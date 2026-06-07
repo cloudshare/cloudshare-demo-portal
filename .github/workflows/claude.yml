@@ -33,6 +33,12 @@ jobs:
         with:
           fetch-depth: 1
 
+      # claude-code-action@v1.0.140's skill discovery does statx('.claude/skills')
+      # and hard-fails with ENOENT when the directory is absent. Ensure it exists
+      # (empty = no project skills) so the action doesn't crash before reviewing.
+      - name: Ensure .claude/skills exists
+        run: mkdir -p .claude/skills
+
       - name: Run Claude Code
         # Pinned to a specific release instead of the moving @v1 tag to make
         # runs reproducible while the upstream Bun crash is unresolved.
