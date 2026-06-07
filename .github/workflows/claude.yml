@@ -33,16 +33,14 @@ jobs:
         with:
           fetch-depth: 1
 
-      # claude-code-action@v1.0.140's skill discovery does statx('.claude/skills')
-      # and hard-fails with ENOENT when the directory is absent. Ensure it exists
-      # (empty = no project skills) so the action doesn't crash before reviewing.
-      - name: Ensure .claude/skills exists
-        run: mkdir -p .claude/skills
-
       - name: Run Claude Code
-        # Pinned to a specific release instead of the moving @v1 tag to make
-        # runs reproducible while the upstream Bun crash is unresolved.
-        uses: anthropics/claude-code-action@v1.0.140
+        # Pinned to the last good commit before the 2026-05-14 regression
+        # (anthropics/claude-code-action#1319): `dereference: true` + Bun 1.3.14
+        # make restoreConfigFromBase crash with `ENOENT statx '.claude/skills'`
+        # when snapshotting a `.claude/` symlink that points outside its set.
+        # Every release since (incl. latest v1.0.140) is still affected; issue open.
+        # Revisit and move back to @v1 once it's fixed upstream.
+        uses: anthropics/claude-code-action@86eb26bf0139bdd75acd15ea5f00f45ee0a284c2
         with:
           # OAuth token provisioned by `/install-github-app`; uses the Claude
           # subscription for billing. Swap to `anthropic_api_key` for API-credit billing.
