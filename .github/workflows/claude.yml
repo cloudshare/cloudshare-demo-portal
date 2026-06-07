@@ -18,7 +18,9 @@ jobs:
       (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
       (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
       (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
-    runs-on: ubuntu-latest
+    # Pinned to 22.04: ubuntu-latest (24.04) triggers a Bun fd crash in the
+    # action ("directory mismatch for tsconfig.json"). See anthropics/claude-code-action#1266.
+    runs-on: ubuntu-22.04
     permissions:
       contents: read
       pull-requests: read
@@ -32,6 +34,8 @@ jobs:
           fetch-depth: 1
 
       - name: Run Claude Code
-        uses: anthropics/claude-code-action@v1
+        # Pinned to a specific release instead of the moving @v1 tag to make
+        # runs reproducible while the upstream Bun crash is unresolved.
+        uses: anthropics/claude-code-action@v1.0.140
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
