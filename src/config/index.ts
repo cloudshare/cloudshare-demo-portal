@@ -25,6 +25,9 @@ const envSchema = z.object({
   CLOUDSHARE_V3_API_ID: z.string().min(1),
   CLOUDSHARE_V3_API_KEY: z.string().min(1),
   CLOUDSHARE_WEBHOOK_SECRET: z.string().min(1),
+  // Kryterion (simulator) exam-token signing secret — HMAC key shared between
+  // the simulator that mints candidate tokens and the auth layer that verifies them.
+  KRYTERION_TOKEN_SECRET: z.string().min(1),
 
   // Category 2 — runtime flags
   PORTAL_MODE: z.enum(["live", "fixture"]),
@@ -49,6 +52,7 @@ export interface Config {
     readonly cloudshareV3ApiId: string;
     readonly cloudshareV3ApiKey: string;
     readonly webhookSecret: string;
+    readonly kryterionTokenSecret: string;
   };
   readonly runtime: {
     readonly mode: PortalMode;
@@ -87,6 +91,7 @@ export function loadConfig(env: NodeJS.ProcessEnv | Record<string, unknown>): Co
       cloudshareV3ApiId: e.CLOUDSHARE_V3_API_ID,
       cloudshareV3ApiKey: e.CLOUDSHARE_V3_API_KEY,
       webhookSecret: e.CLOUDSHARE_WEBHOOK_SECRET,
+      kryterionTokenSecret: e.KRYTERION_TOKEN_SECRET,
     },
     runtime: {
       mode: e.PORTAL_MODE,
