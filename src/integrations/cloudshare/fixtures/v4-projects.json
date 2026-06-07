@@ -1,0 +1,9 @@
+{
+  "method": "GET",
+  "path": "/api/v4/projects",
+  "status": 200,
+  "body": [
+    { "id": "p-demo-1", "name": "Genesys Certification" },
+    { "id": "p-demo-2", "name": "Kryterion Sandbox" }
+  ]
+}
