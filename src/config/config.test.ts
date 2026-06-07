@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { loadConfig, ConfigError } from "./index";
+import { loadConfig, secretValues, ConfigError } from "./index";
 
 const validEnv = {
   CLOUDSHARE_V4_CLIENT_ID: "id",
@@ -35,5 +35,23 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ ...validEnv, PORTAL_MODE: "banana" })).toThrow(
       ConfigError,
     );
+  });
+});
+
+describe("secretValues", () => {
+  it("includes databaseUrl so Postgres credentials are redacted from logs", () => {
+    const config = loadConfig({
+      ...validEnv,
+      DATABASE_URL: "postgresql://user:password@host/db",
+    });
+    const values = secretValues(config);
+    expect(values).toContain("postgresql://user:password@host/db");
+  });
+
+  it("includes all secret fields", () => {
+    const config = loadConfig(validEnv);
+    const values = secretValues(config);
+    expect(values).toContain("secret");
+    expect(values).toContain("whsecret");
   });
 });
