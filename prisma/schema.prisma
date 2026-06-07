@@ -1,0 +1,19 @@
+// CloudShare Demo Portal — persistence schema.
+// SQLite for the demo; provider is swappable to PostgreSQL for the cloud future.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Walking-skeleton tracer entity: proves the persistence seam round-trips.
+// Real domain entities (Candidate, ExamAttempt, ...) arrive in later slices.
+model Heartbeat {
+  id        String   @id @default(cuid())
+  source    String
+  createdAt DateTime @default(now())
+}

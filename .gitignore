@@ -1,5 +1,38 @@
 
 .claude/settings.local.json
+
 # Personal, machine-specific symlink to a local skills collection; must not be
 # committed (breaks on other checkouts / CI — see claude-code-action ENOENT).
 .claude/skills
+
+# dependencies
+/node_modules
+
+# next.js
+/.next/
+/out/
+next-env.d.ts
+
+# production
+/build
+
+# typescript
+*.tsbuildinfo
+
+# prisma / local db
+*.db
+*.db-journal
+/prisma/*.db
+/prisma/migrations/dev.db*
+
+# env
+.env
+.env.local
+.env*.local
+
+# logs
+*.log
+npm-debug.log*
+
+# os / editor
+.DS_Store
