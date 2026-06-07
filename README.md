@@ -17,7 +17,9 @@ Working repository for the CloudShare demo portal discovery, requirements, archi
 - `src/observability` — structured logging with secret redaction
 - `src/persistence` — repository interfaces over Prisma
 - `src/domain` — framework-agnostic business logic
+- `src/auth` — candidate authentication seam (see below)
 - `src/integrations/cloudshare` — CloudShare adapter (see below)
+- `src/integrations/kryterion` — Kryterion simulator (mints candidate exam tokens)
 - `src/composition.ts` — composition root wiring the modules together
 
 ## CloudShare integration
@@ -49,3 +51,20 @@ const projects = await cloudshare.requestV4({
   `src/integrations/cloudshare/fixtures/` through the identical code path, so
   contract tests and demos run with no live calls.
 - Every response is Zod-validated; every failure is a typed `CloudShareError`.
+
+## Candidate identity
+
+Candidates authenticate without a password. The Kryterion simulator mints a
+short-lived, single-use signed token (`KRYTERION_TOKEN_SECRET`, HMAC-SHA256)
+pinned to exactly one `ExamAttempt` when an exam starts. The `auth` layer
+validates it and admits the candidate to that attempt only:
+
+- `verifyExamToken` checks signature, schema, and expiry.
+- The `CandidateAuthenticator` seam enforces **single-use** (a consumed-token
+  store denies replay) and mints a session bound to the token's `ExamAttempt`.
+- The session is stored and resumable by id, so it survives a page reload
+  (`POST /api/candidate/admit` sets an httpOnly cookie; `GET /api/candidate/session` resumes).
+- Token verification lives behind the `auth` interface so a real IdP/OIDC can
+  replace the token scheme without touching callers.
+
+Stores are in-memory for the demo (swappable for Prisma-backed adapters).
