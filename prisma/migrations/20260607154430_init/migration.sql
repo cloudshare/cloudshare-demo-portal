@@ -1,0 +1,6 @@
+-- CreateTable
+CREATE TABLE "Heartbeat" (
+    "id" TEXT NOT NULL PRIMARY KEY,
+    "source" TEXT NOT NULL,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
