@@ -3,7 +3,11 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { createCloudShareClient } from "./client";
 import { createFixtureHttpClient, loadFixturesFromDir } from "./fixtures";
-import { CloudShareRequestError, CloudShareResponseError } from "./errors";
+import {
+  CloudShareRequestError,
+  CloudShareResponseError,
+  CloudShareTransportError,
+} from "./errors";
 import type { HttpClient, HttpRequest, HttpResponse } from "./http";
 import type { V4TokenProvider } from "./v4-auth";
 
@@ -98,6 +102,18 @@ describe("createCloudShareClient — error mapping", () => {
     await expect(
       client.requestV4({ method: "GET", path: "/projects", schema: projectsSchema }),
     ).rejects.toBeInstanceOf(CloudShareResponseError);
+  });
+
+  it("maps a transport failure (http.send throws) to CloudShareTransportError", async () => {
+    const http: HttpClient = {
+      async send() {
+        throw new Error("ECONNREFUSED");
+      },
+    };
+    const client = clientWith(http);
+    await expect(
+      client.requestV4({ method: "GET", path: "/projects", schema: projectsSchema }),
+    ).rejects.toBeInstanceOf(CloudShareTransportError);
   });
 
   it("raises CloudShareResponseError on a non-JSON body", async () => {

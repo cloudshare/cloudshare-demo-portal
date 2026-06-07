@@ -1,5 +1,9 @@
 import type { ZodType } from "zod";
-import { CloudShareRequestError, CloudShareResponseError } from "./errors";
+import {
+  CloudShareRequestError,
+  CloudShareResponseError,
+  CloudShareTransportError,
+} from "./errors";
 import type { HttpClient, HttpRequest } from "./http";
 import { signV3Request } from "./signing";
 import type { V4TokenProvider } from "./v4-auth";
@@ -70,7 +74,18 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
     request: HttpRequest,
     schema: ZodType<T>,
   ): Promise<T> {
-    const response = await opts.http.send(request);
+    let response;
+    try {
+      response = await opts.http.send(request);
+    } catch (cause) {
+      throw new CloudShareTransportError(
+        `CloudShare request to ${request.url} failed to reach the server`,
+        {
+          method: request.method,
+          cause: cause instanceof Error ? cause.message : String(cause),
+        },
+      );
+    }
 
     if (response.status < 200 || response.status >= 300) {
       throw new CloudShareRequestError(

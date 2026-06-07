@@ -34,6 +34,19 @@ export class CloudShareRequestError extends CloudShareError {
   }
 }
 
+/**
+ * A request never reached CloudShare (or no response came back): DNS failure,
+ * timeout, connection refused, TLS error. Distinct from {@link CloudShareRequestError}
+ * (which means CloudShare *did* respond, with a non-success status) so callers
+ * can treat transport failures as retryable.
+ */
+export class CloudShareTransportError extends CloudShareError {
+  constructor(message: string, context?: Record<string, unknown>) {
+    super(message, context);
+    this.name = "CloudShareTransportError";
+  }
+}
+
 /** A response could not be parsed/validated against its expected schema. */
 export class CloudShareResponseError extends CloudShareError {
   constructor(message: string, context?: Record<string, unknown>) {
