@@ -10,11 +10,20 @@ import { checkHealth } from "@/domain/health";
 export async function GET() {
   const { config, logger, heartbeats } = getServices();
 
-  const result = await checkHealth({
-    mode: config.runtime.mode,
-    logger,
-    heartbeats,
-  });
-
-  return NextResponse.json(result);
+  try {
+    const result = await checkHealth({
+      mode: config.runtime.mode,
+      logger,
+      heartbeats,
+    });
+    return NextResponse.json(result);
+  } catch (err) {
+    logger.error("health check failed", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return NextResponse.json(
+      { status: "error", message: "health check failed" },
+      { status: 500 },
+    );
+  }
 }
