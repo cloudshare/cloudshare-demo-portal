@@ -104,5 +104,7 @@ export function loadConfig(env: NodeJS.ProcessEnv | Record<string, unknown>): Co
 
 /** The set of secret values that must never appear in logs. */
 export function secretValues(config: Config): string[] {
-  return Object.values(config.secrets).filter((v) => v.length > 0);
+  return [...Object.values(config.secrets), config.databaseUrl].filter(
+    (v) => v.length > 0,
+  );
 }
