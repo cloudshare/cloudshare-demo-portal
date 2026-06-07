@@ -38,4 +38,6 @@ jobs:
         # runs reproducible while the upstream Bun crash is unresolved.
         uses: anthropics/claude-code-action@v1.0.140
         with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # OAuth token provisioned by `/install-github-app`; uses the Claude
+          # subscription for billing. Swap to `anthropic_api_key` for API-credit billing.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
