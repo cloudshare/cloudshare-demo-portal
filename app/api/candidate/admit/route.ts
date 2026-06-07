@@ -33,11 +33,18 @@ export async function POST(request: Request) {
       httpOnly: true,
       sameSite: "lax",
       path: "/",
+      // HTTPS-only in production; relaxed in local dev (which runs over http).
+      secure: process.env.NODE_ENV === "production",
     });
     return response;
   } catch (err) {
     if (err instanceof AuthError) {
-      logger.warn("candidate admission denied", { reason: err.name });
+      // Include structured context (e.g. jti + examAttemptId for a replay) so the
+      // audit trail is actionable. The raw token is never part of err.context.
+      logger.warn("candidate admission denied", {
+        reason: err.name,
+        ...(err.context ?? {}),
+      });
       return NextResponse.json({ error: "admission denied" }, { status: 401 });
     }
     logger.error("candidate admission failed", {
