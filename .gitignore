@@ -1,2 +1,5 @@
 
 .claude/settings.local.json
+# Personal, machine-specific symlink to a local skills collection; must not be
+# committed (breaks on other checkouts / CI — see claude-code-action ENOENT).
+.claude/skills
