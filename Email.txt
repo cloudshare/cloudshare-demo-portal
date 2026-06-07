@@ -1,0 +1,151 @@
+From: Chris Swinney <chris.swinney@cloudshare.com>
+To:   terrence.wright@genesys.com, shom@kryteriononline.com, jwolff@kryteriononline.com, harry.born@genesys.com, cfletcher@kryteriononline.com, cweaver@kryteriononline.com, mike.eaton@genesys.com
+Cc:   Roger Farr <roger.farr@genesys.com>, Nick Horton <nick.horton@genesys.com>, Mark Rocklin <mark@cloudshare.com>, Barry Pugh <barry.pugh@cloudshare.com>, Matt Crawford <matthew.crawford@cloudshare.com>, Ofek Ackerman <ofek.ackerman@cloudshare.com>, Eric Bar <eric.bar@cloudshare.com>
+Date: Thursday, May 28 2026 at 4:13 PM BST
+
+Subject: Genesys/Kryterion CloudShare Integration Discovery
+
+Hi all,
+Thanks for a productive discovery session the other day, and apologies for the delay in responding. I wanted to talk with internal team members about how to move your requirements forward. These conversations are ongoing, but I thought I should reach out with some information now, and we will keep the discussion flowing.
+We've discussed the opportunity and potentially identified a viable approach for integrating CloudShare labs with Genesys certification exams via Kryterion's proctoring platform.
+**What we decided:**
+1.  I will engage CloudShare's product and implementation teams to clarify certification-specific requirements. I have CC'd Barry Pugh (from our implementation team) and Matt Crawford (from our business development team), along with Ofek Ackerman and Eric Bar (from the product development team). I've also CC'd in Mark Rocklin, who manages the commercials for the Genesys account.
+2.  Genesys will schedule a training demo to see CloudShare's Guided Journey capabilities in action. I have cc'd Nick Horton and Roger Farr, who are part of the team that delivers the Genesys training via CloudShare, for your end users.
+3.  Kryterion will review the API flows and assess compatibility with your existing integration wrapper. We should focus on the v4 API documentation, which is available at https://cloudshare.stoplight.io/ [1] (apologies for the generic branding on this page :( ). Below are _some_ of the endpoints and events I believe will be required to make this happen (though different flows may require different endpoints, so scoping a SoW seems very appropriate). Unfortunately, some of our other endpoints are still using the V3 collection, which requires different authentication methods and has different documentation (see https://docs.cloudshare.com/ [2]). We are in the process of migrating the V3 endpoints to V4, so whilst I will mention V3 below, I'm hopeful that if these are required initially, then we can prioritise their migration.
+    You should also look at the documentation relating to webhook events [3]. Once an environment is created and a user logs in, you can use these webhooks to detect when environment and/or experience events occur.
+    **
+    NOTE:** We are also in the process of delivering our Workato-embedded integration platform, which provides a no-code/low-code solution for integrating external systems with CloudShare and other third-party applications. I think building a recipe within the embedded Workato platform could be of great benefit to you guys. The feature is in alpha at the moment, and we should deliver it as a beta very soon.
+1.  APIv4 - Create Training Experience [4]: This is the wrapper into which you would add a participant and schedule the access to the environment. You could use this in a few ways, but I do know that customers who use our platform to deliver certifications create experiences and map them one-to-one to a user. In this way, each experience is segregated, and the start time is unique for that specific user. As long as the experience is created five hours before the participant logs in, then the environment will be ready to go.
+2.  APIv4 - Add Training Students [5]: This may not be required, depending on use case, as the "Create Sponsored Link" endpoint can also register a participant.
+3.  APIv4 - Add a User Property to a Training [6]: potentially required to add additional fields for a user, typically a licence key, external credential, etc.
+4.  APIv4 - Create Sponsored Link [7]: This is your secret source for creating a participant registration and returning a URL that redirects the participant directly to their environment within CloudShare, without needing to log on through the CloudShare portal.
+5.  APIv3 - Suspend an environment [8]
+6.  APIv3 - Resume an environment [9]
+7.  APIv3 - Extend an environment [10] (unsure if you would require this).
+8.  Event - Environment Created: Fires when an environment is created.
+9.  Event - Environment Suspended: Fires when an environment is suspended.
+10.  Event - Environment Resumed: Fires when an environment is resumed.
+I think this should get you started on seeing the art of the possible, but I'm sure there are many more niche use cases you might think of.
+**Timeline:**
+*   Given Genesys's platform migration from our Classic platform to Accelerate (targeting June), we should wait until this has been completed to make concrete plans; however, we can progress on the initial assessment phase in a sandbox Accelerate subscription if so desired.
+**What happens next:**
+*   The API documentation and suggested implementation flows are outlined above. Kryterion, please review and flag any conflicts with your current setup.
+*   Genesys, we'll coordinate the training demo with your team once you have confirmed availability.
+Looking forward to making this work.
+Regards,
+[11]
+Chris Swinney
+CloudShare
+icon [13] chris.swinney@cloudshare.com  |  icon [14] cloudshare.com [15]
+[16]
+[18]
+[20]
+[22]
+[24]
+
+--
+[1] https://cloudshare.stoplight.io/
+[2] https://docs.cloudshare.com/
+[3] https://support.accelerate.cloudshare.com/hc/en-us/articles/44003785338641-Webhooks
+[4] https://cloudshare.stoplight.io/docs/AccelerateAPI/b90be1885f952-create-training-experience
+[5] https://cloudshare.stoplight.io/docs/AccelerateAPI/f424782891be6-add-training-students
+[6] https://cloudshare.stoplight.io/docs/AccelerateAPI/c05gadl3yvynw-add-a-user-properties-to-a-training
+[7] https://cloudshare.stoplight.io/docs/AccelerateAPI/fmifhx5kuziss-create-sponsored-link
+[8] https://docs.cloudshare.com/rest-api/v3/environments/envs/put-api-v3-envs-actions-suspend/
+[9] https://docs.cloudshare.com/rest-api/v3/environments/envs/put-api-v3-envs-actions-resume/
+[10] https://docs.cloudshare.com/rest-api/v3/environments/envs/put-api-v3-envs-actions-extend/
+[11] http://www.cloudshare.com/
+[12] https://d36urhup7zbd7q.cloudfront.net/u/WaZxJJ9YJkl/1665659013029.jpeg
+[13] https://gifo.srv.wisestamp.com/s/rfem1/45668E/22/trans.png
+[14] https://gifo.srv.wisestamp.com/s/rfw1/45668E/22/trans.png
+[15] https://cloudshare.com/
+[16] https://www.linkedin.com/company/cloudshare/
+[17] https://gifo.srv.wisestamp.com/s/ld/242d37/46/circle/border.png
+[18] https://www.facebook.com/CloudShare/
+[19] https://gifo.srv.wisestamp.com/s/fb/242d37/46/circle/border.png
+[20] https://twitter.com/CloudShare/
+[21] https://gifo.srv.wisestamp.com/s/tw/242d37/46/circle/border.png
+[22] https://www.youtube.com/user/cloudsharecom/
+[23] https://gifo.srv.wisestamp.com/s/yt/242d37/46/circle/border.png
+[24] https://www.instagram.com/cloudshare_labs/
+[25] https://gifo.srv.wisestamp.com/s/inst/242d37/46/circle/border.png
+
+------
+
+From: Chris Swinney <chris.swinney@cloudshare.com>
+To:   Scott Petri <scott@cloudshare.com>
+Date: Thursday, May 28 2026 at 11:47 PM BST
+
+Subject: Fwd: Genesys/Kryterion CloudShare Integration Discovery
+
+Fyi
+[1]
+Chris Swinney
+CloudShare
+icon [3] chris.swinney@cloudshare.com  |  icon [4] cloudshare.com [5]
+[6]
+[8]
+[10]
+[12]
+[14]
+
+--
+[1] http://www.cloudshare.com/
+[2] https://d36urhup7zbd7q.cloudfront.net/u/WaZxJJ9YJkl/1665659013029.jpeg
+[3] https://gifo.srv.wisestamp.com/s/rfem1/45668E/22/trans.png
+[4] https://gifo.srv.wisestamp.com/s/rfw1/45668E/22/trans.png
+[5] https://cloudshare.com/
+[6] https://www.linkedin.com/company/cloudshare/
+[7] https://gifo.srv.wisestamp.com/s/ld/242d37/46/circle/border.png
+[8] https://www.facebook.com/CloudShare/
+[9] https://gifo.srv.wisestamp.com/s/fb/242d37/46/circle/border.png
+[10] https://twitter.com/CloudShare/
+[11] https://gifo.srv.wisestamp.com/s/tw/242d37/46/circle/border.png
+[12] https://www.youtube.com/user/cloudsharecom/
+[13] https://gifo.srv.wisestamp.com/s/yt/242d37/46/circle/border.png
+[14] https://www.instagram.com/cloudshare_labs/
+[15] https://gifo.srv.wisestamp.com/s/inst/242d37/46/circle/border.png
+
+------
+
+From: Chris Swinney <chris.swinney@cloudshare.com>
+To:   terrence.wright@genesys.com, shom@kryteriononline.com, jwolff@kryteriononline.com, harry.born@genesys.com, cfletcher@kryteriononline.com, cweaver@kryteriononline.com, mike.eaton@genesys.com
+Cc:   Roger Farr <roger.farr@genesys.com>, Nick Horton <nick.horton@genesys.com>, Mark Rocklin <mark@cloudshare.com>, Barry Pugh <barry.pugh@cloudshare.com>, Matt Crawford <matthew.crawford@cloudshare.com>, Ofek Ackerman <ofek.ackerman@cloudshare.com>, Eric Bar <eric.bar@cloudshare.com>, Scott Petri <scott@cloudshare.com>
+Date: Friday, May 29 2026 at 12:24 AM BST
+
+Subject: Re: Genesys/Kryterion CloudShare Integration Discovery
+
+Hi All,
+I totally forgot to add the endpoints to retrieve progress and score information for a participant's experience. As I mentioned on the call, this works with our guided journey feature, which, for the moment, has been designed with training in mind. I do think that, with some product direction, it could be tweaked to provide a tool that enables certifications to be delivered.
+1.  APIv4 - Get Participants' Progress Data [1]
+2.  APIv4 - Get Aggregated Progress Data [2]: if you were to use a one-to-one mapping of participant to experience, then this endpoint would obviously not deliver any additional value. If you were to add multiple participants to an experience, then this view will give you some indication as to how all participants have performed in an experience (though remember, that at this time, it is not as simple to schedule an experience to be ready when multiple users are added ad hoc to an ongoing experience).
+As outlined, this is just the art of the possible. I think there will be many more endpoints that would be required to deliver a fully-fledged integration.
+Regards,
+[3]
+Chris Swinney
+CloudShare
+icon [5] chris.swinney@cloudshare.com  |  icon [6] cloudshare.com [7]
+[8]
+[10]
+[12]
+[14]
+[16]
+
+--
+[1] https://cloudshare.stoplight.io/docs/guidedjourney/n8ve2tkc1n5k7-get-participan-s-progress-data
+[2] https://cloudshare.stoplight.io/docs/guidedjourney/ku6x7mh09g2p0-get-aggeregated-progress-data
+[3] http://www.cloudshare.com/
+[4] https://d36urhup7zbd7q.cloudfront.net/u/WaZxJJ9YJkl/1665659013029.jpeg
+[5] https://gifo.srv.wisestamp.com/s/rfem1/45668E/22/trans.png
+[6] https://gifo.srv.wisestamp.com/s/rfw1/45668E/22/trans.png
+[7] https://cloudshare.com/
+[8] https://www.linkedin.com/company/cloudshare/
+[9] https://gifo.srv.wisestamp.com/s/ld/242d37/46/circle/border.png
+[10] https://www.facebook.com/CloudShare/
+[11] https://gifo.srv.wisestamp.com/s/fb/242d37/46/circle/border.png
+[12] https://twitter.com/CloudShare/
+[13] https://gifo.srv.wisestamp.com/s/tw/242d37/46/circle/border.png
+[14] https://www.youtube.com/user/cloudsharecom/
+[15] https://gifo.srv.wisestamp.com/s/yt/242d37/46/circle/border.png
+[16] https://www.instagram.com/cloudshare_labs/
+[17] https://gifo.srv.wisestamp.com/s/inst/242d37/46/circle/border.png
