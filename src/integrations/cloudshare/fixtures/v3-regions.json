@@ -1,0 +1,9 @@
+{
+  "method": "GET",
+  "path": "/api/v3/regions",
+  "status": 200,
+  "body": [
+    { "id": "r-eu-west", "name": "EU West" },
+    { "id": "r-us-east", "name": "US East" }
+  ]
+}

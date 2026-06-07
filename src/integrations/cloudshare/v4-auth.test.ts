@@ -1,0 +1,81 @@
+import { describe, it, expect, vi } from "vitest";
+import { createV4TokenProvider } from "./v4-auth";
+import { CloudShareAuthError } from "./errors";
+import type { HttpClient, HttpResponse } from "./http";
+
+const tokenResponse = (accessToken: string, expiresIn = 300): HttpResponse => ({
+  status: 200,
+  body: JSON.stringify({
+    access_token: accessToken,
+    token_type: "Bearer",
+    expires_in: expiresIn,
+  }),
+});
+
+function stubHttp(responses: HttpResponse[]): { http: HttpClient; calls: () => number } {
+  let i = 0;
+  const send = vi.fn(async () => responses[Math.min(i++, responses.length - 1)]);
+  return { http: { send }, calls: () => send.mock.calls.length };
+}
+
+const baseOpts = {
+  baseUrl: "https://use.cloudshare.com/api/v4",
+  clientId: "client-1",
+  clientSecret: "secret-1",
+};
+
+describe("createV4TokenProvider", () => {
+  it("acquires a bearer token via client_credentials and returns it", async () => {
+    const { http } = stubHttp([tokenResponse("jwt-abc")]);
+    const send = vi.spyOn(http, "send");
+
+    const provider = createV4TokenProvider({ ...baseOpts, http });
+    const token = await provider.getToken();
+
+    expect(token).toBe("jwt-abc");
+    const req = send.mock.calls[0][0];
+    expect(req.method).toBe("POST");
+    expect(req.url).toBe("https://use.cloudshare.com/api/v4/oauth/token");
+    expect(req.body).toContain("grant_type=client_credentials");
+    expect(req.body).toContain("client_id=client-1");
+  });
+
+  it("caches the token and does not re-request before the expiry margin", async () => {
+    const { http, calls } = stubHttp([tokenResponse("jwt-1"), tokenResponse("jwt-2")]);
+    let nowMs = 1_000_000;
+    const provider = createV4TokenProvider({ ...baseOpts, http, now: () => nowMs });
+
+    expect(await provider.getToken()).toBe("jwt-1");
+    nowMs += 100_000; // 100s later, well within 300s validity
+    expect(await provider.getToken()).toBe("jwt-1");
+    expect(calls()).toBe(1);
+  });
+
+  it("refreshes aggressively once inside the safety margin before 300s expiry", async () => {
+    const { http, calls } = stubHttp([tokenResponse("jwt-1"), tokenResponse("jwt-2")]);
+    let nowMs = 1_000_000;
+    const provider = createV4TokenProvider({
+      ...baseOpts,
+      http,
+      now: () => nowMs,
+      safetyMarginMs: 30_000,
+    });
+
+    expect(await provider.getToken()).toBe("jwt-1");
+    nowMs += 280_000; // 280s in: only 20s left, inside the 30s margin
+    expect(await provider.getToken()).toBe("jwt-2");
+    expect(calls()).toBe(2);
+  });
+
+  it("raises CloudShareAuthError on a non-200 token response", async () => {
+    const { http } = stubHttp([{ status: 401, body: "unauthorized" }]);
+    const provider = createV4TokenProvider({ ...baseOpts, http });
+    await expect(provider.getToken()).rejects.toBeInstanceOf(CloudShareAuthError);
+  });
+
+  it("raises CloudShareAuthError on a malformed token body", async () => {
+    const { http } = stubHttp([{ status: 200, body: "{\"not\":\"a token\"}" }]);
+    const provider = createV4TokenProvider({ ...baseOpts, http });
+    await expect(provider.getToken()).rejects.toBeInstanceOf(CloudShareAuthError);
+  });
+});
