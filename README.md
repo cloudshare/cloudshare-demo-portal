@@ -20,6 +20,7 @@ Working repository for the CloudShare demo portal discovery, requirements, archi
 - `src/auth` — candidate authentication seam (see below)
 - `src/integrations/cloudshare` — CloudShare adapter (see below)
 - `src/integrations/kryterion` — Kryterion simulator (mints candidate exam tokens)
+- `src/integrations/genesys` — Genesys simulator (exam eligibility)
 - `src/composition.ts` — composition root wiring the modules together
 
 ## CloudShare integration
@@ -68,3 +69,17 @@ validates it and admits the candidate to that attempt only:
   replace the token scheme without touching callers.
 
 Stores are in-memory for the demo (swappable for Prisma-backed adapters).
+
+## Eligibility & exam booking
+
+A candidate self-schedules with no admin in the loop:
+
+- The **Genesys simulator** decides which exams a candidate is eligible for from
+  invented-but-believable criteria (prerequisite training completed), behind the
+  `ExamEligibilityProvider` port. `GET /api/exams/eligible?candidateId=…`.
+- `bookExam` (domain) re-checks eligibility, persists a booked `ExamAttempt` via
+  the repository, and emits an `exam_attempt.created` **IntegrationEvent**.
+  `POST /api/exams/book` (403 if not eligible).
+- The in-process **event bus** carries IntegrationEvents; the downstream
+  lab-launch flow (later slice) subscribes to `exam_attempt.created`. A failing
+  subscriber is logged, never allowed to break publishing.
