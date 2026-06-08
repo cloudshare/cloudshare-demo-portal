@@ -112,5 +112,9 @@ export function parseWebhookEvent(rawBody: string): ParseWebhookResult {
  * event type, and the moment it occurred.
  */
 export function synthesiseIdempotencyKey(event: CloudShareEnvironmentEvent): string {
-  return `${event.environmentExternalId}:${event.event}:${event.createdAt}`;
+  // JSON-encode the tuple rather than join on a raw delimiter: a value that itself
+  // contains the delimiter (e.g. an id with a ':') could otherwise let two distinct
+  // events collide onto one key and silently dedupe one away. Encoding keeps the
+  // component boundaries unambiguous.
+  return JSON.stringify([event.environmentExternalId, event.event, event.createdAt]);
 }

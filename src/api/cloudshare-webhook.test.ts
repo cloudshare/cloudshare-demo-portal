@@ -69,6 +69,22 @@ describe("handleCloudShareWebhook", () => {
     expect(reconcile).toHaveBeenCalledTimes(1);
   });
 
+  it("returns a deliberate 500 (not a bare exception) when a backing store throws before reconcile", async () => {
+    const { sim, reconcile, deps } = setup();
+    deps.idempotency = {
+      markIfNew: vi.fn(async () => {
+        throw new Error("idempotency store DB timeout");
+      }),
+    };
+    const signed = sim.emit({ environmentExternalId: "env-1", event: "environment.created", at });
+
+    const res = await handleCloudShareWebhook(deps, signed);
+
+    expect(res.status).toBe(500);
+    expect(res.body.status).toBe("internal_error");
+    expect(reconcile).not.toHaveBeenCalled();
+  });
+
   it("still acknowledges (202) when the reconcile poll fails — the next poll recovers", async () => {
     const { sim, deps } = setup();
     deps.reconcile = vi.fn(async () => {

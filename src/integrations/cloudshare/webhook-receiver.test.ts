@@ -30,13 +30,18 @@ describe("receiveWebhook", () => {
     }
   });
 
-  it("rejects an invalid signature without parsing or recording it", async () => {
+  it("rejects an invalid signature, records nothing, and accepts the same event when resent correctly", async () => {
     const d = deps();
-    const result = await receiveWebhook(d, { rawBody: body, signature: "wrong" });
+    const rejected = await receiveWebhook(d, { rawBody: body, signature: "wrong" });
+    expect(rejected.kind).toBe("invalid_signature");
 
-    expect(result.kind).toBe("invalid_signature");
-    // The key for this event must still be free afterwards (it was never recorded).
-    expect(await d.idempotency.markIfNew("env-ext-1:environment.suspended:2026-06-08T10:00:00Z")).toBe(true);
+    // Nothing was recorded for the rejected attempt, so the same event — correctly
+    // signed — is still accepted (not mistaken for a duplicate).
+    const accepted = await receiveWebhook(d, {
+      rawBody: body,
+      signature: computeWebhookSignature(body, SECRET),
+    });
+    expect(accepted.kind).toBe("accepted");
   });
 
   it("rejects a correctly signed but malformed payload", async () => {

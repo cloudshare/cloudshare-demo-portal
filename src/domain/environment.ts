@@ -35,6 +35,15 @@ export interface EnvironmentRecord {
 /** Persistence port for {@link EnvironmentRecord}s. Implemented in the persistence layer. */
 export interface EnvironmentRepository {
   findByExternalId(environmentExternalId: string): Promise<EnvironmentRecord | null>;
+  /**
+   * Persist the reconciled record.
+   *
+   * NOTE: `reconcileEnvironment` does a check-then-write (read existing, compare
+   * `observedAt`, then save) that is race-safe only under single-threaded in-memory
+   * storage. A SQL/Prisma implementation MUST make this a *conditional atomic*
+   * upsert — e.g. `UPDATE ... WHERE observedAt < :observedAt` — so two concurrent
+   * reconciles cannot both read a stale row and let the last (not the newest) win.
+   */
   save(record: EnvironmentRecord): Promise<void>;
 }
 
