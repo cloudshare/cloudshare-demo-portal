@@ -17,6 +17,7 @@ Working repository for the CloudShare demo portal discovery, requirements, archi
 - `src/observability` — structured logging with secret redaction
 - `src/persistence` — repository interfaces over Prisma
 - `src/domain` — framework-agnostic business logic
+- `src/api` — framework-agnostic request handlers (policy), wired to Next.js routes in `app/api`
 - `src/auth` — candidate authentication seam (see below)
 - `src/integrations/cloudshare` — CloudShare adapter (see below)
 - `src/integrations/kryterion` — Kryterion simulator (mints candidate exam tokens)
@@ -102,3 +103,39 @@ A candidate self-schedules with no admin in the loop:
 The candidate opens the returned Classic-domain `loginUrl` in a child window via
 `openLabWindow` (`src/web/lab-window.ts`), which retains the window handle for
 later liveness checks. Works in both live and fixture modes (chosen by `PORTAL_MODE`).
+
+## Webhooks & environment state (polling is the source of truth)
+
+`POST /api/webhooks/cloudshare` ingests CloudShare environment lifecycle events
+(`environment.created | suspended | resumed | deleted | extended | archived`). The
+same endpoint is fed by real CloudShare in live mode (via `PORTAL_TUNNEL_URL`) and
+by the environment simulator in demo mode — **identical signed payloads, one code
+path**. The pipeline (`src/api/cloudshare-webhook.ts` → `webhook-receiver.ts`):
+
+1. **Verify** the HMAC-SHA256 (base64) signature over the *raw* body using
+   `CLOUDSHARE_WEBHOOK_SECRET` (constant-time compare). Bad/missing signature → **401**.
+   The signature is read from the `x-cloudshare-signature` header.
+2. **Validate** the payload with Zod. Malformed → **400** (logged with issues).
+3. **Dedupe** via an idempotency key synthesised from
+   `(environmentExternalId, Event, CreatedAt)` — CloudShare sends no unique event id
+   and no custom headers. A replay → **200** (acknowledged, not reprocessed).
+4. **Accepted** events → **202**, and trigger a reconcile.
+
+**Webhooks are only a hint.** `reconcileEnvironment` (domain) polls `GET environment`
+— the authoritative `EnvironmentStateSource` — and the *polled* status, never the
+event payload, drives the persisted `EnvironmentRecord`. This is what makes duplicate,
+replayed, and **out-of-order** events safe: a poll always reflects current truth
+(idempotent to apply), and an `observedAt` monotonic guard stops an earlier-triggered
+poll that completes late from clobbering a fresher observation. A failed reconcile is
+logged but still returns 202 — the next event or poll recovers.
+
+In demo mode the simulator (`environment-simulator.ts`) is *both* the webhook emitter
+and the `GET environment` target, from one in-memory truth, so emitted events and
+polled state always agree. Swapping in the live integration changes nothing upstream:
+both implement `EnvironmentStateSource` and produce the identical wire payload.
+
+> **Assumptions to verify against a live tenant** (isolated behind
+> `src/integrations/cloudshare/webhooks.ts` and `environment.ts`, tracked for the
+> Slice 12 gap report): the exact webhook field names and the signature header name,
+> and the v3 endpoint that resolves an environment by the `externalId` we set at
+> experience creation.

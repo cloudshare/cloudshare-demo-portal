@@ -22,9 +22,18 @@ import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repo
 import { createInMemoryEventBus, type IntegrationEventBus } from "@/domain/event-bus";
 import { createCloudShareIntegration } from "@/integrations/cloudshare";
 import { createCloudShareLabProvisioner } from "@/integrations/cloudshare/labs";
+import { createCloudShareEnvironmentSource } from "@/integrations/cloudshare/environment";
+import {
+  createCloudShareEnvironmentSimulator,
+  type CloudShareEnvironmentSimulator,
+} from "@/integrations/cloudshare/environment-simulator";
+import { createInMemoryEnvironmentRepository } from "@/persistence/environment-repository";
+import { createInMemoryWebhookIdempotencyStore } from "@/persistence/webhook-idempotency-store";
 import type { ExamEligibilityProvider } from "@/domain/eligibility";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { LabProvisioner, LabLaunchRepository } from "@/domain/lab-launch";
+import type { EnvironmentRepository, EnvironmentStateSource } from "@/domain/environment";
+import type { WebhookIdempotencyStore } from "@/domain/webhook";
 
 /**
  * Composition root. The framework-agnostic modules are pure and dependency-free;
@@ -47,6 +56,13 @@ export interface Services {
   events: IntegrationEventBus;
   labProvisioner: LabProvisioner;
   labLaunches: LabLaunchRepository;
+  // Webhook receiver & polling source-of-truth (Slice 6).
+  environments: EnvironmentRepository;
+  /** Authoritative `GET environment` poll: the simulator in demo mode, CloudShare in live mode. */
+  environmentSource: EnvironmentStateSource;
+  /** Present only in demo/fixture mode — the in-memory CloudShare stand-in that emits webhooks. */
+  environmentSimulator: CloudShareEnvironmentSimulator | null;
+  webhookIdempotency: WebhookIdempotencyStore;
 }
 
 const globalForServices = globalThis as unknown as {
@@ -105,6 +121,18 @@ export function getServices(): Services {
   const labProvisioner = createCloudShareLabProvisioner(cloudshare);
   const labLaunches = createInMemoryLabLaunchRepository();
 
+  // Webhook receiver & polling source-of-truth. In demo mode the simulator is BOTH
+  // the webhook emitter and the authoritative poll target, so its emitted events and
+  // its `GET environment` answers always agree; in live mode the poll hits CloudShare.
+  const environmentSimulator =
+    config.runtime.mode === "fixture"
+      ? createCloudShareEnvironmentSimulator({ secret: config.secrets.webhookSecret })
+      : null;
+  const environmentSource: EnvironmentStateSource =
+    environmentSimulator ?? createCloudShareEnvironmentSource(cloudshare);
+  const environments = createInMemoryEnvironmentRepository();
+  const webhookIdempotency = createInMemoryWebhookIdempotencyStore();
+
   const services: Services = {
     config,
     logger,
@@ -117,6 +145,10 @@ export function getServices(): Services {
     events,
     labProvisioner,
     labLaunches,
+    environments,
+    environmentSource,
+    environmentSimulator,
+    webhookIdempotency,
   };
   globalForServices.__portalServices = services;
   return services;

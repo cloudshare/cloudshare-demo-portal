@@ -1,0 +1,101 @@
+import { createHmac } from "node:crypto";
+import { describe, it, expect } from "vitest";
+import {
+  computeWebhookSignature,
+  parseWebhookEvent,
+  synthesiseIdempotencyKey,
+  verifyWebhookSignature,
+  type CloudShareEnvironmentEvent,
+} from "./webhooks";
+
+const SECRET = "account-webhook-secret";
+
+const validBody = JSON.stringify({
+  Event: "environment.suspended",
+  EnvironmentExternalId: "env-ext-1",
+  CreatedAt: "2026-06-08T10:00:00Z",
+});
+
+function sign(body: string, secret = SECRET): string {
+  return createHmac("sha256", secret).update(body).digest("base64");
+}
+
+describe("verifyWebhookSignature", () => {
+  it("accepts a correct HMAC-SHA256 base64 signature over the raw body", () => {
+    expect(verifyWebhookSignature(validBody, sign(validBody), SECRET)).toBe(true);
+  });
+
+  it("computeWebhookSignature matches an independent HMAC computation", () => {
+    expect(computeWebhookSignature(validBody, SECRET)).toBe(sign(validBody));
+  });
+
+  it("rejects a signature computed over a tampered body", () => {
+    const tampered = validBody.replace("suspended", "resumed");
+    expect(verifyWebhookSignature(tampered, sign(validBody), SECRET)).toBe(false);
+  });
+
+  it("rejects a signature made with the wrong secret", () => {
+    expect(verifyWebhookSignature(validBody, sign(validBody, "wrong"), SECRET)).toBe(false);
+  });
+
+  it("rejects an empty or malformed signature without throwing", () => {
+    expect(verifyWebhookSignature(validBody, "", SECRET)).toBe(false);
+    expect(verifyWebhookSignature(validBody, "not-base64-$$$", SECRET)).toBe(false);
+    expect(verifyWebhookSignature(validBody, "c2hvcnQ=", SECRET)).toBe(false); // valid b64, wrong length
+  });
+});
+
+describe("parseWebhookEvent", () => {
+  it("parses a valid payload into a normalised event", () => {
+    const result = parseWebhookEvent(validBody);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.event).toEqual<CloudShareEnvironmentEvent>({
+        event: "environment.suspended",
+        environmentExternalId: "env-ext-1",
+        createdAt: "2026-06-08T10:00:00Z",
+      });
+    }
+  });
+
+  it("rejects a payload with an unknown event type", () => {
+    const body = JSON.stringify({
+      Event: "environment.exploded",
+      EnvironmentExternalId: "env-ext-1",
+      CreatedAt: "2026-06-08T10:00:00Z",
+    });
+    const result = parseWebhookEvent(body);
+    expect(result.ok).toBe(false);
+  });
+
+  it("rejects a payload missing a required field", () => {
+    const body = JSON.stringify({ Event: "environment.created" });
+    const result = parseWebhookEvent(body);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issues.length).toBeGreaterThan(0);
+  });
+
+  it("rejects a body that is not valid JSON", () => {
+    const result = parseWebhookEvent("<<<not json>>>");
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe("synthesiseIdempotencyKey", () => {
+  const base: CloudShareEnvironmentEvent = {
+    event: "environment.suspended",
+    environmentExternalId: "env-ext-1",
+    createdAt: "2026-06-08T10:00:00Z",
+  };
+
+  it("is stable for the same (environmentExternalId, event, createdAt)", () => {
+    expect(synthesiseIdempotencyKey(base)).toBe(synthesiseIdempotencyKey({ ...base }));
+  });
+
+  it("differs when any of the three components differ", () => {
+    const key = synthesiseIdempotencyKey(base);
+    expect(synthesiseIdempotencyKey({ ...base, environmentExternalId: "env-ext-2" })).not.toBe(key);
+    expect(synthesiseIdempotencyKey({ ...base, event: "environment.resumed" })).not.toBe(key);
+    expect(synthesiseIdempotencyKey({ ...base, createdAt: "2026-06-08T11:00:00Z" })).not.toBe(key);
+  });
+});
