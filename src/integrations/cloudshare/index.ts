@@ -1,11 +1,11 @@
-import { fileURLToPath } from "node:url";
 import {
   createCloudShareClient,
   type CloudShareClient,
   type CloudShareEndpoints,
 } from "./client";
 import { createFetchHttpClient } from "./http";
-import { createFixtureHttpClient, loadFixturesFromDir } from "./fixtures";
+import { createFixtureHttpClient } from "./fixtures";
+import { bundledFixtures } from "./fixtures/index";
 import { createV4TokenProvider } from "./v4-auth";
 
 /**
@@ -38,11 +38,7 @@ export interface CloudShareIntegrationOptions {
   readonly v4: { readonly clientId: string; readonly clientSecret: string };
   readonly v3: { readonly apiId: string; readonly apiKey: string };
   readonly endpoints?: CloudShareEndpoints;
-  /** Fixture corpus location; defaults to the adapter's bundled `fixtures/`. */
-  readonly fixturesDir?: string;
 }
-
-const bundledFixturesDir = fileURLToPath(new URL("./fixtures", import.meta.url));
 
 /**
  * Build a {@link CloudShareClient} for the given mode. This is the one place
@@ -55,7 +51,7 @@ export function createCloudShareIntegration(
   const endpoints = opts.endpoints ?? CLOUDSHARE_DEFAULT_ENDPOINTS;
   const http =
     opts.mode === "fixture"
-      ? createFixtureHttpClient(loadFixturesFromDir(opts.fixturesDir ?? bundledFixturesDir))
+      ? createFixtureHttpClient(bundledFixtures)
       : createFetchHttpClient();
 
   const tokenProvider = createV4TokenProvider({
