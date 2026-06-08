@@ -37,3 +37,11 @@ export class LabLaunchError extends DomainError {
     this.name = "LabLaunchError";
   }
 }
+
+/** Suspend or resume of the exam environment + timer sync failed. */
+export class TimerSyncError extends DomainError {
+  constructor(message: string, context?: Record<string, unknown>) {
+    super(message, context);
+    this.name = "TimerSyncError";
+  }
+}

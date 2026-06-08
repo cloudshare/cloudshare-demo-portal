@@ -66,3 +66,34 @@ describe("CloudShare environment simulator", () => {
     expect(await sim.getEnvironmentState("ghost")).toBeNull();
   });
 });
+
+describe("CloudShare environment simulator: EnvironmentController", () => {
+  it("suspendEnvironment sets the status to suspended, confirmed by the next poll", async () => {
+    const sim = createCloudShareEnvironmentSimulator({ secret: SECRET });
+    sim.emit({ environmentExternalId: "env-1", event: "environment.resumed", at });
+
+    await sim.suspendEnvironment("env-1");
+
+    expect((await sim.getEnvironmentState("env-1"))?.status).toBe("suspended");
+  });
+
+  it("resumeEnvironment sets the status to running, confirmed by the next poll", async () => {
+    const sim = createCloudShareEnvironmentSimulator({ secret: SECRET });
+    sim.emit({ environmentExternalId: "env-1", event: "environment.suspended", at });
+
+    await sim.resumeEnvironment("env-1");
+
+    expect((await sim.getEnvironmentState("env-1"))?.status).toBe("running");
+  });
+
+  it("controller state and emit() state share the same in-memory source of truth", async () => {
+    const sim = createCloudShareEnvironmentSimulator({ secret: SECRET });
+    sim.emit({ environmentExternalId: "env-1", event: "environment.resumed", at });
+
+    await sim.suspendEnvironment("env-1");
+    // Now emit a resume event to change it back via the event path.
+    sim.emit({ environmentExternalId: "env-1", event: "environment.resumed", at });
+
+    expect((await sim.getEnvironmentState("env-1"))?.status).toBe("running");
+  });
+});

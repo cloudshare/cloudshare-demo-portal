@@ -27,12 +27,14 @@ import {
   createCloudShareEnvironmentSimulator,
   type CloudShareEnvironmentSimulator,
 } from "@/integrations/cloudshare/environment-simulator";
+import { createCloudShareEnvironmentController } from "@/integrations/cloudshare/environment-controller";
 import { createInMemoryEnvironmentRepository } from "@/persistence/environment-repository";
 import { createInMemoryWebhookIdempotencyStore } from "@/persistence/webhook-idempotency-store";
 import type { ExamEligibilityProvider } from "@/domain/eligibility";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { LabProvisioner, LabLaunchRepository } from "@/domain/lab-launch";
 import type { EnvironmentRepository, EnvironmentStateSource } from "@/domain/environment";
+import type { EnvironmentController } from "@/domain/timer-sync";
 import type { WebhookIdempotencyStore } from "@/domain/webhook";
 
 /**
@@ -60,6 +62,8 @@ export interface Services {
   environments: EnvironmentRepository;
   /** Authoritative `GET environment` poll: the simulator in demo mode, CloudShare in live mode. */
   environmentSource: EnvironmentStateSource;
+  /** Suspend/resume commands: the simulator in demo mode, the live controller in production. */
+  environmentController: EnvironmentController;
   /** Present only in demo/fixture mode — the in-memory CloudShare stand-in that emits webhooks. */
   environmentSimulator: CloudShareEnvironmentSimulator | null;
   webhookIdempotency: WebhookIdempotencyStore;
@@ -122,14 +126,17 @@ export function getServices(): Services {
   const labLaunches = createInMemoryLabLaunchRepository();
 
   // Webhook receiver & polling source-of-truth. In demo mode the simulator is BOTH
-  // the webhook emitter and the authoritative poll target, so its emitted events and
-  // its `GET environment` answers always agree; in live mode the poll hits CloudShare.
+  // the webhook emitter, the authoritative poll target, AND the suspend/resume
+  // command target — its emitted events, poll answers, and control commands all
+  // share one in-memory truth. In live mode the poll and commands hit CloudShare.
   const environmentSimulator =
     config.runtime.mode === "fixture"
       ? createCloudShareEnvironmentSimulator({ secret: config.secrets.webhookSecret })
       : null;
   const environmentSource: EnvironmentStateSource =
     environmentSimulator ?? createCloudShareEnvironmentSource(cloudshare);
+  const environmentController: EnvironmentController =
+    environmentSimulator ?? createCloudShareEnvironmentController(cloudshare);
   const environments = createInMemoryEnvironmentRepository();
   const webhookIdempotency = createInMemoryWebhookIdempotencyStore();
 
@@ -147,6 +154,7 @@ export function getServices(): Services {
     labLaunches,
     environments,
     environmentSource,
+    environmentController,
     environmentSimulator,
     webhookIdempotency,
   };

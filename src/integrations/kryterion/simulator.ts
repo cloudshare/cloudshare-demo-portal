@@ -1,14 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { signExamToken } from "@/auth/exam-token";
+import type { ExamTimer } from "@/domain/timer-sync";
 
 /**
- * Kryterion simulator. Stands in for the real Kryterion proctoring platform,
- * which mints a short-lived, single-use signed token pinned to one ExamAttempt
- * when a candidate's exam starts. It signs with the same codec the auth layer
- * verifies, so the simulated and real flows are indistinguishable to auth.
+ * Kryterion simulator. Stands in for the real Kryterion proctoring platform.
+ *
+ * In addition to minting short-lived signed exam tokens, the simulator now owns
+ * the authoritative exam clock. `pauseTimer`/`resumeTimer` implement the
+ * {@link ExamTimer} port so the domain timer-sync use cases can drive the clock
+ * without knowing it is a simulator.
  *
  * When Kryterion is integrated for real, this module is replaced by an inbound
- * adapter over Kryterion's actual token/session events — the auth seam is unchanged.
+ * adapter over Kryterion's actual token/session/clock events — the domain port
+ * seam is unchanged.
  */
 
 export interface MintExamTokenInput {
@@ -16,9 +20,19 @@ export interface MintExamTokenInput {
   readonly candidateId: string;
 }
 
-export interface KryterionSimulator {
+export interface KryterionTimerState {
+  readonly status: "running" | "paused";
+  /** Epoch ms when the timer last started or resumed. */
+  readonly startedAt: number;
+  /** Elapsed ms banked at the last pause (0 if never paused). */
+  readonly elapsedAtPause: number;
+}
+
+export interface KryterionSimulator extends ExamTimer {
   /** Mint a signed, single-use token admitting the candidate to one ExamAttempt. */
   mintExamToken(input: MintExamTokenInput): string;
+  /** Get the current timer state, or null if the timer has never been touched. */
+  getTimerState(examAttemptId: string): KryterionTimerState | null;
 }
 
 export interface KryterionSimulatorOptions {
@@ -38,6 +52,8 @@ export function createKryterionSimulator(
   const now = opts.now ?? Date.now;
   const newJti = opts.newJti ?? (() => randomUUID());
 
+  const timers = new Map<string, KryterionTimerState>();
+
   return {
     mintExamToken({ examAttemptId, candidateId }: MintExamTokenInput): string {
       const iat = Math.floor(now() / 1000);
@@ -51,6 +67,33 @@ export function createKryterionSimulator(
         },
         opts.secret,
       );
+    },
+
+    async pauseTimer(examAttemptId: string): Promise<void> {
+      const existing = timers.get(examAttemptId);
+      const elapsed = existing
+        ? existing.status === "running"
+          ? existing.elapsedAtPause + (now() - existing.startedAt)
+          : existing.elapsedAtPause
+        : 0;
+      timers.set(examAttemptId, {
+        status: "paused",
+        startedAt: existing?.startedAt ?? now(),
+        elapsedAtPause: elapsed,
+      });
+    },
+
+    async resumeTimer(examAttemptId: string): Promise<void> {
+      const existing = timers.get(examAttemptId);
+      timers.set(examAttemptId, {
+        status: "running",
+        startedAt: now(),
+        elapsedAtPause: existing?.elapsedAtPause ?? 0,
+      });
+    },
+
+    getTimerState(examAttemptId: string): KryterionTimerState | null {
+      return timers.get(examAttemptId) ?? null;
     },
   };
 }
