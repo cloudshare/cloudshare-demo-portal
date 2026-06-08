@@ -15,6 +15,12 @@ import {
   createKryterionSimulator,
   type KryterionSimulator,
 } from "@/integrations/kryterion/simulator";
+import { createGenesysSimulator } from "@/integrations/genesys/simulator";
+import { genesysDemoData } from "@/integrations/genesys/demo-data";
+import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-repository";
+import { createInMemoryEventBus, type IntegrationEventBus } from "@/domain/event-bus";
+import type { ExamEligibilityProvider } from "@/domain/eligibility";
+import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 
 /**
  * Composition root. The framework-agnostic modules are pure and dependency-free;
@@ -32,6 +38,9 @@ export interface Services {
   heartbeats: HeartbeatRepository;
   candidateAuth: CandidateAuthenticator;
   kryterion: KryterionSimulator;
+  genesys: ExamEligibilityProvider;
+  examAttempts: ExamAttemptRepository;
+  events: IntegrationEventBus;
 }
 
 const globalForServices = globalThis as unknown as {
@@ -61,6 +70,19 @@ export function getServices(): Services {
     ttlSeconds: 120,
   });
 
+  // Eligibility & booking. The event bus carries the exam_attempt.created event
+  // the downstream lab-launch flow (later slice) will subscribe to; a failing
+  // subscriber is logged, not allowed to break publishing.
+  const genesys = createGenesysSimulator(genesysDemoData);
+  const examAttempts = createInMemoryExamAttemptRepository();
+  const events = createInMemoryEventBus({
+    onError: (error, event) =>
+      logger.error("integration event handler failed", {
+        eventType: event.type,
+        error: error instanceof Error ? error.message : String(error),
+      }),
+  });
+
   const services: Services = {
     config,
     logger,
@@ -68,6 +90,9 @@ export function getServices(): Services {
     heartbeats,
     candidateAuth,
     kryterion,
+    genesys,
+    examAttempts,
+    events,
   };
   globalForServices.__portalServices = services;
   return services;
