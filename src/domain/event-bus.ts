@@ -38,6 +38,18 @@ type AnyHandler = (event: IntegrationEvent) => void | Promise<void>;
 
 export function createInMemoryEventBus(opts: EventBusOptions = {}): IntegrationEventBus {
   const handlers = new Map<IntegrationEventType, AnyHandler[]>();
+  // Delivered event ids — makes replay / duplicate publishes safe (at-most-once
+  // delivery per event id), as the integration brief requires. Downstream
+  // consumers (e.g. lab launch) therefore can't be triggered twice by the same event.
+  const delivered = new Set<string>();
+
+  // Never silently swallow a handler error: fall back to console.error if the
+  // caller did not wire an onError sink.
+  const onError =
+    opts.onError ??
+    ((error: unknown, event: IntegrationEvent) => {
+      console.error(`IntegrationEvent handler failed for "${event.type}"`, error);
+    });
 
   return {
     subscribe(type, handler) {
@@ -47,11 +59,14 @@ export function createInMemoryEventBus(opts: EventBusOptions = {}): IntegrationE
     },
 
     async publish(event: IntegrationEvent): Promise<void> {
+      if (delivered.has(event.id)) return; // duplicate / replay — drop it
+      delivered.add(event.id);
+
       for (const handler of handlers.get(event.type) ?? []) {
         try {
           await handler(event);
         } catch (error) {
-          opts.onError?.(error, event);
+          onError(error, event);
         }
       }
     },

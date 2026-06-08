@@ -33,6 +33,29 @@ describe("createInMemoryEventBus", () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
+  it("drops duplicate / replayed events (delivers once per event id)", async () => {
+    const bus = createInMemoryEventBus();
+    const handler = vi.fn();
+    bus.subscribe("exam_attempt.created", handler);
+
+    await bus.publish(event);
+    await bus.publish(event); // same id — replay
+
+    expect(handler).toHaveBeenCalledOnce();
+  });
+
+  it("falls back to console.error when no onError sink is wired", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const bus = createInMemoryEventBus(); // no onError
+    bus.subscribe("exam_attempt.created", () => {
+      throw new Error("boom");
+    });
+
+    await expect(bus.publish(event)).resolves.toBeUndefined();
+    expect(spy).toHaveBeenCalledOnce();
+    spy.mockRestore();
+  });
+
   it("isolates a failing handler so others still run, routing the error to onError", async () => {
     const onError = vi.fn();
     const bus = createInMemoryEventBus({ onError });
