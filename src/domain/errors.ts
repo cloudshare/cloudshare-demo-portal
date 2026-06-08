@@ -17,3 +17,23 @@ export class NotEligibleError extends DomainError {
     this.name = "NotEligibleError";
   }
 }
+
+/** A lab launch was attempted for an ExamAttempt that is not entitled to one. */
+export class NotEntitledError extends DomainError {
+  constructor(message: string, context?: Record<string, unknown>) {
+    super(message, context);
+    this.name = "NotEntitledError";
+  }
+}
+
+/**
+ * The controlled lab-launch sequence failed (e.g. student registration — the
+ * real entitlement gate — did not complete). Surfaced as an actionable error
+ * rather than a silently denied login.
+ */
+export class LabLaunchError extends DomainError {
+  constructor(message: string, context?: Record<string, unknown>) {
+    super(message, context);
+    this.name = "LabLaunchError";
+  }
+}

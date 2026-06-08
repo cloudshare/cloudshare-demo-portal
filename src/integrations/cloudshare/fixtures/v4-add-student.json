@@ -1,0 +1,6 @@
+{
+  "method": "POST",
+  "path": "/api/v4/experiences/exp-demo-1/students",
+  "status": 200,
+  "body": { "registered": true }
+}
