@@ -21,6 +21,7 @@ Working repository for the CloudShare demo portal discovery, requirements, archi
 - `src/integrations/cloudshare` — CloudShare adapter (see below)
 - `src/integrations/kryterion` — Kryterion simulator (mints candidate exam tokens)
 - `src/integrations/genesys` — Genesys simulator (exam eligibility)
+- `src/web` — browser-side helpers and client components (e.g. lab child-window)
 - `src/composition.ts` — composition root wiring the modules together
 
 ## CloudShare integration
@@ -83,3 +84,21 @@ A candidate self-schedules with no admin in the loop:
 - The in-process **event bus** carries IntegrationEvents; the downstream
   lab-launch flow (later slice) subscribes to `exam_attempt.created`. A failing
   subscriber is logged, never allowed to break publishing.
+
+## Lab launch (entitlement-gated)
+
+`POST /api/lab/launch` performs the controlled CloudShare `LabLaunch`:
+
+1. **Entitlement** is recomputed server-side from the persisted `ExamAttempt`
+   (`computeEntitlement`) — never trusted from the client; the request carries
+   only `examAttemptId`.
+2. The lab is provisioned in strict order via the `LabProvisioner` port:
+   **Create Experience (Registered Students Only) → Add Student → Sponsored Link**.
+   `environmentExternalId` is set at creation and persisted for correlation.
+3. **Add Student is the real entitlement gate** — if it fails, the launch aborts
+   with an actionable `LabLaunchError` (HTTP 502) rather than handing out a link
+   that would log in to a silently-denied environment.
+
+The candidate opens the returned Classic-domain `loginUrl` in a child window via
+`openLabWindow` (`src/web/lab-window.ts`), which retains the window handle for
+later liveness checks. Works in both live and fixture modes (chosen by `PORTAL_MODE`).

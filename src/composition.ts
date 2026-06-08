@@ -18,9 +18,13 @@ import {
 import { createGenesysSimulator } from "@/integrations/genesys/simulator";
 import { genesysDemoData } from "@/integrations/genesys/demo-data";
 import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-repository";
+import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repository";
 import { createInMemoryEventBus, type IntegrationEventBus } from "@/domain/event-bus";
+import { createCloudShareIntegration } from "@/integrations/cloudshare";
+import { createCloudShareLabProvisioner } from "@/integrations/cloudshare/labs";
 import type { ExamEligibilityProvider } from "@/domain/eligibility";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
+import type { LabProvisioner, LabLaunchRepository } from "@/domain/lab-launch";
 
 /**
  * Composition root. The framework-agnostic modules are pure and dependency-free;
@@ -41,6 +45,8 @@ export interface Services {
   genesys: ExamEligibilityProvider;
   examAttempts: ExamAttemptRepository;
   events: IntegrationEventBus;
+  labProvisioner: LabProvisioner;
+  labLaunches: LabLaunchRepository;
 }
 
 const globalForServices = globalThis as unknown as {
@@ -83,6 +89,22 @@ export function getServices(): Services {
       }),
   });
 
+  // CloudShare lab launch. The transport (live fetch vs fixture replay) is chosen
+  // by PORTAL_MODE; the provisioner and launch flow are identical either way.
+  const cloudshare = createCloudShareIntegration({
+    mode: config.runtime.mode,
+    v4: {
+      clientId: config.secrets.cloudshareV4ClientId,
+      clientSecret: config.secrets.cloudshareV4ClientSecret,
+    },
+    v3: {
+      apiId: config.secrets.cloudshareV3ApiId,
+      apiKey: config.secrets.cloudshareV3ApiKey,
+    },
+  });
+  const labProvisioner = createCloudShareLabProvisioner(cloudshare);
+  const labLaunches = createInMemoryLabLaunchRepository();
+
   const services: Services = {
     config,
     logger,
@@ -93,6 +115,8 @@ export function getServices(): Services {
     genesys,
     examAttempts,
     events,
+    labProvisioner,
+    labLaunches,
   };
   globalForServices.__portalServices = services;
   return services;

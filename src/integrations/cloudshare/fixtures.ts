@@ -46,15 +46,18 @@ export function createFixtureHttpClient(fixtures: FixtureMap): HttpClient {
   };
 }
 
-/** Load and validate every `*.json` fixture in a directory into a {@link FixtureMap}. */
-export function loadFixturesFromDir(dir: string): FixtureMap {
+/**
+ * Validate raw fixture records (from disk or static imports) into a {@link FixtureMap}.
+ * `label` is only used to make validation errors point at the offending source.
+ */
+export function buildFixtureMap(
+  rawFixtures: Iterable<{ raw: unknown; label: string }>,
+): FixtureMap {
   const map: FixtureMap = {};
-  for (const file of readdirSync(dir)) {
-    if (!file.endsWith(".json")) continue;
-    const raw = JSON.parse(readFileSync(join(dir, file), "utf8"));
+  for (const { raw, label } of rawFixtures) {
     const parsed = fixtureFileSchema.safeParse(raw);
     if (!parsed.success) {
-      throw new CloudShareFixtureError(`Invalid fixture file "${file}"`, {
+      throw new CloudShareFixtureError(`Invalid fixture "${label}"`, {
         issues: parsed.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`),
       });
     }
@@ -62,4 +65,13 @@ export function loadFixturesFromDir(dir: string): FixtureMap {
     map[keyFor(method, path)] = { status, body: JSON.stringify(body) };
   }
   return map;
+}
+
+/** Load and validate every `*.json` fixture in a directory into a {@link FixtureMap}. */
+export function loadFixturesFromDir(dir: string): FixtureMap {
+  return buildFixtureMap(
+    readdirSync(dir)
+      .filter((file) => file.endsWith(".json"))
+      .map((file) => ({ raw: JSON.parse(readFileSync(join(dir, file), "utf8")), label: file })),
+  );
 }
