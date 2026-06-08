@@ -22,4 +22,15 @@ describe("computeEntitlement", () => {
     expect(entitlement.allowed).toBe(false);
     expect(entitlement.reason).toMatch(/not found/);
   });
+
+  it("denies an attempt whose status is not launchable", () => {
+    // Cast a future, not-yet-modelled status to exercise the deny branch.
+    const inProgress = {
+      ...booked,
+      status: "in_progress" as unknown as ExamAttempt["status"],
+    };
+    const entitlement = computeEntitlement("ea-1", inProgress);
+    expect(entitlement.allowed).toBe(false);
+    expect(entitlement.reason).toMatch(/not launchable/);
+  });
 });
