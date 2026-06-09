@@ -1,4 +1,4 @@
-import type { EnvironmentStateSource, EnvironmentStatus } from "@/domain/environment";
+import type { EnvironmentController, EnvironmentStateSource, EnvironmentStatus } from "@/domain/environment";
 import {
   computeWebhookSignature,
   type CloudShareEnvironmentEventType,
@@ -31,7 +31,16 @@ export interface EmitEnvironmentEventInput {
   readonly at: Date;
 }
 
-export interface CloudShareEnvironmentSimulator extends EnvironmentStateSource {
+/**
+ * The demo simulator implements both {@link EnvironmentStateSource} (for polling)
+ * and {@link EnvironmentController} (for suspend/resume commands). When a command
+ * is issued, the simulator immediately transitions its in-memory state so that the
+ * next poll sees the new status — exactly as the real CloudShare API would after
+ * the async lifecycle action completes.
+ */
+export interface CloudShareEnvironmentSimulator
+  extends EnvironmentStateSource,
+    EnvironmentController {
   emit(input: EmitEnvironmentEventInput): SignedWebhook;
 }
 
@@ -83,6 +92,14 @@ export function createCloudShareEnvironmentSimulator(opts: {
       const status = statusByExternalId.get(environmentExternalId);
       if (status === undefined) return null;
       return { environmentExternalId, status };
+    },
+
+    async suspendEnvironment(environmentExternalId: string): Promise<void> {
+      statusByExternalId.set(environmentExternalId, "suspended");
+    },
+
+    async resumeEnvironment(environmentExternalId: string): Promise<void> {
+      statusByExternalId.set(environmentExternalId, "running");
     },
   };
 }

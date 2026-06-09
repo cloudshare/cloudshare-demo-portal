@@ -63,3 +63,14 @@ export interface EnvironmentStateSource {
     environmentExternalId: string,
   ): Promise<EnvironmentStateSnapshot | null>;
 }
+
+/**
+ * CloudShare environment lifecycle commands — suspend and resume. Implemented by
+ * the live CloudShare integration and the environment simulator (demo). Kept here
+ * alongside {@link EnvironmentStateSource} so all environment-facing ports are
+ * co-located.
+ */
+export interface EnvironmentController {
+  suspendEnvironment(environmentExternalId: string): Promise<void>;
+  resumeEnvironment(environmentExternalId: string): Promise<void>;
+}
