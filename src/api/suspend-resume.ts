@@ -5,7 +5,7 @@ import {
   type SuspendExamDeps,
   type ResumeExamDeps,
 } from "@/domain/timer-sync";
-import { TimerSyncError } from "@/domain/errors";
+import { LabLaunchNotFoundError, TimerSyncError } from "@/domain/errors";
 
 /**
  * Framework-agnostic handlers for the candidate-initiated suspend and resume
@@ -16,7 +16,8 @@ import { TimerSyncError } from "@/domain/errors";
  * HTTP contract for both endpoints:
  *  - 400  missing/invalid examAttemptId
  *  - 404  no lab launch found for the exam attempt
- *  - 202  accepted — environment command issued and timer synced
+ *  - 200  success — environment transition confirmed and timer synced
+ *  - 502  CloudShare or poll timeout error
  *  - 500  unexpected internal error
  */
 
@@ -47,7 +48,7 @@ export async function handleSuspendExam(
   try {
     await suspendExam(deps, { examAttemptId });
     deps.logger.info("exam suspended", { examAttemptId });
-    return { status: 202, body: { status: "suspended", examAttemptId } };
+    return { status: 200, body: { status: "suspended", examAttemptId } };
   } catch (err) {
     return handleTimerSyncError(err, deps.logger, "suspend", examAttemptId);
   }
@@ -75,7 +76,7 @@ export async function handleResumeExam(
       environmentExternalId: result.environmentExternalId,
     });
     return {
-      status: 202,
+      status: 200,
       body: {
         status: "resumed",
         examAttemptId,
@@ -94,7 +95,9 @@ export async function handleResumeExam(
 function extractExamAttemptId(body: unknown): string | null {
   if (typeof body !== "object" || body === null) return null;
   const { examAttemptId } = body as { examAttemptId?: unknown };
-  return typeof examAttemptId === "string" ? examAttemptId : null;
+  return typeof examAttemptId === "string" && examAttemptId.trim().length > 0
+    ? examAttemptId.trim()
+    : null;
 }
 
 function handleTimerSyncError(
@@ -103,12 +106,10 @@ function handleTimerSyncError(
   action: string,
   examAttemptId: string,
 ): SuspendResumeResponse {
+  if (err instanceof LabLaunchNotFoundError) {
+    return { status: 404, body: { error: "no lab launch found for exam attempt" } };
+  }
   if (err instanceof TimerSyncError) {
-    const isNotFound =
-      err.message.includes("No lab launch found");
-    if (isNotFound) {
-      return { status: 404, body: { error: "no lab launch found for exam attempt" } };
-    }
     logger.error(`exam ${action} failed`, {
       examAttemptId,
       error: err.message,

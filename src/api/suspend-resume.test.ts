@@ -5,7 +5,6 @@ import type { ExamTimer, EnvironmentController } from "@/domain/timer-sync";
 import type { EnvironmentStateSource } from "@/domain/environment";
 import type { LabLaunchRepository, LabProvisioner } from "@/domain/lab-launch";
 import type { Logger } from "@/observability/logger";
-import { TimerSyncError } from "@/domain/errors";
 
 const noSleep = () => Promise.resolve();
 
@@ -102,12 +101,17 @@ describe("handleSuspendExam", () => {
     expect(resp.status).toBe(400);
   });
 
-  it("returns 202 and status=suspended on success", async () => {
+  it("returns 400 if examAttemptId is an empty string", async () => {
+    const resp = await handleSuspendExam(makeSuspendDeps(), { body: { examAttemptId: "  " } });
+    expect(resp.status).toBe(400);
+  });
+
+  it("returns 200 and status=suspended on success", async () => {
     const resp = await handleSuspendExam(
       makeSuspendDeps(),
       { body: { examAttemptId: "ea-1" } },
     );
-    expect(resp.status).toBe(202);
+    expect(resp.status).toBe(200);
     expect(resp.body.status).toBe("suspended");
     expect(resp.body.examAttemptId).toBe("ea-1");
   });
@@ -120,7 +124,7 @@ describe("handleSuspendExam", () => {
     expect(resp.status).toBe(404);
   });
 
-  it("returns 502 when poll times out (TimerSyncError not a not-found)", async () => {
+  it("returns 502 when poll times out (TimerSyncError, not a not-found)", async () => {
     const resp = await handleSuspendExam(
       makeSuspendDeps({
         source: fixedSource("running"),
@@ -153,13 +157,18 @@ describe("handleResumeExam", () => {
     expect(resp.status).toBe(400);
   });
 
-  it("returns 202 with loginUrl and preservation limit on success", async () => {
+  it("returns 400 if examAttemptId is an empty string", async () => {
+    const resp = await handleResumeExam(makeResumeDeps(), { body: { examAttemptId: "" } });
+    expect(resp.status).toBe(400);
+  });
+
+  it("returns 200 with loginUrl and preservation limit on success", async () => {
     const newUrl = "https://new.lab.url";
     const resp = await handleResumeExam(
       makeResumeDeps({ labs: makeLabs(newUrl) }),
       { body: { examAttemptId: "ea-1" } },
     );
-    expect(resp.status).toBe(202);
+    expect(resp.status).toBe(200);
     expect(resp.body.status).toBe("resumed");
     expect(resp.body.loginUrl).toBe(newUrl);
     expect(typeof resp.body.suspendedPreservationLimitMs).toBe("number");
@@ -182,5 +191,18 @@ describe("handleResumeExam", () => {
       { body: { examAttemptId: "ea-1" } },
     );
     expect(resp.status).toBe(502);
+  });
+
+  it("returns 500 on an unexpected error", async () => {
+    const resp = await handleResumeExam(
+      makeResumeDeps({
+        controller: {
+          suspendEnvironment: () => Promise.resolve(),
+          resumeEnvironment: () => Promise.reject(new Error("boom")),
+        },
+      }),
+      { body: { examAttemptId: "ea-1" } },
+    );
+    expect(resp.status).toBe(500);
   });
 });

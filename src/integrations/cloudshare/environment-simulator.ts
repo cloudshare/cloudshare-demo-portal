@@ -1,5 +1,4 @@
-import type { EnvironmentStateSource, EnvironmentStatus } from "@/domain/environment";
-import type { EnvironmentController } from "@/domain/timer-sync";
+import type { EnvironmentController, EnvironmentStateSource, EnvironmentStatus } from "@/domain/environment";
 import {
   computeWebhookSignature,
   type CloudShareEnvironmentEventType,

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { CloudShareClient } from "./client";
-import type { EnvironmentController } from "@/domain/timer-sync";
+import type { EnvironmentController } from "@/domain/environment";
 
 /**
  * CloudShare implementation of the {@link EnvironmentController} port — issues

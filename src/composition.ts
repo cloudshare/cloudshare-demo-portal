@@ -33,8 +33,7 @@ import { createInMemoryWebhookIdempotencyStore } from "@/persistence/webhook-ide
 import type { ExamEligibilityProvider } from "@/domain/eligibility";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { LabProvisioner, LabLaunchRepository } from "@/domain/lab-launch";
-import type { EnvironmentRepository, EnvironmentStateSource } from "@/domain/environment";
-import type { EnvironmentController } from "@/domain/timer-sync";
+import type { EnvironmentController, EnvironmentRepository, EnvironmentStateSource } from "@/domain/environment";
 import type { WebhookIdempotencyStore } from "@/domain/webhook";
 
 /**

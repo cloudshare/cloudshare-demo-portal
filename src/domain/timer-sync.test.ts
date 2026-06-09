@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
   suspendExam,
   resumeExam,
@@ -10,7 +10,7 @@ import {
 } from "./timer-sync";
 import type { EnvironmentStateSource } from "./environment";
 import type { LabLaunchRepository, LabProvisioner } from "./lab-launch";
-import { TimerSyncError } from "./errors";
+import { TimerSyncError, LabLaunchNotFoundError } from "./errors";
 
 const noSleep = () => Promise.resolve();
 
@@ -43,6 +43,11 @@ function fixedSource(status: string): EnvironmentStateSource {
       Promise.resolve({ environmentExternalId: id, status: status as never }),
   };
 }
+
+/** Source that always returns null (environment unknown). */
+const nullSource: EnvironmentStateSource = {
+  getEnvironmentState: () => Promise.resolve(null),
+};
 
 /** Source that returns `before` for the first N calls, then `after`. */
 function eventualSource(before: string, after: string, callsUntilAfter = 1): EnvironmentStateSource {
@@ -97,10 +102,9 @@ describe("suspendExam", () => {
   it("issues suspend, polls until suspended, then pauses the exam timer", async () => {
     const controller = makeController();
     const timer = makeTimer();
-    const source = fixedSource("suspended");
 
     await suspendExam(
-      { controller, source, timer, launches: makeLaunches(), sleep: noSleep },
+      { controller, source: fixedSource("suspended"), timer, launches: makeLaunches(), sleep: noSleep },
       { examAttemptId: "ea-1" },
     );
 
@@ -108,7 +112,22 @@ describe("suspendExam", () => {
     expect(timer.paused).toEqual(["ea-1"]);
   });
 
-  it("throws TimerSyncError if no lab launch exists for the exam attempt", async () => {
+  it("throws LabLaunchNotFoundError if no lab launch exists for the exam attempt", async () => {
+    await expect(
+      suspendExam(
+        {
+          controller: makeController(),
+          source: fixedSource("suspended"),
+          timer: makeTimer(),
+          launches: makeLaunches(null),
+          sleep: noSleep,
+        },
+        { examAttemptId: "ea-missing" },
+      ),
+    ).rejects.toBeInstanceOf(LabLaunchNotFoundError);
+  });
+
+  it("LabLaunchNotFoundError is also a TimerSyncError (subtype check)", async () => {
     await expect(
       suspendExam(
         {
@@ -124,14 +143,12 @@ describe("suspendExam", () => {
   });
 
   it("retries polling until the status reaches suspended", async () => {
-    const controller = makeController();
     const timer = makeTimer();
-    const source = eventualSource("running", "suspended", 2);
 
     await suspendExam(
       {
-        controller,
-        source,
+        controller: makeController(),
+        source: eventualSource("running", "suspended", 2),
         timer,
         launches: makeLaunches(),
         sleep: noSleep,
@@ -153,6 +170,22 @@ describe("suspendExam", () => {
           launches: makeLaunches(),
           sleep: noSleep,
           poll: { maxAttempts: 3, intervalMs: 0 },
+        },
+        { examAttemptId: "ea-1" },
+      ),
+    ).rejects.toBeInstanceOf(TimerSyncError);
+  });
+
+  it("throws TimerSyncError (timeout) when the state source returns null for all polls", async () => {
+    await expect(
+      suspendExam(
+        {
+          controller: makeController(),
+          source: nullSource,
+          timer: makeTimer(),
+          launches: makeLaunches(),
+          sleep: noSleep,
+          poll: { maxAttempts: 2, intervalMs: 0 },
         },
         { examAttemptId: "ea-1" },
       ),
@@ -181,7 +214,7 @@ describe("suspendExam", () => {
 // --- resumeExam ---
 
 describe("resumeExam", () => {
-  it("issues resume, polls until running, resumes the timer, and returns a new loginUrl", async () => {
+  it("issues resume, polls until running, creates sponsored link, then resumes the timer", async () => {
     const controller = makeController();
     const timer = makeTimer();
     const newUrl = "https://new.lab.url/login";
@@ -205,7 +238,7 @@ describe("resumeExam", () => {
     expect(result.suspendedPreservationLimitMs).toBe(SUSPENDED_PRESERVATION_LIMIT_MS);
   });
 
-  it("throws TimerSyncError if no lab launch exists for the exam attempt", async () => {
+  it("throws LabLaunchNotFoundError if no lab launch exists for the exam attempt", async () => {
     await expect(
       resumeExam(
         {
@@ -218,7 +251,7 @@ describe("resumeExam", () => {
         },
         { examAttemptId: "ea-missing" },
       ),
-    ).rejects.toBeInstanceOf(TimerSyncError);
+    ).rejects.toBeInstanceOf(LabLaunchNotFoundError);
   });
 
   it("throws TimerSyncError if the environment never reaches running within maxAttempts", async () => {
@@ -227,6 +260,23 @@ describe("resumeExam", () => {
         {
           controller: makeController(),
           source: fixedSource("suspended"),
+          timer: makeTimer(),
+          launches: makeLaunches(),
+          labs: makeLabs(),
+          sleep: noSleep,
+          poll: { maxAttempts: 2, intervalMs: 0 },
+        },
+        { examAttemptId: "ea-1" },
+      ),
+    ).rejects.toBeInstanceOf(TimerSyncError);
+  });
+
+  it("throws TimerSyncError (timeout) when state source returns null for all polls", async () => {
+    await expect(
+      resumeExam(
+        {
+          controller: makeController(),
+          source: nullSource,
           timer: makeTimer(),
           launches: makeLaunches(),
           labs: makeLabs(),
@@ -254,6 +304,29 @@ describe("resumeExam", () => {
         { examAttemptId: "ea-1" },
       ),
     ).rejects.toBeInstanceOf(TimerSyncError);
+    expect(timer.resumed).toHaveLength(0);
+  });
+
+  it("does NOT resume the timer if createSponsoredLink fails", async () => {
+    const timer = makeTimer();
+    const failingLabs: LabProvisioner = {
+      createExperience: () => Promise.resolve({ experienceId: "exp-1" }),
+      addStudent: () => Promise.resolve(),
+      createSponsoredLink: () => Promise.reject(new Error("link service down")),
+    };
+    await expect(
+      resumeExam(
+        {
+          controller: makeController(),
+          source: fixedSource("running"),
+          timer,
+          launches: makeLaunches(),
+          labs: failingLabs,
+          sleep: noSleep,
+        },
+        { examAttemptId: "ea-1" },
+      ),
+    ).rejects.toThrow("link service down");
     expect(timer.resumed).toHaveLength(0);
   });
 });

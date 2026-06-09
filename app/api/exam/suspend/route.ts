@@ -8,7 +8,7 @@ import { handleSuspendExam } from "@/api/suspend-resume";
  * by polling. The request body must contain `examAttemptId`.
  */
 export async function POST(request: Request) {
-  const { environmentSource, environments, environmentController, labLaunches, kryterion, logger } =
+  const { environmentSource, environmentController, labLaunches, kryterion, logger } =
     getServices();
 
   let body: unknown;

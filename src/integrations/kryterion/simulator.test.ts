@@ -104,4 +104,24 @@ describe("kryterionSimulator timer", () => {
     expect(sim.getTimerState("ea-2")?.status).toBe("running");
     expect(sim.getTimerState("ea-3")).toBeNull();
   });
+
+  it("double-resume banks elapsed time so no ticks are lost (idempotent retry safety)", async () => {
+    let t = 0;
+    const sim = createKryterionSimulator({ secret, ttlSeconds: 60, now: () => t });
+
+    t = 0;
+    await sim.resumeTimer("ea-1"); // start at t=0
+
+    t = 1_000;
+    await sim.resumeTimer("ea-1"); // already running — banks 1 s, resets startedAt=1000
+
+    const state = sim.getTimerState("ea-1") as KryterionTimerState;
+    // elapsedAtPause should now hold the 1 s banked during the double-resume
+    expect(state.elapsedAtPause).toBe(1_000);
+    expect(state.status).toBe("running");
+
+    t = 2_000;
+    await sim.pauseTimer("ea-1"); // 1 s more → total = 2000
+    expect(sim.getTimerState("ea-1")?.elapsedAtPause).toBe(2_000);
+  });
 });

@@ -85,10 +85,16 @@ export function createKryterionSimulator(
 
     async resumeTimer(examAttemptId: string): Promise<void> {
       const existing = timers.get(examAttemptId);
+      // If already running (e.g. idempotent retry), bank elapsed time first so
+      // no ticks are lost before resetting startedAt.
+      const banked =
+        existing?.status === "running"
+          ? existing.elapsedAtPause + (now() - existing.startedAt)
+          : existing?.elapsedAtPause ?? 0;
       timers.set(examAttemptId, {
         status: "running",
         startedAt: now(),
-        elapsedAtPause: existing?.elapsedAtPause ?? 0,
+        elapsedAtPause: banked,
       });
     },
 

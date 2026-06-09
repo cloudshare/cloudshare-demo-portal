@@ -45,3 +45,11 @@ export class TimerSyncError extends DomainError {
     this.name = "TimerSyncError";
   }
 }
+
+/** No LabLaunch record was found for the given ExamAttempt (thrown by suspend/resume). */
+export class LabLaunchNotFoundError extends TimerSyncError {
+  constructor(context?: Record<string, unknown>) {
+    super("No lab launch found for exam attempt", context);
+    this.name = "LabLaunchNotFoundError";
+  }
+}

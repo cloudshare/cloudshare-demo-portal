@@ -1,5 +1,5 @@
-import { TimerSyncError } from "./errors";
-import type { EnvironmentStateSource, EnvironmentStatus } from "./environment";
+import { LabLaunchNotFoundError, TimerSyncError } from "./errors";
+import type { EnvironmentController, EnvironmentStateSource, EnvironmentStatus } from "./environment";
 import type { LabLaunchRepository, LabProvisioner } from "./lab-launch";
 
 /**
@@ -13,8 +13,8 @@ import type { LabLaunchRepository, LabProvisioner } from "./lab-launch";
  *      authoritative confirmation gate).
  *   4. Pause the Kryterion timer once confirmed.
  *
- * Flow for resume is the mirror: resume → poll until `running` → resume timer →
- * issue a new sponsored link so the candidate can reopen the preserved session.
+ * Flow for resume is the mirror: resume → poll until `running` → create a fresh
+ * sponsored link (so a link failure leaves the timer safely paused) → resume timer.
  *
  * CloudShare preserves a suspended environment for ~2 hours; the portal surfaces
  * this limit so the UI can warn the candidate.
@@ -23,18 +23,15 @@ import type { LabLaunchRepository, LabProvisioner } from "./lab-launch";
 /** ~2-hour CloudShare suspended-state-preservation window (surfaced to the UI). */
 export const SUSPENDED_PRESERVATION_LIMIT_MS = 2 * 60 * 60 * 1000;
 
-// --- Ports ---
+// Re-export so callers can import both ports from a single domain module.
+export type { EnvironmentController } from "./environment";
+
+// --- Exam timer port ---
 
 /** Kryterion authoritative exam clock port. Implemented by the Kryterion integration. */
 export interface ExamTimer {
   pauseTimer(examAttemptId: string): Promise<void>;
   resumeTimer(examAttemptId: string): Promise<void>;
-}
-
-/** CloudShare environment lifecycle commands port. Implemented by the CloudShare integration. */
-export interface EnvironmentController {
-  suspendEnvironment(environmentExternalId: string): Promise<void>;
-  resumeEnvironment(environmentExternalId: string): Promise<void>;
 }
 
 // --- Polling ---
@@ -85,9 +82,7 @@ export async function suspendExam(
 ): Promise<void> {
   const launch = await deps.launches.findByExamAttemptId(input.examAttemptId);
   if (!launch) {
-    throw new TimerSyncError("No lab launch found for exam attempt", {
-      examAttemptId: input.examAttemptId,
-    });
+    throw new LabLaunchNotFoundError({ examAttemptId: input.examAttemptId });
   }
 
   await deps.controller.suspendEnvironment(launch.environmentExternalId);
@@ -130,9 +125,7 @@ export async function resumeExam(
 ): Promise<ResumeExamResult> {
   const launch = await deps.launches.findByExamAttemptId(input.examAttemptId);
   if (!launch) {
-    throw new TimerSyncError("No lab launch found for exam attempt", {
-      examAttemptId: input.examAttemptId,
-    });
+    throw new LabLaunchNotFoundError({ examAttemptId: input.examAttemptId });
   }
 
   await deps.controller.resumeEnvironment(launch.environmentExternalId);
@@ -143,9 +136,12 @@ export async function resumeExam(
     "running",
     deps.poll ?? DEFAULT_POLL,
   );
+
+  // Create the sponsored link before resuming the timer: if the link call fails,
+  // the timer stays safely paused and the candidate can retry cleanly.
+  const link = await deps.labs.createSponsoredLink({ experienceId: launch.experienceId });
   await deps.timer.resumeTimer(input.examAttemptId);
 
-  const link = await deps.labs.createSponsoredLink({ experienceId: launch.experienceId });
   return {
     loginUrl: link.loginUrl,
     environmentExternalId: launch.environmentExternalId,
