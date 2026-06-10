@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getServices } from "@/composition";
 import { handleSuspendExam } from "@/api/suspend-resume";
+import type { AuditRecord } from "@/domain/audit-trail";
 
 /**
  * Candidate-initiated lab suspend. Suspends the CloudShare environment and
@@ -8,7 +10,7 @@ import { handleSuspendExam } from "@/api/suspend-resume";
  * by polling. The request body must contain `examAttemptId`.
  */
 export async function POST(request: Request) {
-  const { environmentSource, environmentController, labLaunches, kryterion, logger, heartbeatAutoSuspend } =
+  const { environmentSource, environmentController, labLaunches, kryterion, logger, heartbeatAutoSuspend, audit } =
     getServices();
 
   let body: unknown;
@@ -30,13 +32,29 @@ export async function POST(request: Request) {
     { body },
   );
 
-  // Remove from heartbeat tracking on successful manual suspend so the auto-suspend
-  // interval doesn't fire a redundant second suspend after the timeout elapses.
+  const parsed = body as { examAttemptId?: unknown };
+  const examAttemptId = typeof parsed.examAttemptId === "string" ? parsed.examAttemptId : undefined;
+
   if (resp.status === 200) {
-    const parsed = body as { examAttemptId?: unknown };
-    if (typeof parsed.examAttemptId === "string") {
-      heartbeatAutoSuspend.removeHeartbeat(parsed.examAttemptId);
+    if (examAttemptId) heartbeatAutoSuspend.removeHeartbeat(examAttemptId);
+    if (examAttemptId) {
+      await audit.write({
+        id: randomUUID(),
+        examAttemptId,
+        action: "lab_suspended",
+        outcome: "success",
+        occurredAt: new Date(),
+      } satisfies AuditRecord);
     }
+  } else if (resp.status >= 500 && examAttemptId) {
+    await audit.write({
+      id: randomUUID(),
+      examAttemptId,
+      action: "lab_suspend_failed",
+      outcome: "failure",
+      error: typeof resp.body.error === "string" ? resp.body.error : "suspend failed",
+      occurredAt: new Date(),
+    } satisfies AuditRecord);
   }
 
   return NextResponse.json(resp.body, { status: resp.status });

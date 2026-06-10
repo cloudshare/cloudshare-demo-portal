@@ -197,3 +197,35 @@ heartbeat while the lab window is open:
 
 `HEARTBEAT_TIMEOUT_MS` is documented in `.env.example`. The server-side timeout
 logic in `HeartbeatAutoSuspend` is fully unit-tested with fake timers.
+
+## Admin audit trail & support console
+
+Every significant portal action is written to an in-memory `AuditRepository` and
+surfaced to support teams via the admin API and UI at `/admin`:
+
+**Audit records** (`src/domain/audit-trail.ts`) are written on:
+- `lab_launched` / `lab_launch_failed` — from `POST /api/lab/launch`
+- `lab_suspended` / `lab_suspend_failed` — from `POST /api/exam/suspend`
+- `lab_resumed` / `lab_resume_failed` — from `POST /api/exam/resume`
+- `score_retrieved` — reserved for the score endpoint (Slice 9+)
+
+Each record carries: `id`, `examAttemptId`, `candidateId?`, `action`,
+`outcome` (`success`|`failure`), `details?`, `error?`, and `occurredAt`.
+
+**Admin API endpoints:**
+- `GET /api/admin/audit` — all records, newest-first; `?examAttemptId=<id>` filters to one attempt
+- `GET /api/admin/events` — integration event log (all published `IntegrationEvent`s); `?limit=<n>`
+- `POST /api/admin/sync-resources` — fetches CloudShare blueprints, policies, projects, and regions
+  and stores them as `ResourceMapping`s (`name ↔ cloudshareId`). Returns `{ synced, byType }`.
+
+**Admin UI** (`/admin`) — React client component with three tabs:
+- **Audit Trail** — per-attempt timeline with filter input; shows action, outcome, error/details
+- **Event Log** — most recent 100 integration events with type, eventId, and payload
+- **Resources** — trigger sync and view the resulting name↔ID mappings by resource type
+
+**Persistence:** all three stores (`AuditRepository`, `ResourceRepository`, `EventLogRepository`)
+are in-memory for the demo. They implement the same typed repository interfaces as every other
+store — swappable for Prisma-backed adapters for deployments that must survive restarts.
+
+**Architecture separation:** `src/api/admin.ts` contains the three framework-agnostic handlers
+(testable without Next.js); `app/api/admin/*/route.ts` are the thin Next.js wrappers.

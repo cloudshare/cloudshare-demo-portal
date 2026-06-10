@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { getServices } from "@/composition";
 import { handleResumeExam } from "@/api/suspend-resume";
+import type { AuditRecord } from "@/domain/audit-trail";
 
 /**
  * Candidate-initiated lab resume. Resumes the CloudShare environment, waits
@@ -16,6 +18,7 @@ export async function POST(request: Request) {
     labProvisioner,
     kryterion,
     logger,
+    audit,
   } = getServices();
 
   let body: unknown;
@@ -37,6 +40,28 @@ export async function POST(request: Request) {
     },
     { body },
   );
+
+  const parsed = body as { examAttemptId?: unknown };
+  const examAttemptId = typeof parsed.examAttemptId === "string" ? parsed.examAttemptId : undefined;
+
+  if (resp.status === 200 && examAttemptId) {
+    await audit.write({
+      id: randomUUID(),
+      examAttemptId,
+      action: "lab_resumed",
+      outcome: "success",
+      occurredAt: new Date(),
+    } satisfies AuditRecord);
+  } else if (resp.status >= 500 && examAttemptId) {
+    await audit.write({
+      id: randomUUID(),
+      examAttemptId,
+      action: "lab_resume_failed",
+      outcome: "failure",
+      error: typeof resp.body.error === "string" ? resp.body.error : "resume failed",
+      occurredAt: new Date(),
+    } satisfies AuditRecord);
+  }
 
   return NextResponse.json(resp.body, { status: resp.status });
 }

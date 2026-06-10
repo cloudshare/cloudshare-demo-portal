@@ -8,6 +8,7 @@ const validEnv = {
   CLOUDSHARE_V3_API_KEY: "v3key",
   CLOUDSHARE_WEBHOOK_SECRET: "whsecret",
   KRYTERION_TOKEN_SECRET: "kryterion-secret",
+  ADMIN_TOKEN: "admin-token-test",
   PORTAL_MODE: "fixture",
   PORTAL_TUNNEL_URL: "",
   DEMO_BLUEPRINT_NAME: "bp",
@@ -55,5 +56,6 @@ describe("secretValues", () => {
     expect(values).toContain("secret");
     expect(values).toContain("whsecret");
     expect(values).toContain("kryterion-secret");
+    expect(values).toContain("admin-token-test");
   });
 });

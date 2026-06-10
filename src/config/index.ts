@@ -40,6 +40,9 @@ const envSchema = z.object({
   DEMO_PROJECT_NAME: z.string().min(1),
   DEMO_REGION_NAME: z.string().min(1),
 
+  // Admin auth — shared secret protecting /admin and /api/admin/*
+  ADMIN_TOKEN: z.string().min(8),
+
   // Persistence
   DATABASE_URL: z.string().min(1),
 });
@@ -54,6 +57,7 @@ export interface Config {
     readonly cloudshareV3ApiKey: string;
     readonly webhookSecret: string;
     readonly kryterionTokenSecret: string;
+    readonly adminToken: string;
   };
   readonly runtime: {
     readonly mode: PortalMode;
@@ -95,6 +99,7 @@ export function loadConfig(env: NodeJS.ProcessEnv | Record<string, unknown>): Co
       cloudshareV3ApiKey: e.CLOUDSHARE_V3_API_KEY,
       webhookSecret: e.CLOUDSHARE_WEBHOOK_SECRET,
       kryterionTokenSecret: e.KRYTERION_TOKEN_SECRET,
+      adminToken: e.ADMIN_TOKEN,
     },
     runtime: {
       mode: e.PORTAL_MODE,
@@ -113,5 +118,5 @@ export function loadConfig(env: NodeJS.ProcessEnv | Record<string, unknown>): Co
 
 /** The set of secret values that must never appear in logs. */
 export function secretValues(config: Config): string[] {
-  return [...Object.values(config.secrets), config.databaseUrl].filter((v) => v.length > 0);
+  return [...Object.values(config.secrets), config.databaseUrl].filter(Boolean);
 }

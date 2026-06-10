@@ -36,12 +36,20 @@ import {
 } from "@/domain/heartbeat-auto-suspend";
 import { suspendExam } from "@/domain/timer-sync";
 import { createCloudShareGuidedJourneyProvider } from "@/integrations/cloudshare/guided-journey";
+import { createCloudShareResourceLister } from "@/integrations/cloudshare/resources";
+import { createInMemoryAuditRepository } from "@/persistence/audit-repository";
+import { createInMemoryResourceRepository } from "@/persistence/resource-repository";
+import { createInMemoryEventLogRepository } from "@/persistence/event-log-repository";
 import type { ScoreRetrievalProvider } from "@/domain/score-result";
 import type { ExamEligibilityProvider } from "@/domain/eligibility";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { LabProvisioner, LabLaunchRepository } from "@/domain/lab-launch";
 import type { EnvironmentController, EnvironmentRepository, EnvironmentStateSource } from "@/domain/environment";
 import type { WebhookIdempotencyStore } from "@/domain/webhook";
+import type { AuditRepository } from "@/domain/audit-trail";
+import type { ResourceRepository } from "@/domain/resource-sync";
+import type { EventLogRepository } from "@/domain/event-log";
+import type { CloudShareResourceLister } from "@/domain/resource-sync";
 
 /**
  * Composition root. The framework-agnostic modules are pure and dependency-free;
@@ -77,6 +85,14 @@ export interface Services {
   heartbeatAutoSuspend: HeartbeatAutoSuspend;
   /** Retrieves per-participant Guided Journey progress from CloudShare. */
   scoreRetriever: ScoreRetrievalProvider;
+  /** Audit trail — one record per significant portal action. */
+  audit: AuditRepository;
+  /** CloudShare resource ID↔name mappings, populated by the admin sync endpoint. */
+  resources: ResourceRepository;
+  /** All integration events received/emitted during this server instance's lifetime. */
+  eventLog: EventLogRepository;
+  /** Lists CloudShare blueprints, policies, projects, regions for admin sync. */
+  resourceLister: CloudShareResourceLister;
 }
 
 const globalForServices = globalThis as unknown as {
@@ -171,6 +187,23 @@ export function getServices(): Services {
 
   const scoreRetriever = createCloudShareGuidedJourneyProvider(cloudshare);
 
+  const audit = createInMemoryAuditRepository();
+  const resources = createInMemoryResourceRepository();
+  const eventLog = createInMemoryEventLogRepository();
+  const resourceLister = createCloudShareResourceLister(cloudshare);
+
+  // Capture every published integration event into the event log so the admin
+  // /events endpoint gives a full history without additional instrumentation.
+  // Subscribe to each known type — the bus does not support wildcard listeners.
+  events.subscribe("exam_attempt.created", async (event) => {
+    await eventLog.append({
+      eventId: event.id,
+      type: event.type,
+      occurredAt: event.occurredAt,
+      payload: event as unknown as Record<string, unknown>,
+    });
+  });
+
   const services: Services = {
     config,
     logger,
@@ -190,6 +223,10 @@ export function getServices(): Services {
     webhookIdempotency,
     heartbeatAutoSuspend,
     scoreRetriever,
+    audit,
+    resources,
+    eventLog,
+    resourceLister,
   };
   globalForServices.__portalServices = services;
   return services;
