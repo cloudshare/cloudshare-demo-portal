@@ -32,6 +32,7 @@ const envSchema = z.object({
   // Category 2 — runtime flags
   PORTAL_MODE: z.enum(["live", "fixture"]),
   PORTAL_TUNNEL_URL: z.string().optional().default(""),
+  HEARTBEAT_TIMEOUT_MS: z.coerce.number().int().positive().optional().default(60_000),
 
   // Category 3 — demo resource selection
   DEMO_BLUEPRINT_NAME: z.string().min(1),
@@ -57,6 +58,8 @@ export interface Config {
   readonly runtime: {
     readonly mode: PortalMode;
     readonly tunnelUrl: string;
+    /** Milliseconds without a client heartbeat before the server auto-suspends the lab. */
+    readonly heartbeatTimeoutMs: number;
   };
   readonly demoResources: {
     readonly blueprintName: string;
@@ -96,6 +99,7 @@ export function loadConfig(env: NodeJS.ProcessEnv | Record<string, unknown>): Co
     runtime: {
       mode: e.PORTAL_MODE,
       tunnelUrl: e.PORTAL_TUNNEL_URL,
+      heartbeatTimeoutMs: e.HEARTBEAT_TIMEOUT_MS,
     },
     demoResources: {
       blueprintName: e.DEMO_BLUEPRINT_NAME,

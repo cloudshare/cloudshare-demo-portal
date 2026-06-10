@@ -30,6 +30,11 @@ import {
 import { createCloudShareEnvironmentController } from "@/integrations/cloudshare/environment-controller";
 import { createInMemoryEnvironmentRepository } from "@/persistence/environment-repository";
 import { createInMemoryWebhookIdempotencyStore } from "@/persistence/webhook-idempotency-store";
+import {
+  createHeartbeatAutoSuspend,
+  type HeartbeatAutoSuspend,
+} from "@/domain/heartbeat-auto-suspend";
+import { suspendExam } from "@/domain/timer-sync";
 import type { ExamEligibilityProvider } from "@/domain/eligibility";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { LabProvisioner, LabLaunchRepository } from "@/domain/lab-launch";
@@ -66,6 +71,8 @@ export interface Services {
   /** Present only in demo/fixture mode — the in-memory CloudShare stand-in that emits webhooks. */
   environmentSimulator: CloudShareEnvironmentSimulator | null;
   webhookIdempotency: WebhookIdempotencyStore;
+  /** Tracks client heartbeats and auto-suspends inactive lab sessions. */
+  heartbeatAutoSuspend: HeartbeatAutoSuspend;
 }
 
 const globalForServices = globalThis as unknown as {
@@ -139,6 +146,25 @@ export function getServices(): Services {
   const environments = createInMemoryEnvironmentRepository();
   const webhookIdempotency = createInMemoryWebhookIdempotencyStore();
 
+  // Heartbeat auto-suspend. The suspend function is pre-bound to the current
+  // service instances so HeartbeatAutoSuspend stays free of framework concerns.
+  const heartbeatAutoSuspend = createHeartbeatAutoSuspend({
+    timeoutMs: config.runtime.heartbeatTimeoutMs,
+    logger,
+    suspendFn: (examAttemptId) =>
+      suspendExam(
+        {
+          controller: environmentController,
+          source: environmentSource,
+          timer: kryterion,
+          launches: labLaunches,
+          sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+        },
+        { examAttemptId },
+      ),
+  });
+  heartbeatAutoSuspend.start();
+
   const services: Services = {
     config,
     logger,
@@ -156,6 +182,7 @@ export function getServices(): Services {
     environmentController,
     environmentSimulator,
     webhookIdempotency,
+    heartbeatAutoSuspend,
   };
   globalForServices.__portalServices = services;
   return services;
