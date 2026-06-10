@@ -35,6 +35,8 @@ function makeLaunch(): LabLaunch {
   };
 }
 
+const TEST_LIMITATIONS = ["Limitation A", "Limitation B"];
+
 function makeDeps(launch: LabLaunch | null, progress: ParticipantProgress | null) {
   const launches: LabLaunchRepository = {
     save: vi.fn(),
@@ -44,7 +46,7 @@ function makeDeps(launch: LabLaunch | null, progress: ParticipantProgress | null
   const scoreRetriever: ScoreRetrievalProvider = {
     getParticipantProgress: vi.fn().mockResolvedValue(progress),
   };
-  return { launches, scoreRetriever, logger: makeLogger() };
+  return { launches, scoreRetriever, logger: makeLogger(), limitations: TEST_LIMITATIONS };
 }
 
 describe("handleRetrieveScore", () => {

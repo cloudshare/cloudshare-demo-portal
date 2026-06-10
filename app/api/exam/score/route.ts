@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServices } from "@/composition";
 import { handleRetrieveScore } from "@/api/score";
+import { SCORING_LIMITATIONS } from "@/integrations/cloudshare/guided-journey";
 
 /**
  * Retrieve the candidate's Guided Journey score for an exam attempt.
@@ -15,6 +16,9 @@ export async function GET(request: Request) {
     query[key] = value;
   });
 
-  const resp = await handleRetrieveScore({ launches: labLaunches, scoreRetriever, logger }, { query });
+  const resp = await handleRetrieveScore(
+    { launches: labLaunches, scoreRetriever, logger, limitations: SCORING_LIMITATIONS },
+    { query },
+  );
   return NextResponse.json(resp.body, { status: resp.status });
 }

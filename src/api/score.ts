@@ -1,9 +1,5 @@
 import type { Logger } from "@/observability/logger";
-import {
-  retrieveScore,
-  SCORING_LIMITATIONS,
-  type ScoreRetrievalProvider,
-} from "@/domain/score-result";
+import { retrieveScore, type ScoreRetrievalProvider } from "@/domain/score-result";
 import { LabLaunchNotFoundError, ScoreRetrievalError } from "@/domain/errors";
 import type { LabLaunchRepository } from "@/domain/lab-launch";
 
@@ -24,6 +20,8 @@ export interface ScoreHandlerDeps {
   readonly launches: LabLaunchRepository;
   readonly scoreRetriever: ScoreRetrievalProvider;
   readonly logger: Logger;
+  /** Provider-specific scoring limitation disclaimers (injected by the route). */
+  readonly limitations: readonly string[];
 }
 
 export interface ScoreRequest {
@@ -60,7 +58,7 @@ export async function handleRetrieveScore(
         stepsTotal: result.stepsTotal,
         steps: result.steps,
         retrievedAt: result.retrievedAt,
-        limitations: [...SCORING_LIMITATIONS],
+        limitations: [...deps.limitations],
       },
     };
   } catch (err) {
@@ -71,7 +69,7 @@ export async function handleRetrieveScore(
       deps.logger.error("score retrieval failed", {
         examAttemptId,
         error: err.message,
-        ...(err.context ?? {}),
+        context: err.context,
       });
       return { status: 502, body: { error: "score retrieval failed" } };
     }

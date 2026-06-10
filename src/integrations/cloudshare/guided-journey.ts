@@ -5,7 +5,11 @@ import type { ParticipantProgress, ScoreRetrievalProvider } from "@/domain/score
 /**
  * CloudShare implementation of the {@link ScoreRetrievalProvider} port.
  * Calls the Guided Journey participants endpoint on the v4 API and maps
- * the first participant's progress to the domain type.
+ * the **first participant's** progress to the domain type.
+ *
+ * One-candidate-per-experience assumption: proctored exams provision one student
+ * per experience, so the first (and only) participant is returned. If multiple
+ * participants are present only the first is used. Flagged for the Slice 12 gap report.
  *
  * NOTE (assumptions to verify against a live tenant, isolated in this module):
  * - Path: GET /experiences/{id}/journey/participants
@@ -14,19 +18,36 @@ import type { ParticipantProgress, ScoreRetrievalProvider } from "@/domain/score
  * All assumptions are documented here; only this file changes if they differ.
  */
 
+/**
+ * Known limitations of CloudShare Guided Journey scoring.
+ * Exported here (the integration layer) because these are CloudShare-specific
+ * product constraints, not abstract domain knowledge.
+ */
+export const SCORING_LIMITATIONS = [
+  "Scoring uses bitmap checkpoints: visual state comparison only, not process-level capture.",
+  "End-state verification only — approach and intermediate steps are not assessed.",
+  "Deterministic script-based verification is not generally available until Q3 2026.",
+  "Final certification score weighting is determined by Genesys, not this portal.",
+] as const;
+
 const taskSchema = z.object({
   id: z.string(),
   name: z.string(),
   completed: z.boolean(),
 });
 
-const participantSchema = z.object({
-  email: z.string().optional(),
-  progress: z.number().min(0).max(100),
-  completedTasks: z.number().int().nonnegative(),
-  totalTasks: z.number().int().nonnegative(),
-  tasks: z.array(taskSchema),
-});
+const participantSchema = z
+  .object({
+    email: z.string().optional(),
+    progress: z.number().min(0).max(100),
+    completedTasks: z.number().int().nonnegative(),
+    totalTasks: z.number().int().nonnegative(),
+    tasks: z.array(taskSchema),
+  })
+  .refine((p) => p.completedTasks <= p.totalTasks, {
+    message: "completedTasks must not exceed totalTasks",
+    path: ["completedTasks"],
+  });
 
 const participantsResponseSchema = z.object({
   participants: z.array(participantSchema),

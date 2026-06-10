@@ -3,12 +3,8 @@ import type { LabLaunchRepository } from "./lab-launch";
 
 /**
  * Guided Journey scoring domain types and the retrieveScore use case.
- *
- * CloudShare's current scoring limitations (surfaced to candidates and proctors):
- *  - Bitmap checkpoints: visual-state comparison only (not process-level).
- *  - End-state verification only: no step-by-step feedback or replay.
- *  - Deterministic script-based verification is not GA until Q3 2026.
- *  - Final certification score weighting is Genesys's responsibility, not the portal's.
+ * Provider-specific limitation disclaimers live in the integration layer
+ * (e.g. src/integrations/cloudshare/guided-journey.ts), not here.
  */
 
 // --- Domain types ---
@@ -38,14 +34,6 @@ export interface ScoreResult {
   /** ISO 8601 timestamp of when progress was retrieved. */
   readonly retrievedAt: string;
 }
-
-/** Known limitations of CloudShare's Guided Journey scoring. Surface these in the UI. */
-export const SCORING_LIMITATIONS = [
-  "Scoring uses bitmap checkpoints: visual state comparison only, not process-level capture.",
-  "End-state verification only — approach and intermediate steps are not assessed.",
-  "Deterministic script-based verification is not generally available until Q3 2026.",
-  "Final certification score weighting is determined by Genesys, not this portal.",
-] as const;
 
 // --- Port ---
 
