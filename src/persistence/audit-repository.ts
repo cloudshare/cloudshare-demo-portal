@@ -1,7 +1,9 @@
 import type { AuditRecord, AuditRepository } from "@/domain/audit-trail";
 
-export function createInMemoryAuditRepository(): AuditRepository {
-  const records: AuditRecord[] = [];
+export function createInMemoryAuditRepository(): AuditRepository & {
+  reset(): void;
+} {
+  let records: AuditRecord[] = [];
 
   return {
     async write(record: AuditRecord): Promise<void> {
@@ -17,6 +19,10 @@ export function createInMemoryAuditRepository(): AuditRepository {
         (a, b) => b.occurredAt.getTime() - a.occurredAt.getTime(),
       );
       return limit !== undefined ? sorted.slice(0, limit) : sorted;
+    },
+
+    reset(): void {
+      records = [];
     },
   };
 }

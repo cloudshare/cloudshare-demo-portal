@@ -33,6 +33,8 @@ export interface KryterionSimulator extends ExamTimer {
   mintExamToken(input: MintExamTokenInput): string;
   /** Get the current timer state, or null if the timer has never been touched. */
   getTimerState(examAttemptId: string): KryterionTimerState | null;
+  /** Clear all timer state for a clean demo reset. */
+  reset(): void;
 }
 
 export interface KryterionSimulatorOptions {
@@ -100,6 +102,10 @@ export function createKryterionSimulator(
 
     getTimerState(examAttemptId: string): KryterionTimerState | null {
       return timers.get(examAttemptId) ?? null;
+    },
+
+    reset(): void {
+      timers.clear();
     },
   };
 }

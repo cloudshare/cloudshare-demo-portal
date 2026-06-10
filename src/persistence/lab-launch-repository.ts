@@ -5,7 +5,9 @@ import type { LabLaunch, LabLaunchRepository } from "@/domain/lab-launch";
  * port). Indexed by id and by examAttemptId so the launch — and its persisted
  * `environmentExternalId` — can be correlated back to an attempt.
  */
-export function createInMemoryLabLaunchRepository(): LabLaunchRepository {
+export function createInMemoryLabLaunchRepository(): LabLaunchRepository & {
+  reset(): void;
+} {
   const byId = new Map<string, LabLaunch>();
 
   return {
@@ -17,6 +19,9 @@ export function createInMemoryLabLaunchRepository(): LabLaunchRepository {
     },
     async findByExamAttemptId(examAttemptId: string): Promise<LabLaunch | null> {
       return [...byId.values()].find((l) => l.examAttemptId === examAttemptId) ?? null;
+    },
+    reset(): void {
+      byId.clear();
     },
   };
 }

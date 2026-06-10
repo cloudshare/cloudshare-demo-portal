@@ -5,7 +5,9 @@ import type { EnvironmentRecord, EnvironmentRepository } from "@/domain/environm
  * port), keyed by `environmentExternalId` so a reconciled environment can be
  * correlated back to the LabLaunch that created it.
  */
-export function createInMemoryEnvironmentRepository(): EnvironmentRepository {
+export function createInMemoryEnvironmentRepository(): EnvironmentRepository & {
+  reset(): void;
+} {
   const byExternalId = new Map<string, EnvironmentRecord>();
 
   return {
@@ -14,6 +16,9 @@ export function createInMemoryEnvironmentRepository(): EnvironmentRepository {
     },
     async save(record: EnvironmentRecord): Promise<void> {
       byExternalId.set(record.environmentExternalId, record);
+    },
+    reset(): void {
+      byExternalId.clear();
     },
   };
 }
