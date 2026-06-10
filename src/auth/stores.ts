@@ -26,7 +26,7 @@ export interface CandidateSessionStore {
   findById(sessionId: string): Promise<CandidateSession | null>;
 }
 
-export function createInMemoryConsumedTokenStore(): ConsumedTokenStore {
+export function createInMemoryConsumedTokenStore(): ConsumedTokenStore & { reset(): void } {
   const used = new Set<string>();
   return {
     async consume(jti: string): Promise<boolean> {
@@ -34,10 +34,13 @@ export function createInMemoryConsumedTokenStore(): ConsumedTokenStore {
       used.add(jti);
       return true;
     },
+    reset(): void {
+      used.clear();
+    },
   };
 }
 
-export function createInMemoryCandidateSessionStore(): CandidateSessionStore {
+export function createInMemoryCandidateSessionStore(): CandidateSessionStore & { reset(): void } {
   const sessions = new Map<string, CandidateSession>();
   return {
     async save(session: CandidateSession): Promise<void> {
@@ -45,6 +48,9 @@ export function createInMemoryCandidateSessionStore(): CandidateSessionStore {
     },
     async findById(sessionId: string): Promise<CandidateSession | null> {
       return sessions.get(sessionId) ?? null;
+    },
+    reset(): void {
+      sessions.clear();
     },
   };
 }

@@ -151,6 +151,27 @@ describe("HeartbeatAutoSuspend", () => {
     expect(suspendFn).toHaveBeenCalledOnce();
   });
 
+  it("reset() clears all tracked entries so no phantom suspension fires after reset", async () => {
+    const suspendFn = vi.fn().mockResolvedValue(undefined);
+    const logger = makeLogger();
+    const base = Date.now();
+    const service = createHeartbeatAutoSuspend({
+      suspendFn,
+      logger,
+      timeoutMs: 60_000,
+      getNow: () => base,
+    });
+
+    service.recordHeartbeat("attempt-1");
+    service.recordHeartbeat("attempt-2");
+
+    // Reset before the timeout — stale entries should be gone
+    service.reset();
+
+    await service.checkAll({ getNow: () => base + 120_000 });
+    expect(suspendFn).not.toHaveBeenCalled();
+  });
+
   it("start/stop wires the interval and prevents further checks", async () => {
     const suspendFn = vi.fn().mockResolvedValue(undefined);
     const logger = makeLogger();

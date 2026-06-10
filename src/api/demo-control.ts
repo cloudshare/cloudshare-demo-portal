@@ -139,7 +139,7 @@ export async function handleGetDemoState(
       timerElapsedMs: timerState
         ? timerState.elapsedAtPause +
           (timerState.status === "running"
-            ? deps.now().getTime() - timerState.startedAt
+            ? Math.max(0, deps.now().getTime() - timerState.startedAt)
             : 0)
         : null,
     },
