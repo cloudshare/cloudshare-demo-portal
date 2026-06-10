@@ -18,7 +18,6 @@ export {
   createInMemoryCandidateSessionStore,
 } from "./stores";
 export {
-  signExamToken,
   verifyExamToken,
   examTokenClaimsSchema,
   type ExamTokenClaims,

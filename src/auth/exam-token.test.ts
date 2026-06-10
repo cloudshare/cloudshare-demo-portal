@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { signExamToken, verifyExamToken } from "./exam-token";
+import { signExamToken, verifyExamToken, examTokenClaimsSchema } from "./exam-token";
 import { ExpiredExamTokenError, InvalidExamTokenError } from "./errors";
 
 const secret = "kryterion-secret";
@@ -50,5 +50,42 @@ describe("signExamToken / verifyExamToken", () => {
     expect(() =>
       verifyExamToken(token, { secret, now: () => (issuedAtS + 61) * 1000 }),
     ).toThrow(ExpiredExamTokenError);
+  });
+});
+
+describe("examTokenClaimsSchema", () => {
+  it("rejects exp: 0 (epoch-zero is always-expired, not a valid expiry)", () => {
+    const result = examTokenClaimsSchema.safeParse({
+      jti: "tok-1",
+      examAttemptId: "ea-1",
+      candidateId: "cand-1",
+      iat: 1_000_000,
+      exp: 0,
+    });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0].path).toEqual(["exp"]);
+  });
+
+  it("rejects iat: 0 (epoch-zero is not a valid issue time)", () => {
+    const result = examTokenClaimsSchema.safeParse({
+      jti: "tok-1",
+      examAttemptId: "ea-1",
+      candidateId: "cand-1",
+      iat: 0,
+      exp: 1_000_060,
+    });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0].path).toEqual(["iat"]);
+  });
+
+  it("accepts valid positive timestamps", () => {
+    const result = examTokenClaimsSchema.safeParse({
+      jti: "tok-1",
+      examAttemptId: "ea-1",
+      candidateId: "cand-1",
+      iat: 1_000_000,
+      exp: 1_000_060,
+    });
+    expect(result.success).toBe(true);
   });
 });

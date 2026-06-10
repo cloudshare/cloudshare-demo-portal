@@ -21,9 +21,9 @@ export const examTokenClaimsSchema = z.object({
   examAttemptId: z.string().min(1),
   candidateId: z.string().min(1),
   /** Issued-at, epoch seconds. */
-  iat: z.number().int().nonnegative(),
+  iat: z.number().int().positive(),
   /** Expiry, epoch seconds. */
-  exp: z.number().int().nonnegative(),
+  exp: z.number().int().positive(),
 });
 
 export type ExamTokenClaims = z.infer<typeof examTokenClaimsSchema>;
