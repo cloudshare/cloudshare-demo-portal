@@ -122,10 +122,12 @@ export function getServices(): Services {
   // Candidate identity. Stores are in-memory for the demo (they survive page
   // reloads within the running server); swap in Prisma-backed stores for a
   // deployment that must survive restarts.
+  const consumedTokens = createInMemoryConsumedTokenStore();
+  const candidateSessions = createInMemoryCandidateSessionStore();
   const candidateAuth = createTokenCandidateAuthenticator({
     secret: config.secrets.kryterionTokenSecret,
-    consumedTokens: createInMemoryConsumedTokenStore(),
-    sessions: createInMemoryCandidateSessionStore(),
+    consumedTokens,
+    sessions: candidateSessions,
   });
   const kryterion = createKryterionSimulator({
     secret: config.secrets.kryterionTokenSecret,
@@ -231,6 +233,9 @@ export function getServices(): Services {
     webhookIdempotency.reset();
     environmentSimulator?.reset();
     kryterion.reset();
+    heartbeatAutoSuspend.reset();
+    consumedTokens.reset();
+    candidateSessions.reset();
     completedDemoSteps.clear();
   }
 

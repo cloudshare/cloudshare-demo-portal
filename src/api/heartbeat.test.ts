@@ -19,6 +19,7 @@ function makeAutoSuspend(): HeartbeatAutoSuspend {
     start: vi.fn(),
     stop: vi.fn(),
     checkAll: vi.fn().mockResolvedValue(undefined),
+    reset: vi.fn(),
   };
 }
 

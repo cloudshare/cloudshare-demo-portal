@@ -96,6 +96,28 @@ describe("handleGetDemoState", () => {
     expect(state.environmentStatus).toBeNull();
   });
 
+  it("clamps timerElapsedMs to 0 when now() is earlier than startedAt (NTP step-back guard)", async () => {
+    const deps = makeDeps();
+    // Run book_exam and launch_lab so kryterion has a running timer for the attempt
+    await handleExecuteStep(deps, { body: { step: "book_exam" } });
+    await handleExecuteStep(deps, { body: { step: "launch_lab" } });
+
+    // Get the exam attempt id so we can inspect timer state
+    const attempts = await deps.examAttempts.listByCandidate(DEMO_SEED.candidateId);
+    const attemptId = attempts[0].id;
+
+    // Put the kryterion timer into running state so timerState.startedAt is set to a future epoch
+    await deps.kryterion.resumeTimer(attemptId);
+
+    // now() is set before startedAt — simulates NTP step-back
+    const pastNow = new Date("2000-01-01T00:00:00Z");
+    const depsWithPastNow = { ...deps, now: () => pastNow };
+
+    const resp = await handleGetDemoState(depsWithPastNow);
+    const state = (resp.body as Record<string, unknown>).currentState as Record<string, unknown>;
+    expect(state.timerElapsedMs).toBeGreaterThanOrEqual(0);
+  });
+
   it("reflects real ExamAttempt when one exists for the seed", async () => {
     const deps = makeDeps();
     // Pre-seed an attempt

@@ -31,6 +31,8 @@ export interface HeartbeatAutoSuspend {
   start(): void;
   stop(): void;
   checkAll(opts?: CheckAllOptions): Promise<void>;
+  /** Clear all tracked heartbeat entries (used by demo reset to avoid phantom suspensions). */
+  reset(): void;
 }
 
 export function createHeartbeatAutoSuspend(
@@ -86,5 +88,9 @@ export function createHeartbeatAutoSuspend(
     }
   }
 
-  return { recordHeartbeat, removeHeartbeat, start, stop, checkAll };
+  function reset(): void {
+    lastHeartbeat.clear();
+  }
+
+  return { recordHeartbeat, removeHeartbeat, start, stop, checkAll, reset };
 }
