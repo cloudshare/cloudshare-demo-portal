@@ -7,15 +7,6 @@
  * on the live environment status reported by the EnvironmentStateSource.
  */
 
-// --- Seed data ---
-
-/** Canonical demo identity used across all demo runs. */
-export const DEMO_SEED = {
-  candidateId: "cand-001",
-  examId: "GCP-ASSOC",
-  examTitle: "Genesys Cloud CX: Associate",
-} as const;
-
 // --- Step types ---
 
 export type DemoStep =
@@ -33,7 +24,7 @@ export const DEMO_STEPS: readonly DemoStep[] = [
   "retrieve_score",
 ];
 
-export type StepStatus = "pending" | "available" | "done";
+export type StepStatus = "pending" | "available" | "done" | "stalled";
 
 export interface StepMeta {
   readonly id: DemoStep;
@@ -103,6 +94,7 @@ export function computeStepStatuses(gates: DemoGates): Record<DemoStep, StepStat
 
     resume_exam: done("resume_exam") ? "done"
       : done("suspend_exam") && environmentStatus === "suspended" ? "available"
+      : done("suspend_exam") && (environmentStatus === "archived" || environmentStatus === "deleted") ? "stalled"
       : "pending",
 
     retrieve_score: done("retrieve_score") ? "done"

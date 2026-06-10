@@ -131,6 +131,30 @@ describe("computeStepStatuses", () => {
     expect(s.retrieve_score).toBe("pending");
   });
 
+  it("resume_exam is stalled when env is archived after suspend", () => {
+    const s = computeStepStatuses(
+      makeGates({
+        examAttemptExists: true,
+        labLaunchExists: true,
+        environmentStatus: "archived",
+        completedSteps: new Set(["book_exam", "launch_lab", "suspend_exam"]),
+      }),
+    );
+    expect(s.resume_exam).toBe("stalled");
+  });
+
+  it("resume_exam is stalled when env is deleted after suspend", () => {
+    const s = computeStepStatuses(
+      makeGates({
+        examAttemptExists: true,
+        labLaunchExists: true,
+        environmentStatus: "deleted",
+        completedSteps: new Set(["book_exam", "launch_lab", "suspend_exam"]),
+      }),
+    );
+    expect(s.resume_exam).toBe("stalled");
+  });
+
   it("full happy path: all steps done", () => {
     const s = computeStepStatuses(
       makeGates({

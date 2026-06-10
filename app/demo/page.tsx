@@ -4,7 +4,7 @@ import { useState, useCallback, useEffect } from "react";
 
 // --- Types mirroring the API response ---
 
-type StepStatus = "pending" | "available" | "done";
+type StepStatus = "pending" | "available" | "done" | "stalled";
 
 interface DemoStep {
   id: string;
@@ -44,12 +44,14 @@ const STATUS_COLOR: Record<StepStatus, string> = {
   pending: "#aaa",
   available: "#0070f3",
   done: "#22c55e",
+  stalled: "#d97706",
 };
 
 const STATUS_BG: Record<StepStatus, string> = {
   pending: "#f5f5f5",
   available: "#eff6ff",
   done: "#f0fdf4",
+  stalled: "#fffbeb",
 };
 
 // --- Component ---
@@ -118,25 +120,15 @@ export default function DemoControlPage() {
 
   async function autoPlay() {
     setAutoPlaying(true);
-    // Re-fetch fresh state to determine which steps remain
-    const res = await fetch("/api/demo/state");
-    const fresh = (await res.json()) as PanelState;
-    const available = fresh.steps
-      .filter((s) => s.status === "available")
-      .map((s) => s.id);
-
-    for (const stepId of available) {
-      await executeStep(stepId);
+    while (true) {
+      const res = await fetch("/api/demo/state");
+      const fresh = (await res.json()) as PanelState;
+      setPanel(fresh);
+      const nextStep = fresh.steps.find((s) => s.status === "available");
+      if (!nextStep) break;
+      await executeStep(nextStep.id);
       // small pause between steps so the state update is visible
       await new Promise((r) => setTimeout(r, 300));
-      // Re-fetch to find next available step
-      const next = await fetch("/api/demo/state");
-      const nextData = (await next.json()) as PanelState;
-      setPanel(nextData);
-      const nextAvailable = nextData.steps
-        .filter((s) => s.status === "available")
-        .map((s) => s.id);
-      if (nextAvailable.length === 0) break;
     }
     setAutoPlaying(false);
   }
@@ -249,7 +241,9 @@ export default function DemoControlPage() {
                         ? "✓"
                         : step.status === "available"
                           ? "→"
-                          : "○"}
+                          : step.status === "stalled"
+                            ? "!"
+                            : "○"}
                     </span>
                     <strong>{step.label}</strong>
                     <span style={{ color: "#555", marginLeft: "0.5rem", fontSize: "0.85rem" }}>

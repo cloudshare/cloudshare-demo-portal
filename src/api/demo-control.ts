@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { Services } from "@/composition";
 import type { Logger } from "@/observability/logger";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { LabLaunchRepository, LabProvisioner } from "@/domain/lab-launch";
@@ -9,13 +10,13 @@ import type { ScoreRetrievalProvider } from "@/domain/score-result";
 import type { KryterionSimulator } from "@/integrations/kryterion/simulator";
 import type { CloudShareEnvironmentSimulator } from "@/integrations/cloudshare/environment-simulator";
 import {
-  DEMO_SEED,
   DEMO_STEPS,
   STEP_META,
   computeStepStatuses,
   type DemoStep,
   type StepStatus,
 } from "@/domain/demo-control";
+import { DEMO_SEED } from "@/integrations/genesys/demo-data";
 import { bookExam } from "@/domain/booking";
 import { launchLab } from "@/domain/lab-launch";
 import { suspendExam, resumeExam } from "@/domain/timer-sync";
@@ -49,7 +50,8 @@ export interface DemoControlDeps {
   readonly labLaunches: LabLaunchRepository;
   readonly environmentSource: EnvironmentStateSource;
   readonly kryterion: KryterionSimulator;
-  readonly completedDemoSteps: Set<DemoStep>;
+  readonly completedDemoSteps: ReadonlySet<DemoStep>;
+  readonly markStepDone: (step: DemoStep) => void;
   // Writes (step execution)
   readonly genesys: ExamEligibilityProvider;
   readonly events: IntegrationEventPublisher;
@@ -191,7 +193,7 @@ export async function handleExecuteStep(
 
   try {
     const result = await runStep(deps, demoStep, { examAttempt, labLaunch });
-    deps.completedDemoSteps.add(demoStep);
+    deps.markStepDone(demoStep);
     deps.logger.info("demo step completed", { step: demoStep });
     return { status: 200, body: { ok: true, step: demoStep, result } };
   } catch (err) {
@@ -308,4 +310,28 @@ export async function handleResetDemo(deps: DemoControlDeps): Promise<DemoHandle
   deps.resetDemoState();
   deps.logger.info("demo state reset");
   return { status: 200, body: { ok: true } };
+}
+
+// --- Deps factory ---
+
+/** Build the full DemoControlDeps from the composition root Services. */
+export function buildDemoDeps(svc: Services): DemoControlDeps {
+  return {
+    logger: svc.logger,
+    examAttempts: svc.examAttempts,
+    labLaunches: svc.labLaunches,
+    environmentSource: svc.environmentSource,
+    kryterion: svc.kryterion,
+    completedDemoSteps: svc.completedDemoSteps,
+    markStepDone: svc.markStepDone,
+    genesys: svc.genesys,
+    events: svc.events,
+    labProvisioner: svc.labProvisioner,
+    environmentSimulator: svc.environmentSimulator,
+    scoreRetriever: svc.scoreRetriever,
+    resetDemoState: svc.resetDemo,
+    newId: () => randomUUID(),
+    now: () => new Date(),
+    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+  };
 }
