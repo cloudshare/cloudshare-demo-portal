@@ -8,7 +8,7 @@ import { handleSuspendExam } from "@/api/suspend-resume";
  * by polling. The request body must contain `examAttemptId`.
  */
 export async function POST(request: Request) {
-  const { environmentSource, environmentController, labLaunches, kryterion, logger } =
+  const { environmentSource, environmentController, labLaunches, kryterion, logger, heartbeatAutoSuspend } =
     getServices();
 
   let body: unknown;
@@ -29,6 +29,15 @@ export async function POST(request: Request) {
     },
     { body },
   );
+
+  // Remove from heartbeat tracking on successful manual suspend so the auto-suspend
+  // interval doesn't fire a redundant second suspend after the timeout elapses.
+  if (resp.status === 200) {
+    const parsed = body as { examAttemptId?: unknown };
+    if (typeof parsed.examAttemptId === "string") {
+      heartbeatAutoSuspend.removeHeartbeat(parsed.examAttemptId);
+    }
+  }
 
   return NextResponse.json(resp.body, { status: resp.status });
 }

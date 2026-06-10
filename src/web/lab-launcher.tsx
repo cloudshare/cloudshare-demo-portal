@@ -35,7 +35,7 @@ export function LabLauncher({ examAttemptId }: { examAttemptId: string }) {
     if (typeof navigator !== "undefined" && navigator.sendBeacon) {
       navigator.sendBeacon(
         "/api/heartbeat",
-        JSON.stringify({ examAttemptId }),
+        new Blob([JSON.stringify({ examAttemptId })], { type: "application/json" }),
       );
     }
   }

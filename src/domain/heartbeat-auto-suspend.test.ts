@@ -166,11 +166,10 @@ describe("HeartbeatAutoSuspend", () => {
     service.start();
     service.stop();
 
-    // Advance timers — interval should not fire after stop
+    // Advance timers — the fake clock advances Date.now() by 200 s, which would
+    // exceed the 60 s timeout if the interval was still running. But stop() cleared
+    // it, so the interval never fires and suspendFn is never called.
     vi.advanceTimersByTime(200_000);
-    // No actual Date.now() progression in fake timers by default,
-    // so suspendFn would only be called if the interval fired AND timeout exceeded.
-    // Since we stopped, it should not have been called.
     expect(suspendFn).not.toHaveBeenCalled();
   });
 });
