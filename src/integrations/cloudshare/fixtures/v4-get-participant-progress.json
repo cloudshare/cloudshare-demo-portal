@@ -1,0 +1,21 @@
+{
+  "method": "GET",
+  "path": "/api/v4/experiences/exp-demo-1/journey/participants",
+  "status": 200,
+  "body": {
+    "participants": [
+      {
+        "email": "candidate@demo.example",
+        "progress": 75,
+        "completedTasks": 3,
+        "totalTasks": 4,
+        "tasks": [
+          { "id": "task-1", "name": "Configure the routing profile", "completed": true },
+          { "id": "task-2", "name": "Set up the inbound queue", "completed": true },
+          { "id": "task-3", "name": "Assign agents to the queue", "completed": true },
+          { "id": "task-4", "name": "Validate call routing end-to-end", "completed": false }
+        ]
+      }
+    ]
+  }
+}

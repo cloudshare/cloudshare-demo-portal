@@ -53,3 +53,11 @@ export class LabLaunchNotFoundError extends TimerSyncError {
     this.name = "LabLaunchNotFoundError";
   }
 }
+
+/** Retrieving Guided Journey progress from CloudShare failed. */
+export class ScoreRetrievalError extends DomainError {
+  constructor(message: string, context?: Record<string, unknown>) {
+    super(message, context);
+    this.name = "ScoreRetrievalError";
+  }
+}
