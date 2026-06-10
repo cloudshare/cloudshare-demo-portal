@@ -1,7 +1,7 @@
 import type { Logger } from "@/observability/logger";
 import { syncResources, type CloudShareResourceLister, type ResourceRepository } from "@/domain/resource-sync";
 import type { AuditRepository } from "@/domain/audit-trail";
-import type { EventLogRepository } from "@/persistence/event-log-repository";
+import type { EventLogRepository } from "@/domain/event-log";
 
 /**
  * Framework-agnostic admin API handlers. All three surfaces are read-only
@@ -93,6 +93,6 @@ export async function handleGetEventLog(
 ): Promise<AdminResponse> {
   const limitParam = request.query.limit;
   const limit = limitParam ? parseInt(limitParam, 10) : undefined;
-  const events = await deps.eventLog.listAll(limit && !isNaN(limit) ? limit : undefined);
+  const events = await deps.eventLog.listAll(limit !== undefined && !isNaN(limit) ? limit : undefined);
   return { status: 200, body: { events } };
 }

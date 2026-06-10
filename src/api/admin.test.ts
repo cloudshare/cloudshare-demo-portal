@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { handleGetAuditTrail, handleSyncResources, handleGetEventLog } from "./admin";
 import type { AuditRepository, AuditRecord } from "@/domain/audit-trail";
 import type { CloudShareResourceLister } from "@/domain/resource-sync";
-import type { EventLogRepository } from "@/persistence/event-log-repository";
+import type { EventLogRepository } from "@/domain/event-log";
 import { createInMemoryAuditRepository } from "@/persistence/audit-repository";
 import { createInMemoryResourceRepository } from "@/persistence/resource-repository";
 import type { Logger } from "@/observability/logger";

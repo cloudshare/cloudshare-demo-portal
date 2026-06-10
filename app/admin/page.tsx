@@ -44,8 +44,12 @@ export default function AdminPage() {
         ? `?examAttemptId=${encodeURIComponent(examAttemptFilter.trim())}`
         : "";
       const res = await fetch(`/api/admin/audit${qs}`);
-      const data = await res.json() as { records: AuditRecord[] };
-      setAuditRecords(data.records);
+      const data = await res.json() as { records?: AuditRecord[]; error?: string };
+      if (!res.ok) {
+        setError(data.error ?? "Failed to load audit trail");
+        return;
+      }
+      setAuditRecords(data.records ?? []);
     } catch {
       setError("Failed to load audit trail");
     } finally {
@@ -58,8 +62,12 @@ export default function AdminPage() {
     setError(null);
     try {
       const res = await fetch("/api/admin/events?limit=100");
-      const data = await res.json() as { events: EventLogRecord[] };
-      setEventRecords(data.events);
+      const data = await res.json() as { events?: EventLogRecord[]; error?: string };
+      if (!res.ok) {
+        setError(data.error ?? "Failed to load event log");
+        return;
+      }
+      setEventRecords(data.events ?? []);
     } catch {
       setError("Failed to load event log");
     } finally {

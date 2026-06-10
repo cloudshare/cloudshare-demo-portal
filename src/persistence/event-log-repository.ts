@@ -1,16 +1,6 @@
-/** Captured IntegrationEvent, serialised for the admin event log. */
-export interface EventLogRecord {
-  readonly eventId: string;
-  readonly type: string;
-  readonly occurredAt: Date;
-  readonly payload: Record<string, unknown>;
-}
+import type { EventLogRecord, EventLogRepository } from "@/domain/event-log";
 
-export interface EventLogRepository {
-  append(record: EventLogRecord): Promise<void>;
-  /** Returns records newest-first. `limit` caps the result set (default: no limit). */
-  listAll(limit?: number): Promise<EventLogRecord[]>;
-}
+export type { EventLogRecord, EventLogRepository };
 
 export function createInMemoryEventLogRepository(): EventLogRepository {
   const records: EventLogRecord[] = [];

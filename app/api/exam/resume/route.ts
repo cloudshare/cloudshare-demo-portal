@@ -44,10 +44,10 @@ export async function POST(request: Request) {
   const parsed = body as { examAttemptId?: unknown };
   const examAttemptId = typeof parsed.examAttemptId === "string" ? parsed.examAttemptId : undefined;
 
-  if (resp.status === 200) {
+  if (resp.status === 200 && examAttemptId) {
     await audit.write({
       id: randomUUID(),
-      examAttemptId: examAttemptId ?? "unknown",
+      examAttemptId,
       action: "lab_resumed",
       outcome: "success",
       occurredAt: new Date(),

@@ -37,13 +37,15 @@ export async function POST(request: Request) {
 
   if (resp.status === 200) {
     if (examAttemptId) heartbeatAutoSuspend.removeHeartbeat(examAttemptId);
-    await audit.write({
-      id: randomUUID(),
-      examAttemptId: examAttemptId ?? "unknown",
-      action: "lab_suspended",
-      outcome: "success",
-      occurredAt: new Date(),
-    } satisfies AuditRecord);
+    if (examAttemptId) {
+      await audit.write({
+        id: randomUUID(),
+        examAttemptId,
+        action: "lab_suspended",
+        outcome: "success",
+        occurredAt: new Date(),
+      } satisfies AuditRecord);
+    }
   } else if (resp.status >= 500 && examAttemptId) {
     await audit.write({
       id: randomUUID(),

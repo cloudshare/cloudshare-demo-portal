@@ -48,7 +48,7 @@ import type { EnvironmentController, EnvironmentRepository, EnvironmentStateSour
 import type { WebhookIdempotencyStore } from "@/domain/webhook";
 import type { AuditRepository } from "@/domain/audit-trail";
 import type { ResourceRepository } from "@/domain/resource-sync";
-import type { EventLogRepository } from "@/persistence/event-log-repository";
+import type { EventLogRepository } from "@/domain/event-log";
 import type { CloudShareResourceLister } from "@/domain/resource-sync";
 
 /**
