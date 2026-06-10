@@ -98,7 +98,9 @@ export interface Services {
    * Which demo steps have been explicitly completed in this server instance's
    * lifetime. Cleared by `resetDemo()` for repeat runs.
    */
-  completedDemoSteps: Set<DemoStep>;
+  completedDemoSteps: ReadonlySet<DemoStep>;
+  /** Record one completed demo step — the only external mutation path for completedDemoSteps. */
+  markStepDone(step: DemoStep): void;
   /** Reset all demo in-memory state for a clean repeat run. */
   resetDemo(): void;
 }
@@ -216,6 +218,10 @@ export function getServices(): Services {
   // Demo step progress tracker — cleared by resetDemo().
   const completedDemoSteps = new Set<DemoStep>();
 
+  function markStepDone(step: DemoStep): void {
+    completedDemoSteps.add(step);
+  }
+
   function resetDemo(): void {
     examAttempts.reset();
     labLaunches.reset();
@@ -252,6 +258,7 @@ export function getServices(): Services {
     eventLog,
     resourceLister,
     completedDemoSteps,
+    markStepDone,
     resetDemo,
   };
   globalForServices.__portalServices = services;

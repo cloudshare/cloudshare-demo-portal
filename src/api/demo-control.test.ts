@@ -12,7 +12,7 @@ import type { LabProvisioner } from "@/domain/lab-launch";
 import type { Logger } from "@/observability/logger";
 import type { ScoreRetrievalProvider } from "@/domain/score-result";
 import type { DemoStep } from "@/domain/demo-control";
-import { DEMO_SEED } from "@/domain/demo-control";
+import { DEMO_SEED } from "@/integrations/genesys/demo-data";
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -48,8 +48,10 @@ function makeDeps(overrides: Partial<DemoControlDeps> = {}): DemoControlDeps {
   const kryterion = createKryterionSimulator({ secret: TEST_SECRET, ttlSeconds: 60 });
   const genesys = createGenesysSimulator(genesysDemoData);
   const events = createInMemoryEventBus({ onError: () => {} });
-  const completedDemoSteps = new Set<DemoStep>();
-  const resetDemoState = vi.fn(() => completedDemoSteps.clear());
+  const completedDemoStepsWritable = new Set<DemoStep>();
+  const completedDemoSteps: ReadonlySet<DemoStep> = completedDemoStepsWritable;
+  const markStepDone = vi.fn((step: DemoStep) => completedDemoStepsWritable.add(step));
+  const resetDemoState = vi.fn(() => completedDemoStepsWritable.clear());
 
   return {
     logger: makeLogger(),
@@ -58,6 +60,7 @@ function makeDeps(overrides: Partial<DemoControlDeps> = {}): DemoControlDeps {
     environmentSource: simulator,
     kryterion,
     completedDemoSteps,
+    markStepDone,
     genesys,
     events,
     labProvisioner: makeLabProvisioner(),
@@ -103,7 +106,7 @@ describe("handleGetDemoState", () => {
       status: "booked",
       createdAt: new Date(),
     });
-    deps.completedDemoSteps.add("book_exam");
+    deps.markStepDone("book_exam");
 
     const resp = await handleGetDemoState(deps);
     const body = resp.body as Record<string, unknown>;
@@ -202,7 +205,7 @@ describe("handleExecuteStep", () => {
 describe("handleResetDemo", () => {
   it("returns 200 and calls resetDemoState", async () => {
     const deps = makeDeps();
-    deps.completedDemoSteps.add("book_exam");
+    deps.markStepDone("book_exam");
 
     const resp = await handleResetDemo(deps);
     expect(resp.status).toBe(200);
