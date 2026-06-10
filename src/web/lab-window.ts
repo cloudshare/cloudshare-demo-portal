@@ -48,3 +48,8 @@ export function isLabWindowOpen(examAttemptId: string): boolean {
   const handle = handles.get(examAttemptId);
   return handle !== undefined && !handle.closed;
 }
+
+/** Remove all retained handles. Intended for test isolation only. */
+export function clearLabWindows(): void {
+  handles.clear();
+}

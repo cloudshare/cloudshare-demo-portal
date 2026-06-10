@@ -1,9 +1,24 @@
-import { describe, it, expect, vi } from "vitest";
-import { openLabWindow, getLabWindow, isLabWindowOpen } from "./lab-window";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { openLabWindow, getLabWindow, isLabWindowOpen, clearLabWindows } from "./lab-window";
 
 function fakeWindow() {
   return { closed: false, close: vi.fn(), focus: vi.fn() };
 }
+
+beforeEach(() => {
+  clearLabWindows();
+});
+
+describe("clearLabWindows", () => {
+  it("removes all retained handles so tests start from a clean slate", () => {
+    openLabWindow("ea-clear-1", "https://classic/login", () => fakeWindow());
+
+    clearLabWindows();
+
+    expect(getLabWindow("ea-clear-1")).toBeUndefined();
+    expect(isLabWindowOpen("ea-clear-1")).toBe(false);
+  });
+});
 
 describe("openLabWindow", () => {
   it("opens the loginUrl and retains the handle for later liveness checks", () => {

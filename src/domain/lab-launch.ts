@@ -83,6 +83,10 @@ export async function launchLab(
   deps: LaunchLabDeps,
   input: LaunchLabInput,
 ): Promise<LabLaunch> {
+  // Idempotency — return the existing launch rather than provisioning a second one.
+  const existing = await deps.launches.findByExamAttemptId(input.examAttemptId);
+  if (existing) return existing;
+
   // Entitlement — server-side, from persisted state only.
   const attempt = await deps.attempts.findById(input.examAttemptId);
   const entitlement = computeEntitlement(input.examAttemptId, attempt);
