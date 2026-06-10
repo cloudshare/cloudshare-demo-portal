@@ -120,17 +120,20 @@ export default function DemoControlPage() {
 
   async function autoPlay() {
     setAutoPlaying(true);
-    while (true) {
-      const res = await fetch("/api/demo/state");
-      const fresh = (await res.json()) as PanelState;
-      setPanel(fresh);
-      const nextStep = fresh.steps.find((s) => s.status === "available");
-      if (!nextStep) break;
-      await executeStep(nextStep.id);
-      // small pause between steps so the state update is visible
-      await new Promise((r) => setTimeout(r, 300));
+    try {
+      while (true) {
+        const res = await fetch("/api/demo/state");
+        const fresh = (await res.json()) as PanelState;
+        setPanel(fresh);
+        const nextStep = fresh.steps.find((s) => s.status === "available");
+        if (!nextStep) break;
+        await executeStep(nextStep.id);
+        // small pause between steps so the state update is visible
+        await new Promise((r) => setTimeout(r, 300));
+      }
+    } finally {
+      setAutoPlaying(false);
     }
-    setAutoPlaying(false);
   }
 
   const allDone = panel?.steps.every((s) => s.status === "done") ?? false;

@@ -51,8 +51,8 @@ export interface DemoControlDeps {
   readonly environmentSource: EnvironmentStateSource;
   readonly kryterion: KryterionSimulator;
   readonly completedDemoSteps: ReadonlySet<DemoStep>;
-  readonly markStepDone: (step: DemoStep) => void;
   // Writes (step execution)
+  readonly markStepDone: (step: DemoStep) => void;
   readonly genesys: ExamEligibilityProvider;
   readonly events: IntegrationEventPublisher;
   readonly labProvisioner: LabProvisioner;
