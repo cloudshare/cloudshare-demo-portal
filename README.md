@@ -1,5 +1,88 @@
 # CloudShare Demo Portal
 
+A proctoring portal integrating CloudShare lab environments, Genesys certification exam workflows, and Kryterion proctoring session state.
+
+## Quick start
+
+No CloudShare credentials are needed. `fixture` mode (the default) runs entirely on in-memory simulators.
+
+```bash
+# 1. Install dependencies
+npm install
+
+# 2. Copy the example env file — defaults are fine for fixture mode
+cp .env.example .env
+
+# 3. Run the database migration (creates dev.db)
+npm run prisma:migrate
+
+# 4. Start the dev server
+npm run dev
+```
+
+Open **http://localhost:3000/demo** — that is the Demo Control Panel and the primary entry point.
+
+### Key URLs
+
+| URL | What |
+|---|---|
+| `/demo` | **Demo Control Panel** — five-step happy path, start here |
+| `/admin` | Audit trail, integration event log, resource sync |
+| `/candidate/lab?examAttemptId=<id>` | Candidate lab page (launch, heartbeat, suspend) |
+| `/candidate/score?examAttemptId=<id>` | Candidate score page |
+| `/api/health` | Health check — `{ ok: true }` |
+
+### Running the demo
+
+1. Open `/demo`.
+2. Click **▶ Auto-play** to run all five steps automatically, or click **Run** on each step manually.
+3. The Domain State table at the bottom shows live IDs, environment status, timer, and login URL.
+4. Click **↺ Reset** to wipe all in-memory state for a clean repeat run — no server restart needed.
+
+### Environment variables
+
+All variables are Zod-validated at boot; missing required values cause a fast-fail with a clear error.
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `PORTAL_MODE` | yes | `fixture` | `fixture` (simulators) or `live` (real CloudShare API) |
+| `DATABASE_URL` | yes | `file:./dev.db` | SQLite path |
+| `KRYTERION_TOKEN_SECRET` | yes | — | HMAC-SHA256 secret shared by the token simulator and auth layer |
+| `ADMIN_TOKEN` | yes | — | Bearer token for `/admin`. Generate: `openssl rand -hex 32` |
+| `CLOUDSHARE_V4_CLIENT_ID` | live only | — | CloudShare Accelerate OAuth client ID |
+| `CLOUDSHARE_V4_CLIENT_SECRET` | live only | — | CloudShare Accelerate OAuth client secret |
+| `CLOUDSHARE_V3_API_ID` | live only | — | CloudShare Production API ID |
+| `CLOUDSHARE_V3_API_KEY` | live only | — | CloudShare Production API key |
+| `CLOUDSHARE_WEBHOOK_SECRET` | live only | — | HMAC-SHA256 webhook signing secret |
+| `PORTAL_TUNNEL_URL` | live only | — | Public URL for CloudShare webhooks (e.g. ngrok) |
+| `HEARTBEAT_TIMEOUT_MS` | no | `60000` | Auto-suspend timeout in ms |
+| `DEMO_BLUEPRINT_NAME` | live only | — | Friendly name of the CloudShare blueprint |
+| `DEMO_POLICY_NAME` | live only | — | Friendly name of the CloudShare policy |
+| `DEMO_PROJECT_NAME` | live only | — | Friendly name of the CloudShare project |
+| `DEMO_REGION_NAME` | live only | — | Friendly name of the CloudShare region |
+
+### Live mode
+
+1. Set `PORTAL_MODE=live` and fill in all `live only` variables.
+2. Expose the server publicly (e.g. `ngrok http 3000`) and set `PORTAL_TUNNEL_URL`.
+3. Configure CloudShare to POST webhooks to `$PORTAL_TUNNEL_URL/api/webhooks/cloudshare`.
+4. Open `/admin` and use **Sync Resources** to populate blueprint/policy/project/region ID mappings.
+
+### Development commands
+
+```bash
+npm run dev          # Next.js dev server with hot reload
+npm test             # Vitest unit tests
+npm run test:watch   # Watch mode
+npm run typecheck    # tsc --noEmit
+npm run lint         # ESLint
+npm run build        # Production build
+```
+
+---
+
+## Project structure and architecture
+
 Working repository for the CloudShare demo portal discovery, requirements, architecture notes and implementation artefacts.
 
 ## Project structure
