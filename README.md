@@ -139,3 +139,28 @@ both implement `EnvironmentStateSource` and produce the identical wire payload.
 > Slice 12 gap report): the exact webhook field names and the signature header name,
 > and the v3 endpoint that resolves an environment by the `externalId` we set at
 > experience creation.
+
+## Heartbeat auto-suspend
+
+Closing the browser tab does not suspend a CloudShare environment — it keeps
+running and billing. To mitigate this, `LabLauncher` maintains a server-side
+heartbeat while the lab window is open:
+
+- **Periodic heartbeat** — `POST /api/heartbeat` (body: `{ examAttemptId }`) is
+  sent every 15 seconds while the candidate page is open and the lab is active.
+- **Fast-path beacon** — `navigator.sendBeacon` fires immediately on
+  `pagehide` and `visibilitychange` (hidden) so the server clock resets on any
+  page-visibility event rather than waiting for the next poll.
+- **Timeout auto-suspend** — `HeartbeatAutoSuspend` (`src/domain/heartbeat-auto-suspend.ts`)
+  checks every `checkIntervalMs` (10 s). If any tracked attempt has not received
+  a heartbeat within `HEARTBEAT_TIMEOUT_MS` (default 60 000 ms; overridable via
+  `.env`), it calls `suspendExam` — which suspends the CloudShare environment and
+  pauses the Kryterion timer.
+- **`childWindow.closed` polling** — `LabLauncher` polls the retained window handle
+  every 3 seconds. If the lab window is detected as closed it proactively calls
+  `POST /api/exam/suspend` rather than waiting for the server timeout.
+- **Candidate warning** — while the lab is open the UI shows: *"Leaving or closing
+  this page without suspending keeps your lab running and consuming time."*
+
+`HEARTBEAT_TIMEOUT_MS` is documented in `.env.example`. The server-side timeout
+logic in `HeartbeatAutoSuspend` is fully unit-tested with fake timers.
