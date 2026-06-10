@@ -72,7 +72,7 @@ provisioning.
   rotation becomes possible, the secret can be swapped via environment variable without
   code changes.
 
-**Code reference:** `src/integrations/cloudshare/webhooks.ts:26`,
+**Code reference:** `src/integrations/cloudshare/webhooks.ts:11`,
 `src/config/index.ts:27`
 
 ---
@@ -297,7 +297,7 @@ link results in a login-denied or access-denied error.
   duplicate add gracefully), but this behaviour should be confirmed.
 
 **Code reference:** `src/integrations/cloudshare/labs.ts:18-20`,
-`src/domain/use-cases/create-sponsored-link.ts`
+`src/domain/lab-launch.ts`
 
 ---
 
@@ -322,6 +322,11 @@ expected behaviour.]
 
 [How this gap affects the proctoring portal, what risk it creates, and any mitigations
 already in place.]
+
+**Action required (if applicable):**
+
+[Outstanding verification, support enquiry, or follow-up task. Omit if the gap is
+fully understood and mitigated.]
 
 **Code reference:** (optional) `src/...`
 ```
