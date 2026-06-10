@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseLaunchResponse } from "./lab-launcher";
+import { parseLaunchResponse } from "./lab-launch-response";
 
 describe("parseLaunchResponse", () => {
   it("extracts loginUrl and environmentExternalId from a well-formed response", () => {

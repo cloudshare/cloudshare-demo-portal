@@ -2,23 +2,9 @@
 
 import { useState, useEffect, useRef } from "react";
 import { openLabWindow, isLabWindowOpen } from "./lab-window";
+import { parseLaunchResponse } from "./lab-launch-response";
 
 type LaunchState = "idle" | "launching" | "open" | "suspending" | "suspended" | "error";
-
-export interface LaunchResponseData {
-  loginUrl: string;
-  environmentExternalId: string;
-}
-
-/** Parse and validate the JSON body returned by POST /api/lab/launch. */
-export function parseLaunchResponse(json: unknown): LaunchResponseData {
-  if (typeof json !== "object" || json === null) throw new Error("invalid launch response");
-  const { loginUrl, environmentExternalId } = json as Record<string, unknown>;
-  if (typeof loginUrl !== "string") throw new Error("launch response missing loginUrl");
-  if (typeof environmentExternalId !== "string")
-    throw new Error("launch response missing environmentExternalId");
-  return { loginUrl, environmentExternalId };
-}
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const CHILD_POLL_INTERVAL_MS = 3_000;
