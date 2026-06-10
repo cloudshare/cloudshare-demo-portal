@@ -1,0 +1,109 @@
+import { describe, it, expect, vi } from "vitest";
+import { retrieveScore } from "./score-result";
+import type { ScoreRetrievalProvider, ParticipantProgress } from "./score-result";
+import type { LabLaunchRepository } from "./lab-launch";
+import type { LabLaunch } from "./lab-launch";
+import { LabLaunchNotFoundError, ScoreRetrievalError } from "./errors";
+
+function makeLaunch(partial: Partial<LabLaunch> = {}): LabLaunch {
+  return {
+    id: "launch-1",
+    examAttemptId: "attempt-1",
+    candidateId: "candidate-1",
+    experienceId: "exp-1",
+    environmentExternalId: "env-ext-1",
+    loginUrl: "https://app.example.com/login",
+    status: "launched",
+    createdAt: new Date("2026-01-01T00:00:00Z"),
+    ...partial,
+  };
+}
+
+function makeLaunchRepo(launch: LabLaunch | null): LabLaunchRepository {
+  return {
+    save: vi.fn(),
+    findById: vi.fn(),
+    findByExamAttemptId: vi.fn().mockResolvedValue(launch),
+  };
+}
+
+const sampleProgress: ParticipantProgress = {
+  percentComplete: 75,
+  stepsCompleted: 3,
+  stepsTotal: 4,
+  steps: [
+    { stepId: "s1", title: "Configure routing", completed: true },
+    { stepId: "s2", title: "Create queue", completed: true },
+    { stepId: "s3", title: "Test flow", completed: true },
+    { stepId: "s4", title: "Validate output", completed: false },
+  ],
+};
+
+function makeProvider(progress: ParticipantProgress | null): ScoreRetrievalProvider {
+  return {
+    getParticipantProgress: vi.fn().mockResolvedValue(progress),
+  };
+}
+
+describe("retrieveScore", () => {
+  it("returns ScoreResult enriched with exam context when lab launch and progress are found", async () => {
+    const launch = makeLaunch();
+    const provider = makeProvider(sampleProgress);
+
+    const result = await retrieveScore(
+      { launches: makeLaunchRepo(launch), scoreRetriever: provider },
+      { examAttemptId: "attempt-1" },
+    );
+
+    expect(result.examAttemptId).toBe("attempt-1");
+    expect(result.experienceId).toBe("exp-1");
+    expect(result.percentComplete).toBe(75);
+    expect(result.stepsCompleted).toBe(3);
+    expect(result.stepsTotal).toBe(4);
+    expect(result.steps).toHaveLength(4);
+    expect(result.retrievedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(provider.getParticipantProgress).toHaveBeenCalledWith("exp-1");
+  });
+
+  it("returns null-progress ScoreResult when no progress data is available yet", async () => {
+    const launch = makeLaunch();
+    const provider = makeProvider(null);
+
+    const result = await retrieveScore(
+      { launches: makeLaunchRepo(launch), scoreRetriever: provider },
+      { examAttemptId: "attempt-1" },
+    );
+
+    expect(result.percentComplete).toBe(0);
+    expect(result.stepsCompleted).toBe(0);
+    expect(result.stepsTotal).toBe(0);
+    expect(result.steps).toEqual([]);
+  });
+
+  it("throws LabLaunchNotFoundError when no lab launch exists for the attempt", async () => {
+    const provider = makeProvider(sampleProgress);
+
+    await expect(
+      retrieveScore(
+        { launches: makeLaunchRepo(null), scoreRetriever: provider },
+        { examAttemptId: "attempt-missing" },
+      ),
+    ).rejects.toBeInstanceOf(LabLaunchNotFoundError);
+
+    expect(provider.getParticipantProgress).not.toHaveBeenCalled();
+  });
+
+  it("wraps provider errors in ScoreRetrievalError", async () => {
+    const launch = makeLaunch();
+    const provider: ScoreRetrievalProvider = {
+      getParticipantProgress: vi.fn().mockRejectedValue(new Error("upstream failure")),
+    };
+
+    await expect(
+      retrieveScore(
+        { launches: makeLaunchRepo(launch), scoreRetriever: provider },
+        { examAttemptId: "attempt-1" },
+      ),
+    ).rejects.toBeInstanceOf(ScoreRetrievalError);
+  });
+});

@@ -35,6 +35,8 @@ import {
   type HeartbeatAutoSuspend,
 } from "@/domain/heartbeat-auto-suspend";
 import { suspendExam } from "@/domain/timer-sync";
+import { createCloudShareGuidedJourneyProvider } from "@/integrations/cloudshare/guided-journey";
+import type { ScoreRetrievalProvider } from "@/domain/score-result";
 import type { ExamEligibilityProvider } from "@/domain/eligibility";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { LabProvisioner, LabLaunchRepository } from "@/domain/lab-launch";
@@ -73,6 +75,8 @@ export interface Services {
   webhookIdempotency: WebhookIdempotencyStore;
   /** Tracks client heartbeats and auto-suspends inactive lab sessions. */
   heartbeatAutoSuspend: HeartbeatAutoSuspend;
+  /** Retrieves per-participant Guided Journey progress from CloudShare. */
+  scoreRetriever: ScoreRetrievalProvider;
 }
 
 const globalForServices = globalThis as unknown as {
@@ -165,6 +169,8 @@ export function getServices(): Services {
   });
   heartbeatAutoSuspend.start();
 
+  const scoreRetriever = createCloudShareGuidedJourneyProvider(cloudshare);
+
   const services: Services = {
     config,
     logger,
@@ -183,6 +189,7 @@ export function getServices(): Services {
     environmentSimulator,
     webhookIdempotency,
     heartbeatAutoSuspend,
+    scoreRetriever,
   };
   globalForServices.__portalServices = services;
   return services;

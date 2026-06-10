@@ -140,6 +140,39 @@ both implement `EnvironmentStateSource` and produce the identical wire payload.
 > and the v3 endpoint that resolves an environment by the `externalId` we set at
 > experience creation.
 
+## Guided Journey scoring
+
+`GET /api/exam/score?examAttemptId=<id>` retrieves per-participant Guided Journey
+progress from CloudShare and returns a typed `ScoreResult`:
+
+- **`percentComplete`** — overall lab progress (0–100).
+- **`stepsCompleted` / `stepsTotal`** — checkpoint counts.
+- **`steps[]`** — per-task breakdown with `stepId`, `title`, `completed`.
+- **`limitations[]`** — CloudShare scoring limitation disclaimers, returned alongside
+  the score so any UI can surface them.
+
+**Architecture:**
+- `ScoreRetrievalProvider` (`src/domain/score-result.ts`) — domain port; implemented
+  by `createCloudShareGuidedJourneyProvider` (`src/integrations/cloudshare/guided-journey.ts`)
+  which calls `GET /experiences/{id}/journey/participants` (v4 API assumption, isolated).
+- `retrieveScore` use case — looks up the `LabLaunch`, calls the port, enriches
+  with exam context and timestamp. Returns an empty progress record if CloudShare
+  has no data yet (lab not yet completed).
+- `ScoreDisplay` component (`src/web/score-display.tsx`) — fetches and renders the
+  score with an inline "About this score" section surfacing the four known limitations.
+- Candidate score page at `/candidate/score?examAttemptId=<id>`.
+
+**CloudShare scoring limitations** (surfaced in every `ScoreResult` response):
+1. Bitmap checkpoints: visual-state comparison only, not process-level capture.
+2. End-state only — approach and intermediate steps are not assessed.
+3. Deterministic script-based verification is not GA until Q3 2026.
+4. Final certification weighting is Genesys's responsibility, not the portal's.
+
+Works in both `fixture` and `live` modes. The bundled fixture
+(`v4-get-participant-progress.json`) returns 75 % / 3 of 4 tasks for the demo
+experience `exp-demo-1`. Assumptions about the Guided Journey API paths and
+response shape are isolated in `guided-journey.ts` for the Slice 12 gap report.
+
 ## Heartbeat auto-suspend
 
 Closing the browser tab does not suspend a CloudShare environment — it keeps
