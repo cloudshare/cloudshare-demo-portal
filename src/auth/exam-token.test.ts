@@ -63,6 +63,7 @@ describe("examTokenClaimsSchema", () => {
       exp: 0,
     });
     expect(result.success).toBe(false);
+    expect(result.error?.issues[0].path).toEqual(["exp"]);
   });
 
   it("rejects iat: 0 (epoch-zero is not a valid issue time)", () => {
@@ -74,6 +75,7 @@ describe("examTokenClaimsSchema", () => {
       exp: 1_000_060,
     });
     expect(result.success).toBe(false);
+    expect(result.error?.issues[0].path).toEqual(["iat"]);
   });
 
   it("accepts valid positive timestamps", () => {
