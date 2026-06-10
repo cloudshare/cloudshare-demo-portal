@@ -7,6 +7,7 @@
 
 export type AuditAction =
   | "lab_launched"
+  | "lab_launch_reused"
   | "lab_launch_failed"
   | "lab_suspended"
   | "lab_suspend_failed"

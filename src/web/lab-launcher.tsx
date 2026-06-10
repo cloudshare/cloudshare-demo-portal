@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { openLabWindow, isLabWindowOpen } from "./lab-window";
+import { parseLaunchResponse } from "./lab-launch-response";
 
 type LaunchState = "idle" | "launching" | "open" | "suspending" | "suspended" | "error";
 
@@ -18,6 +19,7 @@ const CHILD_POLL_INTERVAL_MS = 3_000;
 export function LabLauncher({ examAttemptId }: { examAttemptId: string }) {
   const [state, setState] = useState<LaunchState>("idle");
   const [message, setMessage] = useState<string>("");
+  const [environmentExternalId, setEnvironmentExternalId] = useState<string | null>(null);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const childPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -25,7 +27,7 @@ export function LabLauncher({ examAttemptId }: { examAttemptId: string }) {
     fetch("/api/heartbeat", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ examAttemptId }),
+      body: JSON.stringify({ examAttemptId, environmentExternalId }),
     }).catch(() => {
       // best-effort; server timeout is the reliable backstop
     });
@@ -35,7 +37,10 @@ export function LabLauncher({ examAttemptId }: { examAttemptId: string }) {
     if (typeof navigator !== "undefined" && navigator.sendBeacon) {
       navigator.sendBeacon(
         "/api/heartbeat",
-        new Blob([JSON.stringify({ examAttemptId })], { type: "application/json" }),
+        new Blob(
+          [JSON.stringify({ examAttemptId, environmentExternalId })],
+          { type: "application/json" },
+        ),
       );
     }
   }
@@ -127,8 +132,9 @@ export function LabLauncher({ examAttemptId }: { examAttemptId: string }) {
         const detail = (await response.json().catch(() => ({}))) as { error?: string };
         throw new Error(detail.error ?? `launch failed (${response.status})`);
       }
-      const { loginUrl } = (await response.json()) as { loginUrl: string };
-      openLabWindow(examAttemptId, loginUrl);
+      const data = parseLaunchResponse(await response.json());
+      setEnvironmentExternalId(data.environmentExternalId);
+      openLabWindow(examAttemptId, data.loginUrl);
       setState("open");
     } catch (err) {
       setState("error");

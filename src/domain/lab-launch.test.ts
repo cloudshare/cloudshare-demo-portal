@@ -89,6 +89,20 @@ describe("launchLab", () => {
     expect(order).toEqual([]); // no CloudShare calls for an unentitled attempt
   });
 
+  it("returns the existing launch without re-provisioning when one already exists for the attempt", async () => {
+    const { labs, order } = provisioner();
+    const { deps, launches } = await setup(labs);
+
+    const first = await launchLab(deps, { examAttemptId: "ea-1" });
+    order.length = 0; // reset call log
+
+    const second = await launchLab(deps, { examAttemptId: "ea-1" });
+
+    expect(second).toEqual(first);
+    expect(order).toEqual([]); // no new CloudShare calls
+    expect(await launches.findByExamAttemptId("ea-1")).toEqual(first); // not duplicated
+  });
+
   it("surfaces an actionable error and aborts before the sponsored link when Add Student fails", async () => {
     const sponsored = vi.fn();
     const { labs, order } = provisioner({

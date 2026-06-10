@@ -29,6 +29,7 @@ export async function POST(request: Request) {
   }
 
   try {
+    const existingLaunch = await labLaunches.findByExamAttemptId(examAttemptId);
     const launch = await launchLab(
       {
         attempts: examAttempts,
@@ -40,14 +41,15 @@ export async function POST(request: Request) {
       },
       { examAttemptId },
     );
-    logger.info("lab launched", {
+    const isReuse = existingLaunch !== null;
+    logger.info(isReuse ? "lab launch reused" : "lab launched", {
       examAttemptId,
       environmentExternalId: launch.environmentExternalId,
     });
     await audit.write({
       id: randomUUID(),
       examAttemptId,
-      action: "lab_launched",
+      action: isReuse ? "lab_launch_reused" : "lab_launched",
       outcome: "success",
       details: { environmentExternalId: launch.environmentExternalId },
       occurredAt: new Date(),
@@ -58,7 +60,7 @@ export async function POST(request: Request) {
         loginUrl: launch.loginUrl,
         environmentExternalId: launch.environmentExternalId,
       },
-      { status: 201 },
+      { status: isReuse ? 200 : 201 },
     );
   } catch (err) {
     if (err instanceof NotEntitledError) {
