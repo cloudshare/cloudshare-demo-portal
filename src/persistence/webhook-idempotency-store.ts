@@ -5,7 +5,9 @@ import type { WebhookIdempotencyStore } from "@/domain/webhook";
  * the port — a durable deployment would persist keys so dedupe survives restarts).
  * Single-threaded Node makes the check-and-record effectively atomic here.
  */
-export function createInMemoryWebhookIdempotencyStore(): WebhookIdempotencyStore {
+export function createInMemoryWebhookIdempotencyStore(): WebhookIdempotencyStore & {
+  reset(): void;
+} {
   const seen = new Set<string>();
 
   return {
@@ -13,6 +15,9 @@ export function createInMemoryWebhookIdempotencyStore(): WebhookIdempotencyStore
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
+    },
+    reset(): void {
+      seen.clear();
     },
   };
 }

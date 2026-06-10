@@ -42,6 +42,8 @@ export interface CloudShareEnvironmentSimulator
   extends EnvironmentStateSource,
     EnvironmentController {
   emit(input: EmitEnvironmentEventInput): SignedWebhook;
+  /** Clear all in-memory environment state for a clean demo reset. */
+  reset(): void;
 }
 
 /** Resolve the post-event status, preserving the prior status for extensions. */
@@ -100,6 +102,10 @@ export function createCloudShareEnvironmentSimulator(opts: {
 
     async resumeEnvironment(environmentExternalId: string): Promise<void> {
       statusByExternalId.set(environmentExternalId, "running");
+    },
+
+    reset(): void {
+      statusByExternalId.clear();
     },
   };
 }

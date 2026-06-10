@@ -1,0 +1,27 @@
+import { randomUUID } from "node:crypto";
+import { NextResponse } from "next/server";
+import { getServices } from "@/composition";
+import { handleGetDemoState } from "@/api/demo-control";
+
+/** GET /api/demo/state — returns the current Demo Control Panel state. */
+export async function GET() {
+  const svc = getServices();
+  const resp = await handleGetDemoState({
+    logger: svc.logger,
+    examAttempts: svc.examAttempts,
+    labLaunches: svc.labLaunches,
+    environmentSource: svc.environmentSource,
+    kryterion: svc.kryterion,
+    completedDemoSteps: svc.completedDemoSteps,
+    genesys: svc.genesys,
+    events: svc.events,
+    labProvisioner: svc.labProvisioner,
+    environmentSimulator: svc.environmentSimulator,
+    scoreRetriever: svc.scoreRetriever,
+    resetDemoState: svc.resetDemo,
+    newId: () => randomUUID(),
+    now: () => new Date(),
+    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+  });
+  return NextResponse.json(resp.body, { status: resp.status });
+}

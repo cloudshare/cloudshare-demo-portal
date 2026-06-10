@@ -75,6 +75,7 @@ describe("handleCloudShareWebhook", () => {
       markIfNew: vi.fn(async () => {
         throw new Error("idempotency store DB timeout");
       }),
+      reset: vi.fn(),
     };
     const signed = sim.emit({ environmentExternalId: "env-1", event: "environment.created", at });
 

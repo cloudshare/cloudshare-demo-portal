@@ -35,6 +35,7 @@ import {
   type HeartbeatAutoSuspend,
 } from "@/domain/heartbeat-auto-suspend";
 import { suspendExam } from "@/domain/timer-sync";
+import { type DemoStep } from "@/domain/demo-control";
 import { createCloudShareGuidedJourneyProvider } from "@/integrations/cloudshare/guided-journey";
 import { createCloudShareResourceLister } from "@/integrations/cloudshare/resources";
 import { createInMemoryAuditRepository } from "@/persistence/audit-repository";
@@ -93,6 +94,13 @@ export interface Services {
   eventLog: EventLogRepository;
   /** Lists CloudShare blueprints, policies, projects, regions for admin sync. */
   resourceLister: CloudShareResourceLister;
+  /**
+   * Which demo steps have been explicitly completed in this server instance's
+   * lifetime. Cleared by `resetDemo()` for repeat runs.
+   */
+  completedDemoSteps: Set<DemoStep>;
+  /** Reset all demo in-memory state for a clean repeat run. */
+  resetDemo(): void;
 }
 
 const globalForServices = globalThis as unknown as {
@@ -126,6 +134,7 @@ export function getServices(): Services {
   // the downstream lab-launch flow (later slice) will subscribe to; a failing
   // subscriber is logged, not allowed to break publishing.
   const genesys = createGenesysSimulator(genesysDemoData);
+  // Each in-memory repo exposes reset() for the demo clean-slate operation.
   const examAttempts = createInMemoryExamAttemptRepository();
   const events = createInMemoryEventBus({
     onError: (error, event) =>
@@ -204,6 +213,21 @@ export function getServices(): Services {
     });
   });
 
+  // Demo step progress tracker — cleared by resetDemo().
+  const completedDemoSteps = new Set<DemoStep>();
+
+  function resetDemo(): void {
+    examAttempts.reset();
+    labLaunches.reset();
+    environments.reset();
+    audit.reset();
+    eventLog.reset();
+    webhookIdempotency.reset();
+    environmentSimulator?.reset();
+    kryterion.reset();
+    completedDemoSteps.clear();
+  }
+
   const services: Services = {
     config,
     logger,
@@ -227,6 +251,8 @@ export function getServices(): Services {
     resources,
     eventLog,
     resourceLister,
+    completedDemoSteps,
+    resetDemo,
   };
   globalForServices.__portalServices = services;
   return services;
