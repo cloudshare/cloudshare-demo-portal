@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getServices } from "@/composition";
 import { launchLab } from "@/domain/lab-launch";
 import { LabLaunchError, NotEntitledError } from "@/domain/errors";
+import type { AuditRecord } from "@/domain/audit-trail";
 
 /**
  * Launch the CloudShare lab for an ExamAttempt. Entitlement is recomputed
@@ -11,7 +12,7 @@ import { LabLaunchError, NotEntitledError } from "@/domain/errors";
  * loginUrl the candidate opens in a child window.
  */
 export async function POST(request: Request) {
-  const { labProvisioner, labLaunches, examAttempts, logger } = getServices();
+  const { labProvisioner, labLaunches, examAttempts, logger, audit } = getServices();
 
   let body: unknown;
   try {
@@ -43,6 +44,14 @@ export async function POST(request: Request) {
       examAttemptId,
       environmentExternalId: launch.environmentExternalId,
     });
+    await audit.write({
+      id: randomUUID(),
+      examAttemptId,
+      action: "lab_launched",
+      outcome: "success",
+      details: { environmentExternalId: launch.environmentExternalId },
+      occurredAt: new Date(),
+    } satisfies AuditRecord);
     return NextResponse.json(
       {
         examAttemptId,
@@ -56,14 +65,30 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "not entitled to launch a lab" }, { status: 403 });
     }
     if (err instanceof LabLaunchError) {
-      // Upstream provisioning failed (e.g. Add Student). Actionable, not a silent denial.
       logger.error("lab launch failed", { examAttemptId, ...(err.context ?? {}) });
+      await audit.write({
+        id: randomUUID(),
+        examAttemptId,
+        action: "lab_launch_failed",
+        outcome: "failure",
+        error: err.message,
+        details: err.context ?? undefined,
+        occurredAt: new Date(),
+      } satisfies AuditRecord);
       return NextResponse.json({ error: "lab provisioning failed" }, { status: 502 });
     }
     logger.error("lab launch errored", {
       examAttemptId,
       error: err instanceof Error ? err.message : String(err),
     });
+    await audit.write({
+      id: randomUUID(),
+      examAttemptId,
+      action: "lab_launch_failed",
+      outcome: "failure",
+      error: err instanceof Error ? err.message : String(err),
+      occurredAt: new Date(),
+    } satisfies AuditRecord);
     return NextResponse.json({ error: "internal error" }, { status: 500 });
   }
 }

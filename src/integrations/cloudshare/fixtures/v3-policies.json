@@ -1,0 +1,9 @@
+{
+  "method": "GET",
+  "path": "/api/v3/policies",
+  "status": 200,
+  "body": [
+    { "id": "pol-demo-1", "name": "Standard Exam Policy" },
+    { "id": "pol-demo-2", "name": "Proctored Exam Policy" }
+  ]
+}

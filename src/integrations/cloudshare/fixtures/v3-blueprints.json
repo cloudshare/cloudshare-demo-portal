@@ -1,0 +1,9 @@
+{
+  "method": "GET",
+  "path": "/api/v3/blueprints",
+  "status": 200,
+  "body": [
+    { "id": "bp-demo-1", "name": "Genesys Cloud Blueprint" },
+    { "id": "bp-demo-2", "name": "Genesys Engage Blueprint" }
+  ]
+}
