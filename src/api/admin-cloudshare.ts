@@ -6,6 +6,7 @@ import {
   type CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
 import type { Logger } from "@/observability/logger";
+import { randomUUID } from "node:crypto";
 
 export interface AdminCloudShareRequest {
   readonly customerId: string;
@@ -22,6 +23,7 @@ export interface AdminCloudShareDeps {
   readonly cloudshare: CloudShareClientFactory;
   readonly logger: Logger;
   readonly now?: () => Date;
+  readonly newCorrelationId?: () => string;
 }
 
 export async function handleGetCloudShareConnection(
@@ -83,6 +85,7 @@ export async function handleTestCloudShareConnection(
   deps: AdminCloudShareDeps,
   request: AdminCloudShareRequest,
 ): Promise<AdminCloudShareResponse> {
+  const correlationId = (deps.newCorrelationId ?? randomUUID)();
   try {
     const result = await testCloudShareConnection(
       {
@@ -94,7 +97,14 @@ export async function handleTestCloudShareConnection(
     );
 
     deps.logger.info("cloudshare connection verified", {
+      correlationId,
       customerId: request.customerId,
+      operation: "test_connection",
+      integrationSurface: "cloudshare.v3.ping",
+      method: "GET",
+      path: "/ping",
+      responseStatus: 200,
+      responseBody: result.message,
       verifiedAt: result.verifiedAt.toISOString(),
     });
 
@@ -104,6 +114,7 @@ export async function handleTestCloudShareConnection(
         status: result.status,
         message: result.message,
         verifiedAt: result.verifiedAt.toISOString(),
+        correlationId,
       },
     };
   } catch (error) {
@@ -112,12 +123,18 @@ export async function handleTestCloudShareConnection(
     }
     if (error instanceof CloudShareConnectionTestError) {
       deps.logger.warn("cloudshare connection test failed", {
+        correlationId,
         customerId: request.customerId,
+        ...error.diagnostic,
         error: error.causeMessage,
       });
       return {
         status: 502,
-        body: { error: error.message },
+        body: {
+          error: error.message,
+          correlationId,
+          diagnostic: error.diagnostic ?? null,
+        },
       };
     }
     throw error;

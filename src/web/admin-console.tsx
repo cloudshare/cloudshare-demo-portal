@@ -30,24 +30,43 @@ interface EventLogRecord {
   payload: Record<string, unknown>;
 }
 
+interface SupportLogRecord {
+  timestamp: string;
+  level: "debug" | "info" | "warn" | "error";
+  message: string;
+  fields: Record<string, unknown>;
+}
+
+interface ConnectionDiagnostic {
+  operation: string;
+  integrationSurface: string;
+  method: string;
+  path: string;
+  failureMode: string;
+  responseStatus?: number;
+}
+
 interface SyncResult {
   synced: number;
   byType: Record<string, Array<{ name: string; cloudshareId: string; syncedAt: string }>>;
 }
 
-type Tab = "connection" | "audit" | "events" | "resources";
+type Tab = "connection" | "audit" | "events" | "support" | "resources";
 
 export function AdminConsole({ email }: AdminConsoleProps) {
   const [tab, setTab] = useState<Tab>("connection");
   const [examAttemptFilter, setExamAttemptFilter] = useState("");
   const [auditRecords, setAuditRecords] = useState<AuditRecord[] | null>(null);
   const [eventRecords, setEventRecords] = useState<EventLogRecord[] | null>(null);
+  const [supportRecords, setSupportRecords] = useState<SupportLogRecord[] | null>(null);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [connection, setConnection] = useState<ConnectionState | null>(null);
   const [apiId, setApiId] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [webhookSecret, setWebhookSecret] = useState("");
   const [connectionMessage, setConnectionMessage] = useState<string | null>(null);
+  const [connectionDiagnostic, setConnectionDiagnostic] = useState<ConnectionDiagnostic | null>(null);
+  const [connectionCorrelationId, setConnectionCorrelationId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -71,6 +90,8 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     setLoading(true);
     setError(null);
     setConnectionMessage(null);
+    setConnectionDiagnostic(null);
+    setConnectionCorrelationId(null);
     const trimmedApiId = apiId.trim();
     const trimmedApiKey = apiKey.trim();
     const trimmedWebhookSecret = webhookSecret.trim();
@@ -114,15 +135,26 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     setLoading(true);
     setError(null);
     setConnectionMessage(null);
+    setConnectionDiagnostic(null);
+    setConnectionCorrelationId(null);
     try {
       const response = await fetch("/api/admin/cloudshare/test", { method: "POST" });
-      const data = (await response.json()) as { error?: string; message?: string; verifiedAt?: string };
+      const data = (await response.json()) as {
+        error?: string;
+        message?: string;
+        verifiedAt?: string;
+        correlationId?: string;
+        diagnostic?: ConnectionDiagnostic | null;
+      };
       if (!response.ok) {
         setError(data.error ?? "CloudShare connection test failed");
+        setConnectionDiagnostic(data.diagnostic ?? null);
+        setConnectionCorrelationId(data.correlationId ?? null);
         return;
       }
       await loadConnection();
       setConnectionMessage(`CloudShare responded with ${data.message}.`);
+      setConnectionCorrelationId(data.correlationId ?? null);
     } catch {
       setError("CloudShare connection test failed");
     } finally {
@@ -169,6 +201,24 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     }
   }
 
+  async function loadSupportLog() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/admin/support-log?limit=200");
+      const data = await res.json() as { records?: SupportLogRecord[]; error?: string };
+      if (!res.ok) {
+        setError(data.error ?? "Failed to load support log");
+        return;
+      }
+      setSupportRecords(data.records ?? []);
+    } catch {
+      setError("Failed to load support log");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function syncResources() {
     setLoading(true);
     setError(null);
@@ -202,7 +252,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       <p style={{ marginTop: 0, color: "#555" }}>Signed in as {email}</p>
 
       <nav style={{ display: "flex", gap: "0.75rem", marginBottom: "1.5rem", flexWrap: "wrap" }}>
-        {(["connection", "audit", "events", "resources"] as Tab[]).map((t) => (
+        {(["connection", "audit", "events", "support", "resources"] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -221,15 +271,35 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                 ? "Audit Trail"
                 : t === "events"
                   ? "Event Log"
+                  : t === "support"
+                    ? "Support Log"
                   : "Resources"}
           </button>
         ))}
       </nav>
 
       {error && (
-        <p style={{ color: "#b00020", background: "#fff0f0", padding: "0.75rem", borderRadius: "6px" }}>
-          {error}
-        </p>
+        <div style={{ color: "#b00020", background: "#fff0f0", padding: "0.75rem", borderRadius: "6px", display: "grid", gap: "0.5rem" }}>
+          <p style={{ margin: 0 }}>{error}</p>
+          {(connectionDiagnostic || connectionCorrelationId) && (
+            <div style={{ color: "#5f2120", fontSize: "0.9rem", display: "grid", gap: "0.25rem" }}>
+              {connectionDiagnostic?.operation && <div>Operation: {connectionDiagnostic.operation}</div>}
+              {connectionDiagnostic?.integrationSurface && (
+                <div>Integration surface: {connectionDiagnostic.integrationSurface}</div>
+              )}
+              {(connectionDiagnostic?.method || connectionDiagnostic?.path) && (
+                <div>
+                  Request: {connectionDiagnostic?.method ?? "?"} {connectionDiagnostic?.path ?? "?"}
+                </div>
+              )}
+              {connectionDiagnostic?.failureMode && <div>Failure mode: {connectionDiagnostic.failureMode}</div>}
+              {typeof connectionDiagnostic?.responseStatus === "number" && (
+                <div>Returned status: {connectionDiagnostic.responseStatus}</div>
+              )}
+              {connectionCorrelationId && <div>Correlation ID: {connectionCorrelationId}</div>}
+            </div>
+          )}
+        </div>
       )}
 
       {tab === "connection" && (
@@ -257,8 +327,14 @@ export function AdminConsole({ email }: AdminConsoleProps) {
             <input
               value={apiId}
               onChange={(event) => setApiId(event.target.value)}
+              placeholder={hasSavedConnection ? "stored value present" : ""}
               style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
             />
+            {hasSavedConnection && !apiId && (
+              <span style={{ color: "#666", fontSize: "0.85rem" }}>
+                An API ID is stored. Enter a new value only to replace it.
+              </span>
+            )}
           </label>
           <label style={{ display: "grid", gap: "0.35rem" }}>
             <span>API Key</span>
@@ -388,6 +464,48 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                     <td style={{ padding: "0.4rem", fontSize: "0.75rem", color: "#666" }}>{e.eventId}</td>
                     <td style={{ padding: "0.4rem", fontSize: "0.75rem", color: "#444" }}>
                       <pre style={{ margin: 0 }}>{JSON.stringify(e.payload, null, 0)}</pre>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </section>
+      )}
+
+      {tab === "support" && (
+        <section>
+          <button onClick={loadSupportLog} disabled={loading} style={{ padding: "0.4rem 1rem", marginBottom: "1rem" }}>
+            {loading ? "Loading..." : "Load Support Log"}
+          </button>
+          {supportRecords && (
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
+              <thead>
+                <tr style={{ background: "#f5f5f5" }}>
+                  {["Time", "Level", "Message", "Fields"].map((h) => (
+                    <th key={h} style={{ textAlign: "left", padding: "0.4rem", borderBottom: "1px solid #ddd" }}>
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {supportRecords.length === 0 && (
+                  <tr>
+                    <td colSpan={4} style={{ padding: "0.5rem", color: "#666" }}>
+                      No support log records
+                    </td>
+                  </tr>
+                )}
+                {supportRecords.map((record, index) => (
+                  <tr key={`${record.timestamp}-${record.message}-${index}`} style={{ borderBottom: "1px solid #eee" }}>
+                    <td style={{ padding: "0.4rem", whiteSpace: "nowrap" }}>
+                      {new Date(record.timestamp).toISOString().replace("T", " ").slice(0, 19)}
+                    </td>
+                    <td style={{ padding: "0.4rem", textTransform: "uppercase" }}>{record.level}</td>
+                    <td style={{ padding: "0.4rem" }}>{record.message}</td>
+                    <td style={{ padding: "0.4rem", fontSize: "0.75rem", color: "#444" }}>
+                      <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{JSON.stringify(record.fields, null, 2)}</pre>
                     </td>
                   </tr>
                 ))}

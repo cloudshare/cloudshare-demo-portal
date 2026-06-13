@@ -45,6 +45,7 @@ import { createCloudShareResourceLister } from "@/integrations/cloudshare/resour
 import { createInMemoryAuditRepository } from "@/persistence/audit-repository";
 import { createInMemoryResourceRepository } from "@/persistence/resource-repository";
 import { createInMemoryEventLogRepository } from "@/persistence/event-log-repository";
+import { createInMemorySupportLogRepository } from "@/persistence/support-log-repository";
 import {
   createPortalSessionStore,
   createPortalUserRepository,
@@ -60,6 +61,7 @@ import type { WebhookIdempotencyStore } from "@/domain/webhook";
 import type { AuditRepository } from "@/domain/audit-trail";
 import type { ResourceRepository } from "@/domain/resource-sync";
 import type { EventLogRepository } from "@/domain/event-log";
+import type { SupportLogRepository } from "@/domain/support-log";
 import type { CloudShareResourceLister } from "@/domain/resource-sync";
 import type {
   CloudShareClientFactory,
@@ -110,6 +112,8 @@ export interface Services {
   eventLog: EventLogRepository;
   /** Lists CloudShare blueprints, policies, projects, regions for admin sync. */
   resourceLister: CloudShareResourceLister;
+  /** Structured, redacted server logs surfaced to admins for troubleshooting. */
+  supportLog: SupportLogRepository;
   cloudshareConnections: CloudShareConnectionRepository;
   cloudshareClientFactory: CloudShareClientFactory;
   ensurePortalSeeded(): Promise<void>;
@@ -134,7 +138,26 @@ export function getServices(): Services {
   }
 
   const config = loadConfig(process.env);
-  const logger = createLogger({ secrets: secretValues(config) });
+  const supportLog = createInMemorySupportLogRepository();
+  const logger = createLogger({
+    secrets: secretValues(config),
+    sink: (line: string) => {
+      process.stdout.write(line + "\n");
+      const parsed = JSON.parse(line) as {
+        level: "debug" | "info" | "warn" | "error";
+        message: string;
+        timestamp: string;
+        [key: string]: unknown;
+      };
+      const { level, message, timestamp, ...fields } = parsed;
+      void supportLog.append({
+        level,
+        message,
+        timestamp: new Date(timestamp),
+        fields,
+      });
+    },
+  });
   const prisma = new PrismaClient();
   const heartbeats = createHeartbeatRepository(prisma);
 
@@ -303,6 +326,7 @@ export function getServices(): Services {
     environments.reset();
     audit.reset();
     eventLog.reset();
+    supportLog.reset();
     webhookIdempotency.reset();
     environmentSimulator?.reset();
     kryterion.reset();
@@ -336,6 +360,7 @@ export function getServices(): Services {
     resources,
     eventLog,
     resourceLister,
+    supportLog,
     cloudshareConnections,
     cloudshareClientFactory,
     ensurePortalSeeded,

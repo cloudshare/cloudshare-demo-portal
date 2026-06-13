@@ -1,8 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
-import { handleGetAuditTrail, handleSyncResources, handleGetEventLog } from "./admin";
+import { handleGetAuditTrail, handleSyncResources, handleGetEventLog, handleGetSupportLog } from "./admin";
 import type { AuditRepository, AuditRecord } from "@/domain/audit-trail";
 import type { CloudShareResourceLister } from "@/domain/resource-sync";
 import type { EventLogRepository } from "@/domain/event-log";
+import type { SupportLogRepository } from "@/domain/support-log";
 import { createInMemoryAuditRepository } from "@/persistence/audit-repository";
 import { createInMemoryResourceRepository } from "@/persistence/resource-repository";
 import type { Logger } from "@/observability/logger";
@@ -32,6 +33,13 @@ function makeLister(): CloudShareResourceLister {
 }
 
 function makeEventLog(records: unknown[] = []): EventLogRepository {
+  return {
+    append: vi.fn(),
+    listAll: vi.fn().mockResolvedValue(records),
+  };
+}
+
+function makeSupportLog(records: unknown[] = []): SupportLogRepository {
   return {
     append: vi.fn(),
     listAll: vi.fn().mockResolvedValue(records),
@@ -118,5 +126,31 @@ describe("handleGetEventLog", () => {
     expect(result.status).toBe(200);
     const body = result.body as { events: unknown[] };
     expect(body.events).toHaveLength(1);
+  });
+});
+
+describe("handleGetSupportLog", () => {
+  it("returns 200 with support log entries", async () => {
+    const supportLog = makeSupportLog([
+      {
+        timestamp: new Date(),
+        level: "warn",
+        message: "cloudshare connection test failed",
+        fields: {
+          correlationId: "corr-123",
+          integrationSurface: "cloudshare.v3.ping",
+          responseStatus: 401,
+        },
+      },
+    ]);
+
+    const result = await handleGetSupportLog(
+      { supportLog, logger: makeLogger() },
+      { query: {} },
+    );
+
+    expect(result.status).toBe(200);
+    const body = result.body as { records: unknown[] };
+    expect(body.records).toHaveLength(1);
   });
 });

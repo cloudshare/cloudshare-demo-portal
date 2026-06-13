@@ -9,6 +9,7 @@ import { createSecretBox } from "@/security/secret-box";
 import { createCloudShareConnectionRepository } from "@/persistence/cloudshare-connection-repository";
 import { PrismaClient } from "@prisma/client";
 import type { CloudShareClientFactory } from "@/domain/cloudshare-connection";
+import { CloudShareRequestError } from "@/integrations/cloudshare";
 
 const prisma = new PrismaClient();
 
@@ -111,6 +112,55 @@ describe("admin CloudShare handlers", () => {
       status: "connected",
       message: "pong",
       verifiedAt: "2026-06-13T18:10:00.000Z",
+      correlationId: expect.any(String),
+    });
+  });
+
+  it("returns support diagnostics and a correlation id on test failure", async () => {
+    const deps = await makeDeps();
+    await handleSaveCloudShareConnection(deps, {
+      customerId: deps.customerId,
+      body: {
+        apiId: "api-id",
+        apiKey: "api-key",
+        webhookSecret: "whsec",
+      },
+    });
+
+    const failingDeps = {
+      ...deps,
+      cloudshare: {
+        forConnection: () => ({
+          requestV3Text: async () => {
+            throw new CloudShareRequestError("401 unauthorized", 401);
+          },
+          requestV3: async () => {
+            throw new Error("not used");
+          },
+          requestV4: async () => {
+            throw new Error("not used");
+          },
+        }),
+      } satisfies CloudShareClientFactory,
+      newCorrelationId: () => "corr-123",
+    };
+
+    const response = await handleTestCloudShareConnection(failingDeps, {
+      customerId: deps.customerId,
+    });
+
+    expect(response.status).toBe(502);
+    expect(response.body).toEqual({
+      error: "CloudShare returned 401 to the v3 ping. Check API ID and API key.",
+      correlationId: "corr-123",
+      diagnostic: {
+        operation: "test_connection",
+        integrationSurface: "cloudshare.v3.ping",
+        method: "GET",
+        path: "/ping",
+        failureMode: "http_status",
+        responseStatus: 401,
+      },
     });
   });
 });

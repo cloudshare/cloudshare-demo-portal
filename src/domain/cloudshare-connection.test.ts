@@ -95,6 +95,14 @@ describe("testCloudShareConnection", () => {
     ).rejects.toMatchObject({
       name: "CloudShareConnectionTestError",
       message: "CloudShare returned 401 to the v3 ping. Check API ID and API key.",
+      diagnostic: {
+        operation: "test_connection",
+        integrationSurface: "cloudshare.v3.ping",
+        method: "GET",
+        path: "/ping",
+        failureMode: "http_status",
+        responseStatus: 401,
+      },
     });
   });
 
@@ -122,6 +130,13 @@ describe("testCloudShareConnection", () => {
     ).rejects.toMatchObject({
       name: "CloudShareConnectionTestError",
       message: "CloudShare ping could not reach the server. Check network reachability.",
+      diagnostic: {
+        operation: "test_connection",
+        integrationSurface: "cloudshare.v3.ping",
+        method: "GET",
+        path: "/ping",
+        failureMode: "transport",
+      },
     });
   });
 
@@ -149,6 +164,13 @@ describe("testCloudShareConnection", () => {
     ).rejects.toMatchObject({
       name: "CloudShareConnectionTestError",
       message: "CloudShare ping returned an unexpected response.",
+      diagnostic: {
+        operation: "test_connection",
+        integrationSurface: "cloudshare.v3.ping",
+        method: "GET",
+        path: "/ping",
+        failureMode: "unexpected_response",
+      },
     });
   });
 });

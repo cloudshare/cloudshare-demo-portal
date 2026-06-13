@@ -41,7 +41,11 @@ export class MissingCloudShareConnectionError extends Error {
 }
 
 export class CloudShareConnectionTestError extends Error {
-  constructor(message: string, readonly causeMessage: string) {
+  constructor(
+    message: string,
+    readonly causeMessage: string,
+    readonly diagnostic?: Record<string, unknown>,
+  ) {
     super(message);
     this.name = "CloudShareConnectionTestError";
   }
@@ -71,18 +75,40 @@ export async function testCloudShareConnection(
       throw new CloudShareConnectionTestError(
         `CloudShare returned ${error.status} to the v3 ping. Check API ID and API key.`,
         error.message,
+        {
+          operation: "test_connection",
+          integrationSurface: "cloudshare.v3.ping",
+          method: "GET",
+          path: "/ping",
+          failureMode: "http_status",
+          responseStatus: error.status,
+        },
       );
     }
     if (error instanceof CloudShareTransportError) {
       throw new CloudShareConnectionTestError(
         "CloudShare ping could not reach the server. Check network reachability.",
         error.message,
+        {
+          operation: "test_connection",
+          integrationSurface: "cloudshare.v3.ping",
+          method: "GET",
+          path: "/ping",
+          failureMode: "transport",
+        },
       );
     }
     if (error instanceof CloudShareResponseError) {
       throw new CloudShareConnectionTestError(
         "CloudShare ping returned an unexpected response.",
         error.message,
+        {
+          operation: "test_connection",
+          integrationSurface: "cloudshare.v3.ping",
+          method: "GET",
+          path: "/ping",
+          failureMode: "unexpected_response",
+        },
       );
     }
     if (
@@ -92,6 +118,13 @@ export async function testCloudShareConnection(
       throw new CloudShareConnectionTestError(
         "CloudShare connection test failed.",
         error instanceof Error ? error.message : String(error),
+        {
+          operation: "test_connection",
+          integrationSurface: "cloudshare.v3.ping",
+          method: "GET",
+          path: "/ping",
+          failureMode: "cloudshare_error",
+        },
       );
     }
     throw error;
