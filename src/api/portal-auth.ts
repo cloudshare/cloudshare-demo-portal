@@ -55,7 +55,10 @@ export async function handlePortalLogin(
       session,
     };
   } catch (error) {
-    if (error instanceof InvalidPortalCredentialsError) {
+    if (
+      error instanceof InvalidPortalCredentialsError ||
+      (error instanceof Error && error.name === "InvalidPortalCredentialsError")
+    ) {
       return { status: 401, body: { error: error.message } };
     }
     throw error;
