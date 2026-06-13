@@ -9,7 +9,10 @@ import {
   createTokenCandidateAuthenticator,
   createInMemoryConsumedTokenStore,
   createInMemoryCandidateSessionStore,
+  createPortalAuthenticator,
+  hashPassword,
   type CandidateAuthenticator,
+  type PortalAuthenticator,
 } from "@/auth";
 import {
   createKryterionSimulator,
@@ -21,6 +24,7 @@ import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-
 import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repository";
 import { createInMemoryEventBus, type IntegrationEventBus } from "@/domain/event-bus";
 import { createCloudShareIntegration } from "@/integrations/cloudshare";
+import { createCloudShareIntegrationForConnection } from "@/integrations/cloudshare";
 import { createCloudShareLabProvisioner } from "@/integrations/cloudshare/labs";
 import { createCloudShareEnvironmentSource } from "@/integrations/cloudshare/environment";
 import {
@@ -41,6 +45,12 @@ import { createCloudShareResourceLister } from "@/integrations/cloudshare/resour
 import { createInMemoryAuditRepository } from "@/persistence/audit-repository";
 import { createInMemoryResourceRepository } from "@/persistence/resource-repository";
 import { createInMemoryEventLogRepository } from "@/persistence/event-log-repository";
+import {
+  createPortalSessionStore,
+  createPortalUserRepository,
+  type PortalUserRepository,
+} from "@/persistence/portal-auth-repository";
+import { createCloudShareConnectionRepository } from "@/persistence/cloudshare-connection-repository";
 import type { ScoreRetrievalProvider } from "@/domain/score-result";
 import type { ExamEligibilityProvider } from "@/domain/eligibility";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
@@ -51,6 +61,12 @@ import type { AuditRepository } from "@/domain/audit-trail";
 import type { ResourceRepository } from "@/domain/resource-sync";
 import type { EventLogRepository } from "@/domain/event-log";
 import type { CloudShareResourceLister } from "@/domain/resource-sync";
+import type {
+  CloudShareClientFactory,
+  CloudShareConnectionRepository,
+} from "@/domain/cloudshare-connection";
+import { saveCloudShareConnection } from "@/domain/cloudshare-connection";
+import { createSecretBox } from "@/security/secret-box";
 
 /**
  * Composition root. The framework-agnostic modules are pure and dependency-free;
@@ -67,6 +83,7 @@ export interface Services {
   prisma: PrismaClient;
   heartbeats: HeartbeatRepository;
   candidateAuth: CandidateAuthenticator;
+  portalAuth: PortalAuthenticator;
   kryterion: KryterionSimulator;
   genesys: ExamEligibilityProvider;
   examAttempts: ExamAttemptRepository;
@@ -94,6 +111,9 @@ export interface Services {
   eventLog: EventLogRepository;
   /** Lists CloudShare blueprints, policies, projects, regions for admin sync. */
   resourceLister: CloudShareResourceLister;
+  cloudshareConnections: CloudShareConnectionRepository;
+  cloudshareClientFactory: CloudShareClientFactory;
+  ensurePortalSeeded(): Promise<void>;
   /**
    * Which demo steps have been explicitly completed in this server instance's
    * lifetime. Cleared by `resetDemo()` for repeat runs.
@@ -128,6 +148,12 @@ export function getServices(): Services {
     secret: config.secrets.kryterionTokenSecret,
     consumedTokens,
     sessions: candidateSessions,
+  });
+  const portalUsers = createPortalUserRepository(prisma);
+  const portalSessions = createPortalSessionStore(prisma);
+  const portalAuth = createPortalAuthenticator({
+    users: portalUsers,
+    sessions: portalSessions,
   });
   const kryterion = createKryterionSimulator({
     secret: config.secrets.kryterionTokenSecret,
@@ -204,6 +230,54 @@ export function getServices(): Services {
   const resources = createInMemoryResourceRepository();
   const eventLog = createInMemoryEventLogRepository();
   const resourceLister = createCloudShareResourceLister(cloudshare);
+  const cloudshareSecretBox = createSecretBox(
+    Buffer.from(config.secrets.portalMasterKey, "base64"),
+  );
+  const cloudshareConnections = createCloudShareConnectionRepository(
+    prisma,
+    cloudshareSecretBox,
+  );
+  const cloudshareClientFactory: CloudShareClientFactory = {
+    forConnection: (connection) =>
+      createCloudShareIntegrationForConnection({
+        mode: config.runtime.mode,
+        connection: {
+          apiId: connection.apiId,
+          apiKey: connection.apiKey,
+          webhookSecret: connection.webhookSecret,
+        },
+      }),
+  };
+
+  let portalSeedPromise: Promise<void> | null = null;
+
+  async function ensurePortalSeeded(): Promise<void> {
+    if (!portalSeedPromise) {
+      portalSeedPromise = (async () => {
+        const user = await portalUsers.upsertSeedUser({
+          customerSlug: "helios-cx",
+          customerName: "Helios CX",
+          email: config.seed.heliosAdminEmail,
+          passwordHash: await hashPassword(config.seed.heliosAdminPassword),
+          role: "admin",
+        });
+
+        if (config.seed.heliosCloudShareConnection) {
+          await saveCloudShareConnection(cloudshareConnections, {
+            customerId: user.customerId,
+            apiId: config.seed.heliosCloudShareConnection.apiId,
+            apiKey: config.seed.heliosCloudShareConnection.apiKey,
+            webhookSecret: config.seed.heliosCloudShareConnection.webhookSecret,
+          });
+        }
+      })().catch((error) => {
+        portalSeedPromise = null;
+        throw error;
+      });
+    }
+
+    await portalSeedPromise;
+  }
 
   // Capture every published integration event into the event log so the admin
   // /events endpoint gives a full history without additional instrumentation.
@@ -245,6 +319,7 @@ export function getServices(): Services {
     prisma,
     heartbeats,
     candidateAuth,
+    portalAuth,
     kryterion,
     genesys,
     examAttempts,
@@ -262,6 +337,9 @@ export function getServices(): Services {
     resources,
     eventLog,
     resourceLister,
+    cloudshareConnections,
+    cloudshareClientFactory,
+    ensurePortalSeeded,
     completedDemoSteps,
     markStepDone,
     resetDemo,

@@ -18,6 +18,22 @@ export {
   createInMemoryCandidateSessionStore,
 } from "./stores";
 export {
+  createPortalAuthenticator,
+  InvalidPortalCredentialsError,
+  type PortalAuthenticator,
+  type PortalAuthenticatorOptions,
+} from "./portal-auth";
+export {
+  type PortalSession,
+  type PortalSessionStore,
+  type PortalUserRecord,
+  type PortalUserRole,
+  type PortalUserStore,
+  createInMemoryPortalSessionStore,
+  createInMemoryPortalUserStore,
+} from "./portal-stores";
+export { hashPassword, verifyPassword } from "./password";
+export {
   verifyExamToken,
   examTokenClaimsSchema,
   type ExamTokenClaims,

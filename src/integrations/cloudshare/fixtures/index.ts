@@ -1,4 +1,5 @@
 import { buildFixtureMap, type FixtureMap } from "../fixtures";
+import v4OauthToken from "./v4-oauth-token.json";
 import v4Projects from "./v4-projects.json";
 import v3Regions from "./v3-regions.json";
 import v4CreateExperience from "./v4-create-experience.json";
@@ -15,10 +16,11 @@ import v3Policies from "./v3-policies.json";
  * would not be reliably included. `loadFixturesFromDir` remains for tests.
  */
 // NOTE: each fixture's `path` must be the full URL pathname (e.g.
-// "/api/v4/experiences"), NOT the short path passed to requestV4 ("/experiences").
+// "/v4/experiences"), NOT the short path passed to requestV4 ("/experiences").
 // The fixture transport keys on `new URL(request.url).pathname`, so the v4/v3
 // base-URL prefix is part of the lookup key.
 export const bundledFixtures: FixtureMap = buildFixtureMap([
+  { raw: v4OauthToken, label: "v4-oauth-token.json" },
   { raw: v4Projects, label: "v4-projects.json" },
   { raw: v3Regions, label: "v3-regions.json" },
   { raw: v4CreateExperience, label: "v4-create-experience.json" },

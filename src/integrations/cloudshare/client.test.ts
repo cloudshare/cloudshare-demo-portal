@@ -12,7 +12,7 @@ import type { HttpClient, HttpRequest, HttpResponse } from "./http";
 import type { V4TokenProvider } from "./v4-auth";
 
 const endpoints = {
-  v4BaseUrl: "https://use.cloudshare.com/api/v4",
+  v4BaseUrl: "https://api.accelerate.cloudshare.com/v4",
   v3BaseUrl: "https://use.cloudshare.com/api/v3",
 };
 
@@ -61,7 +61,7 @@ describe("createCloudShareClient — v4", () => {
     });
 
     expect(data).toEqual([{ id: "p1", name: "Proj" }]);
-    expect(last()?.url).toBe("https://use.cloudshare.com/api/v4/projects");
+    expect(last()?.url).toBe("https://api.accelerate.cloudshare.com/v4/projects");
     expect(last()?.headers?.authorization).toBe("Bearer test-bearer");
   });
 });
@@ -84,6 +84,21 @@ describe("createCloudShareClient — v3", () => {
     expect(url.searchParams.get("Timestamp")).toBe("1700000000");
     expect(url.searchParams.get("Token")).toBe("tok-fixed");
     expect(url.searchParams.get("HMAC")).toMatch(/^[0-9a-f]{40}$/);
+  });
+
+  it("supports signed text responses for the v3 ping endpoint", async () => {
+    const { http, last } = capturingHttp({ status: 200, body: "pong" });
+    const client = clientWith(http);
+
+    const body = await client.requestV3Text({
+      method: "GET",
+      path: "/ping",
+    });
+
+    expect(body).toBe("pong");
+    const url = new URL(last()!.url);
+    expect(url.pathname).toBe("/api/v3/ping");
+    expect(url.searchParams.get("UserApiId")).toBe("api-id");
   });
 });
 

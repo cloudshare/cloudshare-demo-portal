@@ -17,3 +17,42 @@ model Heartbeat {
   source    String
   createdAt DateTime @default(now())
 }
+
+model Customer {
+  id                   String                @id @default(cuid())
+  slug                 String                @unique
+  name                 String
+  createdAt            DateTime              @default(now())
+  users                User[]
+  cloudShareConnection CloudShareConnection?
+}
+
+model User {
+  id           String          @id @default(cuid())
+  customerId   String
+  email        String          @unique
+  passwordHash String
+  role         String
+  createdAt    DateTime        @default(now())
+  customer     Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  sessions     PortalSession[]
+}
+
+model PortalSession {
+  id        String   @id
+  userId    String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model CloudShareConnection {
+  id                      String    @id @default(cuid())
+  customerId              String    @unique
+  apiIdCiphertext         String
+  apiKeyCiphertext        String
+  webhookSecretCiphertext String
+  connectedAt             DateTime  @default(now())
+  verifiedAt              DateTime?
+  updatedAt               DateTime  @updatedAt
+  customer                Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+}

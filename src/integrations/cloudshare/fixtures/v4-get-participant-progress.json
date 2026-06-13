@@ -1,6 +1,6 @@
 {
   "method": "GET",
-  "path": "/api/v4/experiences/exp-demo-1/journey/participants",
+  "path": "/v4/experiences/exp-demo-1/journey/participants",
   "status": 200,
   "body": {
     "participants": [

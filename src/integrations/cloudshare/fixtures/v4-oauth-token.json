@@ -1,0 +1,10 @@
+{
+  "method": "POST",
+  "path": "/v4/oauth/token",
+  "status": 200,
+  "body": {
+    "access_token": "fixture-bearer-token",
+    "token_type": "Bearer",
+    "expires_in": 300
+  }
+}

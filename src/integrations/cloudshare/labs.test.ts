@@ -58,7 +58,7 @@ describe("cloudShareLabProvisioner — fixture mode (live/fixture parity)", () =
     return createCloudShareClient({
       http: createFixtureHttpClient(loadFixturesFromDir(fixturesDir)),
       endpoints: {
-        v4BaseUrl: "https://use.cloudshare.com/api/v4",
+        v4BaseUrl: "https://api.accelerate.cloudshare.com/v4",
         v3BaseUrl: "https://use.cloudshare.com/api/v3",
       },
       tokenProvider: stubToken,

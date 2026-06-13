@@ -1,6 +1,6 @@
 # CloudShare Demo Portal
 
-A proctoring portal integrating CloudShare lab environments, Genesys certification exam workflows, and Kryterion proctoring session state.
+Certalis demo portal for Helios CX to connect its own CloudShare subscription, build exams, and deliver real CloudShare environments to Candidates.
 
 ## Quick start
 
@@ -20,14 +20,15 @@ npm run prisma:migrate
 npm run dev
 ```
 
-Open **http://localhost:3000/demo** — that is the Demo Control Panel and the primary entry point.
+Open **http://localhost:3000/login** for Slice 1, or **http://localhost:3000/demo** for the older walking-skeleton demo surface.
 
 ### Key URLs
 
 | URL | What |
 |---|---|
+| `/login` | **Helios admin login** — seeded email/password entrypoint |
+| `/admin` | **Connect CloudShare** + admin console |
 | `/demo` | **Demo Control Panel** — five-step happy path, start here |
-| `/admin` | Audit trail, integration event log, resource sync |
 | `/candidate/lab?examAttemptId=<id>` | Candidate lab page (launch, heartbeat, suspend) |
 | `/candidate/score?examAttemptId=<id>` | Candidate score page |
 | `/api/health` | Health check — `{ ok: true }` |
@@ -45,21 +46,34 @@ All variables are Zod-validated at boot; missing required values cause a fast-fa
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
+| `PORTAL_MASTER_KEY` | yes | — | Base64 32-byte key used to encrypt stored CloudShare credentials |
 | `PORTAL_MODE` | yes | `fixture` | `fixture` (simulators) or `live` (real CloudShare API) |
 | `DATABASE_URL` | yes | `file:./dev.db` | SQLite path |
 | `KRYTERION_TOKEN_SECRET` | yes | — | HMAC-SHA256 secret shared by the token simulator and auth layer |
-| `ADMIN_TOKEN` | yes | — | Bearer token for `/admin`. Generate: `openssl rand -hex 32` |
-| `CLOUDSHARE_V4_CLIENT_ID` | live only | — | CloudShare Accelerate OAuth client ID |
-| `CLOUDSHARE_V4_CLIENT_SECRET` | live only | — | CloudShare Accelerate OAuth client secret |
-| `CLOUDSHARE_V3_API_ID` | live only | — | CloudShare Production API ID |
-| `CLOUDSHARE_V3_API_KEY` | live only | — | CloudShare Production API key |
-| `CLOUDSHARE_WEBHOOK_SECRET` | live only | — | HMAC-SHA256 webhook signing secret |
+| `HELIOS_ADMIN_EMAIL` | no | `admin@helioscx.demo` | Seeded Helios admin login email |
+| `HELIOS_ADMIN_PASSWORD` | no | `HeliosDemo123!` | Seeded Helios admin login password |
+| `HELIOS_SEED_CLOUDSHARE_API_ID` | no | — | Optional seeded CloudShare API ID stored through the normal encrypted path |
+| `HELIOS_SEED_CLOUDSHARE_API_KEY` | no | — | Optional seeded CloudShare API key |
+| `HELIOS_SEED_CLOUDSHARE_WEBHOOK_SECRET` | no | — | Optional seeded CloudShare webhook secret |
+| `CLOUDSHARE_V4_CLIENT_ID` | legacy | — | Transitional global credential for unfinished older slices |
+| `CLOUDSHARE_V4_CLIENT_SECRET` | legacy | — | Transitional global credential for unfinished older slices |
+| `CLOUDSHARE_V3_API_ID` | legacy | — | Transitional global credential for unfinished older slices |
+| `CLOUDSHARE_V3_API_KEY` | legacy | — | Transitional global credential for unfinished older slices |
+| `CLOUDSHARE_WEBHOOK_SECRET` | legacy | — | Transitional global credential for unfinished older slices |
 | `PORTAL_TUNNEL_URL` | live only | — | Public URL for CloudShare webhooks (e.g. ngrok) |
 | `HEARTBEAT_TIMEOUT_MS` | no | `60000` | Auto-suspend timeout in ms |
 | `DEMO_BLUEPRINT_NAME` | live only | — | Friendly name of the CloudShare blueprint |
 | `DEMO_POLICY_NAME` | live only | — | Friendly name of the CloudShare policy |
 | `DEMO_PROJECT_NAME` | live only | — | Friendly name of the CloudShare project |
 | `DEMO_REGION_NAME` | live only | — | Friendly name of the CloudShare region |
+
+### Slice 1 flow
+
+1. Start the app and open `/login`.
+2. Sign in as the seeded Helios admin.
+3. Open **Connect CloudShare** in `/admin`.
+4. Save `API ID + API key + webhook secret`.
+5. Click **Test connection** to run the signed v3 `ping` and expect `pong`.
 
 ### Live mode
 

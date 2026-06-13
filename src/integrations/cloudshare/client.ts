@@ -48,6 +48,7 @@ export interface V3RequestSpec<T> {
 export interface CloudShareClient {
   requestV4<T>(spec: V4RequestSpec<T>): Promise<T>;
   requestV3<T>(spec: V3RequestSpec<T>): Promise<T>;
+  requestV3Text(spec: Omit<V3RequestSpec<never>, "schema">): Promise<string>;
 }
 
 export interface CloudShareClientOptions {
@@ -152,6 +153,47 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
         HMAC: auth.HMAC,
       });
       return execute({ method: spec.method, url: signedUrl }, spec.schema);
+    },
+
+    async requestV3Text(spec: Omit<V3RequestSpec<never>, "schema">): Promise<string> {
+      const unsignedUrl = buildUrl(opts.endpoints.v3BaseUrl, spec.path, spec.query);
+      const auth = signV3Request({
+        apiId: opts.v3.apiId,
+        apiKey: opts.v3.apiKey,
+        fullUrl: unsignedUrl,
+        now: opts.now,
+        newToken: opts.newToken,
+      });
+      const signedUrl = buildUrl(opts.endpoints.v3BaseUrl, spec.path, {
+        ...spec.query,
+        UserApiId: auth.UserApiId,
+        Timestamp: auth.Timestamp,
+        Token: auth.Token,
+        HMAC: auth.HMAC,
+      });
+
+      let response;
+      try {
+        response = await opts.http.send({ method: spec.method, url: signedUrl });
+      } catch (cause) {
+        throw new CloudShareTransportError(
+          `CloudShare request to ${signedUrl} failed to reach the server`,
+          {
+            method: spec.method,
+            cause: cause instanceof Error ? cause.message : String(cause),
+          },
+        );
+      }
+
+      if (response.status < 200 || response.status >= 300) {
+        throw new CloudShareRequestError(
+          `CloudShare request to ${signedUrl} returned ${response.status}`,
+          response.status,
+          { method: spec.method },
+        );
+      }
+
+      return response.body;
     },
   };
 }
