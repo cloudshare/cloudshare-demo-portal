@@ -114,5 +114,5 @@ export function createPortalSessionStore(
 }
 
 function asPortalUserRole(role: string): PortalUserRole {
-  return role === "candidate" ? "candidate" : "admin";
+  return role === "admin" ? "admin" : "candidate";
 }

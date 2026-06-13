@@ -5,7 +5,8 @@ import type { NextRequest } from "next/server";
  * Fast guard for the admin UI and admin API. A real admin session is still
  * verified server-side against the DB-backed session store inside each route;
  * middleware only short-circuits obvious anonymous requests before they hit the
- * heavier server path.
+ * heavier server path. Any non-empty cookie value passes this fast guard; every
+ * protected route re-checks the session id against persistence before acting.
  */
 const PORTAL_SESSION_COOKIE = "portal_session";
 

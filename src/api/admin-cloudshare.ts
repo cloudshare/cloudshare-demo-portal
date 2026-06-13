@@ -1,7 +1,6 @@
 import {
   CloudShareConnectionTestError,
   MissingCloudShareConnectionError,
-  saveCloudShareConnection,
   testCloudShareConnection,
   type CloudShareClientFactory,
   type CloudShareConnectionRepository,
@@ -58,7 +57,7 @@ export async function handleSaveCloudShareConnection(
     };
   }
 
-  const connection = await saveCloudShareConnection(deps.connections, {
+  const connection = await deps.connections.save({
     customerId: request.customerId,
     apiId: (body as { apiId: string }).apiId.trim(),
     apiKey: (body as { apiKey: string }).apiKey.trim(),

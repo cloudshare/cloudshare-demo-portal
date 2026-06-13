@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
   CloudShareConnectionTestError,
   MissingCloudShareConnectionError,
-  saveCloudShareConnection,
   testCloudShareConnection,
   type CloudShareConnectionRepository,
 } from "./cloudshare-connection";
@@ -23,20 +22,6 @@ function makeConnectionRepo(connection = {
     markVerified: vi.fn(async () => {}),
   };
 }
-
-describe("saveCloudShareConnection", () => {
-  it("delegates persistence to the repository", async () => {
-    const repo = makeConnectionRepo();
-    await expect(
-      saveCloudShareConnection(repo, {
-        customerId: "customer-helios",
-        apiId: "api-id",
-        apiKey: "api-key",
-        webhookSecret: "whsec",
-      }),
-    ).resolves.toMatchObject({ customerId: "customer-helios" });
-  });
-});
 
 describe("testCloudShareConnection", () => {
   it("pings CloudShare and marks the stored connection verified on success", async () => {

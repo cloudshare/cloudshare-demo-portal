@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import {
   handleGetCloudShareConnection,
   handleSaveCloudShareConnection,
@@ -11,6 +11,29 @@ import { PrismaClient } from "@prisma/client";
 import type { CloudShareClientFactory } from "@/domain/cloudshare-connection";
 
 const prisma = new PrismaClient();
+
+afterEach(async () => {
+  await prisma.portalSession.deleteMany();
+  await prisma.user.deleteMany({
+    where: {
+      email: {
+        contains: "@helios",
+      },
+    },
+  });
+  await prisma.cloudShareConnection.deleteMany();
+  await prisma.customer.deleteMany({
+    where: {
+      slug: {
+        startsWith: "helios-",
+      },
+    },
+  });
+});
+
+afterAll(async () => {
+  await prisma.$disconnect();
+});
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };

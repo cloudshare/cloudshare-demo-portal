@@ -65,7 +65,6 @@ import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
-import { saveCloudShareConnection } from "@/domain/cloudshare-connection";
 import { createSecretBox } from "@/security/secret-box";
 
 /**
@@ -263,7 +262,7 @@ export function getServices(): Services {
         });
 
         if (config.seed.heliosCloudShareConnection) {
-          await saveCloudShareConnection(cloudshareConnections, {
+          await cloudshareConnections.save({
             customerId: user.customerId,
             apiId: config.seed.heliosCloudShareConnection.apiId,
             apiKey: config.seed.heliosCloudShareConnection.apiKey,

@@ -76,6 +76,8 @@ export function createCloudShareIntegrationForConnection(
     readonly connection: CloudShareConnectionCredentials;
   },
 ): CloudShareClient {
+  // CloudShare's v3 and Accelerate v4 APIs reuse the same API ID + API key pair;
+  // only the request-time auth mechanism differs.
   return createCloudShareIntegration({
     mode: opts.mode,
     endpoints: opts.endpoints,

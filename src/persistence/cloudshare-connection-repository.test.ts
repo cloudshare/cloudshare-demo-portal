@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { createSecretBox } from "@/security/secret-box";
 import { createCloudShareConnectionRepository } from "./cloudshare-connection-repository";
@@ -8,6 +8,17 @@ const secrets = createSecretBox(Buffer.alloc(32, 3));
 
 afterAll(async () => {
   await prisma.$disconnect();
+});
+
+afterEach(async () => {
+  await prisma.cloudShareConnection.deleteMany();
+  await prisma.customer.deleteMany({
+    where: {
+      slug: {
+        startsWith: "helios-",
+      },
+    },
+  });
 });
 
 describe("CloudShareConnectionRepository", () => {

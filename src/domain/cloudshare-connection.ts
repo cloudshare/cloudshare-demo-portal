@@ -42,13 +42,6 @@ export class CloudShareConnectionTestError extends Error {
   }
 }
 
-export async function saveCloudShareConnection(
-  repo: CloudShareConnectionRepository,
-  input: SaveCloudShareConnectionInput,
-): Promise<CloudShareConnectionRecord> {
-  return repo.save(input);
-}
-
 export async function testCloudShareConnection(
   deps: {
     readonly connections: CloudShareConnectionRepository;

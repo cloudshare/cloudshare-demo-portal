@@ -8,7 +8,7 @@ import {
 import { getPortalAdminSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 
-async function requireAdmin() {
+async function getAdminContext() {
   const services = getServices();
   const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
   const session = await getPortalAdminSession(services, sessionId);
@@ -19,7 +19,7 @@ async function requireAdmin() {
 }
 
 export async function GET() {
-  const { services, session } = await requireAdmin();
+  const { services, session } = await getAdminContext();
   if (!session) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
@@ -36,7 +36,7 @@ export async function GET() {
 }
 
 export async function PUT(request: Request) {
-  const { services, session } = await requireAdmin();
+  const { services, session } = await getAdminContext();
   if (!session) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }

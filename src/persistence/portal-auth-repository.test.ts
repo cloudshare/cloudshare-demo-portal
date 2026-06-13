@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { createPortalAuthenticator, hashPassword } from "@/auth";
 import {
@@ -10,6 +10,24 @@ const prisma = new PrismaClient();
 
 afterAll(async () => {
   await prisma.$disconnect();
+});
+
+afterEach(async () => {
+  await prisma.portalSession.deleteMany();
+  await prisma.user.deleteMany({
+    where: {
+      email: {
+        contains: "@helios.example",
+      },
+    },
+  });
+  await prisma.customer.deleteMany({
+    where: {
+      slug: {
+        startsWith: "helios-",
+      },
+    },
+  });
 });
 
 describe("Prisma portal auth stores", () => {
