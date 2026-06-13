@@ -16,7 +16,7 @@ PR that surfaced the gap.
 | Field | Detail |
 |---|---|
 | **Status** | Confirmed — implemented in `src/integrations/cloudshare/` |
-| **Verified live** | No (modelled from documentation) |
+| **Verified live** | Yes |
 
 **Observed behaviour**
 
@@ -26,10 +26,11 @@ authentication:
 - **v4 (Accelerate)** uses OAuth 2.0 `client_credentials` and expects a short-lived
   Bearer JWT (`Authorization: Bearer <token>`, ~5-minute TTL).
 - **v3 (Production/Classic)** uses a proprietary per-call HMAC signature scheme
-  (`cs_sha1`): each request is signed with four query parameters — `UserApiId`,
-  `Token` (random nonce), `Timestamp`, and `Cs_sig` (lowercase-hex SHA-1 of the
-  concatenation `apiKey + fullUrl + timestamp + token`). The API key is folded into
-  the hash and never sent on the wire.
+  (`cs_sha1`): the request is signed into the `Authorization` header as
+  `cs_sha1 userapiid:<id>;timestamp:<ts>;token:<nonce>;hmac:<sha1>`, where the
+  HMAC is the lowercase-hex SHA-1 of the concatenation
+  `apiKey + fullUrl + timestamp + token`. The API key is folded into the hash and
+  never sent on the wire.
 
 Both surfaces are required for a full integration: v4 for lab provisioning
 (`/experiences`, `/students`, `/sponsoredLinks`); v3 for environment state polling
@@ -46,6 +47,14 @@ Both surfaces are required for a full integration: v4 for lab provisioning
 
 **Code reference:** `src/integrations/cloudshare/client.ts:15-16`,
 `src/integrations/cloudshare/v4-auth.ts`, `src/integrations/cloudshare/signing.ts`
+
+**Update (2026-06-13, verified via Postman console):** the API ID + API key are a **single
+credential pair** — the same values are the v4 `client_id`/`client_secret` *and* the v3
+`UserApiId`/`apiKey`; only the per-request mechanism differs. This softens the "two credential
+stores" impact to one stored pair (see ADR-001). Also corrected: the v4 base host is
+`https://api.accelerate.cloudshare.com/v4` and the provisioning resource is `/v4/trainings/{id}`
+(not `use.cloudshare.com/api/v4` or `/experiences`, as the current code has it). The live v3 ping
+request uses the `Authorization: cs_sha1 ...` header, not signed query parameters.
 
 ---
 
@@ -267,6 +276,14 @@ by timing a live provisioning call. Update this entry with the confirmed value.
 `src/integrations/cloudshare/environment-controller.ts:9-15`,
 `src/integrations/cloudshare/guided-journey.ts:14-18`
 
+**Update (2026-06-13):** hosts now confirmed — v4 `https://api.accelerate.cloudshare.com/v4`
+(Bearer, `expires_in: 300`); v3 `https://use.cloudshare.com/api/v3` (`cs_sha1` via
+`Authorization` header); sponsored-link `loginUrl` host `use.cloudshare.com`
+(`/Ent/Course.mvc/ClassSponsoredLink/{id}`). Live v3 ping response shape confirmed as JSON
+`{"result":"Pong"}`. Still **unverified**: the pre-provision SLA value, broader v3
+infrastructure response shapes, the v4 training-creation body, webhook payload field names, and
+Guided-Journey-absent (404) behaviour.
+
 ---
 
 ## GAP-9 — Registration friction: "Registered Students Only" gate blocks direct login
@@ -298,6 +315,129 @@ link results in a login-denied or access-denied error.
 
 **Code reference:** `src/integrations/cloudshare/labs.ts:18-20`,
 `src/domain/lab-launch.ts`
+
+---
+
+## GAP-10 — Blueprints are listed per-project; infrastructure is v3 while experiences are v4
+
+| Field | Detail |
+|---|---|
+| **Status** | Confirmed — from CloudShare admin (2026-06-13) |
+| **Verified live** | No (exact response shapes pending) |
+
+**Observed behaviour**
+
+Blueprints are retrieved **per-project** (`GET /api/v3/projects/{id}/blueprints`), not via a global
+list. Snapshots, regions, policies, and project members are likewise **v3**. Training/experience
+creation, add-participant, sponsored-link, list-students, and Guided Journey are **v4**
+(`api.accelerate.cloudshare.com`). The current code calls a global `GET /blueprints` and uses one
+base host — both wrong.
+
+**Impact on certification use**
+
+- Provisioning is a chained **v3 (read infra) + v4 (write experience)** workflow.
+- The resource lister must scope blueprints to a chosen project; an Exam binds a per-project tuple
+  (project, blueprint, snapshot, region, policy, instructor).
+
+**Action required:** confirm the exact v3 response shapes for blueprints (incl. snapshots + the
+default snapshot field), regions, policies, and project members.
+
+---
+
+## GAP-11 — Project-member RBAC permissions are not retrievable via API
+
+| Field | Detail |
+|---|---|
+| **Status** | Confirmed — from CloudShare admin |
+| **Verified live** | No |
+
+**Observed behaviour**
+
+The Connection's API ID/key belongs to a **project member** with a role (Project Manager / Team
+Manager / Team Member) and per-project custom permissions. There is no reliable API to read those
+permissions, and the same role can carry different permissions in different projects.
+
+**Impact on certification use**
+
+- An under-privileged service account fails operations (create training, add participant, read
+  journey) at runtime with no pre-flight check. Mitigate with actionable errors, the v3
+  Test-connection probe, and documenting the required role.
+
+---
+
+## GAP-12 — No v4 health/ping probe
+
+| Field | Detail |
+|---|---|
+| **Status** | Confirmed — from CloudShare admin |
+| **Verified live** | Partial (v3 ping exists; v4 requested, not available) |
+
+**Observed behaviour**
+
+v3 exposes a simple `ping` → `pong`; v4 has no equivalent health endpoint (requested of CloudShare,
+not yet shipped). Connection validation must therefore use the **v3 `ping`**.
+
+---
+
+## GAP-13 — No API to detect whether a Guided Journey exists for an experience
+
+| Field | Detail |
+|---|---|
+| **Status** | Confirmed — from CloudShare admin |
+| **Verified live** | No (404 behaviour assumed) |
+
+**Observed behaviour**
+
+A Guided Journey is an **optional** experience component configured in CloudShare before the
+experience is created. There is no API to discover whether one exists, or what it contains.
+Requesting participant progress for an experience without a journey likely returns a 404.
+
+**Impact on certification use**
+
+- The portal gates score retrieval on a **per-Exam admin flag** and handles a 404 defensively as
+  "no score available".
+
+---
+
+## GAP-14 — Environment webhook payload omits the experience/training reference
+
+| Field | Detail |
+|---|---|
+| **Status** | Confirmed — from CloudShare admin |
+| **Verified live** | No |
+
+**Observed behaviour**
+
+The environment webhook carries CloudShare's `environmentId`, the event, and a timestamp, but **no
+reference to the training/experience** it belongs to — and the portal does **not** mint environment
+IDs (an environment is bound from a standby at login). This supersedes the self-set
+`environmentExternalId` correlation assumed in GAP-3 and the current code.
+
+**Impact on certification use**
+
+- Correlation requires a **portal-owned `trainingId ↔ Candidate ↔ environmentId` mapping**,
+  populated/reconciled via the v4 **list-students-in-a-training** endpoint.
+- Webhooks become optional; **polling list-students / `GET environment` is the source of truth**.
+  Idempotency key becomes `(environmentId, event, createdAt)`. See ADR-003.
+
+---
+
+## GAP-15 — Per-project webhook registration via the v3 API is unverified
+
+| Field | Detail |
+|---|---|
+| **Status** | Suspected — documented endpoint, never exercised |
+| **Verified live** | No |
+
+**Observed behaviour**
+
+Webhooks can reportedly be created per-project via the v3 POST webhook endpoint, but to date they
+have only been created **manually** in the CloudShare portal. Combined with per-Customer secrets and
+no custom-header support, the portal needs a **per-Customer webhook URL path** to select the right
+secret, and may auto-register via v3 with a manual fallback.
+
+**Action required:** verify v3 webhook registration (request/response, project scoping) against a
+live tenant.
 
 ---
 
@@ -333,5 +473,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-06-10. Maintained by: portal team. Append new entries above the
-gap template; do not renumber existing gaps.*
+*Last updated: 2026-06-13 (grill-with-docs re-scope: added GAP-10–15; updated GAP-1, GAP-8).
+Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*

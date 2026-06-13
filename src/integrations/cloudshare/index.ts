@@ -45,6 +45,7 @@ export interface CloudShareIntegrationOptions {
   readonly v4: { readonly clientId: string; readonly clientSecret: string };
   readonly v3: { readonly apiId: string; readonly apiKey: string };
   readonly endpoints?: CloudShareEndpoints;
+  readonly trace?: Parameters<typeof createCloudShareClient>[0]["trace"];
 }
 
 /**
@@ -68,7 +69,13 @@ export function createCloudShareIntegration(
     clientSecret: opts.v4.clientSecret,
   });
 
-  return createCloudShareClient({ http, endpoints, tokenProvider, v3: opts.v3 });
+  return createCloudShareClient({
+    http,
+    endpoints,
+    tokenProvider,
+    v3: opts.v3,
+    trace: opts.trace,
+  });
 }
 
 export function createCloudShareIntegrationForConnection(
@@ -81,6 +88,7 @@ export function createCloudShareIntegrationForConnection(
   return createCloudShareIntegration({
     mode: opts.mode,
     endpoints: opts.endpoints,
+    trace: opts.trace,
     v3: {
       apiId: opts.connection.apiId,
       apiKey: opts.connection.apiKey,

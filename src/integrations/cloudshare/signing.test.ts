@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { csSha1Hash, signV3Request } from "./signing";
+import { buildV3AuthorizationHeader, csSha1Hash, signV3Request } from "./signing";
 
 describe("csSha1Hash", () => {
   // Pinned known vector: sha1(apiKey + fullUrl + timestamp + token), hex.
@@ -44,6 +44,19 @@ describe("signV3Request", () => {
     expect(params.Timestamp).toBe("1700000000");
     expect(params.Token).toBe("fixed-token-123");
     expect(params.HMAC).toBe("f3638be273be615a4eee47a650d72cc4a8388ac2");
+  });
+
+  it("formats the live v3 cs_sha1 authorization header", () => {
+    const header = buildV3AuthorizationHeader({
+      UserApiId: "9U9QBVAWG03I9X4H",
+      Timestamp: "1781390573",
+      Token: "ioaeux8x4m",
+      HMAC: "fe2e764274a596a0cbac67255c96745ac00e7b7f",
+    });
+
+    expect(header).toBe(
+      "cs_sha1 userapiid:9U9QBVAWG03I9X4H;timestamp:1781390573;token:ioaeux8x4m;hmac:fe2e764274a596a0cbac67255c96745ac00e7b7f",
+    );
   });
 
   it("produces a fresh single-use token and current timestamp per call", () => {

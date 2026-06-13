@@ -55,7 +55,7 @@ async function makeDeps() {
     ),
     cloudshare: {
       forConnection: () => ({
-        requestV3Text: async () => "pong",
+        requestV3Text: async () => "{\"result\":\"Pong\"}",
         requestV3: async () => {
           throw new Error("not used");
         },

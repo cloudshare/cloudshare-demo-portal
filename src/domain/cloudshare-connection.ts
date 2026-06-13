@@ -51,6 +51,15 @@ export class CloudShareConnectionTestError extends Error {
   }
 }
 
+function isNamedCloudShareError(error: unknown, name: string): error is {
+  readonly name: string;
+  readonly message: string;
+  readonly context?: Record<string, unknown>;
+  readonly status?: number;
+} {
+  return error instanceof Error && error.name === name;
+}
+
 export async function testCloudShareConnection(
   deps: {
     readonly connections: CloudShareConnectionRepository;
@@ -71,7 +80,7 @@ export async function testCloudShareConnection(
     await deps.connections.markVerified(customerId, verifiedAt);
     return { status: "connected", message: pong, verifiedAt };
   } catch (error) {
-    if (error instanceof CloudShareRequestError) {
+    if (error instanceof CloudShareRequestError || isNamedCloudShareError(error, "CloudShareRequestError")) {
       throw new CloudShareConnectionTestError(
         `CloudShare returned ${error.status} to the v3 ping. Check API ID and API key.`,
         error.message,
@@ -82,10 +91,12 @@ export async function testCloudShareConnection(
           path: "/ping",
           failureMode: "http_status",
           responseStatus: error.status,
+          requestHeaders: error.context?.requestHeaders,
+          responseBody: error.context?.responseBody,
         },
       );
     }
-    if (error instanceof CloudShareTransportError) {
+    if (error instanceof CloudShareTransportError || isNamedCloudShareError(error, "CloudShareTransportError")) {
       throw new CloudShareConnectionTestError(
         "CloudShare ping could not reach the server. Check network reachability.",
         error.message,
@@ -95,10 +106,12 @@ export async function testCloudShareConnection(
           method: "GET",
           path: "/ping",
           failureMode: "transport",
+          requestHeaders: error.context?.requestHeaders,
+          cause: error.context?.cause,
         },
       );
     }
-    if (error instanceof CloudShareResponseError) {
+    if (error instanceof CloudShareResponseError || isNamedCloudShareError(error, "CloudShareResponseError")) {
       throw new CloudShareConnectionTestError(
         "CloudShare ping returned an unexpected response.",
         error.message,
@@ -108,6 +121,8 @@ export async function testCloudShareConnection(
           method: "GET",
           path: "/ping",
           failureMode: "unexpected_response",
+          requestHeaders: error.context?.requestHeaders,
+          responseBody: error.context?.responseBody,
         },
       );
     }

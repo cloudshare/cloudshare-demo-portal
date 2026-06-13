@@ -53,6 +53,41 @@ interface SyncResult {
 
 type Tab = "connection" | "audit" | "events" | "support" | "resources";
 
+function formatUtcTimestamp(value: string | null | undefined): string {
+  if (!value) {
+    return "-";
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
+}
+
+function readStringField(
+  fields: Record<string, unknown>,
+  key: string,
+): string | null {
+  const value = fields[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function readNumberField(
+  fields: Record<string, unknown>,
+  key: string,
+): number | null {
+  const value = fields[key];
+  return typeof value === "number" ? value : null;
+}
+
+function formatSupportValue(value: unknown): string {
+  if (value === undefined || value === null) {
+    return "-";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  return JSON.stringify(value, null, 2);
+}
+
 export function AdminConsole({ email }: AdminConsoleProps) {
   const [tab, setTab] = useState<Tab>("connection");
   const [examAttemptFilter, setExamAttemptFilter] = useState("");
@@ -310,10 +345,10 @@ export function AdminConsole({ email }: AdminConsoleProps) {
               <strong>{connectionStatusLabel}</strong>
             </p>
             {connection?.connectedAt && (
-              <p style={{ marginBottom: 0 }}>Saved: {new Date(connection.connectedAt).toLocaleString()}</p>
+              <p style={{ marginBottom: 0 }}>Saved (UTC): {formatUtcTimestamp(connection.connectedAt)}</p>
             )}
             {connection?.verifiedAt && (
-              <p style={{ marginBottom: 0 }}>Verified: {new Date(connection.verifiedAt).toLocaleString()}</p>
+              <p style={{ marginBottom: 0 }}>Verified (UTC): {formatUtcTimestamp(connection.verifiedAt)}</p>
             )}
             {hasSavedConnection && !isVerified && (
               <p style={{ marginBottom: 0, color: "#555" }}>
@@ -413,7 +448,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                 {auditRecords.map((r) => (
                   <tr key={r.id} style={{ borderBottom: "1px solid #eee" }}>
                     <td style={{ padding: "0.4rem", whiteSpace: "nowrap" }}>
-                      {new Date(r.occurredAt).toISOString().replace("T", " ").slice(0, 19)}
+                      {formatUtcTimestamp(r.occurredAt)}
                     </td>
                     <td style={{ padding: "0.4rem" }}>{r.examAttemptId}</td>
                     <td style={{ padding: "0.4rem" }}>{r.action}</td>
@@ -458,7 +493,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                 {eventRecords.map((e) => (
                   <tr key={e.eventId} style={{ borderBottom: "1px solid #eee" }}>
                     <td style={{ padding: "0.4rem", whiteSpace: "nowrap" }}>
-                      {new Date(e.occurredAt).toISOString().replace("T", " ").slice(0, 19)}
+                      {formatUtcTimestamp(e.occurredAt)}
                     </td>
                     <td style={{ padding: "0.4rem" }}>{e.type}</td>
                     <td style={{ padding: "0.4rem", fontSize: "0.75rem", color: "#666" }}>{e.eventId}</td>
@@ -475,6 +510,9 @@ export function AdminConsole({ email }: AdminConsoleProps) {
 
       {tab === "support" && (
         <section>
+          <p style={{ color: "#555", marginTop: 0 }}>
+            Structured server logs. All timestamps are ISO 8601 in UTC. Secure values stay redacted.
+          </p>
           <button onClick={loadSupportLog} disabled={loading} style={{ padding: "0.4rem 1rem", marginBottom: "1rem" }}>
             {loading ? "Loading..." : "Load Support Log"}
           </button>
@@ -482,7 +520,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
               <thead>
                 <tr style={{ background: "#f5f5f5" }}>
-                  {["Time", "Level", "Message", "Fields"].map((h) => (
+                  {["Time (UTC)", "Level", "Operation", "Request", "Result", "Correlation ID", "Details"].map((h) => (
                     <th key={h} style={{ textAlign: "left", padding: "0.4rem", borderBottom: "1px solid #ddd" }}>
                       {h}
                     </th>
@@ -497,18 +535,83 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                     </td>
                   </tr>
                 )}
-                {supportRecords.map((record, index) => (
-                  <tr key={`${record.timestamp}-${record.message}-${index}`} style={{ borderBottom: "1px solid #eee" }}>
-                    <td style={{ padding: "0.4rem", whiteSpace: "nowrap" }}>
-                      {new Date(record.timestamp).toISOString().replace("T", " ").slice(0, 19)}
-                    </td>
-                    <td style={{ padding: "0.4rem", textTransform: "uppercase" }}>{record.level}</td>
-                    <td style={{ padding: "0.4rem" }}>{record.message}</td>
-                    <td style={{ padding: "0.4rem", fontSize: "0.75rem", color: "#444" }}>
-                      <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{JSON.stringify(record.fields, null, 2)}</pre>
-                    </td>
-                  </tr>
-                ))}
+                {supportRecords.map((record, index) => {
+                  const operation = readStringField(record.fields, "operation") ?? record.message;
+                  const method = readStringField(record.fields, "method");
+                  const path = readStringField(record.fields, "path");
+                  const responseStatus = readNumberField(record.fields, "responseStatus");
+                  const failureMode = readStringField(record.fields, "failureMode");
+                  const correlationId = readStringField(record.fields, "correlationId");
+                  const integrationSurface = readStringField(record.fields, "integrationSurface");
+                  const host = readStringField(record.fields, "host");
+                  const requestHeaders = record.fields.requestHeaders;
+                  const responseBody = record.fields.responseBody;
+                  const cause = readStringField(record.fields, "cause");
+                  const errorMessage = readStringField(record.fields, "error");
+                  const verifiedAt = readStringField(record.fields, "verifiedAt");
+
+                  return (
+                    <tr key={`${record.timestamp}-${record.message}-${index}`} style={{ borderBottom: "1px solid #eee", verticalAlign: "top" }}>
+                      <td style={{ padding: "0.4rem", whiteSpace: "nowrap" }}>
+                        {formatUtcTimestamp(record.timestamp)}
+                      </td>
+                      <td style={{ padding: "0.4rem", textTransform: "uppercase" }}>{record.level}</td>
+                      <td style={{ padding: "0.4rem" }}>
+                        <div>{operation}</div>
+                        {integrationSurface && (
+                          <div style={{ color: "#666", fontSize: "0.75rem" }}>{integrationSurface}</div>
+                        )}
+                      </td>
+                      <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>
+                        {method ?? "?"} {host ? `${host}${path ?? ""}` : (path ?? "?")}
+                      </td>
+                      <td style={{ padding: "0.4rem" }}>
+                        {typeof responseStatus === "number" ? `HTTP ${responseStatus}` : failureMode ?? record.message}
+                        {verifiedAt && (
+                          <div style={{ color: "#666", fontSize: "0.75rem" }}>
+                            Verified at {formatUtcTimestamp(verifiedAt)}
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ padding: "0.4rem", fontFamily: "monospace", fontSize: "0.75rem" }}>
+                        {correlationId ?? "-"}
+                      </td>
+                      <td style={{ padding: "0.4rem", fontSize: "0.75rem", color: "#444" }}>
+                        <div style={{ display: "grid", gap: "0.35rem" }}>
+                          <div>
+                            <strong>Message:</strong> {record.message}
+                          </div>
+                          {errorMessage && (
+                            <div>
+                              <strong>Error:</strong> {errorMessage}
+                            </div>
+                          )}
+                          {cause && (
+                            <div>
+                              <strong>Cause:</strong> {cause}
+                            </div>
+                          )}
+                          {requestHeaders !== undefined && (
+                            <div>
+                              <strong>Request headers:</strong>
+                              <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
+                                {formatSupportValue(requestHeaders)}
+                              </pre>
+                            </div>
+                          )}
+                          {responseBody !== undefined && (
+                            <div>
+                              <strong>Response body:</strong>
+                              <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
+                                {formatSupportValue(responseBody)}
+                              </pre>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
@@ -544,7 +647,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                           <td style={{ padding: "0.4rem" }}>{item.name}</td>
                           <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{item.cloudshareId}</td>
                           <td style={{ padding: "0.4rem" }}>
-                            {new Date(item.syncedAt).toISOString().replace("T", " ").slice(0, 19)}
+                            {formatUtcTimestamp(item.syncedAt)}
                           </td>
                         </tr>
                       ))}

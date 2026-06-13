@@ -4,9 +4,9 @@ import { CloudShareResponseError } from "./errors";
 import type { CloudShareClient } from "./client";
 
 describe("pingCloudShareV3", () => {
-  it("accepts a pong response", async () => {
+  it("accepts the live JSON pong response shape", async () => {
     const client: CloudShareClient = {
-      requestV3Text: async () => "pong",
+      requestV3Text: async () => "{\"result\":\"Pong\"}",
       requestV3: async () => {
         throw new Error("not used");
       },

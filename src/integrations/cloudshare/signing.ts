@@ -40,6 +40,13 @@ export interface V3AuthParams {
   readonly HMAC: string;
 }
 
+export function buildV3AuthorizationHeader(auth: V3AuthParams): string {
+  return [
+    "cs_sha1",
+    `userapiid:${auth.UserApiId};timestamp:${auth.Timestamp};token:${auth.Token};hmac:${auth.HMAC}`,
+  ].join(" ");
+}
+
 export interface SignV3Options {
   readonly apiId: string;
   readonly apiKey: string;

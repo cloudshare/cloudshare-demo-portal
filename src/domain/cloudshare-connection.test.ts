@@ -33,7 +33,7 @@ describe("testCloudShareConnection", () => {
     const verifiedAt = new Date("2026-06-13T18:05:00.000Z");
     const cloudshare = {
       forConnection: (): CloudShareClient => ({
-        requestV3Text: async () => "pong",
+        requestV3Text: async () => "{\"result\":\"Pong\"}",
         requestV3: async () => {
           throw new Error("not used");
         },
@@ -102,6 +102,54 @@ describe("testCloudShareConnection", () => {
         path: "/ping",
         failureMode: "http_status",
         responseStatus: 401,
+      },
+    });
+  });
+
+  it("classifies a runtime-crossed CloudShare request error by name and status", async () => {
+    const repo = makeConnectionRepo();
+    const cloudshare = {
+      forConnection: (): CloudShareClient => ({
+        requestV3Text: async () => {
+          const error = new Error("CloudShare request to https://use.cloudshare.com/api/v3/ping returned 401");
+          Object.assign(error, {
+            name: "CloudShareRequestError",
+            status: 401,
+            context: {
+              requestHeaders: {
+                authorization:
+                  "cs_sha1 userapiid:demo-bad-id;timestamp:1781391453;token:[REDACTED];hmac:[REDACTED]",
+              },
+              responseBody: "{\"message\":\"Failed signature authentication\",\"code\":\"0x40102\"}",
+            },
+          });
+          throw error;
+        },
+        requestV3: async () => {
+          throw new Error("not used");
+        },
+        requestV4: async () => {
+          throw new Error("not used");
+        },
+      }),
+    };
+
+    await expect(
+      testCloudShareConnection(
+        { connections: repo, cloudshare },
+        "customer-helios",
+      ),
+    ).rejects.toMatchObject({
+      name: "CloudShareConnectionTestError",
+      message: "CloudShare returned 401 to the v3 ping. Check API ID and API key.",
+      diagnostic: {
+        operation: "test_connection",
+        integrationSurface: "cloudshare.v3.ping",
+        method: "GET",
+        path: "/ping",
+        failureMode: "http_status",
+        responseStatus: 401,
+        responseBody: "{\"message\":\"Failed signature authentication\",\"code\":\"0x40102\"}",
       },
     });
   });

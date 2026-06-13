@@ -158,6 +158,17 @@ export function getServices(): Services {
       });
     },
   });
+  const traceCloudShare = (event: {
+    readonly level: "info" | "warn";
+    readonly message: string;
+    readonly fields: Record<string, unknown>;
+  }): void => {
+    if (event.level === "warn") {
+      logger.warn(event.message, event.fields);
+      return;
+    }
+    logger.info(event.message, event.fields);
+  };
   const prisma = new PrismaClient();
   const heartbeats = createHeartbeatRepository(prisma);
 
@@ -200,6 +211,7 @@ export function getServices(): Services {
   // by PORTAL_MODE; the provisioner and launch flow are identical either way.
   const cloudshare = createCloudShareIntegration({
     mode: config.runtime.mode,
+    trace: traceCloudShare,
     v4: {
       clientId: config.secrets.cloudshareV4ClientId,
       clientSecret: config.secrets.cloudshareV4ClientSecret,
@@ -263,6 +275,7 @@ export function getServices(): Services {
     forConnection: (connection) =>
       createCloudShareIntegrationForConnection({
         mode: config.runtime.mode,
+        trace: traceCloudShare,
         connection: {
           apiId: connection.apiId,
           apiKey: connection.apiKey,

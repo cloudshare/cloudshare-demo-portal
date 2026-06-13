@@ -5,7 +5,7 @@ import {
   CloudShareTransportError,
 } from "./errors";
 import type { HttpClient, HttpRequest } from "./http";
-import { signV3Request } from "./signing";
+import { buildV3AuthorizationHeader, signV3Request } from "./signing";
 import type { V4TokenProvider } from "./v4-auth";
 
 /**
@@ -56,6 +56,11 @@ export interface CloudShareClientOptions {
   readonly endpoints: CloudShareEndpoints;
   readonly tokenProvider: V4TokenProvider;
   readonly v3: { readonly apiId: string; readonly apiKey: string };
+  readonly trace?: (event: {
+    readonly level: "info" | "warn";
+    readonly message: string;
+    readonly fields: Record<string, unknown>;
+  }) => void;
   /** Injectable clock for v3 signing. Defaults to `Date.now`. */
   readonly now?: () => number;
   /** Injectable token generator for v3 signing. Defaults to a random UUID. */
@@ -70,29 +75,107 @@ function buildUrl(base: string, path: string, query?: Record<string, string>): s
   return url.toString();
 }
 
+function sanitizeHeaders(headers: Record<string, string> | undefined): Record<string, string> | undefined {
+  if (!headers) {
+    return undefined;
+  }
+
+  const sanitized = { ...headers };
+  const authorization = headers.authorization ?? headers.Authorization;
+  if (authorization) {
+    if (authorization.startsWith("Bearer ")) {
+      sanitized.authorization = "Bearer [REDACTED]";
+    } else if (authorization.startsWith("cs_sha1 ")) {
+      sanitized.authorization = authorization
+        .replace(/token:[^;]+/, "token:[REDACTED]")
+        .replace(/hmac:[^;]+/, "hmac:[REDACTED]");
+    } else {
+      sanitized.authorization = "[REDACTED]";
+    }
+  }
+  return sanitized;
+}
+
+function describeRequest(urlText: string): {
+  readonly host: string;
+  readonly path: string;
+  readonly integrationSurface: string;
+} {
+  const url = new URL(urlText);
+  const path = url.pathname;
+
+  return {
+    host: url.host,
+    path,
+    integrationSurface: path.startsWith("/api/v3/")
+      ? "cloudshare.v3"
+      : path.startsWith("/v4/")
+        ? "cloudshare.v4"
+        : "cloudshare.http",
+  };
+}
+
 export function createCloudShareClient(opts: CloudShareClientOptions): CloudShareClient {
+  function trace(
+    level: "info" | "warn",
+    message: string,
+    request: HttpRequest,
+    fields?: Record<string, unknown>,
+  ): void {
+    const requestInfo = describeRequest(request.url);
+    opts.trace?.({
+      level,
+      message,
+      fields: {
+        operation: "cloudshare_http",
+        method: request.method,
+        host: requestInfo.host,
+        path: requestInfo.path,
+        integrationSurface: requestInfo.integrationSurface,
+        requestHeaders: sanitizeHeaders(request.headers),
+        ...fields,
+      },
+    });
+  }
+
   async function execute<T>(
     request: HttpRequest,
     schema: ZodType<T>,
   ): Promise<T> {
+    trace("info", "cloudshare request sent", request);
+
     let response;
     try {
       response = await opts.http.send(request);
     } catch (cause) {
+      trace("warn", "cloudshare transport failure", request, {
+        failureMode: "transport",
+        error: cause instanceof Error ? cause.message : String(cause),
+      });
       throw new CloudShareTransportError(
         `CloudShare request to ${request.url} failed to reach the server`,
         {
           method: request.method,
+          requestHeaders: sanitizeHeaders(request.headers),
           cause: cause instanceof Error ? cause.message : String(cause),
         },
       );
     }
 
+    trace("info", "cloudshare response received", request, {
+      responseStatus: response.status,
+      responseBody: response.body,
+    });
+
     if (response.status < 200 || response.status >= 300) {
       throw new CloudShareRequestError(
         `CloudShare request to ${request.url} returned ${response.status}`,
         response.status,
-        { method: request.method },
+        {
+          method: request.method,
+          requestHeaders: sanitizeHeaders(request.headers),
+          responseBody: response.body,
+        },
       );
     }
 
@@ -102,7 +185,12 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
     } catch {
       throw new CloudShareResponseError(
         `CloudShare response from ${request.url} was not valid JSON`,
-        { method: request.method, status: response.status },
+        {
+          method: request.method,
+          status: response.status,
+          requestHeaders: sanitizeHeaders(request.headers),
+          responseBody: response.body,
+        },
       );
     }
 
@@ -110,7 +198,12 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
     if (!parsed.success) {
       throw new CloudShareResponseError(
         `CloudShare response from ${request.url} did not match the expected schema`,
-        { method: request.method, issues: parsed.error.issues.map((i) => i.message) },
+        {
+          method: request.method,
+          requestHeaders: sanitizeHeaders(request.headers),
+          responseBody: response.body,
+          issues: parsed.error.issues.map((i) => i.message),
+        },
       );
     }
     return parsed.data;
@@ -145,14 +238,16 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
         now: opts.now,
         newToken: opts.newToken,
       });
-      const signedUrl = buildUrl(opts.endpoints.v3BaseUrl, spec.path, {
-        ...spec.query,
-        UserApiId: auth.UserApiId,
-        Timestamp: auth.Timestamp,
-        Token: auth.Token,
-        HMAC: auth.HMAC,
-      });
-      return execute({ method: spec.method, url: signedUrl }, spec.schema);
+      return execute(
+        {
+          method: spec.method,
+          url: unsignedUrl,
+          headers: {
+            authorization: buildV3AuthorizationHeader(auth),
+          },
+        },
+        spec.schema,
+      );
     },
 
     async requestV3Text(spec: Omit<V3RequestSpec<never>, "schema">): Promise<string> {
@@ -164,32 +259,48 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
         now: opts.now,
         newToken: opts.newToken,
       });
-      const signedUrl = buildUrl(opts.endpoints.v3BaseUrl, spec.path, {
-        ...spec.query,
-        UserApiId: auth.UserApiId,
-        Timestamp: auth.Timestamp,
-        Token: auth.Token,
-        HMAC: auth.HMAC,
-      });
+      const request: HttpRequest = {
+        method: spec.method,
+        url: unsignedUrl,
+        headers: {
+          authorization: buildV3AuthorizationHeader(auth),
+        },
+      };
+
+      trace("info", "cloudshare request sent", request);
 
       let response;
       try {
-        response = await opts.http.send({ method: spec.method, url: signedUrl });
+        response = await opts.http.send(request);
       } catch (cause) {
+        trace("warn", "cloudshare transport failure", request, {
+          failureMode: "transport",
+          error: cause instanceof Error ? cause.message : String(cause),
+        });
         throw new CloudShareTransportError(
-          `CloudShare request to ${signedUrl} failed to reach the server`,
+          `CloudShare request to ${unsignedUrl} failed to reach the server`,
           {
             method: spec.method,
+            requestHeaders: sanitizeHeaders(request.headers),
             cause: cause instanceof Error ? cause.message : String(cause),
           },
         );
       }
 
+      trace("info", "cloudshare response received", request, {
+        responseStatus: response.status,
+        responseBody: response.body,
+      });
+
       if (response.status < 200 || response.status >= 300) {
         throw new CloudShareRequestError(
-          `CloudShare request to ${signedUrl} returned ${response.status}`,
+          `CloudShare request to ${unsignedUrl} returned ${response.status}`,
           response.status,
-          { method: spec.method },
+          {
+            method: spec.method,
+            requestHeaders: sanitizeHeaders(request.headers),
+            responseBody: response.body,
+          },
         );
       }
 
