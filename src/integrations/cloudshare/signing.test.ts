@@ -37,13 +37,13 @@ describe("signV3Request", () => {
       apiKey: "test-api-key",
       fullUrl: "https://use.cloudshare.com/api/v3/projects",
       now: () => 1_700_000_000_000, // ms → 1700000000 s
-      newToken: () => "fixed-token-123",
+      newToken: () => "fxdTkn1234",
     });
 
     expect(params.UserApiId).toBe("api-id-1");
     expect(params.Timestamp).toBe("1700000000");
-    expect(params.Token).toBe("fixed-token-123");
-    expect(params.HMAC).toBe("f3638be273be615a4eee47a650d72cc4a8388ac2");
+    expect(params.Token).toBe("fxdTkn1234");
+    expect(params.HMAC).toBe("57d76cc8dc28d2dfe73ac81736e8b5911b0dde2a");
   });
 
   it("formats the live v3 cs_sha1 authorization header", () => {
@@ -59,9 +59,28 @@ describe("signV3Request", () => {
     );
   });
 
+  it("generates a Postman-compatible default token", () => {
+    const params = signV3Request({
+      apiId: "api-id-1",
+      apiKey: "test-api-key",
+      fullUrl: "https://use.cloudshare.com/api/v3/ping",
+      now: () => 1_700_000_000_000,
+    });
+
+    expect(params.Token).toMatch(/^[A-Za-z0-9]{10}$/);
+    expect(params.HMAC).toBe(
+      csSha1Hash({
+        apiKey: "test-api-key",
+        fullUrl: "https://use.cloudshare.com/api/v3/ping",
+        timestamp: "1700000000",
+        token: params.Token,
+      }),
+    );
+  });
+
   it("produces a fresh single-use token and current timestamp per call", () => {
     let t = 0;
-    const tokens = ["tok-a", "tok-b"];
+    const tokens = ["tokAlpha01", "tokBravo02"];
     const sign = () =>
       signV3Request({
         apiId: "id",
@@ -73,9 +92,21 @@ describe("signV3Request", () => {
 
     const first = sign();
     const second = sign();
-    expect(first.Token).toBe("tok-a");
-    expect(second.Token).toBe("tok-b");
+    expect(first.Token).toBe("tokAlpha01");
+    expect(second.Token).toBe("tokBravo02");
     expect(first.Timestamp).not.toBe(second.Timestamp);
     expect(first.HMAC).not.toBe(second.HMAC);
+  });
+
+  it("rejects a token that is not exactly 10 alphanumeric characters", () => {
+    expect(() =>
+      signV3Request({
+        apiId: "id",
+        apiKey: "key",
+        fullUrl: "https://use.cloudshare.com/api/v3/ping",
+        now: () => 1_700_000_000_000,
+        newToken: () => "fixed-token-123",
+      }),
+    ).toThrow("CloudShare v3 token must be exactly 10 alphanumeric characters");
   });
 });

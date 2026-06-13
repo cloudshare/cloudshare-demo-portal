@@ -44,7 +44,7 @@ function clientWith(http: HttpClient) {
     endpoints,
     tokenProvider: stubTokenProvider,
     v3: { apiId: "api-id", apiKey: "api-key" },
-    newToken: () => "tok-fixed",
+    newToken: () => "tokfixed01",
     now: () => 1_700_000_000_000,
   });
 }
@@ -81,7 +81,7 @@ describe("createCloudShareClient — v3", () => {
     const url = new URL(last()!.url);
     expect(url.pathname).toBe("/api/v3/regions");
     expect(last()?.headers?.authorization).toMatch(
-      /^cs_sha1 userapiid:api-id;timestamp:1700000000;token:tok-fixed;hmac:[0-9a-f]{40}$/,
+      /^cs_sha1 userapiid:api-id;timestamp:1700000000;token:tokfixed01;hmac:[0-9a-f]{40}$/,
     );
   });
 
@@ -98,7 +98,7 @@ describe("createCloudShareClient — v3", () => {
     const url = new URL(last()!.url);
     expect(url.pathname).toBe("/api/v3/ping");
     expect(last()?.headers?.authorization).toMatch(
-      /^cs_sha1 userapiid:api-id;timestamp:1700000000;token:tok-fixed;hmac:[0-9a-f]{40}$/,
+      /^cs_sha1 userapiid:api-id;timestamp:1700000000;token:tokfixed01;hmac:[0-9a-f]{40}$/,
     );
   });
 
@@ -110,7 +110,7 @@ describe("createCloudShareClient — v3", () => {
       endpoints,
       tokenProvider: stubTokenProvider,
       v3: { apiId: "api-id", apiKey: "api-key" },
-      newToken: () => "tok-fixed",
+      newToken: () => "tokfixed01",
       now: () => 1_700_000_000_000,
       trace,
     });
