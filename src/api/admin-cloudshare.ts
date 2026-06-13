@@ -86,6 +86,7 @@ export async function handleTestCloudShareConnection(
   request: AdminCloudShareRequest,
 ): Promise<AdminCloudShareResponse> {
   const correlationId = (deps.newCorrelationId ?? randomUUID)();
+  const occurredAt = (deps.now ?? (() => new Date()))().toISOString();
   try {
     const result = await testCloudShareConnection(
       {
@@ -115,6 +116,7 @@ export async function handleTestCloudShareConnection(
         message: result.message,
         verifiedAt: result.verifiedAt.toISOString(),
         correlationId,
+        occurredAt,
       },
     };
   } catch (error) {
@@ -133,6 +135,7 @@ export async function handleTestCloudShareConnection(
         body: {
           error: error.message,
           correlationId,
+          occurredAt,
           diagnostic: error.diagnostic ?? null,
         },
       };

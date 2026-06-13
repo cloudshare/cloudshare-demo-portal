@@ -51,6 +51,9 @@ export class CloudShareConnectionTestError extends Error {
   }
 }
 
+const CLOUDSHARE_V3_PING_URL = "https://use.cloudshare.com/api/v3/ping";
+const CLOUDSHARE_V3_PING_LABEL = "CloudShare Classic v3 ping";
+
 function isNamedCloudShareError(error: unknown, name: string): error is {
   readonly name: string;
   readonly message: string;
@@ -87,12 +90,17 @@ export async function testCloudShareConnection(
         {
           operation: "test_connection",
           integrationSurface: "cloudshare.v3.ping",
+          integrationLabel: CLOUDSHARE_V3_PING_LABEL,
           method: "GET",
           path: "/ping",
+          requestUrl: CLOUDSHARE_V3_PING_URL,
           failureMode: "http_status",
           responseStatus: error.status,
           requestHeaders: error.context?.requestHeaders,
+          responseHeaders: error.context?.responseHeaders,
           responseBody: error.context?.responseBody,
+          network: error.context?.network,
+          tls: error.context?.tls,
         },
       );
     }
@@ -103,11 +111,15 @@ export async function testCloudShareConnection(
         {
           operation: "test_connection",
           integrationSurface: "cloudshare.v3.ping",
+          integrationLabel: CLOUDSHARE_V3_PING_LABEL,
           method: "GET",
           path: "/ping",
+          requestUrl: CLOUDSHARE_V3_PING_URL,
           failureMode: "transport",
           requestHeaders: error.context?.requestHeaders,
           cause: error.context?.cause,
+          network: error.context?.network,
+          tls: error.context?.tls,
         },
       );
     }
@@ -118,11 +130,16 @@ export async function testCloudShareConnection(
         {
           operation: "test_connection",
           integrationSurface: "cloudshare.v3.ping",
+          integrationLabel: CLOUDSHARE_V3_PING_LABEL,
           method: "GET",
           path: "/ping",
+          requestUrl: CLOUDSHARE_V3_PING_URL,
           failureMode: "unexpected_response",
           requestHeaders: error.context?.requestHeaders,
+          responseHeaders: error.context?.responseHeaders,
           responseBody: error.context?.responseBody,
+          network: error.context?.network,
+          tls: error.context?.tls,
         },
       );
     }
@@ -136,8 +153,10 @@ export async function testCloudShareConnection(
         {
           operation: "test_connection",
           integrationSurface: "cloudshare.v3.ping",
+          integrationLabel: CLOUDSHARE_V3_PING_LABEL,
           method: "GET",
           path: "/ping",
+          requestUrl: CLOUDSHARE_V3_PING_URL,
           failureMode: "cloudshare_error",
         },
       );

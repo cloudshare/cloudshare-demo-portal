@@ -96,6 +96,23 @@ function sanitizeHeaders(headers: Record<string, string> | undefined): Record<st
   return sanitized;
 }
 
+function sanitizeResponseHeaders(
+  headers: Record<string, string | string[]> | undefined,
+): Record<string, string | string[]> | undefined {
+  if (!headers) {
+    return undefined;
+  }
+
+  const sanitized = { ...headers };
+  const setCookie = headers["set-cookie"];
+  if (setCookie) {
+    sanitized["set-cookie"] = Array.isArray(setCookie)
+      ? setCookie.map(() => "[REDACTED]")
+      : "[REDACTED]";
+  }
+  return sanitized;
+}
+
 function describeRequest(urlText: string): {
   readonly host: string;
   readonly path: string;
@@ -164,7 +181,10 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
 
     trace("info", "cloudshare response received", request, {
       responseStatus: response.status,
+      responseHeaders: sanitizeResponseHeaders(response.headers),
       responseBody: response.body,
+      network: response.network,
+      tls: response.tls,
     });
 
     if (response.status < 200 || response.status >= 300) {
@@ -174,7 +194,10 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
         {
           method: request.method,
           requestHeaders: sanitizeHeaders(request.headers),
+          responseHeaders: sanitizeResponseHeaders(response.headers),
           responseBody: response.body,
+          network: response.network,
+          tls: response.tls,
         },
       );
     }
@@ -189,7 +212,10 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           method: request.method,
           status: response.status,
           requestHeaders: sanitizeHeaders(request.headers),
+          responseHeaders: sanitizeResponseHeaders(response.headers),
           responseBody: response.body,
+          network: response.network,
+          tls: response.tls,
         },
       );
     }
@@ -201,7 +227,10 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
         {
           method: request.method,
           requestHeaders: sanitizeHeaders(request.headers),
+          responseHeaders: sanitizeResponseHeaders(response.headers),
           responseBody: response.body,
+          network: response.network,
+          tls: response.tls,
           issues: parsed.error.issues.map((i) => i.message),
         },
       );
@@ -289,7 +318,10 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
 
       trace("info", "cloudshare response received", request, {
         responseStatus: response.status,
+        responseHeaders: sanitizeResponseHeaders(response.headers),
         responseBody: response.body,
+        network: response.network,
+        tls: response.tls,
       });
 
       if (response.status < 200 || response.status >= 300) {
@@ -299,7 +331,10 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           {
             method: spec.method,
             requestHeaders: sanitizeHeaders(request.headers),
+            responseHeaders: sanitizeResponseHeaders(response.headers),
             responseBody: response.body,
+            network: response.network,
+            tls: response.tls,
           },
         );
       }

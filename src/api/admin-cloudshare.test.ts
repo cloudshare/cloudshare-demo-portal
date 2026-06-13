@@ -113,6 +113,7 @@ describe("admin CloudShare handlers", () => {
       message: "pong",
       verifiedAt: "2026-06-13T18:10:00.000Z",
       correlationId: expect.any(String),
+      occurredAt: "2026-06-13T18:10:00.000Z",
     });
   });
 
@@ -153,11 +154,14 @@ describe("admin CloudShare handlers", () => {
     expect(response.body).toEqual({
       error: "CloudShare returned 401 to the v3 ping. Check API ID and API key.",
       correlationId: "corr-123",
+      occurredAt: "2026-06-13T18:10:00.000Z",
       diagnostic: {
         operation: "test_connection",
         integrationSurface: "cloudshare.v3.ping",
+        integrationLabel: "CloudShare Classic v3 ping",
         method: "GET",
         path: "/ping",
+        requestUrl: "https://use.cloudshare.com/api/v3/ping",
         failureMode: "http_status",
         responseStatus: 401,
       },

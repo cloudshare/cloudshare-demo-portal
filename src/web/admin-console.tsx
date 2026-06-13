@@ -40,10 +40,18 @@ interface SupportLogRecord {
 interface ConnectionDiagnostic {
   operation: string;
   integrationSurface: string;
+  integrationLabel?: string;
   method: string;
   path: string;
+  requestUrl?: string;
   failureMode: string;
   responseStatus?: number;
+  requestHeaders?: Record<string, unknown>;
+  responseHeaders?: Record<string, unknown>;
+  responseBody?: unknown;
+  cause?: string;
+  network?: Record<string, unknown>;
+  tls?: Record<string, unknown>;
 }
 
 interface SyncResult {
@@ -102,6 +110,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   const [connectionMessage, setConnectionMessage] = useState<string | null>(null);
   const [connectionDiagnostic, setConnectionDiagnostic] = useState<ConnectionDiagnostic | null>(null);
   const [connectionCorrelationId, setConnectionCorrelationId] = useState<string | null>(null);
+  const [connectionOccurredAt, setConnectionOccurredAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -127,6 +136,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     setConnectionMessage(null);
     setConnectionDiagnostic(null);
     setConnectionCorrelationId(null);
+    setConnectionOccurredAt(null);
     const trimmedApiId = apiId.trim();
     const trimmedApiKey = apiKey.trim();
     const trimmedWebhookSecret = webhookSecret.trim();
@@ -172,6 +182,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     setConnectionMessage(null);
     setConnectionDiagnostic(null);
     setConnectionCorrelationId(null);
+    setConnectionOccurredAt(null);
     try {
       const response = await fetch("/api/admin/cloudshare/test", { method: "POST" });
       const data = (await response.json()) as {
@@ -179,17 +190,21 @@ export function AdminConsole({ email }: AdminConsoleProps) {
         message?: string;
         verifiedAt?: string;
         correlationId?: string;
+        occurredAt?: string;
         diagnostic?: ConnectionDiagnostic | null;
       };
       if (!response.ok) {
         setError(data.error ?? "CloudShare connection test failed");
         setConnectionDiagnostic(data.diagnostic ?? null);
         setConnectionCorrelationId(data.correlationId ?? null);
+        setConnectionOccurredAt(data.occurredAt ?? null);
+        void loadSupportLog();
         return;
       }
       await loadConnection();
       setConnectionMessage(`CloudShare responded with ${data.message}.`);
       setConnectionCorrelationId(data.correlationId ?? null);
+      setConnectionOccurredAt(data.occurredAt ?? null);
     } catch {
       setError("CloudShare connection test failed");
     } finally {
@@ -318,18 +333,68 @@ export function AdminConsole({ email }: AdminConsoleProps) {
           <p style={{ margin: 0 }}>{error}</p>
           {(connectionDiagnostic || connectionCorrelationId) && (
             <div style={{ color: "#5f2120", fontSize: "0.9rem", display: "grid", gap: "0.25rem" }}>
+              {connectionOccurredAt && (
+                <div>Recorded at (UTC): {formatUtcTimestamp(connectionOccurredAt)}</div>
+              )}
               {connectionDiagnostic?.operation && <div>Operation: {connectionDiagnostic.operation}</div>}
+              {connectionDiagnostic?.integrationLabel && (
+                <div>CloudShare endpoint: {connectionDiagnostic.integrationLabel}</div>
+              )}
               {connectionDiagnostic?.integrationSurface && (
-                <div>Integration surface: {connectionDiagnostic.integrationSurface}</div>
+                <div>Internal diagnostic key: {connectionDiagnostic.integrationSurface}</div>
               )}
               {(connectionDiagnostic?.method || connectionDiagnostic?.path) && (
                 <div>
                   Request: {connectionDiagnostic?.method ?? "?"} {connectionDiagnostic?.path ?? "?"}
                 </div>
               )}
+              {connectionDiagnostic?.requestUrl && (
+                <div>Request URL: {connectionDiagnostic.requestUrl}</div>
+              )}
               {connectionDiagnostic?.failureMode && <div>Failure mode: {connectionDiagnostic.failureMode}</div>}
               {typeof connectionDiagnostic?.responseStatus === "number" && (
                 <div>Returned status: {connectionDiagnostic.responseStatus}</div>
+              )}
+              {connectionDiagnostic?.cause && <div>Cause: {connectionDiagnostic.cause}</div>}
+              {connectionDiagnostic?.requestHeaders !== undefined && (
+                <div>
+                  Request headers:
+                  <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
+                    {formatSupportValue(connectionDiagnostic.requestHeaders)}
+                  </pre>
+                </div>
+              )}
+              {connectionDiagnostic?.responseHeaders !== undefined && (
+                <div>
+                  Response headers:
+                  <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
+                    {formatSupportValue(connectionDiagnostic.responseHeaders)}
+                  </pre>
+                </div>
+              )}
+              {connectionDiagnostic?.responseBody !== undefined && (
+                <div>
+                  Response body:
+                  <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
+                    {formatSupportValue(connectionDiagnostic.responseBody)}
+                  </pre>
+                </div>
+              )}
+              {connectionDiagnostic?.network !== undefined && (
+                <div>
+                  Network:
+                  <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
+                    {formatSupportValue(connectionDiagnostic.network)}
+                  </pre>
+                </div>
+              )}
+              {connectionDiagnostic?.tls !== undefined && (
+                <div>
+                  TLS:
+                  <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
+                    {formatSupportValue(connectionDiagnostic.tls)}
+                  </pre>
+                </div>
               )}
               {connectionCorrelationId && <div>Correlation ID: {connectionCorrelationId}</div>}
             </div>
@@ -545,7 +610,10 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                   const integrationSurface = readStringField(record.fields, "integrationSurface");
                   const host = readStringField(record.fields, "host");
                   const requestHeaders = record.fields.requestHeaders;
+                  const responseHeaders = record.fields.responseHeaders;
                   const responseBody = record.fields.responseBody;
+                  const network = record.fields.network;
+                  const tls = record.fields.tls;
                   const cause = readStringField(record.fields, "cause");
                   const errorMessage = readStringField(record.fields, "error");
                   const verifiedAt = readStringField(record.fields, "verifiedAt");
@@ -604,6 +672,30 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                               <strong>Response body:</strong>
                               <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
                                 {formatSupportValue(responseBody)}
+                              </pre>
+                            </div>
+                          )}
+                          {responseHeaders !== undefined && (
+                            <div>
+                              <strong>Response headers:</strong>
+                              <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
+                                {formatSupportValue(responseHeaders)}
+                              </pre>
+                            </div>
+                          )}
+                          {network !== undefined && (
+                            <div>
+                              <strong>Network:</strong>
+                              <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
+                                {formatSupportValue(network)}
+                              </pre>
+                            </div>
+                          )}
+                          {tls !== undefined && (
+                            <div>
+                              <strong>TLS:</strong>
+                              <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
+                                {formatSupportValue(tls)}
                               </pre>
                             </div>
                           )}

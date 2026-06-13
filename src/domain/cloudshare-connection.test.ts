@@ -98,8 +98,10 @@ describe("testCloudShareConnection", () => {
       diagnostic: {
         operation: "test_connection",
         integrationSurface: "cloudshare.v3.ping",
+        integrationLabel: "CloudShare Classic v3 ping",
         method: "GET",
         path: "/ping",
+        requestUrl: "https://use.cloudshare.com/api/v3/ping",
         failureMode: "http_status",
         responseStatus: 401,
       },
@@ -145,8 +147,10 @@ describe("testCloudShareConnection", () => {
       diagnostic: {
         operation: "test_connection",
         integrationSurface: "cloudshare.v3.ping",
+        integrationLabel: "CloudShare Classic v3 ping",
         method: "GET",
         path: "/ping",
+        requestUrl: "https://use.cloudshare.com/api/v3/ping",
         failureMode: "http_status",
         responseStatus: 401,
         responseBody: "{\"message\":\"Failed signature authentication\",\"code\":\"0x40102\"}",
@@ -181,8 +185,10 @@ describe("testCloudShareConnection", () => {
       diagnostic: {
         operation: "test_connection",
         integrationSurface: "cloudshare.v3.ping",
+        integrationLabel: "CloudShare Classic v3 ping",
         method: "GET",
         path: "/ping",
+        requestUrl: "https://use.cloudshare.com/api/v3/ping",
         failureMode: "transport",
       },
     });
@@ -215,8 +221,10 @@ describe("testCloudShareConnection", () => {
       diagnostic: {
         operation: "test_connection",
         integrationSurface: "cloudshare.v3.ping",
+        integrationLabel: "CloudShare Classic v3 ping",
         method: "GET",
         path: "/ping",
+        requestUrl: "https://use.cloudshare.com/api/v3/ping",
         failureMode: "unexpected_response",
       },
     });
