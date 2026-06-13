@@ -1,5 +1,10 @@
 import type { CloudShareClient } from "@/integrations/cloudshare";
-import { CloudShareError } from "@/integrations/cloudshare";
+import {
+  CloudShareError,
+  CloudShareRequestError,
+  CloudShareResponseError,
+  CloudShareTransportError,
+} from "@/integrations/cloudshare";
 import { pingCloudShareV3 } from "@/integrations/cloudshare";
 
 export interface CloudShareConnectionRecord {
@@ -62,12 +67,30 @@ export async function testCloudShareConnection(
     await deps.connections.markVerified(customerId, verifiedAt);
     return { status: "connected", message: pong, verifiedAt };
   } catch (error) {
+    if (error instanceof CloudShareRequestError) {
+      throw new CloudShareConnectionTestError(
+        `CloudShare returned ${error.status} to the v3 ping. Check API ID and API key.`,
+        error.message,
+      );
+    }
+    if (error instanceof CloudShareTransportError) {
+      throw new CloudShareConnectionTestError(
+        "CloudShare ping could not reach the server. Check network reachability.",
+        error.message,
+      );
+    }
+    if (error instanceof CloudShareResponseError) {
+      throw new CloudShareConnectionTestError(
+        "CloudShare ping returned an unexpected response.",
+        error.message,
+      );
+    }
     if (
       error instanceof CloudShareError ||
       (error instanceof Error && error.name.startsWith("CloudShare"))
     ) {
       throw new CloudShareConnectionTestError(
-        "CloudShare rejected the saved credentials. Check API ID, API key, and network reachability.",
+        "CloudShare connection test failed.",
         error instanceof Error ? error.message : String(error),
       );
     }

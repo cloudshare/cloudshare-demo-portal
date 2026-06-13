@@ -71,11 +71,23 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     setLoading(true);
     setError(null);
     setConnectionMessage(null);
+    const trimmedApiId = apiId.trim();
+    const trimmedApiKey = apiKey.trim();
+    const trimmedWebhookSecret = webhookSecret.trim();
+    if (!trimmedApiId || !trimmedApiKey || !trimmedWebhookSecret) {
+      setError("API ID, API Key, and Webhook Secret are required to save the CloudShare Connection.");
+      setLoading(false);
+      return;
+    }
     try {
       const response = await fetch("/api/admin/cloudshare", {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ apiId, apiKey, webhookSecret }),
+        body: JSON.stringify({
+          apiId: trimmedApiId,
+          apiKey: trimmedApiKey,
+          webhookSecret: trimmedWebhookSecret,
+        }),
       });
       const data = (await response.json()) as ConnectionState & { error?: string };
       if (!response.ok) {
@@ -88,6 +100,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
         verifiedAt: data.verifiedAt,
       });
       setConnectionMessage("CloudShare Connection saved.");
+      setApiId(trimmedApiId);
       setApiKey("");
       setWebhookSecret("");
     } catch {
@@ -174,6 +187,15 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     }
   }
 
+  const hasSavedConnection = connection?.hasConnection ?? false;
+  const isVerified = connection?.verifiedAt !== null && connection?.verifiedAt !== undefined;
+  const connectionStatusLabel = isVerified
+    ? "Verified"
+    : hasSavedConnection
+      ? "Saved, not yet verified"
+      : "No CloudShare Connection saved yet";
+  const storedSecretPlaceholder = hasSavedConnection ? "********" : "";
+
   return (
     <main style={{ fontFamily: "system-ui, sans-serif", padding: "2rem", maxWidth: "1000px", margin: "0 auto" }}>
       <h1 style={{ marginBottom: "0.35rem" }}>Certalis Admin Console</h1>
@@ -215,13 +237,18 @@ export function AdminConsole({ email }: AdminConsoleProps) {
           <div style={{ padding: "1rem", background: "#f7f7f8", borderRadius: "6px" }}>
             <p style={{ margin: 0 }}>
               Status:{" "}
-              <strong>{connection?.hasConnection ? "Connected" : "No CloudShare Connection saved yet"}</strong>
+              <strong>{connectionStatusLabel}</strong>
             </p>
             {connection?.connectedAt && (
               <p style={{ marginBottom: 0 }}>Saved: {new Date(connection.connectedAt).toLocaleString()}</p>
             )}
             {connection?.verifiedAt && (
               <p style={{ marginBottom: 0 }}>Verified: {new Date(connection.verifiedAt).toLocaleString()}</p>
+            )}
+            {hasSavedConnection && !isVerified && (
+              <p style={{ marginBottom: 0, color: "#555" }}>
+                Connection details are stored. Run <strong>Test connection</strong> to verify them against CloudShare.
+              </p>
             )}
           </div>
 
@@ -239,8 +266,14 @@ export function AdminConsole({ email }: AdminConsoleProps) {
               type="password"
               value={apiKey}
               onChange={(event) => setApiKey(event.target.value)}
+              placeholder={storedSecretPlaceholder}
               style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
             />
+            {hasSavedConnection && !apiKey && (
+              <span style={{ color: "#666", fontSize: "0.85rem" }}>
+                A stored API Key is present. Enter a new value only to replace it.
+              </span>
+            )}
           </label>
           <label style={{ display: "grid", gap: "0.35rem" }}>
             <span>Webhook Secret</span>
@@ -248,8 +281,14 @@ export function AdminConsole({ email }: AdminConsoleProps) {
               type="password"
               value={webhookSecret}
               onChange={(event) => setWebhookSecret(event.target.value)}
+              placeholder={storedSecretPlaceholder}
               style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
             />
+            {hasSavedConnection && !webhookSecret && (
+              <span style={{ color: "#666", fontSize: "0.85rem" }}>
+                A stored Webhook Secret is present. Enter a new value only to replace it.
+              </span>
+            )}
           </label>
           <div style={{ display: "flex", gap: "0.75rem" }}>
             <button onClick={saveConnection} disabled={loading} style={{ padding: "0.7rem 1rem" }}>

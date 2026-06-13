@@ -5,7 +5,11 @@ import {
   testCloudShareConnection,
   type CloudShareConnectionRepository,
 } from "./cloudshare-connection";
-import { CloudShareRequestError } from "@/integrations/cloudshare";
+import {
+  CloudShareRequestError,
+  CloudShareResponseError,
+  CloudShareTransportError,
+} from "@/integrations/cloudshare";
 import type { CloudShareClient } from "@/integrations/cloudshare";
 
 function makeConnectionRepo(connection = {
@@ -88,6 +92,63 @@ describe("testCloudShareConnection", () => {
         { connections: repo, cloudshare },
         "customer-helios",
       ),
-    ).rejects.toBeInstanceOf(CloudShareConnectionTestError);
+    ).rejects.toMatchObject({
+      name: "CloudShareConnectionTestError",
+      message: "CloudShare returned 401 to the v3 ping. Check API ID and API key.",
+    });
+  });
+
+  it("distinguishes network reachability failures from credential failures", async () => {
+    const repo = makeConnectionRepo();
+    const cloudshare = {
+      forConnection: (): CloudShareClient => ({
+        requestV3Text: async () => {
+          throw new CloudShareTransportError("socket timeout");
+        },
+        requestV3: async () => {
+          throw new Error("not used");
+        },
+        requestV4: async () => {
+          throw new Error("not used");
+        },
+      }),
+    };
+
+    await expect(
+      testCloudShareConnection(
+        { connections: repo, cloudshare },
+        "customer-helios",
+      ),
+    ).rejects.toMatchObject({
+      name: "CloudShareConnectionTestError",
+      message: "CloudShare ping could not reach the server. Check network reachability.",
+    });
+  });
+
+  it("distinguishes malformed CloudShare responses from credential failures", async () => {
+    const repo = makeConnectionRepo();
+    const cloudshare = {
+      forConnection: (): CloudShareClient => ({
+        requestV3Text: async () => {
+          throw new CloudShareResponseError("unexpected payload");
+        },
+        requestV3: async () => {
+          throw new Error("not used");
+        },
+        requestV4: async () => {
+          throw new Error("not used");
+        },
+      }),
+    };
+
+    await expect(
+      testCloudShareConnection(
+        { connections: repo, cloudshare },
+        "customer-helios",
+      ),
+    ).rejects.toMatchObject({
+      name: "CloudShareConnectionTestError",
+      message: "CloudShare ping returned an unexpected response.",
+    });
   });
 });
