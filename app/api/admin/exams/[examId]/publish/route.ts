@@ -20,6 +20,9 @@ export async function POST(
   const response = await handlePublishExam(
     {
       repository: services.exams,
+      connections: services.cloudshareConnections,
+      cloudshare: services.cloudshareClientFactory,
+      cache: services.examAuthoringCache,
       logger: services.logger,
     },
     { customerId: session.customerId, examId },

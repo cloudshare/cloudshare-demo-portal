@@ -19,12 +19,16 @@ export interface Exam {
   readonly blueprintName: string;
   readonly snapshotId: string;
   readonly snapshotName: string;
-  readonly regionId: string;
-  readonly regionName: string;
+  readonly allowedRegions: readonly ExamRegion[];
   readonly policyId: string;
   readonly policyName: string;
   readonly instructorId: string;
   readonly instructorName: string;
+}
+
+export interface ExamRegion {
+  readonly id: string;
+  readonly name: string;
 }
 
 export interface CreateDraftExamInput {
@@ -39,8 +43,7 @@ export interface CreateDraftExamInput {
   readonly blueprintName: string;
   readonly snapshotId: string;
   readonly snapshotName: string;
-  readonly regionId: string;
-  readonly regionName: string;
+  readonly allowedRegions: readonly ExamRegion[];
   readonly policyId: string;
   readonly policyName: string;
   readonly instructorId: string;
@@ -80,6 +83,10 @@ export interface UpdateDraftExamInput {
   readonly title: string;
   readonly description: string;
   readonly scoreRetrievalEnabled: boolean;
+  readonly timeLimitMinutes: number;
+  readonly allowedRegions: readonly ExamRegion[];
+  readonly policyId: string;
+  readonly policyName: string;
 }
 
 export async function createDraftExam(
@@ -110,8 +117,10 @@ export async function createDraftExam(
     blueprintName: input.blueprintName.trim(),
     snapshotId: input.snapshotId.trim(),
     snapshotName: input.snapshotName.trim(),
-    regionId: input.regionId.trim(),
-    regionName: input.regionName.trim(),
+    allowedRegions: input.allowedRegions.map((region) => ({
+      id: region.id.trim(),
+      name: region.name.trim(),
+    })),
     policyId: input.policyId.trim(),
     policyName: input.policyName.trim(),
     instructorId: input.instructorId.trim(),
@@ -168,6 +177,13 @@ export async function updateDraftExam(
     title: input.title.trim(),
     description: input.description.trim(),
     scoreRetrievalEnabled: input.scoreRetrievalEnabled,
+    timeLimitMinutes: input.timeLimitMinutes,
+    allowedRegions: input.allowedRegions.map((region) => ({
+      id: region.id.trim(),
+      name: region.name.trim(),
+    })),
+    policyId: input.policyId.trim(),
+    policyName: input.policyName.trim(),
     updatedAt: (deps.now ?? (() => new Date()))(),
   };
 
@@ -208,8 +224,6 @@ function validateDraftInput(input: CreateDraftExamInput): void {
     input.blueprintName,
     input.snapshotId,
     input.snapshotName,
-    input.regionId,
-    input.regionName,
     input.policyId,
     input.policyName,
     input.instructorId,
@@ -218,6 +232,15 @@ function validateDraftInput(input: CreateDraftExamInput): void {
 
   if (requiredFields.some((value) => value.trim().length === 0)) {
     throw new DraftExamValidationError("Draft exams require complete metadata and provisioning fields.");
+  }
+
+  if (
+    input.allowedRegions.length === 0 ||
+    input.allowedRegions.some((region) => region.id.trim().length === 0 || region.name.trim().length === 0)
+  ) {
+    throw new DraftExamValidationError(
+      "Draft exams require at least one allowed Region from the Blueprint default Snapshot.",
+    );
   }
 
   if (!Number.isInteger(input.timeLimitMinutes) || input.timeLimitMinutes <= 0) {

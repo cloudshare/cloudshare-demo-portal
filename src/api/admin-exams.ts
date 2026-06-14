@@ -24,6 +24,7 @@ import {
   unpublishExam,
   updateDraftExam,
   type CreateDraftExamInput,
+  type Exam,
   type ExamRepository,
   type UpdateDraftExamInput,
 } from "@/domain/exam-catalog";
@@ -71,6 +72,16 @@ interface AdminExamCatalogDeps {
   readonly logger: Logger;
   readonly now?: () => Date;
   readonly newId?: () => string;
+}
+
+interface AdminExamPublishDeps {
+  readonly repository: ExamRepository;
+  readonly connections: CloudShareConnectionRepository;
+  readonly cloudshare: CloudShareClientFactory;
+  readonly cache: ExamAuthoringCacheRepository;
+  readonly logger: Logger;
+  readonly now?: () => Date;
+  readonly newCorrelationId?: () => string;
 }
 
 const DEFAULT_INSTRUCTOR_ID = "seeded-cloudshare-instructor";
@@ -241,22 +252,22 @@ export async function handleCreateDraftExam(
     };
   }
 
-  const input = await parseCreateDraftExamInput(
-    request.customerId,
-    request.body,
-    deps.cache,
-    instructor,
-  );
-  if (!input) {
-    return {
-      status: 400,
-      body: {
-        error: "Refresh CloudShare authoring resources and reselect the Exam provisioning tuple.",
-      },
-    };
-  }
-
   try {
+    const input = await parseCreateDraftExamInput(
+      request.customerId,
+      request.body,
+      deps.cache,
+      instructor,
+    );
+    if (!input) {
+      return {
+        status: 400,
+        body: {
+          error: "Refresh CloudShare authoring resources and reselect the Exam provisioning tuple.",
+        },
+      };
+    }
+
     const exam = await createDraftExam(
       {
         repository: deps.repository,
@@ -297,10 +308,20 @@ function isConfiguredInstructor(
 }
 
 export async function handlePublishExam(
-  deps: Pick<AdminExamCatalogDeps, "repository" | "logger" | "now">,
+  deps: AdminExamPublishDeps,
   request: CustomerRequest & { readonly examId: string },
 ): Promise<AdminExamResponse> {
   try {
+    const existing = await deps.repository.findById(request.examId);
+    if (!existing || existing.customerId !== request.customerId) {
+      return { status: 404, body: { error: `Exam ${request.examId} was not found for customer ${request.customerId}` } };
+    }
+
+    const publishability = await validateCurrentDefaultSnapshotRegions(deps, existing);
+    if (publishability) {
+      return publishability;
+    }
+
     const exam = await publishExam(
       { repository: deps.repository, now: deps.now },
       { customerId: request.customerId, examId: request.examId },
@@ -314,16 +335,101 @@ export async function handlePublishExam(
   }
 }
 
-export async function handleUpdateDraftExam(
-  deps: Pick<AdminExamCatalogDeps, "repository" | "logger" | "now">,
-  request: CustomerRequest & { readonly examId: string; readonly body?: unknown },
-): Promise<AdminExamResponse> {
-  const input = parseUpdateDraftExamInput(request.customerId, request.examId, request.body);
-  if (!input) {
-    return { status: 400, body: { error: "Provide draft Exam metadata before saving changes." } };
+async function validateCurrentDefaultSnapshotRegions(
+  deps: AdminExamPublishDeps,
+  exam: Exam,
+): Promise<AdminExamResponse | null> {
+  if (exam.allowedRegions.length === 0) {
+    return {
+      status: 400,
+      body: { error: "Select at least one allowed Region from the Blueprint default Snapshot." },
+    };
   }
 
+  const connection = await deps.connections.findByCustomerId(exam.customerId);
+  if (!connection) {
+    return { status: 404, body: { error: "Save a CloudShare Connection before publishing Exams." } };
+  }
+
+  const source = resolveAuthoringSource(deps.cloudshare, connection);
+  let blueprint;
   try {
+    blueprint = await source.getBlueprintDetail(exam.projectId, exam.blueprintId);
+  } catch (error) {
+    return handleCloudShareFailure(
+      deps,
+      "get_blueprint_detail",
+      `/projects/${exam.projectId}/blueprints/${exam.blueprintId}`,
+      error,
+    );
+  }
+
+  await deps.cache.saveBlueprintDetail(exam.customerId, exam.projectId, exam.blueprintId, blueprint);
+
+  if (blueprint.defaultSnapshotId === null || blueprint.defaultSnapshotId !== exam.snapshotId) {
+    return {
+      status: 400,
+      body: {
+        error:
+          "The selected Blueprint default Snapshot has changed. Refresh CloudShare authoring resources and reselect the Exam provisioning tuple.",
+      },
+    };
+  }
+
+  const defaultSnapshot = blueprint.snapshots.find((snapshot) => snapshot.id === blueprint.defaultSnapshotId);
+  if (!defaultSnapshot) {
+    return {
+      status: 400,
+      body: {
+        error:
+          "The selected Blueprint default Snapshot could not be found. Refresh CloudShare authoring resources and reselect the Exam provisioning tuple.",
+      },
+    };
+  }
+
+  if (defaultSnapshot.regionIds.length === 0) {
+    return {
+      status: 400,
+      body: { error: "The selected Blueprint default Snapshot is not deployed to any Regions yet." },
+    };
+  }
+
+  const defaultSnapshotRegionIds = new Set(defaultSnapshot.regionIds);
+  const unsupportedRegions = exam.allowedRegions.filter((region) => !defaultSnapshotRegionIds.has(region.id));
+  if (unsupportedRegions.length > 0) {
+    return {
+      status: 400,
+      body: {
+        error:
+          "Selected allowed Regions are no longer deployed for the Blueprint default Snapshot. Refresh CloudShare authoring resources and reselect supported Regions.",
+      },
+    };
+  }
+
+  return null;
+}
+
+export async function handleUpdateDraftExam(
+  deps: Pick<AdminExamCatalogDeps, "repository" | "cache" | "logger" | "now">,
+  request: CustomerRequest & { readonly examId: string; readonly body?: unknown },
+): Promise<AdminExamResponse> {
+  try {
+    const existing = await deps.repository.findById(request.examId);
+    if (!existing || existing.customerId !== request.customerId) {
+      throw new ExamNotFoundError(request.customerId, request.examId);
+    }
+
+    const input = await parseUpdateDraftExamInput(
+      request.customerId,
+      request.examId,
+      request.body,
+      existing,
+      deps.cache,
+    );
+    if (!input) {
+      return { status: 400, body: { error: "Refresh CloudShare authoring resources and reselect the draft Exam Policy and allowed Regions." } };
+    }
+
     const exam = await updateDraftExam(
       { repository: deps.repository, now: deps.now },
       input,
@@ -482,7 +588,19 @@ function parseUpdateDraftExamInput(
   customerId: string,
   examId: string,
   body: unknown,
-): UpdateDraftExamInput | null {
+  existing: Exam,
+  cache: ExamAuthoringCacheRepository,
+): Promise<UpdateDraftExamInput | null> {
+  return parseMutableDraftExamInput(customerId, examId, body, existing, cache);
+}
+
+async function parseMutableDraftExamInput(
+  customerId: string,
+  examId: string,
+  body: unknown,
+  existing: Exam,
+  cache: ExamAuthoringCacheRepository,
+): Promise<UpdateDraftExamInput | null> {
   if (typeof body !== "object" || body === null) {
     return null;
   }
@@ -491,8 +609,61 @@ function parseUpdateDraftExamInput(
   if (
     typeof candidate.title !== "string" ||
     typeof candidate.description !== "string" ||
-    typeof candidate.scoreRetrievalEnabled !== "boolean"
+    typeof candidate.scoreRetrievalEnabled !== "boolean" ||
+    typeof candidate.policyId !== "string" ||
+    !Array.isArray(candidate.allowedRegionIds) ||
+    candidate.allowedRegionIds.some((regionId) => typeof regionId !== "string")
   ) {
+    return null;
+  }
+
+  if (candidate.allowedRegionIds.length === 0) {
+    throw new DraftExamValidationError(
+      "Select at least one allowed Region from the Blueprint default Snapshot.",
+    );
+  }
+
+  const bootstrap = await cache.getBootstrap(customerId);
+  const projectResources = await cache.getProjectResources(customerId, existing.projectId);
+  const blueprintDetail = await cache.getBlueprintDetail(
+    customerId,
+    existing.projectId,
+    existing.blueprintId,
+  );
+  if (!bootstrap || !projectResources || !blueprintDetail) {
+    return null;
+  }
+
+  const policy = projectResources.policies.find((item) => item.id === candidate.policyId);
+  const snapshot = blueprintDetail.snapshots.find((item) => item.id === existing.snapshotId);
+  if (!policy || !snapshot) {
+    return null;
+  }
+  if (blueprintDetail.defaultSnapshotId === null || blueprintDetail.defaultSnapshotId !== existing.snapshotId) {
+    throw new DraftExamValidationError(
+      "The selected Blueprint default Snapshot has changed. Refresh CloudShare authoring resources and reselect the Exam provisioning tuple.",
+    );
+  }
+
+  const allowedRegions = candidate.allowedRegionIds.map((regionId) =>
+    bootstrap.regions.find((item) => item.id === regionId),
+  );
+  if (allowedRegions.some((region) => !region)) {
+    return null;
+  }
+
+  if (snapshot.regionIds.length === 0) {
+    throw new DraftExamValidationError(
+      "The selected Blueprint default Snapshot is not deployed to any Regions yet.",
+    );
+  }
+
+  if (candidate.allowedRegionIds.some((regionId) => !snapshot.regionIds.includes(regionId))) {
+    throw new DraftExamValidationError(
+      "Selected allowed Regions are not deployed for the Blueprint default Snapshot.",
+    );
+  }
+  if (policy.runtimeLeaseMinutes === null || policy.runtimeLeaseMinutes === undefined) {
     return null;
   }
 
@@ -502,6 +673,13 @@ function parseUpdateDraftExamInput(
     title: candidate.title,
     description: candidate.description,
     scoreRetrievalEnabled: candidate.scoreRetrievalEnabled,
+    timeLimitMinutes: policy.runtimeLeaseMinutes,
+    allowedRegions: allowedRegions.map((region) => ({
+      id: region!.id,
+      name: region!.friendlyName?.trim() || region!.name,
+    })),
+    policyId: candidate.policyId,
+    policyName: policy.name,
   };
 }
 
@@ -523,10 +701,17 @@ async function parseCreateDraftExamInput(
     typeof candidate.projectId !== "string" ||
     typeof candidate.blueprintId !== "string" ||
     typeof candidate.snapshotId !== "string" ||
-    typeof candidate.regionId !== "string" ||
+    !Array.isArray(candidate.allowedRegionIds) ||
+    candidate.allowedRegionIds.some((regionId) => typeof regionId !== "string") ||
     typeof candidate.policyId !== "string"
   ) {
     return null;
+  }
+
+  if (candidate.allowedRegionIds.length === 0) {
+    throw new DraftExamValidationError(
+      "Select at least one allowed Region from the Blueprint default Snapshot.",
+    );
   }
 
   const bootstrap = await cache.getBootstrap(customerId);
@@ -541,18 +726,33 @@ async function parseCreateDraftExamInput(
   }
 
   const project = bootstrap.projects.find((item) => item.id === candidate.projectId);
-  const region = bootstrap.regions.find((item) => item.id === candidate.regionId);
   const blueprint = projectResources.blueprints.find((item) => item.id === candidate.blueprintId);
   const policy = projectResources.policies.find((item) => item.id === candidate.policyId);
   const snapshot = blueprintDetail.snapshots.find((item) => item.id === candidate.snapshotId);
-  if (!project || !region || !blueprint || !policy || !snapshot) {
+  if (!project || !blueprint || !policy || !snapshot) {
     return null;
   }
   if (blueprintDetail.defaultSnapshotId === null || snapshot.id !== blueprintDetail.defaultSnapshotId) {
     return null;
   }
-  if (snapshot.regionIds.length > 0 && !snapshot.regionIds.includes(candidate.regionId)) {
+
+  const allowedRegions = candidate.allowedRegionIds.map((regionId) =>
+    bootstrap.regions.find((item) => item.id === regionId),
+  );
+  if (allowedRegions.some((region) => !region)) {
     return null;
+  }
+
+  if (snapshot.regionIds.length === 0) {
+    throw new DraftExamValidationError(
+      "The selected Blueprint default Snapshot is not deployed to any Regions yet.",
+    );
+  }
+
+  if (candidate.allowedRegionIds.some((regionId) => !snapshot.regionIds.includes(regionId))) {
+    throw new DraftExamValidationError(
+      "Selected allowed Regions are not deployed for the Blueprint default Snapshot.",
+    );
   }
   if (policy.runtimeLeaseMinutes === null || policy.runtimeLeaseMinutes === undefined) {
     return null;
@@ -570,8 +770,10 @@ async function parseCreateDraftExamInput(
     blueprintName: blueprint.name,
     snapshotId: candidate.snapshotId,
     snapshotName: snapshot.name,
-    regionId: candidate.regionId,
-    regionName: region.friendlyName?.trim() || region.name,
+    allowedRegions: allowedRegions.map((region) => ({
+      id: region!.id,
+      name: region!.friendlyName?.trim() || region!.name,
+    })),
     policyId: candidate.policyId,
     policyName: policy.name,
     instructorId: instructor.id,

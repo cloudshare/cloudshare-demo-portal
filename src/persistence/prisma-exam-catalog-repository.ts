@@ -42,8 +42,7 @@ function serialize(exam: Exam) {
     blueprintName: exam.blueprintName,
     snapshotId: exam.snapshotId,
     snapshotName: exam.snapshotName,
-    regionId: exam.regionId,
-    regionName: exam.regionName,
+    allowedRegionsJson: JSON.stringify(exam.allowedRegions),
     policyId: exam.policyId,
     policyName: exam.policyName,
     instructorId: exam.instructorId,
@@ -68,8 +67,7 @@ function hydrate(row: {
   blueprintName: string;
   snapshotId: string;
   snapshotName: string;
-  regionId: string;
-  regionName: string;
+  allowedRegionsJson: string;
   policyId: string;
   policyName: string;
   instructorId: string;
@@ -92,8 +90,7 @@ function hydrate(row: {
     blueprintName: row.blueprintName,
     snapshotId: row.snapshotId,
     snapshotName: row.snapshotName,
-    regionId: row.regionId,
-    regionName: row.regionName,
+    allowedRegions: JSON.parse(row.allowedRegionsJson) as Exam["allowedRegions"],
     policyId: row.policyId,
     policyName: row.policyName,
     instructorId: row.instructorId,

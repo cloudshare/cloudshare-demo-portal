@@ -23,8 +23,7 @@ function makeInput(overrides: Partial<CreateDraftExamInput> = {}): CreateDraftEx
     blueprintName: "Helios Exam Blueprint",
     snapshotId: "snap-1",
     snapshotName: "Default Snapshot",
-    regionId: "region-1",
-    regionName: "EU West",
+    allowedRegions: [{ id: "region-1", name: "EU West" }],
     policyId: "policy-1",
     policyName: "Standard Exam Policy",
     instructorId: "instructor-seeded",
@@ -60,8 +59,7 @@ describe("createDraftExam", () => {
       blueprintName: "Helios Exam Blueprint",
       snapshotId: "snap-1",
       snapshotName: "Default Snapshot",
-      regionId: "region-1",
-      regionName: "EU West",
+      allowedRegions: [{ id: "region-1", name: "EU West" }],
       policyId: "policy-1",
       policyName: "Standard Exam Policy",
       instructorId: "instructor-seeded",
@@ -89,6 +87,19 @@ describe("createDraftExam", () => {
       createDraftExam(
         { repository, newId: () => "exam-1" },
         makeInput({ title: "  ", timeLimitMinutes: 0 }),
+      ),
+    ).rejects.toBeInstanceOf(DraftExamValidationError);
+
+    await expect(repository.listByCustomerId("customer-1")).resolves.toEqual([]);
+  });
+
+  it("rejects an empty allowed Region set before anything is persisted", async () => {
+    const repository = createInMemoryExamCatalogRepository();
+
+    await expect(
+      createDraftExam(
+        { repository, newId: () => "exam-1" },
+        makeInput({ allowedRegions: [] }),
       ),
     ).rejects.toBeInstanceOf(DraftExamValidationError);
 
@@ -147,7 +158,11 @@ describe("updateDraftExam", () => {
         customerId: "customer-1",
         title: "Helios Blueprint Exam",
         description: "Updated description.",
+        timeLimitMinutes: 120,
         scoreRetrievalEnabled: false,
+        allowedRegions: [{ id: "region-2", name: "US East" }],
+        policyId: "policy-2",
+        policyName: "Extended Exam Policy",
       },
     );
 
@@ -156,8 +171,11 @@ describe("updateDraftExam", () => {
       status: "draft",
       title: "Helios Blueprint Exam",
       description: "Updated description.",
-      timeLimitMinutes: 90,
+      timeLimitMinutes: 120,
       scoreRetrievalEnabled: false,
+      allowedRegions: [{ id: "region-2", name: "US East" }],
+      policyId: "policy-2",
+      policyName: "Extended Exam Policy",
     });
     expect(updated.updatedAt).toEqual(updatedAt);
     expect(updated.createdAt).toEqual(createdAt);
@@ -185,7 +203,11 @@ describe("updateDraftExam", () => {
           customerId: "customer-1",
           title: "Helios Blueprint Exam",
           description: "Updated description.",
+          timeLimitMinutes: 120,
           scoreRetrievalEnabled: false,
+          allowedRegions: [{ id: "region-2", name: "US East" }],
+          policyId: "policy-2",
+          policyName: "Extended Exam Policy",
         },
       ),
     ).rejects.toThrow("Only draft exams can be edited.");

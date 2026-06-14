@@ -46,8 +46,10 @@ describe("Prisma exam catalog repository", () => {
       blueprintName: "Helios Exam Blueprint",
       snapshotId: "snap-1",
       snapshotName: "Default Snapshot",
-      regionId: "region-1",
-      regionName: "EU West",
+      allowedRegions: [
+        { id: "region-1", name: "EU West" },
+        { id: "region-2", name: "US East" },
+      ],
       policyId: "policy-1",
       policyName: "Standard Exam Policy",
       instructorId: "instructor-1",
