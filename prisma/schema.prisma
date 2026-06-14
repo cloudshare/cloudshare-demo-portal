@@ -75,8 +75,7 @@ model Exam {
   blueprintName         String
   snapshotId            String
   snapshotName          String
-  regionId              String
-  regionName            String
+  allowedRegionsJson    String
   policyId              String
   policyName            String
   instructorId          String

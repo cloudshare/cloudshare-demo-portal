@@ -4,8 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   beginLatestOnlyRequest,
+  getAllowedRegionValidationMessage,
+  getCompatibleRegions,
   getExamAuthoringMode,
   isLatestOnlyResponse,
+  reconcileAllowedRegionIds,
 } from "./admin-console-state";
 
 interface AdminConsoleProps {
@@ -102,8 +105,7 @@ interface ExamRecord {
   blueprintName: string;
   snapshotId: string;
   snapshotName: string;
-  regionId: string;
-  regionName: string;
+  allowedRegions: Array<{ id: string; name: string }>;
   policyId: string;
   policyName: string;
   instructorName: string;
@@ -176,7 +178,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [selectedBlueprintId, setSelectedBlueprintId] = useState("");
   const [selectedPolicyId, setSelectedPolicyId] = useState("");
-  const [selectedRegionId, setSelectedRegionId] = useState("");
+  const [selectedAllowedRegionIds, setSelectedAllowedRegionIds] = useState<string[]>([]);
   const [examTitle, setExamTitle] = useState("");
   const [examDescription, setExamDescription] = useState("");
   const [timeLimitMinutes, setTimeLimitMinutes] = useState("90");
@@ -451,12 +453,6 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       if (nextProjectId !== selectedProjectId) {
         setSelectedProjectId(nextProjectId);
       }
-      const nextRegionId = nextRegions.some((region) => region.id === selectedRegionId)
-        ? selectedRegionId
-        : (nextRegions[0]?.id ?? "");
-      if (nextRegionId !== selectedRegionId) {
-        setSelectedRegionId(nextRegionId);
-      }
       if (!selectedProjectId && nextProjectId) {
         const projectId = nextProjectId;
         setSelectedProjectId(projectId);
@@ -623,14 +619,22 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       const project = projects.find((item) => item.id === selectedProjectId);
       const blueprint = blueprints.find((item) => item.id === selectedBlueprintId);
       const policy = policies.find((item) => item.id === selectedPolicyId);
-      const region = regions.find((item) => item.id === selectedRegionId);
       const snapshot = blueprintDetail?.snapshots.find(
         (item) => item.id === blueprintDetail.defaultSnapshotId,
       );
       const policyTimeLimitMinutes = policy?.runtimeLeaseMinutes ?? null;
+      const validationMessage = getAllowedRegionValidationMessage(
+        selectedAllowedRegionIds,
+        compatibleRegions,
+      );
 
-      if (!project || !blueprint || !policy || !region || !snapshot || !policyTimeLimitMinutes) {
-        setError("Select a project, blueprint, policy, and region before saving the Exam.");
+      if (validationMessage) {
+        setError(validationMessage);
+        return;
+      }
+
+      if (!project || !blueprint || !policy || !snapshot || !policyTimeLimitMinutes) {
+        setError("Select a project, blueprint, policy, and allowed Region set before saving the Exam.");
         return;
       }
 
@@ -654,8 +658,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                   blueprintName: blueprint.name,
                   snapshotId: snapshot.id,
                   snapshotName: snapshot.name,
-                  regionId: region.id,
-                  regionName: region.name,
+                  allowedRegionIds: selectedAllowedRegionIds,
                   policyId: policy.id,
                   policyName: policy.name,
                 }),
@@ -730,7 +733,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     setExamMessage(null);
     try {
       setSelectedProjectId(exam.projectId);
-      setSelectedRegionId(exam.regionId);
+      setSelectedAllowedRegionIds(exam.allowedRegions.map((region) => region.id));
       await loadProjectResources(exam.projectId, false, exam.blueprintId, exam.policyId);
       setSelectedBlueprintId(exam.blueprintId);
       setSelectedPolicyId(exam.policyId);
@@ -770,11 +773,14 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   const authoringMode = getExamAuthoringMode(editingExamId);
   const defaultSnapshot =
     blueprintDetail?.snapshots.find((item) => item.id === blueprintDetail.defaultSnapshotId) ?? null;
-  const compatibleRegions =
-    defaultSnapshot && defaultSnapshot.regionIds.length > 0
-      ? regions.filter((region) => defaultSnapshot.regionIds.includes(region.id))
-      : regions;
-  const selectedRegion = compatibleRegions.find((item) => item.id === selectedRegionId) ?? null;
+  const compatibleRegions = getCompatibleRegions(regions, defaultSnapshot);
+  const selectedAllowedRegions = compatibleRegions.filter((region) =>
+    selectedAllowedRegionIds.includes(region.id),
+  );
+  const allowedRegionValidationMessage = getAllowedRegionValidationMessage(
+    selectedAllowedRegionIds,
+    compatibleRegions,
+  );
   const effectiveTimeLimitMinutes =
     selectedPolicy?.runtimeLeaseMinutes !== null && selectedPolicy?.runtimeLeaseMinutes !== undefined
       ? String(selectedPolicy.runtimeLeaseMinutes)
@@ -794,11 +800,12 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     : "";
 
   useEffect(() => {
-    if (compatibleRegions.some((region) => region.id === selectedRegionId)) {
+    const nextSelectedRegionIds = reconcileAllowedRegionIds(selectedAllowedRegionIds, compatibleRegions);
+    if (nextSelectedRegionIds.length === selectedAllowedRegionIds.length) {
       return;
     }
-    setSelectedRegionId(compatibleRegions[0]?.id ?? "");
-  }, [compatibleRegions, selectedRegionId]);
+    setSelectedAllowedRegionIds(nextSelectedRegionIds);
+  }, [compatibleRegions, selectedAllowedRegionIds]);
 
   return (
     <main style={{ fontFamily: "system-ui, sans-serif", padding: "2rem", maxWidth: "1000px", margin: "0 auto" }}>
@@ -1070,20 +1077,43 @@ export function AdminConsole({ email }: AdminConsoleProps) {
             </label>
 
             <label style={{ display: "grid", gap: "0.35rem", minWidth: 0 }}>
-              <span>Region</span>
-              <select
-                value={selectedRegionId}
-                onChange={(event) => setSelectedRegionId(event.target.value)}
-                style={compactFieldStyle}
-                disabled={authoringMode.provisioningLocked}
+              <span>Allowed Regions</span>
+              <div
+                style={{
+                  ...compactFieldStyle,
+                  background: authoringMode.provisioningLocked ? "#f9fafb" : "#fff",
+                  display: "grid",
+                  gap: "0.5rem",
+                  paddingRight: "0.7rem",
+                }}
               >
-                <option value="">Select a Region</option>
-                {compatibleRegions.map((region) => (
-                  <option key={region.id} value={region.id}>
-                    {region.friendlyName ?? region.name}
-                  </option>
-                ))}
-              </select>
+                {compatibleRegions.length === 0 ? (
+                  <span style={{ color: "#666" }}>No deployed Regions found for the current default Snapshot.</span>
+                ) : (
+                  compatibleRegions.map((region) => (
+                    <label key={region.id} style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                      <input
+                        type="checkbox"
+                        checked={selectedAllowedRegionIds.includes(region.id)}
+                        onChange={(event) => {
+                          setSelectedAllowedRegionIds((current) =>
+                            event.target.checked
+                              ? [...current, region.id]
+                              : current.filter((regionId) => regionId !== region.id),
+                          );
+                        }}
+                        disabled={authoringMode.provisioningLocked}
+                      />
+                      <span>{region.friendlyName ?? region.name}</span>
+                    </label>
+                  ))
+                )}
+              </div>
+              {allowedRegionValidationMessage && (
+                <span style={{ color: "#b42318", fontSize: "0.85rem" }}>
+                  {allowedRegionValidationMessage}
+                </span>
+              )}
             </label>
           </div>
 
@@ -1108,7 +1138,10 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                 : ""}
             </div>
             <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
-              Region: {selectedRegion ? (selectedRegion.friendlyName ?? selectedRegion.name) : "-"}
+              Allowed Regions:{" "}
+              {selectedAllowedRegions.length > 0
+                ? selectedAllowedRegions.map((region) => region.friendlyName ?? region.name).join(", ")
+                : "-"}
             </div>
             <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
               Snapshot: {defaultSnapshot ? `${defaultSnapshot.name} (default only for Experience launches)` : "-"}
@@ -1162,7 +1195,11 @@ export function AdminConsole({ email }: AdminConsoleProps) {
           </div>
 
           <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
-            <button onClick={saveDraftExam} disabled={loading} style={{ padding: "0.7rem 1rem" }}>
+            <button
+              onClick={saveDraftExam}
+              disabled={loading || (!editingExamId && allowedRegionValidationMessage !== null)}
+              style={{ padding: "0.7rem 1rem" }}
+            >
               {loading ? "Saving..." : editingExamId ? "Update Draft Exam" : "Save Draft Exam"}
             </button>
             {editingExamId && (
@@ -1178,7 +1215,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
               <thead>
                 <tr style={{ background: "#f5f5f5" }}>
-                  {["Title", "Status", "Project", "Blueprint / Snapshot", "Region", "Policy", "Score", "Action"].map((heading) => (
+                  {["Title", "Status", "Project", "Blueprint / Snapshot", "Allowed Regions", "Policy", "Score", "Action"].map((heading) => (
                     <th key={heading} style={{ textAlign: "left", padding: "0.4rem", borderBottom: "1px solid #ddd" }}>
                       {heading}
                     </th>
@@ -1212,7 +1249,9 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                       <div>{exam.blueprintName}</div>
                       <div style={{ color: "#666", fontSize: "0.75rem" }}>{exam.snapshotName}</div>
                     </td>
-                    <td style={{ padding: "0.4rem" }}>{exam.regionName}</td>
+                    <td style={{ padding: "0.4rem" }}>
+                      {exam.allowedRegions.map((region) => region.name).join(", ")}
+                    </td>
                     <td style={{ padding: "0.4rem" }}>{exam.policyName}</td>
                     <td style={{ padding: "0.4rem" }}>{exam.scoreRetrievalEnabled ? "Enabled" : "Off"}</td>
                     <td style={{ padding: "0.4rem" }}>

@@ -32,7 +32,7 @@ vehicle), but not over-engineered for production.
   encrypted at rest; never returned to client).
 - **Customer** `1—*` **User** (`role: admin | candidate`; email + password; httpOnly DB session).
 - **Exam** (belongs to Customer) — provisioning tuple **(project, blueprint, snapshot[default-or-
-  override], region, policy, instructor)** + metadata (title, description, per-Exam **time limit**,
+  override], allowed Region set constrained by the default Snapshot deployment set, policy, instructor)** + metadata (title, description, per-Exam **time limit**,
   **published/draft**, **score-retrieval flag**).
 - **ExamAttempt** (Candidate × Exam) — carries **`scheduledFor`** and a status lifecycle.
 - **LabLaunch** (per ExamAttempt) — provisioning record: `trainingId`, `environmentExternalId`,

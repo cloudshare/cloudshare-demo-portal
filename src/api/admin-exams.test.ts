@@ -55,6 +55,8 @@ function makeAuthoringSource(
     listProjects: vi.fn().mockResolvedValue([{ id: "project-1", name: "Helios CX Project" }]),
     listRegions: vi.fn().mockResolvedValue([
       { id: "region-1", name: "eu-west", friendlyName: "EU West" },
+      { id: "region-2", name: "us-east", friendlyName: "US East" },
+      { id: "region-3", name: "ap-south", friendlyName: "AP South" },
     ]),
     listProjectBlueprints: vi.fn().mockResolvedValue([
       {
@@ -72,8 +74,13 @@ function makeAuthoringSource(
       description: "Blueprint-backed description",
       defaultSnapshotId: "snap-1",
       snapshots: [
-        { id: "snap-1", name: "Default Snapshot", isDefault: true, regionIds: ["region-1"] },
-        { id: "snap-2", name: "Older Snapshot", isDefault: false, regionIds: ["region-2"] },
+        {
+          id: "snap-1",
+          name: "Default Snapshot",
+          isDefault: true,
+          regionIds: ["region-1", "region-2"],
+        },
+        { id: "snap-2", name: "Older Snapshot", isDefault: false, regionIds: ["region-3"] },
       ],
     } satisfies CloudShareBlueprintDetail),
     ...overrides,
@@ -93,7 +100,11 @@ async function seedAuthoringCache(
 ) {
   await cache.saveBootstrap("customer-1", {
     projects: [{ id: "project-1", name: "Helios CX Project" }],
-    regions: [{ id: "region-1", name: "eu-west", friendlyName: "EU West" }],
+    regions: [
+      { id: "region-1", name: "eu-west", friendlyName: "EU West" },
+      { id: "region-2", name: "us-east", friendlyName: "US East" },
+      { id: "region-3", name: "ap-south", friendlyName: "AP South" },
+    ],
   });
   await cache.saveProjectResources("customer-1", "project-1", {
     blueprints: [
@@ -107,8 +118,13 @@ async function seedAuthoringCache(
     description: "Blueprint-backed description",
     defaultSnapshotId: "snap-1",
     snapshots: [
-      { id: "snap-1", name: "Default Snapshot", isDefault: true, regionIds: ["region-1"] },
-      { id: "snap-2", name: "Older Snapshot", isDefault: false, regionIds: ["region-2"] },
+      {
+        id: "snap-1",
+        name: "Default Snapshot",
+        isDefault: true,
+        regionIds: ["region-1", "region-2"],
+      },
+      { id: "snap-2", name: "Older Snapshot", isDefault: false, regionIds: ["region-3"] },
     ],
   });
 }
@@ -132,7 +148,11 @@ describe("admin exam authoring handlers", () => {
     expect(result.body).toEqual({
       source: "live",
       projects: [{ id: "project-1", name: "Helios CX Project" }],
-      regions: [{ id: "region-1", name: "eu-west", friendlyName: "EU West" }],
+      regions: [
+        { id: "region-1", name: "eu-west", friendlyName: "EU West" },
+        { id: "region-2", name: "us-east", friendlyName: "US East" },
+        { id: "region-3", name: "ap-south", friendlyName: "AP South" },
+      ],
     });
 
     const cached = await handleGetExamAuthoringBootstrap(
@@ -203,8 +223,13 @@ describe("admin exam authoring handlers", () => {
         description: "Blueprint-backed description",
         defaultSnapshotId: "snap-1",
         snapshots: [
-          { id: "snap-1", name: "Default Snapshot", isDefault: true, regionIds: ["region-1"] },
-          { id: "snap-2", name: "Older Snapshot", isDefault: false, regionIds: ["region-2"] },
+          {
+            id: "snap-1",
+            name: "Default Snapshot",
+            isDefault: true,
+            regionIds: ["region-1", "region-2"],
+          },
+          { id: "snap-2", name: "Older Snapshot", isDefault: false, regionIds: ["region-3"] },
         ],
       },
     });
@@ -319,7 +344,7 @@ describe("admin exam catalog handlers", () => {
           projectId: "project-1",
           blueprintId: "bp-1",
           snapshotId: "snap-1",
-          regionId: "region-1",
+          allowedRegionIds: ["region-1", "region-2"],
           policyId: "policy-1",
         },
       },
@@ -333,6 +358,10 @@ describe("admin exam catalog handlers", () => {
         title: "Helios CloudShare Fundamentals",
         timeLimitMinutes: 240,
         projectName: "Helios CX Project",
+        allowedRegions: [
+          { id: "region-1", name: "EU West" },
+          { id: "region-2", name: "US East" },
+        ],
         instructorId: "instructor-1",
         instructorName: "Helios Service Account",
       },
@@ -363,7 +392,7 @@ describe("admin exam catalog handlers", () => {
           projectId: "project-1",
           blueprintId: "bp-1",
           snapshotId: "snap-1",
-          regionId: "region-1",
+          allowedRegionIds: ["region-1"],
           policyId: "policy-1",
         },
       },
@@ -379,7 +408,7 @@ describe("admin exam catalog handlers", () => {
     });
   });
 
-  it("rejects draft creation when the selected region is not supported by the default snapshot", async () => {
+  it("rejects draft creation when the allowed Region set is empty", async () => {
     const repository = createInMemoryExamCatalogRepository();
     const cache = createInMemoryExamAuthoringCacheRepository();
     await seedAuthoringCache(cache);
@@ -403,7 +432,93 @@ describe("admin exam catalog handlers", () => {
           projectId: "project-1",
           blueprintId: "bp-1",
           snapshotId: "snap-1",
-          regionId: "region-2",
+          allowedRegionIds: [],
+          policyId: "policy-1",
+        },
+      },
+    );
+
+    expect(result.status).toBe(400);
+    expect(result.body).toEqual({
+      error: "Select at least one allowed Region from the Blueprint default Snapshot.",
+    });
+  });
+
+  it("rejects draft creation when the default snapshot is not deployed to any Regions", async () => {
+    const repository = createInMemoryExamCatalogRepository();
+    const cache = createInMemoryExamAuthoringCacheRepository();
+    await seedAuthoringCache(cache);
+    await cache.saveBlueprintDetail("customer-1", "project-1", "bp-1", {
+      id: "bp-1",
+      name: "Helios Exam Blueprint",
+      description: "Blueprint-backed description",
+      defaultSnapshotId: "snap-1",
+      snapshots: [
+        {
+          id: "snap-1",
+          name: "Default Snapshot",
+          isDefault: true,
+          regionIds: [],
+        },
+      ],
+    });
+
+    const result = await handleCreateDraftExam(
+      {
+        repository,
+        cache,
+        instructor: configuredInstructor,
+        logger: makeLogger(),
+        now: () => new Date("2026-06-14T12:00:00.000Z"),
+        newId: () => "exam-1",
+      },
+      {
+        customerId: "customer-1",
+        body: {
+          title: "Helios CloudShare Fundamentals",
+          description: "Hands-on certification exam.",
+          timeLimitMinutes: 240,
+          scoreRetrievalEnabled: true,
+          projectId: "project-1",
+          blueprintId: "bp-1",
+          snapshotId: "snap-1",
+          allowedRegionIds: ["region-1"],
+          policyId: "policy-1",
+        },
+      },
+    );
+
+    expect(result.status).toBe(400);
+    expect(result.body).toEqual({
+      error: "The selected Blueprint default Snapshot is not deployed to any Regions yet.",
+    });
+  });
+
+  it("rejects draft creation when any selected Region is not supported by the default snapshot", async () => {
+    const repository = createInMemoryExamCatalogRepository();
+    const cache = createInMemoryExamAuthoringCacheRepository();
+    await seedAuthoringCache(cache);
+
+    const result = await handleCreateDraftExam(
+      {
+        repository,
+        cache,
+        instructor: configuredInstructor,
+        logger: makeLogger(),
+        now: () => new Date("2026-06-14T12:00:00.000Z"),
+        newId: () => "exam-1",
+      },
+      {
+        customerId: "customer-1",
+        body: {
+          title: "Helios CloudShare Fundamentals",
+          description: "Hands-on certification exam.",
+          timeLimitMinutes: 240,
+          scoreRetrievalEnabled: true,
+          projectId: "project-1",
+          blueprintId: "bp-1",
+          snapshotId: "snap-1",
+          allowedRegionIds: ["region-1", "region-3"],
           policyId: "policy-1",
         },
       },
@@ -439,7 +554,7 @@ describe("admin exam catalog handlers", () => {
           projectId: "project-1",
           blueprintId: "bp-1",
           snapshotId: "snap-1",
-          regionId: "region-1",
+          allowedRegionIds: ["region-1"],
           policyId: "policy-1",
         },
       },
@@ -476,7 +591,7 @@ describe("admin exam catalog handlers", () => {
           projectId: "project-1",
           blueprintId: "bp-not-in-cache",
           snapshotId: "snap-1",
-          regionId: "region-1",
+          allowedRegionIds: ["region-1"],
           policyId: "policy-1",
         },
       },
@@ -512,7 +627,7 @@ describe("admin exam catalog handlers", () => {
           projectId: "project-1",
           blueprintId: "bp-1",
           snapshotId: "snap-2",
-          regionId: "region-1",
+          allowedRegionIds: ["region-1"],
           policyId: "policy-1",
         },
       },
@@ -547,7 +662,7 @@ describe("admin exam catalog handlers", () => {
           projectId: "project-1",
           blueprintId: "bp-1",
           snapshotId: "snap-1",
-          regionId: "region-1",
+          allowedRegionIds: ["region-1", "region-2"],
           policyId: "policy-1",
         },
       },
@@ -603,7 +718,7 @@ describe("admin exam catalog handlers", () => {
           projectId: "project-1",
           blueprintId: "bp-1",
           snapshotId: "snap-1",
-          regionId: "region-1",
+          allowedRegionIds: ["region-1"],
           policyId: "policy-1",
         },
       },
@@ -659,7 +774,7 @@ describe("admin exam catalog handlers", () => {
           projectId: "project-1",
           blueprintId: "bp-1",
           snapshotId: "snap-1",
-          regionId: "region-1",
+          allowedRegionIds: ["region-1"],
           policyId: "policy-1",
         },
       },
