@@ -672,9 +672,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       }
 
       setExamMessage(editingExamId ? "Draft exam updated." : "Draft exam saved.");
-      if (!editingExamId) {
-        resetExamForm();
-      }
+      resetExamForm();
       await loadExamCatalog();
     } catch {
       setError("Failed to save draft exam");
