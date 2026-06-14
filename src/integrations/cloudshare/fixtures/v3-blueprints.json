@@ -1,6 +1,6 @@
 {
   "method": "GET",
-  "path": "/api/v3/blueprints",
+  "path": "/api/v3/projects/p-demo-1/blueprints",
   "status": 200,
   "body": [
     { "id": "bp-demo-1", "name": "Genesys Cloud Blueprint" },

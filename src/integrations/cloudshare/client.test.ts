@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { createCloudShareClient } from "./client";
 import { createFixtureHttpClient, loadFixturesFromDir } from "./fixtures";
+import { pingCloudShareV3 } from "./ping";
 import {
   CloudShareRequestError,
   CloudShareResponseError,
@@ -215,5 +216,9 @@ describe("createCloudShareClient — fixture replay (no live calls)", () => {
     });
     expect(regions).toHaveLength(2);
     expect(regions[1]).toEqual({ id: "r-us-east", name: "US East" });
+  });
+
+  it("replays the recorded v3 ping response for fixture-mode connection checks", async () => {
+    await expect(pingCloudShareV3(fixtureClient)).resolves.toBe("pong");
   });
 });
