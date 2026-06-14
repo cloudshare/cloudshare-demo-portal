@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { getExamAuthoringMode } from "./admin-console-state";
 
 interface AdminConsoleProps {
   readonly email: string;
@@ -727,6 +728,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   const selectedBlueprint = blueprints.find((item) => item.id === selectedBlueprintId) ?? null;
   const selectedPolicy = policies.find((item) => item.id === selectedPolicyId) ?? null;
   const selectedRegion = regions.find((item) => item.id === selectedRegionId) ?? null;
+  const authoringMode = getExamAuthoringMode(editingExamId);
   const defaultSnapshot =
     blueprintDetail?.snapshots.find((item) => item.id === blueprintDetail.defaultSnapshotId) ?? null;
   const effectiveTimeLimitMinutes =
@@ -908,6 +910,9 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                 </button>
               )}
             </div>
+            {authoringMode.tupleChangeHint && (
+              <span style={{ color: "#555", fontSize: "0.9rem" }}>{authoringMode.tupleChangeHint}</span>
+            )}
           </div>
 
           {examDiagnostic && (
@@ -934,6 +939,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                   void loadProjectResources(nextProjectId, true);
                 }}
                 style={compactFieldStyle}
+                disabled={authoringMode.provisioningLocked}
               >
                 <option value="">Select a Project</option>
                 {projects.map((project) => (
@@ -957,6 +963,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                   }
                 }}
                 style={compactFieldStyle}
+                disabled={authoringMode.provisioningLocked}
               >
                 <option value="">Select a Blueprint</option>
                 {blueprints.map((blueprint) => (
@@ -995,6 +1002,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                   setSelectedPolicyId(event.target.value);
                 }}
                 style={compactFieldStyle}
+                disabled={authoringMode.provisioningLocked}
               >
                 <option value="">Select a Policy</option>
                 {policies.map((policy) => (
@@ -1011,6 +1019,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                 value={selectedRegionId}
                 onChange={(event) => setSelectedRegionId(event.target.value)}
                 style={compactFieldStyle}
+                disabled={authoringMode.provisioningLocked}
               >
                 <option value="">Select a Region</option>
                 {regions.map((region) => (
