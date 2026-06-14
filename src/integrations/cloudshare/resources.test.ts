@@ -1,17 +1,26 @@
 import { describe, it, expect, vi } from "vitest";
-import { createCloudShareResourceLister } from "./resources";
+import {
+  createCloudShareExamAuthoringSource,
+  createCloudShareResourceLister,
+} from "./resources";
 import type { CloudShareClient } from "./client";
 
 function makeClient(responses: Record<string, unknown>): CloudShareClient {
   return {
-    requestV4: vi.fn().mockImplementation(({ path }: { path: string }) => {
+    requestV4: vi.fn().mockImplementation(({ path, schema }: { path: string; schema?: { parse(value: unknown): unknown } }) => {
       const key = `v4:${path}`;
-      if (key in responses) return Promise.resolve(responses[key]);
+      if (key in responses) {
+        const value = responses[key];
+        return Promise.resolve(schema ? schema.parse(value) : value);
+      }
       return Promise.reject(new Error(`No mock for v4 ${path}`));
     }),
-    requestV3: vi.fn().mockImplementation(({ path }: { path: string }) => {
+    requestV3: vi.fn().mockImplementation(({ path, schema }: { path: string; schema?: { parse(value: unknown): unknown } }) => {
       const key = `v3:${path}`;
-      if (key in responses) return Promise.resolve(responses[key]);
+      if (key in responses) {
+        const value = responses[key];
+        return Promise.resolve(schema ? schema.parse(value) : value);
+      }
       return Promise.reject(new Error(`No mock for v3 ${path}`));
     }),
   } as unknown as CloudShareClient;
@@ -20,9 +29,9 @@ function makeClient(responses: Record<string, unknown>): CloudShareClient {
 describe("createCloudShareResourceLister", () => {
   const mockClient = makeClient({
     "v3:/projects": [{ id: "p-1", name: "Helios CX" }],
-    "v3:/regions": [{ id: "r-1", name: "EU West" }],
-    "v3:/projects/p-1/blueprints": [{ id: "bp-1", name: "Cloud Blueprint" }],
-    "v3:/policies": [{ id: "pol-1", name: "Exam Policy" }],
+    "v3:/regions": [
+      { id: "r-1", name: "Miami", friendlyName: "US East (Miami)", cloudName: "AWS" },
+    ],
   });
 
   it("lists projects via v3", async () => {
@@ -34,37 +43,122 @@ describe("createCloudShareResourceLister", () => {
   it("lists regions via v3", async () => {
     const lister = createCloudShareResourceLister(mockClient);
     const result = await lister.listRegions();
-    expect(result).toEqual([{ id: "r-1", name: "EU West" }]);
-  });
-
-  it("lists blueprints per project via v3", async () => {
-    const lister = createCloudShareResourceLister(mockClient);
-    const result = await lister.listBlueprints();
-    expect(result).toEqual([{ id: "bp-1", name: "Cloud Blueprint" }]);
-  });
-
-  it("flattens blueprints from multiple projects", async () => {
-    const multiProjectClient = makeClient({
-      "v3:/projects": [
-        { id: "p-1", name: "Helios CX" },
-        { id: "p-2", name: "Northwind" },
-      ],
-      "v3:/projects/p-1/blueprints": [{ id: "bp-1", name: "Blueprint One" }],
-      "v3:/projects/p-2/blueprints": [{ id: "bp-2", name: "Blueprint Two" }],
-    });
-
-    const lister = createCloudShareResourceLister(multiProjectClient);
-    const result = await lister.listBlueprints();
-
     expect(result).toEqual([
-      { id: "bp-1", name: "Blueprint One" },
-      { id: "bp-2", name: "Blueprint Two" },
+      {
+        id: "r-1",
+        name: "Miami",
+        friendlyName: "US East (Miami)",
+      },
     ]);
   });
 
-  it("lists policies via v3", async () => {
+  it("does not pretend blueprints are globally listable", async () => {
+    const lister = createCloudShareResourceLister(mockClient);
+    const result = await lister.listBlueprints();
+    expect(result).toEqual([]);
+  });
+
+  it("does not pretend policies are globally listable", async () => {
     const lister = createCloudShareResourceLister(mockClient);
     const result = await lister.listPolicies();
-    expect(result).toEqual([{ id: "pol-1", name: "Exam Policy" }]);
+    expect(result).toEqual([]);
+  });
+});
+
+describe("createCloudShareExamAuthoringSource", () => {
+  it("lists project-scoped blueprints for a selected project", async () => {
+    const source = createCloudShareExamAuthoringSource(
+      makeClient({
+        "v3:/projects/p-1/blueprints": [{ id: "bp-1", name: "Exam Blueprint" }],
+      }),
+    );
+
+    await expect(source.listProjectBlueprints("p-1")).resolves.toEqual([
+      { id: "bp-1", name: "Exam Blueprint", description: "" },
+    ]);
+  });
+
+  it("lists project-scoped policies for a selected project", async () => {
+    const source = createCloudShareExamAuthoringSource(
+      makeClient({
+        "v3:/projects/p-1/policies": [{ id: "pol-1", name: "Timed Policy" }],
+        "v3:/projects/p-1/policies/pol-1": {
+          id: "pol-1",
+          name: "Timed Policy",
+          projectId: "p-1",
+          allowEnvironmentCreation: true,
+          runtimeLeaseMinutes: 240,
+        },
+      }),
+    );
+
+    await expect(source.listProjectPolicies("p-1")).resolves.toEqual([
+      { id: "pol-1", name: "Timed Policy", runtimeLeaseMinutes: 240 },
+    ]);
+  });
+
+  it("maps blueprint detail snapshots with the default snapshot signal", async () => {
+    const source = createCloudShareExamAuthoringSource(
+      makeClient({
+        "v3:/projects/p-1/blueprints/bp-1": {
+          id: "bp-1",
+          name: "Exam Blueprint",
+          description: "Default tenant-ready environment.",
+          createFromVersions: [
+            {
+              id: "snap-1",
+              name: "Snapshot 1",
+              isDefault: true,
+              regions: [{ id: "r-1", name: "EU West" }],
+            },
+            {
+              id: "snap-2",
+              name: "Snapshot 2",
+              isDefault: false,
+              regions: [{ id: "r-2", name: "US East" }],
+            },
+          ],
+        },
+      }),
+    );
+
+    await expect(source.getBlueprintDetail("p-1", "bp-1")).resolves.toEqual({
+      id: "bp-1",
+      name: "Exam Blueprint",
+      description: "Default tenant-ready environment.",
+      defaultSnapshotId: "snap-1",
+      snapshots: [
+        { id: "snap-1", name: "Snapshot 1", isDefault: true, regionIds: ["r-1"] },
+        { id: "snap-2", name: "Snapshot 2", isDefault: false, regionIds: ["r-2"] },
+      ],
+    });
+  });
+
+  it("accepts blueprint detail regions returned as raw region ids", async () => {
+    const source = createCloudShareExamAuthoringSource(
+      makeClient({
+        "v3:/projects/p-1/blueprints/bp-1": {
+          id: "bp-1",
+          name: "Exam Blueprint",
+          description: "",
+          createFromVersions: [
+            {
+              id: "snap-1",
+              name: "Snapshot 1",
+              isDefault: true,
+              regions: ["r-1", "r-2"],
+            },
+          ],
+        },
+      }),
+    );
+
+    await expect(source.getBlueprintDetail("p-1", "bp-1")).resolves.toEqual({
+      id: "bp-1",
+      name: "Exam Blueprint",
+      description: "",
+      defaultSnapshotId: "snap-1",
+      snapshots: [{ id: "snap-1", name: "Snapshot 1", isDefault: true, regionIds: ["r-1", "r-2"] }],
+    });
   });
 });

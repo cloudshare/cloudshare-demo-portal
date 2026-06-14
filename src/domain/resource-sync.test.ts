@@ -79,4 +79,20 @@ describe("syncResources", () => {
       "CloudShare unavailable",
     );
   });
+
+  it("allows the legacy sync path to persist only global resources", async () => {
+    const lister = makeLister({
+      listBlueprints: vi.fn().mockResolvedValue([]),
+      listPolicies: vi.fn().mockResolvedValue([]),
+    });
+    const repo = createInMemoryResourceRepository();
+
+    const result = await syncResources({ lister, repository: repo });
+
+    expect(result.synced).toBe(2);
+    expect(result.byType.project).toHaveLength(1);
+    expect(result.byType.region).toHaveLength(1);
+    expect(result.byType.blueprint).toEqual([]);
+    expect(result.byType.policy).toEqual([]);
+  });
 });

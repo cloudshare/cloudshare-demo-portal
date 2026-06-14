@@ -45,6 +45,8 @@ import { createInMemoryAuditRepository } from "@/persistence/audit-repository";
 import { createInMemoryResourceRepository } from "@/persistence/resource-repository";
 import { createInMemoryEventLogRepository } from "@/persistence/event-log-repository";
 import { createInMemorySupportLogRepository } from "@/persistence/support-log-repository";
+import { createInMemoryExamAuthoringCacheRepository } from "@/persistence/exam-authoring-cache-repository";
+import { createPrismaExamCatalogRepository } from "@/persistence/prisma-exam-catalog-repository";
 import {
   createPortalSessionStore,
   createPortalUserRepository,
@@ -65,6 +67,8 @@ import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
+import type { ExamRepository } from "@/domain/exam-catalog";
+import type { ExamAuthoringCacheRepository } from "@/persistence/exam-authoring-cache-repository";
 import { createSecretBox } from "@/security/secret-box";
 
 /**
@@ -110,6 +114,8 @@ export interface Services {
   eventLog: EventLogRepository;
   /** Structured, redacted server logs surfaced to admins for troubleshooting. */
   supportLog: SupportLogRepository;
+  exams: ExamRepository;
+  examAuthoringCache: ExamAuthoringCacheRepository;
   cloudshareConnections: CloudShareConnectionRepository;
   cloudshareClientFactory: CloudShareClientFactory;
   ensurePortalSeeded(): Promise<void>;
@@ -259,6 +265,8 @@ export function getServices(): Services {
   const audit = createInMemoryAuditRepository();
   const resources = createInMemoryResourceRepository();
   const eventLog = createInMemoryEventLogRepository();
+  const exams = createPrismaExamCatalogRepository(prisma);
+  const examAuthoringCache = createInMemoryExamAuthoringCacheRepository();
   const cloudshareSecretBox = createSecretBox(
     Buffer.from(config.secrets.portalMasterKey, "base64"),
   );
@@ -282,13 +290,18 @@ export function getServices(): Services {
   let portalSeedPromise: Promise<void> | null = null;
 
   async function ensurePortalSeeded(): Promise<void> {
+    const heliosAdmin = config.seed.heliosAdmin;
+    if (!heliosAdmin) {
+      return;
+    }
+
     if (!portalSeedPromise) {
       portalSeedPromise = (async () => {
         const user = await portalUsers.upsertSeedUser({
           customerSlug: "helios-cx",
           customerName: "Helios CX",
-          email: config.seed.heliosAdminEmail,
-          passwordHash: await hashPassword(config.seed.heliosAdminPassword),
+          email: heliosAdmin.email,
+          passwordHash: await hashPassword(heliosAdmin.password),
           role: "admin",
         });
 
@@ -335,6 +348,7 @@ export function getServices(): Services {
     audit.reset();
     eventLog.reset();
     supportLog.reset();
+    examAuthoringCache.reset();
     webhookIdempotency.reset();
     environmentSimulator?.reset();
     kryterion.reset();
@@ -368,6 +382,8 @@ export function getServices(): Services {
     resources,
     eventLog,
     supportLog,
+    exams,
+    examAuthoringCache,
     cloudshareConnections,
     cloudshareClientFactory,
     ensurePortalSeeded,

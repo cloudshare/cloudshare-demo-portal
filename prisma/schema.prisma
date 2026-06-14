@@ -24,6 +24,7 @@ model Customer {
   name                 String
   createdAt            DateTime              @default(now())
   users                User[]
+  exams                Exam[]
   cloudShareConnection CloudShareConnection?
 }
 
@@ -55,4 +56,32 @@ model CloudShareConnection {
   verifiedAt              DateTime?
   updatedAt               DateTime  @updatedAt
   customer                Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+}
+
+model Exam {
+  id                    String   @id
+  customerId            String
+  title                 String
+  description           String
+  timeLimitMinutes      Int
+  scoreRetrievalEnabled Boolean
+  status                String
+  publishedAt           DateTime?
+  createdAt             DateTime
+  updatedAt             DateTime
+  projectId             String
+  projectName           String
+  blueprintId           String
+  blueprintName         String
+  snapshotId            String
+  snapshotName          String
+  regionId              String
+  regionName            String
+  policyId              String
+  policyName            String
+  instructorId          String
+  instructorName        String
+  customer              Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, status])
 }

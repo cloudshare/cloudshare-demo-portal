@@ -52,10 +52,10 @@ first-class deliverable.
 
 ### Exam catalog (Helios admin)
 6. As a Helios admin, I want to list the projects in my subscription, so that I can pick where exams are provisioned.
-7. As a Helios admin, I want to list the Blueprints for a chosen Project, then inspect Blueprint detail including Snapshots and the default Snapshot, so that I can choose the environment version an Exam uses.
-8. As a Helios admin, I want to choose a blueprint's default snapshot but override it if needed, so that I control which environment version an exam provisions.
+7. As a Helios admin, I want to list the Blueprints for a chosen Project, then inspect Blueprint detail including Snapshots and the default Snapshot, so that I can see which environment version an Experience-based Exam will use.
+8. As a Helios admin, I want the portal to reflect the blueprint's current default Snapshot for Experience-based Exam launches, so that the portal does not imply it can override CloudShare's launch behavior.
 9. As a Helios admin, I want to choose a Project-scoped Policy and a single global Region for an Exam, so that environment lifetime and location are defined.
-10. As a Helios admin, I want to set candidate-facing exam metadata (title, description, time limit), so that candidates understand what they are scheduling.
+10. As a Helios admin, I want candidate-facing exam metadata (title, description, time limit) to be prepared from the selected CloudShare resources, so that candidates understand what they are scheduling without the portal inventing conflicting launch settings.
 11. As a Helios admin, I want to mark whether an exam retrieves Guided Journey scores, so that the portal only requests progress when a journey exists.
 12. As a Helios admin, I want to publish or unpublish an exam (draft vs published), so that candidates only see exams that are ready.
 
@@ -152,14 +152,17 @@ first-class deliverable.
 
 ### Exam catalog
 - An **Exam** belongs to a Customer and binds a provisioning tuple — **project, blueprint, snapshot
-  (default unless overridden), region, policy, instructor (a seeded service-account project
-  member)** — plus metadata (title, description, per-Exam **time limit**, **published/draft**, and a
+  (the Blueprint's current default for Experience-based launches), region, policy, instructor (a seeded service-account project
+  member)** — plus metadata (title, description, per-Exam **time limit** sourced from the selected Policy runtime lease, **published/draft**, and a
   **score-retrieval flag**). The blueprint/policy/project/region selection replaces the global
   `DEMO_*` env vars.
 - Exam authoring is **Project-first**, not global-resource-first. The intended admin workflow is:
   sync/list Projects, sync/list global Regions, select a Project, then fetch or read cached
-  Project-scoped resources for that Project only: Blueprints, Policies, later Project Members /
-  Instructor choices, and later Blueprint detail including Snapshots and the default Snapshot.
+  Project-scoped resources for that Project only: Blueprints, Policies, and Blueprint detail
+  including Snapshots and the default Snapshot. Instructor remains a configured seeded service
+  account for Slice 2 until a real Project-member read endpoint is verified.
+  Snapshot detail is informative for Experience-based launches: the portal records the current
+  default Snapshot and does not directly select a non-default Blueprint version.
 - The current admin **Resources** tab is a stopgap sync surface for early integration evidence. It
   should not be treated as the long-term Exam-authoring model, and the portal should not assume that
   syncing every visible project-scoped object across every Project is the default design.

@@ -10,6 +10,7 @@ import { createCloudShareConnectionRepository } from "@/persistence/cloudshare-c
 import { PrismaClient } from "@prisma/client";
 import type { CloudShareClientFactory } from "@/domain/cloudshare-connection";
 import { CloudShareRequestError } from "@/integrations/cloudshare";
+import { createInMemoryExamAuthoringCacheRepository } from "@/persistence/exam-authoring-cache-repository";
 
 const prisma = new PrismaClient();
 
@@ -145,6 +146,35 @@ describe("admin CloudShare handlers", () => {
       apiKey: "new-api-key",
       webhookSecret: "whsec",
     });
+  });
+
+  it("clears cached exam authoring resources when the CloudShare Connection changes", async () => {
+    const deps = await makeDeps();
+    const cache = createInMemoryExamAuthoringCacheRepository();
+    await cache.saveBootstrap(deps.customerId, {
+      projects: [{ id: "project-1", name: "Helios Exams" }],
+      regions: [{ id: "region-1", name: "EU West" }],
+    });
+    await cache.saveProjectResources(deps.customerId, "project-1", {
+      blueprints: [{ id: "bp-1", name: "Exam Blueprint" }],
+      policies: [{ id: "policy-1", name: "Timed Policy" }],
+    });
+
+    const response = await handleSaveCloudShareConnection(
+      { ...deps, examAuthoringCache: cache },
+      {
+        customerId: deps.customerId,
+        body: {
+          apiId: "api-id",
+          apiKey: "new-api-key",
+          webhookSecret: "whsec",
+        },
+      },
+    );
+
+    expect(response.status).toBe(200);
+    await expect(cache.getBootstrap(deps.customerId)).resolves.toBeNull();
+    await expect(cache.getProjectResources(deps.customerId, "project-1")).resolves.toBeNull();
   });
 
   it("returns support diagnostics and a correlation id on test failure", async () => {

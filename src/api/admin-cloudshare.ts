@@ -6,6 +6,7 @@ import {
   type CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
 import type { Logger } from "@/observability/logger";
+import type { ExamAuthoringCacheRepository } from "@/persistence/exam-authoring-cache-repository";
 import { randomUUID } from "node:crypto";
 
 export interface AdminCloudShareRequest {
@@ -21,6 +22,7 @@ export interface AdminCloudShareResponse {
 export interface AdminCloudShareDeps {
   readonly connections: CloudShareConnectionRepository;
   readonly cloudshare: CloudShareClientFactory;
+  readonly examAuthoringCache?: ExamAuthoringCacheRepository;
   readonly logger: Logger;
   readonly now?: () => Date;
   readonly newCorrelationId?: () => string;
@@ -77,6 +79,7 @@ export async function handleSaveCloudShareConnection(
     apiKey: trimmedApiKey || existing?.apiKey || "",
     webhookSecret: trimmedWebhookSecret || existing?.webhookSecret || "",
   });
+  await deps.examAuthoringCache?.clearCustomer(request.customerId);
 
   deps.logger.info("cloudshare connection saved", {
     customerId: request.customerId,

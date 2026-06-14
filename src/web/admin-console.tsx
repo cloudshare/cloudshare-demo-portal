@@ -1,7 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  beginLatestOnlyRequest,
+  getExamAuthoringMode,
+  isLatestOnlyResponse,
+} from "./admin-console-state";
 
 interface AdminConsoleProps {
   readonly email: string;
@@ -60,7 +65,51 @@ interface SyncResult {
   byType: Record<string, Array<{ name: string; cloudshareId: string; syncedAt: string }>>;
 }
 
-type Tab = "connection" | "audit" | "events" | "support" | "resources";
+interface NamedResource {
+  id: string;
+  name: string;
+  friendlyName?: string;
+  description?: string;
+  runtimeLeaseMinutes?: number | null;
+}
+
+interface BlueprintSnapshot {
+  id: string;
+  name: string;
+  isDefault: boolean;
+  regionIds: string[];
+}
+
+interface BlueprintDetail {
+  id: string;
+  name: string;
+  description: string;
+  defaultSnapshotId: string | null;
+  snapshots: BlueprintSnapshot[];
+}
+
+interface ExamRecord {
+  id: string;
+  title: string;
+  description: string;
+  timeLimitMinutes: number;
+  scoreRetrievalEnabled: boolean;
+  status: "draft" | "published";
+  publishedAt: string | null;
+  projectId: string;
+  projectName: string;
+  blueprintId: string;
+  blueprintName: string;
+  snapshotId: string;
+  snapshotName: string;
+  regionId: string;
+  regionName: string;
+  policyId: string;
+  policyName: string;
+  instructorName: string;
+}
+
+type Tab = "connection" | "exams" | "audit" | "events" | "support" | "resources";
 
 function formatUtcTimestamp(value: string | null | undefined): string {
   if (!value) {
@@ -97,9 +146,48 @@ function formatSupportValue(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
+function stripHtmlToText(value: string | null | undefined): string {
+  if (!value) {
+    return "";
+  }
+
+  return value
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&#39;/gi, "'")
+    .replace(/&quot;/gi, "\"")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function AdminConsole({ email }: AdminConsoleProps) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("connection");
+  const [projects, setProjects] = useState<NamedResource[]>([]);
+  const [regions, setRegions] = useState<NamedResource[]>([]);
+  const [blueprints, setBlueprints] = useState<NamedResource[]>([]);
+  const [policies, setPolicies] = useState<NamedResource[]>([]);
+  const [blueprintDetail, setBlueprintDetail] = useState<BlueprintDetail | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [selectedBlueprintId, setSelectedBlueprintId] = useState("");
+  const [selectedPolicyId, setSelectedPolicyId] = useState("");
+  const [selectedRegionId, setSelectedRegionId] = useState("");
+  const [examTitle, setExamTitle] = useState("");
+  const [examDescription, setExamDescription] = useState("");
+  const [timeLimitMinutes, setTimeLimitMinutes] = useState("90");
+  const [scoreRetrievalEnabled, setScoreRetrievalEnabled] = useState(false);
+  const [editingExamId, setEditingExamId] = useState<string | null>(null);
+  const [examCatalog, setExamCatalog] = useState<ExamRecord[]>([]);
+  const [examMessage, setExamMessage] = useState<string | null>(null);
+  const [examDiagnostic, setExamDiagnostic] = useState<ConnectionDiagnostic | null>(null);
+  const [examCorrelationId, setExamCorrelationId] = useState<string | null>(null);
+  const projectResourcesRequestIdRef = useRef(0);
+  const blueprintDetailRequestIdRef = useRef(0);
   const [examAttemptFilter, setExamAttemptFilter] = useState("");
   const [auditRecords, setAuditRecords] = useState<AuditRecord[] | null>(null);
   const [eventRecords, setEventRecords] = useState<EventLogRecord[] | null>(null);
@@ -116,10 +204,17 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   const [connectionWarning, setConnectionWarning] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   useEffect(() => {
     void loadConnection();
   }, []);
+
+  useEffect(() => {
+    if (tab === "exams") {
+      void loadExamCatalog();
+      void loadExamAuthoring();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
 
   async function loadConnection() {
     const response = await fetch("/api/admin/cloudshare");
@@ -293,6 +388,20 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     void loadSupportLog();
   }
 
+  function resetExamForm(next?: {
+    title?: string;
+    description?: string;
+    scoreRetrievalEnabled?: boolean;
+    timeLimitMinutes?: string;
+  }) {
+    setEditingExamId(null);
+    setExamMessage(null);
+    setExamTitle(next?.title ?? blueprintDetail?.name ?? "");
+    setExamDescription(next?.description ?? stripHtmlToText(blueprintDetail?.description) ?? "");
+    setScoreRetrievalEnabled(next?.scoreRetrievalEnabled ?? false);
+    setTimeLimitMinutes(next?.timeLimitMinutes ?? "");
+  }
+
   async function syncResources() {
     setLoading(true);
     setError(null);
@@ -306,6 +415,331 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       }
     } catch {
       setError("Sync request failed");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadExamAuthoring(refresh = false) {
+    setLoading(true);
+    setError(null);
+    setExamDiagnostic(null);
+    try {
+      const response = await fetch(`/api/admin/exam-authoring${refresh ? "?refresh=true" : ""}`);
+      const data = (await response.json()) as {
+        projects?: NamedResource[];
+        regions?: NamedResource[];
+        error?: string;
+        correlationId?: string | null;
+        diagnostic?: ConnectionDiagnostic | null;
+      };
+      if (!response.ok) {
+        setError(data.error ?? "Failed to load exam authoring resources");
+        setExamCorrelationId(data.correlationId ?? null);
+        setExamDiagnostic(data.diagnostic ?? null);
+        void loadSupportLog(true);
+        return;
+      }
+
+      const nextProjects = data.projects ?? [];
+      const nextRegions = data.regions ?? [];
+      setProjects(nextProjects);
+      setRegions(nextRegions);
+      const nextProjectId = nextProjects.some((project) => project.id === selectedProjectId)
+        ? selectedProjectId
+        : (nextProjects[0]?.id ?? "");
+      if (nextProjectId !== selectedProjectId) {
+        setSelectedProjectId(nextProjectId);
+      }
+      const nextRegionId = nextRegions.some((region) => region.id === selectedRegionId)
+        ? selectedRegionId
+        : (nextRegions[0]?.id ?? "");
+      if (nextRegionId !== selectedRegionId) {
+        setSelectedRegionId(nextRegionId);
+      }
+      if (!selectedProjectId && nextProjectId) {
+        const projectId = nextProjectId;
+        setSelectedProjectId(projectId);
+        void loadProjectResources(projectId, true);
+      }
+    } catch {
+      setError("Failed to load exam authoring resources");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadProjectResources(
+    projectId: string,
+    refresh = false,
+    preferredBlueprintId?: string,
+    preferredPolicyId?: string,
+  ) {
+    const requestId = beginLatestOnlyRequest(projectResourcesRequestIdRef.current);
+    projectResourcesRequestIdRef.current = requestId;
+    setLoading(true);
+    setError(null);
+    setExamDiagnostic(null);
+    try {
+      const response = await fetch(
+        `/api/admin/exam-authoring/projects/${encodeURIComponent(projectId)}${refresh ? "?refresh=true" : ""}`,
+      );
+      const data = (await response.json()) as {
+        blueprints?: NamedResource[];
+        policies?: NamedResource[];
+        error?: string;
+        correlationId?: string | null;
+        diagnostic?: ConnectionDiagnostic | null;
+      };
+      if (!response.ok) {
+        if (!isLatestOnlyResponse(projectResourcesRequestIdRef.current, requestId)) {
+          return;
+        }
+        setError(data.error ?? "Failed to load project resources");
+        setExamCorrelationId(data.correlationId ?? null);
+        setExamDiagnostic(data.diagnostic ?? null);
+        void loadSupportLog(true);
+        return;
+      }
+
+      if (!isLatestOnlyResponse(projectResourcesRequestIdRef.current, requestId)) {
+        return;
+      }
+
+      const nextBlueprints = data.blueprints ?? [];
+      const nextPolicies = data.policies ?? [];
+      setBluePrintState(nextBlueprints, nextPolicies, preferredPolicyId);
+      const desiredBlueprintId = preferredBlueprintId ?? selectedBlueprintId;
+      const nextBlueprintId = nextBlueprints.some((blueprint) => blueprint.id === desiredBlueprintId)
+        ? desiredBlueprintId
+        : (nextBlueprints[0]?.id ?? "");
+      if (nextBlueprintId !== selectedBlueprintId) {
+        setSelectedBlueprintId(nextBlueprintId);
+      }
+      if (nextBlueprintId) {
+        const blueprintId = nextBlueprintId;
+        setSelectedBlueprintId(blueprintId);
+        void loadBlueprintDetail(projectId, blueprintId, refresh);
+      } else {
+        setBlueprintDetail(null);
+      }
+    } catch {
+      if (!isLatestOnlyResponse(projectResourcesRequestIdRef.current, requestId)) {
+        return;
+      }
+      setError("Failed to load project resources");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function setBluePrintState(
+    nextBlueprints: NamedResource[],
+    nextPolicies: NamedResource[],
+    preferredPolicyId?: string,
+  ) {
+    setBlueprints(nextBlueprints);
+    setPolicies(nextPolicies);
+    const desiredPolicyId = preferredPolicyId ?? selectedPolicyId;
+    const nextPolicyId = nextPolicies.some((policy) => policy.id === desiredPolicyId)
+      ? desiredPolicyId
+      : (nextPolicies[0]?.id ?? "");
+    setSelectedPolicyId(nextPolicyId);
+    const selectedPolicy = nextPolicies.find((policy) => policy.id === nextPolicyId);
+    if (selectedPolicy?.runtimeLeaseMinutes) {
+      setTimeLimitMinutes(String(selectedPolicy.runtimeLeaseMinutes));
+    }
+  }
+
+  async function loadBlueprintDetail(projectId: string, blueprintId: string, refresh = false) {
+    const requestId = beginLatestOnlyRequest(blueprintDetailRequestIdRef.current);
+    blueprintDetailRequestIdRef.current = requestId;
+    setLoading(true);
+    setError(null);
+    setExamDiagnostic(null);
+    try {
+      const response = await fetch(
+        `/api/admin/exam-authoring/projects/${encodeURIComponent(projectId)}/blueprints/${encodeURIComponent(blueprintId)}${refresh ? "?refresh=true" : ""}`,
+      );
+      const data = (await response.json()) as {
+        blueprint?: BlueprintDetail;
+        error?: string;
+        correlationId?: string | null;
+        diagnostic?: ConnectionDiagnostic | null;
+      };
+      if (!response.ok) {
+        if (!isLatestOnlyResponse(blueprintDetailRequestIdRef.current, requestId)) {
+          return;
+        }
+        setError(data.error ?? "Failed to load blueprint detail");
+        setExamCorrelationId(data.correlationId ?? null);
+        setExamDiagnostic(data.diagnostic ?? null);
+        void loadSupportLog(true);
+        return;
+      }
+
+      if (!isLatestOnlyResponse(blueprintDetailRequestIdRef.current, requestId)) {
+        return;
+      }
+
+      const detail = data.blueprint ?? null;
+      setError(null);
+      setExamCorrelationId(null);
+      setExamDiagnostic(null);
+      setBlueprintDetail(detail);
+      if (!editingExamId && detail) {
+        setExamTitle(detail.name);
+        setExamDescription(stripHtmlToText(detail.description));
+      }
+    } catch {
+      if (!isLatestOnlyResponse(blueprintDetailRequestIdRef.current, requestId)) {
+        return;
+      }
+      setError("Failed to load blueprint detail");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadExamCatalog() {
+    try {
+      const response = await fetch("/api/admin/exams");
+      const data = (await response.json()) as { exams?: ExamRecord[]; error?: string };
+      if (!response.ok) {
+        setError(data.error ?? "Failed to load exam catalog");
+        return;
+      }
+      setExamCatalog(data.exams ?? []);
+    } catch {
+      setError("Failed to load exam catalog");
+    }
+  }
+
+  async function saveDraftExam() {
+    setLoading(true);
+    setError(null);
+    setExamMessage(null);
+    try {
+      const project = projects.find((item) => item.id === selectedProjectId);
+      const blueprint = blueprints.find((item) => item.id === selectedBlueprintId);
+      const policy = policies.find((item) => item.id === selectedPolicyId);
+      const region = regions.find((item) => item.id === selectedRegionId);
+      const snapshot = blueprintDetail?.snapshots.find(
+        (item) => item.id === blueprintDetail.defaultSnapshotId,
+      );
+      const policyTimeLimitMinutes = policy?.runtimeLeaseMinutes ?? null;
+
+      if (!project || !blueprint || !policy || !region || !snapshot || !policyTimeLimitMinutes) {
+        setError("Select a project, blueprint, policy, and region before saving the Exam.");
+        return;
+      }
+
+      const response = await fetch(
+        editingExamId
+          ? `/api/admin/exams/${encodeURIComponent(editingExamId)}`
+          : "/api/admin/exams",
+        {
+          method: editingExamId ? "PATCH" : "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            title: examTitle,
+            description: examDescription,
+            scoreRetrievalEnabled,
+            ...(editingExamId
+              ? {}
+              : {
+                  projectId: project.id,
+                  projectName: project.name,
+                  blueprintId: blueprint.id,
+                  blueprintName: blueprint.name,
+                  snapshotId: snapshot.id,
+                  snapshotName: snapshot.name,
+                  regionId: region.id,
+                  regionName: region.name,
+                  policyId: policy.id,
+                  policyName: policy.name,
+                }),
+          }),
+        },
+      );
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        setError(data.error ?? "Failed to save draft exam");
+        return;
+      }
+
+      setExamMessage(editingExamId ? "Draft exam updated." : "Draft exam saved.");
+      if (!editingExamId) {
+        resetExamForm();
+      }
+      await loadExamCatalog();
+    } catch {
+      setError("Failed to save draft exam");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function publishCatalogExam(examId: string) {
+    setLoading(true);
+    setError(null);
+    setExamMessage(null);
+    try {
+      const response = await fetch(`/api/admin/exams/${encodeURIComponent(examId)}/publish`, {
+        method: "POST",
+      });
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        setError(data.error ?? "Failed to publish exam");
+        return;
+      }
+      setExamMessage("Exam published.");
+      await loadExamCatalog();
+    } catch {
+      setError("Failed to publish exam");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function unpublishCatalogExam(examId: string) {
+    setLoading(true);
+    setError(null);
+    setExamMessage(null);
+    try {
+      const response = await fetch(`/api/admin/exams/${encodeURIComponent(examId)}/unpublish`, {
+        method: "POST",
+      });
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        setError(data.error ?? "Failed to unpublish exam");
+        return;
+      }
+      setExamMessage("Exam returned to draft.");
+      await loadExamCatalog();
+    } catch {
+      setError("Failed to unpublish exam");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function beginEditingExam(exam: ExamRecord) {
+    setLoading(true);
+    setError(null);
+    setExamMessage(null);
+    try {
+      setSelectedProjectId(exam.projectId);
+      setSelectedRegionId(exam.regionId);
+      await loadProjectResources(exam.projectId, false, exam.blueprintId, exam.policyId);
+      setSelectedBlueprintId(exam.blueprintId);
+      setSelectedPolicyId(exam.policyId);
+      await loadBlueprintDetail(exam.projectId, exam.blueprintId, false);
+      setEditingExamId(exam.id);
+      setExamTitle(exam.title);
+      setExamDescription(exam.description);
+      setScoreRetrievalEnabled(exam.scoreRetrievalEnabled);
+      setTimeLimitMinutes(String(exam.timeLimitMinutes));
     } finally {
       setLoading(false);
     }
@@ -330,6 +764,41 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       ? "Saved, not yet verified"
       : "No CloudShare Connection saved yet";
   const storedSecretPlaceholder = hasSavedConnection ? "********" : "";
+  const selectedProject = projects.find((item) => item.id === selectedProjectId) ?? null;
+  const selectedBlueprint = blueprints.find((item) => item.id === selectedBlueprintId) ?? null;
+  const selectedPolicy = policies.find((item) => item.id === selectedPolicyId) ?? null;
+  const authoringMode = getExamAuthoringMode(editingExamId);
+  const defaultSnapshot =
+    blueprintDetail?.snapshots.find((item) => item.id === blueprintDetail.defaultSnapshotId) ?? null;
+  const compatibleRegions =
+    defaultSnapshot && defaultSnapshot.regionIds.length > 0
+      ? regions.filter((region) => defaultSnapshot.regionIds.includes(region.id))
+      : regions;
+  const selectedRegion = compatibleRegions.find((item) => item.id === selectedRegionId) ?? null;
+  const effectiveTimeLimitMinutes =
+    selectedPolicy?.runtimeLeaseMinutes !== null && selectedPolicy?.runtimeLeaseMinutes !== undefined
+      ? String(selectedPolicy.runtimeLeaseMinutes)
+      : timeLimitMinutes;
+  const compactFieldStyle = {
+    padding: "0.7rem",
+    paddingRight: "2.25rem",
+    border: "1px solid #ccc",
+    borderRadius: "6px",
+    width: "100%",
+    boxSizing: "border-box",
+    minWidth: 0,
+    minHeight: "46px",
+  } as const;
+  const blueprintSummary = selectedBlueprint
+    ? stripHtmlToText(selectedBlueprint.description || blueprintDetail?.description || "")
+    : "";
+
+  useEffect(() => {
+    if (compatibleRegions.some((region) => region.id === selectedRegionId)) {
+      return;
+    }
+    setSelectedRegionId(compatibleRegions[0]?.id ?? "");
+  }, [compatibleRegions, selectedRegionId]);
 
   return (
     <main style={{ fontFamily: "system-ui, sans-serif", padding: "2rem", maxWidth: "1000px", margin: "0 auto" }}>
@@ -342,7 +811,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       </div>
 
       <nav style={{ display: "flex", gap: "0.75rem", marginBottom: "1.5rem", flexWrap: "wrap" }}>
-        {(["connection", "audit", "events", "support", "resources"] as Tab[]).map((t) => (
+        {(["connection", "exams", "audit", "events", "support", "resources"] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -357,6 +826,8 @@ export function AdminConsole({ email }: AdminConsoleProps) {
           >
             {t === "connection"
               ? "Connect CloudShare"
+              : t === "exams"
+                ? "Exam Catalog"
               : t === "audit"
                 ? "Audit Trail"
                 : t === "events"
@@ -371,12 +842,17 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       {error && (
         <div style={{ color: "#b00020", background: "#fff0f0", padding: "0.75rem", borderRadius: "6px", display: "grid", gap: "0.5rem" }}>
           <p style={{ margin: 0 }}>{error}</p>
-          {connectionCorrelationId && (
+          {tab === "exams" && examCorrelationId ? (
+            <p style={{ margin: 0, fontSize: "0.85rem" }}>
+              See <strong>Support Log</strong> with correlation ID{" "}
+              <span style={{ fontFamily: "monospace" }}>{examCorrelationId}</span>.
+            </p>
+          ) : connectionCorrelationId ? (
             <p style={{ margin: 0, fontSize: "0.85rem" }}>
               See <strong>Support Log</strong> with correlation ID{" "}
               <span style={{ fontFamily: "monospace" }}>{connectionCorrelationId}</span>.
             </p>
-          )}
+          ) : null}
         </div>
       )}
 
@@ -463,6 +939,303 @@ export function AdminConsole({ email }: AdminConsoleProps) {
             </button>
           </div>
           {connectionMessage && <p style={{ color: "#0a7a28", margin: 0 }}>{connectionMessage}</p>}
+        </section>
+      )}
+
+      {tab === "exams" && (
+        <section style={{ display: "grid", gap: "1rem" }}>
+          <div style={{ padding: "1rem", background: "#f7f7f8", borderRadius: "6px", display: "grid", gap: "0.5rem" }}>
+            <strong>Project-first Exam authoring</strong>
+            <span style={{ color: "#555" }}>
+              Regions are global reference data. Blueprints and Policies are fetched in the selected Project context. For experience-based Exams, CloudShare launches always use the Blueprint&apos;s current default snapshot.
+            </span>
+            <span style={{ color: "#555" }}>
+              Instructor choice is fixed to the seeded CloudShare service account for this slice and must be explicitly configured before an Exam can be saved.
+            </span>
+            <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+              <button onClick={() => void loadExamAuthoring(true)} disabled={loading} style={{ padding: "0.6rem 0.9rem" }}>
+                {loading ? "Loading..." : "Refresh Projects & Regions"}
+              </button>
+              {selectedProjectId && (
+                <button
+                  onClick={() => void loadProjectResources(selectedProjectId, true)}
+                  disabled={loading}
+                  style={{ padding: "0.6rem 0.9rem" }}
+                >
+                  {loading ? "Loading..." : "Refresh Selected Project"}
+                </button>
+              )}
+            </div>
+            {authoringMode.tupleChangeHint && (
+              <span style={{ color: "#555", fontSize: "0.9rem" }}>{authoringMode.tupleChangeHint}</span>
+            )}
+          </div>
+
+          {examDiagnostic && (
+            <div style={{ color: "#7a4b00", background: "#fff7e6", padding: "0.75rem", borderRadius: "6px", display: "grid", gap: "0.4rem" }}>
+              <p style={{ margin: 0 }}>CloudShare resource request failed.</p>
+              <p style={{ margin: 0, fontSize: "0.85rem" }}>
+                {examDiagnostic.method} {examDiagnostic.path} · {examDiagnostic.failureMode}
+                {typeof examDiagnostic.responseStatus === "number" ? ` · HTTP ${examDiagnostic.responseStatus}` : ""}
+              </p>
+            </div>
+          )}
+
+          <div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", alignItems: "start" }}>
+            <label style={{ display: "grid", gap: "0.35rem", minWidth: 0 }}>
+              <span>Project</span>
+              <select
+                value={selectedProjectId}
+                onChange={(event) => {
+                  const nextProjectId = event.target.value;
+                  setSelectedProjectId(nextProjectId);
+                  setEditingExamId(null);
+                  setSelectedBlueprintId("");
+                  setBlueprintDetail(null);
+                  void loadProjectResources(nextProjectId, true);
+                }}
+                style={compactFieldStyle}
+                disabled={authoringMode.provisioningLocked}
+              >
+                <option value="">Select a Project</option>
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label style={{ display: "grid", gap: "0.35rem", minWidth: 0 }}>
+              <span>Blueprint</span>
+              <select
+                value={selectedBlueprintId}
+                onChange={(event) => {
+                  const nextBlueprintId = event.target.value;
+                  setSelectedBlueprintId(nextBlueprintId);
+                  setEditingExamId(null);
+                  if (selectedProjectId && nextBlueprintId) {
+                    void loadBlueprintDetail(selectedProjectId, nextBlueprintId, true);
+                  }
+                }}
+                style={compactFieldStyle}
+                disabled={authoringMode.provisioningLocked}
+              >
+                <option value="">Select a Blueprint</option>
+                {blueprints.map((blueprint) => (
+                  <option key={blueprint.id} value={blueprint.id}>
+                    {blueprint.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label style={{ display: "grid", gap: "0.35rem", minWidth: 0 }}>
+              <span>Snapshot</span>
+              <div
+                title={defaultSnapshot ? `${defaultSnapshot.name} (default)` : "Select a Blueprint"}
+                style={{
+                  ...compactFieldStyle,
+                  background: "#f9fafb",
+                  color: defaultSnapshot ? "#111" : "#666",
+                  fontSize: "0.95rem",
+                  lineHeight: "1.2",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {defaultSnapshot ? `${defaultSnapshot.name} (default)` : "Select a Blueprint"}
+              </div>
+            </label>
+
+            <label style={{ display: "grid", gap: "0.35rem", minWidth: 0 }}>
+              <span>Policy</span>
+              <select
+                value={selectedPolicyId}
+                onChange={(event) => {
+                  setEditingExamId(null);
+                  setSelectedPolicyId(event.target.value);
+                }}
+                style={compactFieldStyle}
+                disabled={authoringMode.provisioningLocked}
+              >
+                <option value="">Select a Policy</option>
+                {policies.map((policy) => (
+                  <option key={policy.id} value={policy.id}>
+                    {policy.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label style={{ display: "grid", gap: "0.35rem", minWidth: 0 }}>
+              <span>Region</span>
+              <select
+                value={selectedRegionId}
+                onChange={(event) => setSelectedRegionId(event.target.value)}
+                style={compactFieldStyle}
+                disabled={authoringMode.provisioningLocked}
+              >
+                <option value="">Select a Region</option>
+                {compatibleRegions.map((region) => (
+                  <option key={region.id} value={region.id}>
+                    {region.friendlyName ?? region.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gap: "0.5rem",
+              padding: "0.85rem 1rem",
+              border: "1px solid #e5e7eb",
+              borderRadius: "6px",
+              background: "#fafafa",
+            }}
+          >
+            <strong>Selection summary</strong>
+            <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
+              Project: {selectedProject?.name ?? "-"}
+            </div>
+            <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
+              Policy: {selectedPolicy?.name ?? "-"}
+              {selectedPolicy?.runtimeLeaseMinutes
+                ? ` · ${selectedPolicy.runtimeLeaseMinutes} minute runtime lease`
+                : ""}
+            </div>
+            <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
+              Region: {selectedRegion ? (selectedRegion.friendlyName ?? selectedRegion.name) : "-"}
+            </div>
+            <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
+              Snapshot: {defaultSnapshot ? `${defaultSnapshot.name} (default only for Experience launches)` : "-"}
+            </div>
+            {blueprintSummary && (
+              <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
+                Blueprint: {blueprintSummary}
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", alignItems: "start" }}>
+            <label style={{ display: "grid", gap: "0.35rem", gridColumn: "1 / -1" }}>
+              <span>Exam title</span>
+              <input
+                value={examTitle}
+                onChange={(event) => setExamTitle(event.target.value)}
+                style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
+              />
+            </label>
+            <label style={{ display: "grid", gap: "0.35rem", gridColumn: "1 / -1" }}>
+              <span>Description</span>
+              <textarea
+                value={examDescription}
+                onChange={(event) => setExamDescription(event.target.value)}
+                rows={4}
+                style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
+              />
+            </label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              <span>Time limit (minutes)</span>
+              <input
+                type="number"
+                min={1}
+                value={effectiveTimeLimitMinutes}
+                readOnly
+                style={{ ...compactFieldStyle, background: "#f9fafb" }}
+              />
+              <span style={{ color: "#666", fontSize: "0.85rem" }}>
+                Time limit follows the selected CloudShare Policy runtime lease for this slice.
+              </span>
+            </label>
+            <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", gridColumn: "1 / -1" }}>
+              <input
+                type="checkbox"
+                checked={scoreRetrievalEnabled}
+                onChange={(event) => setScoreRetrievalEnabled(event.target.checked)}
+              />
+              <span>Retrieve Guided Journey score for this Exam</span>
+            </label>
+          </div>
+
+          <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+            <button onClick={saveDraftExam} disabled={loading} style={{ padding: "0.7rem 1rem" }}>
+              {loading ? "Saving..." : editingExamId ? "Update Draft Exam" : "Save Draft Exam"}
+            </button>
+            {editingExamId && (
+              <button onClick={() => resetExamForm()} disabled={loading} style={{ padding: "0.7rem 1rem" }}>
+                Cancel Edit
+              </button>
+            )}
+            {examMessage && <span style={{ color: "#0a7a28" }}>{examMessage}</span>}
+          </div>
+
+          <div style={{ overflowX: "auto" }}>
+            <h2 style={{ marginBottom: "0.6rem" }}>Current Exam Catalog</h2>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
+              <thead>
+                <tr style={{ background: "#f5f5f5" }}>
+                  {["Title", "Status", "Project", "Blueprint / Snapshot", "Region", "Policy", "Score", "Action"].map((heading) => (
+                    <th key={heading} style={{ textAlign: "left", padding: "0.4rem", borderBottom: "1px solid #ddd" }}>
+                      {heading}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {examCatalog.length === 0 && (
+                  <tr>
+                    <td colSpan={8} style={{ padding: "0.5rem", color: "#666" }}>
+                      No exams yet.
+                    </td>
+                  </tr>
+                )}
+                {examCatalog.map((exam) => (
+                  <tr key={exam.id} style={{ borderBottom: "1px solid #eee", verticalAlign: "top" }}>
+                    <td style={{ padding: "0.4rem" }}>
+                      <div style={{ fontWeight: 600 }}>{exam.title}</div>
+                      <div style={{ color: "#666" }}>{exam.description}</div>
+                    </td>
+                    <td style={{ padding: "0.4rem" }}>
+                      {exam.status}
+                      {exam.publishedAt && (
+                        <div style={{ color: "#666", fontSize: "0.75rem" }}>
+                          {formatUtcTimestamp(exam.publishedAt)}
+                        </div>
+                      )}
+                    </td>
+                    <td style={{ padding: "0.4rem" }}>{exam.projectName}</td>
+                    <td style={{ padding: "0.4rem" }}>
+                      <div>{exam.blueprintName}</div>
+                      <div style={{ color: "#666", fontSize: "0.75rem" }}>{exam.snapshotName}</div>
+                    </td>
+                    <td style={{ padding: "0.4rem" }}>{exam.regionName}</td>
+                    <td style={{ padding: "0.4rem" }}>{exam.policyName}</td>
+                    <td style={{ padding: "0.4rem" }}>{exam.scoreRetrievalEnabled ? "Enabled" : "Off"}</td>
+                    <td style={{ padding: "0.4rem" }}>
+                      {exam.status === "draft" ? (
+                        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                          <button onClick={() => void beginEditingExam(exam)} disabled={loading} style={{ padding: "0.45rem 0.75rem" }}>
+                            Edit
+                          </button>
+                          <button onClick={() => void publishCatalogExam(exam.id)} disabled={loading} style={{ padding: "0.45rem 0.75rem" }}>
+                            Publish
+                          </button>
+                        </div>
+                      ) : (
+                        <button onClick={() => void unpublishCatalogExam(exam.id)} disabled={loading} style={{ padding: "0.45rem 0.75rem" }}>
+                          Unpublish
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
 
@@ -700,6 +1473,9 @@ export function AdminConsole({ email }: AdminConsoleProps) {
 
       {tab === "resources" && (
         <section>
+          <p style={{ color: "#555", marginTop: 0 }}>
+            Stopgap sync surface only. Slice 2 authoring should use the <strong>Exam Catalog</strong> tab above instead of treating every visible CloudShare resource as a global list.
+          </p>
           <button onClick={syncResources} disabled={loading} style={{ padding: "0.4rem 1rem", marginBottom: "1rem" }}>
             {loading ? "Syncing..." : "Sync CloudShare Resources"}
           </button>

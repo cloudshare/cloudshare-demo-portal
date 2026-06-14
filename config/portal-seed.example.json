@@ -1,0 +1,9 @@
+{
+  "heliosAdminEmail": "admin@helioscx.demo",
+  "heliosAdminPassword": "HeliosDemo123!",
+  "heliosCloudShareConnection": null,
+  "heliosInstructor": {
+    "id": "replace-with-real-cloudshare-member-id",
+    "name": "Helios Service Account"
+  }
+}

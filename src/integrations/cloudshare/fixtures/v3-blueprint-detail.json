@@ -1,0 +1,23 @@
+{
+  "method": "GET",
+  "path": "/api/v3/projects/p-demo-1/blueprints/bp-demo-1",
+  "status": 200,
+  "body": {
+    "id": "bp-demo-1",
+    "name": "Helios Exam Blueprint",
+    "createFromVersions": [
+      {
+        "id": "snap-demo-1",
+        "name": "Default Snapshot",
+        "isDefault": true,
+        "regions": [{ "id": "r-eu-west", "name": "EU West" }]
+      },
+      {
+        "id": "snap-demo-2",
+        "name": "Older Snapshot",
+        "isDefault": false,
+        "regions": [{ "id": "r-us-east", "name": "US East" }]
+      }
+    ]
+  }
+}

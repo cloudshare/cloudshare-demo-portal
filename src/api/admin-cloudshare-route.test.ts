@@ -132,6 +132,45 @@ describe("admin CloudShare route", () => {
     });
   });
 
+  it("clears cached authoring resources through the real PUT route after saving a connection", async () => {
+    const cache = {
+      clearCustomer: vi.fn().mockResolvedValue(undefined),
+    };
+    const save = vi.fn(async (connection) => ({
+      ...connection,
+      connectedAt: new Date("2026-06-13T20:30:00.000Z"),
+      verifiedAt: null,
+    }));
+
+    mockGetServices.mockReturnValue({
+      cloudshareConnections: { save, findByCustomerId: vi.fn().mockResolvedValue(null) },
+      cloudshareClientFactory: {},
+      examAuthoringCache: cache,
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+    });
+    mockGetPortalAdminSession.mockResolvedValue({
+      sessionId: "portal-session-1",
+      customerId: "customer-helios",
+      email: "admin@helioscx.demo",
+      role: "admin",
+    });
+
+    const response = await PUT(
+      new Request("http://localhost:3000/api/admin/cloudshare", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          apiId: "api-id",
+          apiKey: "api-key",
+          webhookSecret: "whsec",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(cache.clearCustomer).toHaveBeenCalledWith("customer-helios");
+  });
+
   it("rejects anonymous admin save attempts", async () => {
     mockGetServices.mockReturnValue({
       cloudshareConnections: { save: vi.fn(), findByCustomerId: vi.fn().mockResolvedValue(null) },
