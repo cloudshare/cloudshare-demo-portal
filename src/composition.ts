@@ -9,7 +9,10 @@ import {
   createTokenCandidateAuthenticator,
   createInMemoryConsumedTokenStore,
   createInMemoryCandidateSessionStore,
+  createPortalAuthenticator,
+  hashPassword,
   type CandidateAuthenticator,
+  type PortalAuthenticator,
 } from "@/auth";
 import {
   createKryterionSimulator,
@@ -21,6 +24,7 @@ import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-
 import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repository";
 import { createInMemoryEventBus, type IntegrationEventBus } from "@/domain/event-bus";
 import { createCloudShareIntegration } from "@/integrations/cloudshare";
+import { createCloudShareIntegrationForConnection } from "@/integrations/cloudshare";
 import { createCloudShareLabProvisioner } from "@/integrations/cloudshare/labs";
 import { createCloudShareEnvironmentSource } from "@/integrations/cloudshare/environment";
 import {
@@ -37,10 +41,16 @@ import {
 import { suspendExam } from "@/domain/timer-sync";
 import { type DemoStep } from "@/domain/demo-control";
 import { createCloudShareGuidedJourneyProvider } from "@/integrations/cloudshare/guided-journey";
-import { createCloudShareResourceLister } from "@/integrations/cloudshare/resources";
 import { createInMemoryAuditRepository } from "@/persistence/audit-repository";
 import { createInMemoryResourceRepository } from "@/persistence/resource-repository";
 import { createInMemoryEventLogRepository } from "@/persistence/event-log-repository";
+import { createInMemorySupportLogRepository } from "@/persistence/support-log-repository";
+import {
+  createPortalSessionStore,
+  createPortalUserRepository,
+  type PortalUserRepository,
+} from "@/persistence/portal-auth-repository";
+import { createCloudShareConnectionRepository } from "@/persistence/cloudshare-connection-repository";
 import type { ScoreRetrievalProvider } from "@/domain/score-result";
 import type { ExamEligibilityProvider } from "@/domain/eligibility";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
@@ -50,7 +60,12 @@ import type { WebhookIdempotencyStore } from "@/domain/webhook";
 import type { AuditRepository } from "@/domain/audit-trail";
 import type { ResourceRepository } from "@/domain/resource-sync";
 import type { EventLogRepository } from "@/domain/event-log";
-import type { CloudShareResourceLister } from "@/domain/resource-sync";
+import type { SupportLogRepository } from "@/domain/support-log";
+import type {
+  CloudShareClientFactory,
+  CloudShareConnectionRepository,
+} from "@/domain/cloudshare-connection";
+import { createSecretBox } from "@/security/secret-box";
 
 /**
  * Composition root. The framework-agnostic modules are pure and dependency-free;
@@ -67,6 +82,7 @@ export interface Services {
   prisma: PrismaClient;
   heartbeats: HeartbeatRepository;
   candidateAuth: CandidateAuthenticator;
+  portalAuth: PortalAuthenticator;
   kryterion: KryterionSimulator;
   genesys: ExamEligibilityProvider;
   examAttempts: ExamAttemptRepository;
@@ -92,8 +108,11 @@ export interface Services {
   resources: ResourceRepository;
   /** All integration events received/emitted during this server instance's lifetime. */
   eventLog: EventLogRepository;
-  /** Lists CloudShare blueprints, policies, projects, regions for admin sync. */
-  resourceLister: CloudShareResourceLister;
+  /** Structured, redacted server logs surfaced to admins for troubleshooting. */
+  supportLog: SupportLogRepository;
+  cloudshareConnections: CloudShareConnectionRepository;
+  cloudshareClientFactory: CloudShareClientFactory;
+  ensurePortalSeeded(): Promise<void>;
   /**
    * Which demo steps have been explicitly completed in this server instance's
    * lifetime. Cleared by `resetDemo()` for repeat runs.
@@ -115,7 +134,37 @@ export function getServices(): Services {
   }
 
   const config = loadConfig(process.env);
-  const logger = createLogger({ secrets: secretValues(config) });
+  const supportLog = createInMemorySupportLogRepository();
+  const logger = createLogger({
+    secrets: secretValues(config),
+    sink: (line: string) => {
+      process.stdout.write(line + "\n");
+      const parsed = JSON.parse(line) as {
+        level: "debug" | "info" | "warn" | "error";
+        message: string;
+        timestamp: string;
+        [key: string]: unknown;
+      };
+      const { level, message, timestamp, ...fields } = parsed;
+      void supportLog.append({
+        level,
+        message,
+        timestamp: new Date(timestamp),
+        fields,
+      });
+    },
+  });
+  const traceCloudShare = (event: {
+    readonly level: "info" | "warn";
+    readonly message: string;
+    readonly fields: Record<string, unknown>;
+  }): void => {
+    if (event.level === "warn") {
+      logger.warn(event.message, event.fields);
+      return;
+    }
+    logger.info(event.message, event.fields);
+  };
   const prisma = new PrismaClient();
   const heartbeats = createHeartbeatRepository(prisma);
 
@@ -128,6 +177,12 @@ export function getServices(): Services {
     secret: config.secrets.kryterionTokenSecret,
     consumedTokens,
     sessions: candidateSessions,
+  });
+  const portalUsers = createPortalUserRepository(prisma);
+  const portalSessions = createPortalSessionStore(prisma);
+  const portalAuth = createPortalAuthenticator({
+    users: portalUsers,
+    sessions: portalSessions,
   });
   const kryterion = createKryterionSimulator({
     secret: config.secrets.kryterionTokenSecret,
@@ -152,6 +207,7 @@ export function getServices(): Services {
   // by PORTAL_MODE; the provisioner and launch flow are identical either way.
   const cloudshare = createCloudShareIntegration({
     mode: config.runtime.mode,
+    trace: traceCloudShare,
     v4: {
       clientId: config.secrets.cloudshareV4ClientId,
       clientSecret: config.secrets.cloudshareV4ClientSecret,
@@ -203,7 +259,55 @@ export function getServices(): Services {
   const audit = createInMemoryAuditRepository();
   const resources = createInMemoryResourceRepository();
   const eventLog = createInMemoryEventLogRepository();
-  const resourceLister = createCloudShareResourceLister(cloudshare);
+  const cloudshareSecretBox = createSecretBox(
+    Buffer.from(config.secrets.portalMasterKey, "base64"),
+  );
+  const cloudshareConnections = createCloudShareConnectionRepository(
+    prisma,
+    cloudshareSecretBox,
+  );
+  const cloudshareClientFactory: CloudShareClientFactory = {
+    forConnection: (connection) =>
+      createCloudShareIntegrationForConnection({
+        mode: config.runtime.mode,
+        trace: traceCloudShare,
+        connection: {
+          apiId: connection.apiId,
+          apiKey: connection.apiKey,
+          webhookSecret: connection.webhookSecret,
+        },
+      }),
+  };
+
+  let portalSeedPromise: Promise<void> | null = null;
+
+  async function ensurePortalSeeded(): Promise<void> {
+    if (!portalSeedPromise) {
+      portalSeedPromise = (async () => {
+        const user = await portalUsers.upsertSeedUser({
+          customerSlug: "helios-cx",
+          customerName: "Helios CX",
+          email: config.seed.heliosAdminEmail,
+          passwordHash: await hashPassword(config.seed.heliosAdminPassword),
+          role: "admin",
+        });
+
+        if (config.seed.heliosCloudShareConnection) {
+          await cloudshareConnections.save({
+            customerId: user.customerId,
+            apiId: config.seed.heliosCloudShareConnection.apiId,
+            apiKey: config.seed.heliosCloudShareConnection.apiKey,
+            webhookSecret: config.seed.heliosCloudShareConnection.webhookSecret,
+          });
+        }
+      })().catch((error) => {
+        portalSeedPromise = null;
+        throw error;
+      });
+    }
+
+    await portalSeedPromise;
+  }
 
   // Capture every published integration event into the event log so the admin
   // /events endpoint gives a full history without additional instrumentation.
@@ -230,6 +334,7 @@ export function getServices(): Services {
     environments.reset();
     audit.reset();
     eventLog.reset();
+    supportLog.reset();
     webhookIdempotency.reset();
     environmentSimulator?.reset();
     kryterion.reset();
@@ -245,6 +350,7 @@ export function getServices(): Services {
     prisma,
     heartbeats,
     candidateAuth,
+    portalAuth,
     kryterion,
     genesys,
     examAttempts,
@@ -261,7 +367,10 @@ export function getServices(): Services {
     audit,
     resources,
     eventLog,
-    resourceLister,
+    supportLog,
+    cloudshareConnections,
+    cloudshareClientFactory,
+    ensurePortalSeeded,
     completedDemoSteps,
     markStepDone,
     resetDemo,

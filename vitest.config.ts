@@ -5,6 +5,14 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts", "tests/**/*.test.ts"],
+    exclude: [
+      "**/node_modules/**",
+      "**/.git/**",
+      "**/.next/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/*.e2e.test.ts",
+    ],
     globals: true,
   },
   resolve: {

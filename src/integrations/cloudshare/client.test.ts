@@ -1,8 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { createCloudShareClient } from "./client";
 import { createFixtureHttpClient, loadFixturesFromDir } from "./fixtures";
+import { pingCloudShareV3 } from "./ping";
 import {
   CloudShareRequestError,
   CloudShareResponseError,
@@ -12,7 +13,7 @@ import type { HttpClient, HttpRequest, HttpResponse } from "./http";
 import type { V4TokenProvider } from "./v4-auth";
 
 const endpoints = {
-  v4BaseUrl: "https://use.cloudshare.com/api/v4",
+  v4BaseUrl: "https://api.accelerate.cloudshare.com/v4",
   v3BaseUrl: "https://use.cloudshare.com/api/v3",
 };
 
@@ -44,7 +45,7 @@ function clientWith(http: HttpClient) {
     endpoints,
     tokenProvider: stubTokenProvider,
     v3: { apiId: "api-id", apiKey: "api-key" },
-    newToken: () => "tok-fixed",
+    newToken: () => "tokfixed01",
     now: () => 1_700_000_000_000,
   });
 }
@@ -61,13 +62,13 @@ describe("createCloudShareClient — v4", () => {
     });
 
     expect(data).toEqual([{ id: "p1", name: "Proj" }]);
-    expect(last()?.url).toBe("https://use.cloudshare.com/api/v4/projects");
+    expect(last()?.url).toBe("https://api.accelerate.cloudshare.com/v4/projects");
     expect(last()?.headers?.authorization).toBe("Bearer test-bearer");
   });
 });
 
 describe("createCloudShareClient — v3", () => {
-  it("returns validated data and appends cs_sha1 auth params to the query", async () => {
+  it("returns validated data and sends cs_sha1 auth in the Authorization header", async () => {
     const { http, last } = capturingHttp(ok([{ id: "r1", name: "EU" }]));
     const client = clientWith(http);
 
@@ -80,10 +81,78 @@ describe("createCloudShareClient — v3", () => {
     expect(data).toEqual([{ id: "r1", name: "EU" }]);
     const url = new URL(last()!.url);
     expect(url.pathname).toBe("/api/v3/regions");
-    expect(url.searchParams.get("UserApiId")).toBe("api-id");
-    expect(url.searchParams.get("Timestamp")).toBe("1700000000");
-    expect(url.searchParams.get("Token")).toBe("tok-fixed");
-    expect(url.searchParams.get("HMAC")).toMatch(/^[0-9a-f]{40}$/);
+    expect(last()?.headers?.authorization).toMatch(
+      /^cs_sha1 userapiid:api-id;timestamp:1700000000;token:tokfixed01;hmac:[0-9a-f]{40}$/,
+    );
+  });
+
+  it("supports signed text responses for the v3 ping endpoint", async () => {
+    const { http, last } = capturingHttp({ status: 200, body: "{\"result\":\"Pong\"}" });
+    const client = clientWith(http);
+
+    const body = await client.requestV3Text({
+      method: "GET",
+      path: "/ping",
+    });
+
+    expect(body).toBe("{\"result\":\"Pong\"}");
+    const url = new URL(last()!.url);
+    expect(url.pathname).toBe("/api/v3/ping");
+    expect(last()?.headers?.authorization).toMatch(
+      /^cs_sha1 userapiid:api-id;timestamp:1700000000;token:tokfixed01;hmac:[0-9a-f]{40}$/,
+    );
+  });
+
+  it("emits redacted request and response trace events", async () => {
+    const trace = vi.fn();
+    const { http } = capturingHttp({ status: 200, body: "{\"result\":\"Pong\"}" });
+    const client = createCloudShareClient({
+      http,
+      endpoints,
+      tokenProvider: stubTokenProvider,
+      v3: { apiId: "api-id", apiKey: "api-key" },
+      newToken: () => "tokfixed01",
+      now: () => 1_700_000_000_000,
+      trace,
+    });
+
+    await client.requestV3Text({
+      method: "GET",
+      path: "/ping",
+    });
+
+    expect(trace).toHaveBeenNthCalledWith(1, {
+      level: "info",
+      message: "cloudshare request sent",
+      fields: {
+        operation: "cloudshare_http",
+        method: "GET",
+        host: "use.cloudshare.com",
+        path: "/api/v3/ping",
+        integrationSurface: "cloudshare.v3",
+        requestHeaders: {
+          authorization:
+            "cs_sha1 userapiid:api-id;timestamp:1700000000;token:[REDACTED];hmac:[REDACTED]",
+        },
+      },
+    });
+    expect(trace).toHaveBeenNthCalledWith(2, {
+      level: "info",
+      message: "cloudshare response received",
+      fields: {
+        operation: "cloudshare_http",
+        method: "GET",
+        host: "use.cloudshare.com",
+        path: "/api/v3/ping",
+        integrationSurface: "cloudshare.v3",
+        requestHeaders: {
+          authorization:
+            "cs_sha1 userapiid:api-id;timestamp:1700000000;token:[REDACTED];hmac:[REDACTED]",
+        },
+        responseStatus: 200,
+        responseBody: "{\"result\":\"Pong\"}",
+      },
+    });
   });
 });
 
@@ -136,7 +205,7 @@ describe("createCloudShareClient — fixture replay (no live calls)", () => {
       schema: projectsSchema,
     });
     expect(projects).toHaveLength(2);
-    expect(projects[0]).toEqual({ id: "p-demo-1", name: "Genesys Certification" });
+    expect(projects[0]).toEqual({ id: "p-demo-1", name: "Helios CX Project" });
   });
 
   it("replays a recorded v3 response through the same adapter path", async () => {
@@ -147,5 +216,9 @@ describe("createCloudShareClient — fixture replay (no live calls)", () => {
     });
     expect(regions).toHaveLength(2);
     expect(regions[1]).toEqual({ id: "r-us-east", name: "US East" });
+  });
+
+  it("replays the recorded v3 ping response for fixture-mode connection checks", async () => {
+    await expect(pingCloudShareV3(fixtureClient)).resolves.toBe("pong");
   });
 });

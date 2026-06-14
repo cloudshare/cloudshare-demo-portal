@@ -23,14 +23,21 @@ export type {
   V4RequestSpec,
 } from "./client";
 export { createFixtureHttpClient, loadFixturesFromDir, type FixtureMap } from "./fixtures";
+export { pingCloudShareV3 } from "./ping";
 
 /** Well-known CloudShare API roots; overridable for staging or a recording proxy. */
 export const CLOUDSHARE_DEFAULT_ENDPOINTS: CloudShareEndpoints = {
-  v4BaseUrl: "https://use.cloudshare.com/api/v4",
+  v4BaseUrl: "https://api.accelerate.cloudshare.com/v4",
   v3BaseUrl: "https://use.cloudshare.com/api/v3",
 };
 
 export type CloudShareMode = "live" | "fixture";
+
+export interface CloudShareConnectionCredentials {
+  readonly apiId: string;
+  readonly apiKey: string;
+  readonly webhookSecret: string;
+}
 
 export interface CloudShareIntegrationOptions {
   /** "live" makes real calls; "fixture" replays the recorded corpus. */
@@ -38,6 +45,7 @@ export interface CloudShareIntegrationOptions {
   readonly v4: { readonly clientId: string; readonly clientSecret: string };
   readonly v3: { readonly apiId: string; readonly apiKey: string };
   readonly endpoints?: CloudShareEndpoints;
+  readonly trace?: Parameters<typeof createCloudShareClient>[0]["trace"];
 }
 
 /**
@@ -61,5 +69,33 @@ export function createCloudShareIntegration(
     clientSecret: opts.v4.clientSecret,
   });
 
-  return createCloudShareClient({ http, endpoints, tokenProvider, v3: opts.v3 });
+  return createCloudShareClient({
+    http,
+    endpoints,
+    tokenProvider,
+    v3: opts.v3,
+    trace: opts.trace,
+  });
+}
+
+export function createCloudShareIntegrationForConnection(
+  opts: Omit<CloudShareIntegrationOptions, "v3" | "v4"> & {
+    readonly connection: CloudShareConnectionCredentials;
+  },
+): CloudShareClient {
+  // CloudShare's v3 and Accelerate v4 APIs reuse the same API ID + API key pair;
+  // only the request-time auth mechanism differs.
+  return createCloudShareIntegration({
+    mode: opts.mode,
+    endpoints: opts.endpoints,
+    trace: opts.trace,
+    v3: {
+      apiId: opts.connection.apiId,
+      apiKey: opts.connection.apiKey,
+    },
+    v4: {
+      clientId: opts.connection.apiId,
+      clientSecret: opts.connection.apiKey,
+    },
+  });
 }

@@ -2,6 +2,12 @@ import type { Logger } from "@/observability/logger";
 import { syncResources, type CloudShareResourceLister, type ResourceRepository } from "@/domain/resource-sync";
 import type { AuditRepository } from "@/domain/audit-trail";
 import type { EventLogRepository } from "@/domain/event-log";
+import type { SupportLogRepository } from "@/domain/support-log";
+import type {
+  CloudShareClientFactory,
+  CloudShareConnectionRepository,
+} from "@/domain/cloudshare-connection";
+import { createCloudShareResourceLister } from "@/integrations/cloudshare/resources";
 
 /**
  * Framework-agnostic admin API handlers. All three surfaces are read-only
@@ -48,17 +54,29 @@ export async function handleGetAuditTrail(
 // --- Sync resources ---
 
 export interface SyncHandlerDeps {
-  readonly lister: CloudShareResourceLister;
+  readonly connections: CloudShareConnectionRepository;
+  readonly cloudshare: CloudShareClientFactory;
   readonly resources: ResourceRepository;
   readonly logger: Logger;
 }
 
 export async function handleSyncResources(
   deps: SyncHandlerDeps,
-  _request: Record<string, unknown>,
+  request: { customerId: string },
 ): Promise<AdminResponse> {
   try {
-    const result = await syncResources({ lister: deps.lister, repository: deps.resources });
+    const connection = await deps.connections.findByCustomerId(request.customerId);
+    if (!connection) {
+      return {
+        status: 404,
+        body: { error: "Save a CloudShare Connection before syncing resources." },
+      };
+    }
+
+    const lister: CloudShareResourceLister = createCloudShareResourceLister(
+      deps.cloudshare.forConnection(connection),
+    );
+    const result = await syncResources({ lister, repository: deps.resources });
     deps.logger.info("resources synced", { synced: result.synced });
     return {
       status: 200,
@@ -95,4 +113,21 @@ export async function handleGetEventLog(
   const limit = limitParam ? parseInt(limitParam, 10) : undefined;
   const events = await deps.eventLog.listAll(limit !== undefined && !isNaN(limit) ? limit : undefined);
   return { status: 200, body: { events } };
+}
+
+// --- Support log ---
+
+export interface SupportLogHandlerDeps {
+  readonly supportLog: SupportLogRepository;
+  readonly logger: Logger;
+}
+
+export async function handleGetSupportLog(
+  deps: SupportLogHandlerDeps,
+  request: AdminRequest,
+): Promise<AdminResponse> {
+  const limitParam = request.query.limit;
+  const limit = limitParam ? parseInt(limitParam, 10) : undefined;
+  const records = await deps.supportLog.listAll(limit !== undefined && !isNaN(limit) ? limit : undefined);
+  return { status: 200, body: { records } };
 }

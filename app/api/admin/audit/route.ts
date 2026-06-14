@@ -1,10 +1,20 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { getServices } from "@/composition";
 import { handleGetAuditTrail } from "@/api/admin";
+import { getPortalAdminSession } from "@/auth/portal-session";
+import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 
 /** GET /api/admin/audit?examAttemptId=<id> — returns audit records, optionally filtered. */
 export async function GET(request: Request) {
-  const { audit, logger } = getServices();
+  const services = getServices();
+  const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
+  const session = await getPortalAdminSession(services, sessionId);
+  if (!session) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  const { audit, logger } = services;
   const url = new URL(request.url);
   const query = Object.fromEntries(url.searchParams.entries());
 

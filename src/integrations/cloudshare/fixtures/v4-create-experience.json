@@ -1,6 +1,6 @@
 {
   "method": "POST",
-  "path": "/api/v4/experiences",
+  "path": "/v4/experiences",
   "status": 200,
   "body": { "id": "exp-demo-1" }
 }

@@ -2,14 +2,14 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
-  title: "CloudShare Demo Portal",
-  description: "Genesys / Kryterion / CloudShare proctoring demo portal",
+  title: "Certalis CloudShare Demo Portal",
+  description: "Certalis admin and candidate portal for Helios CX CloudShare demos",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body suppressHydrationWarning>{children}</body>
     </html>
   );
 }

@@ -2,13 +2,13 @@ import { describe, it, expect } from "vitest";
 import { loadConfig, secretValues, ConfigError } from "./index";
 
 const validEnv = {
+  PORTAL_MASTER_KEY: Buffer.alloc(32, 9).toString("base64"),
   CLOUDSHARE_V4_CLIENT_ID: "id",
   CLOUDSHARE_V4_CLIENT_SECRET: "secret",
   CLOUDSHARE_V3_API_ID: "v3id",
   CLOUDSHARE_V3_API_KEY: "v3key",
   CLOUDSHARE_WEBHOOK_SECRET: "whsecret",
   KRYTERION_TOKEN_SECRET: "kryterion-secret",
-  ADMIN_TOKEN: "admin-token-test",
   PORTAL_MODE: "fixture",
   PORTAL_TUNNEL_URL: "",
   DEMO_BLUEPRINT_NAME: "bp",
@@ -23,13 +23,15 @@ describe("loadConfig", () => {
     const config = loadConfig(validEnv);
 
     expect(config.secrets.cloudshareV4ClientId).toBe("id");
+    expect(config.secrets.portalMasterKey).toBe(validEnv.PORTAL_MASTER_KEY);
     expect(config.secrets.webhookSecret).toBe("whsecret");
     expect(config.runtime.mode).toBe("fixture");
     expect(config.demoResources.blueprintName).toBe("bp");
+    expect(config.seed.heliosAdminEmail).toBe("admin@helioscx.demo");
   });
 
   it("throws ConfigError when a required secret is missing", () => {
-    const { CLOUDSHARE_WEBHOOK_SECRET, ...incomplete } = validEnv;
+    const { PORTAL_MASTER_KEY, ...incomplete } = validEnv;
     expect(() => loadConfig(incomplete)).toThrow(ConfigError);
   });
 
@@ -54,8 +56,8 @@ describe("secretValues", () => {
     const config = loadConfig(validEnv);
     const values = secretValues(config);
     expect(values).toContain("secret");
+    expect(values).toContain(validEnv.PORTAL_MASTER_KEY);
     expect(values).toContain("whsecret");
     expect(values).toContain("kryterion-secret");
-    expect(values).toContain("admin-token-test");
   });
 });

@@ -20,11 +20,12 @@ export class ConfigError extends Error {
 
 const envSchema = z.object({
   // Category 1 — secrets
-  CLOUDSHARE_V4_CLIENT_ID: z.string().min(1),
-  CLOUDSHARE_V4_CLIENT_SECRET: z.string().min(1),
-  CLOUDSHARE_V3_API_ID: z.string().min(1),
-  CLOUDSHARE_V3_API_KEY: z.string().min(1),
-  CLOUDSHARE_WEBHOOK_SECRET: z.string().min(1),
+  PORTAL_MASTER_KEY: z.string().min(1),
+  CLOUDSHARE_V4_CLIENT_ID: z.string().optional().default(""),
+  CLOUDSHARE_V4_CLIENT_SECRET: z.string().optional().default(""),
+  CLOUDSHARE_V3_API_ID: z.string().optional().default(""),
+  CLOUDSHARE_V3_API_KEY: z.string().optional().default(""),
+  CLOUDSHARE_WEBHOOK_SECRET: z.string().optional().default(""),
   // Kryterion (simulator) exam-token signing secret — HMAC key shared between
   // the simulator that mints candidate tokens and the auth layer that verifies them.
   KRYTERION_TOKEN_SECRET: z.string().min(1),
@@ -40,8 +41,16 @@ const envSchema = z.object({
   DEMO_PROJECT_NAME: z.string().min(1),
   DEMO_REGION_NAME: z.string().min(1),
 
-  // Admin auth — shared secret protecting /admin and /api/admin/*
-  ADMIN_TOKEN: z.string().min(8),
+  // Seeded Helios admin login for the demo.
+  HELIOS_ADMIN_EMAIL: z.string().email().optional().default("admin@helioscx.demo"),
+  HELIOS_ADMIN_PASSWORD: z.string().min(8).optional().default("HeliosDemo123!"),
+  HELIOS_SEED_CLOUDSHARE_API_ID: z.string().optional().default(""),
+  HELIOS_SEED_CLOUDSHARE_API_KEY: z.string().optional().default(""),
+  HELIOS_SEED_CLOUDSHARE_WEBHOOK_SECRET: z.string().optional().default(""),
+
+  // Legacy admin bearer token (deprecated by Slice 1 login, tolerated for
+  // unfinished slices that still assume it exists).
+  ADMIN_TOKEN: z.string().optional().default(""),
 
   // Persistence
   DATABASE_URL: z.string().min(1),
@@ -56,6 +65,7 @@ export interface Config {
     readonly cloudshareV3ApiId: string;
     readonly cloudshareV3ApiKey: string;
     readonly webhookSecret: string;
+    readonly portalMasterKey: string;
     readonly kryterionTokenSecret: string;
     readonly adminToken: string;
   };
@@ -70,6 +80,17 @@ export interface Config {
     readonly policyName: string;
     readonly projectName: string;
     readonly regionName: string;
+  };
+  readonly seed: {
+    readonly heliosAdminEmail: string;
+    readonly heliosAdminPassword: string;
+    readonly heliosCloudShareConnection:
+      | {
+          readonly apiId: string;
+          readonly apiKey: string;
+          readonly webhookSecret: string;
+        }
+      | null;
   };
   readonly databaseUrl: string;
 }
@@ -93,6 +114,7 @@ export function loadConfig(env: NodeJS.ProcessEnv | Record<string, unknown>): Co
   const e = result.data;
   return {
     secrets: {
+      portalMasterKey: e.PORTAL_MASTER_KEY,
       cloudshareV4ClientId: e.CLOUDSHARE_V4_CLIENT_ID,
       cloudshareV4ClientSecret: e.CLOUDSHARE_V4_CLIENT_SECRET,
       cloudshareV3ApiId: e.CLOUDSHARE_V3_API_ID,
@@ -111,6 +133,20 @@ export function loadConfig(env: NodeJS.ProcessEnv | Record<string, unknown>): Co
       policyName: e.DEMO_POLICY_NAME,
       projectName: e.DEMO_PROJECT_NAME,
       regionName: e.DEMO_REGION_NAME,
+    },
+    seed: {
+      heliosAdminEmail: e.HELIOS_ADMIN_EMAIL,
+      heliosAdminPassword: e.HELIOS_ADMIN_PASSWORD,
+      heliosCloudShareConnection:
+        e.HELIOS_SEED_CLOUDSHARE_API_ID &&
+        e.HELIOS_SEED_CLOUDSHARE_API_KEY &&
+        e.HELIOS_SEED_CLOUDSHARE_WEBHOOK_SECRET
+          ? {
+              apiId: e.HELIOS_SEED_CLOUDSHARE_API_ID,
+              apiKey: e.HELIOS_SEED_CLOUDSHARE_API_KEY,
+              webhookSecret: e.HELIOS_SEED_CLOUDSHARE_WEBHOOK_SECRET,
+            }
+          : null,
     },
     databaseUrl: e.DATABASE_URL,
   };
