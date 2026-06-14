@@ -59,7 +59,6 @@ request uses the `Authorization: cs_sha1 ...` header, not signed query parameter
 **Update (2026-06-14, verified against live ping and Postman implementation):** the v3 `token`
 must be exactly **10 alphanumeric characters**. A UUID-shaped nonce is rejected by CloudShare even
 when the API ID/key and HMAC formula are otherwise correct.
-
 ---
 
 ## GAP-2 — Webhook secret is account-level and cannot be rotated
