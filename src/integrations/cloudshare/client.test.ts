@@ -205,7 +205,7 @@ describe("createCloudShareClient — fixture replay (no live calls)", () => {
       schema: projectsSchema,
     });
     expect(projects).toHaveLength(2);
-    expect(projects[0]).toEqual({ id: "p-demo-1", name: "Genesys Certification" });
+    expect(projects[0]).toEqual({ id: "p-demo-1", name: "Helios CX Project" });
   });
 
   it("replays a recorded v3 response through the same adapter path", async () => {
