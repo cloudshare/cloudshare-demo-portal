@@ -290,13 +290,18 @@ export function getServices(): Services {
   let portalSeedPromise: Promise<void> | null = null;
 
   async function ensurePortalSeeded(): Promise<void> {
+    const heliosAdmin = config.seed.heliosAdmin;
+    if (!heliosAdmin) {
+      return;
+    }
+
     if (!portalSeedPromise) {
       portalSeedPromise = (async () => {
         const user = await portalUsers.upsertSeedUser({
           customerSlug: "helios-cx",
           customerName: "Helios CX",
-          email: config.seed.heliosAdminEmail,
-          passwordHash: await hashPassword(config.seed.heliosAdminPassword),
+          email: heliosAdmin.email,
+          passwordHash: await hashPassword(heliosAdmin.password),
           role: "admin",
         });
 

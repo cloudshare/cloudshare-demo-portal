@@ -5,11 +5,12 @@ import { useRouter } from "next/navigation";
 
 interface LoginFormProps {
   readonly initialError: string | null;
+  readonly initialEmail: string;
 }
 
-export function LoginForm({ initialError }: LoginFormProps) {
+export function LoginForm({ initialError, initialEmail }: LoginFormProps) {
   const router = useRouter();
-  const [email, setEmail] = useState("admin@helioscx.demo");
+  const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(initialError);
@@ -45,7 +46,7 @@ export function LoginForm({ initialError }: LoginFormProps) {
     <main style={{ fontFamily: "system-ui, sans-serif", padding: "2rem", maxWidth: "420px", margin: "0 auto" }}>
       <h1>Certalis Admin Login</h1>
       <p style={{ color: "#555", marginBottom: "1.5rem" }}>
-        Sign in as the seeded Helios admin to manage the CloudShare Connection.
+        Sign in as the configured Helios admin to manage the CloudShare Connection.
       </p>
       <form
         onSubmit={onSubmit}

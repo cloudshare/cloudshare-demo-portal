@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { describe, it, expect } from "vitest";
 import { loadConfig, secretValues, ConfigError } from "./index";
 
@@ -15,6 +18,11 @@ const validEnv = {
   DEMO_POLICY_NAME: "pol",
   DEMO_PROJECT_NAME: "proj",
   DEMO_REGION_NAME: "region",
+  PORTAL_SEED_SOURCE: "env",
+  HELIOS_ADMIN_EMAIL: "admin@helioscx.demo",
+  HELIOS_ADMIN_PASSWORD: "HeliosDemo123!",
+  HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_ID: "instructor-1",
+  HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_NAME: "Helios Service Account",
   DATABASE_URL: "file:./dev.db",
 };
 
@@ -27,7 +35,9 @@ describe("loadConfig", () => {
     expect(config.secrets.webhookSecret).toBe("whsecret");
     expect(config.runtime.mode).toBe("fixture");
     expect(config.demoResources.blueprintName).toBe("bp");
-    expect(config.seed.heliosAdminEmail).toBe("admin@helioscx.demo");
+    expect(config.runtime.seedSource).toBe("env");
+    expect(config.seed.heliosAdmin?.email).toBe("admin@helioscx.demo");
+    expect(config.seed.heliosInstructor?.id).toBe("instructor-1");
   });
 
   it("throws ConfigError when a required secret is missing", () => {
@@ -39,6 +49,65 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ ...validEnv, PORTAL_MODE: "banana" })).toThrow(
       ConfigError,
     );
+  });
+
+  it("loads the seed from a local JSON config file when PORTAL_SEED_SOURCE=file", () => {
+    const dir = mkdtempSync(join(tmpdir(), "portal-seed-"));
+    const path = join(dir, "portal-seed.local.json");
+    writeFileSync(
+      path,
+      JSON.stringify(
+        {
+          heliosAdminEmail: "file-admin@helioscx.demo",
+          heliosAdminPassword: "FileSeed123!",
+          heliosCloudShareConnection: {
+            apiId: "file-api-id",
+            apiKey: "file-api-key",
+            webhookSecret: "file-whsec",
+          },
+          heliosInstructor: {
+            id: "file-instructor",
+            name: "File Service Account",
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    try {
+      const config = loadConfig({
+        ...validEnv,
+        PORTAL_SEED_SOURCE: "file",
+        PORTAL_SEED_CONFIG_PATH: path,
+        HELIOS_ADMIN_EMAIL: undefined,
+        HELIOS_ADMIN_PASSWORD: undefined,
+        HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_ID: undefined,
+        HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_NAME: undefined,
+      });
+
+      expect(config.seed.source).toBe("file");
+      expect(config.seed.heliosAdmin?.email).toBe("file-admin@helioscx.demo");
+      expect(config.seed.heliosCloudShareConnection?.apiKey).toBe("file-api-key");
+      expect(config.seed.heliosInstructor?.name).toBe("File Service Account");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("allows seeding to be explicitly disabled", () => {
+    const config = loadConfig({
+      ...validEnv,
+      PORTAL_SEED_SOURCE: "off",
+      HELIOS_ADMIN_EMAIL: undefined,
+      HELIOS_ADMIN_PASSWORD: undefined,
+      HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_ID: undefined,
+      HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_NAME: undefined,
+    });
+
+    expect(config.seed.source).toBe("off");
+    expect(config.seed.heliosAdmin).toBeNull();
+    expect(config.seed.heliosInstructor).toBeNull();
   });
 });
 

@@ -55,10 +55,12 @@ interface AdminExamAuthoringDeps {
 interface AdminExamCatalogDeps {
   readonly repository: ExamRepository;
   readonly cache: ExamAuthoringCacheRepository;
-  readonly instructor: {
-    readonly id: string;
-    readonly name: string;
-  };
+  readonly instructor:
+    | {
+        readonly id: string;
+        readonly name: string;
+      }
+    | null;
   readonly logger: Logger;
   readonly now?: () => Date;
   readonly newId?: () => string;
@@ -222,7 +224,8 @@ export async function handleCreateDraftExam(
   deps: AdminExamCatalogDeps,
   request: CustomerRequest & { readonly body?: unknown },
 ): Promise<AdminExamResponse> {
-  if (!isConfiguredInstructor(deps.instructor)) {
+  const instructor = deps.instructor;
+  if (!isConfiguredInstructor(instructor)) {
     return {
       status: 400,
       body: {
@@ -235,7 +238,7 @@ export async function handleCreateDraftExam(
     request.customerId,
     request.body,
     deps.cache,
-    deps.instructor,
+    instructor,
   );
   if (!input) {
     return {
@@ -264,10 +267,20 @@ export async function handleCreateDraftExam(
   }
 }
 
-function isConfiguredInstructor(instructor: {
+function isConfiguredInstructor(
+  instructor:
+    | {
+        readonly id: string;
+        readonly name: string;
+      }
+    | null,
+): instructor is {
   readonly id: string;
   readonly name: string;
-}): boolean {
+} {
+  if (!instructor) {
+    return false;
+  }
   const id = instructor.id.trim();
   const name = instructor.name.trim();
   if (!id || !name) {

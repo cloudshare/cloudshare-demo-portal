@@ -50,11 +50,15 @@ All variables are Zod-validated at boot; missing required values cause a fast-fa
 | `PORTAL_MODE` | yes | `fixture` | `fixture` (simulators) or `live` (real CloudShare API) |
 | `DATABASE_URL` | yes | `file:./dev.db` | SQLite path |
 | `KRYTERION_TOKEN_SECRET` | yes | — | HMAC-SHA256 secret shared by the token simulator and auth layer |
-| `HELIOS_ADMIN_EMAIL` | no | `admin@helioscx.demo` | Seeded Helios admin login email |
-| `HELIOS_ADMIN_PASSWORD` | no | `HeliosDemo123!` | Seeded Helios admin login password |
-| `HELIOS_SEED_CLOUDSHARE_API_ID` | no | — | Optional seeded CloudShare API ID stored through the normal encrypted path |
-| `HELIOS_SEED_CLOUDSHARE_API_KEY` | no | — | Optional seeded CloudShare API key |
-| `HELIOS_SEED_CLOUDSHARE_WEBHOOK_SECRET` | no | — | Optional seeded CloudShare webhook secret |
+| `PORTAL_SEED_SOURCE` | no | `env` | `off`, `env`, or `file` for the seeded Helios admin/demo tenant |
+| `PORTAL_SEED_CONFIG_PATH` | no | `./config/portal-seed.local.json` | Local JSON seed file path when `PORTAL_SEED_SOURCE=file` |
+| `HELIOS_ADMIN_EMAIL` | `env` seed only | — | Seeded Helios admin login email |
+| `HELIOS_ADMIN_PASSWORD` | `env` seed only | — | Seeded Helios admin login password |
+| `HELIOS_SEED_CLOUDSHARE_API_ID` | `env` seed only | — | Optional seeded CloudShare API ID stored through the normal encrypted path |
+| `HELIOS_SEED_CLOUDSHARE_API_KEY` | `env` seed only | — | Optional seeded CloudShare API key |
+| `HELIOS_SEED_CLOUDSHARE_WEBHOOK_SECRET` | `env` seed only | — | Optional seeded CloudShare webhook secret |
+| `HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_ID` | `env` seed only | — | Seeded CloudShare instructor/member id |
+| `HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_NAME` | `env` seed only | — | Seeded CloudShare instructor/member name |
 | `CLOUDSHARE_V4_CLIENT_ID` | legacy | — | Transitional global credential for unfinished older slices |
 | `CLOUDSHARE_V4_CLIENT_SECRET` | legacy | — | Transitional global credential for unfinished older slices |
 | `CLOUDSHARE_V3_API_ID` | legacy | — | Transitional global credential for unfinished older slices |
@@ -67,10 +71,22 @@ All variables are Zod-validated at boot; missing required values cause a fast-fa
 | `DEMO_PROJECT_NAME` | optional legacy | `""` | Legacy global project name from the pre-Exam flow; not required for Slice 2 project-first authoring |
 | `DEMO_REGION_NAME` | optional legacy | `""` | Legacy global region name from the pre-Exam flow; not required for Slice 2 project-first authoring |
 
+### Seeded admin config
+
+Preferred local setup:
+
+1. Copy `config/portal-seed.example.json` to `config/portal-seed.local.json`.
+2. Fill in the Helios admin login, instructor, and optional CloudShare Connection values there.
+3. Set `PORTAL_SEED_SOURCE=file` in `.env`.
+
+If you prefer env-only seeding, set `PORTAL_SEED_SOURCE=env` and fill the `HELIOS_*` variables instead.
+
+Set `PORTAL_SEED_SOURCE=off` to disable demo seeding entirely.
+
 ### Slice 1 flow
 
 1. Start the app and open `/login`.
-2. Sign in as the seeded Helios admin.
+2. Sign in as the configured Helios admin.
 3. Open **Connect CloudShare** in `/admin`.
 4. Save `API ID + API key + webhook secret`.
 5. Click **Test connection** to run the signed v3 `ping` and expect `pong`.
