@@ -62,10 +62,10 @@ All variables are Zod-validated at boot; missing required values cause a fast-fa
 | `CLOUDSHARE_WEBHOOK_SECRET` | legacy | — | Transitional global credential for unfinished older slices |
 | `PORTAL_TUNNEL_URL` | live only | — | Public URL for CloudShare webhooks (e.g. ngrok) |
 | `HEARTBEAT_TIMEOUT_MS` | no | `60000` | Auto-suspend timeout in ms |
-| `DEMO_BLUEPRINT_NAME` | live only | — | Friendly name of the CloudShare blueprint |
-| `DEMO_POLICY_NAME` | live only | — | Friendly name of the CloudShare policy |
-| `DEMO_PROJECT_NAME` | live only | — | Friendly name of the CloudShare project |
-| `DEMO_REGION_NAME` | live only | — | Friendly name of the CloudShare region |
+| `DEMO_BLUEPRINT_NAME` | optional legacy | `""` | Legacy global blueprint name from the pre-Exam flow; not required for Slice 2 project-first authoring |
+| `DEMO_POLICY_NAME` | optional legacy | `""` | Legacy global policy name from the pre-Exam flow; not required for Slice 2 project-first authoring |
+| `DEMO_PROJECT_NAME` | optional legacy | `""` | Legacy global project name from the pre-Exam flow; not required for Slice 2 project-first authoring |
+| `DEMO_REGION_NAME` | optional legacy | `""` | Legacy global region name from the pre-Exam flow; not required for Slice 2 project-first authoring |
 
 ### Slice 1 flow
 

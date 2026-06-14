@@ -9,6 +9,8 @@ import v4SponsoredLink from "./v4-sponsored-link.json";
 import v4GetParticipantProgress from "./v4-get-participant-progress.json";
 import v3Blueprints from "./v3-blueprints.json";
 import v3Policies from "./v3-policies.json";
+import v3ProjectPolicies from "./v3-project-policies.json";
+import v3BlueprintDetail from "./v3-blueprint-detail.json";
 import v3Ping from "./v3-ping.json";
 
 /**
@@ -32,5 +34,7 @@ export const bundledFixtures: FixtureMap = buildFixtureMap([
   { raw: v4GetParticipantProgress, label: "v4-get-participant-progress.json" },
   { raw: v3Blueprints, label: "v3-blueprints.json" },
   { raw: v3Policies, label: "v3-policies.json" },
+  { raw: v3ProjectPolicies, label: "v3-project-policies.json" },
+  { raw: v3BlueprintDetail, label: "v3-blueprint-detail.json" },
   { raw: v3Ping, label: "v3-ping.json" },
 ]);

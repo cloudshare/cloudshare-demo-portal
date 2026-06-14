@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useEffectEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
 interface AdminConsoleProps {
@@ -60,7 +60,41 @@ interface SyncResult {
   byType: Record<string, Array<{ name: string; cloudshareId: string; syncedAt: string }>>;
 }
 
-type Tab = "connection" | "audit" | "events" | "support" | "resources";
+interface NamedResource {
+  id: string;
+  name: string;
+}
+
+interface BlueprintSnapshot {
+  id: string;
+  name: string;
+  isDefault: boolean;
+}
+
+interface BlueprintDetail {
+  id: string;
+  name: string;
+  defaultSnapshotId: string | null;
+  snapshots: BlueprintSnapshot[];
+}
+
+interface ExamRecord {
+  id: string;
+  title: string;
+  description: string;
+  timeLimitMinutes: number;
+  scoreRetrievalEnabled: boolean;
+  status: "draft" | "published";
+  publishedAt: string | null;
+  projectName: string;
+  blueprintName: string;
+  snapshotName: string;
+  regionName: string;
+  policyName: string;
+  instructorName: string;
+}
+
+type Tab = "connection" | "exams" | "audit" | "events" | "support" | "resources";
 
 function formatUtcTimestamp(value: string | null | undefined): string {
   if (!value) {
@@ -100,6 +134,23 @@ function formatSupportValue(value: unknown): string {
 export function AdminConsole({ email }: AdminConsoleProps) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("connection");
+  const [projects, setProjects] = useState<NamedResource[]>([]);
+  const [regions, setRegions] = useState<NamedResource[]>([]);
+  const [blueprints, setBlueprints] = useState<NamedResource[]>([]);
+  const [policies, setPolicies] = useState<NamedResource[]>([]);
+  const [blueprintDetail, setBlueprintDetail] = useState<BlueprintDetail | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [selectedBlueprintId, setSelectedBlueprintId] = useState("");
+  const [selectedPolicyId, setSelectedPolicyId] = useState("");
+  const [selectedRegionId, setSelectedRegionId] = useState("");
+  const [selectedSnapshotId, setSelectedSnapshotId] = useState("");
+  const [examTitle, setExamTitle] = useState("");
+  const [examDescription, setExamDescription] = useState("");
+  const [timeLimitMinutes, setTimeLimitMinutes] = useState("90");
+  const [scoreRetrievalEnabled, setScoreRetrievalEnabled] = useState(false);
+  const [examCatalog, setExamCatalog] = useState<ExamRecord[]>([]);
+  const [examMessage, setExamMessage] = useState<string | null>(null);
+  const [examDiagnostic, setExamDiagnostic] = useState<ConnectionDiagnostic | null>(null);
   const [examAttemptFilter, setExamAttemptFilter] = useState("");
   const [auditRecords, setAuditRecords] = useState<AuditRecord[] | null>(null);
   const [eventRecords, setEventRecords] = useState<EventLogRecord[] | null>(null);
@@ -116,10 +167,20 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   const [connectionWarning, setConnectionWarning] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const loadExamTab = useEffectEvent(() => {
+    void loadExamCatalog();
+    void loadExamAuthoring();
+  });
 
   useEffect(() => {
     void loadConnection();
   }, []);
+
+  useEffect(() => {
+    if (tab === "exams") {
+      loadExamTab();
+    }
+  }, [tab, loadExamTab]);
 
   async function loadConnection() {
     const response = await fetch("/api/admin/cloudshare");
@@ -311,6 +372,205 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     }
   }
 
+  async function loadExamAuthoring(refresh = false) {
+    setLoading(true);
+    setError(null);
+    setExamDiagnostic(null);
+    try {
+      const response = await fetch(`/api/admin/exam-authoring${refresh ? "?refresh=true" : ""}`);
+      const data = (await response.json()) as {
+        projects?: NamedResource[];
+        regions?: NamedResource[];
+        error?: string;
+        diagnostic?: ConnectionDiagnostic | null;
+      };
+      if (!response.ok) {
+        setError(data.error ?? "Failed to load exam authoring resources");
+        setExamDiagnostic(data.diagnostic ?? null);
+        void loadSupportLog(true);
+        return;
+      }
+
+      const nextProjects = data.projects ?? [];
+      const nextRegions = data.regions ?? [];
+      setProjects(nextProjects);
+      setRegions(nextRegions);
+      if (!selectedProjectId && nextProjects[0]) {
+        const projectId = nextProjects[0].id;
+        setSelectedProjectId(projectId);
+        void loadProjectResources(projectId, true);
+      }
+      if (!selectedRegionId && nextRegions[0]) {
+        setSelectedRegionId(nextRegions[0].id);
+      }
+    } catch {
+      setError("Failed to load exam authoring resources");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadProjectResources(projectId: string, refresh = false) {
+    setLoading(true);
+    setError(null);
+    setExamDiagnostic(null);
+    try {
+      const response = await fetch(
+        `/api/admin/exam-authoring/projects/${encodeURIComponent(projectId)}${refresh ? "?refresh=true" : ""}`,
+      );
+      const data = (await response.json()) as {
+        blueprints?: NamedResource[];
+        policies?: NamedResource[];
+        error?: string;
+        diagnostic?: ConnectionDiagnostic | null;
+      };
+      if (!response.ok) {
+        setError(data.error ?? "Failed to load project resources");
+        setExamDiagnostic(data.diagnostic ?? null);
+        void loadSupportLog(true);
+        return;
+      }
+
+      const nextBlueprints = data.blueprints ?? [];
+      const nextPolicies = data.policies ?? [];
+      setBluePrintState(nextBlueprints, nextPolicies);
+      if (nextBlueprints[0]) {
+        const blueprintId = nextBlueprints[0].id;
+        setSelectedBlueprintId(blueprintId);
+        void loadBlueprintDetail(projectId, blueprintId, true);
+      }
+    } catch {
+      setError("Failed to load project resources");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function setBluePrintState(nextBlueprints: NamedResource[], nextPolicies: NamedResource[]) {
+    setBlueprints(nextBlueprints);
+    setPolicies(nextPolicies);
+    setSelectedPolicyId((current) =>
+      nextPolicies.some((policy) => policy.id === current) ? current : (nextPolicies[0]?.id ?? ""),
+    );
+  }
+
+  async function loadBlueprintDetail(projectId: string, blueprintId: string, refresh = false) {
+    setLoading(true);
+    setError(null);
+    setExamDiagnostic(null);
+    try {
+      const response = await fetch(
+        `/api/admin/exam-authoring/projects/${encodeURIComponent(projectId)}/blueprints/${encodeURIComponent(blueprintId)}${refresh ? "?refresh=true" : ""}`,
+      );
+      const data = (await response.json()) as {
+        blueprint?: BlueprintDetail;
+        error?: string;
+        diagnostic?: ConnectionDiagnostic | null;
+      };
+      if (!response.ok) {
+        setError(data.error ?? "Failed to load blueprint detail");
+        setExamDiagnostic(data.diagnostic ?? null);
+        void loadSupportLog(true);
+        return;
+      }
+
+      const detail = data.blueprint ?? null;
+      setBlueprintDetail(detail);
+      setSelectedSnapshotId(detail?.defaultSnapshotId ?? detail?.snapshots[0]?.id ?? "");
+    } catch {
+      setError("Failed to load blueprint detail");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadExamCatalog() {
+    try {
+      const response = await fetch("/api/admin/exams");
+      const data = (await response.json()) as { exams?: ExamRecord[]; error?: string };
+      if (!response.ok) {
+        setError(data.error ?? "Failed to load exam catalog");
+        return;
+      }
+      setExamCatalog(data.exams ?? []);
+    } catch {
+      setError("Failed to load exam catalog");
+    }
+  }
+
+  async function saveDraftExam() {
+    setLoading(true);
+    setError(null);
+    setExamMessage(null);
+    try {
+      const project = projects.find((item) => item.id === selectedProjectId);
+      const blueprint = blueprints.find((item) => item.id === selectedBlueprintId);
+      const policy = policies.find((item) => item.id === selectedPolicyId);
+      const region = regions.find((item) => item.id === selectedRegionId);
+      const snapshot = blueprintDetail?.snapshots.find((item) => item.id === selectedSnapshotId);
+
+      if (!project || !blueprint || !policy || !region || !snapshot) {
+        setError("Select a project, blueprint, snapshot, policy, and region before saving the Exam.");
+        return;
+      }
+
+      const response = await fetch("/api/admin/exams", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          title: examTitle,
+          description: examDescription,
+          timeLimitMinutes: Number(timeLimitMinutes),
+          scoreRetrievalEnabled,
+          projectId: project.id,
+          projectName: project.name,
+          blueprintId: blueprint.id,
+          blueprintName: blueprint.name,
+          snapshotId: snapshot.id,
+          snapshotName: snapshot.name,
+          regionId: region.id,
+          regionName: region.name,
+          policyId: policy.id,
+          policyName: policy.name,
+        }),
+      });
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        setError(data.error ?? "Failed to save draft exam");
+        return;
+      }
+
+      setExamMessage("Draft exam saved.");
+      await loadExamCatalog();
+    } catch {
+      setError("Failed to save draft exam");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function publishCatalogExam(examId: string) {
+    setLoading(true);
+    setError(null);
+    setExamMessage(null);
+    try {
+      const response = await fetch(`/api/admin/exams/${encodeURIComponent(examId)}/publish`, {
+        method: "POST",
+      });
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        setError(data.error ?? "Failed to publish exam");
+        return;
+      }
+      setExamMessage("Exam published.");
+      await loadExamCatalog();
+    } catch {
+      setError("Failed to publish exam");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function logout() {
     setLoading(true);
     setError(null);
@@ -342,7 +602,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       </div>
 
       <nav style={{ display: "flex", gap: "0.75rem", marginBottom: "1.5rem", flexWrap: "wrap" }}>
-        {(["connection", "audit", "events", "support", "resources"] as Tab[]).map((t) => (
+        {(["connection", "exams", "audit", "events", "support", "resources"] as Tab[]).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -357,6 +617,8 @@ export function AdminConsole({ email }: AdminConsoleProps) {
           >
             {t === "connection"
               ? "Connect CloudShare"
+              : t === "exams"
+                ? "Exam Catalog"
               : t === "audit"
                 ? "Audit Trail"
                 : t === "events"
@@ -463,6 +725,245 @@ export function AdminConsole({ email }: AdminConsoleProps) {
             </button>
           </div>
           {connectionMessage && <p style={{ color: "#0a7a28", margin: 0 }}>{connectionMessage}</p>}
+        </section>
+      )}
+
+      {tab === "exams" && (
+        <section style={{ display: "grid", gap: "1rem" }}>
+          <div style={{ padding: "1rem", background: "#f7f7f8", borderRadius: "6px", display: "grid", gap: "0.5rem" }}>
+            <strong>Project-first Exam authoring</strong>
+            <span style={{ color: "#555" }}>
+              Regions are global reference data. Blueprints and Policies are fetched in the selected Project context. For experience-based Exams, CloudShare launches always use the Blueprint&apos;s current default snapshot.
+            </span>
+            <span style={{ color: "#555" }}>
+              Instructor choice is intentionally fixed to the seeded CloudShare service account for this slice.
+            </span>
+            <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+              <button onClick={() => void loadExamAuthoring(true)} disabled={loading} style={{ padding: "0.6rem 0.9rem" }}>
+                {loading ? "Loading..." : "Refresh Projects & Regions"}
+              </button>
+              {selectedProjectId && (
+                <button
+                  onClick={() => void loadProjectResources(selectedProjectId, true)}
+                  disabled={loading}
+                  style={{ padding: "0.6rem 0.9rem" }}
+                >
+                  {loading ? "Loading..." : "Refresh Selected Project"}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {examDiagnostic && (
+            <div style={{ color: "#7a4b00", background: "#fff7e6", padding: "0.75rem", borderRadius: "6px", display: "grid", gap: "0.4rem" }}>
+              <p style={{ margin: 0 }}>CloudShare resource request failed.</p>
+              <p style={{ margin: 0, fontSize: "0.85rem" }}>
+                {examDiagnostic.method} {examDiagnostic.path} · {examDiagnostic.failureMode}
+                {typeof examDiagnostic.responseStatus === "number" ? ` · HTTP ${examDiagnostic.responseStatus}` : ""}
+              </p>
+            </div>
+          )}
+
+          <div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              <span>Project</span>
+              <select
+                value={selectedProjectId}
+                onChange={(event) => {
+                  const nextProjectId = event.target.value;
+                  setSelectedProjectId(nextProjectId);
+                  setSelectedBlueprintId("");
+                  setSelectedSnapshotId("");
+                  setBlueprintDetail(null);
+                  void loadProjectResources(nextProjectId, true);
+                }}
+                style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
+              >
+                <option value="">Select a Project</option>
+                {projects.map((project) => (
+                  <option key={project.id} value={project.id}>
+                    {project.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              <span>Blueprint</span>
+              <select
+                value={selectedBlueprintId}
+                onChange={(event) => {
+                  const nextBlueprintId = event.target.value;
+                  setSelectedBlueprintId(nextBlueprintId);
+                  if (selectedProjectId && nextBlueprintId) {
+                    void loadBlueprintDetail(selectedProjectId, nextBlueprintId, true);
+                  }
+                }}
+                style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
+              >
+                <option value="">Select a Blueprint</option>
+                {blueprints.map((blueprint) => (
+                  <option key={blueprint.id} value={blueprint.id}>
+                    {blueprint.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              <span>Snapshot</span>
+              <select
+                value={selectedSnapshotId}
+                onChange={(event) => setSelectedSnapshotId(event.target.value)}
+                disabled
+                style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
+              >
+                <option value="">Select a Snapshot</option>
+                {blueprintDetail?.snapshots.map((snapshot) => (
+                  <option key={snapshot.id} value={snapshot.id}>
+                    {snapshot.name}{snapshot.isDefault ? " (default)" : ""}
+                  </option>
+                ))}
+              </select>
+              <span style={{ color: "#666", fontSize: "0.85rem" }}>
+                The portal records the Blueprint&apos;s default snapshot. Non-default snapshot versions cannot be chosen for CloudShare experience-based Exam launches.
+              </span>
+            </label>
+
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              <span>Policy</span>
+              <select
+                value={selectedPolicyId}
+                onChange={(event) => setSelectedPolicyId(event.target.value)}
+                style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
+              >
+                <option value="">Select a Policy</option>
+                {policies.map((policy) => (
+                  <option key={policy.id} value={policy.id}>
+                    {policy.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              <span>Region</span>
+              <select
+                value={selectedRegionId}
+                onChange={(event) => setSelectedRegionId(event.target.value)}
+                style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
+              >
+                <option value="">Select a Region</option>
+                {regions.map((region) => (
+                  <option key={region.id} value={region.id}>
+                    {region.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+            <label style={{ display: "grid", gap: "0.35rem", gridColumn: "1 / -1" }}>
+              <span>Exam title</span>
+              <input
+                value={examTitle}
+                onChange={(event) => setExamTitle(event.target.value)}
+                style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
+              />
+            </label>
+            <label style={{ display: "grid", gap: "0.35rem", gridColumn: "1 / -1" }}>
+              <span>Description</span>
+              <textarea
+                value={examDescription}
+                onChange={(event) => setExamDescription(event.target.value)}
+                rows={4}
+                style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
+              />
+            </label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              <span>Time limit (minutes)</span>
+              <input
+                type="number"
+                min={1}
+                value={timeLimitMinutes}
+                onChange={(event) => setTimeLimitMinutes(event.target.value)}
+                style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
+              />
+            </label>
+            <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", paddingTop: "1.8rem" }}>
+              <input
+                type="checkbox"
+                checked={scoreRetrievalEnabled}
+                onChange={(event) => setScoreRetrievalEnabled(event.target.checked)}
+              />
+              <span>Retrieve Guided Journey score for this Exam</span>
+            </label>
+          </div>
+
+          <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+            <button onClick={saveDraftExam} disabled={loading} style={{ padding: "0.7rem 1rem" }}>
+              {loading ? "Saving..." : "Save Draft Exam"}
+            </button>
+            {examMessage && <span style={{ color: "#0a7a28" }}>{examMessage}</span>}
+          </div>
+
+          <div>
+            <h2 style={{ marginBottom: "0.6rem" }}>Current Exam Catalog</h2>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
+              <thead>
+                <tr style={{ background: "#f5f5f5" }}>
+                  {["Title", "Status", "Project", "Blueprint / Snapshot", "Region", "Policy", "Score", "Action"].map((heading) => (
+                    <th key={heading} style={{ textAlign: "left", padding: "0.4rem", borderBottom: "1px solid #ddd" }}>
+                      {heading}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {examCatalog.length === 0 && (
+                  <tr>
+                    <td colSpan={8} style={{ padding: "0.5rem", color: "#666" }}>
+                      No exams yet.
+                    </td>
+                  </tr>
+                )}
+                {examCatalog.map((exam) => (
+                  <tr key={exam.id} style={{ borderBottom: "1px solid #eee", verticalAlign: "top" }}>
+                    <td style={{ padding: "0.4rem" }}>
+                      <div style={{ fontWeight: 600 }}>{exam.title}</div>
+                      <div style={{ color: "#666" }}>{exam.description}</div>
+                    </td>
+                    <td style={{ padding: "0.4rem" }}>
+                      {exam.status}
+                      {exam.publishedAt && (
+                        <div style={{ color: "#666", fontSize: "0.75rem" }}>
+                          {formatUtcTimestamp(exam.publishedAt)}
+                        </div>
+                      )}
+                    </td>
+                    <td style={{ padding: "0.4rem" }}>{exam.projectName}</td>
+                    <td style={{ padding: "0.4rem" }}>
+                      <div>{exam.blueprintName}</div>
+                      <div style={{ color: "#666", fontSize: "0.75rem" }}>{exam.snapshotName}</div>
+                    </td>
+                    <td style={{ padding: "0.4rem" }}>{exam.regionName}</td>
+                    <td style={{ padding: "0.4rem" }}>{exam.policyName}</td>
+                    <td style={{ padding: "0.4rem" }}>{exam.scoreRetrievalEnabled ? "Enabled" : "Off"}</td>
+                    <td style={{ padding: "0.4rem" }}>
+                      {exam.status === "draft" ? (
+                        <button onClick={() => void publishCatalogExam(exam.id)} disabled={loading} style={{ padding: "0.45rem 0.75rem" }}>
+                          Publish
+                        </button>
+                      ) : (
+                        "Published"
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </section>
       )}
 
@@ -700,6 +1201,9 @@ export function AdminConsole({ email }: AdminConsoleProps) {
 
       {tab === "resources" && (
         <section>
+          <p style={{ color: "#555", marginTop: 0 }}>
+            Stopgap sync surface only. Slice 2 authoring should use the <strong>Exam Catalog</strong> tab above instead of treating every visible CloudShare resource as a global list.
+          </p>
           <button onClick={syncResources} disabled={loading} style={{ padding: "0.4rem 1rem", marginBottom: "1rem" }}>
             {loading ? "Syncing..." : "Sync CloudShare Resources"}
           </button>

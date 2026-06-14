@@ -371,6 +371,30 @@ Blueprints, Blueprint detail including Snapshots and default-Snapshot fields, an
 Instructor choices. Update this entry immediately when live tenant behavior contradicts the current
 model.
 
+**Update (2026-06-14, live v3 probe against local E2E credentials):** `GET /api/v3/projects`,
+`GET /api/v3/regions`, `GET /api/v3/projects/{projectId}/policies`,
+`GET /api/v3/projects/{projectId}/blueprints`, and
+`GET /api/v3/projects/{projectId}/blueprints/{blueprintId}` all returned `200`. The observed
+shapes were broader than the current minimal adapter schema:
+
+- Project items included at least `id`, `name`, `isActive`, and `message`.
+- Region items included at least `id`, `name`, `friendlyName`, and `cloudName`.
+- Project-policy items included at least `id`, `name`, `projectId`, and `allowEnvironmentCreation`.
+- Project-blueprint items included at least `id`, `name`, `description`, `resources`,
+  `numberOfMachines`, `hasMultipleVersions`, `hasDefaultVersion`, and `regionId`.
+- Blueprint detail did **not** expose a top-level `snapshots[]` field. Snapshot/version selection is
+  carried in `createFromVersions[]`, where each version included at least `id`, `name`, `isDefault`,
+  `isLatest`, `number`, `resources`, `createTime`, and `regions`.
+- For **experience-based** launches, CloudShare uses the Blueprint's **default** version/Snapshot.
+  The portal should treat Blueprint detail as visibility into that default, not as proof that it can
+  choose any arbitrary non-default version when launching an Experience. Selecting a non-default
+  version applies to custom environment creation outside the Experience flow, not the Exam launch
+  path this portal uses.
+
+This confirms the Project-first authoring model and corrects the earlier placeholder fixture shape:
+the adapter should derive portal Snapshot choices from Blueprint detail `createFromVersions[]`, not
+from an invented top-level `snapshots[]` field.
+
 ---
 
 ## GAP-11 — Project-member RBAC permissions are not retrievable via API

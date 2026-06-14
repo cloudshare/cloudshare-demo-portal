@@ -121,9 +121,12 @@ Subscriptions, but the portal discovers and presents Blueprints through the sele
 
 **Snapshot**:
 A saved state of an environment's VMs and network configuration. Up to five per Blueprint
-(first-in-first-out); one is the **default** (the latest unless overridden) and is what provisions
-an environment. The portal models Snapshot discovery as part of selected Project + Blueprint detail,
-including the default-Snapshot signal, not as a global top-level resource list.
+(first-in-first-out); one is the **default** (often the latest unless a CloudShare instructor/project
+manager changes it) and is what provisions an environment for **experience-based** launches. The
+portal models Snapshot discovery as part of selected Project + Blueprint detail, including the
+default-Snapshot signal, not as a global top-level resource list. The portal does **not** choose an
+arbitrary non-default Snapshot when launching an Exam through a CloudShare Experience; any such
+change must happen by changing the Blueprint's default inside CloudShare first.
 
 **Region**:
 A CloudShare data-centre location. In CloudShare v3 this is effectively platform-global:
@@ -157,7 +160,8 @@ experience, so each Exam carries an explicit flag stating whether to retrieve sc
 
 **Exam**:
 The **catalog item** the Helios admin publishes. Binds a single CloudShare provisioning tuple —
-**Project + Blueprint + Snapshot** (default unless overridden) **+ Region + Policy + Instructor** —
+**Project + Blueprint + Snapshot** (the Blueprint's current default for experience-based launches)
+**+ Region + Policy + Instructor** —
 plus candidate-facing metadata (title, description, **per-Exam time limit**, published/draft flag,
 and a **score-retrieval flag** stating whether the underlying blueprint has a Guided Journey to
 score). Exam authoring is **Project-first**: the Helios admin selects a Project, then chooses

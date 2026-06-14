@@ -1,5 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
-import { createCloudShareResourceLister } from "./resources";
+import {
+  createCloudShareExamAuthoringSource,
+  createCloudShareResourceLister,
+} from "./resources";
 import type { CloudShareClient } from "./client";
 
 function makeClient(responses: Record<string, unknown>): CloudShareClient {
@@ -66,5 +69,56 @@ describe("createCloudShareResourceLister", () => {
     const lister = createCloudShareResourceLister(mockClient);
     const result = await lister.listPolicies();
     expect(result).toEqual([{ id: "pol-1", name: "Exam Policy" }]);
+  });
+});
+
+describe("createCloudShareExamAuthoringSource", () => {
+  it("lists project-scoped blueprints for a selected project", async () => {
+    const source = createCloudShareExamAuthoringSource(
+      makeClient({
+        "v3:/projects/p-1/blueprints": [{ id: "bp-1", name: "Exam Blueprint" }],
+      }),
+    );
+
+    await expect(source.listProjectBlueprints("p-1")).resolves.toEqual([
+      { id: "bp-1", name: "Exam Blueprint" },
+    ]);
+  });
+
+  it("lists project-scoped policies for a selected project", async () => {
+    const source = createCloudShareExamAuthoringSource(
+      makeClient({
+        "v3:/projects/p-1/policies": [{ id: "pol-1", name: "Timed Policy" }],
+      }),
+    );
+
+    await expect(source.listProjectPolicies("p-1")).resolves.toEqual([
+      { id: "pol-1", name: "Timed Policy" },
+    ]);
+  });
+
+  it("maps blueprint detail snapshots with the default snapshot signal", async () => {
+    const source = createCloudShareExamAuthoringSource(
+      makeClient({
+        "v3:/projects/p-1/blueprints/bp-1": {
+          id: "bp-1",
+          name: "Exam Blueprint",
+          createFromVersions: [
+            { id: "snap-1", name: "Snapshot 1", isDefault: true },
+            { id: "snap-2", name: "Snapshot 2", isDefault: false },
+          ],
+        },
+      }),
+    );
+
+    await expect(source.getBlueprintDetail("p-1", "bp-1")).resolves.toEqual({
+      id: "bp-1",
+      name: "Exam Blueprint",
+      defaultSnapshotId: "snap-1",
+      snapshots: [
+        { id: "snap-1", name: "Snapshot 1", isDefault: true },
+        { id: "snap-2", name: "Snapshot 2", isDefault: false },
+      ],
+    });
   });
 });

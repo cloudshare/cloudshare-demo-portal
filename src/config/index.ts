@@ -36,10 +36,10 @@ const envSchema = z.object({
   HEARTBEAT_TIMEOUT_MS: z.coerce.number().int().positive().optional().default(60_000),
 
   // Category 3 — demo resource selection
-  DEMO_BLUEPRINT_NAME: z.string().min(1),
-  DEMO_POLICY_NAME: z.string().min(1),
-  DEMO_PROJECT_NAME: z.string().min(1),
-  DEMO_REGION_NAME: z.string().min(1),
+  DEMO_BLUEPRINT_NAME: z.string().optional().default(""),
+  DEMO_POLICY_NAME: z.string().optional().default(""),
+  DEMO_PROJECT_NAME: z.string().optional().default(""),
+  DEMO_REGION_NAME: z.string().optional().default(""),
 
   // Seeded Helios admin login for the demo.
   HELIOS_ADMIN_EMAIL: z.string().email().optional().default("admin@helioscx.demo"),
@@ -47,6 +47,8 @@ const envSchema = z.object({
   HELIOS_SEED_CLOUDSHARE_API_ID: z.string().optional().default(""),
   HELIOS_SEED_CLOUDSHARE_API_KEY: z.string().optional().default(""),
   HELIOS_SEED_CLOUDSHARE_WEBHOOK_SECRET: z.string().optional().default(""),
+  HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_ID: z.string().optional().default("seeded-cloudshare-instructor"),
+  HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_NAME: z.string().optional().default("Seeded CloudShare Instructor"),
 
   // Legacy admin bearer token (deprecated by Slice 1 login, tolerated for
   // unfinished slices that still assume it exists).
@@ -91,6 +93,10 @@ export interface Config {
           readonly webhookSecret: string;
         }
       | null;
+    readonly heliosInstructor: {
+      readonly id: string;
+      readonly name: string;
+    };
   };
   readonly databaseUrl: string;
 }
@@ -147,6 +153,10 @@ export function loadConfig(env: NodeJS.ProcessEnv | Record<string, unknown>): Co
               webhookSecret: e.HELIOS_SEED_CLOUDSHARE_WEBHOOK_SECRET,
             }
           : null,
+      heliosInstructor: {
+        id: e.HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_ID,
+        name: e.HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_NAME,
+      },
     },
     databaseUrl: e.DATABASE_URL,
   };
