@@ -6,6 +6,15 @@ const blueprintVersionSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   isDefault: z.boolean(),
+  regions: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        name: z.string().min(1).optional(),
+      }),
+    )
+    .optional()
+    .default([]),
 });
 
 const blueprintDetailSchema = z.object({
@@ -47,6 +56,7 @@ export interface CloudShareBlueprintSnapshot {
   readonly id: string;
   readonly name: string;
   readonly isDefault: boolean;
+  readonly regionIds: string[];
 }
 
 export interface CloudShareBlueprintDetail {
@@ -180,7 +190,12 @@ export function createCloudShareExamAuthoringSource(
         description: detail.description ?? "",
         defaultSnapshotId:
           detail.createFromVersions.find((snapshot) => snapshot.isDefault)?.id ?? null,
-        snapshots: detail.createFromVersions,
+        snapshots: detail.createFromVersions.map((snapshot) => ({
+          id: snapshot.id,
+          name: snapshot.name,
+          isDefault: snapshot.isDefault,
+          regionIds: (snapshot.regions ?? []).map((region) => region.id),
+        })),
       };
     },
   };

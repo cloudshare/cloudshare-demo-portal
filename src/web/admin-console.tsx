@@ -73,6 +73,7 @@ interface BlueprintSnapshot {
   id: string;
   name: string;
   isDefault: boolean;
+  regionIds: string[];
 }
 
 interface BlueprintDetail {
@@ -603,7 +604,6 @@ export function AdminConsole({ email }: AdminConsoleProps) {
           body: JSON.stringify({
             title: examTitle,
             description: examDescription,
-            timeLimitMinutes: policyTimeLimitMinutes,
             scoreRetrievalEnabled,
             ...(editingExamId
               ? {}
@@ -727,10 +727,14 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   const selectedProject = projects.find((item) => item.id === selectedProjectId) ?? null;
   const selectedBlueprint = blueprints.find((item) => item.id === selectedBlueprintId) ?? null;
   const selectedPolicy = policies.find((item) => item.id === selectedPolicyId) ?? null;
-  const selectedRegion = regions.find((item) => item.id === selectedRegionId) ?? null;
   const authoringMode = getExamAuthoringMode(editingExamId);
   const defaultSnapshot =
     blueprintDetail?.snapshots.find((item) => item.id === blueprintDetail.defaultSnapshotId) ?? null;
+  const compatibleRegions =
+    defaultSnapshot && defaultSnapshot.regionIds.length > 0
+      ? regions.filter((region) => defaultSnapshot.regionIds.includes(region.id))
+      : regions;
+  const selectedRegion = compatibleRegions.find((item) => item.id === selectedRegionId) ?? null;
   const effectiveTimeLimitMinutes =
     selectedPolicy?.runtimeLeaseMinutes !== null && selectedPolicy?.runtimeLeaseMinutes !== undefined
       ? String(selectedPolicy.runtimeLeaseMinutes)
@@ -748,6 +752,13 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   const blueprintSummary = selectedBlueprint
     ? stripHtmlToText(selectedBlueprint.description || blueprintDetail?.description || "")
     : "";
+
+  useEffect(() => {
+    if (compatibleRegions.some((region) => region.id === selectedRegionId)) {
+      return;
+    }
+    setSelectedRegionId(compatibleRegions[0]?.id ?? "");
+  }, [compatibleRegions, selectedRegionId]);
 
   return (
     <main style={{ fontFamily: "system-ui, sans-serif", padding: "2rem", maxWidth: "1000px", margin: "0 auto" }}>
@@ -1022,7 +1033,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                 disabled={authoringMode.provisioningLocked}
               >
                 <option value="">Select a Region</option>
-                {regions.map((region) => (
+                {compatibleRegions.map((region) => (
                   <option key={region.id} value={region.id}>
                     {region.friendlyName ?? region.name}
                   </option>

@@ -105,8 +105,18 @@ describe("createCloudShareExamAuthoringSource", () => {
           name: "Exam Blueprint",
           description: "Default tenant-ready environment.",
           createFromVersions: [
-            { id: "snap-1", name: "Snapshot 1", isDefault: true },
-            { id: "snap-2", name: "Snapshot 2", isDefault: false },
+            {
+              id: "snap-1",
+              name: "Snapshot 1",
+              isDefault: true,
+              regions: [{ id: "r-1", name: "EU West" }],
+            },
+            {
+              id: "snap-2",
+              name: "Snapshot 2",
+              isDefault: false,
+              regions: [{ id: "r-2", name: "US East" }],
+            },
           ],
         },
       }),
@@ -118,8 +128,8 @@ describe("createCloudShareExamAuthoringSource", () => {
       description: "Default tenant-ready environment.",
       defaultSnapshotId: "snap-1",
       snapshots: [
-        { id: "snap-1", name: "Snapshot 1", isDefault: true },
-        { id: "snap-2", name: "Snapshot 2", isDefault: false },
+        { id: "snap-1", name: "Snapshot 1", isDefault: true, regionIds: ["r-1"] },
+        { id: "snap-2", name: "Snapshot 2", isDefault: false, regionIds: ["r-2"] },
       ],
     });
   });

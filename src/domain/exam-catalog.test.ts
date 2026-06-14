@@ -147,7 +147,6 @@ describe("updateDraftExam", () => {
         customerId: "customer-1",
         title: "Helios Blueprint Exam",
         description: "Updated description.",
-        timeLimitMinutes: 240,
         scoreRetrievalEnabled: false,
       },
     );
@@ -157,7 +156,7 @@ describe("updateDraftExam", () => {
       status: "draft",
       title: "Helios Blueprint Exam",
       description: "Updated description.",
-      timeLimitMinutes: 240,
+      timeLimitMinutes: 90,
       scoreRetrievalEnabled: false,
     });
     expect(updated.updatedAt).toEqual(updatedAt);
@@ -186,7 +185,6 @@ describe("updateDraftExam", () => {
           customerId: "customer-1",
           title: "Helios Blueprint Exam",
           description: "Updated description.",
-          timeLimitMinutes: 240,
           scoreRetrievalEnabled: false,
         },
       ),

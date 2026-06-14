@@ -457,7 +457,6 @@ function parseUpdateDraftExamInput(
   if (
     typeof candidate.title !== "string" ||
     typeof candidate.description !== "string" ||
-    typeof candidate.timeLimitMinutes !== "number" ||
     typeof candidate.scoreRetrievalEnabled !== "boolean"
   ) {
     return null;
@@ -468,7 +467,6 @@ function parseUpdateDraftExamInput(
     examId,
     title: candidate.title,
     description: candidate.description,
-    timeLimitMinutes: candidate.timeLimitMinutes,
     scoreRetrievalEnabled: candidate.scoreRetrievalEnabled,
   };
 }
@@ -487,7 +485,6 @@ async function parseCreateDraftExamInput(
   if (
     typeof candidate.title !== "string" ||
     typeof candidate.description !== "string" ||
-    typeof candidate.timeLimitMinutes !== "number" ||
     typeof candidate.scoreRetrievalEnabled !== "boolean" ||
     typeof candidate.projectId !== "string" ||
     typeof candidate.blueprintId !== "string" ||
@@ -520,12 +517,18 @@ async function parseCreateDraftExamInput(
   if (blueprintDetail.defaultSnapshotId === null || snapshot.id !== blueprintDetail.defaultSnapshotId) {
     return null;
   }
+  if (snapshot.regionIds.length > 0 && !snapshot.regionIds.includes(candidate.regionId)) {
+    return null;
+  }
+  if (policy.runtimeLeaseMinutes === null || policy.runtimeLeaseMinutes === undefined) {
+    return null;
+  }
 
   return {
     customerId,
     title: candidate.title,
     description: candidate.description,
-    timeLimitMinutes: candidate.timeLimitMinutes,
+    timeLimitMinutes: policy.runtimeLeaseMinutes,
     scoreRetrievalEnabled: candidate.scoreRetrievalEnabled,
     projectId: candidate.projectId,
     projectName: project.name,

@@ -72,8 +72,8 @@ function makeAuthoringSource(
       description: "Blueprint-backed description",
       defaultSnapshotId: "snap-1",
       snapshots: [
-        { id: "snap-1", name: "Default Snapshot", isDefault: true },
-        { id: "snap-2", name: "Older Snapshot", isDefault: false },
+        { id: "snap-1", name: "Default Snapshot", isDefault: true, regionIds: ["region-1"] },
+        { id: "snap-2", name: "Older Snapshot", isDefault: false, regionIds: ["region-2"] },
       ],
     } satisfies CloudShareBlueprintDetail),
     ...overrides,
@@ -107,8 +107,8 @@ async function seedAuthoringCache(
     description: "Blueprint-backed description",
     defaultSnapshotId: "snap-1",
     snapshots: [
-      { id: "snap-1", name: "Default Snapshot", isDefault: true },
-      { id: "snap-2", name: "Older Snapshot", isDefault: false },
+      { id: "snap-1", name: "Default Snapshot", isDefault: true, regionIds: ["region-1"] },
+      { id: "snap-2", name: "Older Snapshot", isDefault: false, regionIds: ["region-2"] },
     ],
   });
 }
@@ -203,8 +203,8 @@ describe("admin exam authoring handlers", () => {
         description: "Blueprint-backed description",
         defaultSnapshotId: "snap-1",
         snapshots: [
-          { id: "snap-1", name: "Default Snapshot", isDefault: true },
-          { id: "snap-2", name: "Older Snapshot", isDefault: false },
+          { id: "snap-1", name: "Default Snapshot", isDefault: true, regionIds: ["region-1"] },
+          { id: "snap-2", name: "Older Snapshot", isDefault: false, regionIds: ["region-2"] },
         ],
       },
     });
@@ -273,7 +273,7 @@ describe("admin exam catalog handlers", () => {
         body: {
           title: "Helios CloudShare Fundamentals",
           description: "Hands-on certification exam.",
-          timeLimitMinutes: 90,
+          timeLimitMinutes: 5,
           scoreRetrievalEnabled: true,
           projectId: "project-1",
           blueprintId: "bp-1",
@@ -290,6 +290,7 @@ describe("admin exam catalog handlers", () => {
         id: "exam-1",
         status: "draft",
         title: "Helios CloudShare Fundamentals",
+        timeLimitMinutes: 240,
         projectName: "Helios CX Project",
         instructorId: "instructor-1",
         instructorName: "Helios Service Account",
@@ -316,7 +317,7 @@ describe("admin exam catalog handlers", () => {
         body: {
           title: "Helios CloudShare Fundamentals",
           description: "   ",
-          timeLimitMinutes: 90,
+          timeLimitMinutes: 5,
           scoreRetrievalEnabled: true,
           projectId: "project-1",
           blueprintId: "bp-1",
@@ -332,7 +333,44 @@ describe("admin exam catalog handlers", () => {
       exam: {
         id: "exam-1",
         description: "",
+        timeLimitMinutes: 240,
       },
+    });
+  });
+
+  it("rejects draft creation when the selected region is not supported by the default snapshot", async () => {
+    const repository = createInMemoryExamCatalogRepository();
+    const cache = createInMemoryExamAuthoringCacheRepository();
+    await seedAuthoringCache(cache);
+
+    const result = await handleCreateDraftExam(
+      {
+        repository,
+        cache,
+        instructor: configuredInstructor,
+        logger: makeLogger(),
+        now: () => new Date("2026-06-14T12:00:00.000Z"),
+        newId: () => "exam-1",
+      },
+      {
+        customerId: "customer-1",
+        body: {
+          title: "Helios CloudShare Fundamentals",
+          description: "Hands-on certification exam.",
+          timeLimitMinutes: 240,
+          scoreRetrievalEnabled: true,
+          projectId: "project-1",
+          blueprintId: "bp-1",
+          snapshotId: "snap-1",
+          regionId: "region-2",
+          policyId: "policy-1",
+        },
+      },
+    );
+
+    expect(result.status).toBe(400);
+    expect(result.body).toEqual({
+      error: "Refresh CloudShare authoring resources and reselect the Exam provisioning tuple.",
     });
   });
 
@@ -538,7 +576,7 @@ describe("admin exam catalog handlers", () => {
         body: {
           title: "Helios Blueprint Exam",
           description: "Updated description.",
-          timeLimitMinutes: 240,
+          timeLimitMinutes: 5,
           scoreRetrievalEnabled: true,
         },
       },

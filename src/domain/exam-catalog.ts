@@ -79,7 +79,6 @@ export interface UpdateDraftExamInput {
   readonly examId: string;
   readonly title: string;
   readonly description: string;
-  readonly timeLimitMinutes: number;
   readonly scoreRetrievalEnabled: boolean;
 }
 
@@ -168,7 +167,6 @@ export async function updateDraftExam(
     ...existing,
     title: input.title.trim(),
     description: input.description.trim(),
-    timeLimitMinutes: input.timeLimitMinutes,
     scoreRetrievalEnabled: input.scoreRetrievalEnabled,
     updatedAt: (deps.now ?? (() => new Date()))(),
   };
