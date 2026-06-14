@@ -80,18 +80,49 @@ All variables are Zod-validated at boot; missing required values cause a fast-fa
 1. Set `PORTAL_MODE=live` and fill in all `live only` variables.
 2. Expose the server publicly (e.g. `ngrok http 3000`) and set `PORTAL_TUNNEL_URL`.
 3. Configure CloudShare to POST webhooks to `$PORTAL_TUNNEL_URL/api/webhooks/cloudshare`.
-4. Open `/admin` and use **Sync Resources** to populate blueprint/policy/project/region ID mappings.
+4. Open `/admin` and use **Sync Resources** only as the current stopgap evidence surface. The
+   intended Exam-authoring model is Project-first: Projects and global Regions are reference lists;
+   Blueprints, Policies, Project Members / Instructor choices, and Blueprint-detail Snapshots are
+   fetched or cached for the selected Project.
 
 ### Development commands
 
 ```bash
 npm run dev          # Next.js dev server with hot reload
 npm test             # Vitest unit tests
+npm run test:e2e:live # Live CloudShare E2E checks; requires .env.e2e.local
 npm run test:watch   # Watch mode
 npm run typecheck    # tsc --noEmit
 npm run lint         # ESLint
 npm run build        # Production build
 ```
+
+### Live E2E credentials
+
+Live CloudShare E2E tests read credentials from `.env.e2e.local`, which is ignored
+by git via `.env*.local`.
+
+```bash
+cp .env.e2e.example .env.e2e.local
+```
+
+Fill `CLOUDSHARE_E2E_API_ID` and `CLOUDSHARE_E2E_API_KEY`, then run:
+
+```bash
+npm run test:e2e:live
+```
+
+The current live E2E test performs a real signed v3 `ping` and expects `pong`.
+Normal `npm test` excludes `*.e2e.test.ts`, so fixture/unit tests never call the
+live tenant accidentally.
+
+### Integration slice protocol
+
+For any slice that touches CloudShare, follow
+[`docs/architecture/integration-slice-protocol.md`](docs/architecture/integration-slice-protocol.md).
+The short version: verify CloudShare protocol assumptions early, keep offline tests deterministic,
+use `.env.e2e.local` for safe live E2E checks, build support diagnostics with the feature, and update
+the gap report as soon as live behavior confirms or contradicts an assumption.
 
 ---
 
@@ -122,6 +153,24 @@ Working repository for the CloudShare demo portal discovery, requirements, archi
 - `src/web` — browser-side helpers and client components (e.g. lab child-window)
 - `src/composition.ts` — composition root wiring the modules together
 
+## API-first portal design
+
+Portal capabilities should be API-first: the HTTP route and framework-agnostic `src/api/*` handler
+define the behavior, and the React UI calls that same API. This keeps the portal scriptable for
+sales-demo variants, local E2E automation, and future non-browser integrations.
+
+Slice 1 follows this model:
+
+- `POST /api/auth/login` — accepts JSON `{ email, password }`, authenticates the user, and sets the
+  httpOnly portal session cookie.
+- `GET /api/admin/cloudshare` — returns redacted CloudShare Connection status for the signed-in
+  Helios admin.
+- `PUT /api/admin/cloudshare` — saves or replaces the Customer's CloudShare Connection credentials.
+- `POST /api/admin/cloudshare/test` — verifies the saved CloudShare Connection with a real v3
+  `ping`, returning success or supportable redacted diagnostics.
+
+Future slices should add handler-level API tests before relying on UI-only verification.
+
 ## CloudShare integration
 
 All CloudShare access goes through the typed adapter seam in
@@ -137,16 +186,18 @@ const cloudshare = createCloudShareIntegration({
   v3: { apiId, apiKey },
 });
 
-const projects = await cloudshare.requestV4({
+const regions = await cloudshare.requestV3({
   method: "GET",
-  path: "/projects",
-  schema: projectsSchema, // Zod schema validated at the boundary
+  path: "/regions",
+  schema: regionsSchema, // Zod schema validated at the boundary
 });
 ```
 
 - **v4 (Accelerate):** Bearer JWT via `client_credentials`, cached and refreshed
   before the ~5-minute expiry.
-- **v3 (Production):** per-call `cs_sha1` request signing (single-use token).
+- **v3 (Production):** per-call `cs_sha1` request signing (single-use 10-character alphanumeric
+  token) and infrastructure reads. Regions are a global reference list; Policies and Blueprints are
+  Project-scoped for portal behavior; Snapshots are discovered through selected Blueprint detail.
 - **Live vs fixture:** chosen by `mode`. Fixture mode replays recorded JSON from
   `src/integrations/cloudshare/fixtures/` through the identical code path, so
   contract tests and demos run with no live calls.
@@ -312,13 +363,16 @@ Each record carries: `id`, `examAttemptId`, `candidateId?`, `action`,
 **Admin API endpoints:**
 - `GET /api/admin/audit` — all records, newest-first; `?examAttemptId=<id>` filters to one attempt
 - `GET /api/admin/events` — integration event log (all published `IntegrationEvent`s); `?limit=<n>`
-- `POST /api/admin/sync-resources` — fetches CloudShare blueprints, policies, projects, and regions
-  and stores them as `ResourceMapping`s (`name ↔ cloudshareId`). Returns `{ synced, byType }`.
+- `POST /api/admin/sync-resources` — current stopgap sync surface for early integration evidence.
+  Long-term Exam authoring should not globally sync every visible Project-scoped object; it should
+  list Projects and global Regions, then fetch/cache Project-scoped Blueprints, Policies, later
+  Project Members / Instructor choices, and Blueprint-detail Snapshots for the selected Project.
 
 **Admin UI** (`/admin`) — React client component with three tabs:
 - **Audit Trail** — per-attempt timeline with filter input; shows action, outcome, error/details
 - **Event Log** — most recent 100 integration events with type, eventId, and payload
-- **Resources** — trigger sync and view the resulting name↔ID mappings by resource type
+- **Resources** — stopgap sync tab for viewing early name↔ID mappings; not the intended long-term
+  Exam-authoring workflow.
 
 **Persistence:** all three stores (`AuditRepository`, `ResourceRepository`, `EventLogRepository`)
 are in-memory for the demo. They implement the same typed repository interfaces as every other
