@@ -382,13 +382,9 @@ function handleCloudShareFailure(
   path: string,
   error: unknown,
 ): AdminExamResponse {
-  if (
-    error instanceof CloudShareRequestError ||
-    error instanceof CloudShareTransportError ||
-    error instanceof CloudShareResponseError ||
-    error instanceof CloudShareError
-  ) {
-    const diagnostic = buildDiagnostic(operation, path, error);
+  const cloudShareError = asCloudShareErrorLike(error);
+  if (cloudShareError) {
+    const diagnostic = buildDiagnostic(operation, path, cloudShareError);
     const correlationId = (deps.newCorrelationId ?? randomUUID)();
     const occurredAt = (deps.now ?? (() => new Date()))().toISOString();
     deps.logger.warn("cloudshare exam authoring failed", {
@@ -410,11 +406,37 @@ function handleCloudShareFailure(
   throw error;
 }
 
+function asCloudShareErrorLike(error: unknown): CloudShareError | null {
+  if (
+    error instanceof CloudShareRequestError ||
+    error instanceof CloudShareTransportError ||
+    error instanceof CloudShareResponseError ||
+    error instanceof CloudShareError
+  ) {
+    return error;
+  }
+
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    typeof (error as { name?: unknown }).name === "string" &&
+    ((error as { name: string }).name === "CloudShareRequestError" ||
+      (error as { name: string }).name === "CloudShareTransportError" ||
+      (error as { name: string }).name === "CloudShareResponseError" ||
+      (error as { name: string }).name === "CloudShareError")
+  ) {
+    return error as CloudShareError;
+  }
+
+  return null;
+}
+
 function buildDiagnostic(
   operation: string,
   path: string,
   error: CloudShareError,
 ): Record<string, unknown> {
+  const errorName = error.name;
   const diagnostic: Record<string, unknown> = {
     operation,
     integrationSurface: inferIntegrationSurface(path),
@@ -422,12 +444,13 @@ function buildDiagnostic(
     path,
   };
 
-  if (error instanceof CloudShareRequestError) {
+  if (error instanceof CloudShareRequestError || errorName === "CloudShareRequestError") {
     diagnostic.failureMode = "http_status";
-    diagnostic.responseStatus = error.status;
-  } else if (error instanceof CloudShareTransportError) {
+    diagnostic.responseStatus =
+      error instanceof CloudShareRequestError ? error.status : error.context?.status;
+  } else if (error instanceof CloudShareTransportError || errorName === "CloudShareTransportError") {
     diagnostic.failureMode = "transport";
-  } else if (error instanceof CloudShareResponseError) {
+  } else if (error instanceof CloudShareResponseError || errorName === "CloudShareResponseError") {
     diagnostic.failureMode = "unexpected_response";
   } else {
     diagnostic.failureMode = "cloudshare_error";
@@ -440,7 +463,7 @@ function inferIntegrationSurface(path: string): string {
   if (path.includes("/policies")) {
     return "cloudshare.v3.projects.policies";
   }
-  if (path.includes("/blueprints/") && path.split("/").length > 5) {
+  if (path.includes("/blueprints/") && path.split("/").length >= 5) {
     return "cloudshare.v3.projects.blueprint_detail";
   }
   if (path.includes("/blueprints")) {

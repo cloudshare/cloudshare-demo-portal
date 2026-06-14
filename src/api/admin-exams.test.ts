@@ -248,6 +248,45 @@ describe("admin exam authoring handlers", () => {
       },
     });
   });
+
+  it("maps name-only CloudShare response errors to supportable 502s", async () => {
+    const source = makeAuthoringSource({
+      getBlueprintDetail: vi.fn().mockRejectedValue(
+        Object.assign(
+          new Error("schema mismatch"),
+          {
+            name: "CloudShareResponseError",
+            context: {
+              method: "GET",
+              responseBody: "{\"regions\":[\"r-1\"]}",
+            },
+          },
+        ),
+      ),
+    });
+
+    const result = await handleGetBlueprintDetail(
+      {
+        connections: makeConnections(),
+        cloudshare: makeCloudShareFactory(source),
+        cache: createInMemoryExamAuthoringCacheRepository(),
+        logger: makeLogger(),
+      },
+      { customerId: "customer-1", projectId: "project-1", blueprintId: "bp-1", refresh: true },
+    );
+
+    expect(result.status).toBe(502);
+    expect(result.body).toMatchObject({
+      error: "CloudShare resource request failed.",
+      diagnostic: {
+        operation: "get_blueprint_detail",
+        integrationSurface: "cloudshare.v3.projects.blueprint_detail",
+        method: "GET",
+        path: "/projects/project-1/blueprints/bp-1",
+        failureMode: "unexpected_response",
+      },
+    });
+  });
 });
 
 describe("admin exam catalog handlers", () => {

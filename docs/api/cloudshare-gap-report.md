@@ -390,6 +390,9 @@ shapes were broader than the current minimal adapter schema:
 - Blueprint detail did **not** expose a top-level `snapshots[]` field. Snapshot/version selection is
   carried in `createFromVersions[]`, where each version included at least `id`, `name`, `isDefault`,
   `isLatest`, `number`, `resources`, `createTime`, and `regions`.
+- `createFromVersions[].regions` is not stable to a single shape. In the current tenant it may arrive
+  either as region objects (with `id` / `name`) or as raw region-id strings. The adapter must accept
+  both and normalize them to portal `regionIds`.
 - For **experience-based** launches, CloudShare uses the Blueprint's **default** version/Snapshot.
   The portal should treat Blueprint detail as visibility into that default, not as proof that it can
   choose any arbitrary non-default version when launching an Experience. Selecting a non-default

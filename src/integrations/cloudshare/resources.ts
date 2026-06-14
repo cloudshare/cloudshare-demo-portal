@@ -8,10 +8,13 @@ const blueprintVersionSchema = z.object({
   isDefault: z.boolean(),
   regions: z
     .array(
-      z.object({
-        id: z.string().min(1),
-        name: z.string().min(1).optional(),
-      }),
+      z.union([
+        z.string().min(1),
+        z.object({
+          id: z.string().min(1),
+          name: z.string().min(1).optional(),
+        }),
+      ]),
     )
     .optional()
     .default([]),
@@ -194,7 +197,9 @@ export function createCloudShareExamAuthoringSource(
           id: snapshot.id,
           name: snapshot.name,
           isDefault: snapshot.isDefault,
-          regionIds: (snapshot.regions ?? []).map((region) => region.id),
+          regionIds: (snapshot.regions ?? []).map((region) =>
+            typeof region === "string" ? region : region.id,
+          ),
         })),
       };
     },

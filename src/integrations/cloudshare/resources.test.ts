@@ -133,4 +133,32 @@ describe("createCloudShareExamAuthoringSource", () => {
       ],
     });
   });
+
+  it("accepts blueprint detail regions returned as raw region ids", async () => {
+    const source = createCloudShareExamAuthoringSource(
+      makeClient({
+        "v3:/projects/p-1/blueprints/bp-1": {
+          id: "bp-1",
+          name: "Exam Blueprint",
+          description: "",
+          createFromVersions: [
+            {
+              id: "snap-1",
+              name: "Snapshot 1",
+              isDefault: true,
+              regions: ["r-1", "r-2"],
+            },
+          ],
+        },
+      }),
+    );
+
+    await expect(source.getBlueprintDetail("p-1", "bp-1")).resolves.toEqual({
+      id: "bp-1",
+      name: "Exam Blueprint",
+      description: "",
+      defaultSnapshotId: "snap-1",
+      snapshots: [{ id: "snap-1", name: "Snapshot 1", isDefault: true, regionIds: ["r-1", "r-2"] }],
+    });
+  });
 });
