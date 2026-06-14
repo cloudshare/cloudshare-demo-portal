@@ -271,7 +271,7 @@ verification + support diagnostics confirmed in the real flow.
   but seeded to one Customer.
 - A Certalis provider-admin UI (customer onboarding is seeded).
 - SSO/OIDC; prerequisite-training eligibility gating.
-- Multi-step / multi-blueprint trainings; multiple regions per exam.
+- Multi-step / multi-blueprint trainings; candidate-facing Region choice.
 - Score weighting into a final certification outcome (the Customer's responsibility); the broader
   Certification journey beyond a single Exam.
 - Exporting monitoring data to an external platform; cloud deployment; production hardening.

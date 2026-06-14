@@ -526,7 +526,7 @@ describe("admin exam catalog handlers", () => {
 
     expect(result.status).toBe(400);
     expect(result.body).toEqual({
-      error: "Refresh CloudShare authoring resources and reselect the Exam provisioning tuple.",
+      error: "Selected allowed Regions are not deployed for the Blueprint default Snapshot.",
     });
   });
 
@@ -669,7 +669,14 @@ describe("admin exam catalog handlers", () => {
     );
 
     const publish = await handlePublishExam(
-      { repository, logger: makeLogger(), now: () => new Date("2026-06-14T12:30:00.000Z") },
+      {
+        repository,
+        connections: makeConnections(),
+        cloudshare: makeCloudShareFactory(makeAuthoringSource()),
+        cache,
+        logger: makeLogger(),
+        now: () => new Date("2026-06-14T12:30:00.000Z"),
+      },
       { customerId: "customer-1", examId: "exam-1" },
     );
 
@@ -693,6 +700,133 @@ describe("admin exam catalog handlers", () => {
         }),
       ],
     });
+  });
+
+  it("rejects publish when current default Snapshot no longer supports the draft allowed Regions", async () => {
+    const repository = createInMemoryExamCatalogRepository();
+    const cache = createInMemoryExamAuthoringCacheRepository();
+    await seedAuthoringCache(cache);
+    await handleCreateDraftExam(
+      {
+        repository,
+        cache,
+        instructor: configuredInstructor,
+        logger: makeLogger(),
+        now: () => new Date("2026-06-14T12:00:00.000Z"),
+        newId: () => "exam-1",
+      },
+      {
+        customerId: "customer-1",
+        body: {
+          title: "Helios CloudShare Fundamentals",
+          description: "Hands-on certification exam.",
+          timeLimitMinutes: 90,
+          scoreRetrievalEnabled: false,
+          projectId: "project-1",
+          blueprintId: "bp-1",
+          snapshotId: "snap-1",
+          allowedRegionIds: ["region-1", "region-2"],
+          policyId: "policy-1",
+        },
+      },
+    );
+    const source = makeAuthoringSource({
+      getBlueprintDetail: vi.fn().mockResolvedValue({
+        id: "bp-1",
+        name: "Helios Exam Blueprint",
+        description: "Blueprint-backed description",
+        defaultSnapshotId: "snap-1",
+        snapshots: [
+          {
+            id: "snap-1",
+            name: "Default Snapshot",
+            isDefault: true,
+            regionIds: ["region-1"],
+          },
+        ],
+      } satisfies CloudShareBlueprintDetail),
+    });
+
+    const publish = await handlePublishExam(
+      {
+        repository,
+        connections: makeConnections(),
+        cloudshare: makeCloudShareFactory(source),
+        cache,
+        logger: makeLogger(),
+        now: () => new Date("2026-06-14T12:30:00.000Z"),
+      },
+      { customerId: "customer-1", examId: "exam-1" },
+    );
+
+    expect(publish.status).toBe(400);
+    expect(publish.body).toEqual({
+      error:
+        "Selected allowed Regions are no longer deployed for the Blueprint default Snapshot. Refresh CloudShare authoring resources and reselect supported Regions.",
+    });
+    expect(source.getBlueprintDetail).toHaveBeenCalledWith("project-1", "bp-1");
+    await expect(repository.findById("exam-1")).resolves.toMatchObject({ status: "draft" });
+  });
+
+  it("rejects publish when the current Blueprint default Snapshot changed", async () => {
+    const repository = createInMemoryExamCatalogRepository();
+    const cache = createInMemoryExamAuthoringCacheRepository();
+    await seedAuthoringCache(cache);
+    await handleCreateDraftExam(
+      {
+        repository,
+        cache,
+        instructor: configuredInstructor,
+        logger: makeLogger(),
+        now: () => new Date("2026-06-14T12:00:00.000Z"),
+        newId: () => "exam-1",
+      },
+      {
+        customerId: "customer-1",
+        body: {
+          title: "Helios CloudShare Fundamentals",
+          description: "Hands-on certification exam.",
+          timeLimitMinutes: 90,
+          scoreRetrievalEnabled: false,
+          projectId: "project-1",
+          blueprintId: "bp-1",
+          snapshotId: "snap-1",
+          allowedRegionIds: ["region-1"],
+          policyId: "policy-1",
+        },
+      },
+    );
+    const source = makeAuthoringSource({
+      getBlueprintDetail: vi.fn().mockResolvedValue({
+        id: "bp-1",
+        name: "Helios Exam Blueprint",
+        description: "Blueprint-backed description",
+        defaultSnapshotId: "snap-2",
+        snapshots: [
+          { id: "snap-1", name: "Previous Snapshot", isDefault: false, regionIds: ["region-1"] },
+          { id: "snap-2", name: "New Default Snapshot", isDefault: true, regionIds: ["region-2"] },
+        ],
+      } satisfies CloudShareBlueprintDetail),
+    });
+
+    const publish = await handlePublishExam(
+      {
+        repository,
+        connections: makeConnections(),
+        cloudshare: makeCloudShareFactory(source),
+        cache,
+        logger: makeLogger(),
+        now: () => new Date("2026-06-14T12:30:00.000Z"),
+      },
+      { customerId: "customer-1", examId: "exam-1" },
+    );
+
+    expect(publish.status).toBe(400);
+    expect(publish.body).toEqual({
+      error:
+        "The selected Blueprint default Snapshot has changed. Refresh CloudShare authoring resources and reselect the Exam provisioning tuple.",
+    });
+    await expect(repository.findById("exam-1")).resolves.toMatchObject({ status: "draft" });
   });
 
   it("updates an existing draft exam", async () => {
@@ -780,7 +914,14 @@ describe("admin exam catalog handlers", () => {
       },
     );
     await handlePublishExam(
-      { repository, logger: makeLogger(), now: () => new Date("2026-06-14T12:30:00.000Z") },
+      {
+        repository,
+        connections: makeConnections(),
+        cloudshare: makeCloudShareFactory(makeAuthoringSource()),
+        cache,
+        logger: makeLogger(),
+        now: () => new Date("2026-06-14T12:30:00.000Z"),
+      },
       { customerId: "customer-1", examId: "exam-1" },
     );
 

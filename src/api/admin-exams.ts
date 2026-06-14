@@ -24,6 +24,7 @@ import {
   unpublishExam,
   updateDraftExam,
   type CreateDraftExamInput,
+  type Exam,
   type ExamRepository,
   type UpdateDraftExamInput,
 } from "@/domain/exam-catalog";
@@ -71,6 +72,16 @@ interface AdminExamCatalogDeps {
   readonly logger: Logger;
   readonly now?: () => Date;
   readonly newId?: () => string;
+}
+
+interface AdminExamPublishDeps {
+  readonly repository: ExamRepository;
+  readonly connections: CloudShareConnectionRepository;
+  readonly cloudshare: CloudShareClientFactory;
+  readonly cache: ExamAuthoringCacheRepository;
+  readonly logger: Logger;
+  readonly now?: () => Date;
+  readonly newCorrelationId?: () => string;
 }
 
 const DEFAULT_INSTRUCTOR_ID = "seeded-cloudshare-instructor";
@@ -297,10 +308,20 @@ function isConfiguredInstructor(
 }
 
 export async function handlePublishExam(
-  deps: Pick<AdminExamCatalogDeps, "repository" | "logger" | "now">,
+  deps: AdminExamPublishDeps,
   request: CustomerRequest & { readonly examId: string },
 ): Promise<AdminExamResponse> {
   try {
+    const existing = await deps.repository.findById(request.examId);
+    if (!existing || existing.customerId !== request.customerId) {
+      return { status: 404, body: { error: `Exam ${request.examId} was not found for customer ${request.customerId}` } };
+    }
+
+    const publishability = await validateCurrentDefaultSnapshotRegions(deps, existing);
+    if (publishability) {
+      return publishability;
+    }
+
     const exam = await publishExam(
       { repository: deps.repository, now: deps.now },
       { customerId: request.customerId, examId: request.examId },
@@ -312,6 +333,80 @@ export async function handlePublishExam(
     }
     throw error;
   }
+}
+
+async function validateCurrentDefaultSnapshotRegions(
+  deps: AdminExamPublishDeps,
+  exam: Exam,
+): Promise<AdminExamResponse | null> {
+  if (exam.allowedRegions.length === 0) {
+    return {
+      status: 400,
+      body: { error: "Select at least one allowed Region from the Blueprint default Snapshot." },
+    };
+  }
+
+  const connection = await deps.connections.findByCustomerId(exam.customerId);
+  if (!connection) {
+    return { status: 404, body: { error: "Save a CloudShare Connection before publishing Exams." } };
+  }
+
+  const source = resolveAuthoringSource(deps.cloudshare, connection);
+  let blueprint;
+  try {
+    blueprint = await source.getBlueprintDetail(exam.projectId, exam.blueprintId);
+  } catch (error) {
+    return handleCloudShareFailure(
+      deps,
+      "get_blueprint_detail",
+      `/projects/${exam.projectId}/blueprints/${exam.blueprintId}`,
+      error,
+    );
+  }
+
+  await deps.cache.saveBlueprintDetail(exam.customerId, exam.projectId, exam.blueprintId, blueprint);
+
+  if (blueprint.defaultSnapshotId === null || blueprint.defaultSnapshotId !== exam.snapshotId) {
+    return {
+      status: 400,
+      body: {
+        error:
+          "The selected Blueprint default Snapshot has changed. Refresh CloudShare authoring resources and reselect the Exam provisioning tuple.",
+      },
+    };
+  }
+
+  const defaultSnapshot = blueprint.snapshots.find((snapshot) => snapshot.id === blueprint.defaultSnapshotId);
+  if (!defaultSnapshot) {
+    return {
+      status: 400,
+      body: {
+        error:
+          "The selected Blueprint default Snapshot could not be found. Refresh CloudShare authoring resources and reselect the Exam provisioning tuple.",
+      },
+    };
+  }
+
+  if (defaultSnapshot.regionIds.length === 0) {
+    return {
+      status: 400,
+      body: { error: "The selected Blueprint default Snapshot is not deployed to any Regions yet." },
+    };
+  }
+
+  const defaultSnapshotRegionIds = new Set(defaultSnapshot.regionIds);
+  const unsupportedRegions = exam.allowedRegions.filter((region) => !defaultSnapshotRegionIds.has(region.id));
+  if (unsupportedRegions.length > 0) {
+    return {
+      status: 400,
+      body: {
+        error:
+          "Selected allowed Regions are no longer deployed for the Blueprint default Snapshot. Refresh CloudShare authoring resources and reselect supported Regions.",
+      },
+    };
+  }
+
+  return null;
 }
 
 export async function handleUpdateDraftExam(
@@ -572,7 +667,9 @@ async function parseCreateDraftExamInput(
   }
 
   if (candidate.allowedRegionIds.some((regionId) => !snapshot.regionIds.includes(regionId))) {
-    return null;
+    throw new DraftExamValidationError(
+      "Selected allowed Regions are not deployed for the Blueprint default Snapshot.",
+    );
   }
   if (policy.runtimeLeaseMinutes === null || policy.runtimeLeaseMinutes === undefined) {
     return null;
