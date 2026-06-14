@@ -146,6 +146,13 @@ git checkout -b feature/issue-<number>-<short-description>
 
 Then immediately open a draft PR linked to the issue with a closing keyword:
 
+```bash
+git push -u origin feature/issue-<number>-<short-description>
+gh pr create --draft --base main --head feature/issue-<number>-<short-description>
+```
+
+The PR body must include:
+
 ```text
 Closes #<issue-number>
 ```
@@ -162,6 +169,9 @@ npm run typecheck
 npm test
 git status
 ```
+
+For integration slices, also run the relevant live E2E checks where safe, such as
+`npm run test:e2e:live`, and follow `docs/architecture/integration-slice-protocol.md`.
 
 Then update the PR summary including:
 
