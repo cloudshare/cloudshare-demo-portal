@@ -138,6 +138,7 @@ describe("admin CloudShare handlers", () => {
     });
 
     expect(update.status).toBe(200);
+    expect(update.body).toMatchObject({ verifiedAt: null });
     const stored = await deps.connections.findByCustomerId(deps.customerId);
     expect(stored).toMatchObject({
       apiId: "api-id",

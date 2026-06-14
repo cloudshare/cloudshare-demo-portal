@@ -50,4 +50,29 @@ describe("CloudShareConnectionRepository", () => {
       webhookSecret: "webhook-secret-789",
     });
   });
+
+  it("clears verifiedAt when saved credentials are changed", async () => {
+    const slug = `helios-${Date.now()}-verified`;
+    const customer = await prisma.customer.create({
+      data: { slug, name: "Helios CX" },
+    });
+    const repo = createCloudShareConnectionRepository(prisma, secrets);
+
+    await repo.save({
+      customerId: customer.id,
+      apiId: "api-id-123",
+      apiKey: "api-key-456",
+      webhookSecret: "webhook-secret-789",
+    });
+    await repo.markVerified(customer.id, new Date("2026-06-14T01:00:00.000Z"));
+
+    const updated = await repo.save({
+      customerId: customer.id,
+      apiId: "api-id-123",
+      apiKey: "api-key-999",
+      webhookSecret: "webhook-secret-789",
+    });
+
+    expect(updated.verifiedAt).toBeNull();
+  });
 });

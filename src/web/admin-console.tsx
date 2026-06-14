@@ -371,73 +371,11 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       {error && (
         <div style={{ color: "#b00020", background: "#fff0f0", padding: "0.75rem", borderRadius: "6px", display: "grid", gap: "0.5rem" }}>
           <p style={{ margin: 0 }}>{error}</p>
-          {(connectionDiagnostic || connectionCorrelationId) && (
-            <div style={{ color: "#5f2120", fontSize: "0.9rem", display: "grid", gap: "0.25rem" }}>
-              {connectionOccurredAt && (
-                <div>Recorded at (UTC): {formatUtcTimestamp(connectionOccurredAt)}</div>
-              )}
-              {connectionDiagnostic?.operation && <div>Operation: {connectionDiagnostic.operation}</div>}
-              {connectionDiagnostic?.integrationLabel && (
-                <div>CloudShare endpoint: {connectionDiagnostic.integrationLabel}</div>
-              )}
-              {connectionDiagnostic?.integrationSurface && (
-                <div>Internal diagnostic key: {connectionDiagnostic.integrationSurface}</div>
-              )}
-              {(connectionDiagnostic?.method || connectionDiagnostic?.path) && (
-                <div>
-                  Request: {connectionDiagnostic?.method ?? "?"} {connectionDiagnostic?.path ?? "?"}
-                </div>
-              )}
-              {connectionDiagnostic?.requestUrl && (
-                <div>Request URL: {connectionDiagnostic.requestUrl}</div>
-              )}
-              {connectionDiagnostic?.failureMode && <div>Failure mode: {connectionDiagnostic.failureMode}</div>}
-              {typeof connectionDiagnostic?.responseStatus === "number" && (
-                <div>Returned status: {connectionDiagnostic.responseStatus}</div>
-              )}
-              {connectionDiagnostic?.cause && <div>Cause: {connectionDiagnostic.cause}</div>}
-              {connectionDiagnostic?.requestHeaders !== undefined && (
-                <div>
-                  Request headers:
-                  <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
-                    {formatSupportValue(connectionDiagnostic.requestHeaders)}
-                  </pre>
-                </div>
-              )}
-              {connectionDiagnostic?.responseHeaders !== undefined && (
-                <div>
-                  Response headers:
-                  <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
-                    {formatSupportValue(connectionDiagnostic.responseHeaders)}
-                  </pre>
-                </div>
-              )}
-              {connectionDiagnostic?.responseBody !== undefined && (
-                <div>
-                  Response body:
-                  <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
-                    {formatSupportValue(connectionDiagnostic.responseBody)}
-                  </pre>
-                </div>
-              )}
-              {connectionDiagnostic?.network !== undefined && (
-                <div>
-                  Network:
-                  <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
-                    {formatSupportValue(connectionDiagnostic.network)}
-                  </pre>
-                </div>
-              )}
-              {connectionDiagnostic?.tls !== undefined && (
-                <div>
-                  TLS:
-                  <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
-                    {formatSupportValue(connectionDiagnostic.tls)}
-                  </pre>
-                </div>
-              )}
-              {connectionCorrelationId && <div>Correlation ID: {connectionCorrelationId}</div>}
-            </div>
+          {connectionCorrelationId && (
+            <p style={{ margin: 0, fontSize: "0.85rem" }}>
+              See <strong>Support Log</strong> with correlation ID{" "}
+              <span style={{ fontFamily: "monospace" }}>{connectionCorrelationId}</span>.
+            </p>
           )}
         </div>
       )}
@@ -463,7 +401,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
           </div>
           {connectionWarning && (
             <div style={{ color: "#7a4b00", background: "#fff7e6", padding: "0.75rem", borderRadius: "6px", display: "grid", gap: "0.4rem" }}>
-              <p style={{ margin: 0 }}>{connectionWarning}</p>
+              <p style={{ margin: 0 }}>The CloudShare connection test failed. Check the Support Log for details.</p>
               {connectionCorrelationId && (
                 <p style={{ margin: 0, fontSize: "0.85rem" }}>
                   Correlation ID: <span style={{ fontFamily: "monospace" }}>{connectionCorrelationId}</span>

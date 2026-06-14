@@ -18,6 +18,7 @@ export function createCloudShareConnectionRepository(
           apiIdCiphertext: secrets.encrypt(input.apiId),
           apiKeyCiphertext: secrets.encrypt(input.apiKey),
           webhookSecretCiphertext: secrets.encrypt(input.webhookSecret),
+          verifiedAt: null,
         },
         create: {
           customerId: input.customerId,
