@@ -739,7 +739,9 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     border: "1px solid #ccc",
     borderRadius: "6px",
     width: "100%",
+    boxSizing: "border-box",
     minWidth: 0,
+    minHeight: "46px",
   } as const;
   const blueprintSummary = selectedBlueprint
     ? stripHtmlToText(selectedBlueprint.description || blueprintDetail?.description || "")
