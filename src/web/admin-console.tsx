@@ -970,10 +970,16 @@ export function AdminConsole({ email }: AdminConsoleProps) {
             <label style={{ display: "grid", gap: "0.35rem", minWidth: 0 }}>
               <span>Snapshot</span>
               <div
+                title={defaultSnapshot ? `${defaultSnapshot.name} (default)` : "Select a Blueprint"}
                 style={{
                   ...compactFieldStyle,
                   background: "#f9fafb",
                   color: defaultSnapshot ? "#111" : "#666",
+                  fontSize: "0.95rem",
+                  lineHeight: "1.2",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
                 }}
               >
                 {defaultSnapshot ? `${defaultSnapshot.name} (default)` : "Select a Blueprint"}
