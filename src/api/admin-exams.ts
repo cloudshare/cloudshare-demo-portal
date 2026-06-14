@@ -14,6 +14,7 @@ import {
   type CloudShareExamAuthoringSource,
 } from "@/integrations/cloudshare/resources";
 import type { Logger } from "@/observability/logger";
+import { randomUUID } from "node:crypto";
 import {
   createDraftExam,
   DraftExamValidationError,
@@ -54,6 +55,8 @@ interface AdminExamAuthoringDeps {
   readonly cloudshare: CloudShareClientFactory;
   readonly cache: ExamAuthoringCacheRepository;
   readonly logger: Logger;
+  readonly now?: () => Date;
+  readonly newCorrelationId?: () => string;
 }
 
 interface AdminExamCatalogDeps {
@@ -94,14 +97,14 @@ export async function handleGetExamAuthoringBootstrap(
   try {
     projects = await source.listProjects();
   } catch (error) {
-    return handleCloudShareFailure(deps.logger, "list_projects", "/projects", error);
+    return handleCloudShareFailure(deps, "list_projects", "/projects", error);
   }
 
   let regions;
   try {
     regions = await source.listRegions();
   } catch (error) {
-    return handleCloudShareFailure(deps.logger, "list_regions", "/regions", error);
+    return handleCloudShareFailure(deps, "list_regions", "/regions", error);
   }
 
   await deps.cache.saveBootstrap(request.customerId, { projects, regions });
@@ -137,7 +140,7 @@ export async function handleGetProjectResources(
     blueprints = await source.listProjectBlueprints(request.projectId);
   } catch (error) {
     return handleCloudShareFailure(
-      deps.logger,
+      deps,
       "list_project_blueprints",
       `/projects/${request.projectId}/blueprints`,
       error,
@@ -149,7 +152,7 @@ export async function handleGetProjectResources(
     policies = await source.listProjectPolicies(request.projectId);
   } catch (error) {
     return handleCloudShareFailure(
-      deps.logger,
+      deps,
       "list_project_policies",
       `/projects/${request.projectId}/policies`,
       error,
@@ -208,7 +211,7 @@ export async function handleGetBlueprintDetail(
     };
   } catch (error) {
     return handleCloudShareFailure(
-      deps.logger,
+      deps,
       "get_blueprint_detail",
       `/projects/${request.projectId}/blueprints/${request.blueprintId}`,
       error,
@@ -374,7 +377,7 @@ function resolveAuthoringSource(
 }
 
 function handleCloudShareFailure(
-  logger: Logger,
+  deps: Pick<AdminExamAuthoringDeps, "logger" | "now" | "newCorrelationId">,
   operation: string,
   path: string,
   error: unknown,
@@ -386,11 +389,19 @@ function handleCloudShareFailure(
     error instanceof CloudShareError
   ) {
     const diagnostic = buildDiagnostic(operation, path, error);
-    logger.warn("cloudshare exam authoring failed", diagnostic);
+    const correlationId = (deps.newCorrelationId ?? randomUUID)();
+    const occurredAt = (deps.now ?? (() => new Date()))().toISOString();
+    deps.logger.warn("cloudshare exam authoring failed", {
+      correlationId,
+      occurredAt,
+      ...diagnostic,
+    });
     return {
       status: 502,
       body: {
         error: "CloudShare resource request failed.",
+        correlationId,
+        occurredAt,
         diagnostic,
       },
     };

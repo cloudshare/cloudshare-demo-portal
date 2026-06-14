@@ -234,8 +234,10 @@ describe("admin exam authoring handlers", () => {
     );
 
     expect(result.status).toBe(502);
-    expect(result.body).toEqual({
+    expect(result.body).toMatchObject({
       error: "CloudShare resource request failed.",
+      correlationId: expect.any(String),
+      occurredAt: expect.any(String),
       diagnostic: {
         operation: "list_project_policies",
         integrationSurface: "cloudshare.v3.projects.policies",

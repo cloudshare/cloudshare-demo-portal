@@ -181,6 +181,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   const [examCatalog, setExamCatalog] = useState<ExamRecord[]>([]);
   const [examMessage, setExamMessage] = useState<string | null>(null);
   const [examDiagnostic, setExamDiagnostic] = useState<ConnectionDiagnostic | null>(null);
+  const [examCorrelationId, setExamCorrelationId] = useState<string | null>(null);
   const [examAttemptFilter, setExamAttemptFilter] = useState("");
   const [auditRecords, setAuditRecords] = useState<AuditRecord[] | null>(null);
   const [eventRecords, setEventRecords] = useState<EventLogRecord[] | null>(null);
@@ -423,10 +424,12 @@ export function AdminConsole({ email }: AdminConsoleProps) {
         projects?: NamedResource[];
         regions?: NamedResource[];
         error?: string;
+        correlationId?: string | null;
         diagnostic?: ConnectionDiagnostic | null;
       };
       if (!response.ok) {
         setError(data.error ?? "Failed to load exam authoring resources");
+        setExamCorrelationId(data.correlationId ?? null);
         setExamDiagnostic(data.diagnostic ?? null);
         void loadSupportLog(true);
         return;
@@ -477,10 +480,12 @@ export function AdminConsole({ email }: AdminConsoleProps) {
         blueprints?: NamedResource[];
         policies?: NamedResource[];
         error?: string;
+        correlationId?: string | null;
         diagnostic?: ConnectionDiagnostic | null;
       };
       if (!response.ok) {
         setError(data.error ?? "Failed to load project resources");
+        setExamCorrelationId(data.correlationId ?? null);
         setExamDiagnostic(data.diagnostic ?? null);
         void loadSupportLog(true);
         return;
@@ -539,16 +544,19 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       const data = (await response.json()) as {
         blueprint?: BlueprintDetail;
         error?: string;
+        correlationId?: string | null;
         diagnostic?: ConnectionDiagnostic | null;
       };
       if (!response.ok) {
         setError(data.error ?? "Failed to load blueprint detail");
+        setExamCorrelationId(data.correlationId ?? null);
         setExamDiagnostic(data.diagnostic ?? null);
         void loadSupportLog(true);
         return;
       }
 
       const detail = data.blueprint ?? null;
+      setExamCorrelationId(null);
       setBlueprintDetail(detail);
       if (!editingExamId && detail) {
         setExamTitle(detail.name);
@@ -802,12 +810,17 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       {error && (
         <div style={{ color: "#b00020", background: "#fff0f0", padding: "0.75rem", borderRadius: "6px", display: "grid", gap: "0.5rem" }}>
           <p style={{ margin: 0 }}>{error}</p>
-          {connectionCorrelationId && (
+          {tab === "exams" && examCorrelationId ? (
+            <p style={{ margin: 0, fontSize: "0.85rem" }}>
+              See <strong>Support Log</strong> with correlation ID{" "}
+              <span style={{ fontFamily: "monospace" }}>{examCorrelationId}</span>.
+            </p>
+          ) : connectionCorrelationId ? (
             <p style={{ margin: 0, fontSize: "0.85rem" }}>
               See <strong>Support Log</strong> with correlation ID{" "}
               <span style={{ fontFamily: "monospace" }}>{connectionCorrelationId}</span>.
             </p>
-          )}
+          ) : null}
         </div>
       )}
 
