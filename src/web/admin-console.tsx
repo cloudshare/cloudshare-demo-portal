@@ -1,8 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { getExamAuthoringMode } from "./admin-console-state";
+import {
+  beginLatestOnlyRequest,
+  getExamAuthoringMode,
+  isLatestOnlyResponse,
+} from "./admin-console-state";
 
 interface AdminConsoleProps {
   readonly email: string;
@@ -182,6 +186,8 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   const [examMessage, setExamMessage] = useState<string | null>(null);
   const [examDiagnostic, setExamDiagnostic] = useState<ConnectionDiagnostic | null>(null);
   const [examCorrelationId, setExamCorrelationId] = useState<string | null>(null);
+  const projectResourcesRequestIdRef = useRef(0);
+  const blueprintDetailRequestIdRef = useRef(0);
   const [examAttemptFilter, setExamAttemptFilter] = useState("");
   const [auditRecords, setAuditRecords] = useState<AuditRecord[] | null>(null);
   const [eventRecords, setEventRecords] = useState<EventLogRecord[] | null>(null);
@@ -469,6 +475,8 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     preferredBlueprintId?: string,
     preferredPolicyId?: string,
   ) {
+    const requestId = beginLatestOnlyRequest(projectResourcesRequestIdRef.current);
+    projectResourcesRequestIdRef.current = requestId;
     setLoading(true);
     setError(null);
     setExamDiagnostic(null);
@@ -484,10 +492,17 @@ export function AdminConsole({ email }: AdminConsoleProps) {
         diagnostic?: ConnectionDiagnostic | null;
       };
       if (!response.ok) {
+        if (!isLatestOnlyResponse(projectResourcesRequestIdRef.current, requestId)) {
+          return;
+        }
         setError(data.error ?? "Failed to load project resources");
         setExamCorrelationId(data.correlationId ?? null);
         setExamDiagnostic(data.diagnostic ?? null);
         void loadSupportLog(true);
+        return;
+      }
+
+      if (!isLatestOnlyResponse(projectResourcesRequestIdRef.current, requestId)) {
         return;
       }
 
@@ -509,6 +524,9 @@ export function AdminConsole({ email }: AdminConsoleProps) {
         setBlueprintDetail(null);
       }
     } catch {
+      if (!isLatestOnlyResponse(projectResourcesRequestIdRef.current, requestId)) {
+        return;
+      }
       setError("Failed to load project resources");
     } finally {
       setLoading(false);
@@ -534,6 +552,8 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   }
 
   async function loadBlueprintDetail(projectId: string, blueprintId: string, refresh = false) {
+    const requestId = beginLatestOnlyRequest(blueprintDetailRequestIdRef.current);
+    blueprintDetailRequestIdRef.current = requestId;
     setLoading(true);
     setError(null);
     setExamDiagnostic(null);
@@ -548,6 +568,9 @@ export function AdminConsole({ email }: AdminConsoleProps) {
         diagnostic?: ConnectionDiagnostic | null;
       };
       if (!response.ok) {
+        if (!isLatestOnlyResponse(blueprintDetailRequestIdRef.current, requestId)) {
+          return;
+        }
         setError(data.error ?? "Failed to load blueprint detail");
         setExamCorrelationId(data.correlationId ?? null);
         setExamDiagnostic(data.diagnostic ?? null);
@@ -555,14 +578,23 @@ export function AdminConsole({ email }: AdminConsoleProps) {
         return;
       }
 
+      if (!isLatestOnlyResponse(blueprintDetailRequestIdRef.current, requestId)) {
+        return;
+      }
+
       const detail = data.blueprint ?? null;
+      setError(null);
       setExamCorrelationId(null);
+      setExamDiagnostic(null);
       setBlueprintDetail(detail);
       if (!editingExamId && detail) {
         setExamTitle(detail.name);
         setExamDescription(stripHtmlToText(detail.description));
       }
     } catch {
+      if (!isLatestOnlyResponse(blueprintDetailRequestIdRef.current, requestId)) {
+        return;
+      }
       setError("Failed to load blueprint detail");
     } finally {
       setLoading(false);

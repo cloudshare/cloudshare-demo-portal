@@ -4,6 +4,14 @@ export interface ExamAuthoringMode {
   readonly tupleChangeHint: string | null;
 }
 
+export function beginLatestOnlyRequest(activeRequestId: number): number {
+  return activeRequestId + 1;
+}
+
+export function isLatestOnlyResponse(activeRequestId: number, responseRequestId: number): boolean {
+  return activeRequestId === responseRequestId;
+}
+
 export function getExamAuthoringMode(editingExamId: string | null): ExamAuthoringMode {
   if (!editingExamId) {
     return {
