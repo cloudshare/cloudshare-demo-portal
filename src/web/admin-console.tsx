@@ -1254,15 +1254,35 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                     <td style={{ padding: "0.4rem" }}>
                       {exam.status === "draft" ? (
                         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                          <button onClick={() => void beginEditingExam(exam)} disabled={loading} style={{ padding: "0.45rem 0.75rem" }}>
-                            Edit
-                          </button>
-                          <button onClick={() => void publishCatalogExam(exam.id)} disabled={loading} style={{ padding: "0.45rem 0.75rem" }}>
-                            Publish
-                          </button>
+                          {editingExamId === exam.id ? (
+                            <span style={{ color: "#555", fontSize: "0.85rem" }}>
+                              Editing - save or cancel before publishing.
+                            </span>
+                          ) : (
+                            <>
+                              <button
+                                onClick={() => void beginEditingExam(exam)}
+                                disabled={loading || editingExamId !== null}
+                                style={{ padding: "0.45rem 0.75rem" }}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                onClick={() => void publishCatalogExam(exam.id)}
+                                disabled={loading || editingExamId !== null}
+                                style={{ padding: "0.45rem 0.75rem" }}
+                              >
+                                Publish
+                              </button>
+                            </>
+                          )}
                         </div>
                       ) : (
-                        <button onClick={() => void unpublishCatalogExam(exam.id)} disabled={loading} style={{ padding: "0.45rem 0.75rem" }}>
+                        <button
+                          onClick={() => void unpublishCatalogExam(exam.id)}
+                          disabled={loading || editingExamId !== null}
+                          style={{ padding: "0.45rem 0.75rem" }}
+                        >
                           Unpublish
                         </button>
                       )}
