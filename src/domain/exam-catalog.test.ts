@@ -71,6 +71,17 @@ describe("createDraftExam", () => {
     await expect(repository.findById("exam-1")).resolves.toEqual(exam);
   });
 
+  it("allows an empty description for a draft exam", async () => {
+    const repository = createInMemoryExamCatalogRepository();
+
+    const exam = await createDraftExam(
+      { repository, now: () => new Date("2026-06-14T12:00:00.000Z"), newId: () => "exam-1" },
+      makeInput({ description: "   " }),
+    );
+
+    expect(exam.description).toBe("");
+  });
+
   it("rejects invalid exam metadata before anything is persisted", async () => {
     const repository = createInMemoryExamCatalogRepository();
 

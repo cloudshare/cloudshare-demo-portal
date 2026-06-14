@@ -204,7 +204,6 @@ function validateDraftInput(input: CreateDraftExamInput): void {
   const requiredFields = [
     input.customerId,
     input.title,
-    input.description,
     input.projectId,
     input.projectName,
     input.blueprintId,

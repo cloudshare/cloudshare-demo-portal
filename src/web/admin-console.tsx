@@ -976,9 +976,6 @@ export function AdminConsole({ email }: AdminConsoleProps) {
               >
                 {defaultSnapshot ? `${defaultSnapshot.name} (default)` : "Select a Blueprint"}
               </div>
-              <span style={{ color: "#666", fontSize: "0.85rem", minHeight: "2.5em" }}>
-                The portal records the Blueprint&apos;s default snapshot. Non-default snapshot versions cannot be chosen for CloudShare experience-based Exam launches.
-              </span>
             </label>
 
             <label style={{ display: "grid", gap: "0.35rem", minWidth: 0 }}>
@@ -1040,6 +1037,9 @@ export function AdminConsole({ email }: AdminConsoleProps) {
             <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
               Region: {selectedRegion ? (selectedRegion.friendlyName ?? selectedRegion.name) : "-"}
             </div>
+            <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
+              Snapshot: {defaultSnapshot ? `${defaultSnapshot.name} (default only for Experience launches)` : "-"}
+            </div>
             {blueprintSummary && (
               <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
                 Blueprint: {blueprintSummary}
@@ -1047,7 +1047,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
             )}
           </div>
 
-          <div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+          <div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", alignItems: "start" }}>
             <label style={{ display: "grid", gap: "0.35rem", gridColumn: "1 / -1" }}>
               <span>Exam title</span>
               <input
@@ -1078,7 +1078,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                 Time limit follows the selected CloudShare Policy runtime lease for this slice.
               </span>
             </label>
-            <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", paddingTop: "1.8rem" }}>
+            <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", gridColumn: "1 / -1" }}>
               <input
                 type="checkbox"
                 checked={scoreRetrievalEnabled}

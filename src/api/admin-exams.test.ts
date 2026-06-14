@@ -297,6 +297,45 @@ describe("admin exam catalog handlers", () => {
     });
   });
 
+  it("creates a draft exam when the description is blank", async () => {
+    const repository = createInMemoryExamCatalogRepository();
+    const cache = createInMemoryExamAuthoringCacheRepository();
+    await seedAuthoringCache(cache);
+
+    const result = await handleCreateDraftExam(
+      {
+        repository,
+        cache,
+        instructor: configuredInstructor,
+        logger: makeLogger(),
+        now: () => new Date("2026-06-14T12:00:00.000Z"),
+        newId: () => "exam-1",
+      },
+      {
+        customerId: "customer-1",
+        body: {
+          title: "Helios CloudShare Fundamentals",
+          description: "   ",
+          timeLimitMinutes: 90,
+          scoreRetrievalEnabled: true,
+          projectId: "project-1",
+          blueprintId: "bp-1",
+          snapshotId: "snap-1",
+          regionId: "region-1",
+          policyId: "policy-1",
+        },
+      },
+    );
+
+    expect(result.status).toBe(201);
+    expect(result.body).toMatchObject({
+      exam: {
+        id: "exam-1",
+        description: "",
+      },
+    });
+  });
+
   it("rejects draft creation when the seeded instructor is not explicitly configured", async () => {
     const repository = createInMemoryExamCatalogRepository();
     const cache = createInMemoryExamAuthoringCacheRepository();
