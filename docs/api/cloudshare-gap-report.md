@@ -28,7 +28,7 @@ authentication:
 - **v3 (Production/Classic)** uses a proprietary per-call HMAC signature scheme
   (`cs_sha1`): the request is signed into the `Authorization` header as
   `cs_sha1 userapiid:<id>;timestamp:<ts>;token:<nonce>;hmac:<sha1>`, where the
-  HMAC is the lowercase-hex SHA-1 of the concatenation
+  `token` nonce is exactly **10 alphanumeric characters**, and the HMAC is the lowercase-hex SHA-1 of the concatenation
   `apiKey + fullUrl + timestamp + token`. The API key is folded into the hash and
   never sent on the wire.
 
@@ -56,6 +56,9 @@ stores" impact to one stored pair (see ADR-001). Also corrected: the v4 base hos
 (not `use.cloudshare.com/api/v4` or `/experiences`, as the current code has it). The live v3 ping
 request uses the `Authorization: cs_sha1 ...` header, not signed query parameters.
 
+**Update (2026-06-14, verified against live ping and Postman implementation):** the v3 `token`
+must be exactly **10 alphanumeric characters**. A UUID-shaped nonce is rejected by CloudShare even
+when the API ID/key and HMAC formula are otherwise correct.
 ---
 
 ## GAP-2 — Webhook secret is account-level and cannot be rotated
@@ -318,29 +321,55 @@ link results in a login-denied or access-denied error.
 
 ---
 
-## GAP-10 — Blueprints are listed per-project; infrastructure is v3 while experiences are v4
+## GAP-10 — Resource reads are project-first, with global Regions and Blueprint-owned Snapshots
 
 | Field | Detail |
 |---|---|
-| **Status** | Confirmed — from CloudShare admin (2026-06-13) |
-| **Verified live** | No (exact response shapes pending) |
+| **Status** | Confirmed / partially verified — from CloudShare admin and live v3 resource probing |
+| **Verified live** | Partial (resource scoping verified; some response shapes still pending) |
 
 **Observed behaviour**
 
-Blueprints are retrieved **per-project** (`GET /api/v3/projects/{id}/blueprints`), not via a global
-list. Snapshots, regions, policies, and project members are likewise **v3**. Training/experience
-creation, add-participant, sponsored-link, list-students, and Guided Journey are **v4**
-(`api.accelerate.cloudshare.com`). The current code calls a global `GET /blueprints` and uses one
-base host — both wrong.
+CloudShare v3 resource endpoints are unevenly scoped:
+
+- **Region** is effectively platform-global. `GET /api/v3/regions` currently returns the same shared
+  Region set for the tenant regardless of Project. The portal should treat Regions as a global,
+  refreshable reference list rather than hard-coding them.
+- **Policy** is Project-scoped for portal behavior. The documented endpoint is
+  `GET /api/v3/projects/{projectId}/policies`. `GET /api/v3/policies` may return visible Policies
+  across Projects for the current CloudShare Connection, but this is treated as an undocumented
+  convenience surface and not the primary contract.
+- **Blueprint** is Project-scoped for portal behavior. The relevant endpoint is
+  `GET /api/v3/projects/{projectId}/blueprints`.
+- **Snapshot** should not be modelled as a global top-level resource list. Snapshot selection should
+  come from Blueprint detail for the selected Project + Blueprint path, including default-Snapshot
+  information. CloudShare v3 exposes Snapshot-specific endpoints, but the portal should model
+  Snapshot discovery as part of Blueprint selection.
+- **Project Members / Instructor choices** are expected to be Project-scoped and should be fetched
+  in the selected-Project context when that authoring step is built.
+
+Training/Experience creation, add-participant, sponsored-link, list-students, and Guided Journey are
+v4 (`api.accelerate.cloudshare.com`). CloudShare intends to move more environment-management /
+infrastructure endpoints to v4 over time.
 
 **Impact on certification use**
 
 - Provisioning is a chained **v3 (read infra) + v4 (write experience)** workflow.
-- The resource lister must scope blueprints to a chosen project; an Exam binds a per-project tuple
-  (project, blueprint, snapshot, region, policy, instructor).
+- Exam authoring must be **Project-first**, not global-resource-first: sync/list Projects, sync/list
+  global Regions, select a Project, then fetch or read cached Project-scoped Blueprints, Policies,
+  later Project Members / Instructor choices, and selected Blueprint detail including Snapshots and
+  the default Snapshot.
+- The current admin Resources tab is a stopgap sync surface for early integration evidence. It should
+  not become the long-term model of syncing all visible Project-scoped objects across all Projects by
+  default.
+- All endpoint/path/shape assumptions for Projects, Regions, Policies, Blueprints, Snapshots, and
+  related infrastructure reads must remain isolated inside `integrations/cloudshare`, so a future
+  v3-to-v4 migration is localized to the adapter.
 
-**Action required:** confirm the exact v3 response shapes for blueprints (incl. snapshots + the
-default snapshot field), regions, policies, and project members.
+**Action required:** confirm the exact v3 response shapes for Project-scoped Policies, Project-scoped
+Blueprints, Blueprint detail including Snapshots and default-Snapshot fields, and Project Members /
+Instructor choices. Update this entry immediately when live tenant behavior contradicts the current
+model.
 
 ---
 
@@ -473,5 +502,6 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-06-13 (grill-with-docs re-scope: added GAP-10–15; updated GAP-1, GAP-8).
+*Last updated: 2026-06-14 (resource-model update: Region global reference list; Policy and Blueprint
+Project-scoped; Snapshot discovery through Blueprint detail).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*
