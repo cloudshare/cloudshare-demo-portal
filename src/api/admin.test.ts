@@ -1,9 +1,14 @@
 import { describe, it, expect, vi } from "vitest";
 import { handleGetAuditTrail, handleSyncResources, handleGetEventLog, handleGetSupportLog } from "./admin";
 import type { AuditRepository, AuditRecord } from "@/domain/audit-trail";
-import type { CloudShareResourceLister } from "@/domain/resource-sync";
 import type { EventLogRepository } from "@/domain/event-log";
 import type { SupportLogRepository } from "@/domain/support-log";
+import type {
+  CloudShareClientFactory,
+  CloudShareConnectionRecord,
+  CloudShareConnectionRepository,
+} from "@/domain/cloudshare-connection";
+import type { CloudShareClient } from "@/integrations/cloudshare";
 import { createInMemoryAuditRepository } from "@/persistence/audit-repository";
 import { createInMemoryResourceRepository } from "@/persistence/resource-repository";
 import type { Logger } from "@/observability/logger";
@@ -23,19 +28,71 @@ function makeRecord(partial: Partial<AuditRecord> = {}): AuditRecord {
   };
 }
 
-function makeLister(): CloudShareResourceLister {
-  return {
-    listProjects: vi.fn().mockResolvedValue([{ id: "p-1", name: "Demo Project" }]),
-    listRegions: vi.fn().mockResolvedValue([{ id: "r-1", name: "EU West" }]),
-    listBlueprints: vi.fn().mockResolvedValue([{ id: "bp-1", name: "Demo Blueprint" }]),
-    listPolicies: vi.fn().mockResolvedValue([{ id: "pol-1", name: "Demo Policy" }]),
-  };
-}
-
 function makeEventLog(records: unknown[] = []): EventLogRepository {
   return {
     append: vi.fn(),
     listAll: vi.fn().mockResolvedValue(records),
+  };
+}
+
+function makeConnectionRecord(
+  partial: Partial<CloudShareConnectionRecord> = {},
+): CloudShareConnectionRecord {
+  return {
+    customerId: "customer-1",
+    apiId: "api-id",
+    apiKey: "api-key",
+    webhookSecret: "webhook-secret",
+    connectedAt: new Date("2026-06-14T00:00:00Z"),
+    verifiedAt: null,
+    ...partial,
+  };
+}
+
+function makeConnections(
+  connection: CloudShareConnectionRecord | null = makeConnectionRecord(),
+): CloudShareConnectionRepository {
+  return {
+    save: vi.fn(),
+    findByCustomerId: vi.fn().mockResolvedValue(connection),
+    markVerified: vi.fn(),
+  };
+}
+
+function makeCloudShareFactory(
+  client: CloudShareClient,
+): CloudShareClientFactory {
+  return {
+    forConnection: vi.fn().mockReturnValue(client),
+  };
+}
+
+function makeCloudShareClient(overrides: {
+  requestV3?: CloudShareClient["requestV3"];
+  requestV4?: CloudShareClient["requestV4"];
+} = {}): CloudShareClient {
+  const requestV3 =
+    overrides.requestV3 ??
+    vi.fn().mockImplementation(({ path }: { path: string }) => {
+      if (path === "/projects") {
+        return Promise.resolve([{ id: "p-1", name: "Demo Project" }]);
+      }
+      if (path === "/regions") {
+        return Promise.resolve([{ id: "r-1", name: "EU West" }]);
+      }
+      if (path === "/projects/p-1/blueprints") {
+        return Promise.resolve([{ id: "bp-1", name: "Demo Blueprint" }]);
+      }
+      if (path === "/policies") {
+        return Promise.resolve([{ id: "pol-1", name: "Demo Policy" }]);
+      }
+      return Promise.reject(new Error(`unexpected path ${path}`));
+    });
+
+  return {
+    requestV3,
+    requestV4: overrides.requestV4 ?? vi.fn(),
+    requestV3Text: vi.fn(),
   };
 }
 
@@ -81,34 +138,57 @@ describe("handleGetAuditTrail", () => {
 
 describe("handleSyncResources", () => {
   it("returns 200 with sync counts on success", async () => {
-    const lister = makeLister();
     const resources = createInMemoryResourceRepository();
+    const connections = makeConnections();
+    const cloudshare = makeCloudShareFactory(makeCloudShareClient());
 
     const result = await handleSyncResources(
-      { lister, resources, logger: makeLogger() },
-      {},
+      { connections, cloudshare, resources, logger: makeLogger() },
+      { customerId: "customer-1" },
     );
 
     expect(result.status).toBe(200);
     const body = result.body as { synced: number };
     expect(body.synced).toBe(4);
+    expect(cloudshare.forConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ customerId: "customer-1" }),
+    );
   });
 
   it("returns 502 when CloudShare is unavailable", async () => {
-    const lister: CloudShareResourceLister = {
-      listProjects: vi.fn().mockRejectedValue(new Error("timeout")),
-      listRegions: vi.fn().mockRejectedValue(new Error("timeout")),
-      listBlueprints: vi.fn().mockRejectedValue(new Error("timeout")),
-      listPolicies: vi.fn().mockRejectedValue(new Error("timeout")),
-    };
     const resources = createInMemoryResourceRepository();
+    const connections = makeConnections();
+    const cloudshare = makeCloudShareFactory(
+      makeCloudShareClient({
+        requestV3: vi.fn().mockRejectedValue(new Error("timeout")),
+      }),
+    );
 
     const result = await handleSyncResources(
-      { lister, resources, logger: makeLogger() },
-      {},
+      { connections, cloudshare, resources, logger: makeLogger() },
+      { customerId: "customer-1" },
     );
 
     expect(result.status).toBe(502);
+  });
+
+  it("returns 404 when no CloudShare Connection exists for the customer", async () => {
+    const resources = createInMemoryResourceRepository();
+
+    const result = await handleSyncResources(
+      {
+        connections: makeConnections(null),
+        cloudshare: makeCloudShareFactory(makeCloudShareClient()),
+        resources,
+        logger: makeLogger(),
+      },
+      { customerId: "customer-1" },
+    );
+
+    expect(result.status).toBe(404);
+    expect(result.body).toEqual({
+      error: "Save a CloudShare Connection before syncing resources.",
+    });
   });
 });
 

@@ -41,7 +41,6 @@ import {
 import { suspendExam } from "@/domain/timer-sync";
 import { type DemoStep } from "@/domain/demo-control";
 import { createCloudShareGuidedJourneyProvider } from "@/integrations/cloudshare/guided-journey";
-import { createCloudShareResourceLister } from "@/integrations/cloudshare/resources";
 import { createInMemoryAuditRepository } from "@/persistence/audit-repository";
 import { createInMemoryResourceRepository } from "@/persistence/resource-repository";
 import { createInMemoryEventLogRepository } from "@/persistence/event-log-repository";
@@ -62,7 +61,6 @@ import type { AuditRepository } from "@/domain/audit-trail";
 import type { ResourceRepository } from "@/domain/resource-sync";
 import type { EventLogRepository } from "@/domain/event-log";
 import type { SupportLogRepository } from "@/domain/support-log";
-import type { CloudShareResourceLister } from "@/domain/resource-sync";
 import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
@@ -110,8 +108,6 @@ export interface Services {
   resources: ResourceRepository;
   /** All integration events received/emitted during this server instance's lifetime. */
   eventLog: EventLogRepository;
-  /** Lists CloudShare blueprints, policies, projects, regions for admin sync. */
-  resourceLister: CloudShareResourceLister;
   /** Structured, redacted server logs surfaced to admins for troubleshooting. */
   supportLog: SupportLogRepository;
   cloudshareConnections: CloudShareConnectionRepository;
@@ -263,7 +259,6 @@ export function getServices(): Services {
   const audit = createInMemoryAuditRepository();
   const resources = createInMemoryResourceRepository();
   const eventLog = createInMemoryEventLogRepository();
-  const resourceLister = createCloudShareResourceLister(cloudshare);
   const cloudshareSecretBox = createSecretBox(
     Buffer.from(config.secrets.portalMasterKey, "base64"),
   );
@@ -372,7 +367,6 @@ export function getServices(): Services {
     audit,
     resources,
     eventLog,
-    resourceLister,
     supportLog,
     cloudshareConnections,
     cloudshareClientFactory,
