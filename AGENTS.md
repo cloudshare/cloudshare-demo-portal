@@ -118,15 +118,43 @@ High-integrity software.
 
 Never commit directly to `main`.
 
-For each slice:
+### Slice orchestration
+
+Each implementation slice must run through an explicit branch-and-PR workflow. Do not let slice work
+accumulate as local-only commits.
+
+- The orchestration agent owns coordination: issue selection, agent handoff, PR/review loop, and merge
+  readiness.
+- The implementation agent should usually use `gpt-5.4`. The orchestration agent chooses low or medium
+  reasoning based on slice complexity. Its job is to follow the issue, PRD, ADRs, and this file; it
+  should not redesign the slice unless blocked.
+- The review agent should use `gpt-5.5`. The orchestration agent chooses medium or high reasoning based
+  on PR complexity and risk. Its job is to review the pull request against the issue, PRD, architecture
+  rules, tests, supportability, and security requirements.
+- The implementation agent fixes review findings on the same PR branch. Re-review until the review
+  agent reports no blocking findings.
+- Human QA is required before merge for user-visible or integration behaviour, especially CloudShare
+  flows.
+
+For each slice, before implementation starts:
 
 ```bash
 git checkout main
 git pull
-git checkout -b feature/<short-description>
+git checkout -b feature/issue-<number>-<short-description>
 ```
 
-Before completion:
+Then immediately open a draft PR linked to the issue with a closing keyword:
+
+```text
+Closes #<issue-number>
+```
+
+The implementation agent must report the branch name and PR number before continuing with substantial
+code changes. All commits for the slice go to that PR branch, not to `main` and not to an unreviewed
+local-only branch.
+
+Before requesting review:
 
 ```bash
 npm run lint
@@ -135,12 +163,21 @@ npm test
 git status
 ```
 
-Then prepare a PR summary including:
+Then update the PR summary including:
 
 - What changed
 - Why it changed
 - Tests added/updated
 - Risks or follow-up work
+
+After review and QA:
+
+- Address all blocking review findings on the same PR branch.
+- Re-run the relevant checks after fixes.
+- Record human QA/live verification in the PR or issue when required.
+- Merge only after review is clean and QA is accepted.
+- Confirm the linked issue closed automatically; if it did not, add a closing comment and close it
+  manually.
 
 ## Definition of done
 
