@@ -649,6 +649,8 @@ export function AdminConsole({ email }: AdminConsoleProps) {
             title: examTitle,
             description: examDescription,
             scoreRetrievalEnabled,
+            allowedRegionIds: selectedAllowedRegionIds,
+            policyId: policy.id,
             ...(editingExamId
               ? {}
               : {
@@ -658,8 +660,6 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                   blueprintName: blueprint.name,
                   snapshotId: snapshot.id,
                   snapshotName: snapshot.name,
-                  allowedRegionIds: selectedAllowedRegionIds,
-                  policyId: policy.id,
                   policyName: policy.name,
                 }),
           }),
@@ -1061,11 +1061,9 @@ export function AdminConsole({ email }: AdminConsoleProps) {
               <select
                 value={selectedPolicyId}
                 onChange={(event) => {
-                  setEditingExamId(null);
                   setSelectedPolicyId(event.target.value);
                 }}
                 style={compactFieldStyle}
-                disabled={authoringMode.provisioningLocked}
               >
                 <option value="">Select a Policy</option>
                 {policies.map((policy) => (
@@ -1081,7 +1079,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
               <div
                 style={{
                   ...compactFieldStyle,
-                  background: authoringMode.provisioningLocked ? "#f9fafb" : "#fff",
+                  background: "#fff",
                   display: "grid",
                   gap: "0.5rem",
                   paddingRight: "0.7rem",
@@ -1102,7 +1100,6 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                               : current.filter((regionId) => regionId !== region.id),
                           );
                         }}
-                        disabled={authoringMode.provisioningLocked}
                       />
                       <span>{region.friendlyName ?? region.name}</span>
                     </label>
@@ -1197,7 +1194,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
           <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
             <button
               onClick={saveDraftExam}
-              disabled={loading || (!editingExamId && allowedRegionValidationMessage !== null)}
+              disabled={loading || allowedRegionValidationMessage !== null}
               style={{ padding: "0.7rem 1rem" }}
             >
               {loading ? "Saving..." : editingExamId ? "Update Draft Exam" : "Save Draft Exam"}

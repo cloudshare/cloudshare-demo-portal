@@ -83,6 +83,10 @@ export interface UpdateDraftExamInput {
   readonly title: string;
   readonly description: string;
   readonly scoreRetrievalEnabled: boolean;
+  readonly timeLimitMinutes: number;
+  readonly allowedRegions: readonly ExamRegion[];
+  readonly policyId: string;
+  readonly policyName: string;
 }
 
 export async function createDraftExam(
@@ -173,6 +177,13 @@ export async function updateDraftExam(
     title: input.title.trim(),
     description: input.description.trim(),
     scoreRetrievalEnabled: input.scoreRetrievalEnabled,
+    timeLimitMinutes: input.timeLimitMinutes,
+    allowedRegions: input.allowedRegions.map((region) => ({
+      id: region.id.trim(),
+      name: region.name.trim(),
+    })),
+    policyId: input.policyId.trim(),
+    policyName: input.policyName.trim(),
     updatedAt: (deps.now ?? (() => new Date()))(),
   };
 

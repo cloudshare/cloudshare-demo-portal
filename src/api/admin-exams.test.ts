@@ -833,6 +833,15 @@ describe("admin exam catalog handlers", () => {
     const repository = createInMemoryExamCatalogRepository();
     const cache = createInMemoryExamAuthoringCacheRepository();
     await seedAuthoringCache(cache);
+    await cache.saveProjectResources("customer-1", "project-1", {
+      blueprints: [
+        { id: "bp-1", name: "Helios Exam Blueprint", description: "Blueprint-backed description" },
+      ],
+      policies: [
+        { id: "policy-1", name: "Standard Exam Policy", runtimeLeaseMinutes: 240 },
+        { id: "policy-2", name: "Extended Exam Policy", runtimeLeaseMinutes: 120 },
+      ],
+    });
     await handleCreateDraftExam(
       {
         repository,
@@ -859,7 +868,12 @@ describe("admin exam catalog handlers", () => {
     );
 
     const update = await handleUpdateDraftExam(
-      { repository, logger: makeLogger(), now: () => new Date("2026-06-14T12:45:00.000Z") },
+      {
+        repository,
+        cache,
+        logger: makeLogger(),
+        now: () => new Date("2026-06-14T12:45:00.000Z"),
+      },
       {
         customerId: "customer-1",
         examId: "exam-1",
@@ -868,6 +882,8 @@ describe("admin exam catalog handlers", () => {
           description: "Updated description.",
           timeLimitMinutes: 5,
           scoreRetrievalEnabled: true,
+          allowedRegionIds: ["region-2"],
+          policyId: "policy-2",
         },
       },
     );
@@ -879,8 +895,11 @@ describe("admin exam catalog handlers", () => {
         status: "draft",
         title: "Helios Blueprint Exam",
         description: "Updated description.",
-        timeLimitMinutes: 240,
+        timeLimitMinutes: 120,
         scoreRetrievalEnabled: true,
+        allowedRegions: [{ id: "region-2", name: "US East" }],
+        policyId: "policy-2",
+        policyName: "Extended Exam Policy",
       },
     });
   });

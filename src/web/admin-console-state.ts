@@ -38,7 +38,7 @@ export function getExamAuthoringMode(editingExamId: string | null): ExamAuthorin
     isEditingDraft: true,
     provisioningLocked: true,
     tupleChangeHint:
-      "Provisioning fields are locked while editing a draft. Cancel edit to choose a different project, blueprint, policy, or allowed Region set.",
+      "Project, Blueprint, and Snapshot are locked while editing a draft. Policy and allowed Regions can still be changed.",
   };
 }
 

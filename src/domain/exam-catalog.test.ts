@@ -158,7 +158,11 @@ describe("updateDraftExam", () => {
         customerId: "customer-1",
         title: "Helios Blueprint Exam",
         description: "Updated description.",
+        timeLimitMinutes: 120,
         scoreRetrievalEnabled: false,
+        allowedRegions: [{ id: "region-2", name: "US East" }],
+        policyId: "policy-2",
+        policyName: "Extended Exam Policy",
       },
     );
 
@@ -167,8 +171,11 @@ describe("updateDraftExam", () => {
       status: "draft",
       title: "Helios Blueprint Exam",
       description: "Updated description.",
-      timeLimitMinutes: 90,
+      timeLimitMinutes: 120,
       scoreRetrievalEnabled: false,
+      allowedRegions: [{ id: "region-2", name: "US East" }],
+      policyId: "policy-2",
+      policyName: "Extended Exam Policy",
     });
     expect(updated.updatedAt).toEqual(updatedAt);
     expect(updated.createdAt).toEqual(createdAt);
@@ -196,7 +203,11 @@ describe("updateDraftExam", () => {
           customerId: "customer-1",
           title: "Helios Blueprint Exam",
           description: "Updated description.",
+          timeLimitMinutes: 120,
           scoreRetrievalEnabled: false,
+          allowedRegions: [{ id: "region-2", name: "US East" }],
+          policyId: "policy-2",
+          policyName: "Extended Exam Policy",
         },
       ),
     ).rejects.toThrow("Only draft exams can be edited.");

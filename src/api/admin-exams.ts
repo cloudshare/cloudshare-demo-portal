@@ -410,15 +410,26 @@ async function validateCurrentDefaultSnapshotRegions(
 }
 
 export async function handleUpdateDraftExam(
-  deps: Pick<AdminExamCatalogDeps, "repository" | "logger" | "now">,
+  deps: Pick<AdminExamCatalogDeps, "repository" | "cache" | "logger" | "now">,
   request: CustomerRequest & { readonly examId: string; readonly body?: unknown },
 ): Promise<AdminExamResponse> {
-  const input = parseUpdateDraftExamInput(request.customerId, request.examId, request.body);
-  if (!input) {
-    return { status: 400, body: { error: "Provide draft Exam metadata before saving changes." } };
-  }
-
   try {
+    const existing = await deps.repository.findById(request.examId);
+    if (!existing || existing.customerId !== request.customerId) {
+      throw new ExamNotFoundError(request.customerId, request.examId);
+    }
+
+    const input = await parseUpdateDraftExamInput(
+      request.customerId,
+      request.examId,
+      request.body,
+      existing,
+      deps.cache,
+    );
+    if (!input) {
+      return { status: 400, body: { error: "Refresh CloudShare authoring resources and reselect the draft Exam Policy and allowed Regions." } };
+    }
+
     const exam = await updateDraftExam(
       { repository: deps.repository, now: deps.now },
       input,
@@ -577,7 +588,19 @@ function parseUpdateDraftExamInput(
   customerId: string,
   examId: string,
   body: unknown,
-): UpdateDraftExamInput | null {
+  existing: Exam,
+  cache: ExamAuthoringCacheRepository,
+): Promise<UpdateDraftExamInput | null> {
+  return parseMutableDraftExamInput(customerId, examId, body, existing, cache);
+}
+
+async function parseMutableDraftExamInput(
+  customerId: string,
+  examId: string,
+  body: unknown,
+  existing: Exam,
+  cache: ExamAuthoringCacheRepository,
+): Promise<UpdateDraftExamInput | null> {
   if (typeof body !== "object" || body === null) {
     return null;
   }
@@ -586,8 +609,61 @@ function parseUpdateDraftExamInput(
   if (
     typeof candidate.title !== "string" ||
     typeof candidate.description !== "string" ||
-    typeof candidate.scoreRetrievalEnabled !== "boolean"
+    typeof candidate.scoreRetrievalEnabled !== "boolean" ||
+    typeof candidate.policyId !== "string" ||
+    !Array.isArray(candidate.allowedRegionIds) ||
+    candidate.allowedRegionIds.some((regionId) => typeof regionId !== "string")
   ) {
+    return null;
+  }
+
+  if (candidate.allowedRegionIds.length === 0) {
+    throw new DraftExamValidationError(
+      "Select at least one allowed Region from the Blueprint default Snapshot.",
+    );
+  }
+
+  const bootstrap = await cache.getBootstrap(customerId);
+  const projectResources = await cache.getProjectResources(customerId, existing.projectId);
+  const blueprintDetail = await cache.getBlueprintDetail(
+    customerId,
+    existing.projectId,
+    existing.blueprintId,
+  );
+  if (!bootstrap || !projectResources || !blueprintDetail) {
+    return null;
+  }
+
+  const policy = projectResources.policies.find((item) => item.id === candidate.policyId);
+  const snapshot = blueprintDetail.snapshots.find((item) => item.id === existing.snapshotId);
+  if (!policy || !snapshot) {
+    return null;
+  }
+  if (blueprintDetail.defaultSnapshotId === null || blueprintDetail.defaultSnapshotId !== existing.snapshotId) {
+    throw new DraftExamValidationError(
+      "The selected Blueprint default Snapshot has changed. Refresh CloudShare authoring resources and reselect the Exam provisioning tuple.",
+    );
+  }
+
+  const allowedRegions = candidate.allowedRegionIds.map((regionId) =>
+    bootstrap.regions.find((item) => item.id === regionId),
+  );
+  if (allowedRegions.some((region) => !region)) {
+    return null;
+  }
+
+  if (snapshot.regionIds.length === 0) {
+    throw new DraftExamValidationError(
+      "The selected Blueprint default Snapshot is not deployed to any Regions yet.",
+    );
+  }
+
+  if (candidate.allowedRegionIds.some((regionId) => !snapshot.regionIds.includes(regionId))) {
+    throw new DraftExamValidationError(
+      "Selected allowed Regions are not deployed for the Blueprint default Snapshot.",
+    );
+  }
+  if (policy.runtimeLeaseMinutes === null || policy.runtimeLeaseMinutes === undefined) {
     return null;
   }
 
@@ -597,6 +673,13 @@ function parseUpdateDraftExamInput(
     title: candidate.title,
     description: candidate.description,
     scoreRetrievalEnabled: candidate.scoreRetrievalEnabled,
+    timeLimitMinutes: policy.runtimeLeaseMinutes,
+    allowedRegions: allowedRegions.map((region) => ({
+      id: region!.id,
+      name: region!.friendlyName?.trim() || region!.name,
+    })),
+    policyId: candidate.policyId,
+    policyName: policy.name,
   };
 }
 

@@ -27,6 +27,7 @@ export async function PATCH(
   const response = await handleUpdateDraftExam(
     {
       repository: services.exams,
+      cache: services.examAuthoringCache,
       logger: services.logger,
     },
     { customerId: session.customerId, examId, body },
