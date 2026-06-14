@@ -380,7 +380,11 @@ shapes were broader than the current minimal adapter schema:
 
 - Project items included at least `id`, `name`, `isActive`, and `message`.
 - Region items included at least `id`, `name`, `friendlyName`, and `cloudName`.
-- Project-policy items included at least `id`, `name`, `projectId`, and `allowEnvironmentCreation`.
+- Project-policy list items included at least `id`, `name`, `projectId`, and `allowEnvironmentCreation`.
+- `GET /api/v3/projects/{projectId}/policies/{policyId}` returned `200` and included
+  `runtimeLeaseMinutes`, `storageLeaseMinutes`, `environmentInactivityHandling`,
+  `allowSuspendLease`, and related lease/inactivity fields. Slice 2 should use
+  `runtimeLeaseMinutes` as the exam time-limit source instead of a freeform admin override.
 - Project-blueprint items included at least `id`, `name`, `description`, `resources`,
   `numberOfMachines`, `hasMultipleVersions`, `hasDefaultVersion`, and `regionId`.
 - Blueprint detail did **not** expose a top-level `snapshots[]` field. Snapshot/version selection is

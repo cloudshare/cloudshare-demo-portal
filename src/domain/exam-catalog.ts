@@ -67,6 +67,22 @@ export class ExamNotFoundError extends Error {
   }
 }
 
+export class ExamStateError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ExamStateError";
+  }
+}
+
+export interface UpdateDraftExamInput {
+  readonly customerId: string;
+  readonly examId: string;
+  readonly title: string;
+  readonly description: string;
+  readonly timeLimitMinutes: number;
+  readonly scoreRetrievalEnabled: boolean;
+}
+
 export async function createDraftExam(
   deps: {
     readonly repository: ExamRepository;
@@ -129,6 +145,59 @@ export async function publishExam(
 
   await deps.repository.save(published);
   return published;
+}
+
+export async function updateDraftExam(
+  deps: {
+    readonly repository: ExamRepository;
+    readonly now?: () => Date;
+  },
+  input: UpdateDraftExamInput,
+): Promise<Exam> {
+  const existing = await deps.repository.findById(input.examId);
+  if (!existing || existing.customerId !== input.customerId) {
+    throw new ExamNotFoundError(input.customerId, input.examId);
+  }
+  if (existing.status !== "draft") {
+    throw new ExamStateError("Only draft exams can be edited.");
+  }
+
+  validateDraftInput({ ...existing, ...input });
+
+  const updated: Exam = {
+    ...existing,
+    title: input.title.trim(),
+    description: input.description.trim(),
+    timeLimitMinutes: input.timeLimitMinutes,
+    scoreRetrievalEnabled: input.scoreRetrievalEnabled,
+    updatedAt: (deps.now ?? (() => new Date()))(),
+  };
+
+  await deps.repository.save(updated);
+  return updated;
+}
+
+export async function unpublishExam(
+  deps: {
+    readonly repository: ExamRepository;
+    readonly now?: () => Date;
+  },
+  input: { readonly customerId: string; readonly examId: string },
+): Promise<Exam> {
+  const existing = await deps.repository.findById(input.examId);
+  if (!existing || existing.customerId !== input.customerId) {
+    throw new ExamNotFoundError(input.customerId, input.examId);
+  }
+
+  const updated: Exam = {
+    ...existing,
+    status: "draft",
+    publishedAt: null,
+    updatedAt: (deps.now ?? (() => new Date()))(),
+  };
+
+  await deps.repository.save(updated);
+  return updated;
 }
 
 function validateDraftInput(input: CreateDraftExamInput): void {

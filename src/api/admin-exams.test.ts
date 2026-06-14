@@ -6,6 +6,8 @@ import {
   handleGetExamCatalog,
   handleGetProjectResources,
   handlePublishExam,
+  handleUnpublishExam,
+  handleUpdateDraftExam,
 } from "./admin-exams";
 import type {
   CloudShareClientFactory,
@@ -51,16 +53,23 @@ function makeAuthoringSource(
 ): CloudShareExamAuthoringSource {
   return {
     listProjects: vi.fn().mockResolvedValue([{ id: "project-1", name: "Helios CX Project" }]),
-    listRegions: vi.fn().mockResolvedValue([{ id: "region-1", name: "EU West" }]),
+    listRegions: vi.fn().mockResolvedValue([
+      { id: "region-1", name: "eu-west", friendlyName: "EU West" },
+    ]),
     listProjectBlueprints: vi.fn().mockResolvedValue([
-      { id: "bp-1", name: "Helios Exam Blueprint" },
+      {
+        id: "bp-1",
+        name: "Helios Exam Blueprint",
+        description: "Blueprint-backed description",
+      },
     ]),
     listProjectPolicies: vi.fn().mockResolvedValue([
-      { id: "policy-1", name: "Standard Exam Policy" },
+      { id: "policy-1", name: "Standard Exam Policy", runtimeLeaseMinutes: 240 },
     ]),
     getBlueprintDetail: vi.fn().mockResolvedValue({
       id: "bp-1",
       name: "Helios Exam Blueprint",
+      description: "Blueprint-backed description",
       defaultSnapshotId: "snap-1",
       snapshots: [
         { id: "snap-1", name: "Default Snapshot", isDefault: true },
@@ -84,15 +93,18 @@ async function seedAuthoringCache(
 ) {
   await cache.saveBootstrap("customer-1", {
     projects: [{ id: "project-1", name: "Helios CX Project" }],
-    regions: [{ id: "region-1", name: "EU West" }],
+    regions: [{ id: "region-1", name: "eu-west", friendlyName: "EU West" }],
   });
   await cache.saveProjectResources("customer-1", "project-1", {
-    blueprints: [{ id: "bp-1", name: "Helios Exam Blueprint" }],
-    policies: [{ id: "policy-1", name: "Standard Exam Policy" }],
+    blueprints: [
+      { id: "bp-1", name: "Helios Exam Blueprint", description: "Blueprint-backed description" },
+    ],
+    policies: [{ id: "policy-1", name: "Standard Exam Policy", runtimeLeaseMinutes: 240 }],
   });
   await cache.saveBlueprintDetail("customer-1", "project-1", "bp-1", {
     id: "bp-1",
     name: "Helios Exam Blueprint",
+    description: "Blueprint-backed description",
     defaultSnapshotId: "snap-1",
     snapshots: [
       { id: "snap-1", name: "Default Snapshot", isDefault: true },
@@ -120,7 +132,7 @@ describe("admin exam authoring handlers", () => {
     expect(result.body).toEqual({
       source: "live",
       projects: [{ id: "project-1", name: "Helios CX Project" }],
-      regions: [{ id: "region-1", name: "EU West" }],
+      regions: [{ id: "region-1", name: "eu-west", friendlyName: "EU West" }],
     });
 
     const cached = await handleGetExamAuthoringBootstrap(
@@ -155,8 +167,14 @@ describe("admin exam authoring handlers", () => {
     expect(result.body).toEqual({
       source: "live",
       projectId: "project-1",
-      blueprints: [{ id: "bp-1", name: "Helios Exam Blueprint" }],
-      policies: [{ id: "policy-1", name: "Standard Exam Policy" }],
+      blueprints: [
+        {
+          id: "bp-1",
+          name: "Helios Exam Blueprint",
+          description: "Blueprint-backed description",
+        },
+      ],
+      policies: [{ id: "policy-1", name: "Standard Exam Policy", runtimeLeaseMinutes: 240 }],
     });
     expect(source.listProjectBlueprints).toHaveBeenCalledWith("project-1");
     expect(source.listProjectPolicies).toHaveBeenCalledWith("project-1");
@@ -182,6 +200,7 @@ describe("admin exam authoring handlers", () => {
       blueprint: {
         id: "bp-1",
         name: "Helios Exam Blueprint",
+        description: "Blueprint-backed description",
         defaultSnapshotId: "snap-1",
         snapshots: [
           { id: "snap-1", name: "Default Snapshot", isDefault: true },
@@ -440,6 +459,110 @@ describe("admin exam catalog handlers", () => {
           scoreRetrievalEnabled: false,
         }),
       ],
+    });
+  });
+
+  it("updates an existing draft exam", async () => {
+    const repository = createInMemoryExamCatalogRepository();
+    const cache = createInMemoryExamAuthoringCacheRepository();
+    await seedAuthoringCache(cache);
+    await handleCreateDraftExam(
+      {
+        repository,
+        cache,
+        instructor: configuredInstructor,
+        logger: makeLogger(),
+        now: () => new Date("2026-06-14T12:00:00.000Z"),
+        newId: () => "exam-1",
+      },
+      {
+        customerId: "customer-1",
+        body: {
+          title: "Helios CloudShare Fundamentals",
+          description: "Hands-on certification exam.",
+          timeLimitMinutes: 240,
+          scoreRetrievalEnabled: false,
+          projectId: "project-1",
+          blueprintId: "bp-1",
+          snapshotId: "snap-1",
+          regionId: "region-1",
+          policyId: "policy-1",
+        },
+      },
+    );
+
+    const update = await handleUpdateDraftExam(
+      { repository, logger: makeLogger(), now: () => new Date("2026-06-14T12:45:00.000Z") },
+      {
+        customerId: "customer-1",
+        examId: "exam-1",
+        body: {
+          title: "Helios Blueprint Exam",
+          description: "Updated description.",
+          timeLimitMinutes: 240,
+          scoreRetrievalEnabled: true,
+        },
+      },
+    );
+
+    expect(update.status).toBe(200);
+    expect(update.body).toMatchObject({
+      exam: {
+        id: "exam-1",
+        status: "draft",
+        title: "Helios Blueprint Exam",
+        description: "Updated description.",
+        timeLimitMinutes: 240,
+        scoreRetrievalEnabled: true,
+      },
+    });
+  });
+
+  it("unpublishes an existing published exam", async () => {
+    const repository = createInMemoryExamCatalogRepository();
+    const cache = createInMemoryExamAuthoringCacheRepository();
+    await seedAuthoringCache(cache);
+    await handleCreateDraftExam(
+      {
+        repository,
+        cache,
+        instructor: configuredInstructor,
+        logger: makeLogger(),
+        now: () => new Date("2026-06-14T12:00:00.000Z"),
+        newId: () => "exam-1",
+      },
+      {
+        customerId: "customer-1",
+        body: {
+          title: "Helios CloudShare Fundamentals",
+          description: "Hands-on certification exam.",
+          timeLimitMinutes: 240,
+          scoreRetrievalEnabled: false,
+          projectId: "project-1",
+          blueprintId: "bp-1",
+          snapshotId: "snap-1",
+          regionId: "region-1",
+          policyId: "policy-1",
+        },
+      },
+    );
+    await handlePublishExam(
+      { repository, logger: makeLogger(), now: () => new Date("2026-06-14T12:30:00.000Z") },
+      { customerId: "customer-1", examId: "exam-1" },
+    );
+
+    const unpublish = await handleUnpublishExam(
+      { repository, logger: makeLogger(), now: () => new Date("2026-06-14T12:45:00.000Z") },
+      { customerId: "customer-1", examId: "exam-1" },
+    );
+
+    expect(unpublish.status).toBe(200);
+    expect(unpublish.body).toMatchObject({
+      exam: {
+        id: "exam-1",
+        status: "draft",
+        publishedAt: null,
+      },
     });
   });
 });

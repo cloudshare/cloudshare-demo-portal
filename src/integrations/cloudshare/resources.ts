@@ -11,7 +11,36 @@ const blueprintVersionSchema = z.object({
 const blueprintDetailSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
+  description: z.string().optional().default(""),
   createFromVersions: z.array(blueprintVersionSchema),
+});
+
+const projectSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+});
+
+const regionSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  friendlyName: z.string().min(1).optional(),
+});
+
+const blueprintSummarySchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().optional().default(""),
+});
+
+const policySummarySchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+});
+
+const policyDetailSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  runtimeLeaseMinutes: z.number().int().positive().optional(),
 });
 
 export interface CloudShareBlueprintSnapshot {
@@ -23,15 +52,20 @@ export interface CloudShareBlueprintSnapshot {
 export interface CloudShareBlueprintDetail {
   readonly id: string;
   readonly name: string;
+  readonly description: string;
   readonly defaultSnapshotId: string | null;
   readonly snapshots: CloudShareBlueprintSnapshot[];
 }
 
 export interface CloudShareExamAuthoringSource {
   listProjects(): Promise<Array<{ id: string; name: string }>>;
-  listRegions(): Promise<Array<{ id: string; name: string }>>;
-  listProjectBlueprints(projectId: string): Promise<Array<{ id: string; name: string }>>;
-  listProjectPolicies(projectId: string): Promise<Array<{ id: string; name: string }>>;
+  listRegions(): Promise<Array<{ id: string; name: string; friendlyName?: string }>>;
+  listProjectBlueprints(
+    projectId: string,
+  ): Promise<Array<{ id: string; name: string; description: string }>>;
+  listProjectPolicies(
+    projectId: string,
+  ): Promise<Array<{ id: string; name: string; runtimeLeaseMinutes: number | null }>>;
   getBlueprintDetail(projectId: string, blueprintId: string): Promise<CloudShareBlueprintDetail>;
 }
 
@@ -48,17 +82,27 @@ export interface CloudShareExamAuthoringSource {
  * - Policies: GET /policies (v3 Classic)
  */
 
-const resourceListSchema = z.array(
-  z.object({ id: z.string().min(1), name: z.string().min(1) }),
-);
+const projectListSchema = z.array(projectSchema);
+const regionListSchema = z.array(regionSchema);
+const blueprintListSchema = z.array(blueprintSummarySchema);
+const policyListSchema = z.array(policySummarySchema);
 
 export function createCloudShareResourceLister(client: CloudShareClient): CloudShareResourceLister {
   return {
     async listProjects() {
-      return client.requestV3({ method: "GET", path: "/projects", schema: resourceListSchema });
+      return client.requestV3({ method: "GET", path: "/projects", schema: projectListSchema });
     },
     async listRegions() {
-      return client.requestV3({ method: "GET", path: "/regions", schema: resourceListSchema });
+      const regions = await client.requestV3({
+        method: "GET",
+        path: "/regions",
+        schema: regionListSchema,
+      });
+      return regions.map((region) => ({
+        id: region.id,
+        name: region.name,
+        ...(region.friendlyName ? { friendlyName: region.friendlyName } : {}),
+      }));
     },
     async listBlueprints() {
       // Project-scoped blueprints should be fetched through the project-first authoring flow.
@@ -76,24 +120,52 @@ export function createCloudShareExamAuthoringSource(
 ): CloudShareExamAuthoringSource {
   return {
     async listProjects() {
-      return client.requestV3({ method: "GET", path: "/projects", schema: resourceListSchema });
+      return client.requestV3({ method: "GET", path: "/projects", schema: projectListSchema });
     },
     async listRegions() {
-      return client.requestV3({ method: "GET", path: "/regions", schema: resourceListSchema });
+      const regions = await client.requestV3({
+        method: "GET",
+        path: "/regions",
+        schema: regionListSchema,
+      });
+      return regions.map((region) => ({
+        id: region.id,
+        name: region.name,
+        ...(region.friendlyName ? { friendlyName: region.friendlyName } : {}),
+      }));
     },
     async listProjectBlueprints(projectId) {
-      return client.requestV3({
+      const blueprints = await client.requestV3({
         method: "GET",
         path: `/projects/${projectId}/blueprints`,
-        schema: resourceListSchema,
+        schema: blueprintListSchema,
       });
+      return blueprints.map((blueprint) => ({
+        id: blueprint.id,
+        name: blueprint.name,
+        description: blueprint.description ?? "",
+      }));
     },
     async listProjectPolicies(projectId) {
-      return client.requestV3({
+      const policies = await client.requestV3({
         method: "GET",
         path: `/projects/${projectId}/policies`,
-        schema: resourceListSchema,
+        schema: policyListSchema,
       });
+      return Promise.all(
+        policies.map(async (policy) => {
+          const detail = await client.requestV3({
+            method: "GET",
+            path: `/projects/${projectId}/policies/${policy.id}`,
+            schema: policyDetailSchema,
+          });
+          return {
+            id: policy.id,
+            name: policy.name,
+            runtimeLeaseMinutes: detail.runtimeLeaseMinutes ?? null,
+          };
+        }),
+      );
     },
     async getBlueprintDetail(projectId, blueprintId) {
       const detail = await client.requestV3({
@@ -105,6 +177,7 @@ export function createCloudShareExamAuthoringSource(
       return {
         id: detail.id,
         name: detail.name,
+        description: detail.description ?? "",
         defaultSnapshotId:
           detail.createFromVersions.find((snapshot) => snapshot.isDefault)?.id ?? null,
         snapshots: detail.createFromVersions,

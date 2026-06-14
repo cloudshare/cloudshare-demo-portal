@@ -3,6 +3,9 @@ import type { CloudShareBlueprintDetail } from "@/integrations/cloudshare/resour
 export interface NamedCloudShareResource {
   readonly id: string;
   readonly name: string;
+  readonly friendlyName?: string;
+  readonly description?: string;
+  readonly runtimeLeaseMinutes?: number | null;
 }
 
 export interface ExamAuthoringCacheRepository {

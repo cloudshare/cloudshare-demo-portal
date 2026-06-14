@@ -55,7 +55,7 @@ first-class deliverable.
 7. As a Helios admin, I want to list the Blueprints for a chosen Project, then inspect Blueprint detail including Snapshots and the default Snapshot, so that I can see which environment version an Experience-based Exam will use.
 8. As a Helios admin, I want the portal to reflect the blueprint's current default Snapshot for Experience-based Exam launches, so that the portal does not imply it can override CloudShare's launch behavior.
 9. As a Helios admin, I want to choose a Project-scoped Policy and a single global Region for an Exam, so that environment lifetime and location are defined.
-10. As a Helios admin, I want to set candidate-facing exam metadata (title, description, time limit), so that candidates understand what they are scheduling.
+10. As a Helios admin, I want candidate-facing exam metadata (title, description, time limit) to be prepared from the selected CloudShare resources, so that candidates understand what they are scheduling without the portal inventing conflicting launch settings.
 11. As a Helios admin, I want to mark whether an exam retrieves Guided Journey scores, so that the portal only requests progress when a journey exists.
 12. As a Helios admin, I want to publish or unpublish an exam (draft vs published), so that candidates only see exams that are ready.
 
@@ -153,7 +153,7 @@ first-class deliverable.
 ### Exam catalog
 - An **Exam** belongs to a Customer and binds a provisioning tuple — **project, blueprint, snapshot
   (the Blueprint's current default for Experience-based launches), region, policy, instructor (a seeded service-account project
-  member)** — plus metadata (title, description, per-Exam **time limit**, **published/draft**, and a
+  member)** — plus metadata (title, description, per-Exam **time limit** sourced from the selected Policy runtime lease, **published/draft**, and a
   **score-retrieval flag**). The blueprint/policy/project/region selection replaces the global
   `DEMO_*` env vars.
 - Exam authoring is **Project-first**, not global-resource-first. The intended admin workflow is:

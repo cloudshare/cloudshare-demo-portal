@@ -132,6 +132,7 @@ change must happen by changing the Blueprint's default inside CloudShare first.
 A CloudShare data-centre location. In CloudShare v3 this is effectively platform-global:
 `GET /api/v3/regions` currently returns the same shared Region set regardless of Project. The
 portal treats Regions as a global reference list, retrieved and refreshable rather than hard-coded.
+When showing them to admins, prefer `friendlyName` over the raw `name`.
 
 **Experience**:
 The CloudShare (Accelerate) session that binds a Blueprint + Project + Policy + Region +
@@ -167,9 +168,10 @@ and a **score-retrieval flag** stating whether the underlying blueprint has a Gu
 score). Exam authoring is **Project-first**: the Helios admin selects a Project, then chooses
 Project-scoped Blueprints, Policies, and Blueprint-detail Snapshots for that Project; Region comes
 from the global Region reference list. Instructor is the explicitly configured seeded CloudShare
-service-account member until a Project-member read endpoint is verified. The Candidate is added as
-the single Participant at launch, not at definition time. What a Candidate selects and consumes;
-the unit this portal actually delivers.
+service-account member until a Project-member read endpoint is verified. For Slice 2, the selected
+Policy's `runtimeLeaseMinutes` is the portal's exam time-limit source rather than a manual admin
+override. The Candidate is added as the single Participant at launch, not at definition time. What
+a Candidate selects and consumes; the unit this portal actually delivers.
 _Avoid_: test, assessment; do **not** call the catalog item a "Certification".
 
 **Certification**:

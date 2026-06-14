@@ -4,6 +4,8 @@ import {
   DraftExamValidationError,
   ExamNotFoundError,
   publishExam,
+  unpublishExam,
+  updateDraftExam,
   type CreateDraftExamInput,
 } from "./exam-catalog";
 import { createInMemoryExamCatalogRepository } from "@/persistence/exam-catalog-repository";
@@ -113,5 +115,94 @@ describe("publishExam", () => {
         { customerId: "customer-1", examId: "missing" },
       ),
     ).rejects.toBeInstanceOf(ExamNotFoundError);
+  });
+});
+
+describe("updateDraftExam", () => {
+  it("updates an existing draft exam and keeps it as a draft", async () => {
+    const repository = createInMemoryExamCatalogRepository();
+    const createdAt = new Date("2026-06-14T12:00:00.000Z");
+    const updatedAt = new Date("2026-06-14T13:15:00.000Z");
+
+    await createDraftExam(
+      { repository, now: () => createdAt, newId: () => "exam-1" },
+      makeInput(),
+    );
+
+    const updated = await updateDraftExam(
+      { repository, now: () => updatedAt },
+      {
+        examId: "exam-1",
+        customerId: "customer-1",
+        title: "Helios Blueprint Exam",
+        description: "Updated description.",
+        timeLimitMinutes: 240,
+        scoreRetrievalEnabled: false,
+      },
+    );
+
+    expect(updated).toMatchObject({
+      id: "exam-1",
+      status: "draft",
+      title: "Helios Blueprint Exam",
+      description: "Updated description.",
+      timeLimitMinutes: 240,
+      scoreRetrievalEnabled: false,
+    });
+    expect(updated.updatedAt).toEqual(updatedAt);
+    expect(updated.createdAt).toEqual(createdAt);
+    expect(updated.publishedAt).toBeNull();
+  });
+
+  it("rejects updates to published exams", async () => {
+    const repository = createInMemoryExamCatalogRepository();
+    const createdAt = new Date("2026-06-14T12:00:00.000Z");
+
+    await createDraftExam(
+      { repository, now: () => createdAt, newId: () => "exam-1" },
+      makeInput(),
+    );
+    await publishExam(
+      { repository, now: () => new Date("2026-06-14T12:30:00.000Z") },
+      { customerId: "customer-1", examId: "exam-1" },
+    );
+
+    await expect(
+      updateDraftExam(
+        { repository, now: () => new Date("2026-06-14T13:15:00.000Z") },
+        {
+          examId: "exam-1",
+          customerId: "customer-1",
+          title: "Helios Blueprint Exam",
+          description: "Updated description.",
+          timeLimitMinutes: 240,
+          scoreRetrievalEnabled: false,
+        },
+      ),
+    ).rejects.toThrow("Only draft exams can be edited.");
+  });
+});
+
+describe("unpublishExam", () => {
+  it("returns a published exam to draft status", async () => {
+    const repository = createInMemoryExamCatalogRepository();
+    const createdAt = new Date("2026-06-14T12:00:00.000Z");
+
+    await createDraftExam(
+      { repository, now: () => createdAt, newId: () => "exam-1" },
+      makeInput(),
+    );
+    await publishExam(
+      { repository, now: () => new Date("2026-06-14T12:30:00.000Z") },
+      { customerId: "customer-1", examId: "exam-1" },
+    );
+
+    const unpublished = await unpublishExam(
+      { repository, now: () => new Date("2026-06-14T13:00:00.000Z") },
+      { customerId: "customer-1", examId: "exam-1" },
+    );
+
+    expect(unpublished.status).toBe("draft");
+    expect(unpublished.publishedAt).toBeNull();
   });
 });

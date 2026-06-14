@@ -18,9 +18,13 @@ import {
   createDraftExam,
   DraftExamValidationError,
   ExamNotFoundError,
+  ExamStateError,
   publishExam,
+  unpublishExam,
+  updateDraftExam,
   type CreateDraftExamInput,
   type ExamRepository,
+  type UpdateDraftExamInput,
 } from "@/domain/exam-catalog";
 import type { ExamAuthoringCacheRepository } from "@/persistence/exam-authoring-cache-repository";
 
@@ -307,6 +311,50 @@ export async function handlePublishExam(
   }
 }
 
+export async function handleUpdateDraftExam(
+  deps: Pick<AdminExamCatalogDeps, "repository" | "logger" | "now">,
+  request: CustomerRequest & { readonly examId: string; readonly body?: unknown },
+): Promise<AdminExamResponse> {
+  const input = parseUpdateDraftExamInput(request.customerId, request.examId, request.body);
+  if (!input) {
+    return { status: 400, body: { error: "Provide draft Exam metadata before saving changes." } };
+  }
+
+  try {
+    const exam = await updateDraftExam(
+      { repository: deps.repository, now: deps.now },
+      input,
+    );
+    return { status: 200, body: { exam } };
+  } catch (error) {
+    if (error instanceof DraftExamValidationError || error instanceof ExamStateError) {
+      return { status: 400, body: { error: error.message } };
+    }
+    if (error instanceof ExamNotFoundError) {
+      return { status: 404, body: { error: error.message } };
+    }
+    throw error;
+  }
+}
+
+export async function handleUnpublishExam(
+  deps: Pick<AdminExamCatalogDeps, "repository" | "logger" | "now">,
+  request: CustomerRequest & { readonly examId: string },
+): Promise<AdminExamResponse> {
+  try {
+    const exam = await unpublishExam(
+      { repository: deps.repository, now: deps.now },
+      { customerId: request.customerId, examId: request.examId },
+    );
+    return { status: 200, body: { exam } };
+  } catch (error) {
+    if (error instanceof ExamNotFoundError) {
+      return { status: 404, body: { error: error.message } };
+    }
+    throw error;
+  }
+}
+
 function resolveAuthoringSource(
   factory: CloudShareClientFactory,
   connection: Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>> extends infer T
@@ -396,6 +444,35 @@ function inferIntegrationSurface(path: string): string {
   return "cloudshare.v3";
 }
 
+function parseUpdateDraftExamInput(
+  customerId: string,
+  examId: string,
+  body: unknown,
+): UpdateDraftExamInput | null {
+  if (typeof body !== "object" || body === null) {
+    return null;
+  }
+
+  const candidate = body as Record<string, unknown>;
+  if (
+    typeof candidate.title !== "string" ||
+    typeof candidate.description !== "string" ||
+    typeof candidate.timeLimitMinutes !== "number" ||
+    typeof candidate.scoreRetrievalEnabled !== "boolean"
+  ) {
+    return null;
+  }
+
+  return {
+    customerId,
+    examId,
+    title: candidate.title,
+    description: candidate.description,
+    timeLimitMinutes: candidate.timeLimitMinutes,
+    scoreRetrievalEnabled: candidate.scoreRetrievalEnabled,
+  };
+}
+
 async function parseCreateDraftExamInput(
   customerId: string,
   body: unknown,
@@ -457,7 +534,7 @@ async function parseCreateDraftExamInput(
     snapshotId: candidate.snapshotId,
     snapshotName: snapshot.name,
     regionId: candidate.regionId,
-    regionName: region.name,
+    regionName: region.friendlyName?.trim() || region.name,
     policyId: candidate.policyId,
     policyName: policy.name,
     instructorId: instructor.id,
