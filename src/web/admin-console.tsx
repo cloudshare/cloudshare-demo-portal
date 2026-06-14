@@ -140,6 +140,25 @@ function formatSupportValue(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
+function stripHtmlToText(value: string | null | undefined): string {
+  if (!value) {
+    return "";
+  }
+
+  return value
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&#39;/gi, "'")
+    .replace(/&quot;/gi, "\"")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function AdminConsole({ email }: AdminConsoleProps) {
   const router = useRouter();
   const [tab, setTab] = useState<Tab>("connection");
@@ -369,7 +388,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     setEditingExamId(null);
     setExamMessage(null);
     setExamTitle(next?.title ?? blueprintDetail?.name ?? "");
-    setExamDescription(next?.description ?? blueprintDetail?.description ?? "");
+    setExamDescription(next?.description ?? stripHtmlToText(blueprintDetail?.description) ?? "");
     setScoreRetrievalEnabled(next?.scoreRetrievalEnabled ?? false);
     setTimeLimitMinutes(next?.timeLimitMinutes ?? "");
   }
@@ -531,7 +550,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       setBlueprintDetail(detail);
       if (!editingExamId && detail) {
         setExamTitle(detail.name);
-        setExamDescription(detail.description);
+        setExamDescription(stripHtmlToText(detail.description));
       }
     } catch {
       setError("Failed to load blueprint detail");
@@ -716,11 +735,15 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       : timeLimitMinutes;
   const compactFieldStyle = {
     padding: "0.7rem",
+    paddingRight: "2.25rem",
     border: "1px solid #ccc",
     borderRadius: "6px",
     width: "100%",
     minWidth: 0,
   } as const;
+  const blueprintSummary = selectedBlueprint
+    ? stripHtmlToText(selectedBlueprint.description || blueprintDetail?.description || "")
+    : "";
 
   return (
     <main style={{ fontFamily: "system-ui, sans-serif", padding: "2rem", maxWidth: "1000px", margin: "0 auto" }}>
@@ -895,7 +918,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
             </div>
           )}
 
-          <div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
+          <div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", alignItems: "start" }}>
             <label style={{ display: "grid", gap: "0.35rem", minWidth: 0 }}>
               <span>Project</span>
               <select
@@ -917,11 +940,6 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                   </option>
                 ))}
               </select>
-              {selectedProject && (
-                <span style={{ color: "#666", fontSize: "0.85rem", overflowWrap: "anywhere" }}>
-                  {selectedProject.name}
-                </span>
-              )}
             </label>
 
             <label style={{ display: "grid", gap: "0.35rem", minWidth: 0 }}>
@@ -945,11 +963,6 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                   </option>
                 ))}
               </select>
-              {selectedBlueprint && (
-                <span style={{ color: "#666", fontSize: "0.85rem", overflowWrap: "anywhere" }}>
-                  {selectedBlueprint.description || selectedBlueprint.name}
-                </span>
-              )}
             </label>
 
             <label style={{ display: "grid", gap: "0.35rem", minWidth: 0 }}>
@@ -963,7 +976,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
               >
                 {defaultSnapshot ? `${defaultSnapshot.name} (default)` : "Select a Blueprint"}
               </div>
-              <span style={{ color: "#666", fontSize: "0.85rem" }}>
+              <span style={{ color: "#666", fontSize: "0.85rem", minHeight: "2.5em" }}>
                 The portal records the Blueprint&apos;s default snapshot. Non-default snapshot versions cannot be chosen for CloudShare experience-based Exam launches.
               </span>
             </label>
@@ -985,14 +998,6 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                   </option>
                 ))}
               </select>
-              {selectedPolicy && (
-                <span style={{ color: "#666", fontSize: "0.85rem", overflowWrap: "anywhere" }}>
-                  {selectedPolicy.name}
-                  {selectedPolicy.runtimeLeaseMinutes
-                    ? ` · ${selectedPolicy.runtimeLeaseMinutes} minute runtime lease`
-                    : ""}
-                </span>
-              )}
             </label>
 
             <label style={{ display: "grid", gap: "0.35rem", minWidth: 0 }}>
@@ -1009,12 +1014,37 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                   </option>
                 ))}
               </select>
-              {selectedRegion && (
-                <span style={{ color: "#666", fontSize: "0.85rem", overflowWrap: "anywhere" }}>
-                  {selectedRegion.friendlyName ?? selectedRegion.name}
-                </span>
-              )}
             </label>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gap: "0.5rem",
+              padding: "0.85rem 1rem",
+              border: "1px solid #e5e7eb",
+              borderRadius: "6px",
+              background: "#fafafa",
+            }}
+          >
+            <strong>Selection summary</strong>
+            <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
+              Project: {selectedProject?.name ?? "-"}
+            </div>
+            <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
+              Policy: {selectedPolicy?.name ?? "-"}
+              {selectedPolicy?.runtimeLeaseMinutes
+                ? ` · ${selectedPolicy.runtimeLeaseMinutes} minute runtime lease`
+                : ""}
+            </div>
+            <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
+              Region: {selectedRegion ? (selectedRegion.friendlyName ?? selectedRegion.name) : "-"}
+            </div>
+            {blueprintSummary && (
+              <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
+                Blueprint: {blueprintSummary}
+              </div>
+            )}
           </div>
 
           <div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>

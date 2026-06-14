@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 
 interface LoginFormProps {
   readonly initialError: string | null;
@@ -9,7 +8,6 @@ interface LoginFormProps {
 }
 
 export function LoginForm({ initialError, initialEmail }: LoginFormProps) {
-  const router = useRouter();
   const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -33,8 +31,7 @@ export function LoginForm({ initialError, initialEmail }: LoginFormProps) {
         return;
       }
 
-      router.push("/admin");
-      router.refresh();
+      window.location.assign("/admin");
     } catch {
       setError("Login failed");
     } finally {
