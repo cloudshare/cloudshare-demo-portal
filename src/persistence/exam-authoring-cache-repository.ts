@@ -6,6 +6,7 @@ export interface NamedCloudShareResource {
 }
 
 export interface ExamAuthoringCacheRepository {
+  clearCustomer(customerId: string): Promise<void>;
   getBootstrap(customerId: string): Promise<{
     readonly projects: NamedCloudShareResource[];
     readonly regions: NamedCloudShareResource[];
@@ -58,6 +59,19 @@ export function createInMemoryExamAuthoringCacheRepository(): ExamAuthoringCache
   }
 
   return {
+    async clearCustomer(customerId) {
+      bootstrapByCustomer.delete(customerId);
+      for (const key of projectResourcesByKey.keys()) {
+        if (key.startsWith(`${customerId}:`)) {
+          projectResourcesByKey.delete(key);
+        }
+      }
+      for (const key of blueprintDetailsByKey.keys()) {
+        if (key.startsWith(`${customerId}:`)) {
+          blueprintDetailsByKey.delete(key);
+        }
+      }
+    },
     async getBootstrap(customerId) {
       return bootstrapByCustomer.get(customerId) ?? null;
     },

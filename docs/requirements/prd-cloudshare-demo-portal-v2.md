@@ -158,8 +158,9 @@ first-class deliverable.
   `DEMO_*` env vars.
 - Exam authoring is **Project-first**, not global-resource-first. The intended admin workflow is:
   sync/list Projects, sync/list global Regions, select a Project, then fetch or read cached
-  Project-scoped resources for that Project only: Blueprints, Policies, later Project Members /
-  Instructor choices, and later Blueprint detail including Snapshots and the default Snapshot.
+  Project-scoped resources for that Project only: Blueprints, Policies, and Blueprint detail
+  including Snapshots and the default Snapshot. Instructor remains a configured seeded service
+  account for Slice 2 until a real Project-member read endpoint is verified.
   Snapshot detail is informative for Experience-based launches: the portal records the current
   default Snapshot and does not directly select a non-default Blueprint version.
 - The current admin **Resources** tab is a stopgap sync surface for early integration evidence. It

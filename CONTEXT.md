@@ -165,10 +165,11 @@ The **catalog item** the Helios admin publishes. Binds a single CloudShare provi
 plus candidate-facing metadata (title, description, **per-Exam time limit**, published/draft flag,
 and a **score-retrieval flag** stating whether the underlying blueprint has a Guided Journey to
 score). Exam authoring is **Project-first**: the Helios admin selects a Project, then chooses
-Project-scoped Blueprints, Policies, later Instructor choices, and Blueprint-detail Snapshots for
-that Project; Region comes from the global Region reference list. The Candidate is added as the
-single Participant at launch, not at definition time. What a Candidate selects and consumes; the
-unit this portal actually delivers.
+Project-scoped Blueprints, Policies, and Blueprint-detail Snapshots for that Project; Region comes
+from the global Region reference list. Instructor is the explicitly configured seeded CloudShare
+service-account member until a Project-member read endpoint is verified. The Candidate is added as
+the single Participant at launch, not at definition time. What a Candidate selects and consumes;
+the unit this portal actually delivers.
 _Avoid_: test, assessment; do **not** call the catalog item a "Certification".
 
 **Certification**:

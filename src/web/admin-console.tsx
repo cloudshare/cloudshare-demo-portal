@@ -736,7 +736,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
               Regions are global reference data. Blueprints and Policies are fetched in the selected Project context. For experience-based Exams, CloudShare launches always use the Blueprint&apos;s current default snapshot.
             </span>
             <span style={{ color: "#555" }}>
-              Instructor choice is intentionally fixed to the seeded CloudShare service account for this slice.
+              Instructor choice is fixed to the seeded CloudShare service account for this slice and must be explicitly configured before an Exam can be saved.
             </span>
             <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
               <button onClick={() => void loadExamAuthoring(true)} disabled={loading} style={{ padding: "0.6rem 0.9rem" }}>

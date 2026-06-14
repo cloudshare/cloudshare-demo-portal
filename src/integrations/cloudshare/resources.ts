@@ -61,26 +61,12 @@ export function createCloudShareResourceLister(client: CloudShareClient): CloudS
       return client.requestV3({ method: "GET", path: "/regions", schema: resourceListSchema });
     },
     async listBlueprints() {
-      const projects = await client.requestV3({
-        method: "GET",
-        path: "/projects",
-        schema: resourceListSchema,
-      });
-
-      const blueprintsByProject = await Promise.all(
-        projects.map((project) =>
-          client.requestV3({
-            method: "GET",
-            path: `/projects/${project.id}/blueprints`,
-            schema: resourceListSchema,
-          }),
-        ),
-      );
-
-      return blueprintsByProject.flat();
+      // Project-scoped blueprints should be fetched through the project-first authoring flow.
+      return [];
     },
     async listPolicies() {
-      return client.requestV3({ method: "GET", path: "/policies", schema: resourceListSchema });
+      // Project-scoped policies should be fetched through the project-first authoring flow.
+      return [];
     },
   };
 }

@@ -80,12 +80,6 @@ function makeCloudShareClient(overrides: {
       if (path === "/regions") {
         return Promise.resolve([{ id: "r-1", name: "EU West" }]);
       }
-      if (path === "/projects/p-1/blueprints") {
-        return Promise.resolve([{ id: "bp-1", name: "Demo Blueprint" }]);
-      }
-      if (path === "/policies") {
-        return Promise.resolve([{ id: "pol-1", name: "Demo Policy" }]);
-      }
       return Promise.reject(new Error(`unexpected path ${path}`));
     });
 
@@ -149,7 +143,7 @@ describe("handleSyncResources", () => {
 
     expect(result.status).toBe(200);
     const body = result.body as { synced: number };
-    expect(body.synced).toBe(4);
+    expect(body.synced).toBe(2);
     expect(cloudshare.forConnection).toHaveBeenCalledWith(
       expect.objectContaining({ customerId: "customer-1" }),
     );

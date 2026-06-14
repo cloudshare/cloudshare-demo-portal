@@ -345,8 +345,9 @@ CloudShare v3 resource endpoints are unevenly scoped:
   come from Blueprint detail for the selected Project + Blueprint path, including default-Snapshot
   information. CloudShare v3 exposes Snapshot-specific endpoints, but the portal should model
   Snapshot discovery as part of Blueprint selection.
-- **Project Members / Instructor choices** are expected to be Project-scoped and should be fetched
-  in the selected-Project context when that authoring step is built.
+- **Project Members / Instructor choices** are expected to be Project-scoped, but the exact v3 read
+  surface is still unconfirmed. Slice 2 therefore keeps Instructor fixed to an explicitly
+  configured seeded service-account member instead of presenting an unverified Project-member picker.
 
 Training/Experience creation, add-participant, sponsored-link, list-students, and Guided Journey are
 v4 (`api.accelerate.cloudshare.com`). CloudShare intends to move more environment-management /
@@ -367,9 +368,9 @@ infrastructure endpoints to v4 over time.
   v3-to-v4 migration is localized to the adapter.
 
 **Action required:** confirm the exact v3 response shapes for Project-scoped Policies, Project-scoped
-Blueprints, Blueprint detail including Snapshots and default-Snapshot fields, and Project Members /
-Instructor choices. Update this entry immediately when live tenant behavior contradicts the current
-model.
+Blueprints, Blueprint detail including Snapshots and default-Snapshot fields, and any Project
+Members / Instructor read surface. Update this entry immediately when live tenant behavior
+contradicts the current model.
 
 **Update (2026-06-14, live v3 probe against local E2E credentials):** `GET /api/v3/projects`,
 `GET /api/v3/regions`, `GET /api/v3/projects/{projectId}/policies`,
@@ -394,6 +395,16 @@ shapes were broader than the current minimal adapter schema:
 This confirms the Project-first authoring model and corrects the earlier placeholder fixture shape:
 the adapter should derive portal Snapshot choices from Blueprint detail `createFromVersions[]`, not
 from an invented top-level `snapshots[]` field.
+
+**Update (2026-06-14, live v3 probe for Project Members):** the following candidate Project-member
+read endpoints all returned `404` against the current tenant:
+`GET /api/v3/projects/{projectId}/members`,
+`GET /api/v3/projects/{projectId}/projectmembers`,
+`GET /api/v3/projects/{projectId}/instructors`, and
+`GET /api/v3/projects/{projectId}/team-members`.
+Do not build a Project-member picker around guessed paths. For Slice 2, keep Instructor fixed to an
+explicitly configured seeded service-account member and fail authoring if that configuration is
+still the placeholder default.
 
 ---
 

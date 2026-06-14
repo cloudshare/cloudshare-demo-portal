@@ -28,6 +28,7 @@ export async function GET() {
     {
       connections: services.cloudshareConnections,
       cloudshare: services.cloudshareClientFactory,
+      examAuthoringCache: services.examAuthoringCache,
       logger: services.logger,
     },
     { customerId: session.customerId },
@@ -52,6 +53,7 @@ export async function PUT(request: Request) {
     {
       connections: services.cloudshareConnections,
       cloudshare: services.cloudshareClientFactory,
+      examAuthoringCache: services.examAuthoringCache,
       logger: services.logger,
     },
     { customerId: session.customerId, body },

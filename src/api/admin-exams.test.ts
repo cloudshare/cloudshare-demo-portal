@@ -230,7 +230,55 @@ describe("admin exam authoring handlers", () => {
 });
 
 describe("admin exam catalog handlers", () => {
+  const configuredInstructor = {
+    id: "instructor-1",
+    name: "Helios Service Account",
+  };
+
   it("creates a draft exam and returns it", async () => {
+    const repository = createInMemoryExamCatalogRepository();
+    const cache = createInMemoryExamAuthoringCacheRepository();
+    await seedAuthoringCache(cache);
+
+    const result = await handleCreateDraftExam(
+      {
+        repository,
+        cache,
+        instructor: configuredInstructor,
+        logger: makeLogger(),
+        now: () => new Date("2026-06-14T12:00:00.000Z"),
+        newId: () => "exam-1",
+      },
+      {
+        customerId: "customer-1",
+        body: {
+          title: "Helios CloudShare Fundamentals",
+          description: "Hands-on certification exam.",
+          timeLimitMinutes: 90,
+          scoreRetrievalEnabled: true,
+          projectId: "project-1",
+          blueprintId: "bp-1",
+          snapshotId: "snap-1",
+          regionId: "region-1",
+          policyId: "policy-1",
+        },
+      },
+    );
+
+    expect(result.status).toBe(201);
+    expect(result.body).toMatchObject({
+      exam: {
+        id: "exam-1",
+        status: "draft",
+        title: "Helios CloudShare Fundamentals",
+        projectName: "Helios CX Project",
+        instructorId: "instructor-1",
+        instructorName: "Helios Service Account",
+      },
+    });
+  });
+
+  it("rejects draft creation when the seeded instructor is not explicitly configured", async () => {
     const repository = createInMemoryExamCatalogRepository();
     const cache = createInMemoryExamAuthoringCacheRepository();
     await seedAuthoringCache(cache);
@@ -260,14 +308,10 @@ describe("admin exam catalog handlers", () => {
       },
     );
 
-    expect(result.status).toBe(201);
-    expect(result.body).toMatchObject({
-      exam: {
-        id: "exam-1",
-        status: "draft",
-        title: "Helios CloudShare Fundamentals",
-        projectName: "Helios CX Project",
-      },
+    expect(result.status).toBe(400);
+    expect(result.body).toEqual({
+      error:
+        "Configure the seeded CloudShare instructor before creating Exams for this customer.",
     });
   });
 
@@ -280,7 +324,7 @@ describe("admin exam catalog handlers", () => {
       {
         repository,
         cache,
-        instructor: { id: "seeded-cloudshare-instructor", name: "Seeded CloudShare Instructor" },
+        instructor: configuredInstructor,
         logger: makeLogger(),
         now: () => new Date("2026-06-14T12:00:00.000Z"),
         newId: () => "exam-1",
@@ -316,7 +360,7 @@ describe("admin exam catalog handlers", () => {
       {
         repository,
         cache,
-        instructor: { id: "seeded-cloudshare-instructor", name: "Seeded CloudShare Instructor" },
+        instructor: configuredInstructor,
         logger: makeLogger(),
         now: () => new Date("2026-06-14T12:00:00.000Z"),
         newId: () => "exam-1",
@@ -351,7 +395,7 @@ describe("admin exam catalog handlers", () => {
       {
         repository,
         cache,
-        instructor: { id: "seeded-cloudshare-instructor", name: "Seeded CloudShare Instructor" },
+        instructor: configuredInstructor,
         logger: makeLogger(),
         now: () => new Date("2026-06-14T12:00:00.000Z"),
         newId: () => "exam-1",

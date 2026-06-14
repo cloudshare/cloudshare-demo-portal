@@ -64,6 +64,9 @@ interface AdminExamCatalogDeps {
   readonly newId?: () => string;
 }
 
+const DEFAULT_INSTRUCTOR_ID = "seeded-cloudshare-instructor";
+const DEFAULT_INSTRUCTOR_NAME = "Seeded CloudShare Instructor";
+
 export async function handleGetExamAuthoringBootstrap(
   deps: AdminExamAuthoringDeps,
   request: ResourceRequest,
@@ -219,6 +222,15 @@ export async function handleCreateDraftExam(
   deps: AdminExamCatalogDeps,
   request: CustomerRequest & { readonly body?: unknown },
 ): Promise<AdminExamResponse> {
+  if (!isConfiguredInstructor(deps.instructor)) {
+    return {
+      status: 400,
+      body: {
+        error: "Configure the seeded CloudShare instructor before creating Exams for this customer.",
+      },
+    };
+  }
+
   const input = await parseCreateDraftExamInput(
     request.customerId,
     request.body,
@@ -250,6 +262,18 @@ export async function handleCreateDraftExam(
     }
     throw error;
   }
+}
+
+function isConfiguredInstructor(instructor: {
+  readonly id: string;
+  readonly name: string;
+}): boolean {
+  const id = instructor.id.trim();
+  const name = instructor.name.trim();
+  if (!id || !name) {
+    return false;
+  }
+  return !(id === DEFAULT_INSTRUCTOR_ID && name === DEFAULT_INSTRUCTOR_NAME);
 }
 
 export async function handlePublishExam(
