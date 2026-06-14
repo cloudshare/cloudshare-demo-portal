@@ -117,6 +117,35 @@ describe("admin CloudShare handlers", () => {
     });
   });
 
+  it("allows partial updates for an existing CloudShare Connection", async () => {
+    const deps = await makeDeps();
+    await handleSaveCloudShareConnection(deps, {
+      customerId: deps.customerId,
+      body: {
+        apiId: "api-id",
+        apiKey: "api-key",
+        webhookSecret: "whsec",
+      },
+    });
+
+    const update = await handleSaveCloudShareConnection(deps, {
+      customerId: deps.customerId,
+      body: {
+        apiId: "",
+        apiKey: "new-api-key",
+        webhookSecret: "",
+      },
+    });
+
+    expect(update.status).toBe(200);
+    const stored = await deps.connections.findByCustomerId(deps.customerId);
+    expect(stored).toMatchObject({
+      apiId: "api-id",
+      apiKey: "new-api-key",
+      webhookSecret: "whsec",
+    });
+  });
+
   it("returns support diagnostics and a correlation id on test failure", async () => {
     const deps = await makeDeps();
     await handleSaveCloudShareConnection(deps, {

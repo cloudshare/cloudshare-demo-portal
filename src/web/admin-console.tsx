@@ -113,6 +113,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   const [connectionDiagnostic, setConnectionDiagnostic] = useState<ConnectionDiagnostic | null>(null);
   const [connectionCorrelationId, setConnectionCorrelationId] = useState<string | null>(null);
   const [connectionOccurredAt, setConnectionOccurredAt] = useState<string | null>(null);
+  const [connectionWarning, setConnectionWarning] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -139,11 +140,17 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     setConnectionDiagnostic(null);
     setConnectionCorrelationId(null);
     setConnectionOccurredAt(null);
+    setConnectionWarning(null);
     const trimmedApiId = apiId.trim();
     const trimmedApiKey = apiKey.trim();
     const trimmedWebhookSecret = webhookSecret.trim();
-    if (!trimmedApiId || !trimmedApiKey || !trimmedWebhookSecret) {
-      setError("API ID, API Key, and Webhook Secret are required to save the CloudShare Connection.");
+    if (!hasSavedConnection && (!trimmedApiId || !trimmedApiKey || !trimmedWebhookSecret)) {
+      setError("API ID, API Key, and Webhook Secret are required to save the first CloudShare Connection.");
+      setLoading(false);
+      return;
+    }
+    if (hasSavedConnection && !trimmedApiId && !trimmedApiKey && !trimmedWebhookSecret) {
+      setError("Enter at least one field to update the saved CloudShare Connection.");
       setLoading(false);
       return;
     }
@@ -168,7 +175,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
         verifiedAt: data.verifiedAt,
       });
       setConnectionMessage("CloudShare Connection saved.");
-      setApiId(trimmedApiId);
+      setApiId("");
       setApiKey("");
       setWebhookSecret("");
     } catch {
@@ -185,6 +192,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     setConnectionDiagnostic(null);
     setConnectionCorrelationId(null);
     setConnectionOccurredAt(null);
+    setConnectionWarning(null);
     try {
       const response = await fetch("/api/admin/cloudshare/test", { method: "POST" });
       const data = (await response.json()) as {
@@ -197,10 +205,11 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       };
       if (!response.ok) {
         setError(data.error ?? "CloudShare connection test failed");
+        setConnectionWarning("CloudShare connection test failed. Check the warning details and support log.");
         setConnectionDiagnostic(data.diagnostic ?? null);
         setConnectionCorrelationId(data.correlationId ?? null);
         setConnectionOccurredAt(data.occurredAt ?? null);
-        void loadSupportLog();
+        void loadSupportLog(true);
         return;
       }
       await loadConnection();
@@ -209,6 +218,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       setConnectionOccurredAt(data.occurredAt ?? null);
     } catch {
       setError("CloudShare connection test failed");
+      setConnectionWarning("CloudShare connection test failed. Check the support log for more detail.");
     } finally {
       setLoading(false);
     }
@@ -253,22 +263,34 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     }
   }
 
-  async function loadSupportLog() {
-    setLoading(true);
-    setError(null);
+  async function loadSupportLog(background = false) {
+    if (!background) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const res = await fetch("/api/admin/support-log?limit=200");
       const data = await res.json() as { records?: SupportLogRecord[]; error?: string };
       if (!res.ok) {
-        setError(data.error ?? "Failed to load support log");
+        if (!background) {
+          setError(data.error ?? "Failed to load support log");
+        }
         return;
       }
       setSupportRecords(data.records ?? []);
     } catch {
-      setError("Failed to load support log");
+      if (!background) {
+        setError("Failed to load support log");
+      }
     } finally {
-      setLoading(false);
+      if (!background) {
+        setLoading(false);
+      }
     }
+  }
+
+  function onLoadSupportLog() {
+    void loadSupportLog();
   }
 
   async function syncResources() {
@@ -439,6 +461,16 @@ export function AdminConsole({ email }: AdminConsoleProps) {
               </p>
             )}
           </div>
+          {connectionWarning && (
+            <div style={{ color: "#7a4b00", background: "#fff7e6", padding: "0.75rem", borderRadius: "6px", display: "grid", gap: "0.4rem" }}>
+              <p style={{ margin: 0 }}>{connectionWarning}</p>
+              {connectionCorrelationId && (
+                <p style={{ margin: 0, fontSize: "0.85rem" }}>
+                  Correlation ID: <span style={{ fontFamily: "monospace" }}>{connectionCorrelationId}</span>
+                </p>
+              )}
+            </div>
+          )}
 
           <label style={{ display: "grid", gap: "0.35rem" }}>
             <span>API ID</span>
@@ -596,7 +628,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
           <p style={{ color: "#555", marginTop: 0 }}>
             Structured server logs. All timestamps are ISO 8601 in UTC. Secure values stay redacted.
           </p>
-          <button onClick={loadSupportLog} disabled={loading} style={{ padding: "0.4rem 1rem", marginBottom: "1rem" }}>
+          <button onClick={onLoadSupportLog} disabled={loading} style={{ padding: "0.4rem 1rem", marginBottom: "1rem" }}>
             {loading ? "Loading..." : "Load Support Log"}
           </button>
           {supportRecords && (

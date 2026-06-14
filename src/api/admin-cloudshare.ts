@@ -59,11 +59,23 @@ export async function handleSaveCloudShareConnection(
     };
   }
 
+  const existing = await deps.connections.findByCustomerId(request.customerId);
+  const trimmedApiId = (body as { apiId: string }).apiId.trim();
+  const trimmedApiKey = (body as { apiKey: string }).apiKey.trim();
+  const trimmedWebhookSecret = (body as { webhookSecret: string }).webhookSecret.trim();
+
+  if (!existing && (!trimmedApiId || !trimmedApiKey || !trimmedWebhookSecret)) {
+    return {
+      status: 400,
+      body: { error: "apiId, apiKey, and webhookSecret are required for the first CloudShare Connection save" },
+    };
+  }
+
   const connection = await deps.connections.save({
     customerId: request.customerId,
-    apiId: (body as { apiId: string }).apiId.trim(),
-    apiKey: (body as { apiKey: string }).apiKey.trim(),
-    webhookSecret: (body as { webhookSecret: string }).webhookSecret.trim(),
+    apiId: trimmedApiId || existing?.apiId || "",
+    apiKey: trimmedApiKey || existing?.apiKey || "",
+    webhookSecret: trimmedWebhookSecret || existing?.webhookSecret || "",
   });
 
   deps.logger.info("cloudshare connection saved", {
