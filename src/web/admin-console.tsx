@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useEffectEvent, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 interface AdminConsoleProps {
@@ -167,20 +167,16 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   const [connectionWarning, setConnectionWarning] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const loadExamTab = useEffectEvent(() => {
-    void loadExamCatalog();
-    void loadExamAuthoring();
-  });
-
   useEffect(() => {
     void loadConnection();
   }, []);
 
   useEffect(() => {
     if (tab === "exams") {
-      loadExamTab();
+      void loadExamCatalog();
+      void loadExamAuthoring();
     }
-  }, [tab, loadExamTab]);
+  }, [tab]);
 
   async function loadConnection() {
     const response = await fetch("/api/admin/cloudshare");
