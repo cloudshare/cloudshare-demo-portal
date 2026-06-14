@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { getServices } from "@/composition";
-import { handlePortalLogin, PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
+import {
+  handlePortalLogin,
+  PORTAL_SESSION_COOKIE,
+} from "@/api/portal-auth";
+import { DEFAULT_PORTAL_SESSION_TTL_MS } from "@/auth";
 
 export async function POST(request: Request) {
   const services = getServices();
@@ -47,6 +51,7 @@ export async function POST(request: Request) {
         sameSite: "lax",
         path: "/",
         secure: process.env.NODE_ENV === "production",
+        maxAge: Math.floor(DEFAULT_PORTAL_SESSION_TTL_MS / 1000),
       });
     }
     return nextResponse;
@@ -59,6 +64,7 @@ export async function POST(request: Request) {
       sameSite: "lax",
       path: "/",
       secure: process.env.NODE_ENV === "production",
+      maxAge: Math.floor(DEFAULT_PORTAL_SESSION_TTL_MS / 1000),
     });
   }
   return nextResponse;

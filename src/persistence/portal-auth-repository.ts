@@ -110,6 +110,12 @@ export function createPortalSessionStore(
         issuedAtMs: session.createdAt.getTime(),
       };
     },
+
+    async deleteById(sessionId: string): Promise<void> {
+      await prisma.portalSession.deleteMany({
+        where: { id: sessionId },
+      });
+    },
   };
 }
 

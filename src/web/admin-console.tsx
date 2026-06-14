@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 interface AdminConsoleProps {
   readonly email: string;
@@ -97,6 +98,7 @@ function formatSupportValue(value: unknown): string {
 }
 
 export function AdminConsole({ email }: AdminConsoleProps) {
+  const router = useRouter();
   const [tab, setTab] = useState<Tab>("connection");
   const [examAttemptFilter, setExamAttemptFilter] = useState("");
   const [auditRecords, setAuditRecords] = useState<AuditRecord[] | null>(null);
@@ -287,6 +289,17 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     }
   }
 
+  async function logout() {
+    setLoading(true);
+    setError(null);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      router.push("/login");
+      router.refresh();
+    }
+  }
+
   const hasSavedConnection = connection?.hasConnection ?? false;
   const isVerified = connection?.verifiedAt !== null && connection?.verifiedAt !== undefined;
   const connectionStatusLabel = isVerified
@@ -299,7 +312,12 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   return (
     <main style={{ fontFamily: "system-ui, sans-serif", padding: "2rem", maxWidth: "1000px", margin: "0 auto" }}>
       <h1 style={{ marginBottom: "0.35rem" }}>Certalis Admin Console</h1>
-      <p style={{ marginTop: 0, color: "#555" }}>Signed in as {email}</p>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", marginBottom: "0.75rem", flexWrap: "wrap" }}>
+        <p style={{ margin: 0, color: "#555" }}>Signed in as {email}</p>
+        <button onClick={logout} disabled={loading} style={{ padding: "0.55rem 0.9rem" }}>
+          Log out
+        </button>
+      </div>
 
       <nav style={{ display: "flex", gap: "0.75rem", marginBottom: "1.5rem", flexWrap: "wrap" }}>
         {(["connection", "audit", "events", "support", "resources"] as Tab[]).map((t) => (

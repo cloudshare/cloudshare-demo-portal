@@ -90,3 +90,17 @@ export async function handleGetPortalSession(
     session,
   };
 }
+
+export async function handlePortalLogout(
+  deps: PortalAuthDeps,
+  request: PortalAuthRequest,
+): Promise<PortalAuthResponse> {
+  if (request.sessionId) {
+    await deps.portalAuth.signOut(request.sessionId);
+  }
+
+  return {
+    status: 200,
+    body: { ok: true },
+  };
+}

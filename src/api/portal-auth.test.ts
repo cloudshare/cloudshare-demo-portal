@@ -4,11 +4,19 @@ import {
   createInMemoryPortalSessionStore,
   createInMemoryPortalUserStore,
 } from "@/auth";
-import { handleGetPortalSession, handlePortalLogin } from "./portal-auth";
+import {
+  handleGetPortalSession,
+  handlePortalLogin,
+  handlePortalLogout,
+} from "./portal-auth";
 
 async function makeDeps() {
   const passwordHash = await hashPassword("correct-horse-battery-staple");
+  let currentTime = 1_700_000_000_000;
   return {
+    advanceTime(ms: number) {
+      currentTime += ms;
+    },
     portalAuth: createPortalAuthenticator({
       users: createInMemoryPortalUserStore([
         {
@@ -20,8 +28,9 @@ async function makeDeps() {
         },
       ]),
       sessions: createInMemoryPortalSessionStore(),
-      now: () => 1_700_000_000_000,
+      now: () => currentTime,
       newSessionId: () => "portal-session-1",
+      sessionTtlMs: 60_000,
     }),
   };
 }
@@ -85,5 +94,47 @@ describe("handleGetPortalSession", () => {
         customerId: "customer-helios",
       },
     });
+  });
+
+  it("returns 401 for an expired portal session", async () => {
+    const deps = await makeDeps();
+    const login = await handlePortalLogin(deps, {
+      body: {
+        email: "admin@helioscx.demo",
+        password: "correct-horse-battery-staple",
+      },
+    });
+
+    deps.advanceTime(60_001);
+
+    const response = await handleGetPortalSession(deps, {
+      sessionId: login.session?.sessionId,
+    });
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({ error: "no portal session" });
+  });
+
+  it("signs the current portal session out", async () => {
+    const deps = await makeDeps();
+    const login = await handlePortalLogin(deps, {
+      body: {
+        email: "admin@helioscx.demo",
+        password: "correct-horse-battery-staple",
+      },
+    });
+
+    const logout = await handlePortalLogout(deps, {
+      sessionId: login.session?.sessionId,
+    });
+
+    expect(logout.status).toBe(200);
+    expect(logout.body).toEqual({ ok: true });
+
+    const resumed = await handleGetPortalSession(deps, {
+      sessionId: login.session?.sessionId,
+    });
+    expect(resumed.status).toBe(401);
+    expect(resumed.body).toEqual({ error: "no portal session" });
   });
 });

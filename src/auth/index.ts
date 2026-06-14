@@ -19,6 +19,7 @@ export {
 } from "./stores";
 export {
   createPortalAuthenticator,
+  DEFAULT_PORTAL_SESSION_TTL_MS,
   InvalidPortalCredentialsError,
   type PortalAuthenticator,
   type PortalAuthenticatorOptions,

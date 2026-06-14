@@ -55,4 +55,38 @@ describe("portalAuthenticator.signIn", () => {
       InvalidPortalCredentialsError,
     );
   });
+
+  it("expires a session after the configured timeout", async () => {
+    const passwordHash = await hashPassword("correct-horse-battery-staple");
+    let currentTime = 1_700_000_000_000;
+    const auth = createPortalAuthenticator({
+      users: createInMemoryPortalUserStore([
+        {
+          id: "user-1",
+          customerId: "customer-helios",
+          email: "admin@helios.example",
+          passwordHash,
+          role: "admin",
+        },
+      ]),
+      sessions: createInMemoryPortalSessionStore(),
+      now: () => currentTime,
+      newSessionId: () => "portal-session-1",
+      sessionTtlMs: 60_000,
+    });
+
+    const session = await auth.signIn("admin@helios.example", "correct-horse-battery-staple");
+    currentTime += 60_001;
+
+    await expect(auth.resume(session.sessionId)).resolves.toBeNull();
+  });
+
+  it("supports explicit sign-out", async () => {
+    const auth = await makeAuth();
+    const session = await auth.signIn("admin@helios.example", "correct-horse-battery-staple");
+
+    await auth.signOut(session.sessionId);
+
+    await expect(auth.resume(session.sessionId)).resolves.toBeNull();
+  });
 });

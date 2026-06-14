@@ -24,6 +24,7 @@ export interface PortalUserStore {
 export interface PortalSessionStore {
   save(session: PortalSession): Promise<void>;
   findById(sessionId: string): Promise<PortalSession | null>;
+  deleteById(sessionId: string): Promise<void>;
 }
 
 export function createInMemoryPortalUserStore(
@@ -45,6 +46,9 @@ export function createInMemoryPortalSessionStore(): PortalSessionStore & { reset
     },
     async findById(sessionId: string): Promise<PortalSession | null> {
       return sessions.get(sessionId) ?? null;
+    },
+    async deleteById(sessionId: string): Promise<void> {
+      sessions.delete(sessionId);
     },
     reset(): void {
       sessions.clear();

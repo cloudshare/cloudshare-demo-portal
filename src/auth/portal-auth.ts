@@ -16,6 +16,7 @@ export class InvalidPortalCredentialsError extends Error {
 export interface PortalAuthenticator {
   signIn(email: string, password: string): Promise<PortalSession>;
   resume(sessionId: string): Promise<PortalSession | null>;
+  signOut(sessionId: string): Promise<void>;
 }
 
 export interface PortalAuthenticatorOptions {
@@ -23,13 +24,17 @@ export interface PortalAuthenticatorOptions {
   readonly sessions: PortalSessionStore;
   readonly now?: () => number;
   readonly newSessionId?: () => string;
+  readonly sessionTtlMs?: number;
 }
+
+export const DEFAULT_PORTAL_SESSION_TTL_MS = 30 * 60 * 1000;
 
 export function createPortalAuthenticator(
   opts: PortalAuthenticatorOptions,
 ): PortalAuthenticator {
   const now = opts.now ?? Date.now;
   const newSessionId = opts.newSessionId ?? (() => randomUUID());
+  const sessionTtlMs = opts.sessionTtlMs ?? DEFAULT_PORTAL_SESSION_TTL_MS;
 
   return {
     async signIn(email: string, password: string): Promise<PortalSession> {
@@ -56,7 +61,21 @@ export function createPortalAuthenticator(
     },
 
     async resume(sessionId: string): Promise<PortalSession | null> {
-      return opts.sessions.findById(sessionId);
+      const session = await opts.sessions.findById(sessionId);
+      if (!session) {
+        return null;
+      }
+
+      if (now() - session.issuedAtMs >= sessionTtlMs) {
+        await opts.sessions.deleteById(sessionId);
+        return null;
+      }
+
+      return session;
+    },
+
+    async signOut(sessionId: string): Promise<void> {
+      await opts.sessions.deleteById(sessionId);
     },
   };
 }

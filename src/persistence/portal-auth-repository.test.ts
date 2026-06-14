@@ -58,4 +58,31 @@ describe("Prisma portal auth stores", () => {
 
     expect(resumed).toEqual(session);
   });
+
+  it("deletes a DB-backed session on sign-out", async () => {
+    const users = createPortalUserRepository(prisma);
+    const sessions = createPortalSessionStore(prisma);
+
+    const suffix = randomUUID();
+    const email = `admin-${suffix}@portal-auth.example`;
+    await users.upsertSeedUser({
+      customerSlug: `portal-auth-${suffix}`,
+      customerName: "Helios CX",
+      email,
+      passwordHash: await hashPassword("correct-horse-battery-staple"),
+      role: "admin",
+    });
+
+    const auth = createPortalAuthenticator({
+      users,
+      sessions,
+      now: () => 1_700_000_000_000,
+      newSessionId: () => `portal-session-${Date.now()}`,
+    });
+
+    const session = await auth.signIn(email, "correct-horse-battery-staple");
+    await auth.signOut(session.sessionId);
+
+    await expect(auth.resume(session.sessionId)).resolves.toBeNull();
+  });
 });
