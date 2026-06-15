@@ -97,8 +97,10 @@ export async function scheduleExam(
       projectId: exam.projectId,
       blueprintId: exam.blueprintId,
       policyId: exam.policyId,
-      regionId: exam.allowedRegions[0]?.id ?? "",
+      regionIds: exam.allowedRegions.map((region) => region.id),
       instructorId: exam.instructorId,
+      passphrase: `certalis-${attemptId}`,
+      timeZoneId: "UTC",
     });
     trainingId = training.trainingId;
   } catch (cause) {

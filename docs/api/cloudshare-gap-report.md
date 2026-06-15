@@ -512,36 +512,58 @@ live tenant.
 
 ---
 
-## GAP-16 — v4 training scheduling request body remains unverified without live tenant evidence
+## GAP-16 — v4 training scheduling request body requires PascalCase models
 
 | Field | Detail |
 |---|---|
-| **Status** | Unverified — implemented from repo source docs and discovery notes |
-| **Verified live** | No |
+| **Status** | Partially verified — live validation probes, successful creation still pending |
+| **Verified live** | Partial |
 
 **Observed behaviour**
 
-Slice 4 now provisions CloudShare scheduling through the corrected v4 training endpoints:
+Slice 4 provisions CloudShare scheduling through the corrected v4 training endpoints:
 
 - `POST /v4/trainings`
 - `POST /v4/trainings/{trainingId}/students`
 - `POST /v4/trainings/{trainingId}/sponsored-link`
 
-The current adapter assumes the create-training body includes at least:
+The first live UI scheduling attempt returned a v4 `400` from `POST /v4/trainings` because the
+adapter sent lower-camel placeholder fields. CloudShare reported these required fields as missing:
 
-- `title`
-- `start` as the candidate's scheduled ISO timestamp
-- `type: "instructorLed"`
-- `projectId`
-- `blueprintId`
-- `policyId`
-- `regionId`
-- `instructorId`
+- `Name`
+- `TeamId`
+- `TimeZone`
+- `Passphrase`
+- `BlueprintIds`
+- `MainInstructor`
+- `UsersEarlyAccess`
+- `CloudshareRegionIds`
 
-The participant-add body is assumed to be `{ email, firstName, lastName }`, and the sponsored-link
-body is assumed to accept the same participant fields. These shapes are based on the issue/PRD
-requirements plus the May 28 2026 discovery email and have fixture coverage, but they have **not**
-yet been confirmed by a live training-provisioning run in this repo.
+Follow-up invalid-ID probes against the live v4 endpoint confirmed that the create-training body is
+bound as a PascalCase model. `MainInstructor` must be an object, not a string; `{ Email: <email> }`
+passes JSON conversion. `UsersEarlyAccess` must be an object with numeric enum field
+`GrantEarlyAccess`; string enum names do not bind. `GET /api/v3/timezones` returned `200` and
+included a UTC entry. `GET /api/v3/teams` returned `200`, but observed items exposed only `id` and
+`name`, with no Project linkage, so `TeamId` semantics remain unclear.
+
+The current adapter sends:
+
+- `Name`
+- `Start` as the candidate's scheduled ISO timestamp
+- `Type: "instructorLed"`
+- `ProjectId`
+- `TeamId` (currently populated from the selected Project ID until CloudShare confirms the field)
+- `BlueprintIds: [blueprintId]`
+- `PolicyId`
+- `CloudshareRegionIds: allowedRegionIds[]`
+- `MainInstructor: { Email: configuredInstructorId }`
+- `TimeZone: "UTC"`
+- `Passphrase`
+- `UsersEarlyAccess: { GrantEarlyAccess: 2 }` (modelled on v3 "No early access allowed")
+
+The participant-add body is still assumed to be `{ email, firstName, lastName }`, and the
+sponsored-link body is assumed to accept the same participant fields. These sub-resource shapes
+still require a successful live scheduling run.
 
 **Impact on certification use**
 
@@ -551,9 +573,10 @@ yet been confirmed by a live training-provisioning run in this repo.
   candidate-safe responses and admin-visible diagnostics, but the slice still requires live UI
   verification before merge.
 
-**Action required:** run the real candidate scheduling flow against the live tenant, confirm the
-accepted request/response shapes, and update this entry immediately if any field names, required
-fields, or path semantics differ.
+**Action required:** rerun the real candidate scheduling flow against the live tenant, confirm
+whether `TeamId` must be a Project ID or a Team ID, confirm whether `MainInstructor.Email` should
+come from the configured instructor email rather than an opaque member ID, and update this entry
+immediately if any field names, required fields, enum values, or path semantics differ.
 
 **Code reference:** `src/integrations/cloudshare/labs.ts`, `src/domain/scheduling.ts`
 

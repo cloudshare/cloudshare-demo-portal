@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import {
   loadCandidateDashboard,
   scheduleCandidateExam,
+  shouldShowNoPublishedExams,
+  shouldShowPublishedExamList,
   type CandidateDashboardData,
 } from "./candidate-scheduling";
 
@@ -119,11 +121,11 @@ export function CandidateHome({ email }: CandidateHomeProps) {
         {loading && <p style={{ margin: 0 }}>Loading candidate dashboard...</p>}
         {error && <p style={{ margin: 0, color: "#b00020" }}>{error}</p>}
         {coldStartNotice && <p style={{ margin: 0, color: "#7a4b00" }}>{coldStartNotice}</p>}
-        {!loading && !error && dashboard.exams.length === 0 && (
+        {!error && shouldShowNoPublishedExams({ loading, examCount: dashboard.exams.length }) && (
           <p style={{ margin: 0 }}>No published Exams are available yet.</p>
         )}
 
-        {!loading && !error && dashboard.exams.length > 0 && (
+        {shouldShowPublishedExamList({ loading, examCount: dashboard.exams.length }) && (
           <div style={{ display: "grid", gap: "0.9rem" }}>
             {dashboard.exams.map((exam) => {
               const attempt = attemptForExam(exam.id);

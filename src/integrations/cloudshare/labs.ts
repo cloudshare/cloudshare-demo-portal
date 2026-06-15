@@ -18,9 +18,9 @@ import type {
  * Zod-validated responses; failures surface as the adapter's typed CloudShareErrors.
  *
  * NOTE (assumptions to verify against a live tenant, isolated behind this module):
- * the exact v4 paths/bodies below — `/trainings`, the participant-add shape, and
- * the sponsored-link body — are modelled on the documented Accelerate flow and
- * local discovery notes. Only this file changes if they differ.
+ * the exact v4 paths/bodies below are modelled on the documented Accelerate
+ * flow, the v3 class contract, and live 400 diagnostics. Only this file changes
+ * if the live v4 contract differs.
  */
 
 const experienceSchema = z.object({ id: z.string().min(1) });
@@ -36,14 +36,19 @@ export function createCloudShareLabProvisioner(
         method: "POST",
         path: "/trainings",
         body: {
-          title: input.title,
-          start: input.scheduledFor.toISOString(),
-          type: "instructorLed",
-          projectId: input.projectId,
-          blueprintId: input.blueprintId,
-          policyId: input.policyId,
-          regionId: input.regionId,
-          instructorId: input.instructorId,
+          Name: input.title,
+          Start: input.scheduledFor.toISOString(),
+          Type: "instructorLed",
+          ProjectId: input.projectId,
+          TeamId: input.projectId,
+          BlueprintIds: [input.blueprintId],
+          PolicyId: input.policyId,
+          CloudshareRegionIds: input.regionIds,
+          MainInstructor: { Email: input.instructorId },
+          TimeZone: input.timeZoneId,
+          Passphrase: input.passphrase,
+          // Matches the v3 class API value for "No early access allowed".
+          UsersEarlyAccess: { GrantEarlyAccess: 2 },
         },
         schema: experienceSchema,
       });

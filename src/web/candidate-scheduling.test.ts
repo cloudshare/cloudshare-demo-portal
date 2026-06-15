@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { loadCandidateDashboard, scheduleCandidateExam } from "./candidate-scheduling";
+import {
+  loadCandidateDashboard,
+  scheduleCandidateExam,
+  shouldShowNoPublishedExams,
+  shouldShowPublishedExamList,
+} from "./candidate-scheduling";
 
 describe("candidate scheduling client", () => {
   it("loads the candidate dashboard from the candidate exams API", async () => {
@@ -61,5 +66,10 @@ describe("candidate scheduling client", () => {
         }),
       ),
     ).rejects.toThrow(/loginUrl/);
+  });
+
+  it("keeps published exams visible when a scheduling error is shown", () => {
+    expect(shouldShowPublishedExamList({ loading: false, examCount: 1 })).toBe(true);
+    expect(shouldShowNoPublishedExams({ loading: false, examCount: 1 })).toBe(false);
   });
 });

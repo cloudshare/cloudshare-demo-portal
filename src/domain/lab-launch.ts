@@ -59,8 +59,10 @@ export interface CreateTrainingInput {
   readonly projectId: string;
   readonly blueprintId: string;
   readonly policyId: string;
-  readonly regionId: string;
+  readonly regionIds: readonly string[];
   readonly instructorId: string;
+  readonly passphrase: string;
+  readonly timeZoneId: string;
 }
 export interface CreateTrainingResult {
   readonly trainingId: string;

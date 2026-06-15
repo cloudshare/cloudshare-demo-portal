@@ -18,8 +18,10 @@ describe("cloudShareLabProvisioner — request shape", () => {
       projectId: "project-1",
       blueprintId: "bp-1",
       policyId: "policy-1",
-      regionId: "region-1",
-      instructorId: "instructor-1",
+      regionIds: ["region-1", "region-2"],
+      instructorId: "instructor@example.com",
+      passphrase: "certalis-attempt-1",
+      timeZoneId: "UTC",
     });
 
     expect(result).toEqual({ trainingId: "exp-1" });
@@ -30,14 +32,19 @@ describe("cloudShareLabProvisioner — request shape", () => {
     };
     expect(spec.method).toBe("POST");
     expect(spec.path).toBe("/trainings");
-    expect(spec.body).toMatchObject({
-      type: "instructorLed",
-      start: "2026-06-15T16:00:00.000Z",
-      projectId: "project-1",
-      blueprintId: "bp-1",
-      policyId: "policy-1",
-      regionId: "region-1",
-      instructorId: "instructor-1",
+    expect(spec.body).toEqual({
+      Name: "Exam GCP-ASSOC",
+      Start: "2026-06-15T16:00:00.000Z",
+      Type: "instructorLed",
+      ProjectId: "project-1",
+      TeamId: "project-1",
+      BlueprintIds: ["bp-1"],
+      PolicyId: "policy-1",
+      CloudshareRegionIds: ["region-1", "region-2"],
+      MainInstructor: { Email: "instructor@example.com" },
+      TimeZone: "UTC",
+      Passphrase: "certalis-attempt-1",
+      UsersEarlyAccess: { GrantEarlyAccess: 2 },
     });
   });
 
@@ -104,8 +111,10 @@ describe("cloudShareLabProvisioner — fixture mode (live/fixture parity)", () =
       projectId: "project-1",
       blueprintId: "bp-1",
       policyId: "policy-1",
-      regionId: "region-1",
-      instructorId: "instructor-1",
+      regionIds: ["region-1"],
+      instructorId: "instructor@example.com",
+      passphrase: "certalis-attempt-1",
+      timeZoneId: "UTC",
     });
     expect(trainingId).toBe("exp-demo-1");
 

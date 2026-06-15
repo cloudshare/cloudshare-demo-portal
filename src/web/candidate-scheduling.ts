@@ -30,6 +30,20 @@ export interface ScheduleCandidateExamResult {
   readonly correlationId: string;
 }
 
+export function shouldShowPublishedExamList(input: {
+  readonly loading: boolean;
+  readonly examCount: number;
+}): boolean {
+  return !input.loading && input.examCount > 0;
+}
+
+export function shouldShowNoPublishedExams(input: {
+  readonly loading: boolean;
+  readonly examCount: number;
+}): boolean {
+  return !input.loading && input.examCount === 0;
+}
+
 interface JsonResponse {
   readonly ok: boolean;
   json(): Promise<unknown>;
