@@ -35,7 +35,11 @@ export async function POST(request: Request) {
 
   if (!expectsJson) {
     const redirectUrl = new URL(
-      response.session ? "/admin" : "/login",
+      response.session
+        ? response.session.role === "admin"
+          ? "/admin"
+          : "/candidate"
+        : "/login",
       request.url,
     );
     if (!response.session) {

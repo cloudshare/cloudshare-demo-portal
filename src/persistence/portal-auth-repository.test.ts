@@ -85,4 +85,35 @@ describe("Prisma portal auth stores", () => {
 
     await expect(auth.resume(session.sessionId)).resolves.toBeNull();
   });
+
+  it("creates a Candidate user under an existing customer", async () => {
+    const users = createPortalUserRepository(prisma);
+
+    const suffix = randomUUID();
+    const customerSlug = `portal-auth-${suffix}`;
+    await users.upsertSeedUser({
+      customerSlug,
+      customerName: "Helios CX",
+      email: `admin-${suffix}@portal-auth.example`,
+      passwordHash: await hashPassword("correct-horse-battery-staple"),
+      role: "admin",
+    });
+
+    const customer = await users.findCustomerBySlug(customerSlug);
+    expect(customer).toMatchObject({ slug: customerSlug, name: "Helios CX" });
+
+    const candidate = await users.createUser({
+      customerId: customer!.id,
+      email: `candidate-${suffix}@portal-auth.example`,
+      passwordHash: await hashPassword("candidate-password"),
+      role: "candidate",
+    });
+
+    expect(candidate).toMatchObject({
+      customerId: customer!.id,
+      email: `candidate-${suffix}@portal-auth.example`,
+      role: "candidate",
+    });
+    await expect(users.findByEmail(candidate.email)).resolves.toEqual(candidate);
+  });
 });

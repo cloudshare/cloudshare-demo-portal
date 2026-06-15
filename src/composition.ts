@@ -87,6 +87,7 @@ export interface Services {
   heartbeats: HeartbeatRepository;
   candidateAuth: CandidateAuthenticator;
   portalAuth: PortalAuthenticator;
+  portalUsers: PortalUserRepository;
   kryterion: KryterionSimulator;
   genesys: ExamEligibilityProvider;
   examAttempts: ExamAttemptRepository;
@@ -365,6 +366,7 @@ export function getServices(): Services {
     heartbeats,
     candidateAuth,
     portalAuth,
+    portalUsers,
     kryterion,
     genesys,
     examAttempts,

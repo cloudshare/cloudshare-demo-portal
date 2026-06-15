@@ -204,6 +204,9 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   const [connectionCorrelationId, setConnectionCorrelationId] = useState<string | null>(null);
   const [connectionOccurredAt, setConnectionOccurredAt] = useState<string | null>(null);
   const [connectionWarning, setConnectionWarning] = useState<string | null>(null);
+  const [candidateEmail, setCandidateEmail] = useState("");
+  const [candidatePassword, setCandidatePassword] = useState("");
+  const [candidateMessage, setCandidateMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
@@ -757,6 +760,35 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     }
   }
 
+  async function createCandidate() {
+    setLoading(true);
+    setError(null);
+    setCandidateMessage(null);
+    try {
+      const response = await fetch("/api/admin/candidates", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: candidateEmail,
+          password: candidatePassword,
+        }),
+      });
+      const data = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        setError(data.error ?? "Failed to create Candidate");
+        return;
+      }
+
+      setCandidateEmail("");
+      setCandidatePassword("");
+      setCandidateMessage("Candidate account created.");
+    } catch {
+      setError("Failed to create Candidate");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   const hasSavedConnection = connection?.hasConnection ?? false;
   const isVerified = connection?.verifiedAt !== null && connection?.verifiedAt !== undefined;
   const connectionStatusLabel = isVerified
@@ -814,6 +846,41 @@ export function AdminConsole({ email }: AdminConsoleProps) {
           Log out
         </button>
       </div>
+      <section style={{ marginBottom: "1.5rem", padding: "1rem", background: "#f7f7f8", borderRadius: "6px", display: "grid", gap: "0.9rem" }}>
+        <div>
+          <h2 style={{ marginTop: 0, marginBottom: "0.35rem", fontSize: "1rem" }}>Provision Candidate</h2>
+          <p style={{ margin: 0, color: "#555" }}>
+            Create a Candidate account for Helios CX directly from the admin console.
+          </p>
+        </div>
+        <div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+          <label style={{ display: "grid", gap: "0.35rem" }}>
+            <span>Candidate email</span>
+            <input
+              value={candidateEmail}
+              onChange={(event) => setCandidateEmail(event.target.value)}
+              autoComplete="email"
+              style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
+            />
+          </label>
+          <label style={{ display: "grid", gap: "0.35rem" }}>
+            <span>Temporary password</span>
+            <input
+              type="password"
+              value={candidatePassword}
+              onChange={(event) => setCandidatePassword(event.target.value)}
+              autoComplete="new-password"
+              style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
+            />
+          </label>
+        </div>
+        <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+          <button onClick={() => void createCandidate()} disabled={loading}>
+            Create Candidate
+          </button>
+          {candidateMessage && <span style={{ color: "#0a7a28" }}>{candidateMessage}</span>}
+        </div>
+      </section>
 
       <nav style={{ display: "flex", gap: "0.75rem", marginBottom: "1.5rem", flexWrap: "wrap" }}>
         {(["connection", "exams", "audit", "events", "support", "resources"] as Tab[]).map((t) => (

@@ -1,5 +1,11 @@
 export type PortalUserRole = "admin" | "candidate";
 
+export interface PortalCustomerRecord {
+  readonly id: string;
+  readonly slug: string;
+  readonly name: string;
+}
+
 export interface PortalUserRecord {
   readonly id: string;
   readonly customerId: string;
@@ -19,6 +25,18 @@ export interface PortalSession {
 
 export interface PortalUserStore {
   findByEmail(email: string): Promise<PortalUserRecord | null>;
+}
+
+export interface CreatePortalUserInput {
+  readonly customerId: string;
+  readonly email: string;
+  readonly passwordHash: string;
+  readonly role: PortalUserRole;
+}
+
+export interface PortalUserProvisioningStore extends PortalUserStore {
+  findCustomerBySlug(slug: string): Promise<PortalCustomerRecord | null>;
+  createUser(input: CreatePortalUserInput): Promise<PortalUserRecord>;
 }
 
 export interface PortalSessionStore {
