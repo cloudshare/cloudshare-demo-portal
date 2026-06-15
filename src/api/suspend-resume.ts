@@ -60,6 +60,16 @@ interface FailureHandlingSpec {
   readonly logMessage: string;
 }
 
+class CustomerEnvironmentAccessError extends Error {
+  readonly context: Record<string, unknown>;
+
+  constructor(message: string, context: Record<string, unknown>) {
+    super(message);
+    this.name = "CustomerEnvironmentAccessError";
+    this.context = context;
+  }
+}
+
 // --- Suspend ---
 
 export interface SuspendHandlerDeps
@@ -194,18 +204,21 @@ async function resolveCustomerEnvironmentAccess(
 ): Promise<Pick<SuspendExamDeps, "controller" | "source">> {
   const attempt = await deps.attempts.findById(examAttemptId);
   if (!attempt?.customerId) {
-    return {
-      controller: deps.controller,
-      source: deps.source,
-    };
+    throw new CustomerEnvironmentAccessError(
+      "Exam attempt is missing a Customer CloudShare connection binding.",
+      { examAttemptId },
+    );
   }
 
   const connection = await deps.connections.findByCustomerId(attempt.customerId);
   if (!connection) {
-    return {
-      controller: deps.controller,
-      source: deps.source,
-    };
+    throw new CustomerEnvironmentAccessError(
+      "No stored CloudShare connection exists for the exam attempt customer.",
+      {
+        examAttemptId,
+        customerId: attempt.customerId,
+      },
+    );
   }
 
   const client = deps.cloudshare.forConnection(connection);
@@ -273,6 +286,28 @@ async function reportFailureDiagnostic(
   examAttemptId: string,
   spec: FailureHandlingSpec,
 ): Promise<SuspendResumeResponse | null> {
+  if (err instanceof CustomerEnvironmentAccessError) {
+    const correlationId = (deps.newCorrelationId ?? randomUUID)();
+    const diagnostic = {
+      correlationId,
+      examAttemptId,
+      operation: spec.operation,
+      attemptedOperation: "load_customer_cloudshare_connection",
+      integrationSurface: "cloudshare.connection",
+      failureMode: "missing_customer_connection",
+      error: err.message,
+      ...err.context,
+    };
+    await deps.eventLog.append({
+      eventId: correlationId,
+      type: spec.eventType,
+      occurredAt: (deps.now ?? (() => new Date()))(),
+      payload: diagnostic,
+    });
+    deps.logger.warn(spec.logMessage, diagnostic);
+    return { status: 502, body: { error: `exam ${spec.action} failed`, correlationId } };
+  }
+
   if (err instanceof TimerSyncError) {
     const correlationId = (deps.newCorrelationId ?? randomUUID)();
     const diagnostic = buildTimerSyncDiagnostic(

@@ -220,6 +220,24 @@ async function makeAttemptsFor(
   return attempts;
 }
 
+async function makeAttemptsWithCustomer(
+  examAttemptId: string,
+  status: "ready" | "scheduled" | "in_progress" | "suspended" | "completed" | "expired",
+  customerId: string | null,
+) {
+  const attempts = createInMemoryExamAttemptRepository();
+  await attempts.save({
+    id: examAttemptId,
+    customerId: customerId ?? undefined,
+    candidateId: "cand-1",
+    examId: "exam-1",
+    status,
+    scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+    createdAt: new Date("2026-06-15T10:00:00.000Z"),
+  });
+  return attempts;
+}
+
 async function makeSuspendDeps(overrides: Partial<SuspendHandlerDeps> = {}): Promise<SuspendHandlerDeps> {
   return {
     controller: makeController(),
@@ -472,22 +490,63 @@ describe("handleSuspendExam", () => {
     });
   });
 
-  it("returns 502 with supportable diagnostics when CloudShare suspend returns an http status error", async () => {
+  it("returns 502 with diagnostics and does not touch global adapters when the customer CloudShare connection is missing", async () => {
+    const globalController = {
+      suspendEnvironment: vi.fn().mockResolvedValue(undefined),
+      resumeEnvironment: vi.fn().mockResolvedValue(undefined),
+    };
+    const globalSource = {
+      getEnvironmentState: vi.fn().mockResolvedValue({ environmentExternalId: "env-1", status: "suspended" }),
+    };
+    const cloudshare = {
+      forConnection: vi.fn(),
+    } satisfies CloudShareClientFactory;
     const deps = await makeSuspendDeps({
-        connections: makeConnections(null),
-        controller: {
-          suspendEnvironment: () =>
-            Promise.reject(
-              new CloudShareRequestError("forbidden", 403, {
-                integrationSurface: "cloudshare.v3.env.action.suspend",
-                method: "PUT",
-                path: "/api/v3/envs/actions/suspend",
-                responseBody: "{\"error\":\"forbidden\"}",
-              }),
-            ),
-          resumeEnvironment: () => Promise.resolve(),
-        },
-      });
+      controller: globalController,
+      source: globalSource,
+      connections: makeConnections(null),
+      cloudshare,
+    });
+
+    const resp = await handleSuspendExam(deps, { body: { examAttemptId: "ea-1" } });
+
+    expect(resp.status).toBe(502);
+    expect(resp.body).toEqual({ error: "exam suspend failed", correlationId: "corr-suspend" });
+    expect(cloudshare.forConnection).not.toHaveBeenCalled();
+    expect(globalController.suspendEnvironment).not.toHaveBeenCalled();
+    expect(globalSource.getEnvironmentState).not.toHaveBeenCalled();
+    expect(deps.eventLog.append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventId: "corr-suspend",
+        type: "cloudshare.exam_suspend.failed",
+        payload: expect.objectContaining({
+          correlationId: "corr-suspend",
+          operation: "exam_suspend",
+          attemptedOperation: "load_customer_cloudshare_connection",
+          integrationSurface: "cloudshare.connection",
+          failureMode: "missing_customer_connection",
+          customerId: "customer-1",
+        }),
+      }),
+    );
+  });
+
+  it("returns 502 with supportable diagnostics when CloudShare suspend returns an http status error", async () => {
+    const customerClient = makeCloudShareClient({
+      requestV3: vi.fn(async () => {
+        throw new CloudShareRequestError("forbidden", 403, {
+          integrationSurface: "cloudshare.v3.env.action.suspend",
+          method: "PUT",
+          path: "/api/v3/envs/actions/suspend",
+          responseBody: "{\"error\":\"forbidden\"}",
+        });
+      }) as unknown as CloudShareClient["requestV3"],
+    });
+    const deps = await makeSuspendDeps({
+      cloudshare: {
+        forConnection: vi.fn().mockReturnValue(customerClient),
+      },
+    });
     const resp = await handleSuspendExam(
       deps,
       { body: { examAttemptId: "ea-1" } },
@@ -512,12 +571,15 @@ describe("handleSuspendExam", () => {
   });
 
   it("returns 500 on an unexpected error", async () => {
+    const customerClient = makeCloudShareClient({
+      requestV3: vi.fn(async () => {
+        throw new Error("unexpected");
+      }) as unknown as CloudShareClient["requestV3"],
+    });
     const resp = await handleSuspendExam(
       await makeSuspendDeps({
-        connections: makeConnections(null),
-        controller: {
-          suspendEnvironment: () => Promise.reject(new Error("unexpected")),
-          resumeEnvironment: () => Promise.resolve(),
+        cloudshare: {
+          forConnection: vi.fn().mockReturnValue(customerClient),
         },
       }),
       { body: { examAttemptId: "ea-1" } },
@@ -612,20 +674,60 @@ describe("handleResumeExam", () => {
     });
   });
 
-  it("returns 502 with transport diagnostics when CloudShare resume transport fails", async () => {
+  it("returns 502 with diagnostics and does not touch global adapters when the exam attempt has no customer binding", async () => {
+    const globalController = {
+      suspendEnvironment: vi.fn().mockResolvedValue(undefined),
+      resumeEnvironment: vi.fn().mockResolvedValue(undefined),
+    };
+    const globalSource = {
+      getEnvironmentState: vi.fn().mockResolvedValue({ environmentExternalId: "env-1", status: "running" }),
+    };
+    const cloudshare = {
+      forConnection: vi.fn(),
+    } satisfies CloudShareClientFactory;
     const deps = await makeResumeDeps({
-      connections: makeConnections(null),
-      controller: {
-        suspendEnvironment: () => Promise.resolve(),
-        resumeEnvironment: () =>
-          Promise.reject(
-            new CloudShareTransportError("network down", {
-              integrationSurface: "cloudshare.v3.env.action.resume",
-              method: "POST",
-              path: "/api/v3/envs/actions/resume",
-              cause: "ECONNRESET",
-            }),
-          ),
+      controller: globalController,
+      source: globalSource,
+      attempts: await makeAttemptsWithCustomer("ea-1", "suspended", null),
+      cloudshare,
+    });
+
+    const resp = await handleResumeExam(deps, { body: { examAttemptId: "ea-1" } });
+
+    expect(resp.status).toBe(502);
+    expect(resp.body).toEqual({ error: "exam resume failed", correlationId: "corr-resume" });
+    expect(cloudshare.forConnection).not.toHaveBeenCalled();
+    expect(globalController.resumeEnvironment).not.toHaveBeenCalled();
+    expect(globalSource.getEnvironmentState).not.toHaveBeenCalled();
+    expect(deps.eventLog.append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventId: "corr-resume",
+        type: "cloudshare.exam_resume.failed",
+        payload: expect.objectContaining({
+          correlationId: "corr-resume",
+          operation: "exam_resume",
+          attemptedOperation: "load_customer_cloudshare_connection",
+          integrationSurface: "cloudshare.connection",
+          failureMode: "missing_customer_connection",
+        }),
+      }),
+    );
+  });
+
+  it("returns 502 with transport diagnostics when CloudShare resume transport fails", async () => {
+    const customerClient = makeCloudShareClient({
+      requestV3: vi.fn(async () => {
+        throw new CloudShareTransportError("network down", {
+          integrationSurface: "cloudshare.v3.env.action.resume",
+          method: "POST",
+          path: "/api/v3/envs/actions/resume",
+          cause: "ECONNRESET",
+        });
+      }) as unknown as CloudShareClient["requestV3"],
+    });
+    const deps = await makeResumeDeps({
+      cloudshare: {
+        forConnection: vi.fn().mockReturnValue(customerClient),
       },
     });
     const resp = await handleResumeExam(
@@ -649,20 +751,20 @@ describe("handleResumeExam", () => {
   });
 
   it("returns 502 with response-shape diagnostics when CloudShare resume returns an unexpected payload", async () => {
+    const customerClient = makeCloudShareClient({
+      requestV3: vi.fn(async () => {
+        throw new CloudShareResponseError("schema mismatch", {
+          integrationSurface: "cloudshare.v3.env.action.resume",
+          method: "PUT",
+          path: "/api/v3/envs/actions/resume",
+          responseBody: "{\"bad\":true}",
+          issues: ["Required"],
+        });
+      }) as unknown as CloudShareClient["requestV3"],
+    });
     const deps = await makeResumeDeps({
-      connections: makeConnections(null),
-      controller: {
-        suspendEnvironment: () => Promise.resolve(),
-        resumeEnvironment: () =>
-          Promise.reject(
-            new CloudShareResponseError("schema mismatch", {
-              integrationSurface: "cloudshare.v3.env.action.resume",
-              method: "PUT",
-              path: "/api/v3/envs/actions/resume",
-              responseBody: "{\"bad\":true}",
-              issues: ["Required"],
-            }),
-          ),
+      cloudshare: {
+        forConnection: vi.fn().mockReturnValue(customerClient),
       },
     });
     const resp = await handleResumeExam(
@@ -685,12 +787,15 @@ describe("handleResumeExam", () => {
   });
 
   it("returns 500 on an unexpected error", async () => {
+    const customerClient = makeCloudShareClient({
+      requestV3: vi.fn(async () => {
+        throw new Error("boom");
+      }) as unknown as CloudShareClient["requestV3"],
+    });
     const resp = await handleResumeExam(
       await makeResumeDeps({
-        connections: makeConnections(null),
-        controller: {
-          suspendEnvironment: () => Promise.resolve(),
-          resumeEnvironment: () => Promise.reject(new Error("boom")),
+        cloudshare: {
+          forConnection: vi.fn().mockReturnValue(customerClient),
         },
       }),
       { body: { examAttemptId: "ea-1" } },
@@ -801,11 +906,14 @@ describe("runHeartbeatAutoSuspend", () => {
   ])(
     "appends an admin-visible diagnostic and rethrows on %s",
     async (_label, error, expectedPayload) => {
+      const customerClient = makeCloudShareClient({
+        requestV3: vi.fn(async () => {
+          throw error;
+        }) as unknown as CloudShareClient["requestV3"],
+      });
       const deps = await makeSuspendDeps({
-        connections: makeConnections(null),
-        controller: {
-          suspendEnvironment: () => Promise.reject(error),
-          resumeEnvironment: () => Promise.resolve(),
+        cloudshare: {
+          forConnection: vi.fn().mockReturnValue(customerClient),
         },
       });
 
@@ -823,6 +931,55 @@ describe("runHeartbeatAutoSuspend", () => {
       );
     },
   );
+
+  it("appends a missing-connection diagnostic and does not call global adapters when the customer connection is unavailable", async () => {
+    const globalController = {
+      suspendEnvironment: vi.fn().mockResolvedValue(undefined),
+      resumeEnvironment: vi.fn().mockResolvedValue(undefined),
+    };
+    const globalSource = {
+      getEnvironmentState: vi.fn().mockResolvedValue({ environmentExternalId: "env-1", status: "suspended" }),
+    };
+    const cloudshare = {
+      forConnection: vi.fn(),
+    } satisfies CloudShareClientFactory;
+    const deps = await makeSuspendDeps({
+      controller: globalController,
+      source: globalSource,
+      connections: makeConnections(null),
+      cloudshare,
+    });
+
+    await expect(runHeartbeatAutoSuspend(deps, "ea-1")).rejects.toMatchObject({
+      name: "CustomerEnvironmentAccessError",
+    });
+    expect(cloudshare.forConnection).not.toHaveBeenCalled();
+    expect(globalController.suspendEnvironment).not.toHaveBeenCalled();
+    expect(globalSource.getEnvironmentState).not.toHaveBeenCalled();
+    expect(deps.eventLog.append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventId: "corr-suspend",
+        type: "cloudshare.heartbeat_auto_suspend.failed",
+        payload: expect.objectContaining({
+          correlationId: "corr-suspend",
+          operation: "heartbeat_auto_suspend",
+          attemptedOperation: "load_customer_cloudshare_connection",
+          integrationSurface: "cloudshare.connection",
+          failureMode: "missing_customer_connection",
+          customerId: "customer-1",
+        }),
+      }),
+    );
+    expect(deps.logger.warn).toHaveBeenCalledWith(
+      "heartbeat auto-suspend failed",
+      expect.objectContaining({
+        correlationId: "corr-suspend",
+        operation: "heartbeat_auto_suspend",
+        attemptedOperation: "load_customer_cloudshare_connection",
+        failureMode: "missing_customer_connection",
+      }),
+    );
+  });
 
   it("appends a timeout diagnostic and rethrows when confirmation polling never reaches suspended", async () => {
     const deps = await makeSuspendDeps({
