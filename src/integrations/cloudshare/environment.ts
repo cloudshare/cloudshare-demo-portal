@@ -8,16 +8,20 @@ import { CloudShareRequestError } from "./errors";
  * flow drives off. Webhooks only *hint* that something changed; this is what
  * actually reads the truth from CloudShare and maps it onto the domain vocabulary.
  *
- * NOTE (assumptions to verify against a live tenant — isolated behind this module,
- * tracked in the Slice 12 gap report):
- *  - The v3 path/shape below. We correlate by the `externalId` we set at experience
- *    creation; the exact v3 endpoint that resolves an environment by external id is
- *    a known gap. Only this file changes when it is confirmed.
- *  - CloudShare's environment status strings; {@link mapCloudShareEnvironmentStatus}
- *    folds them onto the domain set, defaulting to `unknown` rather than guessing.
+ * Live training launches discover CloudShare's own `envId` from the v4
+ * training-students list. That `envId` is then used for the authoritative v3
+ * environment poll here. All endpoint/path/shape quirks stay isolated in this
+ * adapter.
  */
 
-const v3EnvironmentSchema = z.object({ status: z.string().min(1) });
+const v3EnvironmentSchema = z
+  .object({
+    status: z.string().min(1).optional(),
+    envStatus: z.string().min(1).optional(),
+  })
+  .refine((value) => typeof value.status === "string" || typeof value.envStatus === "string", {
+    message: "Expected CloudShare environment status field",
+  });
 
 /** Fold a raw CloudShare status string onto the domain {@link EnvironmentStatus}. */
 export function mapCloudShareEnvironmentStatus(raw: string): EnvironmentStatus {
@@ -55,13 +59,12 @@ export function createCloudShareEnvironmentSource(
       try {
         const env = await client.requestV3({
           method: "GET",
-          path: "/environments",
-          query: { externalId: environmentExternalId },
+          path: `/envs/${environmentExternalId}`,
           schema: v3EnvironmentSchema,
         });
         return {
           environmentExternalId,
-          status: mapCloudShareEnvironmentStatus(env.status),
+          status: mapCloudShareEnvironmentStatus(env.envStatus ?? env.status ?? "unknown"),
         };
       } catch (err) {
         // A 404 means "no such environment" — a legitimate null, not a failure.

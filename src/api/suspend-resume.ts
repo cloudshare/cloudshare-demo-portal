@@ -21,6 +21,8 @@ import {
   CloudShareResponseError,
   CloudShareTransportError,
 } from "@/integrations/cloudshare";
+import { createCloudShareEnvironmentController } from "@/integrations/cloudshare/environment-controller";
+import { createCloudShareEnvironmentSource } from "@/integrations/cloudshare/environment";
 import { ensureExamAttemptEnvironmentCorrelation } from "./exam-attempt-environment-correlation";
 
 /**
@@ -79,7 +81,13 @@ export async function handleSuspendExam(
       examAttemptId,
       operation: "exam_suspend",
     });
-    await suspendExam(deps, { examAttemptId });
+    await suspendExam(
+      {
+        ...deps,
+        ...(await resolveCustomerEnvironmentAccess(deps, examAttemptId)),
+      },
+      { examAttemptId },
+    );
     deps.logger.info("exam suspended", { examAttemptId });
     return { status: 200, body: { status: "suspended", examAttemptId } };
   } catch (err) {
@@ -113,7 +121,13 @@ export async function handleResumeExam(
       examAttemptId,
       operation: "exam_resume",
     });
-    const result = await resumeExam(deps, { examAttemptId });
+    const result = await resumeExam(
+      {
+        ...deps,
+        ...(await resolveCustomerEnvironmentAccess(deps, examAttemptId)),
+      },
+      { examAttemptId },
+    );
     deps.logger.info("exam resumed", {
       examAttemptId,
       environmentExternalId: result.environmentExternalId,
@@ -141,7 +155,13 @@ export async function runHeartbeatAutoSuspend(
       examAttemptId,
       operation: "heartbeat_auto_suspend",
     });
-    await suspendExam(deps, { examAttemptId });
+    await suspendExam(
+      {
+        ...deps,
+        ...(await resolveCustomerEnvironmentAccess(deps, examAttemptId)),
+      },
+      { examAttemptId },
+    );
   } catch (err) {
     await reportFailureDiagnostic(
       deps,
@@ -166,6 +186,33 @@ function extractExamAttemptId(body: unknown): string | null {
   return typeof examAttemptId === "string" && examAttemptId.trim().length > 0
     ? examAttemptId.trim()
     : null;
+}
+
+async function resolveCustomerEnvironmentAccess(
+  deps: SuspendHandlerDeps | ResumeHandlerDeps | HeartbeatAutoSuspendHandlerDeps,
+  examAttemptId: string,
+): Promise<Pick<SuspendExamDeps, "controller" | "source">> {
+  const attempt = await deps.attempts.findById(examAttemptId);
+  if (!attempt?.customerId) {
+    return {
+      controller: deps.controller,
+      source: deps.source,
+    };
+  }
+
+  const connection = await deps.connections.findByCustomerId(attempt.customerId);
+  if (!connection) {
+    return {
+      controller: deps.controller,
+      source: deps.source,
+    };
+  }
+
+  const client = deps.cloudshare.forConnection(connection);
+  return {
+    controller: createCloudShareEnvironmentController(client),
+    source: createCloudShareEnvironmentSource(client),
+  };
 }
 
 async function handleTimerSyncError(
@@ -279,12 +326,12 @@ function buildTimerSyncDiagnostic(
     examAttemptId,
     operation,
     attemptedOperation: "poll_environment_status",
-    integrationSurface: "cloudshare.v3.environment",
+    integrationSurface: "cloudshare.v3.env",
     method: "GET",
     path:
       typeof err.context?.environmentExternalId === "string"
-        ? `/api/v3/environments?externalId=${err.context.environmentExternalId}`
-        : "/api/v3/environments?externalId={environmentExternalId}",
+        ? `/api/v3/envs/${err.context.environmentExternalId}`
+        : "/api/v3/envs/{envId}",
     failureMode: "confirmation_timeout",
     error: err.message,
     ...(err.context ?? {}),
@@ -302,21 +349,21 @@ function buildCloudShareDiagnostic(
     action === "suspend"
       ? {
           attemptedOperation: "suspend_environment",
-          integrationSurface: "cloudshare.v4.environment.action.suspend",
-          method: "POST",
+          integrationSurface: "cloudshare.v3.env.action.suspend",
+          method: "PUT",
           path:
             typeof err.context?.environmentExternalId === "string"
-              ? `/v4/environments/${err.context.environmentExternalId}/actions/suspend`
-              : "/v4/environments/{environmentExternalId}/actions/suspend",
+              ? `/api/v3/envs/actions/suspend?envId=${err.context.environmentExternalId}`
+              : "/api/v3/envs/actions/suspend?envId={envId}",
         }
       : {
           attemptedOperation: "resume_environment",
-          integrationSurface: "cloudshare.v4.environment.action.resume",
-          method: "POST",
+          integrationSurface: "cloudshare.v3.env.action.resume",
+          method: "PUT",
           path:
             typeof err.context?.environmentExternalId === "string"
-              ? `/v4/environments/${err.context.environmentExternalId}/actions/resume`
-              : "/v4/environments/{environmentExternalId}/actions/resume",
+              ? `/api/v3/envs/actions/resume?envId=${err.context.environmentExternalId}`
+              : "/api/v3/envs/actions/resume?envId={envId}",
         };
 
   const base = {

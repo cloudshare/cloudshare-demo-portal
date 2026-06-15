@@ -7,7 +7,7 @@ import {
 import type { SuspendHandlerDeps, ResumeHandlerDeps } from "./suspend-resume";
 import type { ExamTimer, EnvironmentController } from "@/domain/timer-sync";
 import type { EnvironmentStateSource } from "@/domain/environment";
-import type { LabLaunchRepository, LabProvisioner } from "@/domain/lab-launch";
+import type { LabLaunch, LabLaunchRepository, LabProvisioner } from "@/domain/lab-launch";
 import type { Logger } from "@/observability/logger";
 import type {
   CloudShareClientFactory,
@@ -21,6 +21,7 @@ import {
   CloudShareResponseError,
   CloudShareTransportError,
 } from "@/integrations/cloudshare";
+import type { CloudShareClient } from "@/integrations/cloudshare";
 
 const noSleep = () => Promise.resolve();
 
@@ -44,7 +45,7 @@ const launch = {
   createdAt: new Date(),
 };
 
-function makeLaunches(found: (typeof launch & { environmentId?: string; participantEmail?: string; trainingId?: string }) | null = launch): LabLaunchRepository {
+function makeLaunches(found: LabLaunch | null = launch): LabLaunchRepository {
   const launches = createInMemoryLabLaunchRepository();
   if (found) {
     void launches.save(found);
@@ -123,6 +124,71 @@ function makeCloudShareFactory(overrides: Partial<ReturnType<CloudShareClientFac
   };
 }
 
+function makeSuspendCloudShareFactory(): CloudShareClientFactory {
+  return {
+    forConnection: () =>
+      makeCloudShareClient({
+        requestV3: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+          if (spec.path === "/envs/actions/suspend") {
+            return spec.schema.parse({});
+          }
+          if (spec.path.startsWith("/envs/")) {
+            return spec.schema.parse({ envStatus: "Suspended" });
+          }
+          throw new Error(`unexpected v3 path ${spec.path}`);
+        }) as unknown as CloudShareClient["requestV3"],
+        requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+          if (spec.path === "/trainings/training-1/students") {
+            return spec.schema.parse([
+              {
+                email: "candidate@helioscx.demo",
+                environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+              },
+            ]);
+          }
+          throw new Error(`unexpected v4 path ${spec.path}`);
+        }) as unknown as CloudShareClient["requestV4"],
+      }),
+  };
+}
+
+function makeResumeCloudShareFactory(): CloudShareClientFactory {
+  return {
+    forConnection: () =>
+      makeCloudShareClient({
+        requestV3: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+          if (spec.path === "/envs/actions/resume") {
+            return spec.schema.parse({});
+          }
+          if (spec.path.startsWith("/envs/")) {
+            return spec.schema.parse({ envStatus: "Running" });
+          }
+          throw new Error(`unexpected v3 path ${spec.path}`);
+        }) as unknown as CloudShareClient["requestV3"],
+        requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+          if (spec.path === "/trainings/training-1/students") {
+            return spec.schema.parse([
+              {
+                email: "candidate@helioscx.demo",
+                environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+              },
+            ]);
+          }
+          throw new Error(`unexpected v4 path ${spec.path}`);
+        }) as unknown as CloudShareClient["requestV4"],
+      }),
+  };
+}
+
+function makeCloudShareClient(overrides: Partial<CloudShareClient> = {}): CloudShareClient {
+  return {
+    requestV3: vi.fn(),
+    requestV3Text: vi.fn(),
+    requestV4: vi.fn(),
+    ...overrides,
+  } as CloudShareClient;
+}
+
 async function makeAttempts(status: "ready" | "in_progress" | "suspended" = "ready") {
   const attempts = createInMemoryExamAttemptRepository();
   await attempts.save({
@@ -165,7 +231,7 @@ async function makeSuspendDeps(overrides: Partial<SuspendHandlerDeps> = {}): Pro
     logger: makeLogger(),
     eventLog: { append: vi.fn().mockResolvedValue(undefined), listAll: vi.fn() },
     connections: makeConnections(),
-    cloudshare: makeCloudShareFactory(),
+    cloudshare: makeSuspendCloudShareFactory(),
     newCorrelationId: () => "corr-suspend",
     now: () => new Date("2026-06-15T10:10:00.000Z"),
     ...overrides,
@@ -184,7 +250,7 @@ async function makeResumeDeps(overrides: Partial<ResumeHandlerDeps> = {}): Promi
     logger: makeLogger(),
     eventLog: { append: vi.fn().mockResolvedValue(undefined), listAll: vi.fn() },
     connections: makeConnections(),
-    cloudshare: makeCloudShareFactory(),
+    cloudshare: makeResumeCloudShareFactory(),
     newCorrelationId: () => "corr-resume",
     now: () => new Date("2026-06-15T10:10:00.000Z"),
     ...overrides,
@@ -219,6 +285,69 @@ describe("handleSuspendExam", () => {
     expect(resp.body.examAttemptId).toBe("ea-1");
   });
 
+  it("uses the attempt customer's CloudShare connection and envId semantics, not the global environment adapter", async () => {
+    const globalController = {
+      suspendEnvironment: vi.fn().mockResolvedValue(undefined),
+      resumeEnvironment: vi.fn().mockResolvedValue(undefined),
+    };
+    const globalSource = {
+      getEnvironmentState: vi.fn().mockResolvedValue({ environmentExternalId: "portal-ext-1", status: "suspended" }),
+    };
+    const customerClient = makeCloudShareClient({
+      requestV3: vi
+        .fn()
+        .mockResolvedValueOnce({})
+        .mockResolvedValue({ envStatus: "Suspended" }),
+      requestV4: vi.fn(),
+    });
+    const cloudshare = {
+      forConnection: vi.fn().mockReturnValue(customerClient),
+    } satisfies CloudShareClientFactory;
+
+    const resp = await handleSuspendExam(
+      await makeSuspendDeps({
+        controller: globalController,
+        source: globalSource,
+        cloudshare,
+        launches: makeLaunches({
+          id: "launch-1",
+          examAttemptId: "ea-1",
+          candidateId: "cand-1",
+          experienceId: "training-1",
+          trainingId: "training-1",
+          participantEmail: "candidate@helioscx.demo",
+          environmentExternalId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+          loginUrl: "https://old.lab.url",
+          status: "launched",
+          createdAt: new Date(),
+        }),
+      }),
+      { body: { examAttemptId: "ea-1" } },
+    );
+
+    expect(resp.status).toBe(200);
+    expect(cloudshare.forConnection).toHaveBeenCalledWith(
+      expect.objectContaining({ customerId: "customer-1" }),
+    );
+    expect(customerClient.requestV3).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        method: "PUT",
+        path: "/envs/actions/suspend",
+        query: { envId: "ENVS2n38LTNdcC4sHsqnjRzg2" },
+      }),
+    );
+    expect(customerClient.requestV3).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        method: "GET",
+        path: "/envs/ENVS2n38LTNdcC4sHsqnjRzg2",
+      }),
+    );
+    expect(globalController.suspendEnvironment).not.toHaveBeenCalled();
+    expect(globalSource.getEnvironmentState).not.toHaveBeenCalled();
+  });
+
   it("discovers the training participant environment ID before suspend when the launch was created without one", async () => {
     const launches = makeLaunches({
       id: "launch-1",
@@ -231,21 +360,49 @@ describe("handleSuspendExam", () => {
       status: "launched",
       createdAt: new Date(),
     });
-    const controller = {
-      suspendEnvironment: vi.fn().mockResolvedValue(undefined),
-      resumeEnvironment: vi.fn().mockResolvedValue(undefined),
-    };
+    const customerClient = makeCloudShareClient({
+      requestV3: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+        if (spec.path === "/envs/actions/suspend") {
+          return spec.schema.parse({});
+        }
+        if (spec.path === "/envs/ENVS2n38LTNdcC4sHsqnjRzg2") {
+          return spec.schema.parse({ envStatus: "Suspended" });
+        }
+        throw new Error(`unexpected v3 path ${spec.path}`);
+      }) as unknown as CloudShareClient["requestV3"],
+      requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+        if (spec.path === "/trainings/training-1/students") {
+          return spec.schema.parse([
+            {
+              email: "candidate@helioscx.demo",
+              environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+            },
+          ]);
+        }
+        throw new Error(`unexpected v4 path ${spec.path}`);
+      }) as unknown as CloudShareClient["requestV4"],
+    });
+    const cloudshare = {
+      forConnection: vi.fn().mockReturnValue(customerClient),
+    } satisfies CloudShareClientFactory;
 
     const resp = await handleSuspendExam(
       await makeSuspendDeps({
         launches,
-        controller,
+        cloudshare,
       }),
       { body: { examAttemptId: "ea-1" } },
     );
 
     expect(resp.status).toBe(200);
-    expect(controller.suspendEnvironment).toHaveBeenCalledWith("ENVS2n38LTNdcC4sHsqnjRzg2");
+    expect(customerClient.requestV3).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        method: "PUT",
+        path: "/envs/actions/suspend",
+        query: { envId: "ENVS2n38LTNdcC4sHsqnjRzg2" },
+      }),
+    );
     await expect(launches.findByExamAttemptId("ea-1")).resolves.toMatchObject({
       environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
       environmentExternalId: "ENVS2n38LTNdcC4sHsqnjRzg2",
@@ -267,6 +424,16 @@ describe("handleSuspendExam", () => {
     const deps = await makeSuspendDeps({
         source: fixedSource("running"),
         poll: { maxAttempts: 1, intervalMs: 0 },
+        cloudshare: {
+          forConnection: vi.fn().mockReturnValue(
+            makeCloudShareClient({
+              requestV3: vi
+                .fn()
+                .mockResolvedValueOnce({})
+                .mockResolvedValue({ envStatus: "Running" }),
+            }),
+          ),
+        },
       });
     const resp = await handleSuspendExam(
       deps,
@@ -282,7 +449,7 @@ describe("handleSuspendExam", () => {
           correlationId: "corr-suspend",
           operation: "exam_suspend",
           attemptedOperation: "poll_environment_status",
-          integrationSurface: "cloudshare.v3.environment",
+          integrationSurface: "cloudshare.v3.env",
           method: "GET",
           failureMode: "confirmation_timeout",
         }),
@@ -307,13 +474,14 @@ describe("handleSuspendExam", () => {
 
   it("returns 502 with supportable diagnostics when CloudShare suspend returns an http status error", async () => {
     const deps = await makeSuspendDeps({
+        connections: makeConnections(null),
         controller: {
           suspendEnvironment: () =>
             Promise.reject(
               new CloudShareRequestError("forbidden", 403, {
-                integrationSurface: "cloudshare.v4.environment.action.suspend",
-                method: "POST",
-                path: "/v4/environments/env-1/actions/suspend",
+                integrationSurface: "cloudshare.v3.env.action.suspend",
+                method: "PUT",
+                path: "/api/v3/envs/actions/suspend",
                 responseBody: "{\"error\":\"forbidden\"}",
               }),
             ),
@@ -332,9 +500,9 @@ describe("handleSuspendExam", () => {
         payload: expect.objectContaining({
           correlationId: "corr-suspend",
           attemptedOperation: "suspend_environment",
-          integrationSurface: "cloudshare.v4.environment.action.suspend",
-          method: "POST",
-          path: "/v4/environments/env-1/actions/suspend",
+          integrationSurface: "cloudshare.v3.env.action.suspend",
+          method: "PUT",
+          path: "/api/v3/envs/actions/suspend",
           failureMode: "http_status",
           responseStatus: 403,
           responseBody: "{\"error\":\"forbidden\"}",
@@ -346,6 +514,7 @@ describe("handleSuspendExam", () => {
   it("returns 500 on an unexpected error", async () => {
     const resp = await handleSuspendExam(
       await makeSuspendDeps({
+        connections: makeConnections(null),
         controller: {
           suspendEnvironment: () => Promise.reject(new Error("unexpected")),
           resumeEnvironment: () => Promise.resolve(),
@@ -396,6 +565,16 @@ describe("handleResumeExam", () => {
 
   it("returns 502 when poll times out", async () => {
     const deps = await makeResumeDeps({
+        cloudshare: {
+          forConnection: vi.fn().mockReturnValue(
+            makeCloudShareClient({
+              requestV3: vi
+                .fn()
+                .mockResolvedValueOnce({})
+                .mockResolvedValue({ envStatus: "Suspended" }),
+            }),
+          ),
+        },
         source: fixedSource("suspended"),
         poll: { maxAttempts: 1, intervalMs: 0 },
       });
@@ -411,7 +590,7 @@ describe("handleResumeExam", () => {
         payload: expect.objectContaining({
           correlationId: "corr-resume",
           attemptedOperation: "poll_environment_status",
-          integrationSurface: "cloudshare.v3.environment",
+          integrationSurface: "cloudshare.v3.env",
           failureMode: "confirmation_timeout",
         }),
       }),
@@ -435,14 +614,15 @@ describe("handleResumeExam", () => {
 
   it("returns 502 with transport diagnostics when CloudShare resume transport fails", async () => {
     const deps = await makeResumeDeps({
+      connections: makeConnections(null),
       controller: {
         suspendEnvironment: () => Promise.resolve(),
         resumeEnvironment: () =>
           Promise.reject(
             new CloudShareTransportError("network down", {
-              integrationSurface: "cloudshare.v4.environment.action.resume",
+              integrationSurface: "cloudshare.v3.env.action.resume",
               method: "POST",
-              path: "/v4/environments/env-1/actions/resume",
+              path: "/api/v3/envs/actions/resume",
               cause: "ECONNRESET",
             }),
           ),
@@ -458,9 +638,9 @@ describe("handleResumeExam", () => {
       expect.objectContaining({
         payload: expect.objectContaining({
           attemptedOperation: "resume_environment",
-          integrationSurface: "cloudshare.v4.environment.action.resume",
+          integrationSurface: "cloudshare.v3.env.action.resume",
           method: "POST",
-          path: "/v4/environments/env-1/actions/resume",
+          path: "/api/v3/envs/actions/resume",
           failureMode: "transport",
           cause: "ECONNRESET",
         }),
@@ -470,14 +650,15 @@ describe("handleResumeExam", () => {
 
   it("returns 502 with response-shape diagnostics when CloudShare resume returns an unexpected payload", async () => {
     const deps = await makeResumeDeps({
+      connections: makeConnections(null),
       controller: {
         suspendEnvironment: () => Promise.resolve(),
         resumeEnvironment: () =>
           Promise.reject(
             new CloudShareResponseError("schema mismatch", {
-              integrationSurface: "cloudshare.v4.environment.action.resume",
-              method: "POST",
-              path: "/v4/environments/env-1/actions/resume",
+              integrationSurface: "cloudshare.v3.env.action.resume",
+              method: "PUT",
+              path: "/api/v3/envs/actions/resume",
               responseBody: "{\"bad\":true}",
               issues: ["Required"],
             }),
@@ -494,7 +675,7 @@ describe("handleResumeExam", () => {
       expect.objectContaining({
         payload: expect.objectContaining({
           attemptedOperation: "resume_environment",
-          integrationSurface: "cloudshare.v4.environment.action.resume",
+          integrationSurface: "cloudshare.v3.env.action.resume",
           failureMode: "unexpected_response",
           responseBody: "{\"bad\":true}",
           issues: ["Required"],
@@ -506,6 +687,7 @@ describe("handleResumeExam", () => {
   it("returns 500 on an unexpected error", async () => {
     const resp = await handleResumeExam(
       await makeResumeDeps({
+        connections: makeConnections(null),
         controller: {
           suspendEnvironment: () => Promise.resolve(),
           resumeEnvironment: () => Promise.reject(new Error("boom")),
@@ -531,17 +713,45 @@ describe("runHeartbeatAutoSuspend", () => {
       status: "launched",
       createdAt: new Date(),
     });
-    const controller = {
-      suspendEnvironment: vi.fn().mockResolvedValue(undefined),
-      resumeEnvironment: vi.fn().mockResolvedValue(undefined),
-    };
+    const customerClient = makeCloudShareClient({
+      requestV3: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+        if (spec.path === "/envs/actions/suspend") {
+          return spec.schema.parse({});
+        }
+        if (spec.path === "/envs/ENVS2n38LTNdcC4sHsqnjRzg2") {
+          return spec.schema.parse({ envStatus: "Suspended" });
+        }
+        throw new Error(`unexpected v3 path ${spec.path}`);
+      }) as unknown as CloudShareClient["requestV3"],
+      requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+        if (spec.path === "/trainings/training-1/students") {
+          return spec.schema.parse([
+            {
+              email: "candidate@helioscx.demo",
+              environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+            },
+          ]);
+        }
+        throw new Error(`unexpected v4 path ${spec.path}`);
+      }) as unknown as CloudShareClient["requestV4"],
+    });
+    const cloudshare = {
+      forConnection: vi.fn().mockReturnValue(customerClient),
+    } satisfies CloudShareClientFactory;
     const deps = await makeSuspendDeps({
       launches,
-      controller,
+      cloudshare,
     });
 
     await expect(runHeartbeatAutoSuspend(deps, "ea-1")).resolves.toBeUndefined();
-    expect(controller.suspendEnvironment).toHaveBeenCalledWith("ENVS2n38LTNdcC4sHsqnjRzg2");
+    expect(customerClient.requestV3).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        method: "PUT",
+        path: "/envs/actions/suspend",
+        query: { envId: "ENVS2n38LTNdcC4sHsqnjRzg2" },
+      }),
+    );
     await expect(launches.findByExamAttemptId("ea-1")).resolves.toMatchObject({
       environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
       environmentExternalId: "ENVS2n38LTNdcC4sHsqnjRzg2",
@@ -552,17 +762,17 @@ describe("runHeartbeatAutoSuspend", () => {
     [
       "CloudShareRequestError",
       new CloudShareRequestError("forbidden", 403, {
-        integrationSurface: "cloudshare.v4.environment.action.suspend",
-        method: "POST",
-        path: "/v4/environments/env-1/actions/suspend",
+        integrationSurface: "cloudshare.v3.env.action.suspend",
+        method: "PUT",
+        path: "/api/v3/envs/actions/suspend",
         responseBody: "{\"error\":\"forbidden\"}",
       }),
       expect.objectContaining({
         operation: "heartbeat_auto_suspend",
         attemptedOperation: "suspend_environment",
-        integrationSurface: "cloudshare.v4.environment.action.suspend",
-        method: "POST",
-        path: "/v4/environments/env-1/actions/suspend",
+        integrationSurface: "cloudshare.v3.env.action.suspend",
+        method: "PUT",
+        path: "/api/v3/envs/actions/suspend",
         failureMode: "http_status",
         responseStatus: 403,
         responseBody: "{\"error\":\"forbidden\"}",
@@ -571,18 +781,18 @@ describe("runHeartbeatAutoSuspend", () => {
     [
       "CloudShareResponseError",
       new CloudShareResponseError("schema mismatch", {
-        integrationSurface: "cloudshare.v4.environment.action.suspend",
-        method: "POST",
-        path: "/v4/environments/env-1/actions/suspend",
+        integrationSurface: "cloudshare.v3.env.action.suspend",
+        method: "PUT",
+        path: "/api/v3/envs/actions/suspend",
         responseBody: "{\"bad\":true}",
         issues: ["Required"],
       }),
       expect.objectContaining({
         operation: "heartbeat_auto_suspend",
         attemptedOperation: "suspend_environment",
-        integrationSurface: "cloudshare.v4.environment.action.suspend",
-        method: "POST",
-        path: "/v4/environments/env-1/actions/suspend",
+        integrationSurface: "cloudshare.v3.env.action.suspend",
+        method: "PUT",
+        path: "/api/v3/envs/actions/suspend",
         failureMode: "unexpected_response",
         responseBody: "{\"bad\":true}",
         issues: ["Required"],
@@ -592,6 +802,7 @@ describe("runHeartbeatAutoSuspend", () => {
     "appends an admin-visible diagnostic and rethrows on %s",
     async (_label, error, expectedPayload) => {
       const deps = await makeSuspendDeps({
+        connections: makeConnections(null),
         controller: {
           suspendEnvironment: () => Promise.reject(error),
           resumeEnvironment: () => Promise.resolve(),
@@ -615,6 +826,16 @@ describe("runHeartbeatAutoSuspend", () => {
 
   it("appends a timeout diagnostic and rethrows when confirmation polling never reaches suspended", async () => {
     const deps = await makeSuspendDeps({
+      cloudshare: {
+        forConnection: vi.fn().mockReturnValue(
+          makeCloudShareClient({
+            requestV3: vi
+              .fn()
+              .mockResolvedValueOnce({})
+              .mockResolvedValue({ envStatus: "Running" }),
+          }),
+        ),
+      },
       source: fixedSource("running"),
       poll: { maxAttempts: 1, intervalMs: 0 },
     });
@@ -630,7 +851,7 @@ describe("runHeartbeatAutoSuspend", () => {
           correlationId: "corr-suspend",
           operation: "heartbeat_auto_suspend",
           attemptedOperation: "poll_environment_status",
-          integrationSurface: "cloudshare.v3.environment",
+          integrationSurface: "cloudshare.v3.env",
           method: "GET",
           failureMode: "confirmation_timeout",
         }),

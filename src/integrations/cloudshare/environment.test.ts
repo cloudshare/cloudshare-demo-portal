@@ -31,14 +31,22 @@ describe("mapCloudShareEnvironmentStatus", () => {
 });
 
 describe("createCloudShareEnvironmentSource", () => {
-  it("polls v3 GET environment and maps the status", async () => {
-    const requestV3 = vi.fn().mockResolvedValue({ status: "Ready" });
+  it("polls the documented v3 env-by-id endpoint and maps envStatus", async () => {
+    const requestV3 = vi.fn().mockResolvedValue({ envStatus: "Ready" });
     const source = createCloudShareEnvironmentSource(client({ requestV3 }));
 
-    const snapshot = await source.getEnvironmentState("env-1");
+    const snapshot = await source.getEnvironmentState("ENVS2n38LTNdcC4sHsqnjRzg2");
 
-    expect(snapshot).toEqual({ environmentExternalId: "env-1", status: "running" });
-    expect(requestV3).toHaveBeenCalledOnce();
+    expect(snapshot).toEqual({
+      environmentExternalId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+      status: "running",
+    });
+    expect(requestV3).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "GET",
+        path: "/envs/ENVS2n38LTNdcC4sHsqnjRzg2",
+      }),
+    );
   });
 
   it("returns null when CloudShare reports the environment does not exist (404)", async () => {
