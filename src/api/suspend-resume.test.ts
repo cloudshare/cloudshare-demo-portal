@@ -6,15 +6,22 @@ import type { EnvironmentStateSource } from "@/domain/environment";
 import type { LabLaunchRepository, LabProvisioner } from "@/domain/lab-launch";
 import type { Logger } from "@/observability/logger";
 import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-repository";
+import {
+  CloudShareRequestError,
+  CloudShareResponseError,
+  CloudShareTransportError,
+} from "@/integrations/cloudshare";
 
 const noSleep = () => Promise.resolve();
 
-const logger: Logger = {
-  info: vi.fn(),
-  warn: vi.fn(),
-  error: vi.fn(),
-  debug: vi.fn(),
-};
+function makeLogger(): Logger {
+  return {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  };
+}
 
 const launch = {
   id: "launch-1",
@@ -78,6 +85,23 @@ async function makeAttempts(status: "ready" | "in_progress" | "suspended" = "rea
   return attempts;
 }
 
+async function makeAttemptsFor(
+  examAttemptId: string,
+  status: "ready" | "scheduled" | "in_progress" | "suspended" | "completed" | "expired",
+) {
+  const attempts = createInMemoryExamAttemptRepository();
+  await attempts.save({
+    id: examAttemptId,
+    customerId: "customer-1",
+    candidateId: "cand-1",
+    examId: "exam-1",
+    status,
+    scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+    createdAt: new Date("2026-06-15T10:00:00.000Z"),
+  });
+  return attempts;
+}
+
 async function makeSuspendDeps(overrides: Partial<SuspendHandlerDeps> = {}): Promise<SuspendHandlerDeps> {
   return {
     controller: makeController(),
@@ -86,7 +110,10 @@ async function makeSuspendDeps(overrides: Partial<SuspendHandlerDeps> = {}): Pro
     attempts: await makeAttempts("in_progress"),
     launches: makeLaunches(),
     sleep: noSleep,
-    logger,
+    logger: makeLogger(),
+    eventLog: { append: vi.fn().mockResolvedValue(undefined), listAll: vi.fn() },
+    newCorrelationId: () => "corr-suspend",
+    now: () => new Date("2026-06-15T10:10:00.000Z"),
     ...overrides,
   };
 }
@@ -100,7 +127,10 @@ async function makeResumeDeps(overrides: Partial<ResumeHandlerDeps> = {}): Promi
     launches: makeLaunches(),
     labs: makeLabs(),
     sleep: noSleep,
-    logger,
+    logger: makeLogger(),
+    eventLog: { append: vi.fn().mockResolvedValue(undefined), listAll: vi.fn() },
+    newCorrelationId: () => "corr-resume",
+    now: () => new Date("2026-06-15T10:10:00.000Z"),
     ...overrides,
   };
 }
@@ -135,21 +165,93 @@ describe("handleSuspendExam", () => {
 
   it("returns 404 when no launch exists for the exam attempt", async () => {
     const resp = await handleSuspendExam(
-      await makeSuspendDeps({ launches: makeLaunches(null) }),
+      await makeSuspendDeps({
+        attempts: await makeAttemptsFor("ea-missing", "in_progress"),
+        launches: makeLaunches(null),
+      }),
       { body: { examAttemptId: "ea-missing" } },
     );
     expect(resp.status).toBe(404);
   });
 
   it("returns 502 when poll times out (TimerSyncError, not a not-found)", async () => {
-    const resp = await handleSuspendExam(
-      await makeSuspendDeps({
+    const deps = await makeSuspendDeps({
         source: fixedSource("running"),
         poll: { maxAttempts: 1, intervalMs: 0 },
-      }),
+      });
+    const resp = await handleSuspendExam(
+      deps,
       { body: { examAttemptId: "ea-1" } },
     );
     expect(resp.status).toBe(502);
+    expect(resp.body).toMatchObject({ error: "exam suspend failed", correlationId: "corr-suspend" });
+    expect(deps.eventLog.append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventId: "corr-suspend",
+        type: "cloudshare.exam_suspend.failed",
+        payload: expect.objectContaining({
+          correlationId: "corr-suspend",
+          operation: "exam_suspend",
+          attemptedOperation: "poll_environment_status",
+          integrationSurface: "cloudshare.v3.environment",
+          method: "GET",
+          failureMode: "confirmation_timeout",
+        }),
+      }),
+    );
+  });
+
+  it("returns 409 when suspend is requested outside the in_progress state", async () => {
+    const resp = await handleSuspendExam(
+      await makeSuspendDeps({
+        attempts: await makeAttempts("ready"),
+      }),
+      { body: { examAttemptId: "ea-1" } },
+    );
+    expect(resp.status).toBe(409);
+    expect(resp.body).toMatchObject({
+      error: "Exam attempt is not in a valid status for this transition",
+      expectedStatus: "in_progress",
+      currentStatus: "ready",
+    });
+  });
+
+  it("returns 502 with supportable diagnostics when CloudShare suspend returns an http status error", async () => {
+    const deps = await makeSuspendDeps({
+        controller: {
+          suspendEnvironment: () =>
+            Promise.reject(
+              new CloudShareRequestError("forbidden", 403, {
+                integrationSurface: "cloudshare.v4.environment.action.suspend",
+                method: "POST",
+                path: "/v4/environments/env-1/actions/suspend",
+                responseBody: "{\"error\":\"forbidden\"}",
+              }),
+            ),
+          resumeEnvironment: () => Promise.resolve(),
+        },
+      });
+    const resp = await handleSuspendExam(
+      deps,
+      { body: { examAttemptId: "ea-1" } },
+    );
+    expect(resp.status).toBe(502);
+    expect(resp.body).toEqual({ error: "exam suspend failed", correlationId: "corr-suspend" });
+    expect(deps.eventLog.append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventId: "corr-suspend",
+        payload: expect.objectContaining({
+          correlationId: "corr-suspend",
+          attemptedOperation: "suspend_environment",
+          integrationSurface: "cloudshare.v4.environment.action.suspend",
+          method: "POST",
+          path: "/v4/environments/env-1/actions/suspend",
+          failureMode: "http_status",
+          responseStatus: 403,
+          responseBody: "{\"error\":\"forbidden\"}",
+        }),
+      }),
+    );
   });
 
   it("returns 500 on an unexpected error", async () => {
@@ -163,6 +265,7 @@ describe("handleSuspendExam", () => {
       { body: { examAttemptId: "ea-1" } },
     );
     expect(resp.status).toBe(500);
+    expect(resp.body).toEqual({ error: "internal error", correlationId: "corr-suspend" });
   });
 });
 
@@ -193,21 +296,122 @@ describe("handleResumeExam", () => {
 
   it("returns 404 when no launch exists", async () => {
     const resp = await handleResumeExam(
-      await makeResumeDeps({ launches: makeLaunches(null) }),
+      await makeResumeDeps({
+        attempts: await makeAttemptsFor("ea-missing", "suspended"),
+        launches: makeLaunches(null),
+      }),
       { body: { examAttemptId: "ea-missing" } },
     );
     expect(resp.status).toBe(404);
   });
 
   it("returns 502 when poll times out", async () => {
-    const resp = await handleResumeExam(
-      await makeResumeDeps({
+    const deps = await makeResumeDeps({
         source: fixedSource("suspended"),
         poll: { maxAttempts: 1, intervalMs: 0 },
-      }),
+      });
+    const resp = await handleResumeExam(
+      deps,
       { body: { examAttemptId: "ea-1" } },
     );
     expect(resp.status).toBe(502);
+    expect(resp.body).toEqual({ error: "exam resume failed", correlationId: "corr-resume" });
+    expect(deps.eventLog.append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventId: "corr-resume",
+        payload: expect.objectContaining({
+          correlationId: "corr-resume",
+          attemptedOperation: "poll_environment_status",
+          integrationSurface: "cloudshare.v3.environment",
+          failureMode: "confirmation_timeout",
+        }),
+      }),
+    );
+  });
+
+  it("returns 409 when resume is requested outside the suspended state", async () => {
+    const resp = await handleResumeExam(
+      await makeResumeDeps({
+        attempts: await makeAttempts("in_progress"),
+      }),
+      { body: { examAttemptId: "ea-1" } },
+    );
+    expect(resp.status).toBe(409);
+    expect(resp.body).toMatchObject({
+      error: "Exam attempt is not in a valid status for this transition",
+      expectedStatus: "suspended",
+      currentStatus: "in_progress",
+    });
+  });
+
+  it("returns 502 with transport diagnostics when CloudShare resume transport fails", async () => {
+    const deps = await makeResumeDeps({
+      controller: {
+        suspendEnvironment: () => Promise.resolve(),
+        resumeEnvironment: () =>
+          Promise.reject(
+            new CloudShareTransportError("network down", {
+              integrationSurface: "cloudshare.v4.environment.action.resume",
+              method: "POST",
+              path: "/v4/environments/env-1/actions/resume",
+              cause: "ECONNRESET",
+            }),
+          ),
+      },
+    });
+    const resp = await handleResumeExam(
+      deps,
+      { body: { examAttemptId: "ea-1" } },
+    );
+    expect(resp.status).toBe(502);
+    expect(resp.body).toEqual({ error: "exam resume failed", correlationId: "corr-resume" });
+    expect(deps.eventLog.append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          attemptedOperation: "resume_environment",
+          integrationSurface: "cloudshare.v4.environment.action.resume",
+          method: "POST",
+          path: "/v4/environments/env-1/actions/resume",
+          failureMode: "transport",
+          cause: "ECONNRESET",
+        }),
+      }),
+    );
+  });
+
+  it("returns 502 with response-shape diagnostics when CloudShare resume returns an unexpected payload", async () => {
+    const deps = await makeResumeDeps({
+      controller: {
+        suspendEnvironment: () => Promise.resolve(),
+        resumeEnvironment: () =>
+          Promise.reject(
+            new CloudShareResponseError("schema mismatch", {
+              integrationSurface: "cloudshare.v4.environment.action.resume",
+              method: "POST",
+              path: "/v4/environments/env-1/actions/resume",
+              responseBody: "{\"bad\":true}",
+              issues: ["Required"],
+            }),
+          ),
+      },
+    });
+    const resp = await handleResumeExam(
+      deps,
+      { body: { examAttemptId: "ea-1" } },
+    );
+    expect(resp.status).toBe(502);
+    expect(resp.body).toEqual({ error: "exam resume failed", correlationId: "corr-resume" });
+    expect(deps.eventLog.append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: expect.objectContaining({
+          attemptedOperation: "resume_environment",
+          integrationSurface: "cloudshare.v4.environment.action.resume",
+          failureMode: "unexpected_response",
+          responseBody: "{\"bad\":true}",
+          issues: ["Required"],
+        }),
+      }),
+    );
   });
 
   it("returns 500 on an unexpected error", async () => {
@@ -221,5 +425,6 @@ describe("handleResumeExam", () => {
       { body: { examAttemptId: "ea-1" } },
     );
     expect(resp.status).toBe(500);
+    expect(resp.body).toEqual({ error: "internal error", correlationId: "corr-resume" });
   });
 });

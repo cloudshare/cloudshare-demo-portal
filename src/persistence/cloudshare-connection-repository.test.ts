@@ -5,17 +5,28 @@ import { createCloudShareConnectionRepository } from "./cloudshare-connection-re
 
 const prisma = new PrismaClient();
 const secrets = createSecretBox(Buffer.alloc(32, 3));
+const createdCustomerIds = new Set<string>();
 
 afterAll(async () => {
   await prisma.$disconnect();
 });
 
 afterEach(async () => {
-  await prisma.cloudShareConnection.deleteMany();
+  const customerIds = [...createdCustomerIds];
+  createdCustomerIds.clear();
+  if (customerIds.length === 0) return;
+
+  await prisma.cloudShareConnection.deleteMany({
+    where: {
+      customerId: {
+        in: customerIds,
+      },
+    },
+  });
   await prisma.customer.deleteMany({
     where: {
-      slug: {
-        startsWith: "helios-",
+      id: {
+        in: customerIds,
       },
     },
   });
@@ -27,6 +38,7 @@ describe("CloudShareConnectionRepository", () => {
     const customer = await prisma.customer.create({
       data: { slug, name: "Helios CX" },
     });
+    createdCustomerIds.add(customer.id);
     const repo = createCloudShareConnectionRepository(prisma, secrets);
 
     await repo.save({
@@ -56,6 +68,7 @@ describe("CloudShareConnectionRepository", () => {
     const customer = await prisma.customer.create({
       data: { slug, name: "Helios CX" },
     });
+    createdCustomerIds.add(customer.id);
     const repo = createCloudShareConnectionRepository(prisma, secrets);
 
     await repo.save({

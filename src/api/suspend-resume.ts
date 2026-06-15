@@ -1,24 +1,28 @@
+import { randomUUID } from "node:crypto";
 import type { Logger } from "@/observability/logger";
+import type { EventLogRepository } from "@/domain/event-log";
 import {
   suspendExam,
   resumeExam,
   type SuspendExamDeps,
   type ResumeExamDeps,
 } from "@/domain/timer-sync";
-import { LabLaunchNotFoundError, TimerSyncError } from "@/domain/errors";
+import {
+  InvalidExamAttemptStatusError,
+  LabLaunchNotFoundError,
+  TimerSyncError,
+} from "@/domain/errors";
+import {
+  CloudShareRequestError,
+  CloudShareResponseError,
+  CloudShareTransportError,
+} from "@/integrations/cloudshare";
 
 /**
  * Framework-agnostic handlers for the candidate-initiated suspend and resume
  * endpoints. They own the request validation, domain delegation, error mapping,
  * and logging — the Next.js routes are thin wrappers that supply the raw body
  * and return the plain `{ status, body }` response.
- *
- * HTTP contract for both endpoints:
- *  - 400  missing/invalid examAttemptId
- *  - 404  no lab launch found for the exam attempt
- *  - 200  success — environment transition confirmed and timer synced
- *  - 502  CloudShare or poll timeout error
- *  - 500  unexpected internal error
  */
 
 export interface SuspendResumeRequest {
@@ -30,11 +34,16 @@ export interface SuspendResumeResponse {
   readonly body: Record<string, unknown>;
 }
 
+interface SupportDiagnosticDeps {
+  readonly logger: Logger;
+  readonly eventLog: EventLogRepository;
+  readonly newCorrelationId?: () => string;
+  readonly now?: () => Date;
+}
+
 // --- Suspend ---
 
-export interface SuspendHandlerDeps extends SuspendExamDeps {
-  readonly logger: Logger;
-}
+export interface SuspendHandlerDeps extends SuspendExamDeps, SupportDiagnosticDeps {}
 
 export async function handleSuspendExam(
   deps: SuspendHandlerDeps,
@@ -50,15 +59,13 @@ export async function handleSuspendExam(
     deps.logger.info("exam suspended", { examAttemptId });
     return { status: 200, body: { status: "suspended", examAttemptId } };
   } catch (err) {
-    return handleTimerSyncError(err, deps.logger, "suspend", examAttemptId);
+    return handleTimerSyncError(deps, err, "suspend", examAttemptId);
   }
 }
 
 // --- Resume ---
 
-export interface ResumeHandlerDeps extends ResumeExamDeps {
-  readonly logger: Logger;
-}
+export interface ResumeHandlerDeps extends ResumeExamDeps, SupportDiagnosticDeps {}
 
 export async function handleResumeExam(
   deps: ResumeHandlerDeps,
@@ -85,7 +92,7 @@ export async function handleResumeExam(
       },
     };
   } catch (err) {
-    return handleTimerSyncError(err, deps.logger, "resume", examAttemptId);
+    return handleTimerSyncError(deps, err, "resume", examAttemptId);
   }
 }
 
@@ -99,26 +106,172 @@ function extractExamAttemptId(body: unknown): string | null {
     : null;
 }
 
-function handleTimerSyncError(
+async function handleTimerSyncError(
+  deps: SupportDiagnosticDeps,
   err: unknown,
-  logger: Logger,
-  action: string,
+  action: "suspend" | "resume",
   examAttemptId: string,
-): SuspendResumeResponse {
+): Promise<SuspendResumeResponse> {
   if (err instanceof LabLaunchNotFoundError) {
     return { status: 404, body: { error: "no lab launch found for exam attempt" } };
   }
-  if (err instanceof TimerSyncError) {
-    logger.error(`exam ${action} failed`, {
-      examAttemptId,
-      error: err.message,
-      ...(err.context ?? {}),
-    });
-    return { status: 502, body: { error: `exam ${action} failed` } };
+  if (err instanceof InvalidExamAttemptStatusError) {
+    return {
+      status: 409,
+      body: {
+        error: err.message,
+        ...(err.context ?? {}),
+      },
+    };
   }
-  logger.error(`exam ${action} errored`, {
+  if (err instanceof TimerSyncError) {
+    const correlationId = (deps.newCorrelationId ?? randomUUID)();
+    const diagnostic = buildTimerSyncDiagnostic(correlationId, action, examAttemptId, err);
+    await deps.eventLog.append({
+      eventId: correlationId,
+      type: `cloudshare.exam_${action}.failed`,
+      occurredAt: (deps.now ?? (() => new Date()))(),
+      payload: diagnostic,
+    });
+    deps.logger.warn(`exam ${action} failed`, diagnostic);
+    return { status: 502, body: { error: `exam ${action} failed`, correlationId } };
+  }
+  if (isCloudShareFailure(err)) {
+    const correlationId = (deps.newCorrelationId ?? randomUUID)();
+    const diagnostic = buildCloudShareDiagnostic(correlationId, action, examAttemptId, err);
+    await deps.eventLog.append({
+      eventId: correlationId,
+      type: `cloudshare.exam_${action}.failed`,
+      occurredAt: (deps.now ?? (() => new Date()))(),
+      payload: diagnostic,
+    });
+    deps.logger.warn(`exam ${action} failed`, diagnostic);
+    return { status: 502, body: { error: `exam ${action} failed`, correlationId } };
+  }
+
+  const correlationId = (deps.newCorrelationId ?? randomUUID)();
+  const diagnostic = {
+    correlationId,
     examAttemptId,
+    operation: `exam_${action}`,
+    attemptedOperation: `${action}_exam`,
+    failureMode: "unexpected_internal_error",
     error: err instanceof Error ? err.message : String(err),
+  };
+  await deps.eventLog.append({
+    eventId: correlationId,
+    type: `cloudshare.exam_${action}.failed`,
+    occurredAt: (deps.now ?? (() => new Date()))(),
+    payload: diagnostic,
   });
-  return { status: 500, body: { error: "internal error" } };
+  deps.logger.error(`exam ${action} errored`, diagnostic);
+  return { status: 500, body: { error: "internal error", correlationId } };
+}
+
+function buildTimerSyncDiagnostic(
+  correlationId: string,
+  action: "suspend" | "resume",
+  examAttemptId: string,
+  err: TimerSyncError,
+): Record<string, unknown> {
+  return {
+    correlationId,
+    examAttemptId,
+    operation: `exam_${action}`,
+    attemptedOperation: "poll_environment_status",
+    integrationSurface: "cloudshare.v3.environment",
+    method: "GET",
+    path:
+      typeof err.context?.environmentExternalId === "string"
+        ? `/api/v3/environments?externalId=${err.context.environmentExternalId}`
+        : "/api/v3/environments?externalId={environmentExternalId}",
+    failureMode: "confirmation_timeout",
+    error: err.message,
+    ...(err.context ?? {}),
+  };
+}
+
+function buildCloudShareDiagnostic(
+  correlationId: string,
+  action: "suspend" | "resume",
+  examAttemptId: string,
+  err: CloudShareRequestError | CloudShareTransportError | CloudShareResponseError,
+): Record<string, unknown> {
+  const staticSpec =
+    action === "suspend"
+      ? {
+          attemptedOperation: "suspend_environment",
+          integrationSurface: "cloudshare.v4.environment.action.suspend",
+          method: "POST",
+          path:
+            typeof err.context?.environmentExternalId === "string"
+              ? `/v4/environments/${err.context.environmentExternalId}/actions/suspend`
+              : "/v4/environments/{environmentExternalId}/actions/suspend",
+        }
+      : {
+          attemptedOperation: "resume_environment",
+          integrationSurface: "cloudshare.v4.environment.action.resume",
+          method: "POST",
+          path:
+            typeof err.context?.environmentExternalId === "string"
+              ? `/v4/environments/${err.context.environmentExternalId}/actions/resume`
+              : "/v4/environments/{environmentExternalId}/actions/resume",
+        };
+
+  const base = {
+    correlationId,
+    examAttemptId,
+    operation: `exam_${action}`,
+    attemptedOperation: staticSpec.attemptedOperation,
+    integrationSurface: err.context?.integrationSurface ?? staticSpec.integrationSurface,
+    method: err.context?.method ?? staticSpec.method,
+    path: err.context?.path ?? staticSpec.path,
+    host: err.context?.host,
+  };
+
+  if (err instanceof CloudShareRequestError) {
+    return {
+      ...base,
+      failureMode: "http_status",
+      responseStatus: err.status,
+      requestHeaders: err.context?.requestHeaders,
+      requestBody: err.context?.requestBody,
+      responseHeaders: err.context?.responseHeaders,
+      responseBody: err.context?.responseBody,
+      network: err.context?.network,
+      tls: err.context?.tls,
+    };
+  }
+
+  if (err instanceof CloudShareTransportError) {
+    return {
+      ...base,
+      failureMode: "transport",
+      requestHeaders: err.context?.requestHeaders,
+      requestBody: err.context?.requestBody,
+      cause: err.context?.cause,
+    };
+  }
+
+  return {
+    ...base,
+    failureMode: "unexpected_response",
+    requestHeaders: err.context?.requestHeaders,
+    requestBody: err.context?.requestBody,
+    responseHeaders: err.context?.responseHeaders,
+    responseBody: err.context?.responseBody,
+    network: err.context?.network,
+    tls: err.context?.tls,
+    issues: err.context?.issues,
+  };
+}
+
+function isCloudShareFailure(
+  err: unknown,
+): err is CloudShareRequestError | CloudShareTransportError | CloudShareResponseError {
+  return (
+    err instanceof CloudShareRequestError ||
+    err instanceof CloudShareTransportError ||
+    err instanceof CloudShareResponseError
+  );
 }

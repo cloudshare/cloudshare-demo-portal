@@ -194,6 +194,9 @@ describe("handleExecuteStep", () => {
       result.environmentExternalId as string,
     );
     expect(envState?.status).toBe("running");
+
+    const attempts = await deps.examAttempts.listByCandidate(DEMO_SEED.candidateId);
+    expect(attempts[0]?.status).toBe("in_progress");
   });
 
   it("executes full happy path: all five steps succeed in order", async () => {

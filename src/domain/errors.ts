@@ -54,6 +54,14 @@ export class LabLaunchNotFoundError extends TimerSyncError {
   }
 }
 
+/** A suspend/resume transition was requested from an invalid ExamAttempt lifecycle state. */
+export class InvalidExamAttemptStatusError extends TimerSyncError {
+  constructor(context?: Record<string, unknown>) {
+    super("Exam attempt is not in a valid status for this transition", context);
+    this.name = "InvalidExamAttemptStatusError";
+  }
+}
+
 /** Retrieving Guided Journey progress from CloudShare failed. */
 export class ScoreRetrievalError extends DomainError {
   constructor(message: string, context?: Record<string, unknown>) {

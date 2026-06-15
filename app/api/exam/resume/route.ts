@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { getServices } from "@/composition";
+import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { handleResumeExam } from "@/api/suspend-resume";
+import { authorizeCandidateExamAttemptAccess } from "@/api/candidate-exam-attempt-access";
 import type { AuditRecord } from "@/domain/audit-trail";
 
 /**
@@ -10,6 +13,7 @@ import type { AuditRecord } from "@/domain/audit-trail";
  * The refreshed link stays server-only; the candidate re-enters through `/enter`.
  */
 export async function POST(request: Request) {
+  const services = getServices();
   const {
     environmentSource,
     environmentController,
@@ -20,13 +24,30 @@ export async function POST(request: Request) {
     logger,
     heartbeatAutoSuspend,
     audit,
-  } = getServices();
+    eventLog,
+  } = services;
 
   let body: unknown;
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
+  }
+
+  const parsed = body as { examAttemptId?: unknown };
+  const examAttemptId = typeof parsed.examAttemptId === "string" ? parsed.examAttemptId : undefined;
+  if (!examAttemptId) {
+    return NextResponse.json({ error: "examAttemptId is required" }, { status: 400 });
+  }
+
+  const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
+  const access = await authorizeCandidateExamAttemptAccess(services, {
+    sessionId,
+    examAttemptId,
+    requireLaunch: true,
+  });
+  if (!access.ok) {
+    return NextResponse.json(access.response.body, { status: access.response.status });
   }
 
   const resp = await handleResumeExam(
@@ -39,12 +60,10 @@ export async function POST(request: Request) {
       labs: labProvisioner,
       sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
       logger,
+      eventLog,
     },
     { body },
   );
-
-  const parsed = body as { examAttemptId?: unknown };
-  const examAttemptId = typeof parsed.examAttemptId === "string" ? parsed.examAttemptId : undefined;
 
   if (resp.status === 200 && examAttemptId) {
     heartbeatAutoSuspend.removeHeartbeat(examAttemptId);

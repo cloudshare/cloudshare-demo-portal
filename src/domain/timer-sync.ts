@@ -1,12 +1,14 @@
-import { LabLaunchNotFoundError, TimerSyncError } from "./errors";
+import { InvalidExamAttemptStatusError, LabLaunchNotFoundError, TimerSyncError } from "./errors";
 import type { ExamAttemptRepository } from "./exam-attempt";
 import type { EnvironmentController, EnvironmentStateSource, EnvironmentStatus } from "./environment";
+import type { ExamAttemptStatus } from "./exam-attempt";
 import type { LabLaunchRepository, LabProvisioner } from "./lab-launch";
 
 /**
  * Suspend/resume synchronised with the Kryterion authoritative exam clock.
  *
  * Flow for suspend:
+ *   0. Confirm the ExamAttempt is currently `in_progress`.
  *   1. Look up the LabLaunch to get `environmentExternalId`.
  *   2. Issue the suspend command to CloudShare.
  *   3. Poll `EnvironmentStateSource` until status is `suspended` (webhook hints
@@ -14,8 +16,9 @@ import type { LabLaunchRepository, LabProvisioner } from "./lab-launch";
  *      authoritative confirmation gate).
  *   4. Pause the Kryterion timer once confirmed.
  *
- * Flow for resume is the mirror: resume → poll until `running` → create a fresh
- * sponsored link (so a link failure leaves the timer safely paused) → resume timer.
+ * Flow for resume is the mirror: confirm `suspended` → resume → poll until
+ * `running` → resume timer. Re-entry still happens through `/enter`, which
+ * remains the only redirect source for the server-held sponsored link.
  *
  * CloudShare preserves a suspended environment for ~2 hours; the portal surfaces
  * this limit so the UI can warn the candidate.
@@ -82,6 +85,7 @@ export async function suspendExam(
   deps: SuspendExamDeps,
   input: SuspendExamInput,
 ): Promise<void> {
+  await requireAttemptStatus(deps.attempts, input.examAttemptId, "in_progress", "suspend");
   const launch = await deps.launches.findByExamAttemptId(input.examAttemptId);
   if (!launch) {
     throw new LabLaunchNotFoundError({ examAttemptId: input.examAttemptId });
@@ -127,6 +131,7 @@ export async function resumeExam(
   deps: ResumeExamDeps,
   input: ResumeExamInput,
 ): Promise<ResumeExamResult> {
+  await requireAttemptStatus(deps.attempts, input.examAttemptId, "suspended", "resume");
   const launch = await deps.launches.findByExamAttemptId(input.examAttemptId);
   if (!launch) {
     throw new LabLaunchNotFoundError({ examAttemptId: input.examAttemptId });
@@ -142,13 +147,6 @@ export async function resumeExam(
     deps.poll ?? DEFAULT_POLL,
   );
 
-  // Create the sponsored link before resuming the timer: if the link call fails,
-  // the timer stays safely paused and the candidate can retry cleanly.
-  const link = await deps.labs.createSponsoredLink({ experienceId: launch.experienceId });
-  await deps.launches.save({
-    ...launch,
-    loginUrl: link.loginUrl,
-  });
   await deps.timer.resumeTimer(input.examAttemptId);
   await persistAttemptStatus(deps.attempts, input.examAttemptId, "in_progress");
 
@@ -176,12 +174,37 @@ async function persistAttemptStatus(
   examAttemptId: string,
   status: "in_progress" | "suspended",
 ): Promise<void> {
-  const attempt = await attempts.findById(examAttemptId);
-  if (!attempt) {
-    throw new LabLaunchNotFoundError({ examAttemptId });
-  }
+  const attempt = await requireAttempt(attempts, examAttemptId);
   await attempts.save({
     ...attempt,
     status,
   });
+}
+
+async function requireAttempt(
+  attempts: ExamAttemptRepository,
+  examAttemptId: string,
+) {
+  const attempt = await attempts.findById(examAttemptId);
+  if (!attempt) {
+    throw new TimerSyncError("Exam attempt not found.", { examAttemptId });
+  }
+  return attempt;
+}
+
+async function requireAttemptStatus(
+  attempts: ExamAttemptRepository,
+  examAttemptId: string,
+  expectedStatus: "in_progress" | "suspended",
+  operation: "suspend" | "resume",
+): Promise<void> {
+  const attempt = await requireAttempt(attempts, examAttemptId);
+  if (attempt.status !== expectedStatus) {
+    throw new InvalidExamAttemptStatusError({
+      examAttemptId,
+      operation,
+      expectedStatus,
+      currentStatus: attempt.status as ExamAttemptStatus,
+    });
+  }
 }

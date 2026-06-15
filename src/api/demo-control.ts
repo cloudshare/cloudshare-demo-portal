@@ -252,6 +252,11 @@ async function runStep(
         }
         await deps.environmentSimulator.resumeEnvironment(launch.environmentExternalId);
       }
+      await deps.kryterion.resumeTimer(ctx.examAttempt.id);
+      await deps.examAttempts.save({
+        ...ctx.examAttempt,
+        status: "in_progress",
+      });
       return {
         labLaunchId: launch.id,
         environmentExternalId: launch.environmentExternalId,
