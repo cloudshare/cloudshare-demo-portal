@@ -74,6 +74,13 @@ export function shouldShowCandidateProvisioning(tab: AdminTab): boolean {
   return tab === "candidates";
 }
 
+export function buildEventRecordRowKey(
+  event: { readonly eventId: string; readonly type: string; readonly occurredAt: string },
+  index: number,
+): string {
+  return `${event.eventId}-${event.type}-${event.occurredAt}-${index}`;
+}
+
 export function getExamAuthoringMode(editingExamId: string | null): ExamAuthoringMode {
   if (!editingExamId) {
     return {

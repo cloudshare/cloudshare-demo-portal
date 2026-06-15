@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CloudShareClient } from "./client";
-import { createCloudShareParticipantLister } from "./participants";
+import { createCloudShareParticipantLister, normalizeTrainingParticipants } from "./participants";
 
 function client(overrides: Partial<CloudShareClient> = {}): CloudShareClient {
   return {
@@ -52,6 +52,42 @@ describe("createCloudShareParticipantLister", () => {
         email: "candidate@helioscx.demo",
         environmentId: null,
         studentId: null,
+      },
+    ]);
+  });
+
+  it("accepts wrapped rows and nested user/environment fields", () => {
+    expect(
+      normalizeTrainingParticipants({
+        rows: [
+          {
+            User: { Email: "candidate@helioscx.demo", Id: "user-1" },
+            Environment: { Id: "env-1" },
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        email: "candidate@helioscx.demo",
+        environmentId: "env-1",
+        studentId: "user-1",
+      },
+    ]);
+  });
+
+  it("skips irrelevant rows that have no usable email instead of failing the whole response", () => {
+    expect(
+      normalizeTrainingParticipants({
+        Students: [
+          { Id: "student-missing-email", EnvironmentId: "env-unused" },
+          { student: { email: "candidate@helioscx.demo", id: "student-1" } },
+        ],
+      }),
+    ).toEqual([
+      {
+        email: "candidate@helioscx.demo",
+        environmentId: null,
+        studentId: "student-1",
       },
     ]);
   });

@@ -9,6 +9,7 @@ import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { EventLogRepository } from "@/domain/event-log";
 import type { LabLaunchRepository } from "@/domain/lab-launch";
 import {
+  CloudShareError,
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
@@ -491,57 +492,83 @@ function toCloudShareFailureDiagnostic(input: {
     path: input.path,
   };
 
-  const cause = input.cause;
-  if (cause instanceof CloudShareRequestError) {
+  const cause = asCloudShareError(input.cause);
+  if (cause instanceof CloudShareRequestError || cause?.name === "CloudShareRequestError") {
     return {
       ...base,
-      method: cause.context?.method ?? base.method,
-      path: cause.context?.path ?? base.path,
-      host: cause.context?.host,
-      integrationSurface: cause.context?.integrationSurface ?? base.integrationSurface,
+      method: cause?.context?.method ?? base.method,
+      path: cause?.context?.path ?? base.path,
+      host: cause?.context?.host,
+      integrationSurface: cause?.context?.integrationSurface ?? base.integrationSurface,
       failureMode: "http_status",
-      responseStatus: cause.status,
-      requestHeaders: cause.context?.requestHeaders,
-      requestBody: cause.context?.requestBody,
-      responseHeaders: cause.context?.responseHeaders,
-      responseBody: cause.context?.responseBody,
-      network: cause.context?.network,
-      tls: cause.context?.tls,
+      responseStatus:
+        cause instanceof CloudShareRequestError ? cause.status : cause?.context?.status,
+      requestHeaders: cause?.context?.requestHeaders,
+      requestBody: cause?.context?.requestBody,
+      responseHeaders: cause?.context?.responseHeaders,
+      responseBody: cause?.context?.responseBody,
+      network: cause?.context?.network,
+      tls: cause?.context?.tls,
     };
   }
-  if (cause instanceof CloudShareTransportError) {
+  if (cause instanceof CloudShareTransportError || cause?.name === "CloudShareTransportError") {
     return {
       ...base,
-      method: cause.context?.method ?? base.method,
-      path: cause.context?.path ?? base.path,
-      host: cause.context?.host,
-      integrationSurface: cause.context?.integrationSurface ?? base.integrationSurface,
+      method: cause?.context?.method ?? base.method,
+      path: cause?.context?.path ?? base.path,
+      host: cause?.context?.host,
+      integrationSurface: cause?.context?.integrationSurface ?? base.integrationSurface,
       failureMode: "transport",
-      requestHeaders: cause.context?.requestHeaders,
-      requestBody: cause.context?.requestBody,
-      cause: cause.context?.cause,
+      requestHeaders: cause?.context?.requestHeaders,
+      requestBody: cause?.context?.requestBody,
+      cause: cause?.context?.cause,
     };
   }
-  if (cause instanceof CloudShareResponseError) {
+  if (cause instanceof CloudShareResponseError || cause?.name === "CloudShareResponseError") {
     return {
       ...base,
-      method: cause.context?.method ?? base.method,
-      path: cause.context?.path ?? base.path,
-      host: cause.context?.host,
-      integrationSurface: cause.context?.integrationSurface ?? base.integrationSurface,
+      method: cause?.context?.method ?? base.method,
+      path: cause?.context?.path ?? base.path,
+      host: cause?.context?.host,
+      integrationSurface: cause?.context?.integrationSurface ?? base.integrationSurface,
       failureMode: "unexpected_response",
-      requestHeaders: cause.context?.requestHeaders,
-      requestBody: cause.context?.requestBody,
-      responseHeaders: cause.context?.responseHeaders,
-      responseBody: cause.context?.responseBody,
-      network: cause.context?.network,
-      tls: cause.context?.tls,
-      issues: cause.context?.issues,
+      requestHeaders: cause?.context?.requestHeaders,
+      requestBody: cause?.context?.requestBody,
+      responseHeaders: cause?.context?.responseHeaders,
+      responseBody: cause?.context?.responseBody,
+      network: cause?.context?.network,
+      tls: cause?.context?.tls,
+      issues: cause?.context?.issues,
     };
   }
   return {
     ...base,
     failureMode: "unknown",
-    error: cause instanceof Error ? cause.message : String(cause),
+    error: input.cause instanceof Error ? input.cause.message : String(input.cause),
   };
+}
+
+function asCloudShareError(error: unknown): CloudShareError | null {
+  if (
+    error instanceof CloudShareError ||
+    error instanceof CloudShareRequestError ||
+    error instanceof CloudShareTransportError ||
+    error instanceof CloudShareResponseError
+  ) {
+    return error;
+  }
+
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    typeof (error as { name?: unknown }).name === "string" &&
+    ((error as { name: string }).name === "CloudShareError" ||
+      (error as { name: string }).name === "CloudShareRequestError" ||
+      (error as { name: string }).name === "CloudShareTransportError" ||
+      (error as { name: string }).name === "CloudShareResponseError")
+  ) {
+    return error as CloudShareError;
+  }
+
+  return null;
 }

@@ -6,7 +6,7 @@ import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repo
 import { createDraftExam, publishExam, type CreateDraftExamInput } from "@/domain/exam-catalog";
 import type { Logger } from "@/observability/logger";
 import type { CloudShareClientFactory, CloudShareConnectionRepository, CloudShareConnectionRecord } from "@/domain/cloudshare-connection";
-import { CloudShareRequestError } from "@/integrations/cloudshare";
+import { CloudShareRequestError, CloudShareResponseError } from "@/integrations/cloudshare";
 import {
   handleGetCandidateDashboard,
   handleScheduleCandidateExam,
@@ -483,6 +483,94 @@ describe("candidate scheduling handlers", () => {
           failureMode: "http_status",
           responseStatus: 403,
           responseBody: "{\"error\":\"forbidden\"}",
+        }),
+      }),
+    ]);
+  });
+
+  it("preserves unexpected_response diagnostics when list-students schema parsing fails", async () => {
+    const exams = await makeExamRepository();
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const eventLog = createInMemoryEventLogRepository();
+    const logger = makeLogger();
+
+    await attempts.save({
+      id: "attempt-ready",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "ready",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    await launches.save({
+      id: "launch-1",
+      examAttemptId: "attempt-ready",
+      candidateId: "candidate-1",
+      participantEmail: "candidate@helioscx.demo",
+      trainingId: "training-1",
+      experienceId: "training-1",
+      loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/demo",
+      status: "launched",
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+
+    const dashboard = await handleGetCandidateDashboard(
+      {
+        repository: exams,
+        attempts,
+        launches,
+        connections: makeConnectionRepository(),
+        cloudshare: makeCloudShareFactory({
+          requestV4: vi.fn(async (spec: { path: string }) => {
+            if (spec.path === "/trainings/training-1/students") {
+              throw new CloudShareResponseError(
+                "CloudShare response from https://api.accelerate.cloudshare.com/v4/trainings/training-1/students did not match the expected schema",
+                {
+                  method: "GET",
+                  host: "api.accelerate.cloudshare.com",
+                  path: "/v4/trainings/training-1/students",
+                  integrationSurface: "cloudshare.v4.training.participant_list",
+                  responseBody: '{"Students":[{"Id":"student-1"}]}',
+                  issues: ["Required"],
+                },
+              );
+            }
+            throw new Error(`unexpected path ${spec.path}`);
+          }) as never,
+        }),
+        eventLog,
+        logger,
+        now: () => new Date("2026-06-15T10:05:00.000Z"),
+        newCorrelationId: () => "corr-list-2",
+      },
+      { customerId: "customer-helios", candidateId: "candidate-1" },
+    );
+
+    expect(dashboard.status).toBe(200);
+    expect(logger.warn).toHaveBeenCalledWith(
+      "candidate dashboard environment correlation failed",
+      expect.objectContaining({
+        correlationId: "corr-list-2",
+        failureMode: "unexpected_response",
+        host: "api.accelerate.cloudshare.com",
+        path: "/v4/trainings/training-1/students",
+        integrationSurface: "cloudshare.v4.training.participant_list",
+        responseBody: '{"Students":[{"Id":"student-1"}]}',
+        issues: ["Required"],
+      }),
+    );
+    await expect(eventLog.listAll()).resolves.toEqual([
+      expect.objectContaining({
+        eventId: "corr-list-2",
+        payload: expect.objectContaining({
+          correlationId: "corr-list-2",
+          failureMode: "unexpected_response",
+          host: "api.accelerate.cloudshare.com",
+          path: "/v4/trainings/training-1/students",
+          integrationSurface: "cloudshare.v4.training.participant_list",
+          responseBody: '{"Students":[{"Id":"student-1"}]}',
+          issues: ["Required"],
         }),
       }),
     ]);
