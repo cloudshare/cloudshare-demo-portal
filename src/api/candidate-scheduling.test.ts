@@ -331,7 +331,7 @@ describe("candidate scheduling handlers", () => {
     });
   });
 
-  it("correlates a discoverable environmentId through list-students and persists it for suspend/resume", async () => {
+  it("correlates a discoverable CloudShare envId through list-students and persists it for suspend/resume", async () => {
     const exams = await makeExamRepository();
     const attempts = createInMemoryExamAttemptRepository();
     const launches = createInMemoryLabLaunchRepository();
@@ -359,12 +359,16 @@ describe("candidate scheduling handlers", () => {
 
     const requestV4 = vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
       if (spec.path === "/trainings/training-1/students") {
-        return spec.schema.parse([
-          {
-            email: "candidate@helioscx.demo",
-            environmentId: "env-1",
-          },
-        ]);
+        return spec.schema.parse({
+          count: 1,
+          items: [
+            {
+              email: "candidate@helioscx.demo",
+              envStatus: "ready",
+              envId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+            },
+          ],
+        });
       }
       throw new Error(`unexpected path ${spec.path}`);
     });
@@ -389,8 +393,8 @@ describe("candidate scheduling handlers", () => {
       }),
     );
     await expect(launches.findByExamAttemptId("attempt-ready")).resolves.toMatchObject({
-      environmentId: "env-1",
-      environmentExternalId: "env-1",
+      environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+      environmentExternalId: "ENVS2n38LTNdcC4sHsqnjRzg2",
     });
     expect(JSON.stringify(dashboard.body)).not.toContain("loginUrl");
   });

@@ -82,6 +82,10 @@ export function normalizeTrainingParticipants(payload: unknown): TrainingPartici
 
     const environmentId =
       readStringCandidate(row, [
+        ["envId"],
+        ["EnvId"],
+        ["envID"],
+        ["EnvID"],
         ["environmentId"],
         ["EnvironmentId"],
         ["environmentID"],

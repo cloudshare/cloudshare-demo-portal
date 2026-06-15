@@ -75,6 +75,27 @@ describe("createCloudShareParticipantLister", () => {
     ]);
   });
 
+  it("accepts the live wrapped response shape with envId", () => {
+    expect(
+      normalizeTrainingParticipants({
+        count: 1,
+        items: [
+          {
+            email: "candidate@helioscx.demo",
+            envStatus: "ready",
+            envId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        email: "candidate@helioscx.demo",
+        environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+        studentId: null,
+      },
+    ]);
+  });
+
   it("skips irrelevant rows that have no usable email instead of failing the whole response", () => {
     expect(
       normalizeTrainingParticipants({
