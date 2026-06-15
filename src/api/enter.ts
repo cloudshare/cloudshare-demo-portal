@@ -1,10 +1,12 @@
 import type { Logger } from "@/observability/logger";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { LabLaunchRepository } from "@/domain/lab-launch";
+import type { ExamTimer } from "@/domain/timer-sync";
 
 export interface EnterExamDeps {
   readonly attempts: ExamAttemptRepository;
   readonly launches: LabLaunchRepository;
+  readonly timer?: ExamTimer;
   readonly logger: Logger;
   readonly now?: () => Date;
 }
@@ -20,7 +22,7 @@ export interface EnterExamResponse {
   readonly body: string;
 }
 
-const ENTERABLE_STATUSES = new Set(["ready", "in_progress", "suspended"]);
+const ENTERABLE_STATUSES = new Set(["ready", "in_progress"]);
 
 export async function handleEnterExam(
   deps: EnterExamDeps,
@@ -51,6 +53,14 @@ export async function handleEnterExam(
   const launch = await deps.launches.findByExamAttemptId(request.examAttemptId);
   if (!launch) {
     return textResponse(404, "Scheduled CloudShare launch not found.");
+  }
+
+  if (attempt.status === "ready") {
+    await deps.timer?.resumeTimer(request.examAttemptId);
+    await deps.attempts.save({
+      ...attempt,
+      status: "in_progress",
+    });
   }
 
   return {

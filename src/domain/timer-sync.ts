@@ -1,4 +1,5 @@
 import { LabLaunchNotFoundError, TimerSyncError } from "./errors";
+import type { ExamAttemptRepository } from "./exam-attempt";
 import type { EnvironmentController, EnvironmentStateSource, EnvironmentStatus } from "./environment";
 import type { LabLaunchRepository, LabProvisioner } from "./lab-launch";
 
@@ -67,6 +68,7 @@ export interface SuspendExamDeps {
   readonly controller: EnvironmentController;
   readonly source: EnvironmentStateSource;
   readonly timer: ExamTimer;
+  readonly attempts: ExamAttemptRepository;
   readonly launches: LabLaunchRepository;
   readonly sleep: (ms: number) => Promise<void>;
   readonly poll?: PollOptions;
@@ -95,6 +97,7 @@ export async function suspendExam(
     deps.poll ?? DEFAULT_POLL,
   );
   await deps.timer.pauseTimer(input.examAttemptId);
+  await persistAttemptStatus(deps.attempts, input.examAttemptId, "suspended");
 }
 
 // --- resumeExam ---
@@ -103,6 +106,7 @@ export interface ResumeExamDeps {
   readonly controller: EnvironmentController;
   readonly source: EnvironmentStateSource;
   readonly timer: ExamTimer;
+  readonly attempts: ExamAttemptRepository;
   readonly launches: LabLaunchRepository;
   readonly labs: LabProvisioner;
   readonly sleep: (ms: number) => Promise<void>;
@@ -114,7 +118,6 @@ export interface ResumeExamInput {
 }
 
 export interface ResumeExamResult {
-  readonly loginUrl: string;
   readonly environmentExternalId: string;
   /** ~2-hour CloudShare preservation window, in ms. Surface this to the UI. */
   readonly suspendedPreservationLimitMs: number;
@@ -142,10 +145,14 @@ export async function resumeExam(
   // Create the sponsored link before resuming the timer: if the link call fails,
   // the timer stays safely paused and the candidate can retry cleanly.
   const link = await deps.labs.createSponsoredLink({ experienceId: launch.experienceId });
+  await deps.launches.save({
+    ...launch,
+    loginUrl: link.loginUrl,
+  });
   await deps.timer.resumeTimer(input.examAttemptId);
+  await persistAttemptStatus(deps.attempts, input.examAttemptId, "in_progress");
 
   return {
-    loginUrl: link.loginUrl,
     environmentExternalId,
     suspendedPreservationLimitMs: SUSPENDED_PRESERVATION_LIMIT_MS,
   };
@@ -162,4 +169,19 @@ function requireEnvironmentExternalId(
     });
   }
   return launch.environmentExternalId;
+}
+
+async function persistAttemptStatus(
+  attempts: ExamAttemptRepository,
+  examAttemptId: string,
+  status: "in_progress" | "suspended",
+): Promise<void> {
+  const attempt = await attempts.findById(examAttemptId);
+  if (!attempt) {
+    throw new LabLaunchNotFoundError({ examAttemptId });
+  }
+  await attempts.save({
+    ...attempt,
+    status,
+  });
 }

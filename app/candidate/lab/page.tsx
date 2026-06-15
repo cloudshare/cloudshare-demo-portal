@@ -8,9 +8,9 @@ import { LabLauncher } from "@/web/lab-launcher";
 export default async function CandidateLabPage({
   searchParams,
 }: {
-  searchParams: Promise<{ examAttemptId?: string }>;
+  searchParams: Promise<{ examAttemptId?: string; attemptStatus?: string }>;
 }) {
-  const { examAttemptId } = await searchParams;
+  const { examAttemptId, attemptStatus } = await searchParams;
 
   if (!examAttemptId) {
     return (
@@ -25,7 +25,16 @@ export default async function CandidateLabPage({
     <main>
       <h1>Launch lab</h1>
       <p>Exam attempt: {examAttemptId}</p>
-      <LabLauncher examAttemptId={examAttemptId} />
+      <LabLauncher
+        examAttemptId={examAttemptId}
+        initialAttemptStatus={
+          attemptStatus === "ready" ||
+          attemptStatus === "in_progress" ||
+          attemptStatus === "suspended"
+            ? attemptStatus
+            : "ready"
+        }
+      />
     </main>
   );
 }

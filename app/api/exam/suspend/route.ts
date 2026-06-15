@@ -10,7 +10,7 @@ import type { AuditRecord } from "@/domain/audit-trail";
  * by polling. The request body must contain `examAttemptId`.
  */
 export async function POST(request: Request) {
-  const { environmentSource, environmentController, labLaunches, kryterion, logger, heartbeatAutoSuspend, audit } =
+  const { environmentSource, environmentController, examAttempts, labLaunches, examClock, logger, heartbeatAutoSuspend, audit } =
     getServices();
 
   let body: unknown;
@@ -24,7 +24,8 @@ export async function POST(request: Request) {
     {
       controller: environmentController,
       source: environmentSource,
-      timer: kryterion,
+      timer: examClock,
+      attempts: examAttempts,
       launches: labLaunches,
       sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
       logger,

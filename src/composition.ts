@@ -20,8 +20,6 @@ import {
 } from "@/integrations/kryterion/simulator";
 import { createGenesysSimulator } from "@/integrations/genesys/simulator";
 import { genesysDemoData } from "@/integrations/genesys/demo-data";
-import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-repository";
-import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repository";
 import { createInMemoryEventBus, type IntegrationEventBus } from "@/domain/event-bus";
 import { createCloudShareIntegration } from "@/integrations/cloudshare";
 import { createCloudShareIntegrationForConnection } from "@/integrations/cloudshare";
@@ -32,13 +30,13 @@ import {
   type CloudShareEnvironmentSimulator,
 } from "@/integrations/cloudshare/environment-simulator";
 import { createCloudShareEnvironmentController } from "@/integrations/cloudshare/environment-controller";
-import { createInMemoryEnvironmentRepository } from "@/persistence/environment-repository";
 import { createInMemoryWebhookIdempotencyStore } from "@/persistence/webhook-idempotency-store";
 import {
   createHeartbeatAutoSuspend,
   type HeartbeatAutoSuspend,
 } from "@/domain/heartbeat-auto-suspend";
 import { suspendExam } from "@/domain/timer-sync";
+import { createExamClock, type ExamClock } from "@/domain/exam-clock";
 import { type DemoStep } from "@/domain/demo-control";
 import { createCloudShareGuidedJourneyProvider } from "@/integrations/cloudshare/guided-journey";
 import { createInMemoryAuditRepository } from "@/persistence/audit-repository";
@@ -47,6 +45,10 @@ import { createInMemoryEventLogRepository } from "@/persistence/event-log-reposi
 import { createInMemorySupportLogRepository } from "@/persistence/support-log-repository";
 import { createInMemoryExamAuthoringCacheRepository } from "@/persistence/exam-authoring-cache-repository";
 import { createPrismaExamCatalogRepository } from "@/persistence/prisma-exam-catalog-repository";
+import { createPrismaExamAttemptRepository } from "@/persistence/prisma-exam-attempt-repository";
+import { createPrismaLabLaunchRepository } from "@/persistence/prisma-lab-launch-repository";
+import { createPrismaEnvironmentRepository } from "@/persistence/prisma-environment-repository";
+import { createPrismaExamClockRepository } from "@/persistence/prisma-exam-clock-repository";
 import {
   createPortalSessionStore,
   createPortalUserRepository,
@@ -89,6 +91,7 @@ export interface Services {
   portalAuth: PortalAuthenticator;
   portalUsers: PortalUserRepository;
   kryterion: KryterionSimulator;
+  examClock: ExamClock;
   genesys: ExamEligibilityProvider;
   examAttempts: ExamAttemptRepository;
   events: IntegrationEventBus;
@@ -128,7 +131,7 @@ export interface Services {
   /** Record one completed demo step — the only external mutation path for completedDemoSteps. */
   markStepDone(step: DemoStep): void;
   /** Reset all demo in-memory state for a clean repeat run. */
-  resetDemo(): void;
+  resetDemo(): Promise<void>;
 }
 
 const globalForServices = globalThis as unknown as {
@@ -201,7 +204,7 @@ export function getServices(): Services {
   // subscriber is logged, not allowed to break publishing.
   const genesys = createGenesysSimulator(genesysDemoData);
   // Each in-memory repo exposes reset() for the demo clean-slate operation.
-  const examAttempts = createInMemoryExamAttemptRepository();
+  const examAttempts = createPrismaExamAttemptRepository(prisma);
   const events = createInMemoryEventBus({
     onError: (error, event) =>
       logger.error("integration event handler failed", {
@@ -225,7 +228,7 @@ export function getServices(): Services {
     },
   });
   const labProvisioner = createCloudShareLabProvisioner(cloudshare);
-  const labLaunches = createInMemoryLabLaunchRepository();
+  const labLaunches = createPrismaLabLaunchRepository(prisma);
 
   // Webhook receiver & polling source-of-truth. In demo mode the simulator is BOTH
   // the webhook emitter, the authoritative poll target, AND the suspend/resume
@@ -239,8 +242,11 @@ export function getServices(): Services {
     environmentSimulator ?? createCloudShareEnvironmentSource(cloudshare);
   const environmentController: EnvironmentController =
     environmentSimulator ?? createCloudShareEnvironmentController(cloudshare);
-  const environments = createInMemoryEnvironmentRepository();
+  const environments = createPrismaEnvironmentRepository(prisma);
   const webhookIdempotency = createInMemoryWebhookIdempotencyStore();
+  const examClock = createExamClock({
+    clocks: createPrismaExamClockRepository(prisma),
+  });
 
   // Heartbeat auto-suspend. The suspend function is pre-bound to the current
   // service instances so HeartbeatAutoSuspend stays free of framework concerns.
@@ -252,7 +258,8 @@ export function getServices(): Services {
         {
           controller: environmentController,
           source: environmentSource,
-          timer: kryterion,
+          timer: examClock,
+          attempts: examAttempts,
           launches: labLaunches,
           sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
         },
@@ -342,10 +349,11 @@ export function getServices(): Services {
     completedDemoSteps.add(step);
   }
 
-  function resetDemo(): void {
-    examAttempts.reset();
-    labLaunches.reset();
-    environments.reset();
+  async function resetDemo(): Promise<void> {
+    await prisma.examClock.deleteMany();
+    await prisma.labLaunch.deleteMany();
+    await prisma.examAttempt.deleteMany();
+    await prisma.environmentRecord.deleteMany();
     audit.reset();
     eventLog.reset();
     supportLog.reset();
@@ -368,6 +376,7 @@ export function getServices(): Services {
     portalAuth,
     portalUsers,
     kryterion,
+    examClock,
     genesys,
     examAttempts,
     events,

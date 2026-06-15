@@ -9,8 +9,9 @@ import {
   type ResumeExamDeps,
 } from "./timer-sync";
 import type { EnvironmentStateSource } from "./environment";
-import type { LabLaunchRepository, LabProvisioner } from "./lab-launch";
+import type { LabLaunch, LabLaunchRepository, LabProvisioner } from "./lab-launch";
 import { TimerSyncError, LabLaunchNotFoundError } from "./errors";
+import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-repository";
 
 const noSleep = () => Promise.resolve();
 
@@ -72,11 +73,15 @@ const launch = {
   createdAt: new Date(),
 };
 
-function makeLaunches(found: typeof launch | null = launch): LabLaunchRepository {
+function makeLaunches(found: LabLaunch | null = launch): LabLaunchRepository {
+  let current: LabLaunch | null = found;
   return {
-    save: () => Promise.resolve(),
-    findById: () => Promise.resolve(null),
-    findByExamAttemptId: () => Promise.resolve(found),
+    save: (value) => {
+      current = value;
+      return Promise.resolve();
+    },
+    findById: () => Promise.resolve(current),
+    findByExamAttemptId: () => Promise.resolve(current),
   };
 }
 
@@ -86,6 +91,20 @@ function makeLabs(loginUrl = "https://new.lab.url/login"): LabProvisioner {
     addStudent: () => Promise.resolve(),
     createSponsoredLink: () => Promise.resolve({ loginUrl }),
   };
+}
+
+async function makeAttempts(status: "ready" | "in_progress" | "suspended" = "ready") {
+  const attempts = createInMemoryExamAttemptRepository();
+  await attempts.save({
+    id: "ea-1",
+    customerId: "customer-1",
+    candidateId: "cand-1",
+    examId: "exam-1",
+    status,
+    scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+    createdAt: new Date("2026-06-15T10:00:00.000Z"),
+  });
+  return attempts;
 }
 
 // --- SUSPENDED_PRESERVATION_LIMIT_MS ---
@@ -102,14 +121,16 @@ describe("suspendExam", () => {
   it("issues suspend, polls until suspended, then pauses the exam timer", async () => {
     const controller = makeController();
     const timer = makeTimer();
+    const attempts = await makeAttempts("in_progress");
 
     await suspendExam(
-      { controller, source: fixedSource("suspended"), timer, launches: makeLaunches(), sleep: noSleep },
+      { controller, source: fixedSource("suspended"), timer, attempts, launches: makeLaunches(), sleep: noSleep },
       { examAttemptId: "ea-1" },
     );
 
     expect(controller.suspended).toEqual(["env-1"]);
     expect(timer.paused).toEqual(["ea-1"]);
+    await expect(attempts.findById("ea-1")).resolves.toMatchObject({ status: "suspended" });
   });
 
   it("throws LabLaunchNotFoundError if no lab launch exists for the exam attempt", async () => {
@@ -119,6 +140,7 @@ describe("suspendExam", () => {
           controller: makeController(),
           source: fixedSource("suspended"),
           timer: makeTimer(),
+          attempts: await makeAttempts(),
           launches: makeLaunches(null),
           sleep: noSleep,
         },
@@ -134,6 +156,7 @@ describe("suspendExam", () => {
           controller: makeController(),
           source: fixedSource("suspended"),
           timer: makeTimer(),
+          attempts: await makeAttempts(),
           launches: makeLaunches(null),
           sleep: noSleep,
         },
@@ -144,12 +167,14 @@ describe("suspendExam", () => {
 
   it("retries polling until the status reaches suspended", async () => {
     const timer = makeTimer();
+    const attempts = await makeAttempts("in_progress");
 
     await suspendExam(
       {
         controller: makeController(),
         source: eventualSource("running", "suspended", 2),
         timer,
+        attempts,
         launches: makeLaunches(),
         sleep: noSleep,
         poll: { maxAttempts: 5, intervalMs: 0 },
@@ -167,6 +192,7 @@ describe("suspendExam", () => {
           controller: makeController(),
           source: fixedSource("running"),
           timer: makeTimer(),
+          attempts: await makeAttempts("in_progress"),
           launches: makeLaunches(),
           sleep: noSleep,
           poll: { maxAttempts: 3, intervalMs: 0 },
@@ -183,6 +209,7 @@ describe("suspendExam", () => {
           controller: makeController(),
           source: nullSource,
           timer: makeTimer(),
+          attempts: await makeAttempts("in_progress"),
           launches: makeLaunches(),
           sleep: noSleep,
           poll: { maxAttempts: 2, intervalMs: 0 },
@@ -194,12 +221,14 @@ describe("suspendExam", () => {
 
   it("does NOT pause the timer if polling fails", async () => {
     const timer = makeTimer();
+    const attempts = await makeAttempts("in_progress");
     await expect(
       suspendExam(
         {
           controller: makeController(),
           source: fixedSource("running"),
           timer,
+          attempts,
           launches: makeLaunches(),
           sleep: noSleep,
           poll: { maxAttempts: 1, intervalMs: 0 },
@@ -218,13 +247,16 @@ describe("resumeExam", () => {
     const controller = makeController();
     const timer = makeTimer();
     const newUrl = "https://new.lab.url/login";
+    const attempts = await makeAttempts("suspended");
+    const launches = makeLaunches();
 
     const result = await resumeExam(
       {
         controller,
         source: fixedSource("running"),
         timer,
-        launches: makeLaunches(),
+        attempts,
+        launches,
         labs: makeLabs(newUrl),
         sleep: noSleep,
       },
@@ -233,9 +265,10 @@ describe("resumeExam", () => {
 
     expect(controller.resumed).toEqual(["env-1"]);
     expect(timer.resumed).toEqual(["ea-1"]);
-    expect(result.loginUrl).toBe(newUrl);
     expect(result.environmentExternalId).toBe("env-1");
     expect(result.suspendedPreservationLimitMs).toBe(SUSPENDED_PRESERVATION_LIMIT_MS);
+    await expect(attempts.findById("ea-1")).resolves.toMatchObject({ status: "in_progress" });
+    await expect(launches.findByExamAttemptId("ea-1")).resolves.toMatchObject({ loginUrl: newUrl });
   });
 
   it("throws LabLaunchNotFoundError if no lab launch exists for the exam attempt", async () => {
@@ -245,6 +278,7 @@ describe("resumeExam", () => {
           controller: makeController(),
           source: fixedSource("running"),
           timer: makeTimer(),
+          attempts: await makeAttempts("suspended"),
           launches: makeLaunches(null),
           labs: makeLabs(),
           sleep: noSleep,
@@ -261,6 +295,7 @@ describe("resumeExam", () => {
           controller: makeController(),
           source: fixedSource("suspended"),
           timer: makeTimer(),
+          attempts: await makeAttempts("suspended"),
           launches: makeLaunches(),
           labs: makeLabs(),
           sleep: noSleep,
@@ -278,6 +313,7 @@ describe("resumeExam", () => {
           controller: makeController(),
           source: nullSource,
           timer: makeTimer(),
+          attempts: await makeAttempts("suspended"),
           launches: makeLaunches(),
           labs: makeLabs(),
           sleep: noSleep,
@@ -290,12 +326,14 @@ describe("resumeExam", () => {
 
   it("does NOT resume the timer if polling fails", async () => {
     const timer = makeTimer();
+    const attempts = await makeAttempts("suspended");
     await expect(
       resumeExam(
         {
           controller: makeController(),
           source: fixedSource("suspended"),
           timer,
+          attempts,
           launches: makeLaunches(),
           labs: makeLabs(),
           sleep: noSleep,
@@ -309,6 +347,7 @@ describe("resumeExam", () => {
 
   it("does NOT resume the timer if createSponsoredLink fails", async () => {
     const timer = makeTimer();
+    const attempts = await makeAttempts("suspended");
     const failingLabs: LabProvisioner = {
       createExperience: () => Promise.resolve({ experienceId: "exp-1" }),
       addStudent: () => Promise.resolve(),
@@ -320,6 +359,7 @@ describe("resumeExam", () => {
           controller: makeController(),
           source: fixedSource("running"),
           timer,
+          attempts,
           launches: makeLaunches(),
           labs: failingLabs,
           sleep: noSleep,

@@ -82,6 +82,29 @@ describe("HeartbeatAutoSuspend", () => {
     expect(fields).toMatchObject({ examAttemptId: "attempt-x" });
   });
 
+  it("keeps tracking a timed-out attempt when auto-suspend fails so the next check retries", async () => {
+    const suspendFn = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("temporary failure"))
+      .mockResolvedValueOnce(undefined);
+    const logger = makeLogger();
+    const now = Date.now();
+    const service = createHeartbeatAutoSuspend({
+      suspendFn,
+      logger,
+      timeoutMs: 30_000,
+      getNow: () => now,
+    });
+
+    service.recordHeartbeat("attempt-retry");
+    await service.checkAll({ getNow: () => now + 30_000 });
+    await service.checkAll({ getNow: () => now + 60_000 });
+
+    expect(suspendFn).toHaveBeenCalledTimes(2);
+    expect(suspendFn).toHaveBeenNthCalledWith(1, "attempt-retry");
+    expect(suspendFn).toHaveBeenNthCalledWith(2, "attempt-retry");
+  });
+
   it("handles multiple attempts independently", async () => {
     const suspendFn = vi.fn().mockResolvedValue(undefined);
     const logger = makeLogger();

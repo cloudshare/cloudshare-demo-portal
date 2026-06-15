@@ -51,7 +51,7 @@ function makeDeps(overrides: Partial<DemoControlDeps> = {}): DemoControlDeps {
   const completedDemoStepsWritable = new Set<DemoStep>();
   const completedDemoSteps: ReadonlySet<DemoStep> = completedDemoStepsWritable;
   const markStepDone = vi.fn((step: DemoStep) => completedDemoStepsWritable.add(step));
-  const resetDemoState = vi.fn(() => completedDemoStepsWritable.clear());
+  const resetDemoState = vi.fn(async () => completedDemoStepsWritable.clear());
 
   return {
     logger: makeLogger(),

@@ -5,6 +5,7 @@ import type { ExamTimer, EnvironmentController } from "@/domain/timer-sync";
 import type { EnvironmentStateSource } from "@/domain/environment";
 import type { LabLaunchRepository, LabProvisioner } from "@/domain/lab-launch";
 import type { Logger } from "@/observability/logger";
+import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-repository";
 
 const noSleep = () => Promise.resolve();
 
@@ -63,11 +64,26 @@ function makeLabs(loginUrl = "https://new.lab.url"): LabProvisioner {
   };
 }
 
-function makeSuspendDeps(overrides: Partial<SuspendHandlerDeps> = {}): SuspendHandlerDeps {
+async function makeAttempts(status: "ready" | "in_progress" | "suspended" = "ready") {
+  const attempts = createInMemoryExamAttemptRepository();
+  await attempts.save({
+    id: "ea-1",
+    customerId: "customer-1",
+    candidateId: "cand-1",
+    examId: "exam-1",
+    status,
+    scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+    createdAt: new Date("2026-06-15T10:00:00.000Z"),
+  });
+  return attempts;
+}
+
+async function makeSuspendDeps(overrides: Partial<SuspendHandlerDeps> = {}): Promise<SuspendHandlerDeps> {
   return {
     controller: makeController(),
     source: fixedSource("suspended"),
     timer: makeTimer(),
+    attempts: await makeAttempts("in_progress"),
     launches: makeLaunches(),
     sleep: noSleep,
     logger,
@@ -75,11 +91,12 @@ function makeSuspendDeps(overrides: Partial<SuspendHandlerDeps> = {}): SuspendHa
   };
 }
 
-function makeResumeDeps(overrides: Partial<ResumeHandlerDeps> = {}): ResumeHandlerDeps {
+async function makeResumeDeps(overrides: Partial<ResumeHandlerDeps> = {}): Promise<ResumeHandlerDeps> {
   return {
     controller: makeController(),
     source: fixedSource("running"),
     timer: makeTimer(),
+    attempts: await makeAttempts("suspended"),
     launches: makeLaunches(),
     labs: makeLabs(),
     sleep: noSleep,
@@ -92,23 +109,23 @@ function makeResumeDeps(overrides: Partial<ResumeHandlerDeps> = {}): ResumeHandl
 
 describe("handleSuspendExam", () => {
   it("returns 400 if body is not an object", async () => {
-    const resp = await handleSuspendExam(makeSuspendDeps(), { body: null });
+    const resp = await handleSuspendExam(await makeSuspendDeps(), { body: null });
     expect(resp.status).toBe(400);
   });
 
   it("returns 400 if examAttemptId is missing", async () => {
-    const resp = await handleSuspendExam(makeSuspendDeps(), { body: {} });
+    const resp = await handleSuspendExam(await makeSuspendDeps(), { body: {} });
     expect(resp.status).toBe(400);
   });
 
   it("returns 400 if examAttemptId is an empty string", async () => {
-    const resp = await handleSuspendExam(makeSuspendDeps(), { body: { examAttemptId: "  " } });
+    const resp = await handleSuspendExam(await makeSuspendDeps(), { body: { examAttemptId: "  " } });
     expect(resp.status).toBe(400);
   });
 
   it("returns 200 and status=suspended on success", async () => {
     const resp = await handleSuspendExam(
-      makeSuspendDeps(),
+      await makeSuspendDeps(),
       { body: { examAttemptId: "ea-1" } },
     );
     expect(resp.status).toBe(200);
@@ -118,7 +135,7 @@ describe("handleSuspendExam", () => {
 
   it("returns 404 when no launch exists for the exam attempt", async () => {
     const resp = await handleSuspendExam(
-      makeSuspendDeps({ launches: makeLaunches(null) }),
+      await makeSuspendDeps({ launches: makeLaunches(null) }),
       { body: { examAttemptId: "ea-missing" } },
     );
     expect(resp.status).toBe(404);
@@ -126,7 +143,7 @@ describe("handleSuspendExam", () => {
 
   it("returns 502 when poll times out (TimerSyncError, not a not-found)", async () => {
     const resp = await handleSuspendExam(
-      makeSuspendDeps({
+      await makeSuspendDeps({
         source: fixedSource("running"),
         poll: { maxAttempts: 1, intervalMs: 0 },
       }),
@@ -137,7 +154,7 @@ describe("handleSuspendExam", () => {
 
   it("returns 500 on an unexpected error", async () => {
     const resp = await handleSuspendExam(
-      makeSuspendDeps({
+      await makeSuspendDeps({
         controller: {
           suspendEnvironment: () => Promise.reject(new Error("unexpected")),
           resumeEnvironment: () => Promise.resolve(),
@@ -153,18 +170,18 @@ describe("handleSuspendExam", () => {
 
 describe("handleResumeExam", () => {
   it("returns 400 if body is not an object", async () => {
-    const resp = await handleResumeExam(makeResumeDeps(), { body: "bad" });
+    const resp = await handleResumeExam(await makeResumeDeps(), { body: "bad" });
     expect(resp.status).toBe(400);
   });
 
   it("returns 400 if examAttemptId is an empty string", async () => {
-    const resp = await handleResumeExam(makeResumeDeps(), { body: { examAttemptId: "" } });
+    const resp = await handleResumeExam(await makeResumeDeps(), { body: { examAttemptId: "" } });
     expect(resp.status).toBe(400);
   });
 
   it("returns 200 without loginUrl and with preservation limit on success", async () => {
     const resp = await handleResumeExam(
-      makeResumeDeps({ labs: makeLabs("https://new.lab.url") }),
+      await makeResumeDeps({ labs: makeLabs("https://new.lab.url") }),
       { body: { examAttemptId: "ea-1" } },
     );
     expect(resp.status).toBe(200);
@@ -176,7 +193,7 @@ describe("handleResumeExam", () => {
 
   it("returns 404 when no launch exists", async () => {
     const resp = await handleResumeExam(
-      makeResumeDeps({ launches: makeLaunches(null) }),
+      await makeResumeDeps({ launches: makeLaunches(null) }),
       { body: { examAttemptId: "ea-missing" } },
     );
     expect(resp.status).toBe(404);
@@ -184,7 +201,7 @@ describe("handleResumeExam", () => {
 
   it("returns 502 when poll times out", async () => {
     const resp = await handleResumeExam(
-      makeResumeDeps({
+      await makeResumeDeps({
         source: fixedSource("suspended"),
         poll: { maxAttempts: 1, intervalMs: 0 },
       }),
@@ -195,7 +212,7 @@ describe("handleResumeExam", () => {
 
   it("returns 500 on an unexpected error", async () => {
     const resp = await handleResumeExam(
-      makeResumeDeps({
+      await makeResumeDeps({
         controller: {
           suspendEnvironment: () => Promise.resolve(),
           resumeEnvironment: () => Promise.reject(new Error("boom")),
