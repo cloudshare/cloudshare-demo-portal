@@ -1,9 +1,12 @@
 import { z } from "zod";
 import type { CloudShareClient } from "./client";
 import type {
+  AddParticipantInput,
   AddStudentInput,
   CreateExperienceInput,
   CreateExperienceResult,
+  CreateTrainingInput,
+  CreateTrainingResult,
   CreateSponsoredLinkInput,
   CreateSponsoredLinkResult,
   LabProvisioner,
@@ -15,9 +18,9 @@ import type {
  * Zod-validated responses; failures surface as the adapter's typed CloudShareErrors.
  *
  * NOTE (assumptions to verify against a live tenant, isolated behind this module):
- * the exact v4 paths/bodies below — `/experiences`, the `RegisteredStudentsOnly`
- * visibility value, the `/students` and `/sponsoredLinks` sub-resources — are
- * modelled on the documented Accelerate flow. Only this file changes if they differ.
+ * the exact v4 paths/bodies below — `/trainings`, the participant-add shape, and
+ * the sponsored-link body — are modelled on the documented Accelerate flow and
+ * local discovery notes. Only this file changes if they differ.
  */
 
 const experienceSchema = z.object({ id: z.string().min(1) });
@@ -28,6 +31,38 @@ export function createCloudShareLabProvisioner(
   client: CloudShareClient,
 ): LabProvisioner {
   return {
+    async createTraining(input: CreateTrainingInput): Promise<CreateTrainingResult> {
+      const training = await client.requestV4({
+        method: "POST",
+        path: "/trainings",
+        body: {
+          title: input.title,
+          start: input.scheduledFor.toISOString(),
+          type: "instructorLed",
+          projectId: input.projectId,
+          blueprintId: input.blueprintId,
+          policyId: input.policyId,
+          regionId: input.regionId,
+          instructorId: input.instructorId,
+        },
+        schema: experienceSchema,
+      });
+      return { trainingId: training.id };
+    },
+
+    async addParticipant(input: AddParticipantInput): Promise<void> {
+      await client.requestV4({
+        method: "POST",
+        path: `/trainings/${input.trainingId}/students`,
+        body: {
+          email: input.email,
+          firstName: input.firstName,
+          lastName: input.lastName,
+        },
+        schema: addStudentSchema,
+      });
+    },
+
     async createExperience(input: CreateExperienceInput): Promise<CreateExperienceResult> {
       const experience = await client.requestV4({
         method: "POST",
@@ -61,7 +96,18 @@ export function createCloudShareLabProvisioner(
     ): Promise<CreateSponsoredLinkResult> {
       const link = await client.requestV4({
         method: "POST",
-        path: `/experiences/${input.experienceId}/sponsoredLinks`,
+        path:
+          input.trainingId !== undefined
+            ? `/trainings/${input.trainingId}/sponsored-link`
+            : `/experiences/${input.experienceId}/sponsoredLinks`,
+        body:
+          input.trainingId !== undefined
+            ? {
+                email: input.email,
+                firstName: input.firstName,
+                lastName: input.lastName,
+              }
+            : undefined,
         schema: sponsoredLinkSchema,
       });
       return { loginUrl: link.loginUrl };

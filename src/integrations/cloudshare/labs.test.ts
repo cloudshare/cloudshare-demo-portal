@@ -7,45 +7,74 @@ import type { CloudShareClient } from "./client";
 import type { V4TokenProvider } from "./v4-auth";
 
 describe("cloudShareLabProvisioner — request shape", () => {
-  it("creates the experience as Registered Students Only and passes the externalId", async () => {
+  it("creates a training with instructorLed timing and exam provisioning tuple", async () => {
     const requestV4 = vi.fn(async (_spec: unknown) => ({ id: "exp-1" }));
     const client = { requestV4, requestV3: vi.fn() } as unknown as CloudShareClient;
     const labs = createCloudShareLabProvisioner(client);
 
-    const result = await labs.createExperience({
+    const result = await labs.createTraining!({
       title: "Exam GCP-ASSOC",
-      environmentExternalId: "env-ext-1",
-      registeredStudentsOnly: true,
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      projectId: "project-1",
+      blueprintId: "bp-1",
+      policyId: "policy-1",
+      regionId: "region-1",
+      instructorId: "instructor-1",
     });
 
-    expect(result).toEqual({ experienceId: "exp-1" });
+    expect(result).toEqual({ trainingId: "exp-1" });
     const spec = requestV4.mock.calls[0][0] as unknown as {
       method: string;
       path: string;
       body: Record<string, unknown>;
     };
     expect(spec.method).toBe("POST");
-    expect(spec.path).toBe("/experiences");
+    expect(spec.path).toBe("/trainings");
     expect(spec.body).toMatchObject({
-      visibility: "RegisteredStudentsOnly",
-      externalId: "env-ext-1",
+      type: "instructorLed",
+      start: "2026-06-15T16:00:00.000Z",
+      projectId: "project-1",
+      blueprintId: "bp-1",
+      policyId: "policy-1",
+      regionId: "region-1",
+      instructorId: "instructor-1",
     });
   });
 
-  it("targets the experience-scoped paths for add-student and sponsored-link", async () => {
-    const requestV4 = vi.fn(async (spec: { path: string }) =>
-      spec.path.endsWith("/sponsoredLinks")
+  it("targets the training-scoped participant and sponsored-link paths", async () => {
+    const requestV4 = vi.fn(async (spec: { path: string; body?: unknown }) =>
+      spec.path.endsWith("/sponsored-link")
         ? { loginUrl: "https://classic.cloudshare.com/login?t=x" }
         : {},
     );
     const client = { requestV4, requestV3: vi.fn() } as unknown as CloudShareClient;
     const labs = createCloudShareLabProvisioner(client);
 
-    await labs.addStudent({ experienceId: "exp-1", candidateId: "c-1" });
-    const link = await labs.createSponsoredLink({ experienceId: "exp-1" });
+    await labs.addParticipant!({
+      trainingId: "training-1",
+      email: "candidate@helioscx.demo",
+      firstName: "Candidate",
+      lastName: "Demo",
+    });
+    const link = await labs.createSponsoredLink({
+      trainingId: "training-1",
+      email: "candidate@helioscx.demo",
+      firstName: "Candidate",
+      lastName: "Demo",
+    });
 
-    expect(requestV4.mock.calls[0][0].path).toBe("/experiences/exp-1/students");
-    expect(requestV4.mock.calls[1][0].path).toBe("/experiences/exp-1/sponsoredLinks");
+    expect(requestV4.mock.calls[0][0].path).toBe("/trainings/training-1/students");
+    expect(requestV4.mock.calls[0][0].body).toEqual({
+      email: "candidate@helioscx.demo",
+      firstName: "Candidate",
+      lastName: "Demo",
+    });
+    expect(requestV4.mock.calls[1][0].path).toBe("/trainings/training-1/sponsored-link");
+    expect(requestV4.mock.calls[1][0].body).toEqual({
+      email: "candidate@helioscx.demo",
+      firstName: "Candidate",
+      lastName: "Demo",
+    });
     expect(link.loginUrl).toContain("classic.cloudshare.com");
   });
 });
@@ -69,18 +98,32 @@ describe("cloudShareLabProvisioner — fixture mode (live/fixture parity)", () =
   it("runs the full provision sequence against recorded fixtures (no live calls)", async () => {
     const labs = createCloudShareLabProvisioner(fixtureClient());
 
-    const { experienceId } = await labs.createExperience({
+    const { trainingId } = await labs.createTraining!({
       title: "Exam GCP-ASSOC",
-      environmentExternalId: "env-ext-1",
-      registeredStudentsOnly: true,
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      projectId: "project-1",
+      blueprintId: "bp-1",
+      policyId: "policy-1",
+      regionId: "region-1",
+      instructorId: "instructor-1",
     });
-    expect(experienceId).toBe("exp-demo-1");
+    expect(trainingId).toBe("exp-demo-1");
 
     await expect(
-      labs.addStudent({ experienceId, candidateId: "cand-001" }),
+      labs.addParticipant!({
+        trainingId,
+        email: "candidate@helioscx.demo",
+        firstName: "Candidate",
+        lastName: "Demo",
+      }),
     ).resolves.toBeUndefined();
 
-    const { loginUrl } = await labs.createSponsoredLink({ experienceId });
+    const { loginUrl } = await labs.createSponsoredLink({
+      trainingId,
+      email: "candidate@helioscx.demo",
+      firstName: "Candidate",
+      lastName: "Demo",
+    });
     expect(loginUrl).toContain("classic.cloudshare.com");
   });
 });
