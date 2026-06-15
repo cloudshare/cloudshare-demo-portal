@@ -89,11 +89,13 @@ describe("cloudShareLabProvisioner — request shape", () => {
     });
 
     expect(requestV4.mock.calls[0][0].path).toBe("/trainings/training-1/students");
-    expect(requestV4.mock.calls[0][0].body).toEqual({
-      email: "candidate@helioscx.demo",
-      firstName: "Candidate",
-      lastName: "Demo",
-    });
+    expect(requestV4.mock.calls[0][0].body).toEqual([
+      {
+        email: "candidate@helioscx.demo",
+        firstName: "Candidate",
+        lastName: "Demo",
+      },
+    ]);
     expect(requestV4.mock.calls[1][0].path).toBe("/trainings/training-1/sponsored-link");
     expect(requestV4.mock.calls[1][0].body).toEqual({
       email: "candidate@helioscx.demo",

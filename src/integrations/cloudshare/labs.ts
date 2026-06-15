@@ -102,11 +102,13 @@ export function createCloudShareLabProvisioner(
       await client.requestV4({
         method: "POST",
         path: `/trainings/${input.trainingId}/students`,
-        body: {
-          email: input.email,
-          firstName: input.firstName,
-          lastName: input.lastName,
-        },
+        body: [
+          {
+            email: input.email,
+            firstName: input.firstName,
+            lastName: input.lastName,
+          },
+        ],
         schema: addStudentSchema,
       });
     },

@@ -72,4 +72,24 @@ describe("candidate scheduling client", () => {
     expect(shouldShowPublishedExamList({ loading: false, examCount: 1 })).toBe(true);
     expect(shouldShowNoPublishedExams({ loading: false, examCount: 1 })).toBe(false);
   });
+
+  it("includes the support correlation ID in scheduling errors", async () => {
+    await expect(
+      scheduleCandidateExam(
+        vi.fn().mockResolvedValue({
+          ok: false,
+          json: async () => ({
+            error: "CloudShare provisioning failed for the scheduled exam.",
+            correlationId: "corr-123",
+          }),
+        }),
+        {
+          examId: "exam-1",
+          scheduledFor: "2026-06-15T16:00:00.000Z",
+        },
+      ),
+    ).rejects.toThrow(
+      "CloudShare provisioning failed for the scheduled exam. Reference ID: corr-123.",
+    );
+  });
 });

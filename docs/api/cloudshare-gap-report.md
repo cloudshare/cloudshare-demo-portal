@@ -561,11 +561,12 @@ The current adapter sends:
 - `Passphrase`
 - `UsersEarlyAccess: { GrantEarlyAccess: 2 }` (modelled on v3 "No early access allowed")
 
-The participant-add body is still assumed to be `{ email, firstName, lastName }`, and the
-sponsored-link body is assumed to accept the same participant fields. Candidate first name and last
-name must be stored by the portal, not inferred from the email address, because CloudShare
-participant registration requires first name, last name, and email. These sub-resource shapes still
-require a successful live scheduling run.
+The participant-add body for `POST /v4/trainings/{trainingId}/students` must be an array of student
+objects, not a single object:
+`[{ email, firstName, lastName }]`. Candidate first name and last name must be stored by the portal,
+not inferred from the email address, because CloudShare participant registration requires first name,
+last name, and email. The sponsored-link body is still assumed to accept a single participant object;
+that sub-resource shape still requires a successful live scheduling run.
 
 **Update (2026-06-15, live v3/v4 contradiction):** a real candidate scheduling attempt confirmed
 that `TeamId` is a required live field for `POST /v4/trainings`, despite not being marked required
@@ -595,10 +596,15 @@ must remain isolated inside `integrations/cloudshare`.
   candidate-safe responses and admin-visible diagnostics, but the slice still requires live UI
   verification before merge.
 
+**Update (2026-06-15, Add Training Students body shape):** support-log request-body diagnostics
+confirmed the portal was sending a single JSON object to `POST /v4/trainings/{trainingId}/students`,
+while the v4 Add Training Students documentation and curl sample require an array of student
+objects. The adapter now sends `[{ email, firstName, lastName }]`.
+
 **Action required:** rerun the real candidate scheduling flow against the live tenant, confirm
 whether `MainInstructor.Email` should come from the configured instructor email rather than an
-opaque member ID, and update this entry immediately if any remaining field names, required fields,
-enum values, or path semantics differ.
+opaque member ID, confirm the sponsored-link body shape, and update this entry immediately if any
+remaining field names, required fields, enum values, or path semantics differ.
 
 **Code reference:** `src/integrations/cloudshare/labs.ts`, `src/domain/scheduling.ts`
 
@@ -636,5 +642,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-06-15 (updated Slice 4 v4 training scheduling with live TeamId contradiction and project-filtered Teams workaround).
+*Last updated: 2026-06-15 (updated Slice 4 add-training-students body shape to array of student objects).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*

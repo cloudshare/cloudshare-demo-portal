@@ -80,7 +80,11 @@ export async function scheduleCandidateExam(
 
 function readError(json: unknown, fallback: string): string {
   if (typeof json === "object" && json !== null && typeof (json as { error?: unknown }).error === "string") {
-    return (json as { error: string }).error;
+    const error = (json as { error: string }).error;
+    const correlationId = (json as { correlationId?: unknown }).correlationId;
+    return typeof correlationId === "string" && correlationId.length > 0
+      ? `${error} Reference ID: ${correlationId}.`
+      : error;
   }
   return fallback;
 }
