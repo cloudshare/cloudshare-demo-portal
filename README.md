@@ -258,21 +258,14 @@ A candidate self-schedules with no admin in the loop:
 
 ## Lab launch (entitlement-gated)
 
-`POST /api/lab/launch` performs the controlled CloudShare `LabLaunch`:
+Direct JSON launch via `POST /api/lab/launch` is retired. Sponsored-link
+`loginUrl` values are bearer credentials and must never be returned in JSON or
+shown in the UI. Slice 5 owns the time-gated `/enter` endpoint, which will
+recompute entitlement server-side and issue a 302 redirect to the server-held
+sponsored link.
 
-1. **Entitlement** is recomputed server-side from the persisted `ExamAttempt`
-   (`computeEntitlement`) — never trusted from the client; the request carries
-   only `examAttemptId`.
-2. The lab is provisioned in strict order via the `LabProvisioner` port:
-   **Create Experience (Registered Students Only) → Add Student → Sponsored Link**.
-   `environmentExternalId` is set at creation and persisted for correlation.
-3. **Add Student is the real entitlement gate** — if it fails, the launch aborts
-   with an actionable `LabLaunchError` (HTTP 502) rather than handing out a link
-   that would log in to a silently-denied environment.
-
-The candidate opens the returned Classic-domain `loginUrl` in a child window via
-`openLabWindow` (`src/web/lab-window.ts`), which retains the window handle for
-later liveness checks. Works in both live and fixture modes (chosen by `PORTAL_MODE`).
+The legacy `/api/lab/launch` route now returns `410 Gone` so it cannot bypass the
+launch-window gate or leak the sponsored link.
 
 ## Webhooks & environment state (polling is the source of truth)
 
@@ -374,7 +367,7 @@ Every significant portal action is written to an in-memory `AuditRepository` and
 surfaced to support teams via the admin API and UI at `/admin`:
 
 **Audit records** (`src/domain/audit-trail.ts`) are written on:
-- `lab_launched` / `lab_launch_failed` — from `POST /api/lab/launch`
+- `lab_launched` / `lab_launch_failed` — reserved for the Slice 5 `/enter` flow
 - `lab_suspended` / `lab_suspend_failed` — from `POST /api/exam/suspend`
 - `lab_resumed` / `lab_resume_failed` — from `POST /api/exam/resume`
 - `score_retrieved` — reserved for the score endpoint (Slice 9+)

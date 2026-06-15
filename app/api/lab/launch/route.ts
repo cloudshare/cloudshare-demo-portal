@@ -1,96 +1,15 @@
-import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
-import { getServices } from "@/composition";
-import { launchLab } from "@/domain/lab-launch";
-import { LabLaunchError, NotEntitledError } from "@/domain/errors";
-import type { AuditRecord } from "@/domain/audit-trail";
 
 /**
- * Launch the CloudShare lab for an ExamAttempt. Entitlement is recomputed
- * server-side inside `launchLab` from persisted state — the request carries only
- * the examAttemptId, never an entitlement claim. Returns the Classic-domain
- * loginUrl the candidate opens in a child window.
+ * Retired direct launch endpoint.
+ *
+ * ADR-002 requires sponsored-link URLs to stay server-only and be reached via a
+ * time-gated `/enter` redirect. Keeping this legacy JSON endpoint active would
+ * leak the bearer `loginUrl` and bypass the launch gate.
  */
-export async function POST(request: Request) {
-  const { labProvisioner, labLaunches, examAttempts, logger, audit } = getServices();
-
-  let body: unknown;
-  try {
-    body = await request.json();
-  } catch {
-    return NextResponse.json({ error: "invalid JSON body" }, { status: 400 });
-  }
-  if (typeof body !== "object" || body === null) {
-    return NextResponse.json({ error: "invalid request body" }, { status: 400 });
-  }
-  const { examAttemptId } = body as { examAttemptId?: unknown };
-  if (typeof examAttemptId !== "string") {
-    return NextResponse.json({ error: "examAttemptId is required" }, { status: 400 });
-  }
-
-  try {
-    const existingLaunch = await labLaunches.findByExamAttemptId(examAttemptId);
-    const launch = await launchLab(
-      {
-        attempts: examAttempts,
-        labs: labProvisioner,
-        launches: labLaunches,
-        newId: () => randomUUID(),
-        newExternalId: () => randomUUID(),
-        now: () => new Date(),
-      },
-      { examAttemptId },
-    );
-    const isReuse = existingLaunch !== null;
-    logger.info(isReuse ? "lab launch reused" : "lab launched", {
-      examAttemptId,
-      environmentExternalId: launch.environmentExternalId,
-    });
-    await audit.write({
-      id: randomUUID(),
-      examAttemptId,
-      action: isReuse ? "lab_launch_reused" : "lab_launched",
-      outcome: "success",
-      details: { environmentExternalId: launch.environmentExternalId },
-      occurredAt: new Date(),
-    } satisfies AuditRecord);
-    return NextResponse.json(
-      {
-        examAttemptId,
-        loginUrl: launch.loginUrl,
-        environmentExternalId: launch.environmentExternalId,
-      },
-      { status: isReuse ? 200 : 201 },
-    );
-  } catch (err) {
-    if (err instanceof NotEntitledError) {
-      return NextResponse.json({ error: "not entitled to launch a lab" }, { status: 403 });
-    }
-    if (err instanceof LabLaunchError) {
-      logger.error("lab launch failed", { examAttemptId, ...(err.context ?? {}) });
-      await audit.write({
-        id: randomUUID(),
-        examAttemptId,
-        action: "lab_launch_failed",
-        outcome: "failure",
-        error: err.message,
-        details: err.context ?? undefined,
-        occurredAt: new Date(),
-      } satisfies AuditRecord);
-      return NextResponse.json({ error: "lab provisioning failed" }, { status: 502 });
-    }
-    logger.error("lab launch errored", {
-      examAttemptId,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    await audit.write({
-      id: randomUUID(),
-      examAttemptId,
-      action: "lab_launch_failed",
-      outcome: "failure",
-      error: err instanceof Error ? err.message : String(err),
-      occurredAt: new Date(),
-    } satisfies AuditRecord);
-    return NextResponse.json({ error: "internal error" }, { status: 500 });
-  }
+export async function POST() {
+  return NextResponse.json(
+    { error: "Lab launch must use the time-gated /enter redirect." },
+    { status: 410 },
+  );
 }
