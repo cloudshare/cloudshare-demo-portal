@@ -10,6 +10,8 @@ export interface CandidateScheduledAttemptView {
   readonly waitingMessage: string | null;
 }
 
+const ENTERABILITY_TIMER_FUZZ_MS = 250;
+
 export function getLatestAttemptForExam(
   attempts: CandidateDashboardData["attempts"],
   examId: string,
@@ -60,4 +62,21 @@ export function buildScheduledAttemptViews(
       canEnter: canEnterAttempt(attempt, nowMs),
       waitingMessage: getAttemptWaitingMessage(attempt, nowMs),
     }));
+}
+
+export function getNextEnterabilityWakeUpDelayMs(
+  attempts: CandidateDashboardData["attempts"],
+  nowMs: number,
+): number | null {
+  const nextScheduledForMs = attempts
+    .filter((attempt) => attempt.status === "ready" && attempt.scheduledFor)
+    .map((attempt) => new Date(attempt.scheduledFor as string).getTime())
+    .filter((scheduledForMs) => Number.isFinite(scheduledForMs) && scheduledForMs > nowMs)
+    .sort((left, right) => left - right)[0];
+
+  if (nextScheduledForMs === undefined) {
+    return null;
+  }
+
+  return Math.max(0, nextScheduledForMs - nowMs + ENTERABILITY_TIMER_FUZZ_MS);
 }

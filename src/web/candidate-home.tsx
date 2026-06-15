@@ -15,6 +15,7 @@ import {
   canEnterAttempt,
   getAttemptWaitingMessage,
   getLatestAttemptForExam,
+  getNextEnterabilityWakeUpDelayMs,
 } from "./candidate-home-state";
 
 interface CandidateHomeProps {
@@ -32,6 +33,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
   const [submittingExamId, setSubmittingExamId] = useState<string | null>(null);
   const [scheduleDrafts, setScheduleDrafts] = useState<Record<string, string>>({});
   const [coldStartNotice, setColdStartNotice] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
     let cancelled = false;
@@ -42,6 +44,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
       try {
         if (!cancelled) {
           setDashboard(await loadCandidateDashboard(fetch));
+          setNowMs(Date.now());
         }
       } catch {
         if (!cancelled) {
@@ -59,6 +62,19 @@ export function CandidateHome({ email }: CandidateHomeProps) {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const delayMs = getNextEnterabilityWakeUpDelayMs(dashboard.attempts, nowMs);
+    if (delayMs === null) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setNowMs(Date.now());
+    }, delayMs);
+
+    return () => window.clearTimeout(timer);
+  }, [dashboard.attempts, nowMs]);
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -88,6 +104,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
           result.attempt,
         ].flat(),
       }));
+      setNowMs(Date.now());
       if (result.coldStartLikely) {
         setColdStartNotice(
           "Scheduled within five hours: CloudShare may cold-start the environment on login.",
@@ -113,7 +130,6 @@ export function CandidateHome({ email }: CandidateHomeProps) {
     }
   }
 
-  const nowMs = Date.now();
   const scheduledAttempts = buildScheduledAttemptViews(dashboard, nowMs);
 
   return (

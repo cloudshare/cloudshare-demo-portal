@@ -4,6 +4,7 @@ import {
   canEnterAttempt,
   getAttemptWaitingMessage,
   getLatestAttemptForExam,
+  getNextEnterabilityWakeUpDelayMs,
 } from "./candidate-home-state";
 import type { CandidateDashboardData } from "./candidate-scheduling";
 
@@ -65,5 +66,24 @@ describe("candidate home attempt state", () => {
         new Date("2026-06-16T15:00:00.000Z").getTime(),
       ),
     ).toMatch(/Enter exam becomes available/);
+  });
+
+  it("computes a one-shot wake-up delay for the next ready attempt that will become enterable", () => {
+    const delayMs = getNextEnterabilityWakeUpDelayMs(
+      dashboard.attempts,
+      new Date("2026-06-16T15:59:59.000Z").getTime(),
+    );
+
+    expect(delayMs).toBeGreaterThan(1_000);
+    expect(delayMs).toBeLessThanOrEqual(1_500);
+  });
+
+  it("returns null when no future ready attempt needs an enterability wake-up", () => {
+    expect(
+      getNextEnterabilityWakeUpDelayMs(
+        dashboard.attempts,
+        new Date("2026-06-18T10:00:00.000Z").getTime(),
+      ),
+    ).toBeNull();
   });
 });
