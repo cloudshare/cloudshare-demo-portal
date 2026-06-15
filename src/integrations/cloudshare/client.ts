@@ -125,6 +125,14 @@ function sanitizeBody(body: string | undefined): unknown {
   }
 }
 
+function sanitizeResponseBody(body: string): string {
+  try {
+    return JSON.stringify(redactSensitiveBodyFields(JSON.parse(body)));
+  } catch {
+    return redactSensitiveText(body);
+  }
+}
+
 function redactSensitiveBodyFields(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(redactSensitiveBodyFields);
@@ -135,13 +143,22 @@ function redactSensitiveBodyFields(value: unknown): unknown {
 
   const redacted: Record<string, unknown> = {};
   for (const [key, fieldValue] of Object.entries(value)) {
-    if (/api[-_]?key|secret|token|hmac|passphrase|password/i.test(key)) {
+    if (/api[-_]?key|secret|token|hmac|passphrase|password|login[-_]?url/i.test(key)) {
       redacted[key] = "[REDACTED]";
       continue;
     }
-    redacted[key] = redactSensitiveBodyFields(fieldValue);
+    redacted[key] =
+      typeof fieldValue === "string"
+        ? redactSensitiveText(fieldValue)
+        : redactSensitiveBodyFields(fieldValue);
   }
   return redacted;
+}
+
+function redactSensitiveText(value: string): string {
+  return value
+    .replace(/https?:\/\/\S*(?:ClassSponsoredLink|SponsoredLink|Ent\/Login)\S*/gi, "[REDACTED]")
+    .replace(/([?&](?:token|access_token|loginUrl)=)[^&\s"]+/gi, "$1[REDACTED]");
 }
 
 function describeRequest(urlText: string): {
@@ -220,7 +237,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
     trace("info", "cloudshare response received", request, {
       responseStatus: response.status,
       responseHeaders: sanitizeResponseHeaders(response.headers),
-      responseBody: response.body,
+      responseBody: sanitizeResponseBody(response.body),
       network: response.network,
       tls: response.tls,
     });
@@ -237,7 +254,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           requestHeaders: sanitizeHeaders(request.headers),
           requestBody: sanitizeBody(request.body),
           responseHeaders: sanitizeResponseHeaders(response.headers),
-          responseBody: response.body,
+          responseBody: sanitizeResponseBody(response.body),
           network: response.network,
           tls: response.tls,
         },
@@ -259,7 +276,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           requestHeaders: sanitizeHeaders(request.headers),
           requestBody: sanitizeBody(request.body),
           responseHeaders: sanitizeResponseHeaders(response.headers),
-          responseBody: response.body,
+          responseBody: sanitizeResponseBody(response.body),
           network: response.network,
           tls: response.tls,
         },
@@ -278,7 +295,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           requestHeaders: sanitizeHeaders(request.headers),
           requestBody: sanitizeBody(request.body),
           responseHeaders: sanitizeResponseHeaders(response.headers),
-          responseBody: response.body,
+          responseBody: sanitizeResponseBody(response.body),
           network: response.network,
           tls: response.tls,
           issues: parsed.error.issues.map((i) => i.message),
@@ -374,7 +391,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
       trace("info", "cloudshare response received", request, {
         responseStatus: response.status,
         responseHeaders: sanitizeResponseHeaders(response.headers),
-        responseBody: response.body,
+        responseBody: sanitizeResponseBody(response.body),
         network: response.network,
         tls: response.tls,
       });
@@ -391,7 +408,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
             requestHeaders: sanitizeHeaders(request.headers),
             requestBody: sanitizeBody(request.body),
             responseHeaders: sanitizeResponseHeaders(response.headers),
-            responseBody: response.body,
+            responseBody: sanitizeResponseBody(response.body),
             network: response.network,
             tls: response.tls,
           },

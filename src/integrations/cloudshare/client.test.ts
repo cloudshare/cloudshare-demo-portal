@@ -107,6 +107,35 @@ describe("createCloudShareClient — v4", () => {
       }),
     });
   });
+
+  it("redacts sponsored-link login URLs from response diagnostics", async () => {
+    const trace = vi.fn();
+    const { http } = capturingHttp(
+      ok({ loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret-token" }),
+    );
+    const client = createCloudShareClient({
+      http,
+      endpoints,
+      tokenProvider: stubTokenProvider,
+      v3: { apiId: "api-id", apiKey: "api-key" },
+      trace,
+    });
+
+    await client.requestV4({
+      method: "POST",
+      path: "/trainings/training-1/sponsored-link",
+      schema: z.object({ loginUrl: z.string() }),
+    });
+
+    const responseTrace = trace.mock.calls[1]?.[0].fields;
+    expect(JSON.stringify(responseTrace)).not.toContain("secret-token");
+    expect(JSON.stringify(responseTrace)).not.toContain("ClassSponsoredLink");
+    expect(responseTrace).toEqual(
+      expect.objectContaining({
+        responseBody: "{\"loginUrl\":\"[REDACTED]\"}",
+      }),
+    );
+  });
 });
 
 describe("createCloudShareClient — v3", () => {
