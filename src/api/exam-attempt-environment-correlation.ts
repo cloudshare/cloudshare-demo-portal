@@ -47,18 +47,6 @@ export async function ensureExamAttemptEnvironmentCorrelation(
     return;
   }
 
-  if (launch.environmentExternalId) {
-    return;
-  }
-
-  if (launch.environmentId) {
-    await deps.launches.save({
-      ...launch,
-      environmentExternalId: launch.environmentId,
-    });
-    return;
-  }
-
   const connection = await deps.connections.findByCustomerId(attempt.customerId);
   if (!connection) {
     return;

@@ -6,6 +6,8 @@ const normalizedParticipantsSchema = z.array(
   z.object({
     email: z.string().email(),
     environmentId: z.string().min(1).nullable(),
+    environmentStatus: z.string().min(1).nullable(),
+    participationStatus: z.string().min(1).nullable(),
     studentId: z.string().min(1).nullable(),
   }),
 );
@@ -96,6 +98,28 @@ export function normalizeTrainingParticipants(payload: unknown): TrainingPartici
         ["Environment", "Id"],
       ]) ?? null;
 
+    const environmentStatus =
+      readStringCandidate(row, [
+        ["envStatus"],
+        ["EnvStatus"],
+        ["environmentStatus"],
+        ["EnvironmentStatus"],
+        ["environment", "status"],
+        ["environment", "Status"],
+        ["Environment", "status"],
+        ["Environment", "Status"],
+      ]) ?? null;
+
+    const participationStatus =
+      readStringCandidate(row, [
+        ["participationStatus"],
+        ["ParticipationStatus"],
+        ["participantStatus"],
+        ["ParticipantStatus"],
+        ["status"],
+        ["Status"],
+      ]) ?? null;
+
     const studentId =
       readStringCandidate(row, [
         ["studentId"],
@@ -112,7 +136,7 @@ export function normalizeTrainingParticipants(payload: unknown): TrainingPartici
         ["User", "Id"],
       ]) ?? null;
 
-    return [{ email, environmentId, studentId }];
+    return [{ email, environmentId, environmentStatus, participationStatus, studentId }];
   });
 
   return normalizedParticipantsSchema.parse(participants);

@@ -114,6 +114,7 @@ function makeCloudShareFactory(overrides: Partial<ReturnType<CloudShareClientFac
             {
               email: "candidate@helioscx.demo",
               environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+              environmentStatus: "ready",
             },
           ]);
         }
@@ -143,6 +144,7 @@ function makeSuspendCloudShareFactory(): CloudShareClientFactory {
               {
                 email: "candidate@helioscx.demo",
                 environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+                environmentStatus: "ready",
               },
             ]);
           }
@@ -171,6 +173,7 @@ function makeResumeCloudShareFactory(): CloudShareClientFactory {
               {
                 email: "candidate@helioscx.demo",
                 environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+                environmentStatus: "ready",
               },
             ]);
           }
@@ -316,7 +319,18 @@ describe("handleSuspendExam", () => {
         .fn()
         .mockResolvedValueOnce({})
         .mockResolvedValue({ envStatus: "Suspended" }),
-      requestV4: vi.fn(),
+      requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+        if (spec.path === "/trainings/training-1/students") {
+          return spec.schema.parse([
+            {
+              email: "candidate@helioscx.demo",
+              environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+              environmentStatus: "ready",
+            },
+          ]);
+        }
+        throw new Error(`unexpected v4 path ${spec.path}`);
+      }) as unknown as CloudShareClient["requestV4"],
     });
     const cloudshare = {
       forConnection: vi.fn().mockReturnValue(customerClient),
@@ -394,6 +408,7 @@ describe("handleSuspendExam", () => {
             {
               email: "candidate@helioscx.demo",
               environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+              environmentStatus: "ready",
             },
           ]);
         }
@@ -425,6 +440,73 @@ describe("handleSuspendExam", () => {
       environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
       environmentExternalId: "ENVS2n38LTNdcC4sHsqnjRzg2",
     });
+  });
+
+  it("does not call CloudShare suspend with a pending placeholder envId and fails as not correlated yet", async () => {
+    const launches = makeLaunches({
+      id: "launch-1",
+      examAttemptId: "ea-1",
+      candidateId: "cand-1",
+      participantEmail: "candidate@helioscx.demo",
+      trainingId: "training-1",
+      experienceId: "training-1",
+      environmentId: "ENKolD1-ab84YIxODeMGob9A2",
+      environmentExternalId: "ENKolD1-ab84YIxODeMGob9A2",
+      loginUrl: "https://old.lab.url",
+      status: "launched",
+      createdAt: new Date(),
+    });
+    const customerClient = makeCloudShareClient({
+      requestV3: vi.fn(),
+      requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+        if (spec.path === "/trainings/training-1/students") {
+          return spec.schema.parse({
+            count: 1,
+            items: [
+              {
+                email: "candidate@helioscx.demo",
+                participationStatus: "pending",
+                envStatus: null,
+                envId: "ENKolD1-ab84YIxODeMGob9A2",
+              },
+            ],
+          });
+        }
+        throw new Error(`unexpected v4 path ${spec.path}`);
+      }) as unknown as CloudShareClient["requestV4"],
+    });
+    const deps = await makeSuspendDeps({
+      launches,
+      cloudshare: {
+        forConnection: vi.fn().mockReturnValue(customerClient),
+      },
+    });
+
+    const resp = await handleSuspendExam(deps, { body: { examAttemptId: "ea-1" } });
+
+    expect(resp.status).toBe(502);
+    expect(resp.body).toEqual({ error: "exam suspend failed", correlationId: "corr-suspend" });
+    expect(customerClient.requestV3).not.toHaveBeenCalled();
+    await expect(launches.findByExamAttemptId("ea-1")).resolves.not.toMatchObject({
+      environmentId: "ENKolD1-ab84YIxODeMGob9A2",
+      environmentExternalId: "ENKolD1-ab84YIxODeMGob9A2",
+    });
+    expect(deps.eventLog.append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventId: "corr-suspend",
+        type: "cloudshare.exam_suspend.failed",
+        payload: expect.objectContaining({
+          correlationId: "corr-suspend",
+          operation: "exam_suspend",
+          attemptedOperation: "resolve_environment_correlation",
+          integrationSurface: "cloudshare.v4.training.participant_list",
+          method: "GET",
+          path: "/v4/trainings/training-1/students",
+          failureMode: "not_correlated_yet",
+          currentEnvironmentExternalId: null,
+        }),
+      }),
+    );
   });
 
   it("returns 404 when no launch exists for the exam attempt", async () => {
@@ -834,6 +916,7 @@ describe("runHeartbeatAutoSuspend", () => {
             {
               email: "candidate@helioscx.demo",
               environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+              environmentStatus: "ready",
             },
           ]);
         }
@@ -861,6 +944,72 @@ describe("runHeartbeatAutoSuspend", () => {
       environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
       environmentExternalId: "ENVS2n38LTNdcC4sHsqnjRzg2",
     });
+  });
+
+  it("does not call CloudShare suspend with a pending placeholder envId during heartbeat auto-suspend", async () => {
+    const launches = makeLaunches({
+      id: "launch-1",
+      examAttemptId: "ea-1",
+      candidateId: "cand-1",
+      participantEmail: "candidate@helioscx.demo",
+      trainingId: "training-1",
+      experienceId: "training-1",
+      environmentId: "ENKolD1-ab84YIxODeMGob9A2",
+      environmentExternalId: "ENKolD1-ab84YIxODeMGob9A2",
+      loginUrl: "https://old.lab.url",
+      status: "launched",
+      createdAt: new Date(),
+    });
+    const customerClient = makeCloudShareClient({
+      requestV3: vi.fn(),
+      requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+        if (spec.path === "/trainings/training-1/students") {
+          return spec.schema.parse({
+            count: 1,
+            items: [
+              {
+                email: "candidate@helioscx.demo",
+                participationStatus: "pending",
+                envStatus: null,
+                envId: "ENKolD1-ab84YIxODeMGob9A2",
+              },
+            ],
+          });
+        }
+        throw new Error(`unexpected v4 path ${spec.path}`);
+      }) as unknown as CloudShareClient["requestV4"],
+    });
+    const deps = await makeSuspendDeps({
+      launches,
+      cloudshare: {
+        forConnection: vi.fn().mockReturnValue(customerClient),
+      },
+    });
+
+    await expect(runHeartbeatAutoSuspend(deps, "ea-1")).rejects.toMatchObject({
+      message: "No CloudShare environment is correlated to this exam attempt yet.",
+    });
+    expect(customerClient.requestV3).not.toHaveBeenCalled();
+    await expect(launches.findByExamAttemptId("ea-1")).resolves.not.toMatchObject({
+      environmentId: "ENKolD1-ab84YIxODeMGob9A2",
+      environmentExternalId: "ENKolD1-ab84YIxODeMGob9A2",
+    });
+    expect(deps.eventLog.append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventId: "corr-suspend",
+        type: "cloudshare.heartbeat_auto_suspend.failed",
+        payload: expect.objectContaining({
+          correlationId: "corr-suspend",
+          operation: "heartbeat_auto_suspend",
+          attemptedOperation: "resolve_environment_correlation",
+          integrationSurface: "cloudshare.v4.training.participant_list",
+          method: "GET",
+          path: "/v4/trainings/training-1/students",
+          failureMode: "not_correlated_yet",
+          currentEnvironmentExternalId: null,
+        }),
+      }),
+    );
   });
 
   it.each([

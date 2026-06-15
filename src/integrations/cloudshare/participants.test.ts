@@ -36,6 +36,8 @@ describe("createCloudShareParticipantLister", () => {
       {
         email: "candidate@helioscx.demo",
         environmentId: "env-1",
+        environmentStatus: null,
+        participationStatus: null,
         studentId: "student-1",
       },
     ]);
@@ -51,6 +53,8 @@ describe("createCloudShareParticipantLister", () => {
       {
         email: "candidate@helioscx.demo",
         environmentId: null,
+        environmentStatus: null,
+        participationStatus: null,
         studentId: null,
       },
     ]);
@@ -70,6 +74,8 @@ describe("createCloudShareParticipantLister", () => {
       {
         email: "candidate@helioscx.demo",
         environmentId: "env-1",
+        environmentStatus: null,
+        participationStatus: null,
         studentId: "user-1",
       },
     ]);
@@ -91,6 +97,8 @@ describe("createCloudShareParticipantLister", () => {
       {
         email: "candidate@helioscx.demo",
         environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+        environmentStatus: "ready",
+        participationStatus: null,
         studentId: null,
       },
     ]);
@@ -108,6 +116,8 @@ describe("createCloudShareParticipantLister", () => {
       {
         email: "candidate@helioscx.demo",
         environmentId: null,
+        environmentStatus: null,
+        participationStatus: null,
         studentId: "student-1",
       },
     ]);

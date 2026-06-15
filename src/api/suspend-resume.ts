@@ -351,11 +351,30 @@ async function reportFailureDiagnostic(
 
 function buildTimerSyncDiagnostic(
   correlationId: string,
-  action: "suspend" | "resume",
+  _action: "suspend" | "resume",
   operation: string,
   examAttemptId: string,
   err: TimerSyncError,
 ): Record<string, unknown> {
+  if (err.context?.failureMode === "not_correlated_yet") {
+    return {
+      correlationId,
+      examAttemptId,
+      operation,
+      attemptedOperation: err.context?.attemptedOperation ?? "resolve_environment_correlation",
+      integrationSurface:
+        err.context?.integrationSurface ?? "cloudshare.v4.training.participant_list",
+      method: err.context?.method ?? "GET",
+      path:
+        typeof err.context?.path === "string"
+          ? err.context.path
+          : "/v4/trainings/{trainingId}/students",
+      failureMode: "not_correlated_yet",
+      error: err.message,
+      ...(err.context ?? {}),
+    };
+  }
+
   return {
     correlationId,
     examAttemptId,

@@ -525,6 +525,18 @@ semantics:
 This corrects the earlier endpoint assumption and explains why suspend/auto-suspend could fail
 after a successful launch until the candidate's CloudShare `envId` had actually been discovered.
 
+**Update (2026-06-15, live suspend QA on fresh attempts):** `GET /v4/trainings/{trainingId}/students`
+can expose a **pre-join placeholder** participant `envId` before the candidate has actually bound to
+their runnable environment. In the live tenant this appeared as an `ENK...` id with
+`participationStatus:"pending"` and `envStatus:null`; after the candidate entered CloudShare, the
+same participant later reported an actionable `ENVS...` id with `participationStatus:"inProgress"`
+and `envStatus:"ready"`. The portal must therefore treat `envId` as actionable **only when an
+environment lifecycle signal is also present** (at minimum a non-empty `envStatus`), and it must be
+able to replace an earlier placeholder correlation with the later active env id. Persisting the
+first non-empty `envId` and never rechecking causes v3 suspend/resume to hit
+`PUT /api/v3/envs/actions/{suspend|resume}?envId=...` with a placeholder id that returns `404
+{"message":"Environment not found","code":"0x40402"}`.
+
 ---
 
 ## GAP-15 — Per-project webhook registration via the v3 API is unverified

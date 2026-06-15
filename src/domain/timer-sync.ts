@@ -157,7 +157,12 @@ export async function resumeExam(
 }
 
 function requireEnvironmentExternalId(
-  launch: { readonly id: string; readonly environmentExternalId?: string; readonly environmentId?: string },
+  launch: {
+    readonly id: string;
+    readonly trainingId?: string;
+    readonly environmentExternalId?: string;
+    readonly environmentId?: string;
+  },
   examAttemptId: string,
 ): string {
   const correlatedEnvironmentId =
@@ -170,6 +175,15 @@ function requireEnvironmentExternalId(
     throw new TimerSyncError("No CloudShare environment is correlated to this exam attempt yet.", {
       examAttemptId,
       labLaunchId: launch.id,
+      trainingId: launch.trainingId,
+      attemptedOperation: "resolve_environment_correlation",
+      integrationSurface: "cloudshare.v4.training.participant_list",
+      method: "GET",
+      path: launch.trainingId
+        ? `/v4/trainings/${launch.trainingId}/students`
+        : "/v4/trainings/{trainingId}/students",
+      failureMode: "not_correlated_yet",
+      currentEnvironmentExternalId: launch.environmentExternalId ?? launch.environmentId ?? null,
     });
   }
   return correlatedEnvironmentId;
