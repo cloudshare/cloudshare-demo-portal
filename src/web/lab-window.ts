@@ -22,15 +22,15 @@ const defaultOpener: WindowOpener = (url, target) =>
   window.open(url, target) as LabWindow | null;
 
 /**
- * Open `loginUrl` for `examAttemptId` in a named child window and retain its
+ * Open `url` for `examAttemptId` in a named child window and retain its
  * handle. Throws if the window could not be opened (e.g. a blocked popup).
  */
 export function openLabWindow(
   examAttemptId: string,
-  loginUrl: string,
+  url: string,
   opener: WindowOpener = defaultOpener,
 ): LabWindow {
-  const handle = opener(loginUrl, `lab_${examAttemptId}`);
+  const handle = opener(url, `lab_${examAttemptId}`);
   if (!handle) {
     throw new Error(`Lab window for "${examAttemptId}" could not be opened (popup blocked?)`);
   }

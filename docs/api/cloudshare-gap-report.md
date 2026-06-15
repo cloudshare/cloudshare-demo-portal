@@ -491,6 +491,15 @@ IDs (an environment is bound from a standby at login). This supersedes the self-
 - Webhooks become optional; **polling list-students / `GET environment` is the source of truth**.
   Idempotency key becomes `(environmentId, event, createdAt)`. See ADR-003.
 
+**Update (2026-06-15, Slice 5 implementation assumption):** the exact response envelope for
+`GET /v4/trainings/{trainingId}/students` is still unverified against the live tenant. The adapter
+now isolates that uncertainty in `src/integrations/cloudshare/participants.ts` and accepts either a
+top-level array or a wrapped `students`/`Students` array, with participant fields normalized from
+either camelCase or PascalCase (`email`/`Email`, `environmentId`/`EnvironmentId`, `id`/`Id`).
+`environmentId` is treated as nullable because it may remain absent until the candidate actually
+logs in through the sponsored link. Live verification is still required to confirm the true
+envelope and field casing.
+
 ---
 
 ## GAP-15 — Per-project webhook registration via the v3 API is unverified

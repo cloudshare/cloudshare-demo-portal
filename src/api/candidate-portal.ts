@@ -14,6 +14,7 @@ import {
   CloudShareTransportError,
 } from "@/integrations/cloudshare";
 import { createCloudShareLabProvisioner } from "@/integrations/cloudshare/labs";
+import { createCloudShareParticipantLister } from "@/integrations/cloudshare/participants";
 import {
   PortalCustomerNotFoundError,
   PortalRegistrationValidationError,
@@ -27,6 +28,7 @@ import {
   ScheduleValidationError,
   scheduleExam,
 } from "@/domain/scheduling";
+import { correlateEnvironmentForExamAttempt } from "@/domain/environment-correlation";
 import { randomUUID } from "node:crypto";
 
 export const SELF_REGISTER_CUSTOMER_SLUG = "helios-cx";
@@ -56,6 +58,9 @@ interface CandidateExamCatalogDeps {
 
 interface CandidateDashboardDeps extends CandidateExamCatalogDeps {
   readonly attempts: ExamAttemptRepository;
+  readonly launches?: LabLaunchRepository;
+  readonly connections?: CloudShareConnectionRepository;
+  readonly cloudshare?: CloudShareClientFactory;
 }
 
 interface CandidateSchedulingDeps {
@@ -130,6 +135,7 @@ export async function handleGetCandidateDashboard(
 ): Promise<CandidatePortalResponse> {
   const exams = await deps.repository.listByCustomerId(request.customerId);
   const attempts = await deps.attempts.listByCandidate(request.candidateId);
+  await correlateCandidateAttemptEnvironments(deps, request.customerId, attempts.map((attempt) => attempt.id));
 
   return {
     status: 200,
@@ -407,5 +413,39 @@ async function registerCandidateFromBody(
       return { status: 409, body: { error: "A portal user with that email already exists." } };
     }
     throw error;
+  }
+}
+
+async function correlateCandidateAttemptEnvironments(
+  deps: CandidateDashboardDeps,
+  customerId: string,
+  examAttemptIds: readonly string[],
+): Promise<void> {
+  if (!deps.launches || !deps.connections || !deps.cloudshare || examAttemptIds.length === 0) {
+    return;
+  }
+
+  const connection = await deps.connections.findByCustomerId(customerId);
+  if (!connection) {
+    return;
+  }
+
+  const participants = createCloudShareParticipantLister(deps.cloudshare.forConnection(connection));
+  for (const examAttemptId of examAttemptIds) {
+    try {
+      await correlateEnvironmentForExamAttempt(
+        {
+          launches: deps.launches,
+          participants,
+        },
+        { examAttemptId },
+      );
+    } catch (error) {
+      deps.logger.warn("candidate dashboard environment correlation failed", {
+        customerId,
+        examAttemptId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 }

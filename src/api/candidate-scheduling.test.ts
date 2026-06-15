@@ -330,4 +330,67 @@ describe("candidate scheduling handlers", () => {
       ],
     });
   });
+
+  it("correlates a discoverable environmentId through list-students and persists it", async () => {
+    const exams = await makeExamRepository();
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const logger = makeLogger();
+
+    await attempts.save({
+      id: "attempt-ready",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "ready",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    await launches.save({
+      id: "launch-1",
+      examAttemptId: "attempt-ready",
+      candidateId: "candidate-1",
+      participantEmail: "candidate@helioscx.demo",
+      trainingId: "training-1",
+      experienceId: "training-1",
+      loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/demo",
+      status: "launched",
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+
+    const requestV4 = vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+      if (spec.path === "/trainings/training-1/students") {
+        return spec.schema.parse([
+          {
+            email: "candidate@helioscx.demo",
+            environmentId: "env-1",
+          },
+        ]);
+      }
+      throw new Error(`unexpected path ${spec.path}`);
+    });
+
+    const dashboard = await handleGetCandidateDashboard(
+      {
+        repository: exams,
+        attempts,
+        launches,
+        connections: makeConnectionRepository(),
+        cloudshare: makeCloudShareFactory({ requestV4: requestV4 as never }),
+        logger,
+      },
+      { customerId: "customer-helios", candidateId: "candidate-1" },
+    );
+
+    expect(dashboard.status).toBe(200);
+    expect(requestV4).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "GET",
+        path: "/trainings/training-1/students",
+      }),
+    );
+    await expect(launches.findByExamAttemptId("attempt-ready")).resolves.toMatchObject({
+      environmentId: "env-1",
+    });
+    expect(JSON.stringify(dashboard.body)).not.toContain("loginUrl");
+  });
 });
