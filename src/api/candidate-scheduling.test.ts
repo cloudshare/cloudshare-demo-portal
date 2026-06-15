@@ -393,4 +393,98 @@ describe("candidate scheduling handlers", () => {
     });
     expect(JSON.stringify(dashboard.body)).not.toContain("loginUrl");
   });
+
+  it("records admin-visible diagnostics when list-students correlation fails", async () => {
+    const exams = await makeExamRepository();
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const eventLog = createInMemoryEventLogRepository();
+    const logger = makeLogger();
+
+    await attempts.save({
+      id: "attempt-ready",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "ready",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    await launches.save({
+      id: "launch-1",
+      examAttemptId: "attempt-ready",
+      candidateId: "candidate-1",
+      participantEmail: "candidate@helioscx.demo",
+      trainingId: "training-1",
+      experienceId: "training-1",
+      loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/demo",
+      status: "launched",
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+
+    const dashboard = await handleGetCandidateDashboard(
+      {
+        repository: exams,
+        attempts,
+        launches,
+        connections: makeConnectionRepository(),
+        cloudshare: makeCloudShareFactory({
+          requestV4: vi.fn(async (spec: { path: string }) => {
+            if (spec.path === "/trainings/training-1/students") {
+              throw new CloudShareRequestError("forbidden", 403, {
+                method: "GET",
+                path: "/v4/trainings/training-1/students",
+                integrationSurface: "cloudshare.v4.training.participant_list",
+                responseBody: "{\"error\":\"forbidden\"}",
+              });
+            }
+            throw new Error(`unexpected path ${spec.path}`);
+          }) as never,
+        }),
+        eventLog,
+        logger,
+        now: () => new Date("2026-06-15T10:05:00.000Z"),
+        newCorrelationId: () => "corr-list-1",
+      },
+      { customerId: "customer-helios", candidateId: "candidate-1" },
+    );
+
+    expect(dashboard.status).toBe(200);
+    expect(logger.warn).toHaveBeenCalledWith(
+      "candidate dashboard environment correlation failed",
+      expect.objectContaining({
+        correlationId: "corr-list-1",
+        customerId: "customer-helios",
+        examAttemptId: "attempt-ready",
+        trainingId: "training-1",
+        operation: "candidate_dashboard_environment_correlation",
+        attemptedOperation: "list_training_participants",
+        integrationSurface: "cloudshare.v4.training.participant_list",
+        method: "GET",
+        path: "/v4/trainings/training-1/students",
+        failureMode: "http_status",
+        responseStatus: 403,
+        responseBody: "{\"error\":\"forbidden\"}",
+      }),
+    );
+    await expect(eventLog.listAll()).resolves.toEqual([
+      expect.objectContaining({
+        eventId: "corr-list-1",
+        type: "cloudshare.candidate_dashboard_environment_correlation.failed",
+        payload: expect.objectContaining({
+          correlationId: "corr-list-1",
+          customerId: "customer-helios",
+          examAttemptId: "attempt-ready",
+          trainingId: "training-1",
+          operation: "candidate_dashboard_environment_correlation",
+          attemptedOperation: "list_training_participants",
+          integrationSurface: "cloudshare.v4.training.participant_list",
+          method: "GET",
+          path: "/v4/trainings/training-1/students",
+          failureMode: "http_status",
+          responseStatus: 403,
+          responseBody: "{\"error\":\"forbidden\"}",
+        }),
+      }),
+    ]);
+  });
 });

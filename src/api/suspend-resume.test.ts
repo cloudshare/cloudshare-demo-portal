@@ -162,16 +162,16 @@ describe("handleResumeExam", () => {
     expect(resp.status).toBe(400);
   });
 
-  it("returns 200 with loginUrl and preservation limit on success", async () => {
-    const newUrl = "https://new.lab.url";
+  it("returns 200 without loginUrl and with preservation limit on success", async () => {
     const resp = await handleResumeExam(
-      makeResumeDeps({ labs: makeLabs(newUrl) }),
+      makeResumeDeps({ labs: makeLabs("https://new.lab.url") }),
       { body: { examAttemptId: "ea-1" } },
     );
     expect(resp.status).toBe(200);
     expect(resp.body.status).toBe("resumed");
-    expect(resp.body.loginUrl).toBe(newUrl);
+    expect(resp.body).not.toHaveProperty("loginUrl");
     expect(typeof resp.body.suspendedPreservationLimitMs).toBe("number");
+    expect(JSON.stringify(resp.body)).not.toContain("loginUrl");
   });
 
   it("returns 404 when no launch exists", async () => {

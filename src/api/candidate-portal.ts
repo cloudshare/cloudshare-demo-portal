@@ -61,6 +61,9 @@ interface CandidateDashboardDeps extends CandidateExamCatalogDeps {
   readonly launches?: LabLaunchRepository;
   readonly connections?: CloudShareConnectionRepository;
   readonly cloudshare?: CloudShareClientFactory;
+  readonly eventLog?: EventLogRepository;
+  readonly now?: () => Date;
+  readonly newCorrelationId?: () => string;
 }
 
 interface CandidateSchedulingDeps {
@@ -430,8 +433,15 @@ async function correlateCandidateAttemptEnvironments(
     return;
   }
 
+  const correlationId = (deps.newCorrelationId ?? randomUUID)();
   const participants = createCloudShareParticipantLister(deps.cloudshare.forConnection(connection));
   for (const examAttemptId of examAttemptIds) {
+    const launch = await deps.launches.findByExamAttemptId(examAttemptId);
+    const trainingId = launch?.trainingId;
+    const path = trainingId
+      ? `/v4/trainings/${trainingId}/students`
+      : "/v4/trainings/{trainingId}/students";
+
     try {
       await correlateEnvironmentForExamAttempt(
         {
@@ -441,11 +451,97 @@ async function correlateCandidateAttemptEnvironments(
         { examAttemptId },
       );
     } catch (error) {
-      deps.logger.warn("candidate dashboard environment correlation failed", {
+      const diagnostic = {
+        correlationId,
         customerId,
         examAttemptId,
-        error: error instanceof Error ? error.message : String(error),
+        trainingId,
+        operation: "candidate_dashboard_environment_correlation",
+        attemptedOperation: "list_training_participants",
+        ...toCloudShareFailureDiagnostic({
+          attemptedOperation: "list_training_participants",
+          integrationSurface: "cloudshare.v4.training.participant_list",
+          method: "GET",
+          path,
+          cause: error,
+        }),
+      };
+      await deps.eventLog?.append({
+        eventId: correlationId,
+        type: "cloudshare.candidate_dashboard_environment_correlation.failed",
+        occurredAt: deps.now?.() ?? new Date(),
+        payload: diagnostic,
       });
+      deps.logger.warn("candidate dashboard environment correlation failed", diagnostic);
     }
   }
+}
+
+function toCloudShareFailureDiagnostic(input: {
+  readonly attemptedOperation: string;
+  readonly integrationSurface: string;
+  readonly method: string;
+  readonly path: string;
+  readonly cause: unknown;
+}): Record<string, unknown> {
+  const base = {
+    attemptedOperation: input.attemptedOperation,
+    integrationSurface: input.integrationSurface,
+    method: input.method,
+    path: input.path,
+  };
+
+  const cause = input.cause;
+  if (cause instanceof CloudShareRequestError) {
+    return {
+      ...base,
+      method: cause.context?.method ?? base.method,
+      path: cause.context?.path ?? base.path,
+      host: cause.context?.host,
+      integrationSurface: cause.context?.integrationSurface ?? base.integrationSurface,
+      failureMode: "http_status",
+      responseStatus: cause.status,
+      requestHeaders: cause.context?.requestHeaders,
+      requestBody: cause.context?.requestBody,
+      responseHeaders: cause.context?.responseHeaders,
+      responseBody: cause.context?.responseBody,
+      network: cause.context?.network,
+      tls: cause.context?.tls,
+    };
+  }
+  if (cause instanceof CloudShareTransportError) {
+    return {
+      ...base,
+      method: cause.context?.method ?? base.method,
+      path: cause.context?.path ?? base.path,
+      host: cause.context?.host,
+      integrationSurface: cause.context?.integrationSurface ?? base.integrationSurface,
+      failureMode: "transport",
+      requestHeaders: cause.context?.requestHeaders,
+      requestBody: cause.context?.requestBody,
+      cause: cause.context?.cause,
+    };
+  }
+  if (cause instanceof CloudShareResponseError) {
+    return {
+      ...base,
+      method: cause.context?.method ?? base.method,
+      path: cause.context?.path ?? base.path,
+      host: cause.context?.host,
+      integrationSurface: cause.context?.integrationSurface ?? base.integrationSurface,
+      failureMode: "unexpected_response",
+      requestHeaders: cause.context?.requestHeaders,
+      requestBody: cause.context?.requestBody,
+      responseHeaders: cause.context?.responseHeaders,
+      responseBody: cause.context?.responseBody,
+      network: cause.context?.network,
+      tls: cause.context?.tls,
+      issues: cause.context?.issues,
+    };
+  }
+  return {
+    ...base,
+    failureMode: "unknown",
+    error: cause instanceof Error ? cause.message : String(cause),
+  };
 }

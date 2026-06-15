@@ -94,6 +94,7 @@ describe("handleGetDemoState", () => {
     const state = body.currentState as Record<string, unknown>;
     expect(state.examAttemptId).toBeNull();
     expect(state.environmentStatus).toBeNull();
+    expect(JSON.stringify(state)).not.toContain("loginUrl");
   });
 
   it("clamps timerElapsedMs to 0 when now() is earlier than startedAt (NTP step-back guard)", async () => {
@@ -177,15 +178,16 @@ describe("handleExecuteStep", () => {
     expect(attempts[0].examId).toBe(DEMO_SEED.examId);
   });
 
-  it("executes launch_lab after book_exam: returns loginUrl, seeds env running", async () => {
+  it("executes launch_lab after book_exam without returning loginUrl, and seeds env running", async () => {
     const deps = makeDeps();
     await handleExecuteStep(deps, { body: { step: "book_exam" } });
     const resp = await handleExecuteStep(deps, { body: { step: "launch_lab" } });
 
     expect(resp.status).toBe(200);
     const result = (resp.body as Record<string, unknown>).result as Record<string, unknown>;
-    expect(typeof result.loginUrl).toBe("string");
+    expect(result).not.toHaveProperty("loginUrl");
     expect(typeof result.environmentExternalId).toBe("string");
+    expect(JSON.stringify(result)).not.toContain("loginUrl");
 
     // Simulator should now report environment as running
     const envState = await deps.environmentSource.getEnvironmentState(
@@ -210,6 +212,21 @@ describe("handleExecuteStep", () => {
     }
     // All five steps should be marked done
     expect(deps.completedDemoSteps.size).toBe(5);
+  });
+
+  it("executes resume_exam without returning loginUrl", async () => {
+    const deps = makeDeps();
+    await handleExecuteStep(deps, { body: { step: "book_exam" } });
+    await handleExecuteStep(deps, { body: { step: "launch_lab" } });
+    await handleExecuteStep(deps, { body: { step: "suspend_exam" } });
+
+    const resp = await handleExecuteStep(deps, { body: { step: "resume_exam" } });
+
+    expect(resp.status).toBe(200);
+    const result = (resp.body as Record<string, unknown>).result as Record<string, unknown>;
+    expect(result).not.toHaveProperty("loginUrl");
+    expect(result).toMatchObject({ status: "resumed" });
+    expect(JSON.stringify(result)).not.toContain("loginUrl");
   });
 
   it("returns 409 when trying to run a step that is already done", async () => {

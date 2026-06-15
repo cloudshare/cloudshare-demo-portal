@@ -25,6 +25,7 @@ export async function GET() {
       launches: services.labLaunches,
       connections: services.cloudshareConnections,
       cloudshare: services.cloudshareClientFactory,
+      eventLog: services.eventLog,
       logger: services.logger,
     },
     { customerId: session.customerId, candidateId: session.userId },

@@ -80,7 +80,6 @@ export async function handleResumeExam(
       body: {
         status: "resumed",
         examAttemptId,
-        loginUrl: result.loginUrl,
         environmentExternalId: result.environmentExternalId,
         suspendedPreservationLimitMs: result.suspendedPreservationLimitMs,
       },
