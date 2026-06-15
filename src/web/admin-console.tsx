@@ -7,6 +7,7 @@ import {
   ADMIN_SESSION_EXPIRED_MESSAGE,
   type AdminTab,
   beginLatestOnlyRequest,
+  buildEventRecordRowKey,
   getAdminTabLabel,
   getAllowedRegionValidationMessage,
   getCompatibleRegions,
@@ -1555,8 +1556,8 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                     </td>
                   </tr>
                 )}
-                {eventRecords.map((e) => (
-                  <tr key={e.eventId} style={{ borderBottom: "1px solid #eee" }}>
+                {eventRecords.map((e, index) => (
+                  <tr key={buildEventRecordRowKey(e, index)} style={{ borderBottom: "1px solid #eee" }}>
                     <td style={{ padding: "0.4rem", whiteSpace: "nowrap" }}>
                       {formatUtcTimestamp(e.occurredAt)}
                     </td>

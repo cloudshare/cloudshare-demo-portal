@@ -491,6 +491,25 @@ IDs (an environment is bound from a standby at login). This supersedes the self-
 - Webhooks become optional; **polling list-students / `GET environment` is the source of truth**.
   Idempotency key becomes `(environmentId, event, createdAt)`. See ADR-003.
 
+**Update (2026-06-15, Slice 5 implementation assumption):** the exact response envelope for
+`GET /v4/trainings/{trainingId}/students` is still unverified against the live tenant. The adapter
+now isolates that uncertainty in `src/integrations/cloudshare/participants.ts` and accepts either a
+top-level array or a wrapped `students`/`Students` array, with participant fields normalized from
+either camelCase or PascalCase (`email`/`Email`, `environmentId`/`EnvironmentId`, `id`/`Id`).
+`environmentId` is treated as nullable because it may remain absent until the candidate actually
+logs in through the sponsored link. Live verification is still required to confirm the true
+envelope and field casing.
+
+**Update (2026-06-15, live QA failure):** a real candidate dashboard correlation run produced
+`CloudShareResponseError` for `GET /v4/trainings/{trainingId}/students`, proving the earlier schema
+was still too narrow. The adapter now also accepts wrapped `rows`/`Rows`/`items`/`Items`/`data`/`Data`
+collections, nested participant identity fields such as `user.email`, `User.Email`,
+`student.email`, `Student.Email`, and nested environment ids such as `environment.id` /
+`Environment.Id`. Rows that still contain no usable participant email are now skipped instead of
+failing the entire response, because they cannot be matched back to a portal Candidate anyway.
+This is still an inference from live failure plus CloudShare naming conventions, not a fully
+confirmed contract; verify the exact live envelope and participant field set on the tenant.
+
 ---
 
 ## GAP-15 — Per-project webhook registration via the v3 API is unverified

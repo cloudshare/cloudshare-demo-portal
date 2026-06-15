@@ -21,7 +21,7 @@ describe("clearLabWindows", () => {
 });
 
 describe("openLabWindow", () => {
-  it("opens the loginUrl and retains the handle for later liveness checks", () => {
+  it("opens the requested URL and retains the handle for later liveness checks", () => {
     const handle = fakeWindow();
     const opener = vi.fn(() => handle);
 

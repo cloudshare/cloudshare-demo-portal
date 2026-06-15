@@ -19,7 +19,15 @@ export async function GET() {
   }
 
   const response = await handleGetCandidateDashboard(
-    { repository: services.exams, attempts: services.examAttempts, logger: services.logger },
+    {
+      repository: services.exams,
+      attempts: services.examAttempts,
+      launches: services.labLaunches,
+      connections: services.cloudshareConnections,
+      cloudshare: services.cloudshareClientFactory,
+      eventLog: services.eventLog,
+      logger: services.logger,
+    },
     { customerId: session.customerId, candidateId: session.userId },
   );
 

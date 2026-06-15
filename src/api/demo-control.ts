@@ -104,7 +104,6 @@ export interface GetDemoStateResponse {
   readonly currentState: {
     examAttemptId: string | null;
     labLaunchId: string | null;
-    loginUrl: string | null;
     environmentStatus: string | null;
     timerStatus: string | null;
     timerElapsedMs: number | null;
@@ -135,7 +134,6 @@ export async function handleGetDemoState(
     currentState: {
       examAttemptId: examAttempt?.id ?? null,
       labLaunchId: labLaunch?.id ?? null,
-      loginUrl: labLaunch?.loginUrl ?? null,
       environmentStatus,
       timerStatus: timerState?.status ?? null,
       timerElapsedMs: timerState
@@ -256,7 +254,6 @@ async function runStep(
       }
       return {
         labLaunchId: launch.id,
-        loginUrl: launch.loginUrl,
         environmentExternalId: launch.environmentExternalId,
       };
     }
@@ -291,7 +288,11 @@ async function runStep(
         },
         { examAttemptId: ctx.examAttempt.id },
       );
-      return { loginUrl: result.loginUrl, status: "resumed" };
+      return {
+        status: "resumed",
+        environmentExternalId: result.environmentExternalId,
+        suspendedPreservationLimitMs: result.suspendedPreservationLimitMs,
+      };
     }
 
     case "retrieve_score": {

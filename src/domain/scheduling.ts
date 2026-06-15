@@ -165,6 +165,7 @@ export async function scheduleExam(
     id: deps.newId(),
     examAttemptId: attempt.id,
     candidateId: input.candidateId,
+    participantEmail: input.candidateEmail,
     trainingId,
     experienceId: trainingId,
     loginUrl,

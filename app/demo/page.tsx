@@ -16,7 +16,6 @@ interface DemoStep {
 interface CurrentState {
   examAttemptId: string | null;
   labLaunchId: string | null;
-  loginUrl: string | null;
   environmentStatus: string | null;
   timerStatus: string | null;
   timerElapsedMs: number | null;
@@ -320,21 +319,6 @@ export default function DemoControlPage() {
                   panel.currentState.timerElapsedMs !== null
                     ? fmtMs(panel.currentState.timerElapsedMs)
                     : "—",
-                ],
-                [
-                  "Login URL",
-                  panel.currentState.loginUrl ? (
-                    <a
-                      href={panel.currentState.loginUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={{ color: "#0070f3" }}
-                    >
-                      open
-                    </a>
-                  ) : (
-                    "—"
-                  ),
                 ],
               ].map(([label, val]) => (
                 <tr

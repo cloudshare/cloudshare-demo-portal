@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { openEnterExamWindow } from "./enter-exam";
 import {
   loadCandidateDashboard,
   scheduleCandidateExam,
@@ -9,6 +10,13 @@ import {
   shouldShowPublishedExamList,
   type CandidateDashboardData,
 } from "./candidate-scheduling";
+import {
+  buildScheduledAttemptViews,
+  canEnterAttempt,
+  getAttemptWaitingMessage,
+  getLatestAttemptForExam,
+  getNextEnterabilityWakeUpDelayMs,
+} from "./candidate-home-state";
 
 interface CandidateHomeProps {
   readonly email: string;
@@ -25,6 +33,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
   const [submittingExamId, setSubmittingExamId] = useState<string | null>(null);
   const [scheduleDrafts, setScheduleDrafts] = useState<Record<string, string>>({});
   const [coldStartNotice, setColdStartNotice] = useState<string | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
 
   useEffect(() => {
     let cancelled = false;
@@ -35,6 +44,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
       try {
         if (!cancelled) {
           setDashboard(await loadCandidateDashboard(fetch));
+          setNowMs(Date.now());
         }
       } catch {
         if (!cancelled) {
@@ -52,6 +62,19 @@ export function CandidateHome({ email }: CandidateHomeProps) {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const delayMs = getNextEnterabilityWakeUpDelayMs(dashboard.attempts, nowMs);
+    if (delayMs === null) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setNowMs(Date.now());
+    }, delayMs);
+
+    return () => window.clearTimeout(timer);
+  }, [dashboard.attempts, nowMs]);
 
   async function logout() {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -81,6 +104,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
           result.attempt,
         ].flat(),
       }));
+      setNowMs(Date.now());
       if (result.coldStartLikely) {
         setColdStartNotice(
           "Scheduled within five hours: CloudShare may cold-start the environment on login.",
@@ -94,12 +118,19 @@ export function CandidateHome({ email }: CandidateHomeProps) {
   }
 
   function attemptForExam(examId: string) {
-    return dashboard.attempts
-      .filter((attempt) => attempt.examId === examId)
-      .sort((left, right) =>
-        (right.scheduledFor ?? "").localeCompare(left.scheduledFor ?? ""),
-      )[0] ?? null;
+    return getLatestAttemptForExam(dashboard.attempts, examId);
   }
+
+  function enterAttempt(attemptId: string) {
+    setError(null);
+    try {
+      openEnterExamWindow(attemptId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Failed to open exam window");
+    }
+  }
+
+  const scheduledAttempts = buildScheduledAttemptViews(dashboard, nowMs);
 
   return (
     <main style={{ fontFamily: "system-ui, sans-serif", padding: "2rem", maxWidth: "900px", margin: "0 auto" }}>
@@ -121,6 +152,42 @@ export function CandidateHome({ email }: CandidateHomeProps) {
         {loading && <p style={{ margin: 0 }}>Loading candidate dashboard...</p>}
         {error && <p style={{ margin: 0, color: "#b00020" }}>{error}</p>}
         {coldStartNotice && <p style={{ margin: 0, color: "#7a4b00" }}>{coldStartNotice}</p>}
+        {scheduledAttempts.length > 0 && (
+          <section style={{ border: "1px solid #ddd", borderRadius: "8px", padding: "1rem", background: "#fafafa" }}>
+            <h2 style={{ marginTop: 0, marginBottom: "0.75rem", fontSize: "1.05rem" }}>Scheduled Exams</h2>
+            <div style={{ display: "grid", gap: "0.75rem" }}>
+              {scheduledAttempts.map((attempt) => (
+                <article
+                  key={attempt.attemptId}
+                  style={{ border: "1px solid #e3e3e3", borderRadius: "6px", padding: "0.85rem", background: "#fff" }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap", alignItems: "baseline" }}>
+                    <strong>{attempt.examTitle}</strong>
+                    <span style={{ color: "#555" }}>Attempt ID: {attempt.attemptId}</span>
+                  </div>
+                  <p style={{ margin: "0.45rem 0", color: "#333" }}>
+                    Scheduled for {attempt.scheduledFor ? new Date(attempt.scheduledFor).toLocaleString() : "TBD"}
+                  </p>
+                  <p style={{ margin: "0.45rem 0", color: "#0b5d3b" }}>Status: {attempt.status}</p>
+                  {attempt.status === "ready" && (
+                    <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+                      <button
+                        onClick={() => enterAttempt(attempt.attemptId)}
+                        disabled={!attempt.canEnter}
+                        style={{ padding: "0.55rem 0.9rem" }}
+                      >
+                        Enter exam
+                      </button>
+                      {attempt.waitingMessage && (
+                        <span style={{ color: "#555" }}>{attempt.waitingMessage}</span>
+                      )}
+                    </div>
+                  )}
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
         {!error && shouldShowNoPublishedExams({ loading, examCount: dashboard.exams.length }) && (
           <p style={{ margin: 0 }}>No published Exams are available yet.</p>
         )}
@@ -160,7 +227,21 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                   >
                     {submittingExamId === exam.id ? "Scheduling..." : "Schedule exam"}
                   </button>
+                  {attempt?.status === "ready" && (
+                    <button
+                      onClick={() => enterAttempt(attempt.id)}
+                      disabled={!canEnterAttempt(attempt, nowMs)}
+                      style={{ padding: "0.55rem 0.9rem" }}
+                    >
+                      Enter exam
+                    </button>
+                  )}
                 </div>
+                {attempt?.status === "ready" && getAttemptWaitingMessage(attempt, nowMs) && (
+                  <p style={{ marginBottom: 0, color: "#555" }}>
+                    {getAttemptWaitingMessage(attempt, nowMs)}
+                  </p>
+                )}
               </article>
               );
             })}
