@@ -82,7 +82,6 @@ export async function scheduleExam(
     scheduledFor: input.scheduledFor,
     createdAt: deps.now(),
   };
-  await deps.attempts.save(attempt);
 
   const trainingCreator = deps.labs.createTraining;
   const participantAdder = deps.labs.addParticipant;
@@ -146,19 +145,17 @@ export async function scheduleExam(
   }
 
   const readyAttempt: ExamAttempt = { ...attempt, status: "ready" };
-  await deps.attempts.save(readyAttempt);
-
   const launch: LabLaunch = {
     id: deps.newId(),
     examAttemptId: attempt.id,
     candidateId: input.candidateId,
     trainingId,
     experienceId: trainingId,
-    environmentExternalId: `pending:${attempt.id}`,
     loginUrl,
     status: "launched",
     createdAt: deps.now(),
   };
+  await deps.attempts.save(readyAttempt);
   await deps.launches.save(launch);
 
   return {

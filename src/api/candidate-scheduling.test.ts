@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryExamCatalogRepository } from "@/persistence/exam-catalog-repository";
 import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-repository";
+import { createInMemoryEventLogRepository } from "@/persistence/event-log-repository";
 import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repository";
 import { createDraftExam, publishExam, type CreateDraftExamInput } from "@/domain/exam-catalog";
 import type { Logger } from "@/observability/logger";
@@ -101,6 +102,7 @@ describe("candidate scheduling handlers", () => {
     const exams = await makeExamRepository();
     const attempts = createInMemoryExamAttemptRepository();
     const launches = createInMemoryLabLaunchRepository();
+    const eventLog = createInMemoryEventLogRepository();
     const logger = makeLogger();
 
     const response = await handleScheduleCandidateExam(
@@ -108,6 +110,7 @@ describe("candidate scheduling handlers", () => {
         exams,
         attempts,
         launches,
+        eventLog,
         connections: makeConnectionRepository(),
         cloudshare: makeCloudShareFactory(),
         logger,
@@ -168,10 +171,11 @@ describe("candidate scheduling handlers", () => {
     expect(JSON.stringify(dashboard.body)).not.toContain("loginUrl");
   });
 
-  it("logs support diagnostics when CloudShare provisioning fails", async () => {
+  it("records admin-visible diagnostics when CloudShare provisioning fails", async () => {
     const exams = await makeExamRepository();
     const attempts = createInMemoryExamAttemptRepository();
     const launches = createInMemoryLabLaunchRepository();
+    const eventLog = createInMemoryEventLogRepository();
     const logger = makeLogger();
 
     const response = await handleScheduleCandidateExam(
@@ -179,6 +183,7 @@ describe("candidate scheduling handlers", () => {
         exams,
         attempts,
         launches,
+        eventLog,
         connections: makeConnectionRepository(),
         cloudshare: makeCloudShareFactory({
           requestV4: vi.fn(async (spec: { path: string }) => {
@@ -212,6 +217,8 @@ describe("candidate scheduling handlers", () => {
       error: "CloudShare provisioning failed for the scheduled exam.",
       correlationId: "corr-2",
     });
+    await expect(attempts.findById("attempt-1")).resolves.toBeNull();
+    await expect(launches.findByExamAttemptId("attempt-1")).resolves.toBeNull();
     expect(logger.warn).toHaveBeenCalledWith(
       "candidate exam scheduling failed",
       expect.objectContaining({
@@ -225,5 +232,74 @@ describe("candidate scheduling handlers", () => {
         responseStatus: 403,
       }),
     );
+    await expect(eventLog.listAll()).resolves.toEqual([
+      expect.objectContaining({
+        eventId: "corr-2",
+        type: "cloudshare.schedule_exam.failed",
+        payload: expect.objectContaining({
+          correlationId: "corr-2",
+          examAttemptId: "attempt-1",
+          operation: "schedule_exam",
+          integrationSurface: "cloudshare.v4.training.participant",
+          method: "POST",
+          path: "/v4/trainings/training-1/students",
+          failureMode: "http_status",
+          responseStatus: 403,
+        }),
+      }),
+    ]);
+  });
+
+  it("keeps later attempt states visible on the candidate dashboard", async () => {
+    const exams = await makeExamRepository();
+    const attempts = createInMemoryExamAttemptRepository();
+    const logger = makeLogger();
+
+    await attempts.save({
+      id: "attempt-in-progress",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "in_progress",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    await attempts.save({
+      id: "attempt-completed",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "completed",
+      scheduledFor: new Date("2026-06-16T16:00:00.000Z"),
+      createdAt: new Date("2026-06-16T10:00:00.000Z"),
+    });
+
+    const dashboard = await handleGetCandidateDashboard(
+      { repository: exams, attempts, logger },
+      { customerId: "customer-helios", candidateId: "candidate-1" },
+    );
+
+    expect(dashboard.body).toEqual({
+      exams: [
+        {
+          id: "exam-1",
+          title: "Helios CloudShare Fundamentals",
+          description: "Hands-on certification exam.",
+          timeLimitMinutes: 90,
+        },
+      ],
+      attempts: [
+        {
+          id: "attempt-in-progress",
+          examId: "exam-1",
+          scheduledFor: "2026-06-15T16:00:00.000Z",
+          status: "in_progress",
+        },
+        {
+          id: "attempt-completed",
+          examId: "exam-1",
+          scheduledFor: "2026-06-16T16:00:00.000Z",
+          status: "completed",
+        },
+      ],
+    });
   });
 });

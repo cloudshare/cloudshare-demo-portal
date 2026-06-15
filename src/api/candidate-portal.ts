@@ -6,6 +6,7 @@ import type {
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
+import type { EventLogRepository } from "@/domain/event-log";
 import type { LabLaunchRepository } from "@/domain/lab-launch";
 import {
   CloudShareRequestError,
@@ -61,6 +62,7 @@ interface CandidateSchedulingDeps {
   readonly exams: ExamRepository;
   readonly attempts: ExamAttemptRepository;
   readonly launches: LabLaunchRepository;
+  readonly eventLog: EventLogRepository;
   readonly connections: CloudShareConnectionRepository;
   readonly cloudshare: CloudShareClientFactory;
   readonly logger: Logger;
@@ -79,8 +81,14 @@ export interface CandidateExamCatalogItem {
 export interface CandidateAttemptItem {
   readonly id: string;
   readonly examId: string;
-  readonly scheduledFor: string;
-  readonly status: "scheduled" | "ready";
+  readonly scheduledFor: string | null;
+  readonly status:
+    | "scheduled"
+    | "ready"
+    | "in_progress"
+    | "suspended"
+    | "completed"
+    | "expired";
 }
 
 export async function handleCandidateSelfRegistration(
@@ -129,18 +137,12 @@ export async function handleGetCandidateDashboard(
       exams: exams
         .filter((exam) => exam.status === "published")
         .map(toCandidateExamCatalogItem),
-      attempts: attempts
-        .filter(
-          (attempt): attempt is typeof attempt & { scheduledFor: Date } =>
-            (attempt.status === "scheduled" || attempt.status === "ready") &&
-            attempt.scheduledFor instanceof Date,
-        )
-        .map((attempt) => ({
-          id: attempt.id,
-          examId: attempt.examId,
-          scheduledFor: attempt.scheduledFor.toISOString(),
-          status: attempt.status,
-        })),
+      attempts: attempts.map((attempt) => ({
+        id: attempt.id,
+        examId: attempt.examId,
+        scheduledFor: attempt.scheduledFor?.toISOString() ?? null,
+        status: attempt.status as CandidateAttemptItem["status"],
+      })),
     },
   };
 }
@@ -220,13 +222,20 @@ export async function handleScheduleCandidateExam(
       return { status: 404, body: { error: "Published exam not found." } };
     }
     if (error instanceof CloudShareProvisioningError) {
-      deps.logger.warn("candidate exam scheduling failed", {
+      const diagnostic = {
         correlationId,
         candidateId: request.candidateId,
         examAttemptId: error.context.attemptId,
         operation: "schedule_exam",
         ...toProvisioningDiagnostic(error),
+      };
+      await deps.eventLog.append({
+        eventId: correlationId,
+        type: "cloudshare.schedule_exam.failed",
+        occurredAt: deps.now?.() ?? new Date(),
+        payload: diagnostic,
       });
+      deps.logger.warn("candidate exam scheduling failed", diagnostic);
       return {
         status: 502,
         body: {

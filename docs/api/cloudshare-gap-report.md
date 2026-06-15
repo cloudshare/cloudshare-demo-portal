@@ -512,6 +512,53 @@ live tenant.
 
 ---
 
+## GAP-16 — v4 training scheduling request body remains unverified without live tenant evidence
+
+| Field | Detail |
+|---|---|
+| **Status** | Unverified — implemented from repo source docs and discovery notes |
+| **Verified live** | No |
+
+**Observed behaviour**
+
+Slice 4 now provisions CloudShare scheduling through the corrected v4 training endpoints:
+
+- `POST /v4/trainings`
+- `POST /v4/trainings/{trainingId}/students`
+- `POST /v4/trainings/{trainingId}/sponsored-link`
+
+The current adapter assumes the create-training body includes at least:
+
+- `title`
+- `start` as the candidate's scheduled ISO timestamp
+- `type: "instructorLed"`
+- `projectId`
+- `blueprintId`
+- `policyId`
+- `regionId`
+- `instructorId`
+
+The participant-add body is assumed to be `{ email, firstName, lastName }`, and the sponsored-link
+body is assumed to accept the same participant fields. These shapes are based on the issue/PRD
+requirements plus the May 28 2026 discovery email and have fixture coverage, but they have **not**
+yet been confirmed by a live training-provisioning run in this repo.
+
+**Impact on certification use**
+
+- Automated tests can prove the portal builds a consistent request shape, but they cannot prove that
+  the live tenant accepts the exact body fields, naming, or validation rules.
+- A mismatch would surface at scheduling time as a CloudShare provisioning failure, now with
+  candidate-safe responses and admin-visible diagnostics, but the slice still requires live UI
+  verification before merge.
+
+**Action required:** run the real candidate scheduling flow against the live tenant, confirm the
+accepted request/response shapes, and update this entry immediately if any field names, required
+fields, or path semantics differ.
+
+**Code reference:** `src/integrations/cloudshare/labs.ts`, `src/domain/scheduling.ts`
+
+---
+
 ## Gap template
 
 Copy this section when appending a new gap discovered during implementation:
@@ -544,6 +591,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-06-14 (resource-model update: Region global reference list; Policy and Blueprint
-Project-scoped; Snapshot discovery through Blueprint detail).
+*Last updated: 2026-06-15 (added unverified v4 training scheduling request-body assumptions for Slice 4).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*

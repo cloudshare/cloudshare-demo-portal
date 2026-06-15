@@ -21,4 +21,5 @@ export interface ExamAttemptRepository {
   save(attempt: ExamAttempt): Promise<void>;
   findById(id: string): Promise<ExamAttempt | null>;
   listByCandidate(candidateId: string): Promise<ExamAttempt[]>;
+  delete(id: string): Promise<void>;
 }

@@ -8,18 +8,24 @@ export interface CandidateDashboardData {
   readonly attempts: Array<{
     readonly id: string;
     readonly examId: string;
-    readonly scheduledFor: string;
-    readonly status: "scheduled" | "ready";
+    readonly scheduledFor: string | null;
+    readonly status:
+      | "scheduled"
+      | "ready"
+      | "in_progress"
+      | "suspended"
+      | "completed"
+      | "expired";
   }>;
 }
 
 export interface ScheduleCandidateExamResult {
-  readonly attempt: {
-    readonly id: string;
-    readonly examId: string;
-    readonly scheduledFor: string;
-    readonly status: "scheduled" | "ready";
-  };
+    readonly attempt: {
+      readonly id: string;
+      readonly examId: string;
+      readonly scheduledFor: string;
+      readonly status: "scheduled" | "ready";
+    };
   readonly coldStartLikely: boolean;
   readonly correlationId: string;
 }

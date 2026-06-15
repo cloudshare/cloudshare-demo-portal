@@ -94,7 +94,9 @@ export function CandidateHome({ email }: CandidateHomeProps) {
   function attemptForExam(examId: string) {
     return dashboard.attempts
       .filter((attempt) => attempt.examId === examId)
-      .sort((left, right) => right.scheduledFor.localeCompare(left.scheduledFor))[0] ?? null;
+      .sort((left, right) =>
+        (right.scheduledFor ?? "").localeCompare(left.scheduledFor ?? ""),
+      )[0] ?? null;
   }
 
   return (
@@ -134,8 +136,8 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                 <p style={{ color: "#444" }}>{exam.description || "No description provided."}</p>
                 {attempt && (
                   <p style={{ marginTop: 0, color: "#0b5d3b" }}>
-                    Current attempt: {attempt.status} for{" "}
-                    {new Date(attempt.scheduledFor).toLocaleString()}
+                    Current attempt: {attempt.status}
+                    {attempt.scheduledFor ? ` for ${new Date(attempt.scheduledFor).toLocaleString()}` : ""}
                   </p>
                 )}
                 <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>

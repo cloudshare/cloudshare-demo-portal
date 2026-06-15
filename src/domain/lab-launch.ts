@@ -26,7 +26,7 @@ export interface LabLaunch {
   readonly candidateId: string;
   readonly trainingId?: string;
   readonly experienceId: string;
-  readonly environmentExternalId: string;
+  readonly environmentExternalId?: string;
   readonly loginUrl: string;
   readonly status: LabLaunchStatus;
   readonly createdAt: Date;
