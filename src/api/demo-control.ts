@@ -78,8 +78,10 @@ async function readDemoGates(deps: DemoControlDeps) {
     : null;
 
   const environmentStatus = labLaunch
-    ? (await deps.environmentSource.getEnvironmentState(labLaunch.environmentExternalId))
+    ? labLaunch.environmentExternalId
+      ? (await deps.environmentSource.getEnvironmentState(labLaunch.environmentExternalId))
         ?.status ?? null
+      : null
     : null;
 
   const timerState = examAttempt
@@ -247,6 +249,9 @@ async function runStep(
       // In demo/fixture mode seed the simulator so the environment appears "running"
       // immediately — in live mode CloudShare emits environment.resumed via webhook.
       if (deps.environmentSimulator) {
+        if (!launch.environmentExternalId) {
+          throw new Error("lab launch has no correlated environmentExternalId");
+        }
         await deps.environmentSimulator.resumeEnvironment(launch.environmentExternalId);
       }
       return {

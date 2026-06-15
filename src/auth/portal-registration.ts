@@ -27,6 +27,8 @@ export class PortalCustomerNotFoundError extends Error {
 
 export interface RegisterCandidateInput {
   readonly email: string;
+  readonly firstName: string;
+  readonly lastName: string;
   readonly password: string;
   readonly customerId?: string;
   readonly customerSlug?: string;
@@ -41,10 +43,16 @@ export async function registerCandidate(
   input: RegisterCandidateInput,
 ): Promise<PortalUserRecord> {
   const email = input.email.trim().toLowerCase();
+  const firstName = input.firstName.trim();
+  const lastName = input.lastName.trim();
   const password = input.password;
 
-  if (!email || !password) {
-    throw new PortalRegistrationValidationError("email and password are required");
+  if (!email || !password || !firstName || !lastName) {
+    throw new PortalRegistrationValidationError("email, firstName, lastName, and password are required");
+  }
+
+  if (firstName.length < 2 || lastName.length < 2) {
+    throw new PortalRegistrationValidationError("firstName and lastName must each be at least 2 characters");
   }
 
   const existing = await deps.users.findByEmail(email);
@@ -57,6 +65,8 @@ export async function registerCandidate(
   return deps.users.createUser({
     customerId,
     email,
+    firstName,
+    lastName,
     passwordHash,
     role: "candidate",
   });

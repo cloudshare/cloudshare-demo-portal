@@ -65,6 +65,77 @@ describe("createCloudShareClient — v4", () => {
     expect(last()?.url).toBe("https://api.accelerate.cloudshare.com/v4/projects");
     expect(last()?.headers?.authorization).toBe("Bearer test-bearer");
   });
+
+  it("emits redacted request bodies for support diagnostics", async () => {
+    const trace = vi.fn();
+    const { http } = capturingHttp(ok({ id: "training-1" }));
+    const client = createCloudShareClient({
+      http,
+      endpoints,
+      tokenProvider: stubTokenProvider,
+      v3: { apiId: "api-id", apiKey: "api-key" },
+      trace,
+    });
+
+    await client.requestV4({
+      method: "POST",
+      path: "/trainings",
+      body: {
+        Name: "Exam GCP-ASSOC",
+        Passphrase: "certalis-attempt-1",
+        MainInstructor: { Email: "instructor@example.com" },
+      },
+      schema: z.object({ id: z.string() }),
+    });
+
+    expect(trace).toHaveBeenNthCalledWith(1, {
+      level: "info",
+      message: "cloudshare request sent",
+      fields: expect.objectContaining({
+        method: "POST",
+        path: "/v4/trainings",
+        integrationSurface: "cloudshare.v4",
+        requestHeaders: {
+          authorization: "Bearer [REDACTED]",
+          "content-type": "application/json",
+        },
+        requestBody: {
+          Name: "Exam GCP-ASSOC",
+          Passphrase: "[REDACTED]",
+          MainInstructor: { Email: "instructor@example.com" },
+        },
+      }),
+    });
+  });
+
+  it("redacts sponsored-link login URLs from response diagnostics", async () => {
+    const trace = vi.fn();
+    const { http } = capturingHttp(
+      ok({ loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret-token" }),
+    );
+    const client = createCloudShareClient({
+      http,
+      endpoints,
+      tokenProvider: stubTokenProvider,
+      v3: { apiId: "api-id", apiKey: "api-key" },
+      trace,
+    });
+
+    await client.requestV4({
+      method: "POST",
+      path: "/trainings/training-1/sponsored-link",
+      schema: z.object({ loginUrl: z.string() }),
+    });
+
+    const responseTrace = trace.mock.calls[1]?.[0].fields;
+    expect(JSON.stringify(responseTrace)).not.toContain("secret-token");
+    expect(JSON.stringify(responseTrace)).not.toContain("ClassSponsoredLink");
+    expect(responseTrace).toEqual(
+      expect.objectContaining({
+        responseBody: "{\"loginUrl\":\"[REDACTED]\"}",
+      }),
+    );
+  });
 });
 
 describe("createCloudShareClient — v3", () => {

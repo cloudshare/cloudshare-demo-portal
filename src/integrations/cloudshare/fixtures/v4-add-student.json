@@ -1,6 +1,12 @@
 {
   "method": "POST",
-  "path": "/v4/experiences/exp-demo-1/students",
+  "path": "/v4/trainings/exp-demo-1/students",
   "status": 200,
-  "body": { "registered": true }
+  "body": [
+    {
+      "email": "candidate@helioscx.demo",
+      "firstName": "Candidate",
+      "lastName": "Demo"
+    }
+  ]
 }

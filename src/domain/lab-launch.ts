@@ -24,8 +24,9 @@ export interface LabLaunch {
   readonly id: string;
   readonly examAttemptId: string;
   readonly candidateId: string;
+  readonly trainingId?: string;
   readonly experienceId: string;
-  readonly environmentExternalId: string;
+  readonly environmentExternalId?: string;
   readonly loginUrl: string;
   readonly status: LabLaunchStatus;
   readonly createdAt: Date;
@@ -52,14 +53,40 @@ export interface AddStudentInput {
   readonly experienceId: string;
   readonly candidateId: string;
 }
+export interface CreateTrainingInput {
+  readonly title: string;
+  readonly scheduledFor: Date;
+  readonly projectId: string;
+  readonly blueprintId: string;
+  readonly policyId: string;
+  readonly regionIds: readonly string[];
+  readonly instructorId: string;
+  readonly passphrase: string;
+  readonly timeZoneId: string;
+}
+export interface CreateTrainingResult {
+  readonly trainingId: string;
+}
+export interface AddParticipantInput {
+  readonly trainingId: string;
+  readonly email: string;
+  readonly firstName: string;
+  readonly lastName: string;
+}
 export interface CreateSponsoredLinkInput {
-  readonly experienceId: string;
+  readonly experienceId?: string;
+  readonly trainingId?: string;
+  readonly email?: string;
+  readonly firstName?: string;
+  readonly lastName?: string;
 }
 export interface CreateSponsoredLinkResult {
   readonly loginUrl: string;
 }
 
 export interface LabProvisioner {
+  createTraining?(input: CreateTrainingInput): Promise<CreateTrainingResult>;
+  addParticipant?(input: AddParticipantInput): Promise<void>;
   createExperience(input: CreateExperienceInput): Promise<CreateExperienceResult>;
   /** Register the candidate. Throws on failure — never resolves on a skipped registration. */
   addStudent(input: AddStudentInput): Promise<void>;
@@ -144,6 +171,7 @@ export async function launchLab(
     id: deps.newId(),
     examAttemptId: attempt.id,
     candidateId: attempt.candidateId,
+    trainingId: experience.experienceId,
     experienceId: experience.experienceId,
     environmentExternalId,
     loginUrl: link.loginUrl,

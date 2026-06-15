@@ -84,12 +84,13 @@ export async function suspendExam(
   if (!launch) {
     throw new LabLaunchNotFoundError({ examAttemptId: input.examAttemptId });
   }
+  const environmentExternalId = requireEnvironmentExternalId(launch, input.examAttemptId);
 
-  await deps.controller.suspendEnvironment(launch.environmentExternalId);
+  await deps.controller.suspendEnvironment(environmentExternalId);
   await pollUntilStatus(
     deps.source,
     deps.sleep,
-    launch.environmentExternalId,
+    environmentExternalId,
     "suspended",
     deps.poll ?? DEFAULT_POLL,
   );
@@ -127,12 +128,13 @@ export async function resumeExam(
   if (!launch) {
     throw new LabLaunchNotFoundError({ examAttemptId: input.examAttemptId });
   }
+  const environmentExternalId = requireEnvironmentExternalId(launch, input.examAttemptId);
 
-  await deps.controller.resumeEnvironment(launch.environmentExternalId);
+  await deps.controller.resumeEnvironment(environmentExternalId);
   await pollUntilStatus(
     deps.source,
     deps.sleep,
-    launch.environmentExternalId,
+    environmentExternalId,
     "running",
     deps.poll ?? DEFAULT_POLL,
   );
@@ -144,7 +146,20 @@ export async function resumeExam(
 
   return {
     loginUrl: link.loginUrl,
-    environmentExternalId: launch.environmentExternalId,
+    environmentExternalId,
     suspendedPreservationLimitMs: SUSPENDED_PRESERVATION_LIMIT_MS,
   };
+}
+
+function requireEnvironmentExternalId(
+  launch: { readonly id: string; readonly environmentExternalId?: string },
+  examAttemptId: string,
+): string {
+  if (typeof launch.environmentExternalId !== "string" || launch.environmentExternalId.length === 0) {
+    throw new TimerSyncError("No CloudShare environment is correlated to this exam attempt yet.", {
+      examAttemptId,
+      labLaunchId: launch.id,
+    });
+  }
+  return launch.environmentExternalId;
 }

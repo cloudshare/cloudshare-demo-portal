@@ -38,6 +38,8 @@ export function createPortalUserRepository(
         id: user.id,
         customerId: user.customerId,
         email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
         passwordHash: user.passwordHash,
         role: asPortalUserRole(user.role),
       };
@@ -63,6 +65,8 @@ export function createPortalUserRepository(
         data: {
           customerId: input.customerId,
           email: input.email.trim().toLowerCase(),
+          firstName: input.firstName ?? null,
+          lastName: input.lastName ?? null,
           passwordHash: input.passwordHash,
           role: input.role,
         },
@@ -72,6 +76,8 @@ export function createPortalUserRepository(
         id: user.id,
         customerId: user.customerId,
         email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
         passwordHash: user.passwordHash,
         role: asPortalUserRole(user.role),
       };
@@ -93,10 +99,14 @@ export function createPortalUserRepository(
           customerId: customer.id,
           passwordHash: input.passwordHash,
           role: input.role,
+          firstName: null,
+          lastName: null,
         },
         create: {
           customerId: customer.id,
           email: input.email.trim().toLowerCase(),
+          firstName: null,
+          lastName: null,
           passwordHash: input.passwordHash,
           role: input.role,
         },
@@ -106,6 +116,8 @@ export function createPortalUserRepository(
         id: user.id,
         customerId: user.customerId,
         email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
         passwordHash: user.passwordHash,
         role: asPortalUserRole(user.role),
       };
@@ -144,6 +156,8 @@ export function createPortalSessionStore(
         customerId: session.user.customerId,
         role: asPortalUserRole(session.user.role),
         email: session.user.email,
+        firstName: session.user.firstName,
+        lastName: session.user.lastName,
         issuedAtMs: session.createdAt.getTime(),
       };
     },

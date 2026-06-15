@@ -60,8 +60,8 @@ first-class deliverable.
 12. As a Helios admin, I want to publish or unpublish an exam (draft vs published), so that candidates only see exams that are ready.
 
 ### Identity & access
-13. As a Candidate, I want to self-register with email and password, so that I can access the portal without an admin provisioning me.
-14. As a Helios admin, I want to provision candidate accounts, so that I can onboard users directly.
+13. As a Candidate, I want to self-register with first name, last name, email, and password, so that I can access the portal and later be registered as a CloudShare training participant.
+14. As a Helios admin, I want to provision candidate accounts with first name, last name, email, and a temporary password, so that I can onboard users directly and preserve the identity fields CloudShare requires.
 15. As any user, I want to log in with email and password and stay logged in across reloads, so that my session is durable.
 16. As a Candidate, I want to see only the exams published by my organisation, so that my choices are relevant.
 17. As the portal, I want to recompute entitlement server-side from persisted state, so that no client-supplied state can grant lab access.
@@ -172,9 +172,13 @@ first-class deliverable.
   Blueprint-detail Snapshots for the selected Project.
 
 ### Identity & access
-- Email + password (hashed), httpOnly DB-backed sessions. Roles: **admin** and **candidate**;
-  role drives home routing. Candidates may **self-register** or be **admin-provisioned**. No SSO.
-  No Certalis provider-admin UI (the Customer is seeded).
+- Candidate identity stores first name, last name, email, and password (hashed), with httpOnly
+  DB-backed sessions. Roles: **admin** and **candidate**; role drives home routing. Candidates may
+  **self-register** or be **admin-provisioned**. No SSO. No Certalis provider-admin UI (the Customer
+  is seeded).
+- Candidate first name and last name are required portal data because CloudShare participant
+  registration requires first name, last name, and email. The password is portal-only and is not sent
+  to CloudShare.
 - **Entitlement** is recomputed server-side in `domain` from the persisted `ExamAttempt`.
 
 ### Scheduling, provisioning & launch (ADR-002)
@@ -184,6 +188,9 @@ first-class deliverable.
   `start = scheduledFor`) → add participant → create sponsored link. No background scheduler; the
   environment is provisioned by CloudShare **on login** (warm standby ≥5h ahead, else cold). A
   warning is shown when scheduling within ~5h.
+- Training creation uses CloudShare's Team ID, not Project ID. Because v4 training creation requires
+  `TeamId` in practice, the portal resolves the Team through the CloudShare adapter using the
+  v3 project-filtered Teams read documented as a gap.
 - **Launch** is **time-gated**: a portal `/enter` endpoint, opened in a **child window**,
   recomputes entitlement, enforces the time gate, then **302-redirects** to the `loginUrl`. The
   `loginUrl` is **server-only** — stored on the `LabLaunch`, never returned to the client or shown

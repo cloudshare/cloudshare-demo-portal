@@ -1,9 +1,12 @@
 import { z } from "zod";
 import type { CloudShareClient } from "./client";
 import type {
+  AddParticipantInput,
   AddStudentInput,
   CreateExperienceInput,
   CreateExperienceResult,
+  CreateTrainingInput,
+  CreateTrainingResult,
   CreateSponsoredLinkInput,
   CreateSponsoredLinkResult,
   LabProvisioner,
@@ -15,19 +18,102 @@ import type {
  * Zod-validated responses; failures surface as the adapter's typed CloudShareErrors.
  *
  * NOTE (assumptions to verify against a live tenant, isolated behind this module):
- * the exact v4 paths/bodies below — `/experiences`, the `RegisteredStudentsOnly`
- * visibility value, the `/students` and `/sponsoredLinks` sub-resources — are
- * modelled on the documented Accelerate flow. Only this file changes if they differ.
+ * the exact v4 paths/bodies below are modelled on the documented Accelerate
+ * flow, the v3 class contract, and live 400 diagnostics. Only this file changes
+ * if the live v4 contract differs.
  */
 
 const experienceSchema = z.object({ id: z.string().min(1) });
-const addStudentSchema = z.object({}).passthrough();
+const addTrainingStudentsSchema = z.array(z.object({}).passthrough());
+const addExperienceStudentSchema = z.object({}).passthrough();
 const sponsoredLinkSchema = z.object({ loginUrl: z.string().url() });
+type ProjectTeam = { id: string; name: string };
+const projectTeamsSchema = z.preprocess(
+  (payload) => {
+    const rows =
+      typeof payload === "object" && payload !== null && "rows" in payload
+        ? (payload as { rows: unknown }).rows
+        : typeof payload === "object" && payload !== null && "Rows" in payload
+          ? (payload as { Rows: unknown }).Rows
+          : payload;
+    if (!Array.isArray(rows)) {
+      return rows;
+    }
+    return rows.map((team) => {
+      if (!team || typeof team !== "object") {
+        return team;
+      }
+      const record = team as Record<string, unknown>;
+      return {
+        id: record.id ?? record.Id,
+        name: record.name ?? record.Name ?? "",
+      };
+    });
+  },
+  z.array(z.object({ id: z.string().min(1), name: z.string() })),
+);
 
 export function createCloudShareLabProvisioner(
   client: CloudShareClient,
 ): LabProvisioner {
   return {
+    async createTraining(input: CreateTrainingInput): Promise<CreateTrainingResult> {
+      const teams = (await client.requestV3({
+        method: "GET",
+        path: "/teams",
+        query: {
+          getRows: "true",
+          projectId: input.projectId,
+          sortBy: "name",
+          sortAscending: "true",
+          skip: "0",
+          take: "20",
+        },
+        schema: projectTeamsSchema,
+      })) as ProjectTeam[];
+      const teamId = teams[0]?.id;
+      if (!teamId) {
+        throw new Error(`No CloudShare Team was returned for Project ${input.projectId}.`);
+      }
+
+      const training = await client.requestV4({
+        method: "POST",
+        path: "/trainings",
+        body: {
+          Name: input.title,
+          Start: input.scheduledFor.toISOString(),
+          Type: "instructorLed",
+          ProjectId: input.projectId,
+          TeamId: teamId,
+          BlueprintIds: [input.blueprintId],
+          PolicyId: input.policyId,
+          CloudshareRegionIds: input.regionIds,
+          MainInstructor: { Email: input.instructorId },
+          TimeZone: input.timeZoneId,
+          Passphrase: input.passphrase,
+          // Matches the v3 class API value for "No early access allowed".
+          UsersEarlyAccess: { GrantEarlyAccess: 2 },
+        },
+        schema: experienceSchema,
+      });
+      return { trainingId: training.id };
+    },
+
+    async addParticipant(input: AddParticipantInput): Promise<void> {
+      await client.requestV4({
+        method: "POST",
+        path: `/trainings/${input.trainingId}/students`,
+        body: [
+          {
+            email: input.email,
+            firstName: input.firstName,
+            lastName: input.lastName,
+          },
+        ],
+        schema: addTrainingStudentsSchema,
+      });
+    },
+
     async createExperience(input: CreateExperienceInput): Promise<CreateExperienceResult> {
       const experience = await client.requestV4({
         method: "POST",
@@ -52,7 +138,7 @@ export function createCloudShareLabProvisioner(
         method: "POST",
         path: `/experiences/${input.experienceId}/students`,
         body: { candidateId: input.candidateId },
-        schema: addStudentSchema,
+        schema: addExperienceStudentSchema,
       });
     },
 
@@ -61,7 +147,18 @@ export function createCloudShareLabProvisioner(
     ): Promise<CreateSponsoredLinkResult> {
       const link = await client.requestV4({
         method: "POST",
-        path: `/experiences/${input.experienceId}/sponsoredLinks`,
+        path:
+          input.trainingId !== undefined
+            ? `/trainings/${input.trainingId}/sponsored-link`
+            : `/experiences/${input.experienceId}/sponsoredLinks`,
+        body:
+          input.trainingId !== undefined
+            ? {
+                email: input.email,
+                firstName: input.firstName,
+                lastName: input.lastName,
+              }
+            : undefined,
         schema: sponsoredLinkSchema,
       });
       return { loginUrl: link.loginUrl };

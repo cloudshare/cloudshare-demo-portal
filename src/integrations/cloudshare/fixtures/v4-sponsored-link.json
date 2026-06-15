@@ -1,6 +1,6 @@
 {
   "method": "POST",
-  "path": "/v4/experiences/exp-demo-1/sponsoredLinks",
+  "path": "/v4/trainings/exp-demo-1/sponsored-link",
   "status": 200,
   "body": { "loginUrl": "https://classic.cloudshare.com/Ent/Login.aspx?token=demo-sponsored-token" }
 }

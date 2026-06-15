@@ -20,6 +20,9 @@ export function createInMemoryExamAttemptRepository(): ExamAttemptRepository & {
     async listByCandidate(candidateId: string): Promise<ExamAttempt[]> {
       return [...byId.values()].filter((a) => a.candidateId === candidateId);
     },
+    async delete(id: string): Promise<void> {
+      byId.delete(id);
+    },
     reset(): void {
       byId.clear();
     },

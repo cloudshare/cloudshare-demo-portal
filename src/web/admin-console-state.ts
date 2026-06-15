@@ -23,6 +23,13 @@ export const ADMIN_TABS: readonly AdminTab[] = [
   "resources",
 ];
 
+export const ADMIN_SESSION_EXPIRED_MESSAGE =
+  "Your admin session has expired. Sign in again to continue.";
+
+export function isAdminSessionExpiredStatus(status: number): boolean {
+  return status === 401;
+}
+
 interface NamedResource {
   readonly id: string;
   readonly name: string;

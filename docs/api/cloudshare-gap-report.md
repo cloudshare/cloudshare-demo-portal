@@ -512,6 +512,117 @@ live tenant.
 
 ---
 
+## GAP-16 — v4 training scheduling request body requires PascalCase models
+
+| Field | Detail |
+|---|---|
+| **Status** | Partially verified — live validation probes, successful creation still pending |
+| **Verified live** | Partial |
+
+**Observed behaviour**
+
+Slice 4 provisions CloudShare scheduling through the corrected v4 training endpoints:
+
+- `POST /v4/trainings`
+- `POST /v4/trainings/{trainingId}/students`
+- `POST /v4/trainings/{trainingId}/sponsored-link`
+
+The first live UI scheduling attempt returned a v4 `400` from `POST /v4/trainings` because the
+adapter sent lower-camel placeholder fields. CloudShare reported these required fields as missing:
+
+- `Name`
+- `TeamId`
+- `TimeZone`
+- `Passphrase`
+- `BlueprintIds`
+- `MainInstructor`
+- `UsersEarlyAccess`
+- `CloudshareRegionIds`
+
+Follow-up invalid-ID probes against the live v4 endpoint confirmed that the create-training body is
+bound as a PascalCase model. `MainInstructor` must be an object, not a string; `{ Email: <email> }`
+passes JSON conversion. `UsersEarlyAccess` must be an object with numeric enum field
+`GrantEarlyAccess`; string enum names do not bind. `GET /api/v3/timezones` returned `200` and
+included a UTC entry. `GET /api/v3/teams` returned `200`, but the documented endpoint retrieves all
+available Teams in all available Projects, which is too broad for Project-first Exam authoring.
+
+The current adapter sends:
+
+- `Name`
+- `Start` as the candidate's scheduled ISO timestamp
+- `Type: "instructorLed"`
+- `ProjectId`
+- `TeamId` resolved from the selected Project through the CloudShare adapter
+- `BlueprintIds: [blueprintId]`
+- `PolicyId`
+- `CloudshareRegionIds: allowedRegionIds[]`
+- `MainInstructor: { Email: configuredInstructorId }`
+- `TimeZone: "UTC"`
+- `Passphrase`
+- `UsersEarlyAccess: { GrantEarlyAccess: 2 }` (modelled on v3 "No early access allowed")
+
+The participant-add request and response body for `POST /v4/trainings/{trainingId}/students` must be
+an array of student objects, not a single object:
+`[{ email, firstName, lastName }]`. Candidate first name and last name must be stored by the portal,
+not inferred from the email address, because CloudShare participant registration requires first name,
+last name, and email. The sponsored-link body is still assumed to accept a single participant object;
+that sub-resource shape still requires a successful live scheduling run.
+
+**Update (2026-06-15, live v3/v4 contradiction):** a real candidate scheduling attempt confirmed
+that `TeamId` is a required live field for `POST /v4/trainings`, despite not being marked required
+in the v4 Stoplight page. Sending the selected Project ID as `TeamId` failed with:
+`Id 'PR...' belongs to an incorrect type`. CloudShare IDs are type-prefixed, and the accepted Team
+ID must be a `TM...` Team ID, not a `PR...` Project ID.
+
+The documented v3 endpoint `GET /api/v3/teams` retrieves all available Teams across all available
+Projects. The CloudShare GUI uses an undocumented Project-filtered variant:
+
+```text
+GET /api/v3/teams?getRows=true&projectId={projectId}&sortBy=name&sortAscending=true&skip=0&take=20
+```
+
+Live read-only probing against the local E2E credentials confirmed this endpoint returned `200` with
+`{ totalRows, rows }`; `rows[0]` included `projectId`, `projectName`, `projectMembers`,
+`endUsersMembers`, `isDefaultTeam`, `name`, and `id`, and the returned `id` used the expected `TM`
+prefix. `getRows=true` and `projectId={projectId}` should be treated as required for this portal.
+Because this endpoint is undocumented, the path, query parameters, and response-shape normalization
+must remain isolated inside `integrations/cloudshare`.
+
+**Impact on certification use**
+
+- Automated tests can prove the portal builds a consistent request shape, but they cannot prove that
+  the live tenant accepts the exact body fields, naming, or validation rules.
+- A mismatch would surface at scheduling time as a CloudShare provisioning failure, now with
+  candidate-safe responses and admin-visible diagnostics, but the slice still requires live UI
+  verification before merge.
+
+**Update (2026-06-15, Add Training Students body shape):** support-log request-body diagnostics
+confirmed the portal was sending a single JSON object to `POST /v4/trainings/{trainingId}/students`,
+while the v4 Add Training Students documentation and curl sample require an array of student
+objects. A subsequent live attempt confirmed CloudShare also returns an array of student objects.
+The adapter now sends and validates `[{ email, firstName, lastName }]`.
+
+**Update (2026-06-15, training Name uniqueness and length):** live edge-case retries confirmed that
+`POST /v4/trainings` rejects duplicate `Name` values with `{"Name":["Experience name must be unique"]}`
+and enforces a 5-100 character range with errors such as
+`{"Name":["'Name' must be between 5 and 100 characters. You entered 103 characters."]}`.
+This matters because a previous partial provisioning attempt can create the Training before a later
+step fails; retrying the same candidate, Blueprint, and schedule with the same name then fails at
+create-training. The portal now builds the CloudShare `Name` from the Blueprint name, candidate name,
+candidate email, scheduled UTC timestamp, and booking-created UTC timestamp, then deterministically
+truncates identity fields when needed so the full name stays within 100 characters. This keeps names
+human-readable without random suffixes and makes retries after partial provisioning produce a fresh
+name.
+
+**Action required:** rerun the real candidate scheduling flow against the live tenant, confirm
+whether `MainInstructor.Email` should come from the configured instructor email rather than an
+opaque member ID, confirm the sponsored-link body shape, and update this entry immediately if any
+remaining field names, required fields, enum values, or path semantics differ.
+
+**Code reference:** `src/integrations/cloudshare/labs.ts`, `src/domain/scheduling.ts`
+
+---
+
 ## Gap template
 
 Copy this section when appending a new gap discovered during implementation:
@@ -544,6 +655,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-06-14 (resource-model update: Region global reference list; Policy and Blueprint
-Project-scoped; Snapshot discovery through Blueprint detail).
+*Last updated: 2026-06-15 (updated Slice 4 training Name uniqueness/length and add-training-students request/response shape).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*

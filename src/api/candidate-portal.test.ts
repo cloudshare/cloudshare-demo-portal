@@ -64,6 +64,8 @@ function createStubPortalUserRepository(): PortalUserRepository {
         id: `user-${users.size + 1}`,
         customerId: input.customerId,
         email: input.email.trim().toLowerCase(),
+        firstName: input.firstName ?? null,
+        lastName: input.lastName ?? null,
         passwordHash: input.passwordHash,
         role: input.role,
       } as const;
@@ -99,6 +101,8 @@ describe("candidate registration and provisioning", () => {
       {
         body: {
           email: "candidate@helioscx.demo",
+          firstName: "Asha",
+          lastName: "Patel",
           password: "correct-horse-battery-staple",
         },
       },
@@ -108,6 +112,8 @@ describe("candidate registration and provisioning", () => {
     expect(response.body).toEqual({
       candidate: {
         email: "candidate@helioscx.demo",
+        firstName: "Asha",
+        lastName: "Patel",
         role: "candidate",
         customerId: "customer-helios",
       },
@@ -123,6 +129,8 @@ describe("candidate registration and provisioning", () => {
         customerId: "customer-helios",
         body: {
           email: "provisioned@helioscx.demo",
+          firstName: "Ravi",
+          lastName: "Singh",
           password: "correct-horse-battery-staple",
         },
       },
@@ -132,9 +140,32 @@ describe("candidate registration and provisioning", () => {
     expect(response.body).toEqual({
       candidate: {
         email: "provisioned@helioscx.demo",
+        firstName: "Ravi",
+        lastName: "Singh",
         role: "candidate",
         customerId: "customer-helios",
       },
+    });
+  });
+
+  it("requires Candidate first and last names for CloudShare participant registration", async () => {
+    const users = createStubPortalUserRepository();
+
+    const response = await handleCandidateSelfRegistration(
+      { users, logger: makeLogger() },
+      {
+        body: {
+          firstName: "A",
+          lastName: "Patel",
+          email: "candidate@helioscx.demo",
+          password: "correct-horse-battery-staple",
+        },
+      },
+    );
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({
+      error: "firstName and lastName must each be at least 2 characters",
     });
   });
 });
@@ -147,6 +178,8 @@ describe("candidate login", () => {
           id: "user-1",
           customerId: "customer-helios",
           email: "candidate@helioscx.demo",
+          firstName: "Asha",
+          lastName: "Patel",
           passwordHash: await hashPassword("correct-horse-battery-staple"),
           role: "candidate",
         },

@@ -1,0 +1,13 @@
+{
+  "method": "GET",
+  "path": "/api/v3/teams",
+  "status": 200,
+  "body": {
+    "rows": [
+      {
+        "id": "TM-demo-1",
+        "name": "Helios CX Team"
+      }
+    ]
+  }
+}
