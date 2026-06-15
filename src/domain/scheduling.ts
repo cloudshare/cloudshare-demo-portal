@@ -76,13 +76,14 @@ export async function scheduleExam(
   }
 
   const attemptId = deps.newId();
+  const createdAt = deps.now();
   const attempt: ExamAttempt = {
     id: attemptId,
     candidateId: input.candidateId,
     examId: exam.id,
     status: "scheduled",
     scheduledFor: input.scheduledFor,
-    createdAt: deps.now(),
+    createdAt,
   };
 
   const trainingCreator = deps.labs.createTraining;
@@ -94,7 +95,14 @@ export async function scheduleExam(
   let trainingId: string;
   try {
     const training = await trainingCreator({
-      title: exam.title,
+      title: buildCloudShareTrainingName({
+        blueprintName: exam.blueprintName,
+        candidateFirstName: input.candidateFirstName,
+        candidateLastName: input.candidateLastName,
+        candidateEmail: input.candidateEmail,
+        scheduledFor: input.scheduledFor,
+        createdAt,
+      }),
       scheduledFor: input.scheduledFor,
       projectId: exam.projectId,
       blueprintId: exam.blueprintId,
@@ -174,6 +182,35 @@ export async function scheduleExam(
     },
     coldStartLikely: input.scheduledFor.getTime() - deps.now().getTime() < COLD_START_WARNING_WINDOW_MS,
   };
+}
+
+function buildCloudShareTrainingName(input: {
+  readonly blueprintName: string;
+  readonly candidateFirstName: string;
+  readonly candidateLastName: string;
+  readonly candidateEmail: string;
+  readonly scheduledFor: Date;
+  readonly createdAt: Date;
+}): string {
+  const name = [input.candidateFirstName, input.candidateLastName]
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .join(" ");
+  return [
+    normalizeNamePart(input.blueprintName),
+    normalizeNamePart(name),
+    normalizeNamePart(input.candidateEmail),
+    formatUtcStamp(input.scheduledFor),
+    `booked ${formatUtcStamp(input.createdAt)}`,
+  ].join(" - ");
+}
+
+function normalizeNamePart(value: string): string {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+function formatUtcStamp(value: Date): string {
+  return value.toISOString().replace(/[-:]/g, "").replace(".000", "");
 }
 
 function validateScheduledFor(scheduledFor: Date, now: Date): void {

@@ -602,6 +602,15 @@ while the v4 Add Training Students documentation and curl sample require an arra
 objects. A subsequent live attempt confirmed CloudShare also returns an array of student objects.
 The adapter now sends and validates `[{ email, firstName, lastName }]`.
 
+**Update (2026-06-15, training Name uniqueness):** a live edge-case retry confirmed that
+`POST /v4/trainings` rejects duplicate `Name` values with `{"Name":["Experience name must be unique"]}`.
+This matters because a previous partial provisioning attempt can create the Training before a later
+step fails; retrying the same candidate, Blueprint, and schedule with the same name then fails at
+create-training. The portal now builds the CloudShare `Name` from the Blueprint name, candidate name,
+candidate email, scheduled UTC timestamp, and booking-created UTC timestamp. This keeps names
+human-readable without random suffixes and makes retries after partial provisioning produce a fresh
+name.
+
 **Action required:** rerun the real candidate scheduling flow against the live tenant, confirm
 whether `MainInstructor.Email` should come from the configured instructor email rather than an
 opaque member ID, confirm the sponsored-link body shape, and update this entry immediately if any
@@ -643,5 +652,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-06-15 (updated Slice 4 add-training-students request/response shape to array of student objects).
+*Last updated: 2026-06-15 (updated Slice 4 training Name uniqueness and add-training-students request/response shape).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*

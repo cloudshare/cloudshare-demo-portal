@@ -144,6 +144,44 @@ describe("scheduleExam", () => {
     });
   });
 
+  it("uses a deterministic unique CloudShare training name", async () => {
+    const { exams, attempts, launches } = await setup();
+    const createTraining = vi.fn(async () => ({ trainingId: "training-1" }));
+
+    await scheduleExam(
+      {
+        exams,
+        attempts,
+        launches,
+        labs: {
+          ...makeLabs(),
+          createTraining,
+        },
+        newId: vi
+          .fn()
+          .mockReturnValueOnce("attempt-1")
+          .mockReturnValueOnce("launch-1"),
+        now: () => new Date("2026-06-15T10:12:30.000Z"),
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        examId: "exam-1",
+        scheduledFor: new Date("2026-06-20T16:00:00.000Z"),
+      },
+    );
+
+    expect(createTraining).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title:
+          "Helios Exam Blueprint - Asha Patel - candidate@helioscx.demo - 20260620T160000Z - booked 20260615T101230Z",
+      }),
+    );
+  });
+
   it("flags a likely cold start when scheduled within five hours", async () => {
     const { exams, attempts, launches } = await setup();
 
