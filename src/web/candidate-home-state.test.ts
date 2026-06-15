@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_ENTERABILITY_WAKE_UP_DELAY_MS,
   buildScheduledAttemptViews,
   canEnterAttempt,
   getAttemptWaitingMessage,
@@ -76,6 +77,24 @@ describe("candidate home attempt state", () => {
 
     expect(delayMs).toBeGreaterThan(1_000);
     expect(delayMs).toBeLessThanOrEqual(1_500);
+  });
+
+  it("caps a far-future wake-up delay to the safe maximum chunk", () => {
+    const farFutureAttempts: CandidateDashboardData["attempts"] = [
+      {
+        id: "attempt-far",
+        examId: "exam-1",
+        scheduledFor: "2027-08-01T10:00:00.000Z",
+        status: "ready",
+      },
+    ];
+
+    expect(
+      getNextEnterabilityWakeUpDelayMs(
+        farFutureAttempts,
+        new Date("2026-06-16T10:00:00.000Z").getTime(),
+      ),
+    ).toBe(MAX_ENTERABILITY_WAKE_UP_DELAY_MS);
   });
 
   it("returns null when no future ready attempt needs an enterability wake-up", () => {

@@ -11,6 +11,7 @@ export interface CandidateScheduledAttemptView {
 }
 
 const ENTERABILITY_TIMER_FUZZ_MS = 250;
+export const MAX_ENTERABILITY_WAKE_UP_DELAY_MS = 24 * 60 * 60 * 1000;
 
 export function getLatestAttemptForExam(
   attempts: CandidateDashboardData["attempts"],
@@ -78,5 +79,8 @@ export function getNextEnterabilityWakeUpDelayMs(
     return null;
   }
 
-  return Math.max(0, nextScheduledForMs - nowMs + ENTERABILITY_TIMER_FUZZ_MS);
+  return Math.min(
+    MAX_ENTERABILITY_WAKE_UP_DELAY_MS,
+    Math.max(0, nextScheduledForMs - nowMs + ENTERABILITY_TIMER_FUZZ_MS),
+  );
 }
