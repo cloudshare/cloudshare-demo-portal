@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  ADMIN_SESSION_EXPIRED_MESSAGE,
   ADMIN_TABS,
   beginLatestOnlyRequest,
   getAdminTabLabel,
   getAllowedRegionValidationMessage,
   getExamAuthoringMode,
   getCompatibleRegions,
+  isAdminSessionExpiredStatus,
   isLatestOnlyResponse,
   reconcileAllowedRegionIds,
   shouldShowCandidateProvisioning,
@@ -53,6 +55,15 @@ describe("admin tab model", () => {
     expect(shouldShowCandidateProvisioning("events")).toBe(false);
     expect(shouldShowCandidateProvisioning("support")).toBe(false);
     expect(shouldShowCandidateProvisioning("resources")).toBe(false);
+  });
+});
+
+describe("admin session expiry", () => {
+  it("treats admin API 401 responses as expired sessions", () => {
+    expect(isAdminSessionExpiredStatus(401)).toBe(true);
+    expect(isAdminSessionExpiredStatus(403)).toBe(false);
+    expect(isAdminSessionExpiredStatus(500)).toBe(false);
+    expect(ADMIN_SESSION_EXPIRED_MESSAGE).toContain("session has expired");
   });
 });
 

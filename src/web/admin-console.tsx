@@ -4,12 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ADMIN_TABS,
+  ADMIN_SESSION_EXPIRED_MESSAGE,
   type AdminTab,
   beginLatestOnlyRequest,
   getAdminTabLabel,
   getAllowedRegionValidationMessage,
   getCompatibleRegions,
   getExamAuthoringMode,
+  isAdminSessionExpiredStatus,
   isLatestOnlyResponse,
   reconcileAllowedRegionIds,
   shouldShowCandidateProvisioning,
@@ -169,6 +171,17 @@ function stripHtmlToText(value: string | null | undefined): string {
     .trim();
 }
 
+class AdminSessionExpiredError extends Error {
+  constructor() {
+    super(ADMIN_SESSION_EXPIRED_MESSAGE);
+    this.name = "AdminSessionExpiredError";
+  }
+}
+
+function isAdminSessionExpiredError(error: unknown): error is AdminSessionExpiredError {
+  return error instanceof AdminSessionExpiredError;
+}
+
 export function AdminConsole({ email }: AdminConsoleProps) {
   const router = useRouter();
   const [tab, setTab] = useState<AdminTab>("connection");
@@ -211,8 +224,10 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   const [candidateMessage, setCandidateMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sessionExpired, setSessionExpired] = useState(false);
   useEffect(() => {
     void loadConnection();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -223,15 +238,41 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
+  function handleAdminSessionExpired() {
+    setSessionExpired(true);
+    setError(ADMIN_SESSION_EXPIRED_MESSAGE);
+    setConnectionCorrelationId(null);
+    setExamCorrelationId(null);
+    setConnectionDiagnostic(null);
+    setExamDiagnostic(null);
+    router.replace("/login");
+    router.refresh();
+  }
+
+  async function fetchAdmin(input: string, init?: RequestInit): Promise<Response> {
+    const response = await fetch(input, init);
+    if (isAdminSessionExpiredStatus(response.status)) {
+      handleAdminSessionExpired();
+      throw new AdminSessionExpiredError();
+    }
+    return response;
+  }
+
   async function loadConnection() {
-    const response = await fetch("/api/admin/cloudshare");
-    const data = (await response.json()) as ConnectionState & { error?: string };
-    if (response.ok) {
-      setConnection({
-        hasConnection: data.hasConnection,
-        connectedAt: data.connectedAt,
-        verifiedAt: data.verifiedAt,
-      });
+    try {
+      const response = await fetchAdmin("/api/admin/cloudshare");
+      const data = (await response.json()) as ConnectionState & { error?: string };
+      if (response.ok) {
+        setConnection({
+          hasConnection: data.hasConnection,
+          connectedAt: data.connectedAt,
+          verifiedAt: data.verifiedAt,
+        });
+      }
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
     }
   }
 
@@ -257,7 +298,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       return;
     }
     try {
-      const response = await fetch("/api/admin/cloudshare", {
+      const response = await fetchAdmin("/api/admin/cloudshare", {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -280,7 +321,10 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       setApiId("");
       setApiKey("");
       setWebhookSecret("");
-    } catch {
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
       setError("Failed to save CloudShare Connection");
     } finally {
       setLoading(false);
@@ -296,7 +340,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     setConnectionOccurredAt(null);
     setConnectionWarning(null);
     try {
-      const response = await fetch("/api/admin/cloudshare/test", { method: "POST" });
+      const response = await fetchAdmin("/api/admin/cloudshare/test", { method: "POST" });
       const data = (await response.json()) as {
         error?: string;
         message?: string;
@@ -318,7 +362,10 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       setConnectionMessage(`CloudShare responded with ${data.message}.`);
       setConnectionCorrelationId(data.correlationId ?? null);
       setConnectionOccurredAt(data.occurredAt ?? null);
-    } catch {
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
       setError("CloudShare connection test failed");
       setConnectionWarning("CloudShare connection test failed. Check the support log for more detail.");
     } finally {
@@ -333,14 +380,17 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       const qs = examAttemptFilter.trim()
         ? `?examAttemptId=${encodeURIComponent(examAttemptFilter.trim())}`
         : "";
-      const res = await fetch(`/api/admin/audit${qs}`);
+      const res = await fetchAdmin(`/api/admin/audit${qs}`);
       const data = await res.json() as { records?: AuditRecord[]; error?: string };
       if (!res.ok) {
         setError(data.error ?? "Failed to load audit trail");
         return;
       }
       setAuditRecords(data.records ?? []);
-    } catch {
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
       setError("Failed to load audit trail");
     } finally {
       setLoading(false);
@@ -351,14 +401,17 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/events?limit=100");
+      const res = await fetchAdmin("/api/admin/events?limit=100");
       const data = await res.json() as { events?: EventLogRecord[]; error?: string };
       if (!res.ok) {
         setError(data.error ?? "Failed to load event log");
         return;
       }
       setEventRecords(data.events ?? []);
-    } catch {
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
       setError("Failed to load event log");
     } finally {
       setLoading(false);
@@ -371,7 +424,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       setError(null);
     }
     try {
-      const res = await fetch("/api/admin/support-log?limit=200");
+      const res = await fetchAdmin("/api/admin/support-log?limit=200");
       const data = await res.json() as { records?: SupportLogRecord[]; error?: string };
       if (!res.ok) {
         if (!background) {
@@ -380,7 +433,10 @@ export function AdminConsole({ email }: AdminConsoleProps) {
         return;
       }
       setSupportRecords(data.records ?? []);
-    } catch {
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
       if (!background) {
         setError("Failed to load support log");
       }
@@ -413,14 +469,17 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/admin/sync-resources", { method: "POST" });
+      const res = await fetchAdmin("/api/admin/sync-resources", { method: "POST" });
       const data = await res.json() as SyncResult | { error: string };
       if ("error" in data) {
         setError(data.error);
       } else {
         setSyncResult(data);
       }
-    } catch {
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
       setError("Sync request failed");
     } finally {
       setLoading(false);
@@ -432,7 +491,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     setError(null);
     setExamDiagnostic(null);
     try {
-      const response = await fetch(`/api/admin/exam-authoring${refresh ? "?refresh=true" : ""}`);
+      const response = await fetchAdmin(`/api/admin/exam-authoring${refresh ? "?refresh=true" : ""}`);
       const data = (await response.json()) as {
         projects?: NamedResource[];
         regions?: NamedResource[];
@@ -463,7 +522,10 @@ export function AdminConsole({ email }: AdminConsoleProps) {
         setSelectedProjectId(projectId);
         void loadProjectResources(projectId, true);
       }
-    } catch {
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
       setError("Failed to load exam authoring resources");
     } finally {
       setLoading(false);
@@ -482,7 +544,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     setError(null);
     setExamDiagnostic(null);
     try {
-      const response = await fetch(
+      const response = await fetchAdmin(
         `/api/admin/exam-authoring/projects/${encodeURIComponent(projectId)}${refresh ? "?refresh=true" : ""}`,
       );
       const data = (await response.json()) as {
@@ -524,7 +586,10 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       } else {
         setBlueprintDetail(null);
       }
-    } catch {
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
       if (!isLatestOnlyResponse(projectResourcesRequestIdRef.current, requestId)) {
         return;
       }
@@ -559,7 +624,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     setError(null);
     setExamDiagnostic(null);
     try {
-      const response = await fetch(
+      const response = await fetchAdmin(
         `/api/admin/exam-authoring/projects/${encodeURIComponent(projectId)}/blueprints/${encodeURIComponent(blueprintId)}${refresh ? "?refresh=true" : ""}`,
       );
       const data = (await response.json()) as {
@@ -592,7 +657,10 @@ export function AdminConsole({ email }: AdminConsoleProps) {
         setExamTitle(detail.name);
         setExamDescription(stripHtmlToText(detail.description));
       }
-    } catch {
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
       if (!isLatestOnlyResponse(blueprintDetailRequestIdRef.current, requestId)) {
         return;
       }
@@ -604,14 +672,17 @@ export function AdminConsole({ email }: AdminConsoleProps) {
 
   async function loadExamCatalog() {
     try {
-      const response = await fetch("/api/admin/exams");
+      const response = await fetchAdmin("/api/admin/exams");
       const data = (await response.json()) as { exams?: ExamRecord[]; error?: string };
       if (!response.ok) {
         setError(data.error ?? "Failed to load exam catalog");
         return;
       }
       setExamCatalog(data.exams ?? []);
-    } catch {
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
       setError("Failed to load exam catalog");
     }
   }
@@ -643,7 +714,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
         return;
       }
 
-      const response = await fetch(
+      const response = await fetchAdmin(
         editingExamId
           ? `/api/admin/exams/${encodeURIComponent(editingExamId)}`
           : "/api/admin/exams",
@@ -679,7 +750,10 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       setExamMessage(editingExamId ? "Draft exam updated." : "Draft exam saved.");
       resetExamForm();
       await loadExamCatalog();
-    } catch {
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
       setError("Failed to save draft exam");
     } finally {
       setLoading(false);
@@ -691,7 +765,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     setError(null);
     setExamMessage(null);
     try {
-      const response = await fetch(`/api/admin/exams/${encodeURIComponent(examId)}/publish`, {
+      const response = await fetchAdmin(`/api/admin/exams/${encodeURIComponent(examId)}/publish`, {
         method: "POST",
       });
       const data = (await response.json()) as { error?: string };
@@ -701,7 +775,10 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       }
       setExamMessage("Exam published.");
       await loadExamCatalog();
-    } catch {
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
       setError("Failed to publish exam");
     } finally {
       setLoading(false);
@@ -713,7 +790,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     setError(null);
     setExamMessage(null);
     try {
-      const response = await fetch(`/api/admin/exams/${encodeURIComponent(examId)}/unpublish`, {
+      const response = await fetchAdmin(`/api/admin/exams/${encodeURIComponent(examId)}/unpublish`, {
         method: "POST",
       });
       const data = (await response.json()) as { error?: string };
@@ -723,7 +800,10 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       }
       setExamMessage("Exam returned to draft.");
       await loadExamCatalog();
-    } catch {
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
       setError("Failed to unpublish exam");
     } finally {
       setLoading(false);
@@ -767,7 +847,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     setError(null);
     setCandidateMessage(null);
     try {
-      const response = await fetch("/api/admin/candidates", {
+      const response = await fetchAdmin("/api/admin/candidates", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -784,7 +864,10 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       setCandidateEmail("");
       setCandidatePassword("");
       setCandidateMessage("Candidate account created.");
-    } catch {
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
       setError("Failed to create Candidate");
     } finally {
       setLoading(false);
@@ -838,6 +921,18 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     }
     setSelectedAllowedRegionIds(nextSelectedRegionIds);
   }, [compatibleRegions, selectedAllowedRegionIds]);
+
+  if (sessionExpired) {
+    return (
+      <main style={{ fontFamily: "system-ui, sans-serif", padding: "2rem", maxWidth: "720px", margin: "0 auto" }}>
+        <h1 style={{ marginBottom: "0.5rem" }}>Admin session expired</h1>
+        <p style={{ color: "#555" }}>{ADMIN_SESSION_EXPIRED_MESSAGE}</p>
+        <button onClick={() => router.replace("/login")} style={{ padding: "0.55rem 0.9rem" }}>
+          Go to login
+        </button>
+      </main>
+    );
+  }
 
   return (
     <main style={{ fontFamily: "system-ui, sans-serif", padding: "2rem", maxWidth: "1000px", margin: "0 auto" }}>
