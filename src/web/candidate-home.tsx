@@ -2,22 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import type { CandidateExamCatalogItem } from "@/api/candidate-portal";
 
 interface CandidateHomeProps {
   readonly email: string;
 }
 
-interface CandidateExamRecord {
-  readonly id: string;
-  readonly title: string;
-  readonly description: string;
-  readonly timeLimitMinutes: number;
-  readonly status: "draft" | "published";
-}
-
 export function CandidateHome({ email }: CandidateHomeProps) {
   const router = useRouter();
-  const [exams, setExams] = useState<CandidateExamRecord[]>([]);
+  const [exams, setExams] = useState<CandidateExamCatalogItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -30,7 +23,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
       try {
         const response = await fetch("/api/candidate/exams");
         const data = (await response.json()) as {
-          exams?: CandidateExamRecord[];
+          exams?: CandidateExamCatalogItem[];
           error?: string;
         };
         if (!response.ok) {

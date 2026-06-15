@@ -7,6 +7,7 @@ import {
   PortalUserAlreadyExistsError,
   registerCandidate,
 } from "@/auth/portal-registration";
+import type { Exam } from "@/domain/exam-catalog";
 
 export const SELF_REGISTER_CUSTOMER_SLUG = "helios-cx";
 
@@ -31,6 +32,13 @@ interface CandidateRegistrationDeps {
 interface CandidateExamCatalogDeps {
   readonly repository: ExamRepository;
   readonly logger: Logger;
+}
+
+export interface CandidateExamCatalogItem {
+  readonly id: string;
+  readonly title: string;
+  readonly description: string;
+  readonly timeLimitMinutes: number;
 }
 
 export async function handleCandidateSelfRegistration(
@@ -59,8 +67,19 @@ export async function handleGetCandidateExamCatalog(
   return {
     status: 200,
     body: {
-      exams: exams.filter((exam) => exam.status === "published"),
+      exams: exams
+        .filter((exam) => exam.status === "published")
+        .map(toCandidateExamCatalogItem),
     },
+  };
+}
+
+function toCandidateExamCatalogItem(exam: Exam): CandidateExamCatalogItem {
+  return {
+    id: exam.id,
+    title: exam.title,
+    description: exam.description,
+    timeLimitMinutes: exam.timeLimitMinutes,
   };
 }
 

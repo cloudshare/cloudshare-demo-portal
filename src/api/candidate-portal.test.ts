@@ -210,13 +210,23 @@ describe("candidate exam catalog", () => {
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
       exams: [
-        expect.objectContaining({
+        {
           id: "exam-published",
           title: "Published Exam",
-          status: "published",
-          customerId: "customer-helios",
-        }),
+          description: "Hands-on certification exam.",
+          timeLimitMinutes: 90,
+        },
       ],
     });
+
+    const [exam] = (response.body as { exams: Array<Record<string, unknown>> }).exams;
+    expect(exam).not.toHaveProperty("projectId");
+    expect(exam).not.toHaveProperty("blueprintId");
+    expect(exam).not.toHaveProperty("snapshotId");
+    expect(exam).not.toHaveProperty("policyId");
+    expect(exam).not.toHaveProperty("instructorId");
+    expect(exam).not.toHaveProperty("allowedRegions");
+    expect(exam).not.toHaveProperty("customerId");
+    expect(exam).not.toHaveProperty("status");
   });
 });
