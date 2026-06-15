@@ -171,7 +171,7 @@ function requireEnvironmentExternalId(
       : typeof launch.environmentId === "string" && launch.environmentId.length > 0
         ? launch.environmentId
         : null;
-  if (!correlatedEnvironmentId) {
+  if (!correlatedEnvironmentId || !isKnownActionableCloudShareEnvironmentId(correlatedEnvironmentId)) {
     throw new TimerSyncError("No CloudShare environment is correlated to this exam attempt yet.", {
       examAttemptId,
       labLaunchId: launch.id,
@@ -183,10 +183,14 @@ function requireEnvironmentExternalId(
         ? `/v4/trainings/${launch.trainingId}/students`
         : "/v4/trainings/{trainingId}/students",
       failureMode: "not_correlated_yet",
-      currentEnvironmentExternalId: launch.environmentExternalId ?? launch.environmentId ?? null,
+      currentEnvironmentExternalId: correlatedEnvironmentId,
     });
   }
   return correlatedEnvironmentId;
+}
+
+function isKnownActionableCloudShareEnvironmentId(environmentId: string): boolean {
+  return environmentId.trim().toUpperCase().startsWith("ENVS");
 }
 
 async function persistAttemptStatus(

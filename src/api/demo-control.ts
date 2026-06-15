@@ -239,7 +239,7 @@ async function runStep(
           labs: deps.labProvisioner,
           launches: deps.labLaunches,
           newId: deps.newId,
-          newExternalId: () => randomUUID(),
+          newExternalId: () => `ENVS-demo-${randomUUID()}`,
           now: deps.now,
         },
         { examAttemptId: ctx.examAttempt.id },

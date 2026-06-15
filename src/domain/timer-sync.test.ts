@@ -67,7 +67,7 @@ const launch = {
   examAttemptId: "ea-1",
   candidateId: "cand-1",
   experienceId: "exp-1",
-  environmentExternalId: "env-1",
+  environmentExternalId: "ENVS-test-env-1",
   loginUrl: "https://old.lab.url/login",
   status: "launched" as const,
   createdAt: new Date(),
@@ -154,7 +154,7 @@ describe("suspendExam", () => {
       { examAttemptId: "ea-1" },
     );
 
-    expect(controller.suspended).toEqual(["env-1"]);
+    expect(controller.suspended).toEqual(["ENVS-test-env-1"]);
     expect(timer.paused).toEqual(["ea-1"]);
     await expect(attempts.findById("ea-1")).resolves.toMatchObject({ status: "suspended" });
   });
@@ -316,9 +316,9 @@ describe("resumeExam", () => {
       { examAttemptId: "ea-1" },
     );
 
-    expect(controller.resumed).toEqual(["env-1"]);
+    expect(controller.resumed).toEqual(["ENVS-test-env-1"]);
     expect(timer.resumed).toEqual(["ea-1"]);
-    expect(result.environmentExternalId).toBe("env-1");
+    expect(result.environmentExternalId).toBe("ENVS-test-env-1");
     expect(result.suspendedPreservationLimitMs).toBe(SUSPENDED_PRESERVATION_LIMIT_MS);
     expect(labs.createSponsoredLinkCalls).toBe(0);
     await expect(attempts.findById("ea-1")).resolves.toMatchObject({ status: "in_progress" });
