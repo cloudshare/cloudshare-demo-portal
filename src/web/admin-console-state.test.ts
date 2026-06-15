@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  ADMIN_TABS,
   beginLatestOnlyRequest,
+  getAdminTabLabel,
   getAllowedRegionValidationMessage,
   getExamAuthoringMode,
   getCompatibleRegions,
   isLatestOnlyResponse,
   reconcileAllowedRegionIds,
+  shouldShowCandidateProvisioning,
 } from "./admin-console-state";
 
 describe("latest-only request coordination", () => {
@@ -36,6 +39,20 @@ describe("getExamAuthoringMode", () => {
       tupleChangeHint:
         "Project, Blueprint, and Snapshot are locked while editing a draft. Policy and allowed Regions can still be changed.",
     });
+  });
+});
+
+describe("admin tab model", () => {
+  it("treats Candidate provisioning as its own admin context", () => {
+    expect(ADMIN_TABS).toContain("candidates");
+    expect(getAdminTabLabel("candidates")).toBe("Candidates");
+    expect(shouldShowCandidateProvisioning("candidates")).toBe(true);
+    expect(shouldShowCandidateProvisioning("connection")).toBe(false);
+    expect(shouldShowCandidateProvisioning("exams")).toBe(false);
+    expect(shouldShowCandidateProvisioning("audit")).toBe(false);
+    expect(shouldShowCandidateProvisioning("events")).toBe(false);
+    expect(shouldShowCandidateProvisioning("support")).toBe(false);
+    expect(shouldShowCandidateProvisioning("resources")).toBe(false);
   });
 });
 

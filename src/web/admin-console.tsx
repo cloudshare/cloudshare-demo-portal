@@ -3,12 +3,16 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  ADMIN_TABS,
+  type AdminTab,
   beginLatestOnlyRequest,
+  getAdminTabLabel,
   getAllowedRegionValidationMessage,
   getCompatibleRegions,
   getExamAuthoringMode,
   isLatestOnlyResponse,
   reconcileAllowedRegionIds,
+  shouldShowCandidateProvisioning,
 } from "./admin-console-state";
 
 interface AdminConsoleProps {
@@ -111,8 +115,6 @@ interface ExamRecord {
   instructorName: string;
 }
 
-type Tab = "connection" | "exams" | "audit" | "events" | "support" | "resources";
-
 function formatUtcTimestamp(value: string | null | undefined): string {
   if (!value) {
     return "-";
@@ -169,7 +171,7 @@ function stripHtmlToText(value: string | null | undefined): string {
 
 export function AdminConsole({ email }: AdminConsoleProps) {
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>("connection");
+  const [tab, setTab] = useState<AdminTab>("connection");
   const [projects, setProjects] = useState<NamedResource[]>([]);
   const [regions, setRegions] = useState<NamedResource[]>([]);
   const [blueprints, setBlueprints] = useState<NamedResource[]>([]);
@@ -846,44 +848,8 @@ export function AdminConsole({ email }: AdminConsoleProps) {
           Log out
         </button>
       </div>
-      <section style={{ marginBottom: "1.5rem", padding: "1rem", background: "#f7f7f8", borderRadius: "6px", display: "grid", gap: "0.9rem" }}>
-        <div>
-          <h2 style={{ marginTop: 0, marginBottom: "0.35rem", fontSize: "1rem" }}>Provision Candidate</h2>
-          <p style={{ margin: 0, color: "#555" }}>
-            Create a Candidate account for Helios CX directly from the admin console.
-          </p>
-        </div>
-        <div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
-          <label style={{ display: "grid", gap: "0.35rem" }}>
-            <span>Candidate email</span>
-            <input
-              value={candidateEmail}
-              onChange={(event) => setCandidateEmail(event.target.value)}
-              autoComplete="email"
-              style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
-            />
-          </label>
-          <label style={{ display: "grid", gap: "0.35rem" }}>
-            <span>Temporary password</span>
-            <input
-              type="password"
-              value={candidatePassword}
-              onChange={(event) => setCandidatePassword(event.target.value)}
-              autoComplete="new-password"
-              style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
-            />
-          </label>
-        </div>
-        <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
-          <button onClick={() => void createCandidate()} disabled={loading}>
-            Create Candidate
-          </button>
-          {candidateMessage && <span style={{ color: "#0a7a28" }}>{candidateMessage}</span>}
-        </div>
-      </section>
-
       <nav style={{ display: "flex", gap: "0.75rem", marginBottom: "1.5rem", flexWrap: "wrap" }}>
-        {(["connection", "exams", "audit", "events", "support", "resources"] as Tab[]).map((t) => (
+        {ADMIN_TABS.map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -896,17 +862,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
               cursor: "pointer",
             }}
           >
-            {t === "connection"
-              ? "Connect CloudShare"
-              : t === "exams"
-                ? "Exam Catalog"
-              : t === "audit"
-                ? "Audit Trail"
-                : t === "events"
-                  ? "Event Log"
-                  : t === "support"
-                    ? "Support Log"
-                  : "Resources"}
+            {getAdminTabLabel(t)}
           </button>
         ))}
       </nav>
@@ -926,6 +882,46 @@ export function AdminConsole({ email }: AdminConsoleProps) {
             </p>
           ) : null}
         </div>
+      )}
+
+      {shouldShowCandidateProvisioning(tab) && (
+        <section style={{ display: "grid", gap: "1rem" }}>
+          <div style={{ padding: "1rem", background: "#f7f7f8", borderRadius: "6px", display: "grid", gap: "0.9rem" }}>
+            <div>
+              <h2 style={{ marginTop: 0, marginBottom: "0.35rem", fontSize: "1rem" }}>Provision Candidate</h2>
+              <p style={{ margin: 0, color: "#555" }}>
+                Create a Candidate account for Helios CX. Candidate list, edit, and reset-password management are intentionally deferred from this slice.
+              </p>
+            </div>
+            <div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+              <label style={{ display: "grid", gap: "0.35rem" }}>
+                <span>Candidate email</span>
+                <input
+                  value={candidateEmail}
+                  onChange={(event) => setCandidateEmail(event.target.value)}
+                  autoComplete="email"
+                  style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
+                />
+              </label>
+              <label style={{ display: "grid", gap: "0.35rem" }}>
+                <span>Temporary password</span>
+                <input
+                  type="password"
+                  value={candidatePassword}
+                  onChange={(event) => setCandidatePassword(event.target.value)}
+                  autoComplete="new-password"
+                  style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
+                />
+              </label>
+            </div>
+            <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+              <button onClick={() => void createCandidate()} disabled={loading}>
+                Create Candidate
+              </button>
+              {candidateMessage && <span style={{ color: "#0a7a28" }}>{candidateMessage}</span>}
+            </div>
+          </div>
+        </section>
       )}
 
       {tab === "connection" && (

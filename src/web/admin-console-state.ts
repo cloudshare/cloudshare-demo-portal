@@ -4,6 +4,25 @@ export interface ExamAuthoringMode {
   readonly tupleChangeHint: string | null;
 }
 
+export type AdminTab =
+  | "connection"
+  | "exams"
+  | "candidates"
+  | "audit"
+  | "events"
+  | "support"
+  | "resources";
+
+export const ADMIN_TABS: readonly AdminTab[] = [
+  "connection",
+  "exams",
+  "candidates",
+  "audit",
+  "events",
+  "support",
+  "resources",
+];
+
 interface NamedResource {
   readonly id: string;
   readonly name: string;
@@ -23,6 +42,29 @@ export function beginLatestOnlyRequest(activeRequestId: number): number {
 
 export function isLatestOnlyResponse(activeRequestId: number, responseRequestId: number): boolean {
   return activeRequestId === responseRequestId;
+}
+
+export function getAdminTabLabel(tab: AdminTab): string {
+  switch (tab) {
+    case "connection":
+      return "Connect CloudShare";
+    case "exams":
+      return "Exam Catalog";
+    case "candidates":
+      return "Candidates";
+    case "audit":
+      return "Audit Trail";
+    case "events":
+      return "Event Log";
+    case "support":
+      return "Support Log";
+    case "resources":
+      return "Resources";
+  }
+}
+
+export function shouldShowCandidateProvisioning(tab: AdminTab): boolean {
+  return tab === "candidates";
 }
 
 export function getExamAuthoringMode(editingExamId: string | null): ExamAuthoringMode {
