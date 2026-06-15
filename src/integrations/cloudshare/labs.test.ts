@@ -67,10 +67,16 @@ describe("cloudShareLabProvisioner — request shape", () => {
   });
 
   it("targets the training-scoped participant and sponsored-link paths", async () => {
-    const requestV4 = vi.fn(async (spec: { path: string; body?: unknown }) =>
+    const requestV4 = vi.fn(async (spec: { path: string; body?: unknown; schema: { parse(value: unknown): unknown } }) =>
       spec.path.endsWith("/sponsored-link")
-        ? { loginUrl: "https://classic.cloudshare.com/login?t=x" }
-        : {},
+        ? spec.schema.parse({ loginUrl: "https://classic.cloudshare.com/login?t=x" })
+        : spec.schema.parse([
+            {
+              email: "candidate@helioscx.demo",
+              firstName: "Candidate",
+              lastName: "Demo",
+            },
+          ]),
     );
     const client = { requestV4, requestV3: vi.fn() } as unknown as CloudShareClient;
     const labs = createCloudShareLabProvisioner(client);

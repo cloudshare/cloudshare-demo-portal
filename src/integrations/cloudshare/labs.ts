@@ -24,7 +24,8 @@ import type {
  */
 
 const experienceSchema = z.object({ id: z.string().min(1) });
-const addStudentSchema = z.object({}).passthrough();
+const addTrainingStudentsSchema = z.array(z.object({}).passthrough());
+const addExperienceStudentSchema = z.object({}).passthrough();
 const sponsoredLinkSchema = z.object({ loginUrl: z.string().url() });
 type ProjectTeam = { id: string; name: string };
 const projectTeamsSchema = z.preprocess(
@@ -109,7 +110,7 @@ export function createCloudShareLabProvisioner(
             lastName: input.lastName,
           },
         ],
-        schema: addStudentSchema,
+        schema: addTrainingStudentsSchema,
       });
     },
 
@@ -137,7 +138,7 @@ export function createCloudShareLabProvisioner(
         method: "POST",
         path: `/experiences/${input.experienceId}/students`,
         body: { candidateId: input.candidateId },
-        schema: addStudentSchema,
+        schema: addExperienceStudentSchema,
       });
     },
 

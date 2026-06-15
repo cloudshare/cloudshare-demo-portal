@@ -561,8 +561,8 @@ The current adapter sends:
 - `Passphrase`
 - `UsersEarlyAccess: { GrantEarlyAccess: 2 }` (modelled on v3 "No early access allowed")
 
-The participant-add body for `POST /v4/trainings/{trainingId}/students` must be an array of student
-objects, not a single object:
+The participant-add request and response body for `POST /v4/trainings/{trainingId}/students` must be
+an array of student objects, not a single object:
 `[{ email, firstName, lastName }]`. Candidate first name and last name must be stored by the portal,
 not inferred from the email address, because CloudShare participant registration requires first name,
 last name, and email. The sponsored-link body is still assumed to accept a single participant object;
@@ -599,7 +599,8 @@ must remain isolated inside `integrations/cloudshare`.
 **Update (2026-06-15, Add Training Students body shape):** support-log request-body diagnostics
 confirmed the portal was sending a single JSON object to `POST /v4/trainings/{trainingId}/students`,
 while the v4 Add Training Students documentation and curl sample require an array of student
-objects. The adapter now sends `[{ email, firstName, lastName }]`.
+objects. A subsequent live attempt confirmed CloudShare also returns an array of student objects.
+The adapter now sends and validates `[{ email, firstName, lastName }]`.
 
 **Action required:** rerun the real candidate scheduling flow against the live tenant, confirm
 whether `MainInstructor.Email` should come from the configured instructor email rather than an
@@ -642,5 +643,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-06-15 (updated Slice 4 add-training-students body shape to array of student objects).
+*Last updated: 2026-06-15 (updated Slice 4 add-training-students request/response shape to array of student objects).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*
