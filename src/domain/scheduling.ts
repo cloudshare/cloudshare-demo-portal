@@ -46,6 +46,8 @@ export interface ScheduleExamInput {
   readonly customerId: string;
   readonly candidateId: string;
   readonly candidateEmail: string;
+  readonly candidateFirstName: string;
+  readonly candidateLastName: string;
   readonly examId: string;
   readonly scheduledFor: Date;
 }
@@ -111,7 +113,10 @@ export async function scheduleExam(
     });
   }
 
-  const participant = toParticipant(input.candidateEmail);
+  const participant = {
+    firstName: input.candidateFirstName.trim(),
+    lastName: input.candidateLastName.trim(),
+  };
   try {
     await participantAdder({
       trainingId,
@@ -179,21 +184,4 @@ function validateScheduledFor(scheduledFor: Date, now: Date): void {
   if (scheduledFor.getTime() <= now.getTime()) {
     throw new ScheduleValidationError("scheduledFor must be in the future.");
   }
-}
-
-function toParticipant(email: string): { firstName: string; lastName: string } {
-  const localPart = email.split("@")[0]?.trim() || "Candidate";
-  const normalized = localPart.replace(/[._-]+/g, " ").trim();
-  const [first = "Candidate", ...rest] = normalized.split(/\s+/);
-  return {
-    firstName: capitalize(first),
-    lastName: rest.length > 0 ? rest.map(capitalize).join(" ") : "Candidate",
-  };
-}
-
-function capitalize(value: string): string {
-  if (value.length === 0) {
-    return value;
-  }
-  return value[0].toUpperCase() + value.slice(1);
 }

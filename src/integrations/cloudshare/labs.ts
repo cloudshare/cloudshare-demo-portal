@@ -26,12 +26,55 @@ import type {
 const experienceSchema = z.object({ id: z.string().min(1) });
 const addStudentSchema = z.object({}).passthrough();
 const sponsoredLinkSchema = z.object({ loginUrl: z.string().url() });
+type ProjectTeam = { id: string; name: string };
+const projectTeamsSchema = z.preprocess(
+  (payload) => {
+    const rows =
+      typeof payload === "object" && payload !== null && "rows" in payload
+        ? (payload as { rows: unknown }).rows
+        : typeof payload === "object" && payload !== null && "Rows" in payload
+          ? (payload as { Rows: unknown }).Rows
+          : payload;
+    if (!Array.isArray(rows)) {
+      return rows;
+    }
+    return rows.map((team) => {
+      if (!team || typeof team !== "object") {
+        return team;
+      }
+      const record = team as Record<string, unknown>;
+      return {
+        id: record.id ?? record.Id,
+        name: record.name ?? record.Name ?? "",
+      };
+    });
+  },
+  z.array(z.object({ id: z.string().min(1), name: z.string() })),
+);
 
 export function createCloudShareLabProvisioner(
   client: CloudShareClient,
 ): LabProvisioner {
   return {
     async createTraining(input: CreateTrainingInput): Promise<CreateTrainingResult> {
+      const teams = (await client.requestV3({
+        method: "GET",
+        path: "/teams",
+        query: {
+          getRows: "true",
+          projectId: input.projectId,
+          sortBy: "name",
+          sortAscending: "true",
+          skip: "0",
+          take: "20",
+        },
+        schema: projectTeamsSchema,
+      })) as ProjectTeam[];
+      const teamId = teams[0]?.id;
+      if (!teamId) {
+        throw new Error(`No CloudShare Team was returned for Project ${input.projectId}.`);
+      }
+
       const training = await client.requestV4({
         method: "POST",
         path: "/trainings",
@@ -40,7 +83,7 @@ export function createCloudShareLabProvisioner(
           Start: input.scheduledFor.toISOString(),
           Type: "instructorLed",
           ProjectId: input.projectId,
-          TeamId: input.projectId,
+          TeamId: teamId,
           BlueprintIds: [input.blueprintId],
           PolicyId: input.policyId,
           CloudshareRegionIds: input.regionIds,

@@ -3,6 +3,8 @@
 import { useState } from "react";
 
 export function RegisterForm() {
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -17,7 +19,7 @@ export function RegisterForm() {
       const response = await fetch("/api/candidate/register", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ firstName, lastName, email, password }),
       });
       const data = (await response.json()) as { error?: string };
       if (!response.ok) {
@@ -40,6 +42,30 @@ export function RegisterForm() {
         Create your Helios CX Candidate account to browse published Exams.
       </p>
       <form onSubmit={onSubmit} style={{ display: "grid", gap: "1rem" }}>
+        <label style={{ display: "grid", gap: "0.35rem" }}>
+          <span>First name</span>
+          <input
+            name="firstName"
+            value={firstName}
+            onChange={(event) => setFirstName(event.target.value)}
+            autoComplete="given-name"
+            minLength={2}
+            required
+            style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
+          />
+        </label>
+        <label style={{ display: "grid", gap: "0.35rem" }}>
+          <span>Last name</span>
+          <input
+            name="lastName"
+            value={lastName}
+            onChange={(event) => setLastName(event.target.value)}
+            autoComplete="family-name"
+            minLength={2}
+            required
+            style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
+          />
+        </label>
         <label style={{ display: "grid", gap: "0.35rem" }}>
           <span>Email</span>
           <input

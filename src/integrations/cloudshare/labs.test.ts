@@ -8,8 +8,13 @@ import type { V4TokenProvider } from "./v4-auth";
 
 describe("cloudShareLabProvisioner — request shape", () => {
   it("creates a training with instructorLed timing and exam provisioning tuple", async () => {
+    const requestV3 = vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) =>
+      spec.schema.parse({
+        rows: [{ id: "TM-team-1", name: "Helios Team" }],
+      }),
+    );
     const requestV4 = vi.fn(async (_spec: unknown) => ({ id: "exp-1" }));
-    const client = { requestV4, requestV3: vi.fn() } as unknown as CloudShareClient;
+    const client = { requestV4, requestV3 } as unknown as CloudShareClient;
     const labs = createCloudShareLabProvisioner(client);
 
     const result = await labs.createTraining!({
@@ -25,6 +30,19 @@ describe("cloudShareLabProvisioner — request shape", () => {
     });
 
     expect(result).toEqual({ trainingId: "exp-1" });
+    expect(requestV3).toHaveBeenCalledWith({
+      method: "GET",
+      path: "/teams",
+      query: {
+        getRows: "true",
+        projectId: "project-1",
+        sortBy: "name",
+        sortAscending: "true",
+        skip: "0",
+        take: "20",
+      },
+      schema: expect.anything(),
+    });
     const spec = requestV4.mock.calls[0][0] as unknown as {
       method: string;
       path: string;
@@ -37,7 +55,7 @@ describe("cloudShareLabProvisioner — request shape", () => {
       Start: "2026-06-15T16:00:00.000Z",
       Type: "instructorLed",
       ProjectId: "project-1",
-      TeamId: "project-1",
+      TeamId: "TM-team-1",
       BlueprintIds: ["bp-1"],
       PolicyId: "policy-1",
       CloudshareRegionIds: ["region-1", "region-2"],
@@ -83,6 +101,30 @@ describe("cloudShareLabProvisioner — request shape", () => {
       lastName: "Demo",
     });
     expect(link.loginUrl).toContain("classic.cloudshare.com");
+  });
+
+  it("accepts documented all-teams array casing while resolving a Team ID", async () => {
+    const requestV3 = vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) =>
+      spec.schema.parse([{ Id: "TM-team-2", Name: "Helios Team" }]),
+    );
+    const requestV4 = vi.fn(async (_spec: unknown) => ({ id: "exp-1" }));
+    const client = { requestV4, requestV3 } as unknown as CloudShareClient;
+    const labs = createCloudShareLabProvisioner(client);
+
+    await labs.createTraining!({
+      title: "Exam GCP-ASSOC",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      projectId: "project-1",
+      blueprintId: "bp-1",
+      policyId: "policy-1",
+      regionIds: ["region-1"],
+      instructorId: "instructor@example.com",
+      passphrase: "certalis-attempt-1",
+      timeZoneId: "UTC",
+    });
+
+    const spec = requestV4.mock.calls[0][0] as { body: { TeamId: string } };
+    expect(spec.body.TeamId).toBe("TM-team-2");
   });
 });
 

@@ -10,6 +10,8 @@ export interface PortalUserRecord {
   readonly id: string;
   readonly customerId: string;
   readonly email: string;
+  readonly firstName?: string | null;
+  readonly lastName?: string | null;
   readonly passwordHash: string;
   readonly role: PortalUserRole;
 }
@@ -20,6 +22,8 @@ export interface PortalSession {
   readonly customerId: string;
   readonly role: PortalUserRole;
   readonly email: string;
+  readonly firstName?: string | null;
+  readonly lastName?: string | null;
   readonly issuedAtMs: number;
 }
 
@@ -30,6 +34,8 @@ export interface PortalUserStore {
 export interface CreatePortalUserInput {
   readonly customerId: string;
   readonly email: string;
+  readonly firstName?: string | null;
+  readonly lastName?: string | null;
   readonly passwordHash: string;
   readonly role: PortalUserRole;
 }

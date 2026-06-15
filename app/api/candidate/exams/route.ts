@@ -57,6 +57,8 @@ export async function POST(request: Request) {
       customerId: session.customerId,
       candidateId: session.userId,
       candidateEmail: session.email,
+      candidateFirstName: session.firstName,
+      candidateLastName: session.lastName,
       body,
     },
   );

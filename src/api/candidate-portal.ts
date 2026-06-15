@@ -149,7 +149,12 @@ export async function handleGetCandidateDashboard(
 
 export async function handleScheduleCandidateExam(
   deps: CandidateSchedulingDeps,
-  request: CustomerRequest & { candidateId: string; candidateEmail: string } & BodyRequest,
+  request: CustomerRequest & {
+    candidateId: string;
+    candidateEmail: string;
+    candidateFirstName?: string | null;
+    candidateLastName?: string | null;
+  } & BodyRequest,
 ): Promise<CandidatePortalResponse> {
   const correlationId = (deps.newCorrelationId ?? randomUUID)();
   const body = request.body;
@@ -173,6 +178,21 @@ export async function handleScheduleCandidateExam(
     };
   }
 
+  if (
+    !request.candidateFirstName?.trim() ||
+    !request.candidateLastName?.trim() ||
+    request.candidateFirstName.trim().length < 2 ||
+    request.candidateLastName.trim().length < 2
+  ) {
+    return {
+      status: 409,
+      body: {
+        error:
+          "Candidate first name and last name are required before scheduling an Exam.",
+      },
+    };
+  }
+
   const cloudshare = deps.cloudshare.forConnection(connection);
   const labs = createCloudShareLabProvisioner(cloudshare);
 
@@ -190,6 +210,8 @@ export async function handleScheduleCandidateExam(
         customerId: request.customerId,
         candidateId: request.candidateId,
         candidateEmail: request.candidateEmail,
+        candidateFirstName: request.candidateFirstName.trim(),
+        candidateLastName: request.candidateLastName.trim(),
         examId: (body as { examId: string }).examId.trim(),
         scheduledFor: new Date((body as { scheduledFor: string }).scheduledFor),
       },
@@ -282,20 +304,48 @@ function toProvisioningDiagnostic(
   if (cause instanceof CloudShareRequestError) {
     return {
       ...base,
+      method: cause.context?.method ?? base.method,
+      path: cause.context?.path ?? base.path,
+      host: cause.context?.host,
+      integrationSurface: cause.context?.integrationSurface ?? base.integrationSurface,
       failureMode: "http_status",
       responseStatus: cause.status,
+      requestHeaders: cause.context?.requestHeaders,
+      requestBody: cause.context?.requestBody,
+      responseHeaders: cause.context?.responseHeaders,
+      responseBody: cause.context?.responseBody,
+      network: cause.context?.network,
+      tls: cause.context?.tls,
     };
   }
   if (cause instanceof CloudShareTransportError) {
     return {
       ...base,
+      method: cause.context?.method ?? base.method,
+      path: cause.context?.path ?? base.path,
+      host: cause.context?.host,
+      integrationSurface: cause.context?.integrationSurface ?? base.integrationSurface,
       failureMode: "transport",
+      requestHeaders: cause.context?.requestHeaders,
+      requestBody: cause.context?.requestBody,
+      cause: cause.context?.cause,
     };
   }
   if (cause instanceof CloudShareResponseError) {
     return {
       ...base,
+      method: cause.context?.method ?? base.method,
+      path: cause.context?.path ?? base.path,
+      host: cause.context?.host,
+      integrationSurface: cause.context?.integrationSurface ?? base.integrationSurface,
       failureMode: "unexpected_response",
+      requestHeaders: cause.context?.requestHeaders,
+      requestBody: cause.context?.requestBody,
+      responseHeaders: cause.context?.responseHeaders,
+      responseBody: cause.context?.responseBody,
+      network: cause.context?.network,
+      tls: cause.context?.tls,
+      issues: cause.context?.issues,
     };
   }
   return {
@@ -313,17 +363,21 @@ async function registerCandidateFromBody(
   if (
     typeof body !== "object" ||
     body === null ||
+    typeof (body as { firstName?: unknown }).firstName !== "string" ||
+    typeof (body as { lastName?: unknown }).lastName !== "string" ||
     typeof (body as { email?: unknown }).email !== "string" ||
     typeof (body as { password?: unknown }).password !== "string"
   ) {
     return {
       status: 400,
-      body: { error: "email and password are required" },
+      body: { error: "firstName, lastName, email, and password are required" },
     };
   }
 
   try {
     const candidate = await registerCandidate(deps, {
+      firstName: (body as { firstName: string }).firstName,
+      lastName: (body as { lastName: string }).lastName,
       email: (body as { email: string }).email,
       password: (body as { password: string }).password,
       customerId: scope.customerId,
@@ -335,6 +389,8 @@ async function registerCandidateFromBody(
       body: {
         candidate: {
           email: candidate.email,
+          firstName: candidate.firstName,
+          lastName: candidate.lastName,
           role: candidate.role,
           customerId: candidate.customerId,
         },

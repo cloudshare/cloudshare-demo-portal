@@ -54,6 +54,8 @@ export function createPortalAuthenticator(
         customerId: user.customerId,
         role: user.role,
         email: user.email,
+        firstName: user.firstName ?? null,
+        lastName: user.lastName ?? null,
         issuedAtMs: now(),
       };
       await opts.sessions.save(session);

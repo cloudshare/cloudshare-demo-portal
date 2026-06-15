@@ -71,13 +71,24 @@ describe("scheduleExam", () => {
   it("creates a scheduled attempt, provisions training in order, and finalizes the attempt as ready", async () => {
     const { exams, attempts, launches } = await setup();
     const order: string[] = [];
+    const addParticipant = vi.fn(async () => {
+      order.push("addParticipant");
+    });
+    const createSponsoredLink = vi.fn(async () => {
+      order.push("createSponsoredLink");
+      return { loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/demo" };
+    });
 
     const result = await scheduleExam(
       {
         exams,
         attempts,
         launches,
-        labs: makeLabs(order),
+        labs: {
+          ...makeLabs(order),
+          addParticipant,
+          createSponsoredLink,
+        },
         newId: vi
           .fn()
           .mockReturnValueOnce("attempt-1")
@@ -88,12 +99,26 @@ describe("scheduleExam", () => {
         customerId: "customer-helios",
         candidateId: "candidate-1",
         candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
         examId: "exam-1",
         scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
       },
     );
 
     expect(order).toEqual(["createTraining", "addParticipant", "createSponsoredLink"]);
+    expect(addParticipant).toHaveBeenCalledWith({
+      trainingId: "training-1",
+      email: "candidate@helioscx.demo",
+      firstName: "Asha",
+      lastName: "Patel",
+    });
+    expect(createSponsoredLink).toHaveBeenCalledWith({
+      trainingId: "training-1",
+      email: "candidate@helioscx.demo",
+      firstName: "Asha",
+      lastName: "Patel",
+    });
     expect(result).toEqual({
       attempt: {
         id: "attempt-1",
@@ -138,6 +163,8 @@ describe("scheduleExam", () => {
         customerId: "customer-helios",
         candidateId: "candidate-1",
         candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
         examId: "exam-1",
         scheduledFor: new Date("2026-06-15T12:30:00.000Z"),
       },
@@ -184,6 +211,8 @@ describe("scheduleExam", () => {
           customerId: "customer-helios",
           candidateId: "candidate-1",
           candidateEmail: "candidate@helioscx.demo",
+          candidateFirstName: "Asha",
+          candidateLastName: "Patel",
           examId: "exam-1",
           scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
         },
@@ -213,6 +242,8 @@ describe("scheduleExam", () => {
           customerId: "customer-helios",
           candidateId: "candidate-1",
           candidateEmail: "candidate@helioscx.demo",
+          candidateFirstName: "Asha",
+          candidateLastName: "Patel",
           examId: "exam-1",
           scheduledFor: new Date("2026-06-15T10:00:00.000Z"),
         },

@@ -113,6 +113,37 @@ function sanitizeResponseHeaders(
   return sanitized;
 }
 
+function sanitizeBody(body: string | undefined): unknown {
+  if (body === undefined) {
+    return undefined;
+  }
+
+  try {
+    return redactSensitiveBodyFields(JSON.parse(body));
+  } catch {
+    return body;
+  }
+}
+
+function redactSensitiveBodyFields(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(redactSensitiveBodyFields);
+  }
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  const redacted: Record<string, unknown> = {};
+  for (const [key, fieldValue] of Object.entries(value)) {
+    if (/api[-_]?key|secret|token|hmac|passphrase|password/i.test(key)) {
+      redacted[key] = "[REDACTED]";
+      continue;
+    }
+    redacted[key] = redactSensitiveBodyFields(fieldValue);
+  }
+  return redacted;
+}
+
 function describeRequest(urlText: string): {
   readonly host: string;
   readonly path: string;
@@ -140,6 +171,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
     fields?: Record<string, unknown>,
   ): void {
     const requestInfo = describeRequest(request.url);
+    const requestBody = sanitizeBody(request.body);
     opts.trace?.({
       level,
       message,
@@ -150,6 +182,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
         path: requestInfo.path,
         integrationSurface: requestInfo.integrationSurface,
         requestHeaders: sanitizeHeaders(request.headers),
+        ...(requestBody !== undefined ? { requestBody } : {}),
         ...fields,
       },
     });
@@ -159,6 +192,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
     request: HttpRequest,
     schema: ZodType<T>,
   ): Promise<T> {
+    const requestInfo = describeRequest(request.url);
     trace("info", "cloudshare request sent", request);
 
     let response;
@@ -173,7 +207,11 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
         `CloudShare request to ${request.url} failed to reach the server`,
         {
           method: request.method,
+          host: requestInfo.host,
+          path: requestInfo.path,
+          integrationSurface: requestInfo.integrationSurface,
           requestHeaders: sanitizeHeaders(request.headers),
+          requestBody: sanitizeBody(request.body),
           cause: cause instanceof Error ? cause.message : String(cause),
         },
       );
@@ -193,7 +231,11 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
         response.status,
         {
           method: request.method,
+          host: requestInfo.host,
+          path: requestInfo.path,
+          integrationSurface: requestInfo.integrationSurface,
           requestHeaders: sanitizeHeaders(request.headers),
+          requestBody: sanitizeBody(request.body),
           responseHeaders: sanitizeResponseHeaders(response.headers),
           responseBody: response.body,
           network: response.network,
@@ -211,7 +253,11 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
         {
           method: request.method,
           status: response.status,
+          host: requestInfo.host,
+          path: requestInfo.path,
+          integrationSurface: requestInfo.integrationSurface,
           requestHeaders: sanitizeHeaders(request.headers),
+          requestBody: sanitizeBody(request.body),
           responseHeaders: sanitizeResponseHeaders(response.headers),
           responseBody: response.body,
           network: response.network,
@@ -226,7 +272,11 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
         `CloudShare response from ${request.url} did not match the expected schema`,
         {
           method: request.method,
+          host: requestInfo.host,
+          path: requestInfo.path,
+          integrationSurface: requestInfo.integrationSurface,
           requestHeaders: sanitizeHeaders(request.headers),
+          requestBody: sanitizeBody(request.body),
           responseHeaders: sanitizeResponseHeaders(response.headers),
           responseBody: response.body,
           network: response.network,
@@ -297,6 +347,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
       };
 
       trace("info", "cloudshare request sent", request);
+      const requestInfo = describeRequest(request.url);
 
       let response;
       try {
@@ -310,7 +361,11 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           `CloudShare request to ${unsignedUrl} failed to reach the server`,
           {
             method: spec.method,
+            host: requestInfo.host,
+            path: requestInfo.path,
+            integrationSurface: requestInfo.integrationSurface,
             requestHeaders: sanitizeHeaders(request.headers),
+            requestBody: sanitizeBody(request.body),
             cause: cause instanceof Error ? cause.message : String(cause),
           },
         );
@@ -330,7 +385,11 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           response.status,
           {
             method: spec.method,
+            host: requestInfo.host,
+            path: requestInfo.path,
+            integrationSurface: requestInfo.integrationSurface,
             requestHeaders: sanitizeHeaders(request.headers),
+            requestBody: sanitizeBody(request.body),
             responseHeaders: sanitizeResponseHeaders(response.headers),
             responseBody: response.body,
             network: response.network,

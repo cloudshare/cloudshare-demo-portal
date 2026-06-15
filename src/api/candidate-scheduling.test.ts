@@ -63,7 +63,12 @@ function makeConnectionRepository(
 function makeCloudShareFactory(overrides: Partial<ReturnType<CloudShareClientFactory["forConnection"]>> = {}): CloudShareClientFactory {
   return {
     forConnection: () => ({
-      requestV3: vi.fn(),
+      requestV3: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+        if (spec.path === "/teams") {
+          return spec.schema.parse({ rows: [{ id: "TM-team-1", name: "Helios Team" }] });
+        }
+        throw new Error(`unexpected v3 path ${spec.path}`);
+      }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>["requestV3"],
       requestV3Text: vi.fn(),
       requestV4: vi.fn(async (spec: { path: string }) => {
         if (spec.path === "/trainings") {
@@ -125,6 +130,8 @@ describe("candidate scheduling handlers", () => {
         customerId: "customer-helios",
         candidateId: "candidate-1",
         candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
         body: {
           examId: "exam-1",
           scheduledFor: "2026-06-15T16:00:00.000Z",
@@ -190,7 +197,14 @@ describe("candidate scheduling handlers", () => {
             if (spec.path === "/trainings") {
               return { id: "training-1" };
             }
-            throw new CloudShareRequestError("forbidden", 403);
+            throw new CloudShareRequestError("forbidden", 403, {
+              requestBody: {
+                email: "candidate@helioscx.demo",
+                firstName: "Asha",
+                lastName: "Patel",
+              },
+              responseBody: "{\"error\":\"forbidden\"}",
+            });
           }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>["requestV4"],
         }),
         logger,
@@ -205,6 +219,8 @@ describe("candidate scheduling handlers", () => {
         customerId: "customer-helios",
         candidateId: "candidate-1",
         candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
         body: {
           examId: "exam-1",
           scheduledFor: "2026-06-15T16:00:00.000Z",
@@ -230,6 +246,12 @@ describe("candidate scheduling handlers", () => {
         path: "/v4/trainings/training-1/students",
         failureMode: "http_status",
         responseStatus: 403,
+        requestBody: {
+          email: "candidate@helioscx.demo",
+          firstName: "Asha",
+          lastName: "Patel",
+        },
+        responseBody: "{\"error\":\"forbidden\"}",
       }),
     );
     await expect(eventLog.listAll()).resolves.toEqual([
@@ -245,6 +267,12 @@ describe("candidate scheduling handlers", () => {
           path: "/v4/trainings/training-1/students",
           failureMode: "http_status",
           responseStatus: 403,
+          requestBody: {
+            email: "candidate@helioscx.demo",
+            firstName: "Asha",
+            lastName: "Patel",
+          },
+          responseBody: "{\"error\":\"forbidden\"}",
         }),
       }),
     ]);

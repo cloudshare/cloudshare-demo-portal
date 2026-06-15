@@ -543,8 +543,8 @@ Follow-up invalid-ID probes against the live v4 endpoint confirmed that the crea
 bound as a PascalCase model. `MainInstructor` must be an object, not a string; `{ Email: <email> }`
 passes JSON conversion. `UsersEarlyAccess` must be an object with numeric enum field
 `GrantEarlyAccess`; string enum names do not bind. `GET /api/v3/timezones` returned `200` and
-included a UTC entry. `GET /api/v3/teams` returned `200`, but observed items exposed only `id` and
-`name`, with no Project linkage, so `TeamId` semantics remain unclear.
+included a UTC entry. `GET /api/v3/teams` returned `200`, but the documented endpoint retrieves all
+available Teams in all available Projects, which is too broad for Project-first Exam authoring.
 
 The current adapter sends:
 
@@ -552,7 +552,7 @@ The current adapter sends:
 - `Start` as the candidate's scheduled ISO timestamp
 - `Type: "instructorLed"`
 - `ProjectId`
-- `TeamId` (currently populated from the selected Project ID until CloudShare confirms the field)
+- `TeamId` resolved from the selected Project through the CloudShare adapter
 - `BlueprintIds: [blueprintId]`
 - `PolicyId`
 - `CloudshareRegionIds: allowedRegionIds[]`
@@ -562,8 +562,30 @@ The current adapter sends:
 - `UsersEarlyAccess: { GrantEarlyAccess: 2 }` (modelled on v3 "No early access allowed")
 
 The participant-add body is still assumed to be `{ email, firstName, lastName }`, and the
-sponsored-link body is assumed to accept the same participant fields. These sub-resource shapes
-still require a successful live scheduling run.
+sponsored-link body is assumed to accept the same participant fields. Candidate first name and last
+name must be stored by the portal, not inferred from the email address, because CloudShare
+participant registration requires first name, last name, and email. These sub-resource shapes still
+require a successful live scheduling run.
+
+**Update (2026-06-15, live v3/v4 contradiction):** a real candidate scheduling attempt confirmed
+that `TeamId` is a required live field for `POST /v4/trainings`, despite not being marked required
+in the v4 Stoplight page. Sending the selected Project ID as `TeamId` failed with:
+`Id 'PR...' belongs to an incorrect type`. CloudShare IDs are type-prefixed, and the accepted Team
+ID must be a `TM...` Team ID, not a `PR...` Project ID.
+
+The documented v3 endpoint `GET /api/v3/teams` retrieves all available Teams across all available
+Projects. The CloudShare GUI uses an undocumented Project-filtered variant:
+
+```text
+GET /api/v3/teams?getRows=true&projectId={projectId}&sortBy=name&sortAscending=true&skip=0&take=20
+```
+
+Live read-only probing against the local E2E credentials confirmed this endpoint returned `200` with
+`{ totalRows, rows }`; `rows[0]` included `projectId`, `projectName`, `projectMembers`,
+`endUsersMembers`, `isDefaultTeam`, `name`, and `id`, and the returned `id` used the expected `TM`
+prefix. `getRows=true` and `projectId={projectId}` should be treated as required for this portal.
+Because this endpoint is undocumented, the path, query parameters, and response-shape normalization
+must remain isolated inside `integrations/cloudshare`.
 
 **Impact on certification use**
 
@@ -574,9 +596,9 @@ still require a successful live scheduling run.
   verification before merge.
 
 **Action required:** rerun the real candidate scheduling flow against the live tenant, confirm
-whether `TeamId` must be a Project ID or a Team ID, confirm whether `MainInstructor.Email` should
-come from the configured instructor email rather than an opaque member ID, and update this entry
-immediately if any field names, required fields, enum values, or path semantics differ.
+whether `MainInstructor.Email` should come from the configured instructor email rather than an
+opaque member ID, and update this entry immediately if any remaining field names, required fields,
+enum values, or path semantics differ.
 
 **Code reference:** `src/integrations/cloudshare/labs.ts`, `src/domain/scheduling.ts`
 
@@ -614,5 +636,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-06-15 (added unverified v4 training scheduling request-body assumptions for Slice 4).
+*Last updated: 2026-06-15 (updated Slice 4 v4 training scheduling with live TeamId contradiction and project-filtered Teams workaround).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*

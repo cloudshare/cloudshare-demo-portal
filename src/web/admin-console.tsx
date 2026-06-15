@@ -62,6 +62,7 @@ interface ConnectionDiagnostic {
   failureMode: string;
   responseStatus?: number;
   requestHeaders?: Record<string, unknown>;
+  requestBody?: unknown;
   responseHeaders?: Record<string, unknown>;
   responseBody?: unknown;
   cause?: string;
@@ -219,6 +220,8 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   const [connectionCorrelationId, setConnectionCorrelationId] = useState<string | null>(null);
   const [connectionOccurredAt, setConnectionOccurredAt] = useState<string | null>(null);
   const [connectionWarning, setConnectionWarning] = useState<string | null>(null);
+  const [candidateFirstName, setCandidateFirstName] = useState("");
+  const [candidateLastName, setCandidateLastName] = useState("");
   const [candidateEmail, setCandidateEmail] = useState("");
   const [candidatePassword, setCandidatePassword] = useState("");
   const [candidateMessage, setCandidateMessage] = useState<string | null>(null);
@@ -851,6 +854,8 @@ export function AdminConsole({ email }: AdminConsoleProps) {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          firstName: candidateFirstName,
+          lastName: candidateLastName,
           email: candidateEmail,
           password: candidatePassword,
         }),
@@ -861,6 +866,8 @@ export function AdminConsole({ email }: AdminConsoleProps) {
         return;
       }
 
+      setCandidateFirstName("");
+      setCandidateLastName("");
       setCandidateEmail("");
       setCandidatePassword("");
       setCandidateMessage("Candidate account created.");
@@ -989,6 +996,26 @@ export function AdminConsole({ email }: AdminConsoleProps) {
               </p>
             </div>
             <div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+              <label style={{ display: "grid", gap: "0.35rem" }}>
+                <span>First name</span>
+                <input
+                  value={candidateFirstName}
+                  onChange={(event) => setCandidateFirstName(event.target.value)}
+                  autoComplete="given-name"
+                  minLength={2}
+                  style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
+                />
+              </label>
+              <label style={{ display: "grid", gap: "0.35rem" }}>
+                <span>Last name</span>
+                <input
+                  value={candidateLastName}
+                  onChange={(event) => setCandidateLastName(event.target.value)}
+                  autoComplete="family-name"
+                  minLength={2}
+                  style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
+                />
+              </label>
               <label style={{ display: "grid", gap: "0.35rem" }}>
                 <span>Candidate email</span>
                 <input
@@ -1583,6 +1610,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                   const integrationSurface = readStringField(record.fields, "integrationSurface");
                   const host = readStringField(record.fields, "host");
                   const requestHeaders = record.fields.requestHeaders;
+                  const requestBody = record.fields.requestBody;
                   const responseHeaders = record.fields.responseHeaders;
                   const responseBody = record.fields.responseBody;
                   const network = record.fields.network;
@@ -1637,6 +1665,14 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                               <strong>Request headers:</strong>
                               <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
                                 {formatSupportValue(requestHeaders)}
+                              </pre>
+                            </div>
+                          )}
+                          {requestBody !== undefined && (
+                            <div>
+                              <strong>Request body:</strong>
+                              <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
+                                {formatSupportValue(requestBody)}
                               </pre>
                             </div>
                           )}
