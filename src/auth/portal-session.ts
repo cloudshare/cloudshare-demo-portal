@@ -19,3 +19,11 @@ export async function getPortalAdminSession(
   const session = await getPortalSession(services, sessionId);
   return session?.role === "admin" ? session : null;
 }
+
+export function getPortalHomePath(session: PortalSession | null): string {
+  if (!session) {
+    return "/login";
+  }
+
+  return session.role === "admin" ? "/admin" : "/candidate";
+}

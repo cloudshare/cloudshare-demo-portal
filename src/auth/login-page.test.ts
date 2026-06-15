@@ -1,13 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import LoginPage from "../../app/login/page";
 
-const { mockCookies, mockRedirect, mockGetServices, mockGetPortalAdminSession } = vi.hoisted(() => ({
+const { mockCookies, mockRedirect, mockGetServices, mockGetPortalSession } = vi.hoisted(() => ({
   mockCookies: vi.fn(),
   mockRedirect: vi.fn((path: string) => {
     throw new Error(`redirect:${path}`);
   }),
   mockGetServices: vi.fn(),
-  mockGetPortalAdminSession: vi.fn(),
+  mockGetPortalSession: vi.fn(),
 }));
 
 vi.mock("next/headers", () => ({
@@ -23,7 +23,9 @@ vi.mock("@/composition", () => ({
 }));
 
 vi.mock("@/auth/portal-session", () => ({
-  getPortalAdminSession: mockGetPortalAdminSession,
+  getPortalSession: mockGetPortalSession,
+  getPortalHomePath: (session: { role: "admin" | "candidate" } | null) =>
+    session?.role === "admin" ? "/admin" : "/candidate",
 }));
 
 vi.mock("../../app/login/login-form", () => ({
@@ -49,7 +51,7 @@ describe("login page", () => {
   });
 
   it("redirects authenticated admins away from /login", async () => {
-    mockGetPortalAdminSession.mockResolvedValue({
+    mockGetPortalSession.mockResolvedValue({
       sessionId: "portal-session-1",
       customerId: "customer-helios",
       email: "admin@helioscx.demo",
@@ -60,8 +62,20 @@ describe("login page", () => {
     expect(mockRedirect).toHaveBeenCalledWith("/admin");
   });
 
+  it("redirects authenticated Candidates away from /login", async () => {
+    mockGetPortalSession.mockResolvedValue({
+      sessionId: "portal-session-1",
+      customerId: "customer-helios",
+      email: "candidate@helioscx.demo",
+      role: "candidate",
+    });
+
+    await expect(LoginPage({})).rejects.toThrow("redirect:/candidate");
+    expect(mockRedirect).toHaveBeenCalledWith("/candidate");
+  });
+
   it("renders the login form for anonymous users", async () => {
-    mockGetPortalAdminSession.mockResolvedValue(null);
+    mockGetPortalSession.mockResolvedValue(null);
 
     const page = await LoginPage({});
 

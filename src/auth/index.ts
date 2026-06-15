@@ -26,14 +26,25 @@ export {
 } from "./portal-auth";
 export {
   type PortalSession,
+  type PortalCustomerRecord,
   type PortalSessionStore,
+  type CreatePortalUserInput,
   type PortalUserRecord,
   type PortalUserRole,
+  type PortalUserProvisioningStore,
   type PortalUserStore,
   createInMemoryPortalSessionStore,
   createInMemoryPortalUserStore,
 } from "./portal-stores";
 export { hashPassword, verifyPassword } from "./password";
+export {
+  PortalCustomerNotFoundError,
+  PortalRegistrationValidationError,
+  PortalUserAlreadyExistsError,
+  registerCandidate,
+  type PortalCandidateRegistrationDeps,
+  type RegisterCandidateInput,
+} from "./portal-registration";
 export {
   verifyExamToken,
   examTokenClaimsSchema,

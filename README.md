@@ -20,14 +20,18 @@ npm run prisma:migrate
 npm run dev
 ```
 
-Open **http://localhost:3000/login** for Slice 1, or **http://localhost:3000/demo** for the older walking-skeleton demo surface.
+Open **http://localhost:3000/login** for the shared portal login, **http://localhost:3000/register**
+for Candidate self-registration, or **http://localhost:3000/demo** for the older walking-skeleton
+demo surface.
 
 ### Key URLs
 
 | URL | What |
 |---|---|
-| `/login` | **Helios admin login** — seeded email/password entrypoint |
+| `/login` | Shared portal login for Helios admins and Candidates |
+| `/register` | Candidate self-registration |
 | `/admin` | **Connect CloudShare** + admin console |
+| `/candidate` | Candidate home — published Exams for the signed-in Customer |
 | `/demo` | **Demo Control Panel** — five-step happy path, start here |
 | `/candidate/lab?examAttemptId=<id>` | Candidate lab page (launch, heartbeat, suspend) |
 | `/candidate/score?examAttemptId=<id>` | Candidate score page |
@@ -175,10 +179,14 @@ Portal capabilities should be API-first: the HTTP route and framework-agnostic `
 define the behavior, and the React UI calls that same API. This keeps the portal scriptable for
 sales-demo variants, local E2E automation, and future non-browser integrations.
 
-Slice 1 follows this model:
+Current slices follow this model:
 
 - `POST /api/auth/login` — accepts JSON `{ email, password }`, authenticates the user, and sets the
   httpOnly portal session cookie.
+- `POST /api/candidate/register` — self-registers a Candidate for the seeded Helios CX Customer.
+- `POST /api/admin/candidates` — lets a signed-in Helios admin provision a Candidate account.
+- `GET /api/candidate/exams` — returns only the published Exams for the signed-in Candidate's
+  Customer.
 - `GET /api/admin/cloudshare` — returns redacted CloudShare Connection status for the signed-in
   Helios admin.
 - `PUT /api/admin/cloudshare` — saves or replaces the Customer's CloudShare Connection credentials.
@@ -221,20 +229,18 @@ const regions = await cloudshare.requestV3({
 
 ## Candidate identity
 
-Candidates authenticate without a password. The Kryterion simulator mints a
-short-lived, single-use signed token (`KRYTERION_TOKEN_SECRET`, HMAC-SHA256)
-pinned to exactly one `ExamAttempt` when an exam starts. The `auth` layer
-validates it and admits the candidate to that attempt only:
+Slice 3 moves Candidate identity onto the same portal user/session model as the Helios admin:
 
-- `verifyExamToken` checks signature, schema, and expiry.
-- The `CandidateAuthenticator` seam enforces **single-use** (a consumed-token
-  store denies replay) and mints a session bound to the token's `ExamAttempt`.
-- The session is stored and resumable by id, so it survives a page reload
-  (`POST /api/candidate/admit` sets an httpOnly cookie; `GET /api/candidate/session` resumes).
-- Token verification lives behind the `auth` interface so a real IdP/OIDC can
-  replace the token scheme without touching callers.
-
-Stores are in-memory for the demo (swappable for Prisma-backed adapters).
+- Candidates can **self-register** with email and password at `/register`; self-registration defaults
+  to the seeded `Helios CX` Customer.
+- Helios admins can also provision Candidate accounts from `/admin`.
+- `POST /api/auth/login` issues the same httpOnly `portal_session` cookie for both roles, and role
+  drives home routing (`/admin` vs `/candidate`).
+- Candidate exam discovery is server-side: `GET /api/candidate/exams` filters to the signed-in
+  Candidate's Customer and returns **published Exams only**.
+- The older token-based candidate admission flow (`/api/candidate/admit`) remains in the repo only
+  for the pre-slice candidate lab surfaces and is superseded for portal identity by the shared
+  portal auth model.
 
 ## Eligibility & exam booking
 

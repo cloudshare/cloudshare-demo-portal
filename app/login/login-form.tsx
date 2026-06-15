@@ -25,13 +25,16 @@ export function LoginForm({ initialError, initialEmail }: LoginFormProps) {
         body: JSON.stringify({ email, password }),
       });
 
-      const data = (await response.json()) as { error?: string };
+      const data = (await response.json()) as {
+        error?: string;
+        session?: { role?: "admin" | "candidate" };
+      };
       if (!response.ok) {
         setError(data.error ?? "Login failed");
         return;
       }
 
-      window.location.assign("/admin");
+      window.location.assign(data.session?.role === "admin" ? "/admin" : "/candidate");
     } catch {
       setError("Login failed");
     } finally {
@@ -41,9 +44,9 @@ export function LoginForm({ initialError, initialEmail }: LoginFormProps) {
 
   return (
     <main style={{ fontFamily: "system-ui, sans-serif", padding: "2rem", maxWidth: "420px", margin: "0 auto" }}>
-      <h1>Certalis Admin Login</h1>
+      <h1>Certalis Portal Login</h1>
       <p style={{ color: "#555", marginBottom: "1.5rem" }}>
-        Sign in as the configured Helios admin to manage the CloudShare Connection.
+        Sign in as a Helios admin or Candidate.
       </p>
       <form
         onSubmit={onSubmit}
@@ -79,6 +82,9 @@ export function LoginForm({ initialError, initialEmail }: LoginFormProps) {
         </button>
         {error && <p style={{ color: "#b00020", margin: 0 }}>{error}</p>}
       </form>
+      <p style={{ color: "#555", marginTop: "1rem" }}>
+        New Candidate? <a href="/register">Create your account</a>.
+      </p>
     </main>
   );
 }

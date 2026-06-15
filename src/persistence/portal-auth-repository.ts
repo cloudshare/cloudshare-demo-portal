@@ -1,9 +1,12 @@
 import type { PrismaClient } from "@prisma/client";
 import type {
+  CreatePortalUserInput,
+  PortalCustomerRecord,
   PortalSession,
   PortalSessionStore,
   PortalUserRecord,
   PortalUserRole,
+  PortalUserProvisioningStore,
   PortalUserStore,
 } from "@/auth";
 
@@ -15,7 +18,7 @@ export interface PortalUserSeedInput {
   readonly role: PortalUserRole;
 }
 
-export interface PortalUserRepository extends PortalUserStore {
+export interface PortalUserRepository extends PortalUserProvisioningStore {
   upsertSeedUser(input: PortalUserSeedInput): Promise<PortalUserRecord>;
 }
 
@@ -30,6 +33,40 @@ export function createPortalUserRepository(
       if (!user) {
         return null;
       }
+
+      return {
+        id: user.id,
+        customerId: user.customerId,
+        email: user.email,
+        passwordHash: user.passwordHash,
+        role: asPortalUserRole(user.role),
+      };
+    },
+
+    async findCustomerBySlug(slug: string): Promise<PortalCustomerRecord | null> {
+      const customer = await prisma.customer.findUnique({
+        where: { slug: slug.trim() },
+      });
+      if (!customer) {
+        return null;
+      }
+
+      return {
+        id: customer.id,
+        slug: customer.slug,
+        name: customer.name,
+      };
+    },
+
+    async createUser(input: CreatePortalUserInput): Promise<PortalUserRecord> {
+      const user = await prisma.user.create({
+        data: {
+          customerId: input.customerId,
+          email: input.email.trim().toLowerCase(),
+          passwordHash: input.passwordHash,
+          role: input.role,
+        },
+      });
 
       return {
         id: user.id,
