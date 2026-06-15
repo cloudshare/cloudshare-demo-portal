@@ -1,5 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
-import { handleSuspendExam, handleResumeExam } from "./suspend-resume";
+import {
+  handleSuspendExam,
+  handleResumeExam,
+  runHeartbeatAutoSuspend,
+} from "./suspend-resume";
 import type { SuspendHandlerDeps, ResumeHandlerDeps } from "./suspend-resume";
 import type { ExamTimer, EnvironmentController } from "@/domain/timer-sync";
 import type { EnvironmentStateSource } from "@/domain/environment";
@@ -426,5 +430,106 @@ describe("handleResumeExam", () => {
     );
     expect(resp.status).toBe(500);
     expect(resp.body).toEqual({ error: "internal error", correlationId: "corr-resume" });
+  });
+});
+
+describe("runHeartbeatAutoSuspend", () => {
+  it.each([
+    [
+      "CloudShareRequestError",
+      new CloudShareRequestError("forbidden", 403, {
+        integrationSurface: "cloudshare.v4.environment.action.suspend",
+        method: "POST",
+        path: "/v4/environments/env-1/actions/suspend",
+        responseBody: "{\"error\":\"forbidden\"}",
+      }),
+      expect.objectContaining({
+        operation: "heartbeat_auto_suspend",
+        attemptedOperation: "suspend_environment",
+        integrationSurface: "cloudshare.v4.environment.action.suspend",
+        method: "POST",
+        path: "/v4/environments/env-1/actions/suspend",
+        failureMode: "http_status",
+        responseStatus: 403,
+        responseBody: "{\"error\":\"forbidden\"}",
+      }),
+    ],
+    [
+      "CloudShareResponseError",
+      new CloudShareResponseError("schema mismatch", {
+        integrationSurface: "cloudshare.v4.environment.action.suspend",
+        method: "POST",
+        path: "/v4/environments/env-1/actions/suspend",
+        responseBody: "{\"bad\":true}",
+        issues: ["Required"],
+      }),
+      expect.objectContaining({
+        operation: "heartbeat_auto_suspend",
+        attemptedOperation: "suspend_environment",
+        integrationSurface: "cloudshare.v4.environment.action.suspend",
+        method: "POST",
+        path: "/v4/environments/env-1/actions/suspend",
+        failureMode: "unexpected_response",
+        responseBody: "{\"bad\":true}",
+        issues: ["Required"],
+      }),
+    ],
+  ])(
+    "appends an admin-visible diagnostic and rethrows on %s",
+    async (_label, error, expectedPayload) => {
+      const deps = await makeSuspendDeps({
+        controller: {
+          suspendEnvironment: () => Promise.reject(error),
+          resumeEnvironment: () => Promise.resolve(),
+        },
+      });
+
+      await expect(runHeartbeatAutoSuspend(deps, "ea-1")).rejects.toBe(error);
+      expect(deps.eventLog.append).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventId: "corr-suspend",
+          type: "cloudshare.heartbeat_auto_suspend.failed",
+          payload: expectedPayload,
+        }),
+      );
+      expect(deps.logger.warn).toHaveBeenCalledWith(
+        "heartbeat auto-suspend failed",
+        expectedPayload,
+      );
+    },
+  );
+
+  it("appends a timeout diagnostic and rethrows when confirmation polling never reaches suspended", async () => {
+    const deps = await makeSuspendDeps({
+      source: fixedSource("running"),
+      poll: { maxAttempts: 1, intervalMs: 0 },
+    });
+
+    await expect(runHeartbeatAutoSuspend(deps, "ea-1")).rejects.toMatchObject({
+      message: "Timed out waiting for environment to become suspended",
+    });
+    expect(deps.eventLog.append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventId: "corr-suspend",
+        type: "cloudshare.heartbeat_auto_suspend.failed",
+        payload: expect.objectContaining({
+          correlationId: "corr-suspend",
+          operation: "heartbeat_auto_suspend",
+          attemptedOperation: "poll_environment_status",
+          integrationSurface: "cloudshare.v3.environment",
+          method: "GET",
+          failureMode: "confirmation_timeout",
+        }),
+      }),
+    );
+    expect(deps.logger.warn).toHaveBeenCalledWith(
+      "heartbeat auto-suspend failed",
+      expect.objectContaining({
+        correlationId: "corr-suspend",
+        operation: "heartbeat_auto_suspend",
+        attemptedOperation: "poll_environment_status",
+        failureMode: "confirmation_timeout",
+      }),
+    );
   });
 });

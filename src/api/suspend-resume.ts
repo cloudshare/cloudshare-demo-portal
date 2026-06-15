@@ -41,6 +41,13 @@ interface SupportDiagnosticDeps {
   readonly now?: () => Date;
 }
 
+interface FailureHandlingSpec {
+  readonly action: "suspend" | "resume";
+  readonly operation: string;
+  readonly eventType: string;
+  readonly logMessage: string;
+}
+
 // --- Suspend ---
 
 export interface SuspendHandlerDeps extends SuspendExamDeps, SupportDiagnosticDeps {}
@@ -66,6 +73,10 @@ export async function handleSuspendExam(
 // --- Resume ---
 
 export interface ResumeHandlerDeps extends ResumeExamDeps, SupportDiagnosticDeps {}
+
+export interface HeartbeatAutoSuspendHandlerDeps
+  extends SuspendExamDeps,
+    SupportDiagnosticDeps {}
 
 export async function handleResumeExam(
   deps: ResumeHandlerDeps,
@@ -93,6 +104,28 @@ export async function handleResumeExam(
     };
   } catch (err) {
     return handleTimerSyncError(deps, err, "resume", examAttemptId);
+  }
+}
+
+export async function runHeartbeatAutoSuspend(
+  deps: HeartbeatAutoSuspendHandlerDeps,
+  examAttemptId: string,
+): Promise<void> {
+  try {
+    await suspendExam(deps, { examAttemptId });
+  } catch (err) {
+    await reportFailureDiagnostic(
+      deps,
+      err,
+      examAttemptId,
+      {
+        action: "suspend",
+        operation: "heartbeat_auto_suspend",
+        eventType: "cloudshare.heartbeat_auto_suspend.failed",
+        logMessage: "heartbeat auto-suspend failed",
+      },
+    );
+    throw err;
   }
 }
 
@@ -124,29 +157,19 @@ async function handleTimerSyncError(
       },
     };
   }
-  if (err instanceof TimerSyncError) {
-    const correlationId = (deps.newCorrelationId ?? randomUUID)();
-    const diagnostic = buildTimerSyncDiagnostic(correlationId, action, examAttemptId, err);
-    await deps.eventLog.append({
-      eventId: correlationId,
-      type: `cloudshare.exam_${action}.failed`,
-      occurredAt: (deps.now ?? (() => new Date()))(),
-      payload: diagnostic,
-    });
-    deps.logger.warn(`exam ${action} failed`, diagnostic);
-    return { status: 502, body: { error: `exam ${action} failed`, correlationId } };
-  }
-  if (isCloudShareFailure(err)) {
-    const correlationId = (deps.newCorrelationId ?? randomUUID)();
-    const diagnostic = buildCloudShareDiagnostic(correlationId, action, examAttemptId, err);
-    await deps.eventLog.append({
-      eventId: correlationId,
-      type: `cloudshare.exam_${action}.failed`,
-      occurredAt: (deps.now ?? (() => new Date()))(),
-      payload: diagnostic,
-    });
-    deps.logger.warn(`exam ${action} failed`, diagnostic);
-    return { status: 502, body: { error: `exam ${action} failed`, correlationId } };
+  const failure = await reportFailureDiagnostic(
+    deps,
+    err,
+    examAttemptId,
+    {
+      action,
+      operation: `exam_${action}`,
+      eventType: `cloudshare.exam_${action}.failed`,
+      logMessage: `exam ${action} failed`,
+    },
+  );
+  if (failure) {
+    return failure;
   }
 
   const correlationId = (deps.newCorrelationId ?? randomUUID)();
@@ -168,16 +191,64 @@ async function handleTimerSyncError(
   return { status: 500, body: { error: "internal error", correlationId } };
 }
 
+async function reportFailureDiagnostic(
+  deps: SupportDiagnosticDeps,
+  err: unknown,
+  examAttemptId: string,
+  spec: FailureHandlingSpec,
+): Promise<SuspendResumeResponse | null> {
+  if (err instanceof TimerSyncError) {
+    const correlationId = (deps.newCorrelationId ?? randomUUID)();
+    const diagnostic = buildTimerSyncDiagnostic(
+      correlationId,
+      spec.action,
+      spec.operation,
+      examAttemptId,
+      err,
+    );
+    await deps.eventLog.append({
+      eventId: correlationId,
+      type: spec.eventType,
+      occurredAt: (deps.now ?? (() => new Date()))(),
+      payload: diagnostic,
+    });
+    deps.logger.warn(spec.logMessage, diagnostic);
+    return { status: 502, body: { error: `exam ${spec.action} failed`, correlationId } };
+  }
+
+  if (isCloudShareFailure(err)) {
+    const correlationId = (deps.newCorrelationId ?? randomUUID)();
+    const diagnostic = buildCloudShareDiagnostic(
+      correlationId,
+      spec.action,
+      spec.operation,
+      examAttemptId,
+      err,
+    );
+    await deps.eventLog.append({
+      eventId: correlationId,
+      type: spec.eventType,
+      occurredAt: (deps.now ?? (() => new Date()))(),
+      payload: diagnostic,
+    });
+    deps.logger.warn(spec.logMessage, diagnostic);
+    return { status: 502, body: { error: `exam ${spec.action} failed`, correlationId } };
+  }
+
+  return null;
+}
+
 function buildTimerSyncDiagnostic(
   correlationId: string,
   action: "suspend" | "resume",
+  operation: string,
   examAttemptId: string,
   err: TimerSyncError,
 ): Record<string, unknown> {
   return {
     correlationId,
     examAttemptId,
-    operation: `exam_${action}`,
+    operation,
     attemptedOperation: "poll_environment_status",
     integrationSurface: "cloudshare.v3.environment",
     method: "GET",
@@ -194,6 +265,7 @@ function buildTimerSyncDiagnostic(
 function buildCloudShareDiagnostic(
   correlationId: string,
   action: "suspend" | "resume",
+  operation: string,
   examAttemptId: string,
   err: CloudShareRequestError | CloudShareTransportError | CloudShareResponseError,
 ): Record<string, unknown> {
@@ -221,7 +293,7 @@ function buildCloudShareDiagnostic(
   const base = {
     correlationId,
     examAttemptId,
-    operation: `exam_${action}`,
+    operation,
     attemptedOperation: staticSpec.attemptedOperation,
     integrationSurface: err.context?.integrationSurface ?? staticSpec.integrationSurface,
     method: err.context?.method ?? staticSpec.method,

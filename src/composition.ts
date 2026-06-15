@@ -35,7 +35,7 @@ import {
   createHeartbeatAutoSuspend,
   type HeartbeatAutoSuspend,
 } from "@/domain/heartbeat-auto-suspend";
-import { suspendExam } from "@/domain/timer-sync";
+import { runHeartbeatAutoSuspend } from "@/api/suspend-resume";
 import { createExamClock, type ExamClock } from "@/domain/exam-clock";
 import { type DemoStep } from "@/domain/demo-control";
 import { createCloudShareGuidedJourneyProvider } from "@/integrations/cloudshare/guided-journey";
@@ -247,6 +247,7 @@ export function getServices(): Services {
   const examClock = createExamClock({
     clocks: createPrismaExamClockRepository(prisma),
   });
+  const eventLog = createInMemoryEventLogRepository();
 
   // Heartbeat auto-suspend. The suspend function is pre-bound to the current
   // service instances so HeartbeatAutoSuspend stays free of framework concerns.
@@ -254,16 +255,19 @@ export function getServices(): Services {
     timeoutMs: config.runtime.heartbeatTimeoutMs,
     logger,
     suspendFn: (examAttemptId) =>
-      suspendExam(
+      runHeartbeatAutoSuspend(
         {
           controller: environmentController,
           source: environmentSource,
           timer: examClock,
           attempts: examAttempts,
           launches: labLaunches,
+          logger,
+          eventLog,
+          now: () => new Date(),
           sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
         },
-        { examAttemptId },
+        examAttemptId,
       ),
   });
   heartbeatAutoSuspend.start();
@@ -272,7 +276,6 @@ export function getServices(): Services {
 
   const audit = createInMemoryAuditRepository();
   const resources = createInMemoryResourceRepository();
-  const eventLog = createInMemoryEventLogRepository();
   const exams = createPrismaExamCatalogRepository(prisma);
   const examAuthoringCache = createInMemoryExamAuthoringCacheRepository();
   const cloudshareSecretBox = createSecretBox(
