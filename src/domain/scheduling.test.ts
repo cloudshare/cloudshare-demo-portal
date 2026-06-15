@@ -5,7 +5,7 @@ import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repo
 import type { CreateDraftExamInput } from "./exam-catalog";
 import { createDraftExam, publishExam } from "./exam-catalog";
 import { CloudShareProvisioningError, ScheduleValidationError, scheduleExam } from "./scheduling";
-import type { LabProvisioner } from "./lab-launch";
+import type { CreateTrainingInput, LabProvisioner } from "./lab-launch";
 
 function makeExamInput(overrides: Partial<CreateDraftExamInput> = {}): CreateDraftExamInput {
   return {
@@ -51,13 +51,13 @@ function makeLabs(order: string[] = []): LabProvisioner {
   };
 }
 
-async function setup() {
+async function setup(examOverrides: Partial<CreateDraftExamInput> = {}) {
   const exams = createInMemoryExamCatalogRepository();
   const attempts = createInMemoryExamAttemptRepository();
   const launches = createInMemoryLabLaunchRepository();
   await createDraftExam(
     { repository: exams, now: () => new Date("2026-06-15T09:00:00.000Z"), newId: () => "exam-1" },
-    makeExamInput(),
+    makeExamInput(examOverrides),
   );
   await publishExam(
     { repository: exams, now: () => new Date("2026-06-15T09:05:00.000Z") },
@@ -146,7 +146,7 @@ describe("scheduleExam", () => {
 
   it("uses a deterministic unique CloudShare training name", async () => {
     const { exams, attempts, launches } = await setup();
-    const createTraining = vi.fn(async () => ({ trainingId: "training-1" }));
+    const createTraining = vi.fn(async (_input: CreateTrainingInput) => ({ trainingId: "training-1" }));
 
     await scheduleExam(
       {
@@ -177,9 +177,47 @@ describe("scheduleExam", () => {
     expect(createTraining).toHaveBeenCalledWith(
       expect.objectContaining({
         title:
-          "Helios Exam Blueprint - Asha Patel - candidate@helioscx.demo - 20260620T160000Z - booked 20260615T101230Z",
+          "Helios Exam Blueprint - Asha Patel - candidate@helioscx.demo - 20260620T160000Z - 20260615T101230Z",
       }),
     );
+  });
+
+  it("keeps the CloudShare training name within the live 100-character limit", async () => {
+    const { exams, attempts, launches } = await setup({
+      blueprintName: "Very Long Helios Certification Blueprint Used For Advanced Customer Simulation Exams",
+    });
+    const createTraining = vi.fn(async (_input: CreateTrainingInput) => ({ trainingId: "training-1" }));
+
+    await scheduleExam(
+      {
+        exams,
+        attempts,
+        launches,
+        labs: {
+          ...makeLabs(),
+          createTraining,
+        },
+        newId: vi
+          .fn()
+          .mockReturnValueOnce("attempt-1")
+          .mockReturnValueOnce("launch-1"),
+        now: () => new Date("2026-06-15T10:12:30.000Z"),
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate.with.a.long.address@certification-demo.helioscx.example",
+        candidateFirstName: "Alexandria",
+        candidateLastName: "Montgomery-Cunningham",
+        examId: "exam-1",
+        scheduledFor: new Date("2026-06-20T16:00:00.000Z"),
+      },
+    );
+
+    const title = createTraining.mock.calls[0]![0].title;
+    expect(title.length).toBeLessThanOrEqual(100);
+    expect(title).toContain("20260620T160000Z");
+    expect(title).toContain("20260615T101230Z");
   });
 
   it("flags a likely cold start when scheduled within five hours", async () => {

@@ -3,6 +3,7 @@ import type { ExamAttempt, ExamAttemptRepository } from "./exam-attempt";
 import type { LabLaunch, LabLaunchRepository, LabProvisioner } from "./lab-launch";
 
 const COLD_START_WARNING_WINDOW_MS = 5 * 60 * 60 * 1000;
+const CLOUDSHARE_TRAINING_NAME_MAX_LENGTH = 100;
 
 export class ScheduleValidationError extends Error {
   constructor(message: string) {
@@ -196,17 +197,55 @@ function buildCloudShareTrainingName(input: {
     .map((part) => part.trim())
     .filter(Boolean)
     .join(" ");
-  return [
+  const suffix = [formatUtcStamp(input.scheduledFor), formatUtcStamp(input.createdAt)].join(" - ");
+  const identityMaxLength = CLOUDSHARE_TRAINING_NAME_MAX_LENGTH - suffix.length - " - ".length;
+  const identity = fitJoinedNameParts(
     normalizeNamePart(input.blueprintName),
     normalizeNamePart(name),
     normalizeNamePart(input.candidateEmail),
-    formatUtcStamp(input.scheduledFor),
-    `booked ${formatUtcStamp(input.createdAt)}`,
-  ].join(" - ");
+    identityMaxLength,
+  );
+  return [identity, suffix].join(" - ");
 }
 
 function normalizeNamePart(value: string): string {
   return value.trim().replace(/\s+/g, " ");
+}
+
+function fitJoinedNameParts(
+  blueprintName: string,
+  candidateName: string,
+  candidateEmail: string,
+  maxLength: number,
+): string {
+  const parts = [blueprintName, candidateName, candidateEmail];
+  const separatorLength = " - ".length * (parts.length - 1);
+  const contentMaxLength = maxLength - separatorLength;
+
+  if (parts.join(" - ").length <= maxLength) {
+    return parts.join(" - ");
+  }
+
+  const budgets = parts.map((part) => part.length);
+  while (budgets.reduce((sum, value) => sum + value, 0) > contentMaxLength) {
+    const largestIndex = budgets.reduce(
+      (largest, value, index) => (value > budgets[largest]! ? index : largest),
+      0,
+    );
+    budgets[largestIndex] = Math.max(1, budgets[largestIndex]! - 1);
+  }
+
+  return parts.map((part, index) => truncateNamePart(part, budgets[index]!)).join(" - ");
+}
+
+function truncateNamePart(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+  if (maxLength <= 3) {
+    return value.slice(0, maxLength);
+  }
+  return `${value.slice(0, maxLength - 3)}...`;
 }
 
 function formatUtcStamp(value: Date): string {
