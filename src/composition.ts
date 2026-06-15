@@ -249,29 +249,6 @@ export function getServices(): Services {
   });
   const eventLog = createInMemoryEventLogRepository();
 
-  // Heartbeat auto-suspend. The suspend function is pre-bound to the current
-  // service instances so HeartbeatAutoSuspend stays free of framework concerns.
-  const heartbeatAutoSuspend = createHeartbeatAutoSuspend({
-    timeoutMs: config.runtime.heartbeatTimeoutMs,
-    logger,
-    suspendFn: (examAttemptId) =>
-      runHeartbeatAutoSuspend(
-        {
-          controller: environmentController,
-          source: environmentSource,
-          timer: examClock,
-          attempts: examAttempts,
-          launches: labLaunches,
-          logger,
-          eventLog,
-          now: () => new Date(),
-          sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
-        },
-        examAttemptId,
-      ),
-  });
-  heartbeatAutoSuspend.start();
-
   const scoreRetriever = createCloudShareGuidedJourneyProvider(cloudshare);
 
   const audit = createInMemoryAuditRepository();
@@ -297,6 +274,31 @@ export function getServices(): Services {
         },
       }),
   };
+
+  // Heartbeat auto-suspend. The suspend function is pre-bound to the current
+  // service instances so HeartbeatAutoSuspend stays free of framework concerns.
+  const heartbeatAutoSuspend = createHeartbeatAutoSuspend({
+    timeoutMs: config.runtime.heartbeatTimeoutMs,
+    logger,
+    suspendFn: (examAttemptId) =>
+      runHeartbeatAutoSuspend(
+        {
+          controller: environmentController,
+          source: environmentSource,
+          timer: examClock,
+          attempts: examAttempts,
+          launches: labLaunches,
+          logger,
+          eventLog,
+          connections: cloudshareConnections,
+          cloudshare: cloudshareClientFactory,
+          now: () => new Date(),
+          sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+        },
+        examAttemptId,
+      ),
+  });
+  heartbeatAutoSuspend.start();
 
   let portalSeedPromise: Promise<void> | null = null;
 

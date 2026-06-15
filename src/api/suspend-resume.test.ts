@@ -9,7 +9,13 @@ import type { ExamTimer, EnvironmentController } from "@/domain/timer-sync";
 import type { EnvironmentStateSource } from "@/domain/environment";
 import type { LabLaunchRepository, LabProvisioner } from "@/domain/lab-launch";
 import type { Logger } from "@/observability/logger";
+import type {
+  CloudShareClientFactory,
+  CloudShareConnectionRecord,
+  CloudShareConnectionRepository,
+} from "@/domain/cloudshare-connection";
 import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-repository";
+import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repository";
 import {
   CloudShareRequestError,
   CloudShareResponseError,
@@ -38,11 +44,15 @@ const launch = {
   createdAt: new Date(),
 };
 
-function makeLaunches(found: typeof launch | null = launch): LabLaunchRepository {
+function makeLaunches(found: (typeof launch & { environmentId?: string; participantEmail?: string; trainingId?: string }) | null = launch): LabLaunchRepository {
+  const launches = createInMemoryLabLaunchRepository();
+  if (found) {
+    void launches.save(found);
+  }
   return {
-    save: () => Promise.resolve(),
-    findById: () => Promise.resolve(null),
-    findByExamAttemptId: () => Promise.resolve(found),
+    save: (record) => launches.save(record),
+    findById: (id) => launches.findById(id),
+    findByExamAttemptId: (examAttemptId) => launches.findByExamAttemptId(examAttemptId),
   };
 }
 
@@ -72,6 +82,44 @@ function makeLabs(loginUrl = "https://new.lab.url"): LabProvisioner {
     createExperience: () => Promise.resolve({ experienceId: "exp-1" }),
     addStudent: () => Promise.resolve(),
     createSponsoredLink: () => Promise.resolve({ loginUrl }),
+  };
+}
+
+function makeConnections(
+  connection: CloudShareConnectionRecord | null = {
+    customerId: "customer-1",
+    apiId: "api-id",
+    apiKey: "api-key",
+    webhookSecret: "whsec",
+    connectedAt: new Date("2026-06-15T08:00:00.000Z"),
+    verifiedAt: new Date("2026-06-15T08:05:00.000Z"),
+  },
+): CloudShareConnectionRepository {
+  return {
+    save: vi.fn(),
+    findByCustomerId: vi.fn().mockResolvedValue(connection),
+    markVerified: vi.fn(),
+  };
+}
+
+function makeCloudShareFactory(overrides: Partial<ReturnType<CloudShareClientFactory["forConnection"]>> = {}): CloudShareClientFactory {
+  return {
+    forConnection: () => ({
+      requestV3: vi.fn(),
+      requestV3Text: vi.fn(),
+      requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+        if (spec.path === "/trainings/training-1/students") {
+          return spec.schema.parse([
+            {
+              email: "candidate@helioscx.demo",
+              environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+            },
+          ]);
+        }
+        throw new Error(`unexpected path ${spec.path}`);
+      }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>["requestV4"],
+      ...overrides,
+    }),
   };
 }
 
@@ -116,6 +164,8 @@ async function makeSuspendDeps(overrides: Partial<SuspendHandlerDeps> = {}): Pro
     sleep: noSleep,
     logger: makeLogger(),
     eventLog: { append: vi.fn().mockResolvedValue(undefined), listAll: vi.fn() },
+    connections: makeConnections(),
+    cloudshare: makeCloudShareFactory(),
     newCorrelationId: () => "corr-suspend",
     now: () => new Date("2026-06-15T10:10:00.000Z"),
     ...overrides,
@@ -133,6 +183,8 @@ async function makeResumeDeps(overrides: Partial<ResumeHandlerDeps> = {}): Promi
     sleep: noSleep,
     logger: makeLogger(),
     eventLog: { append: vi.fn().mockResolvedValue(undefined), listAll: vi.fn() },
+    connections: makeConnections(),
+    cloudshare: makeCloudShareFactory(),
     newCorrelationId: () => "corr-resume",
     now: () => new Date("2026-06-15T10:10:00.000Z"),
     ...overrides,
@@ -165,6 +217,39 @@ describe("handleSuspendExam", () => {
     expect(resp.status).toBe(200);
     expect(resp.body.status).toBe("suspended");
     expect(resp.body.examAttemptId).toBe("ea-1");
+  });
+
+  it("discovers the training participant environment ID before suspend when the launch was created without one", async () => {
+    const launches = makeLaunches({
+      id: "launch-1",
+      examAttemptId: "ea-1",
+      candidateId: "cand-1",
+      participantEmail: "candidate@helioscx.demo",
+      trainingId: "training-1",
+      experienceId: "training-1",
+      loginUrl: "https://old.lab.url",
+      status: "launched",
+      createdAt: new Date(),
+    });
+    const controller = {
+      suspendEnvironment: vi.fn().mockResolvedValue(undefined),
+      resumeEnvironment: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const resp = await handleSuspendExam(
+      await makeSuspendDeps({
+        launches,
+        controller,
+      }),
+      { body: { examAttemptId: "ea-1" } },
+    );
+
+    expect(resp.status).toBe(200);
+    expect(controller.suspendEnvironment).toHaveBeenCalledWith("ENVS2n38LTNdcC4sHsqnjRzg2");
+    await expect(launches.findByExamAttemptId("ea-1")).resolves.toMatchObject({
+      environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+      environmentExternalId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+    });
   });
 
   it("returns 404 when no launch exists for the exam attempt", async () => {
@@ -434,6 +519,35 @@ describe("handleResumeExam", () => {
 });
 
 describe("runHeartbeatAutoSuspend", () => {
+  it("discovers the training participant environment ID before auto-suspend when the launch lacks a pre-existing environmentExternalId", async () => {
+    const launches = makeLaunches({
+      id: "launch-1",
+      examAttemptId: "ea-1",
+      candidateId: "cand-1",
+      participantEmail: "candidate@helioscx.demo",
+      trainingId: "training-1",
+      experienceId: "training-1",
+      loginUrl: "https://old.lab.url",
+      status: "launched",
+      createdAt: new Date(),
+    });
+    const controller = {
+      suspendEnvironment: vi.fn().mockResolvedValue(undefined),
+      resumeEnvironment: vi.fn().mockResolvedValue(undefined),
+    };
+    const deps = await makeSuspendDeps({
+      launches,
+      controller,
+    });
+
+    await expect(runHeartbeatAutoSuspend(deps, "ea-1")).resolves.toBeUndefined();
+    expect(controller.suspendEnvironment).toHaveBeenCalledWith("ENVS2n38LTNdcC4sHsqnjRzg2");
+    await expect(launches.findByExamAttemptId("ea-1")).resolves.toMatchObject({
+      environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+      environmentExternalId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+    });
+  });
+
   it.each([
     [
       "CloudShareRequestError",

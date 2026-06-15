@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { Logger } from "@/observability/logger";
 import type { EventLogRepository } from "@/domain/event-log";
+import type {
+  CloudShareClientFactory,
+  CloudShareConnectionRepository,
+} from "@/domain/cloudshare-connection";
 import {
   suspendExam,
   resumeExam,
@@ -17,6 +21,7 @@ import {
   CloudShareResponseError,
   CloudShareTransportError,
 } from "@/integrations/cloudshare";
+import { ensureExamAttemptEnvironmentCorrelation } from "./exam-attempt-environment-correlation";
 
 /**
  * Framework-agnostic handlers for the candidate-initiated suspend and resume
@@ -41,6 +46,11 @@ interface SupportDiagnosticDeps {
   readonly now?: () => Date;
 }
 
+interface EnvironmentCorrelationDeps {
+  readonly connections: CloudShareConnectionRepository;
+  readonly cloudshare: CloudShareClientFactory;
+}
+
 interface FailureHandlingSpec {
   readonly action: "suspend" | "resume";
   readonly operation: string;
@@ -50,7 +60,10 @@ interface FailureHandlingSpec {
 
 // --- Suspend ---
 
-export interface SuspendHandlerDeps extends SuspendExamDeps, SupportDiagnosticDeps {}
+export interface SuspendHandlerDeps
+  extends SuspendExamDeps,
+    SupportDiagnosticDeps,
+    EnvironmentCorrelationDeps {}
 
 export async function handleSuspendExam(
   deps: SuspendHandlerDeps,
@@ -62,6 +75,10 @@ export async function handleSuspendExam(
   }
 
   try {
+    await ensureExamAttemptEnvironmentCorrelation(deps, {
+      examAttemptId,
+      operation: "exam_suspend",
+    });
     await suspendExam(deps, { examAttemptId });
     deps.logger.info("exam suspended", { examAttemptId });
     return { status: 200, body: { status: "suspended", examAttemptId } };
@@ -72,11 +89,15 @@ export async function handleSuspendExam(
 
 // --- Resume ---
 
-export interface ResumeHandlerDeps extends ResumeExamDeps, SupportDiagnosticDeps {}
+export interface ResumeHandlerDeps
+  extends ResumeExamDeps,
+    SupportDiagnosticDeps,
+    EnvironmentCorrelationDeps {}
 
 export interface HeartbeatAutoSuspendHandlerDeps
   extends SuspendExamDeps,
-    SupportDiagnosticDeps {}
+    SupportDiagnosticDeps,
+    EnvironmentCorrelationDeps {}
 
 export async function handleResumeExam(
   deps: ResumeHandlerDeps,
@@ -88,6 +109,10 @@ export async function handleResumeExam(
   }
 
   try {
+    await ensureExamAttemptEnvironmentCorrelation(deps, {
+      examAttemptId,
+      operation: "exam_resume",
+    });
     const result = await resumeExam(deps, { examAttemptId });
     deps.logger.info("exam resumed", {
       examAttemptId,
@@ -112,6 +137,10 @@ export async function runHeartbeatAutoSuspend(
   examAttemptId: string,
 ): Promise<void> {
   try {
+    await ensureExamAttemptEnvironmentCorrelation(deps, {
+      examAttemptId,
+      operation: "heartbeat_auto_suspend",
+    });
     await suspendExam(deps, { examAttemptId });
   } catch (err) {
     await reportFailureDiagnostic(

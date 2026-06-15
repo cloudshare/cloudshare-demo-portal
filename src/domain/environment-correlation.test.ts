@@ -3,7 +3,7 @@ import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repo
 import { correlateEnvironmentForExamAttempt } from "./environment-correlation";
 
 describe("correlateEnvironmentForExamAttempt", () => {
-  it("records the environmentId when the training participant becomes discoverable", async () => {
+  it("records the discovered training participant environment ID for both correlation fields", async () => {
     const launches = createInMemoryLabLaunchRepository();
     await launches.save({
       id: "launch-1",
@@ -41,6 +41,7 @@ describe("correlateEnvironmentForExamAttempt", () => {
     });
     await expect(launches.findByExamAttemptId("attempt-1")).resolves.toMatchObject({
       environmentId: "env-1",
+      environmentExternalId: "env-1",
     });
   });
 

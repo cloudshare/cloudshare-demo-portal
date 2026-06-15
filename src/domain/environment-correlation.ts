@@ -66,6 +66,7 @@ export async function correlateEnvironmentForExamAttempt(
   await deps.launches.save({
     ...launch,
     environmentId: participant.environmentId,
+    environmentExternalId: participant.environmentId,
   });
 
   return {

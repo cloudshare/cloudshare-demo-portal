@@ -157,16 +157,22 @@ export async function resumeExam(
 }
 
 function requireEnvironmentExternalId(
-  launch: { readonly id: string; readonly environmentExternalId?: string },
+  launch: { readonly id: string; readonly environmentExternalId?: string; readonly environmentId?: string },
   examAttemptId: string,
 ): string {
-  if (typeof launch.environmentExternalId !== "string" || launch.environmentExternalId.length === 0) {
+  const correlatedEnvironmentId =
+    typeof launch.environmentExternalId === "string" && launch.environmentExternalId.length > 0
+      ? launch.environmentExternalId
+      : typeof launch.environmentId === "string" && launch.environmentId.length > 0
+        ? launch.environmentId
+        : null;
+  if (!correlatedEnvironmentId) {
     throw new TimerSyncError("No CloudShare environment is correlated to this exam attempt yet.", {
       examAttemptId,
       labLaunchId: launch.id,
     });
   }
-  return launch.environmentExternalId;
+  return correlatedEnvironmentId;
 }
 
 async function persistAttemptStatus(

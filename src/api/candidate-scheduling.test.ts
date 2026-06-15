@@ -331,7 +331,7 @@ describe("candidate scheduling handlers", () => {
     });
   });
 
-  it("correlates a discoverable environmentId through list-students and persists it", async () => {
+  it("correlates a discoverable environmentId through list-students and persists it for suspend/resume", async () => {
     const exams = await makeExamRepository();
     const attempts = createInMemoryExamAttemptRepository();
     const launches = createInMemoryLabLaunchRepository();
@@ -390,6 +390,7 @@ describe("candidate scheduling handlers", () => {
     );
     await expect(launches.findByExamAttemptId("attempt-ready")).resolves.toMatchObject({
       environmentId: "env-1",
+      environmentExternalId: "env-1",
     });
     expect(JSON.stringify(dashboard.body)).not.toContain("loginUrl");
   });

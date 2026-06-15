@@ -25,6 +25,8 @@ export async function POST(request: Request) {
     heartbeatAutoSuspend,
     audit,
     eventLog,
+    cloudshareConnections,
+    cloudshareClientFactory,
   } = services;
 
   let body: unknown;
@@ -61,6 +63,8 @@ export async function POST(request: Request) {
       sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
       logger,
       eventLog,
+      connections: cloudshareConnections,
+      cloudshare: cloudshareClientFactory,
     },
     { body },
   );
