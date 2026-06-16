@@ -327,6 +327,27 @@ describe("resumeExam", () => {
     });
   });
 
+  it("accepts CloudShare preparing state as a successful resume confirmation", async () => {
+    const timer = makeTimer();
+    const attempts = await makeAttempts("suspended");
+
+    await resumeExam(
+      {
+        controller: makeController(),
+        source: fixedSource("created"),
+        timer,
+        attempts,
+        launches: makeLaunches(),
+        labs: makeLabs(),
+        sleep: noSleep,
+      },
+      { examAttemptId: "ea-1" },
+    );
+
+    expect(timer.resumed).toEqual(["ea-1"]);
+    await expect(attempts.findById("ea-1")).resolves.toMatchObject({ status: "in_progress" });
+  });
+
   it("throws LabLaunchNotFoundError if no lab launch exists for the exam attempt", async () => {
     await expect(
       resumeExam(

@@ -17,8 +17,9 @@ import type { LabLaunchRepository, LabProvisioner } from "./lab-launch";
  *   4. Pause the Kryterion timer once confirmed.
  *
  * Flow for resume is the mirror: confirm `suspended` → resume → poll until
- * `running` → resume timer. Re-entry still happens through `/enter`, which
- * remains the only redirect source for the server-held sponsored link.
+ * CloudShare leaves the suspended state (`running` or `created`/preparing) →
+ * resume timer. Re-entry still happens through `/enter`, which remains the
+ * only redirect source for the server-held sponsored link.
  *
  * CloudShare preserves a suspended environment for ~2 hours; the portal surfaces
  * this limit so the UI can warn the candidate.
@@ -54,14 +55,25 @@ async function pollUntilStatus(
   target: EnvironmentStatus,
   opts: PollOptions,
 ): Promise<void> {
+  return pollUntilAnyStatus(source, sleep, environmentExternalId, [target], target, opts);
+}
+
+async function pollUntilAnyStatus(
+  source: EnvironmentStateSource,
+  sleep: (ms: number) => Promise<void>,
+  environmentExternalId: string,
+  targets: readonly EnvironmentStatus[],
+  targetLabel: string,
+  opts: PollOptions,
+): Promise<void> {
   for (let attempt = 0; attempt < opts.maxAttempts; attempt++) {
     const snapshot = await source.getEnvironmentState(environmentExternalId);
-    if (snapshot?.status === target) return;
+    if (snapshot && targets.includes(snapshot.status)) return;
     if (attempt < opts.maxAttempts - 1) await sleep(opts.intervalMs);
   }
   throw new TimerSyncError(
-    `Timed out waiting for environment to become ${target}`,
-    { environmentExternalId, target, maxAttempts: opts.maxAttempts },
+    `Timed out waiting for environment to become ${targetLabel}`,
+    { environmentExternalId, target: targetLabel, maxAttempts: opts.maxAttempts },
   );
 }
 
@@ -149,10 +161,11 @@ export async function resumeExam(
   );
 
   await deps.controller.resumeEnvironment(environmentExternalId);
-  await pollUntilStatus(
+  await pollUntilAnyStatus(
     deps.source,
     deps.sleep,
     environmentExternalId,
+    ["running", "created"],
     "running",
     deps.poll ?? DEFAULT_POLL,
   );

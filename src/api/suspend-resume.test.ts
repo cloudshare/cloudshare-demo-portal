@@ -109,7 +109,7 @@ function makeCloudShareFactory(overrides: Partial<ReturnType<CloudShareClientFac
   return {
     forConnection: () => ({
       requestV3: vi.fn(),
-      requestV3Text: vi.fn(),
+      requestV3Text: vi.fn().mockResolvedValue(""),
       requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
         if (spec.path === "/trainings/training-1/students") {
           return spec.schema.parse([
@@ -206,7 +206,7 @@ function makeResumeCloudShareFactory(): CloudShareClientFactory {
 function makeCloudShareClient(overrides: Partial<CloudShareClient> = {}): CloudShareClient {
   return {
     requestV3: vi.fn(),
-    requestV3Text: vi.fn(),
+    requestV3Text: vi.fn().mockResolvedValue(""),
     requestV4: activeParticipantRequestV4(),
     ...overrides,
   } as CloudShareClient;
@@ -337,20 +337,8 @@ describe("handleSuspendExam", () => {
     const customerClient = makeCloudShareClient({
       requestV3: vi
         .fn()
-        .mockResolvedValueOnce({})
         .mockResolvedValue({ envStatus: "Suspended" }),
-      requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
-        if (spec.path === "/trainings/training-1/students") {
-          return spec.schema.parse([
-            {
-              email: "candidate@helioscx.demo",
-              environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
-              environmentStatus: "ready",
-            },
-          ]);
-        }
-        throw new Error(`unexpected v4 path ${spec.path}`);
-      }) as unknown as CloudShareClient["requestV4"],
+      requestV4: activeParticipantRequestV4(),
     });
     const cloudshare = {
       forConnection: vi.fn().mockReturnValue(customerClient),
@@ -368,7 +356,7 @@ describe("handleSuspendExam", () => {
           experienceId: "training-1",
           trainingId: "training-1",
           participantEmail: "candidate@helioscx.demo",
-          environmentExternalId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+          environmentExternalId: "ENVstays-live-shaped",
           loginUrl: "https://old.lab.url",
           status: "launched",
           createdAt: new Date(),
@@ -381,19 +369,19 @@ describe("handleSuspendExam", () => {
     expect(cloudshare.forConnection).toHaveBeenCalledWith(
       expect.objectContaining({ customerId: "customer-1" }),
     );
-    expect(customerClient.requestV3).toHaveBeenNthCalledWith(
+    expect(customerClient.requestV3Text).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
         method: "PUT",
         path: "/envs/actions/suspend",
-        query: { envId: "ENVS2n38LTNdcC4sHsqnjRzg2" },
+        query: { envId: "ENVd0WBTGirla-omK6Jh3BvA2" },
       }),
     );
     expect(customerClient.requestV3).toHaveBeenNthCalledWith(
-      2,
+      1,
       expect.objectContaining({
         method: "GET",
-        path: "/envs/ENVS2n38LTNdcC4sHsqnjRzg2",
+        path: "/envs/ENVd0WBTGirla-omK6Jh3BvA2",
       }),
     );
     expect(globalController.suspendEnvironment).not.toHaveBeenCalled();
@@ -414,9 +402,6 @@ describe("handleSuspendExam", () => {
     });
     const customerClient = makeCloudShareClient({
       requestV3: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
-        if (spec.path === "/envs/actions/suspend") {
-          return spec.schema.parse({});
-        }
         if (spec.path === "/envs/ENVS2n38LTNdcC4sHsqnjRzg2") {
           return spec.schema.parse({ envStatus: "Suspended" });
         }
@@ -448,7 +433,7 @@ describe("handleSuspendExam", () => {
     );
 
     expect(resp.status).toBe(200);
-    expect(customerClient.requestV3).toHaveBeenNthCalledWith(
+    expect(customerClient.requestV3Text).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
         method: "PUT",
@@ -615,7 +600,6 @@ describe("handleSuspendExam", () => {
             makeCloudShareClient({
               requestV3: vi
                 .fn()
-                .mockResolvedValueOnce({})
                 .mockResolvedValue({ envStatus: "Running" }),
             }),
           ),
@@ -701,14 +685,14 @@ describe("handleSuspendExam", () => {
 
   it("returns 502 with supportable diagnostics when CloudShare suspend returns an http status error", async () => {
     const customerClient = makeCloudShareClient({
-      requestV3: vi.fn(async () => {
+      requestV3Text: vi.fn(async () => {
         throw new CloudShareRequestError("forbidden", 403, {
           integrationSurface: "cloudshare.v3.env.action.suspend",
           method: "PUT",
           path: "/api/v3/envs/actions/suspend",
           responseBody: "{\"error\":\"forbidden\"}",
         });
-      }) as unknown as CloudShareClient["requestV3"],
+      }) as unknown as CloudShareClient["requestV3Text"],
     });
     const deps = await makeSuspendDeps({
       cloudshare: {
@@ -740,9 +724,9 @@ describe("handleSuspendExam", () => {
 
   it("returns 500 on an unexpected error", async () => {
     const customerClient = makeCloudShareClient({
-      requestV3: vi.fn(async () => {
+      requestV3Text: vi.fn(async () => {
         throw new Error("unexpected");
-      }) as unknown as CloudShareClient["requestV3"],
+      }) as unknown as CloudShareClient["requestV3Text"],
     });
     const resp = await handleSuspendExam(
       await makeSuspendDeps({
@@ -800,7 +784,6 @@ describe("handleResumeExam", () => {
             makeCloudShareClient({
               requestV3: vi
                 .fn()
-                .mockResolvedValueOnce({})
                 .mockResolvedValue({ envStatus: "Suspended" }),
             }),
           ),
@@ -944,14 +927,14 @@ describe("handleResumeExam", () => {
 
   it("returns 502 with transport diagnostics when CloudShare resume transport fails", async () => {
     const customerClient = makeCloudShareClient({
-      requestV3: vi.fn(async () => {
+      requestV3Text: vi.fn(async () => {
         throw new CloudShareTransportError("network down", {
           integrationSurface: "cloudshare.v3.env.action.resume",
           method: "POST",
           path: "/api/v3/envs/actions/resume",
           cause: "ECONNRESET",
         });
-      }) as unknown as CloudShareClient["requestV3"],
+      }) as unknown as CloudShareClient["requestV3Text"],
     });
     const deps = await makeResumeDeps({
       cloudshare: {
@@ -980,7 +963,7 @@ describe("handleResumeExam", () => {
 
   it("returns 502 with response-shape diagnostics when CloudShare resume returns an unexpected payload", async () => {
     const customerClient = makeCloudShareClient({
-      requestV3: vi.fn(async () => {
+      requestV3Text: vi.fn(async () => {
         throw new CloudShareResponseError("schema mismatch", {
           integrationSurface: "cloudshare.v3.env.action.resume",
           method: "PUT",
@@ -988,7 +971,7 @@ describe("handleResumeExam", () => {
           responseBody: "{\"bad\":true}",
           issues: ["Required"],
         });
-      }) as unknown as CloudShareClient["requestV3"],
+      }) as unknown as CloudShareClient["requestV3Text"],
     });
     const deps = await makeResumeDeps({
       cloudshare: {
@@ -1016,9 +999,9 @@ describe("handleResumeExam", () => {
 
   it("returns 500 on an unexpected error", async () => {
     const customerClient = makeCloudShareClient({
-      requestV3: vi.fn(async () => {
+      requestV3Text: vi.fn(async () => {
         throw new Error("boom");
-      }) as unknown as CloudShareClient["requestV3"],
+      }) as unknown as CloudShareClient["requestV3Text"],
     });
     const resp = await handleResumeExam(
       await makeResumeDeps({
@@ -1048,9 +1031,6 @@ describe("runHeartbeatAutoSuspend", () => {
     });
     const customerClient = makeCloudShareClient({
       requestV3: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
-        if (spec.path === "/envs/actions/suspend") {
-          return spec.schema.parse({});
-        }
         if (spec.path === "/envs/ENVS2n38LTNdcC4sHsqnjRzg2") {
           return spec.schema.parse({ envStatus: "Suspended" });
         }
@@ -1078,7 +1058,7 @@ describe("runHeartbeatAutoSuspend", () => {
     });
 
     await expect(runHeartbeatAutoSuspend(deps, "ea-1")).resolves.toBeUndefined();
-    expect(customerClient.requestV3).toHaveBeenNthCalledWith(
+    expect(customerClient.requestV3Text).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
         method: "PUT",
@@ -1261,9 +1241,9 @@ describe("runHeartbeatAutoSuspend", () => {
     "appends an admin-visible diagnostic and rethrows on %s",
     async (_label, error, expectedPayload) => {
       const customerClient = makeCloudShareClient({
-        requestV3: vi.fn(async () => {
+        requestV3Text: vi.fn(async () => {
           throw error;
-        }) as unknown as CloudShareClient["requestV3"],
+        }) as unknown as CloudShareClient["requestV3Text"],
       });
       const deps = await makeSuspendDeps({
         cloudshare: {
@@ -1342,7 +1322,6 @@ describe("runHeartbeatAutoSuspend", () => {
           makeCloudShareClient({
             requestV3: vi
               .fn()
-              .mockResolvedValueOnce({})
               .mockResolvedValue({ envStatus: "Running" }),
           }),
         ),

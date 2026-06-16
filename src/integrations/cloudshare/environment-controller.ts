@@ -1,4 +1,3 @@
-import { z } from "zod";
 import type { CloudShareClient } from "./client";
 import type { EnvironmentController } from "@/domain/environment";
 
@@ -9,27 +8,23 @@ import type { EnvironmentController } from "@/domain/environment";
  * training-students list.
  */
 
-const actionResponseSchema = z.object({}).passthrough();
-
 export function createCloudShareEnvironmentController(
   client: CloudShareClient,
 ): EnvironmentController {
   return {
     async suspendEnvironment(environmentExternalId: string): Promise<void> {
-      await client.requestV3({
+      await client.requestV3Text({
         method: "PUT",
         path: "/envs/actions/suspend",
         query: { envId: environmentExternalId },
-        schema: actionResponseSchema,
       });
     },
 
     async resumeEnvironment(environmentExternalId: string): Promise<void> {
-      await client.requestV3({
+      await client.requestV3Text({
         method: "PUT",
         path: "/envs/actions/resume",
         query: { envId: environmentExternalId },
-        schema: actionResponseSchema,
       });
     },
   };
