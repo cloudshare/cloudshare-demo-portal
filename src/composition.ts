@@ -42,7 +42,7 @@ import { createCloudShareGuidedJourneyProvider } from "@/integrations/cloudshare
 import { createInMemoryAuditRepository } from "@/persistence/audit-repository";
 import { createInMemoryResourceRepository } from "@/persistence/resource-repository";
 import { createInMemoryEventLogRepository } from "@/persistence/event-log-repository";
-import { createInMemorySupportLogRepository } from "@/persistence/support-log-repository";
+import { createPrismaSupportLogRepository } from "@/persistence/support-log-repository";
 import { createInMemoryExamAuthoringCacheRepository } from "@/persistence/exam-authoring-cache-repository";
 import { createPrismaExamCatalogRepository } from "@/persistence/prisma-exam-catalog-repository";
 import { createPrismaExamAttemptRepository } from "@/persistence/prisma-exam-attempt-repository";
@@ -144,7 +144,8 @@ export function getServices(): Services {
   }
 
   const config = loadConfig(process.env);
-  const supportLog = createInMemorySupportLogRepository();
+  const prisma = new PrismaClient();
+  const supportLog = createPrismaSupportLogRepository(prisma);
   const logger = createLogger({
     secrets: secretValues(config),
     sink: (line: string) => {
@@ -161,6 +162,12 @@ export function getServices(): Services {
         message,
         timestamp: new Date(timestamp),
         fields,
+      }).catch((error) => {
+        process.stderr.write(
+          `support log append failed: ${
+            error instanceof Error ? error.message : String(error)
+          }\n`,
+        );
       });
     },
   });
@@ -175,7 +182,6 @@ export function getServices(): Services {
     }
     logger.info(event.message, event.fields);
   };
-  const prisma = new PrismaClient();
   const heartbeats = createHeartbeatRepository(prisma);
 
   // Candidate identity. Stores are in-memory for the demo (they survive page
@@ -361,7 +367,7 @@ export function getServices(): Services {
     await prisma.environmentRecord.deleteMany();
     audit.reset();
     eventLog.reset();
-    supportLog.reset();
+    await supportLog.reset();
     examAuthoringCache.reset();
     webhookIdempotency.reset();
     environmentSimulator?.reset();

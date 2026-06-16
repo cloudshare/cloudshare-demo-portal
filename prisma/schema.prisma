@@ -142,3 +142,13 @@ model EnvironmentRecord {
   status                String
   observedAt            DateTime
 }
+
+model SupportLogEntry {
+  id        String   @id @default(cuid())
+  timestamp DateTime
+  level     String
+  message   String
+  fieldsJson String
+
+  @@index([timestamp])
+}
