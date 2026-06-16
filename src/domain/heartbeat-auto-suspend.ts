@@ -62,9 +62,9 @@ export function createHeartbeatAutoSuspend(
       }
     }
     for (const examAttemptId of timedOut) {
-      lastHeartbeat.delete(examAttemptId);
       try {
         await deps.suspendFn(examAttemptId);
+        lastHeartbeat.delete(examAttemptId);
         deps.logger.info("heartbeat timeout: auto-suspended environment", { examAttemptId });
       } catch (err) {
         deps.logger.warn("heartbeat timeout: auto-suspend failed", {

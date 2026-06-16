@@ -59,7 +59,7 @@ export interface DemoControlDeps {
   readonly environmentSimulator: CloudShareEnvironmentSimulator | null;
   readonly scoreRetriever: ScoreRetrievalProvider;
   // Reset
-  readonly resetDemoState: () => void;
+  readonly resetDemoState: () => Promise<void>;
   // Utilities
   readonly newId: () => string;
   readonly now: () => Date;
@@ -239,7 +239,7 @@ async function runStep(
           labs: deps.labProvisioner,
           launches: deps.labLaunches,
           newId: deps.newId,
-          newExternalId: () => randomUUID(),
+          newExternalId: () => `ENVS-demo-${randomUUID()}`,
           now: deps.now,
         },
         { examAttemptId: ctx.examAttempt.id },
@@ -252,6 +252,11 @@ async function runStep(
         }
         await deps.environmentSimulator.resumeEnvironment(launch.environmentExternalId);
       }
+      await deps.kryterion.resumeTimer(ctx.examAttempt.id);
+      await deps.examAttempts.save({
+        ...ctx.examAttempt,
+        status: "in_progress",
+      });
       return {
         labLaunchId: launch.id,
         environmentExternalId: launch.environmentExternalId,
@@ -265,6 +270,7 @@ async function runStep(
           controller: deps.environmentSimulator ?? (() => { throw new Error("no env controller"); })() as never,
           source: deps.environmentSource,
           timer: deps.kryterion,
+          attempts: deps.examAttempts,
           launches: deps.labLaunches,
           sleep: deps.sleep,
           poll: { maxAttempts: 5, intervalMs: 200 },
@@ -281,6 +287,7 @@ async function runStep(
           controller: deps.environmentSimulator ?? (() => { throw new Error("no env controller"); })() as never,
           source: deps.environmentSource,
           timer: deps.kryterion,
+          attempts: deps.examAttempts,
           launches: deps.labLaunches,
           labs: deps.labProvisioner,
           sleep: deps.sleep,
@@ -313,7 +320,7 @@ async function runStep(
 // --- POST /api/demo/reset ---
 
 export async function handleResetDemo(deps: DemoControlDeps): Promise<DemoHandlerResponse> {
-  deps.resetDemoState();
+  await deps.resetDemoState();
   deps.logger.info("demo state reset");
   return { status: 200, body: { ok: true } };
 }

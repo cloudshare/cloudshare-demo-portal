@@ -11,6 +11,7 @@ import {
   isLatestOnlyResponse,
   reconcileAllowedRegionIds,
   shouldShowCandidateProvisioning,
+  shouldClearAdminBannerOnTabChange,
 } from "./admin-console-state";
 
 describe("latest-only request coordination", () => {
@@ -55,6 +56,11 @@ describe("admin tab model", () => {
     expect(shouldShowCandidateProvisioning("events")).toBe(false);
     expect(shouldShowCandidateProvisioning("support")).toBe(false);
     expect(shouldShowCandidateProvisioning("resources")).toBe(false);
+  });
+
+  it("clears dismissible admin banners only when changing tabs", () => {
+    expect(shouldClearAdminBannerOnTabChange("candidates", "exams")).toBe(true);
+    expect(shouldClearAdminBannerOnTabChange("candidates", "candidates")).toBe(false);
   });
 });
 

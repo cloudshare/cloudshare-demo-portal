@@ -25,6 +25,7 @@ model Customer {
   createdAt            DateTime              @default(now())
   users                User[]
   exams                Exam[]
+  examAttempts         ExamAttempt[]
   cloudShareConnection CloudShareConnection?
 }
 
@@ -83,6 +84,71 @@ model Exam {
   instructorId          String
   instructorName        String
   customer              Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  attempts              ExamAttempt[]
 
   @@index([customerId, status])
+}
+
+model ExamAttempt {
+  id          String     @id
+  customerId  String
+  candidateId String
+  examId      String
+  status      String
+  scheduledFor DateTime?
+  createdAt   DateTime
+  updatedAt   DateTime   @updatedAt
+  customer    Customer   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  exam        Exam       @relation(fields: [examId], references: [id], onDelete: Cascade)
+  labLaunch   LabLaunch?
+  examClock   ExamClock?
+
+  @@index([candidateId, createdAt])
+  @@index([examId, createdAt])
+  @@index([customerId, candidateId])
+}
+
+model LabLaunch {
+  id                    String      @id
+  examAttemptId         String      @unique
+  candidateId           String
+  participantEmail      String?
+  trainingId            String?
+  experienceId          String
+  environmentExternalId String?
+  environmentId         String?
+  loginUrl              String
+  status                String
+  createdAt             DateTime
+  updatedAt             DateTime    @updatedAt
+  examAttempt           ExamAttempt @relation(fields: [examAttemptId], references: [id], onDelete: Cascade)
+
+  @@index([candidateId, createdAt])
+  @@index([trainingId])
+  @@index([environmentExternalId])
+}
+
+model ExamClock {
+  examAttemptId     String      @id
+  status            String
+  elapsedAtPauseMs  Int
+  startedAt         DateTime?
+  updatedAt         DateTime
+  examAttempt       ExamAttempt @relation(fields: [examAttemptId], references: [id], onDelete: Cascade)
+}
+
+model EnvironmentRecord {
+  environmentExternalId String   @id
+  status                String
+  observedAt            DateTime
+}
+
+model SupportLogEntry {
+  id        String   @id @default(cuid())
+  timestamp DateTime
+  level     String
+  message   String
+  fieldsJson String
+
+  @@index([timestamp])
 }

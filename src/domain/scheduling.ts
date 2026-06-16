@@ -80,6 +80,7 @@ export async function scheduleExam(
   const createdAt = deps.now();
   const attempt: ExamAttempt = {
     id: attemptId,
+    customerId: input.customerId,
     candidateId: input.candidateId,
     examId: exam.id,
     status: "scheduled",

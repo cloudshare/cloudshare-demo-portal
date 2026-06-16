@@ -3,9 +3,21 @@ import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-
 import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repository";
 import type { Logger } from "@/observability/logger";
 import { handleEnterExam } from "./enter";
+import type { ExamTimer } from "@/domain/timer-sync";
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+}
+
+function makeTimer(): ExamTimer & { resumed: string[] } {
+  const resumed: string[] = [];
+  return {
+    resumed,
+    pauseTimer: vi.fn().mockResolvedValue(undefined),
+    resumeTimer: vi.fn(async (examAttemptId: string) => {
+      resumed.push(examAttemptId);
+    }),
+  };
 }
 
 describe("handleEnterExam", () => {
@@ -52,6 +64,7 @@ describe("handleEnterExam", () => {
   it("redirects to the sponsored link within the launch window", async () => {
     const attempts = createInMemoryExamAttemptRepository();
     const launches = createInMemoryLabLaunchRepository();
+    const timer = makeTimer();
 
     await attempts.save({
       id: "attempt-1",
@@ -77,6 +90,7 @@ describe("handleEnterExam", () => {
       {
         attempts,
         launches,
+        timer,
         logger: makeLogger(),
         now: () => new Date("2026-06-15T16:00:00.000Z"),
       },
@@ -88,6 +102,10 @@ describe("handleEnterExam", () => {
       "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret",
     );
     expect(response.body).toBe("Redirecting to the CloudShare lab.");
+    expect(timer.resumed).toEqual(["attempt-1"]);
+    await expect(attempts.findById("attempt-1")).resolves.toMatchObject({
+      status: "in_progress",
+    });
   });
 
   it("recomputes ownership server-side and denies another candidate", async () => {

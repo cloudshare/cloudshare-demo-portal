@@ -35,6 +35,7 @@ export async function GET(request: Request) {
     {
       attempts: services.examAttempts,
       launches: services.labLaunches,
+      timer: services.examClock,
       logger: services.logger,
     },
     {

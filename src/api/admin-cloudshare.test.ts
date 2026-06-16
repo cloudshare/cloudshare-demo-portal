@@ -13,6 +13,7 @@ import { CloudShareRequestError } from "@/integrations/cloudshare";
 import { createInMemoryExamAuthoringCacheRepository } from "@/persistence/exam-authoring-cache-repository";
 
 const prisma = new PrismaClient();
+const createdCustomerIds = new Set<string>();
 
 afterEach(async () => {
   await prisma.portalSession.deleteMany();
@@ -23,11 +24,21 @@ afterEach(async () => {
       },
     },
   });
-  await prisma.cloudShareConnection.deleteMany();
+  const customerIds = [...createdCustomerIds];
+  createdCustomerIds.clear();
+  if (customerIds.length === 0) return;
+
+  await prisma.cloudShareConnection.deleteMany({
+    where: {
+      customerId: {
+        in: customerIds,
+      },
+    },
+  });
   await prisma.customer.deleteMany({
     where: {
-      slug: {
-        startsWith: "helios-",
+      id: {
+        in: customerIds,
       },
     },
   });
@@ -48,6 +59,7 @@ async function makeDeps() {
       name: "Helios CX",
     },
   });
+  createdCustomerIds.add(customer.id);
   return {
     customerId: customer.id,
     connections: createCloudShareConnectionRepository(

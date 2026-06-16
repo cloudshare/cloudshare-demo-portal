@@ -1,4 +1,5 @@
-import { LabLauncher } from "@/web/lab-launcher";
+import React from "react";
+import { CandidateLabShell } from "@/web/candidate-lab-shell";
 
 /**
  * Minimal candidate lab page. Reads the ExamAttempt from the query string and
@@ -8,9 +9,9 @@ import { LabLauncher } from "@/web/lab-launcher";
 export default async function CandidateLabPage({
   searchParams,
 }: {
-  searchParams: Promise<{ examAttemptId?: string }>;
+  searchParams: Promise<{ examAttemptId?: string; attemptStatus?: string }>;
 }) {
-  const { examAttemptId } = await searchParams;
+  const { examAttemptId, attemptStatus } = await searchParams;
 
   if (!examAttemptId) {
     return (
@@ -21,11 +22,17 @@ export default async function CandidateLabPage({
     );
   }
 
+  const initialAttemptStatus =
+    attemptStatus === "ready" ||
+    attemptStatus === "in_progress" ||
+    attemptStatus === "suspended"
+      ? attemptStatus
+      : "ready";
+
   return (
-    <main>
-      <h1>Launch lab</h1>
-      <p>Exam attempt: {examAttemptId}</p>
-      <LabLauncher examAttemptId={examAttemptId} />
-    </main>
+    <CandidateLabShell
+      examAttemptId={examAttemptId}
+      initialAttemptStatus={initialAttemptStatus}
+    />
   );
 }

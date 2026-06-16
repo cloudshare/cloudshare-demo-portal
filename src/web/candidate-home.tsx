@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { openEnterExamWindow } from "./enter-exam";
 import {
   loadCandidateDashboard,
   scheduleCandidateExam,
@@ -121,13 +120,12 @@ export function CandidateHome({ email }: CandidateHomeProps) {
     return getLatestAttemptForExam(dashboard.attempts, examId);
   }
 
-  function enterAttempt(attemptId: string) {
-    setError(null);
-    try {
-      openEnterExamWindow(attemptId);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Failed to open exam window");
-    }
+  function openLabConsole(attemptId: string, attemptStatus: string) {
+    const params = new URLSearchParams({
+      examAttemptId: attemptId,
+      attemptStatus,
+    });
+    router.push(`/candidate/lab?${params.toString()}`);
   }
 
   const scheduledAttempts = buildScheduledAttemptViews(dashboard, nowMs);
@@ -169,16 +167,20 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                     Scheduled for {attempt.scheduledFor ? new Date(attempt.scheduledFor).toLocaleString() : "TBD"}
                   </p>
                   <p style={{ margin: "0.45rem 0", color: "#0b5d3b" }}>Status: {attempt.status}</p>
-                  {attempt.status === "ready" && (
+                  {(attempt.status === "ready" || attempt.status === "in_progress" || attempt.status === "suspended") && (
                     <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
                       <button
-                        onClick={() => enterAttempt(attempt.attemptId)}
-                        disabled={!attempt.canEnter}
+                        onClick={() => openLabConsole(attempt.attemptId, attempt.status)}
+                        disabled={attempt.status === "ready" ? !attempt.canEnter : false}
                         style={{ padding: "0.55rem 0.9rem" }}
                       >
-                        Enter exam
+                        {attempt.status === "suspended"
+                          ? "Resume exam"
+                          : attempt.status === "in_progress"
+                            ? "Return to exam"
+                            : "Enter exam"}
                       </button>
-                      {attempt.waitingMessage && (
+                      {attempt.waitingMessage && attempt.status === "ready" && (
                         <span style={{ color: "#555" }}>{attempt.waitingMessage}</span>
                       )}
                     </div>
@@ -227,13 +229,17 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                   >
                     {submittingExamId === exam.id ? "Scheduling..." : "Schedule exam"}
                   </button>
-                  {attempt?.status === "ready" && (
+                  {(attempt?.status === "ready" || attempt?.status === "in_progress" || attempt?.status === "suspended") && (
                     <button
-                      onClick={() => enterAttempt(attempt.id)}
-                      disabled={!canEnterAttempt(attempt, nowMs)}
+                      onClick={() => openLabConsole(attempt.id, attempt.status)}
+                      disabled={attempt.status === "ready" ? !canEnterAttempt(attempt, nowMs) : false}
                       style={{ padding: "0.55rem 0.9rem" }}
                     >
-                      Enter exam
+                      {attempt.status === "suspended"
+                        ? "Resume exam"
+                        : attempt.status === "in_progress"
+                          ? "Return to exam"
+                          : "Enter exam"}
                     </button>
                   )}
                 </div>

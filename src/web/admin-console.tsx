@@ -15,6 +15,7 @@ import {
   isAdminSessionExpiredStatus,
   isLatestOnlyResponse,
   reconcileAllowedRegionIds,
+  shouldClearAdminBannerOnTabChange,
   shouldShowCandidateProvisioning,
 } from "./admin-console-state";
 
@@ -955,7 +956,13 @@ export function AdminConsole({ email }: AdminConsoleProps) {
         {ADMIN_TABS.map((t) => (
           <button
             key={t}
-            onClick={() => setTab(t)}
+            onClick={() => {
+              if (shouldClearAdminBannerOnTabChange(tab, t)) {
+                setError(null);
+                setCandidateMessage(null);
+              }
+              setTab(t);
+            }}
             style={{
               padding: "0.5rem 0.9rem",
               background: tab === t ? "#111827" : "#eee",
@@ -972,7 +979,16 @@ export function AdminConsole({ email }: AdminConsoleProps) {
 
       {error && (
         <div style={{ color: "#b00020", background: "#fff0f0", padding: "0.75rem", borderRadius: "6px", display: "grid", gap: "0.5rem" }}>
-          <p style={{ margin: 0 }}>{error}</p>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "flex-start" }}>
+            <p style={{ margin: 0 }}>{error}</p>
+            <button
+              type="button"
+              onClick={() => setError(null)}
+              style={{ padding: "0.25rem 0.55rem" }}
+            >
+              Dismiss
+            </button>
+          </div>
           {tab === "exams" && examCorrelationId ? (
             <p style={{ margin: 0, fontSize: "0.85rem" }}>
               See <strong>Support Log</strong> with correlation ID{" "}

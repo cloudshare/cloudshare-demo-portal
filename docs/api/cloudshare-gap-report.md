@@ -510,6 +510,33 @@ failing the entire response, because they cannot be matched back to a portal Can
 This is still an inference from live failure plus CloudShare naming conventions, not a fully
 confirmed contract; verify the exact live envelope and participant field set on the tenant.
 
+**Update (2026-06-15, live suspend/resume QA + v3 docs review):** the discovered participant
+`environmentId` from `GET /v4/trainings/{trainingId}/students` is the actionable CloudShare
+**envId** for suspend/resume and poll confirmation. Earlier code incorrectly treated the portal's
+provisioning-time `environmentExternalId` as the runtime environment correlation key and polled a
+guessed `GET /api/v3/environments?externalId=...` endpoint. The portal now persists the discovered
+participant `environmentId` into the launch correlation record and uses documented v3 env
+semantics:
+
+- `PUT /api/v3/envs/actions/suspend?envId={envId}`
+- `PUT /api/v3/envs/actions/resume?envId={envId}`
+- `GET /api/v3/envs/{envId}` for authoritative state confirmation
+
+This corrects the earlier endpoint assumption and explains why suspend/auto-suspend could fail
+after a successful launch until the candidate's CloudShare `envId` had actually been discovered.
+
+**Update (2026-06-15, live suspend QA on fresh attempts):** `GET /v4/trainings/{trainingId}/students`
+can expose a **pre-join placeholder** participant `envId` before the candidate has actually bound to
+their runnable environment. In the live tenant this appeared as an `ENK...` id with
+`participationStatus:"pending"` and `envStatus:null`; after the candidate entered CloudShare, the
+same participant later reported an actionable `ENVS...` id with `participationStatus:"inProgress"`
+and `envStatus:"ready"`. The portal must therefore treat `envId` as actionable **only when an
+environment lifecycle signal is also present** (at minimum a non-empty `envStatus`), and it must be
+able to replace an earlier placeholder correlation with the later active env id. Persisting the
+first non-empty `envId` and never rechecking causes v3 suspend/resume to hit
+`PUT /api/v3/envs/actions/{suspend|resume}?envId=...` with a placeholder id that returns `404
+{"message":"Environment not found","code":"0x40402"}`.
+
 ---
 
 ## GAP-15 — Per-project webhook registration via the v3 API is unverified
@@ -674,5 +701,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-06-15 (updated Slice 4 training Name uniqueness/length and add-training-students request/response shape).
+*Last updated: 2026-06-15 (updated training-students schema handling, v3 envId-based suspend/resume/poll semantics, and Slice 4 training Name uniqueness/length).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*

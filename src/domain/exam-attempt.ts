@@ -9,6 +9,7 @@ export type ExamAttemptStatus =
 
 export interface ExamAttempt {
   readonly id: string;
+  readonly customerId?: string;
   readonly candidateId: string;
   readonly examId: string;
   readonly status: ExamAttemptStatus;

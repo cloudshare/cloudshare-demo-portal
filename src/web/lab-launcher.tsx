@@ -5,6 +5,7 @@ import { openEnterExamWindow } from "./enter-exam";
 import { isLabWindowOpen } from "./lab-window";
 
 type LaunchState = "idle" | "launching" | "open" | "suspending" | "suspended" | "error";
+type AttemptStatus = "ready" | "in_progress" | "suspended";
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const CHILD_POLL_INTERVAL_MS = 3_000;
@@ -16,8 +17,16 @@ const CHILD_POLL_INTERVAL_MS = 3_000;
  * suspends. `sendBeacon` fires on `pagehide`/`visibilitychange` as a fast-path
  * signal so the server auto-suspend timer resets on every page-visibility change.
  */
-export function LabLauncher({ examAttemptId }: { examAttemptId: string }) {
-  const [state, setState] = useState<LaunchState>("idle");
+export function LabLauncher({
+  examAttemptId,
+  initialAttemptStatus = "ready",
+}: {
+  examAttemptId: string;
+  initialAttemptStatus?: AttemptStatus;
+}) {
+  const [state, setState] = useState<LaunchState>(
+    initialAttemptStatus === "suspended" ? "suspended" : "idle",
+  );
   const [message, setMessage] = useState<string>("");
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const childPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -127,11 +136,37 @@ export function LabLauncher({ examAttemptId }: { examAttemptId: string }) {
     }
   }
 
+  async function resumeNow() {
+    try {
+      setState("launching");
+      setMessage("");
+      const resp = await fetch("/api/exam/resume", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ examAttemptId }),
+      });
+      if (!resp.ok) {
+        const detail = (await resp.json().catch(() => ({}))) as { error?: string };
+        throw new Error(detail.error ?? `resume failed (${resp.status})`);
+      }
+      openEnterExamWindow(examAttemptId);
+      setState("open");
+    } catch (err) {
+      setState("error");
+      setMessage(err instanceof Error ? err.message : "resume failed");
+    }
+  }
+
   return (
     <div>
       {(state === "idle" || state === "error") && (
         <button type="button" onClick={launch}>
           Enter exam
+        </button>
+      )}
+      {state === "suspended" && (
+        <button type="button" onClick={resumeNow}>
+          Resume exam
         </button>
       )}
       {state === "launching" && <p>Opening exam…</p>}

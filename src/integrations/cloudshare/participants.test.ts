@@ -36,6 +36,8 @@ describe("createCloudShareParticipantLister", () => {
       {
         email: "candidate@helioscx.demo",
         environmentId: "env-1",
+        environmentStatus: null,
+        participationStatus: null,
         studentId: "student-1",
       },
     ]);
@@ -51,6 +53,8 @@ describe("createCloudShareParticipantLister", () => {
       {
         email: "candidate@helioscx.demo",
         environmentId: null,
+        environmentStatus: null,
+        participationStatus: null,
         studentId: null,
       },
     ]);
@@ -70,7 +74,32 @@ describe("createCloudShareParticipantLister", () => {
       {
         email: "candidate@helioscx.demo",
         environmentId: "env-1",
+        environmentStatus: null,
+        participationStatus: null,
         studentId: "user-1",
+      },
+    ]);
+  });
+
+  it("accepts the live wrapped response shape with envId", () => {
+    expect(
+      normalizeTrainingParticipants({
+        count: 1,
+        items: [
+          {
+            email: "candidate@helioscx.demo",
+            envStatus: "ready",
+            envId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        email: "candidate@helioscx.demo",
+        environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+        environmentStatus: "ready",
+        participationStatus: null,
+        studentId: null,
       },
     ]);
   });
@@ -87,6 +116,8 @@ describe("createCloudShareParticipantLister", () => {
       {
         email: "candidate@helioscx.demo",
         environmentId: null,
+        environmentStatus: null,
+        participationStatus: null,
         studentId: "student-1",
       },
     ]);

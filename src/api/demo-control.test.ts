@@ -51,7 +51,7 @@ function makeDeps(overrides: Partial<DemoControlDeps> = {}): DemoControlDeps {
   const completedDemoStepsWritable = new Set<DemoStep>();
   const completedDemoSteps: ReadonlySet<DemoStep> = completedDemoStepsWritable;
   const markStepDone = vi.fn((step: DemoStep) => completedDemoStepsWritable.add(step));
-  const resetDemoState = vi.fn(() => completedDemoStepsWritable.clear());
+  const resetDemoState = vi.fn(async () => completedDemoStepsWritable.clear());
 
   return {
     logger: makeLogger(),
@@ -194,6 +194,9 @@ describe("handleExecuteStep", () => {
       result.environmentExternalId as string,
     );
     expect(envState?.status).toBe("running");
+
+    const attempts = await deps.examAttempts.listByCandidate(DEMO_SEED.candidateId);
+    expect(attempts[0]?.status).toBe("in_progress");
   });
 
   it("executes full happy path: all five steps succeed in order", async () => {

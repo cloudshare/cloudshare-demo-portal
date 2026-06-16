@@ -74,6 +74,10 @@ export function shouldShowCandidateProvisioning(tab: AdminTab): boolean {
   return tab === "candidates";
 }
 
+export function shouldClearAdminBannerOnTabChange(from: AdminTab, to: AdminTab): boolean {
+  return from !== to;
+}
+
 export function buildEventRecordRowKey(
   event: { readonly eventId: string; readonly type: string; readonly occurredAt: string },
   index: number,
