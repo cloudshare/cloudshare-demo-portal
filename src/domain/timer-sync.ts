@@ -79,6 +79,7 @@ export interface SuspendExamDeps {
 
 export interface SuspendExamInput {
   readonly examAttemptId: string;
+  readonly verifiedEnvironmentExternalId?: string;
 }
 
 export async function suspendExam(
@@ -90,7 +91,11 @@ export async function suspendExam(
   if (!launch) {
     throw new LabLaunchNotFoundError({ examAttemptId: input.examAttemptId });
   }
-  const environmentExternalId = requireEnvironmentExternalId(launch, input.examAttemptId);
+  const environmentExternalId = requireEnvironmentExternalId(
+    launch,
+    input.examAttemptId,
+    input.verifiedEnvironmentExternalId,
+  );
 
   await deps.controller.suspendEnvironment(environmentExternalId);
   await pollUntilStatus(
@@ -119,6 +124,7 @@ export interface ResumeExamDeps {
 
 export interface ResumeExamInput {
   readonly examAttemptId: string;
+  readonly verifiedEnvironmentExternalId?: string;
 }
 
 export interface ResumeExamResult {
@@ -136,7 +142,11 @@ export async function resumeExam(
   if (!launch) {
     throw new LabLaunchNotFoundError({ examAttemptId: input.examAttemptId });
   }
-  const environmentExternalId = requireEnvironmentExternalId(launch, input.examAttemptId);
+  const environmentExternalId = requireEnvironmentExternalId(
+    launch,
+    input.examAttemptId,
+    input.verifiedEnvironmentExternalId,
+  );
 
   await deps.controller.resumeEnvironment(environmentExternalId);
   await pollUntilStatus(
@@ -164,14 +174,18 @@ function requireEnvironmentExternalId(
     readonly environmentId?: string;
   },
   examAttemptId: string,
+  verifiedEnvironmentExternalId?: string,
 ): string {
   const correlatedEnvironmentId =
-    typeof launch.environmentExternalId === "string" && launch.environmentExternalId.length > 0
-      ? launch.environmentExternalId
-      : typeof launch.environmentId === "string" && launch.environmentId.length > 0
-        ? launch.environmentId
-        : null;
-  if (!correlatedEnvironmentId || !isKnownActionableCloudShareEnvironmentId(correlatedEnvironmentId)) {
+    typeof verifiedEnvironmentExternalId === "string" &&
+    verifiedEnvironmentExternalId.length > 0
+      ? verifiedEnvironmentExternalId
+      : typeof launch.environmentExternalId === "string" && launch.environmentExternalId.length > 0
+        ? launch.environmentExternalId
+        : typeof launch.environmentId === "string" && launch.environmentId.length > 0
+          ? launch.environmentId
+          : null;
+  if (!correlatedEnvironmentId) {
     throw new TimerSyncError("No CloudShare environment is correlated to this exam attempt yet.", {
       examAttemptId,
       labLaunchId: launch.id,
@@ -187,10 +201,6 @@ function requireEnvironmentExternalId(
     });
   }
   return correlatedEnvironmentId;
-}
-
-function isKnownActionableCloudShareEnvironmentId(environmentId: string): boolean {
-  return environmentId.trim().toUpperCase().startsWith("ENVS");
 }
 
 async function persistAttemptStatus(

@@ -38,6 +38,8 @@ const launch = {
   id: "launch-1",
   examAttemptId: "ea-1",
   candidateId: "cand-1",
+  participantEmail: "candidate@helioscx.demo",
+  trainingId: "training-1",
   experienceId: "exp-1",
   environmentExternalId: "ENVS-default-live-env-1",
   loginUrl: "https://old.lab.url",
@@ -125,6 +127,24 @@ function makeCloudShareFactory(overrides: Partial<ReturnType<CloudShareClientFac
   };
 }
 
+function activeParticipantRequestV4(
+  environmentId = "ENVd0WBTGirla-omK6Jh3BvA2",
+): CloudShareClient["requestV4"] {
+  return vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+    if (spec.path === "/trainings/training-1/students") {
+      return spec.schema.parse([
+        {
+          email: "candidate@helioscx.demo",
+          envId: environmentId,
+          envStatus: "ready",
+          participationStatus: "inProgress",
+        },
+      ]);
+    }
+    throw new Error(`unexpected v4 path ${spec.path}`);
+  }) as unknown as CloudShareClient["requestV4"];
+}
+
 function makeSuspendCloudShareFactory(): CloudShareClientFactory {
   return {
     forConnection: () =>
@@ -187,7 +207,7 @@ function makeCloudShareClient(overrides: Partial<CloudShareClient> = {}): CloudS
   return {
     requestV3: vi.fn(),
     requestV3Text: vi.fn(),
-    requestV4: vi.fn(),
+    requestV4: activeParticipantRequestV4(),
     ...overrides,
   } as CloudShareClient;
 }

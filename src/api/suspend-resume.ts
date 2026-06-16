@@ -87,7 +87,7 @@ export async function handleSuspendExam(
   }
 
   try {
-    await ensureExamAttemptEnvironmentCorrelation(deps, {
+    const correlation = await ensureExamAttemptEnvironmentCorrelation(deps, {
       examAttemptId,
       operation: "exam_suspend",
     });
@@ -96,7 +96,14 @@ export async function handleSuspendExam(
         ...deps,
         ...(await resolveCustomerEnvironmentAccess(deps, examAttemptId)),
       },
-      { examAttemptId },
+      {
+        examAttemptId,
+        verifiedEnvironmentExternalId: await requireVerifiedEnvironmentExternalId(
+          deps,
+          examAttemptId,
+          correlation.actionableEnvironmentId,
+        ),
+      },
     );
     deps.logger.info("exam suspended", { examAttemptId });
     return { status: 200, body: { status: "suspended", examAttemptId } };
@@ -127,7 +134,7 @@ export async function handleResumeExam(
   }
 
   try {
-    await ensureExamAttemptEnvironmentCorrelation(deps, {
+    const correlation = await ensureExamAttemptEnvironmentCorrelation(deps, {
       examAttemptId,
       operation: "exam_resume",
     });
@@ -136,7 +143,14 @@ export async function handleResumeExam(
         ...deps,
         ...(await resolveCustomerEnvironmentAccess(deps, examAttemptId)),
       },
-      { examAttemptId },
+      {
+        examAttemptId,
+        verifiedEnvironmentExternalId: await requireVerifiedEnvironmentExternalId(
+          deps,
+          examAttemptId,
+          correlation.actionableEnvironmentId,
+        ),
+      },
     );
     deps.logger.info("exam resumed", {
       examAttemptId,
@@ -161,7 +175,7 @@ export async function runHeartbeatAutoSuspend(
   examAttemptId: string,
 ): Promise<void> {
   try {
-    await ensureExamAttemptEnvironmentCorrelation(deps, {
+    const correlation = await ensureExamAttemptEnvironmentCorrelation(deps, {
       examAttemptId,
       operation: "heartbeat_auto_suspend",
     });
@@ -170,7 +184,14 @@ export async function runHeartbeatAutoSuspend(
         ...deps,
         ...(await resolveCustomerEnvironmentAccess(deps, examAttemptId)),
       },
-      { examAttemptId },
+      {
+        examAttemptId,
+        verifiedEnvironmentExternalId: await requireVerifiedEnvironmentExternalId(
+          deps,
+          examAttemptId,
+          correlation.actionableEnvironmentId,
+        ),
+      },
     );
   } catch (err) {
     await reportFailureDiagnostic(
@@ -226,6 +247,35 @@ async function resolveCustomerEnvironmentAccess(
     controller: createCloudShareEnvironmentController(client),
     source: createCloudShareEnvironmentSource(client),
   };
+}
+
+async function requireVerifiedEnvironmentExternalId(
+  deps: Pick<SuspendHandlerDeps | ResumeHandlerDeps | HeartbeatAutoSuspendHandlerDeps, "launches">,
+  examAttemptId: string,
+  actionableEnvironmentId: string | null,
+): Promise<string | undefined> {
+  if (actionableEnvironmentId) {
+    return actionableEnvironmentId;
+  }
+
+  const launch = await deps.launches.findByExamAttemptId(examAttemptId);
+  if (!launch) {
+    return undefined;
+  }
+  throw new TimerSyncError("No CloudShare environment is correlated to this exam attempt yet.", {
+    examAttemptId,
+    labLaunchId: launch.id,
+    trainingId: launch.trainingId,
+    attemptedOperation: "resolve_environment_correlation",
+    integrationSurface: "cloudshare.v4.training.participant_list",
+    method: "GET",
+    path: launch.trainingId
+      ? `/v4/trainings/${launch.trainingId}/students`
+      : "/v4/trainings/{trainingId}/students",
+    failureMode: "not_correlated_yet",
+    currentEnvironmentExternalId:
+      launch.environmentExternalId ?? launch.environmentId ?? null,
+  });
 }
 
 async function handleTimerSyncError(

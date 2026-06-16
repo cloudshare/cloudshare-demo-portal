@@ -27,6 +27,10 @@ export interface EnsureExamAttemptEnvironmentCorrelationDeps {
   readonly newCorrelationId?: () => string;
 }
 
+export interface ExamAttemptEnvironmentCorrelationResult {
+  readonly actionableEnvironmentId: string | null;
+}
+
 export async function ensureExamAttemptEnvironmentCorrelation(
   deps: EnsureExamAttemptEnvironmentCorrelationDeps,
   input: {
@@ -36,30 +40,33 @@ export async function ensureExamAttemptEnvironmentCorrelation(
       | "exam_resume"
       | "heartbeat_auto_suspend";
   },
-): Promise<void> {
+): Promise<ExamAttemptEnvironmentCorrelationResult> {
   const attempt = await deps.attempts.findById(input.examAttemptId);
   if (!attempt?.customerId) {
-    return;
+    return { actionableEnvironmentId: null };
   }
 
   const launch = await deps.launches.findByExamAttemptId(input.examAttemptId);
   if (!launch?.trainingId || !launch.participantEmail) {
-    return;
+    return { actionableEnvironmentId: null };
   }
 
   const connection = await deps.connections.findByCustomerId(attempt.customerId);
   if (!connection) {
-    return;
+    return { actionableEnvironmentId: null };
   }
 
   try {
-    await correlateEnvironmentForExamAttempt(
+    const result = await correlateEnvironmentForExamAttempt(
       {
         launches: deps.launches,
         participants: createCloudShareParticipantLister(deps.cloudshare.forConnection(connection)),
       },
       { examAttemptId: input.examAttemptId },
     );
+    return {
+      actionableEnvironmentId: result.correlated ? result.environmentId : null,
+    };
   } catch (error) {
     const correlationId = (deps.newCorrelationId ?? randomUUID)();
     const diagnostic = {
@@ -84,6 +91,7 @@ export async function ensureExamAttemptEnvironmentCorrelation(
       payload: diagnostic,
     });
     deps.logger.warn(`${input.operation} environment correlation failed`, diagnostic);
+    return { actionableEnvironmentId: null };
   }
 }
 
