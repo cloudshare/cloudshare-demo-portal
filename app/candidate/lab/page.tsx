@@ -1,4 +1,5 @@
-import { LabLauncher } from "@/web/lab-launcher";
+import React from "react";
+import { CandidateLabShell } from "@/web/candidate-lab-shell";
 
 /**
  * Minimal candidate lab page. Reads the ExamAttempt from the query string and
@@ -21,20 +22,17 @@ export default async function CandidateLabPage({
     );
   }
 
+  const initialAttemptStatus =
+    attemptStatus === "ready" ||
+    attemptStatus === "in_progress" ||
+    attemptStatus === "suspended"
+      ? attemptStatus
+      : "ready";
+
   return (
-    <main>
-      <h1>Launch lab</h1>
-      <p>Exam attempt: {examAttemptId}</p>
-      <LabLauncher
-        examAttemptId={examAttemptId}
-        initialAttemptStatus={
-          attemptStatus === "ready" ||
-          attemptStatus === "in_progress" ||
-          attemptStatus === "suspended"
-            ? attemptStatus
-            : "ready"
-        }
-      />
-    </main>
+    <CandidateLabShell
+      examAttemptId={examAttemptId}
+      initialAttemptStatus={initialAttemptStatus}
+    />
   );
 }
