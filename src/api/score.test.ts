@@ -193,6 +193,76 @@ describe("handleGetCandidateScore", () => {
     expect(deps.createScoreRetriever).not.toHaveBeenCalled();
   });
 
+  it("returns 409 and does not call CloudShare before the exam attempt is completed", async () => {
+    const deps = makeDeps({
+      attempt: makeAttempt({ status: "in_progress" }),
+    });
+
+    const result = await handleGetCandidateScore(deps, {
+      query: { examAttemptId: "attempt-1" },
+      session: {
+        userId: "candidate-1",
+        customerId: "customer-1",
+        role: "candidate",
+      },
+    });
+
+    expect(result).toEqual({
+      status: 409,
+      body: { error: "score is only available after the exam attempt is completed" },
+    });
+    expect(deps.exams.findById).not.toHaveBeenCalled();
+    expect(deps.launches.findByExamAttemptId).not.toHaveBeenCalled();
+    expect(deps.connections.findByCustomerId).not.toHaveBeenCalled();
+    expect(deps.createScoreRetriever).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 when one candidate tries to retrieve another candidate's score", async () => {
+    const deps = makeDeps({
+      attempt: makeAttempt({ candidateId: "candidate-2" }),
+    });
+
+    const result = await handleGetCandidateScore(deps, {
+      query: { examAttemptId: "attempt-1" },
+      session: {
+        userId: "candidate-1",
+        customerId: "customer-1",
+        role: "candidate",
+      },
+    });
+
+    expect(result).toEqual({
+      status: 403,
+      body: { error: "forbidden" },
+    });
+    expect(deps.exams.findById).not.toHaveBeenCalled();
+    expect(deps.launches.findByExamAttemptId).not.toHaveBeenCalled();
+    expect(deps.createScoreRetriever).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 when the exam attempt belongs to a different customer", async () => {
+    const deps = makeDeps({
+      attempt: makeAttempt({ customerId: "customer-2" }),
+    });
+
+    const result = await handleGetCandidateScore(deps, {
+      query: { examAttemptId: "attempt-1" },
+      session: {
+        userId: "candidate-1",
+        customerId: "customer-1",
+        role: "candidate",
+      },
+    });
+
+    expect(result).toEqual({
+      status: 403,
+      body: { error: "forbidden" },
+    });
+    expect(deps.exams.findById).not.toHaveBeenCalled();
+    expect(deps.launches.findByExamAttemptId).not.toHaveBeenCalled();
+    expect(deps.createScoreRetriever).not.toHaveBeenCalled();
+  });
+
   it("returns the candidate score when scoring is enabled", async () => {
     const deps = makeDeps();
 

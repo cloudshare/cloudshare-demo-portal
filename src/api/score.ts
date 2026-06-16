@@ -64,6 +64,13 @@ export async function handleGetCandidateScore(
     return { status: 403, body: { error: "forbidden" } };
   }
 
+  if (attempt.status !== "completed") {
+    return {
+      status: 409,
+      body: { error: "score is only available after the exam attempt is completed" },
+    };
+  }
+
   const exam = await deps.exams.findById(attempt.examId);
   if (!exam || exam.customerId !== request.session.customerId) {
     return { status: 404, body: { error: "exam not found for attempt" } };
