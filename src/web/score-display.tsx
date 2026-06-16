@@ -9,9 +9,22 @@ interface ScoreDisplayProps {
 
 type FetchState = "loading" | "loaded" | "error";
 
-interface ScorePayload extends ScoreResult {
-  limitations: string[];
-}
+type ScorePayload =
+  | (ScoreResult & {
+      scoreRetrievalEnabled: true;
+      scoreAvailable: true;
+      limitations: string[];
+    })
+  | {
+      examAttemptId: string;
+      experienceId: string;
+      scoreRetrievalEnabled: boolean;
+      scoreAvailable: false;
+      reason: "score_retrieval_disabled" | "no_guided_journey_score";
+      message: string;
+      retrievedAt: string;
+      limitations: string[];
+    };
 
 /**
  * Fetches and renders the candidate's Guided Journey score for a completed exam
@@ -30,8 +43,16 @@ export function ScoreDisplay({ examAttemptId }: ScoreDisplayProps) {
       .then(async (res) => {
         if (cancelled) return;
         if (!res.ok) {
-          const body = (await res.json().catch(() => ({}))) as { error?: string };
-          throw new Error(body.error ?? `request failed (${res.status})`);
+          const body = (await res.json().catch(() => ({}))) as {
+            error?: string;
+            correlationId?: string;
+          };
+          const detail = body.error ?? `request failed (${res.status})`;
+          throw new Error(
+            body.correlationId
+              ? `${detail}. Reference: ${body.correlationId}`
+              : detail,
+          );
         }
         return res.json() as Promise<ScorePayload>;
       })
@@ -62,28 +83,33 @@ export function ScoreDisplay({ examAttemptId }: ScoreDisplayProps) {
 
   return (
     <div>
-      <h2>Your Guided Journey score</h2>
+      <h2>Guided Journey score</h2>
 
-      <p>
-        <strong>{score.percentComplete}%</strong> complete —{" "}
-        {score.stepsCompleted} of {score.stepsTotal} tasks done
-      </p>
+      {score.scoreAvailable ? (
+        <>
+          <p>
+            <strong>{score.percentComplete}%</strong> complete —{" "}
+            {score.stepsCompleted} of {score.stepsTotal} tasks done
+          </p>
 
-      {score.steps.length > 0 && (
-        <ul>
-          {score.steps.map((step) => (
-            <li key={step.stepId}>
-              {step.completed ? "✓" : "○"} {step.title}
-            </li>
-          ))}
-        </ul>
+          {score.steps.length > 0 && (
+            <ul>
+              {score.steps.map((step) => (
+                <li key={step.stepId}>
+                  {step.completed ? "✓" : "○"} {step.title}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      ) : (
+        <p>{score.message}</p>
       )}
 
       <section aria-label="Scoring limitations">
         <h3>About this score</h3>
         <p>
           CloudShare Guided Journey scoring has the following known limitations.
-          Final certification decisions are made by Genesys, not this portal.
         </p>
         <ul>
           {score.limitations.map((limitation, i) => (

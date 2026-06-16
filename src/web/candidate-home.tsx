@@ -128,6 +128,13 @@ export function CandidateHome({ email }: CandidateHomeProps) {
     router.push(`/candidate/lab?${params.toString()}`);
   }
 
+  function openScorePage(attemptId: string) {
+    const params = new URLSearchParams({
+      examAttemptId: attemptId,
+    });
+    router.push(`/candidate/score?${params.toString()}`);
+  }
+
   const scheduledAttempts = buildScheduledAttemptViews(dashboard, nowMs);
 
   return (
@@ -185,6 +192,14 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                       )}
                     </div>
                   )}
+                  {attempt.status === "completed" && (
+                    <button
+                      onClick={() => openScorePage(attempt.attemptId)}
+                      style={{ padding: "0.55rem 0.9rem" }}
+                    >
+                      View score
+                    </button>
+                  )}
                 </article>
               ))}
             </div>
@@ -239,7 +254,15 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                         ? "Resume exam"
                         : attempt.status === "in_progress"
                           ? "Return to exam"
-                          : "Enter exam"}
+                        : "Enter exam"}
+                    </button>
+                  )}
+                  {attempt?.status === "completed" && (
+                    <button
+                      onClick={() => openScorePage(attempt.id)}
+                      style={{ padding: "0.55rem 0.9rem" }}
+                    >
+                      View score
                     </button>
                   )}
                 </div>

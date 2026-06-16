@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { CloudShareClient } from "./client";
 import type { ParticipantProgress, ScoreRetrievalProvider } from "@/domain/score-result";
+import { CloudShareRequestError } from "./errors";
 
 /**
  * CloudShare implementation of the {@link ScoreRetrievalProvider} port.
@@ -27,7 +28,7 @@ export const SCORING_LIMITATIONS = [
   "Scoring uses bitmap checkpoints: visual state comparison only, not process-level capture.",
   "End-state verification only — approach and intermediate steps are not assessed.",
   "Deterministic script-based verification is not generally available until Q3 2026.",
-  "Final certification score weighting is determined by Genesys, not this portal.",
+  "Final certification decisions may use criteria outside this portal's Guided Journey score.",
 ] as const;
 
 const taskSchema = z.object({
@@ -58,11 +59,19 @@ export function createCloudShareGuidedJourneyProvider(
 ): ScoreRetrievalProvider {
   return {
     async getParticipantProgress(experienceId: string): Promise<ParticipantProgress | null> {
-      const response = await client.requestV4({
-        method: "GET",
-        path: `/experiences/${experienceId}/journey/participants`,
-        schema: participantsResponseSchema,
-      });
+      let response;
+      try {
+        response = await client.requestV4({
+          method: "GET",
+          path: `/experiences/${experienceId}/journey/participants`,
+          schema: participantsResponseSchema,
+        });
+      } catch (error) {
+        if (error instanceof CloudShareRequestError && error.status === 404) {
+          return null;
+        }
+        throw error;
+      }
 
       const first = response.participants[0];
       if (!first) return null;

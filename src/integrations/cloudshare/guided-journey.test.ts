@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { createCloudShareGuidedJourneyProvider } from "./guided-journey";
 import type { CloudShareClient } from "./client";
+import { CloudShareRequestError } from "./errors";
 
 function makeClient(response: unknown): CloudShareClient {
   return {
@@ -53,6 +54,24 @@ describe("createCloudShareGuidedJourneyProvider", () => {
 
   it("returns null when participants list is empty", async () => {
     const client = makeClient({ participants: [] });
+    const provider = createCloudShareGuidedJourneyProvider(client);
+
+    const result = await provider.getParticipantProgress("exp-1");
+    expect(result).toBeNull();
+  });
+
+  it("returns null when CloudShare reports no Guided Journey for the experience", async () => {
+    const client: CloudShareClient = {
+      requestV4: vi
+        .fn()
+        .mockRejectedValue(
+          new CloudShareRequestError("not found", 404, {
+            method: "GET",
+            path: "/experiences/exp-1/journey/participants",
+          }),
+        ),
+      requestV3: vi.fn(),
+    } as unknown as CloudShareClient;
     const provider = createCloudShareGuidedJourneyProvider(client);
 
     const result = await provider.getParticipantProgress("exp-1");

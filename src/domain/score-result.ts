@@ -35,6 +35,18 @@ export interface ScoreResult {
   readonly retrievedAt: string;
 }
 
+export type ExamAttemptScore =
+  | (ScoreResult & {
+      readonly scoreAvailable: true;
+    })
+  | {
+      readonly examAttemptId: string;
+      readonly experienceId: string;
+      readonly scoreAvailable: false;
+      readonly reason: "score_retrieval_disabled" | "no_guided_journey_score";
+      readonly retrievedAt: string;
+    };
+
 // --- Port ---
 
 export interface ScoreRetrievalProvider {
@@ -51,6 +63,12 @@ export interface RetrieveScoreDeps {
 
 export interface RetrieveScoreInput {
   readonly examAttemptId: string;
+}
+
+export interface ResolveExamAttemptScoreInput {
+  readonly examAttemptId: string;
+  readonly experienceId: string;
+  readonly scoreRetrievalEnabled: boolean;
 }
 
 const EMPTY_PROGRESS: ParticipantProgress = {
@@ -76,7 +94,8 @@ export async function retrieveScore(
     throw new ScoreRetrievalError("Failed to retrieve Guided Journey progress", {
       examAttemptId: input.examAttemptId,
       experienceId: launch.experienceId,
-      cause: cause instanceof Error ? cause.message : String(cause),
+      cause,
+      causeMessage: cause instanceof Error ? cause.message : String(cause),
     });
   }
 
@@ -89,5 +108,58 @@ export async function retrieveScore(
     stepsTotal: p.stepsTotal,
     steps: p.steps,
     retrievedAt: new Date().toISOString(),
+  };
+}
+
+export async function resolveExamAttemptScore(
+  deps: {
+    readonly scoreRetriever: ScoreRetrievalProvider;
+    readonly now?: () => Date;
+  },
+  input: ResolveExamAttemptScoreInput,
+): Promise<ExamAttemptScore> {
+  const retrievedAt = (deps.now ?? (() => new Date()))().toISOString();
+
+  if (!input.scoreRetrievalEnabled) {
+    return {
+      examAttemptId: input.examAttemptId,
+      experienceId: input.experienceId,
+      scoreAvailable: false,
+      reason: "score_retrieval_disabled",
+      retrievedAt,
+    };
+  }
+
+  let progress: ParticipantProgress | null;
+  try {
+    progress = await deps.scoreRetriever.getParticipantProgress(input.experienceId);
+  } catch (cause) {
+    throw new ScoreRetrievalError("Failed to retrieve Guided Journey progress", {
+      examAttemptId: input.examAttemptId,
+      experienceId: input.experienceId,
+      cause,
+      causeMessage: cause instanceof Error ? cause.message : String(cause),
+    });
+  }
+
+  if (!progress) {
+    return {
+      examAttemptId: input.examAttemptId,
+      experienceId: input.experienceId,
+      scoreAvailable: false,
+      reason: "no_guided_journey_score",
+      retrievedAt,
+    };
+  }
+
+  return {
+    examAttemptId: input.examAttemptId,
+    experienceId: input.experienceId,
+    scoreAvailable: true,
+    percentComplete: progress.percentComplete,
+    stepsCompleted: progress.stepsCompleted,
+    stepsTotal: progress.stepsTotal,
+    steps: progress.steps,
+    retrievedAt,
   };
 }
