@@ -37,12 +37,19 @@ export function CandidateHome({ email }: CandidateHomeProps) {
 
   useEffect(() => {
     let cancelled = false;
+    let refreshInFlight = false;
 
-    async function loadDashboard() {
-      setLoading(true);
-      setError(null);
+    async function loadDashboard(showLoading = false) {
+      if (refreshInFlight) {
+        return;
+      }
+      refreshInFlight = true;
+      if (showLoading) {
+        setLoading(true);
+      }
       try {
         if (!cancelled) {
+          setError(null);
           setDashboard(await loadCandidateDashboard(fetch));
           setNowMs(Date.now());
         }
@@ -54,12 +61,28 @@ export function CandidateHome({ email }: CandidateHomeProps) {
         if (!cancelled) {
           setLoading(false);
         }
+        refreshInFlight = false;
       }
     }
 
-    void loadDashboard();
+    function refreshIfVisible() {
+      if (document.visibilityState === "visible") {
+        void loadDashboard();
+      }
+    }
+
+    void loadDashboard(true);
+    const interval = window.setInterval(() => {
+      void loadDashboard();
+    }, 30_000);
+    window.addEventListener("focus", refreshIfVisible);
+    document.addEventListener("visibilitychange", refreshIfVisible);
+
     return () => {
       cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshIfVisible);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
     };
   }, []);
 

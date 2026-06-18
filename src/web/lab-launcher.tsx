@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { openEnterExamWindow } from "./enter-exam";
 import { isLabWindowOpen } from "./lab-window";
+import { preflightLabAction, suspendLabAttempt, type CandidateLabStatus } from "./lab-launcher-client";
 
 type LaunchState = "idle" | "launching" | "open" | "suspending" | "suspended" | "completed" | "error";
 type AttemptStatus = "ready" | "in_progress" | "suspended" | "completed";
@@ -21,10 +22,12 @@ export function LabLauncher({
   examAttemptId,
   currentAttemptStatus = "ready",
   onAttemptStatusChange,
+  onLabStatusLoaded,
 }: {
   examAttemptId: string;
   currentAttemptStatus?: AttemptStatus;
   onAttemptStatusChange?: (status: AttemptStatus) => void;
+  onLabStatusLoaded?: (status: CandidateLabStatus) => void;
 }) {
   const [state, setState] = useState<LaunchState>(
     currentAttemptStatus === "completed"
@@ -97,20 +100,103 @@ export function LabLauncher({
     stopChildPoll();
     setState("suspending");
     try {
-      const resp = await fetch("/api/exam/suspend", {
+      const result = await suspendLabAttempt(fetch, examAttemptId);
+      if (result.kind === "completed") {
+        onLabStatusLoaded?.(result.labStatus);
+        onAttemptStatusChange?.("completed");
+        setState("completed");
+        setMessage(result.message);
+        return;
+      }
+      if (result.kind === "blocked") {
+        if (result.labStatus) {
+          onLabStatusLoaded?.(result.labStatus);
+          onAttemptStatusChange?.(result.labStatus.status);
+        }
+        setState(result.labStatus?.status === "suspended" ? "suspended" : "error");
+        setMessage(result.message);
+        return;
+      }
+      setState("suspended");
+      setMessage(result.message);
+    } catch (err) {
+      setState("error");
+      setMessage(err instanceof Error ? err.message : "suspend failed");
+    }
+  }
+
+  async function launch() {
+    if (currentAttemptStatus === "completed") {
+      setState("completed");
+      setMessage("Examination complete.");
+      return;
+    }
+    try {
+      setState("launching");
+      setMessage("");
+      const preflight = await preflightLabAction(fetch, {
+        examAttemptId,
+        action: "enter",
+      });
+      onLabStatusLoaded?.(preflight.labStatus);
+      onAttemptStatusChange?.(preflight.labStatus.status);
+      if (preflight.kind === "completed") {
+        setState("completed");
+        setMessage(preflight.message);
+        return;
+      }
+      if (preflight.kind === "blocked") {
+        setState("error");
+        setMessage(preflight.message);
+        return;
+      }
+      openEnterExamWindow(examAttemptId);
+      setState("open");
+    } catch (err) {
+      setState("error");
+      setMessage(err instanceof Error ? err.message : "launch failed");
+    }
+  }
+
+  async function resumeNow() {
+    if (currentAttemptStatus === "completed") {
+      setState("completed");
+      setMessage("Examination complete.");
+      return;
+    }
+    try {
+      setState("launching");
+      setMessage("");
+      const preflight = await preflightLabAction(fetch, {
+        examAttemptId,
+        action: "resume",
+      });
+      onLabStatusLoaded?.(preflight.labStatus);
+      onAttemptStatusChange?.(preflight.labStatus.status);
+      if (preflight.kind === "completed") {
+        setState("completed");
+        setMessage(preflight.message);
+        return;
+      }
+      if (preflight.kind === "blocked") {
+        setState("error");
+        setMessage(preflight.message);
+        return;
+      }
+      const resp = await fetch("/api/exam/resume", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ examAttemptId }),
       });
       if (!resp.ok) {
         const detail = (await resp.json().catch(() => ({}))) as { error?: string };
-        throw new Error(detail.error ?? `suspend failed (${resp.status})`);
+        throw new Error(detail.error ?? `resume failed (${resp.status})`);
       }
-      setState("suspended");
-      setMessage("Lab suspended. You can resume your session when ready.");
+      openEnterExamWindow(examAttemptId);
+      setState("open");
     } catch (err) {
       setState("error");
-      setMessage(err instanceof Error ? err.message : "suspend failed");
+      setMessage(err instanceof Error ? err.message : "resume failed");
     }
   }
 
@@ -164,49 +250,6 @@ export function LabLauncher({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
-
-  async function launch() {
-    if (currentAttemptStatus === "completed") {
-      setState("completed");
-      setMessage("Examination complete.");
-      return;
-    }
-    try {
-      setState("launching");
-      setMessage("");
-      openEnterExamWindow(examAttemptId);
-      setState("open");
-    } catch (err) {
-      setState("error");
-      setMessage(err instanceof Error ? err.message : "launch failed");
-    }
-  }
-
-  async function resumeNow() {
-    if (currentAttemptStatus === "completed") {
-      setState("completed");
-      setMessage("Examination complete.");
-      return;
-    }
-    try {
-      setState("launching");
-      setMessage("");
-      const resp = await fetch("/api/exam/resume", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ examAttemptId }),
-      });
-      if (!resp.ok) {
-        const detail = (await resp.json().catch(() => ({}))) as { error?: string };
-        throw new Error(detail.error ?? `resume failed (${resp.status})`);
-      }
-      openEnterExamWindow(examAttemptId);
-      setState("open");
-    } catch (err) {
-      setState("error");
-      setMessage(err instanceof Error ? err.message : "resume failed");
-    }
-  }
 
   return (
     <div>
