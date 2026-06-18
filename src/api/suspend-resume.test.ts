@@ -392,10 +392,20 @@ describe("handleSuspendExam", () => {
     });
     const attempts = await makeAttempts("in_progress");
 
+    const customerClient = makeCloudShareClient({
+      requestV3: vi.fn(),
+      requestV3Text: vi.fn(),
+      requestV4: vi.fn(),
+    });
+    const cloudshare = {
+      forConnection: vi.fn().mockReturnValue(customerClient),
+    } satisfies CloudShareClientFactory;
+
     const resp = await handleSuspendExam(
       await makeSuspendDeps({
         attempts,
         clocks: clock,
+        cloudshare,
       }),
       { body: { examAttemptId: "ea-1" } },
     );
@@ -409,6 +419,10 @@ describe("handleSuspendExam", () => {
     await expect(attempts.findById("ea-1")).resolves.toMatchObject({
       status: "completed",
     });
+    expect(cloudshare.forConnection).not.toHaveBeenCalled();
+    expect(customerClient.requestV4).not.toHaveBeenCalled();
+    expect(customerClient.requestV3).not.toHaveBeenCalled();
+    expect(customerClient.requestV3Text).not.toHaveBeenCalled();
   });
 
   it("uses the attempt customer's CloudShare connection and envId semantics, not the global environment adapter", async () => {
@@ -862,10 +876,20 @@ describe("handleResumeExam", () => {
     });
     const attempts = await makeAttempts("suspended");
 
+    const customerClient = makeCloudShareClient({
+      requestV3: vi.fn(),
+      requestV3Text: vi.fn(),
+      requestV4: vi.fn(),
+    });
+    const cloudshare = {
+      forConnection: vi.fn().mockReturnValue(customerClient),
+    } satisfies CloudShareClientFactory;
+
     const resp = await handleResumeExam(
       await makeResumeDeps({
         attempts,
         clocks: clock,
+        cloudshare,
       }),
       { body: { examAttemptId: "ea-1" } },
     );
@@ -879,6 +903,10 @@ describe("handleResumeExam", () => {
     await expect(attempts.findById("ea-1")).resolves.toMatchObject({
       status: "completed",
     });
+    expect(cloudshare.forConnection).not.toHaveBeenCalled();
+    expect(customerClient.requestV4).not.toHaveBeenCalled();
+    expect(customerClient.requestV3).not.toHaveBeenCalled();
+    expect(customerClient.requestV3Text).not.toHaveBeenCalled();
   });
 
   it("returns 404 when no launch exists", async () => {

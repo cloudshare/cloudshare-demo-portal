@@ -104,6 +104,22 @@ export async function handleSuspendExam(
       },
       { examAttemptId },
     );
+    const reconciledAttempt = await deps.attempts.findById(examAttemptId);
+    if (!reconciledAttempt) {
+      return { status: 404, body: { error: "exam attempt not found" } };
+    }
+    if (reconciledAttempt.status !== "in_progress") {
+      return {
+        status: 409,
+        body: {
+          error: "Exam attempt is not in a valid status for this transition",
+          examAttemptId,
+          operation: "suspend",
+          expectedStatus: "in_progress",
+          currentStatus: reconciledAttempt.status,
+        },
+      };
+    }
     const correlation = await ensureExamAttemptEnvironmentCorrelation(deps, {
       examAttemptId,
       operation: "exam_suspend",
@@ -161,6 +177,22 @@ export async function handleResumeExam(
       },
       { examAttemptId },
     );
+    const reconciledAttempt = await deps.attempts.findById(examAttemptId);
+    if (!reconciledAttempt) {
+      return { status: 404, body: { error: "exam attempt not found" } };
+    }
+    if (reconciledAttempt.status !== "suspended") {
+      return {
+        status: 409,
+        body: {
+          error: "Exam attempt is not in a valid status for this transition",
+          examAttemptId,
+          operation: "resume",
+          expectedStatus: "suspended",
+          currentStatus: reconciledAttempt.status,
+        },
+      };
+    }
     const correlation = await ensureExamAttemptEnvironmentCorrelation(deps, {
       examAttemptId,
       operation: "exam_resume",
