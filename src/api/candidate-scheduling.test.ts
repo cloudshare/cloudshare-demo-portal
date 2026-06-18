@@ -3,6 +3,7 @@ import { createInMemoryExamCatalogRepository } from "@/persistence/exam-catalog-
 import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-repository";
 import { createInMemoryEventLogRepository } from "@/persistence/event-log-repository";
 import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repository";
+import { createExamClock, createInMemoryExamClockRepository } from "@/domain/exam-clock";
 import { createDraftExam, publishExam, type CreateDraftExamInput } from "@/domain/exam-catalog";
 import type { Logger } from "@/observability/logger";
 import type { CloudShareClientFactory, CloudShareConnectionRepository, CloudShareConnectionRecord } from "@/domain/cloudshare-connection";
@@ -325,6 +326,64 @@ describe("candidate scheduling handlers", () => {
           id: "attempt-completed",
           examId: "exam-1",
           scheduledFor: "2026-06-16T16:00:00.000Z",
+          status: "completed",
+        },
+      ],
+    });
+  });
+
+  it("reconciles an in-progress attempt to completed on the candidate dashboard when the portal-owned runtime is exhausted", async () => {
+    const exams = await makeExamRepository();
+    const attempts = createInMemoryExamAttemptRepository();
+    const clockRepository = createInMemoryExamClockRepository();
+    const logger = makeLogger();
+    let nowMs = new Date("2026-06-15T17:30:30.000Z").getTime();
+    const clocks = createExamClock({
+      clocks: clockRepository,
+      now: () => new Date(nowMs),
+    });
+
+    await attempts.save({
+      id: "attempt-in-progress",
+      customerId: "customer-helios",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "in_progress",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    await clockRepository.save({
+      examAttemptId: "attempt-in-progress",
+      status: "running",
+      elapsedAtPauseMs: 89 * 60 * 1000,
+      startedAt: new Date("2026-06-15T17:29:30.000Z"),
+      updatedAt: new Date("2026-06-15T17:29:30.000Z"),
+    });
+
+    const dashboard = await handleGetCandidateDashboard(
+      {
+        repository: exams,
+        attempts,
+        clocks,
+        logger,
+      },
+      { customerId: "customer-helios", candidateId: "candidate-1" },
+    );
+
+    expect(dashboard.body).toEqual({
+      exams: [
+        {
+          id: "exam-1",
+          title: "Helios CloudShare Fundamentals",
+          description: "Hands-on certification exam.",
+          timeLimitMinutes: 90,
+        },
+      ],
+      attempts: [
+        {
+          id: "attempt-in-progress",
+          examId: "exam-1",
+          scheduledFor: "2026-06-15T16:00:00.000Z",
           status: "completed",
         },
       ],

@@ -4,8 +4,8 @@ import { useState, useEffect, useRef } from "react";
 import { openEnterExamWindow } from "./enter-exam";
 import { isLabWindowOpen } from "./lab-window";
 
-type LaunchState = "idle" | "launching" | "open" | "suspending" | "suspended" | "error";
-type AttemptStatus = "ready" | "in_progress" | "suspended";
+type LaunchState = "idle" | "launching" | "open" | "suspending" | "suspended" | "completed" | "error";
+type AttemptStatus = "ready" | "in_progress" | "suspended" | "completed";
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const CHILD_POLL_INTERVAL_MS = 3_000;
@@ -19,26 +19,38 @@ const CHILD_POLL_INTERVAL_MS = 3_000;
  */
 export function LabLauncher({
   examAttemptId,
-  initialAttemptStatus = "ready",
+  currentAttemptStatus = "ready",
+  onAttemptStatusChange,
 }: {
   examAttemptId: string;
-  initialAttemptStatus?: AttemptStatus;
+  currentAttemptStatus?: AttemptStatus;
+  onAttemptStatusChange?: (status: AttemptStatus) => void;
 }) {
   const [state, setState] = useState<LaunchState>(
-    initialAttemptStatus === "suspended" ? "suspended" : "idle",
+    currentAttemptStatus === "completed"
+      ? "completed"
+      : currentAttemptStatus === "suspended"
+        ? "suspended"
+        : "idle",
   );
   const [message, setMessage] = useState<string>("");
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const childPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  function sendHeartbeat() {
-    fetch("/api/heartbeat", {
+  async function sendHeartbeat() {
+    const response = await fetch("/api/heartbeat", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ examAttemptId }),
-    }).catch(() => {
-      // best-effort; server timeout is the reliable backstop
     });
+    const body = (await response.json().catch(() => ({}))) as { attemptStatus?: AttemptStatus };
+    if (body.attemptStatus === "completed") {
+      stopHeartbeat();
+      stopChildPoll();
+      setState("completed");
+      setMessage("Examination complete.");
+      onAttemptStatusChange?.("completed");
+    }
   }
 
   function sendBeaconHeartbeat() {
@@ -51,8 +63,14 @@ export function LabLauncher({
   }
 
   function startHeartbeat() {
-    sendHeartbeat();
-    heartbeatRef.current = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS);
+    void sendHeartbeat().catch(() => {
+      // best-effort; server timeout is the reliable backstop
+    });
+    heartbeatRef.current = setInterval(() => {
+      void sendHeartbeat().catch(() => {
+        // best-effort; server timeout is the reliable backstop
+      });
+    }, HEARTBEAT_INTERVAL_MS);
   }
 
   function stopHeartbeat() {
@@ -70,6 +88,11 @@ export function LabLauncher({
   }
 
   async function suspendNow() {
+    if (currentAttemptStatus === "completed") {
+      setState("completed");
+      setMessage("Examination complete.");
+      return;
+    }
     stopHeartbeat();
     stopChildPoll();
     setState("suspending");
@@ -90,6 +113,24 @@ export function LabLauncher({
       setMessage(err instanceof Error ? err.message : "suspend failed");
     }
   }
+
+  useEffect(() => {
+    if (currentAttemptStatus === "completed") {
+      stopHeartbeat();
+      stopChildPoll();
+      setState("completed");
+      setMessage("Examination complete.");
+      onAttemptStatusChange?.("completed");
+      return;
+    }
+    if (currentAttemptStatus === "suspended") {
+      stopHeartbeat();
+      stopChildPoll();
+      setState("suspended");
+      onAttemptStatusChange?.("suspended");
+      return;
+    }
+  }, [currentAttemptStatus, onAttemptStatusChange]);
 
   useEffect(() => {
     if (state !== "open") return;
@@ -125,6 +166,11 @@ export function LabLauncher({
   }, [state]);
 
   async function launch() {
+    if (currentAttemptStatus === "completed") {
+      setState("completed");
+      setMessage("Examination complete.");
+      return;
+    }
     try {
       setState("launching");
       setMessage("");
@@ -137,6 +183,11 @@ export function LabLauncher({
   }
 
   async function resumeNow() {
+    if (currentAttemptStatus === "completed") {
+      setState("completed");
+      setMessage("Examination complete.");
+      return;
+    }
     try {
       setState("launching");
       setMessage("");
@@ -188,6 +239,10 @@ export function LabLauncher({
 
       {state === "suspended" && (
         <p>{message || "Lab suspended."}</p>
+      )}
+
+      {state === "completed" && (
+        <p>{message || "Examination complete."}</p>
       )}
 
       {state === "error" && (

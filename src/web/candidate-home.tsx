@@ -16,6 +16,7 @@ import {
   getLatestAttemptForExam,
   getNextEnterabilityWakeUpDelayMs,
 } from "./candidate-home-state";
+import { formatCandidateAttemptStatus } from "./candidate-lab-state";
 
 interface CandidateHomeProps {
   readonly email: string;
@@ -173,7 +174,9 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                   <p style={{ margin: "0.45rem 0", color: "#333" }}>
                     Scheduled for {attempt.scheduledFor ? new Date(attempt.scheduledFor).toLocaleString() : "TBD"}
                   </p>
-                  <p style={{ margin: "0.45rem 0", color: "#0b5d3b" }}>Status: {attempt.status}</p>
+                  <p style={{ margin: "0.45rem 0", color: "#0b5d3b" }}>
+                    Status: {formatCandidateAttemptStatus(attempt.status)}
+                  </p>
                   {(attempt.status === "ready" || attempt.status === "in_progress" || attempt.status === "suspended") && (
                     <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
                       <button
@@ -222,7 +225,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                 <p style={{ color: "#444" }}>{exam.description || "No description provided."}</p>
                 {attempt && (
                   <p style={{ marginTop: 0, color: "#0b5d3b" }}>
-                    Current attempt: {attempt.status}
+                    Current attempt: {formatCandidateAttemptStatus(attempt.status)}
                     {attempt.scheduledFor ? ` for ${new Date(attempt.scheduledFor).toLocaleString()}` : ""}
                   </p>
                 )}

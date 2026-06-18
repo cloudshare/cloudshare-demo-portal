@@ -117,6 +117,10 @@ npm run lint         # ESLint
 npm run build        # Production build
 ```
 
+`npm test` uses a dedicated SQLite database at `prisma/test.db`. It does not run against the
+local development `DATABASE_URL` from `.env`, so running the suite should not delete QA data from
+the dev portal database.
+
 ### Live E2E credentials
 
 Live CloudShare E2E tests read credentials from `.env.e2e.local`, which is ignored

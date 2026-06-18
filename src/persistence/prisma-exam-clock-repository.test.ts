@@ -4,34 +4,56 @@ import { createPrismaExamClockRepository } from "./prisma-exam-clock-repository"
 import { createExamClock } from "@/domain/exam-clock";
 
 const prisma = new PrismaClient();
+const createdAttemptIds = new Set<string>();
+const createdExamIds = new Set<string>();
+const createdCustomerIds = new Set<string>();
 
 afterAll(async () => {
   await prisma.$disconnect();
 });
 
 afterEach(async () => {
-  await prisma.examClock.deleteMany();
-  await prisma.examAttempt.deleteMany({
-    where: {
-      id: {
-        startsWith: "clock-attempt-",
+  const attemptIds = [...createdAttemptIds];
+  const examIds = [...createdExamIds];
+  const customerIds = [...createdCustomerIds];
+  createdAttemptIds.clear();
+  createdExamIds.clear();
+  createdCustomerIds.clear();
+
+  if (attemptIds.length > 0) {
+    await prisma.examClock.deleteMany({
+      where: {
+        examAttemptId: {
+          in: attemptIds,
+        },
       },
-    },
-  });
-  await prisma.exam.deleteMany({
-    where: {
-      id: {
-        startsWith: "clock-exam-",
+    });
+    await prisma.examAttempt.deleteMany({
+      where: {
+        id: {
+          in: attemptIds,
+        },
       },
-    },
-  });
-  await prisma.customer.deleteMany({
-    where: {
-      slug: {
-        startsWith: "clock-customer-",
+    });
+  }
+  if (examIds.length > 0) {
+    await prisma.exam.deleteMany({
+      where: {
+        id: {
+          in: examIds,
+        },
       },
-    },
-  });
+    });
+  }
+  if (customerIds.length > 0) {
+    await prisma.customer.deleteMany({
+      where: {
+        id: {
+          in: customerIds,
+        },
+      },
+    });
+  }
 });
 
 describe("PrismaExamClockRepository", () => {
@@ -43,9 +65,11 @@ describe("PrismaExamClockRepository", () => {
         name: "Helios CX",
       },
     });
+    createdCustomerIds.add(customer.id);
+    const examId = `clock-exam-${suffix}`;
     await prisma.exam.create({
       data: {
-        id: `clock-exam-${suffix}`,
+        id: examId,
         customerId: customer.id,
         title: "Clock Persistence Exam",
         description: "Exam clock persistence test",
@@ -68,17 +92,20 @@ describe("PrismaExamClockRepository", () => {
         instructorName: "Instructor",
       },
     });
+    createdExamIds.add(examId);
+    const attemptId = `clock-attempt-${suffix}`;
     await prisma.examAttempt.create({
       data: {
-        id: `clock-attempt-${suffix}`,
+        id: attemptId,
         customerId: customer.id,
         candidateId: "candidate-1",
-        examId: `clock-exam-${suffix}`,
+        examId,
         status: "ready",
         scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
         createdAt: new Date("2026-06-15T10:00:00.000Z"),
       },
     });
+    createdAttemptIds.add(attemptId);
 
     const repository = createPrismaExamClockRepository(prisma);
     let nowMs = 0;
@@ -90,18 +117,18 @@ describe("PrismaExamClockRepository", () => {
       });
 
     const first = createService();
-    await first.resumeTimer(`clock-attempt-${suffix}`);
+    await first.resumeTimer(attemptId);
     nowMs = 2_000;
-    await first.pauseTimer(`clock-attempt-${suffix}`);
+    await first.pauseTimer(attemptId);
 
     const restarted = createService();
     nowMs = 8_000;
-    await restarted.resumeTimer(`clock-attempt-${suffix}`);
+    await restarted.resumeTimer(attemptId);
     nowMs = 9_250;
-    await restarted.pauseTimer(`clock-attempt-${suffix}`);
+    await restarted.pauseTimer(attemptId);
 
-    await expect(restarted.getTimerState(`clock-attempt-${suffix}`)).resolves.toMatchObject({
-      examAttemptId: `clock-attempt-${suffix}`,
+    await expect(restarted.getTimerState(attemptId)).resolves.toMatchObject({
+      examAttemptId: attemptId,
       status: "paused",
       elapsedAtPauseMs: 3_250,
     });

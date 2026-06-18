@@ -3,13 +3,20 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { createPrismaSupportLogRepository } from "./support-log-repository";
 
 const prisma = new PrismaClient();
+const TEST_MESSAGE_PREFIX = "support-log-test-";
 
 afterAll(async () => {
   await prisma.$disconnect();
 });
 
 beforeEach(async () => {
-  await prisma.supportLogEntry.deleteMany();
+  await prisma.supportLogEntry.deleteMany({
+    where: {
+      message: {
+        startsWith: TEST_MESSAGE_PREFIX,
+      },
+    },
+  });
 });
 
 describe("createPrismaSupportLogRepository", () => {
@@ -19,7 +26,7 @@ describe("createPrismaSupportLogRepository", () => {
     await first.append({
       timestamp: new Date("2026-06-16T07:00:00.000Z"),
       level: "info",
-      message: "cloudshare response received",
+      message: `${TEST_MESSAGE_PREFIX}cloudshare response received`,
       fields: {
         operation: "cloudshare_http",
         method: "PUT",
@@ -40,7 +47,7 @@ describe("createPrismaSupportLogRepository", () => {
       {
         timestamp: new Date("2026-06-16T07:00:00.000Z"),
         level: "info",
-        message: "cloudshare response received",
+        message: `${TEST_MESSAGE_PREFIX}cloudshare response received`,
         fields: {
           operation: "cloudshare_http",
           method: "PUT",
@@ -61,20 +68,20 @@ describe("createPrismaSupportLogRepository", () => {
     await repo.append({
       timestamp: new Date("2026-06-16T07:00:00.000Z"),
       level: "info",
-      message: "older",
+      message: `${TEST_MESSAGE_PREFIX}older`,
       fields: {},
     });
     await repo.append({
       timestamp: new Date("2026-06-16T07:01:00.000Z"),
       level: "warn",
-      message: "newer",
+      message: `${TEST_MESSAGE_PREFIX}newer`,
       fields: {},
     });
 
     await expect(repo.listAll(1)).resolves.toMatchObject([
       {
         level: "warn",
-        message: "newer",
+        message: `${TEST_MESSAGE_PREFIX}newer`,
       },
     ]);
   });

@@ -25,7 +25,8 @@ export default async function CandidateLabPage({
   const initialAttemptStatus =
     attemptStatus === "ready" ||
     attemptStatus === "in_progress" ||
-    attemptStatus === "suspended"
+    attemptStatus === "suspended" ||
+    attemptStatus === "completed"
       ? attemptStatus
       : "ready";
 

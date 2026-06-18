@@ -28,6 +28,7 @@ vi.mock("@/auth/portal-session", () => ({
 function makeServices() {
   return {
     examAttempts: {
+      save: vi.fn(),
       findById: vi.fn().mockResolvedValue({
         id: "ea-1",
         customerId: "customer-1",
@@ -47,7 +48,35 @@ function makeServices() {
     environmentSource: {},
     environmentController: {},
     labProvisioner: {},
-    examClock: {},
+    examClock: {
+      getElapsedMs: vi.fn().mockResolvedValue(0),
+      settleCompletion: vi.fn().mockResolvedValue(null),
+    },
+    exams: {
+      findById: vi.fn().mockResolvedValue({
+        id: "exam-1",
+        customerId: "customer-1",
+        title: "Helios Guided Journey",
+        description: "",
+        timeLimitMinutes: 90,
+        scoreRetrievalEnabled: true,
+        status: "published",
+        publishedAt: new Date("2026-06-15T09:00:00.000Z"),
+        createdAt: new Date("2026-06-15T09:00:00.000Z"),
+        updatedAt: new Date("2026-06-15T09:00:00.000Z"),
+        projectId: "project-1",
+        projectName: "Helios CX Project",
+        blueprintId: "bp-1",
+        blueprintName: "Guided Journey Blueprint",
+        snapshotId: "snap-1",
+        snapshotName: "Default Snapshot",
+        allowedRegions: [{ id: "region-1", name: "EU West" }],
+        policyId: "policy-1",
+        policyName: "Policy",
+        instructorId: "instructor-1",
+        instructorName: "Instructor",
+      }),
+    },
     logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     heartbeatAutoSuspend: {
       recordHeartbeat: vi.fn(),
@@ -153,5 +182,38 @@ describe("candidate exam mutation routes", () => {
     expect(heartbeatResponse.status).toBe(409);
     expect(await heartbeatResponse.json()).toEqual({ error: "exam attempt is not in progress" });
     expect(services.heartbeatAutoSuspend.recordHeartbeat).not.toHaveBeenCalled();
+  });
+
+  it("surfaces completion through heartbeat and stops offering active lab state once runtime is exhausted", async () => {
+    const services = makeServices();
+    services.examClock = {
+      getElapsedMs: vi.fn().mockResolvedValue(90 * 60 * 1000),
+      settleCompletion: vi.fn().mockResolvedValue({
+        examAttemptId: "ea-1",
+        status: "paused",
+        elapsedAtPauseMs: 90 * 60 * 1000,
+        startedAt: null,
+        updatedAt: new Date("2026-06-15T17:30:00.000Z"),
+      }),
+    };
+    mockGetServices.mockReturnValue(services);
+    mockGetPortalSession.mockResolvedValue({
+      sessionId: "portal-session-1",
+      userId: "candidate-owner",
+      customerId: "customer-1",
+      role: "candidate",
+      email: "candidate@example.com",
+      issuedAtMs: 1,
+    });
+
+    const heartbeatResponse = await heartbeatPOST(makeRequest("http://localhost/api/heartbeat"));
+
+    expect(heartbeatResponse.status).toBe(200);
+    expect(await heartbeatResponse.json()).toEqual({
+      status: "completed",
+      attemptStatus: "completed",
+    });
+    expect(services.heartbeatAutoSuspend.recordHeartbeat).not.toHaveBeenCalled();
+    expect(services.heartbeatAutoSuspend.removeHeartbeat).toHaveBeenCalledWith("ea-1");
   });
 });
