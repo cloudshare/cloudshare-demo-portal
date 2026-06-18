@@ -9,6 +9,9 @@ import type { ExamTimer, EnvironmentController } from "@/domain/timer-sync";
 import type { EnvironmentStateSource } from "@/domain/environment";
 import type { LabLaunch, LabLaunchRepository, LabProvisioner } from "@/domain/lab-launch";
 import type { Logger } from "@/observability/logger";
+import { createExamClock, createInMemoryExamClockRepository, type ExamClock } from "@/domain/exam-clock";
+import { createInMemoryExamCatalogRepository } from "@/persistence/exam-catalog-repository";
+import { createDraftExam, publishExam } from "@/domain/exam-catalog";
 import type {
   CloudShareClientFactory,
   CloudShareConnectionRecord,
@@ -64,6 +67,52 @@ function makeTimer(): ExamTimer {
     pauseTimer: () => Promise.resolve(),
     resumeTimer: () => Promise.resolve(),
   };
+}
+
+async function makeExams() {
+  const exams = createInMemoryExamCatalogRepository();
+  await createDraftExam(
+    {
+      repository: exams,
+      now: () => new Date("2026-06-15T09:00:00.000Z"),
+      newId: () => "exam-1",
+    },
+    {
+      customerId: "customer-1",
+      title: "Helios Guided Journey",
+      description: "Hands-on exam",
+      timeLimitMinutes: 60,
+      scoreRetrievalEnabled: true,
+      projectId: "project-1",
+      projectName: "Helios CX",
+      blueprintId: "bp-1",
+      blueprintName: "Helios Guided Journey",
+      snapshotId: "snap-1",
+      snapshotName: "Default Snapshot",
+      allowedRegions: [{ id: "region-1", name: "EU West" }],
+      policyId: "policy-1",
+      policyName: "Standard Policy",
+      instructorId: "instructor-1",
+      instructorName: "Helios Service Account",
+    },
+  );
+  await publishExam(
+    { repository: exams, now: () => new Date("2026-06-15T09:05:00.000Z") },
+    { customerId: "customer-1", examId: "exam-1" },
+  );
+  return exams;
+}
+
+function makeClock(nowIso = "2026-06-15T10:10:00.000Z"): {
+  clock: ExamClock;
+  repository: ReturnType<typeof createInMemoryExamClockRepository>;
+} {
+  const repository = createInMemoryExamClockRepository();
+  const clock = createExamClock({
+    clocks: repository,
+    now: () => new Date(nowIso),
+  });
+  return { clock, repository };
 }
 
 function makeController(): EnvironmentController {
@@ -262,10 +311,13 @@ async function makeAttemptsWithCustomer(
 }
 
 async function makeSuspendDeps(overrides: Partial<SuspendHandlerDeps> = {}): Promise<SuspendHandlerDeps> {
+  const { clock } = makeClock();
   return {
     controller: makeController(),
     source: fixedSource("suspended"),
     timer: makeTimer(),
+    clocks: clock,
+    exams: await makeExams(),
     attempts: await makeAttempts("in_progress"),
     launches: makeLaunches(),
     sleep: noSleep,
@@ -280,10 +332,13 @@ async function makeSuspendDeps(overrides: Partial<SuspendHandlerDeps> = {}): Pro
 }
 
 async function makeResumeDeps(overrides: Partial<ResumeHandlerDeps> = {}): Promise<ResumeHandlerDeps> {
+  const { clock } = makeClock();
   return {
     controller: makeController(),
     source: fixedSource("running"),
     timer: makeTimer(),
+    clocks: clock,
+    exams: await makeExams(),
     attempts: await makeAttempts("suspended"),
     launches: makeLaunches(),
     labs: makeLabs(),
@@ -324,6 +379,36 @@ describe("handleSuspendExam", () => {
     expect(resp.status).toBe(200);
     expect(resp.body.status).toBe("suspended");
     expect(resp.body.examAttemptId).toBe("ea-1");
+  });
+
+  it("reconciles runtime exhaustion before suspend and completes the attempt instead", async () => {
+    const { clock, repository } = makeClock("2026-06-15T16:00:30.000Z");
+    await repository.save({
+      examAttemptId: "ea-1",
+      status: "running",
+      elapsedAtPauseMs: 59 * 60 * 1000,
+      startedAt: new Date("2026-06-15T15:59:30.000Z"),
+      updatedAt: new Date("2026-06-15T15:59:30.000Z"),
+    });
+    const attempts = await makeAttempts("in_progress");
+
+    const resp = await handleSuspendExam(
+      await makeSuspendDeps({
+        attempts,
+        clocks: clock,
+      }),
+      { body: { examAttemptId: "ea-1" } },
+    );
+
+    expect(resp.status).toBe(409);
+    expect(resp.body).toMatchObject({
+      currentStatus: "completed",
+      expectedStatus: "in_progress",
+      operation: "suspend",
+    });
+    await expect(attempts.findById("ea-1")).resolves.toMatchObject({
+      status: "completed",
+    });
   });
 
   it("uses the attempt customer's CloudShare connection and envId semantics, not the global environment adapter", async () => {
@@ -764,6 +849,36 @@ describe("handleResumeExam", () => {
     expect(resp.body).not.toHaveProperty("loginUrl");
     expect(typeof resp.body.suspendedPreservationLimitMs).toBe("number");
     expect(JSON.stringify(resp.body)).not.toContain("loginUrl");
+  });
+
+  it("reconciles runtime exhaustion before resume and completes the attempt instead", async () => {
+    const { clock, repository } = makeClock("2026-06-15T16:00:30.000Z");
+    await repository.save({
+      examAttemptId: "ea-1",
+      status: "running",
+      elapsedAtPauseMs: 59 * 60 * 1000,
+      startedAt: new Date("2026-06-15T15:59:30.000Z"),
+      updatedAt: new Date("2026-06-15T15:59:30.000Z"),
+    });
+    const attempts = await makeAttempts("suspended");
+
+    const resp = await handleResumeExam(
+      await makeResumeDeps({
+        attempts,
+        clocks: clock,
+      }),
+      { body: { examAttemptId: "ea-1" } },
+    );
+
+    expect(resp.status).toBe(409);
+    expect(resp.body).toMatchObject({
+      currentStatus: "completed",
+      expectedStatus: "suspended",
+      operation: "resume",
+    });
+    await expect(attempts.findById("ea-1")).resolves.toMatchObject({
+      status: "completed",
+    });
   });
 
   it("returns 404 when no launch exists", async () => {

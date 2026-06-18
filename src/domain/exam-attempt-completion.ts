@@ -47,12 +47,19 @@ export async function reconcileExamAttemptCompletion(
     };
   }
 
-  const settled = await deps.clocks.settleCompletion(attempt.id, limitMs);
+  const existingClockState = await deps.clocks.getTimerState(attempt.id);
+  const clockNeedsSettlement = Boolean(
+    existingClockState &&
+      (existingClockState.status !== "paused" ||
+        existingClockState.elapsedAtPauseMs !== limitMs ||
+        existingClockState.startedAt !== null),
+  );
+  await deps.clocks.settleCompletion(attempt.id, limitMs);
   if (!COMPLETABLE_STATUSES.has(attempt.status) && attempt.status !== "completed") {
     return {
       examAttemptId: attempt.id,
       status: attempt.status,
-      changed: Boolean(settled),
+      changed: clockNeedsSettlement,
       elapsedMs: limitMs,
     };
   }
@@ -73,7 +80,7 @@ export async function reconcileExamAttemptCompletion(
   return {
     examAttemptId: attempt.id,
     status: "completed",
-    changed: settled !== null,
+    changed: clockNeedsSettlement,
     elapsedMs: limitMs,
   };
 }

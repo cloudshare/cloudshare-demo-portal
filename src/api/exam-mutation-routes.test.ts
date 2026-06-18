@@ -49,6 +49,7 @@ function makeServices() {
     environmentController: {},
     labProvisioner: {},
     examClock: {
+      getTimerState: vi.fn().mockResolvedValue(null),
       getElapsedMs: vi.fn().mockResolvedValue(0),
       settleCompletion: vi.fn().mockResolvedValue(null),
     },
@@ -187,6 +188,13 @@ describe("candidate exam mutation routes", () => {
   it("surfaces completion through heartbeat and stops offering active lab state once runtime is exhausted", async () => {
     const services = makeServices();
     services.examClock = {
+      getTimerState: vi.fn().mockResolvedValue({
+        examAttemptId: "ea-1",
+        status: "running",
+        elapsedAtPauseMs: 89 * 60 * 1000,
+        startedAt: new Date("2026-06-15T17:29:00.000Z"),
+        updatedAt: new Date("2026-06-15T17:29:00.000Z"),
+      }),
       getElapsedMs: vi.fn().mockResolvedValue(90 * 60 * 1000),
       settleCompletion: vi.fn().mockResolvedValue({
         examAttemptId: "ea-1",

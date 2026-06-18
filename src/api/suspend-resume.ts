@@ -24,6 +24,9 @@ import {
 import { createCloudShareEnvironmentController } from "@/integrations/cloudshare/environment-controller";
 import { createCloudShareEnvironmentSource } from "@/integrations/cloudshare/environment";
 import { ensureExamAttemptEnvironmentCorrelation } from "./exam-attempt-environment-correlation";
+import type { ExamClock } from "@/domain/exam-clock";
+import type { ExamRepository } from "@/domain/exam-catalog";
+import { reconcileExamAttemptCompletion } from "@/domain/exam-attempt-completion";
 
 /**
  * Framework-agnostic handlers for the candidate-initiated suspend and resume
@@ -53,6 +56,11 @@ interface EnvironmentCorrelationDeps {
   readonly cloudshare: CloudShareClientFactory;
 }
 
+interface CompletionReconciliationDeps {
+  readonly exams?: ExamRepository;
+  readonly clocks?: ExamClock;
+}
+
 interface FailureHandlingSpec {
   readonly action: "suspend" | "resume";
   readonly operation: string;
@@ -75,7 +83,8 @@ class CustomerEnvironmentAccessError extends Error {
 export interface SuspendHandlerDeps
   extends SuspendExamDeps,
     SupportDiagnosticDeps,
-    EnvironmentCorrelationDeps {}
+    EnvironmentCorrelationDeps,
+    CompletionReconciliationDeps {}
 
 export async function handleSuspendExam(
   deps: SuspendHandlerDeps,
@@ -87,6 +96,14 @@ export async function handleSuspendExam(
   }
 
   try {
+    await reconcileExamAttemptCompletion(
+      {
+        attempts: deps.attempts,
+        exams: deps.exams ?? emptyExamRepository(),
+        clocks: deps.clocks,
+      },
+      { examAttemptId },
+    );
     const correlation = await ensureExamAttemptEnvironmentCorrelation(deps, {
       examAttemptId,
       operation: "exam_suspend",
@@ -117,12 +134,14 @@ export async function handleSuspendExam(
 export interface ResumeHandlerDeps
   extends ResumeExamDeps,
     SupportDiagnosticDeps,
-    EnvironmentCorrelationDeps {}
+    EnvironmentCorrelationDeps,
+    CompletionReconciliationDeps {}
 
 export interface HeartbeatAutoSuspendHandlerDeps
   extends SuspendExamDeps,
     SupportDiagnosticDeps,
-    EnvironmentCorrelationDeps {}
+    EnvironmentCorrelationDeps,
+    CompletionReconciliationDeps {}
 
 export async function handleResumeExam(
   deps: ResumeHandlerDeps,
@@ -134,6 +153,14 @@ export async function handleResumeExam(
   }
 
   try {
+    await reconcileExamAttemptCompletion(
+      {
+        attempts: deps.attempts,
+        exams: deps.exams ?? emptyExamRepository(),
+        clocks: deps.clocks,
+      },
+      { examAttemptId },
+    );
     const correlation = await ensureExamAttemptEnvironmentCorrelation(deps, {
       examAttemptId,
       operation: "exam_resume",
@@ -526,4 +553,12 @@ function isCloudShareFailure(
     err instanceof CloudShareTransportError ||
     err instanceof CloudShareResponseError
   );
+}
+
+function emptyExamRepository(): ExamRepository {
+  return {
+    save: async () => {},
+    findById: async () => null,
+    listByCustomerId: async () => [],
+  };
 }

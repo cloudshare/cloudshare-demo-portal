@@ -57,6 +57,8 @@ export async function POST(request: Request) {
       controller: environmentController,
       source: environmentSource,
       timer: examClock,
+      exams: services.exams,
+      clocks: examClock,
       attempts: examAttempts,
       launches: labLaunches,
       labs: labProvisioner,

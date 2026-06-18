@@ -23,24 +23,29 @@ export async function handleGetCandidateLabStatus(
     readonly candidateId: string;
   },
 ): Promise<CandidateLabStatusResponse> {
-  const reconciliation = await reconcileExamAttemptCompletion(deps, {
-    examAttemptId: request.examAttemptId,
-  });
-  if (!reconciliation) {
+  const attempt = await deps.attempts.findById(request.examAttemptId);
+  if (!attempt) {
     return { status: 404, body: { error: "exam attempt not found" } };
   }
-
-  const attempt = await deps.attempts.findById(request.examAttemptId);
-  if (!attempt || attempt.candidateId !== request.candidateId) {
+  if (attempt.candidateId !== request.candidateId) {
     deps.logger.warn("candidate requested another candidate's lab status", {
       examAttemptId: request.examAttemptId,
       candidateId: request.candidateId,
-      ownerCandidateId: attempt?.candidateId,
+      ownerCandidateId: attempt.candidateId,
     });
     return { status: 403, body: { error: "forbidden" } };
   }
 
-  const exam = await deps.exams.findById(attempt.examId);
+  await reconcileExamAttemptCompletion(deps, {
+    examAttemptId: request.examAttemptId,
+  });
+
+  const reconciledAttempt = await deps.attempts.findById(request.examAttemptId);
+  if (!reconciledAttempt) {
+    return { status: 404, body: { error: "exam attempt not found" } };
+  }
+
+  const exam = await deps.exams.findById(reconciledAttempt.examId);
   if (!exam) {
     return { status: 404, body: { error: "exam not found" } };
   }
@@ -48,11 +53,11 @@ export async function handleGetCandidateLabStatus(
   return {
     status: 200,
     body: {
-      examAttemptId: attempt.id,
+      examAttemptId: reconciledAttempt.id,
       examTitle: exam.title,
       timeLimitMinutes: exam.timeLimitMinutes,
-      status: attempt.status,
-      scheduledFor: attempt.scheduledFor?.toISOString() ?? null,
+      status: reconciledAttempt.status,
+      scheduledFor: reconciledAttempt.scheduledFor?.toISOString() ?? null,
     },
   };
 }
