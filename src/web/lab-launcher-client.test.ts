@@ -6,6 +6,43 @@ import {
 } from "./lab-launcher-client";
 
 describe("lab launcher client helpers", () => {
+  it("blocks enter preflight for a future-scheduled ready attempt before any child-window open path can start", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        examAttemptId: "attempt-2",
+        examTitle: "Helios Guided Journey",
+        timeLimitMinutes: 60,
+        status: "ready",
+        scheduledFor: "2026-06-18T10:00:00.000Z",
+      }),
+    });
+
+    const result = await preflightLabAction(fetchImpl, {
+      examAttemptId: "attempt-2",
+      action: "enter",
+      now: () => new Date("2026-06-18T09:59:00.000Z"),
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "/api/exam/status?examAttemptId=attempt-2",
+      { cache: "no-store" },
+    );
+    expect(result).toEqual({
+      kind: "blocked",
+      labStatus: {
+        examAttemptId: "attempt-2",
+        examTitle: "Helios Guided Journey",
+        timeLimitMinutes: 60,
+        status: "ready",
+        scheduledFor: "2026-06-18T10:00:00.000Z",
+      },
+      message: "Exam entry is not available before the scheduled start time.",
+    });
+  });
+
   it("does not allow enter to open when status preflight already shows completion", async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,

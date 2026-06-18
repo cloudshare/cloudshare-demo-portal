@@ -36,6 +36,7 @@ export async function preflightLabAction(
   input: {
     examAttemptId: string;
     action: "enter" | "resume";
+    now?: () => Date;
   },
 ):
   Promise<
@@ -50,6 +51,18 @@ export async function preflightLabAction(
       kind: "completed",
       labStatus,
       message: "Examination complete.",
+    };
+  }
+
+  if (
+    input.action === "enter" &&
+    labStatus.status === "ready" &&
+    !isReadyAttemptEnterable(labStatus, input.now)
+  ) {
+    return {
+      kind: "blocked",
+      labStatus,
+      message: "Exam entry is not available before the scheduled start time.",
     };
   }
 
@@ -118,4 +131,20 @@ function readError(json: unknown, fallback: string): string {
     return (json as { error: string }).error;
   }
   return fallback;
+}
+
+function isReadyAttemptEnterable(
+  labStatus: Pick<CandidateLabStatus, "status" | "scheduledFor">,
+  now: (() => Date) | undefined,
+): boolean {
+  if (labStatus.status !== "ready" || !labStatus.scheduledFor) {
+    return true;
+  }
+
+  const scheduledForMs = new Date(labStatus.scheduledFor).getTime();
+  if (Number.isNaN(scheduledForMs)) {
+    return true;
+  }
+
+  return scheduledForMs <= (now ?? (() => new Date()))().getTime();
 }
