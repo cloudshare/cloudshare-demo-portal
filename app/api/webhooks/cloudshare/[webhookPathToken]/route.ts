@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServices } from "@/composition";
 import { handleCloudShareWebhook } from "@/api/cloudshare-webhook";
 import { reconcileEnvironment } from "@/domain/environment-reconcile";
+import { createCloudShareEnvironmentSource } from "@/integrations/cloudshare/environment";
 import { CLOUDSHARE_WEBHOOK_SIGNATURE_HEADER } from "@/integrations/cloudshare/webhooks";
 
 /**
@@ -24,10 +25,16 @@ export async function POST(
     {
       connections: services.cloudshareConnections,
       idempotency: services.webhookIdempotency,
-      reconcile: (environmentId) =>
+      reconcile: (connection, environmentExternalId) =>
         reconcileEnvironment(
-          { source: services.environmentSource, environments: services.environments, now: () => new Date() },
-          environmentId,
+          {
+            source: createCloudShareEnvironmentSource(
+              services.cloudshareClientFactory.forConnection(connection),
+            ),
+            environments: services.environments,
+            now: () => new Date(),
+          },
+          environmentExternalId,
         ),
       logger: services.logger,
       eventLog: services.eventLog,

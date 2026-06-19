@@ -301,7 +301,8 @@ inconsistent.
   resource-hours (provisioning too early) or candidate-facing delays (too late).
 - Known documentation gaps tracked as code assumptions in this codebase:
   - `x-cloudshare-signature` header name (webhooks) — unverified.
-  - Webhook payload field names (`Event`, `EnvironmentExternalId`, `CreatedAt`) — unverified.
+  - Webhook payload field names were previously under-specified. Current docs indicate top-level
+    `Event`, `CreatedAt`, `CreatedById`, `CreatedByEmail`, `Attempt`, and nested `Payload`.
   - `GET /environments?externalId=...` path for resolving environment by external ID — unverified.
   - `POST /environments/{id}/actions/suspend` and `…/resume` paths — unverified.
   - Guided Journey progress response field names beyond the currently tolerated
@@ -516,17 +517,22 @@ Requesting participant progress for an experience without a journey likely retur
 
 **Observed behaviour**
 
-The environment webhook carries CloudShare's `environmentId`, the event, and a timestamp, but **no
-reference to the training/experience** it belongs to — and the portal does **not** mint environment
-IDs (an environment is bound from a standby at login). This supersedes the self-set
-`environmentExternalId` correlation assumed in GAP-3 and the current code.
+CloudShare's current webhook docs describe a top-level envelope including `Event`, `CreatedAt`,
+`CreatedById`, `CreatedByEmail`, `Attempt`, and nested `Payload`. For environment events, the
+documented payload keys include `environmentExternalId`, `environmentName`, `blueprintId`,
+`blueprintName`, `policyId`, `policyName`, `ownerEmail`, `cloud`, and `regionId` — but still **no
+reference to the training/experience** the event belongs to.
 
 **Impact on certification use**
 
-- Correlation requires a **portal-owned `trainingId ↔ Candidate ↔ environmentId` mapping**,
-  populated/reconciled via the v4 **list-students-in-a-training** endpoint.
+- The documented environment webhook payload is still insufficient to correlate directly to a portal
+  `ExamAttempt`; correlation still requires a **portal-owned `trainingId ↔ Candidate ↔ environmentId`
+  mapping**, populated/reconciled via the v4 **list-students-in-a-training** endpoint.
 - Webhooks become optional; **polling list-students / `GET environment` is the source of truth**.
-  Idempotency key becomes `(environmentId, event, createdAt)`. See ADR-003.
+  For the v3 documented webhook body, idempotency is keyed on
+  `(environmentExternalId, event, createdAt)`.
+- Slice 9 now parses the documented v3 webhook envelope and treats any legacy top-level
+  `EnvironmentId` shape as simulator/backwards-compatibility only.
 
 **Update (2026-06-15, Slice 5 implementation assumption):** the exact response envelope for
 `GET /v4/trainings/{trainingId}/students` is still unverified against the live tenant. The adapter
@@ -562,6 +568,10 @@ semantics:
 This corrects the earlier endpoint assumption and explains why suspend/auto-suspend could fail
 after a successful launch until the candidate's CloudShare `envId` had actually been discovered.
 
+**Update (2026-06-19, docs correction):** current public CloudShare webhook docs point to the v3
+Integration Hub / account-level contract, not a v4 experience-webhook surface. The portal should
+not assume a v4 webhook tied directly to experience creation unless live evidence proves one.
+
 **Update (2026-06-15, live suspend QA on fresh attempts):** `GET /v4/trainings/{trainingId}/students`
 can expose a **pre-join placeholder** participant `envId` before the candidate has actually bound to
 their runnable environment. In the live tenant this appeared as an `ENK...` id with
@@ -592,6 +602,8 @@ secret, and may auto-register via v3 with a manual fallback.
 
 **Impact on certification use**
 
+- Public CloudShare v3 docs now list `GET /api/v3/webhooks`, `GET /api/v3/webhooks/{id}`,
+  `POST /api/v3/webhooks`, and `DELETE /api/v3/webhooks/{id}` as the current management surface.
 - Slice 9 now persists an opaque per-Customer `webhookPathToken`, and the receiver resolves the
   Customer from `/api/webhooks/cloudshare/{token}` before HMAC verification.
 - Because the CloudShare v3 registration contract is still unverified, the currently supported path

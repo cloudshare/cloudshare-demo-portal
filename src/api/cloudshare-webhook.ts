@@ -5,7 +5,10 @@ import {
 } from "@/integrations/cloudshare/webhook-receiver";
 import type { WebhookIdempotencyStore } from "@/domain/webhook";
 import type { EventLogRepository } from "@/domain/event-log";
-import type { CloudShareConnectionRepository } from "@/domain/cloudshare-connection";
+import type {
+  CloudShareConnectionRecord,
+  CloudShareConnectionRepository,
+} from "@/domain/cloudshare-connection";
 
 /**
  * Framework-agnostic handler for the inbound CloudShare webhook endpoint. It owns
@@ -32,7 +35,10 @@ export interface CloudShareWebhookDeps {
   readonly connections: CloudShareConnectionRepository;
   readonly idempotency: WebhookIdempotencyStore;
   /** Trigger the authoritative poll-and-reconcile for one environment. */
-  readonly reconcile: (environmentId: string) => Promise<unknown>;
+  readonly reconcile: (
+    connection: CloudShareConnectionRecord,
+    environmentExternalId: string,
+  ) => Promise<unknown>;
   readonly logger: Logger;
   readonly eventLog: EventLogRepository;
   readonly now?: () => Date;
@@ -121,7 +127,7 @@ export async function handleCloudShareWebhook(
           customerId: connection.customerId,
           webhookPathToken: connection.webhookPathToken,
           event: event.event,
-          environmentId: event.environmentId,
+          environmentExternalId: event.environmentExternalId,
           idempotencyKey,
         });
         await appendWebhookEvent(deps, {
@@ -130,19 +136,19 @@ export async function handleCloudShareWebhook(
             customerId: connection.customerId,
             webhookPathToken: connection.webhookPathToken,
             event: event.event,
-            environmentId: event.environmentId,
+            environmentExternalId: event.environmentExternalId,
             idempotencyKey,
           },
         });
         // The webhook is only a hint; the poll is the source of truth. Best-effort:
         // a failure here is logged, not surfaced, because the next event/poll recovers.
         try {
-          await deps.reconcile(event.environmentId);
+          await deps.reconcile(connection, event.environmentExternalId);
         } catch (err) {
           deps.logger.error("cloudshare environment reconcile failed", {
             customerId: connection.customerId,
             webhookPathToken: connection.webhookPathToken,
-            environmentId: event.environmentId,
+            environmentExternalId: event.environmentExternalId,
             error: err instanceof Error ? err.message : String(err),
           });
           await appendWebhookEvent(deps, {
@@ -151,7 +157,7 @@ export async function handleCloudShareWebhook(
               customerId: connection.customerId,
               webhookPathToken: connection.webhookPathToken,
               event: event.event,
-              environmentId: event.environmentId,
+              environmentExternalId: event.environmentExternalId,
               idempotencyKey,
               error: err instanceof Error ? err.message : String(err),
             },

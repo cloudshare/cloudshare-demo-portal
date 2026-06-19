@@ -13,8 +13,26 @@ function setup() {
   const helios = createCloudShareEnvironmentSimulator({ secret: HELIOS_SECRET });
   const other = createCloudShareEnvironmentSimulator({ secret: OTHER_SECRET });
   const eventLog = createInMemoryEventLogRepository();
-  const reconcile = vi.fn(async (_id: string) => {});
+  const reconcile = vi.fn(async (_connection: unknown, _environmentExternalId: string) => {});
   const logger = createLogger({ secrets: [], sink: () => {} });
+  const heliosConnection = {
+    customerId: "customer-helios",
+    apiId: "api-helios",
+    apiKey: "key-helios",
+    webhookSecret: HELIOS_SECRET,
+    webhookPathToken: "whk-helios",
+    connectedAt: new Date("2026-06-01T00:00:00Z"),
+    verifiedAt: null,
+  };
+  const otherConnection = {
+    customerId: "customer-other",
+    apiId: "api-other",
+    apiKey: "key-other",
+    webhookSecret: OTHER_SECRET,
+    webhookPathToken: "whk-other",
+    connectedAt: new Date("2026-06-01T00:00:00Z"),
+    verifiedAt: null,
+  };
   const deps = {
     connections: {
       save: vi.fn(),
@@ -22,26 +40,10 @@ function setup() {
       markVerified: vi.fn(),
       findByWebhookPathToken: vi.fn(async (webhookPathToken: string) => {
         if (webhookPathToken === "whk-helios") {
-          return {
-            customerId: "customer-helios",
-            apiId: "api-helios",
-            apiKey: "key-helios",
-            webhookSecret: HELIOS_SECRET,
-            webhookPathToken: "whk-helios",
-            connectedAt: new Date("2026-06-01T00:00:00Z"),
-            verifiedAt: null,
-          };
+          return heliosConnection;
         }
         if (webhookPathToken === "whk-other") {
-          return {
-            customerId: "customer-other",
-            apiId: "api-other",
-            apiKey: "key-other",
-            webhookSecret: OTHER_SECRET,
-            webhookPathToken: "whk-other",
-            connectedAt: new Date("2026-06-01T00:00:00Z"),
-            verifiedAt: null,
-          };
+          return otherConnection;
         }
         return null;
       }),
@@ -56,13 +58,13 @@ function setup() {
       return () => `webhook-event-${++counter}`;
     })(),
   };
-  return { helios, other, eventLog, reconcile, deps };
+  return { helios, other, eventLog, reconcile, deps, heliosConnection, otherConnection };
 }
 
 describe("handleCloudShareWebhook", () => {
-  it("accepts a signed event for the matched webhook token (202) and triggers a reconcile for its environment", async () => {
-    const { helios, reconcile, deps } = setup();
-    const signed = helios.emit({ environmentId: "env-1", event: "environment.suspended", at });
+  it("accepts a signed event for the matched webhook token (202) and triggers a reconcile for its environment with the resolved customer connection", async () => {
+    const { helios, reconcile, deps, heliosConnection } = setup();
+    const signed = helios.emit({ environmentExternalId: "env-ext-1", event: "environment.suspended", at });
 
     const res = await handleCloudShareWebhook(deps, {
       webhookPathToken: "whk-helios",
@@ -70,7 +72,7 @@ describe("handleCloudShareWebhook", () => {
     });
 
     expect(res.status).toBe(202);
-    expect(reconcile).toHaveBeenCalledWith("env-1");
+    expect(reconcile).toHaveBeenCalledWith(heliosConnection, "env-ext-1");
   });
 
   it("rejects an invalid signature with 401 and never reconciles", async () => {
@@ -78,7 +80,11 @@ describe("handleCloudShareWebhook", () => {
 
     const res = await handleCloudShareWebhook(deps, {
       webhookPathToken: "whk-helios",
-      rawBody: JSON.stringify({ Event: "environment.created", EnvironmentId: "env-1", CreatedAt: "t" }),
+      rawBody: JSON.stringify({
+        Event: "environment.created",
+        CreatedAt: "t",
+        Payload: { environmentExternalId: "env-ext-1" },
+      }),
       signature: "wrong",
     });
 
@@ -103,7 +109,7 @@ describe("handleCloudShareWebhook", () => {
 
   it("acknowledges a duplicate with 200 and reconciles only once across replays", async () => {
     const { helios, reconcile, deps } = setup();
-    const signed = helios.emit({ environmentId: "env-1", event: "environment.created", at });
+    const signed = helios.emit({ environmentExternalId: "env-ext-1", event: "environment.created", at });
 
     const first = await handleCloudShareWebhook(deps, {
       webhookPathToken: "whk-helios",
@@ -121,7 +127,7 @@ describe("handleCloudShareWebhook", () => {
 
   it("selects the secret from the webhook token before verification", async () => {
     const { helios, deps } = setup();
-    const signed = helios.emit({ environmentId: "env-1", event: "environment.created", at });
+    const signed = helios.emit({ environmentExternalId: "env-ext-1", event: "environment.created", at });
 
     const res = await handleCloudShareWebhook(deps, {
       webhookPathToken: "whk-other",
@@ -139,7 +145,7 @@ describe("handleCloudShareWebhook", () => {
       }),
       reset: vi.fn(),
     };
-    const signed = helios.emit({ environmentId: "env-1", event: "environment.created", at });
+    const signed = helios.emit({ environmentExternalId: "env-ext-1", event: "environment.created", at });
 
     const res = await handleCloudShareWebhook(deps, {
       webhookPathToken: "whk-helios",
@@ -156,7 +162,7 @@ describe("handleCloudShareWebhook", () => {
     deps.reconcile = vi.fn(async () => {
       throw new Error("CloudShare GET environment timed out");
     });
-    const signed = helios.emit({ environmentId: "env-1", event: "environment.resumed", at });
+    const signed = helios.emit({ environmentExternalId: "env-ext-1", event: "environment.resumed", at });
 
     const res = await handleCloudShareWebhook(deps, {
       webhookPathToken: "whk-helios",
@@ -168,7 +174,7 @@ describe("handleCloudShareWebhook", () => {
 
   it("records webhook dispositions in the event log without secrets", async () => {
     const { helios, eventLog, deps } = setup();
-    const signed = helios.emit({ environmentId: "env-1", event: "environment.created", at });
+    const signed = helios.emit({ environmentExternalId: "env-ext-1", event: "environment.created", at });
 
     await handleCloudShareWebhook(deps, {
       webhookPathToken: "whk-helios",
@@ -194,7 +200,7 @@ describe("handleCloudShareWebhook", () => {
           type: "cloudshare.webhook.accepted",
           payload: expect.objectContaining({
             customerId: "customer-helios",
-            environmentId: "env-1",
+            environmentExternalId: "env-ext-1",
           }),
         }),
       ]),

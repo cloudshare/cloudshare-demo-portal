@@ -23,7 +23,7 @@ import {
  */
 
 export interface ReceiveWebhookDeps {
-  /** Account-level webhook secret (`CLOUDSHARE_WEBHOOK_SECRET`). */
+  /** Account-level webhook secret selected for the resolved Customer. */
   readonly secret: string;
   readonly idempotency: WebhookIdempotencyStore;
 }

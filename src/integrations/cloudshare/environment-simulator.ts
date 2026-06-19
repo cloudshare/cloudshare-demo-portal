@@ -25,7 +25,7 @@ export interface SignedWebhook {
 }
 
 export interface EmitEnvironmentEventInput {
-  readonly environmentId: string;
+  readonly environmentExternalId: string;
   readonly event: CloudShareEnvironmentEventType;
   /** Event timestamp; its ISO string becomes the payload `CreatedAt`. */
   readonly at: Date;
@@ -74,18 +74,31 @@ export function createCloudShareEnvironmentSimulator(opts: {
   const statusByExternalId = new Map<string, EnvironmentStatus>();
 
   return {
-    emit({ environmentId, event, at }: EmitEnvironmentEventInput): SignedWebhook {
+    emit({ environmentExternalId, event, at }: EmitEnvironmentEventInput): SignedWebhook {
       statusByExternalId.set(
-        environmentId,
-        statusAfter(event, statusByExternalId.get(environmentId)),
+        environmentExternalId,
+        statusAfter(event, statusByExternalId.get(environmentExternalId)),
       );
 
-      // PascalCase wire field names, matching the real CloudShare payload the
-      // receiver's Zod schema expects.
+      // Documented CloudShare v3 webhook shape: top-level metadata plus event data
+      // nested under Payload.
       const rawBody = JSON.stringify({
         Event: event,
-        EnvironmentId: environmentId,
         CreatedAt: at.toISOString(),
+        CreatedById: "simulator-user",
+        CreatedByEmail: "simulator@certalis.demo",
+        Attempt: 1,
+        Payload: {
+          environmentExternalId,
+          environmentName: "Simulated Environment",
+          blueprintId: "bp-sim",
+          blueprintName: "Simulated Blueprint",
+          policyId: "policy-sim",
+          policyName: "Simulated Policy",
+          ownerEmail: "candidate@example.com",
+          cloud: "aws",
+          regionId: "region-1",
+        },
       });
       return { rawBody, signature: computeWebhookSignature(rawBody, opts.secret) };
     },

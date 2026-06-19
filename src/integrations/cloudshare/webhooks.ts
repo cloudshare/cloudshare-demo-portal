@@ -11,12 +11,13 @@ import { z } from "zod";
  * the account-level webhook secret (`CLOUDSHARE_WEBHOOK_SECRET`). The raw body must
  * be verified before any JSON re-serialisation, which would change the bytes.
  *
- * NOTE (assumptions to verify against a live tenant — isolated behind this module):
- *  - The wire field names below (`Event`, `EnvironmentId`, `CreatedAt`) and
- *    the event vocabulary are modelled on the documented environment events. Adjust
- *    only here if a live payload differs; this is tracked in the Slice 12 gap report.
+ * NOTE:
+ *  - The primary shape below follows the CloudShare v3 Integration Hub webhook docs:
+ *    top-level `Event` + `CreatedAt`, with event-specific data under `Payload`.
+ *  - A legacy top-level `EnvironmentId` shape is still tolerated for the local
+ *    simulator/backwards compatibility, but it is explicitly treated as legacy.
  *  - CloudShare cannot send custom headers and the payload carries no unique event
- *    id, so dedupe uses a key synthesised from (environmentId, Event,
+ *    id, so dedupe uses a key synthesised from (environmentExternalId, Event,
  *    CreatedAt) rather than a header or body id.
  *  - The signature is delivered in the {@link CLOUDSHARE_WEBHOOK_SIGNATURE_HEADER}
  *    request header (the route reads it and passes it here).
@@ -41,12 +42,20 @@ export type CloudShareEnvironmentEventType =
 /** A validated, normalised environment webhook event. */
 export interface CloudShareEnvironmentEvent {
   readonly event: CloudShareEnvironmentEventType;
-  readonly environmentId: string;
+  readonly environmentExternalId: string;
   /** The event timestamp as CloudShare sent it; used verbatim in the idempotency key. */
   readonly createdAt: string;
 }
 
-const webhookPayloadSchema = z.object({
+const documentedWebhookPayloadSchema = z.object({
+  Event: z.enum(CLOUDSHARE_ENVIRONMENT_EVENT_TYPES),
+  CreatedAt: z.string().min(1),
+  Payload: z.object({
+    environmentExternalId: z.string().min(1),
+  }).passthrough(),
+}).passthrough();
+
+const legacyWebhookPayloadSchema = z.object({
   Event: z.enum(CLOUDSHARE_ENVIRONMENT_EVENT_TYPES),
   EnvironmentId: z.string().min(1),
   CreatedAt: z.string().min(1),
@@ -88,21 +97,33 @@ export function parseWebhookEvent(rawBody: string): ParseWebhookResult {
     return { ok: false, issues: ["body is not valid JSON"] };
   }
 
-  const parsed = webhookPayloadSchema.safeParse(json);
-  if (!parsed.success) {
+  const documented = documentedWebhookPayloadSchema.safeParse(json);
+  if (documented.success) {
     return {
-      ok: false,
-      issues: parsed.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`),
+      ok: true,
+      event: {
+        event: documented.data.Event,
+        environmentExternalId: documented.data.Payload.environmentExternalId,
+        createdAt: documented.data.CreatedAt,
+      },
+    };
+  }
+
+  const legacy = legacyWebhookPayloadSchema.safeParse(json);
+  if (legacy.success) {
+    return {
+      ok: true,
+      event: {
+        event: legacy.data.Event,
+        environmentExternalId: legacy.data.EnvironmentId,
+        createdAt: legacy.data.CreatedAt,
+      },
     };
   }
 
   return {
-    ok: true,
-    event: {
-      event: parsed.data.Event,
-      environmentId: parsed.data.EnvironmentId,
-      createdAt: parsed.data.CreatedAt,
-    },
+    ok: false,
+    issues: documented.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`),
   };
 }
 
@@ -116,5 +137,5 @@ export function synthesiseIdempotencyKey(event: CloudShareEnvironmentEvent): str
   // contains the delimiter (e.g. an id with a ':') could otherwise let two distinct
   // events collide onto one key and silently dedupe one away. Encoding keeps the
   // component boundaries unambiguous.
-  return JSON.stringify([event.environmentId, event.event, event.createdAt]);
+  return JSON.stringify([event.environmentExternalId, event.event, event.createdAt]);
 }

@@ -12,8 +12,10 @@ const SECRET = "account-webhook-secret";
 
 const validBody = JSON.stringify({
   Event: "environment.suspended",
-  EnvironmentId: "env-1",
   CreatedAt: "2026-06-08T10:00:00Z",
+  Payload: {
+    environmentExternalId: "env-ext-1",
+  },
 });
 
 function sign(body: string, secret = SECRET): string {
@@ -52,17 +54,53 @@ describe("parseWebhookEvent", () => {
     if (result.ok) {
       expect(result.event).toEqual<CloudShareEnvironmentEvent>({
         event: "environment.suspended",
-        environmentId: "env-1",
+        environmentExternalId: "env-ext-1",
         createdAt: "2026-06-08T10:00:00Z",
       });
+    }
+  });
+
+  it("accepts the documented CloudShare v3 event shape with extra metadata fields", () => {
+    const body = JSON.stringify({
+      Event: "environment.created",
+      CreatedAt: "2026-06-08T10:00:00Z",
+      CreatedById: "user-1",
+      CreatedByEmail: "admin@example.com",
+      Attempt: 1,
+      Payload: {
+        environmentExternalId: "env-ext-2",
+        environmentName: "Exam Lab",
+      },
+    });
+
+    const result = parseWebhookEvent(body);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.event.environmentExternalId).toBe("env-ext-2");
+    }
+  });
+
+  it("still accepts the legacy simulator shape with top-level EnvironmentId", () => {
+    const body = JSON.stringify({
+      Event: "environment.created",
+      EnvironmentId: "legacy-env-1",
+      CreatedAt: "2026-06-08T10:00:00Z",
+    });
+
+    const result = parseWebhookEvent(body);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.event.environmentExternalId).toBe("legacy-env-1");
     }
   });
 
   it("rejects a payload with an unknown event type", () => {
     const body = JSON.stringify({
       Event: "environment.exploded",
-      EnvironmentId: "env-1",
       CreatedAt: "2026-06-08T10:00:00Z",
+      Payload: {
+        environmentExternalId: "env-ext-1",
+      },
     });
     const result = parseWebhookEvent(body);
     expect(result.ok).toBe(false);
@@ -84,17 +122,17 @@ describe("parseWebhookEvent", () => {
 describe("synthesiseIdempotencyKey", () => {
   const base: CloudShareEnvironmentEvent = {
     event: "environment.suspended",
-    environmentId: "env-1",
+    environmentExternalId: "env-ext-1",
     createdAt: "2026-06-08T10:00:00Z",
   };
 
-  it("is stable for the same (environmentId, event, createdAt)", () => {
+  it("is stable for the same (environmentExternalId, event, createdAt)", () => {
     expect(synthesiseIdempotencyKey(base)).toBe(synthesiseIdempotencyKey({ ...base }));
   });
 
   it("differs when any of the three components differ", () => {
     const key = synthesiseIdempotencyKey(base);
-    expect(synthesiseIdempotencyKey({ ...base, environmentId: "env-2" })).not.toBe(key);
+    expect(synthesiseIdempotencyKey({ ...base, environmentExternalId: "env-ext-2" })).not.toBe(key);
     expect(synthesiseIdempotencyKey({ ...base, event: "environment.resumed" })).not.toBe(key);
     expect(synthesiseIdempotencyKey({ ...base, createdAt: "2026-06-08T11:00:00Z" })).not.toBe(key);
   });

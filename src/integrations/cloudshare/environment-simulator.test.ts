@@ -12,7 +12,7 @@ describe("CloudShare environment simulator", () => {
     const sim = createCloudShareEnvironmentSimulator({ secret: SECRET });
 
     const { rawBody, signature } = sim.emit({
-      environmentId: "env-1",
+      environmentExternalId: "env-1",
       event: "environment.suspended",
       at,
     });
@@ -23,7 +23,7 @@ describe("CloudShare environment simulator", () => {
     if (parsed.ok) {
       expect(parsed.event).toEqual({
         event: "environment.suspended",
-        environmentId: "env-1",
+        environmentExternalId: "env-1",
         createdAt: "2026-06-08T10:00:00.000Z",
       });
     }
@@ -31,7 +31,7 @@ describe("CloudShare environment simulator", () => {
 
   it("its emitted payload flows through the real receiver and is accepted", async () => {
     const sim = createCloudShareEnvironmentSimulator({ secret: SECRET });
-    const signed = sim.emit({ environmentId: "env-1", event: "environment.created", at });
+    const signed = sim.emit({ environmentExternalId: "env-1", event: "environment.created", at });
 
     const outcome = await receiveWebhook(
       { secret: SECRET, idempotency: createInMemoryWebhookIdempotencyStore() },
@@ -44,20 +44,20 @@ describe("CloudShare environment simulator", () => {
   it("acts as the authoritative GET-environment source, reflecting emitted events", async () => {
     const sim = createCloudShareEnvironmentSimulator({ secret: SECRET });
 
-    sim.emit({ environmentId: "env-1", event: "environment.created", at });
+    sim.emit({ environmentExternalId: "env-1", event: "environment.created", at });
     expect((await sim.getEnvironmentState("env-1"))?.status).toBe("created");
 
-    sim.emit({ environmentId: "env-1", event: "environment.resumed", at });
+    sim.emit({ environmentExternalId: "env-1", event: "environment.resumed", at });
     expect((await sim.getEnvironmentState("env-1"))?.status).toBe("running");
 
-    sim.emit({ environmentId: "env-1", event: "environment.suspended", at });
+    sim.emit({ environmentExternalId: "env-1", event: "environment.suspended", at });
     expect((await sim.getEnvironmentState("env-1"))?.status).toBe("suspended");
 
     // Extension does not change the lifecycle status.
-    sim.emit({ environmentId: "env-1", event: "environment.extended", at });
+    sim.emit({ environmentExternalId: "env-1", event: "environment.extended", at });
     expect((await sim.getEnvironmentState("env-1"))?.status).toBe("suspended");
 
-    sim.emit({ environmentId: "env-1", event: "environment.deleted", at });
+    sim.emit({ environmentExternalId: "env-1", event: "environment.deleted", at });
     expect((await sim.getEnvironmentState("env-1"))?.status).toBe("deleted");
   });
 
@@ -70,7 +70,7 @@ describe("CloudShare environment simulator", () => {
 describe("CloudShare environment simulator: EnvironmentController", () => {
   it("suspendEnvironment sets the status to suspended, confirmed by the next poll", async () => {
     const sim = createCloudShareEnvironmentSimulator({ secret: SECRET });
-    sim.emit({ environmentId: "env-1", event: "environment.resumed", at });
+    sim.emit({ environmentExternalId: "env-1", event: "environment.resumed", at });
 
     await sim.suspendEnvironment("env-1");
 
@@ -79,7 +79,7 @@ describe("CloudShare environment simulator: EnvironmentController", () => {
 
   it("resumeEnvironment sets the status to running, confirmed by the next poll", async () => {
     const sim = createCloudShareEnvironmentSimulator({ secret: SECRET });
-    sim.emit({ environmentId: "env-1", event: "environment.suspended", at });
+    sim.emit({ environmentExternalId: "env-1", event: "environment.suspended", at });
 
     await sim.resumeEnvironment("env-1");
 
@@ -88,11 +88,11 @@ describe("CloudShare environment simulator: EnvironmentController", () => {
 
   it("controller state and emit() state share the same in-memory source of truth", async () => {
     const sim = createCloudShareEnvironmentSimulator({ secret: SECRET });
-    sim.emit({ environmentId: "env-1", event: "environment.resumed", at });
+    sim.emit({ environmentExternalId: "env-1", event: "environment.resumed", at });
 
     await sim.suspendEnvironment("env-1");
     // Now emit a resume event to change it back via the event path.
-    sim.emit({ environmentId: "env-1", event: "environment.resumed", at });
+    sim.emit({ environmentExternalId: "env-1", event: "environment.resumed", at });
 
     expect((await sim.getEnvironmentState("env-1"))?.status).toBe("running");
   });
