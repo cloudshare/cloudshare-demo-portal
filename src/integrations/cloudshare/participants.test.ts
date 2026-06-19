@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CloudShareClient } from "./client";
-import { createCloudShareParticipantLister, normalizeTrainingParticipants } from "./participants";
+import {
+  createCloudShareParticipantLister,
+  isCloudShareTrainingExperienceId,
+  normalizeTrainingParticipants,
+} from "./participants";
 
 function client(overrides: Partial<CloudShareClient> = {}): CloudShareClient {
   return {
@@ -24,12 +28,12 @@ describe("createCloudShareParticipantLister", () => {
     );
     const lister = createCloudShareParticipantLister(client({ requestV4: requestV4 as never }));
 
-    const participants = await lister.listParticipants("training-1");
+    const participants = await lister.listParticipants("EXtraining-1");
 
     expect(requestV4).toHaveBeenCalledWith(
       expect.objectContaining({
         method: "GET",
-        path: "/trainings/training-1/students",
+        path: "/trainings/EXtraining-1/students",
       }),
     );
     expect(participants).toEqual([
@@ -49,7 +53,7 @@ describe("createCloudShareParticipantLister", () => {
     );
     const lister = createCloudShareParticipantLister(client({ requestV4: requestV4 as never }));
 
-    await expect(lister.listParticipants("training-1")).resolves.toEqual([
+    await expect(lister.listParticipants("EXtraining-1")).resolves.toEqual([
       {
         email: "candidate@helioscx.demo",
         environmentId: null,
@@ -58,6 +62,21 @@ describe("createCloudShareParticipantLister", () => {
         studentId: null,
       },
     ]);
+  });
+
+  it("does not send local placeholder training IDs to CloudShare", async () => {
+    const requestV4 = vi.fn();
+    const lister = createCloudShareParticipantLister(client({ requestV4: requestV4 as never }));
+
+    await expect(lister.listParticipants("codex-training")).resolves.toEqual([]);
+
+    expect(requestV4).not.toHaveBeenCalled();
+  });
+
+  it("recognizes CloudShare training experience IDs by the EX prefix", () => {
+    expect(isCloudShareTrainingExperienceId("EXGPrh8JCEep6W7sfOLOEmRQ2")).toBe(true);
+    expect(isCloudShareTrainingExperienceId("codex-training")).toBe(false);
+    expect(isCloudShareTrainingExperienceId("PRCU02uuokHPBfjMedkmradg2")).toBe(false);
   });
 
   it("accepts wrapped rows and nested user/environment fields", () => {

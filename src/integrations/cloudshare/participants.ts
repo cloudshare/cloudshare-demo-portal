@@ -2,6 +2,8 @@ import { z } from "zod";
 import type { ParticipantLister, TrainingParticipant } from "@/domain/environment-correlation";
 import type { CloudShareClient } from "./client";
 
+const trainingExperienceIdPattern = /^EX[A-Za-z0-9_-]+$/;
+
 const normalizedParticipantsSchema = z.array(
   z.object({
     email: z.string().email(),
@@ -11,6 +13,10 @@ const normalizedParticipantsSchema = z.array(
     studentId: z.string().min(1).nullable(),
   }),
 );
+
+export function isCloudShareTrainingExperienceId(value: string): boolean {
+  return trainingExperienceIdPattern.test(value.trim());
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -152,6 +158,12 @@ export function createCloudShareParticipantLister(
 ): ParticipantLister {
   return {
     async listParticipants(trainingId: string): Promise<readonly TrainingParticipant[]> {
+      if (!isCloudShareTrainingExperienceId(trainingId)) {
+        // Training experience IDs are CloudShare-generated EX... identifiers.
+        // Refuse local placeholders before they can hit the live API.
+        return [];
+      }
+
       return (await client.requestV4({
         method: "GET",
         path: `/trainings/${trainingId}/students`,

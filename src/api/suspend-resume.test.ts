@@ -42,7 +42,7 @@ const launch = {
   examAttemptId: "ea-1",
   candidateId: "cand-1",
   participantEmail: "candidate@helioscx.demo",
-  trainingId: "training-1",
+  trainingId: "EXtraining-1",
   experienceId: "exp-1",
   environmentExternalId: "ENVS-default-live-env-1",
   loginUrl: "https://old.lab.url",
@@ -160,7 +160,7 @@ function makeCloudShareFactory(overrides: Partial<ReturnType<CloudShareClientFac
       requestV3: vi.fn(),
       requestV3Text: vi.fn().mockResolvedValue(""),
       requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
-        if (spec.path === "/trainings/training-1/students") {
+        if (spec.path === "/trainings/EXtraining-1/students") {
           return spec.schema.parse([
             {
               email: "candidate@helioscx.demo",
@@ -180,7 +180,7 @@ function activeParticipantRequestV4(
   environmentId = "ENVd0WBTGirla-omK6Jh3BvA2",
 ): CloudShareClient["requestV4"] {
   return vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
-    if (spec.path === "/trainings/training-1/students") {
+    if (spec.path === "/trainings/EXtraining-1/students") {
       return spec.schema.parse([
         {
           email: "candidate@helioscx.demo",
@@ -208,7 +208,7 @@ function makeSuspendCloudShareFactory(): CloudShareClientFactory {
           throw new Error(`unexpected v3 path ${spec.path}`);
         }) as unknown as CloudShareClient["requestV3"],
         requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
-          if (spec.path === "/trainings/training-1/students") {
+          if (spec.path === "/trainings/EXtraining-1/students") {
             return spec.schema.parse([
               {
                 email: "candidate@helioscx.demo",
@@ -237,7 +237,7 @@ function makeResumeCloudShareFactory(): CloudShareClientFactory {
           throw new Error(`unexpected v3 path ${spec.path}`);
         }) as unknown as CloudShareClient["requestV3"],
         requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
-          if (spec.path === "/trainings/training-1/students") {
+          if (spec.path === "/trainings/EXtraining-1/students") {
             return spec.schema.parse([
               {
                 email: "candidate@helioscx.demo",
@@ -452,8 +452,8 @@ describe("handleSuspendExam", () => {
           id: "launch-1",
           examAttemptId: "ea-1",
           candidateId: "cand-1",
-          experienceId: "training-1",
-          trainingId: "training-1",
+          experienceId: "EXtraining-1",
+          trainingId: "EXtraining-1",
           participantEmail: "candidate@helioscx.demo",
           environmentExternalId: "ENVstays-live-shaped",
           loginUrl: "https://old.lab.url",
@@ -493,8 +493,8 @@ describe("handleSuspendExam", () => {
       examAttemptId: "ea-1",
       candidateId: "cand-1",
       participantEmail: "candidate@helioscx.demo",
-      trainingId: "training-1",
-      experienceId: "training-1",
+      trainingId: "EXtraining-1",
+      experienceId: "EXtraining-1",
       loginUrl: "https://old.lab.url",
       status: "launched",
       createdAt: new Date(),
@@ -507,7 +507,7 @@ describe("handleSuspendExam", () => {
         throw new Error(`unexpected v3 path ${spec.path}`);
       }) as unknown as CloudShareClient["requestV3"],
       requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
-        if (spec.path === "/trainings/training-1/students") {
+        if (spec.path === "/trainings/EXtraining-1/students") {
           return spec.schema.parse([
             {
               email: "candidate@helioscx.demo",
@@ -552,8 +552,8 @@ describe("handleSuspendExam", () => {
       examAttemptId: "ea-1",
       candidateId: "cand-1",
       participantEmail: "candidate@helioscx.demo",
-      trainingId: "training-1",
-      experienceId: "training-1",
+      trainingId: "EXtraining-1",
+      experienceId: "EXtraining-1",
       environmentId: "ENKolD1-ab84YIxODeMGob9A2",
       environmentExternalId: "ENKolD1-ab84YIxODeMGob9A2",
       loginUrl: "https://old.lab.url",
@@ -563,7 +563,7 @@ describe("handleSuspendExam", () => {
     const customerClient = makeCloudShareClient({
       requestV3: vi.fn(),
       requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
-        if (spec.path === "/trainings/training-1/students") {
+        if (spec.path === "/trainings/EXtraining-1/students") {
           return spec.schema.parse({
             count: 1,
             items: [
@@ -605,7 +605,7 @@ describe("handleSuspendExam", () => {
           attemptedOperation: "resolve_environment_correlation",
           integrationSurface: "cloudshare.v4.training.participant_list",
           method: "GET",
-          path: "/v4/trainings/training-1/students",
+          path: "/v4/trainings/EXtraining-1/students",
           failureMode: "not_correlated_yet",
           currentEnvironmentExternalId: null,
         }),
@@ -619,8 +619,8 @@ describe("handleSuspendExam", () => {
       examAttemptId: "ea-1",
       candidateId: "cand-1",
       participantEmail: "candidate@helioscx.demo",
-      trainingId: "training-1",
-      experienceId: "training-1",
+      trainingId: "EXtraining-1",
+      experienceId: "EXtraining-1",
       environmentId: "ENKolD1-ab84YIxODeMGob9A2",
       environmentExternalId: "ENKolD1-ab84YIxODeMGob9A2",
       loginUrl: "https://old.lab.url",
@@ -633,7 +633,7 @@ describe("handleSuspendExam", () => {
         throw new CloudShareRequestError("forbidden", 403, {
           integrationSurface: "cloudshare.v4.training.participant_list",
           method: "GET",
-          path: "/v4/trainings/training-1/students",
+          path: "/v4/trainings/EXtraining-1/students",
           responseBody: "{\"error\":\"forbidden\"}",
         });
       }) as unknown as CloudShareClient["requestV4"],
@@ -974,8 +974,8 @@ describe("handleResumeExam", () => {
       examAttemptId: "ea-1",
       candidateId: "cand-1",
       participantEmail: "candidate@helioscx.demo",
-      trainingId: "training-1",
-      experienceId: "training-1",
+      trainingId: "EXtraining-1",
+      experienceId: "EXtraining-1",
       environmentId: "ENKolD1-ab84YIxODeMGob9A2",
       environmentExternalId: "ENKolD1-ab84YIxODeMGob9A2",
       loginUrl: "https://old.lab.url",
@@ -985,7 +985,7 @@ describe("handleResumeExam", () => {
     const customerClient = makeCloudShareClient({
       requestV3: vi.fn(),
       requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
-        if (spec.path === "/trainings/training-1/students") {
+        if (spec.path === "/trainings/EXtraining-1/students") {
           return spec.schema.parse({
             count: 1,
             items: [
@@ -1166,8 +1166,8 @@ describe("runHeartbeatAutoSuspend", () => {
       examAttemptId: "ea-1",
       candidateId: "cand-1",
       participantEmail: "candidate@helioscx.demo",
-      trainingId: "training-1",
-      experienceId: "training-1",
+      trainingId: "EXtraining-1",
+      experienceId: "EXtraining-1",
       loginUrl: "https://old.lab.url",
       status: "launched",
       createdAt: new Date(),
@@ -1180,7 +1180,7 @@ describe("runHeartbeatAutoSuspend", () => {
         throw new Error(`unexpected v3 path ${spec.path}`);
       }) as unknown as CloudShareClient["requestV3"],
       requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
-        if (spec.path === "/trainings/training-1/students") {
+        if (spec.path === "/trainings/EXtraining-1/students") {
           return spec.schema.parse([
             {
               email: "candidate@helioscx.demo",
@@ -1221,8 +1221,8 @@ describe("runHeartbeatAutoSuspend", () => {
       examAttemptId: "ea-1",
       candidateId: "cand-1",
       participantEmail: "candidate@helioscx.demo",
-      trainingId: "training-1",
-      experienceId: "training-1",
+      trainingId: "EXtraining-1",
+      experienceId: "EXtraining-1",
       environmentId: "ENKolD1-ab84YIxODeMGob9A2",
       environmentExternalId: "ENKolD1-ab84YIxODeMGob9A2",
       loginUrl: "https://old.lab.url",
@@ -1232,7 +1232,7 @@ describe("runHeartbeatAutoSuspend", () => {
     const customerClient = makeCloudShareClient({
       requestV3: vi.fn(),
       requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
-        if (spec.path === "/trainings/training-1/students") {
+        if (spec.path === "/trainings/EXtraining-1/students") {
           return spec.schema.parse({
             count: 1,
             items: [
@@ -1273,7 +1273,7 @@ describe("runHeartbeatAutoSuspend", () => {
           attemptedOperation: "resolve_environment_correlation",
           integrationSurface: "cloudshare.v4.training.participant_list",
           method: "GET",
-          path: "/v4/trainings/training-1/students",
+          path: "/v4/trainings/EXtraining-1/students",
           failureMode: "not_correlated_yet",
           currentEnvironmentExternalId: null,
         }),
@@ -1287,8 +1287,8 @@ describe("runHeartbeatAutoSuspend", () => {
       examAttemptId: "ea-1",
       candidateId: "cand-1",
       participantEmail: "candidate@helioscx.demo",
-      trainingId: "training-1",
-      experienceId: "training-1",
+      trainingId: "EXtraining-1",
+      experienceId: "EXtraining-1",
       environmentId: "ENKolD1-ab84YIxODeMGob9A2",
       environmentExternalId: "ENKolD1-ab84YIxODeMGob9A2",
       loginUrl: "https://old.lab.url",
@@ -1298,7 +1298,7 @@ describe("runHeartbeatAutoSuspend", () => {
     const customerClient = makeCloudShareClient({
       requestV3: vi.fn(),
       requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
-        if (spec.path === "/trainings/training-1/students") {
+        if (spec.path === "/trainings/EXtraining-1/students") {
           return spec.schema.parse({
             count: 1,
             items: [
