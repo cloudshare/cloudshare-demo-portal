@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryExamCatalogRepository } from "@/persistence/exam-catalog-repository";
 import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-repository";
+import { createInMemoryAuditRepository } from "@/persistence/audit-repository";
 import { createInMemoryEventLogRepository } from "@/persistence/event-log-repository";
 import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repository";
 import { createExamClock, createInMemoryExamClockRepository } from "@/domain/exam-clock";
@@ -108,6 +109,7 @@ describe("candidate scheduling handlers", () => {
     const exams = await makeExamRepository();
     const attempts = createInMemoryExamAttemptRepository();
     const launches = createInMemoryLabLaunchRepository();
+    const audit = createInMemoryAuditRepository();
     const eventLog = createInMemoryEventLogRepository();
     const logger = makeLogger();
 
@@ -116,6 +118,7 @@ describe("candidate scheduling handlers", () => {
         exams,
         attempts,
         launches,
+        audit,
         eventLog,
         connections: makeConnectionRepository(),
         cloudshare: makeCloudShareFactory(),
@@ -152,6 +155,17 @@ describe("candidate scheduling handlers", () => {
       correlationId: "corr-1",
     });
     expect(JSON.stringify(response.body)).not.toContain("loginUrl");
+    await expect(audit.listByExamAttemptId("attempt-1")).resolves.toEqual([
+      expect.objectContaining({
+        examAttemptId: "attempt-1",
+        action: "lab_launched",
+        outcome: "success",
+        details: {
+          trainingId: "EXtraining-1",
+          experienceId: "EXtraining-1",
+        },
+      }),
+    ]);
 
     const dashboard = await handleGetCandidateDashboard(
       { repository: exams, attempts, logger },
@@ -184,6 +198,7 @@ describe("candidate scheduling handlers", () => {
     const exams = await makeExamRepository();
     const attempts = createInMemoryExamAttemptRepository();
     const launches = createInMemoryLabLaunchRepository();
+    const audit = createInMemoryAuditRepository();
     const eventLog = createInMemoryEventLogRepository();
     const logger = makeLogger();
 
@@ -192,6 +207,7 @@ describe("candidate scheduling handlers", () => {
         exams,
         attempts,
         launches,
+        audit,
         eventLog,
         connections: makeConnectionRepository(),
         cloudshare: makeCloudShareFactory({
@@ -235,8 +251,29 @@ describe("candidate scheduling handlers", () => {
       error: "CloudShare provisioning failed for the scheduled exam.",
       correlationId: "corr-2",
     });
-    await expect(attempts.findById("attempt-1")).resolves.toBeNull();
+    await expect(attempts.findById("attempt-1")).resolves.toMatchObject({
+      id: "attempt-1",
+      examId: "exam-1",
+      candidateId: "candidate-1",
+      status: "expired",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+    });
     await expect(launches.findByExamAttemptId("attempt-1")).resolves.toBeNull();
+    await expect(audit.listByExamAttemptId("attempt-1")).resolves.toEqual([
+      expect.objectContaining({
+        examAttemptId: "attempt-1",
+        action: "lab_launch_failed",
+        outcome: "failure",
+        details: expect.objectContaining({
+          attemptedOperation: "add_participant",
+          integrationSurface: "cloudshare.v4.training.participant",
+          method: "POST",
+          path: "/v4/trainings/EXtraining-1/students",
+          failureMode: "http_status",
+          responseStatus: 403,
+        }),
+      }),
+    ]);
     expect(logger.warn).toHaveBeenCalledWith(
       "candidate exam scheduling failed",
       expect.objectContaining({

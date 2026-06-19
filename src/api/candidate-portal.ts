@@ -9,6 +9,7 @@ import type {
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { EventLogRepository } from "@/domain/event-log";
 import type { LabLaunchRepository } from "@/domain/lab-launch";
+import type { AuditRepository } from "@/domain/audit-trail";
 import {
   CloudShareError,
   CloudShareRequestError,
@@ -74,6 +75,7 @@ interface CandidateSchedulingDeps {
   readonly exams: ExamRepository;
   readonly attempts: ExamAttemptRepository;
   readonly launches: LabLaunchRepository;
+  readonly audit: AuditRepository;
   readonly eventLog: EventLogRepository;
   readonly connections: CloudShareConnectionRepository;
   readonly cloudshare: CloudShareClientFactory;
@@ -258,6 +260,18 @@ export async function handleScheduleCandidateExam(
       attemptStatus: result.attempt.status,
       coldStartLikely: result.coldStartLikely,
     });
+    await deps.audit.write({
+      id: `${result.attempt.id}:lab_launched:${correlationId}`,
+      examAttemptId: result.attempt.id,
+      candidateId: request.candidateId,
+      action: "lab_launched",
+      outcome: "success",
+      details: {
+        trainingId: result.trainingId,
+        experienceId: result.experienceId,
+      },
+      occurredAt: deps.now?.() ?? new Date(),
+    });
 
     return {
       status: 201,
@@ -275,7 +289,7 @@ export async function handleScheduleCandidateExam(
       return { status: 404, body: { error: "Published exam not found." } };
     }
     if (error instanceof CloudShareProvisioningError) {
-      const diagnostic = {
+      const diagnostic: Record<string, unknown> = {
         correlationId,
         candidateId: request.candidateId,
         examAttemptId: error.context.attemptId,
@@ -287,6 +301,24 @@ export async function handleScheduleCandidateExam(
         type: "cloudshare.schedule_exam.failed",
         occurredAt: deps.now?.() ?? new Date(),
         payload: diagnostic,
+      });
+      await deps.audit.write({
+        id: `${error.context.attemptId}:lab_launch_failed:${correlationId}`,
+        examAttemptId: error.context.attemptId,
+        candidateId: request.candidateId,
+        action: "lab_launch_failed",
+        outcome: "failure",
+        details: {
+          attemptedOperation: diagnostic.attemptedOperation,
+          integrationSurface: diagnostic.integrationSurface,
+          method: diagnostic.method,
+          path: diagnostic.path,
+          failureMode: diagnostic.failureMode,
+          responseStatus: diagnostic.responseStatus,
+          correlationId,
+        },
+        error: "CloudShare provisioning failed for the scheduled exam.",
+        occurredAt: deps.now?.() ?? new Date(),
       });
       deps.logger.warn("candidate exam scheduling failed", diagnostic);
       return {

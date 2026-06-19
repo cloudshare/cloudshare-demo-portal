@@ -127,6 +127,8 @@ describe("scheduleExam", () => {
         status: "ready",
       },
       coldStartLikely: false,
+      trainingId: "training-1",
+      experienceId: "training-1",
     });
 
     await expect(attempts.findById("attempt-1")).resolves.toMatchObject({
@@ -249,7 +251,7 @@ describe("scheduleExam", () => {
     expect(result.coldStartLikely).toBe(true);
   });
 
-  it("does not persist a candidate-visible attempt or lab launch when CloudShare provisioning fails", async () => {
+  it("persists a failed provisioning attempt as expired and does not create a lab launch", async () => {
     const { exams, attempts, launches } = await setup();
     const order: string[] = [];
     const sponsoredLink = vi.fn();
@@ -297,7 +299,13 @@ describe("scheduleExam", () => {
 
     expect(order).toEqual(["createTraining", "addParticipant"]);
     expect(sponsoredLink).not.toHaveBeenCalled();
-    await expect(attempts.findById("attempt-1")).resolves.toBeNull();
+    await expect(attempts.findById("attempt-1")).resolves.toMatchObject({
+      id: "attempt-1",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "expired",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+    });
     await expect(launches.findByExamAttemptId("attempt-1")).resolves.toBeNull();
   });
 

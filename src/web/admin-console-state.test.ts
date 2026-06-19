@@ -48,10 +48,13 @@ describe("getExamAuthoringMode", () => {
 describe("admin tab model", () => {
   it("treats Candidate provisioning as its own admin context", () => {
     expect(ADMIN_TABS).toContain("candidates");
+    expect(ADMIN_TABS).toContain("monitoring");
     expect(getAdminTabLabel("candidates")).toBe("Candidates");
+    expect(getAdminTabLabel("monitoring")).toBe("Session Monitoring");
     expect(shouldShowCandidateProvisioning("candidates")).toBe(true);
     expect(shouldShowCandidateProvisioning("connection")).toBe(false);
     expect(shouldShowCandidateProvisioning("exams")).toBe(false);
+    expect(shouldShowCandidateProvisioning("monitoring")).toBe(false);
     expect(shouldShowCandidateProvisioning("audit")).toBe(false);
     expect(shouldShowCandidateProvisioning("events")).toBe(false);
     expect(shouldShowCandidateProvisioning("support")).toBe(false);

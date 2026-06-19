@@ -63,6 +63,8 @@ export interface ScheduledAttemptSummary {
 export interface ScheduleExamResult {
   readonly attempt: ScheduledAttemptSummary;
   readonly coldStartLikely: boolean;
+  readonly trainingId: string;
+  readonly experienceId: string;
 }
 
 export async function scheduleExam(
@@ -87,6 +89,7 @@ export async function scheduleExam(
     scheduledFor: input.scheduledFor,
     createdAt,
   };
+  await deps.attempts.save(attempt);
 
   const trainingCreator = deps.labs.createTraining;
   const participantAdder = deps.labs.addParticipant;
@@ -116,6 +119,7 @@ export async function scheduleExam(
     });
     trainingId = training.trainingId;
   } catch (cause) {
+    await deps.attempts.save({ ...attempt, status: "expired" });
     throw new CloudShareProvisioningError("CloudShare training creation failed.", {
       attemptId,
       attemptedOperation: "create_training",
@@ -135,6 +139,7 @@ export async function scheduleExam(
       lastName: participant.lastName,
     });
   } catch (cause) {
+    await deps.attempts.save({ ...attempt, status: "expired" });
     throw new CloudShareProvisioningError("CloudShare participant registration failed.", {
       attemptId,
       attemptedOperation: "add_participant",
@@ -153,6 +158,7 @@ export async function scheduleExam(
     });
     loginUrl = sponsoredLink.loginUrl;
   } catch (cause) {
+    await deps.attempts.save({ ...attempt, status: "expired" });
     throw new CloudShareProvisioningError("CloudShare sponsored-link creation failed.", {
       attemptId,
       attemptedOperation: "create_sponsored_link",
@@ -184,6 +190,8 @@ export async function scheduleExam(
       status: "ready",
     },
     coldStartLikely: input.scheduledFor.getTime() - deps.now().getTime() < COLD_START_WARNING_WINDOW_MS,
+    trainingId,
+    experienceId: trainingId,
   };
 }
 

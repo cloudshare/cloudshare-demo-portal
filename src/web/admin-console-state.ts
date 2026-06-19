@@ -8,6 +8,7 @@ export type AdminTab =
   | "connection"
   | "exams"
   | "candidates"
+  | "monitoring"
   | "audit"
   | "events"
   | "support"
@@ -17,6 +18,7 @@ export const ADMIN_TABS: readonly AdminTab[] = [
   "connection",
   "exams",
   "candidates",
+  "monitoring",
   "audit",
   "events",
   "support",
@@ -59,6 +61,8 @@ export function getAdminTabLabel(tab: AdminTab): string {
       return "Exam Catalog";
     case "candidates":
       return "Candidates";
+    case "monitoring":
+      return "Session Monitoring";
     case "audit":
       return "Audit Trail";
     case "events":

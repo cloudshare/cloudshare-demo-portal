@@ -33,6 +33,7 @@ export async function GET(request: Request) {
       attempts: services.examAttempts,
       exams: services.exams,
       launches: services.labLaunches,
+      audit: services.audit,
       connections: services.cloudshareConnections,
       createScoreRetriever: (connection) =>
         createCloudShareGuidedJourneyProvider(

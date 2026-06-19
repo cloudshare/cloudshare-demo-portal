@@ -183,6 +183,33 @@ describe("handleEnterExam", () => {
     expect(JSON.stringify(response)).not.toContain("secret");
   });
 
+  it("blocks entry for an expired failed provisioning attempt before any launch lookup", async () => {
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+
+    await attempts.save({
+      id: "attempt-failed",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "expired",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+
+    const response = await handleEnterExam(
+      {
+        attempts,
+        launches,
+        logger: makeLogger(),
+        now: () => new Date("2026-06-15T16:05:00.000Z"),
+      },
+      { examAttemptId: "attempt-failed", candidateId: "candidate-1" },
+    );
+
+    expect(response.status).toBe(403);
+    expect(response.body).toBe("Exam entry is not available for this attempt.");
+  });
+
   it("reconciles runtime exhaustion before redirect and completes the attempt instead of entering", async () => {
     const attempts = createInMemoryExamAttemptRepository();
     const launches = createInMemoryLabLaunchRepository();
