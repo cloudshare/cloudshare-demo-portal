@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 export default defineConfig({
   test: {
     environment: "node",
+    globalSetup: ["./vitest.global-setup.ts"],
     include: ["src/**/*.test.ts", "tests/**/*.test.ts"],
     exclude: [
       "**/node_modules/**",
@@ -14,6 +15,7 @@ export default defineConfig({
       "**/*.e2e.test.ts",
     ],
     globals: true,
+    setupFiles: ["./vitest.setup.ts"],
   },
   resolve: {
     alias: {

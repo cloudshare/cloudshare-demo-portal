@@ -22,6 +22,7 @@ export async function GET() {
     {
       repository: services.exams,
       attempts: services.examAttempts,
+      clocks: services.examClock,
       launches: services.labLaunches,
       connections: services.cloudshareConnections,
       cloudshare: services.cloudshareClientFactory,

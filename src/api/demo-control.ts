@@ -244,13 +244,25 @@ async function runStep(
         },
         { examAttemptId: ctx.examAttempt.id },
       );
+      const scoreReadyLaunch = launch.participantId
+        ? launch
+        : {
+            ...launch,
+            // Demo mode has no real CloudShare participant-correlation pass, so persist a
+            // stable synthetic participant id to keep the score step aligned with the
+            // production score-retrieval contract.
+            participantId: ctx.examAttempt.candidateId,
+          };
+      if (scoreReadyLaunch !== launch) {
+        await deps.labLaunches.save(scoreReadyLaunch);
+      }
       // In demo/fixture mode seed the simulator so the environment appears "running"
       // immediately — in live mode CloudShare emits environment.resumed via webhook.
       if (deps.environmentSimulator) {
-        if (!launch.environmentExternalId) {
+        if (!scoreReadyLaunch.environmentExternalId) {
           throw new Error("lab launch has no correlated environmentExternalId");
         }
-        await deps.environmentSimulator.resumeEnvironment(launch.environmentExternalId);
+        await deps.environmentSimulator.resumeEnvironment(scoreReadyLaunch.environmentExternalId);
       }
       await deps.kryterion.resumeTimer(ctx.examAttempt.id);
       await deps.examAttempts.save({
@@ -258,8 +270,8 @@ async function runStep(
         status: "in_progress",
       });
       return {
-        labLaunchId: launch.id,
-        environmentExternalId: launch.environmentExternalId,
+        labLaunchId: scoreReadyLaunch.id,
+        environmentExternalId: scoreReadyLaunch.environmentExternalId,
       };
     }
 

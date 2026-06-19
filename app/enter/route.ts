@@ -34,6 +34,8 @@ export async function GET(request: Request) {
   const response = await handleEnterExam(
     {
       attempts: services.examAttempts,
+      exams: services.exams,
+      clocks: services.examClock,
       launches: services.labLaunches,
       timer: services.examClock,
       logger: services.logger,

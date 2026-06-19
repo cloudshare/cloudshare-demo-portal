@@ -1,10 +1,15 @@
 import type { Logger } from "@/observability/logger";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
+import type { ExamRepository } from "@/domain/exam-catalog";
+import type { ExamClock } from "@/domain/exam-clock";
 import type { LabLaunchRepository } from "@/domain/lab-launch";
 import type { ExamTimer } from "@/domain/timer-sync";
+import { reconcileExamAttemptCompletion } from "@/domain/exam-attempt-completion";
 
 export interface EnterExamDeps {
   readonly attempts: ExamAttemptRepository;
+  readonly exams?: ExamRepository;
+  readonly clocks?: ExamClock;
   readonly launches: LabLaunchRepository;
   readonly timer?: ExamTimer;
   readonly logger: Logger;
@@ -28,7 +33,7 @@ export async function handleEnterExam(
   deps: EnterExamDeps,
   request: EnterExamRequest,
 ): Promise<EnterExamResponse> {
-  const attempt = await deps.attempts.findById(request.examAttemptId);
+  let attempt = await deps.attempts.findById(request.examAttemptId);
   if (!attempt) {
     return textResponse(404, "Exam attempt not found.");
   }
@@ -40,6 +45,20 @@ export async function handleEnterExam(
       ownerCandidateId: attempt.candidateId,
     });
     return textResponse(403, "Exam entry is not allowed for this candidate.");
+  }
+
+  await reconcileExamAttemptCompletion(
+    {
+      attempts: deps.attempts,
+      exams: deps.exams ?? emptyExamRepository(),
+      clocks: deps.clocks,
+    },
+    { examAttemptId: request.examAttemptId },
+  );
+
+  attempt = await deps.attempts.findById(request.examAttemptId);
+  if (!attempt) {
+    return textResponse(404, "Exam attempt not found.");
   }
 
   if (!ENTERABLE_STATUSES.has(attempt.status)) {
@@ -70,6 +89,14 @@ export async function handleEnterExam(
       "cache-control": "no-store",
     },
     body: "Redirecting to the CloudShare lab.",
+  };
+}
+
+function emptyExamRepository(): ExamRepository {
+  return {
+    save: async () => {},
+    findById: async () => null,
+    listByCustomerId: async () => [],
   };
 }
 

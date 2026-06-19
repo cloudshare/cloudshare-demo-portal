@@ -3,20 +3,37 @@ import { PrismaClient } from "@prisma/client";
 import { createPrismaExamCatalogRepository } from "./prisma-exam-catalog-repository";
 
 const prisma = new PrismaClient();
+const createdExamIds = new Set<string>();
+const createdCustomerIds = new Set<string>();
 
 afterAll(async () => {
   await prisma.$disconnect();
 });
 
 afterEach(async () => {
-  await prisma.exam.deleteMany();
-  await prisma.customer.deleteMany({
-    where: {
-      slug: {
-        startsWith: "exam-catalog-",
+  const examIds = [...createdExamIds];
+  const customerIds = [...createdCustomerIds];
+  createdExamIds.clear();
+  createdCustomerIds.clear();
+
+  if (examIds.length > 0) {
+    await prisma.exam.deleteMany({
+      where: {
+        id: {
+          in: examIds,
+        },
       },
-    },
-  });
+    });
+  }
+  if (customerIds.length > 0) {
+    await prisma.customer.deleteMany({
+      where: {
+        id: {
+          in: customerIds,
+        },
+      },
+    });
+  }
 });
 
 describe("Prisma exam catalog repository", () => {
@@ -28,9 +45,10 @@ describe("Prisma exam catalog repository", () => {
         name: "Helios CX",
       },
     });
+    createdCustomerIds.add(customer.id);
     const repository = createPrismaExamCatalogRepository(prisma);
     const exam = {
-      id: `exam-${suffix}`,
+      id: `exam-catalog-${suffix}`,
       customerId: customer.id,
       title: "Helios CloudShare Fundamentals",
       description: "",
@@ -55,6 +73,7 @@ describe("Prisma exam catalog repository", () => {
       instructorId: "instructor-1",
       instructorName: "Helios Service Account",
     };
+    createdExamIds.add(exam.id);
 
     await repository.save(exam);
 

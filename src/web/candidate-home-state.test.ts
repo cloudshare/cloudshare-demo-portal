@@ -11,8 +11,8 @@ import type { CandidateDashboardData } from "./candidate-scheduling";
 
 const dashboard: CandidateDashboardData = {
   exams: [
-    { id: "exam-1", title: "Helios Fundamentals", description: "", timeLimitMinutes: 90 },
-    { id: "exam-2", title: "Operations Lab", description: "", timeLimitMinutes: 60 },
+    { id: "exam-1", title: "Helios Fundamentals", description: "", timeLimitMinutes: 90, scoreRetrievalEnabled: true },
+    { id: "exam-2", title: "Operations Lab", description: "", timeLimitMinutes: 60, scoreRetrievalEnabled: false },
   ],
   attempts: [
     {

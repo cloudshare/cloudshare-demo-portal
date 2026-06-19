@@ -214,7 +214,7 @@ equivalent `X-Frame-Options: DENY`), preventing the lab from being embedded in a
 
 **Observed behaviour**
 
-CloudShare Guided Journey scoring has three significant limitations:
+CloudShare Guided Journey scoring has three significant product limitations:
 
 1. **Bitmap checkpoints only.** Scoring uses visual-state comparison (screenshot diff)
    rather than process-level or OS-level capture. A candidate can reach the correct
@@ -225,15 +225,51 @@ CloudShare Guided Journey scoring has three significant limitations:
    Per CloudShare roadmap, a more reliable script-driven verification mode is not GA
    until Q3 2026.
 
+In addition, live QA on Slice 7 contradicted an earlier adapter assumption: the previously modelled
+participant-list path `GET /v4/experiences/{id}/journey/participants` is not the correct v4
+Guided Journey score endpoint for this tenant. The working v4 path is:
+
+- `GET /v4/guided-journey/progress/{experienceId}/{participantId}`
+
+The endpoint is participant-specific and requires the CloudShare participant id from the v4
+training-students correlation flow, not the candidate email address. That participant id is now
+persisted on `LabLaunch.participantId` when environment/participant correlation runs, with a
+score-retrieval fallback that re-lists training participants for older launches that predate the
+new field.
+
+The response shape also appears to be a participant-progress document with fields such as
+`progressRate` plus section/step statuses, not the earlier inferred `{ participants: [...] }`
+envelope.
+
+**Update (2026-06-19, live Guided Journey QA):** the live tenant returned a payload shaped like:
+
+- `sectionStatuses[]` rather than `sections[]`
+- section status strings such as `explored` and `inProgress`
+- raw rate fields:
+  - `exploredRate`
+  - `inProgressRate`
+  - `notStartedRate`
+  - `passedRate`
+  - `failedRate`
+  - `notInitiatedRate`
+
+The portal now renders these raw rates directly instead of inferring a synthetic certification
+score. In particular, live QA suggests `passedRate` and `failedRate` may **not** sum to `1.0`
+because CloudShare divides AI checks by sections and some sections may have no checks at all.
+Treat these as Guided Journey progress signals, not a definitive certification pass/fail result.
+
 **Impact on certification use**
 
-- The scoring API (`GET /experiences/{id}/journey/participants`) returns
-  `completedTasks / totalTasks` and a `progress` percentage; the portal surfaces these
-  directly to the candidate.
-- Final certification pass/fail weighting is determined by Genesys, not this portal.
+- Score retrieval must be keyed by the correlated CloudShare participant id, so missing or stale
+  participant correlation is now a supportable retrieval failure rather than a misleading "no score".
+- The portal now maps the participant-progress payload to the candidate score UI by
+  showing raw Guided Journey rates plus section progress, while avoiding any fake composite
+  certification score.
+- Final certification pass/fail weighting is determined outside this portal's Guided Journey view.
 - These limitations must be disclosed to the exam author when configuring checkpoints.
 
-**Code reference:** `src/integrations/cloudshare/guided-journey.ts:26-31`
+**Code reference:** `src/integrations/cloudshare/guided-journey.ts`,
+`src/domain/environment-correlation.ts`, `src/api/score.ts`
 
 ---
 
@@ -268,7 +304,8 @@ inconsistent.
   - Webhook payload field names (`Event`, `EnvironmentExternalId`, `CreatedAt`) — unverified.
   - `GET /environments?externalId=...` path for resolving environment by external ID — unverified.
   - `POST /environments/{id}/actions/suspend` and `…/resume` paths — unverified.
-  - `GET /experiences/{id}/journey/participants` response envelope — unverified.
+  - Guided Journey progress response field names beyond the currently tolerated
+    `progressRate` / section-status shape — partially verified.
 
 **Action required:** Confirm the pre-provision SLA directly with CloudShare support or
 by timing a live provisioning call. Update this entry with the confirmed value.
@@ -277,7 +314,7 @@ by timing a live provisioning call. Update this entry with the confirmed value.
 `src/integrations/cloudshare/environment.ts:11-15`,
 `src/integrations/cloudshare/webhooks.ts:14-26`,
 `src/integrations/cloudshare/environment-controller.ts:9-15`,
-`src/integrations/cloudshare/guided-journey.ts:14-18`
+`src/integrations/cloudshare/guided-journey.ts`
 
 **Update (2026-06-13):** hosts now confirmed — v4 `https://api.accelerate.cloudshare.com/v4`
 (Bearer, `expires_in: 300`); v3 `https://use.cloudshare.com/api/v3` (`cs_sha1` via
@@ -701,5 +738,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-06-15 (updated training-students schema handling, v3 envId-based suspend/resume/poll semantics, and Slice 4 training Name uniqueness/length).
+*Last updated: 2026-06-19 (recorded Guided Journey progress endpoint correction, participant-id correlation requirement, and prior training-students / envId findings).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*

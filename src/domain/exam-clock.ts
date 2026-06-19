@@ -17,6 +17,8 @@ export interface ExamClockRepository {
 
 export interface ExamClock extends ExamTimer {
   getTimerState(examAttemptId: string): Promise<ExamClockState | null>;
+  getElapsedMs(examAttemptId: string): Promise<number>;
+  settleCompletion(examAttemptId: string, limitMs: number): Promise<ExamClockState | null>;
 }
 
 export function createExamClock(deps: {
@@ -28,6 +30,38 @@ export function createExamClock(deps: {
   return {
     async getTimerState(examAttemptId: string): Promise<ExamClockState | null> {
       return deps.clocks.findByExamAttemptId(examAttemptId);
+    },
+
+    async getElapsedMs(examAttemptId: string): Promise<number> {
+      const state = await deps.clocks.findByExamAttemptId(examAttemptId);
+      return resolveElapsedMs(state, now());
+    },
+
+    async settleCompletion(examAttemptId: string, limitMs: number): Promise<ExamClockState | null> {
+      const state = await deps.clocks.findByExamAttemptId(examAttemptId);
+      if (!state) {
+        return null;
+      }
+
+      const settledAt = now();
+      const nextState: ExamClockState = {
+        examAttemptId,
+        status: "paused",
+        elapsedAtPauseMs: Math.min(limitMs, resolveElapsedMs(state, settledAt)),
+        startedAt: null,
+        updatedAt: settledAt,
+      };
+
+      if (
+        state.status === nextState.status &&
+        state.elapsedAtPauseMs === nextState.elapsedAtPauseMs &&
+        state.startedAt?.getTime() === nextState.startedAt?.getTime()
+      ) {
+        return state;
+      }
+
+      await deps.clocks.save(nextState);
+      return nextState;
     },
 
     async pauseTimer(examAttemptId: string): Promise<void> {
@@ -64,6 +98,18 @@ export function createExamClock(deps: {
       });
     },
   };
+}
+
+function resolveElapsedMs(state: ExamClockState | null, at: Date): number {
+  if (!state) {
+    return 0;
+  }
+
+  if (state.status !== "running" || !state.startedAt) {
+    return state.elapsedAtPauseMs;
+  }
+
+  return state.elapsedAtPauseMs + Math.max(0, at.getTime() - state.startedAt.getTime());
 }
 
 export function createInMemoryExamClockRepository(): ExamClockRepository & {

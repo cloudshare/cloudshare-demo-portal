@@ -14,7 +14,13 @@ afterAll(async () => {
 });
 
 afterEach(async () => {
-  await prisma.portalSession.deleteMany();
+  await prisma.portalSession.deleteMany({
+    where: {
+      id: {
+        startsWith: "portal-session-",
+      },
+    },
+  });
   await prisma.user.deleteMany({
     where: {
       email: {

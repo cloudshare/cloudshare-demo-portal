@@ -14,17 +14,31 @@ export default async function CandidateScorePage({
 
   if (!examAttemptId) {
     return (
-      <main>
-        <h1>Session complete</h1>
-        <p>Missing examAttemptId.</p>
+      <main
+        style={{
+          fontFamily: "system-ui, sans-serif",
+          padding: "2rem",
+          maxWidth: "720px",
+          margin: "0 auto",
+        }}
+      >
+        <h1 style={{ marginBottom: "0.5rem" }}>Session complete</h1>
+        <p style={{ color: "#555" }}>Missing examAttemptId.</p>
       </main>
     );
   }
 
   return (
-    <main>
-      <h1>Session complete</h1>
-      <p>Exam attempt: {examAttemptId}</p>
+    <main
+      style={{
+        fontFamily: "system-ui, sans-serif",
+        padding: "2rem",
+        maxWidth: "720px",
+        margin: "0 auto",
+      }}
+    >
+      <h1 style={{ marginBottom: "0.35rem" }}>Session complete</h1>
+      <p style={{ marginTop: 0, color: "#555" }}>Exam attempt: {examAttemptId}</p>
       <ScoreDisplay examAttemptId={examAttemptId} />
     </main>
   );

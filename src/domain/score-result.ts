@@ -13,6 +13,7 @@ export interface ScoreStep {
   readonly stepId: string;
   readonly title: string;
   readonly completed: boolean;
+  readonly status?: string | null;
 }
 
 /** Per-participant Guided Journey progress as returned by the ScoreRetrievalProvider port. */
@@ -21,6 +22,12 @@ export interface ParticipantProgress {
   readonly stepsCompleted: number;
   readonly stepsTotal: number;
   readonly steps: ScoreStep[];
+  readonly exploredRate: number;
+  readonly inProgressRate: number;
+  readonly notStartedRate: number;
+  readonly passedRate: number;
+  readonly failedRate: number;
+  readonly notInitiatedRate: number;
 }
 
 /** Enriched score result, combining participant progress with exam attempt context. */
@@ -31,15 +38,36 @@ export interface ScoreResult {
   readonly stepsCompleted: number;
   readonly stepsTotal: number;
   readonly steps: ScoreStep[];
+  readonly exploredRate: number;
+  readonly inProgressRate: number;
+  readonly notStartedRate: number;
+  readonly passedRate: number;
+  readonly failedRate: number;
+  readonly notInitiatedRate: number;
   /** ISO 8601 timestamp of when progress was retrieved. */
   readonly retrievedAt: string;
 }
+
+export type ExamAttemptScore =
+  | (ScoreResult & {
+      readonly scoreAvailable: true;
+    })
+  | {
+      readonly examAttemptId: string;
+      readonly experienceId: string;
+      readonly scoreAvailable: false;
+      readonly reason: "score_retrieval_disabled" | "no_guided_journey_score";
+      readonly retrievedAt: string;
+    };
 
 // --- Port ---
 
 export interface ScoreRetrievalProvider {
   /** Fetch per-participant progress for a CloudShare experience. Returns null if no data yet. */
-  getParticipantProgress(experienceId: string): Promise<ParticipantProgress | null>;
+  getParticipantProgress(
+    experienceId: string,
+    participantId: string,
+  ): Promise<ParticipantProgress | null>;
 }
 
 // --- Use case ---
@@ -53,11 +81,24 @@ export interface RetrieveScoreInput {
   readonly examAttemptId: string;
 }
 
+export interface ResolveExamAttemptScoreInput {
+  readonly examAttemptId: string;
+  readonly experienceId: string;
+  readonly participantId: string;
+  readonly scoreRetrievalEnabled: boolean;
+}
+
 const EMPTY_PROGRESS: ParticipantProgress = {
   percentComplete: 0,
   stepsCompleted: 0,
   stepsTotal: 0,
   steps: [],
+  exploredRate: 0,
+  inProgressRate: 0,
+  notStartedRate: 0,
+  passedRate: 0,
+  failedRate: 0,
+  notInitiatedRate: 0,
 };
 
 export async function retrieveScore(
@@ -70,13 +111,25 @@ export async function retrieveScore(
   }
 
   let progress: ParticipantProgress | null;
+  if (!launch.participantId) {
+    throw new ScoreRetrievalError("Failed to retrieve Guided Journey progress", {
+      examAttemptId: input.examAttemptId,
+      experienceId: launch.experienceId,
+      cause: "missing_participant_id",
+      causeMessage: "CloudShare participantId is not recorded for this lab launch",
+    });
+  }
   try {
-    progress = await deps.scoreRetriever.getParticipantProgress(launch.experienceId);
+    progress = await deps.scoreRetriever.getParticipantProgress(
+      launch.experienceId,
+      launch.participantId,
+    );
   } catch (cause) {
     throw new ScoreRetrievalError("Failed to retrieve Guided Journey progress", {
       examAttemptId: input.examAttemptId,
       experienceId: launch.experienceId,
-      cause: cause instanceof Error ? cause.message : String(cause),
+      cause,
+      causeMessage: cause instanceof Error ? cause.message : String(cause),
     });
   }
 
@@ -88,6 +141,74 @@ export async function retrieveScore(
     stepsCompleted: p.stepsCompleted,
     stepsTotal: p.stepsTotal,
     steps: p.steps,
+    exploredRate: p.exploredRate,
+    inProgressRate: p.inProgressRate,
+    notStartedRate: p.notStartedRate,
+    passedRate: p.passedRate,
+    failedRate: p.failedRate,
+    notInitiatedRate: p.notInitiatedRate,
     retrievedAt: new Date().toISOString(),
+  };
+}
+
+export async function resolveExamAttemptScore(
+  deps: {
+    readonly scoreRetriever: ScoreRetrievalProvider;
+    readonly now?: () => Date;
+  },
+  input: ResolveExamAttemptScoreInput,
+): Promise<ExamAttemptScore> {
+  const retrievedAt = (deps.now ?? (() => new Date()))().toISOString();
+
+  if (!input.scoreRetrievalEnabled) {
+    return {
+      examAttemptId: input.examAttemptId,
+      experienceId: input.experienceId,
+      scoreAvailable: false,
+      reason: "score_retrieval_disabled",
+      retrievedAt,
+    };
+  }
+
+  let progress: ParticipantProgress | null;
+  try {
+    progress = await deps.scoreRetriever.getParticipantProgress(
+      input.experienceId,
+      input.participantId,
+    );
+  } catch (cause) {
+    throw new ScoreRetrievalError("Failed to retrieve Guided Journey progress", {
+      examAttemptId: input.examAttemptId,
+      experienceId: input.experienceId,
+      cause,
+      causeMessage: cause instanceof Error ? cause.message : String(cause),
+    });
+  }
+
+  if (!progress) {
+    return {
+      examAttemptId: input.examAttemptId,
+      experienceId: input.experienceId,
+      scoreAvailable: false,
+      reason: "no_guided_journey_score",
+      retrievedAt,
+    };
+  }
+
+  return {
+    examAttemptId: input.examAttemptId,
+    experienceId: input.experienceId,
+    scoreAvailable: true,
+    percentComplete: progress.percentComplete,
+    stepsCompleted: progress.stepsCompleted,
+    stepsTotal: progress.stepsTotal,
+    steps: progress.steps,
+    exploredRate: progress.exploredRate,
+    inProgressRate: progress.inProgressRate,
+    notStartedRate: progress.notStartedRate,
+    passedRate: progress.passedRate,
+    failedRate: progress.failedRate,
+    notInitiatedRate: progress.notInitiatedRate,
+    retrievedAt,
   };
 }

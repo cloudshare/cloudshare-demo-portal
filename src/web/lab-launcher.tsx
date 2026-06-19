@@ -1,11 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { openEnterExamWindow } from "./enter-exam";
 import { isLabWindowOpen } from "./lab-window";
-
-type LaunchState = "idle" | "launching" | "open" | "suspending" | "suspended" | "error";
-type AttemptStatus = "ready" | "in_progress" | "suspended";
+import { preflightLabAction, suspendLabAttempt, type CandidateLabStatus, type AttemptStatus } from "./lab-launcher-client";
+import { getLauncherSyncTarget, type LaunchState } from "./lab-launcher-state";
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const CHILD_POLL_INTERVAL_MS = 3_000;
@@ -19,26 +18,77 @@ const CHILD_POLL_INTERVAL_MS = 3_000;
  */
 export function LabLauncher({
   examAttemptId,
-  initialAttemptStatus = "ready",
+  currentAttemptStatus = "ready",
+  onAttemptStatusChange,
+  onLabStatusLoaded,
 }: {
   examAttemptId: string;
-  initialAttemptStatus?: AttemptStatus;
+  currentAttemptStatus?: AttemptStatus;
+  onAttemptStatusChange?: (status: AttemptStatus) => void;
+  onLabStatusLoaded?: (status: CandidateLabStatus) => void;
 }) {
   const [state, setState] = useState<LaunchState>(
-    initialAttemptStatus === "suspended" ? "suspended" : "idle",
+    currentAttemptStatus === "completed"
+      ? "completed"
+      : currentAttemptStatus === "suspended"
+        ? "suspended"
+        : "idle",
   );
   const [message, setMessage] = useState<string>("");
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const childPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastReportedAttemptStatusRef = useRef<AttemptStatus | null>(null);
+  const currentAttemptStatusRef = useRef(currentAttemptStatus);
+  const onAttemptStatusChangeRef = useRef(onAttemptStatusChange);
+  const onLabStatusLoadedRef = useRef(onLabStatusLoaded);
 
-  function sendHeartbeat() {
-    fetch("/api/heartbeat", {
+  useEffect(() => {
+    currentAttemptStatusRef.current = currentAttemptStatus;
+  }, [currentAttemptStatus]);
+
+  useEffect(() => {
+    onAttemptStatusChangeRef.current = onAttemptStatusChange;
+  }, [onAttemptStatusChange]);
+
+  useEffect(() => {
+    onLabStatusLoadedRef.current = onLabStatusLoaded;
+  }, [onLabStatusLoaded]);
+
+  const reportAttemptStatusChange = useCallback((status: AttemptStatus) => {
+    if (lastReportedAttemptStatusRef.current === status) {
+      return;
+    }
+    lastReportedAttemptStatusRef.current = status;
+    onAttemptStatusChangeRef.current?.(status);
+  }, []);
+
+  const reportLabStatusLoaded = useCallback((status: CandidateLabStatus) => {
+    onLabStatusLoadedRef.current?.(status);
+  }, []);
+
+  const syncToAuthoritativeAttemptStatus = useCallback((status: AttemptStatus) => {
+    const target = getLauncherSyncTarget(status);
+    if (!target) {
+      return;
+    }
+
+    stopHeartbeat();
+    stopChildPoll();
+    setState((current) => (current === target.state ? current : target.state));
+    setMessage((current) => (current === target.message ? current : target.message));
+    reportAttemptStatusChange(status);
+  }, [reportAttemptStatusChange]);
+
+  async function sendHeartbeat() {
+    const response = await fetch("/api/heartbeat", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ examAttemptId }),
-    }).catch(() => {
-      // best-effort; server timeout is the reliable backstop
     });
+    const body = (await response.json().catch(() => ({}))) as { attemptStatus?: AttemptStatus };
+    if (body.attemptStatus === "completed") {
+      syncToAuthoritativeAttemptStatus("completed");
+    }
   }
 
   function sendBeaconHeartbeat() {
@@ -51,8 +101,14 @@ export function LabLauncher({
   }
 
   function startHeartbeat() {
-    sendHeartbeat();
-    heartbeatRef.current = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS);
+    void sendHeartbeat().catch(() => {
+      // best-effort; server timeout is the reliable backstop
+    });
+    heartbeatRef.current = setInterval(() => {
+      void sendHeartbeat().catch(() => {
+        // best-effort; server timeout is the reliable backstop
+      });
+    }, HEARTBEAT_INTERVAL_MS);
   }
 
   function stopHeartbeat() {
@@ -70,26 +126,117 @@ export function LabLauncher({
   }
 
   async function suspendNow() {
+    if (currentAttemptStatusRef.current === "completed") {
+      setState("completed");
+      setMessage("Examination complete.");
+      return;
+    }
     stopHeartbeat();
     stopChildPoll();
     setState("suspending");
     try {
-      const resp = await fetch("/api/exam/suspend", {
+      const result = await suspendLabAttempt(fetch, examAttemptId);
+      if (result.kind === "completed") {
+        reportLabStatusLoaded(result.labStatus);
+        syncToAuthoritativeAttemptStatus("completed");
+        return;
+      }
+      if (result.kind === "blocked") {
+        if (result.labStatus) {
+          reportLabStatusLoaded(result.labStatus);
+          reportAttemptStatusChange(result.labStatus.status);
+        }
+        setState(result.labStatus?.status === "suspended" ? "suspended" : "error");
+        setMessage(result.message);
+        return;
+      }
+      setState("suspended");
+      setMessage(result.message);
+    } catch (err) {
+      setState("error");
+      setMessage(err instanceof Error ? err.message : "suspend failed");
+    }
+  }
+
+  async function launch() {
+    if (currentAttemptStatusRef.current === "completed") {
+      setState("completed");
+      setMessage("Examination complete.");
+      return;
+    }
+    try {
+      setState("launching");
+      setMessage("");
+      const preflight = await preflightLabAction(fetch, {
+        examAttemptId,
+        action: "enter",
+      });
+      reportLabStatusLoaded(preflight.labStatus);
+      reportAttemptStatusChange(preflight.labStatus.status);
+      if (preflight.kind === "completed") {
+        syncToAuthoritativeAttemptStatus("completed");
+        return;
+      }
+      if (preflight.kind === "blocked") {
+        setState("error");
+        setMessage(preflight.message);
+        return;
+      }
+      openEnterExamWindow(examAttemptId);
+      setState("open");
+    } catch (err) {
+      setState("error");
+      setMessage(err instanceof Error ? err.message : "launch failed");
+    }
+  }
+
+  async function resumeNow() {
+    if (currentAttemptStatusRef.current === "completed") {
+      setState("completed");
+      setMessage("Examination complete.");
+      return;
+    }
+    try {
+      setState("launching");
+      setMessage("");
+      const preflight = await preflightLabAction(fetch, {
+        examAttemptId,
+        action: "resume",
+      });
+      reportLabStatusLoaded(preflight.labStatus);
+      reportAttemptStatusChange(preflight.labStatus.status);
+      if (preflight.kind === "completed") {
+        syncToAuthoritativeAttemptStatus("completed");
+        return;
+      }
+      if (preflight.kind === "blocked") {
+        setState("error");
+        setMessage(preflight.message);
+        return;
+      }
+      const resp = await fetch("/api/exam/resume", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ examAttemptId }),
       });
       if (!resp.ok) {
         const detail = (await resp.json().catch(() => ({}))) as { error?: string };
-        throw new Error(detail.error ?? `suspend failed (${resp.status})`);
+        throw new Error(detail.error ?? `resume failed (${resp.status})`);
       }
-      setState("suspended");
-      setMessage("Lab suspended. You can resume your session when ready.");
+      openEnterExamWindow(examAttemptId);
+      setState("open");
     } catch (err) {
       setState("error");
-      setMessage(err instanceof Error ? err.message : "suspend failed");
+      setMessage(err instanceof Error ? err.message : "resume failed");
     }
   }
+
+  useEffect(() => {
+    const target = getLauncherSyncTarget(currentAttemptStatus);
+    if (target) {
+      syncToAuthoritativeAttemptStatus(currentAttemptStatus);
+    }
+  }, [currentAttemptStatus, syncToAuthoritativeAttemptStatus]);
 
   useEffect(() => {
     if (state !== "open") return;
@@ -124,39 +271,6 @@ export function LabLauncher({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
 
-  async function launch() {
-    try {
-      setState("launching");
-      setMessage("");
-      openEnterExamWindow(examAttemptId);
-      setState("open");
-    } catch (err) {
-      setState("error");
-      setMessage(err instanceof Error ? err.message : "launch failed");
-    }
-  }
-
-  async function resumeNow() {
-    try {
-      setState("launching");
-      setMessage("");
-      const resp = await fetch("/api/exam/resume", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ examAttemptId }),
-      });
-      if (!resp.ok) {
-        const detail = (await resp.json().catch(() => ({}))) as { error?: string };
-        throw new Error(detail.error ?? `resume failed (${resp.status})`);
-      }
-      openEnterExamWindow(examAttemptId);
-      setState("open");
-    } catch (err) {
-      setState("error");
-      setMessage(err instanceof Error ? err.message : "resume failed");
-    }
-  }
-
   return (
     <div>
       {(state === "idle" || state === "error") && (
@@ -188,6 +302,10 @@ export function LabLauncher({
 
       {state === "suspended" && (
         <p>{message || "Lab suspended."}</p>
+      )}
+
+      {state === "completed" && (
+        <p>{message || "Examination complete."}</p>
       )}
 
       {state === "error" && (

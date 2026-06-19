@@ -117,6 +117,10 @@ npm run lint         # ESLint
 npm run build        # Production build
 ```
 
+`npm test` uses a dedicated SQLite database at `prisma/test.db`. It does not run against the
+local development `DATABASE_URL` from `.env`, so running the suite should not delete QA data from
+the dev portal database.
+
 ### Live E2E credentials
 
 Live CloudShare E2E tests read credentials from `.env.e2e.local`, which is ignored
@@ -317,7 +321,9 @@ progress from CloudShare and returns a typed `ScoreResult`:
 **Architecture:**
 - `ScoreRetrievalProvider` (`src/domain/score-result.ts`) — domain port; implemented
   by `createCloudShareGuidedJourneyProvider` (`src/integrations/cloudshare/guided-journey.ts`)
-  which calls `GET /experiences/{id}/journey/participants` (v4 API assumption, isolated).
+  which calls `GET /v4/guided-journey/progress/{experienceId}/{participantId}`.
+  The required `participantId` comes from the correlated CloudShare training participant
+  record, not from the candidate email address.
 - `retrieveScore` use case — looks up the `LabLaunch`, calls the port, enriches
   with exam context and timestamp. Returns an empty progress record if CloudShare
   has no data yet (lab not yet completed).

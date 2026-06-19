@@ -3,6 +3,7 @@ import { createInMemoryExamCatalogRepository } from "@/persistence/exam-catalog-
 import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-repository";
 import { createInMemoryEventLogRepository } from "@/persistence/event-log-repository";
 import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repository";
+import { createExamClock, createInMemoryExamClockRepository } from "@/domain/exam-clock";
 import { createDraftExam, publishExam, type CreateDraftExamInput } from "@/domain/exam-catalog";
 import type { Logger } from "@/observability/logger";
 import type { CloudShareClientFactory, CloudShareConnectionRepository, CloudShareConnectionRecord } from "@/domain/cloudshare-connection";
@@ -72,12 +73,12 @@ function makeCloudShareFactory(overrides: Partial<ReturnType<CloudShareClientFac
       requestV3Text: vi.fn(),
       requestV4: vi.fn(async (spec: { path: string }) => {
         if (spec.path === "/trainings") {
-          return { id: "training-1" };
+          return { id: "EXtraining-1" };
         }
-        if (spec.path === "/trainings/training-1/students") {
+        if (spec.path === "/trainings/EXtraining-1/students") {
           return {};
         }
-        if (spec.path === "/trainings/training-1/sponsored-link") {
+        if (spec.path === "/trainings/EXtraining-1/sponsored-link") {
           return {
             loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/demo",
           };
@@ -164,6 +165,7 @@ describe("candidate scheduling handlers", () => {
           title: "Helios CloudShare Fundamentals",
           description: "Hands-on certification exam.",
           timeLimitMinutes: 90,
+          scoreRetrievalEnabled: false,
         },
       ],
       attempts: [
@@ -195,7 +197,7 @@ describe("candidate scheduling handlers", () => {
         cloudshare: makeCloudShareFactory({
           requestV4: vi.fn(async (spec: { path: string }) => {
             if (spec.path === "/trainings") {
-              return { id: "training-1" };
+              return { id: "EXtraining-1" };
             }
             throw new CloudShareRequestError("forbidden", 403, {
               requestBody: {
@@ -243,7 +245,7 @@ describe("candidate scheduling handlers", () => {
         attemptedOperation: "add_participant",
         integrationSurface: "cloudshare.v4.training.participant",
         method: "POST",
-        path: "/v4/trainings/training-1/students",
+        path: "/v4/trainings/EXtraining-1/students",
         failureMode: "http_status",
         responseStatus: 403,
         requestBody: {
@@ -264,7 +266,7 @@ describe("candidate scheduling handlers", () => {
           operation: "schedule_exam",
           integrationSurface: "cloudshare.v4.training.participant",
           method: "POST",
-          path: "/v4/trainings/training-1/students",
+          path: "/v4/trainings/EXtraining-1/students",
           failureMode: "http_status",
           responseStatus: 403,
           requestBody: {
@@ -312,6 +314,7 @@ describe("candidate scheduling handlers", () => {
           title: "Helios CloudShare Fundamentals",
           description: "Hands-on certification exam.",
           timeLimitMinutes: 90,
+          scoreRetrievalEnabled: false,
         },
       ],
       attempts: [
@@ -325,6 +328,65 @@ describe("candidate scheduling handlers", () => {
           id: "attempt-completed",
           examId: "exam-1",
           scheduledFor: "2026-06-16T16:00:00.000Z",
+          status: "completed",
+        },
+      ],
+    });
+  });
+
+  it("reconciles an in-progress attempt to completed on the candidate dashboard when the portal-owned runtime is exhausted", async () => {
+    const exams = await makeExamRepository();
+    const attempts = createInMemoryExamAttemptRepository();
+    const clockRepository = createInMemoryExamClockRepository();
+    const logger = makeLogger();
+    let nowMs = new Date("2026-06-15T17:30:30.000Z").getTime();
+    const clocks = createExamClock({
+      clocks: clockRepository,
+      now: () => new Date(nowMs),
+    });
+
+    await attempts.save({
+      id: "attempt-in-progress",
+      customerId: "customer-helios",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "in_progress",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    await clockRepository.save({
+      examAttemptId: "attempt-in-progress",
+      status: "running",
+      elapsedAtPauseMs: 89 * 60 * 1000,
+      startedAt: new Date("2026-06-15T17:29:30.000Z"),
+      updatedAt: new Date("2026-06-15T17:29:30.000Z"),
+    });
+
+    const dashboard = await handleGetCandidateDashboard(
+      {
+        repository: exams,
+        attempts,
+        clocks,
+        logger,
+      },
+      { customerId: "customer-helios", candidateId: "candidate-1" },
+    );
+
+    expect(dashboard.body).toEqual({
+      exams: [
+        {
+          id: "exam-1",
+          title: "Helios CloudShare Fundamentals",
+          description: "Hands-on certification exam.",
+          timeLimitMinutes: 90,
+          scoreRetrievalEnabled: false,
+        },
+      ],
+      attempts: [
+        {
+          id: "attempt-in-progress",
+          examId: "exam-1",
+          scheduledFor: "2026-06-15T16:00:00.000Z",
           status: "completed",
         },
       ],
@@ -350,15 +412,15 @@ describe("candidate scheduling handlers", () => {
       examAttemptId: "attempt-ready",
       candidateId: "candidate-1",
       participantEmail: "candidate@helioscx.demo",
-      trainingId: "training-1",
-      experienceId: "training-1",
+      trainingId: "EXtraining-1",
+      experienceId: "EXtraining-1",
       loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/demo",
       status: "launched",
       createdAt: new Date("2026-06-15T10:00:00.000Z"),
     });
 
     const requestV4 = vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
-      if (spec.path === "/trainings/training-1/students") {
+      if (spec.path === "/trainings/EXtraining-1/students") {
         return spec.schema.parse({
           count: 1,
           items: [
@@ -389,7 +451,7 @@ describe("candidate scheduling handlers", () => {
     expect(requestV4).toHaveBeenCalledWith(
       expect.objectContaining({
         method: "GET",
-        path: "/trainings/training-1/students",
+        path: "/trainings/EXtraining-1/students",
       }),
     );
     await expect(launches.findByExamAttemptId("attempt-ready")).resolves.toMatchObject({
@@ -419,8 +481,8 @@ describe("candidate scheduling handlers", () => {
       examAttemptId: "attempt-ready",
       candidateId: "candidate-1",
       participantEmail: "candidate@helioscx.demo",
-      trainingId: "training-1",
-      experienceId: "training-1",
+      trainingId: "EXtraining-1",
+      experienceId: "EXtraining-1",
       loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/demo",
       status: "launched",
       createdAt: new Date("2026-06-15T10:00:00.000Z"),
@@ -434,10 +496,10 @@ describe("candidate scheduling handlers", () => {
         connections: makeConnectionRepository(),
         cloudshare: makeCloudShareFactory({
           requestV4: vi.fn(async (spec: { path: string }) => {
-            if (spec.path === "/trainings/training-1/students") {
+            if (spec.path === "/trainings/EXtraining-1/students") {
               throw new CloudShareRequestError("forbidden", 403, {
                 method: "GET",
-                path: "/v4/trainings/training-1/students",
+                path: "/v4/trainings/EXtraining-1/students",
                 integrationSurface: "cloudshare.v4.training.participant_list",
                 responseBody: "{\"error\":\"forbidden\"}",
               });
@@ -460,12 +522,12 @@ describe("candidate scheduling handlers", () => {
         correlationId: "corr-list-1",
         customerId: "customer-helios",
         examAttemptId: "attempt-ready",
-        trainingId: "training-1",
+        trainingId: "EXtraining-1",
         operation: "candidate_dashboard_environment_correlation",
         attemptedOperation: "list_training_participants",
         integrationSurface: "cloudshare.v4.training.participant_list",
         method: "GET",
-        path: "/v4/trainings/training-1/students",
+        path: "/v4/trainings/EXtraining-1/students",
         failureMode: "http_status",
         responseStatus: 403,
         responseBody: "{\"error\":\"forbidden\"}",
@@ -479,12 +541,12 @@ describe("candidate scheduling handlers", () => {
           correlationId: "corr-list-1",
           customerId: "customer-helios",
           examAttemptId: "attempt-ready",
-          trainingId: "training-1",
+          trainingId: "EXtraining-1",
           operation: "candidate_dashboard_environment_correlation",
           attemptedOperation: "list_training_participants",
           integrationSurface: "cloudshare.v4.training.participant_list",
           method: "GET",
-          path: "/v4/trainings/training-1/students",
+          path: "/v4/trainings/EXtraining-1/students",
           failureMode: "http_status",
           responseStatus: 403,
           responseBody: "{\"error\":\"forbidden\"}",
@@ -513,8 +575,8 @@ describe("candidate scheduling handlers", () => {
       examAttemptId: "attempt-ready",
       candidateId: "candidate-1",
       participantEmail: "candidate@helioscx.demo",
-      trainingId: "training-1",
-      experienceId: "training-1",
+      trainingId: "EXtraining-1",
+      experienceId: "EXtraining-1",
       loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/demo",
       status: "launched",
       createdAt: new Date("2026-06-15T10:00:00.000Z"),
@@ -528,13 +590,13 @@ describe("candidate scheduling handlers", () => {
         connections: makeConnectionRepository(),
         cloudshare: makeCloudShareFactory({
           requestV4: vi.fn(async (spec: { path: string }) => {
-            if (spec.path === "/trainings/training-1/students") {
+            if (spec.path === "/trainings/EXtraining-1/students") {
               throw new CloudShareResponseError(
-                "CloudShare response from https://api.accelerate.cloudshare.com/v4/trainings/training-1/students did not match the expected schema",
+                "CloudShare response from https://api.accelerate.cloudshare.com/v4/trainings/EXtraining-1/students did not match the expected schema",
                 {
                   method: "GET",
                   host: "api.accelerate.cloudshare.com",
-                  path: "/v4/trainings/training-1/students",
+                  path: "/v4/trainings/EXtraining-1/students",
                   integrationSurface: "cloudshare.v4.training.participant_list",
                   responseBody: '{"Students":[{"Id":"student-1"}]}',
                   issues: ["Required"],
@@ -559,7 +621,7 @@ describe("candidate scheduling handlers", () => {
         correlationId: "corr-list-2",
         failureMode: "unexpected_response",
         host: "api.accelerate.cloudshare.com",
-        path: "/v4/trainings/training-1/students",
+        path: "/v4/trainings/EXtraining-1/students",
         integrationSurface: "cloudshare.v4.training.participant_list",
         responseBody: '{"Students":[{"Id":"student-1"}]}',
         issues: ["Required"],
@@ -572,7 +634,7 @@ describe("candidate scheduling handlers", () => {
           correlationId: "corr-list-2",
           failureMode: "unexpected_response",
           host: "api.accelerate.cloudshare.com",
-          path: "/v4/trainings/training-1/students",
+          path: "/v4/trainings/EXtraining-1/students",
           integrationSurface: "cloudshare.v4.training.participant_list",
           responseBody: '{"Students":[{"Id":"student-1"}]}',
           issues: ["Required"],

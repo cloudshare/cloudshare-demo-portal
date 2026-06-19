@@ -113,6 +113,7 @@ model LabLaunch {
   examAttemptId         String      @unique
   candidateId           String
   participantEmail      String?
+  participantId         String?
   trainingId            String?
   experienceId          String
   environmentExternalId String?

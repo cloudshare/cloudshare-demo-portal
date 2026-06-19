@@ -4,6 +4,7 @@ import { getServices } from "@/composition";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { handleHeartbeat } from "@/api/heartbeat";
 import { authorizeCandidateExamAttemptAccess } from "@/api/candidate-exam-attempt-access";
+import { reconcileExamAttemptCompletion } from "@/domain/exam-attempt-completion";
 
 /**
  * Client heartbeat endpoint. The candidate page POSTs here while a lab is
@@ -32,12 +33,37 @@ export async function POST(request: Request) {
     sessionId,
     examAttemptId,
     requireLaunch: true,
-    requireInProgress: true,
   });
   if (!access.ok) {
     return NextResponse.json(access.response.body, { status: access.response.status });
   }
 
+  const reconciliation = await reconcileExamAttemptCompletion(
+    {
+      attempts: services.examAttempts,
+      exams: services.exams,
+      clocks: services.examClock,
+    },
+    { examAttemptId },
+  );
+  if (reconciliation?.status === "completed") {
+    heartbeatAutoSuspend.removeHeartbeat(examAttemptId);
+    return NextResponse.json(
+      { status: "completed", attemptStatus: "completed" },
+      { status: 200 },
+    );
+  }
+
+  if (access.attempt.status !== "in_progress") {
+    return NextResponse.json({ error: "exam attempt is not in progress" }, { status: 409 });
+  }
+
   const resp = await handleHeartbeat({ autoSuspend: heartbeatAutoSuspend, logger }, { body });
-  return NextResponse.json(resp.body, { status: resp.status });
+  return NextResponse.json(
+    {
+      ...resp.body,
+      attemptStatus: "in_progress",
+    },
+    { status: resp.status },
+  );
 }

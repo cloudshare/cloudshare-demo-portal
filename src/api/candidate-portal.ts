@@ -1,4 +1,5 @@
 import type { ExamRepository } from "@/domain/exam-catalog";
+import type { ExamClock } from "@/domain/exam-clock";
 import type { Logger } from "@/observability/logger";
 import type { PortalUserProvisioningStore } from "@/auth";
 import type {
@@ -30,6 +31,7 @@ import {
   scheduleExam,
 } from "@/domain/scheduling";
 import { correlateEnvironmentForExamAttempt } from "@/domain/environment-correlation";
+import { reconcileExamAttemptCompletion } from "@/domain/exam-attempt-completion";
 import { randomUUID } from "node:crypto";
 
 export const SELF_REGISTER_CUSTOMER_SLUG = "helios-cx";
@@ -59,6 +61,7 @@ interface CandidateExamCatalogDeps {
 
 interface CandidateDashboardDeps extends CandidateExamCatalogDeps {
   readonly attempts: ExamAttemptRepository;
+  readonly clocks?: ExamClock;
   readonly launches?: LabLaunchRepository;
   readonly connections?: CloudShareConnectionRepository;
   readonly cloudshare?: CloudShareClientFactory;
@@ -85,6 +88,7 @@ export interface CandidateExamCatalogItem {
   readonly title: string;
   readonly description: string;
   readonly timeLimitMinutes: number;
+  readonly scoreRetrievalEnabled: boolean;
 }
 
 export interface CandidateAttemptItem {
@@ -139,7 +143,24 @@ export async function handleGetCandidateDashboard(
 ): Promise<CandidatePortalResponse> {
   const exams = await deps.repository.listByCustomerId(request.customerId);
   const attempts = await deps.attempts.listByCandidate(request.candidateId);
-  await correlateCandidateAttemptEnvironments(deps, request.customerId, attempts.map((attempt) => attempt.id));
+
+  for (const attempt of attempts) {
+    await reconcileExamAttemptCompletion(
+      {
+        attempts: deps.attempts,
+        exams: deps.repository,
+        clocks: deps.clocks,
+      },
+      { examAttemptId: attempt.id },
+    );
+  }
+
+  const reconciledAttempts = await deps.attempts.listByCandidate(request.candidateId);
+  await correlateCandidateAttemptEnvironments(
+    deps,
+    request.customerId,
+    reconciledAttempts.map((attempt) => attempt.id),
+  );
 
   return {
     status: 200,
@@ -147,7 +168,7 @@ export async function handleGetCandidateDashboard(
       exams: exams
         .filter((exam) => exam.status === "published")
         .map(toCandidateExamCatalogItem),
-      attempts: attempts.map((attempt) => ({
+      attempts: reconciledAttempts.map((attempt) => ({
         id: attempt.id,
         examId: attempt.examId,
         scheduledFor: attempt.scheduledFor?.toISOString() ?? null,
@@ -286,6 +307,7 @@ function toCandidateExamCatalogItem(exam: Exam): CandidateExamCatalogItem {
     title: exam.title,
     description: exam.description,
     timeLimitMinutes: exam.timeLimitMinutes,
+    scoreRetrievalEnabled: exam.scoreRetrievalEnabled,
   };
 }
 

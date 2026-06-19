@@ -16,11 +16,17 @@ const prisma = new PrismaClient();
 const createdCustomerIds = new Set<string>();
 
 afterEach(async () => {
-  await prisma.portalSession.deleteMany();
+  await prisma.portalSession.deleteMany({
+    where: {
+      id: {
+        startsWith: "portal-session-",
+      },
+    },
+  });
   await prisma.user.deleteMany({
     where: {
       email: {
-        contains: "@helios",
+        contains: "@admin-cloudshare.example",
       },
     },
   });

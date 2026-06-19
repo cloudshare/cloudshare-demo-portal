@@ -4,6 +4,7 @@ export interface CandidateDashboardData {
     readonly title: string;
     readonly description: string;
     readonly timeLimitMinutes: number;
+    readonly scoreRetrievalEnabled: boolean;
   }>;
   readonly attempts: Array<{
     readonly id: string;

@@ -16,6 +16,7 @@ import {
   getLatestAttemptForExam,
   getNextEnterabilityWakeUpDelayMs,
 } from "./candidate-home-state";
+import { formatCandidateAttemptStatus } from "./candidate-lab-state";
 
 interface CandidateHomeProps {
   readonly email: string;
@@ -36,12 +37,19 @@ export function CandidateHome({ email }: CandidateHomeProps) {
 
   useEffect(() => {
     let cancelled = false;
+    let refreshInFlight = false;
 
-    async function loadDashboard() {
-      setLoading(true);
-      setError(null);
+    async function loadDashboard(showLoading = false) {
+      if (refreshInFlight) {
+        return;
+      }
+      refreshInFlight = true;
+      if (showLoading) {
+        setLoading(true);
+      }
       try {
         if (!cancelled) {
+          setError(null);
           setDashboard(await loadCandidateDashboard(fetch));
           setNowMs(Date.now());
         }
@@ -53,12 +61,28 @@ export function CandidateHome({ email }: CandidateHomeProps) {
         if (!cancelled) {
           setLoading(false);
         }
+        refreshInFlight = false;
       }
     }
 
-    void loadDashboard();
+    function refreshIfVisible() {
+      if (document.visibilityState === "visible") {
+        void loadDashboard();
+      }
+    }
+
+    void loadDashboard(true);
+    const interval = window.setInterval(() => {
+      void loadDashboard();
+    }, 30_000);
+    window.addEventListener("focus", refreshIfVisible);
+    document.addEventListener("visibilitychange", refreshIfVisible);
+
     return () => {
       cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshIfVisible);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
     };
   }, []);
 
@@ -128,6 +152,13 @@ export function CandidateHome({ email }: CandidateHomeProps) {
     router.push(`/candidate/lab?${params.toString()}`);
   }
 
+  function openScorePage(attemptId: string) {
+    const params = new URLSearchParams({
+      examAttemptId: attemptId,
+    });
+    router.push(`/candidate/score?${params.toString()}`);
+  }
+
   const scheduledAttempts = buildScheduledAttemptViews(dashboard, nowMs);
 
   return (
@@ -166,7 +197,9 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                   <p style={{ margin: "0.45rem 0", color: "#333" }}>
                     Scheduled for {attempt.scheduledFor ? new Date(attempt.scheduledFor).toLocaleString() : "TBD"}
                   </p>
-                  <p style={{ margin: "0.45rem 0", color: "#0b5d3b" }}>Status: {attempt.status}</p>
+                  <p style={{ margin: "0.45rem 0", color: "#0b5d3b" }}>
+                    Status: {formatCandidateAttemptStatus(attempt.status)}
+                  </p>
                   {(attempt.status === "ready" || attempt.status === "in_progress" || attempt.status === "suspended") && (
                     <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
                       <button
@@ -184,6 +217,14 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                         <span style={{ color: "#555" }}>{attempt.waitingMessage}</span>
                       )}
                     </div>
+                  )}
+                  {attempt.status === "completed" && (
+                    <button
+                      onClick={() => openScorePage(attempt.attemptId)}
+                      style={{ padding: "0.55rem 0.9rem" }}
+                    >
+                      View score
+                    </button>
                   )}
                 </article>
               ))}
@@ -205,9 +246,12 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                   <span style={{ color: "#555", fontSize: "0.95rem" }}>{exam.timeLimitMinutes} minute limit</span>
                 </div>
                 <p style={{ color: "#444" }}>{exam.description || "No description provided."}</p>
+                <p style={{ marginTop: "-0.2rem", color: "#555" }}>
+                  Guided Journey scoring: {exam.scoreRetrievalEnabled ? "Enabled" : "Not enabled for this Exam"}
+                </p>
                 {attempt && (
                   <p style={{ marginTop: 0, color: "#0b5d3b" }}>
-                    Current attempt: {attempt.status}
+                    Current attempt: {formatCandidateAttemptStatus(attempt.status)}
                     {attempt.scheduledFor ? ` for ${new Date(attempt.scheduledFor).toLocaleString()}` : ""}
                   </p>
                 )}
@@ -239,7 +283,15 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                         ? "Resume exam"
                         : attempt.status === "in_progress"
                           ? "Return to exam"
-                          : "Enter exam"}
+                        : "Enter exam"}
+                    </button>
+                  )}
+                  {attempt?.status === "completed" && (
+                    <button
+                      onClick={() => openScorePage(attempt.id)}
+                      style={{ padding: "0.55rem 0.9rem" }}
+                    >
+                      View score
                     </button>
                   )}
                 </div>

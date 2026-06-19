@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { LabLaunch as PrismaLabLaunch, PrismaClient } from "@prisma/client";
 import type { LabLaunch, LabLaunchRepository } from "@/domain/lab-launch";
 
 export function createPrismaLabLaunchRepository(prisma: PrismaClient): LabLaunchRepository {
@@ -10,6 +10,7 @@ export function createPrismaLabLaunchRepository(prisma: PrismaClient): LabLaunch
           examAttemptId: launch.examAttemptId,
           candidateId: launch.candidateId,
           participantEmail: launch.participantEmail ?? null,
+          participantId: launch.participantId ?? null,
           trainingId: launch.trainingId ?? null,
           experienceId: launch.experienceId,
           environmentExternalId: launch.environmentExternalId ?? null,
@@ -23,6 +24,7 @@ export function createPrismaLabLaunchRepository(prisma: PrismaClient): LabLaunch
           examAttemptId: launch.examAttemptId,
           candidateId: launch.candidateId,
           participantEmail: launch.participantEmail ?? null,
+          participantId: launch.participantId ?? null,
           trainingId: launch.trainingId ?? null,
           experienceId: launch.experienceId,
           environmentExternalId: launch.environmentExternalId ?? null,
@@ -46,24 +48,13 @@ export function createPrismaLabLaunchRepository(prisma: PrismaClient): LabLaunch
   };
 }
 
-function toDomain(row: {
-  id: string;
-  examAttemptId: string;
-  candidateId: string;
-  participantEmail: string | null;
-  trainingId: string | null;
-  experienceId: string;
-  environmentExternalId: string | null;
-  environmentId: string | null;
-  loginUrl: string;
-  status: string;
-  createdAt: Date;
-}): LabLaunch {
+function toDomain(row: PrismaLabLaunch): LabLaunch {
   return {
     id: row.id,
     examAttemptId: row.examAttemptId,
     candidateId: row.candidateId,
     participantEmail: row.participantEmail ?? undefined,
+    participantId: row.participantId ?? undefined,
     trainingId: row.trainingId ?? undefined,
     experienceId: row.experienceId,
     environmentExternalId: row.environmentExternalId ?? undefined,

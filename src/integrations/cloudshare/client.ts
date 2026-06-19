@@ -35,14 +35,14 @@ export interface V4RequestSpec<T> {
   readonly path: string;
   readonly query?: Record<string, string>;
   readonly body?: unknown;
-  readonly schema: ZodType<T>;
+  readonly schema: ZodType<T, ZodType["_def"], unknown>;
 }
 
 export interface V3RequestSpec<T> {
   readonly method: Method;
   readonly path: string;
   readonly query?: Record<string, string>;
-  readonly schema: ZodType<T>;
+  readonly schema: ZodType<T, ZodType["_def"], unknown>;
 }
 
 export interface CloudShareClient {
@@ -207,7 +207,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
 
   async function execute<T>(
     request: HttpRequest,
-    schema: ZodType<T>,
+    schema: ZodType<T, ZodType["_def"], unknown>,
   ): Promise<T> {
     const requestInfo = describeRequest(request.url);
     trace("info", "cloudshare request sent", request);
