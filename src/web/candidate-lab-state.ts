@@ -30,7 +30,7 @@ export function getCandidateLabPresentation(input: {
   return {
     heading: input.examTitle,
     statusLabel: formatCandidateAttemptStatus(input.status),
-    notice: input.status === "completed" ? "Examination complete." : null,
+    notice: null,
     showEnter: input.status === "ready" || input.status === "in_progress",
     showSuspend: input.status === "in_progress",
     showResume: input.status === "suspended",

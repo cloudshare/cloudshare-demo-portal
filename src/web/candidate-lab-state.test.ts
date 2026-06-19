@@ -22,7 +22,7 @@ describe("candidate lab state", () => {
     ).toMatchObject({
       heading: "Helios Guided Journey",
       statusLabel: "Completed",
-      notice: "Examination complete.",
+      notice: null,
       showEnter: false,
       showSuspend: false,
       showResume: false,
