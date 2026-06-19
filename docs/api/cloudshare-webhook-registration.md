@@ -26,7 +26,7 @@ specific.
    to local `localhost:3000`.
 
 3. Verify the public tunnel reaches the local portal **before** registering a CloudShare webhook:
-   - open [https://treasurer-computer-mailed-anderson.trycloudflare.com](https://treasurer-computer-mailed-anderson.trycloudflare.com)
+   - open the current public tunnel base URL, for example `https://<current-public-base-url>`
    - confirm the portal responds, or at minimum that the request reaches the local app instead of a
      Cloudflare/TLS error page
 
