@@ -47,6 +47,7 @@ import { createInMemoryExamAuthoringCacheRepository } from "@/persistence/exam-a
 import { createPrismaExamCatalogRepository } from "@/persistence/prisma-exam-catalog-repository";
 import { createPrismaExamAttemptRepository } from "@/persistence/prisma-exam-attempt-repository";
 import { createPrismaLabLaunchRepository } from "@/persistence/prisma-lab-launch-repository";
+import { createPrismaAdminMonitoringAttemptRepository } from "@/persistence/prisma-admin-monitoring-attempt-repository";
 import { createPrismaEnvironmentRepository } from "@/persistence/prisma-environment-repository";
 import { createPrismaExamClockRepository } from "@/persistence/prisma-exam-clock-repository";
 import {
@@ -69,6 +70,7 @@ import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
+import type { AdminMonitoringAttemptRepository } from "@/domain/admin-monitoring";
 import type { ExamRepository } from "@/domain/exam-catalog";
 import type { ExamAuthoringCacheRepository } from "@/persistence/exam-authoring-cache-repository";
 import { createSecretBox } from "@/security/secret-box";
@@ -118,6 +120,7 @@ export interface Services {
   eventLog: EventLogRepository;
   /** Structured, redacted server logs surfaced to admins for troubleshooting. */
   supportLog: SupportLogRepository;
+  adminMonitoringAttempts: AdminMonitoringAttemptRepository;
   exams: ExamRepository;
   examAuthoringCache: ExamAuthoringCacheRepository;
   cloudshareConnections: CloudShareConnectionRepository;
@@ -260,6 +263,7 @@ export function getServices(): Services {
   const audit = createInMemoryAuditRepository();
   const resources = createInMemoryResourceRepository();
   const exams = createPrismaExamCatalogRepository(prisma);
+  const adminMonitoringAttempts = createPrismaAdminMonitoringAttemptRepository(prisma);
   const examAuthoringCache = createInMemoryExamAuthoringCacheRepository();
   const cloudshareSecretBox = createSecretBox(
     Buffer.from(config.secrets.portalMasterKey, "base64"),
@@ -404,6 +408,7 @@ export function getServices(): Services {
     resources,
     eventLog,
     supportLog,
+    adminMonitoringAttempts,
     exams,
     examAuthoringCache,
     cloudshareConnections,
