@@ -14,7 +14,11 @@ const body = JSON.stringify({
 });
 
 function deps() {
-  return { secret: SECRET, idempotency: createInMemoryWebhookIdempotencyStore() };
+  return {
+    secret: SECRET,
+    idempotencyScope: "customer-helios",
+    idempotency: createInMemoryWebhookIdempotencyStore(),
+  };
 }
 
 describe("receiveWebhook", () => {

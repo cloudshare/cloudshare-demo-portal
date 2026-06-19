@@ -125,6 +125,33 @@ describe("handleCloudShareWebhook", () => {
     expect(reconcile).toHaveBeenCalledTimes(1);
   });
 
+  it("scopes webhook idempotency by Customer so two Customers cannot suppress each other", async () => {
+    const { reconcile, deps } = setup();
+    const rawBody = JSON.stringify({
+      Event: "environment.created",
+      CreatedAt: at.toISOString(),
+      Payload: {
+        environmentExternalId: "shared-env-id",
+      },
+    });
+    const { computeWebhookSignature } = await import("@/integrations/cloudshare/webhooks");
+
+    const helios = await handleCloudShareWebhook(deps, {
+      webhookPathToken: "whk-helios",
+      rawBody,
+      signature: computeWebhookSignature(rawBody, HELIOS_SECRET),
+    });
+    const other = await handleCloudShareWebhook(deps, {
+      webhookPathToken: "whk-other",
+      rawBody,
+      signature: computeWebhookSignature(rawBody, OTHER_SECRET),
+    });
+
+    expect(helios.status).toBe(202);
+    expect(other.status).toBe(202);
+    expect(reconcile).toHaveBeenCalledTimes(2);
+  });
+
   it("selects the secret from the webhook token before verification", async () => {
     const { helios, deps } = setup();
     const signed = helios.emit({ environmentExternalId: "env-ext-1", event: "environment.created", at });

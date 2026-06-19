@@ -80,7 +80,35 @@ describe("parseWebhookEvent", () => {
     }
   });
 
-  it("still accepts the legacy simulator shape with top-level EnvironmentId", () => {
+  it("accepts the live CloudShare v3 shape where Payload is a JSON string with PascalCase fields", () => {
+    const body = JSON.stringify({
+      Event: "environment.created",
+      CreatedAt: "2026-06-19T20:45:14.3838933",
+      CreatedById: "USUhmU1Bg9K9PNx1vUm2waaQ2",
+      CreatedByEmail: "Chris.Swinney+acceleratetesting@Cloudshare.com",
+      Attempt: 1,
+      Payload: JSON.stringify({
+        EnvironmentId: "ENT0KnYJsuNgzaBZk9NdeDRQ2",
+        EnvironmentExternalId: null,
+        EnvironmentName: "Linux Boxes",
+        BlueprintId: "BP4tUkq129wKUYtAndnfwuuA2",
+        BlueprintName: "Linux Boxes",
+        PolicyId: "POavMAu1wiaVydJdYUOAExJg2",
+        PolicyName: "10 mins run time - 2 days storage - Always on",
+        OwnerEmail: "Chris.Swinney+acceleratetesting@Cloudshare.com",
+        Cloud: ["cloudshare"],
+        RegionId: "REKolD1-ab84YIxODeMGob9A2",
+      }),
+    });
+
+    const result = parseWebhookEvent(body);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.event.environmentExternalId).toBe("ENT0KnYJsuNgzaBZk9NdeDRQ2");
+    }
+  });
+
+  it("rejects the old top-level EnvironmentId fixture shape", () => {
     const body = JSON.stringify({
       Event: "environment.created",
       EnvironmentId: "legacy-env-1",
@@ -88,10 +116,7 @@ describe("parseWebhookEvent", () => {
     });
 
     const result = parseWebhookEvent(body);
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.event.environmentExternalId).toBe("legacy-env-1");
-    }
+    expect(result.ok).toBe(false);
   });
 
   it("rejects non-environment webhook event types", () => {

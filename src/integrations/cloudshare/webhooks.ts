@@ -12,10 +12,10 @@ import { z } from "zod";
  * verified before any JSON re-serialisation, which would change the bytes.
  *
  * NOTE:
- *  - The primary shape below follows the CloudShare v3 Integration Hub webhook docs:
- *    top-level `Event` + `CreatedAt`, with event-specific data under `Payload`.
- *  - A legacy top-level `EnvironmentId` shape is still tolerated for the local
- *    simulator/backwards compatibility, but it is explicitly treated as legacy.
+ *  - The primary shape below follows the live CloudShare v3 Integration Hub webhook
+ *    shape: top-level `Event` + `CreatedAt`, with event-specific data under
+ *    `Payload`. Live deliveries may send `Payload` as a JSON string with PascalCase
+ *    keys, despite the docs presenting it as an object.
  *  - Only environment lifecycle events are useful to this portal. Other documented
  *    webhook events, such as class or student events, are rejected at this boundary.
  *  - CloudShare cannot send custom headers and the payload carries no unique event
@@ -52,16 +52,8 @@ export interface CloudShareEnvironmentEvent {
 const documentedWebhookPayloadSchema = z.object({
   Event: z.enum(CLOUDSHARE_ENVIRONMENT_EVENT_TYPES),
   CreatedAt: z.string().min(1),
-  Payload: z.object({
-    environmentExternalId: z.string().min(1),
-  }).passthrough(),
+  Payload: z.unknown(),
 }).passthrough();
-
-const legacyWebhookPayloadSchema = z.object({
-  Event: z.enum(CLOUDSHARE_ENVIRONMENT_EVENT_TYPES),
-  EnvironmentId: z.string().min(1),
-  CreatedAt: z.string().min(1),
-});
 
 /** Compute the base64 HMAC-SHA256 signature of a raw body. Used by the simulator. */
 export function computeWebhookSignature(rawBody: string, secret: string): string {
@@ -101,24 +93,30 @@ export function parseWebhookEvent(rawBody: string): ParseWebhookResult {
 
   const documented = documentedWebhookPayloadSchema.safeParse(json);
   if (documented.success) {
+    const payload = parsePayloadObject(documented.data.Payload);
+    if (!payload.ok) {
+      return { ok: false, issues: payload.issues };
+    }
+
+    const environmentExternalId = firstNonEmptyString(
+      payload.value.environmentExternalId,
+      payload.value.EnvironmentExternalId,
+      payload.value.environmentId,
+      payload.value.EnvironmentId,
+    );
+    if (!environmentExternalId) {
+      return {
+        ok: false,
+        issues: ["Payload.environmentExternalId/EnvironmentExternalId/EnvironmentId: Required"],
+      };
+    }
+
     return {
       ok: true,
       event: {
         event: documented.data.Event,
-        environmentExternalId: documented.data.Payload.environmentExternalId,
+        environmentExternalId,
         createdAt: documented.data.CreatedAt,
-      },
-    };
-  }
-
-  const legacy = legacyWebhookPayloadSchema.safeParse(json);
-  if (legacy.success) {
-    return {
-      ok: true,
-      event: {
-        event: legacy.data.Event,
-        environmentExternalId: legacy.data.EnvironmentId,
-        createdAt: legacy.data.CreatedAt,
       },
     };
   }
@@ -127,6 +125,33 @@ export function parseWebhookEvent(rawBody: string): ParseWebhookResult {
     ok: false,
     issues: documented.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`),
   };
+}
+
+function parsePayloadObject(
+  payload: unknown,
+): { readonly ok: true; readonly value: Record<string, unknown> } | { readonly ok: false; readonly issues: string[] } {
+  const parsedPayload = typeof payload === "string" ? parseJsonPayloadString(payload) : payload;
+  if (parsedPayload === null || typeof parsedPayload !== "object" || Array.isArray(parsedPayload)) {
+    return { ok: false, issues: ["Payload: Expected an object or JSON object string"] };
+  }
+  return { ok: true, value: parsedPayload as Record<string, unknown> };
+}
+
+function parseJsonPayloadString(payload: string): unknown {
+  try {
+    return JSON.parse(payload);
+  } catch {
+    return null;
+  }
+}
+
+function firstNonEmptyString(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value;
+    }
+  }
+  return null;
 }
 
 /**

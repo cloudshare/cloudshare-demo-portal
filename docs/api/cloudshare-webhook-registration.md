@@ -22,13 +22,8 @@ specific.
 ## Manual registration steps
 
 1. Start the portal locally on `localhost:3000`.
-2. Start or confirm the current QA tunnel:
-
-```text
-https://treasurer-computer-mailed-anderson.trycloudflare.com
-```
-
-This tunnel must forward to local `localhost:3000`.
+2. Start or confirm the current QA tunnel. It must expose the local portal over HTTPS and forward
+   to local `localhost:3000`.
 
 3. Verify the public tunnel reaches the local portal **before** registering a CloudShare webhook:
    - open [https://treasurer-computer-mailed-anderson.trycloudflare.com](https://treasurer-computer-mailed-anderson.trycloudflare.com)
@@ -43,10 +38,10 @@ This tunnel must forward to local `localhost:3000`.
 <current-public-base-url><webhookPath>
 ```
 
-Example for live QA only:
+Example shape for live QA only:
 
 ```text
-https://treasurer-computer-mailed-anderson.trycloudflare.com/api/webhooks/cloudshare/<opaque-token>
+https://<current-public-base-url>/api/webhooks/cloudshare/<opaque-token>
 ```
 
 6. Register that full callback URL in the CloudShare webhook UI for the Helios CloudShare
@@ -66,7 +61,7 @@ https://treasurer-computer-mailed-anderson.trycloudflare.com/api/webhooks/clouds
 
 ## Notes
 
-- The Cloudflare URL above is temporary QA context only. Do not store or commit it.
+- The public tunnel URL is temporary QA context only. Do not store or commit it.
 - The opaque token is the Customer-routing key. The handler resolves the Customer first, then selects
   that Customer's stored webhook secret before verifying the HMAC.
 - CloudShare's current documented webhook contract is v3 Integration Hub / account-level webhooks.

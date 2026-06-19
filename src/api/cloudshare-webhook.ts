@@ -70,7 +70,11 @@ export async function handleCloudShareWebhook(
     }
 
     const outcome = await receiveWebhook(
-      { secret: connection.webhookSecret, idempotency: deps.idempotency },
+      {
+        secret: connection.webhookSecret,
+        idempotencyScope: connection.customerId,
+        idempotency: deps.idempotency,
+      },
       request,
     );
 

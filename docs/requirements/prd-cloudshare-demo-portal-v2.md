@@ -205,10 +205,11 @@ first-class deliverable.
 ### Event correlation (ADR-003)
 - The portal owns the `trainingId ↔ Candidate (email/studentId) ↔ environmentId` mapping. The
   `environmentId` is unknown until login and is discovered via the v4 **list-students-in-a-training**
-  endpoint (`ParticipantLister` port). The documented v3 environment webhook payload carries
-  `Payload.environmentExternalId`, but no experience/training reference. **Polling `GET environment`
-  / list-students is the source of truth; webhooks are an optional tunnel-only hint.** Idempotency
-  key = `(environmentExternalId, event, createdAt)`.
+  endpoint (`ParticipantLister` port). The v3 environment webhook payload carries no
+  experience/training reference, and live payloads may send `Payload` as a JSON string with
+  PascalCase `EnvironmentId` / nullable `EnvironmentExternalId`. **Polling `GET environment` /
+  list-students is the source of truth; webhooks are an optional tunnel-only hint.** Idempotency key
+  = `(customerId, normalisedEnvironmentId, event, createdAt)`.
 - Webhook routing is **per-Customer via an opaque URL path** so the receiver can select the right
   secret before verifying (no custom headers possible). Webhook registration via the v3 POST
   endpoint is supported with a manual fallback (unverified — flagged in the gap report). Subscribe

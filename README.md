@@ -67,8 +67,8 @@ All variables are Zod-validated at boot; missing required values cause a fast-fa
 | `CLOUDSHARE_V4_CLIENT_SECRET` | legacy | — | Transitional global credential for unfinished older slices |
 | `CLOUDSHARE_V3_API_ID` | legacy | — | Transitional global credential for unfinished older slices |
 | `CLOUDSHARE_V3_API_KEY` | legacy | — | Transitional global credential for unfinished older slices |
-| `CLOUDSHARE_WEBHOOK_SECRET` | legacy | — | Transitional global credential for unfinished older slices |
-| `PORTAL_TUNNEL_URL` | live only | — | Public URL for CloudShare webhooks (e.g. ngrok) |
+| `CLOUDSHARE_WEBHOOK_SECRET` | legacy | — | Transitional global credential; new webhook handling uses the per-Customer CloudShare Connection secret |
+| `PORTAL_TUNNEL_URL` | live QA only | — | Optional public URL used when manually registering CloudShare webhooks during local QA |
 | `HEARTBEAT_TIMEOUT_MS` | no | `60000` | Auto-suspend timeout in ms |
 | `DEMO_BLUEPRINT_NAME` | optional legacy | `""` | Legacy global blueprint name from the pre-Exam flow; not required for Slice 2 project-first authoring |
 | `DEMO_POLICY_NAME` | optional legacy | `""` | Legacy global policy name from the pre-Exam flow; not required for Slice 2 project-first authoring |
@@ -98,8 +98,9 @@ Set `PORTAL_SEED_SOURCE=off` to disable demo seeding entirely.
 ### Live mode
 
 1. Set `PORTAL_MODE=live` and fill in all `live only` variables.
-2. Expose the server publicly (e.g. `ngrok http 3000`) and set `PORTAL_TUNNEL_URL`.
-3. Configure CloudShare to POST webhooks to `$PORTAL_TUNNEL_URL/api/webhooks/cloudshare`.
+2. Expose the server publicly (for example, with Cloudflare Tunnel or `ngrok http 3000`).
+3. Read the saved Customer-specific `webhookPath` from `GET /api/admin/cloudshare`, then configure
+   CloudShare to POST environment lifecycle webhooks to `<public-base-url><webhookPath>`.
 4. Open `/admin` and use **Sync Resources** only as the current stopgap evidence surface. The
    intended Exam-authoring model is Project-first: Projects and global Regions are reference lists;
    Blueprints, Policies, Project Members / Instructor choices, and Blueprint-detail Snapshots are
@@ -273,18 +274,21 @@ launch-window gate or leak the sponsored link.
 
 ## Webhooks & environment state (polling is the source of truth)
 
-`POST /api/webhooks/cloudshare` ingests CloudShare environment lifecycle events
+`POST /api/webhooks/cloudshare/<opaque-token>` ingests CloudShare environment lifecycle events
 (`environment.created | suspended | resumed | deleted | extended | archived`). The
-same endpoint is fed by real CloudShare in live mode (via `PORTAL_TUNNEL_URL`) and
-by the environment simulator in demo mode — **identical signed payloads, one code
-path**. The pipeline (`src/api/cloudshare-webhook.ts` → `webhook-receiver.ts`):
+same endpoint is fed by real CloudShare in live mode (via a public tunnel) and by
+the environment simulator in demo mode — **identical signed payloads, one code
+path**. The opaque token resolves the Customer before the payload is trusted. The
+pipeline (`src/api/cloudshare-webhook.ts` → `webhook-receiver.ts`):
 
 1. **Verify** the HMAC-SHA256 (base64) signature over the *raw* body using
-   `CLOUDSHARE_WEBHOOK_SECRET` (constant-time compare). Bad/missing signature → **401**.
-   The signature is read from the `x-cloudshare-signature` header.
-2. **Validate** the payload with Zod. Malformed → **400** (logged with issues).
-3. **Dedupe** via an idempotency key synthesised from
-   `(environmentExternalId, Event, CreatedAt)` — CloudShare sends no unique event id
+   the resolved Customer's stored webhook secret (constant-time compare). Bad/missing
+   signature → **401**. The signature is read from the `x-cloudshare-signature` header.
+2. **Validate** the payload with Zod. Live v3 deliveries may send `Payload` as a JSON
+   string with PascalCase keys, so the adapter normalises `EnvironmentExternalId` /
+   `EnvironmentId` before the domain sees it. Malformed → **400** (logged with issues).
+3. **Dedupe** via a Customer-scoped idempotency key synthesised from
+   `(Customer, environment identifier, Event, CreatedAt)` — CloudShare sends no unique event id
    and no custom headers. A replay → **200** (acknowledged, not reprocessed).
 4. **Accepted** events → **202**, and trigger a reconcile.
 

@@ -5,9 +5,10 @@ assumed by `webhooks.ts` / `labs.ts`.
 
 ## Decision
 
-The documented CloudShare v3 environment webhook payload carries `Payload.environmentExternalId`,
-an event type, and a timestamp — but **no reference to the experience/training** it belongs to, and
-the portal does **not** mint environment IDs (environments are bound from a standby at login). So:
+The CloudShare v3 environment webhook payload carries an environment identifier, an event type, and
+a timestamp — but **no reference to the experience/training** it belongs to, and the portal does
+**not** mint environment IDs (environments are bound from a standby at login). Live payloads may send
+`Payload` as a JSON string with PascalCase `EnvironmentId` / nullable `EnvironmentExternalId`. So:
 
 - **The portal owns the correlation mapping:** `trainingId ↔ Candidate (email / studentId) ↔
   environmentId`, stored on/around the `LabLaunch`. The `environmentId` is unknown until login.
@@ -25,7 +26,7 @@ the portal does **not** mint environment IDs (environments are bound from a stan
 - The portal only subscribes to environment lifecycle webhook events:
   `environment.created`, `environment.suspended`, `environment.resumed`, `environment.deleted`,
   `environment.extended`, and `environment.archived`.
-- Idempotency key becomes `(environmentExternalId, event, createdAt)`.
+- Idempotency key becomes `(customerId, normalisedEnvironmentId, event, createdAt)`.
 
 ## Why
 
@@ -36,8 +37,8 @@ deterministic and tunnel-free — consistent with "fixtures for the show."
 
 ## Consequences
 
-- `webhooks.ts` must parse CloudShare's documented v3 envelope and `Payload.environmentExternalId`;
-  the receiver gains a Customer-resolution step from the URL.
+- `webhooks.ts` must parse CloudShare's documented v3 envelope and live JSON-string `Payload`
+  variant; the receiver gains a Customer-resolution step from the URL.
 - New gap-report items: webhook payload omits the experience; v3 webhook auto-registration is
   unverified (only done manually to date); list-students is the de-facto correlation source.
 - A long candidate gap can still hit the ~2h suspended-state preservation limit (separate gap).

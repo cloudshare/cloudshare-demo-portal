@@ -34,7 +34,11 @@ describe("CloudShare environment simulator", () => {
     const signed = sim.emit({ environmentExternalId: "env-1", event: "environment.created", at });
 
     const outcome = await receiveWebhook(
-      { secret: SECRET, idempotency: createInMemoryWebhookIdempotencyStore() },
+      {
+        secret: SECRET,
+        idempotencyScope: "customer-helios",
+        idempotency: createInMemoryWebhookIdempotencyStore(),
+      },
       signed,
     );
 

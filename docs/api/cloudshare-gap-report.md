@@ -80,12 +80,13 @@ provisioning.
   self-serve rotation — creating a window of exposure in a high-integrity exam context.
 - Because all environments in the account share the same secret, a compromise affects
   every integration simultaneously.
-- The portal stores the secret as `CLOUDSHARE_WEBHOOK_SECRET` and never logs it; if
-  rotation becomes possible, the secret can be swapped via environment variable without
-  code changes.
+- The portal stores the secret on the encrypted per-Customer `CloudShareConnection` and never logs
+  it. The legacy global `CLOUDSHARE_WEBHOOK_SECRET` remains transitional config only; webhook
+  verification now selects the resolved Customer's stored secret.
 
 **Code reference:** `src/integrations/cloudshare/webhooks.ts:11`,
-`src/config/index.ts:27`
+`src/domain/cloudshare-connection.ts`,
+`src/persistence/cloudshare-connection-repository.ts`
 
 ---
 
@@ -523,16 +524,22 @@ documented payload keys include `environmentExternalId`, `environmentName`, `blu
 `blueprintName`, `policyId`, `policyName`, `ownerEmail`, `cloud`, and `regionId` — but still **no
 reference to the training/experience** the event belongs to.
 
+**Update (2026-06-19, live webhook payload):** a real `environment.created` delivery used the same
+top-level envelope, but sent `Payload` as a JSON string with PascalCase keys. It included
+`EnvironmentId`, `EnvironmentExternalId:null`, `EnvironmentName`, `BlueprintId`, `BlueprintName`,
+`PolicyId`, `PolicyName`, `OwnerEmail`, `Cloud`, and `RegionId`. The portal therefore parses both
+the documented object-style payload and the live string/PascalCase payload, normalising to
+`EnvironmentExternalId` when present and otherwise falling back to `EnvironmentId`.
+
 **Impact on certification use**
 
 - The documented environment webhook payload is still insufficient to correlate directly to a portal
   `ExamAttempt`; correlation still requires a **portal-owned `trainingId ↔ Candidate ↔ environmentId`
   mapping**, populated/reconciled via the v4 **list-students-in-a-training** endpoint.
 - Webhooks become optional; **polling list-students / `GET environment` is the source of truth**.
-  For the v3 documented webhook body, idempotency is keyed on
-  `(environmentExternalId, event, createdAt)`.
-- Slice 9 now parses the documented v3 webhook envelope and treats any legacy top-level
-  `EnvironmentId` shape as simulator/backwards-compatibility only.
+  For the v3 webhook body, idempotency is keyed on
+  `(customerId, normalisedEnvironmentId, event, createdAt)`.
+- Slice 9 now parses the documented v3 webhook envelope plus the live JSON-string `Payload` variant.
 
 **Update (2026-06-15, Slice 5 implementation assumption):** the exact response envelope for
 `GET /v4/trainings/{trainingId}/students` is still unverified against the live tenant. The adapter
