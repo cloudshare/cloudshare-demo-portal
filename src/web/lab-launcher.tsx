@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useEffectEvent } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { openEnterExamWindow } from "./enter-exam";
 import { isLabWindowOpen } from "./lab-window";
 import { preflightLabAction, suspendLabAttempt, type CandidateLabStatus, type AttemptStatus } from "./lab-launcher-client";
@@ -38,20 +38,35 @@ export function LabLauncher({
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const childPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastReportedAttemptStatusRef = useRef<AttemptStatus | null>(null);
+  const currentAttemptStatusRef = useRef(currentAttemptStatus);
+  const onAttemptStatusChangeRef = useRef(onAttemptStatusChange);
+  const onLabStatusLoadedRef = useRef(onLabStatusLoaded);
 
-  const reportAttemptStatusChange = useEffectEvent((status: AttemptStatus) => {
+  useEffect(() => {
+    currentAttemptStatusRef.current = currentAttemptStatus;
+  }, [currentAttemptStatus]);
+
+  useEffect(() => {
+    onAttemptStatusChangeRef.current = onAttemptStatusChange;
+  }, [onAttemptStatusChange]);
+
+  useEffect(() => {
+    onLabStatusLoadedRef.current = onLabStatusLoaded;
+  }, [onLabStatusLoaded]);
+
+  const reportAttemptStatusChange = useCallback((status: AttemptStatus) => {
     if (lastReportedAttemptStatusRef.current === status) {
       return;
     }
     lastReportedAttemptStatusRef.current = status;
-    onAttemptStatusChange?.(status);
-  });
+    onAttemptStatusChangeRef.current?.(status);
+  }, []);
 
-  const reportLabStatusLoaded = useEffectEvent((status: CandidateLabStatus) => {
-    onLabStatusLoaded?.(status);
-  });
+  const reportLabStatusLoaded = useCallback((status: CandidateLabStatus) => {
+    onLabStatusLoadedRef.current?.(status);
+  }, []);
 
-  const syncToAuthoritativeAttemptStatus = useEffectEvent((status: AttemptStatus) => {
+  const syncToAuthoritativeAttemptStatus = useCallback((status: AttemptStatus) => {
     const target = getLauncherSyncTarget(status);
     if (!target) {
       return;
@@ -62,7 +77,7 @@ export function LabLauncher({
     setState((current) => (current === target.state ? current : target.state));
     setMessage((current) => (current === target.message ? current : target.message));
     reportAttemptStatusChange(status);
-  });
+  }, [reportAttemptStatusChange]);
 
   async function sendHeartbeat() {
     const response = await fetch("/api/heartbeat", {
@@ -111,7 +126,7 @@ export function LabLauncher({
   }
 
   async function suspendNow() {
-    if (currentAttemptStatus === "completed") {
+    if (currentAttemptStatusRef.current === "completed") {
       setState("completed");
       setMessage("Examination complete.");
       return;
@@ -144,7 +159,7 @@ export function LabLauncher({
   }
 
   async function launch() {
-    if (currentAttemptStatus === "completed") {
+    if (currentAttemptStatusRef.current === "completed") {
       setState("completed");
       setMessage("Examination complete.");
       return;
@@ -176,7 +191,7 @@ export function LabLauncher({
   }
 
   async function resumeNow() {
-    if (currentAttemptStatus === "completed") {
+    if (currentAttemptStatusRef.current === "completed") {
       setState("completed");
       setMessage("Examination complete.");
       return;
