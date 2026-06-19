@@ -1,4 +1,8 @@
-import { buildAdminMonitoringView, type AdminMonitoringAttemptRepository } from "@/domain/admin-monitoring";
+import {
+  buildAdminMonitoringView,
+  type AdminMonitoringAttemptRepository,
+  type AdminMonitoringView,
+} from "@/domain/admin-monitoring";
 import type { AuditRepository } from "@/domain/audit-trail";
 import type { EventLogRepository } from "@/domain/event-log";
 import type { Logger } from "@/observability/logger";
@@ -12,7 +16,11 @@ export interface AdminMonitoringHandlerDeps {
 
 export interface AdminMonitoringResponse {
   readonly status: number;
-  readonly body: Record<string, unknown>;
+  readonly body: AdminMonitoringResponseBody;
+}
+
+export interface AdminMonitoringResponseBody {
+  readonly monitoring: AdminMonitoringView;
 }
 
 export async function handleGetAdminMonitoring(

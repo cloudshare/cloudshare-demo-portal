@@ -63,6 +63,8 @@ export interface ScheduledAttemptSummary {
 export interface ScheduleExamResult {
   readonly attempt: ScheduledAttemptSummary;
   readonly coldStartLikely: boolean;
+  readonly trainingId: string;
+  readonly experienceId: string;
 }
 
 export async function scheduleExam(
@@ -184,6 +186,8 @@ export async function scheduleExam(
       status: "ready",
     },
     coldStartLikely: input.scheduledFor.getTime() - deps.now().getTime() < COLD_START_WARNING_WINDOW_MS,
+    trainingId,
+    experienceId: trainingId,
   };
 }
 

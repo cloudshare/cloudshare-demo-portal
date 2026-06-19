@@ -57,6 +57,7 @@ export async function POST(request: Request) {
       exams: services.exams,
       attempts: services.examAttempts,
       launches: services.labLaunches,
+      audit: services.audit,
       eventLog: services.eventLog,
       connections: services.cloudshareConnections,
       cloudshare: services.cloudshareClientFactory,

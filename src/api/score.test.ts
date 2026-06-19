@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { handleGetCandidateScore } from "./score";
 import type { Logger } from "@/observability/logger";
+import type { AuditRepository } from "@/domain/audit-trail";
 import type { ScoreRetrievalProvider, ParticipantProgress } from "@/domain/score-result";
 import type { LabLaunchRepository, LabLaunch } from "@/domain/lab-launch";
 import type { ExamAttemptRepository, ExamAttempt } from "@/domain/exam-attempt";
@@ -119,6 +120,11 @@ function makeDeps(input?: {
     findById: vi.fn(),
     findByExamAttemptId: vi.fn(async () => storedLaunch),
   };
+  const audit: AuditRepository = {
+    write: vi.fn(),
+    listByExamAttemptId: vi.fn(),
+    listAll: vi.fn(),
+  };
   const connections: CloudShareConnectionRepository = {
     save: vi.fn(),
     markVerified: vi.fn(),
@@ -162,6 +168,7 @@ function makeDeps(input?: {
     attempts,
     exams,
     launches,
+    audit,
     connections,
     createScoreRetriever,
     createParticipantLister,
@@ -215,6 +222,18 @@ describe("handleGetCandidateScore", () => {
       limitations: TEST_LIMITATIONS,
     });
     expect(deps.createScoreRetriever).not.toHaveBeenCalled();
+    expect(deps.audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        examAttemptId: "attempt-1",
+        action: "score_retrieved",
+        outcome: "success",
+        details: {
+          experienceId: "exp-1",
+          scoreAvailable: false,
+          reason: "score_retrieval_disabled",
+        },
+      }),
+    );
   });
 
   it("returns 409 and does not call CloudShare before the exam attempt is completed", async () => {
@@ -320,6 +339,20 @@ describe("handleGetCandidateScore", () => {
     });
     expect(deps.createScoreRetriever).toHaveBeenCalledTimes(1);
     expect(deps.scoreRetriever.getParticipantProgress).toHaveBeenCalledWith("exp-1", "student-1");
+    expect(deps.audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        examAttemptId: "attempt-1",
+        action: "score_retrieved",
+        outcome: "success",
+        details: {
+          experienceId: "exp-1",
+          scoreAvailable: true,
+          percentComplete: 75,
+          stepsCompleted: 3,
+          stepsTotal: 4,
+        },
+      }),
+    );
   });
 
   it("returns no score available when Guided Journey progress is absent", async () => {
@@ -345,6 +378,18 @@ describe("handleGetCandidateScore", () => {
       retrievedAt: "2026-06-16T12:00:00.000Z",
       limitations: TEST_LIMITATIONS,
     });
+    expect(deps.audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        examAttemptId: "attempt-1",
+        action: "score_retrieved",
+        outcome: "success",
+        details: {
+          experienceId: "exp-1",
+          scoreAvailable: false,
+          reason: "no_guided_journey_score",
+        },
+      }),
+    );
   });
 
   it("returns 502 with a correlation id when CloudShare retrieval fails", async () => {
@@ -381,6 +426,21 @@ describe("handleGetCandidateScore", () => {
         examAttemptId: "attempt-1",
         attemptedOperation: "get_guided_journey_progress",
         failureMode: "transport",
+      }),
+    );
+    expect(deps.audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        examAttemptId: "attempt-1",
+        action: "score_retrieved",
+        outcome: "failure",
+        details: expect.objectContaining({
+          experienceId: "exp-1",
+          attemptedOperation: "get_guided_journey_progress",
+          integrationSurface: "cloudshare.v4.guided_journey.progress",
+          method: "GET",
+          path: "/guided-journey/progress/exp-1/student-1",
+          failureMode: "transport",
+        }),
       }),
     );
   });

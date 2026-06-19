@@ -30,7 +30,7 @@ export interface MonitoringTimelineAuditEntry {
   readonly occurredAt: string;
   readonly action: AuditRecord["action"];
   readonly outcome: AuditRecord["outcome"];
-  readonly details?: Record<string, unknown>;
+  readonly details?: Record<string, string | number | boolean | null>;
   readonly error?: string;
 }
 
@@ -40,11 +40,17 @@ export interface MonitoringTimelineFailureEntry {
   readonly eventType: string;
   readonly attemptedOperation: string | null;
   readonly integrationSurface: string | null;
+  readonly method: string | null;
+  readonly path: string | null;
   readonly failureMode: string | null;
   readonly responseStatus: number | null;
   readonly correlationId: string | null;
   readonly error: string | null;
 }
+
+export type MonitoringTimelineEntry =
+  | MonitoringTimelineAuditEntry
+  | MonitoringTimelineFailureEntry;
 
 export interface MonitoringAttemptResult {
   readonly status: "completed" | "expired";
@@ -69,7 +75,7 @@ export interface MonitoringAttemptView {
   readonly environmentExternalId: string | null;
   readonly participantId: string | null;
   readonly scoreRetrievalEnabled: boolean;
-  readonly timeline: readonly (MonitoringTimelineAuditEntry | MonitoringTimelineFailureEntry)[];
+  readonly timeline: readonly MonitoringTimelineEntry[];
   readonly result?: MonitoringAttemptResult;
 }
 
@@ -162,7 +168,7 @@ function toAttemptView(
 function buildTimeline(
   auditRecords: readonly AuditRecord[],
   failureEvents: readonly EventLogRecord[],
-): readonly (MonitoringTimelineAuditEntry | MonitoringTimelineFailureEntry)[] {
+): readonly MonitoringTimelineEntry[] {
   return [
     ...auditRecords.map(
       (record): MonitoringTimelineAuditEntry => ({
@@ -170,8 +176,8 @@ function buildTimeline(
         occurredAt: record.occurredAt.toISOString(),
         action: record.action,
         outcome: record.outcome,
-        details: record.details,
-        error: record.error,
+        details: sanitizeDetails(record.details),
+        error: sanitizeFreeText(record.error) ?? undefined,
       }),
     ),
     ...failureEvents.map(
@@ -181,10 +187,12 @@ function buildTimeline(
         eventType: event.type,
         attemptedOperation: readStringField(event.payload, "attemptedOperation"),
         integrationSurface: readStringField(event.payload, "integrationSurface"),
+        method: readStringField(event.payload, "method") ?? null,
+        path: readStringField(event.payload, "path") ?? null,
         failureMode: readStringField(event.payload, "failureMode"),
         responseStatus: readNumberField(event.payload, "responseStatus"),
         correlationId: readStringField(event.payload, "correlationId"),
-        error: readStringField(event.payload, "error"),
+        error: sanitizeFreeText(readStringField(event.payload, "error")) ?? null,
       }),
     ),
   ].sort((left, right) => left.occurredAt.localeCompare(right.occurredAt));
@@ -294,4 +302,74 @@ function readNumberField(
 
 function asNumber(value: unknown): number | undefined {
   return typeof value === "number" ? value : undefined;
+}
+
+const SAFE_DETAIL_KEYS = new Set([
+  "trainingId",
+  "experienceId",
+  "environmentExternalId",
+  "participantId",
+  "attemptedOperation",
+  "integrationSurface",
+  "method",
+  "path",
+  "failureMode",
+  "responseStatus",
+  "correlationId",
+  "scoreAvailable",
+  "reason",
+  "percentComplete",
+  "stepsCompleted",
+  "stepsTotal",
+]);
+
+function sanitizeDetails(
+  details: Record<string, unknown> | undefined,
+): Record<string, string | number | boolean | null> | undefined {
+  if (!details) {
+    return undefined;
+  }
+
+  const sanitized: Record<string, string | number | boolean | null> = {};
+  for (const [key, value] of Object.entries(details)) {
+    if (!SAFE_DETAIL_KEYS.has(key)) {
+      continue;
+    }
+    if (
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean" ||
+      value === null
+    ) {
+      sanitized[key] = value;
+    }
+  }
+
+  return Object.keys(sanitized).length > 0 ? sanitized : undefined;
+}
+
+function sanitizeFreeText(value: string | null | undefined): string | null | undefined {
+  if (!value) {
+    return value;
+  }
+
+  if (looksSensitive(value)) {
+    return "[REDACTED]";
+  }
+
+  return value;
+}
+
+function looksSensitive(value: string): boolean {
+  const lower = value.toLowerCase();
+  return (
+    lower.includes("http://") ||
+    lower.includes("https://") ||
+    lower.includes("loginurl") ||
+    lower.includes("sponsored-link") ||
+    lower.includes("api key") ||
+    lower.includes("apikey") ||
+    lower.includes("authorization") ||
+    lower.includes("token")
+  );
 }

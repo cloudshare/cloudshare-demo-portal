@@ -102,6 +102,7 @@ describe("buildAdminMonitoringView", () => {
             stepsCompleted: 3,
             stepsTotal: 4,
             scoreAvailable: true,
+            loginUrl: "https://use.cloudshare.com/secret",
           },
         }),
       ],
@@ -115,6 +116,8 @@ describe("buildAdminMonitoringView", () => {
             integrationSurface: "cloudshare.v3.env.action.resume",
             failureMode: "transport",
             correlationId: "corr-2",
+            requestHeaders: { authorization: "Bearer secret" },
+            responseBody: "{\"loginUrl\":\"https://use.cloudshare.com/secret\"}",
           },
         }),
       ],
@@ -156,6 +159,12 @@ describe("buildAdminMonitoringView", () => {
       expect.objectContaining({
         kind: "audit",
         action: "score_retrieved",
+        details: {
+          percentComplete: 75,
+          stepsCompleted: 3,
+          stepsTotal: 4,
+          scoreAvailable: true,
+        },
       }),
     ]);
   });
@@ -199,6 +208,63 @@ describe("buildAdminMonitoringView", () => {
           scoreAvailable: false,
         },
         timeline: [],
+      }),
+    ]);
+  });
+
+  it("redacts sensitive audit and event details from monitoring timelines", () => {
+    const view = buildAdminMonitoringView({
+      attempts: [makeAttempt({ status: "completed" })],
+      auditRecords: [
+        makeAudit({
+          action: "lab_launched",
+          details: {
+            trainingId: "training-1",
+            experienceId: "experience-1",
+            loginUrl: "https://use.cloudshare.com/secret",
+            apiKey: "super-secret",
+            token: "abcd1234",
+            requestBody: { loginUrl: "https://use.cloudshare.com/secret" },
+          },
+          error: "Failed with sponsored-link https://use.cloudshare.com/secret",
+        }),
+      ],
+      eventLog: [
+        makeEvent({
+          payload: {
+            examAttemptId: "attempt-1",
+            attemptedOperation: "create_sponsored_link",
+            integrationSurface: "cloudshare.v4.training.sponsored_link",
+            failureMode: "http_status",
+            responseStatus: 502,
+            correlationId: "corr-1",
+            requestHeaders: { authorization: "cs_sha1 secret" },
+            requestBody: { apiKey: "abc", loginUrl: "https://use.cloudshare.com/secret" },
+            responseBody: "{\"token\":\"secret\"}",
+            error: "request failed with api key secret",
+          },
+        }),
+      ],
+    });
+
+    expect(view.history[0]?.timeline).toEqual([
+      expect.objectContaining({
+        kind: "audit",
+        details: {
+          trainingId: "training-1",
+          experienceId: "experience-1",
+        },
+        error: "[REDACTED]",
+      }),
+      expect.objectContaining({
+        kind: "failure",
+        eventType: "cloudshare.exam_suspend.failed",
+        attemptedOperation: "create_sponsored_link",
+        integrationSurface: "cloudshare.v4.training.sponsored_link",
+        failureMode: "http_status",
+        responseStatus: 502,
+        correlationId: "corr-1",
+        error: "[REDACTED]",
       }),
     ]);
   });

@@ -18,6 +18,12 @@ import {
   shouldClearAdminBannerOnTabChange,
   shouldShowCandidateProvisioning,
 } from "./admin-console-state";
+import type {
+  AdminMonitoringView as MonitoringView,
+  MonitoringAttemptView as MonitoringAttempt,
+  MonitoringAttemptResult,
+  MonitoringTimelineEntry,
+} from "@/domain/admin-monitoring";
 
 interface AdminConsoleProps {
   readonly email: string;
@@ -118,66 +124,6 @@ interface ExamRecord {
   policyId: string;
   policyName: string;
   instructorName: string;
-}
-
-interface MonitoringTimelineEntry {
-  kind: "audit" | "failure";
-  occurredAt: string;
-  action?: string;
-  outcome?: "success" | "failure";
-  details?: Record<string, unknown>;
-  error?: string | null;
-  eventType?: string;
-  attemptedOperation?: string | null;
-  integrationSurface?: string | null;
-  failureMode?: string | null;
-  responseStatus?: number | null;
-  correlationId?: string | null;
-}
-
-interface MonitoringAttemptResult {
-  status: "completed" | "expired";
-  scoreAvailable: boolean;
-  percentComplete?: number;
-  stepsCompleted?: number;
-  stepsTotal?: number;
-}
-
-interface MonitoringAttempt {
-  id: string;
-  examId: string;
-  examTitle: string;
-  candidateId: string;
-  candidateName: string;
-  candidateEmail: string;
-  status: "scheduled" | "ready" | "in_progress" | "suspended" | "completed" | "expired";
-  scheduledFor: string | null;
-  createdAt: string;
-  trainingId: string | null;
-  experienceId: string | null;
-  environmentExternalId: string | null;
-  participantId: string | null;
-  scoreRetrievalEnabled: boolean;
-  timeline: MonitoringTimelineEntry[];
-  result?: MonitoringAttemptResult;
-}
-
-interface MonitoringView {
-  summary: {
-    scheduled: number;
-    ready: number;
-    inProgress: number;
-    suspended: number;
-    completed: number;
-    expired: number;
-  };
-  currentAttempts: {
-    scheduled: MonitoringAttempt[];
-    ready: MonitoringAttempt[];
-    inProgress: MonitoringAttempt[];
-    suspended: MonitoringAttempt[];
-  };
-  history: MonitoringAttempt[];
 }
 
 function formatUtcTimestamp(value: string | null | undefined): string {

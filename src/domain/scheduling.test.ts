@@ -127,6 +127,8 @@ describe("scheduleExam", () => {
         status: "ready",
       },
       coldStartLikely: false,
+      trainingId: "training-1",
+      experienceId: "training-1",
     });
 
     await expect(attempts.findById("attempt-1")).resolves.toMatchObject({

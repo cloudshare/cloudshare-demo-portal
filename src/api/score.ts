@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { resolveExamAttemptScore, type ScoreRetrievalProvider } from "@/domain/score-result";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { ExamRepository } from "@/domain/exam-catalog";
+import type { AuditRepository } from "@/domain/audit-trail";
 import type { CloudShareConnectionRecord, CloudShareConnectionRepository } from "@/domain/cloudshare-connection";
 import type { ParticipantLister } from "@/domain/environment-correlation";
 import { correlateEnvironmentForExamAttempt } from "@/domain/environment-correlation";
@@ -18,6 +19,7 @@ export interface ScoreHandlerDeps {
   readonly attempts: ExamAttemptRepository;
   readonly exams: ExamRepository;
   readonly launches: LabLaunchRepository;
+  readonly audit: AuditRepository;
   readonly connections: CloudShareConnectionRepository;
   readonly createScoreRetriever: (
     connection: CloudShareConnectionRecord,
@@ -87,25 +89,39 @@ export async function handleGetCandidateScore(
   }
 
   if (!exam.scoreRetrievalEnabled) {
+    const body = {
+      examAttemptId,
+      experienceId: launch.experienceId,
+      scoreRetrievalEnabled: false,
+      scoreAvailable: false,
+      reason: "score_retrieval_disabled" as const,
+      message: "Guided Journey scoring is not enabled for this Exam.",
+      retrievedAt: (deps.now ?? (() => new Date()))().toISOString(),
+      limitations: [...deps.limitations],
+    };
+    await deps.audit.write({
+      id: `${examAttemptId}:score_retrieved:${body.retrievedAt}`,
+      examAttemptId,
+      candidateId: request.session.userId,
+      action: "score_retrieved",
+      outcome: "success",
+      details: {
+        experienceId: launch.experienceId,
+        scoreAvailable: false,
+        reason: body.reason,
+      },
+      occurredAt: new Date(body.retrievedAt),
+    });
     return {
       status: 200,
-      body: {
-        examAttemptId,
-        experienceId: launch.experienceId,
-        scoreRetrievalEnabled: false,
-        scoreAvailable: false,
-        reason: "score_retrieval_disabled",
-        message: "Guided Journey scoring is not enabled for this Exam.",
-        retrievedAt: (deps.now ?? (() => new Date()))().toISOString(),
-        limitations: [...deps.limitations],
-      },
+      body,
     };
   }
 
   const connection = await deps.connections.findByCustomerId(request.session.customerId);
   if (!connection) {
     const correlationId = (deps.newCorrelationId ?? randomUUID)();
-    deps.logger.warn("candidate score retrieval failed", {
+    const diagnostic = {
       correlationId,
       examAttemptId,
       customerId: request.session.customerId,
@@ -113,7 +129,17 @@ export async function handleGetCandidateScore(
       attemptedOperation: "load_customer_cloudshare_connection",
       integrationSurface: "cloudshare.connection",
       failureMode: "missing_customer_connection",
-    });
+    };
+    await writeScoreFailureAudit(
+      deps,
+      examAttemptId,
+      request.session.userId,
+      launch.experienceId,
+      correlationId,
+      diagnostic,
+      "Score retrieval failed.",
+    );
+    deps.logger.warn("candidate score retrieval failed", diagnostic);
     return {
       status: 502,
       body: {
@@ -128,6 +154,7 @@ export async function handleGetCandidateScore(
       deps,
       connection,
       request.session.customerId,
+      request.session.userId,
       examAttemptId,
       launch,
     );
@@ -150,6 +177,19 @@ export async function handleGetCandidateScore(
     );
 
     if (!result.scoreAvailable) {
+      await deps.audit.write({
+        id: `${examAttemptId}:score_retrieved:${result.retrievedAt}`,
+        examAttemptId,
+        candidateId: request.session.userId,
+        action: "score_retrieved",
+        outcome: "success",
+        details: {
+          experienceId: result.experienceId,
+          scoreAvailable: false,
+          reason: result.reason,
+        },
+        occurredAt: new Date(result.retrievedAt),
+      });
       return {
         status: 200,
         body: {
@@ -164,6 +204,22 @@ export async function handleGetCandidateScore(
         },
       };
     }
+
+    await deps.audit.write({
+      id: `${examAttemptId}:score_retrieved:${result.retrievedAt}`,
+      examAttemptId,
+      candidateId: request.session.userId,
+      action: "score_retrieved",
+      outcome: "success",
+      details: {
+        experienceId: result.experienceId,
+        scoreAvailable: true,
+        percentComplete: result.percentComplete,
+        stepsCompleted: result.stepsCompleted,
+        stepsTotal: result.stepsTotal,
+      },
+      occurredAt: new Date(result.retrievedAt),
+    });
 
     return {
       status: 200,
@@ -192,16 +248,33 @@ export async function handleGetCandidateScore(
     }
     if (error instanceof ScoreRetrievalError) {
       const correlationId = (deps.newCorrelationId ?? randomUUID)();
-      deps.logger.warn(
-        "candidate score retrieval failed",
-        buildScoreRetrievalDiagnostic(
-          correlationId,
-          examAttemptId,
-          launch.experienceId,
-          launch.participantId ?? "unknown-participant",
-          error,
-        ),
+      const diagnostic = buildScoreRetrievalDiagnostic(
+        correlationId,
+        examAttemptId,
+        launch.experienceId,
+        launch.participantId ?? "unknown-participant",
+        error,
       );
+      await deps.audit.write({
+        id: `${examAttemptId}:score_retrieved_failed:${correlationId}`,
+        examAttemptId,
+        candidateId: request.session.userId,
+        action: "score_retrieved",
+        outcome: "failure",
+        details: {
+          experienceId: launch.experienceId,
+          attemptedOperation: diagnostic.attemptedOperation,
+          integrationSurface: diagnostic.integrationSurface,
+          method: diagnostic.method,
+          path: diagnostic.path,
+          failureMode: diagnostic.failureMode,
+          responseStatus: diagnostic.responseStatus,
+          correlationId,
+        },
+        error: "Score retrieval failed.",
+        occurredAt: deps.now?.() ?? new Date(),
+      });
+      deps.logger.warn("candidate score retrieval failed", diagnostic);
       return {
         status: 502,
         body: {
@@ -223,6 +296,7 @@ async function resolveLaunchParticipantId(
   deps: ScoreHandlerDeps,
   connection: CloudShareConnectionRecord,
   customerId: string,
+  candidateId: string,
   examAttemptId: string,
   launch: NonNullable<Awaited<ReturnType<LabLaunchRepository["findByExamAttemptId"]>>>,
 ): Promise<
@@ -235,26 +309,33 @@ async function resolveLaunchParticipantId(
 
   if (!launch.trainingId || !launch.participantEmail) {
     const correlationId = (deps.newCorrelationId ?? randomUUID)();
-    deps.logger.warn(
-      "candidate score retrieval failed",
-      {
-        correlationId,
-        customerId,
-        examAttemptId,
-        experienceId: launch.experienceId,
-        trainingId: launch.trainingId ?? null,
-        participantEmail: launch.participantEmail ?? null,
-        operation: "candidate_score_retrieval",
-        attemptedOperation: "resolve_training_participant",
-        integrationSurface: "cloudshare.v4.training.participant_list",
-        method: "GET",
-        path: launch.trainingId
-          ? `/v4/trainings/${launch.trainingId}/students`
-          : "/v4/trainings/{trainingId}/students",
-        failureMode: "missing_participant_id",
-        error: "CloudShare participantId is not recorded for this lab launch.",
-      },
+    const diagnostic = {
+      correlationId,
+      customerId,
+      examAttemptId,
+      experienceId: launch.experienceId,
+      trainingId: launch.trainingId ?? null,
+      participantEmail: launch.participantEmail ?? null,
+      operation: "candidate_score_retrieval",
+      attemptedOperation: "resolve_training_participant",
+      integrationSurface: "cloudshare.v4.training.participant_list",
+      method: "GET",
+      path: launch.trainingId
+        ? `/v4/trainings/${launch.trainingId}/students`
+        : "/v4/trainings/{trainingId}/students",
+      failureMode: "missing_participant_id",
+      error: "CloudShare participantId is not recorded for this lab launch.",
+    };
+    await writeScoreFailureAudit(
+      deps,
+      examAttemptId,
+      candidateId,
+      launch.experienceId,
+      correlationId,
+      diagnostic,
+      "Score retrieval failed.",
     );
+    deps.logger.warn("candidate score retrieval failed", diagnostic);
     return {
       ok: false,
       response: {
@@ -275,10 +356,23 @@ async function resolveLaunchParticipantId(
     );
   } catch (error) {
     const correlationId = (deps.newCorrelationId ?? randomUUID)();
-    deps.logger.warn(
-      "candidate score retrieval failed",
-      buildParticipantResolutionDiagnostic(correlationId, customerId, examAttemptId, launch, error),
+    const diagnostic = buildParticipantResolutionDiagnostic(
+      correlationId,
+      customerId,
+      examAttemptId,
+      launch,
+      error,
     );
+    await writeScoreFailureAudit(
+      deps,
+      examAttemptId,
+      candidateId,
+      launch.experienceId,
+      correlationId,
+      diagnostic,
+      "Score retrieval failed.",
+    );
+    deps.logger.warn("candidate score retrieval failed", diagnostic);
     return {
       ok: false,
       response: {
@@ -294,10 +388,23 @@ async function resolveLaunchParticipantId(
   }
 
   const correlationId = (deps.newCorrelationId ?? randomUUID)();
-  deps.logger.warn(
-    "candidate score retrieval failed",
-    buildParticipantResolutionDiagnostic(correlationId, customerId, examAttemptId, launch, "missing_participant_id"),
+  const diagnostic = buildParticipantResolutionDiagnostic(
+    correlationId,
+    customerId,
+    examAttemptId,
+    launch,
+    "missing_participant_id",
   );
+  await writeScoreFailureAudit(
+    deps,
+    examAttemptId,
+    candidateId,
+    launch.experienceId,
+    correlationId,
+    diagnostic,
+    "Score retrieval failed.",
+  );
+  deps.logger.warn("candidate score retrieval failed", diagnostic);
   return {
     ok: false,
     response: {
@@ -437,4 +544,42 @@ function toCloudShareDiagnostic(
     tls: cause.context?.tls,
     issues: cause.context?.issues,
   };
+}
+
+async function writeScoreFailureAudit(
+  deps: Pick<ScoreHandlerDeps, "audit" | "now">,
+  examAttemptId: string,
+  candidateId: string,
+  experienceId: string,
+  correlationId: string,
+  diagnostic: Record<string, unknown>,
+  error: string,
+): Promise<void> {
+  await deps.audit.write({
+    id: `${examAttemptId}:score_retrieved_failed:${correlationId}`,
+    examAttemptId,
+    candidateId,
+    action: "score_retrieved",
+    outcome: "failure",
+    details: {
+      experienceId,
+      attemptedOperation: asString(diagnostic.attemptedOperation),
+      integrationSurface: asString(diagnostic.integrationSurface),
+      method: asString(diagnostic.method),
+      path: asString(diagnostic.path),
+      failureMode: asString(diagnostic.failureMode),
+      responseStatus: asNumber(diagnostic.responseStatus),
+      correlationId,
+    },
+    error,
+    occurredAt: deps.now?.() ?? new Date(),
+  });
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === "string" ? value : undefined;
+}
+
+function asNumber(value: unknown): number | undefined {
+  return typeof value === "number" ? value : undefined;
 }
