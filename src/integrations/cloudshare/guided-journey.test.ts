@@ -55,6 +55,32 @@ describe("createCloudShareGuidedJourneyProvider", () => {
     expect(result).toBeNull();
   });
 
+  it("treats documented numeric completed-style statuses as completed steps", async () => {
+    const client = makeClient({
+      participantId: "student-1",
+      experienceId: "exp-1",
+      sections: [
+        { id: "t1", name: "Explore dashboard", status: 2 },
+        { id: "t2", name: "Validate outcome", status: 3 },
+        { id: "t3", name: "Pending step", status: 1 },
+      ],
+    });
+    const provider = createCloudShareGuidedJourneyProvider(client);
+
+    const result = await provider.getParticipantProgress("exp-1", "student-1");
+
+    expect(result).toEqual({
+      percentComplete: 67,
+      stepsCompleted: 2,
+      stepsTotal: 3,
+      steps: [
+        { stepId: "t1", title: "Explore dashboard", completed: true },
+        { stepId: "t2", title: "Validate outcome", completed: true },
+        { stepId: "t3", title: "Pending step", completed: false },
+      ],
+    });
+  });
+
   it("returns null when CloudShare reports no Guided Journey for the experience", async () => {
     const client: CloudShareClient = {
       requestV4: vi

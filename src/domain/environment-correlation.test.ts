@@ -121,6 +121,53 @@ describe("correlateEnvironmentForExamAttempt", () => {
     expect(launch).not.toHaveProperty("environmentId");
   });
 
+  it("persists participantId even when CloudShare has not exposed an actionable environment yet", async () => {
+    const launches = createInMemoryLabLaunchRepository();
+    await launches.save({
+      id: "launch-1",
+      examAttemptId: "attempt-1",
+      candidateId: "candidate-1",
+      participantEmail: "candidate@helioscx.demo",
+      trainingId: "training-1",
+      experienceId: "training-1",
+      loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret",
+      status: "launched",
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+
+    await expect(
+      correlateEnvironmentForExamAttempt(
+        {
+          launches,
+          participants: {
+            listParticipants: vi.fn().mockResolvedValue([
+              {
+                email: "candidate@helioscx.demo",
+                environmentId: null,
+                environmentStatus: null,
+                studentId: "student-1",
+              },
+            ]),
+          },
+        },
+        { examAttemptId: "attempt-1" },
+      ),
+    ).resolves.toEqual({
+      examAttemptId: "attempt-1",
+      trainingId: "training-1",
+      environmentId: null,
+      correlated: false,
+    });
+
+    await expect(launches.findByExamAttemptId("attempt-1")).resolves.toMatchObject({
+      participantId: "student-1",
+    });
+    await expect(launches.findByExamAttemptId("attempt-1")).resolves.not.toMatchObject({
+      environmentId: expect.anything(),
+      environmentExternalId: expect.anything(),
+    });
+  });
+
   it("ignores a pending placeholder envId until CloudShare reports an active environment, then updates to the actionable envId", async () => {
     const launches = createInMemoryLabLaunchRepository();
     await launches.save({

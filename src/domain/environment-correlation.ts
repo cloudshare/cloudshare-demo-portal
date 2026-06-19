@@ -46,28 +46,32 @@ export async function correlateEnvironmentForExamAttempt(
   const participant = participants.find(
     (candidate) => candidate.email.trim().toLowerCase() === launch.participantEmail?.trim().toLowerCase(),
   );
+  const participantBackfilledLaunch = await persistParticipantIdIfChanged(
+    deps,
+    launch,
+    participant?.studentId ?? null,
+  );
+  const launchWithParticipantId = participantBackfilledLaunch ?? launch;
 
   const actionableEnvironmentId = getActionableEnvironmentId(participant);
   if (!actionableEnvironmentId) {
-    if (shouldClearStaleEnvironmentCorrelation(launch, participant)) {
-      await deps.launches.save(clearEnvironmentCorrelation(launch));
+    if (shouldClearStaleEnvironmentCorrelation(launchWithParticipantId, participant)) {
+      await deps.launches.save(clearEnvironmentCorrelation(launchWithParticipantId));
     }
     return {
       examAttemptId: input.examAttemptId,
-      trainingId: launch.trainingId,
+      trainingId: launchWithParticipantId.trainingId ?? launch.trainingId,
       environmentId: null,
       correlated: false,
     };
   }
 
   if (
-    launch.participantId !== participant?.studentId ||
-    launch.environmentId !== actionableEnvironmentId ||
-    launch.environmentExternalId !== actionableEnvironmentId
+    launchWithParticipantId.environmentId !== actionableEnvironmentId ||
+    launchWithParticipantId.environmentExternalId !== actionableEnvironmentId
   ) {
     await deps.launches.save({
-      ...launch,
-      participantId: participant?.studentId ?? launch.participantId,
+      ...launchWithParticipantId,
       environmentId: actionableEnvironmentId,
       environmentExternalId: actionableEnvironmentId,
     });
@@ -79,6 +83,23 @@ export async function correlateEnvironmentForExamAttempt(
     environmentId: actionableEnvironmentId,
     correlated: true,
   };
+}
+
+async function persistParticipantIdIfChanged(
+  deps: CorrelateEnvironmentDeps,
+  launch: NonNullable<Awaited<ReturnType<LabLaunchRepository["findByExamAttemptId"]>>>,
+  participantId: string | null,
+) {
+  if (!participantId || launch.participantId === participantId) {
+    return null;
+  }
+
+  const updatedLaunch = {
+    ...launch,
+    participantId,
+  };
+  await deps.launches.save(updatedLaunch);
+  return updatedLaunch;
 }
 
 function getActionableEnvironmentId(

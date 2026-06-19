@@ -12,6 +12,10 @@ import { CloudShareRequestError } from "./errors";
  * - Path: GET /guided-journey/progress/{experienceId}/{participantId}
  * - Response shape exposes a progress rate plus section/step statuses rather than
  *   the older participants envelope we previously assumed.
+ * - Section/task status can arrive as either strings or numeric codes. Until the
+ *   exact enum is live-confirmed for this tenant, the adapter treats `2`/`3`
+ *   as completed-style statuses (`explored` / `completed-or-passed`) because
+ *   user/docs context indicates those numeric values represent completed progress.
  * All assumptions are documented here; only this file changes if they differ.
  */
 
@@ -158,7 +162,10 @@ function normalizeProgressSteps(rows: unknown[]): ParticipantProgress["steps"] {
 
     const completed =
       readBooleanCandidate(row, ["completed", "isCompleted"]) ??
-      isCompletedStatus(readStringCandidate(row, ["status", "sectionStatus", "stepStatus", "taskStatus"]));
+      isCompletedStatus(
+        readStringCandidate(row, ["status", "sectionStatus", "stepStatus", "taskStatus"]),
+        readNumberCandidate(row, ["status", "sectionStatus", "stepStatus", "taskStatus"]),
+      );
 
     return [{
       stepId,
@@ -168,7 +175,17 @@ function normalizeProgressSteps(rows: unknown[]): ParticipantProgress["steps"] {
   });
 }
 
-function isCompletedStatus(status: string | null): boolean {
+function isCompletedStatus(status: string | null, numericStatus: number | null): boolean {
+  if (numericStatus !== null) {
+    switch (numericStatus) {
+      case 2:
+      case 3:
+        return true;
+      default:
+        return false;
+    }
+  }
+
   if (!status) {
     return false;
   }
@@ -176,6 +193,7 @@ function isCompletedStatus(status: string | null): boolean {
   switch (status.trim().toLowerCase()) {
     case "completed":
     case "complete":
+    case "explored":
     case "done":
     case "passed":
     case "success":
