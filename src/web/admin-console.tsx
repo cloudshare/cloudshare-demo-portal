@@ -1716,54 +1716,65 @@ export function AdminConsole({ email }: AdminConsoleProps) {
 
               <div style={{ background: "#f7f7f8", borderRadius: "8px", padding: "1rem" }}>
                 <h2 style={{ marginTop: 0, marginBottom: "0.75rem", fontSize: "1rem" }}>
-                  Attempt History ({monitoring.history.length})
+                  Completed / expired attempts ({monitoring.history.length})
                 </h2>
-                <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
-                    <thead>
-                      <tr style={{ background: "#f5f5f5" }}>
-                        {["Candidate", "Exam", "Result", "Scheduled (UTC)", "Timeline"].map((heading) => (
-                          <th key={heading} style={{ textAlign: "left", padding: "0.4rem", borderBottom: "1px solid #ddd" }}>
-                            {heading}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {monitoring.history.length === 0 && (
-                        <tr>
-                          <td colSpan={5} style={{ padding: "0.5rem", color: "#666" }}>
-                            No past attempts yet.
-                          </td>
-                        </tr>
-                      )}
-                      {monitoring.history.map((attempt) => (
-                        <tr key={attempt.id} style={{ borderBottom: "1px solid #eee", verticalAlign: "top" }}>
-                          <td style={{ padding: "0.4rem" }}>
-                            <div style={{ fontWeight: 600 }}>{attempt.candidateName}</div>
-                            <div style={{ color: "#666", fontSize: "0.8rem" }}>{attempt.candidateEmail}</div>
-                          </td>
-                          <td style={{ padding: "0.4rem" }}>{attempt.examTitle}</td>
-                          <td style={{ padding: "0.4rem" }}>{formatMonitoringResult(attempt.result)}</td>
-                          <td style={{ padding: "0.4rem", whiteSpace: "nowrap" }}>
-                            {formatUtcTimestamp(attempt.scheduledFor)}
-                          </td>
-                          <td style={{ padding: "0.4rem", color: "#444", fontSize: "0.8rem" }}>
-                            {attempt.timeline.length === 0
-                              ? "No timeline entries"
-                              : attempt.timeline
-                                  .map((entry) =>
-                                    `${formatUtcTimestamp(entry.occurredAt)} · ${
-                                      entry.kind === "audit" ? entry.action : entry.eventType
-                                    }`,
-                                  )
-                                  .join("\n")}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                {monitoring.history.length === 0 ? (
+                  <p style={{ margin: 0, color: "#666" }}>No completed or expired attempts yet.</p>
+                ) : (
+                  <div style={{ display: "grid", gap: "0.75rem" }}>
+                    {monitoring.history.map((attempt) => (
+                      <details key={attempt.id} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "0.75rem 0.9rem" }}>
+                        <summary style={{ cursor: "pointer", fontWeight: 600 }}>
+                          {attempt.candidateName} · {attempt.examTitle} · {formatMonitoringResult(attempt.result)}
+                        </summary>
+                        <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.75rem", fontSize: "0.9rem" }}>
+                          <div>Candidate: {attempt.candidateEmail}</div>
+                          <div>Status: {formatAttemptStatus(attempt.status)}</div>
+                          <div>Scheduled (UTC): {formatUtcTimestamp(attempt.scheduledFor)}</div>
+                          <div>Training ID: {attempt.trainingId ?? "-"}</div>
+                          <div>Environment: {attempt.environmentExternalId ?? "-"}</div>
+                          <div style={{ overflowX: "auto" }}>
+                            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
+                              <thead>
+                                <tr style={{ background: "#f5f5f5" }}>
+                                  {["Time", "Kind", "Event", "Outcome", "Details"].map((heading) => (
+                                    <th key={heading} style={{ textAlign: "left", padding: "0.35rem", borderBottom: "1px solid #ddd" }}>
+                                      {heading}
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {attempt.timeline.length === 0 && (
+                                  <tr>
+                                    <td colSpan={5} style={{ padding: "0.4rem", color: "#666" }}>
+                                      No timeline entries recorded.
+                                    </td>
+                                  </tr>
+                                )}
+                                {attempt.timeline.map((entry, index) => (
+                                  <tr key={`${attempt.id}-${entry.occurredAt}-${entry.kind}-${index}`} style={{ borderBottom: "1px solid #eee", verticalAlign: "top" }}>
+                                    <td style={{ padding: "0.35rem", whiteSpace: "nowrap" }}>
+                                      {formatUtcTimestamp(entry.occurredAt)}
+                                    </td>
+                                    <td style={{ padding: "0.35rem" }}>{entry.kind}</td>
+                                    <td style={{ padding: "0.35rem" }}>{entry.kind === "audit" ? entry.action : entry.eventType}</td>
+                                    <td style={{ padding: "0.35rem" }}>
+                                      {entry.kind === "audit"
+                                        ? entry.outcome
+                                        : (typeof entry.responseStatus === "number" ? `HTTP ${entry.responseStatus}` : entry.failureMode ?? "-")}
+                                    </td>
+                                    <td style={{ padding: "0.35rem", color: "#444" }}>{formatTimelineEntry(entry)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </details>
+                    ))}
+                  </div>
+                )}
               </div>
             </>
           )}
