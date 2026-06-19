@@ -245,7 +245,11 @@ export function getServices(): Services {
   // share one in-memory truth. In live mode the poll and commands hit CloudShare.
   const environmentSimulator =
     config.runtime.mode === "fixture"
-      ? createCloudShareEnvironmentSimulator({ secret: config.secrets.webhookSecret })
+      ? createCloudShareEnvironmentSimulator({
+          secret:
+            config.seed.heliosCloudShareConnection?.webhookSecret ??
+            config.secrets.webhookSecret,
+        })
       : null;
   const environmentSource: EnvironmentStateSource =
     environmentSimulator ?? createCloudShareEnvironmentSource(cloudshare);

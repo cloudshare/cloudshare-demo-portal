@@ -590,8 +590,20 @@ have only been created **manually** in the CloudShare portal. Combined with per-
 no custom-header support, the portal needs a **per-Customer webhook URL path** to select the right
 secret, and may auto-register via v3 with a manual fallback.
 
+**Impact on certification use**
+
+- Slice 9 now persists an opaque per-Customer `webhookPathToken`, and the receiver resolves the
+  Customer from `/api/webhooks/cloudshare/{token}` before HMAC verification.
+- Because the CloudShare v3 registration contract is still unverified, the currently supported path
+  is the **manual fallback** documented in `docs/api/cloudshare-webhook-registration.md`: read
+  `webhookPath` from `GET /api/admin/cloudshare`, prepend the current public tunnel or deployment
+  base URL, and register that full callback URL in CloudShare.
+- This keeps webhook setup supportable without hard-coding a temporary tunnel hostname or
+  fabricating an unverified API integration.
+
 **Action required:** verify v3 webhook registration (request/response, project scoping) against a
-live tenant.
+live tenant. If it works, replace the manual-only fallback with a supported admin-triggered
+registration flow and update this entry immediately.
 
 ---
 

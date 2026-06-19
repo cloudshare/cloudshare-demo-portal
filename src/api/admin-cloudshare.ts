@@ -1,4 +1,5 @@
 import {
+  buildCloudShareWebhookPath,
   CloudShareConnectionTestError,
   MissingCloudShareConnectionError,
   testCloudShareConnection,
@@ -39,6 +40,8 @@ export async function handleGetCloudShareConnection(
       hasConnection: connection !== null,
       verifiedAt: connection?.verifiedAt?.toISOString() ?? null,
       connectedAt: connection?.connectedAt.toISOString() ?? null,
+      webhookPathToken: connection?.webhookPathToken ?? null,
+      webhookPath: connection ? buildCloudShareWebhookPath(connection.webhookPathToken) : null,
     },
   };
 }
@@ -92,6 +95,8 @@ export async function handleSaveCloudShareConnection(
       hasConnection: true,
       connectedAt: connection.connectedAt.toISOString(),
       verifiedAt: connection.verifiedAt?.toISOString() ?? null,
+      webhookPathToken: connection.webhookPathToken,
+      webhookPath: buildCloudShareWebhookPath(connection.webhookPathToken),
     },
   };
 }

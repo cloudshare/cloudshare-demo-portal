@@ -12,6 +12,7 @@ export interface CloudShareConnectionRecord {
   readonly apiId: string;
   readonly apiKey: string;
   readonly webhookSecret: string;
+  readonly webhookPathToken: string;
   readonly connectedAt: Date;
   readonly verifiedAt: Date | null;
 }
@@ -26,7 +27,12 @@ export interface SaveCloudShareConnectionInput {
 export interface CloudShareConnectionRepository {
   save(input: SaveCloudShareConnectionInput): Promise<CloudShareConnectionRecord>;
   findByCustomerId(customerId: string): Promise<CloudShareConnectionRecord | null>;
+  findByWebhookPathToken(webhookPathToken: string): Promise<CloudShareConnectionRecord | null>;
   markVerified(customerId: string, verifiedAt: Date): Promise<void>;
+}
+
+export function buildCloudShareWebhookPath(webhookPathToken: string): string {
+  return `/api/webhooks/cloudshare/${encodeURIComponent(webhookPathToken)}`;
 }
 
 export interface CloudShareClientFactory {

@@ -25,7 +25,7 @@ export interface SignedWebhook {
 }
 
 export interface EmitEnvironmentEventInput {
-  readonly environmentExternalId: string;
+  readonly environmentId: string;
   readonly event: CloudShareEnvironmentEventType;
   /** Event timestamp; its ISO string becomes the payload `CreatedAt`. */
   readonly at: Date;
@@ -74,17 +74,17 @@ export function createCloudShareEnvironmentSimulator(opts: {
   const statusByExternalId = new Map<string, EnvironmentStatus>();
 
   return {
-    emit({ environmentExternalId, event, at }: EmitEnvironmentEventInput): SignedWebhook {
+    emit({ environmentId, event, at }: EmitEnvironmentEventInput): SignedWebhook {
       statusByExternalId.set(
-        environmentExternalId,
-        statusAfter(event, statusByExternalId.get(environmentExternalId)),
+        environmentId,
+        statusAfter(event, statusByExternalId.get(environmentId)),
       );
 
       // PascalCase wire field names, matching the real CloudShare payload the
       // receiver's Zod schema expects.
       const rawBody = JSON.stringify({
         Event: event,
-        EnvironmentExternalId: environmentExternalId,
+        EnvironmentId: environmentId,
         CreatedAt: at.toISOString(),
       });
       return { rawBody, signature: computeWebhookSignature(rawBody, opts.secret) };

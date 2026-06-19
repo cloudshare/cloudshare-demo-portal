@@ -12,11 +12,11 @@ import { z } from "zod";
  * be verified before any JSON re-serialisation, which would change the bytes.
  *
  * NOTE (assumptions to verify against a live tenant — isolated behind this module):
- *  - The wire field names below (`Event`, `EnvironmentExternalId`, `CreatedAt`) and
+ *  - The wire field names below (`Event`, `EnvironmentId`, `CreatedAt`) and
  *    the event vocabulary are modelled on the documented environment events. Adjust
  *    only here if a live payload differs; this is tracked in the Slice 12 gap report.
  *  - CloudShare cannot send custom headers and the payload carries no unique event
- *    id, so dedupe uses a key synthesised from (environmentExternalId, Event,
+ *    id, so dedupe uses a key synthesised from (environmentId, Event,
  *    CreatedAt) rather than a header or body id.
  *  - The signature is delivered in the {@link CLOUDSHARE_WEBHOOK_SIGNATURE_HEADER}
  *    request header (the route reads it and passes it here).
@@ -41,14 +41,14 @@ export type CloudShareEnvironmentEventType =
 /** A validated, normalised environment webhook event. */
 export interface CloudShareEnvironmentEvent {
   readonly event: CloudShareEnvironmentEventType;
-  readonly environmentExternalId: string;
+  readonly environmentId: string;
   /** The event timestamp as CloudShare sent it; used verbatim in the idempotency key. */
   readonly createdAt: string;
 }
 
 const webhookPayloadSchema = z.object({
   Event: z.enum(CLOUDSHARE_ENVIRONMENT_EVENT_TYPES),
-  EnvironmentExternalId: z.string().min(1),
+  EnvironmentId: z.string().min(1),
   CreatedAt: z.string().min(1),
 });
 
@@ -100,7 +100,7 @@ export function parseWebhookEvent(rawBody: string): ParseWebhookResult {
     ok: true,
     event: {
       event: parsed.data.Event,
-      environmentExternalId: parsed.data.EnvironmentExternalId,
+      environmentId: parsed.data.EnvironmentId,
       createdAt: parsed.data.CreatedAt,
     },
   };
@@ -116,5 +116,5 @@ export function synthesiseIdempotencyKey(event: CloudShareEnvironmentEvent): str
   // contains the delimiter (e.g. an id with a ':') could otherwise let two distinct
   // events collide onto one key and silently dedupe one away. Encoding keeps the
   // component boundaries unambiguous.
-  return JSON.stringify([event.environmentExternalId, event.event, event.createdAt]);
+  return JSON.stringify([event.environmentId, event.event, event.createdAt]);
 }

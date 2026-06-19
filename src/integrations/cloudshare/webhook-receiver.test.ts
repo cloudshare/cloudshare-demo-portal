@@ -7,7 +7,7 @@ const SECRET = "account-webhook-secret";
 
 const body = JSON.stringify({
   Event: "environment.suspended",
-  EnvironmentExternalId: "env-ext-1",
+  EnvironmentId: "env-1",
   CreatedAt: "2026-06-08T10:00:00Z",
 });
 
@@ -24,9 +24,9 @@ describe("receiveWebhook", () => {
 
     expect(result.kind).toBe("accepted");
     if (result.kind === "accepted") {
-      expect(result.event.environmentExternalId).toBe("env-ext-1");
+      expect(result.event.environmentId).toBe("env-1");
       expect(result.event.event).toBe("environment.suspended");
-      expect(result.idempotencyKey).toContain("env-ext-1");
+      expect(result.idempotencyKey).toContain("env-1");
     }
   });
 

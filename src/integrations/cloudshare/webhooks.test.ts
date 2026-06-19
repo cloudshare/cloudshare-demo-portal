@@ -12,7 +12,7 @@ const SECRET = "account-webhook-secret";
 
 const validBody = JSON.stringify({
   Event: "environment.suspended",
-  EnvironmentExternalId: "env-ext-1",
+  EnvironmentId: "env-1",
   CreatedAt: "2026-06-08T10:00:00Z",
 });
 
@@ -52,7 +52,7 @@ describe("parseWebhookEvent", () => {
     if (result.ok) {
       expect(result.event).toEqual<CloudShareEnvironmentEvent>({
         event: "environment.suspended",
-        environmentExternalId: "env-ext-1",
+        environmentId: "env-1",
         createdAt: "2026-06-08T10:00:00Z",
       });
     }
@@ -61,7 +61,7 @@ describe("parseWebhookEvent", () => {
   it("rejects a payload with an unknown event type", () => {
     const body = JSON.stringify({
       Event: "environment.exploded",
-      EnvironmentExternalId: "env-ext-1",
+      EnvironmentId: "env-1",
       CreatedAt: "2026-06-08T10:00:00Z",
     });
     const result = parseWebhookEvent(body);
@@ -84,17 +84,17 @@ describe("parseWebhookEvent", () => {
 describe("synthesiseIdempotencyKey", () => {
   const base: CloudShareEnvironmentEvent = {
     event: "environment.suspended",
-    environmentExternalId: "env-ext-1",
+    environmentId: "env-1",
     createdAt: "2026-06-08T10:00:00Z",
   };
 
-  it("is stable for the same (environmentExternalId, event, createdAt)", () => {
+  it("is stable for the same (environmentId, event, createdAt)", () => {
     expect(synthesiseIdempotencyKey(base)).toBe(synthesiseIdempotencyKey({ ...base }));
   });
 
   it("differs when any of the three components differ", () => {
     const key = synthesiseIdempotencyKey(base);
-    expect(synthesiseIdempotencyKey({ ...base, environmentExternalId: "env-ext-2" })).not.toBe(key);
+    expect(synthesiseIdempotencyKey({ ...base, environmentId: "env-2" })).not.toBe(key);
     expect(synthesiseIdempotencyKey({ ...base, event: "environment.resumed" })).not.toBe(key);
     expect(synthesiseIdempotencyKey({ ...base, createdAt: "2026-06-08T11:00:00Z" })).not.toBe(key);
   });

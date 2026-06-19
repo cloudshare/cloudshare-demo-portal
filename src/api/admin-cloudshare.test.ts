@@ -101,13 +101,20 @@ describe("admin CloudShare handlers", () => {
       },
     });
     expect(save.status).toBe(200);
-    expect(save.body).toMatchObject({ hasConnection: true, verifiedAt: null });
+    expect(save.body).toMatchObject({
+      hasConnection: true,
+      verifiedAt: null,
+      webhookPath: expect.stringMatching(/^\/api\/webhooks\/cloudshare\//),
+    });
 
     const get = await handleGetCloudShareConnection(deps, {
       customerId: deps.customerId,
     });
     expect(get.status).toBe(200);
-    expect(get.body).toMatchObject({ hasConnection: true });
+    expect(get.body).toMatchObject({
+      hasConnection: true,
+      webhookPath: expect.stringMatching(/^\/api\/webhooks\/cloudshare\//),
+    });
     expect(JSON.stringify(get.body)).not.toContain("api-key");
   });
 

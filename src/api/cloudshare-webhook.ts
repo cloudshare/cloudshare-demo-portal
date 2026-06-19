@@ -4,6 +4,8 @@ import {
   type RawWebhookRequest,
 } from "@/integrations/cloudshare/webhook-receiver";
 import type { WebhookIdempotencyStore } from "@/domain/webhook";
+import type { EventLogRepository } from "@/domain/event-log";
+import type { CloudShareConnectionRepository } from "@/domain/cloudshare-connection";
 
 /**
  * Framework-agnostic handler for the inbound CloudShare webhook endpoint. It owns
@@ -27,12 +29,14 @@ import type { WebhookIdempotencyStore } from "@/domain/webhook";
  */
 
 export interface CloudShareWebhookDeps {
-  /** Account-level webhook secret. */
-  readonly secret: string;
+  readonly connections: CloudShareConnectionRepository;
   readonly idempotency: WebhookIdempotencyStore;
   /** Trigger the authoritative poll-and-reconcile for one environment. */
-  readonly reconcile: (environmentExternalId: string) => Promise<unknown>;
+  readonly reconcile: (environmentId: string) => Promise<unknown>;
   readonly logger: Logger;
+  readonly eventLog: EventLogRepository;
+  readonly now?: () => Date;
+  readonly newEventId?: () => string;
 }
 
 export interface CloudShareWebhookResponse {
@@ -42,46 +46,115 @@ export interface CloudShareWebhookResponse {
 
 export async function handleCloudShareWebhook(
   deps: CloudShareWebhookDeps,
-  request: RawWebhookRequest,
+  request: RawWebhookRequest & { readonly webhookPathToken: string },
 ): Promise<CloudShareWebhookResponse> {
   try {
+    const connection = await deps.connections.findByWebhookPathToken(request.webhookPathToken);
+    if (!connection) {
+      deps.logger.warn("cloudshare webhook rejected: unknown webhook target", {
+        webhookPathToken: request.webhookPathToken,
+      });
+      await appendWebhookEvent(deps, {
+        type: "cloudshare.webhook.unknown_target",
+        payload: {
+          webhookPathToken: request.webhookPathToken,
+        },
+      });
+      return { status: 404, body: { status: "unknown_target" } };
+    }
+
     const outcome = await receiveWebhook(
-      { secret: deps.secret, idempotency: deps.idempotency },
+      { secret: connection.webhookSecret, idempotency: deps.idempotency },
       request,
     );
 
     switch (outcome.kind) {
       case "invalid_signature":
-        deps.logger.warn("cloudshare webhook rejected: invalid signature");
+        deps.logger.warn("cloudshare webhook rejected: invalid signature", {
+          customerId: connection.customerId,
+          webhookPathToken: connection.webhookPathToken,
+        });
+        await appendWebhookEvent(deps, {
+          type: "cloudshare.webhook.invalid_signature",
+          payload: {
+            customerId: connection.customerId,
+            webhookPathToken: connection.webhookPathToken,
+          },
+        });
         return { status: 401, body: { status: "invalid_signature" } };
 
       case "invalid_payload":
         deps.logger.warn("cloudshare webhook rejected: invalid payload", {
+          customerId: connection.customerId,
+          webhookPathToken: connection.webhookPathToken,
           issues: outcome.issues,
+        });
+        await appendWebhookEvent(deps, {
+          type: "cloudshare.webhook.invalid_payload",
+          payload: {
+            customerId: connection.customerId,
+            webhookPathToken: connection.webhookPathToken,
+            issues: outcome.issues,
+          },
         });
         return { status: 400, body: { status: "invalid_payload" } };
 
       case "duplicate":
         deps.logger.info("cloudshare webhook ignored: duplicate event", {
+          customerId: connection.customerId,
+          webhookPathToken: connection.webhookPathToken,
           idempotencyKey: outcome.idempotencyKey,
+        });
+        await appendWebhookEvent(deps, {
+          type: "cloudshare.webhook.duplicate",
+          payload: {
+            customerId: connection.customerId,
+            webhookPathToken: connection.webhookPathToken,
+            idempotencyKey: outcome.idempotencyKey,
+          },
         });
         return { status: 200, body: { status: "duplicate" } };
 
       case "accepted": {
         const { event, idempotencyKey } = outcome;
         deps.logger.info("cloudshare webhook accepted", {
+          customerId: connection.customerId,
+          webhookPathToken: connection.webhookPathToken,
           event: event.event,
-          environmentExternalId: event.environmentExternalId,
+          environmentId: event.environmentId,
           idempotencyKey,
+        });
+        await appendWebhookEvent(deps, {
+          type: "cloudshare.webhook.accepted",
+          payload: {
+            customerId: connection.customerId,
+            webhookPathToken: connection.webhookPathToken,
+            event: event.event,
+            environmentId: event.environmentId,
+            idempotencyKey,
+          },
         });
         // The webhook is only a hint; the poll is the source of truth. Best-effort:
         // a failure here is logged, not surfaced, because the next event/poll recovers.
         try {
-          await deps.reconcile(event.environmentExternalId);
+          await deps.reconcile(event.environmentId);
         } catch (err) {
           deps.logger.error("cloudshare environment reconcile failed", {
-            environmentExternalId: event.environmentExternalId,
+            customerId: connection.customerId,
+            webhookPathToken: connection.webhookPathToken,
+            environmentId: event.environmentId,
             error: err instanceof Error ? err.message : String(err),
+          });
+          await appendWebhookEvent(deps, {
+            type: "cloudshare.webhook.reconcile_failed",
+            payload: {
+              customerId: connection.customerId,
+              webhookPathToken: connection.webhookPathToken,
+              event: event.event,
+              environmentId: event.environmentId,
+              idempotencyKey,
+              error: err instanceof Error ? err.message : String(err),
+            },
           });
         }
         return { status: 202, body: { status: "accepted" } };
@@ -96,4 +169,16 @@ export async function handleCloudShareWebhook(
     });
     return { status: 500, body: { status: "internal_error" } };
   }
+}
+
+async function appendWebhookEvent(
+  deps: Pick<CloudShareWebhookDeps, "eventLog" | "newEventId" | "now">,
+  input: { readonly type: string; readonly payload: Record<string, unknown> },
+): Promise<void> {
+  await deps.eventLog.append({
+    eventId: deps.newEventId?.() ?? `${input.type}:${Date.now()}`,
+    type: input.type,
+    occurredAt: deps.now?.() ?? new Date(),
+    payload: input.payload,
+  });
 }

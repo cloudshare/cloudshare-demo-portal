@@ -136,10 +136,12 @@ function makeDeps(input?: {
           apiId: "api-id",
           apiKey: "api-key",
           webhookSecret: "webhook-secret",
+          webhookPathToken: "whk-customer-1",
           connectedAt: new Date("2026-06-16T07:00:00.000Z"),
           verifiedAt: new Date("2026-06-16T07:05:00.000Z"),
         },
       ),
+    findByWebhookPathToken: vi.fn(),
   };
   const scoreRetriever: ScoreRetrievalProvider = {
     getParticipantProgress:

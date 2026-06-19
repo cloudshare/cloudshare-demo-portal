@@ -54,12 +54,18 @@ describe("CloudShareConnectionRepository", () => {
     expect(raw.apiIdCiphertext).not.toContain("api-id-123");
     expect(raw.apiKeyCiphertext).not.toContain("api-key-456");
     expect(raw.webhookSecretCiphertext).not.toContain("webhook-secret-789");
+    expect(raw.webhookPathToken).toMatch(/^[A-Za-z0-9_-]+$/);
 
     await expect(repo.findByCustomerId(customer.id)).resolves.toMatchObject({
       customerId: customer.id,
       apiId: "api-id-123",
       apiKey: "api-key-456",
       webhookSecret: "webhook-secret-789",
+      webhookPathToken: raw.webhookPathToken,
+    });
+    await expect(repo.findByWebhookPathToken(raw.webhookPathToken)).resolves.toMatchObject({
+      customerId: customer.id,
+      webhookPathToken: raw.webhookPathToken,
     });
   });
 
@@ -87,5 +93,29 @@ describe("CloudShareConnectionRepository", () => {
     });
 
     expect(updated.verifiedAt).toBeNull();
+  });
+
+  it("preserves the webhook path token when credentials are updated", async () => {
+    const slug = `helios-${Date.now()}-token`;
+    const customer = await prisma.customer.create({
+      data: { slug, name: "Helios CX" },
+    });
+    createdCustomerIds.add(customer.id);
+    const repo = createCloudShareConnectionRepository(prisma, secrets);
+
+    const first = await repo.save({
+      customerId: customer.id,
+      apiId: "api-id-123",
+      apiKey: "api-key-456",
+      webhookSecret: "webhook-secret-789",
+    });
+    const second = await repo.save({
+      customerId: customer.id,
+      apiId: "api-id-123",
+      apiKey: "api-key-999",
+      webhookSecret: "webhook-secret-abc",
+    });
+
+    expect(second.webhookPathToken).toBe(first.webhookPathToken);
   });
 });

@@ -43,6 +43,7 @@ function makeConnectionRecord(
     apiId: "api-id",
     apiKey: "api-key",
     webhookSecret: "webhook-secret",
+    webhookPathToken: "whk-customer-1",
     connectedAt: new Date("2026-06-14T00:00:00Z"),
     verifiedAt: null,
     ...partial,
@@ -55,6 +56,7 @@ function makeConnections(
   return {
     save: vi.fn(),
     findByCustomerId: vi.fn().mockResolvedValue(connection),
+    findByWebhookPathToken: vi.fn().mockResolvedValue(connection),
     markVerified: vi.fn(),
   };
 }
