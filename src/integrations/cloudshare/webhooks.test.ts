@@ -94,12 +94,12 @@ describe("parseWebhookEvent", () => {
     }
   });
 
-  it("rejects a payload with an unknown event type", () => {
+  it("rejects non-environment webhook event types", () => {
     const body = JSON.stringify({
-      Event: "environment.exploded",
+      Event: "student.enrolled",
       CreatedAt: "2026-06-08T10:00:00Z",
       Payload: {
-        environmentExternalId: "env-ext-1",
+        studentEmail: "candidate@example.com",
       },
     });
     const result = parseWebhookEvent(body);

@@ -50,7 +50,13 @@ https://treasurer-computer-mailed-anderson.trycloudflare.com/api/webhooks/clouds
 ```
 
 6. Register that full callback URL in the CloudShare webhook UI for the Helios CloudShare
-   account/project.
+   account/project, selecting **only** these environment lifecycle events:
+   - `environment.created`
+   - `environment.suspended`
+   - `environment.resumed`
+   - `environment.deleted`
+   - `environment.extended`
+   - `environment.archived`
 7. Trigger a CloudShare environment lifecycle event and confirm:
    - the webhook request hits the portal route
    - invalid signatures return `401`
@@ -65,5 +71,7 @@ https://treasurer-computer-mailed-anderson.trycloudflare.com/api/webhooks/clouds
   that Customer's stored webhook secret before verifying the HMAC.
 - CloudShare's current documented webhook contract is v3 Integration Hub / account-level webhooks.
   Do not assume a v4 experience webhook contract unless live evidence proves one.
+- The receiver intentionally accepts only environment lifecycle events. Class, student, and assistance
+  webhooks do not carry the environment state transition this slice reconciles.
 - Webhooks remain a hint only. The authoritative state change still comes from the poll/reconcile
   flow.

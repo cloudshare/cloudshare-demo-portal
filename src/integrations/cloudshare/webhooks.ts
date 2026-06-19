@@ -8,14 +8,16 @@ import { z } from "zod";
  * {@link CloudShareEnvironmentEvent}.
  *
  * Signing scheme: HMAC-SHA256 of the *raw* request body, encoded base64, keyed by
- * the account-level webhook secret (`CLOUDSHARE_WEBHOOK_SECRET`). The raw body must
- * be verified before any JSON re-serialisation, which would change the bytes.
+ * the resolved Customer's account-level webhook secret. The raw body must be
+ * verified before any JSON re-serialisation, which would change the bytes.
  *
  * NOTE:
  *  - The primary shape below follows the CloudShare v3 Integration Hub webhook docs:
  *    top-level `Event` + `CreatedAt`, with event-specific data under `Payload`.
  *  - A legacy top-level `EnvironmentId` shape is still tolerated for the local
  *    simulator/backwards compatibility, but it is explicitly treated as legacy.
+ *  - Only environment lifecycle events are useful to this portal. Other documented
+ *    webhook events, such as class or student events, are rejected at this boundary.
  *  - CloudShare cannot send custom headers and the payload carries no unique event
  *    id, so dedupe uses a key synthesised from (environmentExternalId, Event,
  *    CreatedAt) rather than a header or body id.

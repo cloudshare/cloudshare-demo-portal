@@ -606,6 +606,10 @@ secret, and may auto-register via v3 with a manual fallback.
   `POST /api/v3/webhooks`, and `DELETE /api/v3/webhooks/{id}` as the current management surface.
 - Slice 9 now persists an opaque per-Customer `webhookPathToken`, and the receiver resolves the
   Customer from `/api/webhooks/cloudshare/{token}` before HMAC verification.
+- The portal currently accepts only environment lifecycle events:
+  `environment.created`, `environment.suspended`, `environment.resumed`, `environment.deleted`,
+  `environment.extended`, and `environment.archived`. Other documented webhook families are not
+  useful for this slice because they do not drive environment-state reconciliation.
 - Because the CloudShare v3 registration contract is still unverified, the currently supported path
   is the **manual fallback** documented in `docs/api/cloudshare-webhook-registration.md`: read
   `webhookPath` from `GET /api/admin/cloudshare`, prepend the current public tunnel or deployment

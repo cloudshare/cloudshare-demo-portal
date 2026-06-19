@@ -205,12 +205,15 @@ first-class deliverable.
 ### Event correlation (ADR-003)
 - The portal owns the `trainingId ↔ Candidate (email/studentId) ↔ environmentId` mapping. The
   `environmentId` is unknown until login and is discovered via the v4 **list-students-in-a-training**
-  endpoint (`ParticipantLister` port); the webhook payload carries CloudShare's `environmentId`
-  only (no experience reference). **Polling `GET environment`/list-students is the source of truth;
-  webhooks are an optional tunnel-only hint.** Idempotency key = `(environmentId, event, createdAt)`.
+  endpoint (`ParticipantLister` port). The documented v3 environment webhook payload carries
+  `Payload.environmentExternalId`, but no experience/training reference. **Polling `GET environment`
+  / list-students is the source of truth; webhooks are an optional tunnel-only hint.** Idempotency
+  key = `(environmentExternalId, event, createdAt)`.
 - Webhook routing is **per-Customer via an opaque URL path** so the receiver can select the right
   secret before verifying (no custom headers possible). Webhook registration via the v3 POST
-  endpoint is supported with a manual fallback (unverified — flagged in the gap report).
+  endpoint is supported with a manual fallback (unverified — flagged in the gap report). Subscribe
+  only to environment lifecycle events: `environment.created`, `environment.suspended`,
+  `environment.resumed`, `environment.deleted`, `environment.extended`, and `environment.archived`.
 
 ### Monitoring & audit
 - Reuse the audit trail + integration-event log; add a **live session view** (scheduled / in
