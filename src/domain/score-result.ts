@@ -13,6 +13,7 @@ export interface ScoreStep {
   readonly stepId: string;
   readonly title: string;
   readonly completed: boolean;
+  readonly status?: string | null;
 }
 
 /** Per-participant Guided Journey progress as returned by the ScoreRetrievalProvider port. */
@@ -21,6 +22,12 @@ export interface ParticipantProgress {
   readonly stepsCompleted: number;
   readonly stepsTotal: number;
   readonly steps: ScoreStep[];
+  readonly exploredRate: number;
+  readonly inProgressRate: number;
+  readonly notStartedRate: number;
+  readonly passedRate: number;
+  readonly failedRate: number;
+  readonly notInitiatedRate: number;
 }
 
 /** Enriched score result, combining participant progress with exam attempt context. */
@@ -31,6 +38,12 @@ export interface ScoreResult {
   readonly stepsCompleted: number;
   readonly stepsTotal: number;
   readonly steps: ScoreStep[];
+  readonly exploredRate: number;
+  readonly inProgressRate: number;
+  readonly notStartedRate: number;
+  readonly passedRate: number;
+  readonly failedRate: number;
+  readonly notInitiatedRate: number;
   /** ISO 8601 timestamp of when progress was retrieved. */
   readonly retrievedAt: string;
 }
@@ -80,6 +93,12 @@ const EMPTY_PROGRESS: ParticipantProgress = {
   stepsCompleted: 0,
   stepsTotal: 0,
   steps: [],
+  exploredRate: 0,
+  inProgressRate: 0,
+  notStartedRate: 0,
+  passedRate: 0,
+  failedRate: 0,
+  notInitiatedRate: 0,
 };
 
 export async function retrieveScore(
@@ -122,6 +141,12 @@ export async function retrieveScore(
     stepsCompleted: p.stepsCompleted,
     stepsTotal: p.stepsTotal,
     steps: p.steps,
+    exploredRate: p.exploredRate,
+    inProgressRate: p.inProgressRate,
+    notStartedRate: p.notStartedRate,
+    passedRate: p.passedRate,
+    failedRate: p.failedRate,
+    notInitiatedRate: p.notInitiatedRate,
     retrievedAt: new Date().toISOString(),
   };
 }
@@ -178,6 +203,12 @@ export async function resolveExamAttemptScore(
     stepsCompleted: progress.stepsCompleted,
     stepsTotal: progress.stepsTotal,
     steps: progress.steps,
+    exploredRate: progress.exploredRate,
+    inProgressRate: progress.inProgressRate,
+    notStartedRate: progress.notStartedRate,
+    passedRate: progress.passedRate,
+    failedRate: progress.failedRate,
+    notInitiatedRate: progress.notInitiatedRate,
     retrievedAt,
   };
 }

@@ -143,15 +143,43 @@ export function ScoreDisplay({ examAttemptId }: ScoreDisplayProps) {
       {score.scoreAvailable ? (
         <>
           <p style={{ margin: 0 }}>
-            <strong>{score.percentComplete}%</strong> complete —{" "}
-            {score.stepsCompleted} of {score.stepsTotal} tasks done
+            <strong>{score.percentComplete}%</strong> sections explored, passed, or otherwise completed
           </p>
+          <p style={{ margin: 0, color: "#333" }}>
+            {score.stepsCompleted} of {score.stepsTotal} sections are currently marked explored or complete.
+          </p>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+              gap: "0.75rem",
+            }}
+          >
+            {[
+              ["Passed rate", score.passedRate],
+              ["Failed rate", score.failedRate],
+              ["Explored rate", score.exploredRate],
+              ["In progress rate", score.inProgressRate],
+              ["Not started rate", score.notStartedRate],
+              ["Not initiated rate", score.notInitiatedRate],
+            ].map(([label, value]) => (
+              <div
+                key={label}
+                style={{ border: "1px solid #e5e7eb", borderRadius: "8px", padding: "0.75rem", background: "#fafafa" }}
+              >
+                <div style={{ fontSize: "0.9rem", color: "#555" }}>{label}</div>
+                <div style={{ fontSize: "1.15rem", fontWeight: 600 }}>{formatRate(value as number)}</div>
+              </div>
+            ))}
+          </div>
 
           {score.steps.length > 0 && (
             <ul style={{ margin: 0, paddingLeft: "1.2rem" }}>
               {score.steps.map((step) => (
                 <li key={step.stepId} style={{ marginBottom: "0.35rem" }}>
                   {step.completed ? "✓" : "○"} {step.title}
+                  {step.status ? ` (${step.status})` : ""}
                 </li>
               ))}
             </ul>
@@ -177,4 +205,8 @@ export function ScoreDisplay({ examAttemptId }: ScoreDisplayProps) {
       </section>
     </section>
   );
+}
+
+function formatRate(value: number): string {
+  return `${Math.round(value * 100)}%`;
 }

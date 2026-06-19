@@ -33,11 +33,17 @@ const sampleProgress: ParticipantProgress = {
   stepsCompleted: 3,
   stepsTotal: 4,
   steps: [
-    { stepId: "s1", title: "Configure routing", completed: true },
-    { stepId: "s2", title: "Create queue", completed: true },
-    { stepId: "s3", title: "Test flow", completed: true },
-    { stepId: "s4", title: "Validate output", completed: false },
+    { stepId: "s1", title: "Configure routing", completed: true, status: "passed" },
+    { stepId: "s2", title: "Create queue", completed: true, status: "explored" },
+    { stepId: "s3", title: "Test flow", completed: true, status: "passed" },
+    { stepId: "s4", title: "Validate output", completed: false, status: "in Progress" },
   ],
+  exploredRate: 0.25,
+  inProgressRate: 0.25,
+  notStartedRate: 0.25,
+  passedRate: 0.25,
+  failedRate: 0,
+  notInitiatedRate: 0.25,
 };
 
 function makeProvider(progress: ParticipantProgress | null): ScoreRetrievalProvider {
@@ -62,6 +68,8 @@ describe("retrieveScore", () => {
     expect(result.stepsCompleted).toBe(3);
     expect(result.stepsTotal).toBe(4);
     expect(result.steps).toHaveLength(4);
+    expect(result.passedRate).toBe(0.25);
+    expect(result.failedRate).toBe(0);
     expect(result.retrievedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
     expect(provider.getParticipantProgress).toHaveBeenCalledWith("exp-1", "student-1");
   });
@@ -79,6 +87,8 @@ describe("retrieveScore", () => {
     expect(result.stepsCompleted).toBe(0);
     expect(result.stepsTotal).toBe(0);
     expect(result.steps).toEqual([]);
+    expect(result.passedRate).toBe(0);
+    expect(result.failedRate).toBe(0);
   });
 
   it("throws LabLaunchNotFoundError when no lab launch exists for the attempt", async () => {
@@ -164,6 +174,12 @@ describe("resolveExamAttemptScore", () => {
       stepsCompleted: 3,
       stepsTotal: 4,
       steps: sampleProgress.steps,
+      exploredRate: 0.25,
+      inProgressRate: 0.25,
+      notStartedRate: 0.25,
+      passedRate: 0.25,
+      failedRate: 0,
+      notInitiatedRate: 0.25,
       retrievedAt: "2026-06-16T12:00:00.000Z",
     });
   });

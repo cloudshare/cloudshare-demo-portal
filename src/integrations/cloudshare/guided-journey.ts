@@ -28,6 +28,7 @@ export const SCORING_LIMITATIONS = [
   "Scoring uses bitmap checkpoints: visual state comparison only, not process-level capture.",
   "End-state verification only — approach and intermediate steps are not assessed.",
   "Deterministic script-based verification is not generally available until Q3 2026.",
+  "CloudShare Guided Journey passedRate and failedRate are raw per-section rates and may not sum to 100%.",
   "Final certification decisions may use criteria outside this portal's Guided Journey score.",
 ] as const;
 
@@ -36,11 +37,18 @@ const normalizedProgressSchema = z
     percentComplete: z.number().min(0).max(100),
     stepsCompleted: z.number().int().nonnegative(),
     stepsTotal: z.number().int().nonnegative(),
+    exploredRate: z.number().min(0).max(1),
+    inProgressRate: z.number().min(0).max(1),
+    notStartedRate: z.number().min(0).max(1),
+    passedRate: z.number().min(0).max(1),
+    failedRate: z.number().min(0).max(1),
+    notInitiatedRate: z.number().min(0).max(1),
     steps: z.array(
       z.object({
         stepId: z.string().min(1),
         title: z.string().min(1),
         completed: z.boolean(),
+        status: z.string().min(1).nullable().optional(),
       }),
     ),
   })
@@ -105,7 +113,9 @@ function normalizeGuidedJourneyProgress(payload: unknown): ParticipantProgress |
         ? payload.steps
         : Array.isArray(payload.tasks)
           ? payload.tasks
-          : [],
+          : Array.isArray(payload.sectionStatuses)
+            ? payload.sectionStatuses
+            : [],
   );
 
   const explicitPercent = readNumberCandidate(payload, [
@@ -124,27 +134,47 @@ function normalizeGuidedJourneyProgress(payload: unknown): ParticipantProgress |
     "totalSteps",
     "totalTasks",
   ]);
+  const exploredRate = readNumberCandidate(payload, ["exploredRate"]) ?? 0;
+  const inProgressRate = readNumberCandidate(payload, ["inProgressRate"]) ?? 0;
+  const notStartedRate = readNumberCandidate(payload, ["notStartedRate"]) ?? 0;
+  const passedRate = readNumberCandidate(payload, ["passedRate"]) ?? 0;
+  const failedRate = readNumberCandidate(payload, ["failedRate"]) ?? 0;
+  const notInitiatedRate = readNumberCandidate(payload, ["notInitiatedRate"]) ?? 0;
+  const hasExplicitRates =
+    exploredRate > 0 ||
+    inProgressRate > 0 ||
+    notStartedRate > 0 ||
+    passedRate > 0 ||
+    failedRate > 0 ||
+    notInitiatedRate > 0;
 
   if (
     steps.length === 0 &&
     (explicitPercent ?? 0) === 0 &&
     (explicitCompleted ?? 0) === 0 &&
-    (explicitTotal ?? 0) === 0
+    (explicitTotal ?? 0) === 0 &&
+    !hasExplicitRates
   ) {
     return null;
   }
 
   const stepsCompleted = explicitCompleted ?? steps.filter((step) => step.completed).length;
   const stepsTotal = explicitTotal ?? steps.length;
-  const percentComplete = explicitPercent ?? (
-    stepsTotal > 0 ? Math.round((stepsCompleted / stepsTotal) * 100) : 0
-  );
+  const percentComplete =
+    explicitPercent ??
+    (stepsTotal > 0 ? Math.round((stepsCompleted / stepsTotal) * 100) : 0);
 
   return {
     percentComplete,
     stepsCompleted,
     stepsTotal,
     steps,
+    exploredRate,
+    inProgressRate,
+    notStartedRate,
+    passedRate,
+    failedRate,
+    notInitiatedRate,
   };
 }
 
@@ -156,21 +186,30 @@ function normalizeProgressSteps(rows: unknown[]): ParticipantProgress["steps"] {
 
     const stepId = readStringCandidate(row, ["id", "sectionId", "stepId", "taskId"]);
     const title = readStringCandidate(row, ["name", "title", "sectionName", "stepName", "taskName"]);
-    if (!stepId || !title) {
+    const numericOrder = readNumberCandidate(row, ["number", "order", "index"]);
+    const fallbackStepId =
+      title !== null
+        ? `${numericOrder ?? "section"}:${title}`
+        : null;
+    const normalizedStatus = normalizeStatusLabel(
+      readStringCandidate(row, ["status", "sectionStatus", "stepStatus", "taskStatus"]),
+    );
+    if ((!stepId && !fallbackStepId) || !title) {
       return [];
     }
 
     const completed =
       readBooleanCandidate(row, ["completed", "isCompleted"]) ??
       isCompletedStatus(
-        readStringCandidate(row, ["status", "sectionStatus", "stepStatus", "taskStatus"]),
+        normalizedStatus,
         readNumberCandidate(row, ["status", "sectionStatus", "stepStatus", "taskStatus"]),
       );
 
     return [{
-      stepId,
+      stepId: stepId ?? fallbackStepId!,
       title,
       completed,
+      status: normalizedStatus,
     }];
   });
 }
@@ -194,6 +233,7 @@ function isCompletedStatus(status: string | null, numericStatus: number | null):
     case "completed":
     case "complete":
     case "explored":
+    case "explore":
     case "done":
     case "passed":
     case "success":
@@ -202,6 +242,23 @@ function isCompletedStatus(status: string | null, numericStatus: number | null):
     default:
       return false;
   }
+}
+
+function normalizeStatusLabel(status: string | null): string | null {
+  if (!status) {
+    return null;
+  }
+
+  const trimmed = status.trim();
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  return trimmed
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

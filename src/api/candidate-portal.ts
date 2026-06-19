@@ -88,6 +88,7 @@ export interface CandidateExamCatalogItem {
   readonly title: string;
   readonly description: string;
   readonly timeLimitMinutes: number;
+  readonly scoreRetrievalEnabled: boolean;
 }
 
 export interface CandidateAttemptItem {
@@ -306,6 +307,7 @@ function toCandidateExamCatalogItem(exam: Exam): CandidateExamCatalogItem {
     title: exam.title,
     description: exam.description,
     timeLimitMinutes: exam.timeLimitMinutes,
+    scoreRetrievalEnabled: exam.scoreRetrievalEnabled,
   };
 }
 

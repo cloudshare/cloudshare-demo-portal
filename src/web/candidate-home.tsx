@@ -246,6 +246,9 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                   <span style={{ color: "#555", fontSize: "0.95rem" }}>{exam.timeLimitMinutes} minute limit</span>
                 </div>
                 <p style={{ color: "#444" }}>{exam.description || "No description provided."}</p>
+                <p style={{ marginTop: "-0.2rem", color: "#555" }}>
+                  Guided Journey scoring: {exam.scoreRetrievalEnabled ? "Enabled" : "Not enabled for this Exam"}
+                </p>
                 {attempt && (
                   <p style={{ marginTop: 0, color: "#0b5d3b" }}>
                     Current attempt: {formatCandidateAttemptStatus(attempt.status)}

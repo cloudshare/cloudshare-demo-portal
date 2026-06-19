@@ -22,6 +22,45 @@ const apiResponse = {
   ],
 };
 
+const liveApiResponse = {
+  exploredRate: 0.5,
+  inProgressRate: 0.5,
+  notStartedRate: 0,
+  passedRate: 0.25,
+  failedRate: 0.25,
+  notInitiatedRate: 0,
+  sectionStatuses: [
+    {
+      number: 0,
+      name: "Check pfSense WAN Interface",
+      status: "explored",
+      isInFocus: false,
+      timeSpent: 338.24936349999996,
+    },
+    {
+      number: 0,
+      name: "Section Name",
+      status: "inProgress",
+      isInFocus: false,
+      timeSpent: 7.1577779999999995,
+    },
+    {
+      number: 1,
+      name: "Check the LAN interface",
+      status: "explored",
+      isInFocus: false,
+      timeSpent: 51.3734852,
+    },
+    {
+      number: 2,
+      name: "Section Name 3",
+      status: "inProgress",
+      isInFocus: false,
+      timeSpent: 2.7512976,
+    },
+  ],
+};
+
 describe("createCloudShareGuidedJourneyProvider", () => {
   it("maps documented guided-journey progress payloads by participant id", async () => {
     const client = makeClient(apiResponse);
@@ -34,10 +73,10 @@ describe("createCloudShareGuidedJourneyProvider", () => {
     expect(result!.stepsCompleted).toBe(3);
     expect(result!.stepsTotal).toBe(4);
     expect(result!.steps).toEqual([
-      { stepId: "t1", title: "Configure routing", completed: true },
-      { stepId: "t2", title: "Create queue", completed: true },
-      { stepId: "t3", title: "Test flow", completed: true },
-      { stepId: "t4", title: "Validate output", completed: false },
+      { stepId: "t1", title: "Configure routing", completed: true, status: "completed" },
+      { stepId: "t2", title: "Create queue", completed: true, status: "completed" },
+      { stepId: "t3", title: "Test flow", completed: true, status: "completed" },
+      { stepId: "t4", title: "Validate output", completed: false, status: "in progress" },
     ]);
     expect(client.requestV4).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -53,6 +92,51 @@ describe("createCloudShareGuidedJourneyProvider", () => {
 
     const result = await provider.getParticipantProgress("exp-1", "student-1");
     expect(result).toBeNull();
+  });
+
+  it("maps the live guided-journey payload with sectionStatuses and raw rates", async () => {
+    const client = makeClient(liveApiResponse);
+    const provider = createCloudShareGuidedJourneyProvider(client);
+
+    const result = await provider.getParticipantProgress("EX8FegB45PLVmyn8LgPRXPuA2", "PTdBBgMl9ryrQzFBToh3aqew2");
+
+    expect(result).toEqual({
+      percentComplete: 50,
+      stepsCompleted: 2,
+      stepsTotal: 4,
+      exploredRate: 0.5,
+      inProgressRate: 0.5,
+      notStartedRate: 0,
+      passedRate: 0.25,
+      failedRate: 0.25,
+      notInitiatedRate: 0,
+      steps: [
+        {
+          stepId: "0:Check pfSense WAN Interface",
+          title: "Check pfSense WAN Interface",
+          completed: true,
+          status: "explored",
+        },
+        {
+          stepId: "0:Section Name",
+          title: "Section Name",
+          completed: false,
+          status: "in Progress",
+        },
+        {
+          stepId: "1:Check the LAN interface",
+          title: "Check the LAN interface",
+          completed: true,
+          status: "explored",
+        },
+        {
+          stepId: "2:Section Name 3",
+          title: "Section Name 3",
+          completed: false,
+          status: "in Progress",
+        },
+      ],
+    });
   });
 
   it("treats documented numeric completed-style statuses as completed steps", async () => {
@@ -73,10 +157,16 @@ describe("createCloudShareGuidedJourneyProvider", () => {
       percentComplete: 67,
       stepsCompleted: 2,
       stepsTotal: 3,
+      exploredRate: 0,
+      inProgressRate: 0,
+      notStartedRate: 0,
+      passedRate: 0,
+      failedRate: 0,
+      notInitiatedRate: 0,
       steps: [
-        { stepId: "t1", title: "Explore dashboard", completed: true },
-        { stepId: "t2", title: "Validate outcome", completed: true },
-        { stepId: "t3", title: "Pending step", completed: false },
+        { stepId: "t1", title: "Explore dashboard", completed: true, status: null },
+        { stepId: "t2", title: "Validate outcome", completed: true, status: null },
+        { stepId: "t3", title: "Pending step", completed: false, status: null },
       ],
     });
   });

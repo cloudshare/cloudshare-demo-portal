@@ -248,6 +248,7 @@ describe("candidate exam catalog", () => {
           title: "Published Exam",
           description: "Hands-on certification exam.",
           timeLimitMinutes: 90,
+          scoreRetrievalEnabled: false,
         },
       ],
     });
@@ -261,5 +262,51 @@ describe("candidate exam catalog", () => {
     expect(exam).not.toHaveProperty("allowedRegions");
     expect(exam).not.toHaveProperty("customerId");
     expect(exam).not.toHaveProperty("status");
+  });
+
+  it("exposes whether each published Exam has Guided Journey scoring enabled", async () => {
+    const repository = createInMemoryExamCatalogRepository();
+
+    await createDraftExam(
+      { repository, now: () => new Date("2026-06-14T12:00:00.000Z"), newId: () => "exam-score-on" },
+      makeExamInput({ title: "Score On", scoreRetrievalEnabled: true }),
+    );
+    await publishExam(
+      { repository, now: () => new Date("2026-06-14T12:10:00.000Z") },
+      { customerId: "customer-helios", examId: "exam-score-on" },
+    );
+    await createDraftExam(
+      { repository, now: () => new Date("2026-06-14T12:15:00.000Z"), newId: () => "exam-score-off" },
+      makeExamInput({ title: "Score Off", scoreRetrievalEnabled: false }),
+    );
+    await publishExam(
+      { repository, now: () => new Date("2026-06-14T12:20:00.000Z") },
+      { customerId: "customer-helios", examId: "exam-score-off" },
+    );
+
+    const response = await handleGetCandidateExamCatalog(
+      { repository, logger: makeLogger() },
+      { customerId: "customer-helios" },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      exams: [
+        {
+          id: "exam-score-on",
+          title: "Score On",
+          description: "Hands-on certification exam.",
+          timeLimitMinutes: 90,
+          scoreRetrievalEnabled: true,
+        },
+        {
+          id: "exam-score-off",
+          title: "Score Off",
+          description: "Hands-on certification exam.",
+          timeLimitMinutes: 90,
+          scoreRetrievalEnabled: false,
+        },
+      ],
+    });
   });
 });

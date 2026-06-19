@@ -241,14 +241,31 @@ The response shape also appears to be a participant-progress document with field
 `progressRate` plus section/step statuses, not the earlier inferred `{ participants: [...] }`
 envelope.
 
+**Update (2026-06-19, live Guided Journey QA):** the live tenant returned a payload shaped like:
+
+- `sectionStatuses[]` rather than `sections[]`
+- section status strings such as `explored` and `inProgress`
+- raw rate fields:
+  - `exploredRate`
+  - `inProgressRate`
+  - `notStartedRate`
+  - `passedRate`
+  - `failedRate`
+  - `notInitiatedRate`
+
+The portal now renders these raw rates directly instead of inferring a synthetic certification
+score. In particular, live QA suggests `passedRate` and `failedRate` may **not** sum to `1.0`
+because CloudShare divides AI checks by sections and some sections may have no checks at all.
+Treat these as Guided Journey progress signals, not a definitive certification pass/fail result.
+
 **Impact on certification use**
 
 - Score retrieval must be keyed by the correlated CloudShare participant id, so missing or stale
   participant correlation is now a supportable retrieval failure rather than a misleading "no score".
-- The portal now maps the participant-progress payload to the existing candidate score UI by
-  deriving percent complete plus completed/total steps from the documented progress fields and
-  section statuses.
-- Final certification pass/fail weighting is determined by Genesys, not this portal.
+- The portal now maps the participant-progress payload to the candidate score UI by
+  showing raw Guided Journey rates plus section progress, while avoiding any fake composite
+  certification score.
+- Final certification pass/fail weighting is determined outside this portal's Guided Journey view.
 - These limitations must be disclosed to the exam author when configuring checkpoints.
 
 **Code reference:** `src/integrations/cloudshare/guided-journey.ts`,

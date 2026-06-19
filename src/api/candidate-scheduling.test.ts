@@ -165,6 +165,7 @@ describe("candidate scheduling handlers", () => {
           title: "Helios CloudShare Fundamentals",
           description: "Hands-on certification exam.",
           timeLimitMinutes: 90,
+          scoreRetrievalEnabled: false,
         },
       ],
       attempts: [
@@ -313,6 +314,7 @@ describe("candidate scheduling handlers", () => {
           title: "Helios CloudShare Fundamentals",
           description: "Hands-on certification exam.",
           timeLimitMinutes: 90,
+          scoreRetrievalEnabled: false,
         },
       ],
       attempts: [
@@ -377,6 +379,7 @@ describe("candidate scheduling handlers", () => {
           title: "Helios CloudShare Fundamentals",
           description: "Hands-on certification exam.",
           timeLimitMinutes: 90,
+          scoreRetrievalEnabled: false,
         },
       ],
       attempts: [

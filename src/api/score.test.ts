@@ -77,11 +77,17 @@ const SAMPLE_PROGRESS: ParticipantProgress = {
   stepsCompleted: 3,
   stepsTotal: 4,
   steps: [
-    { stepId: "s1", title: "Step 1", completed: true },
-    { stepId: "s2", title: "Step 2", completed: true },
-    { stepId: "s3", title: "Step 3", completed: true },
-    { stepId: "s4", title: "Step 4", completed: false },
+    { stepId: "s1", title: "Step 1", completed: true, status: "passed" },
+    { stepId: "s2", title: "Step 2", completed: true, status: "explored" },
+    { stepId: "s3", title: "Step 3", completed: true, status: "passed" },
+    { stepId: "s4", title: "Step 4", completed: false, status: "in Progress" },
   ],
+  exploredRate: 0.25,
+  inProgressRate: 0.25,
+  notStartedRate: 0.25,
+  passedRate: 0.25,
+  failedRate: 0,
+  notInitiatedRate: 0.25,
 };
 
 const TEST_LIMITATIONS = ["Limitation A", "Limitation B"];
@@ -303,6 +309,12 @@ describe("handleGetCandidateScore", () => {
       stepsCompleted: 3,
       stepsTotal: 4,
       steps: SAMPLE_PROGRESS.steps,
+      exploredRate: 0.25,
+      inProgressRate: 0.25,
+      notStartedRate: 0.25,
+      passedRate: 0.25,
+      failedRate: 0,
+      notInitiatedRate: 0.25,
       retrievedAt: "2026-06-16T12:00:00.000Z",
       limitations: TEST_LIMITATIONS,
     });
