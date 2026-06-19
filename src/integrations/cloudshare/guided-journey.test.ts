@@ -5,34 +5,29 @@ import { CloudShareRequestError } from "./errors";
 
 function makeClient(response: unknown): CloudShareClient {
   return {
-    requestV4: vi.fn().mockResolvedValue(response),
+    requestV4: vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) => spec.schema.parse(response)),
     requestV3: vi.fn(),
   } as unknown as CloudShareClient;
 }
 
 const apiResponse = {
-  participants: [
-    {
-      email: "candidate@example.com",
-      progress: 75,
-      completedTasks: 3,
-      totalTasks: 4,
-      tasks: [
-        { id: "t1", name: "Configure routing", completed: true },
-        { id: "t2", name: "Create queue", completed: true },
-        { id: "t3", name: "Test flow", completed: true },
-        { id: "t4", name: "Validate output", completed: false },
-      ],
-    },
+  participantId: "student-1",
+  experienceId: "exp-1",
+  progressRate: 75,
+  sections: [
+    { id: "t1", name: "Configure routing", status: "completed" },
+    { id: "t2", name: "Create queue", status: "completed" },
+    { id: "t3", name: "Test flow", status: "completed" },
+    { id: "t4", name: "Validate output", status: "in_progress" },
   ],
 };
 
 describe("createCloudShareGuidedJourneyProvider", () => {
-  it("maps API response to ParticipantProgress for the first participant", async () => {
+  it("maps documented guided-journey progress payloads by participant id", async () => {
     const client = makeClient(apiResponse);
     const provider = createCloudShareGuidedJourneyProvider(client);
 
-    const result = await provider.getParticipantProgress("exp-1");
+    const result = await provider.getParticipantProgress("exp-1", "student-1");
 
     expect(result).not.toBeNull();
     expect(result!.percentComplete).toBe(75);
@@ -47,16 +42,16 @@ describe("createCloudShareGuidedJourneyProvider", () => {
     expect(client.requestV4).toHaveBeenCalledWith(
       expect.objectContaining({
         method: "GET",
-        path: "/experiences/exp-1/journey/participants",
+        path: "/guided-journey/progress/exp-1/student-1",
       }),
     );
   });
 
-  it("returns null when participants list is empty", async () => {
-    const client = makeClient({ participants: [] });
+  it("returns null when no progress sections are present", async () => {
+    const client = makeClient({ participantId: "student-1", experienceId: "exp-1", progressRate: 0, sections: [] });
     const provider = createCloudShareGuidedJourneyProvider(client);
 
-    const result = await provider.getParticipantProgress("exp-1");
+    const result = await provider.getParticipantProgress("exp-1", "student-1");
     expect(result).toBeNull();
   });
 
@@ -67,14 +62,14 @@ describe("createCloudShareGuidedJourneyProvider", () => {
         .mockRejectedValue(
           new CloudShareRequestError("not found", 404, {
             method: "GET",
-            path: "/experiences/exp-1/journey/participants",
+            path: "/guided-journey/progress/exp-1/student-1",
           }),
         ),
       requestV3: vi.fn(),
     } as unknown as CloudShareClient;
     const provider = createCloudShareGuidedJourneyProvider(client);
 
-    const result = await provider.getParticipantProgress("exp-1");
+    const result = await provider.getParticipantProgress("exp-1", "student-1");
     expect(result).toBeNull();
   });
 
@@ -85,6 +80,6 @@ describe("createCloudShareGuidedJourneyProvider", () => {
     } as unknown as CloudShareClient;
     const provider = createCloudShareGuidedJourneyProvider(client);
 
-    await expect(provider.getParticipantProgress("exp-1")).rejects.toThrow("upstream failure");
+    await expect(provider.getParticipantProgress("exp-1", "student-1")).rejects.toThrow("upstream failure");
   });
 });

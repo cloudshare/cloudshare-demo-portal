@@ -214,7 +214,7 @@ equivalent `X-Frame-Options: DENY`), preventing the lab from being embedded in a
 
 **Observed behaviour**
 
-CloudShare Guided Journey scoring has three significant limitations:
+CloudShare Guided Journey scoring has three significant product limitations:
 
 1. **Bitmap checkpoints only.** Scoring uses visual-state comparison (screenshot diff)
    rather than process-level or OS-level capture. A candidate can reach the correct
@@ -225,15 +225,34 @@ CloudShare Guided Journey scoring has three significant limitations:
    Per CloudShare roadmap, a more reliable script-driven verification mode is not GA
    until Q3 2026.
 
+In addition, live QA on Slice 7 contradicted an earlier adapter assumption: the previously modelled
+participant-list path `GET /v4/experiences/{id}/journey/participants` is not the correct v4
+Guided Journey score endpoint for this tenant. The working v4 path is:
+
+- `GET /v4/guided-journey/progress/{experienceId}/{participantId}`
+
+The endpoint is participant-specific and requires the CloudShare participant id from the v4
+training-students correlation flow, not the candidate email address. That participant id is now
+persisted on `LabLaunch.participantId` when environment/participant correlation runs, with a
+score-retrieval fallback that re-lists training participants for older launches that predate the
+new field.
+
+The response shape also appears to be a participant-progress document with fields such as
+`progressRate` plus section/step statuses, not the earlier inferred `{ participants: [...] }`
+envelope.
+
 **Impact on certification use**
 
-- The scoring API (`GET /experiences/{id}/journey/participants`) returns
-  `completedTasks / totalTasks` and a `progress` percentage; the portal surfaces these
-  directly to the candidate.
+- Score retrieval must be keyed by the correlated CloudShare participant id, so missing or stale
+  participant correlation is now a supportable retrieval failure rather than a misleading "no score".
+- The portal now maps the participant-progress payload to the existing candidate score UI by
+  deriving percent complete plus completed/total steps from the documented progress fields and
+  section statuses.
 - Final certification pass/fail weighting is determined by Genesys, not this portal.
 - These limitations must be disclosed to the exam author when configuring checkpoints.
 
-**Code reference:** `src/integrations/cloudshare/guided-journey.ts:26-31`
+**Code reference:** `src/integrations/cloudshare/guided-journey.ts`,
+`src/domain/environment-correlation.ts`, `src/api/score.ts`
 
 ---
 
@@ -701,5 +720,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-06-15 (updated training-students schema handling, v3 envId-based suspend/resume/poll semantics, and Slice 4 training Name uniqueness/length).
+*Last updated: 2026-06-19 (recorded Guided Journey progress endpoint correction, participant-id correlation requirement, and prior training-students / envId findings).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*

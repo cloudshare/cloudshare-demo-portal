@@ -61,11 +61,13 @@ export async function correlateEnvironmentForExamAttempt(
   }
 
   if (
+    launch.participantId !== participant?.studentId ||
     launch.environmentId !== actionableEnvironmentId ||
     launch.environmentExternalId !== actionableEnvironmentId
   ) {
     await deps.launches.save({
       ...launch,
+      participantId: participant?.studentId ?? launch.participantId,
       environmentId: actionableEnvironmentId,
       environmentExternalId: actionableEnvironmentId,
     });

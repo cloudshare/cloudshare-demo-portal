@@ -51,7 +51,10 @@ export type ExamAttemptScore =
 
 export interface ScoreRetrievalProvider {
   /** Fetch per-participant progress for a CloudShare experience. Returns null if no data yet. */
-  getParticipantProgress(experienceId: string): Promise<ParticipantProgress | null>;
+  getParticipantProgress(
+    experienceId: string,
+    participantId: string,
+  ): Promise<ParticipantProgress | null>;
 }
 
 // --- Use case ---
@@ -68,6 +71,7 @@ export interface RetrieveScoreInput {
 export interface ResolveExamAttemptScoreInput {
   readonly examAttemptId: string;
   readonly experienceId: string;
+  readonly participantId: string;
   readonly scoreRetrievalEnabled: boolean;
 }
 
@@ -88,8 +92,19 @@ export async function retrieveScore(
   }
 
   let progress: ParticipantProgress | null;
+  if (!launch.participantId) {
+    throw new ScoreRetrievalError("Failed to retrieve Guided Journey progress", {
+      examAttemptId: input.examAttemptId,
+      experienceId: launch.experienceId,
+      cause: "missing_participant_id",
+      causeMessage: "CloudShare participantId is not recorded for this lab launch",
+    });
+  }
   try {
-    progress = await deps.scoreRetriever.getParticipantProgress(launch.experienceId);
+    progress = await deps.scoreRetriever.getParticipantProgress(
+      launch.experienceId,
+      launch.participantId,
+    );
   } catch (cause) {
     throw new ScoreRetrievalError("Failed to retrieve Guided Journey progress", {
       examAttemptId: input.examAttemptId,
@@ -132,7 +147,10 @@ export async function resolveExamAttemptScore(
 
   let progress: ParticipantProgress | null;
   try {
-    progress = await deps.scoreRetriever.getParticipantProgress(input.experienceId);
+    progress = await deps.scoreRetriever.getParticipantProgress(
+      input.experienceId,
+      input.participantId,
+    );
   } catch (cause) {
     throw new ScoreRetrievalError("Failed to retrieve Guided Journey progress", {
       examAttemptId: input.examAttemptId,

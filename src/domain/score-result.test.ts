@@ -11,6 +11,7 @@ function makeLaunch(partial: Partial<LabLaunch> = {}): LabLaunch {
     examAttemptId: "attempt-1",
     candidateId: "candidate-1",
     experienceId: "exp-1",
+    participantId: "student-1",
     environmentExternalId: "env-ext-1",
     loginUrl: "https://app.example.com/login",
     status: "launched",
@@ -62,7 +63,7 @@ describe("retrieveScore", () => {
     expect(result.stepsTotal).toBe(4);
     expect(result.steps).toHaveLength(4);
     expect(result.retrievedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
-    expect(provider.getParticipantProgress).toHaveBeenCalledWith("exp-1");
+    expect(provider.getParticipantProgress).toHaveBeenCalledWith("exp-1", "student-1");
   });
 
   it("returns null-progress ScoreResult when no progress data is available yet", async () => {
@@ -122,6 +123,7 @@ describe("resolveExamAttemptScore", () => {
       {
         examAttemptId: "attempt-1",
         experienceId: "exp-1",
+        participantId: "student-1",
         scoreRetrievalEnabled: false,
       },
     );
@@ -149,6 +151,7 @@ describe("resolveExamAttemptScore", () => {
       {
         examAttemptId: "attempt-1",
         experienceId: "exp-1",
+        participantId: "student-1",
         scoreRetrievalEnabled: true,
       },
     );
@@ -178,6 +181,7 @@ describe("resolveExamAttemptScore", () => {
       {
         examAttemptId: "attempt-1",
         experienceId: "exp-1",
+        participantId: "student-1",
         scoreRetrievalEnabled: true,
       },
     );

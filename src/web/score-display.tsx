@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import type { ScoreResult } from "@/domain/score-result";
 
 interface ScoreDisplayProps {
@@ -33,9 +34,16 @@ type ScorePayload =
  * and is not captured.
  */
 export function ScoreDisplay({ examAttemptId }: ScoreDisplayProps) {
+  const router = useRouter();
   const [fetchState, setFetchState] = useState<FetchState>("loading");
   const [score, setScore] = useState<ScorePayload | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
+
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/login");
+    router.refresh();
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -72,30 +80,77 @@ export function ScoreDisplay({ examAttemptId }: ScoreDisplayProps) {
   }, [examAttemptId]);
 
   if (fetchState === "loading") {
-    return <p>Loading score…</p>;
+    return <p style={{ margin: 0 }}>Loading score…</p>;
   }
 
   if (fetchState === "error") {
-    return <p role="alert">Could not load score: {errorMessage}</p>;
+    return (
+      <section
+        style={{
+          display: "grid",
+          gap: "1rem",
+          border: "1px solid #e5e7eb",
+          borderRadius: "10px",
+          padding: "1.25rem",
+          background: "#fff",
+        }}
+      >
+        <p role="alert" style={{ margin: 0, color: "#b00020" }}>
+          Could not load score: {errorMessage}
+        </p>
+        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+          <button type="button" onClick={() => router.push("/candidate")} style={{ padding: "0.55rem 0.9rem" }}>
+            Back to Candidate Home
+          </button>
+          <button type="button" onClick={() => void logout()} style={{ padding: "0.55rem 0.9rem" }}>
+            Log out
+          </button>
+        </div>
+      </section>
+    );
   }
 
   if (!score) return null;
 
   return (
-    <div>
-      <h2>Guided Journey score</h2>
+    <section
+      style={{
+        display: "grid",
+        gap: "1.25rem",
+        border: "1px solid #e5e7eb",
+        borderRadius: "10px",
+        padding: "1.25rem",
+        background: "#fff",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "flex-start", flexWrap: "wrap" }}>
+        <div>
+          <h2 style={{ margin: 0 }}>Guided Journey score</h2>
+          <p style={{ margin: "0.35rem 0 0", color: "#555" }}>
+            Review the recorded CloudShare progress for this completed exam attempt.
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+          <button type="button" onClick={() => router.push("/candidate")} style={{ padding: "0.55rem 0.9rem" }}>
+            Back to Candidate Home
+          </button>
+          <button type="button" onClick={() => void logout()} style={{ padding: "0.55rem 0.9rem" }}>
+            Log out
+          </button>
+        </div>
+      </div>
 
       {score.scoreAvailable ? (
         <>
-          <p>
+          <p style={{ margin: 0 }}>
             <strong>{score.percentComplete}%</strong> complete —{" "}
             {score.stepsCompleted} of {score.stepsTotal} tasks done
           </p>
 
           {score.steps.length > 0 && (
-            <ul>
+            <ul style={{ margin: 0, paddingLeft: "1.2rem" }}>
               {score.steps.map((step) => (
-                <li key={step.stepId}>
+                <li key={step.stepId} style={{ marginBottom: "0.35rem" }}>
                   {step.completed ? "✓" : "○"} {step.title}
                 </li>
               ))}
@@ -103,20 +158,23 @@ export function ScoreDisplay({ examAttemptId }: ScoreDisplayProps) {
           )}
         </>
       ) : (
-        <p>{score.message}</p>
+        <p style={{ margin: 0 }}>{score.message}</p>
       )}
 
-      <section aria-label="Scoring limitations">
-        <h3>About this score</h3>
-        <p>
+      <section
+        aria-label="Scoring limitations"
+        style={{ display: "grid", gap: "0.75rem", padding: "1rem", borderRadius: "8px", background: "#f8fafc" }}
+      >
+        <h3 style={{ margin: 0 }}>About this score</h3>
+        <p style={{ margin: 0 }}>
           CloudShare Guided Journey scoring has the following known limitations.
         </p>
-        <ul>
+        <ul style={{ margin: 0, paddingLeft: "1.2rem" }}>
           {score.limitations.map((limitation, i) => (
-            <li key={i}>{limitation}</li>
+            <li key={i} style={{ marginBottom: "0.35rem" }}>{limitation}</li>
           ))}
         </ul>
       </section>
-    </div>
+    </section>
   );
 }

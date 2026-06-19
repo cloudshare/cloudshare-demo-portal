@@ -1,4 +1,4 @@
-type AttemptStatus = "ready" | "in_progress" | "suspended" | "completed";
+export type AttemptStatus = "ready" | "in_progress" | "suspended" | "completed";
 
 export type CandidateLabStatus = {
   examAttemptId: string;

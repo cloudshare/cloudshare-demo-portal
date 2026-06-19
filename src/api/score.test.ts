@@ -62,6 +62,8 @@ function makeLaunch(overrides: Partial<LabLaunch> = {}): LabLaunch {
     candidateId: "candidate-1",
     trainingId: "training-1",
     experienceId: "exp-1",
+    participantEmail: "candidate@example.com",
+    participantId: "student-1",
     environmentExternalId: "env-1",
     loginUrl: "https://example.com/login",
     status: "launched",
@@ -92,6 +94,7 @@ function makeDeps(input?: {
   readonly progress?: ParticipantProgress | null;
   readonly progressError?: unknown;
 }) {
+  let storedLaunch = input?.launch ?? makeLaunch();
   const attempts: ExamAttemptRepository = {
     save: vi.fn(),
     delete: vi.fn(),
@@ -104,9 +107,11 @@ function makeDeps(input?: {
     findById: vi.fn().mockResolvedValue(input?.exam ?? makeExam()),
   };
   const launches: LabLaunchRepository = {
-    save: vi.fn(),
+    save: vi.fn(async (launch: LabLaunch) => {
+      storedLaunch = launch;
+    }),
     findById: vi.fn(),
-    findByExamAttemptId: vi.fn().mockResolvedValue(input?.launch ?? makeLaunch()),
+    findByExamAttemptId: vi.fn(async () => storedLaunch),
   };
   const connections: CloudShareConnectionRepository = {
     save: vi.fn(),
@@ -135,6 +140,17 @@ function makeDeps(input?: {
             ),
   };
   const createScoreRetriever = vi.fn().mockReturnValue(scoreRetriever);
+  const participantLister = {
+    listParticipants: vi.fn().mockResolvedValue([
+      {
+        email: "candidate@example.com",
+        environmentId: "env-1",
+        environmentStatus: "ready",
+        studentId: "student-1",
+      },
+    ]),
+  };
+  const createParticipantLister = vi.fn().mockReturnValue(participantLister);
 
   return {
     attempts,
@@ -142,6 +158,8 @@ function makeDeps(input?: {
     launches,
     connections,
     createScoreRetriever,
+    createParticipantLister,
+    participantLister,
     scoreRetriever,
     logger: makeLogger(),
     limitations: TEST_LIMITATIONS,
@@ -289,7 +307,7 @@ describe("handleGetCandidateScore", () => {
       limitations: TEST_LIMITATIONS,
     });
     expect(deps.createScoreRetriever).toHaveBeenCalledTimes(1);
-    expect(deps.scoreRetriever.getParticipantProgress).toHaveBeenCalledWith("exp-1");
+    expect(deps.scoreRetriever.getParticipantProgress).toHaveBeenCalledWith("exp-1", "student-1");
   });
 
   it("returns no score available when Guided Journey progress is absent", async () => {
@@ -322,8 +340,8 @@ describe("handleGetCandidateScore", () => {
       progressError: new CloudShareTransportError("timeout", {
         method: "GET",
         host: "api.accelerate.cloudshare.com",
-        path: "/experiences/exp-1/journey/participants",
-        integrationSurface: "cloudshare.v4.guided_journey.participants",
+        path: "/guided-journey/progress/exp-1/student-1",
+        integrationSurface: "cloudshare.v4.guided_journey.progress",
         cause: "ETIMEDOUT",
       }),
     });
@@ -349,8 +367,66 @@ describe("handleGetCandidateScore", () => {
       expect.objectContaining({
         correlationId: "corr-123",
         examAttemptId: "attempt-1",
-        attemptedOperation: "get_guided_journey_participants",
+        attemptedOperation: "get_guided_journey_progress",
         failureMode: "transport",
+      }),
+    );
+  });
+
+  it("backfills participant id from training participants when an older launch does not have one yet", async () => {
+    const deps = makeDeps({
+      launch: makeLaunch({ participantId: undefined }),
+    });
+
+    const result = await handleGetCandidateScore(deps, {
+      query: { examAttemptId: "attempt-1" },
+      session: {
+        userId: "candidate-1",
+        customerId: "customer-1",
+        role: "candidate",
+      },
+    });
+
+    expect(result.status).toBe(200);
+    expect(deps.createParticipantLister).toHaveBeenCalledTimes(1);
+    expect(deps.participantLister.listParticipants).toHaveBeenCalledWith("training-1");
+    expect(deps.launches.save).toHaveBeenCalledWith(
+      expect.objectContaining({
+        participantId: "student-1",
+      }),
+    );
+    expect(deps.scoreRetriever.getParticipantProgress).toHaveBeenCalledWith("exp-1", "student-1");
+  });
+
+  it("returns a supportable 502 instead of no-score when participant id cannot be resolved", async () => {
+    const deps = makeDeps({
+      launch: makeLaunch({ participantId: undefined, participantEmail: undefined }),
+    });
+
+    const result = await handleGetCandidateScore(deps, {
+      query: { examAttemptId: "attempt-1" },
+      session: {
+        userId: "candidate-1",
+        customerId: "customer-1",
+        role: "candidate",
+      },
+    });
+
+    expect(result).toEqual({
+      status: 502,
+      body: {
+        error: "score retrieval failed",
+        correlationId: "corr-123",
+      },
+    });
+    expect(deps.createScoreRetriever).not.toHaveBeenCalled();
+    expect(deps.logger.warn).toHaveBeenCalledWith(
+      "candidate score retrieval failed",
+      expect.objectContaining({
+        attemptedOperation: "resolve_training_participant",
+        integrationSurface: "cloudshare.v4.training.participant_list",
+        path: "/v4/trainings/training-1/students",
+        failureMode: "missing_participant_id",
       }),
     );
   });

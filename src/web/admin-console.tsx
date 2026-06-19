@@ -944,7 +944,16 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   }
 
   return (
-    <main style={{ fontFamily: "system-ui, sans-serif", padding: "2rem", maxWidth: "1000px", margin: "0 auto" }}>
+    <main
+      style={{
+        fontFamily: "system-ui, sans-serif",
+        padding: "2rem",
+        maxWidth: "1000px",
+        margin: "0 auto",
+        minHeight: "100vh",
+        scrollbarGutter: "stable",
+      }}
+    >
       <h1 style={{ marginBottom: "0.35rem" }}>Certalis Admin Console</h1>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", marginBottom: "0.75rem", flexWrap: "wrap" }}>
         <p style={{ margin: 0, color: "#555" }}>Signed in as {email}</p>

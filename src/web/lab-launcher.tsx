@@ -1,12 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useEffectEvent } from "react";
 import { openEnterExamWindow } from "./enter-exam";
 import { isLabWindowOpen } from "./lab-window";
-import { preflightLabAction, suspendLabAttempt, type CandidateLabStatus } from "./lab-launcher-client";
-
-type LaunchState = "idle" | "launching" | "open" | "suspending" | "suspended" | "completed" | "error";
-type AttemptStatus = "ready" | "in_progress" | "suspended" | "completed";
+import { preflightLabAction, suspendLabAttempt, type CandidateLabStatus, type AttemptStatus } from "./lab-launcher-client";
+import { getLauncherSyncTarget, type LaunchState } from "./lab-launcher-state";
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const CHILD_POLL_INTERVAL_MS = 3_000;
@@ -39,6 +37,32 @@ export function LabLauncher({
   const [message, setMessage] = useState<string>("");
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const childPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const lastReportedAttemptStatusRef = useRef<AttemptStatus | null>(null);
+
+  const reportAttemptStatusChange = useEffectEvent((status: AttemptStatus) => {
+    if (lastReportedAttemptStatusRef.current === status) {
+      return;
+    }
+    lastReportedAttemptStatusRef.current = status;
+    onAttemptStatusChange?.(status);
+  });
+
+  const reportLabStatusLoaded = useEffectEvent((status: CandidateLabStatus) => {
+    onLabStatusLoaded?.(status);
+  });
+
+  const syncToAuthoritativeAttemptStatus = useEffectEvent((status: AttemptStatus) => {
+    const target = getLauncherSyncTarget(status);
+    if (!target) {
+      return;
+    }
+
+    stopHeartbeat();
+    stopChildPoll();
+    setState((current) => (current === target.state ? current : target.state));
+    setMessage((current) => (current === target.message ? current : target.message));
+    reportAttemptStatusChange(status);
+  });
 
   async function sendHeartbeat() {
     const response = await fetch("/api/heartbeat", {
@@ -48,11 +72,7 @@ export function LabLauncher({
     });
     const body = (await response.json().catch(() => ({}))) as { attemptStatus?: AttemptStatus };
     if (body.attemptStatus === "completed") {
-      stopHeartbeat();
-      stopChildPoll();
-      setState("completed");
-      setMessage("Examination complete.");
-      onAttemptStatusChange?.("completed");
+      syncToAuthoritativeAttemptStatus("completed");
     }
   }
 
@@ -102,16 +122,14 @@ export function LabLauncher({
     try {
       const result = await suspendLabAttempt(fetch, examAttemptId);
       if (result.kind === "completed") {
-        onLabStatusLoaded?.(result.labStatus);
-        onAttemptStatusChange?.("completed");
-        setState("completed");
-        setMessage(result.message);
+        reportLabStatusLoaded(result.labStatus);
+        syncToAuthoritativeAttemptStatus("completed");
         return;
       }
       if (result.kind === "blocked") {
         if (result.labStatus) {
-          onLabStatusLoaded?.(result.labStatus);
-          onAttemptStatusChange?.(result.labStatus.status);
+          reportLabStatusLoaded(result.labStatus);
+          reportAttemptStatusChange(result.labStatus.status);
         }
         setState(result.labStatus?.status === "suspended" ? "suspended" : "error");
         setMessage(result.message);
@@ -138,11 +156,10 @@ export function LabLauncher({
         examAttemptId,
         action: "enter",
       });
-      onLabStatusLoaded?.(preflight.labStatus);
-      onAttemptStatusChange?.(preflight.labStatus.status);
+      reportLabStatusLoaded(preflight.labStatus);
+      reportAttemptStatusChange(preflight.labStatus.status);
       if (preflight.kind === "completed") {
-        setState("completed");
-        setMessage(preflight.message);
+        syncToAuthoritativeAttemptStatus("completed");
         return;
       }
       if (preflight.kind === "blocked") {
@@ -171,11 +188,10 @@ export function LabLauncher({
         examAttemptId,
         action: "resume",
       });
-      onLabStatusLoaded?.(preflight.labStatus);
-      onAttemptStatusChange?.(preflight.labStatus.status);
+      reportLabStatusLoaded(preflight.labStatus);
+      reportAttemptStatusChange(preflight.labStatus.status);
       if (preflight.kind === "completed") {
-        setState("completed");
-        setMessage(preflight.message);
+        syncToAuthoritativeAttemptStatus("completed");
         return;
       }
       if (preflight.kind === "blocked") {
@@ -201,22 +217,11 @@ export function LabLauncher({
   }
 
   useEffect(() => {
-    if (currentAttemptStatus === "completed") {
-      stopHeartbeat();
-      stopChildPoll();
-      setState("completed");
-      setMessage("Examination complete.");
-      onAttemptStatusChange?.("completed");
-      return;
+    const target = getLauncherSyncTarget(currentAttemptStatus);
+    if (target) {
+      syncToAuthoritativeAttemptStatus(currentAttemptStatus);
     }
-    if (currentAttemptStatus === "suspended") {
-      stopHeartbeat();
-      stopChildPoll();
-      setState("suspended");
-      onAttemptStatusChange?.("suspended");
-      return;
-    }
-  }, [currentAttemptStatus, onAttemptStatusChange]);
+  }, [currentAttemptStatus, syncToAuthoritativeAttemptStatus]);
 
   useEffect(() => {
     if (state !== "open") return;

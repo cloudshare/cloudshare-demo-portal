@@ -43,6 +43,7 @@ describe("correlateEnvironmentForExamAttempt", () => {
     await expect(launches.findByExamAttemptId("attempt-1")).resolves.toMatchObject({
       environmentId: "env-1",
       environmentExternalId: "env-1",
+      participantId: "student-1",
     });
   });
 

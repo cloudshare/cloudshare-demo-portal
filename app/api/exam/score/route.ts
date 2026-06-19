@@ -8,6 +8,7 @@ import {
   createCloudShareGuidedJourneyProvider,
   SCORING_LIMITATIONS,
 } from "@/integrations/cloudshare/guided-journey";
+import { createCloudShareParticipantLister } from "@/integrations/cloudshare/participants";
 
 /**
  * Retrieve the candidate's Guided Journey score for an exam attempt.
@@ -35,6 +36,10 @@ export async function GET(request: Request) {
       connections: services.cloudshareConnections,
       createScoreRetriever: (connection) =>
         createCloudShareGuidedJourneyProvider(
+          services.cloudshareClientFactory.forConnection(connection),
+        ),
+      createParticipantLister: (connection) =>
+        createCloudShareParticipantLister(
           services.cloudshareClientFactory.forConnection(connection),
         ),
       logger: services.logger,

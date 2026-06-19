@@ -5,6 +5,10 @@ import { useRouter } from "next/navigation";
 import { LabLauncher } from "./lab-launcher";
 import { getCandidateLabPresentation } from "./candidate-lab-state";
 import { loadCandidateLabStatus, type CandidateLabStatus } from "./lab-launcher-client";
+import {
+  updateCandidateLabStatus,
+  updateCandidateLabStatusAttemptState,
+} from "./lab-launcher-state";
 
 type AttemptStatus = "ready" | "in_progress" | "suspended" | "completed";
 
@@ -114,16 +118,11 @@ export function CandidateLabShell({
           examAttemptId={examAttemptId}
           currentAttemptStatus={labStatus.status ?? initialAttemptStatus}
           onAttemptStatusChange={(status) =>
-            setLabStatus((current) =>
-              current
-                ? {
-                    ...current,
-                    status,
-                  }
-                : current,
-            )
+            setLabStatus((current) => updateCandidateLabStatusAttemptState(current, status))
           }
-          onLabStatusLoaded={(status) => setLabStatus(status)}
+          onLabStatusLoaded={(status) =>
+            setLabStatus((current) => updateCandidateLabStatus(current, status))
+          }
         />
       ) : null}
     </main>

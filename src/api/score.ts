@@ -3,6 +3,8 @@ import { resolveExamAttemptScore, type ScoreRetrievalProvider } from "@/domain/s
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { ExamRepository } from "@/domain/exam-catalog";
 import type { CloudShareConnectionRecord, CloudShareConnectionRepository } from "@/domain/cloudshare-connection";
+import type { ParticipantLister } from "@/domain/environment-correlation";
+import { correlateEnvironmentForExamAttempt } from "@/domain/environment-correlation";
 import { LabLaunchNotFoundError, ScoreRetrievalError } from "@/domain/errors";
 import type { LabLaunchRepository } from "@/domain/lab-launch";
 import type { Logger } from "@/observability/logger";
@@ -20,6 +22,9 @@ export interface ScoreHandlerDeps {
   readonly createScoreRetriever: (
     connection: CloudShareConnectionRecord,
   ) => ScoreRetrievalProvider;
+  readonly createParticipantLister: (
+    connection: CloudShareConnectionRecord,
+  ) => ParticipantLister;
   readonly logger: Logger;
   readonly limitations: readonly string[];
   readonly now?: () => Date;
@@ -119,6 +124,17 @@ export async function handleGetCandidateScore(
   }
 
   try {
+    const resolvedParticipantId = await resolveLaunchParticipantId(
+      deps,
+      connection,
+      request.session.customerId,
+      examAttemptId,
+      launch,
+    );
+    if (!resolvedParticipantId.ok) {
+      return resolvedParticipantId.response;
+    }
+
     const scoreRetriever = deps.createScoreRetriever(connection);
     const result = await resolveExamAttemptScore(
       {
@@ -128,6 +144,7 @@ export async function handleGetCandidateScore(
       {
         examAttemptId,
         experienceId: launch.experienceId,
+        participantId: resolvedParticipantId.participantId,
         scoreRetrievalEnabled: true,
       },
     );
@@ -171,7 +188,13 @@ export async function handleGetCandidateScore(
       const correlationId = (deps.newCorrelationId ?? randomUUID)();
       deps.logger.warn(
         "candidate score retrieval failed",
-        buildScoreRetrievalDiagnostic(correlationId, examAttemptId, launch.experienceId, error),
+        buildScoreRetrievalDiagnostic(
+          correlationId,
+          examAttemptId,
+          launch.experienceId,
+          launch.participantId ?? "unknown-participant",
+          error,
+        ),
       );
       return {
         status: 502,
@@ -190,21 +213,111 @@ export async function handleGetCandidateScore(
   }
 }
 
+async function resolveLaunchParticipantId(
+  deps: ScoreHandlerDeps,
+  connection: CloudShareConnectionRecord,
+  customerId: string,
+  examAttemptId: string,
+  launch: NonNullable<Awaited<ReturnType<LabLaunchRepository["findByExamAttemptId"]>>>,
+): Promise<
+  | { ok: true; participantId: string }
+  | { ok: false; response: ScoreResponse }
+> {
+  if (launch.participantId) {
+    return { ok: true, participantId: launch.participantId };
+  }
+
+  if (!launch.trainingId || !launch.participantEmail) {
+    const correlationId = (deps.newCorrelationId ?? randomUUID)();
+    deps.logger.warn(
+      "candidate score retrieval failed",
+      {
+        correlationId,
+        customerId,
+        examAttemptId,
+        experienceId: launch.experienceId,
+        trainingId: launch.trainingId ?? null,
+        participantEmail: launch.participantEmail ?? null,
+        operation: "candidate_score_retrieval",
+        attemptedOperation: "resolve_training_participant",
+        integrationSurface: "cloudshare.v4.training.participant_list",
+        method: "GET",
+        path: launch.trainingId
+          ? `/v4/trainings/${launch.trainingId}/students`
+          : "/v4/trainings/{trainingId}/students",
+        failureMode: "missing_participant_id",
+        error: "CloudShare participantId is not recorded for this lab launch.",
+      },
+    );
+    return {
+      ok: false,
+      response: {
+        status: 502,
+        body: { error: "score retrieval failed", correlationId },
+      },
+    };
+  }
+
+  try {
+    const participants = deps.createParticipantLister(connection);
+    await correlateEnvironmentForExamAttempt(
+      {
+        launches: deps.launches,
+        participants,
+      },
+      { examAttemptId },
+    );
+  } catch (error) {
+    const correlationId = (deps.newCorrelationId ?? randomUUID)();
+    deps.logger.warn(
+      "candidate score retrieval failed",
+      buildParticipantResolutionDiagnostic(correlationId, customerId, examAttemptId, launch, error),
+    );
+    return {
+      ok: false,
+      response: {
+        status: 502,
+        body: { error: "score retrieval failed", correlationId },
+      },
+    };
+  }
+
+  const refreshedLaunch = await deps.launches.findByExamAttemptId(examAttemptId);
+  if (refreshedLaunch?.participantId) {
+    return { ok: true, participantId: refreshedLaunch.participantId };
+  }
+
+  const correlationId = (deps.newCorrelationId ?? randomUUID)();
+  deps.logger.warn(
+    "candidate score retrieval failed",
+    buildParticipantResolutionDiagnostic(correlationId, customerId, examAttemptId, launch, "missing_participant_id"),
+  );
+  return {
+    ok: false,
+    response: {
+      status: 502,
+      body: { error: "score retrieval failed", correlationId },
+    },
+  };
+}
+
 function buildScoreRetrievalDiagnostic(
   correlationId: string,
   examAttemptId: string,
   experienceId: string,
+  participantId: string,
   error: ScoreRetrievalError,
 ): Record<string, unknown> {
   const cause = error.context?.cause;
-  const path = `/experiences/${experienceId}/journey/participants`;
+  const path = `/guided-journey/progress/${experienceId}/${participantId}`;
   const base = {
     correlationId,
     examAttemptId,
     experienceId,
+    participantId,
     operation: "candidate_score_retrieval",
-    attemptedOperation: "get_guided_journey_participants",
-    integrationSurface: "cloudshare.v4.guided_journey.participants",
+    attemptedOperation: "get_guided_journey_progress",
+    integrationSurface: "cloudshare.v4.guided_journey.progress",
     method: "GET",
     path,
   };
@@ -222,6 +335,56 @@ function buildScoreRetrievalDiagnostic(
     failureMode: "unknown",
     error: error.message,
     cause: typeof cause === "string" ? cause : String(cause),
+  };
+}
+
+function buildParticipantResolutionDiagnostic(
+  correlationId: string,
+  customerId: string,
+  examAttemptId: string,
+  launch: {
+    readonly experienceId: string;
+    readonly trainingId?: string;
+    readonly participantEmail?: string;
+  },
+  error: unknown,
+): Record<string, unknown> {
+  const base = {
+    correlationId,
+    customerId,
+    examAttemptId,
+    experienceId: launch.experienceId,
+    trainingId: launch.trainingId ?? null,
+    participantEmail: launch.participantEmail ?? null,
+    operation: "candidate_score_retrieval",
+    attemptedOperation: "resolve_training_participant",
+    integrationSurface: "cloudshare.v4.training.participant_list",
+    method: "GET",
+    path: launch.trainingId
+      ? `/v4/trainings/${launch.trainingId}/students`
+      : "/v4/trainings/{trainingId}/students",
+  };
+
+  if (error === "missing_participant_id") {
+    return {
+      ...base,
+      failureMode: "missing_participant_id",
+      error: "CloudShare participantId could not be resolved from training participants.",
+    };
+  }
+
+  if (
+    error instanceof CloudShareRequestError ||
+    error instanceof CloudShareTransportError ||
+    error instanceof CloudShareResponseError
+  ) {
+    return toCloudShareDiagnostic(base, error);
+  }
+
+  return {
+    ...base,
+    failureMode: "unknown",
+    error: error instanceof Error ? error.message : String(error),
   };
 }
 
