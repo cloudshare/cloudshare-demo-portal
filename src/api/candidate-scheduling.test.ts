@@ -251,7 +251,13 @@ describe("candidate scheduling handlers", () => {
       error: "CloudShare provisioning failed for the scheduled exam.",
       correlationId: "corr-2",
     });
-    await expect(attempts.findById("attempt-1")).resolves.toBeNull();
+    await expect(attempts.findById("attempt-1")).resolves.toMatchObject({
+      id: "attempt-1",
+      examId: "exam-1",
+      candidateId: "candidate-1",
+      status: "expired",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+    });
     await expect(launches.findByExamAttemptId("attempt-1")).resolves.toBeNull();
     await expect(audit.listByExamAttemptId("attempt-1")).resolves.toEqual([
       expect.objectContaining({

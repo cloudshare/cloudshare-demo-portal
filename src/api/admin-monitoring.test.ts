@@ -84,4 +84,80 @@ describe("handleGetAdminMonitoring", () => {
       }),
     });
   });
+
+  it("includes an expired provisioning failure attempt in monitoring history with its failure timeline", async () => {
+    const response = await handleGetAdminMonitoring(
+      {
+        attempts: makeAttemptRepository([
+          {
+            id: "attempt-failed",
+            customerId: "customer-1",
+            candidateId: "candidate-1",
+            candidateEmail: "candidate@helioscx.demo",
+            candidateFirstName: "Casey",
+            candidateLastName: "Rivera",
+            examId: "exam-1",
+            examTitle: "Helios Exam",
+            status: "expired",
+            scheduledFor: new Date("2026-06-19T09:00:00.000Z"),
+            createdAt: new Date("2026-06-18T09:00:00.000Z"),
+            trainingId: null,
+            experienceId: null,
+            environmentExternalId: null,
+            participantId: null,
+            scoreRetrievalEnabled: false,
+          },
+        ]),
+        audit: makeAuditRepository([
+          {
+            id: "attempt-failed:audit",
+            examAttemptId: "attempt-failed",
+            candidateId: "candidate-1",
+            action: "lab_launch_failed",
+            outcome: "failure",
+            details: {
+              attemptedOperation: "add_participant",
+              integrationSurface: "cloudshare.v4.training.participant",
+              method: "POST",
+              path: "/v4/trainings/training-1/students",
+              failureMode: "http_status",
+              responseStatus: 403,
+            },
+            error: "CloudShare provisioning failed for the scheduled exam.",
+            occurredAt: new Date("2026-06-18T09:02:00.000Z"),
+          },
+        ]),
+        eventLog: makeEventLog([]),
+        logger: makeLogger(),
+      },
+      { customerId: "customer-1" },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      monitoring: expect.objectContaining({
+        summary: {
+          scheduled: 0,
+          ready: 0,
+          inProgress: 0,
+          suspended: 0,
+          completed: 0,
+          expired: 1,
+        },
+        history: [
+          expect.objectContaining({
+            id: "attempt-failed",
+            status: "expired",
+            timeline: [
+              expect.objectContaining({
+                kind: "audit",
+                action: "lab_launch_failed",
+                outcome: "failure",
+              }),
+            ],
+          }),
+        ],
+      }),
+    });
+  });
 });

@@ -89,6 +89,7 @@ export async function scheduleExam(
     scheduledFor: input.scheduledFor,
     createdAt,
   };
+  await deps.attempts.save(attempt);
 
   const trainingCreator = deps.labs.createTraining;
   const participantAdder = deps.labs.addParticipant;
@@ -118,6 +119,7 @@ export async function scheduleExam(
     });
     trainingId = training.trainingId;
   } catch (cause) {
+    await deps.attempts.save({ ...attempt, status: "expired" });
     throw new CloudShareProvisioningError("CloudShare training creation failed.", {
       attemptId,
       attemptedOperation: "create_training",
@@ -137,6 +139,7 @@ export async function scheduleExam(
       lastName: participant.lastName,
     });
   } catch (cause) {
+    await deps.attempts.save({ ...attempt, status: "expired" });
     throw new CloudShareProvisioningError("CloudShare participant registration failed.", {
       attemptId,
       attemptedOperation: "add_participant",
@@ -155,6 +158,7 @@ export async function scheduleExam(
     });
     loginUrl = sponsoredLink.loginUrl;
   } catch (cause) {
+    await deps.attempts.save({ ...attempt, status: "expired" });
     throw new CloudShareProvisioningError("CloudShare sponsored-link creation failed.", {
       attemptId,
       attemptedOperation: "create_sponsored_link",
