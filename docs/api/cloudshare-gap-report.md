@@ -287,7 +287,8 @@ inconsistent.
   - Webhook payload field names (`Event`, `EnvironmentExternalId`, `CreatedAt`) — unverified.
   - `GET /environments?externalId=...` path for resolving environment by external ID — unverified.
   - `POST /environments/{id}/actions/suspend` and `…/resume` paths — unverified.
-  - `GET /experiences/{id}/journey/participants` response envelope — unverified.
+  - Guided Journey progress response field names beyond the currently tolerated
+    `progressRate` / section-status shape — partially verified.
 
 **Action required:** Confirm the pre-provision SLA directly with CloudShare support or
 by timing a live provisioning call. Update this entry with the confirmed value.
@@ -296,7 +297,7 @@ by timing a live provisioning call. Update this entry with the confirmed value.
 `src/integrations/cloudshare/environment.ts:11-15`,
 `src/integrations/cloudshare/webhooks.ts:14-26`,
 `src/integrations/cloudshare/environment-controller.ts:9-15`,
-`src/integrations/cloudshare/guided-journey.ts:14-18`
+`src/integrations/cloudshare/guided-journey.ts`
 
 **Update (2026-06-13):** hosts now confirmed — v4 `https://api.accelerate.cloudshare.com/v4`
 (Bearer, `expires_in: 300`); v3 `https://use.cloudshare.com/api/v3` (`cs_sha1` via
