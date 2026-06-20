@@ -422,6 +422,34 @@ function toProvisioningDiagnostic(
   };
 }
 
+/**
+ * Best-effort Customer attribution for a failed account creation. Returns the
+ * existing user's Customer (duplicate email), else the scope's Customer (admin
+ * create or self-register slug), else null. Never throws.
+ */
+async function resolveFailureCustomerId(
+  users: PortalUserProvisioningStore,
+  attemptedEmail: string,
+  scope: { readonly customerId?: string; readonly customerSlug?: string },
+): Promise<string | null> {
+  try {
+    const existing = await users.findByEmail(attemptedEmail);
+    if (existing) {
+      return existing.customerId;
+    }
+    if (scope.customerId?.trim()) {
+      return scope.customerId.trim();
+    }
+    if (scope.customerSlug?.trim()) {
+      const customer = await users.findCustomerBySlug(scope.customerSlug.trim());
+      return customer?.id ?? null;
+    }
+  } catch {
+    // Attribution is best-effort; a lookup failure must not break the response.
+  }
+  return null;
+}
+
 async function registerCandidateFromBody(
   deps: CandidateRegistrationDeps,
   body: unknown,
@@ -479,6 +507,15 @@ async function registerCandidateFromBody(
       },
     };
   } catch (error) {
+    // Attribute the failure to its owning Customer where knowable (existing user
+    // for a duplicate, or the registration scope), so it surfaces in that
+    // Customer's Support view. Resolution never throws into this flow.
+    const failureCustomerId = await resolveFailureCustomerId(
+      deps.users,
+      attemptedEmail,
+      scope,
+    );
+
     // Record every failure — including unexpected store errors — so the support
     // log explains the failures it most needs to. Never log the password.
     await deps.diagnostics?.record({
@@ -486,7 +523,7 @@ async function registerCandidateFromBody(
       source: "candidate-portal",
       operation: "candidate.account.create",
       outcome: "failure",
-      customerId: scope.customerId ?? null,
+      customerId: failureCustomerId,
       actor: { type: "candidate", email: attemptedEmail },
       subject: { type: "candidate" },
       candidateEmail: attemptedEmail,

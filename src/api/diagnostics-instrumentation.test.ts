@@ -136,6 +136,44 @@ describe("portal login diagnostics", () => {
     });
     expect(JSON.stringify(entries[0])).not.toContain("wrong");
   });
+
+  it("attributes a failed login to the owning Customer when the email is known, so it is visible in the scoped view", async () => {
+    const { repository, recorder } = diagnosticsHarness();
+    const users = createInMemoryPortalUserStore([
+      {
+        id: "user-1",
+        customerId: "customer-helios",
+        email: "admin@helioscx.demo",
+        passwordHash: "x",
+        role: "admin",
+      },
+    ]);
+
+    await handlePortalLogin(
+      { portalAuth: await adminAuth(), diagnostics: recorder, users },
+      { body: { email: "admin@helioscx.demo", password: "wrong" } },
+    );
+
+    const scoped = await handleGetDiagnosticLog(
+      { diagnostics: repository, logger: noopLogger },
+      { query: {}, customerId: "customer-helios" },
+    );
+    const failure = (scoped.body.entries as Array<{ outcome: string; customerId: string }>).find(
+      (e) => e.outcome === "failure",
+    );
+    expect(failure?.customerId).toBe("customer-helios");
+  });
+
+  it("leaves a failed login for an unknown email unattributed (anonymous, null Customer)", async () => {
+    const { repository, recorder } = diagnosticsHarness();
+    const users = createInMemoryPortalUserStore([]);
+    await handlePortalLogin(
+      { portalAuth: await adminAuth(), diagnostics: recorder, users },
+      { body: { email: "nobody@example.com", password: "wrong" } },
+    );
+    const [entry] = await repository.query();
+    expect(entry).toMatchObject({ outcome: "failure", customerId: null, actor: { type: "anonymous" } });
+  });
 });
 
 describe("portal logout diagnostics", () => {
@@ -237,6 +275,29 @@ describe("candidate account creation diagnostics", () => {
       operation: "candidate.account.create",
       candidateEmail: "pat@example.com",
     });
+  });
+
+  it("makes a duplicate-registration failure visible in the owning Customer's scoped view", async () => {
+    const repository = createInMemoryDiagnosticLogRepository();
+    const recorder = createDiagnosticRecorder({ repository });
+    const deps = { users: inMemoryProvisioningStore(), logger: noopLogger, diagnostics: recorder };
+    const body = {
+      firstName: "Pat",
+      lastName: "Lee",
+      email: "pat@example.com",
+      password: "correct-horse-battery-staple",
+    };
+    await handleCandidateSelfRegistration(deps, { body });
+    await handleCandidateSelfRegistration(deps, { body });
+
+    const scoped = await handleGetDiagnosticLog(
+      { diagnostics: repository, logger: noopLogger },
+      { query: {}, customerId: "customer-helios" },
+    );
+    const failure = (scoped.body.entries as Array<{ outcome: string; customerId: string }>).find(
+      (e) => e.outcome === "failure",
+    );
+    expect(failure?.customerId).toBe("customer-helios");
   });
 });
 
