@@ -91,6 +91,43 @@ export async function handleCloudShareWebhook(
       return { status: 404, body: { status: "unknown_target" } };
     }
 
+    const outcome = await receiveWebhook(
+      {
+        secret: connection.webhookSecret,
+        idempotencyScope: connection.customerId,
+        idempotency: deps.idempotency,
+      },
+      request,
+    );
+
+    if (outcome.kind === "missing_signature") {
+      deps.logger.warn("cloudshare webhook rejected: missing signature", {
+        operation: "receive_webhook",
+        integrationSurface: "cloudshare.v3.webhook",
+        method: "POST",
+        path: `/api/webhooks/cloudshare/${request.webhookPathToken}`,
+        customerId: connection.customerId,
+        webhookPathToken: request.webhookPathToken,
+        requestHeaders: {
+          [CLOUDSHARE_WEBHOOK_SIGNATURE_HEADER]: null,
+        },
+        rawRequestBody: request.rawBody,
+        requestBodyBytes: Buffer.byteLength(request.rawBody, "utf8"),
+        rawBodySha256: hashRawBody(request.rawBody),
+        signaturePresent: false,
+        trustGateReason:
+          `CloudShare signature header ${CLOUDSHARE_WEBHOOK_SIGNATURE_HEADER} was absent.`,
+      });
+      await appendWebhookEvent(deps, {
+        type: "cloudshare.webhook.missing_signature",
+        payload: {
+          customerId: connection.customerId,
+          webhookPathToken: connection.webhookPathToken,
+        },
+      });
+      return { status: 401, body: { status: "missing_signature" } };
+    }
+
     const requestBodySummary = summariseWebhookBody(request.rawBody);
     const webhookFields = isWebhookBodySummary(requestBodySummary)
       ? flattenWebhookDiagnosticFields(requestBodySummary)
@@ -116,17 +153,8 @@ export async function handleCloudShareWebhook(
         : {}),
       requestBodyBytes: Buffer.byteLength(request.rawBody, "utf8"),
       rawBodySha256: hashRawBody(request.rawBody),
-      signaturePresent: Boolean(request.signature),
+      signaturePresent: true,
     });
-
-    const outcome = await receiveWebhook(
-      {
-        secret: connection.webhookSecret,
-        idempotencyScope: connection.customerId,
-        idempotency: deps.idempotency,
-      },
-      request,
-    );
 
     deps.logger.info("cloudshare webhook signature diagnostic", {
       operation: "receive_webhook",

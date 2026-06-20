@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { receiveWebhook } from "./webhook-receiver";
 import { computeWebhookSignature } from "./webhooks";
 import { createInMemoryWebhookIdempotencyStore } from "@/persistence/webhook-idempotency-store";
@@ -48,6 +48,28 @@ describe("receiveWebhook", () => {
       signature: computeWebhookSignature(body, SECRET),
     });
     expect(accepted.kind).toBe("accepted");
+  });
+
+  it("treats a missing signature as a deliberate outcome and never touches idempotency", async () => {
+    const idempotency = {
+      markIfNew: vi.fn(async () => true),
+      reset: vi.fn(),
+    };
+
+    const result = await receiveWebhook(
+      {
+        secret: SECRET,
+        idempotencyScope: "customer-helios",
+        idempotency,
+      },
+      {
+        rawBody: body,
+        signature: null,
+      },
+    );
+
+    expect(result.kind).toBe("missing_signature");
+    expect(idempotency.markIfNew).not.toHaveBeenCalled();
   });
 
   it("rejects a correctly signed but malformed payload", async () => {

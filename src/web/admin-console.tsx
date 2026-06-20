@@ -62,6 +62,23 @@ interface SupportLogRecord {
   fields: Record<string, unknown>;
 }
 
+interface SupportWorkbenchDiagnostic {
+  timestamp: string;
+  level: "debug" | "info" | "warn" | "error";
+  message: string;
+  operation: string | null;
+  integrationSurface: string | null;
+  customerId: string | null;
+  webhookPathToken: string | null;
+  method: string | null;
+  path: string | null;
+  requestBodyBytes: number | null;
+  rawBodySha256: string | null;
+  signaturePresent: boolean | null;
+  rawRequestBody: string | null;
+  trustGateReason: string | null;
+}
+
 interface ConnectionDiagnostic {
   operation: string;
   integrationSurface: string;
@@ -275,6 +292,9 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   const [auditRecords, setAuditRecords] = useState<AuditRecord[] | null>(null);
   const [eventRecords, setEventRecords] = useState<EventLogRecord[] | null>(null);
   const [supportRecords, setSupportRecords] = useState<SupportLogRecord[] | null>(null);
+  const [supportWorkbenchDiagnostics, setSupportWorkbenchDiagnostics] = useState<
+    SupportWorkbenchDiagnostic[] | null
+  >(null);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [connection, setConnection] = useState<ConnectionState | null>(null);
   const [apiId, setApiId] = useState("");
@@ -542,8 +562,44 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     }
   }
 
+  async function loadSupportWorkbench(background = false) {
+    if (!background) {
+      setLoading(true);
+      setError(null);
+    }
+    try {
+      const res = await fetchAdmin("/api/admin/support-workbench");
+      const data = await res.json() as {
+        diagnostics?: SupportWorkbenchDiagnostic[];
+        error?: string;
+      };
+      if (!res.ok) {
+        if (!background) {
+          setError(data.error ?? "Failed to load support workbench");
+        }
+        return;
+      }
+      setSupportWorkbenchDiagnostics(data.diagnostics ?? []);
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
+      if (!background) {
+        setError("Failed to load support workbench");
+      }
+    } finally {
+      if (!background) {
+        setLoading(false);
+      }
+    }
+  }
+
   function onLoadSupportLog() {
     void loadSupportLog();
+  }
+
+  function onLoadSupportWorkbench() {
+    void loadSupportWorkbench();
   }
 
   function resetExamForm(next?: {
@@ -1911,11 +1967,86 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       {tab === "support" && (
         <section>
           <p style={{ color: "#555", marginTop: 0 }}>
-            Structured server logs. All timestamps are ISO 8601 in UTC. Secure values stay redacted.
+            Recent CloudShare webhook trust-gate diagnostics appear first. Structured server logs stay available
+            below. All timestamps are ISO 8601 in UTC. Secure values stay redacted.
           </p>
-          <button onClick={onLoadSupportLog} disabled={loading} style={{ padding: "0.4rem 1rem", marginBottom: "1rem" }}>
-            {loading ? "Loading..." : "Load Support Log"}
-          </button>
+          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "1rem" }}>
+            <button onClick={onLoadSupportWorkbench} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
+              {loading ? "Loading..." : "Load Recent Webhook Diagnostics"}
+            </button>
+            <button onClick={onLoadSupportLog} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
+              {loading ? "Loading..." : "Load Full Support Log"}
+            </button>
+          </div>
+          {supportWorkbenchDiagnostics && (
+            <div style={{ marginBottom: "1.5rem" }}>
+              <h3 style={{ margin: "0 0 0.75rem" }}>Recent Webhook Diagnostics</h3>
+              <div style={{ display: "grid", gap: "0.75rem" }}>
+                {supportWorkbenchDiagnostics.length === 0 && (
+                  <div style={{ color: "#666" }}>No recent CloudShare webhook diagnostics.</div>
+                )}
+                {supportWorkbenchDiagnostics.map((diagnostic, index) => (
+                  <div
+                    key={`${diagnostic.timestamp}-${diagnostic.message}-${index}`}
+                    style={{
+                      border: "1px solid #ddd",
+                      borderRadius: "8px",
+                      padding: "0.85rem 1rem",
+                      background: "#fff",
+                    }}
+                  >
+                    <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "0.4rem" }}>
+                      <strong>{diagnostic.message}</strong>
+                      <span style={{ color: "#666" }}>{formatUtcTimestamp(diagnostic.timestamp)}</span>
+                      <span style={{ textTransform: "uppercase", color: diagnostic.level === "warn" ? "#8a5a00" : "#555" }}>
+                        {diagnostic.level}
+                      </span>
+                    </div>
+                    <div style={{ display: "grid", gap: "0.25rem", fontSize: "0.85rem", color: "#444" }}>
+                      <div>
+                        <strong>Request:</strong>{" "}
+                        <span style={{ fontFamily: "monospace" }}>
+                          {diagnostic.method ?? "?"} {diagnostic.path ?? "?"}
+                        </span>
+                      </div>
+                      <div>
+                        <strong>Webhook token:</strong>{" "}
+                        <span style={{ fontFamily: "monospace" }}>{diagnostic.webhookPathToken ?? "-"}</span>
+                      </div>
+                      <div>
+                        <strong>Customer:</strong>{" "}
+                        <span style={{ fontFamily: "monospace" }}>{diagnostic.customerId ?? "-"}</span>
+                      </div>
+                      <div>
+                        <strong>Signature present:</strong>{" "}
+                        {diagnostic.signaturePresent === null ? "-" : diagnostic.signaturePresent ? "yes" : "no"}
+                      </div>
+                      <div>
+                        <strong>Body bytes:</strong> {diagnostic.requestBodyBytes ?? "-"}
+                      </div>
+                      <div>
+                        <strong>Raw body SHA-256:</strong>{" "}
+                        <span style={{ fontFamily: "monospace" }}>{diagnostic.rawBodySha256 ?? "-"}</span>
+                      </div>
+                      {diagnostic.trustGateReason && (
+                        <div style={{ color: "#8a5a00" }}>
+                          <strong>Trust gate:</strong> {diagnostic.trustGateReason}
+                        </div>
+                      )}
+                      {diagnostic.rawRequestBody && (
+                        <div>
+                          <strong>Raw webhook request body used for HMAC:</strong>
+                          <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
+                            {diagnostic.rawRequestBody}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {supportRecords && (
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
               <thead>
