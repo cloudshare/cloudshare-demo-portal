@@ -11,6 +11,7 @@ import {
   buildMonitoringAttemptViews,
 } from "@/domain/admin-monitoring";
 import type { ExamAttemptStatus } from "@/domain/exam-attempt";
+import { parseUtcDateTimeInput } from "@/support/utc-date-time";
 
 const DEFAULT_ATTEMPT_LIMIT = 50;
 const MAX_ATTEMPT_LIMIT = 200;
@@ -45,6 +46,13 @@ export interface SupportWorkbenchResponse {
       readonly limit: number;
       readonly returnedAttempts: number;
       readonly defaultLimitApplied: boolean;
+      readonly currentQueueLimit: number;
+      readonly currentQueueTotals: {
+        readonly scheduled: number;
+        readonly ready: number;
+        readonly inProgress: number;
+        readonly suspended: number;
+      };
     };
     diagnostics: SupportWorkbenchDiagnostic[];
   };
@@ -97,23 +105,39 @@ export async function handleGetSupportWorkbench(
   };
   const monitoringView = buildAdminMonitoringView(monitoringInput);
   const matchingAttemptViews = buildMonitoringAttemptViews(monitoringInput);
-  const diagnostics = (await deps.supportLog.listAll(WEBHOOK_DIAGNOSTIC_SCAN_LIMIT))
-    .filter(isCloudShareWebhookDiagnostic)
-    .map(toSupportWorkbenchDiagnostic)
+  const supportLogRecords = (await deps.supportLog.listAll(WEBHOOK_DIAGNOSTIC_SCAN_LIMIT)).filter(
+    isCloudShareWebhookDiagnostic,
+  );
+  const trustedWebhookBodyKeys = collectTrustedWebhookBodyKeys(supportLogRecords);
+  const diagnostics = supportLogRecords
+    .map((record) => toSupportWorkbenchDiagnostic(record, trustedWebhookBodyKeys))
     .slice(0, WEBHOOK_DIAGNOSTIC_RESULT_LIMIT);
   const boundedAttempts = matchingAttemptViews.slice(0, filters.limit);
+  const currentQueueTotals = {
+    scheduled: monitoringView.currentAttempts.scheduled.length,
+    ready: monitoringView.currentAttempts.ready.length,
+    inProgress: monitoringView.currentAttempts.inProgress.length,
+    suspended: monitoringView.currentAttempts.suspended.length,
+  };
 
   return {
     status: 200,
     body: {
       summary: monitoringView.summary,
-      currentQueues: monitoringView.currentAttempts,
+      currentQueues: {
+        scheduled: monitoringView.currentAttempts.scheduled.slice(0, filters.limit),
+        ready: monitoringView.currentAttempts.ready.slice(0, filters.limit),
+        inProgress: monitoringView.currentAttempts.inProgress.slice(0, filters.limit),
+        suspended: monitoringView.currentAttempts.suspended.slice(0, filters.limit),
+      },
       matchingAttempts: boundedAttempts,
       meta: {
         totalMatchingAttempts: matchingAttemptViews.length,
         limit: filters.limit,
         returnedAttempts: boundedAttempts.length,
         defaultLimitApplied: filters.defaultLimitApplied,
+        currentQueueLimit: filters.limit,
+        currentQueueTotals,
       },
       diagnostics,
     },
@@ -173,8 +197,7 @@ function parseDate(value: string | undefined): number | null {
     return null;
   }
 
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.getTime();
+  return parseUtcDateTimeInput(value)?.getTime() ?? null;
 }
 
 function matchesAttemptFilters(
@@ -229,9 +252,30 @@ function isCloudShareWebhookDiagnostic(record: SupportLogRecord): boolean {
   );
 }
 
-function toSupportWorkbenchDiagnostic(record: SupportLogRecord): SupportWorkbenchDiagnostic {
+function collectTrustedWebhookBodyKeys(records: readonly SupportLogRecord[]): Set<string> {
+  const trustedKeys = new Set<string>();
+  for (const record of records) {
+    if (record.message !== "cloudshare webhook signature diagnostic") {
+      continue;
+    }
+    if (record.fields.signatureMatched !== true) {
+      continue;
+    }
+
+    const key = getWebhookBodyTrustKey(record.fields);
+    if (key) {
+      trustedKeys.add(key);
+    }
+  }
+  return trustedKeys;
+}
+
+function toSupportWorkbenchDiagnostic(
+  record: SupportLogRecord,
+  trustedWebhookBodyKeys: ReadonlySet<string>,
+): SupportWorkbenchDiagnostic {
   const message = record.message;
-  const isUnknownTarget = message === "cloudshare webhook rejected: unknown webhook target";
+  const rawRequestBody = getSafeRawWebhookBody(record, trustedWebhookBodyKeys);
 
   return {
     timestamp: record.timestamp,
@@ -246,9 +290,44 @@ function toSupportWorkbenchDiagnostic(record: SupportLogRecord): SupportWorkbenc
     requestBodyBytes: readNumberField(record.fields, "requestBodyBytes"),
     rawBodySha256: readStringField(record.fields, "rawBodySha256"),
     signaturePresent: readBooleanField(record.fields, "signaturePresent"),
-    rawRequestBody: isUnknownTarget ? null : readStringField(record.fields, "rawRequestBody"),
+    rawRequestBody,
     trustGateReason: readStringField(record.fields, "trustGateReason"),
   };
+}
+
+function getSafeRawWebhookBody(
+  record: SupportLogRecord,
+  trustedWebhookBodyKeys: ReadonlySet<string>,
+): string | null {
+  const rawRequestBody = readStringField(record.fields, "rawRequestBody");
+  if (!rawRequestBody) {
+    return null;
+  }
+
+  if (
+    record.message === "cloudshare webhook rejected: unknown webhook target" ||
+    record.message === "cloudshare webhook rejected: missing signature" ||
+    record.message === "cloudshare webhook rejected: invalid signature"
+  ) {
+    return null;
+  }
+
+  const trustKey = getWebhookBodyTrustKey(record.fields);
+  if (!trustKey || !trustedWebhookBodyKeys.has(trustKey)) {
+    return null;
+  }
+
+  return rawRequestBody;
+}
+
+function getWebhookBodyTrustKey(fields: Record<string, unknown>): string | null {
+  const customerId = readStringField(fields, "customerId");
+  const webhookPathToken = readStringField(fields, "webhookPathToken");
+  const rawBodySha256 = readStringField(fields, "rawBodySha256");
+  if (!customerId || !webhookPathToken || !rawBodySha256) {
+    return null;
+  }
+  return `${customerId}:${webhookPathToken}:${rawBodySha256}`;
 }
 
 function readStringField(fields: Record<string, unknown>, key: string): string | null {

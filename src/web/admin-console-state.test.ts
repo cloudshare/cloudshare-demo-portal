@@ -168,6 +168,21 @@ describe("support workbench filters", () => {
     );
   });
 
+  it("serializes timezone-less support workbench date filters as UTC instants", () => {
+    expect(
+      buildSupportWorkbenchQuery({
+        candidate: "",
+        examId: "",
+        status: "",
+        scheduledFrom: "2026-06-20T09:30",
+        scheduledTo: "2026-06-21T18:45",
+        limit: String(SUPPORT_WORKBENCH_DEFAULT_LIMIT),
+      }),
+    ).toBe(
+      "?scheduledFrom=2026-06-20T09%3A30%3A00.000Z&scheduledTo=2026-06-21T18%3A45%3A00.000Z",
+    );
+  });
+
   it("omits blank values and the default limit from the support workbench query", () => {
     expect(
       buildSupportWorkbenchQuery({

@@ -187,6 +187,13 @@ describe("handleGetSupportWorkbench", () => {
       limit: 2,
       returnedAttempts: 2,
       defaultLimitApplied: false,
+      currentQueueLimit: 2,
+      currentQueueTotals: {
+        scheduled: 2,
+        ready: 0,
+        inProgress: 1,
+        suspended: 0,
+      },
     });
     expect(result.body.currentQueues).toEqual({
       scheduled: [
@@ -211,6 +218,11 @@ describe("handleGetSupportWorkbench", () => {
       expect.objectContaining({ id: "attempt-scheduled-morgan" }),
     ]);
     expect(result.body.diagnostics).toHaveLength(1);
+    expect(result.body.diagnostics[0]).toEqual(
+      expect.objectContaining({
+        rawRequestBody: null,
+      }),
+    );
   });
 
   it("uses a bounded default limit and supports status-specific filtering", async () => {
@@ -263,6 +275,13 @@ describe("handleGetSupportWorkbench", () => {
       limit: 50,
       returnedAttempts: 50,
       defaultLimitApplied: true,
+      currentQueueLimit: 50,
+      currentQueueTotals: {
+        scheduled: 0,
+        ready: 0,
+        inProgress: 0,
+        suspended: 0,
+      },
     });
     expect(result.body.currentQueues).toEqual({
       scheduled: [],
@@ -272,6 +291,60 @@ describe("handleGetSupportWorkbench", () => {
     });
     expect(result.body.matchingAttempts).toHaveLength(50);
     expect(result.body.matchingAttempts[0]?.id).toBe("attempt-28");
+  });
+
+  it("bounds current queues with the same limit and reports when queue payloads are truncated", async () => {
+    const attempts = Array.from({ length: 1000 }, (_, index) => ({
+      id: `attempt-${index + 1}`,
+      customerId: "customer-helios",
+      candidateId: `candidate-${index + 1}`,
+      candidateEmail: `candidate-${index + 1}@helioscx.demo`,
+      candidateFirstName: "Queue",
+      candidateLastName: `${index + 1}`,
+      examId: "exam-1",
+      examTitle: "Helios CX Fundamentals",
+      status: "scheduled" as const,
+      scheduledFor: new Date(`2026-06-${String((index % 28) + 1).padStart(2, "0")}T09:00:00.000Z`),
+      createdAt: new Date(`2026-05-${String((index % 28) + 1).padStart(2, "0")}T09:00:00.000Z`),
+      trainingId: `training-${index + 1}`,
+      experienceId: `experience-${index + 1}`,
+      environmentExternalId: `env-${index + 1}`,
+      participantId: `participant-${index + 1}`,
+      scoreRetrievalEnabled: false,
+    }));
+
+    const result = await handleGetSupportWorkbench(
+      {
+        attempts: makeAttemptRepository(attempts),
+        audit: makeAuditRepository([]),
+        eventLog: makeEventLog([]),
+        supportLog: makeSupportLog([]),
+        logger: makeLogger(),
+      },
+      {
+        customerId: "customer-helios",
+        query: {
+          limit: "25",
+        },
+      },
+    );
+
+    expect(result.status).toBe(200);
+    expect(result.body.currentQueues.scheduled).toHaveLength(25);
+    expect(result.body.matchingAttempts).toHaveLength(25);
+    expect(result.body.meta).toEqual({
+      totalMatchingAttempts: 1000,
+      limit: 25,
+      returnedAttempts: 25,
+      defaultLimitApplied: false,
+      currentQueueLimit: 25,
+      currentQueueTotals: {
+        scheduled: 1000,
+        ready: 0,
+        inProgress: 0,
+        suspended: 0,
+      },
+    });
   });
 
   it("redacts sensitive matching-attempt details and unknown-target webhook bodies", async () => {
@@ -376,6 +449,141 @@ describe("handleGetSupportWorkbench", () => {
       expect.objectContaining({
         webhookPathToken: "unknown-token",
         rawRequestBody: null,
+      }),
+    ]);
+  });
+
+  it("never returns raw webhook bodies for invalid-signature diagnostics even when the body hash is present", async () => {
+    const rawRequestBody = "{\"loginUrl\":\"https://use.cloudshare.com/secret\",\"token\":\"must-not-leak\"}";
+
+    const result = await handleGetSupportWorkbench(
+      {
+        attempts: makeAttemptRepository([]),
+        audit: makeAuditRepository([]),
+        eventLog: makeEventLog([]),
+        supportLog: makeSupportLog([
+          {
+            timestamp: new Date("2026-06-20T10:00:00.000Z"),
+            level: "info",
+            message: "cloudshare webhook received",
+            fields: {
+              operation: "receive_webhook",
+              integrationSurface: "cloudshare.v3.webhook",
+              customerId: "customer-helios",
+              webhookPathToken: "whk-helios",
+              method: "POST",
+              path: "/api/webhooks/cloudshare/whk-helios",
+              requestBodyBytes: rawRequestBody.length,
+              rawBodySha256: "trusted-hash",
+              signaturePresent: true,
+              rawRequestBody,
+            },
+          },
+          {
+            timestamp: new Date("2026-06-20T10:00:01.000Z"),
+            level: "info",
+            message: "cloudshare webhook signature diagnostic",
+            fields: {
+              operation: "receive_webhook",
+              integrationSurface: "cloudshare.v3.webhook",
+              customerId: "customer-helios",
+              webhookPathToken: "whk-helios",
+              rawBodySha256: "trusted-hash",
+              signatureMatched: false,
+            },
+          },
+          {
+            timestamp: new Date("2026-06-20T10:00:02.000Z"),
+            level: "warn",
+            message: "cloudshare webhook rejected: invalid signature",
+            fields: {
+              operation: "receive_webhook",
+              integrationSurface: "cloudshare.v3.webhook",
+              customerId: "customer-helios",
+              webhookPathToken: "whk-helios",
+              signaturePresent: true,
+            },
+          },
+        ]),
+        logger: makeLogger(),
+      },
+      {
+        customerId: "customer-helios",
+        query: {},
+      },
+    );
+
+    expect(result.body.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          message: "cloudshare webhook received",
+          rawRequestBody: null,
+        }),
+        expect.objectContaining({
+          message: "cloudshare webhook rejected: invalid signature",
+          rawRequestBody: null,
+        }),
+      ]),
+    );
+  });
+
+  it("treats timezone-less scheduled date filters as UTC boundaries", async () => {
+    const result = await handleGetSupportWorkbench(
+      {
+        attempts: makeAttemptRepository([
+          {
+            id: "attempt-included",
+            customerId: "customer-helios",
+            candidateId: "candidate-1",
+            candidateEmail: "casey@helioscx.demo",
+            candidateFirstName: "Casey",
+            candidateLastName: "Rivera",
+            examId: "exam-1",
+            examTitle: "Helios Exam",
+            status: "scheduled",
+            scheduledFor: new Date("2026-06-20T00:30:00.000Z"),
+            createdAt: new Date("2026-06-19T09:00:00.000Z"),
+            trainingId: "training-1",
+            experienceId: "experience-1",
+            environmentExternalId: "env-1",
+            participantId: "participant-1",
+            scoreRetrievalEnabled: false,
+          },
+          {
+            id: "attempt-excluded",
+            customerId: "customer-helios",
+            candidateId: "candidate-2",
+            candidateEmail: "alex@helioscx.demo",
+            candidateFirstName: "Alex",
+            candidateLastName: "Chen",
+            examId: "exam-1",
+            examTitle: "Helios Exam",
+            status: "scheduled",
+            scheduledFor: new Date("2026-06-19T23:59:59.999Z"),
+            createdAt: new Date("2026-06-19T08:00:00.000Z"),
+            trainingId: "training-2",
+            experienceId: "experience-2",
+            environmentExternalId: "env-2",
+            participantId: "participant-2",
+            scoreRetrievalEnabled: false,
+          },
+        ]),
+        audit: makeAuditRepository([]),
+        eventLog: makeEventLog([]),
+        supportLog: makeSupportLog([]),
+        logger: makeLogger(),
+      },
+      {
+        customerId: "customer-helios",
+        query: {
+          scheduledFrom: "2026-06-20T00:00",
+        },
+      },
+    );
+
+    expect(result.body.matchingAttempts).toEqual([
+      expect.objectContaining({
+        id: "attempt-included",
       }),
     ]);
   });

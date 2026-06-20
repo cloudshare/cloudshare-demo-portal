@@ -102,6 +102,13 @@ interface SupportWorkbenchResponseBody {
     limit: number;
     returnedAttempts: number;
     defaultLimitApplied: boolean;
+    currentQueueLimit: number;
+    currentQueueTotals: {
+      scheduled: number;
+      ready: number;
+      inProgress: number;
+      suspended: number;
+    };
   };
   diagnostics: SupportWorkbenchDiagnostic[];
 }
@@ -293,12 +300,24 @@ function renderAttemptCollection(
   label: string,
   attempts: readonly MonitoringAttempt[],
   emptyMessage: string,
+  totalCount?: number,
 ) {
+  const visibleCount = attempts.length;
+  const headingCount =
+    typeof totalCount === "number" && totalCount > visibleCount
+      ? `${visibleCount} of ${totalCount}`
+      : String(visibleCount);
+
   return (
     <div key={label} style={{ background: "#f7f7f8", borderRadius: "8px", padding: "1rem" }}>
       <h2 style={{ marginTop: 0, marginBottom: "0.75rem", fontSize: "1rem" }}>
-        {label} ({attempts.length})
+        {label} ({headingCount})
       </h2>
+      {typeof totalCount === "number" && totalCount > visibleCount && (
+        <div style={{ marginBottom: "0.75rem", color: "#666", fontSize: "0.85rem" }}>
+          Queue truncated to the first {visibleCount} attempts for this view.
+        </div>
+      )}
       {attempts.length === 0 ? (
         <p style={{ margin: 0, color: "#666" }}>{emptyMessage}</p>
       ) : (
@@ -2146,12 +2165,33 @@ export function AdminConsole({ email }: AdminConsoleProps) {
               </div>
 
               {([
-                ["Scheduled queue", supportWorkbench.currentQueues.scheduled],
-                ["Ready queue", supportWorkbench.currentQueues.ready],
-                ["In-progress queue", supportWorkbench.currentQueues.inProgress],
-                ["Suspended queue", supportWorkbench.currentQueues.suspended],
-              ] as const).map(([label, attempts]) =>
-                renderAttemptCollection(label, attempts, "No matching attempts in this queue."),
+                [
+                  "Scheduled queue",
+                  supportWorkbench.currentQueues.scheduled,
+                  supportWorkbench.meta.currentQueueTotals.scheduled,
+                ],
+                [
+                  "Ready queue",
+                  supportWorkbench.currentQueues.ready,
+                  supportWorkbench.meta.currentQueueTotals.ready,
+                ],
+                [
+                  "In-progress queue",
+                  supportWorkbench.currentQueues.inProgress,
+                  supportWorkbench.meta.currentQueueTotals.inProgress,
+                ],
+                [
+                  "Suspended queue",
+                  supportWorkbench.currentQueues.suspended,
+                  supportWorkbench.meta.currentQueueTotals.suspended,
+                ],
+              ] as const).map(([label, attempts, totalCount]) =>
+                renderAttemptCollection(
+                  label,
+                  attempts,
+                  "No matching attempts in this queue.",
+                  totalCount,
+                ),
               )}
 
               {renderAttemptCollection(

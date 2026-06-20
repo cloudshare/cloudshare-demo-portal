@@ -1,3 +1,5 @@
+import { toUtcIsoString } from "@/support/utc-date-time";
+
 export interface ExamAuthoringMode {
   readonly isEditingDraft: boolean;
   readonly provisioningLocked: boolean;
@@ -168,8 +170,8 @@ export function buildSupportWorkbenchQuery(filters: SupportWorkbenchFilterInput)
   const candidate = filters.candidate.trim();
   const examId = filters.examId.trim();
   const status = filters.status.trim();
-  const scheduledFrom = filters.scheduledFrom.trim();
-  const scheduledTo = filters.scheduledTo.trim();
+  const scheduledFrom = normalizeSupportWorkbenchDateFilter(filters.scheduledFrom);
+  const scheduledTo = normalizeSupportWorkbenchDateFilter(filters.scheduledTo);
   const limit = filters.limit.trim();
 
   if (candidate) {
@@ -193,4 +195,9 @@ export function buildSupportWorkbenchQuery(filters: SupportWorkbenchFilterInput)
 
   const query = params.toString();
   return query ? `?${query}` : "";
+}
+
+function normalizeSupportWorkbenchDateFilter(value: string): string {
+  const trimmed = value.trim();
+  return toUtcIsoString(trimmed) ?? trimmed;
 }
