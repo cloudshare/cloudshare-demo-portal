@@ -91,6 +91,77 @@ opener can monitor liveness).
 **IntegrationEvent**:
 An inbound or outbound event exchanged with CloudShare.
 
+**Diagnostic Log Entry**:
+An admin-support record describing something the Portal or CloudShare integration did or received:
+HTTP requests, webhook deliveries, platform events, audit-worthy actions, failures, retries, and
+state transitions. Diagnostic Log Entries are the primary object of the support area. They should be
+correlatable to the relevant **Customer**, **Candidate**, **Exam**, **ExamAttempt**, CloudShare
+identifiers, and correlation ID where known. They are distinct from Session Monitoring queues, which
+summarise current ExamAttempt state rather than explain platform behaviour. Diagnostic logging is
+not limited to failures: successful scheduling, provisioning, sponsored-link creation, enter
+redirects, suspend/resume, heartbeat auto-suspend, score retrieval, webhook handling, and admin
+catalog changes should also leave enough trace data to reconstruct how the Portal behaved.
+Diagnostic Log Entries are append-only evidence: do not rewrite old entries to add identifiers that
+were unknown at the time. When later actions discover new identifiers, such as a CloudShare
+environment ID, emit later entries that include both the new identifier and the initiating thread's
+known identifiers, such as ExamAttempt ID, Exam ID, Candidate email, and Customer.
+For candidate exam support, **ExamAttempt ID** is the primary diagnostic thread because it identifies
+one Candidate taking one Exam. **Exam ID** identifies the catalog item and is used for Exam lifecycle
+diagnostics such as authoring, publishing, unpublishing, editing, and future deletion/archive actions;
+those entries should not invent an ExamAttempt ID. Non-attempt diagnostics use the most specific
+known thread: Candidate account actions use Candidate identity, CloudShare resource reads use
+Customer plus operation/resource identifiers, and webhook entries start from Customer plus
+CloudShare environment ID/event data before later correlation ties them to Candidate, ExamAttempt,
+and Exam where possible.
+
+**Session Monitoring**:
+The admin surface for current ExamAttempt state: scheduled, ready, in progress, suspended, completed,
+and expired views. It answers "what is happening now?" and may summarise active operational state,
+but it is not the primary forensic support log.
+
+**Support**:
+The admin surface for correlated Diagnostic Log Entries. It answers "what happened, in what order,
+and how can support trace it?" Support should not duplicate Session Monitoring queues as its main
+workflow; it should provide searchable diagnostic evidence across Portal actions, CloudShare
+requests, webhooks, events, and state transitions.
+
+**Audit Trail**:
+The admin record of who changed or attempted to change important Portal state and whether that action
+was allowed. Audit Trail answers "who changed what?" and is separate from Support diagnostics, which
+answer "what did the platform do and how can support trace behaviour?" Some actions should emit both
+an audit record and a Diagnostic Log Entry.
+
+**Event Log**:
+An internal/source stream of platform events, not a primary support workflow. Long-term, events that
+matter to support should appear as Diagnostic Log Entries or correlated diagnostic timeline rows
+rather than forcing admins to inspect a separate Event Log UI.
+
+A Diagnostic Log Entry should try to carry a consistent support field set: occurred time, level,
+source, operation, outcome, Customer ID, message, and details. Candidate email, Exam ID,
+ExamAttempt ID, correlation ID, CloudShare identifiers, request metadata, and response metadata are
+nullable because some diagnostics occur before or outside those relationships. Nullable fields
+should be populated whenever they are known at the time of the entry.
+The long-term support model should be a typed **DiagnosticLogEntry** read/write model: a generic
+platform trace with nullable domain anchors, not an Exam-only log. Free-form data may remain in
+`details`, `request`, and `response`, but core correlation fields such as Customer, actor, subject,
+operation, outcome, correlation ID, external IDs, Candidate email, Exam ID, and ExamAttempt ID must
+be first-class so support filtering and tracing are reliable.
+Existing prototype support-log rows are not product data and should not constrain the new model.
+They may be discarded, reset, or archived during development; do not preserve a legacy shape if it
+weakens the DiagnosticLogEntry design.
+Normal diagnostics must redact secrets, API keys, bearer tokens, sponsored-link URLs, authorization
+headers, and similar sensitive values. A sensitive diagnostic mode may exist for replicable issues
+where redaction prevents diagnosis, but it must be explicit, audited, time-boxed with automatic
+expiry, disabled by default, scoped as narrowly as possible, and clearly visible to operators while
+enabled.
+The first DiagnosticLogEntry write-path slice should instrument the most support-critical flows:
+Candidate account creation; Candidate login/logout attempts; Customer admin login/logout attempts;
+Candidate ExamAttempt scheduling; CloudShare training creation; Candidate participant/student add;
+sponsored-link creation; Candidate enter/resume/suspend; CloudShare webhook receive/verify/reconcile;
+Guided Journey score retrieval; and CloudShare resource-sync reads. Exam authoring and lifecycle
+changes should also emit diagnostics alongside audits, but are lower priority than the candidate
+exam delivery path.
+
 ### CloudShare resources
 
 **Project**:
