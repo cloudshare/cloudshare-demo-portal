@@ -1920,6 +1920,12 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                   const host = readStringField(record.fields, "host");
                   const requestHeaders = record.fields.requestHeaders;
                   const requestBody = record.fields.requestBody;
+                  const requestBodySummary = record.fields.requestBodySummary;
+                  const rawRequestBody = record.fields.rawRequestBody;
+                  const rawBodySha256 = readStringField(record.fields, "rawBodySha256");
+                  const receivedSignature = readStringField(record.fields, "receivedSignature");
+                  const expectedSignature = readStringField(record.fields, "expectedSignature");
+                  const signatureMatched = record.fields.signatureMatched;
                   const responseHeaders = record.fields.responseHeaders;
                   const responseBody = record.fields.responseBody;
                   const network = record.fields.network;
@@ -1983,6 +1989,42 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                               <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
                                 {formatSupportValue(requestBody)}
                               </pre>
+                            </div>
+                          )}
+                          {requestBodySummary !== undefined && (
+                            <div>
+                              <strong>Webhook request body summary:</strong>
+                              <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
+                                {formatSupportValue(requestBodySummary)}
+                              </pre>
+                            </div>
+                          )}
+                          {rawRequestBody !== undefined && (
+                            <div>
+                              <strong>Raw webhook request body:</strong>
+                              <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
+                                {formatSupportValue(rawRequestBody)}
+                              </pre>
+                            </div>
+                          )}
+                          {rawBodySha256 && (
+                            <div>
+                              <strong>Raw body SHA-256:</strong> <span style={{ fontFamily: "monospace" }}>{rawBodySha256}</span>
+                            </div>
+                          )}
+                          {receivedSignature && (
+                            <div>
+                              <strong>Received signature:</strong> <span style={{ fontFamily: "monospace" }}>{receivedSignature}</span>
+                            </div>
+                          )}
+                          {expectedSignature && (
+                            <div>
+                              <strong>Expected signature:</strong> <span style={{ fontFamily: "monospace" }}>{expectedSignature}</span>
+                            </div>
+                          )}
+                          {typeof signatureMatched === "boolean" && (
+                            <div>
+                              <strong>Signature matched:</strong> {signatureMatched ? "yes" : "no"}
                             </div>
                           )}
                           {responseBody !== undefined && (
