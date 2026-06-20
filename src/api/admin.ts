@@ -4,6 +4,10 @@ import type { AuditRepository } from "@/domain/audit-trail";
 import type { EventLogRepository } from "@/domain/event-log";
 import type { SupportLogRepository } from "@/domain/support-log";
 import type {
+  DiagnosticLogEntry,
+  DiagnosticLogRepository,
+} from "@/domain/diagnostic-log";
+import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
@@ -130,4 +134,65 @@ export async function handleGetSupportLog(
   const limit = limitParam ? parseInt(limitParam, 10) : undefined;
   const records = await deps.supportLog.listAll(limit !== undefined && !isNaN(limit) ? limit : undefined);
   return { status: 200, body: { records } };
+}
+
+// --- Diagnostic log (typed support source of truth, ADR-004) ---
+
+export interface DiagnosticLogHandlerDeps {
+  readonly diagnostics: DiagnosticLogRepository;
+  readonly logger: Logger;
+}
+
+/**
+ * Read the typed diagnostic log for one Customer. Customer scoping is enforced
+ * server-side: the caller passes the authenticated admin's `customerId`, never a
+ * client-supplied one, so admins only ever see their own Customer's entries.
+ * Reads are always bounded (default + hard cap) and filterable by time range.
+ */
+export async function handleGetDiagnosticLog(
+  deps: DiagnosticLogHandlerDeps,
+  request: AdminRequest & { customerId: string },
+): Promise<AdminResponse> {
+  const from = parseDate(request.query.from);
+  const to = parseDate(request.query.to);
+  const limitParam = request.query.limit;
+  const limit = limitParam ? parseInt(limitParam, 10) : undefined;
+
+  const entries = await deps.diagnostics.query({
+    customerId: request.customerId,
+    ...(from ? { from } : {}),
+    ...(to ? { to } : {}),
+    ...(limit !== undefined && !Number.isNaN(limit) ? { limit } : {}),
+  });
+
+  return { status: 200, body: { entries: entries.map(serialiseDiagnosticEntry) } };
+}
+
+function parseDate(value: string | undefined): Date | undefined {
+  if (!value) return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+function serialiseDiagnosticEntry(entry: DiagnosticLogEntry): Record<string, unknown> {
+  return {
+    id: entry.id,
+    occurredAt: entry.occurredAt.toISOString(),
+    level: entry.level,
+    source: entry.source,
+    operation: entry.operation,
+    outcome: entry.outcome,
+    customerId: entry.customerId,
+    actor: entry.actor,
+    subject: entry.subject,
+    message: entry.message,
+    correlationId: entry.correlationId,
+    candidateEmail: entry.candidateEmail,
+    examId: entry.examId,
+    examAttemptId: entry.examAttemptId,
+    externalIds: entry.externalIds,
+    request: entry.request,
+    response: entry.response,
+    details: entry.details,
+  };
 }

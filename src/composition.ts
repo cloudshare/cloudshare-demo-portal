@@ -43,6 +43,12 @@ import { createInMemoryAuditRepository } from "@/persistence/audit-repository";
 import { createInMemoryResourceRepository } from "@/persistence/resource-repository";
 import { createInMemoryEventLogRepository } from "@/persistence/event-log-repository";
 import { createPrismaSupportLogRepository } from "@/persistence/support-log-repository";
+import { createPrismaDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
+import {
+  createDiagnosticRecorder,
+  type DiagnosticLogRepository,
+  type DiagnosticRecorder,
+} from "@/domain/diagnostic-log";
 import { createInMemoryExamAuthoringCacheRepository } from "@/persistence/exam-authoring-cache-repository";
 import { createPrismaExamCatalogRepository } from "@/persistence/prisma-exam-catalog-repository";
 import { createPrismaExamAttemptRepository } from "@/persistence/prisma-exam-attempt-repository";
@@ -120,6 +126,10 @@ export interface Services {
   eventLog: EventLogRepository;
   /** Structured, redacted server logs surfaced to admins for troubleshooting. */
   supportLog: SupportLogRepository;
+  /** Typed, append-only diagnostic log — the Support read model (ADR-004). */
+  diagnostics: DiagnosticLogRepository;
+  /** Redaction-applying write seam every instrumented flow records through. */
+  diagnosticRecorder: DiagnosticRecorder;
   adminMonitoringAttempts: AdminMonitoringAttemptRepository;
   exams: ExamRepository;
   examAuthoringCache: ExamAuthoringCacheRepository;
@@ -158,6 +168,7 @@ export function getServices(): Services {
   const config = loadConfig(process.env);
   const prisma = new PrismaClient();
   const supportLog = createPrismaSupportLogRepository(prisma);
+  const diagnostics = createPrismaDiagnosticLogRepository(prisma);
   const logger = createLogger({
     secrets: secretValues(config),
     sink: (line: string) => {
@@ -182,6 +193,16 @@ export function getServices(): Services {
         );
       });
     },
+  });
+  const diagnosticRecorder = createDiagnosticRecorder({
+    repository: diagnostics,
+    secrets: secretValues(config),
+    // Sensitive mode stays disabled: secrets are always redacted in normal mode.
+    sensitiveMode: false,
+    onError: (error) =>
+      logger.error("diagnostic log append failed", {
+        error: error instanceof Error ? error.message : String(error),
+      }),
   });
   const traceCloudShare = (event: {
     readonly level: "info" | "warn";
@@ -385,6 +406,7 @@ export function getServices(): Services {
     audit.reset();
     eventLog.reset();
     await supportLog.reset();
+    await diagnostics.reset();
     examAuthoringCache.reset();
     webhookIdempotency.reset();
     environmentSimulator?.reset();
@@ -421,6 +443,8 @@ export function getServices(): Services {
     resources,
     eventLog,
     supportLog,
+    diagnostics,
+    diagnosticRecorder,
     adminMonitoringAttempts,
     exams,
     examAuthoringCache,

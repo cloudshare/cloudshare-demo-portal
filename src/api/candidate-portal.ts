@@ -31,6 +31,7 @@ import {
   ScheduleValidationError,
   scheduleExam,
 } from "@/domain/scheduling";
+import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import { correlateEnvironmentForExamAttempt } from "@/domain/environment-correlation";
 import { reconcileExamAttemptCompletion } from "@/domain/exam-attempt-completion";
 import { randomUUID } from "node:crypto";
@@ -53,6 +54,8 @@ interface CustomerRequest {
 interface CandidateRegistrationDeps {
   readonly users: PortalUserProvisioningStore;
   readonly logger: Logger;
+  /** Optional support diagnostics; routes always wire it. Never throws. */
+  readonly diagnostics?: DiagnosticRecorder;
 }
 
 interface CandidateExamCatalogDeps {
@@ -438,6 +441,9 @@ async function registerCandidateFromBody(
     };
   }
 
+  // Attempted email for failure diagnostics; never record the submitted password.
+  const attemptedEmail = (body as { email: string }).email.trim().toLowerCase();
+
   try {
     const candidate = await registerCandidate(deps, {
       firstName: (body as { firstName: string }).firstName,
@@ -446,6 +452,18 @@ async function registerCandidateFromBody(
       password: (body as { password: string }).password,
       customerId: scope.customerId,
       customerSlug: scope.customerSlug,
+    });
+
+    await deps.diagnostics?.record({
+      level: "info",
+      source: "candidate-portal",
+      operation: "candidate.account.create",
+      outcome: "success",
+      customerId: candidate.customerId,
+      actor: { type: "candidate", id: candidate.id, email: candidate.email },
+      subject: { type: "candidate", id: candidate.id },
+      candidateEmail: candidate.email,
+      message: "Candidate account created",
     });
 
     return {
@@ -461,6 +479,25 @@ async function registerCandidateFromBody(
       },
     };
   } catch (error) {
+    if (
+      error instanceof PortalRegistrationValidationError ||
+      error instanceof PortalCustomerNotFoundError ||
+      error instanceof PortalUserAlreadyExistsError
+    ) {
+      await deps.diagnostics?.record({
+        level: "warn",
+        source: "candidate-portal",
+        operation: "candidate.account.create",
+        outcome: "failure",
+        customerId: scope.customerId ?? null,
+        actor: { type: "candidate", email: attemptedEmail },
+        subject: { type: "candidate" },
+        candidateEmail: attemptedEmail,
+        message: `Candidate account creation failed: ${error.name}`,
+        details: { reason: error.name },
+      });
+    }
+
     if (
       error instanceof PortalRegistrationValidationError ||
       error instanceof PortalCustomerNotFoundError

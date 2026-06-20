@@ -12,7 +12,7 @@ export async function POST() {
 
   const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
   await handlePortalLogout(
-    { portalAuth: services.portalAuth },
+    { portalAuth: services.portalAuth, diagnostics: services.diagnosticRecorder },
     { sessionId },
   );
 

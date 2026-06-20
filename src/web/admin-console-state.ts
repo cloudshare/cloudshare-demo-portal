@@ -11,6 +11,7 @@ export type AdminTab =
   | "monitoring"
   | "audit"
   | "events"
+  | "diagnostics"
   | "support"
   | "resources";
 
@@ -21,6 +22,7 @@ export const ADMIN_TABS: readonly AdminTab[] = [
   "monitoring",
   "audit",
   "events",
+  "diagnostics",
   "support",
   "resources",
 ];
@@ -67,6 +69,8 @@ export function getAdminTabLabel(tab: AdminTab): string {
       return "Audit Trail";
     case "events":
       return "Event Log";
+    case "diagnostics":
+      return "Diagnostic Log";
     case "support":
       return "Support Workbench";
     case "resources":

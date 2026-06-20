@@ -29,7 +29,7 @@ export async function POST(request: Request) {
   }
 
   const response = await handlePortalLogin(
-    { portalAuth: services.portalAuth },
+    { portalAuth: services.portalAuth, diagnostics: services.diagnosticRecorder },
     { body },
   );
 
