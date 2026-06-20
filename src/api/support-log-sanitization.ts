@@ -8,9 +8,18 @@ const UNTRUSTED_WEBHOOK_MESSAGES = new Set([
 
 export function sanitizeSupportLogRecords(
   records: readonly SupportLogRecord[],
+  options: { readonly customerId?: string } = {},
 ): SupportLogRecord[] {
-  const trustedWebhookBodyKeys = collectTrustedWebhookBodyKeys(records);
-  return records.map((record) => sanitizeSupportLogRecord(record, trustedWebhookBodyKeys));
+  const customerId = options.customerId;
+  const visibleRecords = customerId
+    ? records.filter((record) => isVisibleToSupportWorkbenchCustomer(record, customerId))
+    : records;
+  const trustedWebhookBodyKeys = collectTrustedWebhookBodyKeys(
+    customerId
+      ? visibleRecords.filter((record) => readStringField(record.fields, "customerId") === customerId)
+      : visibleRecords,
+  );
+  return visibleRecords.map((record) => sanitizeSupportLogRecord(record, trustedWebhookBodyKeys));
 }
 
 export function sanitizeSupportLogRecord(

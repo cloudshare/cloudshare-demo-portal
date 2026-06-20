@@ -17,7 +17,7 @@ export async function GET(request: Request) {
   const query = Object.fromEntries(url.searchParams.entries());
   const response = await handleGetSupportLog(
     { supportLog: services.supportLog, logger: services.logger },
-    { query },
+    { customerId: session.customerId, query },
   );
 
   return NextResponse.json(response.body, { status: response.status });

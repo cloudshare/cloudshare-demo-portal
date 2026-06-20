@@ -125,12 +125,13 @@ export interface SupportLogHandlerDeps {
 
 export async function handleGetSupportLog(
   deps: SupportLogHandlerDeps,
-  request: AdminRequest,
+  request: AdminRequest & { readonly customerId?: string },
 ): Promise<AdminResponse> {
   const limitParam = request.query.limit;
   const limit = limitParam ? parseInt(limitParam, 10) : undefined;
   const records = sanitizeSupportLogRecords(
     await deps.supportLog.listAll(limit !== undefined && !isNaN(limit) ? limit : undefined),
+    { customerId: request.customerId },
   );
   return { status: 200, body: { records } };
 }

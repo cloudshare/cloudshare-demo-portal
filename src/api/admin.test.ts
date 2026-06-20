@@ -358,4 +358,87 @@ describe("handleGetSupportLog", () => {
       ],
     });
   });
+
+  it("does not return another customer's trusted webhook raw body", async () => {
+    const heliosBody = "{\"Event\":\"environment.created\",\"Customer\":\"Helios\"}";
+    const otherCustomerBody = "{\"Event\":\"environment.created\",\"Customer\":\"Other\"}";
+
+    const supportLog = makeSupportLog([
+      {
+        timestamp: new Date("2026-06-20T10:00:00.000Z"),
+        level: "info",
+        message: "cloudshare webhook received",
+        fields: {
+          operation: "receive_webhook",
+          integrationSurface: "cloudshare.v3.webhook",
+          customerId: "customer-helios",
+          webhookPathToken: "whk-helios",
+          rawBodySha256: "hash-helios",
+          rawRequestBody: heliosBody,
+        },
+      },
+      {
+        timestamp: new Date("2026-06-20T10:00:01.000Z"),
+        level: "info",
+        message: "cloudshare webhook signature diagnostic",
+        fields: {
+          operation: "receive_webhook",
+          integrationSurface: "cloudshare.v3.webhook",
+          customerId: "customer-helios",
+          webhookPathToken: "whk-helios",
+          rawBodySha256: "hash-helios",
+          signatureMatched: true,
+        },
+      },
+      {
+        timestamp: new Date("2026-06-20T10:01:00.000Z"),
+        level: "info",
+        message: "cloudshare webhook received",
+        fields: {
+          operation: "receive_webhook",
+          integrationSurface: "cloudshare.v3.webhook",
+          customerId: "customer-other",
+          webhookPathToken: "whk-other",
+          rawBodySha256: "hash-other",
+          rawRequestBody: otherCustomerBody,
+        },
+      },
+      {
+        timestamp: new Date("2026-06-20T10:01:01.000Z"),
+        level: "info",
+        message: "cloudshare webhook signature diagnostic",
+        fields: {
+          operation: "receive_webhook",
+          integrationSurface: "cloudshare.v3.webhook",
+          customerId: "customer-other",
+          webhookPathToken: "whk-other",
+          rawBodySha256: "hash-other",
+          signatureMatched: true,
+        },
+      },
+    ]);
+
+    const result = await handleGetSupportLog(
+      { supportLog, logger: makeLogger() },
+      { customerId: "customer-helios", query: {} },
+    );
+
+    expect(result.status).toBe(200);
+    expect(result.body).toEqual({
+      records: [
+        expect.objectContaining({
+          fields: expect.objectContaining({
+            customerId: "customer-helios",
+            rawRequestBody: heliosBody,
+          }),
+        }),
+        expect.objectContaining({
+          fields: expect.objectContaining({
+            customerId: "customer-helios",
+            signatureMatched: true,
+          }),
+        }),
+      ],
+    });
+  });
 });
