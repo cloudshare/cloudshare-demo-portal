@@ -479,24 +479,20 @@ async function registerCandidateFromBody(
       },
     };
   } catch (error) {
-    if (
-      error instanceof PortalRegistrationValidationError ||
-      error instanceof PortalCustomerNotFoundError ||
-      error instanceof PortalUserAlreadyExistsError
-    ) {
-      await deps.diagnostics?.record({
-        level: "warn",
-        source: "candidate-portal",
-        operation: "candidate.account.create",
-        outcome: "failure",
-        customerId: scope.customerId ?? null,
-        actor: { type: "candidate", email: attemptedEmail },
-        subject: { type: "candidate" },
-        candidateEmail: attemptedEmail,
-        message: `Candidate account creation failed: ${error.name}`,
-        details: { reason: error.name },
-      });
-    }
+    // Record every failure — including unexpected store errors — so the support
+    // log explains the failures it most needs to. Never log the password.
+    await deps.diagnostics?.record({
+      level: "warn",
+      source: "candidate-portal",
+      operation: "candidate.account.create",
+      outcome: "failure",
+      customerId: scope.customerId ?? null,
+      actor: { type: "candidate", email: attemptedEmail },
+      subject: { type: "candidate" },
+      candidateEmail: attemptedEmail,
+      message: `Candidate account creation failed: ${error instanceof Error ? error.name : "unexpected error"}`,
+      details: { reason: error instanceof Error ? error.name : "unexpected_error" },
+    });
 
     if (
       error instanceof PortalRegistrationValidationError ||

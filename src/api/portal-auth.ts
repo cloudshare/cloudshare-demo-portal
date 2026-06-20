@@ -84,22 +84,32 @@ export async function handlePortalLogin(
       session,
     };
   } catch (error) {
-    if (
+    const isInvalidCreds =
       error instanceof InvalidPortalCredentialsError ||
-      (error instanceof Error && error.name === "InvalidPortalCredentialsError")
-    ) {
-      // Failed attempt: identity is unverified, so the actor is anonymous and we
-      // record only the attempted email — never the submitted password.
-      await deps.diagnostics?.record({
-        level: "warn",
-        source: AUTH_SOURCE,
-        operation: "portal.login",
-        outcome: "failure",
-        actor: { type: "anonymous", email },
-        message: "Portal login failed: invalid credentials",
-        details: { reason: "invalid_credentials" },
-      });
-      return { status: 401, body: { error: error.message } };
+      (error instanceof Error && error.name === "InvalidPortalCredentialsError");
+
+    // Always record the failed attempt. Identity is unverified, so the actor is
+    // anonymous and we record only the attempted email — never the password.
+    await deps.diagnostics?.record({
+      level: "warn",
+      source: AUTH_SOURCE,
+      operation: "portal.login",
+      outcome: "failure",
+      actor: { type: "anonymous", email },
+      message: isInvalidCreds
+        ? "Portal login failed: invalid credentials"
+        : "Portal login failed: unexpected error",
+      details: {
+        reason: isInvalidCreds
+          ? "invalid_credentials"
+          : error instanceof Error
+            ? error.name
+            : "unexpected_error",
+      },
+    });
+
+    if (isInvalidCreds) {
+      return { status: 401, body: { error: (error as Error).message } };
     }
     throw error;
   }
@@ -137,12 +147,29 @@ export async function handlePortalLogout(
 ): Promise<PortalAuthResponse> {
   // Resume before signing out so the diagnostic entry carries the actor's
   // identity (role, customer, email) rather than just an opaque session id.
-  const session = request.sessionId
-    ? await deps.portalAuth.resume(request.sessionId)
-    : null;
+  let session: PortalSession | null = null;
+  try {
+    session = request.sessionId
+      ? await deps.portalAuth.resume(request.sessionId)
+      : null;
 
-  if (request.sessionId) {
-    await deps.portalAuth.signOut(request.sessionId);
+    if (request.sessionId) {
+      await deps.portalAuth.signOut(request.sessionId);
+    }
+  } catch (error) {
+    await deps.diagnostics?.record({
+      level: "warn",
+      source: AUTH_SOURCE,
+      operation: "portal.logout",
+      outcome: "failure",
+      customerId: session?.customerId ?? null,
+      actor: session
+        ? { type: actorTypeForRole(session.role), id: session.userId, email: session.email }
+        : { type: "anonymous" },
+      message: "Portal logout failed",
+      details: { reason: error instanceof Error ? error.name : "unexpected_error" },
+    });
+    throw error;
   }
 
   await deps.diagnostics?.record({

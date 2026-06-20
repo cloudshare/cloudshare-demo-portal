@@ -14,8 +14,6 @@ import {
  * JSON-string search); only genuinely free-form structures are JSON-encoded.
  */
 
-let inMemorySeq = 0;
-
 function materialise(
   input: DiagnosticLogEntryInput,
   id: string,
@@ -60,10 +58,11 @@ export function createInMemoryDiagnosticLogRepository(): DiagnosticLogRepository
   reset(): void;
 } {
   let entries: DiagnosticLogEntry[] = [];
+  let seq = 0;
 
   return {
     async append(input: DiagnosticLogEntryInput): Promise<DiagnosticLogEntry> {
-      const id = `diag-${++inMemorySeq}`;
+      const id = `diag-${++seq}`;
       const entry = materialise(input, id, input.occurredAt ?? new Date());
       entries.push(entry);
       return entry;

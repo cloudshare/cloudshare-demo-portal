@@ -47,6 +47,23 @@ async function adminAuth() {
   });
 }
 
+async function candidateAuth() {
+  const passwordHash = await hashPassword("correct-horse-battery-staple");
+  return createPortalAuthenticator({
+    users: createInMemoryPortalUserStore([
+      {
+        id: "cand-1",
+        customerId: "customer-helios",
+        email: "candidate@helioscx.demo",
+        passwordHash,
+        role: "candidate",
+      },
+    ]),
+    sessions: createInMemoryPortalSessionStore(),
+    newSessionId: () => "portal-session-cand",
+  });
+}
+
 /** Minimal provisioning store for registration emission tests. */
 function inMemoryProvisioningStore(): PortalUserProvisioningStore {
   const byEmail = new Map<string, PortalUserRecord>();
@@ -84,6 +101,22 @@ describe("portal login diagnostics", () => {
       outcome: "success",
       customerId: "customer-helios",
       actor: { type: "admin", id: "user-1", email: "admin@helioscx.demo" },
+    });
+  });
+
+  it("tags a candidate login with the candidate actor type and candidate email", async () => {
+    const { repository, recorder } = diagnosticsHarness();
+    await handlePortalLogin(
+      { portalAuth: await candidateAuth(), diagnostics: recorder },
+      { body: { email: "candidate@helioscx.demo", password: "correct-horse-battery-staple" } },
+    );
+
+    const [entry] = await repository.query({ customerId: "customer-helios" });
+    expect(entry).toMatchObject({
+      operation: "portal.login",
+      outcome: "success",
+      actor: { type: "candidate", id: "cand-1", email: "candidate@helioscx.demo" },
+      candidateEmail: "candidate@helioscx.demo",
     });
   });
 
@@ -125,6 +158,37 @@ describe("portal logout diagnostics", () => {
       customerId: "customer-helios",
       actor: { type: "admin", email: "admin@helioscx.demo" },
     });
+  });
+
+  it("emits a failure entry and rethrows when sign-out fails", async () => {
+    const { repository, recorder } = diagnosticsHarness();
+    const portalAuth = {
+      async signIn() {
+        throw new Error("unused");
+      },
+      async resume() {
+        return {
+          sessionId: "s1",
+          userId: "user-1",
+          customerId: "customer-helios",
+          role: "admin" as const,
+          email: "admin@helioscx.demo",
+          firstName: null,
+          lastName: null,
+          issuedAtMs: 0,
+        };
+      },
+      async signOut() {
+        throw new Error("session store offline");
+      },
+    };
+
+    await expect(
+      handlePortalLogout({ portalAuth, diagnostics: recorder }, { sessionId: "s1" }),
+    ).rejects.toThrow("session store offline");
+
+    const logout = (await repository.query()).find((e) => e.operation === "portal.logout");
+    expect(logout).toMatchObject({ outcome: "failure", customerId: "customer-helios" });
   });
 });
 
@@ -173,6 +237,31 @@ describe("candidate account creation diagnostics", () => {
       operation: "candidate.account.create",
       candidateEmail: "pat@example.com",
     });
+  });
+});
+
+describe("recorder → repository redaction (end to end)", () => {
+  it("persists a redacted entry so no secret survives to the read model", async () => {
+    const repository = createInMemoryDiagnosticLogRepository();
+    const recorder = createDiagnosticRecorder({
+      repository,
+      secrets: ["sk-live-supersecret"],
+    });
+
+    await recorder.record({
+      source: "integration",
+      operation: "cloudshare.read",
+      outcome: "success",
+      message: "used sk-live-supersecret",
+      customerId: "customer-a",
+      details: { apiKey: "sk-live-supersecret", note: "fine" },
+      request: { headers: { authorization: "Bearer sk-live-supersecret" } },
+    });
+
+    const [entry] = await repository.query({ customerId: "customer-a" });
+    expect(JSON.stringify(entry)).not.toContain("sk-live-supersecret");
+    expect(entry.message).toBe("used [REDACTED]");
+    expect(entry.details).toMatchObject({ apiKey: "[REDACTED]", note: "fine" });
   });
 });
 
