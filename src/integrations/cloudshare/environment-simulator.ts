@@ -80,12 +80,26 @@ export function createCloudShareEnvironmentSimulator(opts: {
         statusAfter(event, statusByExternalId.get(environmentExternalId)),
       );
 
-      // PascalCase wire field names, matching the real CloudShare payload the
-      // receiver's Zod schema expects.
+      // Live CloudShare v3 webhook shape: top-level metadata plus event data
+      // nested under Payload as a JSON string.
       const rawBody = JSON.stringify({
         Event: event,
-        EnvironmentExternalId: environmentExternalId,
         CreatedAt: at.toISOString(),
+        CreatedById: "simulator-user",
+        CreatedByEmail: "simulator@certalis.demo",
+        Attempt: 1,
+        Payload: JSON.stringify({
+          EnvironmentId: environmentExternalId,
+          EnvironmentExternalId: null,
+          EnvironmentName: "Simulated Environment",
+          BlueprintId: "bp-sim",
+          BlueprintName: "Simulated Blueprint",
+          PolicyId: "policy-sim",
+          PolicyName: "Simulated Policy",
+          OwnerEmail: "candidate@example.com",
+          Cloud: ["cloudshare"],
+          RegionId: "region-1",
+        }),
       });
       return { rawBody, signature: computeWebhookSignature(rawBody, opts.secret) };
     },

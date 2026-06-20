@@ -34,12 +34,17 @@ describe("admin CloudShare route", () => {
   it("saves the Helios CX CloudShare Connection through the admin API route", async () => {
     const save = vi.fn(async (connection) => ({
       ...connection,
+      webhookPathToken: "whk-helios",
       connectedAt: new Date("2026-06-13T20:30:00.000Z"),
       verifiedAt: null,
     }));
 
     mockGetServices.mockReturnValue({
-      cloudshareConnections: { save, findByCustomerId: vi.fn().mockResolvedValue(null) },
+      cloudshareConnections: {
+        save,
+        findByCustomerId: vi.fn().mockResolvedValue(null),
+        findByWebhookPathToken: vi.fn(),
+      },
       cloudshareClientFactory: {},
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
     });
@@ -67,6 +72,8 @@ describe("admin CloudShare route", () => {
       hasConnection: true,
       connectedAt: "2026-06-13T20:30:00.000Z",
       verifiedAt: null,
+      webhookPathToken: "whk-helios",
+      webhookPath: "/api/webhooks/cloudshare/whk-helios",
     });
     expect(save).toHaveBeenCalledWith({
       customerId: "customer-helios",
@@ -82,6 +89,7 @@ describe("admin CloudShare route", () => {
       apiId: "api-id",
       apiKey: "api-key",
       webhookSecret: "whsec",
+      webhookPathToken: "whk-helios",
       connectedAt: new Date("2026-06-13T20:30:00.000Z"),
       verifiedAt: null,
     };
@@ -100,7 +108,7 @@ describe("admin CloudShare route", () => {
     }));
 
     mockGetServices.mockReturnValue({
-      cloudshareConnections: { save, findByCustomerId },
+      cloudshareConnections: { save, findByCustomerId, findByWebhookPathToken: vi.fn() },
       cloudshareClientFactory: {},
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
     });
@@ -138,12 +146,17 @@ describe("admin CloudShare route", () => {
     };
     const save = vi.fn(async (connection) => ({
       ...connection,
+      webhookPathToken: "whk-helios",
       connectedAt: new Date("2026-06-13T20:30:00.000Z"),
       verifiedAt: null,
     }));
 
     mockGetServices.mockReturnValue({
-      cloudshareConnections: { save, findByCustomerId: vi.fn().mockResolvedValue(null) },
+      cloudshareConnections: {
+        save,
+        findByCustomerId: vi.fn().mockResolvedValue(null),
+        findByWebhookPathToken: vi.fn(),
+      },
       cloudshareClientFactory: {},
       examAuthoringCache: cache,
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
@@ -173,7 +186,11 @@ describe("admin CloudShare route", () => {
 
   it("rejects anonymous admin save attempts", async () => {
     mockGetServices.mockReturnValue({
-      cloudshareConnections: { save: vi.fn(), findByCustomerId: vi.fn().mockResolvedValue(null) },
+      cloudshareConnections: {
+        save: vi.fn(),
+        findByCustomerId: vi.fn().mockResolvedValue(null),
+        findByWebhookPathToken: vi.fn(),
+      },
       cloudshareClientFactory: {},
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
     });

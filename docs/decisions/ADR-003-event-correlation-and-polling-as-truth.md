@@ -5,9 +5,10 @@ assumed by `webhooks.ts` / `labs.ts`.
 
 ## Decision
 
-The CloudShare environment webhook payload carries CloudShare's own **environmentId**, an event
-type, and a timestamp — but **no reference to the experience/training** it belongs to, and the
-portal does **not** mint environment IDs (environments are bound from a standby at login). So:
+The CloudShare v3 environment webhook payload carries an environment identifier, an event type, and
+a timestamp — but **no reference to the experience/training** it belongs to, and the portal does
+**not** mint environment IDs (environments are bound from a standby at login). Live payloads may send
+`Payload` as a JSON string with PascalCase `EnvironmentId` / nullable `EnvironmentExternalId`. So:
 
 - **The portal owns the correlation mapping:** `trainingId ↔ Candidate (email / studentId) ↔
   environmentId`, stored on/around the `LabLaunch`. The `environmentId` is unknown until login.
@@ -22,7 +23,10 @@ portal does **not** mint environment IDs (environments are bound from a standby 
   (CloudShare allows no custom headers, and the body can't be trusted pre-verification). The webhook
   may be registered via the **v3 POST webhook** endpoint during "Connect CloudShare", with manual
   registration as the fallback.
-- Idempotency key becomes `(environmentId, event, createdAt)`.
+- The portal only subscribes to environment lifecycle webhook events:
+  `environment.created`, `environment.suspended`, `environment.resumed`, `environment.deleted`,
+  `environment.extended`, and `environment.archived`.
+- Idempotency key becomes `(customerId, normalisedEnvironmentId, event, createdAt)`.
 
 ## Why
 
@@ -33,8 +37,8 @@ deterministic and tunnel-free — consistent with "fixtures for the show."
 
 ## Consequences
 
-- `webhooks.ts` must drop the `EnvironmentExternalId` payload field in favour of CloudShare's
-  `environmentId`; the receiver gains a Customer-resolution step from the URL.
+- `webhooks.ts` must parse CloudShare's documented v3 envelope and live JSON-string `Payload`
+  variant; the receiver gains a Customer-resolution step from the URL.
 - New gap-report items: webhook payload omits the experience; v3 webhook auto-registration is
   unverified (only done manually to date); list-students is the de-facto correlation source.
 - A long candidate gap can still hit the ~2h suspended-state preservation limit (separate gap).

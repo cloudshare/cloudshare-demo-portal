@@ -17,12 +17,14 @@ function makeConnectionRepo(connection = {
   apiId: "api-id",
   apiKey: "api-key",
   webhookSecret: "whsec",
+  webhookPathToken: "whk-helios",
   connectedAt: new Date("2026-06-13T18:00:00.000Z"),
   verifiedAt: null,
 }): CloudShareConnectionRepository {
   return {
     save: vi.fn(async (input) => ({ ...connection, ...input })),
     findByCustomerId: vi.fn(async () => connection),
+    findByWebhookPathToken: vi.fn(async () => connection),
     markVerified: vi.fn(async () => {}),
   };
 }
@@ -60,6 +62,7 @@ describe("testCloudShareConnection", () => {
     const repo: CloudShareConnectionRepository = {
       save: vi.fn(),
       findByCustomerId: vi.fn(async () => null),
+      findByWebhookPathToken: vi.fn(async () => null),
       markVerified: vi.fn(),
     };
 

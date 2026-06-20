@@ -7,6 +7,7 @@ import {
   ADMIN_SESSION_EXPIRED_MESSAGE,
   type AdminTab,
   beginLatestOnlyRequest,
+  buildWebhookCallbackUrl,
   buildEventRecordRowKey,
   getAdminTabLabel,
   getAllowedRegionValidationMessage,
@@ -33,6 +34,7 @@ interface ConnectionState {
   hasConnection: boolean;
   connectedAt: string | null;
   verifiedAt: string | null;
+  webhookPath: string | null;
 }
 
 interface AuditRecord {
@@ -161,6 +163,32 @@ function formatSupportValue(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
+const WEBHOOK_SUPPORT_FIELD_LABELS: Array<{ key: string; label: string }> = [
+  { key: "webhookEvent", label: "Event" },
+  { key: "webhookCreatedAt", label: "CreatedAt" },
+  { key: "webhookCreatedById", label: "CreatedById" },
+  { key: "webhookCreatedByEmail", label: "CreatedByEmail" },
+  { key: "webhookAttempt", label: "Attempt" },
+  { key: "webhookEnvironmentId", label: "EnvironmentId" },
+  { key: "webhookEnvironmentExternalId", label: "EnvironmentExternalId" },
+  { key: "webhookEnvironmentName", label: "EnvironmentName" },
+  { key: "webhookBlueprintId", label: "BlueprintId" },
+  { key: "webhookBlueprintName", label: "BlueprintName" },
+  { key: "webhookPolicyId", label: "PolicyId" },
+  { key: "webhookPolicyName", label: "PolicyName" },
+  { key: "webhookOwnerEmail", label: "OwnerEmail" },
+  { key: "webhookCloud", label: "Cloud" },
+  { key: "webhookRegionId", label: "RegionId" },
+];
+
+function getWebhookSupportFieldRows(
+  fields: Record<string, unknown>,
+): Array<{ label: string; value: unknown }> {
+  return WEBHOOK_SUPPORT_FIELD_LABELS
+    .map(({ key, label }) => ({ label, value: fields[key] }))
+    .filter(({ value }) => value !== undefined && value !== null && value !== "");
+}
+
 function stripHtmlToText(value: string | null | undefined): string {
   if (!value) {
     return "";
@@ -252,6 +280,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   const [apiId, setApiId] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [webhookSecret, setWebhookSecret] = useState("");
+  const [webhookPublicBaseUrl, setWebhookPublicBaseUrl] = useState("");
   const [connectionMessage, setConnectionMessage] = useState<string | null>(null);
   const [connectionDiagnostic, setConnectionDiagnostic] = useState<ConnectionDiagnostic | null>(null);
   const [connectionCorrelationId, setConnectionCorrelationId] = useState<string | null>(null);
@@ -310,6 +339,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
           hasConnection: data.hasConnection,
           connectedAt: data.connectedAt,
           verifiedAt: data.verifiedAt,
+          webhookPath: data.webhookPath,
         });
       }
     } catch (caughtError) {
@@ -359,6 +389,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
         hasConnection: data.hasConnection,
         connectedAt: data.connectedAt,
         verifiedAt: data.verifiedAt,
+        webhookPath: data.webhookPath,
       });
       setConnectionMessage("CloudShare Connection saved.");
       setApiId("");
@@ -950,6 +981,10 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       ? "Saved, not yet verified"
       : "No CloudShare Connection saved yet";
   const storedSecretPlaceholder = hasSavedConnection ? "********" : "";
+  const webhookCallbackUrl = buildWebhookCallbackUrl(
+    webhookPublicBaseUrl,
+    connection?.webhookPath,
+  );
   const selectedProject = projects.find((item) => item.id === selectedProjectId) ?? null;
   const selectedBlueprint = blueprints.find((item) => item.id === selectedBlueprintId) ?? null;
   const selectedPolicy = policies.find((item) => item.id === selectedPolicyId) ?? null;
@@ -1205,6 +1240,56 @@ export function AdminConsole({ email }: AdminConsoleProps) {
               </span>
             )}
           </label>
+          {hasSavedConnection && (
+            <div style={{ padding: "1rem", background: "#eef6ff", border: "1px solid #c7ddff", borderRadius: "6px", display: "grid", gap: "0.75rem" }}>
+              <div>
+                <strong>CloudShare webhook callback</strong>
+                <p style={{ margin: "0.35rem 0 0", color: "#45556c" }}>
+                  Register this callback manually in CloudShare until v3 webhook auto-registration is live-verified.
+                  Select only the environment lifecycle events.
+                </p>
+              </div>
+              <label style={{ display: "grid", gap: "0.35rem" }}>
+                <span>Public portal base URL</span>
+                <input
+                  value={webhookPublicBaseUrl}
+                  onChange={(event) => setWebhookPublicBaseUrl(event.target.value)}
+                  placeholder="https://<current-public-base-url>"
+                  style={{ padding: "0.7rem", border: "1px solid #aac4ea", borderRadius: "6px" }}
+                />
+              </label>
+              <div style={{ display: "grid", gap: "0.35rem" }}>
+                <span>Portal webhook path</span>
+                <code style={{ display: "block", overflowWrap: "anywhere", background: "#fff", padding: "0.7rem", borderRadius: "6px", border: "1px solid #d8e5f8" }}>
+                  {connection?.webhookPath ?? "Save a CloudShare Connection to generate a path."}
+                </code>
+              </div>
+              <div style={{ display: "grid", gap: "0.35rem" }}>
+                <span>Full CloudShare callback URL</span>
+                <code style={{ display: "block", overflowWrap: "anywhere", background: "#fff", padding: "0.7rem", borderRadius: "6px", border: "1px solid #d8e5f8" }}>
+                  {webhookCallbackUrl ?? "Enter the public base URL above."}
+                </code>
+              </div>
+              <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
+                <button
+                  type="button"
+                  disabled={!webhookCallbackUrl}
+                  onClick={() => {
+                    if (webhookCallbackUrl) {
+                      void navigator.clipboard?.writeText(webhookCallbackUrl);
+                      setConnectionMessage("Webhook callback URL copied.");
+                    }
+                  }}
+                  style={{ padding: "0.55rem 0.9rem" }}
+                >
+                  Copy callback URL
+                </button>
+                <span style={{ color: "#45556c", fontSize: "0.9rem" }}>
+                  Auto-create in CloudShare is deferred until the v3 create request/response is verified.
+                </span>
+              </div>
+            </div>
+          )}
           <div style={{ display: "flex", gap: "0.75rem" }}>
             <button onClick={saveConnection} disabled={loading} style={{ padding: "0.7rem 1rem" }}>
               {loading ? "Saving..." : "Save CloudShare Connection"}
@@ -1861,6 +1946,15 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                   const host = readStringField(record.fields, "host");
                   const requestHeaders = record.fields.requestHeaders;
                   const requestBody = record.fields.requestBody;
+                  const requestBodySummary = record.fields.requestBodySummary;
+                  const rawRequestBody = record.fields.rawRequestBody;
+                  const rawBodySha256 = readStringField(record.fields, "rawBodySha256");
+                  const receivedSignature = readStringField(record.fields, "receivedSignature");
+                  const expectedSignature = readStringField(record.fields, "expectedSignature");
+                  const signatureMatched = record.fields.signatureMatched;
+                  const signatureFailureHint = readStringField(record.fields, "signatureFailureHint");
+                  const storedWebhookSecretLength = readNumberField(record.fields, "storedWebhookSecretLength");
+                  const webhookFieldRows = getWebhookSupportFieldRows(record.fields);
                   const responseHeaders = record.fields.responseHeaders;
                   const responseBody = record.fields.responseBody;
                   const network = record.fields.network;
@@ -1924,6 +2018,67 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                               <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
                                 {formatSupportValue(requestBody)}
                               </pre>
+                            </div>
+                          )}
+                          {webhookFieldRows.length > 0 && (
+                            <div>
+                              <strong>Webhook fields:</strong>
+                              <dl style={{ display: "grid", gridTemplateColumns: "max-content minmax(12rem, 1fr)", columnGap: "0.75rem", rowGap: "0.2rem", margin: "0.2rem 0 0" }}>
+                                {webhookFieldRows.map(({ label, value }) => (
+                                  <div key={label} style={{ display: "contents" }}>
+                                    <dt style={{ fontWeight: 600 }}>{label}</dt>
+                                    <dd style={{ margin: 0, fontFamily: "monospace", overflowWrap: "anywhere" }}>
+                                      {formatSupportValue(value)}
+                                    </dd>
+                                  </div>
+                                ))}
+                              </dl>
+                            </div>
+                          )}
+                          {requestBodySummary !== undefined && (
+                            <div>
+                              <strong>Webhook request body summary:</strong>
+                              <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
+                                {formatSupportValue(requestBodySummary)}
+                              </pre>
+                            </div>
+                          )}
+                          {rawRequestBody !== undefined && (
+                            <div>
+                              <strong>Raw webhook request body used for HMAC:</strong>
+                              <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
+                                {formatSupportValue(rawRequestBody)}
+                              </pre>
+                            </div>
+                          )}
+                          {rawBodySha256 && (
+                            <div>
+                              <strong>Raw body SHA-256:</strong> <span style={{ fontFamily: "monospace" }}>{rawBodySha256}</span>
+                            </div>
+                          )}
+                          {receivedSignature && (
+                            <div>
+                              <strong>Received x-cloudshare-signature:</strong> <span style={{ fontFamily: "monospace" }}>{receivedSignature}</span>
+                            </div>
+                          )}
+                          {expectedSignature && (
+                            <div>
+                              <strong>Expected signature from stored secret:</strong> <span style={{ fontFamily: "monospace" }}>{expectedSignature}</span>
+                            </div>
+                          )}
+                          {typeof storedWebhookSecretLength === "number" && (
+                            <div>
+                              <strong>Stored webhook secret length:</strong> {storedWebhookSecretLength} characters
+                            </div>
+                          )}
+                          {typeof signatureMatched === "boolean" && (
+                            <div>
+                              <strong>Signature matched:</strong> {signatureMatched ? "yes" : "no"}
+                            </div>
+                          )}
+                          {signatureFailureHint && (
+                            <div style={{ color: "#8a5a00" }}>
+                              <strong>Signature diagnostic:</strong> {signatureFailureHint}
                             </div>
                           )}
                           {responseBody !== undefined && (

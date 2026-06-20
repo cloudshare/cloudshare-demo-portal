@@ -143,7 +143,16 @@ const globalForServices = globalThis as unknown as {
 
 export function getServices(): Services {
   if (globalForServices.__portalServices) {
-    return globalForServices.__portalServices;
+    if (isReusableServices(globalForServices.__portalServices)) {
+      return globalForServices.__portalServices;
+    }
+
+    // Next dev hot-reload can preserve the global singleton while module shapes
+    // change. If a required service method is missing, discard the stale instance
+    // instead of mixing new route code with old dependency objects.
+    void globalForServices.__portalServices.prisma.$disconnect();
+    globalForServices.__portalServices.heartbeatAutoSuspend.stop();
+    globalForServices.__portalServices = undefined;
   }
 
   const config = loadConfig(process.env);
@@ -245,7 +254,11 @@ export function getServices(): Services {
   // share one in-memory truth. In live mode the poll and commands hit CloudShare.
   const environmentSimulator =
     config.runtime.mode === "fixture"
-      ? createCloudShareEnvironmentSimulator({ secret: config.secrets.webhookSecret })
+      ? createCloudShareEnvironmentSimulator({
+          secret:
+            config.seed.heliosCloudShareConnection?.webhookSecret ??
+            config.secrets.webhookSecret,
+        })
       : null;
   const environmentSource: EnvironmentStateSource =
     environmentSimulator ?? createCloudShareEnvironmentSource(cloudshare);
@@ -420,4 +433,11 @@ export function getServices(): Services {
   };
   globalForServices.__portalServices = services;
   return services;
+}
+
+function isReusableServices(services: Services): boolean {
+  return (
+    typeof services.cloudshareConnections?.findByWebhookPathToken === "function" &&
+    typeof services.cloudshareClientFactory?.forConnection === "function"
+  );
 }

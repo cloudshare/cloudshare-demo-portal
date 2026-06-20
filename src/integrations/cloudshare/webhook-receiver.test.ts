@@ -7,12 +7,18 @@ const SECRET = "account-webhook-secret";
 
 const body = JSON.stringify({
   Event: "environment.suspended",
-  EnvironmentExternalId: "env-ext-1",
   CreatedAt: "2026-06-08T10:00:00Z",
+  Payload: {
+    environmentExternalId: "env-ext-1",
+  },
 });
 
 function deps() {
-  return { secret: SECRET, idempotency: createInMemoryWebhookIdempotencyStore() };
+  return {
+    secret: SECRET,
+    idempotencyScope: "customer-helios",
+    idempotency: createInMemoryWebhookIdempotencyStore(),
+  };
 }
 
 describe("receiveWebhook", () => {

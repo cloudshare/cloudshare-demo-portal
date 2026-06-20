@@ -23,8 +23,10 @@ import {
  */
 
 export interface ReceiveWebhookDeps {
-  /** Account-level webhook secret (`CLOUDSHARE_WEBHOOK_SECRET`). */
+  /** Account-level webhook secret selected for the resolved Customer. */
   readonly secret: string;
+  /** Customer-specific namespace so two tenants cannot dedupe each other's events. */
+  readonly idempotencyScope: string;
   readonly idempotency: WebhookIdempotencyStore;
 }
 
@@ -52,7 +54,7 @@ export async function receiveWebhook(
     return { kind: "invalid_payload", issues: parsed.issues };
   }
 
-  const idempotencyKey = synthesiseIdempotencyKey(parsed.event);
+  const idempotencyKey = `${deps.idempotencyScope}:${synthesiseIdempotencyKey(parsed.event)}`;
   const isNew = await deps.idempotency.markIfNew(idempotencyKey);
   if (!isNew) {
     return { kind: "duplicate", idempotencyKey };

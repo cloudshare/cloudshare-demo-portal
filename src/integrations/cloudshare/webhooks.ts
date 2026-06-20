@@ -8,13 +8,16 @@ import { z } from "zod";
  * {@link CloudShareEnvironmentEvent}.
  *
  * Signing scheme: HMAC-SHA256 of the *raw* request body, encoded base64, keyed by
- * the account-level webhook secret (`CLOUDSHARE_WEBHOOK_SECRET`). The raw body must
- * be verified before any JSON re-serialisation, which would change the bytes.
+ * the resolved Customer's account-level webhook secret. The raw body must be
+ * verified before any JSON re-serialisation, which would change the bytes.
  *
- * NOTE (assumptions to verify against a live tenant — isolated behind this module):
- *  - The wire field names below (`Event`, `EnvironmentExternalId`, `CreatedAt`) and
- *    the event vocabulary are modelled on the documented environment events. Adjust
- *    only here if a live payload differs; this is tracked in the Slice 12 gap report.
+ * NOTE:
+ *  - The primary shape below follows the live CloudShare v3 Integration Hub webhook
+ *    shape: top-level `Event` + `CreatedAt`, with event-specific data under
+ *    `Payload`. Live deliveries may send `Payload` as a JSON string with PascalCase
+ *    keys, despite the docs presenting it as an object.
+ *  - Only environment lifecycle events are useful to this portal. Other documented
+ *    webhook events, such as class or student events, are rejected at this boundary.
  *  - CloudShare cannot send custom headers and the payload carries no unique event
  *    id, so dedupe uses a key synthesised from (environmentExternalId, Event,
  *    CreatedAt) rather than a header or body id.
@@ -46,11 +49,11 @@ export interface CloudShareEnvironmentEvent {
   readonly createdAt: string;
 }
 
-const webhookPayloadSchema = z.object({
+const documentedWebhookPayloadSchema = z.object({
   Event: z.enum(CLOUDSHARE_ENVIRONMENT_EVENT_TYPES),
-  EnvironmentExternalId: z.string().min(1),
   CreatedAt: z.string().min(1),
-});
+  Payload: z.unknown(),
+}).passthrough();
 
 /** Compute the base64 HMAC-SHA256 signature of a raw body. Used by the simulator. */
 export function computeWebhookSignature(rawBody: string, secret: string): string {
@@ -88,22 +91,67 @@ export function parseWebhookEvent(rawBody: string): ParseWebhookResult {
     return { ok: false, issues: ["body is not valid JSON"] };
   }
 
-  const parsed = webhookPayloadSchema.safeParse(json);
-  if (!parsed.success) {
+  const documented = documentedWebhookPayloadSchema.safeParse(json);
+  if (documented.success) {
+    const payload = parsePayloadObject(documented.data.Payload);
+    if (!payload.ok) {
+      return { ok: false, issues: payload.issues };
+    }
+
+    const environmentExternalId = firstNonEmptyString(
+      payload.value.environmentExternalId,
+      payload.value.EnvironmentExternalId,
+      payload.value.environmentId,
+      payload.value.EnvironmentId,
+    );
+    if (!environmentExternalId) {
+      return {
+        ok: false,
+        issues: ["Payload.environmentExternalId/EnvironmentExternalId/EnvironmentId: Required"],
+      };
+    }
+
     return {
-      ok: false,
-      issues: parsed.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`),
+      ok: true,
+      event: {
+        event: documented.data.Event,
+        environmentExternalId,
+        createdAt: documented.data.CreatedAt,
+      },
     };
   }
 
   return {
-    ok: true,
-    event: {
-      event: parsed.data.Event,
-      environmentExternalId: parsed.data.EnvironmentExternalId,
-      createdAt: parsed.data.CreatedAt,
-    },
+    ok: false,
+    issues: documented.error.issues.map((i) => `${i.path.join(".") || "(root)"}: ${i.message}`),
   };
+}
+
+function parsePayloadObject(
+  payload: unknown,
+): { readonly ok: true; readonly value: Record<string, unknown> } | { readonly ok: false; readonly issues: string[] } {
+  const parsedPayload = typeof payload === "string" ? parseJsonPayloadString(payload) : payload;
+  if (parsedPayload === null || typeof parsedPayload !== "object" || Array.isArray(parsedPayload)) {
+    return { ok: false, issues: ["Payload: Expected an object or JSON object string"] };
+  }
+  return { ok: true, value: parsedPayload as Record<string, unknown> };
+}
+
+function parseJsonPayloadString(payload: string): unknown {
+  try {
+    return JSON.parse(payload);
+  } catch {
+    return null;
+  }
+}
+
+function firstNonEmptyString(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim().length > 0) {
+      return value;
+    }
+  }
+  return null;
 }
 
 /**

@@ -55,6 +55,7 @@ model CloudShareConnection {
   apiIdCiphertext         String
   apiKeyCiphertext        String
   webhookSecretCiphertext String
+  webhookPathToken        String    @unique
   connectedAt             DateTime  @default(now())
   verifiedAt              DateTime?
   updatedAt               DateTime  @updatedAt

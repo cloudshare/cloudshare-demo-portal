@@ -80,12 +80,13 @@ provisioning.
   self-serve rotation — creating a window of exposure in a high-integrity exam context.
 - Because all environments in the account share the same secret, a compromise affects
   every integration simultaneously.
-- The portal stores the secret as `CLOUDSHARE_WEBHOOK_SECRET` and never logs it; if
-  rotation becomes possible, the secret can be swapped via environment variable without
-  code changes.
+- The portal stores the secret on the encrypted per-Customer `CloudShareConnection` and never logs
+  it. The legacy global `CLOUDSHARE_WEBHOOK_SECRET` remains transitional config only; webhook
+  verification now selects the resolved Customer's stored secret.
 
 **Code reference:** `src/integrations/cloudshare/webhooks.ts:11`,
-`src/config/index.ts:27`
+`src/domain/cloudshare-connection.ts`,
+`src/persistence/cloudshare-connection-repository.ts`
 
 ---
 
@@ -300,8 +301,12 @@ inconsistent.
   must schedule provisioning with the correct lead time to avoid either wasted
   resource-hours (provisioning too early) or candidate-facing delays (too late).
 - Known documentation gaps tracked as code assumptions in this codebase:
-  - `x-cloudshare-signature` header name (webhooks) — unverified.
-  - Webhook payload field names (`Event`, `EnvironmentExternalId`, `CreatedAt`) — unverified.
+  - `x-cloudshare-signature` header name (webhooks) — verified live on 2026-06-20.
+    CloudShare signs the exact raw request body with HMAC-SHA256 and sends the
+    base64 MAC in this header. Signature diagnostics must compare against the
+    raw request body bytes as received, not a parsed or re-serialised JSON body.
+  - Webhook payload field names were previously under-specified. Current docs indicate top-level
+    `Event`, `CreatedAt`, `CreatedById`, `CreatedByEmail`, `Attempt`, and nested `Payload`.
   - `GET /environments?externalId=...` path for resolving environment by external ID — unverified.
   - `POST /environments/{id}/actions/suspend` and `…/resume` paths — unverified.
   - Guided Journey progress response field names beyond the currently tolerated
@@ -516,17 +521,28 @@ Requesting participant progress for an experience without a journey likely retur
 
 **Observed behaviour**
 
-The environment webhook carries CloudShare's `environmentId`, the event, and a timestamp, but **no
-reference to the training/experience** it belongs to — and the portal does **not** mint environment
-IDs (an environment is bound from a standby at login). This supersedes the self-set
-`environmentExternalId` correlation assumed in GAP-3 and the current code.
+CloudShare's current webhook docs describe a top-level envelope including `Event`, `CreatedAt`,
+`CreatedById`, `CreatedByEmail`, `Attempt`, and nested `Payload`. For environment events, the
+documented payload keys include `environmentExternalId`, `environmentName`, `blueprintId`,
+`blueprintName`, `policyId`, `policyName`, `ownerEmail`, `cloud`, and `regionId` — but still **no
+reference to the training/experience** the event belongs to.
+
+**Update (2026-06-19, live webhook payload):** a real `environment.created` delivery used the same
+top-level envelope, but sent `Payload` as a JSON string with PascalCase keys. It included
+`EnvironmentId`, `EnvironmentExternalId:null`, `EnvironmentName`, `BlueprintId`, `BlueprintName`,
+`PolicyId`, `PolicyName`, `OwnerEmail`, `Cloud`, and `RegionId`. The portal therefore parses both
+the documented object-style payload and the live string/PascalCase payload, normalising to
+`EnvironmentExternalId` when present and otherwise falling back to `EnvironmentId`.
 
 **Impact on certification use**
 
-- Correlation requires a **portal-owned `trainingId ↔ Candidate ↔ environmentId` mapping**,
-  populated/reconciled via the v4 **list-students-in-a-training** endpoint.
+- The documented environment webhook payload is still insufficient to correlate directly to a portal
+  `ExamAttempt`; correlation still requires a **portal-owned `trainingId ↔ Candidate ↔ environmentId`
+  mapping**, populated/reconciled via the v4 **list-students-in-a-training** endpoint.
 - Webhooks become optional; **polling list-students / `GET environment` is the source of truth**.
-  Idempotency key becomes `(environmentId, event, createdAt)`. See ADR-003.
+  For the v3 webhook body, idempotency is keyed on
+  `(customerId, normalisedEnvironmentId, event, createdAt)`.
+- Slice 9 now parses the documented v3 webhook envelope plus the live JSON-string `Payload` variant.
 
 **Update (2026-06-15, Slice 5 implementation assumption):** the exact response envelope for
 `GET /v4/trainings/{trainingId}/students` is still unverified against the live tenant. The adapter
@@ -562,6 +578,10 @@ semantics:
 This corrects the earlier endpoint assumption and explains why suspend/auto-suspend could fail
 after a successful launch until the candidate's CloudShare `envId` had actually been discovered.
 
+**Update (2026-06-19, docs correction):** current public CloudShare webhook docs point to the v3
+Integration Hub / account-level contract, not a v4 experience-webhook surface. The portal should
+not assume a v4 webhook tied directly to experience creation unless live evidence proves one.
+
 **Update (2026-06-15, live suspend QA on fresh attempts):** `GET /v4/trainings/{trainingId}/students`
 can expose a **pre-join placeholder** participant `envId` before the candidate has actually bound to
 their runnable environment. In the live tenant this appeared as an `ENK...` id with
@@ -590,8 +610,26 @@ have only been created **manually** in the CloudShare portal. Combined with per-
 no custom-header support, the portal needs a **per-Customer webhook URL path** to select the right
 secret, and may auto-register via v3 with a manual fallback.
 
+**Impact on certification use**
+
+- Public CloudShare v3 docs now list `GET /api/v3/webhooks`, `GET /api/v3/webhooks/{id}`,
+  `POST /api/v3/webhooks`, and `DELETE /api/v3/webhooks/{id}` as the current management surface.
+- Slice 9 now persists an opaque per-Customer `webhookPathToken`, and the receiver resolves the
+  Customer from `/api/webhooks/cloudshare/{token}` before HMAC verification.
+- The portal currently accepts only environment lifecycle events:
+  `environment.created`, `environment.suspended`, `environment.resumed`, `environment.deleted`,
+  `environment.extended`, and `environment.archived`. Other documented webhook families are not
+  useful for this slice because they do not drive environment-state reconciliation.
+- Because the CloudShare v3 registration contract is still unverified, the currently supported path
+  is the **manual fallback** documented in `docs/api/cloudshare-webhook-registration.md`: read
+  `webhookPath` from `GET /api/admin/cloudshare`, prepend the current public tunnel or deployment
+  base URL, and register that full callback URL in CloudShare.
+- This keeps webhook setup supportable without hard-coding a temporary tunnel hostname or
+  fabricating an unverified API integration.
+
 **Action required:** verify v3 webhook registration (request/response, project scoping) against a
-live tenant.
+live tenant. If it works, replace the manual-only fallback with a supported admin-triggered
+registration flow and update this entry immediately.
 
 ---
 
