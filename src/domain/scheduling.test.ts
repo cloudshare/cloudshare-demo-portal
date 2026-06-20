@@ -6,6 +6,11 @@ import type { CreateDraftExamInput } from "./exam-catalog";
 import { createDraftExam, publishExam } from "./exam-catalog";
 import { CloudShareProvisioningError, ScheduleValidationError, scheduleExam } from "./scheduling";
 import type { CreateTrainingInput, LabProvisioner } from "./lab-launch";
+import { createDiagnosticRecorder } from "./diagnostic-log";
+import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
+
+const SPONSORED_LINK_URL =
+  "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret-token";
 
 function makeExamInput(overrides: Partial<CreateDraftExamInput> = {}): CreateDraftExamInput {
   return {
@@ -307,6 +312,129 @@ describe("scheduleExam", () => {
       scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
     });
     await expect(launches.findByExamAttemptId("attempt-1")).resolves.toBeNull();
+  });
+
+  it("emits a correlated diagnostic per provisioning step, anchored to the ExamAttempt, with no sponsored-link URL", async () => {
+    const { exams, attempts, launches } = await setup();
+    const repository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository });
+
+    await scheduleExam(
+      {
+        exams,
+        attempts,
+        launches,
+        labs: {
+          ...makeLabs(),
+          async createSponsoredLink() {
+            return { loginUrl: SPONSORED_LINK_URL };
+          },
+        },
+        newId: vi.fn().mockReturnValueOnce("attempt-1").mockReturnValueOnce("launch-1"),
+        now: () => new Date("2026-06-15T10:00:00.000Z"),
+        diagnostics,
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        examId: "exam-1",
+        scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+        correlationId: "corr-1",
+      },
+    );
+
+    // Filter by ExamAttempt ID — proves the first-class filter and that every
+    // step in the thread is anchored to the attempt.
+    const thread = await repository.query({ examAttemptId: "attempt-1" });
+    const ops = thread.map((e) => e.operation).sort();
+    expect(ops).toEqual(
+      [
+        "exam_attempt.schedule",
+        "cloudshare.create_training",
+        "cloudshare.add_participant",
+        "cloudshare.create_sponsored_link",
+        "exam_attempt.provisioned",
+      ].sort(),
+    );
+    for (const entry of thread) {
+      expect(entry).toMatchObject({
+        customerId: "customer-helios",
+        examId: "exam-1",
+        examAttemptId: "attempt-1",
+        correlationId: "corr-1",
+        candidateEmail: "candidate@helioscx.demo",
+        outcome: "success",
+      });
+    }
+    const training = thread.find((e) => e.operation === "cloudshare.create_training");
+    expect(training?.externalIds).toMatchObject({ trainingId: "training-1", blueprintId: "bp-1" });
+    // The sponsored-link bearer credential must never appear in diagnostics.
+    expect(JSON.stringify(thread)).not.toContain(SPONSORED_LINK_URL);
+    expect(JSON.stringify(thread)).not.toContain("ClassSponsoredLink");
+  });
+
+  it("records a failure diagnostic for the failing CloudShare op and emits no later steps", async () => {
+    const { exams, attempts, launches } = await setup();
+    const repository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository });
+
+    const cloudShareError = Object.assign(new Error("forbidden"), {
+      name: "CloudShareRequestError",
+      status: 403,
+      context: {
+        integrationSurface: "cloudshare.v4.training.participant",
+        method: "POST",
+        path: "/trainings/training-1/students",
+        responseBody: '{"error":"forbidden"}',
+      },
+    });
+
+    await expect(
+      scheduleExam(
+        {
+          exams,
+          attempts,
+          launches,
+          labs: {
+            ...makeLabs(),
+            async addParticipant() {
+              throw cloudShareError;
+            },
+          },
+          newId: vi.fn().mockReturnValueOnce("attempt-1").mockReturnValueOnce("launch-1"),
+          now: () => new Date("2026-06-15T10:00:00.000Z"),
+          diagnostics,
+        },
+        {
+          customerId: "customer-helios",
+          candidateId: "candidate-1",
+          candidateEmail: "candidate@helioscx.demo",
+          candidateFirstName: "Asha",
+          candidateLastName: "Patel",
+          examId: "exam-1",
+          scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+          correlationId: "corr-1",
+        },
+      ),
+    ).rejects.toBeInstanceOf(CloudShareProvisioningError);
+
+    const thread = await repository.query({ examAttemptId: "attempt-1" });
+    const ops = thread.map((e) => e.operation);
+    expect(ops).toContain("cloudshare.add_participant");
+    expect(ops).not.toContain("cloudshare.create_sponsored_link");
+    expect(ops).not.toContain("exam_attempt.provisioned");
+
+    const failure = thread.find(
+      (e) => e.operation === "cloudshare.add_participant" && e.outcome === "failure",
+    );
+    expect(failure?.details).toMatchObject({
+      failureMode: "http_status",
+      integrationSurface: "cloudshare.v4.training.participant",
+      responseStatus: 403,
+    });
   });
 
   it("rejects non-future schedule times", async () => {

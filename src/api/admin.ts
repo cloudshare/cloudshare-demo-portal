@@ -155,11 +155,13 @@ export async function handleGetDiagnosticLog(
 ): Promise<AdminResponse> {
   const from = parseDate(request.query.from);
   const to = parseDate(request.query.to);
+  const examAttemptId = request.query.examAttemptId?.trim();
   const limitParam = request.query.limit;
   const limit = limitParam ? parseInt(limitParam, 10) : undefined;
 
   const entries = await deps.diagnostics.query({
     customerId: request.customerId,
+    ...(examAttemptId ? { examAttemptId } : {}),
     ...(from ? { from } : {}),
     ...(to ? { to } : {}),
     ...(limit !== undefined && !Number.isNaN(limit) ? { limit } : {}),

@@ -62,6 +62,7 @@ export async function POST(request: Request) {
       connections: services.cloudshareConnections,
       cloudshare: services.cloudshareClientFactory,
       logger: services.logger,
+      diagnostics: services.diagnosticRecorder,
     },
     {
       customerId: session.customerId,

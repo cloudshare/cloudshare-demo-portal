@@ -1,6 +1,46 @@
 import type { ExamRepository } from "./exam-catalog";
 import type { ExamAttempt, ExamAttemptRepository } from "./exam-attempt";
 import type { LabLaunch, LabLaunchRepository, LabProvisioner } from "./lab-launch";
+import type { DiagnosticRecorder } from "./diagnostic-log";
+
+type ProvisioningOperation = "create_training" | "add_participant" | "create_sponsored_link";
+
+const PROVISIONING_SURFACE: Record<ProvisioningOperation, string> = {
+  create_training: "cloudshare.v4.training",
+  add_participant: "cloudshare.v4.training.participant",
+  create_sponsored_link: "cloudshare.v4.training.sponsored_link",
+};
+
+/**
+ * Structural (non-CloudShare-coupled) summary of a provisioning failure cause.
+ * Reads only plain error properties so the domain stays free of integration
+ * imports. The CloudShare adapter already redacts headers/body before placing
+ * them in `context`, and the DiagnosticRecorder redacts again on the way out.
+ */
+function describeProvisioningCause(cause: unknown): Record<string, unknown> {
+  const err = cause as
+    | { name?: string; status?: number; message?: string; context?: Record<string, unknown> }
+    | undefined;
+  const ctx = (err?.context ?? {}) as Record<string, unknown>;
+  const failureMode =
+    err?.name === "CloudShareRequestError"
+      ? "http_status"
+      : err?.name === "CloudShareTransportError"
+        ? "transport"
+        : err?.name === "CloudShareResponseError"
+          ? "unexpected_response"
+          : "unknown";
+  return {
+    failureMode,
+    integrationSurface: ctx.integrationSurface ?? null,
+    method: ctx.method ?? null,
+    path: ctx.path ?? null,
+    responseStatus:
+      typeof err?.status === "number" ? err.status : (ctx.status ?? null),
+    responseBody: ctx.responseBody ?? null,
+    error: cause instanceof Error ? cause.message : String(cause),
+  };
+}
 
 const COLD_START_WARNING_WINDOW_MS = 5 * 60 * 60 * 1000;
 const CLOUDSHARE_TRAINING_NAME_MAX_LENGTH = 100;
@@ -41,6 +81,8 @@ export interface ScheduleExamDeps {
   readonly labs: LabProvisioner;
   readonly newId: () => string;
   readonly now: () => Date;
+  /** Optional support diagnostics. Callers always wire it; recording never throws. */
+  readonly diagnostics?: DiagnosticRecorder;
 }
 
 export interface ScheduleExamInput {
@@ -51,6 +93,8 @@ export interface ScheduleExamInput {
   readonly candidateLastName: string;
   readonly examId: string;
   readonly scheduledFor: Date;
+  /** Correlation id shared with the caller's audit/event-log thread, if any. */
+  readonly correlationId?: string;
 }
 
 export interface ScheduledAttemptSummary {
@@ -91,6 +135,38 @@ export async function scheduleExam(
   };
   await deps.attempts.save(attempt);
 
+  // Shared anchors for every diagnostic in this provisioning thread so support
+  // can trace the ExamAttempt end to end (and filter by it).
+  const anchors = {
+    source: "scheduling",
+    customerId: input.customerId,
+    candidateEmail: input.candidateEmail,
+    examId: exam.id,
+    examAttemptId: attemptId,
+    correlationId: input.correlationId ?? null,
+    subject: { type: "exam_attempt", id: attemptId },
+  } as const;
+  const recordSuccess = (
+    operation: string,
+    message: string,
+    extra?: { externalIds?: Record<string, string>; request?: Record<string, unknown>; response?: Record<string, unknown> },
+  ) =>
+    deps.diagnostics?.record({ ...anchors, level: "info", operation, outcome: "success", message, ...extra });
+  const recordFailure = (op: ProvisioningOperation, cause: unknown, externalIds?: Record<string, string>) =>
+    deps.diagnostics?.record({
+      ...anchors,
+      level: "warn",
+      operation: `cloudshare.${op}`,
+      outcome: "failure",
+      message: `CloudShare ${op.replace(/_/g, " ")} failed`,
+      ...(externalIds ? { externalIds } : {}),
+      details: { attemptedOperation: op, integrationSurface: PROVISIONING_SURFACE[op], ...describeProvisioningCause(cause) },
+    });
+
+  await recordSuccess("exam_attempt.schedule", "ExamAttempt scheduled", {
+    request: { scheduledFor: input.scheduledFor.toISOString() },
+  });
+
   const trainingCreator = deps.labs.createTraining;
   const participantAdder = deps.labs.addParticipant;
   if (!trainingCreator || !participantAdder) {
@@ -119,6 +195,7 @@ export async function scheduleExam(
     });
     trainingId = training.trainingId;
   } catch (cause) {
+    await recordFailure("create_training", cause);
     await deps.attempts.save({ ...attempt, status: "expired" });
     throw new CloudShareProvisioningError("CloudShare training creation failed.", {
       attemptId,
@@ -126,6 +203,19 @@ export async function scheduleExam(
       cause,
     });
   }
+
+  await recordSuccess("cloudshare.create_training", "CloudShare training created", {
+    externalIds: {
+      trainingId,
+      projectId: exam.projectId,
+      blueprintId: exam.blueprintId,
+      policyId: exam.policyId,
+      instructorId: exam.instructorId,
+      regionIds: exam.allowedRegions.map((region) => region.id).join(","),
+    },
+    request: { method: "POST", integrationSurface: PROVISIONING_SURFACE.create_training, path: "/trainings" },
+    response: { trainingId },
+  });
 
   const participant = {
     firstName: input.candidateFirstName.trim(),
@@ -139,6 +229,7 @@ export async function scheduleExam(
       lastName: participant.lastName,
     });
   } catch (cause) {
+    await recordFailure("add_participant", cause, { trainingId });
     await deps.attempts.save({ ...attempt, status: "expired" });
     throw new CloudShareProvisioningError("CloudShare participant registration failed.", {
       attemptId,
@@ -147,6 +238,15 @@ export async function scheduleExam(
       cause,
     });
   }
+
+  await recordSuccess("cloudshare.add_participant", "CloudShare participant added", {
+    externalIds: { trainingId },
+    request: {
+      method: "POST",
+      integrationSurface: PROVISIONING_SURFACE.add_participant,
+      path: `/trainings/${trainingId}/students`,
+    },
+  });
 
   let loginUrl: string;
   try {
@@ -158,6 +258,7 @@ export async function scheduleExam(
     });
     loginUrl = sponsoredLink.loginUrl;
   } catch (cause) {
+    await recordFailure("create_sponsored_link", cause, { trainingId });
     await deps.attempts.save({ ...attempt, status: "expired" });
     throw new CloudShareProvisioningError("CloudShare sponsored-link creation failed.", {
       attemptId,
@@ -166,6 +267,17 @@ export async function scheduleExam(
       cause,
     });
   }
+
+  // Success only — the sponsored-link loginUrl is a bearer credential and is
+  // deliberately NOT recorded in diagnostics (the recorder also redacts it).
+  await recordSuccess("cloudshare.create_sponsored_link", "CloudShare sponsored link created", {
+    externalIds: { trainingId },
+    request: {
+      method: "POST",
+      integrationSurface: PROVISIONING_SURFACE.create_sponsored_link,
+      path: `/trainings/${trainingId}/sponsored-link`,
+    },
+  });
 
   const readyAttempt: ExamAttempt = { ...attempt, status: "ready" };
   const launch: LabLaunch = {
@@ -181,6 +293,11 @@ export async function scheduleExam(
   };
   await deps.attempts.save(readyAttempt);
   await deps.launches.save(launch);
+
+  await recordSuccess("exam_attempt.provisioned", "ExamAttempt provisioned and ready", {
+    externalIds: { trainingId, experienceId: trainingId },
+    response: { attemptStatus: "ready" },
+  });
 
   return {
     attempt: {
