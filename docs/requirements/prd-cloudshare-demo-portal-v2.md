@@ -211,8 +211,10 @@ first-class deliverable.
   list-students is the source of truth; webhooks are an optional tunnel-only hint.** Idempotency key
   = `(customerId, normalisedEnvironmentId, event, createdAt)`.
 - Webhook routing is **per-Customer via an opaque URL path** so the receiver can select the right
-  secret before verifying (no custom headers possible). Webhook registration via the v3 POST
-  endpoint is supported with a manual fallback (unverified — flagged in the gap report). Subscribe
+  secret before verifying (no custom headers possible). Automatic webhook registration via the v3
+  POST endpoint is planned but not shipped in the current slice; manual CloudShare webhook
+  registration remains the supported path until the v3 create request/response is live-verified.
+  Subscribe
   only to environment lifecycle events: `environment.created`, `environment.suspended`,
   `environment.resumed`, `environment.deleted`, `environment.extended`, and `environment.archived`.
 
