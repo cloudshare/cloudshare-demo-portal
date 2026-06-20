@@ -174,17 +174,19 @@ export async function scheduleExam(
     throw new Error("LabProvisioner does not support training scheduling.");
   }
 
+  const trainingTitle = buildCloudShareTrainingName({
+    blueprintName: exam.blueprintName,
+    candidateFirstName: input.candidateFirstName,
+    candidateLastName: input.candidateLastName,
+    candidateEmail: input.candidateEmail,
+    scheduledFor: input.scheduledFor,
+    createdAt,
+  });
+
   let trainingId: string;
   try {
     const training = await trainingCreator({
-      title: buildCloudShareTrainingName({
-        blueprintName: exam.blueprintName,
-        candidateFirstName: input.candidateFirstName,
-        candidateLastName: input.candidateLastName,
-        candidateEmail: input.candidateEmail,
-        scheduledFor: input.scheduledFor,
-        createdAt,
-      }),
+      title: trainingTitle,
       scheduledFor: input.scheduledFor,
       projectId: exam.projectId,
       blueprintId: exam.blueprintId,
@@ -215,7 +217,20 @@ export async function scheduleExam(
       instructorId: exam.instructorId,
       ...(regionIds ? { regionIds } : {}),
     },
-    request: { method: "POST", integrationSurface: PROVISIONING_SURFACE.create_training, path: "/trainings" },
+    request: {
+      method: "POST",
+      integrationSurface: PROVISIONING_SURFACE.create_training,
+      path: "/trainings",
+      body: {
+        title: trainingTitle,
+        scheduledFor: input.scheduledFor.toISOString(),
+        projectId: exam.projectId,
+        blueprintId: exam.blueprintId,
+        policyId: exam.policyId,
+        regionIds: exam.allowedRegions.map((r) => r.id),
+        instructorId: exam.instructorId,
+      },
+    },
     response: { trainingId },
   });
 
@@ -247,6 +262,12 @@ export async function scheduleExam(
       method: "POST",
       integrationSurface: PROVISIONING_SURFACE.add_participant,
       path: `/trainings/${trainingId}/students`,
+      body: {
+        trainingId,
+        email: input.candidateEmail,
+        firstName: participant.firstName,
+        lastName: participant.lastName,
+      },
     },
   });
 
@@ -270,15 +291,20 @@ export async function scheduleExam(
     });
   }
 
-  // Success only — the sponsored-link loginUrl is a bearer credential and is
-  // deliberately NOT recorded in diagnostics (the recorder also redacts it).
   await recordSuccess("cloudshare.create_sponsored_link", "CloudShare sponsored link created", {
     externalIds: { trainingId },
     request: {
       method: "POST",
       integrationSurface: PROVISIONING_SURFACE.create_sponsored_link,
       path: `/trainings/${trainingId}/sponsored-link`,
+      body: {
+        trainingId,
+        email: input.candidateEmail,
+        firstName: participant.firstName,
+        lastName: participant.lastName,
+      },
     },
+    response: { loginUrl },
   });
 
   const readyAttempt: ExamAttempt = { ...attempt, status: "ready" };

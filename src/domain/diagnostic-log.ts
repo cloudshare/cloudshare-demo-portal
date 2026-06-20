@@ -118,8 +118,6 @@ const SENSITIVE_KEY_PATTERNS = [
   "api_key",
   "authorization",
   "credential",
-  "loginurl",
-  "login_url",
   "bearer",
   "hmac",
   "ciphertext",
