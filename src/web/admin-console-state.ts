@@ -68,7 +68,7 @@ export function getAdminTabLabel(tab: AdminTab): string {
     case "events":
       return "Event Log";
     case "support":
-      return "Support Log";
+      return "Support Workbench";
     case "resources":
       return "Resources";
   }

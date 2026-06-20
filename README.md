@@ -282,8 +282,10 @@ path**. The opaque token resolves the Customer before the payload is trusted. Th
 pipeline (`src/api/cloudshare-webhook.ts` → `webhook-receiver.ts`):
 
 1. **Verify** the HMAC-SHA256 (base64) signature over the *raw* body using
-   the resolved Customer's stored webhook secret (constant-time compare). Bad/missing
-   signature → **401**. The signature is read from the `x-cloudshare-signature` header.
+   the resolved Customer's stored webhook secret (constant-time compare). Missing
+   `x-cloudshare-signature` is a deliberate **401** `missing_signature`; a present-but-bad
+   signature is **401** `invalid_signature`. Missing-signature requests do not parse the
+   payload, touch idempotency, or trigger reconcile.
 2. **Validate** the payload with Zod. Live v3 deliveries may send `Payload` as a JSON
    string with PascalCase keys, so the adapter normalises `EnvironmentExternalId` /
    `EnvironmentId` before the domain sees it. Malformed → **400** (logged with issues).
@@ -304,6 +306,11 @@ In demo mode the simulator (`environment-simulator.ts`) is *both* the webhook em
 and the `GET environment` target, from one in-memory truth, so emitted events and
 polled state always agree. Swapping in the live integration changes nothing upstream:
 both implement `EnvironmentStateSource` and produce the identical wire payload.
+
+The admin `Support Workbench` tab now includes a minimal recent-webhook diagnostics view
+for this trust gate. Known Customer diagnostics can show raw webhook/signature material;
+unknown webhook targets expose only safe metadata (path token, byte count, raw-body hash,
+and whether a signature header was present).
 
 > **Assumptions to verify against a live tenant** (isolated behind
 > `src/integrations/cloudshare/webhooks.ts` and `environment.ts`, tracked for the

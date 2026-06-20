@@ -38,6 +38,7 @@ export interface RawWebhookRequest {
 export type WebhookOutcome =
   | { readonly kind: "accepted"; readonly event: CloudShareEnvironmentEvent; readonly idempotencyKey: string }
   | { readonly kind: "duplicate"; readonly idempotencyKey: string }
+  | { readonly kind: "missing_signature" }
   | { readonly kind: "invalid_signature" }
   | { readonly kind: "invalid_payload"; readonly issues: string[] };
 
@@ -45,6 +46,10 @@ export async function receiveWebhook(
   deps: ReceiveWebhookDeps,
   raw: RawWebhookRequest,
 ): Promise<WebhookOutcome> {
+  if (!raw.signature) {
+    return { kind: "missing_signature" };
+  }
+
   if (!verifyWebhookSignature(raw.rawBody, raw.signature, deps.secret)) {
     return { kind: "invalid_signature" };
   }

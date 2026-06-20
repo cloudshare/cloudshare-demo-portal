@@ -62,6 +62,23 @@ interface SupportLogRecord {
   fields: Record<string, unknown>;
 }
 
+interface SupportWorkbenchDiagnostic {
+  timestamp: string;
+  level: "debug" | "info" | "warn" | "error";
+  message: string;
+  operation: string | null;
+  integrationSurface: string | null;
+  customerId: string | null;
+  webhookPathToken: string | null;
+  method: string | null;
+  path: string | null;
+  requestBodyBytes: number | null;
+  rawBodySha256: string | null;
+  signaturePresent: boolean | null;
+  rawRequestBody: string | null;
+  trustGateReason: string | null;
+}
+
 interface ConnectionDiagnostic {
   operation: string;
   integrationSurface: string;
@@ -275,6 +292,9 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   const [auditRecords, setAuditRecords] = useState<AuditRecord[] | null>(null);
   const [eventRecords, setEventRecords] = useState<EventLogRecord[] | null>(null);
   const [supportRecords, setSupportRecords] = useState<SupportLogRecord[] | null>(null);
+  const [supportWorkbenchDiagnostics, setSupportWorkbenchDiagnostics] = useState<
+    SupportWorkbenchDiagnostic[] | null
+  >(null);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [connection, setConnection] = useState<ConnectionState | null>(null);
   const [apiId, setApiId] = useState("");
@@ -517,6 +537,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     if (!background) {
       setLoading(true);
       setError(null);
+      setSupportWorkbenchDiagnostics(null);
     }
     try {
       const res = await fetchAdmin("/api/admin/support-log?limit=200");
@@ -542,8 +563,45 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     }
   }
 
+  async function loadSupportWorkbench(background = false) {
+    if (!background) {
+      setLoading(true);
+      setError(null);
+      setSupportRecords(null);
+    }
+    try {
+      const res = await fetchAdmin("/api/admin/support-workbench");
+      const data = await res.json() as {
+        diagnostics?: SupportWorkbenchDiagnostic[];
+        error?: string;
+      };
+      if (!res.ok) {
+        if (!background) {
+          setError(data.error ?? "Failed to load support workbench");
+        }
+        return;
+      }
+      setSupportWorkbenchDiagnostics(data.diagnostics ?? []);
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
+      if (!background) {
+        setError("Failed to load support workbench");
+      }
+    } finally {
+      if (!background) {
+        setLoading(false);
+      }
+    }
+  }
+
   function onLoadSupportLog() {
     void loadSupportLog();
+  }
+
+  function onLoadSupportWorkbench() {
+    void loadSupportWorkbench();
   }
 
   function resetExamForm(next?: {
@@ -1911,89 +1969,174 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       {tab === "support" && (
         <section>
           <p style={{ color: "#555", marginTop: 0 }}>
-            Structured server logs. All timestamps are ISO 8601 in UTC. Secure values stay redacted.
+            Recent CloudShare webhook trust-gate diagnostics appear first. Structured server logs stay available
+            below. All timestamps are ISO 8601 in UTC. Secure values stay redacted.
           </p>
-          <button onClick={onLoadSupportLog} disabled={loading} style={{ padding: "0.4rem 1rem", marginBottom: "1rem" }}>
-            {loading ? "Loading..." : "Load Support Log"}
-          </button>
-          {supportRecords && (
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
-              <thead>
-                <tr style={{ background: "#f5f5f5" }}>
-                  {["Time (UTC)", "Level", "Operation", "Request", "Result", "Correlation ID", "Details"].map((h) => (
-                    <th key={h} style={{ textAlign: "left", padding: "0.4rem", borderBottom: "1px solid #ddd" }}>
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {supportRecords.length === 0 && (
-                  <tr>
-                    <td colSpan={4} style={{ padding: "0.5rem", color: "#666" }}>
-                      No support log records
-                    </td>
-                  </tr>
+          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "1rem" }}>
+            <button onClick={onLoadSupportWorkbench} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
+              {loading ? "Loading..." : "Load Recent Webhook Diagnostics"}
+            </button>
+            <button onClick={onLoadSupportLog} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
+              {loading ? "Loading..." : "Load Full Support Log"}
+            </button>
+          </div>
+          {supportWorkbenchDiagnostics && (
+            <div style={{ marginBottom: "1.5rem" }}>
+              <h3 style={{ margin: "0 0 0.75rem" }}>Recent Webhook Diagnostics</h3>
+              <div style={{ display: "grid", gap: "0.75rem" }}>
+                {supportWorkbenchDiagnostics.length === 0 && (
+                  <div style={{ color: "#666" }}>No recent CloudShare webhook diagnostics.</div>
                 )}
-                {supportRecords.map((record, index) => {
-                  const operation = readStringField(record.fields, "operation") ?? record.message;
-                  const method = readStringField(record.fields, "method");
-                  const path = readStringField(record.fields, "path");
-                  const responseStatus = readNumberField(record.fields, "responseStatus");
-                  const failureMode = readStringField(record.fields, "failureMode");
-                  const correlationId = readStringField(record.fields, "correlationId");
-                  const integrationSurface = readStringField(record.fields, "integrationSurface");
-                  const host = readStringField(record.fields, "host");
-                  const requestHeaders = record.fields.requestHeaders;
-                  const requestBody = record.fields.requestBody;
-                  const requestBodySummary = record.fields.requestBodySummary;
-                  const rawRequestBody = record.fields.rawRequestBody;
-                  const rawBodySha256 = readStringField(record.fields, "rawBodySha256");
-                  const receivedSignature = readStringField(record.fields, "receivedSignature");
-                  const expectedSignature = readStringField(record.fields, "expectedSignature");
-                  const signatureMatched = record.fields.signatureMatched;
-                  const signatureFailureHint = readStringField(record.fields, "signatureFailureHint");
-                  const storedWebhookSecretLength = readNumberField(record.fields, "storedWebhookSecretLength");
-                  const webhookFieldRows = getWebhookSupportFieldRows(record.fields);
-                  const responseHeaders = record.fields.responseHeaders;
-                  const responseBody = record.fields.responseBody;
-                  const network = record.fields.network;
-                  const tls = record.fields.tls;
-                  const cause = readStringField(record.fields, "cause");
-                  const errorMessage = readStringField(record.fields, "error");
-                  const verifiedAt = readStringField(record.fields, "verifiedAt");
+                {supportWorkbenchDiagnostics.map((diagnostic, index) => (
+                  <div
+                    key={`${diagnostic.timestamp}-${diagnostic.message}-${index}`}
+                    style={{
+                      border: "1px solid #ddd",
+                      borderRadius: "8px",
+                      padding: "0.85rem 1rem",
+                      background: "#fff",
+                    }}
+                  >
+                    <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "0.4rem" }}>
+                      <strong>{diagnostic.message}</strong>
+                      <span style={{ color: "#666" }}>{formatUtcTimestamp(diagnostic.timestamp)}</span>
+                      <span style={{ textTransform: "uppercase", color: diagnostic.level === "warn" ? "#8a5a00" : "#555" }}>
+                        {diagnostic.level}
+                      </span>
+                    </div>
+                    <div style={{ display: "grid", gap: "0.25rem", fontSize: "0.85rem", color: "#444" }}>
+                      <div>
+                        <strong>Request:</strong>{" "}
+                        <span style={{ fontFamily: "monospace" }}>
+                          {diagnostic.method ?? "?"} {diagnostic.path ?? "?"}
+                        </span>
+                      </div>
+                      <div>
+                        <strong>Webhook token:</strong>{" "}
+                        <span style={{ fontFamily: "monospace" }}>{diagnostic.webhookPathToken ?? "-"}</span>
+                      </div>
+                      <div>
+                        <strong>Customer:</strong>{" "}
+                        <span style={{ fontFamily: "monospace" }}>{diagnostic.customerId ?? "-"}</span>
+                      </div>
+                      <div>
+                        <strong>Signature present:</strong>{" "}
+                        {diagnostic.signaturePresent === null ? "-" : diagnostic.signaturePresent ? "yes" : "no"}
+                      </div>
+                      <div>
+                        <strong>Body bytes:</strong> {diagnostic.requestBodyBytes ?? "-"}
+                      </div>
+                      <div>
+                        <strong>Raw body SHA-256:</strong>{" "}
+                        <span style={{ fontFamily: "monospace" }}>{diagnostic.rawBodySha256 ?? "-"}</span>
+                      </div>
+                      {diagnostic.trustGateReason && (
+                        <div style={{ color: "#8a5a00" }}>
+                          <strong>Trust gate:</strong> {diagnostic.trustGateReason}
+                        </div>
+                      )}
+                      {diagnostic.rawRequestBody && (
+                        <div>
+                          <strong>Raw webhook request body used for HMAC:</strong>
+                          <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
+                            {diagnostic.rawRequestBody}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {supportRecords && (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ minWidth: "118rem", width: "100%", borderCollapse: "collapse", fontSize: "0.85rem", tableLayout: "fixed" }}>
+                <colgroup>
+                  <col style={{ width: "17rem" }} />
+                  <col style={{ width: "5rem" }} />
+                  <col style={{ width: "14rem" }} />
+                  <col style={{ width: "18rem" }} />
+                  <col style={{ width: "8rem" }} />
+                  <col style={{ width: "12rem" }} />
+                  <col style={{ width: "44rem" }} />
+                </colgroup>
+                <thead>
+                  <tr style={{ background: "#f5f5f5" }}>
+                    {["Time (UTC)", "Level", "Operation", "Request", "Result", "Correlation ID", "Details"].map((h) => (
+                      <th key={h} style={{ textAlign: "left", padding: "0.4rem", borderBottom: "1px solid #ddd" }}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {supportRecords.length === 0 && (
+                    <tr>
+                      <td colSpan={7} style={{ padding: "0.5rem", color: "#666" }}>
+                        No support log records
+                      </td>
+                    </tr>
+                  )}
+                  {supportRecords.map((record, index) => {
+                    const operation = readStringField(record.fields, "operation") ?? record.message;
+                    const method = readStringField(record.fields, "method");
+                    const path = readStringField(record.fields, "path");
+                    const responseStatus = readNumberField(record.fields, "responseStatus");
+                    const failureMode = readStringField(record.fields, "failureMode");
+                    const correlationId = readStringField(record.fields, "correlationId");
+                    const integrationSurface = readStringField(record.fields, "integrationSurface");
+                    const host = readStringField(record.fields, "host");
+                    const requestHeaders = record.fields.requestHeaders;
+                    const requestBody = record.fields.requestBody;
+                    const requestBodySummary = record.fields.requestBodySummary;
+                    const rawRequestBody = record.fields.rawRequestBody;
+                    const rawBodySha256 = readStringField(record.fields, "rawBodySha256");
+                    const receivedSignature = readStringField(record.fields, "receivedSignature");
+                    const expectedSignature = readStringField(record.fields, "expectedSignature");
+                    const signatureMatched = record.fields.signatureMatched;
+                    const signatureFailureHint = readStringField(record.fields, "signatureFailureHint");
+                    const storedWebhookSecretLength = readNumberField(record.fields, "storedWebhookSecretLength");
+                    const webhookFieldRows = getWebhookSupportFieldRows(record.fields);
+                    const responseHeaders = record.fields.responseHeaders;
+                    const responseBody = record.fields.responseBody;
+                    const network = record.fields.network;
+                    const tls = record.fields.tls;
+                    const cause = readStringField(record.fields, "cause");
+                    const errorMessage = readStringField(record.fields, "error");
+                    const verifiedAt = readStringField(record.fields, "verifiedAt");
 
-                  return (
-                    <tr key={`${record.timestamp}-${record.message}-${index}`} style={{ borderBottom: "1px solid #eee", verticalAlign: "top" }}>
-                      <td style={{ padding: "0.4rem", whiteSpace: "nowrap" }}>
-                        {formatUtcTimestamp(record.timestamp)}
-                      </td>
-                      <td style={{ padding: "0.4rem", textTransform: "uppercase" }}>{record.level}</td>
-                      <td style={{ padding: "0.4rem" }}>
-                        <div>{operation}</div>
-                        {integrationSurface && (
-                          <div style={{ color: "#666", fontSize: "0.75rem" }}>{integrationSurface}</div>
-                        )}
-                      </td>
-                      <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>
-                        {method ?? "?"} {host ? `${host}${path ?? ""}` : (path ?? "?")}
-                      </td>
-                      <td style={{ padding: "0.4rem" }}>
-                        {typeof responseStatus === "number" ? `HTTP ${responseStatus}` : failureMode ?? record.message}
-                        {verifiedAt && (
-                          <div style={{ color: "#666", fontSize: "0.75rem" }}>
-                            Verified at {formatUtcTimestamp(verifiedAt)}
-                          </div>
-                        )}
-                      </td>
-                      <td style={{ padding: "0.4rem", fontFamily: "monospace", fontSize: "0.75rem" }}>
-                        {correlationId ?? "-"}
-                      </td>
-                      <td style={{ padding: "0.4rem", fontSize: "0.75rem", color: "#444" }}>
-                        <div style={{ display: "grid", gap: "0.35rem" }}>
-                          <div>
-                            <strong>Message:</strong> {record.message}
-                          </div>
+                    return (
+                      <tr key={`${record.timestamp}-${record.message}-${index}`} style={{ borderBottom: "1px solid #eee", verticalAlign: "top" }}>
+                        <td style={{ padding: "0.4rem", whiteSpace: "nowrap" }}>
+                          {formatUtcTimestamp(record.timestamp)}
+                        </td>
+                        <td style={{ padding: "0.4rem", textTransform: "uppercase" }}>{record.level}</td>
+                        <td style={{ padding: "0.4rem", overflowWrap: "anywhere" }}>
+                          <div>{operation}</div>
+                          {integrationSurface && (
+                            <div style={{ color: "#666", fontSize: "0.75rem" }}>{integrationSurface}</div>
+                          )}
+                        </td>
+                        <td style={{ padding: "0.4rem", fontFamily: "monospace", overflowWrap: "anywhere", wordBreak: "break-word" }}>
+                          {method ?? "?"} {host ? `${host}${path ?? ""}` : (path ?? "?")}
+                        </td>
+                        <td style={{ padding: "0.4rem", overflowWrap: "anywhere" }}>
+                          {typeof responseStatus === "number" ? `HTTP ${responseStatus}` : failureMode ?? record.message}
+                          {verifiedAt && (
+                            <div style={{ color: "#666", fontSize: "0.75rem" }}>
+                              Verified at {formatUtcTimestamp(verifiedAt)}
+                            </div>
+                          )}
+                        </td>
+                        <td style={{ padding: "0.4rem", fontFamily: "monospace", fontSize: "0.75rem", overflowWrap: "anywhere" }}>
+                          {correlationId ?? "-"}
+                        </td>
+                        <td style={{ padding: "0.4rem", fontSize: "0.75rem", color: "#444", overflowWrap: "anywhere" }}>
+                          <div style={{ display: "grid", gap: "0.35rem" }}>
+                            <div>
+                              <strong>Message:</strong> {record.message}
+                            </div>
                           {errorMessage && (
                             <div>
                               <strong>Error:</strong> {errorMessage}
@@ -2119,7 +2262,8 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                   );
                 })}
               </tbody>
-            </table>
+              </table>
+            </div>
           )}
         </section>
       )}

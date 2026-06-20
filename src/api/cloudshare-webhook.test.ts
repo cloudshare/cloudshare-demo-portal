@@ -164,6 +164,53 @@ describe("handleCloudShareWebhook", () => {
     expect(diagnosticLine).toContain("rawBodySha256");
   });
 
+  it("rejects a missing signature deliberately, does not parse trusted webhook fields, and never reconciles", async () => {
+    const lines: string[] = [];
+    const { reconcile, deps, eventLog } = setup();
+    const rawBody = JSON.stringify({
+      Event: "environment.created",
+      CreatedAt: at.toISOString(),
+      Payload: JSON.stringify({
+        EnvironmentId: "env-1",
+        EnvironmentExternalId: "env-ext-1",
+        OwnerEmail: "owner@example.test",
+      }),
+    });
+
+    const res = await handleCloudShareWebhook(
+      {
+        ...deps,
+        logger: createLogger({ secrets: [], sink: (line) => lines.push(line) }),
+      },
+      {
+        webhookPathToken: "whk-helios",
+        rawBody,
+        signature: null,
+      },
+    );
+
+    expect(res.status).toBe(401);
+    expect(res.body.status).toBe("missing_signature");
+    expect(reconcile).not.toHaveBeenCalled();
+
+    const serialized = lines.join("\n");
+    expect(serialized).toContain("cloudshare webhook rejected: missing signature");
+    expect(serialized).toContain('"signaturePresent":false');
+    expect(serialized).toContain(`"rawRequestBody":${JSON.stringify(rawBody)}`);
+    expect(serialized).not.toContain("cloudshare webhook received");
+    expect(serialized).not.toContain('"webhookEnvelope"');
+    expect(serialized).not.toContain('"webhookPayload"');
+    expect(serialized).not.toContain('"webhookEvent"');
+
+    await expect(eventLog.listAll()).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "cloudshare.webhook.missing_signature",
+        }),
+      ]),
+    );
+  });
+
   it("does not log raw request bodies for unknown webhook targets", async () => {
     const lines: string[] = [];
     const { deps } = setup();
@@ -187,6 +234,36 @@ describe("handleCloudShareWebhook", () => {
 
     const serialized = lines.join("\n");
     expect(serialized).toContain("cloudshare webhook rejected: unknown webhook target");
+    expect(serialized).not.toContain("rawRequestBody");
+    expect(serialized).not.toContain("must-not-be-logged");
+  });
+
+  it("logs only safe metadata for an unknown webhook target with a missing signature", async () => {
+    const lines: string[] = [];
+    const { deps } = setup();
+    const rawBody = JSON.stringify({
+      Event: "environment.created",
+      bearerToken: "must-not-be-logged",
+      Payload: JSON.stringify({ EnvironmentId: "env-1" }),
+    });
+
+    await handleCloudShareWebhook(
+      {
+        ...deps,
+        logger: createLogger({ secrets: [], sink: (line) => lines.push(line) }),
+      },
+      {
+        webhookPathToken: "unknown-token",
+        rawBody,
+        signature: null,
+      },
+    );
+
+    const serialized = lines.join("\n");
+    expect(serialized).toContain("cloudshare webhook rejected: unknown webhook target");
+    expect(serialized).toContain('"signaturePresent":false');
+    expect(serialized).toContain('"requestBodyBytes"');
+    expect(serialized).toContain('"rawBodySha256"');
     expect(serialized).not.toContain("rawRequestBody");
     expect(serialized).not.toContain("must-not-be-logged");
   });
