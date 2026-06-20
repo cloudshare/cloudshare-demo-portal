@@ -97,11 +97,15 @@ export interface AdminMonitoringView {
   readonly history: readonly MonitoringAttemptView[];
 }
 
-export function buildAdminMonitoringView(input: {
+export interface BuildAdminMonitoringInput {
   readonly attempts: readonly MonitoringAttemptRecord[];
   readonly auditRecords: readonly AuditRecord[];
   readonly eventLog: readonly EventLogRecord[];
-}): AdminMonitoringView {
+}
+
+export function buildMonitoringAttemptViews(
+  input: BuildAdminMonitoringInput,
+): readonly MonitoringAttemptView[] {
   const attemptsById = new Set(input.attempts.map((attempt) => attempt.id));
   const auditByAttemptId = groupBy(input.auditRecords, (record) => record.examAttemptId);
   const failureEventsByAttemptId = groupBy(
@@ -118,6 +122,12 @@ export function buildAdminMonitoringView(input: {
         failureEventsByAttemptId.get(attempt.id) ?? [],
       ),
     );
+
+  return attemptViews;
+}
+
+export function buildAdminMonitoringView(input: BuildAdminMonitoringInput): AdminMonitoringView {
+  const attemptViews = buildMonitoringAttemptViews(input);
 
   return {
     summary: {

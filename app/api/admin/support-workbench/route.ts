@@ -16,8 +16,14 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const query = Object.fromEntries(url.searchParams.entries());
   const response = await handleGetSupportWorkbench(
-    { supportLog: services.supportLog, logger: services.logger },
-    { query },
+    {
+      attempts: services.adminMonitoringAttempts,
+      audit: services.audit,
+      eventLog: services.eventLog,
+      supportLog: services.supportLog,
+      logger: services.logger,
+    },
+    { customerId: session.customerId, query },
   );
 
   return NextResponse.json(response.body, { status: response.status });

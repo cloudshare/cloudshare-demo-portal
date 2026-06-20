@@ -7,6 +7,7 @@ import {
   ADMIN_SESSION_EXPIRED_MESSAGE,
   type AdminTab,
   beginLatestOnlyRequest,
+  buildSupportWorkbenchQuery,
   buildWebhookCallbackUrl,
   buildEventRecordRowKey,
   getAdminTabLabel,
@@ -16,6 +17,7 @@ import {
   isAdminSessionExpiredStatus,
   isLatestOnlyResponse,
   reconcileAllowedRegionIds,
+  SUPPORT_WORKBENCH_DEFAULT_LIMIT,
   shouldClearAdminBannerOnTabChange,
   shouldShowCandidateProvisioning,
 } from "./admin-console-state";
@@ -77,6 +79,40 @@ interface SupportWorkbenchDiagnostic {
   signaturePresent: boolean | null;
   rawRequestBody: string | null;
   trustGateReason: string | null;
+}
+
+interface SupportWorkbenchResponseBody {
+  summary: {
+    scheduled: number;
+    ready: number;
+    inProgress: number;
+    suspended: number;
+    completed: number;
+    expired: number;
+  };
+  currentQueues: {
+    scheduled: MonitoringAttempt[];
+    ready: MonitoringAttempt[];
+    inProgress: MonitoringAttempt[];
+    suspended: MonitoringAttempt[];
+  };
+  matchingAttempts: MonitoringAttempt[];
+  meta: {
+    totalMatchingAttempts: number;
+    limit: number;
+    returnedAttempts: number;
+    defaultLimitApplied: boolean;
+  };
+  diagnostics: SupportWorkbenchDiagnostic[];
+}
+
+interface SupportWorkbenchFilterState {
+  candidate: string;
+  examId: string;
+  status: string;
+  scheduledFrom: string;
+  scheduledTo: string;
+  limit: string;
 }
 
 interface ConnectionDiagnostic {
@@ -253,6 +289,96 @@ function formatTimelineEntry(entry: MonitoringTimelineEntry): string {
   return `${attemptedOperation}${status}`.trim();
 }
 
+function renderAttemptCollection(
+  label: string,
+  attempts: readonly MonitoringAttempt[],
+  emptyMessage: string,
+) {
+  return (
+    <div key={label} style={{ background: "#f7f7f8", borderRadius: "8px", padding: "1rem" }}>
+      <h2 style={{ marginTop: 0, marginBottom: "0.75rem", fontSize: "1rem" }}>
+        {label} ({attempts.length})
+      </h2>
+      {attempts.length === 0 ? (
+        <p style={{ margin: 0, color: "#666" }}>{emptyMessage}</p>
+      ) : (
+        <div style={{ display: "grid", gap: "0.75rem" }}>
+          {attempts.map((attempt) => (
+            <details
+              key={attempt.id}
+              style={{
+                background: "#fff",
+                border: "1px solid #e5e7eb",
+                borderRadius: "8px",
+                padding: "0.75rem 0.9rem",
+              }}
+            >
+              <summary style={{ cursor: "pointer", fontWeight: 600 }}>
+                {attempt.candidateName} · {attempt.examTitle} ·{" "}
+                {attempt.result ? formatMonitoringResult(attempt.result) : formatAttemptStatus(attempt.status)}
+              </summary>
+              <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.75rem", fontSize: "0.9rem" }}>
+                <div>Candidate: {attempt.candidateEmail}</div>
+                <div>Status: {formatAttemptStatus(attempt.status)}</div>
+                <div>Scheduled (UTC): {formatUtcTimestamp(attempt.scheduledFor)}</div>
+                <div>Training ID: {attempt.trainingId ?? "-"}</div>
+                <div>Environment: {attempt.environmentExternalId ?? "-"}</div>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
+                    <thead>
+                      <tr style={{ background: "#f5f5f5" }}>
+                        {["Time", "Kind", "Event", "Outcome", "Details"].map((heading) => (
+                          <th
+                            key={heading}
+                            style={{ textAlign: "left", padding: "0.35rem", borderBottom: "1px solid #ddd" }}
+                          >
+                            {heading}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {attempt.timeline.length === 0 && (
+                        <tr>
+                          <td colSpan={5} style={{ padding: "0.4rem", color: "#666" }}>
+                            No timeline entries recorded.
+                          </td>
+                        </tr>
+                      )}
+                      {attempt.timeline.map((entry, index) => (
+                        <tr
+                          key={`${attempt.id}-${entry.occurredAt}-${entry.kind}-${index}`}
+                          style={{ borderBottom: "1px solid #eee", verticalAlign: "top" }}
+                        >
+                          <td style={{ padding: "0.35rem", whiteSpace: "nowrap" }}>
+                            {formatUtcTimestamp(entry.occurredAt)}
+                          </td>
+                          <td style={{ padding: "0.35rem" }}>{entry.kind}</td>
+                          <td style={{ padding: "0.35rem" }}>
+                            {entry.kind === "audit" ? entry.action : entry.eventType}
+                          </td>
+                          <td style={{ padding: "0.35rem" }}>
+                            {entry.kind === "audit"
+                              ? entry.outcome
+                              : (typeof entry.responseStatus === "number"
+                                ? `HTTP ${entry.responseStatus}`
+                                : entry.failureMode ?? "-")}
+                          </td>
+                          <td style={{ padding: "0.35rem", color: "#444" }}>{formatTimelineEntry(entry)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </details>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 class AdminSessionExpiredError extends Error {
   constructor() {
     super(ADMIN_SESSION_EXPIRED_MESSAGE);
@@ -292,9 +418,15 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   const [auditRecords, setAuditRecords] = useState<AuditRecord[] | null>(null);
   const [eventRecords, setEventRecords] = useState<EventLogRecord[] | null>(null);
   const [supportRecords, setSupportRecords] = useState<SupportLogRecord[] | null>(null);
-  const [supportWorkbenchDiagnostics, setSupportWorkbenchDiagnostics] = useState<
-    SupportWorkbenchDiagnostic[] | null
-  >(null);
+  const [supportWorkbench, setSupportWorkbench] = useState<SupportWorkbenchResponseBody | null>(null);
+  const [supportCandidateFilter, setSupportCandidateFilter] = useState("");
+  const [supportExamFilter, setSupportExamFilter] = useState("");
+  const [supportStatusFilter, setSupportStatusFilter] = useState("");
+  const [supportScheduledFromFilter, setSupportScheduledFromFilter] = useState("");
+  const [supportScheduledToFilter, setSupportScheduledToFilter] = useState("");
+  const [supportLimitFilter, setSupportLimitFilter] = useState(
+    String(SUPPORT_WORKBENCH_DEFAULT_LIMIT),
+  );
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [connection, setConnection] = useState<ConnectionState | null>(null);
   const [apiId, setApiId] = useState("");
@@ -326,6 +458,12 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     }
     if (tab === "monitoring") {
       void loadMonitoring();
+    }
+    if (tab === "support") {
+      if (examCatalog.length === 0) {
+        void loadExamCatalog();
+      }
+      void loadSupportWorkbench();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
@@ -537,7 +675,6 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     if (!background) {
       setLoading(true);
       setError(null);
-      setSupportWorkbenchDiagnostics(null);
     }
     try {
       const res = await fetchAdmin("/api/admin/support-log?limit=200");
@@ -563,25 +700,41 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     }
   }
 
-  async function loadSupportWorkbench(background = false) {
+  async function loadSupportWorkbench(
+    background = false,
+    overrides?: Partial<SupportWorkbenchFilterState>,
+  ) {
     if (!background) {
       setLoading(true);
       setError(null);
       setSupportRecords(null);
     }
     try {
-      const res = await fetchAdmin("/api/admin/support-workbench");
-      const data = await res.json() as {
-        diagnostics?: SupportWorkbenchDiagnostic[];
-        error?: string;
+      const filters: SupportWorkbenchFilterState = {
+        candidate: overrides?.candidate ?? supportCandidateFilter,
+        examId: overrides?.examId ?? supportExamFilter,
+        status: overrides?.status ?? supportStatusFilter,
+        scheduledFrom: overrides?.scheduledFrom ?? supportScheduledFromFilter,
+        scheduledTo: overrides?.scheduledTo ?? supportScheduledToFilter,
+        limit: overrides?.limit ?? supportLimitFilter,
       };
+      const query = buildSupportWorkbenchQuery({
+        candidate: filters.candidate,
+        examId: filters.examId,
+        status: filters.status,
+        scheduledFrom: filters.scheduledFrom,
+        scheduledTo: filters.scheduledTo,
+        limit: filters.limit,
+      });
+      const res = await fetchAdmin(`/api/admin/support-workbench${query}`);
+      const data = (await res.json()) as SupportWorkbenchResponseBody & { error?: string };
       if (!res.ok) {
         if (!background) {
           setError(data.error ?? "Failed to load support workbench");
         }
         return;
       }
-      setSupportWorkbenchDiagnostics(data.diagnostics ?? []);
+      setSupportWorkbench(data);
     } catch (caughtError) {
       if (isAdminSessionExpiredError(caughtError)) {
         return;
@@ -602,6 +755,28 @@ export function AdminConsole({ email }: AdminConsoleProps) {
 
   function onLoadSupportWorkbench() {
     void loadSupportWorkbench();
+  }
+
+  function resetSupportWorkbenchFilters() {
+    setSupportCandidateFilter("");
+    setSupportExamFilter("");
+    setSupportStatusFilter("");
+    setSupportScheduledFromFilter("");
+    setSupportScheduledToFilter("");
+    setSupportLimitFilter(String(SUPPORT_WORKBENCH_DEFAULT_LIMIT));
+  }
+
+  function onResetSupportWorkbenchFilters() {
+    resetSupportWorkbenchFilters();
+    setSupportWorkbench(null);
+    void loadSupportWorkbench(false, {
+      candidate: "",
+      examId: "",
+      status: "",
+      scheduledFrom: "",
+      scheduledTo: "",
+      limit: String(SUPPORT_WORKBENCH_DEFAULT_LIMIT),
+    });
   }
 
   function resetExamForm(next?: {
@@ -1793,132 +1968,15 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                 ["Ready", monitoring.currentAttempts.ready],
                 ["In Progress", monitoring.currentAttempts.inProgress],
                 ["Suspended", monitoring.currentAttempts.suspended],
-              ] as const).map(([label, attempts]) => (
-                <div key={label} style={{ background: "#f7f7f8", borderRadius: "8px", padding: "1rem" }}>
-                  <h2 style={{ marginTop: 0, marginBottom: "0.75rem", fontSize: "1rem" }}>
-                    {label} ({attempts.length})
-                  </h2>
-                  {attempts.length === 0 ? (
-                    <p style={{ margin: 0, color: "#666" }}>No current attempts in this state.</p>
-                  ) : (
-                    <div style={{ display: "grid", gap: "0.75rem" }}>
-                      {attempts.map((attempt) => (
-                        <details key={attempt.id} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "0.75rem 0.9rem" }}>
-                          <summary style={{ cursor: "pointer", fontWeight: 600 }}>
-                            {attempt.candidateName} · {attempt.examTitle} · {formatAttemptStatus(attempt.status)}
-                          </summary>
-                          <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.75rem", fontSize: "0.9rem" }}>
-                            <div>Candidate: {attempt.candidateEmail}</div>
-                            <div>Scheduled (UTC): {formatUtcTimestamp(attempt.scheduledFor)}</div>
-                            <div>Training ID: {attempt.trainingId ?? "-"}</div>
-                            <div>Environment: {attempt.environmentExternalId ?? "-"}</div>
-                            <div style={{ overflowX: "auto" }}>
-                              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
-                                <thead>
-                                  <tr style={{ background: "#f5f5f5" }}>
-                                    {["Time", "Kind", "Event", "Outcome", "Details"].map((heading) => (
-                                      <th key={heading} style={{ textAlign: "left", padding: "0.35rem", borderBottom: "1px solid #ddd" }}>
-                                        {heading}
-                                      </th>
-                                    ))}
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {attempt.timeline.length === 0 && (
-                                    <tr>
-                                      <td colSpan={5} style={{ padding: "0.4rem", color: "#666" }}>
-                                        No timeline entries recorded.
-                                      </td>
-                                    </tr>
-                                  )}
-                                  {attempt.timeline.map((entry, index) => (
-                                    <tr key={`${attempt.id}-${entry.occurredAt}-${entry.kind}-${index}`} style={{ borderBottom: "1px solid #eee", verticalAlign: "top" }}>
-                                      <td style={{ padding: "0.35rem", whiteSpace: "nowrap" }}>
-                                        {formatUtcTimestamp(entry.occurredAt)}
-                                      </td>
-                                      <td style={{ padding: "0.35rem" }}>{entry.kind}</td>
-                                      <td style={{ padding: "0.35rem" }}>{entry.kind === "audit" ? entry.action : entry.eventType}</td>
-                                      <td style={{ padding: "0.35rem" }}>
-                                        {entry.kind === "audit"
-                                          ? entry.outcome
-                                          : (typeof entry.responseStatus === "number" ? `HTTP ${entry.responseStatus}` : entry.failureMode ?? "-")}
-                                      </td>
-                                      <td style={{ padding: "0.35rem", color: "#444" }}>{formatTimelineEntry(entry)}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        </details>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
+              ] as const).map(([label, attempts]) =>
+                renderAttemptCollection(label, attempts, "No current attempts in this state."),
+              )}
 
-              <div style={{ background: "#f7f7f8", borderRadius: "8px", padding: "1rem" }}>
-                <h2 style={{ marginTop: 0, marginBottom: "0.75rem", fontSize: "1rem" }}>
-                  Completed / expired attempts ({monitoring.history.length})
-                </h2>
-                {monitoring.history.length === 0 ? (
-                  <p style={{ margin: 0, color: "#666" }}>No completed or expired attempts yet.</p>
-                ) : (
-                  <div style={{ display: "grid", gap: "0.75rem" }}>
-                    {monitoring.history.map((attempt) => (
-                      <details key={attempt.id} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "0.75rem 0.9rem" }}>
-                        <summary style={{ cursor: "pointer", fontWeight: 600 }}>
-                          {attempt.candidateName} · {attempt.examTitle} · {formatMonitoringResult(attempt.result)}
-                        </summary>
-                        <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.75rem", fontSize: "0.9rem" }}>
-                          <div>Candidate: {attempt.candidateEmail}</div>
-                          <div>Status: {formatAttemptStatus(attempt.status)}</div>
-                          <div>Scheduled (UTC): {formatUtcTimestamp(attempt.scheduledFor)}</div>
-                          <div>Training ID: {attempt.trainingId ?? "-"}</div>
-                          <div>Environment: {attempt.environmentExternalId ?? "-"}</div>
-                          <div style={{ overflowX: "auto" }}>
-                            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
-                              <thead>
-                                <tr style={{ background: "#f5f5f5" }}>
-                                  {["Time", "Kind", "Event", "Outcome", "Details"].map((heading) => (
-                                    <th key={heading} style={{ textAlign: "left", padding: "0.35rem", borderBottom: "1px solid #ddd" }}>
-                                      {heading}
-                                    </th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {attempt.timeline.length === 0 && (
-                                  <tr>
-                                    <td colSpan={5} style={{ padding: "0.4rem", color: "#666" }}>
-                                      No timeline entries recorded.
-                                    </td>
-                                  </tr>
-                                )}
-                                {attempt.timeline.map((entry, index) => (
-                                  <tr key={`${attempt.id}-${entry.occurredAt}-${entry.kind}-${index}`} style={{ borderBottom: "1px solid #eee", verticalAlign: "top" }}>
-                                    <td style={{ padding: "0.35rem", whiteSpace: "nowrap" }}>
-                                      {formatUtcTimestamp(entry.occurredAt)}
-                                    </td>
-                                    <td style={{ padding: "0.35rem" }}>{entry.kind}</td>
-                                    <td style={{ padding: "0.35rem" }}>{entry.kind === "audit" ? entry.action : entry.eventType}</td>
-                                    <td style={{ padding: "0.35rem" }}>
-                                      {entry.kind === "audit"
-                                        ? entry.outcome
-                                        : (typeof entry.responseStatus === "number" ? `HTTP ${entry.responseStatus}` : entry.failureMode ?? "-")}
-                                    </td>
-                                    <td style={{ padding: "0.35rem", color: "#444" }}>{formatTimelineEntry(entry)}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      </details>
-                    ))}
-                  </div>
-                )}
-              </div>
+              {renderAttemptCollection(
+                "Completed / expired attempts",
+                monitoring.history,
+                "No completed or expired attempts yet.",
+              )}
             </>
           )}
         </section>
@@ -1967,87 +2025,209 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       )}
 
       {tab === "support" && (
-        <section>
+        <section style={{ display: "grid", gap: "1rem" }}>
           <p style={{ color: "#555", marginTop: 0 }}>
-            Recent CloudShare webhook trust-gate diagnostics appear first. Structured server logs stay available
-            below. All timestamps are ISO 8601 in UTC. Secure values stay redacted.
+            The Support Workbench groups current ExamAttempts into support queues and keeps the redacted CloudShare
+            webhook diagnostics below. The full Session Monitoring tab remains available for the previous slice’s
+            dedicated live monitoring view.
           </p>
+          <div
+            style={{
+              display: "grid",
+              gap: "0.75rem",
+              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              alignItems: "end",
+            }}
+          >
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              <span>Candidate email or name</span>
+              <input
+                value={supportCandidateFilter}
+                onChange={(event) => setSupportCandidateFilter(event.target.value)}
+                placeholder="morgan.lee@helioscx.demo"
+                style={{ padding: "0.5rem" }}
+              />
+            </label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              <span>Exam</span>
+              <select
+                value={supportExamFilter}
+                onChange={(event) => setSupportExamFilter(event.target.value)}
+                style={{ padding: "0.5rem" }}
+              >
+                <option value="">All Exams</option>
+                {examCatalog.map((exam) => (
+                  <option key={exam.id} value={exam.id}>
+                    {exam.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              <span>Attempt status</span>
+              <select
+                value={supportStatusFilter}
+                onChange={(event) => setSupportStatusFilter(event.target.value)}
+                style={{ padding: "0.5rem" }}
+              >
+                <option value="">All statuses</option>
+                <option value="scheduled">Scheduled</option>
+                <option value="ready">Ready</option>
+                <option value="in_progress">In progress</option>
+                <option value="suspended">Suspended</option>
+                <option value="completed">Completed</option>
+                <option value="expired">Expired</option>
+              </select>
+            </label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              <span>Scheduled from (UTC)</span>
+              <input
+                type="datetime-local"
+                value={supportScheduledFromFilter}
+                onChange={(event) => setSupportScheduledFromFilter(event.target.value)}
+                style={{ padding: "0.5rem" }}
+              />
+            </label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              <span>Scheduled to (UTC)</span>
+              <input
+                type="datetime-local"
+                value={supportScheduledToFilter}
+                onChange={(event) => setSupportScheduledToFilter(event.target.value)}
+                style={{ padding: "0.5rem" }}
+              />
+            </label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              <span>Attempt limit</span>
+              <input
+                type="number"
+                min={1}
+                max={200}
+                value={supportLimitFilter}
+                onChange={(event) => setSupportLimitFilter(event.target.value)}
+                style={{ padding: "0.5rem" }}
+              />
+            </label>
+          </div>
           <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "1rem" }}>
             <button onClick={onLoadSupportWorkbench} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
-              {loading ? "Loading..." : "Load Recent Webhook Diagnostics"}
+              {loading ? "Loading..." : "Apply Workbench Filters"}
+            </button>
+            <button onClick={onResetSupportWorkbenchFilters} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
+              Reset Filters
             </button>
             <button onClick={onLoadSupportLog} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
               {loading ? "Loading..." : "Load Full Support Log"}
             </button>
           </div>
-          {supportWorkbenchDiagnostics && (
-            <div style={{ marginBottom: "1.5rem" }}>
-              <h3 style={{ margin: "0 0 0.75rem" }}>Recent Webhook Diagnostics</h3>
-              <div style={{ display: "grid", gap: "0.75rem" }}>
-                {supportWorkbenchDiagnostics.length === 0 && (
-                  <div style={{ color: "#666" }}>No recent CloudShare webhook diagnostics.</div>
-                )}
-                {supportWorkbenchDiagnostics.map((diagnostic, index) => (
-                  <div
-                    key={`${diagnostic.timestamp}-${diagnostic.message}-${index}`}
-                    style={{
-                      border: "1px solid #ddd",
-                      borderRadius: "8px",
-                      padding: "0.85rem 1rem",
-                      background: "#fff",
-                    }}
-                  >
-                    <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "0.4rem" }}>
-                      <strong>{diagnostic.message}</strong>
-                      <span style={{ color: "#666" }}>{formatUtcTimestamp(diagnostic.timestamp)}</span>
-                      <span style={{ textTransform: "uppercase", color: diagnostic.level === "warn" ? "#8a5a00" : "#555" }}>
-                        {diagnostic.level}
-                      </span>
-                    </div>
-                    <div style={{ display: "grid", gap: "0.25rem", fontSize: "0.85rem", color: "#444" }}>
-                      <div>
-                        <strong>Request:</strong>{" "}
-                        <span style={{ fontFamily: "monospace" }}>
-                          {diagnostic.method ?? "?"} {diagnostic.path ?? "?"}
-                        </span>
-                      </div>
-                      <div>
-                        <strong>Webhook token:</strong>{" "}
-                        <span style={{ fontFamily: "monospace" }}>{diagnostic.webhookPathToken ?? "-"}</span>
-                      </div>
-                      <div>
-                        <strong>Customer:</strong>{" "}
-                        <span style={{ fontFamily: "monospace" }}>{diagnostic.customerId ?? "-"}</span>
-                      </div>
-                      <div>
-                        <strong>Signature present:</strong>{" "}
-                        {diagnostic.signaturePresent === null ? "-" : diagnostic.signaturePresent ? "yes" : "no"}
-                      </div>
-                      <div>
-                        <strong>Body bytes:</strong> {diagnostic.requestBodyBytes ?? "-"}
-                      </div>
-                      <div>
-                        <strong>Raw body SHA-256:</strong>{" "}
-                        <span style={{ fontFamily: "monospace" }}>{diagnostic.rawBodySha256 ?? "-"}</span>
-                      </div>
-                      {diagnostic.trustGateReason && (
-                        <div style={{ color: "#8a5a00" }}>
-                          <strong>Trust gate:</strong> {diagnostic.trustGateReason}
-                        </div>
-                      )}
-                      {diagnostic.rawRequestBody && (
-                        <div>
-                          <strong>Raw webhook request body used for HMAC:</strong>
-                          <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
-                            {diagnostic.rawRequestBody}
-                          </pre>
-                        </div>
-                      )}
-                    </div>
+          {supportWorkbench && (
+            <>
+              <div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))" }}>
+                {[
+                  ["Scheduled", supportWorkbench.summary.scheduled],
+                  ["Ready", supportWorkbench.summary.ready],
+                  ["In progress", supportWorkbench.summary.inProgress],
+                  ["Suspended", supportWorkbench.summary.suspended],
+                  ["Completed", supportWorkbench.summary.completed],
+                  ["Expired", supportWorkbench.summary.expired],
+                ].map(([label, count]) => (
+                  <div key={label} style={{ background: "#f7f7f8", borderRadius: "8px", padding: "0.9rem" }}>
+                    <div style={{ color: "#555", fontSize: "0.85rem" }}>{label}</div>
+                    <div style={{ fontSize: "1.5rem", fontWeight: 700 }}>{count}</div>
                   </div>
                 ))}
               </div>
-            </div>
+
+              <div style={{ color: "#555", fontSize: "0.9rem" }}>
+                Showing {supportWorkbench.meta.returnedAttempts} of {supportWorkbench.meta.totalMatchingAttempts} matching attempts.
+                {supportWorkbench.meta.defaultLimitApplied
+                  ? ` Default limit ${supportWorkbench.meta.limit} applied.`
+                  : ` Limit ${supportWorkbench.meta.limit}.`}
+              </div>
+
+              {([
+                ["Scheduled queue", supportWorkbench.currentQueues.scheduled],
+                ["Ready queue", supportWorkbench.currentQueues.ready],
+                ["In-progress queue", supportWorkbench.currentQueues.inProgress],
+                ["Suspended queue", supportWorkbench.currentQueues.suspended],
+              ] as const).map(([label, attempts]) =>
+                renderAttemptCollection(label, attempts, "No matching attempts in this queue."),
+              )}
+
+              {renderAttemptCollection(
+                "Matching attempts",
+                supportWorkbench.matchingAttempts,
+                "No ExamAttempts matched the current filters.",
+              )}
+
+              <div style={{ marginBottom: "0.5rem" }}>
+                <h3 style={{ margin: "0 0 0.75rem" }}>Recent Webhook Diagnostics</h3>
+                <div style={{ display: "grid", gap: "0.75rem" }}>
+                  {supportWorkbench.diagnostics.length === 0 && (
+                    <div style={{ color: "#666" }}>No recent CloudShare webhook diagnostics.</div>
+                  )}
+                  {supportWorkbench.diagnostics.map((diagnostic, index) => (
+                    <div
+                      key={`${diagnostic.timestamp}-${diagnostic.message}-${index}`}
+                      style={{
+                        border: "1px solid #ddd",
+                        borderRadius: "8px",
+                        padding: "0.85rem 1rem",
+                        background: "#fff",
+                      }}
+                    >
+                      <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "0.4rem" }}>
+                        <strong>{diagnostic.message}</strong>
+                        <span style={{ color: "#666" }}>{formatUtcTimestamp(diagnostic.timestamp)}</span>
+                        <span style={{ textTransform: "uppercase", color: diagnostic.level === "warn" ? "#8a5a00" : "#555" }}>
+                          {diagnostic.level}
+                        </span>
+                      </div>
+                      <div style={{ display: "grid", gap: "0.25rem", fontSize: "0.85rem", color: "#444" }}>
+                        <div>
+                          <strong>Request:</strong>{" "}
+                          <span style={{ fontFamily: "monospace" }}>
+                            {diagnostic.method ?? "?"} {diagnostic.path ?? "?"}
+                          </span>
+                        </div>
+                        <div>
+                          <strong>Webhook token:</strong>{" "}
+                          <span style={{ fontFamily: "monospace" }}>{diagnostic.webhookPathToken ?? "-"}</span>
+                        </div>
+                        <div>
+                          <strong>Customer:</strong>{" "}
+                          <span style={{ fontFamily: "monospace" }}>{diagnostic.customerId ?? "-"}</span>
+                        </div>
+                        <div>
+                          <strong>Signature present:</strong>{" "}
+                          {diagnostic.signaturePresent === null ? "-" : diagnostic.signaturePresent ? "yes" : "no"}
+                        </div>
+                        <div>
+                          <strong>Body bytes:</strong> {diagnostic.requestBodyBytes ?? "-"}
+                        </div>
+                        <div>
+                          <strong>Raw body SHA-256:</strong>{" "}
+                          <span style={{ fontFamily: "monospace" }}>{diagnostic.rawBodySha256 ?? "-"}</span>
+                        </div>
+                        {diagnostic.trustGateReason && (
+                          <div style={{ color: "#8a5a00" }}>
+                            <strong>Trust gate:</strong> {diagnostic.trustGateReason}
+                          </div>
+                        )}
+                        {diagnostic.rawRequestBody && (
+                          <div>
+                            <strong>Raw webhook request body used for HMAC:</strong>
+                            <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
+                              {diagnostic.rawRequestBody}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
           )}
           {supportRecords && (
             <div style={{ overflowX: "auto" }}>

@@ -28,6 +28,8 @@ export const ADMIN_TABS: readonly AdminTab[] = [
 export const ADMIN_SESSION_EXPIRED_MESSAGE =
   "Your admin session has expired. Sign in again to continue.";
 
+export const SUPPORT_WORKBENCH_DEFAULT_LIMIT = 50;
+
 export function isAdminSessionExpiredStatus(status: number): boolean {
   return status === 401;
 }
@@ -150,4 +152,45 @@ export function getAllowedRegionValidationMessage(
   }
 
   return null;
+}
+
+export interface SupportWorkbenchFilterInput {
+  readonly candidate: string;
+  readonly examId: string;
+  readonly status: string;
+  readonly scheduledFrom: string;
+  readonly scheduledTo: string;
+  readonly limit: string;
+}
+
+export function buildSupportWorkbenchQuery(filters: SupportWorkbenchFilterInput): string {
+  const params = new URLSearchParams();
+  const candidate = filters.candidate.trim();
+  const examId = filters.examId.trim();
+  const status = filters.status.trim();
+  const scheduledFrom = filters.scheduledFrom.trim();
+  const scheduledTo = filters.scheduledTo.trim();
+  const limit = filters.limit.trim();
+
+  if (candidate) {
+    params.set("candidate", candidate);
+  }
+  if (examId) {
+    params.set("examId", examId);
+  }
+  if (status) {
+    params.set("status", status);
+  }
+  if (scheduledFrom) {
+    params.set("scheduledFrom", scheduledFrom);
+  }
+  if (scheduledTo) {
+    params.set("scheduledTo", scheduledTo);
+  }
+  if (limit && limit !== String(SUPPORT_WORKBENCH_DEFAULT_LIMIT)) {
+    params.set("limit", limit);
+  }
+
+  const query = params.toString();
+  return query ? `?${query}` : "";
 }

@@ -3,6 +3,7 @@ import {
   ADMIN_SESSION_EXPIRED_MESSAGE,
   ADMIN_TABS,
   beginLatestOnlyRequest,
+  buildSupportWorkbenchQuery,
   buildWebhookCallbackUrl,
   getAdminTabLabel,
   getAllowedRegionValidationMessage,
@@ -11,6 +12,7 @@ import {
   isAdminSessionExpiredStatus,
   isLatestOnlyResponse,
   reconcileAllowedRegionIds,
+  SUPPORT_WORKBENCH_DEFAULT_LIMIT,
   shouldShowCandidateProvisioning,
   shouldClearAdminBannerOnTabChange,
 } from "./admin-console-state";
@@ -147,5 +149,35 @@ describe("allowed Region selection state", () => {
       "The selected Blueprint default Snapshot is not deployed to any Regions yet.",
     );
     expect(getAllowedRegionValidationMessage(["region-1"], regions)).toBeNull();
+  });
+});
+
+describe("support workbench filters", () => {
+  it("builds a compact query string from non-default filter values", () => {
+    expect(
+      buildSupportWorkbenchQuery({
+        candidate: "  morgan ",
+        examId: "exam-1",
+        status: "in_progress",
+        scheduledFrom: "2026-06-20T00:00:00.000Z",
+        scheduledTo: "2026-06-21T23:59:59.999Z",
+        limit: "25",
+      }),
+    ).toBe(
+      "?candidate=morgan&examId=exam-1&status=in_progress&scheduledFrom=2026-06-20T00%3A00%3A00.000Z&scheduledTo=2026-06-21T23%3A59%3A59.999Z&limit=25",
+    );
+  });
+
+  it("omits blank values and the default limit from the support workbench query", () => {
+    expect(
+      buildSupportWorkbenchQuery({
+        candidate: "",
+        examId: "",
+        status: "",
+        scheduledFrom: "",
+        scheduledTo: "",
+        limit: String(SUPPORT_WORKBENCH_DEFAULT_LIMIT),
+      }),
+    ).toBe("");
   });
 });
