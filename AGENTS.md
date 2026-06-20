@@ -125,12 +125,12 @@ accumulate as local-only commits.
 
 - The orchestration agent owns coordination: issue selection, agent handoff, PR/review loop, and merge
   readiness.
-- The implementation agent should usually use `gpt-5.4`. The orchestration agent chooses low or medium
-  reasoning based on slice complexity. Its job is to follow the issue, PRD, ADRs, and this file; it
-  should not redesign the slice unless blocked.
-- The review agent should use `gpt-5.5`. The orchestration agent chooses medium or high reasoning based
-  on PR complexity and risk. Its job is to review the pull request against the issue, PRD, architecture
-  rules, tests, supportability, and security requirements.
+- The implementation agent should usually use `gpt-5.4`, `Sonnet 4.6`, or `Haiku 4.5`. The orchestration
+  agent chooses low or medium reasoning based on slice complexity. Its job is to follow the issue, PRD,
+  ADRs, and this file; it should not redesign the slice unless blocked.
+- The review agent should use `gpt-5.5` or `Opus 4.8`. The orchestration agent chooses medium or high
+  reasoning based on PR complexity and risk. Its job is to review the pull request against the issue,
+  PRD, architecture rules, tests, supportability, and security requirements.
 - The implementation agent fixes review findings on the same PR branch. Re-review until the review
   agent reports no blocking findings.
 - Human QA is required before merge for user-visible or integration behaviour, especially CloudShare
