@@ -55,6 +55,27 @@ export async function handleCloudShareWebhook(
   request: RawWebhookRequest & { readonly webhookPathToken: string },
 ): Promise<CloudShareWebhookResponse> {
   try {
+    deps.logger.info("cloudshare webhook received", {
+      operation: "receive_webhook",
+      integrationSurface: "cloudshare.v3.webhook",
+      method: "POST",
+      path: `/api/webhooks/cloudshare/${request.webhookPathToken}`,
+      webhookPathToken: request.webhookPathToken,
+      requestBody: summariseWebhookBody(request.rawBody),
+      requestBodyBytes: Buffer.byteLength(request.rawBody, "utf8"),
+      signaturePresent: Boolean(request.signature),
+    });
+
+    if (!canResolveWebhookConnection(deps.connections)) {
+      deps.logger.error("cloudshare webhook handler misconfigured", {
+        operation: "receive_webhook",
+        integrationSurface: "cloudshare.v3.webhook",
+        webhookPathToken: request.webhookPathToken,
+        error: "connections.findByWebhookPathToken is unavailable",
+      });
+      return { status: 500, body: { status: "internal_error" } };
+    }
+
     const connection = await deps.connections.findByWebhookPathToken(request.webhookPathToken);
     if (!connection) {
       deps.logger.warn("cloudshare webhook rejected: unknown webhook target", {
@@ -178,6 +199,25 @@ export async function handleCloudShareWebhook(
       error: err instanceof Error ? err.message : String(err),
     });
     return { status: 500, body: { status: "internal_error" } };
+  }
+}
+
+function canResolveWebhookConnection(
+  connections: CloudShareWebhookDeps["connections"],
+): connections is CloudShareWebhookDeps["connections"] {
+  return typeof connections.findByWebhookPathToken === "function";
+}
+
+const MAX_WEBHOOK_BODY_LOG_CHARS = 4_000;
+
+function summariseWebhookBody(rawBody: string): unknown {
+  const body = rawBody.length > MAX_WEBHOOK_BODY_LOG_CHARS
+    ? `${rawBody.slice(0, MAX_WEBHOOK_BODY_LOG_CHARS)}... [truncated]`
+    : rawBody;
+  try {
+    return JSON.parse(body) as unknown;
+  } catch {
+    return body;
   }
 }
 

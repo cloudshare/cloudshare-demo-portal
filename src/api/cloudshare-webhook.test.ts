@@ -62,6 +62,30 @@ function setup() {
 }
 
 describe("handleCloudShareWebhook", () => {
+  it("logs receipt and returns a deliberate 500 when a stale dependency object is missing webhook lookup", async () => {
+    const lines: string[] = [];
+    const { helios, deps } = setup();
+    const signed = helios.emit({ environmentExternalId: "env-ext-1", event: "environment.created", at });
+    const staleDeps = {
+      ...deps,
+      logger: createLogger({ secrets: [], sink: (line) => lines.push(line) }),
+      connections: {
+        save: vi.fn(),
+        findByCustomerId: vi.fn(),
+        markVerified: vi.fn(),
+      },
+    };
+
+    const res = await handleCloudShareWebhook(staleDeps as never, {
+      webhookPathToken: "whk-helios",
+      ...signed,
+    });
+
+    expect(res.status).toBe(500);
+    expect(lines.some((line) => line.includes("cloudshare webhook received"))).toBe(true);
+    expect(lines.some((line) => line.includes("cloudshare webhook handler misconfigured"))).toBe(true);
+  });
+
   it("accepts a signed event for the matched webhook token (202) and triggers a reconcile for its environment with the resolved customer connection", async () => {
     const { helios, reconcile, deps, heliosConnection } = setup();
     const signed = helios.emit({ environmentExternalId: "env-ext-1", event: "environment.suspended", at });
