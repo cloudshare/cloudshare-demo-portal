@@ -1,8 +1,10 @@
+import { createHash } from "node:crypto";
 import type { Logger } from "@/observability/logger";
 import {
   receiveWebhook,
   type RawWebhookRequest,
 } from "@/integrations/cloudshare/webhook-receiver";
+import { computeWebhookSignature } from "@/integrations/cloudshare/webhooks";
 import type { WebhookIdempotencyStore } from "@/domain/webhook";
 import type { EventLogRepository } from "@/domain/event-log";
 import type {
@@ -41,6 +43,7 @@ export interface CloudShareWebhookDeps {
   ) => Promise<unknown>;
   readonly logger: Logger;
   readonly eventLog: EventLogRepository;
+  readonly debugLogRawBody?: boolean;
   readonly now?: () => Date;
   readonly newEventId?: () => string;
 }
@@ -63,7 +66,9 @@ export async function handleCloudShareWebhook(
       webhookPathToken: request.webhookPathToken,
       requestBodySummary: summariseWebhookBody(request.rawBody),
       requestBodyBytes: Buffer.byteLength(request.rawBody, "utf8"),
+      rawBodySha256: hashRawBody(request.rawBody),
       signaturePresent: Boolean(request.signature),
+      ...(deps.debugLogRawBody ? { rawRequestBody: request.rawBody } : {}),
     });
 
     if (!canResolveWebhookConnection(deps.connections)) {
@@ -98,6 +103,20 @@ export async function handleCloudShareWebhook(
       },
       request,
     );
+
+    if (deps.debugLogRawBody) {
+      deps.logger.info("cloudshare webhook signature diagnostic", {
+        operation: "receive_webhook",
+        integrationSurface: "cloudshare.v3.webhook",
+        customerId: connection.customerId,
+        webhookPathToken: connection.webhookPathToken,
+        signatureScheme: "HMAC-SHA256 base64 over exact raw request body",
+        rawBodySha256: hashRawBody(request.rawBody),
+        receivedSignature: request.signature ?? null,
+        expectedSignature: computeWebhookSignature(request.rawBody, connection.webhookSecret),
+        signatureMatched: outcome.kind !== "invalid_signature",
+      });
+    }
 
     switch (outcome.kind) {
       case "invalid_signature":
@@ -266,6 +285,10 @@ function parsePayloadJson(payload: string): unknown {
 
 function stringOrNull(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function hashRawBody(rawBody: string): string {
+  return createHash("sha256").update(rawBody, "utf8").digest("hex");
 }
 
 async function appendWebhookEvent(

@@ -49,6 +49,7 @@ describe("CloudShare webhook route", () => {
     const globalSource = { kind: "global-source" };
 
     const services = {
+      config: { runtime: { webhookDebugLogRawBody: false } },
       ensurePortalSeeded: vi.fn().mockResolvedValue(undefined),
       cloudshareConnections: {},
       webhookIdempotency: {},

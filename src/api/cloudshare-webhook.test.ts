@@ -120,6 +120,43 @@ describe("handleCloudShareWebhook", () => {
     expect(receivedLine).not.toContain("must-not-be-logged");
     expect(receivedLine).not.toContain("nested-must-not-be-logged");
     expect(receivedLine).not.toContain("https://example.test/bearer");
+    expect(receivedLine).not.toContain("rawRequestBody");
+  });
+
+  it("can emit explicit local-QA raw body and signature diagnostics when enabled", async () => {
+    const lines: string[] = [];
+    const { deps } = setup();
+    const rawBody = JSON.stringify({
+      Event: "environment.created",
+      CreatedAt: at.toISOString(),
+      Payload: {
+        environmentExternalId: "env-ext-1",
+      },
+    });
+    const { computeWebhookSignature } = await import("@/integrations/cloudshare/webhooks");
+
+    await handleCloudShareWebhook(
+      {
+        ...deps,
+        debugLogRawBody: true,
+        logger: createLogger({ secrets: [], sink: (line) => lines.push(line) }),
+      },
+      {
+        webhookPathToken: "whk-helios",
+        rawBody,
+        signature: "invalid",
+      },
+    );
+
+    const receivedLine = lines.find((line) => line.includes("cloudshare webhook received"));
+    const diagnosticLine = lines.find((line) => line.includes("cloudshare webhook signature diagnostic"));
+    expect(receivedLine).toContain(`"rawRequestBody":${JSON.stringify(rawBody)}`);
+    expect(diagnosticLine).toContain(`"receivedSignature":"invalid"`);
+    expect(diagnosticLine).toContain(
+      `"expectedSignature":"${computeWebhookSignature(rawBody, HELIOS_SECRET)}"`,
+    );
+    expect(diagnosticLine).toContain('"signatureMatched":false');
+    expect(diagnosticLine).toContain("rawBodySha256");
   });
 
   it("accepts a signed event for the matched webhook token (202) and triggers a reconcile for its environment with the resolved customer connection", async () => {

@@ -38,6 +38,7 @@ export async function POST(
         ),
       logger: services.logger,
       eventLog: services.eventLog,
+      debugLogRawBody: services.config.runtime.webhookDebugLogRawBody,
       now: () => new Date(),
     },
     { webhookPathToken, rawBody, signature },
