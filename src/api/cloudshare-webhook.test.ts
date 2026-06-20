@@ -86,6 +86,42 @@ describe("handleCloudShareWebhook", () => {
     expect(lines.some((line) => line.includes("cloudshare webhook handler misconfigured"))).toBe(true);
   });
 
+  it("logs only an allowlisted webhook body summary before signature verification", async () => {
+    const lines: string[] = [];
+    const { deps } = setup();
+    const rawBody = JSON.stringify({
+      Event: "environment.created",
+      CreatedAt: at.toISOString(),
+      token: "must-not-be-logged",
+      apiKey: "must-not-be-logged",
+      loginUrl: "https://example.test/bearer",
+      Payload: JSON.stringify({
+        EnvironmentId: "env-1",
+        EnvironmentName: "Allowed Environment Name",
+        token: "nested-must-not-be-logged",
+      }),
+    });
+    await handleCloudShareWebhook(
+      {
+        ...deps,
+        logger: createLogger({ secrets: [], sink: (line) => lines.push(line) }),
+      },
+      {
+        webhookPathToken: "whk-helios",
+        rawBody,
+        signature: "invalid",
+      },
+    );
+
+    const receivedLine = lines.find((line) => line.includes("cloudshare webhook received"));
+    expect(receivedLine).toBeDefined();
+    expect(receivedLine).toContain("Allowed Environment Name");
+    expect(receivedLine).toContain("env-1");
+    expect(receivedLine).not.toContain("must-not-be-logged");
+    expect(receivedLine).not.toContain("nested-must-not-be-logged");
+    expect(receivedLine).not.toContain("https://example.test/bearer");
+  });
+
   it("accepts a signed event for the matched webhook token (202) and triggers a reconcile for its environment with the resolved customer connection", async () => {
     const { helios, reconcile, deps, heliosConnection } = setup();
     const signed = helios.emit({ environmentExternalId: "env-ext-1", event: "environment.suspended", at });

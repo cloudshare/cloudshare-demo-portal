@@ -61,7 +61,7 @@ export async function handleCloudShareWebhook(
       method: "POST",
       path: `/api/webhooks/cloudshare/${request.webhookPathToken}`,
       webhookPathToken: request.webhookPathToken,
-      requestBody: summariseWebhookBody(request.rawBody),
+      requestBodySummary: summariseWebhookBody(request.rawBody),
       requestBodyBytes: Buffer.byteLength(request.rawBody, "utf8"),
       signaturePresent: Boolean(request.signature),
     });
@@ -211,14 +211,61 @@ function canResolveWebhookConnection(
 const MAX_WEBHOOK_BODY_LOG_CHARS = 4_000;
 
 function summariseWebhookBody(rawBody: string): unknown {
-  const body = rawBody.length > MAX_WEBHOOK_BODY_LOG_CHARS
-    ? `${rawBody.slice(0, MAX_WEBHOOK_BODY_LOG_CHARS)}... [truncated]`
-    : rawBody;
+  const body =
+    rawBody.length > MAX_WEBHOOK_BODY_LOG_CHARS
+      ? rawBody.slice(0, MAX_WEBHOOK_BODY_LOG_CHARS)
+      : rawBody;
   try {
-    return JSON.parse(body) as unknown;
+    const parsed = JSON.parse(body) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { parseStatus: "non_object_json" };
+    }
+    const envelope = parsed as Record<string, unknown>;
+    const payload = summariseWebhookPayload(envelope.Payload);
+    return {
+      parseStatus: "ok",
+      Event: stringOrNull(envelope.Event),
+      CreatedAt: stringOrNull(envelope.CreatedAt),
+      CreatedById: stringOrNull(envelope.CreatedById),
+      CreatedByEmail: stringOrNull(envelope.CreatedByEmail),
+      Attempt: typeof envelope.Attempt === "number" ? envelope.Attempt : null,
+      Payload: payload,
+    };
   } catch {
-    return body;
+    return { parseStatus: "invalid_json" };
   }
+}
+
+function summariseWebhookPayload(payload: unknown): Record<string, unknown> | null {
+  const parsedPayload = typeof payload === "string" ? parsePayloadJson(payload) : payload;
+  if (!parsedPayload || typeof parsedPayload !== "object" || Array.isArray(parsedPayload)) {
+    return null;
+  }
+  const fields = parsedPayload as Record<string, unknown>;
+  return {
+    EnvironmentId: stringOrNull(fields.EnvironmentId ?? fields.environmentId),
+    EnvironmentExternalId: stringOrNull(
+      fields.EnvironmentExternalId ?? fields.environmentExternalId,
+    ),
+    EnvironmentName: stringOrNull(fields.EnvironmentName ?? fields.environmentName),
+    BlueprintId: stringOrNull(fields.BlueprintId ?? fields.blueprintId),
+    BlueprintName: stringOrNull(fields.BlueprintName ?? fields.blueprintName),
+    PolicyId: stringOrNull(fields.PolicyId ?? fields.policyId),
+    PolicyName: stringOrNull(fields.PolicyName ?? fields.policyName),
+    RegionId: stringOrNull(fields.RegionId ?? fields.regionId),
+  };
+}
+
+function parsePayloadJson(payload: string): unknown {
+  try {
+    return JSON.parse(payload) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 async function appendWebhookEvent(
