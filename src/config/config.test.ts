@@ -34,20 +34,10 @@ describe("loadConfig", () => {
     expect(config.secrets.portalMasterKey).toBe(validEnv.PORTAL_MASTER_KEY);
     expect(config.secrets.webhookSecret).toBe("whsecret");
     expect(config.runtime.mode).toBe("fixture");
-    expect(config.runtime.webhookDebugLogRawBody).toBe(false);
     expect(config.demoResources.blueprintName).toBe("bp");
     expect(config.runtime.seedSource).toBe("env");
     expect(config.seed.heliosAdmin?.email).toBe("admin@helioscx.demo");
     expect(config.seed.heliosInstructor?.id).toBe("instructor-1");
-  });
-
-  it("enables raw webhook body diagnostics only when explicitly requested", () => {
-    const config = loadConfig({
-      ...validEnv,
-      CLOUDSHARE_WEBHOOK_DEBUG_LOG_RAW_BODY: "true",
-    });
-
-    expect(config.runtime.webhookDebugLogRawBody).toBe(true);
   });
 
   it("throws ConfigError when a required secret is missing", () => {

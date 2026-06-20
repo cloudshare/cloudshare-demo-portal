@@ -4,7 +4,10 @@ import {
   receiveWebhook,
   type RawWebhookRequest,
 } from "@/integrations/cloudshare/webhook-receiver";
-import { computeWebhookSignature } from "@/integrations/cloudshare/webhooks";
+import {
+  CLOUDSHARE_WEBHOOK_SIGNATURE_HEADER,
+  computeWebhookSignature,
+} from "@/integrations/cloudshare/webhooks";
 import type { WebhookIdempotencyStore } from "@/domain/webhook";
 import type { EventLogRepository } from "@/domain/event-log";
 import type {
@@ -43,7 +46,6 @@ export interface CloudShareWebhookDeps {
   ) => Promise<unknown>;
   readonly logger: Logger;
   readonly eventLog: EventLogRepository;
-  readonly debugLogRawBody?: boolean;
   readonly now?: () => Date;
   readonly newEventId?: () => string;
 }
@@ -58,19 +60,6 @@ export async function handleCloudShareWebhook(
   request: RawWebhookRequest & { readonly webhookPathToken: string },
 ): Promise<CloudShareWebhookResponse> {
   try {
-    deps.logger.info("cloudshare webhook received", {
-      operation: "receive_webhook",
-      integrationSurface: "cloudshare.v3.webhook",
-      method: "POST",
-      path: `/api/webhooks/cloudshare/${request.webhookPathToken}`,
-      webhookPathToken: request.webhookPathToken,
-      requestBodySummary: summariseWebhookBody(request.rawBody),
-      requestBodyBytes: Buffer.byteLength(request.rawBody, "utf8"),
-      rawBodySha256: hashRawBody(request.rawBody),
-      signaturePresent: Boolean(request.signature),
-      ...(deps.debugLogRawBody ? { rawRequestBody: request.rawBody } : {}),
-    });
-
     if (!canResolveWebhookConnection(deps.connections)) {
       deps.logger.error("cloudshare webhook handler misconfigured", {
         operation: "receive_webhook",
@@ -84,7 +73,14 @@ export async function handleCloudShareWebhook(
     const connection = await deps.connections.findByWebhookPathToken(request.webhookPathToken);
     if (!connection) {
       deps.logger.warn("cloudshare webhook rejected: unknown webhook target", {
+        operation: "receive_webhook",
+        integrationSurface: "cloudshare.v3.webhook",
+        method: "POST",
+        path: `/api/webhooks/cloudshare/${request.webhookPathToken}`,
         webhookPathToken: request.webhookPathToken,
+        requestBodyBytes: Buffer.byteLength(request.rawBody, "utf8"),
+        rawBodySha256: hashRawBody(request.rawBody),
+        signaturePresent: Boolean(request.signature),
       });
       await appendWebhookEvent(deps, {
         type: "cloudshare.webhook.unknown_target",
@@ -95,6 +91,30 @@ export async function handleCloudShareWebhook(
       return { status: 404, body: { status: "unknown_target" } };
     }
 
+    const requestBodySummary = summariseWebhookBody(request.rawBody);
+    deps.logger.info("cloudshare webhook received", {
+      operation: "receive_webhook",
+      integrationSurface: "cloudshare.v3.webhook",
+      method: "POST",
+      path: `/api/webhooks/cloudshare/${request.webhookPathToken}`,
+      customerId: connection.customerId,
+      webhookPathToken: request.webhookPathToken,
+      requestHeaders: {
+        [CLOUDSHARE_WEBHOOK_SIGNATURE_HEADER]: request.signature ?? null,
+      },
+      rawRequestBody: request.rawBody,
+      requestBodySummary,
+      ...(isWebhookBodySummary(requestBodySummary)
+        ? {
+            webhookEnvelope: requestBodySummary.envelope,
+            webhookPayload: requestBodySummary.payload,
+          }
+        : {}),
+      requestBodyBytes: Buffer.byteLength(request.rawBody, "utf8"),
+      rawBodySha256: hashRawBody(request.rawBody),
+      signaturePresent: Boolean(request.signature),
+    });
+
     const outcome = await receiveWebhook(
       {
         secret: connection.webhookSecret,
@@ -104,19 +124,17 @@ export async function handleCloudShareWebhook(
       request,
     );
 
-    if (deps.debugLogRawBody) {
-      deps.logger.info("cloudshare webhook signature diagnostic", {
-        operation: "receive_webhook",
-        integrationSurface: "cloudshare.v3.webhook",
-        customerId: connection.customerId,
-        webhookPathToken: connection.webhookPathToken,
-        signatureScheme: "HMAC-SHA256 base64 over exact raw request body",
-        rawBodySha256: hashRawBody(request.rawBody),
-        receivedSignature: request.signature ?? null,
-        expectedSignature: computeWebhookSignature(request.rawBody, connection.webhookSecret),
-        signatureMatched: outcome.kind !== "invalid_signature",
-      });
-    }
+    deps.logger.info("cloudshare webhook signature diagnostic", {
+      operation: "receive_webhook",
+      integrationSurface: "cloudshare.v3.webhook",
+      customerId: connection.customerId,
+      webhookPathToken: connection.webhookPathToken,
+      signatureScheme: "HMAC-SHA256 base64 over exact raw request body",
+      rawBodySha256: hashRawBody(request.rawBody),
+      receivedSignature: request.signature ?? null,
+      expectedSignature: computeWebhookSignature(request.rawBody, connection.webhookSecret),
+      signatureMatched: outcome.kind !== "invalid_signature",
+    });
 
     switch (outcome.kind) {
       case "invalid_signature":
@@ -227,15 +245,15 @@ function canResolveWebhookConnection(
   return typeof connections.findByWebhookPathToken === "function";
 }
 
-const MAX_WEBHOOK_BODY_LOG_CHARS = 4_000;
+interface WebhookBodySummary {
+  readonly parseStatus: "ok";
+  readonly envelope: Record<string, unknown>;
+  readonly payload: Record<string, unknown> | null;
+}
 
-function summariseWebhookBody(rawBody: string): unknown {
-  const body =
-    rawBody.length > MAX_WEBHOOK_BODY_LOG_CHARS
-      ? rawBody.slice(0, MAX_WEBHOOK_BODY_LOG_CHARS)
-      : rawBody;
+function summariseWebhookBody(rawBody: string): WebhookBodySummary | { readonly parseStatus: string } {
   try {
-    const parsed = JSON.parse(body) as unknown;
+    const parsed = JSON.parse(rawBody) as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       return { parseStatus: "non_object_json" };
     }
@@ -243,16 +261,27 @@ function summariseWebhookBody(rawBody: string): unknown {
     const payload = summariseWebhookPayload(envelope.Payload);
     return {
       parseStatus: "ok",
-      Event: stringOrNull(envelope.Event),
-      CreatedAt: stringOrNull(envelope.CreatedAt),
-      CreatedById: stringOrNull(envelope.CreatedById),
-      CreatedByEmail: stringOrNull(envelope.CreatedByEmail),
-      Attempt: typeof envelope.Attempt === "number" ? envelope.Attempt : null,
-      Payload: payload,
+      envelope: {
+        Event: stringOrNull(envelope.Event),
+        CreatedAt: stringOrNull(envelope.CreatedAt),
+        CreatedById: stringOrNull(envelope.CreatedById),
+        CreatedByEmail: stringOrNull(envelope.CreatedByEmail),
+        Attempt: typeof envelope.Attempt === "number" ? envelope.Attempt : null,
+      },
+      payload,
     };
   } catch {
     return { parseStatus: "invalid_json" };
   }
+}
+
+function isWebhookBodySummary(summary: unknown): summary is WebhookBodySummary {
+  return (
+    Boolean(summary) &&
+    typeof summary === "object" &&
+    !Array.isArray(summary) &&
+    (summary as { parseStatus?: unknown }).parseStatus === "ok"
+  );
 }
 
 function summariseWebhookPayload(payload: unknown): Record<string, unknown> | null {
@@ -271,6 +300,8 @@ function summariseWebhookPayload(payload: unknown): Record<string, unknown> | nu
     BlueprintName: stringOrNull(fields.BlueprintName ?? fields.blueprintName),
     PolicyId: stringOrNull(fields.PolicyId ?? fields.policyId),
     PolicyName: stringOrNull(fields.PolicyName ?? fields.policyName),
+    OwnerEmail: stringOrNull(fields.OwnerEmail ?? fields.ownerEmail),
+    Cloud: Array.isArray(fields.Cloud) ? fields.Cloud.filter((item) => typeof item === "string") : null,
     RegionId: stringOrNull(fields.RegionId ?? fields.regionId),
   };
 }

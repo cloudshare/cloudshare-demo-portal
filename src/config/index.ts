@@ -35,11 +35,6 @@ const envSchema = z.object({
   // Category 2 — runtime flags
   PORTAL_MODE: z.enum(["live", "fixture"]),
   PORTAL_TUNNEL_URL: z.string().optional().default(""),
-  CLOUDSHARE_WEBHOOK_DEBUG_LOG_RAW_BODY: z
-    .enum(["true", "false"])
-    .optional()
-    .default("false")
-    .transform((value) => value === "true"),
   HEARTBEAT_TIMEOUT_MS: z.coerce.number().int().positive().optional().default(60_000),
   PORTAL_SEED_SOURCE: z.enum(["off", "env", "file"]).optional().default("env"),
   PORTAL_SEED_CONFIG_PATH: z.string().optional().default("./config/portal-seed.local.json"),
@@ -106,8 +101,6 @@ export interface Config {
     /** Milliseconds without a client heartbeat before the server auto-suspends the lab. */
     readonly heartbeatTimeoutMs: number;
     readonly seedSource: PortalSeedSource;
-    /** Local QA only: persist exact webhook raw body/signature diagnostics in Support Log. */
-    readonly webhookDebugLogRawBody: boolean;
   };
   readonly demoResources: {
     readonly blueprintName: string;
@@ -257,7 +250,6 @@ export function loadConfig(env: NodeJS.ProcessEnv | Record<string, unknown>): Co
       tunnelUrl: e.PORTAL_TUNNEL_URL,
       heartbeatTimeoutMs: e.HEARTBEAT_TIMEOUT_MS,
       seedSource: e.PORTAL_SEED_SOURCE,
-      webhookDebugLogRawBody: e.CLOUDSHARE_WEBHOOK_DEBUG_LOG_RAW_BODY,
     },
     demoResources: {
       blueprintName: e.DEMO_BLUEPRINT_NAME,

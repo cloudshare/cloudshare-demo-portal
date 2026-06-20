@@ -82,23 +82,21 @@ describe("handleCloudShareWebhook", () => {
     });
 
     expect(res.status).toBe(500);
-    expect(lines.some((line) => line.includes("cloudshare webhook received"))).toBe(true);
+    expect(lines.some((line) => line.includes("cloudshare webhook received"))).toBe(false);
     expect(lines.some((line) => line.includes("cloudshare webhook handler misconfigured"))).toBe(true);
   });
 
-  it("logs only an allowlisted webhook body summary before signature verification", async () => {
+  it("logs raw body, header signature, and parsed fields for known webhook targets", async () => {
     const lines: string[] = [];
     const { deps } = setup();
     const rawBody = JSON.stringify({
       Event: "environment.created",
       CreatedAt: at.toISOString(),
-      token: "must-not-be-logged",
-      apiKey: "must-not-be-logged",
-      loginUrl: "https://example.test/bearer",
       Payload: JSON.stringify({
         EnvironmentId: "env-1",
         EnvironmentName: "Allowed Environment Name",
-        token: "nested-must-not-be-logged",
+        OwnerEmail: "owner@example.test",
+        Cloud: ["cloudshare"],
       }),
     });
     await handleCloudShareWebhook(
@@ -115,15 +113,17 @@ describe("handleCloudShareWebhook", () => {
 
     const receivedLine = lines.find((line) => line.includes("cloudshare webhook received"));
     expect(receivedLine).toBeDefined();
+    expect(receivedLine).toContain(`"rawRequestBody":${JSON.stringify(rawBody)}`);
+    expect(receivedLine).toContain('"x-cloudshare-signature":"invalid"');
+    expect(receivedLine).toContain('"webhookEnvelope"');
+    expect(receivedLine).toContain('"webhookPayload"');
     expect(receivedLine).toContain("Allowed Environment Name");
     expect(receivedLine).toContain("env-1");
-    expect(receivedLine).not.toContain("must-not-be-logged");
-    expect(receivedLine).not.toContain("nested-must-not-be-logged");
-    expect(receivedLine).not.toContain("https://example.test/bearer");
-    expect(receivedLine).not.toContain("rawRequestBody");
+    expect(receivedLine).toContain("owner@example.test");
+    expect(receivedLine).toContain("cloudshare");
   });
 
-  it("can emit explicit local-QA raw body and signature diagnostics when enabled", async () => {
+  it("logs signature diagnostics for known webhook targets", async () => {
     const lines: string[] = [];
     const { deps } = setup();
     const rawBody = JSON.stringify({
@@ -138,7 +138,6 @@ describe("handleCloudShareWebhook", () => {
     await handleCloudShareWebhook(
       {
         ...deps,
-        debugLogRawBody: true,
         logger: createLogger({ secrets: [], sink: (line) => lines.push(line) }),
       },
       {
@@ -157,6 +156,33 @@ describe("handleCloudShareWebhook", () => {
     );
     expect(diagnosticLine).toContain('"signatureMatched":false');
     expect(diagnosticLine).toContain("rawBodySha256");
+  });
+
+  it("does not log raw request bodies for unknown webhook targets", async () => {
+    const lines: string[] = [];
+    const { deps } = setup();
+    const rawBody = JSON.stringify({
+      Event: "environment.created",
+      token: "must-not-be-logged",
+      Payload: JSON.stringify({ EnvironmentId: "env-1" }),
+    });
+
+    await handleCloudShareWebhook(
+      {
+        ...deps,
+        logger: createLogger({ secrets: [], sink: (line) => lines.push(line) }),
+      },
+      {
+        webhookPathToken: "unknown-token",
+        rawBody,
+        signature: "invalid",
+      },
+    );
+
+    const serialized = lines.join("\n");
+    expect(serialized).toContain("cloudshare webhook rejected: unknown webhook target");
+    expect(serialized).not.toContain("rawRequestBody");
+    expect(serialized).not.toContain("must-not-be-logged");
   });
 
   it("accepts a signed event for the matched webhook token (202) and triggers a reconcile for its environment with the resolved customer connection", async () => {
