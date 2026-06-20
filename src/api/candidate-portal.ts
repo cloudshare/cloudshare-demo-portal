@@ -31,6 +31,7 @@ import {
   ScheduleValidationError,
   scheduleExam,
 } from "@/domain/scheduling";
+import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import { correlateEnvironmentForExamAttempt } from "@/domain/environment-correlation";
 import { reconcileExamAttemptCompletion } from "@/domain/exam-attempt-completion";
 import { randomUUID } from "node:crypto";
@@ -53,6 +54,8 @@ interface CustomerRequest {
 interface CandidateRegistrationDeps {
   readonly users: PortalUserProvisioningStore;
   readonly logger: Logger;
+  /** Optional support diagnostics; routes always wire it. Never throws. */
+  readonly diagnostics?: DiagnosticRecorder;
 }
 
 interface CandidateExamCatalogDeps {
@@ -419,6 +422,34 @@ function toProvisioningDiagnostic(
   };
 }
 
+/**
+ * Best-effort Customer attribution for a failed account creation. Returns the
+ * existing user's Customer (duplicate email), else the scope's Customer (admin
+ * create or self-register slug), else null. Never throws.
+ */
+async function resolveFailureCustomerId(
+  users: PortalUserProvisioningStore,
+  attemptedEmail: string,
+  scope: { readonly customerId?: string; readonly customerSlug?: string },
+): Promise<string | null> {
+  try {
+    const existing = await users.findByEmail(attemptedEmail);
+    if (existing) {
+      return existing.customerId;
+    }
+    if (scope.customerId?.trim()) {
+      return scope.customerId.trim();
+    }
+    if (scope.customerSlug?.trim()) {
+      const customer = await users.findCustomerBySlug(scope.customerSlug.trim());
+      return customer?.id ?? null;
+    }
+  } catch {
+    // Attribution is best-effort; a lookup failure must not break the response.
+  }
+  return null;
+}
+
 async function registerCandidateFromBody(
   deps: CandidateRegistrationDeps,
   body: unknown,
@@ -438,6 +469,9 @@ async function registerCandidateFromBody(
     };
   }
 
+  // Attempted email for failure diagnostics; never record the submitted password.
+  const attemptedEmail = (body as { email: string }).email.trim().toLowerCase();
+
   try {
     const candidate = await registerCandidate(deps, {
       firstName: (body as { firstName: string }).firstName,
@@ -446,6 +480,18 @@ async function registerCandidateFromBody(
       password: (body as { password: string }).password,
       customerId: scope.customerId,
       customerSlug: scope.customerSlug,
+    });
+
+    await deps.diagnostics?.record({
+      level: "info",
+      source: "candidate-portal",
+      operation: "candidate.account.create",
+      outcome: "success",
+      customerId: candidate.customerId,
+      actor: { type: "candidate", id: candidate.id, email: candidate.email },
+      subject: { type: "candidate", id: candidate.id },
+      candidateEmail: candidate.email,
+      message: "Candidate account created",
     });
 
     return {
@@ -461,6 +507,30 @@ async function registerCandidateFromBody(
       },
     };
   } catch (error) {
+    // Attribute the failure to its owning Customer where knowable (existing user
+    // for a duplicate, or the registration scope), so it surfaces in that
+    // Customer's Support view. Resolution never throws into this flow.
+    const failureCustomerId = await resolveFailureCustomerId(
+      deps.users,
+      attemptedEmail,
+      scope,
+    );
+
+    // Record every failure — including unexpected store errors — so the support
+    // log explains the failures it most needs to. Never log the password.
+    await deps.diagnostics?.record({
+      level: "warn",
+      source: "candidate-portal",
+      operation: "candidate.account.create",
+      outcome: "failure",
+      customerId: failureCustomerId,
+      actor: { type: "candidate", email: attemptedEmail },
+      subject: { type: "candidate" },
+      candidateEmail: attemptedEmail,
+      message: `Candidate account creation failed: ${error instanceof Error ? error.name : "unexpected error"}`,
+      details: { reason: error instanceof Error ? error.name : "unexpected_error" },
+    });
+
     if (
       error instanceof PortalRegistrationValidationError ||
       error instanceof PortalCustomerNotFoundError

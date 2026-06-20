@@ -2,9 +2,18 @@ import {
   InvalidPortalCredentialsError,
   type PortalAuthenticator,
   type PortalSession,
+  type PortalUserStore,
 } from "@/auth";
+import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 
 export const PORTAL_SESSION_COOKIE = "portal_session";
+
+const AUTH_SOURCE = "auth";
+
+/** Map a portal role to a diagnostic actor type. */
+function actorTypeForRole(role: string): string {
+  return role === "admin" ? "admin" : "candidate";
+}
 
 export interface PortalAuthRequest {
   readonly body?: unknown;
@@ -19,6 +28,17 @@ export interface PortalAuthResponse {
 
 export interface PortalAuthDeps {
   readonly portalAuth: PortalAuthenticator;
+  /**
+   * Optional support diagnostics. Routes always wire this; unit tests that only
+   * exercise auth behaviour may omit it. Recording never throws into this flow.
+   */
+  readonly diagnostics?: DiagnosticRecorder;
+  /**
+   * Optional user lookup used only to attribute a FAILED login to its owning
+   * Customer (so the failed attempt is visible in that Customer's Support view).
+   * Never affects the auth decision; absence simply leaves failures unattributed.
+   */
+  readonly users?: PortalUserStore;
 }
 
 export async function handlePortalLogin(
@@ -43,6 +63,22 @@ export async function handlePortalLogin(
 
   try {
     const session = await deps.portalAuth.signIn(email, password);
+    await deps.diagnostics?.record({
+      level: "info",
+      source: AUTH_SOURCE,
+      operation: "portal.login",
+      outcome: "success",
+      customerId: session.customerId,
+      actor: {
+        type: actorTypeForRole(session.role),
+        id: session.userId,
+        email: session.email,
+      },
+      subject: { type: "customer", id: session.customerId },
+      candidateEmail: session.role === "admin" ? null : session.email,
+      message: `Portal ${session.role} login succeeded`,
+      details: { role: session.role },
+    });
     return {
       status: 200,
       body: {
@@ -55,11 +91,47 @@ export async function handlePortalLogin(
       session,
     };
   } catch (error) {
-    if (
+    const isInvalidCreds =
       error instanceof InvalidPortalCredentialsError ||
-      (error instanceof Error && error.name === "InvalidPortalCredentialsError")
-    ) {
-      return { status: 401, body: { error: error.message } };
+      (error instanceof Error && error.name === "InvalidPortalCredentialsError");
+
+    // Attribute the failed attempt to its owning Customer when the email maps to
+    // a known user, so the failure is visible in that Customer's Support view.
+    // Unknown emails stay unattributed. The lookup never affects auth and never
+    // throws into this flow.
+    let known: Awaited<ReturnType<PortalUserStore["findByEmail"]>> = null;
+    try {
+      known = email ? await deps.users?.findByEmail(email) ?? null : null;
+    } catch {
+      known = null;
+    }
+
+    // Always record the failed attempt. We record only the attempted email —
+    // never the submitted password.
+    await deps.diagnostics?.record({
+      level: "warn",
+      source: AUTH_SOURCE,
+      operation: "portal.login",
+      outcome: "failure",
+      customerId: known?.customerId ?? null,
+      actor: known
+        ? { type: actorTypeForRole(known.role), id: known.id, email }
+        : { type: "anonymous", email },
+      candidateEmail: known && known.role !== "admin" ? email : null,
+      message: isInvalidCreds
+        ? "Portal login failed: invalid credentials"
+        : "Portal login failed: unexpected error",
+      details: {
+        reason: isInvalidCreds
+          ? "invalid_credentials"
+          : error instanceof Error
+            ? error.name
+            : "unexpected_error",
+      },
+    });
+
+    if (isInvalidCreds) {
+      return { status: 401, body: { error: (error as Error).message } };
     }
     throw error;
   }
@@ -95,9 +167,48 @@ export async function handlePortalLogout(
   deps: PortalAuthDeps,
   request: PortalAuthRequest,
 ): Promise<PortalAuthResponse> {
-  if (request.sessionId) {
-    await deps.portalAuth.signOut(request.sessionId);
+  // Resume before signing out so the diagnostic entry carries the actor's
+  // identity (role, customer, email) rather than just an opaque session id.
+  let session: PortalSession | null = null;
+  try {
+    session = request.sessionId
+      ? await deps.portalAuth.resume(request.sessionId)
+      : null;
+
+    if (request.sessionId) {
+      await deps.portalAuth.signOut(request.sessionId);
+    }
+  } catch (error) {
+    await deps.diagnostics?.record({
+      level: "warn",
+      source: AUTH_SOURCE,
+      operation: "portal.logout",
+      outcome: "failure",
+      customerId: session?.customerId ?? null,
+      actor: session
+        ? { type: actorTypeForRole(session.role), id: session.userId, email: session.email }
+        : { type: "anonymous" },
+      message: "Portal logout failed",
+      details: { reason: error instanceof Error ? error.name : "unexpected_error" },
+    });
+    throw error;
   }
+
+  await deps.diagnostics?.record({
+    level: "info",
+    source: AUTH_SOURCE,
+    operation: "portal.logout",
+    outcome: "success",
+    customerId: session?.customerId ?? null,
+    actor: session
+      ? { type: actorTypeForRole(session.role), id: session.userId, email: session.email }
+      : { type: "anonymous" },
+    subject: session ? { type: "customer", id: session.customerId } : null,
+    candidateEmail: session && session.role !== "admin" ? session.email : null,
+    message: session
+      ? `Portal ${session.role} logout`
+      : "Portal logout for unknown or expired session",
+  });
 
   return {
     status: 200,

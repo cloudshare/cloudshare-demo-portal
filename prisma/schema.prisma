@@ -154,3 +154,37 @@ model SupportLogEntry {
 
   @@index([timestamp])
 }
+
+// Typed, append-only support source of truth (ADR-004). Core correlation fields
+// are first-class columns so the Support read API filters on them directly and
+// never depends on brittle JSON-string search; only free-form structures are
+// JSON-encoded. Rows are append-only evidence — no update path is exposed.
+model DiagnosticLogEntry {
+  id              String   @id @default(cuid())
+  occurredAt      DateTime
+  level           String
+  source          String
+  operation       String
+  outcome         String
+  customerId      String?
+  actorType       String?
+  actorId         String?
+  actorEmail      String?
+  subjectType     String?
+  subjectId       String?
+  message         String
+  correlationId   String?
+  candidateEmail  String?
+  examId          String?
+  examAttemptId   String?
+  externalIdsJson String?
+  requestJson     String?
+  responseJson    String?
+  detailsJson     String?
+  createdAt       DateTime @default(now())
+
+  @@index([customerId, occurredAt])
+  @@index([examAttemptId])
+  @@index([candidateEmail])
+  @@index([correlationId])
+}

@@ -37,3 +37,6 @@ npm-debug.log*
 
 # os / editor
 .DS_Store
+
+# Local dev-server launch config (per-machine)
+.claude/launch.json

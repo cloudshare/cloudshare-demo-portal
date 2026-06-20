@@ -53,6 +53,9 @@ describe("admin tab model", () => {
     expect(getAdminTabLabel("candidates")).toBe("Candidates");
     expect(getAdminTabLabel("monitoring")).toBe("Session Monitoring");
     expect(getAdminTabLabel("support")).toBe("Support Workbench");
+    expect(ADMIN_TABS).toContain("diagnostics");
+    expect(getAdminTabLabel("diagnostics")).toBe("Diagnostic Log");
+    expect(shouldShowCandidateProvisioning("diagnostics")).toBe(false);
     expect(shouldShowCandidateProvisioning("candidates")).toBe(true);
     expect(shouldShowCandidateProvisioning("connection")).toBe(false);
     expect(shouldShowCandidateProvisioning("exams")).toBe(false);

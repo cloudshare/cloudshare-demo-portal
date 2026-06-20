@@ -62,6 +62,23 @@ interface SupportLogRecord {
   fields: Record<string, unknown>;
 }
 
+interface DiagnosticLogEntry {
+  id: string;
+  occurredAt: string;
+  level: "debug" | "info" | "warn" | "error";
+  source: string;
+  operation: string;
+  outcome: "success" | "failure";
+  customerId: string | null;
+  actor: { type: string; id?: string | null; email?: string | null } | null;
+  subject: { type: string; id?: string | null } | null;
+  message: string;
+  correlationId: string | null;
+  candidateEmail: string | null;
+  examId: string | null;
+  examAttemptId: string | null;
+}
+
 interface SupportWorkbenchDiagnostic {
   timestamp: string;
   level: "debug" | "info" | "warn" | "error";
@@ -295,6 +312,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   const [supportWorkbenchDiagnostics, setSupportWorkbenchDiagnostics] = useState<
     SupportWorkbenchDiagnostic[] | null
   >(null);
+  const [diagnosticEntries, setDiagnosticEntries] = useState<DiagnosticLogEntry[] | null>(null);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [connection, setConnection] = useState<ConnectionState | null>(null);
   const [apiId, setApiId] = useState("");
@@ -594,6 +612,39 @@ export function AdminConsole({ email }: AdminConsoleProps) {
         setLoading(false);
       }
     }
+  }
+
+  async function loadDiagnostics(background = false) {
+    if (!background) {
+      setLoading(true);
+      setError(null);
+    }
+    try {
+      const res = await fetchAdmin("/api/admin/diagnostics?limit=200");
+      const data = (await res.json()) as { entries?: DiagnosticLogEntry[]; error?: string };
+      if (!res.ok) {
+        if (!background) {
+          setError(data.error ?? "Failed to load diagnostic log");
+        }
+        return;
+      }
+      setDiagnosticEntries(data.entries ?? []);
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
+      if (!background) {
+        setError("Failed to load diagnostic log");
+      }
+    } finally {
+      if (!background) {
+        setLoading(false);
+      }
+    }
+  }
+
+  function onLoadDiagnostics() {
+    void loadDiagnostics();
   }
 
   function onLoadSupportLog() {
@@ -1962,6 +2013,78 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                 ))}
               </tbody>
             </table>
+          )}
+        </section>
+      )}
+
+      {tab === "diagnostics" && (
+        <section>
+          <p style={{ color: "#555", marginTop: 0 }}>
+            The correlated diagnostic log: what the portal did, in what order, and how to trace it.
+            Entries are append-only and scoped to your Customer. Timestamps are ISO 8601 in UTC.
+            Secrets and credentials are redacted.
+          </p>
+          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "1rem" }}>
+            <button onClick={onLoadDiagnostics} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
+              {loading ? "Loading..." : "Load Diagnostic Log"}
+            </button>
+          </div>
+          {diagnosticEntries && (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
+                <thead>
+                  <tr style={{ textAlign: "left", borderBottom: "2px solid #ddd" }}>
+                    <th style={{ padding: "0.4rem" }}>Occurred (UTC)</th>
+                    <th style={{ padding: "0.4rem" }}>Level</th>
+                    <th style={{ padding: "0.4rem" }}>Source</th>
+                    <th style={{ padding: "0.4rem" }}>Operation</th>
+                    <th style={{ padding: "0.4rem" }}>Outcome</th>
+                    <th style={{ padding: "0.4rem" }}>Actor</th>
+                    <th style={{ padding: "0.4rem" }}>Subject</th>
+                    <th style={{ padding: "0.4rem" }}>Candidate</th>
+                    <th style={{ padding: "0.4rem" }}>Correlation</th>
+                    <th style={{ padding: "0.4rem" }}>Message</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {diagnosticEntries.length === 0 && (
+                    <tr>
+                      <td colSpan={10} style={{ padding: "0.75rem", color: "#666" }}>
+                        No diagnostic entries yet.
+                      </td>
+                    </tr>
+                  )}
+                  {diagnosticEntries.map((entry) => (
+                    <tr key={entry.id} style={{ borderBottom: "1px solid #eee", verticalAlign: "top" }}>
+                      <td style={{ padding: "0.4rem", fontFamily: "monospace", whiteSpace: "nowrap" }}>
+                        {entry.occurredAt}
+                      </td>
+                      <td style={{ padding: "0.4rem" }}>{entry.level}</td>
+                      <td style={{ padding: "0.4rem" }}>{entry.source}</td>
+                      <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{entry.operation}</td>
+                      <td
+                        style={{
+                          padding: "0.4rem",
+                          color: entry.outcome === "failure" ? "#b00020" : "#0a7",
+                          fontWeight: 600,
+                        }}
+                      >
+                        {entry.outcome}
+                      </td>
+                      <td style={{ padding: "0.4rem" }}>
+                        {entry.actor ? `${entry.actor.type}${entry.actor.email ? ` (${entry.actor.email})` : ""}` : "—"}
+                      </td>
+                      <td style={{ padding: "0.4rem" }}>
+                        {entry.subject ? `${entry.subject.type}${entry.subject.id ? ` (${entry.subject.id})` : ""}` : "—"}
+                      </td>
+                      <td style={{ padding: "0.4rem" }}>{entry.candidateEmail ?? "—"}</td>
+                      <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{entry.correlationId ?? "—"}</td>
+                      <td style={{ padding: "0.4rem" }}>{entry.message}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </section>
       )}

@@ -14,7 +14,7 @@ export async function POST(request: Request) {
   }
 
   const response = await handleCandidateSelfRegistration(
-    { users: services.portalUsers, logger: services.logger },
+    { users: services.portalUsers, logger: services.logger, diagnostics: services.diagnosticRecorder },
     { body },
   );
 

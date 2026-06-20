@@ -23,7 +23,7 @@ export async function POST(request: Request) {
   }
 
   const response = await handleAdminCreateCandidate(
-    { users: services.portalUsers, logger: services.logger },
+    { users: services.portalUsers, logger: services.logger, diagnostics: services.diagnosticRecorder },
     { customerId: session.customerId, body },
   );
 
