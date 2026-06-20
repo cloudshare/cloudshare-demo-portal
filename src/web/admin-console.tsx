@@ -694,6 +694,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     if (!background) {
       setLoading(true);
       setError(null);
+      setSupportWorkbench(null);
     }
     try {
       const res = await fetchAdmin("/api/admin/support-log?limit=200");
