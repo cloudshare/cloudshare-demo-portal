@@ -437,6 +437,114 @@ describe("scheduleExam", () => {
     });
   });
 
+  it("records a transport-mode failure for training creation and emits no later steps", async () => {
+    const { exams, attempts, launches } = await setup();
+    const repository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository });
+
+    const transportError = Object.assign(new Error("ENOTFOUND use.cloudshare.com"), {
+      name: "CloudShareTransportError",
+      context: {
+        integrationSurface: "cloudshare.v4.training",
+        method: "POST",
+        path: "/trainings",
+      },
+    });
+
+    await expect(
+      scheduleExam(
+        {
+          exams,
+          attempts,
+          launches,
+          labs: {
+            ...makeLabs(),
+            async createTraining() {
+              throw transportError;
+            },
+          },
+          newId: vi.fn().mockReturnValueOnce("attempt-1").mockReturnValueOnce("launch-1"),
+          now: () => new Date("2026-06-15T10:00:00.000Z"),
+          diagnostics,
+        },
+        {
+          customerId: "customer-helios",
+          candidateId: "candidate-1",
+          candidateEmail: "candidate@helioscx.demo",
+          candidateFirstName: "Asha",
+          candidateLastName: "Patel",
+          examId: "exam-1",
+          scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+        },
+      ),
+    ).rejects.toBeInstanceOf(CloudShareProvisioningError);
+
+    const thread = await repository.query({ examAttemptId: "attempt-1" });
+    const ops = thread.map((e) => e.operation);
+    expect(ops).toContain("cloudshare.create_training");
+    expect(ops).not.toContain("cloudshare.add_participant");
+    expect(ops).not.toContain("exam_attempt.provisioned");
+    const failure = thread.find((e) => e.outcome === "failure");
+    expect(failure?.details).toMatchObject({
+      failureMode: "transport",
+      integrationSurface: "cloudshare.v4.training",
+    });
+  });
+
+  it("redacts a login-url-keyed value if it appears in a failed sponsored-link response body", async () => {
+    const { exams, attempts, launches } = await setup();
+    const repository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository });
+
+    const leakyError = Object.assign(new Error("bad request"), {
+      name: "CloudShareRequestError",
+      status: 400,
+      context: {
+        integrationSurface: "cloudshare.v4.training.sponsored_link",
+        method: "POST",
+        path: "/trainings/training-1/sponsored-link",
+        responseBody: {
+          loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/leak-token",
+        },
+      },
+    });
+
+    await expect(
+      scheduleExam(
+        {
+          exams,
+          attempts,
+          launches,
+          labs: {
+            ...makeLabs(),
+            async createSponsoredLink() {
+              throw leakyError;
+            },
+          },
+          newId: vi.fn().mockReturnValueOnce("attempt-1").mockReturnValueOnce("launch-1"),
+          now: () => new Date("2026-06-15T10:00:00.000Z"),
+          diagnostics,
+        },
+        {
+          customerId: "customer-helios",
+          candidateId: "candidate-1",
+          candidateEmail: "candidate@helioscx.demo",
+          candidateFirstName: "Asha",
+          candidateLastName: "Patel",
+          examId: "exam-1",
+          scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+        },
+      ),
+    ).rejects.toBeInstanceOf(CloudShareProvisioningError);
+
+    const thread = await repository.query({ examAttemptId: "attempt-1" });
+    expect(JSON.stringify(thread)).not.toContain("leak-token");
+    const failure = thread.find((e) => e.operation === "cloudshare.create_sponsored_link");
+    expect((failure?.details as { responseBody?: { loginUrl?: string } })?.responseBody?.loginUrl).toBe(
+      "[REDACTED]",
+    );
+  });
+
   it("rejects non-future schedule times", async () => {
     const { exams, attempts, launches } = await setup();
 

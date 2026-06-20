@@ -744,6 +744,42 @@ remaining field names, required fields, enum values, or path semantics differ.
 
 ---
 
+## GAP-17 — Provisioning responses omit Team ID and student/participant ID
+
+| Field | Detail |
+|---|---|
+| **Status** | Confirmed from adapter contracts; live confirmation pending |
+| **Verified live** | No |
+
+**Observed behaviour**
+
+Slice 2B instruments the scheduling/provisioning write path with `DiagnosticLogEntry`s. Two
+identifiers the support model would ideally carry are not returned by the v4 calls the portal makes:
+
+- **Team ID** — `createTraining` resolves a Team internally (`GET /v3/teams`) but
+  `CreateTrainingResult` only returns `{ trainingId }`, so the Team ID is not surfaced to the domain
+  and is not recorded on the `cloudshare.create_training` diagnostic.
+- **Student/participant ID** — `POST /v4/trainings/{id}/students` returns an array the adapter
+  discards (`addTrainingStudentsSchema`), so no CloudShare-side student/participant ID is available
+  to anchor the `cloudshare.add_participant` diagnostic.
+
+**Impact on certification use**
+
+Issue #76's "training/Team ID where known" and "participant/student ID when known" anchors are
+satisfied as *null* for these two IDs. Support can still trace the thread via ExamAttempt ID,
+training ID, Candidate email, and correlation ID, so forensic correlation is intact; only the
+CloudShare-side Team/student IDs are missing.
+
+**Action required (if applicable):**
+
+If a later slice needs Team/student IDs in diagnostics, extend the lab adapter result types to
+surface them (the data is present in the `GET /v3/teams` and add-students responses) and populate
+the diagnostic `externalIds`. Confirm the add-students response shape against the live tenant first.
+
+**Code reference:** `src/integrations/cloudshare/labs.ts`, `src/domain/scheduling.ts`
+
+---
+
 ## Gap template
 
 Copy this section when appending a new gap discovered during implementation:

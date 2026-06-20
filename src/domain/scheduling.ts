@@ -144,6 +144,7 @@ export async function scheduleExam(
     examId: exam.id,
     examAttemptId: attemptId,
     correlationId: input.correlationId ?? null,
+    actor: { type: "candidate", id: input.candidateId, email: input.candidateEmail },
     subject: { type: "exam_attempt", id: attemptId },
   } as const;
   const recordSuccess = (
@@ -204,6 +205,7 @@ export async function scheduleExam(
     });
   }
 
+  const regionIds = exam.allowedRegions.map((region) => region.id).join(",");
   await recordSuccess("cloudshare.create_training", "CloudShare training created", {
     externalIds: {
       trainingId,
@@ -211,7 +213,7 @@ export async function scheduleExam(
       blueprintId: exam.blueprintId,
       policyId: exam.policyId,
       instructorId: exam.instructorId,
-      regionIds: exam.allowedRegions.map((region) => region.id).join(","),
+      ...(regionIds ? { regionIds } : {}),
     },
     request: { method: "POST", integrationSurface: PROVISIONING_SURFACE.create_training, path: "/trainings" },
     response: { trainingId },
