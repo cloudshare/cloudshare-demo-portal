@@ -92,6 +92,9 @@ export async function handleCloudShareWebhook(
     }
 
     const requestBodySummary = summariseWebhookBody(request.rawBody);
+    const webhookFields = isWebhookBodySummary(requestBodySummary)
+      ? flattenWebhookDiagnosticFields(requestBodySummary)
+      : {};
     deps.logger.info("cloudshare webhook received", {
       operation: "receive_webhook",
       integrationSurface: "cloudshare.v3.webhook",
@@ -104,6 +107,7 @@ export async function handleCloudShareWebhook(
       },
       rawRequestBody: request.rawBody,
       requestBodySummary,
+      ...webhookFields,
       ...(isWebhookBodySummary(requestBodySummary)
         ? {
             webhookEnvelope: requestBodySummary.envelope,
@@ -133,7 +137,14 @@ export async function handleCloudShareWebhook(
       rawBodySha256: hashRawBody(request.rawBody),
       receivedSignature: request.signature ?? null,
       expectedSignature: computeWebhookSignature(request.rawBody, connection.webhookSecret),
+      storedWebhookSecretLength: connection.webhookSecret.length,
       signatureMatched: outcome.kind !== "invalid_signature",
+      ...(outcome.kind === "invalid_signature"
+        ? {
+            signatureFailureHint:
+              "Expected signature is computed from the portal-stored webhook secret. If an external HMAC tool using the CloudShare secret returns the received signature, update the stored CloudShare Connection webhook secret.",
+          }
+        : {}),
     });
 
     switch (outcome.kind) {
@@ -282,6 +293,26 @@ function isWebhookBodySummary(summary: unknown): summary is WebhookBodySummary {
     !Array.isArray(summary) &&
     (summary as { parseStatus?: unknown }).parseStatus === "ok"
   );
+}
+
+function flattenWebhookDiagnosticFields(summary: WebhookBodySummary): Record<string, unknown> {
+  return {
+    webhookEvent: summary.envelope.Event,
+    webhookCreatedAt: summary.envelope.CreatedAt,
+    webhookCreatedById: summary.envelope.CreatedById,
+    webhookCreatedByEmail: summary.envelope.CreatedByEmail,
+    webhookAttempt: summary.envelope.Attempt,
+    webhookEnvironmentId: summary.payload?.EnvironmentId ?? null,
+    webhookEnvironmentExternalId: summary.payload?.EnvironmentExternalId ?? null,
+    webhookEnvironmentName: summary.payload?.EnvironmentName ?? null,
+    webhookBlueprintId: summary.payload?.BlueprintId ?? null,
+    webhookBlueprintName: summary.payload?.BlueprintName ?? null,
+    webhookPolicyId: summary.payload?.PolicyId ?? null,
+    webhookPolicyName: summary.payload?.PolicyName ?? null,
+    webhookOwnerEmail: summary.payload?.OwnerEmail ?? null,
+    webhookCloud: summary.payload?.Cloud ?? null,
+    webhookRegionId: summary.payload?.RegionId ?? null,
+  };
 }
 
 function summariseWebhookPayload(payload: unknown): Record<string, unknown> | null {

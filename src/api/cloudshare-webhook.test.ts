@@ -117,6 +117,10 @@ describe("handleCloudShareWebhook", () => {
     expect(receivedLine).toContain('"x-cloudshare-signature":"invalid"');
     expect(receivedLine).toContain('"webhookEnvelope"');
     expect(receivedLine).toContain('"webhookPayload"');
+    expect(receivedLine).toContain('"webhookEvent":"environment.created"');
+    expect(receivedLine).toContain('"webhookEnvironmentId":"env-1"');
+    expect(receivedLine).toContain('"webhookEnvironmentName":"Allowed Environment Name"');
+    expect(receivedLine).toContain('"webhookOwnerEmail":"owner@example.test"');
     expect(receivedLine).toContain("Allowed Environment Name");
     expect(receivedLine).toContain("env-1");
     expect(receivedLine).toContain("owner@example.test");
@@ -154,7 +158,9 @@ describe("handleCloudShareWebhook", () => {
     expect(diagnosticLine).toContain(
       `"expectedSignature":"${computeWebhookSignature(rawBody, HELIOS_SECRET)}"`,
     );
+    expect(diagnosticLine).toContain(`"storedWebhookSecretLength":${HELIOS_SECRET.length}`);
     expect(diagnosticLine).toContain('"signatureMatched":false');
+    expect(diagnosticLine).toContain("update the stored CloudShare Connection webhook secret");
     expect(diagnosticLine).toContain("rawBodySha256");
   });
 

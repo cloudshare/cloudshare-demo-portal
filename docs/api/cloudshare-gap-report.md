@@ -301,7 +301,10 @@ inconsistent.
   must schedule provisioning with the correct lead time to avoid either wasted
   resource-hours (provisioning too early) or candidate-facing delays (too late).
 - Known documentation gaps tracked as code assumptions in this codebase:
-  - `x-cloudshare-signature` header name (webhooks) — unverified.
+  - `x-cloudshare-signature` header name (webhooks) — verified live on 2026-06-20.
+    CloudShare signs the exact raw request body with HMAC-SHA256 and sends the
+    base64 MAC in this header. Signature diagnostics must compare against the
+    raw request body bytes as received, not a parsed or re-serialised JSON body.
   - Webhook payload field names were previously under-specified. Current docs indicate top-level
     `Event`, `CreatedAt`, `CreatedById`, `CreatedByEmail`, `Attempt`, and nested `Payload`.
   - `GET /environments?externalId=...` path for resolving environment by external ID — unverified.

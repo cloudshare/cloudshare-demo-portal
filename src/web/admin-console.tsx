@@ -163,6 +163,32 @@ function formatSupportValue(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
+const WEBHOOK_SUPPORT_FIELD_LABELS: Array<{ key: string; label: string }> = [
+  { key: "webhookEvent", label: "Event" },
+  { key: "webhookCreatedAt", label: "CreatedAt" },
+  { key: "webhookCreatedById", label: "CreatedById" },
+  { key: "webhookCreatedByEmail", label: "CreatedByEmail" },
+  { key: "webhookAttempt", label: "Attempt" },
+  { key: "webhookEnvironmentId", label: "EnvironmentId" },
+  { key: "webhookEnvironmentExternalId", label: "EnvironmentExternalId" },
+  { key: "webhookEnvironmentName", label: "EnvironmentName" },
+  { key: "webhookBlueprintId", label: "BlueprintId" },
+  { key: "webhookBlueprintName", label: "BlueprintName" },
+  { key: "webhookPolicyId", label: "PolicyId" },
+  { key: "webhookPolicyName", label: "PolicyName" },
+  { key: "webhookOwnerEmail", label: "OwnerEmail" },
+  { key: "webhookCloud", label: "Cloud" },
+  { key: "webhookRegionId", label: "RegionId" },
+];
+
+function getWebhookSupportFieldRows(
+  fields: Record<string, unknown>,
+): Array<{ label: string; value: unknown }> {
+  return WEBHOOK_SUPPORT_FIELD_LABELS
+    .map(({ key, label }) => ({ label, value: fields[key] }))
+    .filter(({ value }) => value !== undefined && value !== null && value !== "");
+}
+
 function stripHtmlToText(value: string | null | undefined): string {
   if (!value) {
     return "";
@@ -1926,6 +1952,9 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                   const receivedSignature = readStringField(record.fields, "receivedSignature");
                   const expectedSignature = readStringField(record.fields, "expectedSignature");
                   const signatureMatched = record.fields.signatureMatched;
+                  const signatureFailureHint = readStringField(record.fields, "signatureFailureHint");
+                  const storedWebhookSecretLength = readNumberField(record.fields, "storedWebhookSecretLength");
+                  const webhookFieldRows = getWebhookSupportFieldRows(record.fields);
                   const responseHeaders = record.fields.responseHeaders;
                   const responseBody = record.fields.responseBody;
                   const network = record.fields.network;
@@ -1991,6 +2020,21 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                               </pre>
                             </div>
                           )}
+                          {webhookFieldRows.length > 0 && (
+                            <div>
+                              <strong>Webhook fields:</strong>
+                              <dl style={{ display: "grid", gridTemplateColumns: "max-content minmax(12rem, 1fr)", columnGap: "0.75rem", rowGap: "0.2rem", margin: "0.2rem 0 0" }}>
+                                {webhookFieldRows.map(({ label, value }) => (
+                                  <div key={label} style={{ display: "contents" }}>
+                                    <dt style={{ fontWeight: 600 }}>{label}</dt>
+                                    <dd style={{ margin: 0, fontFamily: "monospace", overflowWrap: "anywhere" }}>
+                                      {formatSupportValue(value)}
+                                    </dd>
+                                  </div>
+                                ))}
+                              </dl>
+                            </div>
+                          )}
                           {requestBodySummary !== undefined && (
                             <div>
                               <strong>Webhook request body summary:</strong>
@@ -2001,7 +2045,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                           )}
                           {rawRequestBody !== undefined && (
                             <div>
-                              <strong>Raw webhook request body:</strong>
+                              <strong>Raw webhook request body used for HMAC:</strong>
                               <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
                                 {formatSupportValue(rawRequestBody)}
                               </pre>
@@ -2014,17 +2058,27 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                           )}
                           {receivedSignature && (
                             <div>
-                              <strong>Received signature:</strong> <span style={{ fontFamily: "monospace" }}>{receivedSignature}</span>
+                              <strong>Received x-cloudshare-signature:</strong> <span style={{ fontFamily: "monospace" }}>{receivedSignature}</span>
                             </div>
                           )}
                           {expectedSignature && (
                             <div>
-                              <strong>Expected signature:</strong> <span style={{ fontFamily: "monospace" }}>{expectedSignature}</span>
+                              <strong>Expected signature from stored secret:</strong> <span style={{ fontFamily: "monospace" }}>{expectedSignature}</span>
+                            </div>
+                          )}
+                          {typeof storedWebhookSecretLength === "number" && (
+                            <div>
+                              <strong>Stored webhook secret length:</strong> {storedWebhookSecretLength} characters
                             </div>
                           )}
                           {typeof signatureMatched === "boolean" && (
                             <div>
                               <strong>Signature matched:</strong> {signatureMatched ? "yes" : "no"}
+                            </div>
+                          )}
+                          {signatureFailureHint && (
+                            <div style={{ color: "#8a5a00" }}>
+                              <strong>Signature diagnostic:</strong> {signatureFailureHint}
                             </div>
                           )}
                           {responseBody !== undefined && (
