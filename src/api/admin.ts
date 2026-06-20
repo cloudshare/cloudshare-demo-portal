@@ -8,6 +8,7 @@ import type {
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
 import { createCloudShareResourceLister } from "@/integrations/cloudshare/resources";
+import { sanitizeSupportLogRecords } from "./support-log-sanitization";
 
 /**
  * Framework-agnostic admin API handlers. All three surfaces are read-only
@@ -128,6 +129,8 @@ export async function handleGetSupportLog(
 ): Promise<AdminResponse> {
   const limitParam = request.query.limit;
   const limit = limitParam ? parseInt(limitParam, 10) : undefined;
-  const records = await deps.supportLog.listAll(limit !== undefined && !isNaN(limit) ? limit : undefined);
+  const records = sanitizeSupportLogRecords(
+    await deps.supportLog.listAll(limit !== undefined && !isNaN(limit) ? limit : undefined),
+  );
   return { status: 200, body: { records } };
 }

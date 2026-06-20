@@ -12,6 +12,12 @@ import {
 } from "@/domain/admin-monitoring";
 import type { ExamAttemptStatus } from "@/domain/exam-attempt";
 import { parseUtcDateTimeInput } from "@/support/utc-date-time";
+import {
+  isCloudShareWebhookDiagnostic,
+  isVisibleToSupportWorkbenchCustomer,
+  sanitizeSupportLogRecord,
+  collectTrustedWebhookBodyKeys,
+} from "./support-log-sanitization";
 
 const DEFAULT_ATTEMPT_LIMIT = 50;
 const MAX_ATTEMPT_LIMIT = 200;
@@ -106,11 +112,14 @@ export async function handleGetSupportWorkbench(
   const monitoringView = buildAdminMonitoringView(monitoringInput);
   const matchingAttemptViews = buildMonitoringAttemptViews(monitoringInput);
   const supportLogRecords = (await deps.supportLog.listAll(WEBHOOK_DIAGNOSTIC_SCAN_LIMIT)).filter(
-    isCloudShareWebhookDiagnostic,
+    (record) =>
+      isCloudShareWebhookDiagnostic(record) &&
+      isVisibleToSupportWorkbenchCustomer(record, request.customerId),
   );
   const trustedWebhookBodyKeys = collectTrustedWebhookBodyKeys(supportLogRecords);
   const diagnostics = supportLogRecords
-    .map((record) => toSupportWorkbenchDiagnostic(record, trustedWebhookBodyKeys))
+    .map((record) => sanitizeSupportLogRecord(record, trustedWebhookBodyKeys))
+    .map((record) => toSupportWorkbenchDiagnostic(record))
     .slice(0, WEBHOOK_DIAGNOSTIC_RESULT_LIMIT);
   const boundedAttempts = matchingAttemptViews.slice(0, filters.limit);
   const currentQueueTotals = {
@@ -245,37 +254,9 @@ function normalizeText(value: string | null | undefined): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function isCloudShareWebhookDiagnostic(record: SupportLogRecord): boolean {
-  return (
-    readStringField(record.fields, "operation") === "receive_webhook" &&
-    readStringField(record.fields, "integrationSurface") === "cloudshare.v3.webhook"
-  );
-}
-
-function collectTrustedWebhookBodyKeys(records: readonly SupportLogRecord[]): Set<string> {
-  const trustedKeys = new Set<string>();
-  for (const record of records) {
-    if (record.message !== "cloudshare webhook signature diagnostic") {
-      continue;
-    }
-    if (record.fields.signatureMatched !== true) {
-      continue;
-    }
-
-    const key = getWebhookBodyTrustKey(record.fields);
-    if (key) {
-      trustedKeys.add(key);
-    }
-  }
-  return trustedKeys;
-}
-
-function toSupportWorkbenchDiagnostic(
-  record: SupportLogRecord,
-  trustedWebhookBodyKeys: ReadonlySet<string>,
-): SupportWorkbenchDiagnostic {
+function toSupportWorkbenchDiagnostic(record: SupportLogRecord): SupportWorkbenchDiagnostic {
   const message = record.message;
-  const rawRequestBody = getSafeRawWebhookBody(record, trustedWebhookBodyKeys);
+  const rawRequestBody = readStringField(record.fields, "rawRequestBody");
 
   return {
     timestamp: record.timestamp,
@@ -293,41 +274,6 @@ function toSupportWorkbenchDiagnostic(
     rawRequestBody,
     trustGateReason: readStringField(record.fields, "trustGateReason"),
   };
-}
-
-function getSafeRawWebhookBody(
-  record: SupportLogRecord,
-  trustedWebhookBodyKeys: ReadonlySet<string>,
-): string | null {
-  const rawRequestBody = readStringField(record.fields, "rawRequestBody");
-  if (!rawRequestBody) {
-    return null;
-  }
-
-  if (
-    record.message === "cloudshare webhook rejected: unknown webhook target" ||
-    record.message === "cloudshare webhook rejected: missing signature" ||
-    record.message === "cloudshare webhook rejected: invalid signature"
-  ) {
-    return null;
-  }
-
-  const trustKey = getWebhookBodyTrustKey(record.fields);
-  if (!trustKey || !trustedWebhookBodyKeys.has(trustKey)) {
-    return null;
-  }
-
-  return rawRequestBody;
-}
-
-function getWebhookBodyTrustKey(fields: Record<string, unknown>): string | null {
-  const customerId = readStringField(fields, "customerId");
-  const webhookPathToken = readStringField(fields, "webhookPathToken");
-  const rawBodySha256 = readStringField(fields, "rawBodySha256");
-  if (!customerId || !webhookPathToken || !rawBodySha256) {
-    return null;
-  }
-  return `${customerId}:${webhookPathToken}:${rawBodySha256}`;
 }
 
 function readStringField(fields: Record<string, unknown>, key: string): string | null {

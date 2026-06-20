@@ -2406,7 +2406,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                               </pre>
                             </div>
                           )}
-                          {rawRequestBody !== undefined && (
+                          {typeof rawRequestBody === "string" && rawRequestBody.length > 0 && (
                             <div>
                               <strong>Raw webhook request body used for HMAC:</strong>
                               <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>

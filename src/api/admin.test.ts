@@ -229,4 +229,133 @@ describe("handleGetSupportLog", () => {
     const body = result.body as { records: unknown[] };
     expect(body.records).toHaveLength(1);
   });
+
+  it("redacts untrusted webhook raw bodies while preserving trusted known-target diagnostics", async () => {
+    const trustedBody = "{\"Event\":\"environment.created\",\"Customer\":\"Helios\"}";
+    const untrustedBody = "{\"token\":\"must-not-leak\"}";
+    const legacyBody = "{\"legacy\":\"must-not-leak\"}";
+
+    const supportLog = makeSupportLog([
+      {
+        timestamp: new Date("2026-06-20T10:00:00.000Z"),
+        level: "info",
+        message: "cloudshare webhook received",
+        fields: {
+          operation: "receive_webhook",
+          integrationSurface: "cloudshare.v3.webhook",
+          customerId: "customer-helios",
+          webhookPathToken: "whk-helios",
+          requestBodyBytes: trustedBody.length,
+          rawBodySha256: "hash-helios",
+          signaturePresent: true,
+          rawRequestBody: trustedBody,
+        },
+      },
+      {
+        timestamp: new Date("2026-06-20T10:00:01.000Z"),
+        level: "info",
+        message: "cloudshare webhook signature diagnostic",
+        fields: {
+          operation: "receive_webhook",
+          integrationSurface: "cloudshare.v3.webhook",
+          customerId: "customer-helios",
+          webhookPathToken: "whk-helios",
+          rawBodySha256: "hash-helios",
+          signatureMatched: true,
+        },
+      },
+      {
+        timestamp: new Date("2026-06-20T10:01:00.000Z"),
+        level: "warn",
+        message: "cloudshare webhook rejected: missing signature",
+        fields: {
+          operation: "receive_webhook",
+          integrationSurface: "cloudshare.v3.webhook",
+          customerId: "customer-helios",
+          webhookPathToken: "whk-helios",
+          requestBodyBytes: untrustedBody.length,
+          rawBodySha256: "hash-missing",
+          signaturePresent: false,
+          trustGateReason: "CloudShare signature header x-cloudshare-signature was absent.",
+          rawRequestBody: untrustedBody,
+        },
+      },
+      {
+        timestamp: new Date("2026-06-20T10:02:00.000Z"),
+        level: "info",
+        message: "cloudshare webhook received",
+        fields: {
+          operation: "receive_webhook",
+          integrationSurface: "cloudshare.v3.webhook",
+          webhookPathToken: "whk-legacy",
+          requestBodyBytes: legacyBody.length,
+          rawBodySha256: "hash-legacy",
+          signaturePresent: true,
+          rawRequestBody: legacyBody,
+        },
+      },
+      {
+        timestamp: new Date("2026-06-20T10:02:01.000Z"),
+        level: "info",
+        message: "cloudshare webhook signature diagnostic",
+        fields: {
+          operation: "receive_webhook",
+          integrationSurface: "cloudshare.v3.webhook",
+          webhookPathToken: "whk-legacy",
+          rawBodySha256: "hash-legacy",
+          signatureMatched: true,
+        },
+      },
+    ]);
+
+    const result = await handleGetSupportLog(
+      { supportLog, logger: makeLogger() },
+      { query: {} },
+    );
+
+    expect(result.status).toBe(200);
+    expect(result.body).toEqual({
+      records: [
+        expect.objectContaining({
+          message: "cloudshare webhook received",
+          fields: expect.objectContaining({
+            customerId: "customer-helios",
+            rawBodySha256: "hash-helios",
+            rawRequestBody: trustedBody,
+          }),
+        }),
+        expect.objectContaining({
+          message: "cloudshare webhook signature diagnostic",
+          fields: expect.objectContaining({
+            signatureMatched: true,
+          }),
+        }),
+        expect.objectContaining({
+          message: "cloudshare webhook rejected: missing signature",
+          fields: expect.objectContaining({
+            requestBodyBytes: untrustedBody.length,
+            rawBodySha256: "hash-missing",
+            signaturePresent: false,
+            trustGateReason: "CloudShare signature header x-cloudshare-signature was absent.",
+            rawRequestBody: null,
+          }),
+        }),
+        expect.objectContaining({
+          message: "cloudshare webhook received",
+          fields: expect.objectContaining({
+            webhookPathToken: "whk-legacy",
+            rawBodySha256: "hash-legacy",
+            rawRequestBody: null,
+          }),
+        }),
+        expect.objectContaining({
+          message: "cloudshare webhook signature diagnostic",
+          fields: expect.objectContaining({
+            webhookPathToken: "whk-legacy",
+            signatureMatched: true,
+          }),
+        }),
+      ],
+    });
+  });
 });

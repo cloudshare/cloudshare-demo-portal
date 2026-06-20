@@ -527,6 +527,139 @@ describe("handleGetSupportWorkbench", () => {
     );
   });
 
+  it("scopes webhook diagnostics to the current Customer and never trusts legacy records without customer ownership", async () => {
+    const trustedHeliosBody = "{\"Event\":\"environment.created\",\"Customer\":\"Helios\"}";
+    const trustedOtherBody = "{\"Event\":\"environment.created\",\"Customer\":\"Other\"}";
+    const legacyBody = "{\"Event\":\"environment.created\",\"Customer\":\"Legacy\"}";
+
+    const result = await handleGetSupportWorkbench(
+      {
+        attempts: makeAttemptRepository([]),
+        audit: makeAuditRepository([]),
+        eventLog: makeEventLog([]),
+        supportLog: makeSupportLog([
+          {
+            timestamp: new Date("2026-06-20T10:00:00.000Z"),
+            level: "info",
+            message: "cloudshare webhook received",
+            fields: {
+              operation: "receive_webhook",
+              integrationSurface: "cloudshare.v3.webhook",
+              customerId: "customer-helios",
+              webhookPathToken: "whk-helios",
+              method: "POST",
+              path: "/api/webhooks/cloudshare/whk-helios",
+              requestBodyBytes: trustedHeliosBody.length,
+              rawBodySha256: "hash-helios",
+              signaturePresent: true,
+              rawRequestBody: trustedHeliosBody,
+            },
+          },
+          {
+            timestamp: new Date("2026-06-20T10:00:01.000Z"),
+            level: "info",
+            message: "cloudshare webhook signature diagnostic",
+            fields: {
+              operation: "receive_webhook",
+              integrationSurface: "cloudshare.v3.webhook",
+              customerId: "customer-helios",
+              webhookPathToken: "whk-helios",
+              rawBodySha256: "hash-helios",
+              signatureMatched: true,
+            },
+          },
+          {
+            timestamp: new Date("2026-06-20T10:01:00.000Z"),
+            level: "info",
+            message: "cloudshare webhook received",
+            fields: {
+              operation: "receive_webhook",
+              integrationSurface: "cloudshare.v3.webhook",
+              customerId: "customer-other",
+              webhookPathToken: "whk-other",
+              method: "POST",
+              path: "/api/webhooks/cloudshare/whk-other",
+              requestBodyBytes: trustedOtherBody.length,
+              rawBodySha256: "hash-other",
+              signaturePresent: true,
+              rawRequestBody: trustedOtherBody,
+            },
+          },
+          {
+            timestamp: new Date("2026-06-20T10:01:01.000Z"),
+            level: "info",
+            message: "cloudshare webhook signature diagnostic",
+            fields: {
+              operation: "receive_webhook",
+              integrationSurface: "cloudshare.v3.webhook",
+              customerId: "customer-other",
+              webhookPathToken: "whk-other",
+              rawBodySha256: "hash-other",
+              signatureMatched: true,
+            },
+          },
+          {
+            timestamp: new Date("2026-06-20T10:02:00.000Z"),
+            level: "info",
+            message: "cloudshare webhook received",
+            fields: {
+              operation: "receive_webhook",
+              integrationSurface: "cloudshare.v3.webhook",
+              webhookPathToken: "whk-legacy",
+              method: "POST",
+              path: "/api/webhooks/cloudshare/whk-legacy",
+              requestBodyBytes: legacyBody.length,
+              rawBodySha256: "hash-legacy",
+              signaturePresent: true,
+              rawRequestBody: legacyBody,
+            },
+          },
+          {
+            timestamp: new Date("2026-06-20T10:02:01.000Z"),
+            level: "info",
+            message: "cloudshare webhook signature diagnostic",
+            fields: {
+              operation: "receive_webhook",
+              integrationSurface: "cloudshare.v3.webhook",
+              webhookPathToken: "whk-legacy",
+              rawBodySha256: "hash-legacy",
+              signatureMatched: true,
+            },
+          },
+        ]),
+        logger: makeLogger(),
+      },
+      {
+        customerId: "customer-helios",
+        query: {},
+      },
+    );
+
+    expect(result.body.diagnostics).toHaveLength(4);
+    expect(result.body.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          customerId: null,
+          webhookPathToken: "whk-legacy",
+          rawRequestBody: null,
+        }),
+        expect.objectContaining({
+          customerId: "customer-helios",
+          webhookPathToken: "whk-helios",
+          rawRequestBody: null,
+        }),
+        expect.objectContaining({
+          customerId: "customer-helios",
+          webhookPathToken: "whk-helios",
+          rawRequestBody: trustedHeliosBody,
+        }),
+      ]),
+    );
+    expect(
+      result.body.diagnostics.some((diagnostic) => diagnostic.customerId === "customer-other"),
+    ).toBe(false);
+  });
+
   it("treats timezone-less scheduled date filters as UTC boundaries", async () => {
     const result = await handleGetSupportWorkbench(
       {
