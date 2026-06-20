@@ -537,6 +537,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     if (!background) {
       setLoading(true);
       setError(null);
+      setSupportWorkbenchDiagnostics(null);
     }
     try {
       const res = await fetchAdmin("/api/admin/support-log?limit=200");
@@ -566,6 +567,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     if (!background) {
       setLoading(true);
       setError(null);
+      setSupportRecords(null);
     }
     try {
       const res = await fetchAdmin("/api/admin/support-workbench");
@@ -2048,11 +2050,11 @@ export function AdminConsole({ email }: AdminConsoleProps) {
             </div>
           )}
           {supportRecords && (
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem", tableLayout: "fixed" }}>
               <thead>
                 <tr style={{ background: "#f5f5f5" }}>
                   {["Time (UTC)", "Level", "Operation", "Request", "Result", "Correlation ID", "Details"].map((h) => (
-                    <th key={h} style={{ textAlign: "left", padding: "0.4rem", borderBottom: "1px solid #ddd" }}>
+                    <th key={h} style={{ textAlign: "left", padding: "0.4rem", borderBottom: "1px solid #ddd", overflowWrap: "anywhere" }}>
                       {h}
                     </th>
                   ))}
@@ -2096,20 +2098,20 @@ export function AdminConsole({ email }: AdminConsoleProps) {
 
                   return (
                     <tr key={`${record.timestamp}-${record.message}-${index}`} style={{ borderBottom: "1px solid #eee", verticalAlign: "top" }}>
-                      <td style={{ padding: "0.4rem", whiteSpace: "nowrap" }}>
+                      <td style={{ padding: "0.4rem", whiteSpace: "nowrap", width: "10rem" }}>
                         {formatUtcTimestamp(record.timestamp)}
                       </td>
-                      <td style={{ padding: "0.4rem", textTransform: "uppercase" }}>{record.level}</td>
-                      <td style={{ padding: "0.4rem" }}>
+                      <td style={{ padding: "0.4rem", textTransform: "uppercase", width: "4rem" }}>{record.level}</td>
+                      <td style={{ padding: "0.4rem", overflowWrap: "anywhere", width: "11rem" }}>
                         <div>{operation}</div>
                         {integrationSurface && (
                           <div style={{ color: "#666", fontSize: "0.75rem" }}>{integrationSurface}</div>
                         )}
                       </td>
-                      <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>
+                      <td style={{ padding: "0.4rem", fontFamily: "monospace", overflowWrap: "anywhere", wordBreak: "break-word", width: "14rem" }}>
                         {method ?? "?"} {host ? `${host}${path ?? ""}` : (path ?? "?")}
                       </td>
-                      <td style={{ padding: "0.4rem" }}>
+                      <td style={{ padding: "0.4rem", overflowWrap: "anywhere", width: "8rem" }}>
                         {typeof responseStatus === "number" ? `HTTP ${responseStatus}` : failureMode ?? record.message}
                         {verifiedAt && (
                           <div style={{ color: "#666", fontSize: "0.75rem" }}>
@@ -2117,10 +2119,10 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                           </div>
                         )}
                       </td>
-                      <td style={{ padding: "0.4rem", fontFamily: "monospace", fontSize: "0.75rem" }}>
+                      <td style={{ padding: "0.4rem", fontFamily: "monospace", fontSize: "0.75rem", overflowWrap: "anywhere", width: "11rem" }}>
                         {correlationId ?? "-"}
                       </td>
-                      <td style={{ padding: "0.4rem", fontSize: "0.75rem", color: "#444" }}>
+                      <td style={{ padding: "0.4rem", fontSize: "0.75rem", color: "#444", overflowWrap: "anywhere" }}>
                         <div style={{ display: "grid", gap: "0.35rem" }}>
                           <div>
                             <strong>Message:</strong> {record.message}
