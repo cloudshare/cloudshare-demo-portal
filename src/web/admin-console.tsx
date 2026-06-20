@@ -2050,83 +2050,93 @@ export function AdminConsole({ email }: AdminConsoleProps) {
             </div>
           )}
           {supportRecords && (
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem", tableLayout: "fixed" }}>
-              <thead>
-                <tr style={{ background: "#f5f5f5" }}>
-                  {["Time (UTC)", "Level", "Operation", "Request", "Result", "Correlation ID", "Details"].map((h) => (
-                    <th key={h} style={{ textAlign: "left", padding: "0.4rem", borderBottom: "1px solid #ddd", overflowWrap: "anywhere" }}>
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {supportRecords.length === 0 && (
-                  <tr>
-                    <td colSpan={4} style={{ padding: "0.5rem", color: "#666" }}>
-                      No support log records
-                    </td>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ minWidth: "118rem", width: "100%", borderCollapse: "collapse", fontSize: "0.85rem", tableLayout: "fixed" }}>
+                <colgroup>
+                  <col style={{ width: "17rem" }} />
+                  <col style={{ width: "5rem" }} />
+                  <col style={{ width: "14rem" }} />
+                  <col style={{ width: "18rem" }} />
+                  <col style={{ width: "8rem" }} />
+                  <col style={{ width: "12rem" }} />
+                  <col style={{ width: "44rem" }} />
+                </colgroup>
+                <thead>
+                  <tr style={{ background: "#f5f5f5" }}>
+                    {["Time (UTC)", "Level", "Operation", "Request", "Result", "Correlation ID", "Details"].map((h) => (
+                      <th key={h} style={{ textAlign: "left", padding: "0.4rem", borderBottom: "1px solid #ddd" }}>
+                        {h}
+                      </th>
+                    ))}
                   </tr>
-                )}
-                {supportRecords.map((record, index) => {
-                  const operation = readStringField(record.fields, "operation") ?? record.message;
-                  const method = readStringField(record.fields, "method");
-                  const path = readStringField(record.fields, "path");
-                  const responseStatus = readNumberField(record.fields, "responseStatus");
-                  const failureMode = readStringField(record.fields, "failureMode");
-                  const correlationId = readStringField(record.fields, "correlationId");
-                  const integrationSurface = readStringField(record.fields, "integrationSurface");
-                  const host = readStringField(record.fields, "host");
-                  const requestHeaders = record.fields.requestHeaders;
-                  const requestBody = record.fields.requestBody;
-                  const requestBodySummary = record.fields.requestBodySummary;
-                  const rawRequestBody = record.fields.rawRequestBody;
-                  const rawBodySha256 = readStringField(record.fields, "rawBodySha256");
-                  const receivedSignature = readStringField(record.fields, "receivedSignature");
-                  const expectedSignature = readStringField(record.fields, "expectedSignature");
-                  const signatureMatched = record.fields.signatureMatched;
-                  const signatureFailureHint = readStringField(record.fields, "signatureFailureHint");
-                  const storedWebhookSecretLength = readNumberField(record.fields, "storedWebhookSecretLength");
-                  const webhookFieldRows = getWebhookSupportFieldRows(record.fields);
-                  const responseHeaders = record.fields.responseHeaders;
-                  const responseBody = record.fields.responseBody;
-                  const network = record.fields.network;
-                  const tls = record.fields.tls;
-                  const cause = readStringField(record.fields, "cause");
-                  const errorMessage = readStringField(record.fields, "error");
-                  const verifiedAt = readStringField(record.fields, "verifiedAt");
+                </thead>
+                <tbody>
+                  {supportRecords.length === 0 && (
+                    <tr>
+                      <td colSpan={7} style={{ padding: "0.5rem", color: "#666" }}>
+                        No support log records
+                      </td>
+                    </tr>
+                  )}
+                  {supportRecords.map((record, index) => {
+                    const operation = readStringField(record.fields, "operation") ?? record.message;
+                    const method = readStringField(record.fields, "method");
+                    const path = readStringField(record.fields, "path");
+                    const responseStatus = readNumberField(record.fields, "responseStatus");
+                    const failureMode = readStringField(record.fields, "failureMode");
+                    const correlationId = readStringField(record.fields, "correlationId");
+                    const integrationSurface = readStringField(record.fields, "integrationSurface");
+                    const host = readStringField(record.fields, "host");
+                    const requestHeaders = record.fields.requestHeaders;
+                    const requestBody = record.fields.requestBody;
+                    const requestBodySummary = record.fields.requestBodySummary;
+                    const rawRequestBody = record.fields.rawRequestBody;
+                    const rawBodySha256 = readStringField(record.fields, "rawBodySha256");
+                    const receivedSignature = readStringField(record.fields, "receivedSignature");
+                    const expectedSignature = readStringField(record.fields, "expectedSignature");
+                    const signatureMatched = record.fields.signatureMatched;
+                    const signatureFailureHint = readStringField(record.fields, "signatureFailureHint");
+                    const storedWebhookSecretLength = readNumberField(record.fields, "storedWebhookSecretLength");
+                    const webhookFieldRows = getWebhookSupportFieldRows(record.fields);
+                    const responseHeaders = record.fields.responseHeaders;
+                    const responseBody = record.fields.responseBody;
+                    const network = record.fields.network;
+                    const tls = record.fields.tls;
+                    const cause = readStringField(record.fields, "cause");
+                    const errorMessage = readStringField(record.fields, "error");
+                    const verifiedAt = readStringField(record.fields, "verifiedAt");
 
-                  return (
-                    <tr key={`${record.timestamp}-${record.message}-${index}`} style={{ borderBottom: "1px solid #eee", verticalAlign: "top" }}>
-                      <td style={{ padding: "0.4rem", whiteSpace: "nowrap", width: "10rem" }}>
-                        {formatUtcTimestamp(record.timestamp)}
-                      </td>
-                      <td style={{ padding: "0.4rem", textTransform: "uppercase", width: "4rem" }}>{record.level}</td>
-                      <td style={{ padding: "0.4rem", overflowWrap: "anywhere", width: "11rem" }}>
-                        <div>{operation}</div>
-                        {integrationSurface && (
-                          <div style={{ color: "#666", fontSize: "0.75rem" }}>{integrationSurface}</div>
-                        )}
-                      </td>
-                      <td style={{ padding: "0.4rem", fontFamily: "monospace", overflowWrap: "anywhere", wordBreak: "break-word", width: "14rem" }}>
-                        {method ?? "?"} {host ? `${host}${path ?? ""}` : (path ?? "?")}
-                      </td>
-                      <td style={{ padding: "0.4rem", overflowWrap: "anywhere", width: "8rem" }}>
-                        {typeof responseStatus === "number" ? `HTTP ${responseStatus}` : failureMode ?? record.message}
-                        {verifiedAt && (
-                          <div style={{ color: "#666", fontSize: "0.75rem" }}>
-                            Verified at {formatUtcTimestamp(verifiedAt)}
-                          </div>
-                        )}
-                      </td>
-                      <td style={{ padding: "0.4rem", fontFamily: "monospace", fontSize: "0.75rem", overflowWrap: "anywhere", width: "11rem" }}>
-                        {correlationId ?? "-"}
-                      </td>
-                      <td style={{ padding: "0.4rem", fontSize: "0.75rem", color: "#444", overflowWrap: "anywhere" }}>
-                        <div style={{ display: "grid", gap: "0.35rem" }}>
-                          <div>
-                            <strong>Message:</strong> {record.message}
-                          </div>
+                    return (
+                      <tr key={`${record.timestamp}-${record.message}-${index}`} style={{ borderBottom: "1px solid #eee", verticalAlign: "top" }}>
+                        <td style={{ padding: "0.4rem", whiteSpace: "nowrap" }}>
+                          {formatUtcTimestamp(record.timestamp)}
+                        </td>
+                        <td style={{ padding: "0.4rem", textTransform: "uppercase" }}>{record.level}</td>
+                        <td style={{ padding: "0.4rem", overflowWrap: "anywhere" }}>
+                          <div>{operation}</div>
+                          {integrationSurface && (
+                            <div style={{ color: "#666", fontSize: "0.75rem" }}>{integrationSurface}</div>
+                          )}
+                        </td>
+                        <td style={{ padding: "0.4rem", fontFamily: "monospace", overflowWrap: "anywhere", wordBreak: "break-word" }}>
+                          {method ?? "?"} {host ? `${host}${path ?? ""}` : (path ?? "?")}
+                        </td>
+                        <td style={{ padding: "0.4rem", overflowWrap: "anywhere" }}>
+                          {typeof responseStatus === "number" ? `HTTP ${responseStatus}` : failureMode ?? record.message}
+                          {verifiedAt && (
+                            <div style={{ color: "#666", fontSize: "0.75rem" }}>
+                              Verified at {formatUtcTimestamp(verifiedAt)}
+                            </div>
+                          )}
+                        </td>
+                        <td style={{ padding: "0.4rem", fontFamily: "monospace", fontSize: "0.75rem", overflowWrap: "anywhere" }}>
+                          {correlationId ?? "-"}
+                        </td>
+                        <td style={{ padding: "0.4rem", fontSize: "0.75rem", color: "#444", overflowWrap: "anywhere" }}>
+                          <div style={{ display: "grid", gap: "0.35rem" }}>
+                            <div>
+                              <strong>Message:</strong> {record.message}
+                            </div>
                           {errorMessage && (
                             <div>
                               <strong>Error:</strong> {errorMessage}
@@ -2252,7 +2262,8 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                   );
                 })}
               </tbody>
-            </table>
+              </table>
+            </div>
           )}
         </section>
       )}
