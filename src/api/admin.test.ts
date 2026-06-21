@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
-import { handleGetAuditTrail, handleSyncResources, handleGetEventLog, handleGetSupportLog } from "./admin";
+import {
+  handleGetAuditTrail,
+  handleSyncResources,
+  handleGetEventLog,
+  handleGetSupportLog,
+} from "./admin";
 import type { AuditRepository, AuditRecord } from "@/domain/audit-trail";
 import type { EventLogRepository } from "@/domain/event-log";
 import type { SupportLogRepository } from "@/domain/support-log";
@@ -12,6 +17,8 @@ import type { CloudShareClient } from "@/integrations/cloudshare";
 import { createInMemoryAuditRepository } from "@/persistence/audit-repository";
 import { createInMemoryResourceRepository } from "@/persistence/resource-repository";
 import type { Logger } from "@/observability/logger";
+import { createDiagnosticRecorder, type DiagnosticRecorder } from "@/domain/diagnostic-log";
+import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -82,6 +89,12 @@ function makeCloudShareClient(overrides: {
       if (path === "/regions") {
         return Promise.resolve([{ id: "r-1", name: "EU West" }]);
       }
+      if (path === "/projects/p-1/blueprints") {
+        return Promise.resolve([{ id: "bp-1", name: "Blueprint 1" }]);
+      }
+      if (path === "/projects/p-1/policies") {
+        return Promise.resolve([{ id: "pol-1", name: "Policy 1" }]);
+      }
       return Promise.reject(new Error(`unexpected path ${path}`));
     });
 
@@ -97,6 +110,15 @@ function makeSupportLog(records: unknown[] = []): SupportLogRepository {
     append: vi.fn(),
     listAll: vi.fn().mockResolvedValue(records),
   };
+}
+
+function makeDiagnostics(): {
+  recorder: DiagnosticRecorder;
+  repository: ReturnType<typeof createInMemoryDiagnosticLogRepository>;
+} {
+  const repository = createInMemoryDiagnosticLogRepository();
+  const recorder = createDiagnosticRecorder({ repository, secrets: ["api-id", "api-key"] });
+  return { recorder, repository };
 }
 
 describe("handleGetAuditTrail", () => {
@@ -137,23 +159,39 @@ describe("handleSyncResources", () => {
     const resources = createInMemoryResourceRepository();
     const connections = makeConnections();
     const cloudshare = makeCloudShareFactory(makeCloudShareClient());
+    const diagnostics = makeDiagnostics();
 
     const result = await handleSyncResources(
-      { connections, cloudshare, resources, logger: makeLogger() },
+      { connections, cloudshare, resources, diagnostics: diagnostics.recorder, logger: makeLogger() },
       { customerId: "customer-1" },
     );
 
     expect(result.status).toBe(200);
     const body = result.body as { synced: number };
-    expect(body.synced).toBe(2);
+    expect(body.synced).toBe(4);
     expect(cloudshare.forConnection).toHaveBeenCalledWith(
       expect.objectContaining({ customerId: "customer-1" }),
     );
+
+    const [entry] = await diagnostics.repository.query({
+      customerId: "customer-1",
+      operation: "cloudshare.resource_sync.legacy_sync.read",
+    });
+    expect(entry).toMatchObject({
+      customerId: "customer-1",
+      source: "admin",
+      operation: "cloudshare.resource_sync.legacy_sync.read",
+      outcome: "success",
+      request: { method: "POST", path: "/api/admin/sync-resources" },
+      response: { synced: 4, resourceCounts: { project: 1, region: 1, blueprint: 1, policy: 1 } },
+      externalIds: { resourceType: "resource_sync" },
+    });
   });
 
   it("returns 502 when CloudShare is unavailable", async () => {
     const resources = createInMemoryResourceRepository();
     const connections = makeConnections();
+    const diagnostics = makeDiagnostics();
     const cloudshare = makeCloudShareFactory(
       makeCloudShareClient({
         requestV3: vi.fn().mockRejectedValue(new Error("timeout")),
@@ -161,11 +199,25 @@ describe("handleSyncResources", () => {
     );
 
     const result = await handleSyncResources(
-      { connections, cloudshare, resources, logger: makeLogger() },
+      { connections, cloudshare, resources, diagnostics: diagnostics.recorder, logger: makeLogger() },
       { customerId: "customer-1" },
     );
 
     expect(result.status).toBe(502);
+    const [entry] = await diagnostics.repository.query({
+      customerId: "customer-1",
+      operation: "cloudshare.resource_sync.legacy_sync.read",
+    });
+    expect(entry).toMatchObject({
+      customerId: "customer-1",
+      source: "admin",
+      operation: "cloudshare.resource_sync.legacy_sync.read",
+      outcome: "failure",
+      request: { method: "POST", path: "/api/admin/sync-resources" },
+      details: { failureMode: "resource_sync_failed" },
+      externalIds: { resourceType: "resource_sync" },
+    });
+    expect(JSON.stringify(entry)).not.toContain("timeout");
   });
 
   it("returns 404 when no CloudShare Connection exists for the customer", async () => {

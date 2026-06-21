@@ -75,8 +75,12 @@ export interface DiagnosticLogEntryInput {
 export interface DiagnosticLogQuery {
   /** Exact Customer match — the primary isolation boundary for the read API. */
   readonly customerId?: string;
+  /** Exact Exam match for exam lifecycle diagnostics. */
+  readonly examId?: string;
   /** Trace one ExamAttempt thread end to end. Matched on the first-class column. */
   readonly examAttemptId?: string;
+  /** Exact operation match for support filtering. */
+  readonly operation?: string;
   readonly from?: Date;
   readonly to?: Date;
   readonly limit?: number;

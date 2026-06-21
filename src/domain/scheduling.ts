@@ -184,6 +184,7 @@ export async function scheduleExam(
   });
 
   let trainingId: string;
+  let teamId: string | undefined;
   try {
     const training = await trainingCreator({
       title: trainingTitle,
@@ -197,6 +198,7 @@ export async function scheduleExam(
       timeZoneId: "UTC",
     });
     trainingId = training.trainingId;
+    teamId = training.teamId;
   } catch (cause) {
     await recordFailure("create_training", cause);
     await deps.attempts.save({ ...attempt, status: "expired" });
@@ -223,6 +225,7 @@ export async function scheduleExam(
       blueprintId: exam.blueprintId,
       policyId: exam.policyId,
       instructorId: exam.instructorId,
+      ...(teamId ? { teamId } : {}),
       ...(regionIds ? { regionIds } : {}),
     },
     request: {

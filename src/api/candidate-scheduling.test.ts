@@ -3,6 +3,8 @@ import { createInMemoryExamCatalogRepository } from "@/persistence/exam-catalog-
 import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-repository";
 import { createInMemoryAuditRepository } from "@/persistence/audit-repository";
 import { createInMemoryEventLogRepository } from "@/persistence/event-log-repository";
+import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
+import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repository";
 import { createExamClock, createInMemoryExamClockRepository } from "@/domain/exam-clock";
 import { createDraftExam, publishExam, type CreateDraftExamInput } from "@/domain/exam-catalog";
@@ -330,6 +332,137 @@ describe("candidate scheduling handlers", () => {
         }),
       }),
     ]);
+  });
+
+  it("emits a successful team-read diagnostic before createTraining later fails", async () => {
+    const exams = await makeExamRepository();
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const audit = createInMemoryAuditRepository();
+    const eventLog = createInMemoryEventLogRepository();
+    const logger = makeLogger();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
+
+    const response = await handleScheduleCandidateExam(
+      {
+        exams,
+        attempts,
+        launches,
+        audit,
+        eventLog,
+        connections: makeConnectionRepository(),
+        cloudshare: makeCloudShareFactory({
+          requestV4: vi.fn(async (spec: { path: string }) => {
+            if (spec.path === "/trainings") {
+              throw new CloudShareRequestError("forbidden", 403, {
+                method: "POST",
+                path: "/v4/trainings",
+                integrationSurface: "cloudshare.v4.training",
+              });
+            }
+            throw new Error(`unexpected path ${spec.path}`);
+          }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>["requestV4"],
+        }),
+        diagnostics,
+        logger,
+        now: () => new Date("2026-06-15T10:00:00.000Z"),
+        newId: vi.fn().mockReturnValueOnce("attempt-1").mockReturnValueOnce("launch-1"),
+        newCorrelationId: () => "corr-team-1",
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        body: {
+          examId: "exam-1",
+          scheduledFor: "2026-06-15T16:00:00.000Z",
+        },
+      },
+    );
+
+    expect(response.status).toBe(502);
+    const [entry] = await diagnosticsRepository.query({
+      customerId: "customer-helios",
+      operation: "cloudshare.resource_sync.teams.read",
+    });
+    expect(entry).toMatchObject({
+      customerId: "customer-helios",
+      examId: "exam-1",
+      outcome: "success",
+      source: "candidate-portal",
+      externalIds: { resourceType: "team", projectId: "project-1", teamId: "TM-team-1" },
+      request: { method: "GET", path: "/teams", query: { projectId: "project-1" } },
+      response: { itemCount: 1, resourceIds: ["TM-team-1"] },
+    });
+  });
+
+  it("emits a failed team-read diagnostic when the /teams lookup fails", async () => {
+    const exams = await makeExamRepository();
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const audit = createInMemoryAuditRepository();
+    const eventLog = createInMemoryEventLogRepository();
+    const logger = makeLogger();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
+
+    const response = await handleScheduleCandidateExam(
+      {
+        exams,
+        attempts,
+        launches,
+        audit,
+        eventLog,
+        connections: makeConnectionRepository(),
+        cloudshare: makeCloudShareFactory({
+          requestV3: vi.fn(async (_spec: { path: string }) => {
+            throw new CloudShareRequestError("forbidden", 403, {
+              method: "GET",
+              path: "/teams",
+              integrationSurface: "cloudshare.v3.teams",
+            });
+          }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>["requestV3"],
+        }),
+        diagnostics,
+        logger,
+        now: () => new Date("2026-06-15T10:00:00.000Z"),
+        newId: vi.fn().mockReturnValueOnce("attempt-1").mockReturnValueOnce("launch-1"),
+        newCorrelationId: () => "corr-team-2",
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        body: {
+          examId: "exam-1",
+          scheduledFor: "2026-06-15T16:00:00.000Z",
+        },
+      },
+    );
+
+    expect(response.status).toBe(502);
+    const [entry] = await diagnosticsRepository.query({
+      customerId: "customer-helios",
+      operation: "cloudshare.resource_sync.teams.read",
+    });
+    expect(entry).toMatchObject({
+      customerId: "customer-helios",
+      examId: "exam-1",
+      outcome: "failure",
+      source: "candidate-portal",
+      externalIds: { resourceType: "team", projectId: "project-1" },
+      request: { method: "GET", path: "/teams", query: { projectId: "project-1" } },
+      response: { status: 403 },
+      details: {
+        integrationSurface: "cloudshare.v3.teams",
+        failureMode: "http_status",
+      },
+    });
   });
 
   it("keeps later attempt states visible on the candidate dashboard", async () => {

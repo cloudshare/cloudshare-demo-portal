@@ -23,9 +23,14 @@ export async function POST(
       connections: services.cloudshareConnections,
       cloudshare: services.cloudshareClientFactory,
       cache: services.examAuthoringCache,
+      diagnostics: services.diagnosticRecorder,
       logger: services.logger,
     },
-    { customerId: session.customerId, examId },
+    {
+      customerId: session.customerId,
+      actor: { type: "admin", id: session.userId, email: session.email },
+      examId,
+    },
   );
 
   return NextResponse.json(response.body, { status: response.status });

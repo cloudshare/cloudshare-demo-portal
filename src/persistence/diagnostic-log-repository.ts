@@ -45,7 +45,13 @@ function matchesQuery(entry: DiagnosticLogEntry, query: DiagnosticLogQuery): boo
   if (query.customerId !== undefined && entry.customerId !== query.customerId) {
     return false;
   }
+  if (query.examId !== undefined && entry.examId !== query.examId) {
+    return false;
+  }
   if (query.examAttemptId !== undefined && entry.examAttemptId !== query.examAttemptId) {
+    return false;
+  }
+  if (query.operation !== undefined && entry.operation !== query.operation) {
     return false;
   }
   if (query.from && entry.occurredAt.getTime() < query.from.getTime()) {
@@ -188,7 +194,9 @@ export function createPrismaDiagnosticLogRepository(
       const rows = (await prisma.diagnosticLogEntry.findMany({
         where: {
           ...(query.customerId !== undefined ? { customerId: query.customerId } : {}),
+          ...(query.examId !== undefined ? { examId: query.examId } : {}),
           ...(query.examAttemptId !== undefined ? { examAttemptId: query.examAttemptId } : {}),
+          ...(query.operation !== undefined ? { operation: query.operation } : {}),
           ...(occurredAt ? { occurredAt } : {}),
         },
         orderBy: { occurredAt: "desc" },

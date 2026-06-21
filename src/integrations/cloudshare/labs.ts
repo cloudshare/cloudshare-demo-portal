@@ -53,28 +53,78 @@ const projectTeamsSchema = z.preprocess(
   z.array(z.object({ id: z.string().min(1), name: z.string() })),
 );
 
+export interface CloudShareTeamReadSuccessEvent {
+  readonly projectId: string;
+  readonly selectedTeamId: string;
+  readonly teamIds: readonly string[];
+  readonly itemCount: number;
+}
+
+export interface CloudShareTeamReadFailureEvent {
+  readonly projectId: string;
+  readonly integrationSurface: string;
+  readonly failureMode: "http_status" | "transport" | "unexpected_response" | "cloudshare_error";
+  readonly responseStatus?: number;
+}
+
+export interface CloudShareLabProvisionerObserver {
+  onTeamReadSuccess?(event: CloudShareTeamReadSuccessEvent): void | Promise<void>;
+  onTeamReadFailure?(event: CloudShareTeamReadFailureEvent): void | Promise<void>;
+}
+
+function inferFailureMode(error: unknown): CloudShareTeamReadFailureEvent["failureMode"] {
+  const name = (error as { name?: unknown } | undefined)?.name;
+  if (name === "CloudShareRequestError") return "http_status";
+  if (name === "CloudShareTransportError") return "transport";
+  if (name === "CloudShareResponseError") return "unexpected_response";
+  return "cloudshare_error";
+}
+
 export function createCloudShareLabProvisioner(
   client: CloudShareClient,
+  observer?: CloudShareLabProvisionerObserver,
 ): LabProvisioner {
   return {
     async createTraining(input: CreateTrainingInput): Promise<CreateTrainingResult> {
-      const teams = (await client.requestV3({
-        method: "GET",
-        path: "/teams",
-        query: {
-          getRows: "true",
+      let teams: ProjectTeam[];
+      try {
+        teams = (await client.requestV3({
+          method: "GET",
+          path: "/teams",
+          query: {
+            getRows: "true",
+            projectId: input.projectId,
+            sortBy: "name",
+            sortAscending: "true",
+            skip: "0",
+            take: "20",
+          },
+          schema: projectTeamsSchema,
+        })) as ProjectTeam[];
+      } catch (error) {
+        await observer?.onTeamReadFailure?.({
           projectId: input.projectId,
-          sortBy: "name",
-          sortAscending: "true",
-          skip: "0",
-          take: "20",
-        },
-        schema: projectTeamsSchema,
-      })) as ProjectTeam[];
+          integrationSurface:
+            ((error as { context?: { integrationSurface?: unknown } }).context?.integrationSurface as string | undefined) ??
+            "cloudshare.v3.teams",
+          failureMode: inferFailureMode(error),
+          responseStatus:
+            typeof (error as { status?: unknown }).status === "number"
+              ? ((error as { status: number }).status)
+              : undefined,
+        });
+        throw error;
+      }
       const teamId = teams[0]?.id;
       if (!teamId) {
         throw new Error(`No CloudShare Team was returned for Project ${input.projectId}.`);
       }
+      await observer?.onTeamReadSuccess?.({
+        projectId: input.projectId,
+        selectedTeamId: teamId,
+        teamIds: teams.map((team) => team.id),
+        itemCount: teams.length,
+      });
 
       const training = await client.requestV4({
         method: "POST",
@@ -96,7 +146,7 @@ export function createCloudShareLabProvisioner(
         },
         schema: experienceSchema,
       });
-      return { trainingId: training.id };
+      return { trainingId: training.id, teamId, teamCount: teams.length };
     },
 
     async addParticipant(input: AddParticipantInput): Promise<void> {

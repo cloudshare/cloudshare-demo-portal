@@ -20,9 +20,14 @@ export async function POST(
   const response = await handleUnpublishExam(
     {
       repository: services.exams,
+      diagnostics: services.diagnosticRecorder,
       logger: services.logger,
     },
-    { customerId: session.customerId, examId },
+    {
+      customerId: session.customerId,
+      actor: { type: "admin", id: session.userId, email: session.email },
+      examId,
+    },
   );
 
   return NextResponse.json(response.body, { status: response.status });

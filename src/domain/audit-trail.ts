@@ -1,8 +1,11 @@
 /**
- * Audit trail domain types. An AuditRecord is written for every significant
- * portal action (lab launch, suspend, resume, score retrieval) and every external
- * API failure, giving support teams a per-ExamAttempt timeline without needing
- * access to CloudShare, Genesys, or Kryterion directly.
+ * Audit trail domain types. The current AuditRecord model is intentionally
+ * ExamAttempt-threaded: every record is keyed by `examAttemptId`, so this
+ * surface answers "what happened to this candidate attempt?" for launch,
+ * suspend, resume, score retrieval, and related external API failures.
+ * Exam catalog lifecycle actions are not yet represented here because they are
+ * not anchored to an ExamAttempt; those actions currently rely on typed
+ * DiagnosticLogEntry records instead of synthetic attempt-scoped audit rows.
  */
 
 export type AuditAction =

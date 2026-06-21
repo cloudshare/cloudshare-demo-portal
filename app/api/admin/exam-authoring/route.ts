@@ -20,6 +20,7 @@ export async function GET(request: Request) {
       connections: services.cloudshareConnections,
       cloudshare: services.cloudshareClientFactory,
       cache: services.examAuthoringCache,
+      diagnostics: services.diagnosticRecorder,
       logger: services.logger,
     },
     { customerId: session.customerId, refresh },

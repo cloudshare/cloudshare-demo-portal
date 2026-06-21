@@ -14,13 +14,15 @@ export async function POST() {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const { cloudshareConnections, cloudshareClientFactory, resources, logger } = services;
+  const { cloudshareConnections, cloudshareClientFactory, resources, diagnosticRecorder, logger } =
+    services;
 
   const resp = await handleSyncResources(
     {
       connections: cloudshareConnections,
       cloudshare: cloudshareClientFactory,
       resources,
+      diagnostics: diagnosticRecorder,
       logger,
     },
     { customerId: session.customerId },

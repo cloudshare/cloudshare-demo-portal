@@ -44,7 +44,7 @@ function makeLabs(order: string[] = []): LabProvisioner {
     },
     async createTraining() {
       order.push("createTraining");
-      return { trainingId: "training-1" };
+      return { trainingId: "training-1", teamId: "team-1", teamCount: 1 };
     },
     async addParticipant() {
       order.push("addParticipant");
@@ -371,7 +371,11 @@ describe("scheduleExam", () => {
     }
 
     const training = thread.find((e) => e.operation === "cloudshare.create_training");
-    expect(training?.externalIds).toMatchObject({ trainingId: "training-1", blueprintId: "bp-1" });
+    expect(training?.externalIds).toMatchObject({
+      trainingId: "training-1",
+      blueprintId: "bp-1",
+      teamId: "team-1",
+    });
     expect((training?.request as { body?: Record<string, unknown> })?.body).toMatchObject({
       projectId: "project-1",
       blueprintId: "bp-1",
