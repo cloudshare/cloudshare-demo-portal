@@ -369,6 +369,22 @@ describe("createCloudShareExamAuthoringSource", () => {
     );
   });
 
+  it("rejects generic blueprint fragments with only resources at the adapter seam", async () => {
+    const source = makeAuthoringSourceWithRealClient({ resources: {} });
+
+    await expect(source.getBlueprintDetail("p-1", "bp-1")).rejects.toBeInstanceOf(
+      CloudShareResponseError,
+    );
+  });
+
+  it("rejects generic blueprint fragments with only imageUrl at the adapter seam", async () => {
+    const source = makeAuthoringSourceWithRealClient({ imageUrl: null });
+
+    await expect(source.getBlueprintDetail("p-1", "bp-1")).rejects.toBeInstanceOf(
+      CloudShareResponseError,
+    );
+  });
+
   it("accepts documented blueprint detail responses with PascalCase CreateFromVersions", async () => {
     const source = createCloudShareExamAuthoringSource(
       makeClient({

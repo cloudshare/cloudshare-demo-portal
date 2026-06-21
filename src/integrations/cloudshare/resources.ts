@@ -485,26 +485,11 @@ function normalizeBlueprintDetailPayload(
   const createFromVersions = readField(record, "createFromVersions", "CreateFromVersions");
   const id = readField(record, "id", "Id");
   const name = readField(record, "name", "Name");
-  const hasBlueprintDetailShape =
-    id !== undefined ||
-    name !== undefined ||
-    hasAnyField(
-      record,
-      "createFromVersions",
-      "CreateFromVersions",
-      "type",
-      "Type",
-      "creationDate",
-      "CreationDate",
-      "resources",
-      "Resources",
-      "numberOfMachines",
-      "NumberOfMachines",
-      "imageUrl",
-      "ImageUrl",
-    );
+  const hasCreateFromVersionsField = hasAnyField(record, "createFromVersions", "CreateFromVersions");
+  const hasExplicitIdentity = id !== undefined && name !== undefined;
+  const canSynthesizeIdentity = hasCreateFromVersionsField;
 
-  if (!hasBlueprintDetailShape) {
+  if (!hasExplicitIdentity && !canSynthesizeIdentity) {
     return value;
   }
 
