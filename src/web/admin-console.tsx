@@ -77,6 +77,10 @@ interface DiagnosticLogEntry {
   candidateEmail: string | null;
   examId: string | null;
   examAttemptId: string | null;
+  externalIds?: Record<string, string> | null;
+  request?: Record<string, unknown> | null;
+  response?: Record<string, unknown> | null;
+  details?: Record<string, unknown> | null;
 }
 
 interface SupportWorkbenchDiagnostic {
@@ -313,6 +317,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     SupportWorkbenchDiagnostic[] | null
   >(null);
   const [diagnosticEntries, setDiagnosticEntries] = useState<DiagnosticLogEntry[] | null>(null);
+  const [expandedDiagnosticId, setExpandedDiagnosticId] = useState<string | null>(null);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [connection, setConnection] = useState<ConnectionState | null>(null);
   const [apiId, setApiId] = useState("");
@@ -2055,32 +2060,59 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                     </tr>
                   )}
                   {diagnosticEntries.map((entry) => (
-                    <tr key={entry.id} style={{ borderBottom: "1px solid #eee", verticalAlign: "top" }}>
-                      <td style={{ padding: "0.4rem", fontFamily: "monospace", whiteSpace: "nowrap" }}>
-                        {entry.occurredAt}
-                      </td>
-                      <td style={{ padding: "0.4rem" }}>{entry.level}</td>
-                      <td style={{ padding: "0.4rem" }}>{entry.source}</td>
-                      <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{entry.operation}</td>
-                      <td
-                        style={{
-                          padding: "0.4rem",
-                          color: entry.outcome === "failure" ? "#b00020" : "#0a7",
-                          fontWeight: 600,
-                        }}
+                    <>
+                      <tr
+                        key={entry.id}
+                        style={{ borderBottom: "1px solid #eee", verticalAlign: "top", cursor: "pointer" }}
+                        onClick={() => setExpandedDiagnosticId(expandedDiagnosticId === entry.id ? null : entry.id)}
                       >
-                        {entry.outcome}
-                      </td>
-                      <td style={{ padding: "0.4rem" }}>
-                        {entry.actor ? `${entry.actor.type}${entry.actor.email ? ` (${entry.actor.email})` : ""}` : "—"}
-                      </td>
-                      <td style={{ padding: "0.4rem" }}>
-                        {entry.subject ? `${entry.subject.type}${entry.subject.id ? ` (${entry.subject.id})` : ""}` : "—"}
-                      </td>
-                      <td style={{ padding: "0.4rem" }}>{entry.candidateEmail ?? "—"}</td>
-                      <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{entry.correlationId ?? "—"}</td>
-                      <td style={{ padding: "0.4rem" }}>{entry.message}</td>
-                    </tr>
+                        <td style={{ padding: "0.4rem", fontFamily: "monospace", whiteSpace: "nowrap", cursor: "pointer" }}>
+                          {expandedDiagnosticId === entry.id ? "▼ " : "▶ "}{entry.occurredAt}
+                        </td>
+                        <td style={{ padding: "0.4rem" }}>{entry.level}</td>
+                        <td style={{ padding: "0.4rem" }}>{entry.source}</td>
+                        <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{entry.operation}</td>
+                        <td
+                          style={{
+                            padding: "0.4rem",
+                            color: entry.outcome === "failure" ? "#b00020" : "#0a7",
+                            fontWeight: 600,
+                          }}
+                        >
+                          {entry.outcome}
+                        </td>
+                        <td style={{ padding: "0.4rem" }}>
+                          {entry.actor ? `${entry.actor.type}${entry.actor.email ? ` (${entry.actor.email})` : ""}` : "—"}
+                        </td>
+                        <td style={{ padding: "0.4rem" }}>
+                          {entry.subject ? `${entry.subject.type}${entry.subject.id ? ` (${entry.subject.id})` : ""}` : "—"}
+                        </td>
+                        <td style={{ padding: "0.4rem" }}>{entry.candidateEmail ?? "—"}</td>
+                        <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{entry.correlationId ?? "—"}</td>
+                        <td style={{ padding: "0.4rem" }}>{entry.message}</td>
+                      </tr>
+                      {expandedDiagnosticId === entry.id && (
+                        <tr key={`${entry.id}-detail`}>
+                          <td colSpan={10} style={{ padding: "0.5rem 1rem", background: "#f7f7f7", fontFamily: "monospace", fontSize: "0.78rem" }}>
+                            {entry.externalIds && Object.keys(entry.externalIds).length > 0 && (
+                              <div><strong>External IDs</strong><pre style={{ margin: "0.25rem 0 0.75rem", whiteSpace: "pre-wrap" }}>{JSON.stringify(entry.externalIds, null, 2)}</pre></div>
+                            )}
+                            {entry.request && Object.keys(entry.request).length > 0 && (
+                              <div><strong>Request</strong><pre style={{ margin: "0.25rem 0 0.75rem", whiteSpace: "pre-wrap" }}>{JSON.stringify(entry.request, null, 2)}</pre></div>
+                            )}
+                            {entry.response && Object.keys(entry.response).length > 0 && (
+                              <div><strong>Response</strong><pre style={{ margin: "0.25rem 0 0.75rem", whiteSpace: "pre-wrap" }}>{JSON.stringify(entry.response, null, 2)}</pre></div>
+                            )}
+                            {entry.details && Object.keys(entry.details).length > 0 && (
+                              <div><strong>Details</strong><pre style={{ margin: "0.25rem 0 0.75rem", whiteSpace: "pre-wrap" }}>{JSON.stringify(entry.details, null, 2)}</pre></div>
+                            )}
+                            {!entry.externalIds && !entry.request && !entry.response && !entry.details && (
+                              <span style={{ color: "#888" }}>No additional detail.</span>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </>
                   ))}
                 </tbody>
               </table>
