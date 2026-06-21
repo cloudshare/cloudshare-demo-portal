@@ -46,6 +46,9 @@ export async function handleEnterExam(
       examAttemptId: request.examAttemptId,
       candidateId: request.candidateId,
       ownerCandidateId: attempt.candidateId,
+      customerId: attempt.customerId ?? null,
+      examId: attempt.examId,
+      candidateEmail: deps.candidateEmail ?? null,
     });
     const anchors = {
       source: "runtime" as const,

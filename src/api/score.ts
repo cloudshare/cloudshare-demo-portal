@@ -303,6 +303,7 @@ export async function handleGetCandidateScore(
       const correlationId = (deps.newCorrelationId ?? randomUUID)();
       const diagnostic = buildScoreRetrievalDiagnostic(
         correlationId,
+        request.session.customerId,
         examAttemptId,
         launch.experienceId,
         launch.participantId ?? "unknown-participant",
@@ -336,7 +337,10 @@ export async function handleGetCandidateScore(
         details: {
           attemptedOperation: asString(diagnostic.attemptedOperation),
           integrationSurface: asString(diagnostic.integrationSurface),
+          method: asString(diagnostic.method),
+          path: asString(diagnostic.path),
           failureMode: asString(diagnostic.failureMode),
+          responseStatus: asNumber(diagnostic.responseStatus),
           correlationId,
         },
       });
@@ -352,6 +356,8 @@ export async function handleGetCandidateScore(
 
     deps.logger.error("candidate score retrieval errored", {
       examAttemptId,
+      customerId: attempt.customerId ?? request.session.customerId,
+      examId: attempt.examId,
       error: error instanceof Error ? error.message : String(error),
     });
     return { status: 500, body: { error: "internal error" } };
@@ -482,6 +488,7 @@ async function resolveLaunchParticipantId(
 
 function buildScoreRetrievalDiagnostic(
   correlationId: string,
+  customerId: string,
   examAttemptId: string,
   experienceId: string,
   participantId: string,
@@ -491,6 +498,7 @@ function buildScoreRetrievalDiagnostic(
   const path = `/guided-journey/progress/${experienceId}/${participantId}`;
   const base = {
     correlationId,
+    customerId,
     examAttemptId,
     experienceId,
     participantId,

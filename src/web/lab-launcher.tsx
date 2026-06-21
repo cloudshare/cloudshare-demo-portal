@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { openEnterExamWindow } from "./enter-exam";
 import { isLabWindowOpen } from "./lab-window";
-import { preflightLabAction, suspendLabAttempt, type CandidateLabStatus, type AttemptStatus } from "./lab-launcher-client";
+import { preflightLabAction, resumeLabAttempt, suspendLabAttempt, type CandidateLabStatus, type AttemptStatus } from "./lab-launcher-client";
 import { getLauncherSyncTarget, type LaunchState } from "./lab-launcher-state";
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
@@ -214,14 +214,20 @@ export function LabLauncher({
         setMessage(preflight.message);
         return;
       }
-      const resp = await fetch("/api/exam/resume", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ examAttemptId }),
-      });
-      if (!resp.ok) {
-        const detail = (await resp.json().catch(() => ({}))) as { error?: string };
-        throw new Error(detail.error ?? `resume failed (${resp.status})`);
+      const result = await resumeLabAttempt(fetch, examAttemptId);
+      if (result.kind === "completed") {
+        reportLabStatusLoaded(result.labStatus);
+        syncToAuthoritativeAttemptStatus("completed");
+        return;
+      }
+      if (result.kind === "blocked") {
+        if (result.labStatus) {
+          reportLabStatusLoaded(result.labStatus);
+          reportAttemptStatusChange(result.labStatus.status);
+        }
+        setState(result.labStatus?.status === "suspended" ? "suspended" : "error");
+        setMessage(result.message);
+        return;
       }
       openEnterExamWindow(examAttemptId);
       setState("open");

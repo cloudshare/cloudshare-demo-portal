@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   loadCandidateLabStatus,
   preflightLabAction,
+  resumeLabAttempt,
   suspendLabAttempt,
 } from "./lab-launcher-client";
 
@@ -75,6 +76,60 @@ describe("lab launcher client helpers", () => {
         scheduledFor: "2026-06-18T09:00:00.000Z",
       },
       message: "Examination complete.",
+    });
+  });
+
+  it("allows resume preflight to re-enter when the authoritative attempt status is already in progress", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        examAttemptId: "attempt-1",
+        examTitle: "Helios Guided Journey",
+        timeLimitMinutes: 60,
+        status: "in_progress",
+        scheduledFor: "2026-06-18T09:00:00.000Z",
+      }),
+    });
+
+    const result = await preflightLabAction(fetchImpl, {
+      examAttemptId: "attempt-1",
+      action: "resume",
+    });
+
+    expect(result).toEqual({
+      kind: "proceed",
+      labStatus: {
+        examAttemptId: "attempt-1",
+        examTitle: "Helios Guided Journey",
+        timeLimitMinutes: 60,
+        status: "in_progress",
+        scheduledFor: "2026-06-18T09:00:00.000Z",
+      },
+    });
+  });
+
+  it("treats a resume POST that reports already_active as a successful recovery path", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: "resumed",
+        resumeDisposition: "already_active",
+        examAttemptId: "attempt-1",
+      }),
+    });
+
+    const result = await resumeLabAttempt(fetchImpl, "attempt-1");
+
+    expect(fetchImpl).toHaveBeenCalledWith("/api/exam/resume", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ examAttemptId: "attempt-1" }),
+    });
+    expect(result).toEqual({
+      kind: "resumed",
+      disposition: "already_active",
     });
   });
 

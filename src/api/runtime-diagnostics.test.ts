@@ -400,6 +400,79 @@ describe("handleResumeExam diagnostics", () => {
       candidateEmail: "candidate@helioscx.demo",
     });
   });
+
+  it("emits exam_attempt.resume failure with customer scope and CloudShare support details", async () => {
+    const { repository, recorder } = diagnosticsHarness();
+    const attempts = makeAttempts({ ...BASE_ATTEMPT, status: "suspended" });
+    const launches = makeLaunches();
+    const cloudshare: CloudShareClientFactory = {
+      forConnection: () => ({
+        requestV3: vi.fn() as never,
+        requestV3Text: vi.fn(async () => {
+          throw new CloudShareRequestError("Bad Gateway", 502, {
+            integrationSurface: "cloudshare.v3.env.action.resume",
+            method: "PUT",
+            path: "/api/v3/envs/actions/resume",
+            environmentExternalId: "ENVS-env-1",
+          });
+        }) as never,
+        requestV4: vi.fn(async (spec: { path: string; schema: { parse(v: unknown): unknown } }) => {
+          if (spec.path === "/trainings/EXtraining-1/students") {
+            return spec.schema.parse([
+              {
+                email: "candidate@helioscx.demo",
+                environmentId: "ENVS-env-1",
+                environmentStatus: "ready",
+              },
+            ]);
+          }
+          throw new Error(`unexpected v4 path ${spec.path}`);
+        }) as never,
+      }),
+    };
+
+    const deps: ResumeHandlerDeps = {
+      attempts,
+      launches,
+      connections: makeConnections(),
+      cloudshare,
+      controller: makeController(),
+      source: makeSource("Running"),
+      timer: { pauseTimer: vi.fn(), resumeTimer: vi.fn().mockResolvedValue(undefined) },
+      labs: {
+        createExperience: vi.fn(),
+        addStudent: vi.fn(),
+        createSponsoredLink: vi.fn().mockResolvedValue({ loginUrl: "https://new.lab.url" }),
+      },
+      sleep: () => Promise.resolve(),
+      logger: makeLogger(),
+      eventLog: makeEventLog(),
+      diagnostics: recorder,
+      candidateEmail: "candidate@helioscx.demo",
+    };
+
+    const resp = await handleResumeExam(deps, { body: { examAttemptId: "ea-1" } });
+    expect(resp.status).toBe(502);
+
+    const entries = await repository.query({ examAttemptId: "ea-1" });
+    const failure = entries.find((e) => e.operation === "exam_attempt.resume" && e.outcome === "failure");
+    expect(failure).toBeDefined();
+    expect(failure).toMatchObject({
+      source: "runtime",
+      outcome: "failure",
+      examAttemptId: "ea-1",
+      examId: "exam-1",
+      customerId: "customer-1",
+      candidateEmail: "candidate@helioscx.demo",
+    });
+    expect(failure?.details).toMatchObject({
+      method: "PUT",
+      path: "/api/v3/envs/actions/resume",
+      integrationSurface: "cloudshare.v3.env.action.resume",
+      responseStatus: 502,
+      failureMode: "http_status",
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -629,12 +702,10 @@ describe("score diagnostics", () => {
   it("emits exam_attempt.score.retrieve failure when score retrieval throws ScoreRetrievalError", async () => {
     const failingRetriever: ScoreRetrievalProvider = {
       getParticipantProgress: vi.fn().mockRejectedValue(
-        new ScoreRetrievalError("CloudShare guided journey unavailable", {
-          cause: new CloudShareRequestError("Bad Gateway", 502, {
-            integrationSurface: "cloudshare.v4.guided_journey.progress",
-            method: "GET",
-            path: "/guided-journey/progress/exp-s1/student-1",
-          }),
+        new CloudShareRequestError("Bad Gateway", 502, {
+          integrationSurface: "cloudshare.v4.guided_journey.progress",
+          method: "GET",
+          path: "/guided-journey/progress/exp-s1/student-1",
         }),
       ),
     };
@@ -654,6 +725,13 @@ describe("score diagnostics", () => {
       outcome: "failure",
       examAttemptId: "sa-1",
       customerId: "customer-1",
+    });
+    expect(failure?.details).toMatchObject({
+      method: "GET",
+      path: "/guided-journey/progress/exp-s1/student-1",
+      responseStatus: 502,
+      integrationSurface: "cloudshare.v4.guided_journey.progress",
+      failureMode: "http_status",
     });
   });
 });

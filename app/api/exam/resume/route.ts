@@ -75,7 +75,10 @@ export async function POST(request: Request) {
     { body },
   );
 
-  if (resp.status === 200 && examAttemptId) {
+  const resumeDisposition =
+    typeof resp.body.resumeDisposition === "string" ? resp.body.resumeDisposition : null;
+
+  if (resp.status === 200 && examAttemptId && resumeDisposition === "resumed") {
     heartbeatAutoSuspend.removeHeartbeat(examAttemptId);
     await audit.write({
       id: randomUUID(),
