@@ -14,6 +14,7 @@ import {
   type ResumeHandlerDeps,
   type HeartbeatAutoSuspendHandlerDeps,
 } from "./suspend-resume";
+import { handleGetCandidateScore, type ScoreHandlerDeps } from "./score";
 import type { ExamAttempt, ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { LabLaunchRepository } from "@/domain/lab-launch";
 import type { EventLogRepository } from "@/domain/event-log";
@@ -21,7 +22,13 @@ import type { Logger } from "@/observability/logger";
 import type { EnvironmentController } from "@/domain/timer-sync";
 import type { EnvironmentStateSource } from "@/domain/environment";
 import type { CloudShareClientFactory, CloudShareConnectionRepository } from "@/domain/cloudshare-connection";
+import type { ExamRepository, Exam } from "@/domain/exam-catalog";
+import type { AuditRepository } from "@/domain/audit-trail";
+import type { ScoreRetrievalProvider } from "@/domain/score-result";
+import type { ParticipantLister } from "@/domain/environment-correlation";
+import type { CloudShareConnectionRecord } from "@/domain/cloudshare-connection";
 import { CloudShareRequestError } from "@/integrations/cloudshare";
+import { ScoreRetrievalError } from "@/domain/errors";
 import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-repository";
 import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repository";
 
@@ -430,6 +437,222 @@ describe("runHeartbeatAutoSuspend diagnostics", () => {
       source: "runtime",
       outcome: "success",
       examAttemptId: "ea-1",
+      customerId: "customer-1",
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// handleGetCandidateScore diagnostics
+// ---------------------------------------------------------------------------
+
+const SCORE_ATTEMPT: ExamAttempt = {
+  id: "sa-1",
+  customerId: "customer-1",
+  candidateId: "cand-1",
+  examId: "exam-1",
+  status: "completed" as const,
+  scheduledFor: new Date("2026-06-15T09:00:00.000Z"),
+  createdAt: new Date("2026-06-15T08:00:00.000Z"),
+};
+
+const SCORE_EXAM: Exam = {
+  id: "exam-1",
+  customerId: "customer-1",
+  title: "Test Exam",
+  description: "desc",
+  timeLimitMinutes: 60,
+  scoreRetrievalEnabled: true,
+  status: "published",
+  publishedAt: new Date("2026-06-15T07:00:00.000Z"),
+  createdAt: new Date("2026-06-15T07:00:00.000Z"),
+  updatedAt: new Date("2026-06-15T07:00:00.000Z"),
+  projectId: "proj-1",
+  projectName: "Project 1",
+  blueprintId: "bp-1",
+  blueprintName: "Blueprint 1",
+  snapshotId: "snap-1",
+  snapshotName: "Snapshot 1",
+  allowedRegions: [{ id: "region-1", name: "EU West" }],
+  policyId: "policy-1",
+  policyName: "Policy 1",
+  instructorId: "instructor-1",
+  instructorName: "Instructor 1",
+};
+
+const SCORE_LAUNCH = {
+  id: "launch-s1",
+  examAttemptId: "sa-1",
+  candidateId: "cand-1",
+  participantEmail: "candidate@helioscx.demo",
+  participantId: "student-1",
+  trainingId: "EXtraining-s1",
+  experienceId: "exp-s1",
+  environmentExternalId: "ENVS-env-s1",
+  loginUrl: "https://lab.cloudshare.com/enter?token=secret2",
+  status: "launched" as const,
+  createdAt: new Date(),
+};
+
+const SCORE_CONNECTION: CloudShareConnectionRecord = {
+  customerId: "customer-1",
+  apiId: "api-id",
+  apiKey: "api-key",
+  webhookSecret: "whsec",
+  webhookPathToken: "whk-customer-1",
+  connectedAt: new Date(),
+  verifiedAt: new Date(),
+};
+
+function makeScoreDeps(overrides: {
+  scoreRetriever?: ScoreRetrievalProvider;
+  participantLister?: ParticipantLister;
+} = {}): ScoreHandlerDeps & { _recorder: DiagnosticRecorder; _repository: ReturnType<typeof createInMemoryDiagnosticLogRepository> } {
+  const { repository, recorder } = diagnosticsHarness();
+
+  const attempts = createInMemoryExamAttemptRepository();
+  void attempts.save(SCORE_ATTEMPT);
+
+  const launches = createInMemoryLabLaunchRepository();
+  void launches.save(SCORE_LAUNCH);
+
+  const exams: ExamRepository = {
+    save: vi.fn(),
+    findById: vi.fn().mockResolvedValue(SCORE_EXAM),
+    listByCustomerId: vi.fn().mockResolvedValue([]),
+  };
+
+  const audit: AuditRepository = {
+    write: vi.fn().mockResolvedValue(undefined),
+    listByExamAttemptId: vi.fn().mockResolvedValue([]),
+    listAll: vi.fn().mockResolvedValue([]),
+  };
+
+  const connections: CloudShareConnectionRepository = {
+    save: vi.fn(),
+    findByCustomerId: vi.fn().mockResolvedValue(SCORE_CONNECTION),
+    findByWebhookPathToken: vi.fn(),
+    markVerified: vi.fn(),
+  };
+
+  const defaultScoreRetriever: ScoreRetrievalProvider = {
+    getParticipantProgress: vi.fn().mockResolvedValue({
+      percentComplete: 80,
+      stepsCompleted: 4,
+      stepsTotal: 5,
+      steps: [],
+      exploredRate: 0,
+      inProgressRate: 0,
+      notStartedRate: 0.2,
+      passedRate: 0.8,
+      failedRate: 0,
+      notInitiatedRate: 0,
+    }),
+  };
+
+  const defaultParticipantLister: ParticipantLister = {
+    listParticipants: vi.fn().mockResolvedValue([
+      { email: "candidate@helioscx.demo", environmentId: "ENVS-env-s1", environmentStatus: "ready", studentId: "student-1" },
+    ]),
+  };
+
+  return {
+    attempts,
+    launches,
+    exams,
+    audit,
+    connections,
+    createScoreRetriever: vi.fn().mockReturnValue(overrides.scoreRetriever ?? defaultScoreRetriever),
+    createParticipantLister: vi.fn().mockReturnValue(overrides.participantLister ?? defaultParticipantLister),
+    logger: makeLogger(),
+    limitations: [],
+    now: () => new Date("2026-06-15T10:00:00.000Z"),
+    newCorrelationId: () => "score-corr-1",
+    diagnostics: recorder,
+    _recorder: recorder,
+    _repository: repository,
+  };
+}
+
+const SCORE_SESSION = {
+  userId: "cand-1",
+  customerId: "customer-1",
+  role: "candidate" as const,
+};
+
+describe("score diagnostics", () => {
+  it("emits exam_attempt.score.correlate_environment success when participant ID is already present", async () => {
+    const deps = makeScoreDeps();
+
+    const resp = await handleGetCandidateScore(deps, {
+      query: { examAttemptId: "sa-1" },
+      session: SCORE_SESSION,
+    });
+    expect(resp.status).toBe(200);
+
+    const entries = await deps._repository.query({ examAttemptId: "sa-1" });
+    const correlate = entries.find((e) => e.operation === "exam_attempt.score.correlate_environment");
+    expect(correlate).toBeDefined();
+    expect(correlate).toMatchObject({
+      source: "runtime",
+      outcome: "success",
+      examAttemptId: "sa-1",
+      customerId: "customer-1",
+    });
+    expect((correlate as { externalIds?: Record<string, unknown> }).externalIds).toMatchObject({
+      participantId: "student-1",
+    });
+  });
+
+  it("emits exam_attempt.score.retrieve success with score data in response field", async () => {
+    const deps = makeScoreDeps();
+
+    const resp = await handleGetCandidateScore(deps, {
+      query: { examAttemptId: "sa-1" },
+      session: SCORE_SESSION,
+    });
+    expect(resp.status).toBe(200);
+
+    const entries = await deps._repository.query({ examAttemptId: "sa-1" });
+    const retrieve = entries.find((e) => e.operation === "exam_attempt.score.retrieve" && e.outcome === "success");
+    expect(retrieve).toBeDefined();
+    expect(retrieve).toMatchObject({
+      source: "runtime",
+      outcome: "success",
+      examAttemptId: "sa-1",
+      customerId: "customer-1",
+    });
+    const response = (retrieve as { response?: Record<string, unknown> }).response;
+    expect(response).toMatchObject({ scoreAvailable: true, percentComplete: 80 });
+  });
+
+  it("emits exam_attempt.score.retrieve failure when score retrieval throws ScoreRetrievalError", async () => {
+    const failingRetriever: ScoreRetrievalProvider = {
+      getParticipantProgress: vi.fn().mockRejectedValue(
+        new ScoreRetrievalError("CloudShare guided journey unavailable", {
+          cause: new CloudShareRequestError("Bad Gateway", 502, {
+            integrationSurface: "cloudshare.v4.guided_journey.progress",
+            method: "GET",
+            path: "/guided-journey/progress/exp-s1/student-1",
+          }),
+        }),
+      ),
+    };
+    const deps = makeScoreDeps({ scoreRetriever: failingRetriever });
+
+    const resp = await handleGetCandidateScore(deps, {
+      query: { examAttemptId: "sa-1" },
+      session: SCORE_SESSION,
+    });
+    expect(resp.status).toBe(502);
+
+    const entries = await deps._repository.query({ examAttemptId: "sa-1" });
+    const failure = entries.find((e) => e.operation === "exam_attempt.score.retrieve" && e.outcome === "failure");
+    expect(failure).toBeDefined();
+    expect(failure).toMatchObject({
+      source: "runtime",
+      outcome: "failure",
+      examAttemptId: "sa-1",
       customerId: "customer-1",
     });
   });

@@ -343,6 +343,7 @@ export function getServices(): Services {
           eventLog,
           connections: cloudshareConnections,
           cloudshare: cloudshareClientFactory,
+          diagnostics: diagnosticRecorder,
           now: () => new Date(),
           sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
         },

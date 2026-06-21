@@ -87,6 +87,7 @@ function makeServices() {
       checkAll: vi.fn(),
       reset: vi.fn(),
     },
+    diagnosticRecorder: { record: vi.fn().mockResolvedValue(undefined) },
     audit: { write: vi.fn() },
     eventLog: { append: vi.fn() },
   };

@@ -98,6 +98,17 @@ export async function handleSuspendExam(
     return { status: 400, body: { error: "examAttemptId is required" } };
   }
 
+  let anchors = {
+    source: "runtime" as const,
+    customerId: null as string | null,
+    candidateEmail: deps.candidateEmail ?? null,
+    examId: null as string | null,
+    examAttemptId,
+    correlationId: null as string | null,
+    actor: { type: "candidate" as const, id: null as string | null, email: deps.candidateEmail ?? null },
+    subject: { type: "exam_attempt" as const, id: examAttemptId },
+  };
+
   try {
     await reconcileExamAttemptCompletion(
       {
@@ -123,15 +134,11 @@ export async function handleSuspendExam(
         },
       };
     }
-    const anchors = {
-      source: "runtime" as const,
+    anchors = {
+      ...anchors,
       customerId: reconciledAttempt.customerId ?? null,
-      candidateEmail: deps.candidateEmail ?? null,
       examId: reconciledAttempt.examId ?? null,
-      examAttemptId,
-      correlationId: null as string | null,
-      actor: { type: "candidate" as const, id: reconciledAttempt.candidateId ?? null, email: deps.candidateEmail ?? null },
-      subject: { type: "exam_attempt" as const, id: examAttemptId },
+      actor: { ...anchors.actor, id: reconciledAttempt.candidateId ?? null },
     };
     const correlation = await ensureExamAttemptEnvironmentCorrelation(deps, {
       examAttemptId,
@@ -158,13 +165,7 @@ export async function handleSuspendExam(
     const resp = await handleTimerSyncError(deps, err, "suspend", examAttemptId);
     if (resp.status !== 200) {
       await deps.diagnostics?.record({
-        source: "runtime" as const,
-        customerId: null,
-        candidateEmail: deps.candidateEmail ?? null,
-        examId: null,
-        examAttemptId,
-        actor: { type: "candidate" as const, id: null, email: deps.candidateEmail ?? null },
-        subject: { type: "exam_attempt" as const, id: examAttemptId },
+        ...anchors,
         level: "warn",
         operation: "exam_attempt.suspend",
         outcome: "failure",
@@ -199,6 +200,17 @@ export async function handleResumeExam(
     return { status: 400, body: { error: "examAttemptId is required" } };
   }
 
+  let anchors = {
+    source: "runtime" as const,
+    customerId: null as string | null,
+    candidateEmail: deps.candidateEmail ?? null,
+    examId: null as string | null,
+    examAttemptId,
+    correlationId: null as string | null,
+    actor: { type: "candidate" as const, id: null as string | null, email: deps.candidateEmail ?? null },
+    subject: { type: "exam_attempt" as const, id: examAttemptId },
+  };
+
   try {
     await reconcileExamAttemptCompletion(
       {
@@ -224,15 +236,11 @@ export async function handleResumeExam(
         },
       };
     }
-    const anchors = {
-      source: "runtime" as const,
+    anchors = {
+      ...anchors,
       customerId: reconciledAttempt.customerId ?? null,
-      candidateEmail: deps.candidateEmail ?? null,
       examId: reconciledAttempt.examId ?? null,
-      examAttemptId,
-      correlationId: null as string | null,
-      actor: { type: "candidate" as const, id: reconciledAttempt.candidateId ?? null, email: deps.candidateEmail ?? null },
-      subject: { type: "exam_attempt" as const, id: examAttemptId },
+      actor: { ...anchors.actor, id: reconciledAttempt.candidateId ?? null },
     };
     const correlation = await ensureExamAttemptEnvironmentCorrelation(deps, {
       examAttemptId,
@@ -270,13 +278,7 @@ export async function handleResumeExam(
     const resp = await handleTimerSyncError(deps, err, "resume", examAttemptId);
     if (resp.status !== 200) {
       await deps.diagnostics?.record({
-        source: "runtime" as const,
-        customerId: null,
-        candidateEmail: deps.candidateEmail ?? null,
-        examId: null,
-        examAttemptId,
-        actor: { type: "candidate" as const, id: null, email: deps.candidateEmail ?? null },
-        subject: { type: "exam_attempt" as const, id: examAttemptId },
+        ...anchors,
         level: "warn",
         operation: "exam_attempt.resume",
         outcome: "failure",
