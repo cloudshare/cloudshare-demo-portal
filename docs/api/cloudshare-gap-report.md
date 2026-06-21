@@ -785,6 +785,48 @@ the diagnostic `externalIds`. Confirm the add-students response shape against th
 Copy this section when appending a new gap discovered during implementation:
 
 ```markdown
+## GAP-18 — LabProvisioner interface discards CloudShare response bodies and HTTP status
+
+| Field | Detail |
+|---|---|
+| **Status** | Confirmed — architectural gap surfaced during Slice #76 |
+| **Verified live** | Yes |
+
+**Observed behaviour**
+
+The `LabProvisioner` interface (`src/domain/lab-launch.ts`) was designed to return only the minimum
+domain-useful payload from each provisioning call:
+
+- `createTraining` → `{ trainingId: string }` (full training object discarded)
+- `addParticipant` → `void` (full participant/student response discarded)
+- `createSponsoredLink` → `{ loginUrl: string }` (status and any additional fields discarded)
+
+The CloudShare adapter receives the full HTTP response — status code, headers, body — but strips it
+to these minimal shapes before returning to the domain. The discarded data is never logged.
+
+**Impact on certification use**
+
+Admin support diagnostics for the scheduling/provisioning path (`cloudshare.add_participant`,
+`cloudshare.create_training`, `cloudshare.create_sponsored_link`) show request bodies but no
+response bodies or HTTP status codes. This makes it impossible to diagnose CloudShare-side
+rejections that return a 2xx with an error payload, soft failures, or unexpected response shapes.
+The principle is: **both successful and failing responses must be logged** — throwing away response
+data makes the platform significantly harder to support.
+
+**Action required:**
+
+A dedicated slice must:
+1. Extend the `LabProvisioner` return types to carry `{ status: number; body: unknown }` alongside
+   the current domain payload for all three operations.
+2. Update the CloudShare adapter to capture and return the full HTTP response (status + parsed body).
+3. Update `scheduleExam` to include `response.status` and `response.body` in every `recordSuccess`
+   and `recordFailure` diagnostic entry.
+4. Update all mock stubs and unit tests that implement `LabProvisioner` to supply the new fields.
+
+Until this is resolved, the diagnostic log for provisioning operations is incomplete.
+
+---
+
 ## GAP-N — Short descriptive title
 
 | Field | Detail |
