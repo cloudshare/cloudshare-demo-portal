@@ -124,7 +124,7 @@ describe("createCloudShareExamAuthoringSource", () => {
       }),
     );
 
-    await expect(source.getBlueprintDetail("p-1", "bp-1")).resolves.toEqual({
+    await expect(source.getBlueprintDetail("p-1", "bp-1")).resolves.toMatchObject({
       id: "bp-1",
       name: "Exam Blueprint",
       description: "Default tenant-ready environment.",
@@ -155,12 +155,122 @@ describe("createCloudShareExamAuthoringSource", () => {
       }),
     );
 
-    await expect(source.getBlueprintDetail("p-1", "bp-1")).resolves.toEqual({
+    await expect(source.getBlueprintDetail("p-1", "bp-1")).resolves.toMatchObject({
       id: "bp-1",
       name: "Exam Blueprint",
       description: "",
       defaultSnapshotId: "snap-1",
       snapshots: [{ id: "snap-1", name: "Snapshot 1", isDefault: true, regionIds: ["r-1", "r-2"] }],
+    });
+  });
+
+  it("builds a rich redacted diagnostic summary from blueprint detail responses", async () => {
+    const source = createCloudShareExamAuthoringSource(
+      makeClient({
+        "v3:/projects/p-1/blueprints/bp-1": {
+          id: "bp-1",
+          name: "Exam Blueprint",
+          description: "Default tenant-ready environment.",
+          type: "VmBlueprint",
+          creationDate: "2026-06-20T10:00:00Z",
+          resources: { ram: 16, cpu: 8 },
+          numberOfMachines: 2,
+          imageUrl:
+            "https://use.cloudshare.com/image-library/blueprints/bp-1.png?imageToken=secret-token&size=large",
+          createFromVersions: [
+            {
+              id: "snap-1",
+              name: "Snapshot 1",
+              number: 3,
+              isDefault: true,
+              isLatest: true,
+              type: "snapshot",
+              createTime: "2026-06-19T09:30:00Z",
+              description: "Primary lab image",
+              comment: "Approved for candidates",
+              regions: [
+                { id: "r-1", name: "EU West" },
+                { id: "r-2", name: "US East" },
+              ],
+              resources: { ram: 8, cpu: 4 },
+              machines: [
+                {
+                  id: "machine-1",
+                  name: "Gateway",
+                  osTypeName: "Windows Server 2022",
+                  resources: { ram: 4, cpu: 2 },
+                  isSaaS: false,
+                  httpAccessEnabled: true,
+                  resumeType: "resume",
+                  bootOrder: 1,
+                  canAddMultipleInstances: false,
+                  internalIPs: ["10.0.0.10"],
+                  macAddresses: ["00:11:22:33:44:55"],
+                  user: "Administrator",
+                  password: "super-secret",
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+
+    await expect(source.getBlueprintDetail("p-1", "bp-1")).resolves.toMatchObject({
+      id: "bp-1",
+      defaultSnapshotId: "snap-1",
+      snapshots: [{ id: "snap-1", regionIds: ["r-1", "r-2"] }],
+      diagnosticSummary: {
+        blueprintId: "bp-1",
+        name: "Exam Blueprint",
+        description: "Default tenant-ready environment.",
+        type: "VmBlueprint",
+        creationDate: "2026-06-20T10:00:00Z",
+        resources: { ram: 16, cpu: 8 },
+        numberOfMachines: 2,
+        imageUrl: {
+          present: true,
+          path: "/image-library/blueprints/bp-1.png",
+          query: {
+            imageToken: "[REDACTED]",
+            size: "large",
+          },
+        },
+        defaultSnapshotId: "snap-1",
+        snapshotCount: 1,
+        snapshots: [
+          {
+            id: "snap-1",
+            name: "Snapshot 1",
+            number: 3,
+            isDefault: true,
+            isLatest: true,
+            type: "snapshot",
+            createTime: "2026-06-19T09:30:00Z",
+            description: "Primary lab image",
+            comment: "Approved for candidates",
+            regions: [
+              { id: "r-1", name: "EU West" },
+              { id: "r-2", name: "US East" },
+            ],
+            resources: { ram: 8, cpu: 4 },
+            machineCount: 1,
+            machines: [
+              {
+                id: "machine-1",
+                name: "Gateway",
+                osTypeName: "Windows Server 2022",
+                resources: { ram: 4, cpu: 2 },
+                isSaaS: false,
+                httpAccessEnabled: true,
+                resumeType: "resume",
+                bootOrder: 1,
+                canAddMultipleInstances: false,
+              },
+            ],
+          },
+        ],
+      },
     });
   });
 });

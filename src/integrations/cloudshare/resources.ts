@@ -2,10 +2,44 @@ import { z } from "zod";
 import type { CloudShareClient } from "./client";
 import type { CloudShareResourceLister } from "@/domain/resource-sync";
 
+const REDACTED = "[REDACTED]";
+const SNAPSHOT_DIAGNOSTIC_LIMIT = 25;
+const MACHINE_DIAGNOSTIC_LIMIT = 25;
+
+const redactableQueryKeyPatterns = ["token", "bearer", "secret", "signature", "auth", "key"];
+const sensitiveTextPatterns = [/bearer\s+[a-z0-9._-]+/i, /authorization:/i, /\b(password|secret)\b/i];
+
+const optionalStringSchema = z.string().trim().min(1).optional();
+const optionalBooleanSchema = z.boolean().optional();
+const optionalRecordSchema = z.record(z.string(), z.unknown()).optional();
+const optionalStringOrNumberSchema = z.union([z.string(), z.number()]).optional();
+
+const machineSchema = z
+  .object({
+    id: z.union([z.string(), z.number()]).transform(String),
+    name: optionalStringSchema,
+    osTypeName: optionalStringSchema,
+    resources: optionalRecordSchema,
+    isSaaS: optionalBooleanSchema,
+    httpAccessEnabled: optionalBooleanSchema,
+    resumeType: optionalStringOrNumberSchema,
+    bootOrder: optionalStringOrNumberSchema,
+    canAddMultipleInstances: optionalBooleanSchema,
+  })
+  .passthrough();
+
 const blueprintVersionSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   isDefault: z.boolean(),
+  number: optionalStringOrNumberSchema,
+  isLatest: optionalBooleanSchema,
+  type: optionalStringSchema,
+  createTime: optionalStringSchema,
+  description: optionalStringSchema,
+  comment: optionalStringSchema,
+  resources: optionalRecordSchema,
+  machines: z.array(machineSchema).optional(),
   regions: z
     .array(
       z.union([
@@ -13,19 +47,26 @@ const blueprintVersionSchema = z.object({
         z.object({
           id: z.string().min(1),
           name: z.string().min(1).optional(),
-        }),
+        }).passthrough(),
       ]),
     )
     .optional()
     .default([]),
-});
+})
+  .passthrough();
 
 const blueprintDetailSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   description: z.string().optional().default(""),
+  type: optionalStringSchema,
+  creationDate: optionalStringSchema,
+  resources: optionalRecordSchema,
+  numberOfMachines: z.number().int().nonnegative().optional(),
+  imageUrl: optionalStringSchema,
   createFromVersions: z.array(blueprintVersionSchema),
-});
+})
+  .passthrough();
 
 const projectSchema = z.object({
   id: z.string().min(1),
@@ -68,6 +109,7 @@ export interface CloudShareBlueprintDetail {
   readonly description: string;
   readonly defaultSnapshotId: string | null;
   readonly snapshots: CloudShareBlueprintSnapshot[];
+  readonly diagnosticSummary?: Record<string, unknown>;
 }
 
 export interface CloudShareExamAuthoringSource {
@@ -360,6 +402,7 @@ export function createCloudShareExamAuthoringSource(
         description: detail.description ?? "",
         defaultSnapshotId:
           detail.createFromVersions.find((snapshot) => snapshot.isDefault)?.id ?? null,
+        diagnosticSummary: summarizeBlueprintDetailForDiagnostics(detail),
         snapshots: detail.createFromVersions.map((snapshot) => ({
           id: snapshot.id,
           name: snapshot.name,
@@ -371,4 +414,163 @@ export function createCloudShareExamAuthoringSource(
       };
     },
   };
+}
+
+function summarizeBlueprintDetailForDiagnostics(
+  detail: z.infer<typeof blueprintDetailSchema>,
+): Record<string, unknown> {
+  const snapshots = detail.createFromVersions.slice(0, SNAPSHOT_DIAGNOSTIC_LIMIT);
+  const summary: Record<string, unknown> = {
+    blueprintId: detail.id,
+    name: detail.name,
+    description: sanitizeFreeText(detail.description) ?? "",
+    defaultSnapshotId:
+      detail.createFromVersions.find((snapshot) => snapshot.isDefault)?.id ?? null,
+    snapshotCount: detail.createFromVersions.length,
+    snapshots: snapshots.map((snapshot) => summarizeSnapshotForDiagnostics(snapshot)),
+  };
+
+  if (detail.type) {
+    summary.type = detail.type;
+  }
+  if (detail.creationDate) {
+    summary.creationDate = detail.creationDate;
+  }
+  if (detail.resources) {
+    summary.resources = detail.resources;
+  }
+  if (detail.numberOfMachines !== undefined) {
+    summary.numberOfMachines = detail.numberOfMachines;
+  }
+  summary.imageUrl = summarizeImageUrl(detail.imageUrl);
+
+  if (detail.createFromVersions.length > snapshots.length) {
+    summary.truncation = {
+      snapshotsIncluded: snapshots.length,
+      totalSnapshots: detail.createFromVersions.length,
+    };
+  }
+
+  return summary;
+}
+
+function summarizeSnapshotForDiagnostics(
+  snapshot: z.infer<typeof blueprintVersionSchema>,
+): Record<string, unknown> {
+  const machines = (snapshot.machines ?? []).slice(0, MACHINE_DIAGNOSTIC_LIMIT);
+  const summary: Record<string, unknown> = {
+    id: snapshot.id,
+    name: snapshot.name,
+    isDefault: snapshot.isDefault,
+    machineCount: snapshot.machines?.length ?? 0,
+    machines: machines.map((machine) => summarizeMachineForDiagnostics(machine)),
+  };
+
+  if (snapshot.number !== undefined) {
+    summary.number = snapshot.number;
+  }
+  if (snapshot.isLatest !== undefined) {
+    summary.isLatest = snapshot.isLatest;
+  }
+  if (snapshot.type) {
+    summary.type = snapshot.type;
+  }
+  if (snapshot.createTime) {
+    summary.createTime = snapshot.createTime;
+  }
+  const description = sanitizeFreeText(snapshot.description);
+  if (description) {
+    summary.description = description;
+  }
+  const comment = sanitizeFreeText(snapshot.comment);
+  if (comment) {
+    summary.comment = comment;
+  }
+  if (snapshot.regions.length > 0) {
+    summary.regions = snapshot.regions.map((region) =>
+      typeof region === "string"
+        ? { id: region }
+        : { id: region.id, ...(region.name ? { name: region.name } : {}) },
+    );
+  }
+  if (snapshot.resources) {
+    summary.resources = snapshot.resources;
+  }
+  if ((snapshot.machines ?? []).length > machines.length) {
+    summary.truncation = {
+      machinesIncluded: machines.length,
+      totalMachines: snapshot.machines?.length ?? machines.length,
+    };
+  }
+
+  return summary;
+}
+
+function summarizeMachineForDiagnostics(
+  machine: z.infer<typeof machineSchema>,
+): Record<string, unknown> {
+  const summary: Record<string, unknown> = { id: machine.id };
+
+  if (machine.name) {
+    summary.name = machine.name;
+  }
+  if (machine.osTypeName) {
+    summary.osTypeName = machine.osTypeName;
+  }
+  if (machine.resources) {
+    summary.resources = machine.resources;
+  }
+  if (machine.isSaaS !== undefined) {
+    summary.isSaaS = machine.isSaaS;
+  }
+  if (machine.httpAccessEnabled !== undefined) {
+    summary.httpAccessEnabled = machine.httpAccessEnabled;
+  }
+  if (machine.resumeType !== undefined) {
+    summary.resumeType = machine.resumeType;
+  }
+  if (machine.bootOrder !== undefined) {
+    summary.bootOrder = machine.bootOrder;
+  }
+  if (machine.canAddMultipleInstances !== undefined) {
+    summary.canAddMultipleInstances = machine.canAddMultipleInstances;
+  }
+
+  return summary;
+}
+
+function summarizeImageUrl(value: string | undefined): Record<string, unknown> {
+  if (!value) {
+    return { present: false };
+  }
+
+  try {
+    const url = new URL(value);
+    const query: Record<string, string> = {};
+    for (const [key, paramValue] of url.searchParams.entries()) {
+      query[key] = isSensitiveQueryKey(key) ? REDACTED : paramValue;
+    }
+    return {
+      present: true,
+      path: url.pathname,
+      ...(Object.keys(query).length > 0 ? { query } : {}),
+    };
+  } catch {
+    return { present: true, path: sanitizeFreeText(value) ?? "[UNPARSEABLE]" };
+  }
+}
+
+function isSensitiveQueryKey(key: string): boolean {
+  const normalized = key.toLowerCase();
+  return redactableQueryKeyPatterns.some((pattern) => normalized.includes(pattern));
+}
+
+function sanitizeFreeText(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  if (sensitiveTextPatterns.some((pattern) => pattern.test(value))) {
+    return REDACTED;
+  }
+  return value;
 }

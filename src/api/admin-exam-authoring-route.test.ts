@@ -59,6 +59,24 @@ function makeAuthoringSource(): CloudShareExamAuthoringSource {
       name: "Helios Blueprint",
       description: "Blueprint-backed description",
       defaultSnapshotId: "snap-1",
+      diagnosticSummary: {
+        blueprintId: "bp-1",
+        name: "Helios Blueprint",
+        description: "Blueprint-backed description",
+        type: "VmBlueprint",
+        defaultSnapshotId: "snap-1",
+        snapshotCount: 1,
+        imageUrl: { present: false },
+        snapshots: [
+          {
+            id: "snap-1",
+            name: "Default Snapshot",
+            isDefault: true,
+            machineCount: 0,
+            machines: [],
+          },
+        ],
+      },
       snapshots: [
         {
           id: "snap-1",
@@ -210,8 +228,21 @@ describe("admin exam authoring routes", () => {
       request: { method: "GET", path: "/projects/project-1/blueprints/bp-1" },
       response: {
         blueprintId: "bp-1",
+        name: "Helios Blueprint",
+        description: "Blueprint-backed description",
+        type: "VmBlueprint",
         defaultSnapshotId: "snap-1",
         snapshotCount: 1,
+        imageUrl: { present: false },
+        snapshots: [
+          {
+            id: "snap-1",
+            name: "Default Snapshot",
+            isDefault: true,
+            machineCount: 0,
+            machines: [],
+          },
+        ],
       },
       externalIds: {
         resourceType: "blueprint_detail",

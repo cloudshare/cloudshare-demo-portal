@@ -285,6 +285,7 @@ export async function handleGetBlueprintDetail(
   const source = resolveAuthoringSource(deps.cloudshare, connection);
   try {
     const blueprint = await source.getBlueprintDetail(request.projectId, request.blueprintId);
+    const blueprintForClient = stripBlueprintDiagnosticSummary(blueprint);
     await recordResourceRead(deps, {
       customerId: request.customerId,
       operation: "cloudshare.resource_sync.blueprint_detail.read",
@@ -292,21 +293,17 @@ export async function handleGetBlueprintDetail(
       path: `/projects/${request.projectId}/blueprints/${request.blueprintId}`,
       resourceType: "blueprint_detail",
       resourceIds: { projectId: request.projectId, blueprintId: request.blueprintId },
-      response: {
-        blueprintId: blueprint.id,
-        defaultSnapshotId: blueprint.defaultSnapshotId,
-        snapshotCount: blueprint.snapshots.length,
-      },
+      response: buildBlueprintDetailDiagnosticResponse(blueprint),
     });
     await deps.cache.saveBlueprintDetail(
       request.customerId,
       request.projectId,
       request.blueprintId,
-      blueprint,
+      blueprintForClient,
     );
     return {
       status: 200,
-      body: { source: "live", projectId: request.projectId, blueprint },
+      body: { source: "live", projectId: request.projectId, blueprint: blueprintForClient },
     };
   } catch (error) {
     return await handleCloudShareFailure(deps, {
@@ -486,11 +483,7 @@ async function validateCurrentDefaultSnapshotRegions(
       path: `/projects/${exam.projectId}/blueprints/${exam.blueprintId}`,
       resourceType: "blueprint_detail",
       resourceIds: { projectId: exam.projectId, blueprintId: exam.blueprintId },
-      response: {
-        blueprintId: blueprint.id,
-        defaultSnapshotId: blueprint.defaultSnapshotId,
-        snapshotCount: blueprint.snapshots.length,
-      },
+      response: buildBlueprintDetailDiagnosticResponse(blueprint),
     });
   } catch (error) {
     return await handleCloudShareFailure(deps, {
@@ -696,6 +689,28 @@ async function recordResourceRead(
     details: { integrationSurface: spec.integrationSurface },
     externalIds: { resourceType: spec.resourceType, ...(spec.resourceIds ?? {}) },
   });
+}
+
+function buildBlueprintDetailDiagnosticResponse(blueprint: {
+  readonly id: string;
+  readonly defaultSnapshotId: string | null;
+  readonly snapshots: ReadonlyArray<unknown>;
+  readonly diagnosticSummary?: Record<string, unknown>;
+}): Record<string, unknown> {
+  return (
+    blueprint.diagnosticSummary ?? {
+      blueprintId: blueprint.id,
+      defaultSnapshotId: blueprint.defaultSnapshotId,
+      snapshotCount: blueprint.snapshots.length,
+    }
+  );
+}
+
+function stripBlueprintDiagnosticSummary<T extends { readonly diagnosticSummary?: Record<string, unknown> }>(
+  blueprint: T,
+): Omit<T, "diagnosticSummary"> {
+  const { diagnosticSummary: _diagnosticSummary, ...rest } = blueprint;
+  return rest;
 }
 
 async function safeRecordDiagnostic(
