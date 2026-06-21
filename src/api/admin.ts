@@ -5,14 +5,25 @@ import type { EventLogRepository } from "@/domain/event-log";
 import type { SupportLogRepository } from "@/domain/support-log";
 import type {
   DiagnosticLogEntry,
+  DiagnosticLogEntryInput,
   DiagnosticRecorder,
   DiagnosticLogRepository,
 } from "@/domain/diagnostic-log";
+import {
+  CloudShareError,
+  CloudShareRequestError,
+  CloudShareResponseError,
+  CloudShareTransportError,
+} from "@/integrations/cloudshare";
 import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
-import { createCloudShareResourceLister } from "@/integrations/cloudshare/resources";
+import {
+  createCloudShareResourceLister,
+  type CloudShareResourceReadFailure,
+  type CloudShareResourceReadSuccess,
+} from "@/integrations/cloudshare/resources";
 
 /**
  * Framework-agnostic admin API handlers. All three surfaces are read-only
@@ -81,9 +92,17 @@ export async function handleSyncResources(
 
     const lister: CloudShareResourceLister = createCloudShareResourceLister(
       deps.cloudshare.forConnection(connection),
+      {
+        onReadSuccess: async (spec) => {
+          await safeRecordDiagnostic(deps, buildResourceReadSuccessEntry(request.customerId, spec));
+        },
+        onReadFailure: async (spec) => {
+          await safeRecordDiagnostic(deps, buildResourceReadFailureEntry(request.customerId, spec));
+        },
+      },
     );
     const result = await syncResources({ lister, repository: deps.resources });
-    await deps.diagnostics?.record({
+    await safeRecordDiagnostic(deps, {
       source: "admin",
       customerId: request.customerId,
       level: "info",
@@ -116,7 +135,7 @@ export async function handleSyncResources(
       },
     };
   } catch (err) {
-    await deps.diagnostics?.record({
+    await safeRecordDiagnostic(deps, {
       source: "admin",
       customerId: request.customerId,
       level: "warn",
@@ -134,6 +153,117 @@ export async function handleSyncResources(
     });
     return { status: 502, body: { error: "resource sync failed" } };
   }
+}
+
+function buildResourceReadSuccessEntry(
+  customerId: string,
+  spec: CloudShareResourceReadSuccess,
+): DiagnosticLogEntryInput {
+  return {
+    source: "admin",
+    customerId,
+    level: "info",
+    operation: spec.operation,
+    outcome: "success",
+    message: `${spec.resourceType} resource read succeeded`,
+    request: { method: "GET", path: spec.path },
+    response: spec.response,
+    details: { integrationSurface: spec.integrationSurface },
+    externalIds: { resourceType: spec.resourceType, ...(spec.resourceIds ?? {}) },
+  };
+}
+
+function buildResourceReadFailureEntry(
+  customerId: string,
+  spec: CloudShareResourceReadFailure,
+): DiagnosticLogEntryInput {
+  const cloudShareError = asCloudShareErrorLike(spec.error);
+  const diagnostic = cloudShareError
+    ? buildCloudShareFailureDiagnostic(cloudShareError)
+    : { method: "GET", failureMode: "resource_sync_failed", responseStatus: undefined };
+
+  return {
+    source: "admin",
+    customerId,
+    level: "warn",
+    operation: spec.operation,
+    outcome: "failure",
+    message: `${spec.resourceType} resource read failed`,
+    request: {
+      method: diagnostic.method,
+      path: spec.path,
+      ...(cloudShareError?.context?.requestHeaders
+        ? { headers: cloudShareError.context.requestHeaders }
+        : {}),
+    },
+    response: {
+      ...(diagnostic.responseStatus !== undefined ? { status: diagnostic.responseStatus } : {}),
+    },
+    details: {
+      integrationSurface: spec.integrationSurface,
+      failureMode: diagnostic.failureMode,
+    },
+    externalIds: { resourceType: spec.resourceType, ...(spec.resourceIds ?? {}) },
+  };
+}
+
+async function safeRecordDiagnostic(
+  deps: Pick<SyncHandlerDeps, "diagnostics" | "logger">,
+  entry: DiagnosticLogEntryInput,
+): Promise<void> {
+  if (!deps.diagnostics) {
+    return;
+  }
+
+  try {
+    await deps.diagnostics.record(entry);
+  } catch (error) {
+    deps.logger.warn("admin diagnostic recording failed", {
+      operation: entry.operation,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+function asCloudShareErrorLike(error: unknown): CloudShareError | null {
+  if (
+    error instanceof CloudShareRequestError ||
+    error instanceof CloudShareTransportError ||
+    error instanceof CloudShareResponseError ||
+    error instanceof CloudShareError
+  ) {
+    return error;
+  }
+  return null;
+}
+
+function buildCloudShareFailureDiagnostic(
+  error: CloudShareError,
+): {
+  readonly method: string;
+  readonly failureMode: string;
+  readonly responseStatus?: number;
+} {
+  const errorName = error.name;
+  const diagnostic = {
+    method: (error.context?.method as string | undefined) ?? "GET",
+    failureMode: "cloudshare_error",
+    responseStatus: undefined as number | undefined,
+  };
+
+  if (error instanceof CloudShareRequestError || errorName === "CloudShareRequestError") {
+    diagnostic.failureMode = "http_status";
+    diagnostic.responseStatus =
+      error instanceof CloudShareRequestError
+        ? error.status
+        : (error.context?.status as number | undefined);
+  } else if (error instanceof CloudShareTransportError || errorName === "CloudShareTransportError") {
+    diagnostic.failureMode = "transport";
+  } else if (error instanceof CloudShareResponseError || errorName === "CloudShareResponseError") {
+    diagnostic.failureMode = "unexpected_response";
+  }
+
+  return diagnostic;
 }
 
 // --- Event log ---

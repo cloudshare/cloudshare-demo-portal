@@ -32,6 +32,8 @@ describe("createCloudShareResourceLister", () => {
     "v3:/regions": [
       { id: "r-1", name: "Miami", friendlyName: "US East (Miami)", cloudName: "AWS" },
     ],
+    "v3:/projects/p-1/blueprints": [{ id: "bp-1", name: "Blueprint 1" }],
+    "v3:/projects/p-1/policies": [{ id: "pol-1", name: "Policy 1" }],
   });
 
   it("lists projects via v3", async () => {
@@ -52,16 +54,16 @@ describe("createCloudShareResourceLister", () => {
     ]);
   });
 
-  it("does not pretend blueprints are globally listable", async () => {
+  it("lists project-scoped blueprints during legacy resource sync", async () => {
     const lister = createCloudShareResourceLister(mockClient);
     const result = await lister.listBlueprints();
-    expect(result).toEqual([]);
+    expect(result).toEqual([{ id: "bp-1", name: "Blueprint 1" }]);
   });
 
-  it("does not pretend policies are globally listable", async () => {
+  it("lists project-scoped policies during legacy resource sync", async () => {
     const lister = createCloudShareResourceLister(mockClient);
     const result = await lister.listPolicies();
-    expect(result).toEqual([]);
+    expect(result).toEqual([{ id: "pol-1", name: "Policy 1" }]);
   });
 });
 

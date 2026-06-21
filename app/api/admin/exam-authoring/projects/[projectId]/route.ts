@@ -24,6 +24,7 @@ export async function GET(
       connections: services.cloudshareConnections,
       cloudshare: services.cloudshareClientFactory,
       cache: services.examAuthoringCache,
+      diagnostics: services.diagnosticRecorder,
       logger: services.logger,
     },
     { customerId: session.customerId, projectId, refresh },

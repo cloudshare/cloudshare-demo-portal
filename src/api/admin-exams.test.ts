@@ -189,11 +189,11 @@ describe("admin exam authoring handlers", () => {
 
     const entries = await diagnostics.repository.query({ customerId: "customer-1" });
     expect(entries).toHaveLength(2);
-    expect(entries.map((entry) => entry.operation)).toEqual([
+    expect(entries.map((entry) => entry.operation).sort()).toEqual([
       "cloudshare.resource_sync.projects.read",
       "cloudshare.resource_sync.regions.read",
     ]);
-    expect(entries[0]).toMatchObject({
+    expect(entries.find((entry) => entry.operation === "cloudshare.resource_sync.projects.read")).toMatchObject({
       customerId: "customer-1",
       source: "admin-exams",
       operation: "cloudshare.resource_sync.projects.read",
@@ -202,7 +202,7 @@ describe("admin exam authoring handlers", () => {
       request: { method: "GET", path: "/projects" },
       response: { itemCount: 1, resourceIds: ["project-1"] },
     });
-    expect(entries[1]).toMatchObject({
+    expect(entries.find((entry) => entry.operation === "cloudshare.resource_sync.regions.read")).toMatchObject({
       customerId: "customer-1",
       source: "admin-exams",
       operation: "cloudshare.resource_sync.regions.read",

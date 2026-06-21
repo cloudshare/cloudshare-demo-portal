@@ -89,6 +89,12 @@ function makeCloudShareClient(overrides: {
       if (path === "/regions") {
         return Promise.resolve([{ id: "r-1", name: "EU West" }]);
       }
+      if (path === "/projects/p-1/blueprints") {
+        return Promise.resolve([{ id: "bp-1", name: "Blueprint 1" }]);
+      }
+      if (path === "/projects/p-1/policies") {
+        return Promise.resolve([{ id: "pol-1", name: "Policy 1" }]);
+      }
       return Promise.reject(new Error(`unexpected path ${path}`));
     });
 
@@ -162,7 +168,7 @@ describe("handleSyncResources", () => {
 
     expect(result.status).toBe(200);
     const body = result.body as { synced: number };
-    expect(body.synced).toBe(2);
+    expect(body.synced).toBe(4);
     expect(cloudshare.forConnection).toHaveBeenCalledWith(
       expect.objectContaining({ customerId: "customer-1" }),
     );
@@ -177,7 +183,7 @@ describe("handleSyncResources", () => {
       operation: "cloudshare.resource_sync.legacy_sync.read",
       outcome: "success",
       request: { method: "POST", path: "/api/admin/sync-resources" },
-      response: { synced: 2, resourceCounts: { project: 1, region: 1, blueprint: 0, policy: 0 } },
+      response: { synced: 4, resourceCounts: { project: 1, region: 1, blueprint: 1, policy: 1 } },
       externalIds: { resourceType: "resource_sync" },
     });
   });

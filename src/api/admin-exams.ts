@@ -15,7 +15,11 @@ import {
 } from "@/integrations/cloudshare/resources";
 import type { Logger } from "@/observability/logger";
 import { randomUUID } from "node:crypto";
-import type { DiagnosticActor, DiagnosticRecorder } from "@/domain/diagnostic-log";
+import type {
+  DiagnosticActor,
+  DiagnosticLogEntryInput,
+  DiagnosticRecorder,
+} from "@/domain/diagnostic-log";
 import {
   createDraftExam,
   DraftExamValidationError,
@@ -363,7 +367,7 @@ export async function handleCreateDraftExam(
       },
       input,
     );
-    await deps.diagnostics?.record({
+    await safeRecordDiagnostic(deps, {
       source: "admin-exams",
       customerId: request.customerId,
       actor: request.actor ?? null,
@@ -434,7 +438,7 @@ export async function handlePublishExam(
       { repository: deps.repository, now: deps.now },
       { customerId: request.customerId, examId: request.examId },
     );
-    await deps.diagnostics?.record({
+    await safeRecordDiagnostic(deps, {
       source: "admin-exams",
       customerId: request.customerId,
       actor: request.actor ?? null,
@@ -570,7 +574,7 @@ export async function handleUpdateDraftExam(
       { repository: deps.repository, now: deps.now },
       input,
     );
-    await deps.diagnostics?.record({
+    await safeRecordDiagnostic(deps, {
       source: "admin-exams",
       customerId: request.customerId,
       actor: request.actor ?? null,
@@ -603,7 +607,7 @@ export async function handleUnpublishExam(
       { repository: deps.repository, now: deps.now },
       { customerId: request.customerId, examId: request.examId },
     );
-    await deps.diagnostics?.record({
+    await safeRecordDiagnostic(deps, {
       source: "admin-exams",
       customerId: request.customerId,
       actor: request.actor ?? null,
@@ -669,7 +673,7 @@ function summariseExamChanges(before: Exam, after: Exam): string[] {
 }
 
 async function recordResourceRead(
-  deps: Pick<AdminExamAuthoringDeps, "diagnostics">,
+  deps: Pick<AdminExamAuthoringDeps, "diagnostics" | "logger">,
   spec: {
     readonly customerId: string;
     readonly operation: string;
@@ -680,7 +684,7 @@ async function recordResourceRead(
     readonly response: Record<string, unknown>;
   },
 ): Promise<void> {
-  await deps.diagnostics?.record({
+  await safeRecordDiagnostic(deps, {
     source: "admin-exams",
     customerId: spec.customerId,
     level: "info",
@@ -692,6 +696,24 @@ async function recordResourceRead(
     details: { integrationSurface: spec.integrationSurface },
     externalIds: { resourceType: spec.resourceType, ...(spec.resourceIds ?? {}) },
   });
+}
+
+async function safeRecordDiagnostic(
+  deps: { readonly diagnostics?: DiagnosticRecorder; readonly logger: Logger },
+  entry: DiagnosticLogEntryInput,
+): Promise<void> {
+  if (!deps.diagnostics) {
+    return;
+  }
+
+  try {
+    await deps.diagnostics.record(entry);
+  } catch (error) {
+    deps.logger.warn("admin exam diagnostic recording failed", {
+      operation: entry.operation,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 async function handleCloudShareFailure(
@@ -708,7 +730,7 @@ async function handleCloudShareFailure(
     );
     const correlationId = (deps.newCorrelationId ?? randomUUID)();
     const occurredAt = (deps.now ?? (() => new Date()))().toISOString();
-    await deps.diagnostics?.record({
+    await safeRecordDiagnostic(deps, {
       source: "admin-exams",
       customerId: spec.customerId,
       level: "warn",

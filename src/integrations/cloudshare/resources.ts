@@ -100,30 +100,197 @@ const regionListSchema = z.array(regionSchema);
 const blueprintListSchema = z.array(blueprintSummarySchema);
 const policyListSchema = z.array(policySummarySchema);
 
-export function createCloudShareResourceLister(client: CloudShareClient): CloudShareResourceLister {
+export interface CloudShareResourceReadSuccess {
+  readonly operation: string;
+  readonly integrationSurface: string;
+  readonly path: string;
+  readonly resourceType: "project" | "region" | "blueprint" | "policy";
+  readonly resourceIds?: Record<string, string>;
+  readonly response: Record<string, unknown>;
+}
+
+export interface CloudShareResourceReadFailure {
+  readonly operation: string;
+  readonly integrationSurface: string;
+  readonly path: string;
+  readonly resourceType: "project" | "region" | "blueprint" | "policy";
+  readonly resourceIds?: Record<string, string>;
+  readonly error: unknown;
+}
+
+export interface CloudShareResourceListerOptions {
+  readonly onReadSuccess?: (spec: CloudShareResourceReadSuccess) => Promise<void> | void;
+  readonly onReadFailure?: (spec: CloudShareResourceReadFailure) => Promise<void> | void;
+}
+
+export function createCloudShareResourceLister(
+  client: CloudShareClient,
+  options: CloudShareResourceListerOptions = {},
+): CloudShareResourceLister {
+  let projectsPromise: Promise<Array<{ id: string; name: string }>> | undefined;
+  let regionsPromise:
+    | Promise<Array<{ id: string; name: string; friendlyName?: string }>>
+    | undefined;
+
+  function loadProjects(): Promise<Array<{ id: string; name: string }>> {
+    if (!projectsPromise) {
+      projectsPromise = client
+        .requestV3({ method: "GET", path: "/projects", schema: projectListSchema })
+        .then(async (projects) => {
+          await options.onReadSuccess?.({
+            operation: "cloudshare.resource_sync.projects.read",
+            integrationSurface: "cloudshare.v3.projects",
+            path: "/projects",
+            resourceType: "project",
+            response: {
+              itemCount: projects.length,
+              resourceIds: projects.map((project) => project.id),
+            },
+          });
+          return projects;
+        })
+        .catch(async (error) => {
+          await options.onReadFailure?.({
+            operation: "cloudshare.resource_sync.projects.read",
+            integrationSurface: "cloudshare.v3.projects",
+            path: "/projects",
+            resourceType: "project",
+            error,
+          });
+          throw error;
+        });
+    }
+    return projectsPromise;
+  }
+
+  function loadRegions(): Promise<Array<{ id: string; name: string; friendlyName?: string }>> {
+    if (!regionsPromise) {
+      regionsPromise = client
+        .requestV3({
+          method: "GET",
+          path: "/regions",
+          schema: regionListSchema,
+        })
+        .then(async (regions) => {
+          const mapped = regions.map((region) => ({
+            id: region.id,
+            name: region.name,
+            ...(region.friendlyName ? { friendlyName: region.friendlyName } : {}),
+          }));
+          await options.onReadSuccess?.({
+            operation: "cloudshare.resource_sync.regions.read",
+            integrationSurface: "cloudshare.v3.regions",
+            path: "/regions",
+            resourceType: "region",
+            response: {
+              itemCount: mapped.length,
+              resourceIds: mapped.map((region) => region.id),
+            },
+          });
+          return mapped;
+        })
+        .catch(async (error) => {
+          await options.onReadFailure?.({
+            operation: "cloudshare.resource_sync.regions.read",
+            integrationSurface: "cloudshare.v3.regions",
+            path: "/regions",
+            resourceType: "region",
+            error,
+          });
+          throw error;
+        });
+    }
+    return regionsPromise;
+  }
+
   return {
     async listProjects() {
-      return client.requestV3({ method: "GET", path: "/projects", schema: projectListSchema });
+      return loadProjects();
     },
     async listRegions() {
-      const regions = await client.requestV3({
-        method: "GET",
-        path: "/regions",
-        schema: regionListSchema,
-      });
-      return regions.map((region) => ({
-        id: region.id,
-        name: region.name,
-        ...(region.friendlyName ? { friendlyName: region.friendlyName } : {}),
-      }));
+      return loadRegions();
     },
     async listBlueprints() {
-      // Project-scoped blueprints should be fetched through the project-first authoring flow.
-      return [];
+      const projects = await loadProjects();
+      const blueprints = await Promise.all(
+        projects.map(async (project) => {
+          const path = `/projects/${project.id}/blueprints`;
+          try {
+            const result = await client.requestV3({
+              method: "GET",
+              path,
+              schema: blueprintListSchema,
+            });
+            await options.onReadSuccess?.({
+              operation: "cloudshare.resource_sync.blueprints.read",
+              integrationSurface: "cloudshare.v3.projects.blueprints",
+              path,
+              resourceType: "blueprint",
+              resourceIds: { projectId: project.id },
+              response: {
+                itemCount: result.length,
+                resourceIds: result.map((blueprint) => blueprint.id),
+              },
+            });
+            return result.map((blueprint) => ({
+              id: blueprint.id,
+              name: blueprint.name,
+            }));
+          } catch (error) {
+            await options.onReadFailure?.({
+              operation: "cloudshare.resource_sync.blueprints.read",
+              integrationSurface: "cloudshare.v3.projects.blueprints",
+              path,
+              resourceType: "blueprint",
+              resourceIds: { projectId: project.id },
+              error,
+            });
+            throw error;
+          }
+        }),
+      );
+      return blueprints.flat();
     },
     async listPolicies() {
-      // Project-scoped policies should be fetched through the project-first authoring flow.
-      return [];
+      const projects = await loadProjects();
+      const policies = await Promise.all(
+        projects.map(async (project) => {
+          const path = `/projects/${project.id}/policies`;
+          try {
+            const result = await client.requestV3({
+              method: "GET",
+              path,
+              schema: policyListSchema,
+            });
+            await options.onReadSuccess?.({
+              operation: "cloudshare.resource_sync.policies.read",
+              integrationSurface: "cloudshare.v3.projects.policies",
+              path,
+              resourceType: "policy",
+              resourceIds: { projectId: project.id },
+              response: {
+                itemCount: result.length,
+                resourceIds: result.map((policy) => policy.id),
+              },
+            });
+            return result.map((policy) => ({
+              id: policy.id,
+              name: policy.name,
+            }));
+          } catch (error) {
+            await options.onReadFailure?.({
+              operation: "cloudshare.resource_sync.policies.read",
+              integrationSurface: "cloudshare.v3.projects.policies",
+              path,
+              resourceType: "policy",
+              resourceIds: { projectId: project.id },
+              error,
+            });
+            throw error;
+          }
+        }),
+      );
+      return policies.flat();
     },
   };
 }
