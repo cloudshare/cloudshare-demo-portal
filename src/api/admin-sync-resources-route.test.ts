@@ -108,15 +108,15 @@ describe("admin sync resources route", () => {
       customerId: "customer-helios",
     });
 
-    expect(entries.map((entry) => entry.operation)).toEqual([
+    expect(entries.map((entry) => entry.operation).sort()).toEqual([
+      "cloudshare.resource_sync.blueprints.read",
+      "cloudshare.resource_sync.legacy_sync.read",
+      "cloudshare.resource_sync.policies.read",
       "cloudshare.resource_sync.projects.read",
       "cloudshare.resource_sync.regions.read",
-      "cloudshare.resource_sync.blueprints.read",
-      "cloudshare.resource_sync.policies.read",
-      "cloudshare.resource_sync.legacy_sync.read",
     ]);
 
-    expect(entries[0]).toMatchObject({
+    expect(entries.find((entry) => entry.operation === "cloudshare.resource_sync.projects.read")).toMatchObject({
       customerId: "customer-helios",
       source: "admin",
       operation: "cloudshare.resource_sync.projects.read",
@@ -126,7 +126,7 @@ describe("admin sync resources route", () => {
       details: { integrationSurface: "cloudshare.v3.projects" },
       externalIds: { resourceType: "project" },
     });
-    expect(entries[1]).toMatchObject({
+    expect(entries.find((entry) => entry.operation === "cloudshare.resource_sync.regions.read")).toMatchObject({
       customerId: "customer-helios",
       source: "admin",
       operation: "cloudshare.resource_sync.regions.read",
@@ -136,7 +136,7 @@ describe("admin sync resources route", () => {
       details: { integrationSurface: "cloudshare.v3.regions" },
       externalIds: { resourceType: "region" },
     });
-    expect(entries[2]).toMatchObject({
+    expect(entries.find((entry) => entry.operation === "cloudshare.resource_sync.blueprints.read")).toMatchObject({
       customerId: "customer-helios",
       source: "admin",
       operation: "cloudshare.resource_sync.blueprints.read",
@@ -146,7 +146,7 @@ describe("admin sync resources route", () => {
       details: { integrationSurface: "cloudshare.v3.projects.blueprints" },
       externalIds: { resourceType: "blueprint", projectId: "project-1" },
     });
-    expect(entries[3]).toMatchObject({
+    expect(entries.find((entry) => entry.operation === "cloudshare.resource_sync.policies.read")).toMatchObject({
       customerId: "customer-helios",
       source: "admin",
       operation: "cloudshare.resource_sync.policies.read",

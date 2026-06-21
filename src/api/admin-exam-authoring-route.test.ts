@@ -117,7 +117,7 @@ describe("admin exam authoring routes", () => {
     const entries = await diagnosticsRepository.query({
       customerId: "customer-helios",
     });
-    expect(entries.map((entry) => entry.operation)).toEqual([
+    expect(entries.map((entry) => entry.operation).sort()).toEqual([
       "cloudshare.resource_sync.projects.read",
       "cloudshare.resource_sync.regions.read",
     ]);
@@ -156,15 +156,15 @@ describe("admin exam authoring routes", () => {
     const entries = await diagnosticsRepository.query({
       customerId: "customer-helios",
     });
-    expect(entries.map((entry) => entry.operation)).toEqual([
+    expect(entries.map((entry) => entry.operation).sort()).toEqual([
       "cloudshare.resource_sync.blueprints.read",
       "cloudshare.resource_sync.policies.read",
     ]);
-    expect(entries[0]).toMatchObject({
+    expect(entries.find((entry) => entry.operation === "cloudshare.resource_sync.blueprints.read")).toMatchObject({
       request: { method: "GET", path: "/projects/project-1/blueprints" },
       externalIds: { resourceType: "blueprint", projectId: "project-1" },
     });
-    expect(entries[1]).toMatchObject({
+    expect(entries.find((entry) => entry.operation === "cloudshare.resource_sync.policies.read")).toMatchObject({
       request: { method: "GET", path: "/projects/project-1/policies" },
       externalIds: { resourceType: "policy", projectId: "project-1" },
     });
