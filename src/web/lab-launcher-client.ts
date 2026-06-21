@@ -168,6 +168,28 @@ export async function resumeLabAttempt(
     };
   }
 
+  const labStatus = await loadCandidateLabStatus(fetchImpl, examAttemptId).catch(() => null);
+  if (labStatus?.status === "completed") {
+    return {
+      kind: "completed",
+      labStatus,
+      message: "Examination complete.",
+    };
+  }
+  if (labStatus?.status === "in_progress") {
+    return {
+      kind: "resumed",
+      disposition: "already_active",
+    };
+  }
+  if (labStatus?.status === "suspended") {
+    return {
+      kind: "blocked",
+      labStatus,
+      message: readError(detail, "Exam resume is not available for this attempt."),
+    };
+  }
+
   throw new Error(readError(detail, `resume failed (${response.status})`));
 }
 

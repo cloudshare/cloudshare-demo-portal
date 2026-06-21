@@ -133,6 +133,40 @@ describe("lab launcher client helpers", () => {
     });
   });
 
+  it("rechecks authoritative status after a failed resume POST and recovers when the attempt is already back in progress", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({
+          error: "internal error",
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          examAttemptId: "attempt-1",
+          examTitle: "Helios Guided Journey",
+          timeLimitMinutes: 60,
+          status: "in_progress",
+          scheduledFor: "2026-06-18T09:00:00.000Z",
+        }),
+      });
+
+    const result = await resumeLabAttempt(fetchImpl, "attempt-1");
+
+    expect(result).toEqual({
+      kind: "resumed",
+      disposition: "already_active",
+    });
+    expect(fetchImpl).toHaveBeenNthCalledWith(2,
+      "/api/exam/status?examAttemptId=attempt-1",
+      { cache: "no-store" },
+    );
+  });
+
   it("refreshes authoritative status after a suspend 409 so the lab UI can settle to completed", async () => {
     const fetchImpl = vi
       .fn()

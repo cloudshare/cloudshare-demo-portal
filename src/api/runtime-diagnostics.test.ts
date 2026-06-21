@@ -401,6 +401,86 @@ describe("handleResumeExam diagnostics", () => {
     });
   });
 
+  it("emits exam_attempt.resume success with support metadata when the resume recovers after CloudShare reports an already-active environment", async () => {
+    const { repository, recorder } = diagnosticsHarness();
+    const attempts = makeAttempts({ ...BASE_ATTEMPT, status: "suspended" });
+    const launches = makeLaunches();
+    const cloudshare: CloudShareClientFactory = {
+      forConnection: () => ({
+        requestV3: vi.fn(async (spec: { path: string; schema: { parse(v: unknown): unknown } }) => {
+          if (spec.path.startsWith("/envs/")) {
+            return spec.schema.parse({ envStatus: "Running" });
+          }
+          throw new Error(`unexpected v3 path ${spec.path}`);
+        }) as never,
+        requestV3Text: vi.fn(async () => {
+          throw new CloudShareRequestError("already resumed", 409, {
+            integrationSurface: "cloudshare.v3.env.action.resume",
+            method: "PUT",
+            path: "/api/v3/envs/actions/resume",
+            environmentExternalId: "ENVS-env-1",
+          });
+        }) as never,
+        requestV4: vi.fn(async (spec: { path: string; schema: { parse(v: unknown): unknown } }) => {
+          if (spec.path === "/trainings/EXtraining-1/students") {
+            return spec.schema.parse([
+              {
+                email: "candidate@helioscx.demo",
+                environmentId: "ENVS-env-1",
+                environmentStatus: "ready",
+              },
+            ]);
+          }
+          throw new Error(`unexpected v4 path ${spec.path}`);
+        }) as never,
+      }),
+    };
+
+    const deps: ResumeHandlerDeps = {
+      attempts,
+      launches,
+      connections: makeConnections(),
+      cloudshare,
+      controller: makeController(),
+      source: makeSource("Running"),
+      timer: { pauseTimer: vi.fn(), resumeTimer: vi.fn().mockResolvedValue(undefined) },
+      labs: {
+        createExperience: vi.fn(),
+        addStudent: vi.fn(),
+        createSponsoredLink: vi.fn().mockResolvedValue({ loginUrl: "https://new.lab.url" }),
+      },
+      sleep: () => Promise.resolve(),
+      logger: makeLogger(),
+      eventLog: makeEventLog(),
+      diagnostics: recorder,
+      candidateEmail: "candidate@helioscx.demo",
+    };
+
+    const resp = await handleResumeExam(deps, { body: { examAttemptId: "ea-1" } });
+    expect(resp.status).toBe(200);
+
+    const entries = await repository.query({ examAttemptId: "ea-1" });
+    const success = entries.find((e) => e.operation === "exam_attempt.resume" && e.outcome === "success");
+    expect(success).toBeDefined();
+    expect(success).toMatchObject({
+      customerId: "customer-1",
+      candidateEmail: "candidate@helioscx.demo",
+      examId: "exam-1",
+      examAttemptId: "ea-1",
+      externalIds: {
+        environmentId: "ENVS-env-1",
+        trainingId: "EXtraining-1",
+        experienceId: "exp-1",
+      },
+      details: {
+        idempotent: true,
+        resumeDisposition: "already_active",
+        recoveryReason: "cloudshare_reported_already_active",
+        environmentStatus: "running",
+      },
+    });
+  });
+
   it("emits exam_attempt.resume failure with customer scope and CloudShare support details", async () => {
     const { repository, recorder } = diagnosticsHarness();
     const attempts = makeAttempts({ ...BASE_ATTEMPT, status: "suspended" });

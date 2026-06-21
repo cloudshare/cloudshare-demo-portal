@@ -152,6 +152,7 @@ export function LabLauncher({
       }
       setState("suspended");
       setMessage(result.message);
+      reportAttemptStatusChange("suspended");
     } catch (err) {
       setState("error");
       setMessage(err instanceof Error ? err.message : "suspend failed");
@@ -182,6 +183,7 @@ export function LabLauncher({
         setMessage(preflight.message);
         return;
       }
+      reportAttemptStatusChange("in_progress");
       openEnterExamWindow(examAttemptId);
       setState("open");
     } catch (err) {
@@ -229,6 +231,7 @@ export function LabLauncher({
         setMessage(result.message);
         return;
       }
+      reportAttemptStatusChange("in_progress");
       openEnterExamWindow(examAttemptId);
       setState("open");
     } catch (err) {

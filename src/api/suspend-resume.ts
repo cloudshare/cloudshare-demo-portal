@@ -259,34 +259,10 @@ export async function handleResumeExam(
     anchors = anchorsForAttempt(reconciledAttempt, deps.candidateEmail);
     if (reconciledAttempt.status === "in_progress") {
       const launch = await deps.launches.findByExamAttemptId(examAttemptId);
-      await deps.diagnostics?.record({
-        ...anchors,
-        level: "info",
-        operation: "exam_attempt.resume",
-        outcome: "success",
-        message: "Exam resume requested while already active",
-        details: {
-          idempotent: true,
-          currentStatus: reconciledAttempt.status,
-        },
+      return buildAlreadyActiveResumeResponse(deps, examAttemptId, anchors, launch, {
+        currentStatus: reconciledAttempt.status,
+        recoveryReason: "attempt_already_in_progress",
       });
-      deps.logger.info("exam resume returned idempotent success", {
-        examAttemptId,
-        customerId: anchors.customerId,
-        examId: anchors.examId,
-        candidateEmail: anchors.candidateEmail,
-      });
-      return {
-        status: 200,
-        body: {
-          status: "resumed",
-          resumeDisposition: "already_active" satisfies ResumeDisposition,
-          examAttemptId,
-          environmentExternalId:
-            launch?.environmentExternalId ?? launch?.environmentId ?? undefined,
-          suspendedPreservationLimitMs: SUSPENDED_PRESERVATION_LIMIT_MS,
-        },
-      };
     }
     if (reconciledAttempt.status !== "suspended") {
       await deps.diagnostics?.record({
@@ -349,6 +325,10 @@ export async function handleResumeExam(
       },
     };
   } catch (err) {
+    const recovered = await tryRecoverAlreadyActiveResume(deps, examAttemptId, anchors, err);
+    if (recovered) {
+      return recovered;
+    }
     const resp = await handleTimerSyncError(deps, err, "resume", examAttemptId, anchors);
     if (resp.status !== 200) {
       const correlationId =
@@ -496,6 +476,115 @@ async function requireVerifiedEnvironmentExternalId(
     currentEnvironmentExternalId:
       launch.environmentExternalId ?? launch.environmentId ?? null,
   });
+}
+
+async function tryRecoverAlreadyActiveResume(
+  deps: ResumeHandlerDeps,
+  examAttemptId: string,
+  anchors: RuntimeDiagnosticAnchors,
+  err: unknown,
+): Promise<SuspendResumeResponse | null> {
+  if (!isCloudShareFailure(err)) {
+    return null;
+  }
+
+  try {
+    const launch = await deps.launches.findByExamAttemptId(examAttemptId);
+    if (!launch) {
+      return null;
+    }
+
+    const access = await resolveCustomerEnvironmentAccess(deps, examAttemptId);
+    const environmentExternalId =
+      launch.environmentExternalId ?? launch.environmentId ?? null;
+    if (!environmentExternalId) {
+      return null;
+    }
+
+    const snapshot = await access.source.getEnvironmentState(environmentExternalId);
+    if (!snapshot || (snapshot.status !== "running" && snapshot.status !== "created")) {
+      return null;
+    }
+
+    await deps.timer.resumeTimer(examAttemptId);
+    const attempt = await deps.attempts.findById(examAttemptId);
+    if (attempt) {
+      await deps.attempts.save({
+        ...attempt,
+        status: "in_progress",
+      });
+    }
+
+    return buildAlreadyActiveResumeResponse(deps, examAttemptId, anchors, launch, {
+      currentStatus: attempt?.status ?? "suspended",
+      environmentStatus: snapshot.status,
+      recoveryReason: "cloudshare_reported_already_active",
+      supportContext: extractRuntimeFailureDetails(err, "resume", examAttemptId),
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function buildAlreadyActiveResumeResponse(
+  deps: Pick<ResumeHandlerDeps, "diagnostics" | "logger">,
+  examAttemptId: string,
+  anchors: RuntimeDiagnosticAnchors,
+  launch:
+    | {
+        readonly environmentExternalId?: string;
+        readonly environmentId?: string;
+        readonly trainingId?: string;
+        readonly experienceId?: string;
+      }
+    | null,
+  input: {
+    readonly currentStatus: string;
+    readonly recoveryReason: string;
+    readonly environmentStatus?: string;
+    readonly supportContext?: Record<string, unknown>;
+  },
+): Promise<SuspendResumeResponse> {
+  const environmentExternalId =
+    launch?.environmentExternalId ?? launch?.environmentId ?? undefined;
+  await deps.diagnostics?.record({
+    ...anchors,
+    level: "info",
+    operation: "exam_attempt.resume",
+    outcome: "success",
+    message: "Exam resume requested while already active",
+    externalIds: {
+      ...(environmentExternalId ? { environmentId: environmentExternalId } : {}),
+      ...(launch?.trainingId ? { trainingId: launch.trainingId } : {}),
+      ...(launch?.experienceId ? { experienceId: launch.experienceId } : {}),
+    },
+    details: {
+      idempotent: true,
+      currentStatus: input.currentStatus,
+      resumeDisposition: "already_active",
+      recoveryReason: input.recoveryReason,
+      ...(input.environmentStatus ? { environmentStatus: input.environmentStatus } : {}),
+      ...(input.supportContext ? { supportContext: input.supportContext } : {}),
+    },
+  });
+  deps.logger.info("exam resume returned idempotent success", {
+    examAttemptId,
+    customerId: anchors.customerId,
+    examId: anchors.examId,
+    candidateEmail: anchors.candidateEmail,
+    environmentExternalId,
+    recoveryReason: input.recoveryReason,
+  });
+  return {
+    status: 200,
+    body: {
+      status: "resumed",
+      resumeDisposition: "already_active" satisfies ResumeDisposition,
+      examAttemptId,
+      environmentExternalId,
+      suspendedPreservationLimitMs: SUSPENDED_PRESERVATION_LIMIT_MS,
+    },
+  };
 }
 
 async function handleTimerSyncError(
