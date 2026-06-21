@@ -211,6 +211,7 @@ describe("handleSyncResources", () => {
       details: { failureMode: "resource_sync_failed" },
       externalIds: { resourceType: "resource_sync" },
     });
+    expect(JSON.stringify(entry)).not.toContain("timeout");
   });
 
   it("returns 404 when no CloudShare Connection exists for the customer", async () => {

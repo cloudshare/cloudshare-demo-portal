@@ -29,7 +29,7 @@ describe("cloudShareLabProvisioner — request shape", () => {
       timeZoneId: "UTC",
     });
 
-    expect(result).toEqual({ trainingId: "exp-1" });
+    expect(result).toEqual({ trainingId: "exp-1", teamId: "TM-team-1", teamCount: 1 });
     expect(requestV3).toHaveBeenCalledWith({
       method: "GET",
       path: "/teams",

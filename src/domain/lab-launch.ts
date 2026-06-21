@@ -73,6 +73,8 @@ export interface CreateTrainingInput {
 }
 export interface CreateTrainingResult {
   readonly trainingId: string;
+  readonly teamId?: string;
+  readonly teamCount?: number;
 }
 export interface AddParticipantInput {
   readonly trainingId: string;

@@ -4,7 +4,6 @@ import type { AuditRepository } from "@/domain/audit-trail";
 import type { EventLogRepository } from "@/domain/event-log";
 import type { SupportLogRepository } from "@/domain/support-log";
 import type {
-  DiagnosticActor,
   DiagnosticLogEntry,
   DiagnosticRecorder,
   DiagnosticLogRepository,
@@ -127,7 +126,6 @@ export async function handleSyncResources(
       request: { method: "POST", path: "/api/admin/sync-resources" },
       details: {
         failureMode: "resource_sync_failed",
-        error: err instanceof Error ? err.message : String(err),
       },
       externalIds: { resourceType: "resource_sync" },
     });

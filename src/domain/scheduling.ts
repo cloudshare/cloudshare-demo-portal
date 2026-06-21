@@ -42,6 +42,11 @@ function describeProvisioningCause(cause: unknown): Record<string, unknown> {
   };
 }
 
+function provisioningContext(cause: unknown): Record<string, unknown> {
+  const err = cause as { context?: Record<string, unknown> } | undefined;
+  return (err?.context ?? {}) as Record<string, unknown>;
+}
+
 const COLD_START_WARNING_WINDOW_MS = 5 * 60 * 60 * 1000;
 const CLOUDSHARE_TRAINING_NAME_MAX_LENGTH = 100;
 
@@ -184,6 +189,8 @@ export async function scheduleExam(
   });
 
   let trainingId: string;
+  let teamId: string | undefined;
+  let teamCount: number | undefined;
   try {
     const training = await trainingCreator({
       title: trainingTitle,
@@ -197,7 +204,37 @@ export async function scheduleExam(
       timeZoneId: "UTC",
     });
     trainingId = training.trainingId;
+    teamId = training.teamId;
+    teamCount = training.teamCount;
   } catch (cause) {
+    const context = provisioningContext(cause);
+    if (context.path === "/teams") {
+      await deps.diagnostics?.record({
+        ...anchors,
+        level: "warn",
+        operation: "cloudshare.resource_sync.teams.read",
+        outcome: "failure",
+        message: "CloudShare team resource read failed",
+        request: {
+          method: (context.method as string | undefined) ?? "GET",
+          path: "/teams",
+          ...(context.query && typeof context.query === "object"
+            ? { query: context.query as Record<string, unknown> }
+            : { query: { projectId: exam.projectId } }),
+        },
+        response: {
+          ...(typeof (cause as { status?: unknown }).status === "number"
+            ? { status: (cause as { status: number }).status }
+            : {}),
+        },
+        details: {
+          integrationSurface:
+            (context.integrationSurface as string | undefined) ?? "cloudshare.v3.teams",
+          failureMode: describeProvisioningCause(cause).failureMode,
+        },
+        externalIds: { resourceType: "team", projectId: exam.projectId },
+      });
+    }
     await recordFailure("create_training", cause);
     await deps.attempts.save({ ...attempt, status: "expired" });
     await deps.diagnostics?.record({
@@ -216,6 +253,21 @@ export async function scheduleExam(
   }
 
   const regionIds = exam.allowedRegions.map((region) => region.id).join(",");
+  if (teamId) {
+    await deps.diagnostics?.record({
+      ...anchors,
+      level: "info",
+      operation: "cloudshare.resource_sync.teams.read",
+      outcome: "success",
+      message: "CloudShare team resource read succeeded",
+      externalIds: { resourceType: "team", projectId: exam.projectId, teamId },
+      request: { method: "GET", path: "/teams", query: { projectId: exam.projectId } },
+      response: {
+        itemCount: teamCount ?? 1,
+        resourceIds: [teamId],
+      },
+    });
+  }
   await recordSuccess("cloudshare.create_training", "CloudShare training created", {
     externalIds: {
       trainingId,
@@ -223,6 +275,7 @@ export async function scheduleExam(
       blueprintId: exam.blueprintId,
       policyId: exam.policyId,
       instructorId: exam.instructorId,
+      ...(teamId ? { teamId } : {}),
       ...(regionIds ? { regionIds } : {}),
     },
     request: {

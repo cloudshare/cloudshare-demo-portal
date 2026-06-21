@@ -209,7 +209,7 @@ describe("admin exam authoring handlers", () => {
       outcome: "success",
       externalIds: { resourceType: "region" },
       request: { method: "GET", path: "/regions" },
-      response: { itemCount: 3 },
+      response: { itemCount: 3, resourceIds: ["region-1", "region-2", "region-3"] },
     });
   });
 
@@ -1104,6 +1104,28 @@ describe("admin exam catalog handlers", () => {
       actor: adminActor,
       operation: "exam.publish",
       outcome: "success",
+    });
+
+    const blueprintDetailEntry = (
+      await diagnostics.repository.query({
+        customerId: "customer-1",
+        operation: "cloudshare.resource_sync.blueprint_detail.read",
+      })
+    )[0];
+    expect(blueprintDetailEntry).toMatchObject({
+      customerId: "customer-1",
+      operation: "cloudshare.resource_sync.blueprint_detail.read",
+      outcome: "success",
+      externalIds: {
+        resourceType: "blueprint_detail",
+        projectId: "project-1",
+        blueprintId: "bp-1",
+      },
+      response: {
+        blueprintId: "bp-1",
+        defaultSnapshotId: "snap-1",
+        snapshotCount: 2,
+      },
     });
 
     const unpublishEntry = (

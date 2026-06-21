@@ -124,7 +124,7 @@ export async function handleGetExamAuthoringBootstrap(
       },
     });
   } catch (error) {
-    return handleCloudShareFailure(deps, {
+    return await handleCloudShareFailure(deps, {
       customerId: request.customerId,
       operation: "cloudshare.resource_sync.projects.read",
       integrationSurface: "cloudshare.v3.projects",
@@ -145,10 +145,11 @@ export async function handleGetExamAuthoringBootstrap(
       resourceType: "region",
       response: {
         itemCount: regions.length,
+        resourceIds: regions.map((region) => region.id),
       },
     });
   } catch (error) {
-    return handleCloudShareFailure(deps, {
+    return await handleCloudShareFailure(deps, {
       customerId: request.customerId,
       operation: "cloudshare.resource_sync.regions.read",
       integrationSurface: "cloudshare.v3.regions",
@@ -202,7 +203,7 @@ export async function handleGetProjectResources(
       },
     });
   } catch (error) {
-    return handleCloudShareFailure(deps, {
+    return await handleCloudShareFailure(deps, {
       customerId: request.customerId,
       operation: "cloudshare.resource_sync.blueprints.read",
       integrationSurface: "cloudshare.v3.projects.blueprints",
@@ -229,7 +230,7 @@ export async function handleGetProjectResources(
       },
     });
   } catch (error) {
-    return handleCloudShareFailure(deps, {
+    return await handleCloudShareFailure(deps, {
       customerId: request.customerId,
       operation: "cloudshare.resource_sync.policies.read",
       integrationSurface: "cloudshare.v3.projects.policies",
@@ -304,7 +305,7 @@ export async function handleGetBlueprintDetail(
       body: { source: "live", projectId: request.projectId, blueprint },
     };
   } catch (error) {
-    return handleCloudShareFailure(deps, {
+    return await handleCloudShareFailure(deps, {
       customerId: request.customerId,
       operation: "cloudshare.resource_sync.blueprint_detail.read",
       integrationSurface: "cloudshare.v3.projects.blueprint_detail",
@@ -474,8 +475,21 @@ async function validateCurrentDefaultSnapshotRegions(
   let blueprint;
   try {
     blueprint = await source.getBlueprintDetail(exam.projectId, exam.blueprintId);
+    await recordResourceRead(deps, {
+      customerId: exam.customerId,
+      operation: "cloudshare.resource_sync.blueprint_detail.read",
+      integrationSurface: "cloudshare.v3.projects.blueprint_detail",
+      path: `/projects/${exam.projectId}/blueprints/${exam.blueprintId}`,
+      resourceType: "blueprint_detail",
+      resourceIds: { projectId: exam.projectId, blueprintId: exam.blueprintId },
+      response: {
+        blueprintId: blueprint.id,
+        defaultSnapshotId: blueprint.defaultSnapshotId,
+        snapshotCount: blueprint.snapshots.length,
+      },
+    });
   } catch (error) {
-    return handleCloudShareFailure(deps, {
+    return await handleCloudShareFailure(deps, {
       customerId: exam.customerId,
       operation: "cloudshare.resource_sync.blueprint_detail.read",
       integrationSurface: "cloudshare.v3.projects.blueprint_detail",
@@ -680,10 +694,10 @@ async function recordResourceRead(
   });
 }
 
-function handleCloudShareFailure(
+async function handleCloudShareFailure(
   deps: Pick<AdminExamAuthoringDeps, "diagnostics" | "logger" | "now" | "newCorrelationId">,
   spec: ResourceDiagnosticFailureSpec,
-): AdminExamResponse {
+): Promise<AdminExamResponse> {
   const cloudShareError = asCloudShareErrorLike(spec.error);
   if (cloudShareError) {
     const diagnostic = buildDiagnostic(
@@ -694,7 +708,7 @@ function handleCloudShareFailure(
     );
     const correlationId = (deps.newCorrelationId ?? randomUUID)();
     const occurredAt = (deps.now ?? (() => new Date()))().toISOString();
-    void deps.diagnostics?.record({
+    await deps.diagnostics?.record({
       source: "admin-exams",
       customerId: spec.customerId,
       level: "warn",

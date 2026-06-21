@@ -96,7 +96,7 @@ export function createCloudShareLabProvisioner(
         },
         schema: experienceSchema,
       });
-      return { trainingId: training.id };
+      return { trainingId: training.id, teamId, teamCount: teams.length };
     },
 
     async addParticipant(input: AddParticipantInput): Promise<void> {
