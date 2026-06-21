@@ -16,7 +16,10 @@ import {
   CloudShareResponseError,
   CloudShareTransportError,
 } from "@/integrations/cloudshare";
-import { createCloudShareLabProvisioner } from "@/integrations/cloudshare/labs";
+import {
+  createCloudShareLabProvisioner,
+  type CloudShareLabProvisionerObserver,
+} from "@/integrations/cloudshare/labs";
 import { createCloudShareParticipantLister } from "@/integrations/cloudshare/participants";
 import {
   PortalCustomerNotFoundError,
@@ -231,7 +234,18 @@ export async function handleScheduleCandidateExam(
   }
 
   const cloudshare = deps.cloudshare.forConnection(connection);
-  const labs = createCloudShareLabProvisioner(cloudshare);
+  const examId = (body as { examId: string }).examId.trim();
+  const labs = createCloudShareLabProvisioner(
+    cloudshare,
+    createTeamReadDiagnosticObserver({
+      diagnostics: deps.diagnostics,
+      customerId: request.customerId,
+      candidateId: request.candidateId,
+      candidateEmail: request.candidateEmail,
+      examId,
+      correlationId,
+    }),
+  );
 
   try {
     const result = await scheduleExam(
@@ -250,7 +264,7 @@ export async function handleScheduleCandidateExam(
         candidateEmail: request.candidateEmail,
         candidateFirstName: request.candidateFirstName.trim(),
         candidateLastName: request.candidateLastName.trim(),
-        examId: (body as { examId: string }).examId.trim(),
+        examId,
         scheduledFor: new Date((body as { scheduledFor: string }).scheduledFor),
         correlationId,
       },
@@ -339,6 +353,77 @@ export async function handleScheduleCandidateExam(
     }
     throw error;
   }
+}
+
+function createTeamReadDiagnosticObserver(input: {
+  diagnostics?: DiagnosticRecorder;
+  customerId: string;
+  candidateId: string;
+  candidateEmail: string;
+  examId: string;
+  correlationId: string;
+}): CloudShareLabProvisionerObserver | undefined {
+  if (!input.diagnostics) {
+    return undefined;
+  }
+
+  return {
+    onTeamReadSuccess: async (event) => {
+      await input.diagnostics?.record({
+        source: "candidate-portal",
+        customerId: input.customerId,
+        candidateEmail: input.candidateEmail,
+        examId: input.examId,
+        correlationId: input.correlationId,
+        actor: {
+          type: "candidate",
+          id: input.candidateId,
+          email: input.candidateEmail,
+        },
+        subject: { type: "exam", id: input.examId },
+        level: "info",
+        operation: "cloudshare.resource_sync.teams.read",
+        outcome: "success",
+        message: "CloudShare team resource read succeeded",
+        externalIds: {
+          resourceType: "team",
+          projectId: event.projectId,
+          teamId: event.selectedTeamId,
+        },
+        request: { method: "GET", path: "/teams", query: { projectId: event.projectId } },
+        response: { itemCount: event.itemCount, resourceIds: [...event.teamIds] },
+        details: { integrationSurface: "cloudshare.v3.teams" },
+      });
+    },
+    onTeamReadFailure: async (event) => {
+      await input.diagnostics?.record({
+        source: "candidate-portal",
+        customerId: input.customerId,
+        candidateEmail: input.candidateEmail,
+        examId: input.examId,
+        correlationId: input.correlationId,
+        actor: {
+          type: "candidate",
+          id: input.candidateId,
+          email: input.candidateEmail,
+        },
+        subject: { type: "exam", id: input.examId },
+        level: "warn",
+        operation: "cloudshare.resource_sync.teams.read",
+        outcome: "failure",
+        message: "CloudShare team resource read failed",
+        externalIds: { resourceType: "team", projectId: event.projectId },
+        request: { method: "GET", path: "/teams", query: { projectId: event.projectId } },
+        response: {
+          ...(event.responseStatus !== undefined ? { status: event.responseStatus } : {}),
+        },
+        details: {
+          integrationSurface: event.integrationSurface,
+          failureMode: event.failureMode,
+        },
+      });
+    },
+  };
 }
 
 function toCandidateExamCatalogItem(exam: Exam): CandidateExamCatalogItem {

@@ -353,7 +353,6 @@ describe("scheduleExam", () => {
     expect(ops).toEqual(
       [
         "exam_attempt.schedule",
-        "cloudshare.resource_sync.teams.read",
         "cloudshare.create_training",
         "cloudshare.add_participant",
         "cloudshare.create_sponsored_link",
@@ -381,17 +380,6 @@ describe("scheduleExam", () => {
       projectId: "project-1",
       blueprintId: "bp-1",
       policyId: "policy-1",
-    });
-
-    const teamRead = thread.find((e) => e.operation === "cloudshare.resource_sync.teams.read");
-    expect(teamRead).toMatchObject({
-      customerId: "customer-helios",
-      examId: "exam-1",
-      examAttemptId: "attempt-1",
-      outcome: "success",
-      externalIds: { resourceType: "team", projectId: "project-1", teamId: "team-1" },
-      request: { method: "GET", path: "/teams", query: { projectId: "project-1" } },
-      response: { resourceIds: ["team-1"], itemCount: 1 },
     });
 
     const addParticipant = thread.find((e) => e.operation === "cloudshare.add_participant");
@@ -559,69 +547,6 @@ describe("scheduleExam", () => {
     expect(failure?.details).toMatchObject({
       failureMode: "transport",
       integrationSurface: "cloudshare.v4.training",
-    });
-  });
-
-  it("records a team-read failure diagnostic when createTraining fails during the /teams lookup", async () => {
-    const { exams, attempts, launches } = await setup();
-    const repository = createInMemoryDiagnosticLogRepository();
-    const diagnostics = createDiagnosticRecorder({ repository });
-
-    const teamReadError = Object.assign(new Error("forbidden"), {
-      name: "CloudShareRequestError",
-      status: 403,
-      context: {
-        method: "GET",
-        path: "/teams",
-        integrationSurface: "cloudshare.v3.teams",
-        query: { projectId: "project-1" },
-      },
-    });
-
-    await expect(
-      scheduleExam(
-        {
-          exams,
-          attempts,
-          launches,
-          labs: {
-            ...makeLabs(),
-            async createTraining() {
-              throw teamReadError;
-            },
-          },
-          newId: vi.fn().mockReturnValueOnce("attempt-1").mockReturnValueOnce("launch-1"),
-          now: () => new Date("2026-06-15T10:00:00.000Z"),
-          diagnostics,
-        },
-        {
-          customerId: "customer-helios",
-          candidateId: "candidate-1",
-          candidateEmail: "candidate@helioscx.demo",
-          candidateFirstName: "Asha",
-          candidateLastName: "Patel",
-          examId: "exam-1",
-          scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
-        },
-      ),
-    ).rejects.toBeInstanceOf(CloudShareProvisioningError);
-
-    const [entry] = await repository.query({
-      examAttemptId: "attempt-1",
-      operation: "cloudshare.resource_sync.teams.read",
-    });
-    expect(entry).toMatchObject({
-      customerId: "customer-helios",
-      examId: "exam-1",
-      examAttemptId: "attempt-1",
-      outcome: "failure",
-      request: { method: "GET", path: "/teams", query: { projectId: "project-1" } },
-      details: {
-        integrationSurface: "cloudshare.v3.teams",
-        failureMode: "http_status",
-      },
-      response: { status: 403 },
-      externalIds: { resourceType: "team", projectId: "project-1" },
     });
   });
 
