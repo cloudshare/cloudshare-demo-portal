@@ -119,7 +119,7 @@ function makeDeps(input?: {
     }),
     findById: vi.fn(),
     findByExamAttemptId: vi.fn(async () => storedLaunch),
-    findByEnvironmentExternalId: vi.fn(async () => storedLaunch),
+    findByCustomerIdAndEnvironmentExternalId: vi.fn(async () => storedLaunch),
   };
   const audit: AuditRepository = {
     write: vi.fn(),

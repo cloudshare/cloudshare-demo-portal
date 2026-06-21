@@ -6,7 +6,6 @@ import {
 } from "@/integrations/cloudshare/webhook-receiver";
 import {
   CLOUDSHARE_WEBHOOK_SIGNATURE_HEADER,
-  computeWebhookSignature,
 } from "@/integrations/cloudshare/webhooks";
 import type { WebhookIdempotencyStore } from "@/domain/webhook";
 import type { EventLogRepository } from "@/domain/event-log";
@@ -61,15 +60,17 @@ export async function handleCloudShareWebhook(
   deps: CloudShareWebhookDeps,
   request: RawWebhookRequest & { readonly webhookPathToken: string },
 ): Promise<CloudShareWebhookResponse> {
-  const path = `/api/webhooks/cloudshare/${request.webhookPathToken}`;
+  const path = "/api/webhooks/cloudshare/{webhookPathToken}";
   const requestBodyBytes = Buffer.byteLength(request.rawBody, "utf8");
   const rawBodySha256 = hashRawBody(request.rawBody);
+  const webhookPathFingerprint = fingerprintWebhookPathToken(request.webhookPathToken);
+  let resolvedCustomerId: string | null = null;
   try {
     if (!canResolveWebhookConnection(deps.connections)) {
       deps.logger.error("cloudshare webhook handler misconfigured", {
         operation: "receive_webhook",
         integrationSurface: "cloudshare.v3.webhook",
-        webhookPathToken: request.webhookPathToken,
+        webhookPathFingerprint,
         error: "connections.findByWebhookPathToken is unavailable",
       });
       await recordDiagnostic(deps.diagnostics, {
@@ -79,7 +80,7 @@ export async function handleCloudShareWebhook(
         outcome: "failure",
         customerId: null,
         message: "CloudShare webhook handler misconfigured",
-        externalIds: { webhookPathToken: request.webhookPathToken },
+        externalIds: { webhookPathFingerprint },
         request: {
           method: "POST",
           path,
@@ -102,7 +103,7 @@ export async function handleCloudShareWebhook(
         integrationSurface: "cloudshare.v3.webhook",
         method: "POST",
         path,
-        webhookPathToken: request.webhookPathToken,
+        webhookPathFingerprint,
         requestBodyBytes,
         rawBodySha256,
         signaturePresent: Boolean(request.signature),
@@ -113,7 +114,7 @@ export async function handleCloudShareWebhook(
         outcome: "failure",
         customerId: null,
         message: "CloudShare webhook rejected: unknown target",
-        externalIds: { webhookPathToken: request.webhookPathToken },
+        externalIds: { webhookPathFingerprint },
         request: {
           method: "POST",
           path,
@@ -128,11 +129,12 @@ export async function handleCloudShareWebhook(
       await appendWebhookEvent(deps, {
         type: "cloudshare.webhook.unknown_target",
         payload: {
-          webhookPathToken: request.webhookPathToken,
+          webhookPathFingerprint,
         },
       });
       return { status: 404, body: { status: "unknown_target" } };
     }
+    resolvedCustomerId = connection.customerId;
 
     const outcome = await receiveWebhook(
       {
@@ -150,11 +152,10 @@ export async function handleCloudShareWebhook(
         method: "POST",
         path,
         customerId: connection.customerId,
-        webhookPathToken: request.webhookPathToken,
+        webhookPathFingerprint,
         requestHeaders: {
           [CLOUDSHARE_WEBHOOK_SIGNATURE_HEADER]: null,
         },
-        rawRequestBody: request.rawBody,
         requestBodyBytes,
         rawBodySha256,
         signaturePresent: false,
@@ -167,7 +168,7 @@ export async function handleCloudShareWebhook(
         outcome: "failure",
         customerId: connection.customerId,
         message: "CloudShare webhook rejected: missing signature",
-        externalIds: { webhookPathToken: connection.webhookPathToken },
+        externalIds: { webhookPathFingerprint },
         request: {
           method: "POST",
           path,
@@ -185,7 +186,7 @@ export async function handleCloudShareWebhook(
         outcome: "failure",
         customerId: connection.customerId,
         message: "CloudShare webhook signature missing",
-        externalIds: { webhookPathToken: connection.webhookPathToken },
+        externalIds: { webhookPathFingerprint },
         details: {
           signaturePresent: false,
           signatureMatched: false,
@@ -199,7 +200,7 @@ export async function handleCloudShareWebhook(
         type: "cloudshare.webhook.missing_signature",
         payload: {
           customerId: connection.customerId,
-          webhookPathToken: connection.webhookPathToken,
+          webhookPathFingerprint,
         },
       });
       return { status: 401, body: { status: "missing_signature" } };
@@ -215,11 +216,7 @@ export async function handleCloudShareWebhook(
       method: "POST",
       path,
       customerId: connection.customerId,
-      webhookPathToken: request.webhookPathToken,
-      requestHeaders: {
-        [CLOUDSHARE_WEBHOOK_SIGNATURE_HEADER]: request.signature ?? null,
-      },
-      rawRequestBody: request.rawBody,
+      webhookPathFingerprint,
       requestBodySummary,
       ...webhookFields,
       ...(isWebhookBodySummary(requestBodySummary)
@@ -237,11 +234,9 @@ export async function handleCloudShareWebhook(
       operation: "receive_webhook",
       integrationSurface: "cloudshare.v3.webhook",
       customerId: connection.customerId,
-      webhookPathToken: connection.webhookPathToken,
+      webhookPathFingerprint,
       signatureScheme: "HMAC-SHA256 base64 over exact raw request body",
       rawBodySha256,
-      receivedSignature: request.signature ?? null,
-      expectedSignature: computeWebhookSignature(request.rawBody, connection.webhookSecret),
       storedWebhookSecretLength: connection.webhookSecret.length,
       signatureMatched: outcome.kind !== "invalid_signature",
       ...(outcome.kind === "invalid_signature"
@@ -260,7 +255,7 @@ export async function handleCloudShareWebhook(
           outcome: "failure",
           customerId: connection.customerId,
           message: "CloudShare webhook rejected: invalid signature",
-          externalIds: { webhookPathToken: connection.webhookPathToken },
+          externalIds: { webhookPathFingerprint },
           request: {
             method: "POST",
             path,
@@ -278,7 +273,7 @@ export async function handleCloudShareWebhook(
           outcome: "failure",
           customerId: connection.customerId,
           message: "CloudShare webhook signature did not match",
-          externalIds: { webhookPathToken: connection.webhookPathToken },
+          externalIds: { webhookPathFingerprint },
           details: {
             signaturePresent: true,
             signatureMatched: false,
@@ -290,13 +285,13 @@ export async function handleCloudShareWebhook(
         });
         deps.logger.warn("cloudshare webhook rejected: invalid signature", {
           customerId: connection.customerId,
-          webhookPathToken: connection.webhookPathToken,
+          webhookPathFingerprint,
         });
         await appendWebhookEvent(deps, {
           type: "cloudshare.webhook.invalid_signature",
           payload: {
             customerId: connection.customerId,
-            webhookPathToken: connection.webhookPathToken,
+            webhookPathFingerprint,
           },
         });
         return { status: 401, body: { status: "invalid_signature" } };
@@ -308,7 +303,7 @@ export async function handleCloudShareWebhook(
           outcome: "success",
           customerId: connection.customerId,
           message: "CloudShare webhook signature verified",
-          externalIds: { webhookPathToken: connection.webhookPathToken },
+          externalIds: { webhookPathFingerprint },
           details: {
             signaturePresent: true,
             signatureMatched: true,
@@ -325,7 +320,7 @@ export async function handleCloudShareWebhook(
           customerId: connection.customerId,
           message: "CloudShare webhook rejected: invalid payload",
           externalIds: {
-            webhookPathToken: connection.webhookPathToken,
+            webhookPathFingerprint,
             ...(webhookFields.webhookEnvironmentExternalId
               ? { environmentExternalId: String(webhookFields.webhookEnvironmentExternalId) }
               : {}),
@@ -347,14 +342,14 @@ export async function handleCloudShareWebhook(
         });
         deps.logger.warn("cloudshare webhook rejected: invalid payload", {
           customerId: connection.customerId,
-          webhookPathToken: connection.webhookPathToken,
+          webhookPathFingerprint,
           issues: outcome.issues,
         });
         await appendWebhookEvent(deps, {
           type: "cloudshare.webhook.invalid_payload",
           payload: {
             customerId: connection.customerId,
-            webhookPathToken: connection.webhookPathToken,
+            webhookPathFingerprint,
             issues: outcome.issues,
           },
         });
@@ -367,7 +362,7 @@ export async function handleCloudShareWebhook(
           outcome: "success",
           customerId: connection.customerId,
           message: "CloudShare webhook signature verified",
-          externalIds: { webhookPathToken: connection.webhookPathToken },
+          externalIds: { webhookPathFingerprint },
           details: {
             signaturePresent: true,
             signatureMatched: true,
@@ -384,7 +379,7 @@ export async function handleCloudShareWebhook(
           customerId: connection.customerId,
           message: "CloudShare webhook ignored: duplicate event",
           externalIds: {
-            webhookPathToken: connection.webhookPathToken,
+            webhookPathFingerprint,
             ...(isWebhookBodySummary(requestBodySummary) &&
             typeof requestBodySummary.payload?.EnvironmentExternalId === "string"
               ? {
@@ -409,14 +404,14 @@ export async function handleCloudShareWebhook(
         });
         deps.logger.info("cloudshare webhook ignored: duplicate event", {
           customerId: connection.customerId,
-          webhookPathToken: connection.webhookPathToken,
+          webhookPathFingerprint,
           idempotencyKey: outcome.idempotencyKey,
         });
         await appendWebhookEvent(deps, {
           type: "cloudshare.webhook.duplicate",
           payload: {
             customerId: connection.customerId,
-            webhookPathToken: connection.webhookPathToken,
+            webhookPathFingerprint,
             idempotencyKey: outcome.idempotencyKey,
           },
         });
@@ -431,7 +426,7 @@ export async function handleCloudShareWebhook(
           customerId: connection.customerId,
           message: "CloudShare webhook signature verified",
           externalIds: {
-            webhookPathToken: connection.webhookPathToken,
+            webhookPathFingerprint,
             environmentExternalId: event.environmentExternalId,
           },
           details: {
@@ -450,7 +445,7 @@ export async function handleCloudShareWebhook(
           customerId: connection.customerId,
           message: "CloudShare webhook accepted",
           externalIds: {
-            webhookPathToken: connection.webhookPathToken,
+            webhookPathFingerprint,
             environmentExternalId: event.environmentExternalId,
             idempotencyKey,
           },
@@ -468,7 +463,7 @@ export async function handleCloudShareWebhook(
         });
         deps.logger.info("cloudshare webhook accepted", {
           customerId: connection.customerId,
-          webhookPathToken: connection.webhookPathToken,
+          webhookPathFingerprint,
           event: event.event,
           environmentExternalId: event.environmentExternalId,
           idempotencyKey,
@@ -477,7 +472,7 @@ export async function handleCloudShareWebhook(
           type: "cloudshare.webhook.accepted",
           payload: {
             customerId: connection.customerId,
-            webhookPathToken: connection.webhookPathToken,
+            webhookPathFingerprint,
             event: event.event,
             environmentExternalId: event.environmentExternalId,
             idempotencyKey,
@@ -503,7 +498,7 @@ export async function handleCloudShareWebhook(
               ? "CloudShare webhook reconcile correlated to ExamAttempt"
               : "CloudShare webhook reconcile completed",
             externalIds: {
-              webhookPathToken: connection.webhookPathToken,
+              webhookPathFingerprint,
               environmentExternalId:
                 reconcileDiagnostic?.environmentExternalId ?? event.environmentExternalId,
               ...(reconcileDiagnostic?.status ? { environmentStatus: reconcileDiagnostic.status } : {}),
@@ -516,7 +511,7 @@ export async function handleCloudShareWebhook(
         } catch (err) {
           deps.logger.error("cloudshare environment reconcile failed", {
             customerId: connection.customerId,
-            webhookPathToken: connection.webhookPathToken,
+            webhookPathFingerprint,
             environmentExternalId: event.environmentExternalId,
             error: err instanceof Error ? err.message : String(err),
           });
@@ -528,7 +523,7 @@ export async function handleCloudShareWebhook(
             customerId: connection.customerId,
             message: "CloudShare webhook reconcile failed",
             externalIds: {
-              webhookPathToken: connection.webhookPathToken,
+              webhookPathFingerprint,
               environmentExternalId: event.environmentExternalId,
             },
             details: {
@@ -540,7 +535,7 @@ export async function handleCloudShareWebhook(
             type: "cloudshare.webhook.reconcile_failed",
             payload: {
               customerId: connection.customerId,
-              webhookPathToken: connection.webhookPathToken,
+              webhookPathFingerprint,
               event: event.event,
               environmentExternalId: event.environmentExternalId,
               idempotencyKey,
@@ -563,9 +558,9 @@ export async function handleCloudShareWebhook(
       level: "error",
       operation: "cloudshare.webhook.receive",
       outcome: "failure",
-      customerId: null,
+      customerId: resolvedCustomerId,
       message: "CloudShare webhook handler errored",
-      externalIds: { webhookPathToken: request.webhookPathToken },
+      externalIds: { webhookPathFingerprint },
       request: {
         method: "POST",
         path,
@@ -683,6 +678,10 @@ function stringOrNull(value: unknown): string | null {
 
 function hashRawBody(rawBody: string): string {
   return createHash("sha256").update(rawBody, "utf8").digest("hex");
+}
+
+function fingerprintWebhookPathToken(webhookPathToken: string): string {
+  return `sha256:${createHash("sha256").update(webhookPathToken, "utf8").digest("hex").slice(0, 16)}`;
 }
 
 interface WebhookReconcileDiagnostic {

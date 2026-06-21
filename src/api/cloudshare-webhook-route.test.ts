@@ -60,7 +60,7 @@ describe("CloudShare webhook route", () => {
       environmentSource: globalSource,
       environments: {},
       labLaunches: {
-        findByEnvironmentExternalId: vi.fn().mockResolvedValue(null),
+        findByCustomerIdAndEnvironmentExternalId: vi.fn().mockResolvedValue(null),
       },
       examAttempts: {
         findById: vi.fn().mockResolvedValue(null),
@@ -92,6 +92,10 @@ describe("CloudShare webhook route", () => {
     expect(mockCreateCloudShareEnvironmentSource).toHaveBeenCalledWith(customerClient);
     expect(mockReconcileEnvironment).toHaveBeenCalledWith(
       expect.objectContaining({ source: customerSource }),
+      "env-ext-1",
+    );
+    expect(services.labLaunches.findByCustomerIdAndEnvironmentExternalId).toHaveBeenCalledWith(
+      "customer-helios",
       "env-ext-1",
     );
     expect(mockReconcileEnvironment).not.toHaveBeenCalledWith(

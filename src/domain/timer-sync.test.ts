@@ -82,7 +82,7 @@ function makeLaunches(found: LabLaunch | null = launch): LabLaunchRepository {
     },
     findById: () => Promise.resolve(current),
     findByExamAttemptId: () => Promise.resolve(current),
-    findByEnvironmentExternalId: (environmentExternalId) =>
+    findByCustomerIdAndEnvironmentExternalId: (_customerId, environmentExternalId) =>
       Promise.resolve(current?.environmentExternalId === environmentExternalId ? current : null),
   };
 }

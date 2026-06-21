@@ -36,7 +36,10 @@ export async function POST(
           },
           environmentExternalId,
         ).then(async (record) => {
-          const launch = await services.labLaunches.findByEnvironmentExternalId(environmentExternalId);
+          const launch = await services.labLaunches.findByCustomerIdAndEnvironmentExternalId(
+            connection.customerId,
+            environmentExternalId,
+          );
           const attempt = launch
             ? await services.examAttempts.findById(launch.examAttemptId)
             : null;

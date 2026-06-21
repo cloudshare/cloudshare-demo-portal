@@ -100,7 +100,7 @@ describe("handleCloudShareWebhook", () => {
     expect(lines.some((line) => line.includes("cloudshare webhook handler misconfigured"))).toBe(true);
   });
 
-  it("logs raw body, header signature, and parsed fields for known webhook targets", async () => {
+  it("logs safe request summary and parsed fields for known webhook targets without persisting raw bodies", async () => {
     const lines: string[] = [];
     const { deps } = setup();
     const rawBody = JSON.stringify({
@@ -127,8 +127,8 @@ describe("handleCloudShareWebhook", () => {
 
     const receivedLine = lines.find((line) => line.includes("cloudshare webhook received"));
     expect(receivedLine).toBeDefined();
-    expect(receivedLine).toContain(`"rawRequestBody":${JSON.stringify(rawBody)}`);
-    expect(receivedLine).toContain('"x-cloudshare-signature":"invalid"');
+    expect(receivedLine).not.toContain("rawRequestBody");
+    expect(receivedLine).not.toContain('"x-cloudshare-signature"');
     expect(receivedLine).toContain('"webhookEnvelope"');
     expect(receivedLine).toContain('"webhookPayload"');
     expect(receivedLine).toContain('"webhookEvent":"environment.created"');
@@ -141,7 +141,7 @@ describe("handleCloudShareWebhook", () => {
     expect(receivedLine).toContain("cloudshare");
   });
 
-  it("logs signature diagnostics for known webhook targets", async () => {
+  it("logs signature diagnostics for known webhook targets without persisting raw signatures", async () => {
     const lines: string[] = [];
     const { deps } = setup();
     const rawBody = JSON.stringify({
@@ -151,8 +151,6 @@ describe("handleCloudShareWebhook", () => {
         environmentExternalId: "env-ext-1",
       },
     });
-    const { computeWebhookSignature } = await import("@/integrations/cloudshare/webhooks");
-
     await handleCloudShareWebhook(
       {
         ...deps,
@@ -167,11 +165,9 @@ describe("handleCloudShareWebhook", () => {
 
     const receivedLine = lines.find((line) => line.includes("cloudshare webhook received"));
     const diagnosticLine = lines.find((line) => line.includes("cloudshare webhook signature diagnostic"));
-    expect(receivedLine).toContain(`"rawRequestBody":${JSON.stringify(rawBody)}`);
-    expect(diagnosticLine).toContain(`"receivedSignature":"invalid"`);
-    expect(diagnosticLine).toContain(
-      `"expectedSignature":"${computeWebhookSignature(rawBody, HELIOS_SECRET)}"`,
-    );
+    expect(receivedLine).not.toContain("rawRequestBody");
+    expect(diagnosticLine).not.toContain('"receivedSignature"');
+    expect(diagnosticLine).not.toContain('"expectedSignature"');
     expect(diagnosticLine).toContain(`"storedWebhookSecretLength":${HELIOS_SECRET.length}`);
     expect(diagnosticLine).toContain('"signatureMatched":false');
     expect(diagnosticLine).toContain("update the stored CloudShare Connection webhook secret");
@@ -210,7 +206,7 @@ describe("handleCloudShareWebhook", () => {
     const serialized = lines.join("\n");
     expect(serialized).toContain("cloudshare webhook rejected: missing signature");
     expect(serialized).toContain('"signaturePresent":false');
-    expect(serialized).toContain(`"rawRequestBody":${JSON.stringify(rawBody)}`);
+    expect(serialized).not.toContain("rawRequestBody");
     expect(serialized).not.toContain("cloudshare webhook received");
     expect(serialized).not.toContain('"webhookEnvelope"');
     expect(serialized).not.toContain('"webhookPayload"');
@@ -483,7 +479,7 @@ describe("handleCloudShareWebhook", () => {
           outcome: "success",
           customerId: "customer-helios",
           externalIds: expect.objectContaining({
-            webhookPathToken: "whk-helios",
+            webhookPathFingerprint: expect.stringMatching(/^sha256:/),
             environmentExternalId: "env-ext-1",
           }),
           details: expect.objectContaining({
@@ -500,6 +496,9 @@ describe("handleCloudShareWebhook", () => {
           operation: "cloudshare.webhook.verify_signature",
           outcome: "success",
           customerId: "customer-helios",
+          externalIds: expect.objectContaining({
+            webhookPathFingerprint: expect.stringMatching(/^sha256:/),
+          }),
           details: expect.objectContaining({
             signatureMatched: true,
             signatureScheme: "HMAC-SHA256 base64 over exact raw request body",
@@ -514,6 +513,7 @@ describe("handleCloudShareWebhook", () => {
           examId: "exam-1",
           examAttemptId: "attempt-1",
           externalIds: expect.objectContaining({
+            webhookPathFingerprint: expect.stringMatching(/^sha256:/),
             environmentExternalId: "env-ext-1",
           }),
         }),
@@ -521,10 +521,16 @@ describe("handleCloudShareWebhook", () => {
     );
     expect(JSON.stringify(entries)).not.toContain(signed.rawBody);
     expect(JSON.stringify(entries)).not.toContain(signed.signature ?? "");
+    expect(JSON.stringify(entries)).not.toContain("whk-helios");
   });
 
-  it("records typed failure diagnostics for unknown target, invalid payload, duplicate, and reconcile failure without raw body leakage", async () => {
+  it("records the full typed failure diagnostic matrix without raw body leakage", async () => {
     const { helios, diagnostics, deps } = setup();
+    const invalidSignatureRawBody = JSON.stringify({
+      Event: "environment.created",
+      CreatedAt: at.toISOString(),
+      Payload: { environmentExternalId: "env-ext-invalid" },
+    });
     const unknownRawBody = JSON.stringify({
       Event: "environment.created",
       token: "must-not-be-logged",
@@ -534,6 +540,23 @@ describe("handleCloudShareWebhook", () => {
       webhookPathToken: "unknown-token",
       rawBody: unknownRawBody,
       signature: "invalid",
+    });
+
+    const missingSignatureRawBody = JSON.stringify({
+      Event: "environment.created",
+      CreatedAt: at.toISOString(),
+      Payload: JSON.stringify({ EnvironmentExternalId: "env-ext-missing" }),
+    });
+    await handleCloudShareWebhook(deps, {
+      webhookPathToken: "whk-helios",
+      rawBody: missingSignatureRawBody,
+      signature: null,
+    });
+
+    await handleCloudShareWebhook(deps, {
+      webhookPathToken: "whk-helios",
+      rawBody: invalidSignatureRawBody,
+      signature: "wrong",
     });
 
     const malformedRawBody = JSON.stringify({ Event: "garbage" });
@@ -554,6 +577,42 @@ describe("handleCloudShareWebhook", () => {
     const allEntries = await diagnostics.query();
     expect(allEntries).toEqual(
       expect.arrayContaining([
+        expect.objectContaining({
+          operation: "cloudshare.webhook.receive",
+          outcome: "failure",
+          customerId: "customer-helios",
+          details: expect.objectContaining({
+            trustGateOutcome: "missing_signature",
+            signaturePresent: false,
+          }),
+        }),
+        expect.objectContaining({
+          operation: "cloudshare.webhook.verify_signature",
+          outcome: "failure",
+          customerId: "customer-helios",
+          details: expect.objectContaining({
+            signatureMatched: false,
+            signaturePresent: false,
+          }),
+        }),
+        expect.objectContaining({
+          operation: "cloudshare.webhook.receive",
+          outcome: "failure",
+          customerId: "customer-helios",
+          details: expect.objectContaining({
+            trustGateOutcome: "invalid_signature",
+            signaturePresent: true,
+          }),
+        }),
+        expect.objectContaining({
+          operation: "cloudshare.webhook.verify_signature",
+          outcome: "failure",
+          customerId: "customer-helios",
+          details: expect.objectContaining({
+            signatureMatched: false,
+            signaturePresent: true,
+          }),
+        }),
         expect.objectContaining({
           operation: "cloudshare.webhook.receive",
           outcome: "failure",
@@ -591,6 +650,45 @@ describe("handleCloudShareWebhook", () => {
     );
     expect(JSON.stringify(allEntries)).not.toContain("must-not-be-logged");
     expect(JSON.stringify(allEntries)).not.toContain(unknownRawBody);
+    expect(JSON.stringify(allEntries)).not.toContain("wrong");
+    expect(JSON.stringify(allEntries)).not.toContain("whk-helios");
+    expect(JSON.stringify(allEntries)).not.toContain("unknown-token");
+  });
+
+  it("does not correlate another customer's launch when environment ids collide across customers", async () => {
+    const { helios, diagnostics, deps } = setup();
+    deps.reconcile = vi.fn(
+      async (_connection: unknown, _environmentExternalId: string) => ({
+        environmentExternalId: "shared-env",
+        status: "running",
+        correlation: {
+          customerId: "customer-helios",
+          examAttemptId: "attempt-helios",
+          examId: "exam-helios",
+          candidateEmail: "candidate@helioscx.demo",
+        },
+      }),
+    );
+    const signed = helios.emit({ environmentExternalId: "shared-env", event: "environment.created", at });
+
+    const res = await handleCloudShareWebhook(deps, {
+      webhookPathToken: "whk-helios",
+      ...signed,
+    });
+
+    expect(res.status).toBe(202);
+    const entries = await diagnostics.query({ customerId: "customer-helios" });
+    expect(entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation: "cloudshare.webhook.reconcile",
+          examAttemptId: "attempt-helios",
+          examId: "exam-helios",
+          customerId: "customer-helios",
+        }),
+      ]),
+    );
+    expect(JSON.stringify(entries)).not.toContain("customer-other");
   });
 
   it("swallows diagnostic recording failures so webhook behavior still succeeds", async () => {

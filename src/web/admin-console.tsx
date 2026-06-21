@@ -75,13 +75,12 @@ interface SupportWorkbenchDiagnostic {
   operation: string | null;
   integrationSurface: string | null;
   customerId: string | null;
-  webhookPathToken: string | null;
+  webhookPathFingerprint: string | null;
   method: string | null;
   path: string | null;
   requestBodyBytes: number | null;
   rawBodySha256: string | null;
   signaturePresent: boolean | null;
-  rawRequestBody: string | null;
   trustGateReason: string | null;
 }
 
@@ -1999,7 +1998,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                       </div>
                       <div>
                         <strong>Webhook token:</strong>{" "}
-                        <span style={{ fontFamily: "monospace" }}>{diagnostic.webhookPathToken ?? "-"}</span>
+                        <span style={{ fontFamily: "monospace" }}>{diagnostic.webhookPathFingerprint ?? "-"}</span>
                       </div>
                       <div>
                         <strong>Customer:</strong>{" "}
@@ -2019,14 +2018,6 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                       {diagnostic.trustGateReason && (
                         <div style={{ color: "#8a5a00" }}>
                           <strong>Trust gate:</strong> {diagnostic.trustGateReason}
-                        </div>
-                      )}
-                      {diagnostic.rawRequestBody && (
-                        <div>
-                          <strong>Raw webhook request body used for HMAC:</strong>
-                          <pre style={{ margin: "0.2rem 0 0", whiteSpace: "pre-wrap" }}>
-                            {diagnostic.rawRequestBody}
-                          </pre>
                         </div>
                       )}
                     </div>
