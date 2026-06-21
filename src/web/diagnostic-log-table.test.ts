@@ -34,4 +34,38 @@ describe("DiagnosticLogTable", () => {
     expect(html).toContain(">Customer<");
     expect(html).toContain(">customer-helios<");
   });
+
+  it("truncates oversized structured detail payloads in the expanded view", () => {
+    const html = renderToStaticMarkup(
+      createElement(DiagnosticLogTable, {
+        entries: [
+          {
+            id: "diag-oversized",
+            occurredAt: "2026-06-21T10:00:00.000Z",
+            level: "warn",
+            source: "runtime",
+            operation: "exam_attempt.resume",
+            outcome: "failure",
+            customerId: "customer-helios",
+            actor: { type: "candidate", id: "candidate-1", email: "candidate@helioscx.demo" },
+            subject: { type: "exam_attempt", id: "attempt-1" },
+            message: "Exam resume failed",
+            correlationId: "corr-oversized",
+            candidateEmail: "candidate@helioscx.demo",
+            examId: "exam-1",
+            examAttemptId: "attempt-1",
+            details: {
+              payload: "x".repeat(20_000),
+            },
+          },
+        ],
+        expandedDiagnosticId: "diag-oversized",
+        onToggleExpanded: () => {},
+      }),
+    );
+
+    expect(html).toContain("Detail output truncated in the table view");
+    expect(html).toContain("... truncated");
+    expect(html).not.toContain("x".repeat(15_000));
+  });
 });
