@@ -39,6 +39,8 @@ export async function POST(request: Request) {
     return NextResponse.json(access.response.body, { status: access.response.status });
   }
 
+  const portalSession = await getPortalSession(services, sessionId);
+
   const reconciliation = await reconcileExamAttemptCompletion(
     {
       attempts: services.examAttempts,
@@ -49,7 +51,6 @@ export async function POST(request: Request) {
   );
   if (reconciliation?.status === "completed") {
     heartbeatAutoSuspend.removeHeartbeat(examAttemptId);
-    const portalSession = await getPortalSession(services, sessionId);
     await services.diagnosticRecorder.record({
       source: "runtime",
       customerId: access.attempt.customerId ?? null,
@@ -75,6 +76,20 @@ export async function POST(request: Request) {
   }
 
   const resp = await handleHeartbeat({ autoSuspend: heartbeatAutoSuspend, logger }, { body });
+  await services.diagnosticRecorder.record({
+    source: "runtime",
+    customerId: access.attempt.customerId ?? null,
+    candidateEmail: portalSession?.email ?? null,
+    examId: access.attempt.examId ?? null,
+    examAttemptId,
+    level: "info",
+    operation: "exam_attempt.heartbeat.receive",
+    outcome: "success",
+    message: "Heartbeat received for in-progress exam attempt",
+    actor: { type: "candidate", id: access.attempt.candidateId ?? null, email: portalSession?.email ?? null },
+    subject: { type: "exam_attempt", id: examAttemptId },
+    details: { route: "/api/heartbeat" },
+  });
   return NextResponse.json(
     {
       ...resp.body,

@@ -476,6 +476,7 @@ describe("handleCloudShareWebhook", () => {
       expect.arrayContaining([
         expect.objectContaining({
           operation: "cloudshare.webhook.receive",
+          level: "info",
           outcome: "success",
           customerId: "customer-helios",
           externalIds: expect.objectContaining({
@@ -486,6 +487,15 @@ describe("handleCloudShareWebhook", () => {
             eventType: "environment.created",
             signaturePresent: true,
             trustGateOutcome: "accepted",
+            webhookSummary: expect.objectContaining({
+              parseStatus: "ok",
+              envelope: expect.objectContaining({
+                Event: "environment.created",
+              }),
+              payload: expect.objectContaining({
+                EnvironmentId: "env-ext-1",
+              }),
+            }),
           }),
           request: expect.objectContaining({
             method: "POST",
@@ -522,6 +532,89 @@ describe("handleCloudShareWebhook", () => {
     expect(JSON.stringify(entries)).not.toContain(signed.rawBody);
     expect(JSON.stringify(entries)).not.toContain(signed.signature ?? "");
     expect(JSON.stringify(entries)).not.toContain("whk-helios");
+  });
+
+  it("records rejected webhook diagnostics at warn level with safe signature header metadata and allowlisted body summary", async () => {
+    const { diagnostics, deps } = setup();
+    const rawBody = JSON.stringify({
+      Event: "environment.created",
+      CreatedAt: at.toISOString(),
+      CreatedByEmail: "owner@example.test",
+      Payload: JSON.stringify({
+        EnvironmentId: "env-1",
+        EnvironmentExternalId: "env-ext-invalid",
+        EnvironmentName: "Helios Candidate Lab",
+        BlueprintId: "bp-1",
+        PolicyId: "policy-1",
+        OwnerEmail: "owner@example.test",
+        RegionId: "region-1",
+      }),
+    });
+
+    const res = await handleCloudShareWebhook(deps, {
+      webhookPathToken: "whk-helios",
+      rawBody,
+      signature: "invalid-signature-value",
+    });
+
+    expect(res.status).toBe(401);
+    const entries = await diagnostics.query({ customerId: "customer-helios" });
+    expect(entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation: "cloudshare.webhook.receive",
+          level: "warn",
+          outcome: "failure",
+          details: expect.objectContaining({
+            trustGateOutcome: "invalid_signature",
+            webhookSummary: expect.objectContaining({
+              parseStatus: "ok",
+              envelope: expect.objectContaining({
+                Event: "environment.created",
+                CreatedByEmail: "owner@example.test",
+              }),
+              payload: expect.objectContaining({
+                EnvironmentId: "env-1",
+                EnvironmentExternalId: "env-ext-invalid",
+                EnvironmentName: "Helios Candidate Lab",
+                BlueprintId: "bp-1",
+                PolicyId: "policy-1",
+                OwnerEmail: "owner@example.test",
+                RegionId: "region-1",
+              }),
+            }),
+            signatureHeader: expect.objectContaining({
+              name: "x-cloudshare-signature",
+              present: true,
+              scheme: "hmac-sha256-base64",
+              length: "invalid-signature-value".length,
+              fingerprint: expect.stringMatching(/^sha256:/),
+            }),
+          }),
+          request: expect.objectContaining({
+            requestBodyBytes: expect.any(Number),
+            rawBodySha256: expect.any(String),
+          }),
+        }),
+        expect.objectContaining({
+          operation: "cloudshare.webhook.verify_signature",
+          level: "warn",
+          outcome: "failure",
+          details: expect.objectContaining({
+            signatureMatched: false,
+            signatureHeader: expect.objectContaining({
+              name: "x-cloudshare-signature",
+              present: true,
+              scheme: "hmac-sha256-base64",
+              length: "invalid-signature-value".length,
+              fingerprint: expect.stringMatching(/^sha256:/),
+            }),
+          }),
+        }),
+      ]),
+    );
+    expect(JSON.stringify(entries)).not.toContain(rawBody);
+    expect(JSON.stringify(entries)).not.toContain("invalid-signature-value");
   });
 
   it("records the full typed failure diagnostic matrix without raw body leakage", async () => {

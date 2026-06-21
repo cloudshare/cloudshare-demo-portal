@@ -63,6 +63,8 @@ export async function handleCloudShareWebhook(
   const path = "/api/webhooks/cloudshare/{webhookPathToken}";
   const requestBodyBytes = Buffer.byteLength(request.rawBody, "utf8");
   const rawBodySha256 = hashRawBody(request.rawBody);
+  const requestBodySummary = summariseWebhookBody(request.rawBody);
+  const signatureHeader = summariseSignatureHeader(request.signature);
   const webhookPathFingerprint = fingerprintWebhookPathToken(request.webhookPathToken);
   let resolvedCustomerId: string | null = null;
   try {
@@ -88,7 +90,8 @@ export async function handleCloudShareWebhook(
           rawBodySha256,
         },
         details: {
-          signaturePresent: Boolean(request.signature),
+          signaturePresent: signatureHeader.present,
+          signatureHeader,
           trustGateOutcome: "internal_error",
           reason: "connections.findByWebhookPathToken is unavailable",
         },
@@ -110,6 +113,7 @@ export async function handleCloudShareWebhook(
       });
       await recordDiagnostic(deps.diagnostics, {
         source: "cloudshare-webhook",
+        level: "warn",
         operation: "cloudshare.webhook.receive",
         outcome: "failure",
         customerId: null,
@@ -122,7 +126,9 @@ export async function handleCloudShareWebhook(
           rawBodySha256,
         },
         details: {
-          signaturePresent: Boolean(request.signature),
+          signaturePresent: signatureHeader.present,
+          signatureHeader,
+          webhookSummary: requestBodySummary,
           trustGateOutcome: "unknown_target",
         },
       });
@@ -164,6 +170,7 @@ export async function handleCloudShareWebhook(
       });
       await recordDiagnostic(deps.diagnostics, {
         source: "cloudshare-webhook",
+        level: "warn",
         operation: "cloudshare.webhook.receive",
         outcome: "failure",
         customerId: connection.customerId,
@@ -177,11 +184,14 @@ export async function handleCloudShareWebhook(
         },
         details: {
           signaturePresent: false,
+          signatureHeader,
+          webhookSummary: requestBodySummary,
           trustGateOutcome: "missing_signature",
         },
       });
       await recordDiagnostic(deps.diagnostics, {
         source: "cloudshare-webhook",
+        level: "warn",
         operation: "cloudshare.webhook.verify_signature",
         outcome: "failure",
         customerId: connection.customerId,
@@ -192,7 +202,7 @@ export async function handleCloudShareWebhook(
           signatureMatched: false,
           signatureScheme: "HMAC-SHA256 base64 over exact raw request body",
           storedWebhookSecretLength: connection.webhookSecret.length,
-          signatureHeader: CLOUDSHARE_WEBHOOK_SIGNATURE_HEADER,
+          signatureHeader,
           rawBodySha256,
         },
       });
@@ -206,7 +216,6 @@ export async function handleCloudShareWebhook(
       return { status: 401, body: { status: "missing_signature" } };
     }
 
-    const requestBodySummary = summariseWebhookBody(request.rawBody);
     const webhookFields = isWebhookBodySummary(requestBodySummary)
       ? flattenWebhookDiagnosticFields(requestBodySummary)
       : {};
@@ -251,6 +260,7 @@ export async function handleCloudShareWebhook(
       case "invalid_signature":
         await recordDiagnostic(deps.diagnostics, {
           source: "cloudshare-webhook",
+          level: "warn",
           operation: "cloudshare.webhook.receive",
           outcome: "failure",
           customerId: connection.customerId,
@@ -264,11 +274,14 @@ export async function handleCloudShareWebhook(
           },
           details: {
             signaturePresent: true,
+            signatureHeader,
+            webhookSummary: requestBodySummary,
             trustGateOutcome: "invalid_signature",
           },
         });
         await recordDiagnostic(deps.diagnostics, {
           source: "cloudshare-webhook",
+          level: "warn",
           operation: "cloudshare.webhook.verify_signature",
           outcome: "failure",
           customerId: connection.customerId,
@@ -279,7 +292,7 @@ export async function handleCloudShareWebhook(
             signatureMatched: false,
             signatureScheme: "HMAC-SHA256 base64 over exact raw request body",
             storedWebhookSecretLength: connection.webhookSecret.length,
-            signatureHeader: CLOUDSHARE_WEBHOOK_SIGNATURE_HEADER,
+            signatureHeader,
             rawBodySha256,
           },
         });
@@ -309,12 +322,13 @@ export async function handleCloudShareWebhook(
             signatureMatched: true,
             signatureScheme: "HMAC-SHA256 base64 over exact raw request body",
             storedWebhookSecretLength: connection.webhookSecret.length,
-            signatureHeader: CLOUDSHARE_WEBHOOK_SIGNATURE_HEADER,
+            signatureHeader,
             rawBodySha256,
           },
         });
         await recordDiagnostic(deps.diagnostics, {
           source: "cloudshare-webhook",
+          level: "warn",
           operation: "cloudshare.webhook.receive",
           outcome: "failure",
           customerId: connection.customerId,
@@ -336,6 +350,8 @@ export async function handleCloudShareWebhook(
               ? requestBodySummary.envelope.Event
               : null,
             signaturePresent: true,
+            signatureHeader,
+            webhookSummary: requestBodySummary,
             trustGateOutcome: "invalid_payload",
             issues: outcome.issues,
           },
@@ -368,12 +384,13 @@ export async function handleCloudShareWebhook(
             signatureMatched: true,
             signatureScheme: "HMAC-SHA256 base64 over exact raw request body",
             storedWebhookSecretLength: connection.webhookSecret.length,
-            signatureHeader: CLOUDSHARE_WEBHOOK_SIGNATURE_HEADER,
+            signatureHeader,
             rawBodySha256,
           },
         });
         await recordDiagnostic(deps.diagnostics, {
           source: "cloudshare-webhook",
+          level: "warn",
           operation: "cloudshare.webhook.receive",
           outcome: "failure",
           customerId: connection.customerId,
@@ -399,6 +416,8 @@ export async function handleCloudShareWebhook(
               ? requestBodySummary.envelope.Event
               : null,
             signaturePresent: true,
+            signatureHeader,
+            webhookSummary: requestBodySummary,
             trustGateOutcome: "duplicate",
           },
         });
@@ -434,7 +453,7 @@ export async function handleCloudShareWebhook(
             signatureMatched: true,
             signatureScheme: "HMAC-SHA256 base64 over exact raw request body",
             storedWebhookSecretLength: connection.webhookSecret.length,
-            signatureHeader: CLOUDSHARE_WEBHOOK_SIGNATURE_HEADER,
+            signatureHeader,
             rawBodySha256,
           },
         });
@@ -458,6 +477,8 @@ export async function handleCloudShareWebhook(
           details: {
             eventType: event.event,
             signaturePresent: true,
+            signatureHeader,
+            webhookSummary: requestBodySummary,
             trustGateOutcome: "accepted",
           },
         });
@@ -568,7 +589,8 @@ export async function handleCloudShareWebhook(
         rawBodySha256,
       },
       details: {
-        signaturePresent: Boolean(request.signature),
+        signaturePresent: signatureHeader.present,
+        signatureHeader,
         trustGateOutcome: "internal_error",
         error: err instanceof Error ? err.message : String(err),
       },
@@ -680,8 +702,31 @@ function hashRawBody(rawBody: string): string {
   return createHash("sha256").update(rawBody, "utf8").digest("hex");
 }
 
+function hashValueFingerprint(value: string): string {
+  return `sha256:${createHash("sha256").update(value, "utf8").digest("hex").slice(0, 16)}`;
+}
+
 function fingerprintWebhookPathToken(webhookPathToken: string): string {
-  return `sha256:${createHash("sha256").update(webhookPathToken, "utf8").digest("hex").slice(0, 16)}`;
+  return hashValueFingerprint(webhookPathToken);
+}
+
+function summariseSignatureHeader(signature: string | null | undefined): {
+  readonly name: string;
+  readonly present: boolean;
+  readonly scheme: string;
+  readonly length: number;
+  readonly fingerprint: string | null;
+} {
+  return {
+    name: CLOUDSHARE_WEBHOOK_SIGNATURE_HEADER,
+    present: typeof signature === "string" && signature.length > 0,
+    scheme: "hmac-sha256-base64",
+    length: typeof signature === "string" ? signature.length : 0,
+    fingerprint:
+      typeof signature === "string" && signature.length > 0
+        ? hashValueFingerprint(signature)
+        : null,
+  };
 }
 
 interface WebhookReconcileDiagnostic {
