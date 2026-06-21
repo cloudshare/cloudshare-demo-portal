@@ -17,6 +17,10 @@ const optionalStringSchema = z.preprocess(
   nullishToUndefined,
   z.string().trim().min(1).optional(),
 );
+const optionalLooseStringSchema = z.preprocess(
+  nullishToUndefined,
+  z.string().optional(),
+);
 const optionalBooleanSchema = z.preprocess(nullishToUndefined, z.boolean().optional());
 const optionalRecordSchema = z.preprocess(
   nullishToUndefined,
@@ -49,8 +53,8 @@ const blueprintVersionSchema = z.object({
   isLatest: optionalBooleanSchema,
   type: optionalStringOrNumberSchema,
   createTime: optionalStringSchema,
-  description: optionalStringSchema,
-  comment: optionalStringSchema,
+  description: optionalLooseStringSchema,
+  comment: optionalLooseStringSchema,
   resources: optionalRecordSchema,
   machines: z.array(machineSchema).optional(),
   regions: z

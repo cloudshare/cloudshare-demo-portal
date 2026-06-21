@@ -498,4 +498,60 @@ describe("createCloudShareExamAuthoringSource", () => {
       },
     });
   });
+
+  it("accepts snapshot versions whose descriptions are present but blank", async () => {
+    const source = createCloudShareExamAuthoringSource(
+      makeClient({
+        "v3:/projects/p-1/blueprints/bp-1": {
+          id: "bp-1",
+          name: "Windows Boxes",
+          description: "Live tenant blueprint variant",
+          createFromVersions: [
+            {
+              id: "snap-1",
+              name: "Default Snapshot",
+              description: "",
+              isDefault: true,
+              regions: ["r-1"],
+            },
+            {
+              id: "snap-2",
+              name: "Previous Snapshot",
+              description: "",
+              isDefault: false,
+              regions: ["r-1"],
+            },
+          ],
+        },
+      }),
+    );
+
+    await expect(source.getBlueprintDetail("p-1", "bp-1")).resolves.toMatchObject({
+      id: "bp-1",
+      name: "Windows Boxes",
+      description: "Live tenant blueprint variant",
+      defaultSnapshotId: "snap-1",
+      snapshots: [
+        { id: "snap-1", name: "Default Snapshot", isDefault: true, regionIds: ["r-1"] },
+        { id: "snap-2", name: "Previous Snapshot", isDefault: false, regionIds: ["r-1"] },
+      ],
+      diagnosticSummary: {
+        blueprintId: "bp-1",
+        snapshots: [
+          {
+            id: "snap-1",
+            name: "Default Snapshot",
+            isDefault: true,
+            regions: [{ id: "r-1" }],
+          },
+          {
+            id: "snap-2",
+            name: "Previous Snapshot",
+            isDefault: false,
+            regions: [{ id: "r-1" }],
+          },
+        ],
+      },
+    });
+  });
 });

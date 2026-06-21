@@ -435,6 +435,10 @@ shapes were broader than the current minimal adapter schema:
 - `createFromVersions[].regions` is not stable to a single shape. In the current tenant it may arrive
   either as region objects (with `id` / `name`) or as raw region-id strings. The adapter must accept
   both and normalize them to portal `regionIds`.
+- `createFromVersions[].description` is not reliably non-empty. Live tenant Blueprint detail for
+  `Windows Boxes` returned `description: ""` on every version row while the rest of the payload was
+  valid. The adapter must allow blank version descriptions instead of treating the whole Blueprint
+  detail response as malformed.
 - For **experience-based** launches, CloudShare uses the Blueprint's **default** version/Snapshot.
   The portal should treat Blueprint detail as visibility into that default, not as proof that it can
   choose any arbitrary non-default version when launching an Experience. Selecting a non-default
