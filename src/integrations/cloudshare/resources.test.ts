@@ -1,4 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
+import { createCloudShareClient } from "./client";
+import { CloudShareResponseError } from "./errors";
+import type { HttpClient } from "./http";
 import {
   createCloudShareExamAuthoringSource,
   createCloudShareResourceLister,
@@ -24,6 +27,30 @@ function makeClient(responses: Record<string, unknown>): CloudShareClient {
       return Promise.reject(new Error(`No mock for v3 ${path}`));
     }),
   } as unknown as CloudShareClient;
+}
+
+function makeAuthoringSourceWithRealClient(
+  responseBody: unknown,
+): ReturnType<typeof createCloudShareExamAuthoringSource> {
+  const http: HttpClient = {
+    async send() {
+      return { status: 200, body: JSON.stringify(responseBody) };
+    },
+  };
+
+  const client = createCloudShareClient({
+    http,
+    endpoints: {
+      v4BaseUrl: "https://api.accelerate.cloudshare.com/v4",
+      v3BaseUrl: "https://use.cloudshare.com/api/v3",
+    },
+    tokenProvider: { getToken: async () => "test-bearer" },
+    v3: { apiId: "api-id", apiKey: "api-key" },
+    newToken: () => "tokfixed01",
+    now: () => 1_700_000_000_000,
+  });
+
+  return createCloudShareExamAuthoringSource(client);
 }
 
 describe("createCloudShareResourceLister", () => {
@@ -331,6 +358,39 @@ describe("createCloudShareExamAuthoringSource", () => {
         snapshotCount: 0,
         snapshots: [],
       },
+    });
+  });
+
+  it("rejects unrelated blueprint detail payloads at the CloudShare adapter seam", async () => {
+    const source = makeAuthoringSourceWithRealClient({});
+
+    await expect(source.getBlueprintDetail("p-1", "bp-1")).rejects.toBeInstanceOf(
+      CloudShareResponseError,
+    );
+  });
+
+  it("accepts documented blueprint detail responses with PascalCase CreateFromVersions", async () => {
+    const source = createCloudShareExamAuthoringSource(
+      makeClient({
+        "v3:/projects/p-1/blueprints/bp-1": {
+          Type: 0,
+          CreateFromVersions: [
+            {
+              id: "snap-1",
+              name: "Default Snapshot",
+              isDefault: true,
+              Regions: ["r-1"],
+            },
+          ],
+        },
+      }),
+    );
+
+    await expect(source.getBlueprintDetail("p-1", "bp-1")).resolves.toMatchObject({
+      id: "bp-1",
+      name: "bp-1",
+      defaultSnapshotId: "snap-1",
+      snapshots: [{ id: "snap-1", name: "Default Snapshot", isDefault: true, regionIds: ["r-1"] }],
     });
   });
 

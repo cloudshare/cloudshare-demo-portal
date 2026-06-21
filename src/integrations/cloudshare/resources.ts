@@ -483,11 +483,35 @@ function normalizeBlueprintDetailPayload(
   }
 
   const createFromVersions = readField(record, "createFromVersions", "CreateFromVersions");
+  const id = readField(record, "id", "Id");
+  const name = readField(record, "name", "Name");
+  const hasBlueprintDetailShape =
+    id !== undefined ||
+    name !== undefined ||
+    hasAnyField(
+      record,
+      "createFromVersions",
+      "CreateFromVersions",
+      "type",
+      "Type",
+      "creationDate",
+      "CreationDate",
+      "resources",
+      "Resources",
+      "numberOfMachines",
+      "NumberOfMachines",
+      "imageUrl",
+      "ImageUrl",
+    );
+
+  if (!hasBlueprintDetailShape) {
+    return value;
+  }
 
   return {
     ...record,
-    id: readField(record, "id", "Id") ?? blueprintId,
-    name: readField(record, "name", "Name") ?? blueprintId,
+    id: id ?? blueprintId,
+    name: name ?? blueprintId,
     description: readField(record, "description", "Description") ?? "",
     type: readField(record, "type", "Type"),
     creationDate: readField(record, "creationDate", "CreationDate"),
@@ -582,6 +606,10 @@ function readField(record: Record<string, unknown>, ...keys: string[]): unknown 
     }
   }
   return undefined;
+}
+
+function hasAnyField(record: Record<string, unknown>, ...keys: string[]): boolean {
+  return keys.some((key) => key in record);
 }
 
 function summarizeSnapshotForDiagnostics(
