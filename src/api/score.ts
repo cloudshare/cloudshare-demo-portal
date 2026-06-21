@@ -14,6 +14,7 @@ import {
   CloudShareResponseError,
   CloudShareTransportError,
 } from "@/integrations/cloudshare";
+import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 
 export interface ScoreHandlerDeps {
   readonly attempts: ExamAttemptRepository;
@@ -31,6 +32,7 @@ export interface ScoreHandlerDeps {
   readonly limitations: readonly string[];
   readonly now?: () => Date;
   readonly newCorrelationId?: () => string;
+  readonly diagnostics?: DiagnosticRecorder;
 }
 
 export interface ScoreRequest {
@@ -77,6 +79,16 @@ export async function handleGetCandidateScore(
       body: { error: "score is only available after the exam attempt is completed" },
     };
   }
+
+  const anchors = {
+    source: "runtime" as const,
+    customerId: attempt.customerId ?? null,
+    candidateEmail: null as string | null,
+    examId: attempt.examId ?? null,
+    examAttemptId: attempt.id,
+    actor: { type: "candidate" as const, id: attempt.candidateId, email: null as string | null },
+    subject: { type: "exam_attempt" as const, id: attempt.id },
+  };
 
   const exam = await deps.exams.findById(attempt.examId);
   if (!exam || exam.customerId !== request.session.customerId) {
@@ -159,8 +171,27 @@ export async function handleGetCandidateScore(
       launch,
     );
     if (!resolvedParticipantId.ok) {
+      await deps.diagnostics?.record({
+        ...anchors,
+        level: "warn",
+        operation: "exam_attempt.score.correlate_environment",
+        outcome: "failure",
+        message: "Score retrieval failed: could not correlate CloudShare environment participant",
+      });
       return resolvedParticipantId.response;
     }
+
+    await deps.diagnostics?.record({
+      ...anchors,
+      level: "info",
+      operation: "exam_attempt.score.correlate_environment",
+      outcome: "success",
+      message: "CloudShare environment participant resolved for score retrieval",
+      externalIds: {
+        ...(launch.experienceId ? { experienceId: launch.experienceId } : {}),
+        participantId: resolvedParticipantId.participantId,
+      },
+    });
 
     const scoreRetriever = deps.createScoreRetriever(connection);
     const result = await resolveExamAttemptScore(
@@ -189,6 +220,14 @@ export async function handleGetCandidateScore(
           reason: result.reason,
         },
         occurredAt: new Date(result.retrievedAt),
+      });
+      await deps.diagnostics?.record({
+        ...anchors,
+        level: "info",
+        operation: "exam_attempt.score.retrieve",
+        outcome: "success",
+        message: "Score retrieved — no score available yet",
+        response: { scoreAvailable: false, reason: result.reason },
       });
       return {
         status: 200,
@@ -221,6 +260,20 @@ export async function handleGetCandidateScore(
       occurredAt: new Date(result.retrievedAt),
     });
 
+    await deps.diagnostics?.record({
+      ...anchors,
+      level: "info",
+      operation: "exam_attempt.score.retrieve",
+      outcome: "success",
+      message: "Score retrieved successfully",
+      response: {
+        scoreAvailable: true,
+        percentComplete: result.percentComplete,
+        stepsCompleted: result.stepsCompleted,
+        stepsTotal: result.stepsTotal,
+      },
+    });
+
     return {
       status: 200,
       body: {
@@ -250,6 +303,7 @@ export async function handleGetCandidateScore(
       const correlationId = (deps.newCorrelationId ?? randomUUID)();
       const diagnostic = buildScoreRetrievalDiagnostic(
         correlationId,
+        request.session.customerId,
         examAttemptId,
         launch.experienceId,
         launch.participantId ?? "unknown-participant",
@@ -274,6 +328,22 @@ export async function handleGetCandidateScore(
         error: "Score retrieval failed.",
         occurredAt: deps.now?.() ?? new Date(),
       });
+      await deps.diagnostics?.record({
+        ...anchors,
+        level: "warn",
+        operation: "exam_attempt.score.retrieve",
+        outcome: "failure",
+        message: "Score retrieval failed",
+        details: {
+          attemptedOperation: asString(diagnostic.attemptedOperation),
+          integrationSurface: asString(diagnostic.integrationSurface),
+          method: asString(diagnostic.method),
+          path: asString(diagnostic.path),
+          failureMode: asString(diagnostic.failureMode),
+          responseStatus: asNumber(diagnostic.responseStatus),
+          correlationId,
+        },
+      });
       deps.logger.warn("candidate score retrieval failed", diagnostic);
       return {
         status: 502,
@@ -286,6 +356,8 @@ export async function handleGetCandidateScore(
 
     deps.logger.error("candidate score retrieval errored", {
       examAttemptId,
+      customerId: attempt.customerId ?? request.session.customerId,
+      examId: attempt.examId,
       error: error instanceof Error ? error.message : String(error),
     });
     return { status: 500, body: { error: "internal error" } };
@@ -416,6 +488,7 @@ async function resolveLaunchParticipantId(
 
 function buildScoreRetrievalDiagnostic(
   correlationId: string,
+  customerId: string,
   examAttemptId: string,
   experienceId: string,
   participantId: string,
@@ -425,6 +498,7 @@ function buildScoreRetrievalDiagnostic(
   const path = `/guided-journey/progress/${experienceId}/${participantId}`;
   const base = {
     correlationId,
+    customerId,
     examAttemptId,
     experienceId,
     participantId,

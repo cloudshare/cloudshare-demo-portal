@@ -5,6 +5,7 @@ import { getServices } from "@/composition";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { handleResumeExam } from "@/api/suspend-resume";
 import { authorizeCandidateExamAttemptAccess } from "@/api/candidate-exam-attempt-access";
+import { getPortalSession } from "@/auth/portal-session";
 import type { AuditRecord } from "@/domain/audit-trail";
 
 /**
@@ -43,6 +44,7 @@ export async function POST(request: Request) {
   }
 
   const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
+  const session = await getPortalSession(services, sessionId);
   const access = await authorizeCandidateExamAttemptAccess(services, {
     sessionId,
     examAttemptId,
@@ -67,11 +69,16 @@ export async function POST(request: Request) {
       eventLog,
       connections: cloudshareConnections,
       cloudshare: cloudshareClientFactory,
+      diagnostics: services.diagnosticRecorder,
+      candidateEmail: session?.email ?? undefined,
     },
     { body },
   );
 
-  if (resp.status === 200 && examAttemptId) {
+  const resumeDisposition =
+    typeof resp.body.resumeDisposition === "string" ? resp.body.resumeDisposition : null;
+
+  if (resp.status === 200 && examAttemptId && resumeDisposition === "resumed") {
     heartbeatAutoSuspend.removeHeartbeat(examAttemptId);
     await audit.write({
       id: randomUUID(),

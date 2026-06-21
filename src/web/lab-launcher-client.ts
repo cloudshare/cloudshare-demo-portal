@@ -67,7 +67,7 @@ export async function preflightLabAction(
   }
 
   const validStatus = input.action === "resume"
-    ? labStatus.status === "suspended"
+    ? labStatus.status === "suspended" || labStatus.status === "in_progress"
     : labStatus.status === "ready" || labStatus.status === "in_progress";
 
   if (!validStatus) {
@@ -124,6 +124,73 @@ export async function suspendLabAttempt(
   }
 
   throw new Error(readError(detail, `suspend failed (${response.status})`));
+}
+
+export async function resumeLabAttempt(
+  fetchImpl: FetchLike,
+  examAttemptId: string,
+): Promise<
+  | { kind: "resumed"; disposition: "resumed" | "already_active" }
+  | { kind: "completed"; labStatus: CandidateLabStatus; message: string }
+  | { kind: "blocked"; labStatus: CandidateLabStatus | null; message: string }
+> {
+  const response = await fetchImpl("/api/exam/resume", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ examAttemptId }),
+  });
+
+  const detail = await response.json().catch(() => ({}));
+  if (response.ok) {
+    const disposition =
+      typeof (detail as { resumeDisposition?: unknown }).resumeDisposition === "string"
+        ? (detail as { resumeDisposition: "resumed" | "already_active" }).resumeDisposition
+        : "resumed";
+    return {
+      kind: "resumed",
+      disposition,
+    };
+  }
+
+  if (response.status === 409) {
+    const labStatus = await loadCandidateLabStatus(fetchImpl, examAttemptId).catch(() => null);
+    if (labStatus?.status === "completed") {
+      return {
+        kind: "completed",
+        labStatus,
+        message: "Examination complete.",
+      };
+    }
+    return {
+      kind: "blocked",
+      labStatus,
+      message: readError(detail, "Exam resume is not available for this attempt."),
+    };
+  }
+
+  const labStatus = await loadCandidateLabStatus(fetchImpl, examAttemptId).catch(() => null);
+  if (labStatus?.status === "completed") {
+    return {
+      kind: "completed",
+      labStatus,
+      message: "Examination complete.",
+    };
+  }
+  if (labStatus?.status === "in_progress") {
+    return {
+      kind: "resumed",
+      disposition: "already_active",
+    };
+  }
+  if (labStatus?.status === "suspended") {
+    return {
+      kind: "blocked",
+      labStatus,
+      message: readError(detail, "Exam resume is not available for this attempt."),
+    };
+  }
+
+  throw new Error(readError(detail, `resume failed (${response.status})`));
 }
 
 function readError(json: unknown, fallback: string): string {

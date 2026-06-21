@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Logger } from "@/observability/logger";
 import type { EventLogRepository } from "@/domain/event-log";
+import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
@@ -8,6 +9,7 @@ import type {
 import {
   suspendExam,
   resumeExam,
+  SUSPENDED_PRESERVATION_LIMIT_MS,
   type SuspendExamDeps,
   type ResumeExamDeps,
 } from "@/domain/timer-sync";
@@ -44,11 +46,15 @@ export interface SuspendResumeResponse {
   readonly body: Record<string, unknown>;
 }
 
+type ResumeDisposition = "resumed" | "already_active";
+
 interface SupportDiagnosticDeps {
   readonly logger: Logger;
   readonly eventLog: EventLogRepository;
   readonly newCorrelationId?: () => string;
   readonly now?: () => Date;
+  readonly diagnostics?: DiagnosticRecorder;
+  readonly candidateEmail?: string;
 }
 
 interface EnvironmentCorrelationDeps {
@@ -66,6 +72,17 @@ interface FailureHandlingSpec {
   readonly operation: string;
   readonly eventType: string;
   readonly logMessage: string;
+}
+
+interface RuntimeDiagnosticAnchors {
+  readonly source: "runtime";
+  readonly customerId: string | null;
+  readonly candidateEmail: string | null;
+  readonly examId: string | null;
+  readonly examAttemptId: string;
+  readonly correlationId?: string | null;
+  readonly actor: { readonly type: "candidate"; readonly id: string | null; readonly email: string | null };
+  readonly subject: { readonly type: "exam_attempt"; readonly id: string };
 }
 
 class CustomerEnvironmentAccessError extends Error {
@@ -95,6 +112,17 @@ export async function handleSuspendExam(
     return { status: 400, body: { error: "examAttemptId is required" } };
   }
 
+  let anchors: RuntimeDiagnosticAnchors = {
+    source: "runtime" as const,
+    customerId: null as string | null,
+    candidateEmail: deps.candidateEmail ?? null,
+    examId: null as string | null,
+    examAttemptId,
+    correlationId: null as string | null,
+    actor: { type: "candidate" as const, id: null as string | null, email: deps.candidateEmail ?? null },
+    subject: { type: "exam_attempt" as const, id: examAttemptId },
+  };
+
   try {
     await reconcileExamAttemptCompletion(
       {
@@ -108,7 +136,20 @@ export async function handleSuspendExam(
     if (!reconciledAttempt) {
       return { status: 404, body: { error: "exam attempt not found" } };
     }
+    anchors = anchorsForAttempt(reconciledAttempt, deps.candidateEmail);
     if (reconciledAttempt.status !== "in_progress") {
+      await deps.diagnostics?.record({
+        ...anchors,
+        level: "warn",
+        operation: "exam_attempt.suspend",
+        outcome: "failure",
+        message: "Exam suspend failed",
+        details: {
+          failureMode: "invalid_status",
+          expectedStatus: "in_progress",
+          currentStatus: reconciledAttempt.status,
+        },
+      });
       return {
         status: 409,
         body: {
@@ -138,10 +179,33 @@ export async function handleSuspendExam(
         ),
       },
     );
-    deps.logger.info("exam suspended", { examAttemptId });
+    await deps.diagnostics?.record({ ...anchors, level: "info", operation: "exam_attempt.suspend", outcome: "success", message: "Exam suspended" });
+    deps.logger.info("exam suspended", {
+      examAttemptId,
+      customerId: anchors.customerId,
+      examId: anchors.examId,
+      candidateEmail: anchors.candidateEmail,
+    });
     return { status: 200, body: { status: "suspended", examAttemptId } };
   } catch (err) {
-    return handleTimerSyncError(deps, err, "suspend", examAttemptId);
+    const resp = await handleTimerSyncError(deps, err, "suspend", examAttemptId, anchors);
+    if (resp.status !== 200) {
+      const correlationId =
+        typeof resp.body.correlationId === "string" ? resp.body.correlationId : undefined;
+      await deps.diagnostics?.record({
+        ...anchors,
+        level: "warn",
+        operation: "exam_attempt.suspend",
+        outcome: "failure",
+        message: "Exam suspend failed",
+        details: {
+          error: err instanceof Error ? err.message : String(err),
+          ...(correlationId ? { correlationId } : {}),
+          ...extractRuntimeFailureDetails(err, "suspend", examAttemptId),
+        },
+      });
+    }
+    return resp;
   }
 }
 
@@ -168,6 +232,17 @@ export async function handleResumeExam(
     return { status: 400, body: { error: "examAttemptId is required" } };
   }
 
+  let anchors: RuntimeDiagnosticAnchors = {
+    source: "runtime" as const,
+    customerId: null as string | null,
+    candidateEmail: deps.candidateEmail ?? null,
+    examId: null as string | null,
+    examAttemptId,
+    correlationId: null as string | null,
+    actor: { type: "candidate" as const, id: null as string | null, email: deps.candidateEmail ?? null },
+    subject: { type: "exam_attempt" as const, id: examAttemptId },
+  };
+
   try {
     await reconcileExamAttemptCompletion(
       {
@@ -181,7 +256,27 @@ export async function handleResumeExam(
     if (!reconciledAttempt) {
       return { status: 404, body: { error: "exam attempt not found" } };
     }
+    anchors = anchorsForAttempt(reconciledAttempt, deps.candidateEmail);
+    if (reconciledAttempt.status === "in_progress") {
+      const launch = await deps.launches.findByExamAttemptId(examAttemptId);
+      return buildAlreadyActiveResumeResponse(deps, examAttemptId, anchors, launch, {
+        currentStatus: reconciledAttempt.status,
+        recoveryReason: "attempt_already_in_progress",
+      });
+    }
     if (reconciledAttempt.status !== "suspended") {
+      await deps.diagnostics?.record({
+        ...anchors,
+        level: "warn",
+        operation: "exam_attempt.resume",
+        outcome: "failure",
+        message: "Exam resume failed",
+        details: {
+          failureMode: "invalid_status",
+          expectedStatus: "suspended",
+          currentStatus: reconciledAttempt.status,
+        },
+      });
       return {
         status: 409,
         body: {
@@ -211,21 +306,47 @@ export async function handleResumeExam(
         ),
       },
     );
+    await deps.diagnostics?.record({ ...anchors, level: "info", operation: "exam_attempt.resume", outcome: "success", message: "Exam resumed" });
     deps.logger.info("exam resumed", {
       examAttemptId,
+      customerId: anchors.customerId,
+      examId: anchors.examId,
+      candidateEmail: anchors.candidateEmail,
       environmentExternalId: result.environmentExternalId,
     });
     return {
       status: 200,
       body: {
         status: "resumed",
+        resumeDisposition: "resumed" satisfies ResumeDisposition,
         examAttemptId,
         environmentExternalId: result.environmentExternalId,
         suspendedPreservationLimitMs: result.suspendedPreservationLimitMs,
       },
     };
   } catch (err) {
-    return handleTimerSyncError(deps, err, "resume", examAttemptId);
+    const recovered = await tryRecoverAlreadyActiveResume(deps, examAttemptId, anchors, err);
+    if (recovered) {
+      return recovered;
+    }
+    const resp = await handleTimerSyncError(deps, err, "resume", examAttemptId, anchors);
+    if (resp.status !== 200) {
+      const correlationId =
+        typeof resp.body.correlationId === "string" ? resp.body.correlationId : undefined;
+      await deps.diagnostics?.record({
+        ...anchors,
+        level: "warn",
+        operation: "exam_attempt.resume",
+        outcome: "failure",
+        message: "Exam resume failed",
+        details: {
+          error: err instanceof Error ? err.message : String(err),
+          ...(correlationId ? { correlationId } : {}),
+          ...extractRuntimeFailureDetails(err, "resume", examAttemptId),
+        },
+      });
+    }
+    return resp;
   }
 }
 
@@ -233,6 +354,16 @@ export async function runHeartbeatAutoSuspend(
   deps: HeartbeatAutoSuspendHandlerDeps,
   examAttemptId: string,
 ): Promise<void> {
+  const attempt = await deps.attempts.findById(examAttemptId);
+  const anchors = {
+    source: "runtime" as const,
+    customerId: attempt?.customerId ?? null,
+    candidateEmail: deps.candidateEmail ?? null,
+    examId: attempt?.examId ?? null,
+    examAttemptId,
+    actor: { type: "candidate" as const, id: attempt?.candidateId ?? null, email: deps.candidateEmail ?? null },
+    subject: { type: "exam_attempt" as const, id: examAttemptId },
+  };
   try {
     const correlation = await ensureExamAttemptEnvironmentCorrelation(deps, {
       examAttemptId,
@@ -252,11 +383,21 @@ export async function runHeartbeatAutoSuspend(
         ),
       },
     );
+    await deps.diagnostics?.record({ ...anchors, level: "info", operation: "exam_attempt.heartbeat_auto_suspend", outcome: "success", message: "Exam auto-suspended by heartbeat expiry" });
   } catch (err) {
+    await deps.diagnostics?.record({
+      ...anchors,
+      level: "warn",
+      operation: "exam_attempt.heartbeat_auto_suspend",
+      outcome: "failure",
+      message: "Heartbeat auto-suspend failed",
+      details: { error: err instanceof Error ? err.message : String(err) },
+    });
     await reportFailureDiagnostic(
       deps,
       err,
       examAttemptId,
+      anchors,
       {
         action: "suspend",
         operation: "heartbeat_auto_suspend",
@@ -337,11 +478,121 @@ async function requireVerifiedEnvironmentExternalId(
   });
 }
 
+async function tryRecoverAlreadyActiveResume(
+  deps: ResumeHandlerDeps,
+  examAttemptId: string,
+  anchors: RuntimeDiagnosticAnchors,
+  err: unknown,
+): Promise<SuspendResumeResponse | null> {
+  if (!isCloudShareFailure(err)) {
+    return null;
+  }
+
+  try {
+    const launch = await deps.launches.findByExamAttemptId(examAttemptId);
+    if (!launch) {
+      return null;
+    }
+
+    const access = await resolveCustomerEnvironmentAccess(deps, examAttemptId);
+    const environmentExternalId =
+      launch.environmentExternalId ?? launch.environmentId ?? null;
+    if (!environmentExternalId) {
+      return null;
+    }
+
+    const snapshot = await access.source.getEnvironmentState(environmentExternalId);
+    if (!snapshot || (snapshot.status !== "running" && snapshot.status !== "created")) {
+      return null;
+    }
+
+    await deps.timer.resumeTimer(examAttemptId);
+    const attempt = await deps.attempts.findById(examAttemptId);
+    if (attempt) {
+      await deps.attempts.save({
+        ...attempt,
+        status: "in_progress",
+      });
+    }
+
+    return buildAlreadyActiveResumeResponse(deps, examAttemptId, anchors, launch, {
+      currentStatus: attempt?.status ?? "suspended",
+      environmentStatus: snapshot.status,
+      recoveryReason: "cloudshare_reported_already_active",
+      supportContext: extractRuntimeFailureDetails(err, "resume", examAttemptId),
+    });
+  } catch {
+    return null;
+  }
+}
+
+async function buildAlreadyActiveResumeResponse(
+  deps: Pick<ResumeHandlerDeps, "diagnostics" | "logger">,
+  examAttemptId: string,
+  anchors: RuntimeDiagnosticAnchors,
+  launch:
+    | {
+        readonly environmentExternalId?: string;
+        readonly environmentId?: string;
+        readonly trainingId?: string;
+        readonly experienceId?: string;
+      }
+    | null,
+  input: {
+    readonly currentStatus: string;
+    readonly recoveryReason: string;
+    readonly environmentStatus?: string;
+    readonly supportContext?: Record<string, unknown>;
+  },
+): Promise<SuspendResumeResponse> {
+  const environmentExternalId =
+    launch?.environmentExternalId ?? launch?.environmentId ?? undefined;
+  await deps.diagnostics?.record({
+    ...anchors,
+    level: "info",
+    operation: "exam_attempt.resume",
+    outcome: "success",
+    message: "Exam resume requested while already active",
+    externalIds: {
+      ...(environmentExternalId ? { environmentId: environmentExternalId } : {}),
+      ...(launch?.trainingId ? { trainingId: launch.trainingId } : {}),
+      ...(launch?.experienceId ? { experienceId: launch.experienceId } : {}),
+    },
+    details: {
+      idempotent: true,
+      currentStatus: input.currentStatus,
+      resumeDisposition: "already_active",
+      recoveryReason: input.recoveryReason,
+      ...(input.environmentStatus ? { environmentStatus: input.environmentStatus } : {}),
+      ...(input.supportContext ? { supportContext: input.supportContext } : {}),
+    },
+  });
+  deps.logger.info("exam resume returned idempotent success", {
+    examAttemptId,
+    customerId: anchors.customerId,
+    examId: anchors.examId,
+    candidateEmail: anchors.candidateEmail,
+    environmentExternalId,
+    recoveryReason: input.recoveryReason,
+  });
+  return {
+    status: 200,
+    body: {
+      status: "resumed",
+      resumeDisposition: "already_active" satisfies ResumeDisposition,
+      examAttemptId,
+      environmentExternalId,
+      suspendedPreservationLimitMs: SUSPENDED_PRESERVATION_LIMIT_MS,
+    },
+  };
+}
+
 async function handleTimerSyncError(
   deps: SupportDiagnosticDeps,
   err: unknown,
   action: "suspend" | "resume",
   examAttemptId: string,
+  anchors?: Pick<RuntimeDiagnosticAnchors, "customerId" | "candidateEmail" | "examId">,
 ): Promise<SuspendResumeResponse> {
   if (err instanceof LabLaunchNotFoundError) {
     return { status: 404, body: { error: "no lab launch found for exam attempt" } };
@@ -359,6 +610,7 @@ async function handleTimerSyncError(
     deps,
     err,
     examAttemptId,
+    anchors,
     {
       action,
       operation: `exam_${action}`,
@@ -374,6 +626,9 @@ async function handleTimerSyncError(
   const diagnostic = {
     correlationId,
     examAttemptId,
+    customerId: anchors?.customerId ?? null,
+    examId: anchors?.examId ?? null,
+    candidateEmail: anchors?.candidateEmail ?? null,
     operation: `exam_${action}`,
     attemptedOperation: `${action}_exam`,
     failureMode: "unexpected_internal_error",
@@ -393,6 +648,7 @@ async function reportFailureDiagnostic(
   deps: SupportDiagnosticDeps,
   err: unknown,
   examAttemptId: string,
+  anchors: Pick<RuntimeDiagnosticAnchors, "customerId" | "candidateEmail" | "examId"> | undefined,
   spec: FailureHandlingSpec,
 ): Promise<SuspendResumeResponse | null> {
   if (err instanceof CustomerEnvironmentAccessError) {
@@ -400,6 +656,9 @@ async function reportFailureDiagnostic(
     const diagnostic = {
       correlationId,
       examAttemptId,
+      customerId: anchors?.customerId ?? null,
+      examId: anchors?.examId ?? null,
+      candidateEmail: anchors?.candidateEmail ?? null,
       operation: spec.operation,
       attemptedOperation: "load_customer_cloudshare_connection",
       integrationSurface: "cloudshare.connection",
@@ -425,6 +684,7 @@ async function reportFailureDiagnostic(
       spec.operation,
       examAttemptId,
       err,
+      anchors,
     );
     await deps.eventLog.append({
       eventId: correlationId,
@@ -444,6 +704,7 @@ async function reportFailureDiagnostic(
       spec.operation,
       examAttemptId,
       err,
+      anchors,
     );
     await deps.eventLog.append({
       eventId: correlationId,
@@ -464,11 +725,15 @@ function buildTimerSyncDiagnostic(
   operation: string,
   examAttemptId: string,
   err: TimerSyncError,
+  anchors?: Pick<RuntimeDiagnosticAnchors, "customerId" | "candidateEmail" | "examId">,
 ): Record<string, unknown> {
   if (err.context?.failureMode === "not_correlated_yet") {
     return {
       correlationId,
       examAttemptId,
+      customerId: anchors?.customerId ?? null,
+      examId: anchors?.examId ?? null,
+      candidateEmail: anchors?.candidateEmail ?? null,
       operation,
       attemptedOperation: err.context?.attemptedOperation ?? "resolve_environment_correlation",
       integrationSurface:
@@ -487,6 +752,9 @@ function buildTimerSyncDiagnostic(
   return {
     correlationId,
     examAttemptId,
+    customerId: anchors?.customerId ?? null,
+    examId: anchors?.examId ?? null,
+    candidateEmail: anchors?.candidateEmail ?? null,
     operation,
     attemptedOperation: "poll_environment_status",
     integrationSurface: "cloudshare.v3.env",
@@ -507,6 +775,7 @@ function buildCloudShareDiagnostic(
   operation: string,
   examAttemptId: string,
   err: CloudShareRequestError | CloudShareTransportError | CloudShareResponseError,
+  anchors?: Pick<RuntimeDiagnosticAnchors, "customerId" | "candidateEmail" | "examId">,
 ): Record<string, unknown> {
   const staticSpec =
     action === "suspend"
@@ -532,6 +801,9 @@ function buildCloudShareDiagnostic(
   const base = {
     correlationId,
     examAttemptId,
+    customerId: anchors?.customerId ?? null,
+    examId: anchors?.examId ?? null,
+    candidateEmail: anchors?.candidateEmail ?? null,
     operation,
     attemptedOperation: staticSpec.attemptedOperation,
     integrationSurface: err.context?.integrationSurface ?? staticSpec.integrationSurface,
@@ -585,6 +857,74 @@ function isCloudShareFailure(
     err instanceof CloudShareTransportError ||
     err instanceof CloudShareResponseError
   );
+}
+
+function anchorsForAttempt(
+  attempt: {
+    readonly id: string;
+    readonly customerId?: string;
+    readonly candidateId: string;
+    readonly examId: string;
+  },
+  candidateEmail?: string,
+): RuntimeDiagnosticAnchors {
+  return {
+    source: "runtime",
+    customerId: attempt.customerId ?? null,
+    candidateEmail: candidateEmail ?? null,
+    examId: attempt.examId ?? null,
+    examAttemptId: attempt.id,
+    correlationId: null,
+    actor: { type: "candidate", id: attempt.candidateId ?? null, email: candidateEmail ?? null },
+    subject: { type: "exam_attempt", id: attempt.id },
+  };
+}
+
+function extractRuntimeFailureDetails(
+  err: unknown,
+  action: "suspend" | "resume",
+  examAttemptId: string,
+): Record<string, unknown> {
+  if (err instanceof CustomerEnvironmentAccessError) {
+    return {
+      attemptedOperation: "load_customer_cloudshare_connection",
+      integrationSurface: "cloudshare.connection",
+      failureMode: "missing_customer_connection",
+    };
+  }
+  if (err instanceof InvalidExamAttemptStatusError) {
+    return {
+      failureMode: "invalid_status",
+      expectedStatus: err.context?.expectedStatus,
+      currentStatus: err.context?.currentStatus,
+    };
+  }
+  if (err instanceof TimerSyncError) {
+    return stripDiagnosticEnvelope(
+      buildTimerSyncDiagnostic("", action, `exam_${action}`, examAttemptId, err),
+    );
+  }
+  if (isCloudShareFailure(err)) {
+    return stripDiagnosticEnvelope(
+      buildCloudShareDiagnostic("", action, `exam_${action}`, examAttemptId, err),
+    );
+  }
+  return {};
+}
+
+function stripDiagnosticEnvelope(
+  diagnostic: Record<string, unknown>,
+): Record<string, unknown> {
+  const {
+    correlationId: _correlationId,
+    examAttemptId: _examAttemptId,
+    customerId: _customerId,
+    examId: _examId,
+    candidateEmail: _candidateEmail,
+    operation: _operation,
+    ...rest
+  } = diagnostic;
+  return rest;
 }
 
 function emptyExamRepository(): ExamRepository {

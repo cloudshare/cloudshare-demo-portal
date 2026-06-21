@@ -34,6 +34,7 @@ export const CLOUDSHARE_DEFAULT_ENDPOINTS: CloudShareEndpoints = {
 export type CloudShareMode = "live" | "fixture";
 
 export interface CloudShareConnectionCredentials {
+  readonly customerId?: string;
   readonly apiId: string;
   readonly apiKey: string;
   readonly webhookSecret: string;
@@ -42,6 +43,7 @@ export interface CloudShareConnectionCredentials {
 export interface CloudShareIntegrationOptions {
   /** "live" makes real calls; "fixture" replays the recorded corpus. */
   readonly mode: CloudShareMode;
+  readonly customerId?: string;
   readonly v4: { readonly clientId: string; readonly clientSecret: string };
   readonly v3: { readonly apiId: string; readonly apiKey: string };
   readonly endpoints?: CloudShareEndpoints;
@@ -73,6 +75,7 @@ export function createCloudShareIntegration(
     http,
     endpoints,
     tokenProvider,
+    customerId: opts.customerId,
     v3: opts.v3,
     trace: opts.trace,
   });
@@ -89,6 +92,7 @@ export function createCloudShareIntegrationForConnection(
     mode: opts.mode,
     endpoints: opts.endpoints,
     trace: opts.trace,
+    customerId: opts.connection.customerId,
     v3: {
       apiId: opts.connection.apiId,
       apiKey: opts.connection.apiKey,

@@ -45,6 +45,7 @@ export async function GET(request: Request) {
         ),
       logger: services.logger,
       limitations: SCORING_LIMITATIONS,
+      diagnostics: services.diagnosticRecorder,
     },
     { query, session },
   );

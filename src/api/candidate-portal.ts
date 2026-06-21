@@ -258,6 +258,7 @@ export async function handleScheduleCandidateExam(
 
     deps.logger.info("candidate exam scheduled", {
       correlationId,
+      customerId: request.customerId,
       operation: "schedule_exam",
       candidateId: request.candidateId,
       examId: result.attempt.examId,
@@ -297,6 +298,7 @@ export async function handleScheduleCandidateExam(
     if (error instanceof CloudShareProvisioningError) {
       const diagnostic: Record<string, unknown> = {
         correlationId,
+        customerId: request.customerId,
         candidateId: request.candidateId,
         examAttemptId: error.context.attemptId,
         operation: "schedule_exam",

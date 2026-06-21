@@ -319,6 +319,7 @@ export function getServices(): Services {
         mode: config.runtime.mode,
         trace: traceCloudShare,
         connection: {
+          customerId: connection.customerId,
           apiId: connection.apiId,
           apiKey: connection.apiKey,
           webhookSecret: connection.webhookSecret,
@@ -343,6 +344,7 @@ export function getServices(): Services {
           eventLog,
           connections: cloudshareConnections,
           cloudshare: cloudshareClientFactory,
+          diagnostics: diagnosticRecorder,
           now: () => new Date(),
           sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
         },

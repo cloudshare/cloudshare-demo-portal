@@ -75,6 +75,7 @@ describe("createCloudShareClient — v4", () => {
       tokenProvider: stubTokenProvider,
       v3: { apiId: "api-id", apiKey: "api-key" },
       trace,
+      customerId: "customer-helios",
     });
 
     await client.requestV4({
@@ -95,6 +96,7 @@ describe("createCloudShareClient — v4", () => {
         method: "POST",
         path: "/v4/trainings",
         integrationSurface: "cloudshare.v4",
+        customerId: "customer-helios",
         requestHeaders: {
           authorization: "Bearer [REDACTED]",
           "content-type": "application/json",
@@ -133,6 +135,48 @@ describe("createCloudShareClient — v4", () => {
     expect(responseTrace).toEqual(
       expect.objectContaining({
         responseBody: "{\"loginUrl\":\"[REDACTED]\"}",
+      }),
+    );
+  });
+
+  it("includes customerId in CloudShare HTTP trace fields for customer-scoped v4 reads", async () => {
+    const trace = vi.fn();
+    const { http } = capturingHttp(ok({ percentComplete: 80 }));
+    const client = createCloudShareClient({
+      http,
+      endpoints,
+      tokenProvider: stubTokenProvider,
+      v3: { apiId: "api-id", apiKey: "api-key" },
+      trace,
+      customerId: "customer-helios",
+    });
+
+    await client.requestV4({
+      method: "GET",
+      path: "/guided-journey/progress/exp-1/student-1",
+      schema: z.object({ percentComplete: z.number() }),
+    });
+
+    expect(trace).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        message: "cloudshare request sent",
+        fields: expect.objectContaining({
+          customerId: "customer-helios",
+          path: "/v4/guided-journey/progress/exp-1/student-1",
+          integrationSurface: "cloudshare.v4",
+        }),
+      }),
+    );
+    expect(trace).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        message: "cloudshare response received",
+        fields: expect.objectContaining({
+          customerId: "customer-helios",
+          path: "/v4/guided-journey/progress/exp-1/student-1",
+          integrationSurface: "cloudshare.v4",
+        }),
       }),
     );
   });
@@ -185,6 +229,7 @@ describe("createCloudShareClient — v3", () => {
       newToken: () => "tokfixed01",
       now: () => 1_700_000_000_000,
       trace,
+      customerId: "customer-helios",
     });
 
     await client.requestV3Text({
@@ -201,6 +246,7 @@ describe("createCloudShareClient — v3", () => {
         host: "use.cloudshare.com",
         path: "/api/v3/ping",
         integrationSurface: "cloudshare.v3",
+        customerId: "customer-helios",
         requestHeaders: {
           authorization:
             "cs_sha1 userapiid:api-id;timestamp:1700000000;token:[REDACTED];hmac:[REDACTED]",
@@ -216,6 +262,7 @@ describe("createCloudShareClient — v3", () => {
         host: "use.cloudshare.com",
         path: "/api/v3/ping",
         integrationSurface: "cloudshare.v3",
+        customerId: "customer-helios",
         requestHeaders: {
           authorization:
             "cs_sha1 userapiid:api-id;timestamp:1700000000;token:[REDACTED];hmac:[REDACTED]",

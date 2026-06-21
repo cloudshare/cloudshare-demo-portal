@@ -39,6 +39,8 @@ export async function GET(request: Request) {
       launches: services.labLaunches,
       timer: services.examClock,
       logger: services.logger,
+      diagnostics: services.diagnosticRecorder,
+      candidateEmail: session.email ?? undefined,
     },
     {
       examAttemptId,

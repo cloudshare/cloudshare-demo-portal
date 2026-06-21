@@ -955,10 +955,10 @@ describe("handleResumeExam", () => {
     );
   });
 
-  it("returns 409 when resume is requested outside the suspended state", async () => {
+  it("returns 409 when resume is requested from a non-resumable status", async () => {
     const resp = await handleResumeExam(
       await makeResumeDeps({
-        attempts: await makeAttempts("in_progress"),
+        attempts: await makeAttempts("ready"),
       }),
       { body: { examAttemptId: "ea-1" } },
     );
@@ -966,8 +966,176 @@ describe("handleResumeExam", () => {
     expect(resp.body).toMatchObject({
       error: "Exam attempt is not in a valid status for this transition",
       expectedStatus: "suspended",
-      currentStatus: "in_progress",
+      currentStatus: "ready",
     });
+  });
+
+  it("treats a repeated resume request after a successful resume as idempotent", async () => {
+    const customerClient = makeCloudShareClient({
+      requestV3: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+        if (spec.path === "/envs/actions/resume") {
+          return spec.schema.parse({});
+        }
+        if (spec.path.startsWith("/envs/")) {
+          return spec.schema.parse({ envStatus: "Running" });
+        }
+        throw new Error(`unexpected v3 path ${spec.path}`);
+      }) as unknown as CloudShareClient["requestV3"],
+      requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+        if (spec.path === "/trainings/EXtraining-1/students") {
+          return spec.schema.parse([
+            {
+              email: "candidate@helioscx.demo",
+              environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+              environmentStatus: "ready",
+            },
+          ]);
+        }
+        throw new Error(`unexpected v4 path ${spec.path}`);
+      }) as unknown as CloudShareClient["requestV4"],
+    });
+    const timer = {
+      pauseTimer: vi.fn(),
+      resumeTimer: vi.fn().mockResolvedValue(undefined),
+    };
+    const deps = await makeResumeDeps({
+      timer,
+      cloudshare: {
+        forConnection: vi.fn().mockReturnValue(customerClient),
+      },
+    });
+
+    const first = await handleResumeExam(deps, { body: { examAttemptId: "ea-1" } });
+    const second = await handleResumeExam(deps, { body: { examAttemptId: "ea-1" } });
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    expect(second.body).toMatchObject({
+      status: "resumed",
+      examAttemptId: "ea-1",
+    });
+    expect(timer.resumeTimer).toHaveBeenCalledTimes(1);
+    expect(customerClient.requestV3Text).toHaveBeenCalledTimes(1);
+  });
+
+  it("recovers a duplicate fast resume when CloudShare rejects the action but the environment is already active", async () => {
+    const customerClient = makeCloudShareClient({
+      requestV3Text: vi.fn(async () => {
+        throw new CloudShareRequestError("already resumed", 409, {
+          integrationSurface: "cloudshare.v3.env.action.resume",
+          method: "PUT",
+          path: "/api/v3/envs/actions/resume",
+          environmentExternalId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+          responseBody: "{\"error\":\"already running\"}",
+        });
+      }) as unknown as CloudShareClient["requestV3Text"],
+      requestV3: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+        if (spec.path.startsWith("/envs/")) {
+          return spec.schema.parse({ envStatus: "Running" });
+        }
+        throw new Error(`unexpected v3 path ${spec.path}`);
+      }) as unknown as CloudShareClient["requestV3"],
+      requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+        if (spec.path === "/trainings/EXtraining-1/students") {
+          return spec.schema.parse([
+            {
+              email: "candidate@helioscx.demo",
+              environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+              environmentStatus: "ready",
+            },
+          ]);
+        }
+        throw new Error(`unexpected v4 path ${spec.path}`);
+      }) as unknown as CloudShareClient["requestV4"],
+    });
+    const timer = {
+      pauseTimer: vi.fn(),
+      resumeTimer: vi.fn().mockResolvedValue(undefined),
+    };
+    const deps = await makeResumeDeps({
+      timer,
+      cloudshare: {
+        forConnection: vi.fn().mockReturnValue(customerClient),
+      },
+    });
+
+    const resp = await handleResumeExam(deps, { body: { examAttemptId: "ea-1" } });
+
+    expect(resp.status).toBe(200);
+    expect(resp.body).toMatchObject({
+      status: "resumed",
+      resumeDisposition: "already_active",
+      examAttemptId: "ea-1",
+      environmentExternalId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+    });
+    expect(timer.resumeTimer).toHaveBeenCalledTimes(1);
+    await expect(deps.attempts.findById("ea-1")).resolves.toMatchObject({
+      status: "in_progress",
+    });
+    expect(deps.eventLog.append).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the normal CloudShare failure diagnostic when already-active recovery itself fails", async () => {
+    const customerClient = makeCloudShareClient({
+      requestV3Text: vi.fn(async () => {
+        throw new CloudShareRequestError("already resumed", 409, {
+          integrationSurface: "cloudshare.v3.env.action.resume",
+          method: "PUT",
+          path: "/api/v3/envs/actions/resume",
+          environmentExternalId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+          responseBody: "{\"error\":\"already running\"}",
+        });
+      }) as unknown as CloudShareClient["requestV3Text"],
+      requestV3: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+        if (spec.path.startsWith("/envs/")) {
+          return spec.schema.parse({ envStatus: "Running" });
+        }
+        throw new Error(`unexpected v3 path ${spec.path}`);
+      }) as unknown as CloudShareClient["requestV3"],
+      requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+        if (spec.path === "/trainings/EXtraining-1/students") {
+          return spec.schema.parse([
+            {
+              email: "candidate@helioscx.demo",
+              environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+              environmentStatus: "ready",
+            },
+          ]);
+        }
+        throw new Error(`unexpected v4 path ${spec.path}`);
+      }) as unknown as CloudShareClient["requestV4"],
+    });
+    const deps = await makeResumeDeps({
+      timer: {
+        pauseTimer: vi.fn(),
+        resumeTimer: vi.fn().mockRejectedValue(new Error("timer unavailable")),
+      },
+      cloudshare: {
+        forConnection: vi.fn().mockReturnValue(customerClient),
+      },
+    });
+
+    const resp = await handleResumeExam(deps, { body: { examAttemptId: "ea-1" } });
+
+    expect(resp.status).toBe(502);
+    expect(resp.body).toEqual({ error: "exam resume failed", correlationId: "corr-resume" });
+    expect(deps.eventLog.append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventId: "corr-resume",
+        type: "cloudshare.exam_resume.failed",
+        payload: expect.objectContaining({
+          correlationId: "corr-resume",
+          operation: "exam_resume",
+          attemptedOperation: "resume_environment",
+          integrationSurface: "cloudshare.v3.env.action.resume",
+          method: "PUT",
+          path: "/api/v3/envs/actions/resume",
+          failureMode: "http_status",
+          responseStatus: 409,
+          responseBody: "{\"error\":\"already running\"}",
+        }),
+      }),
+    );
   });
 
   it("does not call CloudShare resume with a persisted placeholder envId when participant refresh finds no matching active participant", async () => {

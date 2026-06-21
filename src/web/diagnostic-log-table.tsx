@@ -1,0 +1,178 @@
+import React, { Fragment, useMemo } from "react";
+
+export interface DiagnosticLogTableEntry {
+  id: string;
+  occurredAt: string;
+  level: "debug" | "info" | "warn" | "error";
+  source: string;
+  operation: string;
+  outcome: "success" | "failure";
+  customerId: string | null;
+  actor: { type: string; id?: string | null; email?: string | null } | null;
+  subject: { type: string; id?: string | null } | null;
+  message: string;
+  correlationId: string | null;
+  candidateEmail: string | null;
+  examId: string | null;
+  examAttemptId: string | null;
+  externalIds?: Record<string, string> | null;
+  request?: Record<string, unknown> | null;
+  response?: Record<string, unknown> | null;
+  details?: Record<string, unknown> | null;
+}
+
+export interface DiagnosticLogTableProps {
+  readonly entries: readonly DiagnosticLogTableEntry[];
+  readonly expandedDiagnosticId: string | null;
+  readonly onToggleExpanded: (id: string) => void;
+}
+
+const MAX_RENDERED_DETAIL_CHARS = 12_000;
+
+function hasStructuredContent(value: Record<string, unknown> | Record<string, string> | null | undefined): boolean {
+  return !!value && Object.keys(value).length > 0;
+}
+
+function formatStructuredValue(value: Record<string, unknown> | Record<string, string>): {
+  readonly text: string;
+  readonly truncated: boolean;
+  readonly omittedCharacters: number;
+} {
+  const pretty = JSON.stringify(value, null, 2);
+  if (pretty.length <= MAX_RENDERED_DETAIL_CHARS) {
+    return { text: pretty, truncated: false, omittedCharacters: 0 };
+  }
+
+  return {
+    text: `${pretty.slice(0, MAX_RENDERED_DETAIL_CHARS)}\n... truncated`,
+    truncated: true,
+    omittedCharacters: pretty.length - MAX_RENDERED_DETAIL_CHARS,
+  };
+}
+
+function formatActor(actor: DiagnosticLogTableEntry["actor"]): string {
+  return actor ? `${actor.type}${actor.email ? ` (${actor.email})` : ""}` : "—";
+}
+
+function formatSubject(subject: DiagnosticLogTableEntry["subject"]): string {
+  return subject ? `${subject.type}${subject.id ? ` (${subject.id})` : ""}` : "—";
+}
+
+function StructuredDetailBlock(props: {
+  readonly label: string;
+  readonly value: Record<string, unknown> | Record<string, string>;
+}) {
+  const formatted = useMemo(() => formatStructuredValue(props.value), [props.value]);
+
+  return (
+    <div>
+      <strong>{props.label}</strong>
+      <pre
+        style={{
+          margin: "0.25rem 0 0.75rem",
+          whiteSpace: "pre-wrap",
+          maxHeight: "20rem",
+          overflow: "auto",
+        }}
+      >
+        {formatted.text}
+      </pre>
+      {formatted.truncated && (
+        <div style={{ marginTop: "-0.5rem", marginBottom: "0.75rem", color: "#666" }}>
+          Detail output truncated in the table view ({formatted.omittedCharacters.toLocaleString()} more characters omitted).
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function DiagnosticLogTable({
+  entries,
+  expandedDiagnosticId,
+  onToggleExpanded,
+}: DiagnosticLogTableProps) {
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
+        <thead>
+          <tr style={{ textAlign: "left", borderBottom: "2px solid #ddd" }}>
+            <th style={{ padding: "0.4rem" }}>Occurred (UTC)</th>
+            <th style={{ padding: "0.4rem" }}>Level</th>
+            <th style={{ padding: "0.4rem" }}>Source</th>
+            <th style={{ padding: "0.4rem" }}>Operation</th>
+            <th style={{ padding: "0.4rem" }}>Outcome</th>
+            <th style={{ padding: "0.4rem" }}>Customer</th>
+            <th style={{ padding: "0.4rem" }}>Actor</th>
+            <th style={{ padding: "0.4rem" }}>Subject</th>
+            <th style={{ padding: "0.4rem" }}>Candidate</th>
+            <th style={{ padding: "0.4rem" }}>Correlation</th>
+            <th style={{ padding: "0.4rem" }}>Message</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.length === 0 && (
+            <tr>
+              <td colSpan={11} style={{ padding: "0.75rem", color: "#666" }}>
+                No diagnostic entries yet.
+              </td>
+            </tr>
+          )}
+          {entries.map((entry) => {
+            const isExpanded = expandedDiagnosticId === entry.id;
+            const sections = [
+              hasStructuredContent(entry.externalIds) ? { label: "External IDs", value: entry.externalIds! } : null,
+              hasStructuredContent(entry.request) ? { label: "Request", value: entry.request! } : null,
+              hasStructuredContent(entry.response) ? { label: "Response", value: entry.response! } : null,
+              hasStructuredContent(entry.details) ? { label: "Details", value: entry.details! } : null,
+            ].filter((section): section is { label: string; value: Record<string, unknown> | Record<string, string> } => section !== null);
+
+            return (
+              <Fragment key={entry.id}>
+                <tr
+                  style={{ borderBottom: "1px solid #eee", verticalAlign: "top", cursor: "pointer" }}
+                  onClick={() => onToggleExpanded(entry.id)}
+                >
+                  <td style={{ padding: "0.4rem", fontFamily: "monospace", whiteSpace: "nowrap", cursor: "pointer" }}>
+                    {isExpanded ? "▼ " : "▶ "}
+                    {entry.occurredAt}
+                  </td>
+                  <td style={{ padding: "0.4rem" }}>{entry.level}</td>
+                  <td style={{ padding: "0.4rem" }}>{entry.source}</td>
+                  <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{entry.operation}</td>
+                  <td
+                    style={{
+                      padding: "0.4rem",
+                      color: entry.outcome === "failure" ? "#b00020" : "#0a7",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {entry.outcome}
+                  </td>
+                  <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{entry.customerId ?? "—"}</td>
+                  <td style={{ padding: "0.4rem" }}>{formatActor(entry.actor)}</td>
+                  <td style={{ padding: "0.4rem" }}>{formatSubject(entry.subject)}</td>
+                  <td style={{ padding: "0.4rem" }}>{entry.candidateEmail ?? "—"}</td>
+                  <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{entry.correlationId ?? "—"}</td>
+                  <td style={{ padding: "0.4rem" }}>{entry.message}</td>
+                </tr>
+                {isExpanded && (
+                  <tr key={`${entry.id}-detail`}>
+                    <td colSpan={11} style={{ padding: "0.5rem 1rem", background: "#f7f7f7", fontFamily: "monospace", fontSize: "0.78rem" }}>
+                      {sections.length > 0 ? (
+                        sections.map((section) => (
+                          <StructuredDetailBlock key={section.label} label={section.label} value={section.value} />
+                        ))
+                      ) : (
+                        <span style={{ color: "#888" }}>No additional detail.</span>
+                      )}
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}

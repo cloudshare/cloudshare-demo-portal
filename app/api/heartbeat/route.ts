@@ -5,6 +5,7 @@ import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { handleHeartbeat } from "@/api/heartbeat";
 import { authorizeCandidateExamAttemptAccess } from "@/api/candidate-exam-attempt-access";
 import { reconcileExamAttemptCompletion } from "@/domain/exam-attempt-completion";
+import { getPortalSession } from "@/auth/portal-session";
 
 /**
  * Client heartbeat endpoint. The candidate page POSTs here while a lab is
@@ -48,6 +49,21 @@ export async function POST(request: Request) {
   );
   if (reconciliation?.status === "completed") {
     heartbeatAutoSuspend.removeHeartbeat(examAttemptId);
+    const portalSession = await getPortalSession(services, sessionId);
+    await services.diagnosticRecorder.record({
+      source: "runtime",
+      customerId: access.attempt.customerId ?? null,
+      candidateEmail: portalSession?.email ?? null,
+      examId: access.attempt.examId ?? null,
+      examAttemptId,
+      level: "info",
+      operation: "exam_attempt.completed",
+      outcome: "success",
+      message: "Exam attempt completed (heartbeat reconciliation)",
+      actor: { type: "candidate", id: access.attempt.candidateId ?? null, email: portalSession?.email ?? null },
+      subject: { type: "exam_attempt", id: examAttemptId },
+      details: { reason: "heartbeat_reconciliation" },
+    });
     return NextResponse.json(
       { status: "completed", attemptStatus: "completed" },
       { status: 200 },

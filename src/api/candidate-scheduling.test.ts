@@ -168,6 +168,17 @@ describe("candidate scheduling handlers", () => {
         },
       }),
     ]);
+    expect(logger.info).toHaveBeenCalledWith(
+      "candidate exam scheduled",
+      expect.objectContaining({
+        correlationId: "corr-1",
+        customerId: "customer-helios",
+        operation: "schedule_exam",
+        candidateId: "candidate-1",
+        examId: "exam-1",
+        examAttemptId: "attempt-1",
+      }),
+    );
 
     const dashboard = await handleGetCandidateDashboard(
       { repository: exams, attempts, logger },
@@ -280,6 +291,7 @@ describe("candidate scheduling handlers", () => {
       "candidate exam scheduling failed",
       expect.objectContaining({
         correlationId: "corr-2",
+        customerId: "customer-helios",
         operation: "schedule_exam",
         attemptedOperation: "add_participant",
         integrationSurface: "cloudshare.v4.training.participant",
@@ -301,6 +313,7 @@ describe("candidate scheduling handlers", () => {
         type: "cloudshare.schedule_exam.failed",
         payload: expect.objectContaining({
           correlationId: "corr-2",
+          customerId: "customer-helios",
           examAttemptId: "attempt-1",
           operation: "schedule_exam",
           integrationSurface: "cloudshare.v4.training.participant",
