@@ -17,6 +17,8 @@ import type {
 import type { Logger } from "@/observability/logger";
 import { createInMemoryExamAuthoringCacheRepository } from "@/persistence/exam-authoring-cache-repository";
 import { createInMemoryExamCatalogRepository } from "@/persistence/exam-catalog-repository";
+import { createDiagnosticRecorder, type DiagnosticRecorder } from "@/domain/diagnostic-log";
+import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import type {
   CloudShareBlueprintDetail,
   CloudShareExamAuthoringSource,
@@ -97,6 +99,18 @@ function makeCloudShareFactory(
   } as unknown as CloudShareClientFactory;
 }
 
+function makeDiagnostics(): {
+  recorder: DiagnosticRecorder;
+  repository: ReturnType<typeof createInMemoryDiagnosticLogRepository>;
+} {
+  const repository = createInMemoryDiagnosticLogRepository();
+  const recorder = createDiagnosticRecorder({
+    repository,
+    secrets: ["api-id", "api-key", "whsec"],
+  });
+  return { recorder, repository };
+}
+
 async function seedAuthoringCache(
   cache: ReturnType<typeof createInMemoryExamAuthoringCacheRepository>,
 ) {
@@ -135,12 +149,14 @@ describe("admin exam authoring handlers", () => {
   it("lists projects and global regions and caches them", async () => {
     const source = makeAuthoringSource();
     const cache = createInMemoryExamAuthoringCacheRepository();
+    const diagnostics = makeDiagnostics();
 
     const result = await handleGetExamAuthoringBootstrap(
       {
         connections: makeConnections(),
         cloudshare: makeCloudShareFactory(source),
         cache,
+        diagnostics: diagnostics.recorder,
         logger: makeLogger(),
       },
       { customerId: "customer-1", refresh: false },
@@ -170,6 +186,31 @@ describe("admin exam authoring handlers", () => {
     expect(cached.body).toMatchObject({ source: "cache" });
     expect(source.listProjects).toHaveBeenCalledTimes(1);
     expect(source.listRegions).toHaveBeenCalledTimes(1);
+
+    const entries = await diagnostics.repository.query({ customerId: "customer-1" });
+    expect(entries).toHaveLength(2);
+    expect(entries.map((entry) => entry.operation)).toEqual([
+      "cloudshare.resource_sync.projects.read",
+      "cloudshare.resource_sync.regions.read",
+    ]);
+    expect(entries[0]).toMatchObject({
+      customerId: "customer-1",
+      source: "admin-exams",
+      operation: "cloudshare.resource_sync.projects.read",
+      outcome: "success",
+      externalIds: { resourceType: "project" },
+      request: { method: "GET", path: "/projects" },
+      response: { itemCount: 1, resourceIds: ["project-1"] },
+    });
+    expect(entries[1]).toMatchObject({
+      customerId: "customer-1",
+      source: "admin-exams",
+      operation: "cloudshare.resource_sync.regions.read",
+      outcome: "success",
+      externalIds: { resourceType: "region" },
+      request: { method: "GET", path: "/regions" },
+      response: { itemCount: 3 },
+    });
   });
 
   it("lists project-scoped blueprints and policies for the selected project", async () => {
@@ -249,12 +290,14 @@ describe("admin exam authoring handlers", () => {
           }),
         ),
     });
+    const diagnostics = makeDiagnostics();
 
     const result = await handleGetProjectResources(
       {
         connections: makeConnections(),
         cloudshare: makeCloudShareFactory(source),
         cache: createInMemoryExamAuthoringCacheRepository(),
+        diagnostics: diagnostics.recorder,
         logger: makeLogger(),
       },
       { customerId: "customer-1", projectId: "project-1", refresh: true },
@@ -266,13 +309,31 @@ describe("admin exam authoring handlers", () => {
       correlationId: expect.any(String),
       occurredAt: expect.any(String),
       diagnostic: {
-        operation: "list_project_policies",
+        operation: "cloudshare.resource_sync.policies.read",
         integrationSurface: "cloudshare.v3.projects.policies",
         method: "GET",
         path: "/projects/project-1/policies",
         failureMode: "http_status",
         responseStatus: 403,
       },
+    });
+
+    const [entry] = await diagnostics.repository.query({
+      customerId: "customer-1",
+      operation: "cloudshare.resource_sync.policies.read",
+    });
+    expect(entry).toMatchObject({
+      customerId: "customer-1",
+      source: "admin-exams",
+      operation: "cloudshare.resource_sync.policies.read",
+      outcome: "failure",
+      externalIds: { resourceType: "policy", projectId: "project-1" },
+      request: {
+        method: "GET",
+        path: "/projects/project-1/policies",
+        headers: { authorization: "[REDACTED]" },
+      },
+      response: { status: 403 },
     });
   });
 
@@ -306,7 +367,7 @@ describe("admin exam authoring handlers", () => {
     expect(result.body).toMatchObject({
       error: "CloudShare resource request failed.",
       diagnostic: {
-        operation: "get_blueprint_detail",
+        operation: "cloudshare.resource_sync.blueprint_detail.read",
         integrationSurface: "cloudshare.v3.projects.blueprint_detail",
         method: "GET",
         path: "/projects/project-1/blueprints/bp-1",
@@ -321,10 +382,16 @@ describe("admin exam catalog handlers", () => {
     id: "instructor-1",
     name: "Helios Service Account",
   };
+  const adminActor = {
+    type: "admin",
+    id: "admin-1",
+    email: "admin@helioscx.demo",
+  } as const;
 
   it("creates a draft exam and returns it", async () => {
     const repository = createInMemoryExamCatalogRepository();
     const cache = createInMemoryExamAuthoringCacheRepository();
+    const diagnostics = makeDiagnostics();
     await seedAuthoringCache(cache);
 
     const result = await handleCreateDraftExam(
@@ -332,12 +399,14 @@ describe("admin exam catalog handlers", () => {
         repository,
         cache,
         instructor: configuredInstructor,
+        diagnostics: diagnostics.recorder,
         logger: makeLogger(),
         now: () => new Date("2026-06-14T12:00:00.000Z"),
         newId: () => "exam-1",
       },
       {
         customerId: "customer-1",
+        actor: adminActor,
         body: {
           title: "Helios CloudShare Fundamentals",
           description: "Hands-on certification exam.",
@@ -368,6 +437,30 @@ describe("admin exam catalog handlers", () => {
         instructorName: "Helios Service Account",
       },
     });
+
+    const [entry] = await diagnostics.repository.query({
+      customerId: "customer-1",
+      examId: "exam-1",
+      operation: "exam.create",
+    });
+    expect(entry).toMatchObject({
+      customerId: "customer-1",
+      actor: adminActor,
+      examId: "exam-1",
+      operation: "exam.create",
+      outcome: "success",
+      subject: { type: "exam", id: "exam-1" },
+      details: {
+        changedFields: [
+          "title",
+          "description",
+          "scoreRetrievalEnabled",
+          "policyId",
+          "allowedRegions",
+          "status",
+        ],
+      },
+    });
   });
 
   it("creates a draft exam when the description is blank", async () => {
@@ -386,6 +479,7 @@ describe("admin exam catalog handlers", () => {
       },
       {
         customerId: "customer-1",
+        actor: adminActor,
         body: {
           title: "Helios CloudShare Fundamentals",
           description: "   ",
@@ -834,6 +928,7 @@ describe("admin exam catalog handlers", () => {
   it("updates an existing draft exam", async () => {
     const repository = createInMemoryExamCatalogRepository();
     const cache = createInMemoryExamAuthoringCacheRepository();
+    const diagnostics = makeDiagnostics();
     await seedAuthoringCache(cache);
     await cache.saveProjectResources("customer-1", "project-1", {
       blueprints: [
@@ -849,6 +944,7 @@ describe("admin exam catalog handlers", () => {
         repository,
         cache,
         instructor: configuredInstructor,
+        diagnostics: diagnostics.recorder,
         logger: makeLogger(),
         now: () => new Date("2026-06-14T12:00:00.000Z"),
         newId: () => "exam-1",
@@ -873,11 +969,13 @@ describe("admin exam catalog handlers", () => {
       {
         repository,
         cache,
+        diagnostics: diagnostics.recorder,
         logger: makeLogger(),
         now: () => new Date("2026-06-14T12:45:00.000Z"),
       },
       {
         customerId: "customer-1",
+        actor: adminActor,
         examId: "exam-1",
         body: {
           title: "Helios Blueprint Exam",
@@ -904,23 +1002,50 @@ describe("admin exam catalog handlers", () => {
         policyName: "Extended Exam Policy",
       },
     });
+
+    const [entry] = await diagnostics.repository.query({
+      customerId: "customer-1",
+      examId: "exam-1",
+      operation: "exam.update",
+    });
+    expect(entry).toMatchObject({
+      customerId: "customer-1",
+      examId: "exam-1",
+      actor: adminActor,
+      operation: "exam.update",
+      outcome: "success",
+      details: {
+        changedFields: [
+          "title",
+          "description",
+          "scoreRetrievalEnabled",
+          "policyId",
+          "policyName",
+          "timeLimitMinutes",
+          "allowedRegions",
+        ],
+      },
+    });
   });
 
   it("unpublishes an existing published exam", async () => {
     const repository = createInMemoryExamCatalogRepository();
     const cache = createInMemoryExamAuthoringCacheRepository();
+    const diagnostics = makeDiagnostics();
     await seedAuthoringCache(cache);
     await handleCreateDraftExam(
       {
         repository,
         cache,
         instructor: configuredInstructor,
+        diagnostics: diagnostics.recorder,
         logger: makeLogger(),
         now: () => new Date("2026-06-14T12:00:00.000Z"),
         newId: () => "exam-1",
       },
       {
         customerId: "customer-1",
+        actor: adminActor,
         body: {
           title: "Helios CloudShare Fundamentals",
           description: "Hands-on certification exam.",
@@ -940,15 +1065,21 @@ describe("admin exam catalog handlers", () => {
         connections: makeConnections(),
         cloudshare: makeCloudShareFactory(makeAuthoringSource()),
         cache,
+        diagnostics: diagnostics.recorder,
         logger: makeLogger(),
         now: () => new Date("2026-06-14T12:30:00.000Z"),
       },
-      { customerId: "customer-1", examId: "exam-1" },
+      { customerId: "customer-1", actor: adminActor, examId: "exam-1" },
     );
 
     const unpublish = await handleUnpublishExam(
-      { repository, logger: makeLogger(), now: () => new Date("2026-06-14T12:45:00.000Z") },
-      { customerId: "customer-1", examId: "exam-1" },
+      {
+        repository,
+        diagnostics: diagnostics.recorder,
+        logger: makeLogger(),
+        now: () => new Date("2026-06-14T12:45:00.000Z"),
+      },
+      { customerId: "customer-1", actor: adminActor, examId: "exam-1" },
     );
 
     expect(unpublish.status).toBe(200);
@@ -958,6 +1089,36 @@ describe("admin exam catalog handlers", () => {
         status: "draft",
         publishedAt: null,
       },
+    });
+
+    const publishEntry = (
+      await diagnostics.repository.query({
+        customerId: "customer-1",
+        examId: "exam-1",
+        operation: "exam.publish",
+      })
+    )[0];
+    expect(publishEntry).toMatchObject({
+      customerId: "customer-1",
+      examId: "exam-1",
+      actor: adminActor,
+      operation: "exam.publish",
+      outcome: "success",
+    });
+
+    const unpublishEntry = (
+      await diagnostics.repository.query({
+        customerId: "customer-1",
+        examId: "exam-1",
+        operation: "exam.unpublish",
+      })
+    )[0];
+    expect(unpublishEntry).toMatchObject({
+      customerId: "customer-1",
+      examId: "exam-1",
+      actor: adminActor,
+      operation: "exam.unpublish",
+      outcome: "success",
     });
   });
 });

@@ -383,6 +383,46 @@ describe("handleGetDiagnosticLog", () => {
     expect(entries[0].examAttemptId).toBe("attempt-1");
   });
 
+  it("filters by Exam ID and operation within the Customer scope", async () => {
+    const repository = createInMemoryDiagnosticLogRepository();
+    await repository.append({
+      source: "admin-exams",
+      operation: "exam.publish",
+      outcome: "success",
+      message: "published",
+      customerId: "customer-a",
+      examId: "exam-1",
+    });
+    await repository.append({
+      source: "admin-exams",
+      operation: "exam.update",
+      outcome: "success",
+      message: "updated",
+      customerId: "customer-a",
+      examId: "exam-1",
+    });
+    await repository.append({
+      source: "admin-exams",
+      operation: "exam.publish",
+      outcome: "success",
+      message: "other exam",
+      customerId: "customer-a",
+      examId: "exam-2",
+    });
+
+    const response = await handleGetDiagnosticLog(
+      { diagnostics: repository, logger: noopLogger },
+      {
+        query: { examId: "exam-1", operation: "exam.publish" },
+        customerId: "customer-a",
+      },
+    );
+
+    const entries = response.body.entries as Array<{ examId: string; operation: string }>;
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ examId: "exam-1", operation: "exam.publish" });
+  });
+
   it("ignores a client-supplied customerId and trusts the session scope", async () => {
     const repository = createInMemoryDiagnosticLogRepository();
     await repository.append({

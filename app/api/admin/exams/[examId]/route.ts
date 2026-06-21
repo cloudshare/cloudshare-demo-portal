@@ -28,9 +28,15 @@ export async function PATCH(
     {
       repository: services.exams,
       cache: services.examAuthoringCache,
+      diagnostics: services.diagnosticRecorder,
       logger: services.logger,
     },
-    { customerId: session.customerId, examId, body },
+    {
+      customerId: session.customerId,
+      actor: { type: "admin", id: session.userId, email: session.email },
+      examId,
+      body,
+    },
   );
 
   return NextResponse.json(response.body, { status: response.status });

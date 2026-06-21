@@ -4,7 +4,9 @@ import type { AuditRepository } from "@/domain/audit-trail";
 import type { EventLogRepository } from "@/domain/event-log";
 import type { SupportLogRepository } from "@/domain/support-log";
 import type {
+  DiagnosticActor,
   DiagnosticLogEntry,
+  DiagnosticRecorder,
   DiagnosticLogRepository,
 } from "@/domain/diagnostic-log";
 import type {
@@ -61,6 +63,7 @@ export interface SyncHandlerDeps {
   readonly connections: CloudShareConnectionRepository;
   readonly cloudshare: CloudShareClientFactory;
   readonly resources: ResourceRepository;
+  readonly diagnostics?: DiagnosticRecorder;
   readonly logger: Logger;
 }
 
@@ -81,6 +84,25 @@ export async function handleSyncResources(
       deps.cloudshare.forConnection(connection),
     );
     const result = await syncResources({ lister, repository: deps.resources });
+    await deps.diagnostics?.record({
+      source: "admin",
+      customerId: request.customerId,
+      level: "info",
+      operation: "cloudshare.resource_sync.legacy_sync.read",
+      outcome: "success",
+      message: "Legacy resource sync completed",
+      request: { method: "POST", path: "/api/admin/sync-resources" },
+      response: {
+        synced: result.synced,
+        resourceCounts: {
+          project: result.byType.project.length,
+          region: result.byType.region.length,
+          blueprint: result.byType.blueprint.length,
+          policy: result.byType.policy.length,
+        },
+      },
+      externalIds: { resourceType: "resource_sync" },
+    });
     deps.logger.info("resources synced", { synced: result.synced });
     return {
       status: 200,
@@ -95,6 +117,20 @@ export async function handleSyncResources(
       },
     };
   } catch (err) {
+    await deps.diagnostics?.record({
+      source: "admin",
+      customerId: request.customerId,
+      level: "warn",
+      operation: "cloudshare.resource_sync.legacy_sync.read",
+      outcome: "failure",
+      message: "Legacy resource sync failed",
+      request: { method: "POST", path: "/api/admin/sync-resources" },
+      details: {
+        failureMode: "resource_sync_failed",
+        error: err instanceof Error ? err.message : String(err),
+      },
+      externalIds: { resourceType: "resource_sync" },
+    });
     deps.logger.error("resource sync failed", {
       error: err instanceof Error ? err.message : String(err),
     });
@@ -155,13 +191,17 @@ export async function handleGetDiagnosticLog(
 ): Promise<AdminResponse> {
   const from = parseDate(request.query.from);
   const to = parseDate(request.query.to);
+  const examId = request.query.examId?.trim();
   const examAttemptId = request.query.examAttemptId?.trim();
+  const operation = request.query.operation?.trim();
   const limitParam = request.query.limit;
   const limit = limitParam ? parseInt(limitParam, 10) : undefined;
 
   const entries = await deps.diagnostics.query({
     customerId: request.customerId,
+    ...(examId ? { examId } : {}),
     ...(examAttemptId ? { examAttemptId } : {}),
+    ...(operation ? { operation } : {}),
     ...(from ? { from } : {}),
     ...(to ? { to } : {}),
     ...(limit !== undefined && !Number.isNaN(limit) ? { limit } : {}),

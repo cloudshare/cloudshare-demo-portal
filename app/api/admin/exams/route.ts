@@ -40,9 +40,14 @@ export async function POST(request: Request) {
       repository: services.exams,
       cache: services.examAuthoringCache,
       instructor: services.config.seed.heliosInstructor,
+      diagnostics: services.diagnosticRecorder,
       logger: services.logger,
     },
-    { customerId: session.customerId, body },
+    {
+      customerId: session.customerId,
+      actor: { type: "admin", id: session.userId, email: session.email },
+      body,
+    },
   );
 
   return NextResponse.json(response.body, { status: response.status });

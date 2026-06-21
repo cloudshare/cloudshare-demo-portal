@@ -15,6 +15,7 @@ import {
 } from "@/integrations/cloudshare/resources";
 import type { Logger } from "@/observability/logger";
 import { randomUUID } from "node:crypto";
+import type { DiagnosticActor, DiagnosticRecorder } from "@/domain/diagnostic-log";
 import {
   createDraftExam,
   DraftExamValidationError,
@@ -37,6 +38,7 @@ interface AdminExamResponse {
 
 interface CustomerRequest {
   readonly customerId: string;
+  readonly actor?: DiagnosticActor | null;
 }
 
 interface ResourceRequest extends CustomerRequest {
@@ -55,6 +57,7 @@ interface AdminExamAuthoringDeps {
   readonly connections: CloudShareConnectionRepository;
   readonly cloudshare: CloudShareClientFactory;
   readonly cache: ExamAuthoringCacheRepository;
+  readonly diagnostics?: DiagnosticRecorder;
   readonly logger: Logger;
   readonly now?: () => Date;
   readonly newCorrelationId?: () => string;
@@ -69,6 +72,7 @@ interface AdminExamCatalogDeps {
         readonly name: string;
       }
     | null;
+  readonly diagnostics?: DiagnosticRecorder;
   readonly logger: Logger;
   readonly now?: () => Date;
   readonly newId?: () => string;
@@ -79,6 +83,7 @@ interface AdminExamPublishDeps {
   readonly connections: CloudShareConnectionRepository;
   readonly cloudshare: CloudShareClientFactory;
   readonly cache: ExamAuthoringCacheRepository;
+  readonly diagnostics?: DiagnosticRecorder;
   readonly logger: Logger;
   readonly now?: () => Date;
   readonly newCorrelationId?: () => string;
@@ -107,15 +112,50 @@ export async function handleGetExamAuthoringBootstrap(
   let projects;
   try {
     projects = await source.listProjects();
+    await recordResourceRead(deps, {
+      customerId: request.customerId,
+      operation: "cloudshare.resource_sync.projects.read",
+      integrationSurface: "cloudshare.v3.projects",
+      path: "/projects",
+      resourceType: "project",
+      response: {
+        itemCount: projects.length,
+        resourceIds: projects.map((project) => project.id),
+      },
+    });
   } catch (error) {
-    return handleCloudShareFailure(deps, "list_projects", "/projects", error);
+    return handleCloudShareFailure(deps, {
+      customerId: request.customerId,
+      operation: "cloudshare.resource_sync.projects.read",
+      integrationSurface: "cloudshare.v3.projects",
+      path: "/projects",
+      resourceType: "project",
+      error,
+    });
   }
 
   let regions;
   try {
     regions = await source.listRegions();
+    await recordResourceRead(deps, {
+      customerId: request.customerId,
+      operation: "cloudshare.resource_sync.regions.read",
+      integrationSurface: "cloudshare.v3.regions",
+      path: "/regions",
+      resourceType: "region",
+      response: {
+        itemCount: regions.length,
+      },
+    });
   } catch (error) {
-    return handleCloudShareFailure(deps, "list_regions", "/regions", error);
+    return handleCloudShareFailure(deps, {
+      customerId: request.customerId,
+      operation: "cloudshare.resource_sync.regions.read",
+      integrationSurface: "cloudshare.v3.regions",
+      path: "/regions",
+      resourceType: "region",
+      error,
+    });
   }
 
   await deps.cache.saveBootstrap(request.customerId, { projects, regions });
@@ -149,25 +189,55 @@ export async function handleGetProjectResources(
   let blueprints;
   try {
     blueprints = await source.listProjectBlueprints(request.projectId);
+    await recordResourceRead(deps, {
+      customerId: request.customerId,
+      operation: "cloudshare.resource_sync.blueprints.read",
+      integrationSurface: "cloudshare.v3.projects.blueprints",
+      path: `/projects/${request.projectId}/blueprints`,
+      resourceType: "blueprint",
+      resourceIds: { projectId: request.projectId },
+      response: {
+        itemCount: blueprints.length,
+        resourceIds: blueprints.map((blueprint) => blueprint.id),
+      },
+    });
   } catch (error) {
-    return handleCloudShareFailure(
-      deps,
-      "list_project_blueprints",
-      `/projects/${request.projectId}/blueprints`,
+    return handleCloudShareFailure(deps, {
+      customerId: request.customerId,
+      operation: "cloudshare.resource_sync.blueprints.read",
+      integrationSurface: "cloudshare.v3.projects.blueprints",
+      path: `/projects/${request.projectId}/blueprints`,
+      resourceType: "blueprint",
+      resourceIds: { projectId: request.projectId },
       error,
-    );
+    });
   }
 
   let policies;
   try {
     policies = await source.listProjectPolicies(request.projectId);
+    await recordResourceRead(deps, {
+      customerId: request.customerId,
+      operation: "cloudshare.resource_sync.policies.read",
+      integrationSurface: "cloudshare.v3.projects.policies",
+      path: `/projects/${request.projectId}/policies`,
+      resourceType: "policy",
+      resourceIds: { projectId: request.projectId },
+      response: {
+        itemCount: policies.length,
+        resourceIds: policies.map((policy) => policy.id),
+      },
+    });
   } catch (error) {
-    return handleCloudShareFailure(
-      deps,
-      "list_project_policies",
-      `/projects/${request.projectId}/policies`,
+    return handleCloudShareFailure(deps, {
+      customerId: request.customerId,
+      operation: "cloudshare.resource_sync.policies.read",
+      integrationSurface: "cloudshare.v3.projects.policies",
+      path: `/projects/${request.projectId}/policies`,
+      resourceType: "policy",
+      resourceIds: { projectId: request.projectId },
       error,
-    );
+    });
   }
 
   await deps.cache.saveProjectResources(request.customerId, request.projectId, {
@@ -210,6 +280,19 @@ export async function handleGetBlueprintDetail(
   const source = resolveAuthoringSource(deps.cloudshare, connection);
   try {
     const blueprint = await source.getBlueprintDetail(request.projectId, request.blueprintId);
+    await recordResourceRead(deps, {
+      customerId: request.customerId,
+      operation: "cloudshare.resource_sync.blueprint_detail.read",
+      integrationSurface: "cloudshare.v3.projects.blueprint_detail",
+      path: `/projects/${request.projectId}/blueprints/${request.blueprintId}`,
+      resourceType: "blueprint_detail",
+      resourceIds: { projectId: request.projectId, blueprintId: request.blueprintId },
+      response: {
+        blueprintId: blueprint.id,
+        defaultSnapshotId: blueprint.defaultSnapshotId,
+        snapshotCount: blueprint.snapshots.length,
+      },
+    });
     await deps.cache.saveBlueprintDetail(
       request.customerId,
       request.projectId,
@@ -221,12 +304,15 @@ export async function handleGetBlueprintDetail(
       body: { source: "live", projectId: request.projectId, blueprint },
     };
   } catch (error) {
-    return handleCloudShareFailure(
-      deps,
-      "get_blueprint_detail",
-      `/projects/${request.projectId}/blueprints/${request.blueprintId}`,
+    return handleCloudShareFailure(deps, {
+      customerId: request.customerId,
+      operation: "cloudshare.resource_sync.blueprint_detail.read",
+      integrationSurface: "cloudshare.v3.projects.blueprint_detail",
+      path: `/projects/${request.projectId}/blueprints/${request.blueprintId}`,
+      resourceType: "blueprint_detail",
+      resourceIds: { projectId: request.projectId, blueprintId: request.blueprintId },
       error,
-    );
+    });
   }
 }
 
@@ -276,6 +362,27 @@ export async function handleCreateDraftExam(
       },
       input,
     );
+    await deps.diagnostics?.record({
+      source: "admin-exams",
+      customerId: request.customerId,
+      actor: request.actor ?? null,
+      subject: { type: "exam", id: exam.id },
+      examId: exam.id,
+      level: "info",
+      operation: "exam.create",
+      outcome: "success",
+      message: "Draft exam created",
+      details: {
+        changedFields: [
+          "title",
+          "description",
+          "scoreRetrievalEnabled",
+          "policyId",
+          "allowedRegions",
+          "status",
+        ],
+      },
+    });
     return { status: 201, body: { exam } };
   } catch (error) {
     if (error instanceof DraftExamValidationError) {
@@ -326,6 +433,18 @@ export async function handlePublishExam(
       { repository: deps.repository, now: deps.now },
       { customerId: request.customerId, examId: request.examId },
     );
+    await deps.diagnostics?.record({
+      source: "admin-exams",
+      customerId: request.customerId,
+      actor: request.actor ?? null,
+      subject: { type: "exam", id: exam.id },
+      examId: exam.id,
+      level: "info",
+      operation: "exam.publish",
+      outcome: "success",
+      message: "Exam published",
+      details: { changedFields: ["status", "publishedAt"] },
+    });
     return { status: 200, body: { exam } };
   } catch (error) {
     if (error instanceof ExamNotFoundError) {
@@ -356,12 +475,15 @@ async function validateCurrentDefaultSnapshotRegions(
   try {
     blueprint = await source.getBlueprintDetail(exam.projectId, exam.blueprintId);
   } catch (error) {
-    return handleCloudShareFailure(
-      deps,
-      "get_blueprint_detail",
-      `/projects/${exam.projectId}/blueprints/${exam.blueprintId}`,
+    return handleCloudShareFailure(deps, {
+      customerId: exam.customerId,
+      operation: "cloudshare.resource_sync.blueprint_detail.read",
+      integrationSurface: "cloudshare.v3.projects.blueprint_detail",
+      path: `/projects/${exam.projectId}/blueprints/${exam.blueprintId}`,
+      resourceType: "blueprint_detail",
+      resourceIds: { projectId: exam.projectId, blueprintId: exam.blueprintId },
       error,
-    );
+    });
   }
 
   await deps.cache.saveBlueprintDetail(exam.customerId, exam.projectId, exam.blueprintId, blueprint);
@@ -410,7 +532,7 @@ async function validateCurrentDefaultSnapshotRegions(
 }
 
 export async function handleUpdateDraftExam(
-  deps: Pick<AdminExamCatalogDeps, "repository" | "cache" | "logger" | "now">,
+  deps: Pick<AdminExamCatalogDeps, "repository" | "cache" | "diagnostics" | "logger" | "now">,
   request: CustomerRequest & { readonly examId: string; readonly body?: unknown },
 ): Promise<AdminExamResponse> {
   try {
@@ -434,6 +556,18 @@ export async function handleUpdateDraftExam(
       { repository: deps.repository, now: deps.now },
       input,
     );
+    await deps.diagnostics?.record({
+      source: "admin-exams",
+      customerId: request.customerId,
+      actor: request.actor ?? null,
+      subject: { type: "exam", id: exam.id },
+      examId: exam.id,
+      level: "info",
+      operation: "exam.update",
+      outcome: "success",
+      message: "Draft exam updated",
+      details: { changedFields: summariseExamChanges(existing, exam) },
+    });
     return { status: 200, body: { exam } };
   } catch (error) {
     if (error instanceof DraftExamValidationError || error instanceof ExamStateError) {
@@ -447,7 +581,7 @@ export async function handleUpdateDraftExam(
 }
 
 export async function handleUnpublishExam(
-  deps: Pick<AdminExamCatalogDeps, "repository" | "logger" | "now">,
+  deps: Pick<AdminExamCatalogDeps, "repository" | "diagnostics" | "logger" | "now">,
   request: CustomerRequest & { readonly examId: string },
 ): Promise<AdminExamResponse> {
   try {
@@ -455,6 +589,18 @@ export async function handleUnpublishExam(
       { repository: deps.repository, now: deps.now },
       { customerId: request.customerId, examId: request.examId },
     );
+    await deps.diagnostics?.record({
+      source: "admin-exams",
+      customerId: request.customerId,
+      actor: request.actor ?? null,
+      subject: { type: "exam", id: exam.id },
+      examId: exam.id,
+      level: "info",
+      operation: "exam.unpublish",
+      outcome: "success",
+      message: "Exam unpublished",
+      details: { changedFields: ["status", "publishedAt"] },
+    });
     return { status: 200, body: { exam } };
   } catch (error) {
     if (error instanceof ExamNotFoundError) {
@@ -482,17 +628,96 @@ function resolveAuthoringSource(
   return createCloudShareExamAuthoringSource(candidate as CloudShareClient);
 }
 
+interface ResourceDiagnosticFailureSpec {
+  readonly customerId: string;
+  readonly operation: string;
+  readonly integrationSurface: string;
+  readonly path: string;
+  readonly resourceType: string;
+  readonly resourceIds?: Record<string, string>;
+  readonly error: unknown;
+}
+
+function summariseExamChanges(before: Exam, after: Exam): string[] {
+  const changedFields: string[] = [];
+  if (before.title !== after.title) changedFields.push("title");
+  if (before.description !== after.description) changedFields.push("description");
+  if (before.scoreRetrievalEnabled !== after.scoreRetrievalEnabled) {
+    changedFields.push("scoreRetrievalEnabled");
+  }
+  if (before.policyId !== after.policyId) changedFields.push("policyId");
+  if (before.policyName !== after.policyName) changedFields.push("policyName");
+  if (before.timeLimitMinutes !== after.timeLimitMinutes) changedFields.push("timeLimitMinutes");
+  if (JSON.stringify(before.allowedRegions) !== JSON.stringify(after.allowedRegions)) {
+    changedFields.push("allowedRegions");
+  }
+  return changedFields;
+}
+
+async function recordResourceRead(
+  deps: Pick<AdminExamAuthoringDeps, "diagnostics">,
+  spec: {
+    readonly customerId: string;
+    readonly operation: string;
+    readonly integrationSurface: string;
+    readonly path: string;
+    readonly resourceType: string;
+    readonly resourceIds?: Record<string, string>;
+    readonly response: Record<string, unknown>;
+  },
+): Promise<void> {
+  await deps.diagnostics?.record({
+    source: "admin-exams",
+    customerId: spec.customerId,
+    level: "info",
+    operation: spec.operation,
+    outcome: "success",
+    message: `${spec.resourceType} resource read succeeded`,
+    request: { method: "GET", path: spec.path },
+    response: spec.response,
+    details: { integrationSurface: spec.integrationSurface },
+    externalIds: { resourceType: spec.resourceType, ...(spec.resourceIds ?? {}) },
+  });
+}
+
 function handleCloudShareFailure(
-  deps: Pick<AdminExamAuthoringDeps, "logger" | "now" | "newCorrelationId">,
-  operation: string,
-  path: string,
-  error: unknown,
+  deps: Pick<AdminExamAuthoringDeps, "diagnostics" | "logger" | "now" | "newCorrelationId">,
+  spec: ResourceDiagnosticFailureSpec,
 ): AdminExamResponse {
-  const cloudShareError = asCloudShareErrorLike(error);
+  const cloudShareError = asCloudShareErrorLike(spec.error);
   if (cloudShareError) {
-    const diagnostic = buildDiagnostic(operation, path, cloudShareError);
+    const diagnostic = buildDiagnostic(
+      spec.operation,
+      spec.path,
+      spec.integrationSurface,
+      cloudShareError,
+    );
     const correlationId = (deps.newCorrelationId ?? randomUUID)();
     const occurredAt = (deps.now ?? (() => new Date()))().toISOString();
+    void deps.diagnostics?.record({
+      source: "admin-exams",
+      customerId: spec.customerId,
+      level: "warn",
+      operation: spec.operation,
+      outcome: "failure",
+      message: `${spec.resourceType} resource read failed`,
+      correlationId,
+      request: {
+        method: (cloudShareError.context?.method as string | undefined) ?? "GET",
+        path: spec.path,
+        ...(cloudShareError.context?.requestHeaders
+          ? { headers: cloudShareError.context.requestHeaders }
+          : {}),
+      },
+      response: {
+        ...(diagnostic.responseStatus !== undefined ? { status: diagnostic.responseStatus } : {}),
+      },
+      details: {
+        integrationSurface: spec.integrationSurface,
+        failureMode: diagnostic.failureMode,
+      },
+      externalIds: { resourceType: spec.resourceType, ...(spec.resourceIds ?? {}) },
+    });
     deps.logger.warn("cloudshare exam authoring failed", {
       correlationId,
       occurredAt,
@@ -509,7 +734,7 @@ function handleCloudShareFailure(
     };
   }
 
-  throw error;
+  throw spec.error;
 }
 
 function asCloudShareErrorLike(error: unknown): CloudShareError | null {
@@ -540,12 +765,13 @@ function asCloudShareErrorLike(error: unknown): CloudShareError | null {
 function buildDiagnostic(
   operation: string,
   path: string,
+  integrationSurface: string,
   error: CloudShareError,
 ): Record<string, unknown> {
   const errorName = error.name;
   const diagnostic: Record<string, unknown> = {
     operation,
-    integrationSurface: inferIntegrationSurface(path),
+    integrationSurface,
     method: (error.context?.method as string | undefined) ?? "GET",
     path,
   };
@@ -563,25 +789,6 @@ function buildDiagnostic(
   }
 
   return diagnostic;
-}
-
-function inferIntegrationSurface(path: string): string {
-  if (path.includes("/policies")) {
-    return "cloudshare.v3.projects.policies";
-  }
-  if (path.includes("/blueprints/") && path.split("/").length >= 5) {
-    return "cloudshare.v3.projects.blueprint_detail";
-  }
-  if (path.includes("/blueprints")) {
-    return "cloudshare.v3.projects.blueprints";
-  }
-  if (path === "/projects") {
-    return "cloudshare.v3.projects";
-  }
-  if (path === "/regions") {
-    return "cloudshare.v3.regions";
-  }
-  return "cloudshare.v3";
 }
 
 function parseUpdateDraftExamInput(
