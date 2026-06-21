@@ -123,7 +123,12 @@ const SENSITIVE_KEY_PATTERNS = [
   "ciphertext",
 ];
 
+const NON_SENSITIVE_KEYS = new Set(["idempotencyKey", "storedWebhookSecretLength"]);
+
 function isSensitiveKey(key: string): boolean {
+  if (NON_SENSITIVE_KEYS.has(key)) {
+    return false;
+  }
   const k = key.toLowerCase();
   return SENSITIVE_KEY_PATTERNS.some((pattern) => k.includes(pattern));
 }

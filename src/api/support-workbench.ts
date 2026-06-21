@@ -19,13 +19,12 @@ export interface SupportWorkbenchDiagnostic {
   readonly operation: string | null;
   readonly integrationSurface: string | null;
   readonly customerId: string | null;
-  readonly webhookPathToken: string | null;
+  readonly webhookPathFingerprint: string | null;
   readonly method: string | null;
   readonly path: string | null;
   readonly requestBodyBytes: number | null;
   readonly rawBodySha256: string | null;
   readonly signaturePresent: boolean | null;
-  readonly rawRequestBody: string | null;
   readonly trustGateReason: string | null;
 }
 
@@ -57,23 +56,19 @@ function isCloudShareWebhookDiagnostic(record: SupportLogRecord): boolean {
 }
 
 function toSupportWorkbenchDiagnostic(record: SupportLogRecord): SupportWorkbenchDiagnostic {
-  const message = record.message;
-  const isUnknownTarget = message === "cloudshare webhook rejected: unknown webhook target";
-
   return {
     timestamp: record.timestamp,
     level: record.level,
-    message,
+    message: record.message,
     operation: readStringField(record.fields, "operation"),
     integrationSurface: readStringField(record.fields, "integrationSurface"),
     customerId: readStringField(record.fields, "customerId"),
-    webhookPathToken: readStringField(record.fields, "webhookPathToken"),
+    webhookPathFingerprint: readStringField(record.fields, "webhookPathFingerprint"),
     method: readStringField(record.fields, "method"),
     path: readStringField(record.fields, "path"),
     requestBodyBytes: readNumberField(record.fields, "requestBodyBytes"),
     rawBodySha256: readStringField(record.fields, "rawBodySha256"),
     signaturePresent: readBooleanField(record.fields, "signaturePresent"),
-    rawRequestBody: isUnknownTarget ? null : readStringField(record.fields, "rawRequestBody"),
     trustGateReason: readStringField(record.fields, "trustGateReason"),
   };
 }

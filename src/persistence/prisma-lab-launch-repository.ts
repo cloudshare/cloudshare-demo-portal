@@ -45,6 +45,22 @@ export function createPrismaLabLaunchRepository(prisma: PrismaClient): LabLaunch
       const row = await prisma.labLaunch.findUnique({ where: { examAttemptId } });
       return row ? toDomain(row) : null;
     },
+
+    async findByCustomerIdAndEnvironmentExternalId(
+      customerId: string,
+      environmentExternalId: string,
+    ): Promise<LabLaunch | null> {
+      const row = await prisma.labLaunch.findFirst({
+        where: {
+          environmentExternalId,
+          examAttempt: {
+            customerId,
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+      return row ? toDomain(row) : null;
+    },
   };
 }
 

@@ -225,4 +225,40 @@ describe("candidate exam mutation routes", () => {
     expect(services.heartbeatAutoSuspend.recordHeartbeat).not.toHaveBeenCalled();
     expect(services.heartbeatAutoSuspend.removeHeartbeat).toHaveBeenCalledWith("ea-1");
   });
+
+  it("records a typed heartbeat-received diagnostic for an in-progress exam attempt", async () => {
+    const services = makeServices();
+    mockGetServices.mockReturnValue(services);
+    mockGetPortalSession.mockResolvedValue({
+      sessionId: "portal-session-1",
+      userId: "candidate-owner",
+      customerId: "customer-1",
+      role: "candidate",
+      email: "candidate@example.com",
+      issuedAtMs: 1,
+    });
+
+    const heartbeatResponse = await heartbeatPOST(makeRequest("http://localhost/api/heartbeat"));
+
+    expect(heartbeatResponse.status).toBe(200);
+    expect(await heartbeatResponse.json()).toEqual({
+      status: "ok",
+      attemptStatus: "in_progress",
+    });
+    expect(services.heartbeatAutoSuspend.recordHeartbeat).toHaveBeenCalledWith("ea-1");
+    expect(services.diagnosticRecorder.record).toHaveBeenCalledWith({
+      source: "runtime",
+      customerId: "customer-1",
+      candidateEmail: "candidate@example.com",
+      examId: "exam-1",
+      examAttemptId: "ea-1",
+      level: "info",
+      operation: "exam_attempt.heartbeat.receive",
+      outcome: "success",
+      message: "Heartbeat received for in-progress exam attempt",
+      actor: { type: "candidate", id: "candidate-owner", email: "candidate@example.com" },
+      subject: { type: "exam_attempt", id: "ea-1" },
+      details: { route: "/api/heartbeat" },
+    });
+  });
 });

@@ -25,6 +25,7 @@ function makeLaunchRepo(launch: LabLaunch | null): LabLaunchRepository {
     save: vi.fn(),
     findById: vi.fn(),
     findByExamAttemptId: vi.fn().mockResolvedValue(launch),
+    findByCustomerIdAndEnvironmentExternalId: vi.fn().mockResolvedValue(launch),
   };
 }
 
