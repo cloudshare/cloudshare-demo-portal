@@ -273,4 +273,64 @@ describe("createCloudShareExamAuthoringSource", () => {
       },
     });
   });
+
+  it("redacts token-bearing query params for relative blueprint image urls", async () => {
+    const source = createCloudShareExamAuthoringSource(
+      makeClient({
+        "v3:/projects/p-1/blueprints/bp-1": {
+          id: "bp-1",
+          name: "Exam Blueprint",
+          description: "",
+          imageUrl: "/image-library/blueprints/bp-1.png?imageToken=secret-token&size=large",
+          createFromVersions: [
+            {
+              id: "snap-1",
+              name: "Snapshot 1",
+              isDefault: true,
+              regions: ["r-1"],
+            },
+          ],
+        },
+      }),
+    );
+
+    await expect(source.getBlueprintDetail("p-1", "bp-1")).resolves.toMatchObject({
+      diagnosticSummary: {
+        imageUrl: {
+          present: true,
+          path: "/image-library/blueprints/bp-1.png",
+          query: {
+            imageToken: "[REDACTED]",
+            size: "large",
+          },
+        },
+      },
+    });
+  });
+
+  it("accepts blueprint detail responses when createFromVersions is omitted", async () => {
+    const source = createCloudShareExamAuthoringSource(
+      makeClient({
+        "v3:/projects/p-1/blueprints/bp-1": {
+          id: "bp-1",
+          name: "Exam Blueprint",
+          description: "No versions returned yet",
+        },
+      }),
+    );
+
+    await expect(source.getBlueprintDetail("p-1", "bp-1")).resolves.toMatchObject({
+      id: "bp-1",
+      name: "Exam Blueprint",
+      description: "No versions returned yet",
+      defaultSnapshotId: null,
+      snapshots: [],
+      diagnosticSummary: {
+        blueprintId: "bp-1",
+        defaultSnapshotId: null,
+        snapshotCount: 0,
+        snapshots: [],
+      },
+    });
+  });
 });

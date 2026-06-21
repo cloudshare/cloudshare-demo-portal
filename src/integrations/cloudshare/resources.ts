@@ -64,7 +64,10 @@ const blueprintDetailSchema = z.object({
   resources: optionalRecordSchema,
   numberOfMachines: z.number().int().nonnegative().optional(),
   imageUrl: optionalStringSchema,
-  createFromVersions: z.array(blueprintVersionSchema),
+  createFromVersions: z.preprocess(
+    (value) => value ?? [],
+    z.array(blueprintVersionSchema),
+  ),
 })
   .passthrough();
 
@@ -545,24 +548,37 @@ function summarizeImageUrl(value: string | undefined): Record<string, unknown> {
   }
 
   try {
-    const url = new URL(value);
-    const query: Record<string, string> = {};
-    for (const [key, paramValue] of url.searchParams.entries()) {
-      query[key] = isSensitiveQueryKey(key) ? REDACTED : paramValue;
-    }
+    const url = new URL(value, "https://cloudshare.invalid");
+    const query = summarizeImageUrlQuery(url.searchParams);
     return {
       present: true,
       path: url.pathname,
       ...(Object.keys(query).length > 0 ? { query } : {}),
     };
   } catch {
-    return { present: true, path: sanitizeFreeText(value) ?? "[UNPARSEABLE]" };
+    const [rawPath, rawQuery = ""] = value.split("?", 2);
+    const query = summarizeImageUrlQuery(new URLSearchParams(rawQuery));
+    return {
+      present: true,
+      path: sanitizeFreeText(rawPath) ?? "[UNPARSEABLE]",
+      ...(Object.keys(query).length > 0 ? { query } : {}),
+    };
   }
 }
 
 function isSensitiveQueryKey(key: string): boolean {
   const normalized = key.toLowerCase();
   return redactableQueryKeyPatterns.some((pattern) => normalized.includes(pattern));
+}
+
+function summarizeImageUrlQuery(
+  searchParams: URLSearchParams,
+): Record<string, string> {
+  const query: Record<string, string> = {};
+  for (const [key, paramValue] of searchParams.entries()) {
+    query[key] = isSensitiveQueryKey(key) ? REDACTED : paramValue;
+  }
+  return query;
 }
 
 function sanitizeFreeText(value: string | undefined): string | undefined {

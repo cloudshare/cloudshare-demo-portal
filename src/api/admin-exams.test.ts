@@ -973,6 +973,82 @@ describe("admin exam catalog handlers", () => {
     await expect(repository.findById("exam-1")).resolves.toMatchObject({ status: "draft" });
   });
 
+  it("does not expose diagnostic-only blueprint detail metadata from publish-time cache refreshes", async () => {
+    const repository = createInMemoryExamCatalogRepository();
+    const cache = createInMemoryExamAuthoringCacheRepository();
+    await seedAuthoringCache(cache);
+    const source = makeAuthoringSource();
+    await handleCreateDraftExam(
+      {
+        repository,
+        cache,
+        instructor: configuredInstructor,
+        logger: makeLogger(),
+        now: () => new Date("2026-06-14T12:00:00.000Z"),
+        newId: () => "exam-1",
+      },
+      {
+        customerId: "customer-1",
+        body: {
+          title: "Helios CloudShare Fundamentals",
+          description: "Hands-on certification exam.",
+          timeLimitMinutes: 90,
+          scoreRetrievalEnabled: false,
+          projectId: "project-1",
+          blueprintId: "bp-1",
+          snapshotId: "snap-1",
+          allowedRegionIds: ["region-1"],
+          policyId: "policy-1",
+        },
+      },
+    );
+
+    const publish = await handlePublishExam(
+      {
+        repository,
+        connections: makeConnections(),
+        cloudshare: makeCloudShareFactory(source),
+        cache,
+        logger: makeLogger(),
+        now: () => new Date("2026-06-14T12:30:00.000Z"),
+      },
+      { customerId: "customer-1", examId: "exam-1" },
+    );
+
+    expect(publish.status).toBe(200);
+
+    const cachedDetail = await handleGetBlueprintDetail(
+      {
+        connections: makeConnections(),
+        cloudshare: makeCloudShareFactory(source),
+        cache,
+        logger: makeLogger(),
+      },
+      { customerId: "customer-1", projectId: "project-1", blueprintId: "bp-1", refresh: false },
+    );
+
+    expect(cachedDetail.status).toBe(200);
+    expect(cachedDetail.body).toEqual({
+      source: "cache",
+      projectId: "project-1",
+      blueprint: {
+        id: "bp-1",
+        name: "Helios Exam Blueprint",
+        description: "Blueprint-backed description",
+        defaultSnapshotId: "snap-1",
+        snapshots: [
+          {
+            id: "snap-1",
+            name: "Default Snapshot",
+            isDefault: true,
+            regionIds: ["region-1", "region-2"],
+          },
+          { id: "snap-2", name: "Older Snapshot", isDefault: false, regionIds: ["region-3"] },
+        ],
+      },
+    });
+  });
+
   it("updates an existing draft exam", async () => {
     const repository = createInMemoryExamCatalogRepository();
     const cache = createInMemoryExamAuthoringCacheRepository();

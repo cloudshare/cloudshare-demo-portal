@@ -277,7 +277,11 @@ export async function handleGetBlueprintDetail(
     if (cached) {
       return {
         status: 200,
-        body: { source: "cache", projectId: request.projectId, blueprint: cached },
+        body: {
+          source: "cache",
+          projectId: request.projectId,
+          blueprint: stripBlueprintDiagnosticSummary(cached),
+        },
       };
     }
   }
@@ -497,7 +501,12 @@ async function validateCurrentDefaultSnapshotRegions(
     });
   }
 
-  await deps.cache.saveBlueprintDetail(exam.customerId, exam.projectId, exam.blueprintId, blueprint);
+  await deps.cache.saveBlueprintDetail(
+    exam.customerId,
+    exam.projectId,
+    exam.blueprintId,
+    stripBlueprintDiagnosticSummary(blueprint),
+  );
 
   if (blueprint.defaultSnapshotId === null || blueprint.defaultSnapshotId !== exam.snapshotId) {
     return {
