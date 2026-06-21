@@ -4,6 +4,9 @@ import { createCloudShareEnvironmentSimulator } from "@/integrations/cloudshare/
 import { createInMemoryWebhookIdempotencyStore } from "@/persistence/webhook-idempotency-store";
 import { createLogger } from "@/observability/logger";
 import { createInMemoryEventLogRepository } from "@/persistence/event-log-repository";
+import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
+import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
+import type { CloudShareWebhookDeps } from "./cloudshare-webhook";
 
 const HELIOS_SECRET = "helios-webhook-secret";
 const OTHER_SECRET = "other-webhook-secret";
@@ -13,7 +16,8 @@ function setup() {
   const helios = createCloudShareEnvironmentSimulator({ secret: HELIOS_SECRET });
   const other = createCloudShareEnvironmentSimulator({ secret: OTHER_SECRET });
   const eventLog = createInMemoryEventLogRepository();
-  const reconcile = vi.fn(async (_connection: unknown, _environmentExternalId: string) => {});
+  const diagnostics = createInMemoryDiagnosticLogRepository();
+  const reconcile = vi.fn<CloudShareWebhookDeps["reconcile"]>(async () => undefined);
   const logger = createLogger({ secrets: [], sink: () => {} });
   const heliosConnection = {
     customerId: "customer-helios",
@@ -52,13 +56,23 @@ function setup() {
     reconcile,
     logger,
     eventLog,
+    diagnostics: createDiagnosticRecorder({ repository: diagnostics }),
     now: () => at,
     newEventId: (() => {
       let counter = 0;
       return () => `webhook-event-${++counter}`;
     })(),
   };
-  return { helios, other, eventLog, reconcile, deps, heliosConnection, otherConnection };
+  return {
+    helios,
+    other,
+    eventLog,
+    diagnostics,
+    reconcile,
+    deps,
+    heliosConnection,
+    otherConnection,
+  };
 }
 
 describe("handleCloudShareWebhook", () => {
@@ -438,5 +452,161 @@ describe("handleCloudShareWebhook", () => {
         }),
       ]),
     );
+  });
+
+  it("records safe typed diagnostics for receipt, signature verification, and later reconcile correlation", async () => {
+    const { helios, diagnostics, deps } = setup();
+    deps.reconcile = vi.fn(
+      async (_connection: unknown, _environmentExternalId: string) => ({
+        environmentExternalId: "env-ext-1",
+        status: "running",
+        correlation: {
+          examAttemptId: "attempt-1",
+          examId: "exam-1",
+          candidateEmail: "candidate@helioscx.demo",
+        },
+      }),
+    );
+    const signed = helios.emit({ environmentExternalId: "env-ext-1", event: "environment.created", at });
+
+    const res = await handleCloudShareWebhook(deps, {
+      webhookPathToken: "whk-helios",
+      ...signed,
+    });
+
+    expect(res.status).toBe(202);
+    const entries = await diagnostics.query({ customerId: "customer-helios" });
+    expect(entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation: "cloudshare.webhook.receive",
+          outcome: "success",
+          customerId: "customer-helios",
+          externalIds: expect.objectContaining({
+            webhookPathToken: "whk-helios",
+            environmentExternalId: "env-ext-1",
+          }),
+          details: expect.objectContaining({
+            eventType: "environment.created",
+            signaturePresent: true,
+            trustGateOutcome: "accepted",
+          }),
+          request: expect.objectContaining({
+            method: "POST",
+            rawBodySha256: expect.any(String),
+          }),
+        }),
+        expect.objectContaining({
+          operation: "cloudshare.webhook.verify_signature",
+          outcome: "success",
+          customerId: "customer-helios",
+          details: expect.objectContaining({
+            signatureMatched: true,
+            signatureScheme: "HMAC-SHA256 base64 over exact raw request body",
+            storedWebhookSecretLength: HELIOS_SECRET.length,
+          }),
+        }),
+        expect.objectContaining({
+          operation: "cloudshare.webhook.reconcile",
+          outcome: "success",
+          customerId: "customer-helios",
+          candidateEmail: "candidate@helioscx.demo",
+          examId: "exam-1",
+          examAttemptId: "attempt-1",
+          externalIds: expect.objectContaining({
+            environmentExternalId: "env-ext-1",
+          }),
+        }),
+      ]),
+    );
+    expect(JSON.stringify(entries)).not.toContain(signed.rawBody);
+    expect(JSON.stringify(entries)).not.toContain(signed.signature ?? "");
+  });
+
+  it("records typed failure diagnostics for unknown target, invalid payload, duplicate, and reconcile failure without raw body leakage", async () => {
+    const { helios, diagnostics, deps } = setup();
+    const unknownRawBody = JSON.stringify({
+      Event: "environment.created",
+      token: "must-not-be-logged",
+      Payload: JSON.stringify({ EnvironmentId: "env-1" }),
+    });
+    await handleCloudShareWebhook(deps, {
+      webhookPathToken: "unknown-token",
+      rawBody: unknownRawBody,
+      signature: "invalid",
+    });
+
+    const malformedRawBody = JSON.stringify({ Event: "garbage" });
+    const { computeWebhookSignature } = await import("@/integrations/cloudshare/webhooks");
+    await handleCloudShareWebhook(deps, {
+      webhookPathToken: "whk-helios",
+      rawBody: malformedRawBody,
+      signature: computeWebhookSignature(malformedRawBody, HELIOS_SECRET),
+    });
+
+    deps.reconcile = vi.fn(async () => {
+      throw new Error("CloudShare GET environment timed out");
+    });
+    const signed = helios.emit({ environmentExternalId: "env-ext-1", event: "environment.created", at });
+    await handleCloudShareWebhook(deps, { webhookPathToken: "whk-helios", ...signed });
+    await handleCloudShareWebhook(deps, { webhookPathToken: "whk-helios", ...signed });
+
+    const allEntries = await diagnostics.query();
+    expect(allEntries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation: "cloudshare.webhook.receive",
+          outcome: "failure",
+          customerId: null,
+          details: expect.objectContaining({
+            trustGateOutcome: "unknown_target",
+            signaturePresent: true,
+          }),
+        }),
+        expect.objectContaining({
+          operation: "cloudshare.webhook.receive",
+          outcome: "failure",
+          customerId: "customer-helios",
+          details: expect.objectContaining({
+            trustGateOutcome: "invalid_payload",
+          }),
+        }),
+        expect.objectContaining({
+          operation: "cloudshare.webhook.receive",
+          outcome: "failure",
+          customerId: "customer-helios",
+          details: expect.objectContaining({
+            trustGateOutcome: "duplicate",
+          }),
+        }),
+        expect.objectContaining({
+          operation: "cloudshare.webhook.reconcile",
+          outcome: "failure",
+          customerId: "customer-helios",
+          externalIds: expect.objectContaining({
+            environmentExternalId: "env-ext-1",
+          }),
+        }),
+      ]),
+    );
+    expect(JSON.stringify(allEntries)).not.toContain("must-not-be-logged");
+    expect(JSON.stringify(allEntries)).not.toContain(unknownRawBody);
+  });
+
+  it("swallows diagnostic recording failures so webhook behavior still succeeds", async () => {
+    const { helios, deps } = setup();
+    deps.diagnostics = {
+      record: vi.fn(async () => {
+        throw new Error("diagnostics unavailable");
+      }),
+    };
+    const signed = helios.emit({ environmentExternalId: "env-ext-1", event: "environment.created", at });
+
+    const res = await handleCloudShareWebhook(deps, {
+      webhookPathToken: "whk-helios",
+      ...signed,
+    });
+
+    expect(res.status).toBe(202);
   });
 });

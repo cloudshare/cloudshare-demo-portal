@@ -39,6 +39,7 @@ export interface LabLaunchRepository {
   save(launch: LabLaunch): Promise<void>;
   findById(id: string): Promise<LabLaunch | null>;
   findByExamAttemptId(examAttemptId: string): Promise<LabLaunch | null>;
+  findByEnvironmentExternalId(environmentExternalId: string): Promise<LabLaunch | null>;
 }
 
 // --- LabProvisioner port (implemented by the CloudShare integration) ---

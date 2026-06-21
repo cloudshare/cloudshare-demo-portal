@@ -35,9 +35,27 @@ export async function POST(
             now: () => new Date(),
           },
           environmentExternalId,
-      ),
+        ).then(async (record) => {
+          const launch = await services.labLaunches.findByEnvironmentExternalId(environmentExternalId);
+          const attempt = launch
+            ? await services.examAttempts.findById(launch.examAttemptId)
+            : null;
+          return {
+            environmentExternalId,
+            status: record?.status,
+            correlation: launch
+              ? {
+                  customerId: attempt?.customerId ?? connection.customerId,
+                  examAttemptId: attempt?.id ?? null,
+                  examId: attempt?.examId ?? null,
+                  candidateEmail: launch.participantEmail ?? null,
+                }
+              : undefined,
+          };
+        }),
       logger: services.logger,
       eventLog: services.eventLog,
+      diagnostics: services.diagnosticRecorder,
       now: () => new Date(),
     },
     { webhookPathToken, rawBody, signature },

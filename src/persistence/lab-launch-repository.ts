@@ -20,6 +20,9 @@ export function createInMemoryLabLaunchRepository(): LabLaunchRepository & {
     async findByExamAttemptId(examAttemptId: string): Promise<LabLaunch | null> {
       return [...byId.values()].find((l) => l.examAttemptId === examAttemptId) ?? null;
     },
+    async findByEnvironmentExternalId(environmentExternalId: string): Promise<LabLaunch | null> {
+      return [...byId.values()].find((l) => l.environmentExternalId === environmentExternalId) ?? null;
+    },
     reset(): void {
       byId.clear();
     },

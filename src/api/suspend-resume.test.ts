@@ -59,6 +59,8 @@ function makeLaunches(found: LabLaunch | null = launch): LabLaunchRepository {
     save: (record) => launches.save(record),
     findById: (id) => launches.findById(id),
     findByExamAttemptId: (examAttemptId) => launches.findByExamAttemptId(examAttemptId),
+    findByEnvironmentExternalId: (environmentExternalId) =>
+      launches.findByEnvironmentExternalId(environmentExternalId),
   };
 }
 

@@ -59,6 +59,15 @@ describe("CloudShare webhook route", () => {
       },
       environmentSource: globalSource,
       environments: {},
+      labLaunches: {
+        findByEnvironmentExternalId: vi.fn().mockResolvedValue(null),
+      },
+      examAttempts: {
+        findById: vi.fn().mockResolvedValue(null),
+      },
+      diagnosticRecorder: {
+        record: vi.fn(),
+      },
     };
 
     mockCreateCloudShareEnvironmentSource.mockReturnValue(customerSource);
