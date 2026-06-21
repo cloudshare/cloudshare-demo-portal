@@ -319,6 +319,7 @@ export function getServices(): Services {
         mode: config.runtime.mode,
         trace: traceCloudShare,
         connection: {
+          customerId: connection.customerId,
           apiId: connection.apiId,
           apiKey: connection.apiKey,
           webhookSecret: connection.webhookSecret,

@@ -56,6 +56,7 @@ export interface CloudShareClientOptions {
   readonly endpoints: CloudShareEndpoints;
   readonly tokenProvider: V4TokenProvider;
   readonly v3: { readonly apiId: string; readonly apiKey: string };
+  readonly customerId?: string;
   readonly trace?: (event: {
     readonly level: "info" | "warn";
     readonly message: string;
@@ -198,6 +199,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
         host: requestInfo.host,
         path: requestInfo.path,
         integrationSurface: requestInfo.integrationSurface,
+        ...(opts.customerId ? { customerId: opts.customerId } : {}),
         requestHeaders: sanitizeHeaders(request.headers),
         ...(requestBody !== undefined ? { requestBody } : {}),
         ...fields,

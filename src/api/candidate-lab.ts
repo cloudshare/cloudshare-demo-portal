@@ -32,6 +32,8 @@ export async function handleGetCandidateLabStatus(
       examAttemptId: request.examAttemptId,
       candidateId: request.candidateId,
       ownerCandidateId: attempt.candidateId,
+      customerId: attempt.customerId ?? null,
+      examId: attempt.examId,
     });
     return { status: 403, body: { error: "forbidden" } };
   }

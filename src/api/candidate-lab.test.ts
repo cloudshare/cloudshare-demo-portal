@@ -149,17 +149,19 @@ describe("candidate lab status handler", () => {
       updatedAt: new Date("2026-06-18T09:59:30.000Z"),
     });
 
+    const logger = {
+      debug: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+    };
+
     const response = await handleGetCandidateLabStatus(
       {
         attempts,
         exams,
         clocks,
-        logger: {
-          debug: vi.fn(),
-          info: vi.fn(),
-          warn: vi.fn(),
-          error: vi.fn(),
-        },
+        logger,
       },
       {
         examAttemptId: "attempt-1",
@@ -178,5 +180,15 @@ describe("candidate lab status handler", () => {
       status: "running",
       elapsedAtPauseMs: 59 * 60 * 1000,
     });
+    expect(logger.warn).toHaveBeenCalledWith(
+      "candidate requested another candidate's lab status",
+      expect.objectContaining({
+        examAttemptId: "attempt-1",
+        candidateId: "candidate-attacker",
+        ownerCandidateId: "candidate-owner",
+        customerId: "customer-1",
+        examId: "exam-1",
+      }),
+    );
   });
 });
