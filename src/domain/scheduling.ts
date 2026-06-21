@@ -200,6 +200,14 @@ export async function scheduleExam(
   } catch (cause) {
     await recordFailure("create_training", cause);
     await deps.attempts.save({ ...attempt, status: "expired" });
+    await deps.diagnostics?.record({
+      ...anchors,
+      level: "error",
+      operation: "exam_attempt.expired",
+      outcome: "failure",
+      message: `ExamAttempt expired: CloudShare create training failed`,
+      details: { expiredDueTo: "create_training" },
+    });
     throw new CloudShareProvisioningError("CloudShare training creation failed.", {
       attemptId,
       attemptedOperation: "create_training",
@@ -248,6 +256,14 @@ export async function scheduleExam(
   } catch (cause) {
     await recordFailure("add_participant", cause, { trainingId });
     await deps.attempts.save({ ...attempt, status: "expired" });
+    await deps.diagnostics?.record({
+      ...anchors,
+      level: "error",
+      operation: "exam_attempt.expired",
+      outcome: "failure",
+      message: `ExamAttempt expired: CloudShare add participant failed`,
+      details: { expiredDueTo: "add_participant" },
+    });
     throw new CloudShareProvisioningError("CloudShare participant registration failed.", {
       attemptId,
       attemptedOperation: "add_participant",
@@ -283,6 +299,14 @@ export async function scheduleExam(
   } catch (cause) {
     await recordFailure("create_sponsored_link", cause, { trainingId });
     await deps.attempts.save({ ...attempt, status: "expired" });
+    await deps.diagnostics?.record({
+      ...anchors,
+      level: "error",
+      operation: "exam_attempt.expired",
+      outcome: "failure",
+      message: `ExamAttempt expired: CloudShare create sponsored link failed`,
+      details: { expiredDueTo: "create_sponsored_link" },
+    });
     throw new CloudShareProvisioningError("CloudShare sponsored-link creation failed.", {
       attemptId,
       attemptedOperation: "create_sponsored_link",

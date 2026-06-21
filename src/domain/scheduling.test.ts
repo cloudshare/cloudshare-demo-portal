@@ -449,6 +449,49 @@ describe("scheduleExam", () => {
     });
   });
 
+  it("records an exam_attempt.expired entry with outcome failure when addParticipant throws", async () => {
+    const { exams, attempts, launches } = await setup();
+    const repository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository });
+
+    await expect(
+      scheduleExam(
+        {
+          exams,
+          attempts,
+          launches,
+          labs: {
+            ...makeLabs(),
+            async addParticipant() {
+              throw new Error("forbidden");
+            },
+          },
+          newId: vi.fn().mockReturnValueOnce("attempt-1").mockReturnValueOnce("launch-1"),
+          now: () => new Date("2026-06-15T10:00:00.000Z"),
+          diagnostics,
+        },
+        {
+          customerId: "customer-helios",
+          candidateId: "candidate-1",
+          candidateEmail: "candidate@helioscx.demo",
+          candidateFirstName: "Asha",
+          candidateLastName: "Patel",
+          examId: "exam-1",
+          scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+          correlationId: "corr-expired",
+        },
+      ),
+    ).rejects.toBeInstanceOf(CloudShareProvisioningError);
+
+    const thread = await repository.query({ examAttemptId: "attempt-1" });
+    const expiredEntry = thread.find(
+      (e) => e.operation === "exam_attempt.expired" && e.outcome === "failure",
+    );
+    expect(expiredEntry).toBeDefined();
+    expect(expiredEntry?.level).toBe("error");
+    expect(expiredEntry?.details).toMatchObject({ expiredDueTo: "add_participant" });
+  });
+
   it("records a transport-mode failure for training creation and emits no later steps", async () => {
     const { exams, attempts, launches } = await setup();
     const repository = createInMemoryDiagnosticLogRepository();

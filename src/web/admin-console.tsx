@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ADMIN_TABS,
@@ -2060,9 +2060,8 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                     </tr>
                   )}
                   {diagnosticEntries.map((entry) => (
-                    <>
+                    <Fragment key={entry.id}>
                       <tr
-                        key={entry.id}
                         style={{ borderBottom: "1px solid #eee", verticalAlign: "top", cursor: "pointer" }}
                         onClick={() => setExpandedDiagnosticId(expandedDiagnosticId === entry.id ? null : entry.id)}
                       >
@@ -2112,7 +2111,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
