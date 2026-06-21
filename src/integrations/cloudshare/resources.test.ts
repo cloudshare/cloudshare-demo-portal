@@ -333,4 +333,93 @@ describe("createCloudShareExamAuthoringSource", () => {
       },
     });
   });
+
+  it("accepts CloudShare blueprint detail variants from the documented v3 response shape", async () => {
+    const source = createCloudShareExamAuthoringSource(
+      makeClient({
+        "v3:/projects/p-1/blueprints/bp-1": {
+          createFromVersions: [
+            {
+              id: "snap-1",
+              name: "Default Snapshot",
+              description: null,
+              comment: null,
+              type: 0,
+              isDefault: true,
+              isLatest: true,
+              number: 3,
+              createTime: "Wed, 24 Oct 2012 14:45:25 GMT",
+              Regions: ["r-1", "r-2"],
+              Machines: [
+                {
+                  Id: "machine-1",
+                  Name: "Gateway",
+                  OsTypeName: "Windows",
+                  Resources: { cpuCount: 2, memorySizeMB: 2048 },
+                  HttpAccessEnabled: false,
+                  CanAddMultipleInstances: true,
+                },
+              ],
+            },
+          ],
+          type: 0,
+          imageUrl: null,
+          resources: {
+            cpuCount: 2,
+            diskSizeMB: 32768,
+            memorySizeMB: 2048,
+          },
+          numberOfMachines: 1,
+          creationDate: "Mon, 30 Mar 2014 03:26:40 GMT",
+        },
+      }),
+    );
+
+    await expect(source.getBlueprintDetail("p-1", "bp-1")).resolves.toMatchObject({
+      id: "bp-1",
+      name: "bp-1",
+      description: "",
+      defaultSnapshotId: "snap-1",
+      snapshots: [{ id: "snap-1", name: "Default Snapshot", isDefault: true, regionIds: ["r-1", "r-2"] }],
+      diagnosticSummary: {
+        blueprintId: "bp-1",
+        name: "bp-1",
+        description: "",
+        type: 0,
+        creationDate: "Mon, 30 Mar 2014 03:26:40 GMT",
+        resources: {
+          cpuCount: 2,
+          diskSizeMB: 32768,
+          memorySizeMB: 2048,
+        },
+        numberOfMachines: 1,
+        imageUrl: { present: false },
+        defaultSnapshotId: "snap-1",
+        snapshotCount: 1,
+        snapshots: [
+          {
+            id: "snap-1",
+            name: "Default Snapshot",
+            isDefault: true,
+            isLatest: true,
+            type: 0,
+            number: 3,
+            createTime: "Wed, 24 Oct 2012 14:45:25 GMT",
+            regions: [{ id: "r-1" }, { id: "r-2" }],
+            machineCount: 1,
+            machines: [
+              {
+                id: "machine-1",
+                name: "Gateway",
+                osTypeName: "Windows",
+                resources: { cpuCount: 2, memorySizeMB: 2048 },
+                httpAccessEnabled: false,
+                canAddMultipleInstances: true,
+              },
+            ],
+          },
+        ],
+      },
+    });
+  });
 });

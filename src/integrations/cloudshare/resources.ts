@@ -9,10 +9,23 @@ const MACHINE_DIAGNOSTIC_LIMIT = 25;
 const redactableQueryKeyPatterns = ["token", "bearer", "secret", "signature", "auth", "key"];
 const sensitiveTextPatterns = [/bearer\s+[a-z0-9._-]+/i, /authorization:/i, /\b(password|secret)\b/i];
 
-const optionalStringSchema = z.string().trim().min(1).optional();
-const optionalBooleanSchema = z.boolean().optional();
-const optionalRecordSchema = z.record(z.string(), z.unknown()).optional();
-const optionalStringOrNumberSchema = z.union([z.string(), z.number()]).optional();
+function nullishToUndefined(value: unknown): unknown {
+  return value ?? undefined;
+}
+
+const optionalStringSchema = z.preprocess(
+  nullishToUndefined,
+  z.string().trim().min(1).optional(),
+);
+const optionalBooleanSchema = z.preprocess(nullishToUndefined, z.boolean().optional());
+const optionalRecordSchema = z.preprocess(
+  nullishToUndefined,
+  z.record(z.string(), z.unknown()).optional(),
+);
+const optionalStringOrNumberSchema = z.preprocess(
+  nullishToUndefined,
+  z.union([z.string(), z.number()]).optional(),
+);
 
 const machineSchema = z
   .object({
@@ -34,7 +47,7 @@ const blueprintVersionSchema = z.object({
   isDefault: z.boolean(),
   number: optionalStringOrNumberSchema,
   isLatest: optionalBooleanSchema,
-  type: optionalStringSchema,
+  type: optionalStringOrNumberSchema,
   createTime: optionalStringSchema,
   description: optionalStringSchema,
   comment: optionalStringSchema,
@@ -58,8 +71,8 @@ const blueprintVersionSchema = z.object({
 const blueprintDetailSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
-  description: z.string().optional().default(""),
-  type: optionalStringSchema,
+  description: z.preprocess(nullishToUndefined, z.string().optional()).default(""),
+  type: optionalStringOrNumberSchema,
   creationDate: optionalStringSchema,
   resources: optionalRecordSchema,
   numberOfMachines: z.number().int().nonnegative().optional(),
@@ -396,7 +409,10 @@ export function createCloudShareExamAuthoringSource(
       const detail = await client.requestV3({
         method: "GET",
         path: `/projects/${projectId}/blueprints/${blueprintId}`,
-        schema: blueprintDetailSchema,
+        schema: z.preprocess(
+          (value) => normalizeBlueprintDetailPayload(value, blueprintId),
+          blueprintDetailSchema,
+        ),
       });
 
       return {
@@ -433,7 +449,7 @@ function summarizeBlueprintDetailForDiagnostics(
     snapshots: snapshots.map((snapshot) => summarizeSnapshotForDiagnostics(snapshot)),
   };
 
-  if (detail.type) {
+  if (detail.type !== undefined) {
     summary.type = detail.type;
   }
   if (detail.creationDate) {
@@ -457,6 +473,117 @@ function summarizeBlueprintDetailForDiagnostics(
   return summary;
 }
 
+function normalizeBlueprintDetailPayload(
+  value: unknown,
+  blueprintId: string,
+): unknown {
+  const record = asRecord(value);
+  if (!record) {
+    return value;
+  }
+
+  const createFromVersions = readField(record, "createFromVersions", "CreateFromVersions");
+
+  return {
+    ...record,
+    id: readField(record, "id", "Id") ?? blueprintId,
+    name: readField(record, "name", "Name") ?? blueprintId,
+    description: readField(record, "description", "Description") ?? "",
+    type: readField(record, "type", "Type"),
+    creationDate: readField(record, "creationDate", "CreationDate"),
+    resources: readField(record, "resources", "Resources"),
+    numberOfMachines: readField(record, "numberOfMachines", "NumberOfMachines"),
+    imageUrl: readField(record, "imageUrl", "ImageUrl"),
+    createFromVersions: Array.isArray(createFromVersions)
+      ? createFromVersions.map((version) => normalizeBlueprintVersionPayload(version))
+      : createFromVersions,
+  };
+}
+
+function normalizeBlueprintVersionPayload(value: unknown): unknown {
+  const record = asRecord(value);
+  if (!record) {
+    return value;
+  }
+
+  const machines = readField(record, "machines", "Machines");
+  const regions = readField(record, "regions", "Regions");
+
+  return {
+    ...record,
+    id: readField(record, "id", "Id"),
+    name: readField(record, "name", "Name"),
+    isDefault: readField(record, "isDefault", "IsDefault"),
+    number: readField(record, "number", "Number"),
+    isLatest: readField(record, "isLatest", "IsLatest"),
+    type: readField(record, "type", "Type"),
+    createTime: readField(record, "createTime", "CreateTime"),
+    description: readField(record, "description", "Description"),
+    comment: readField(record, "comment", "Comment"),
+    resources: readField(record, "resources", "Resources"),
+    machines: Array.isArray(machines)
+      ? machines.map((machine) => normalizeMachinePayload(machine))
+      : machines,
+    regions: Array.isArray(regions)
+      ? regions.map((region) => normalizeRegionPayload(region))
+      : regions,
+  };
+}
+
+function normalizeMachinePayload(value: unknown): unknown {
+  const record = asRecord(value);
+  if (!record) {
+    return value;
+  }
+
+  return {
+    ...record,
+    id: readField(record, "id", "Id"),
+    name: readField(record, "name", "Name"),
+    osTypeName: readField(record, "osTypeName", "OsTypeName"),
+    resources: readField(record, "resources", "Resources"),
+    isSaaS: readField(record, "isSaaS", "IsSaaS"),
+    httpAccessEnabled: readField(record, "httpAccessEnabled", "HttpAccessEnabled"),
+    resumeType: readField(record, "resumeType", "ResumeType"),
+    bootOrder: readField(record, "bootOrder", "BootOrder"),
+    canAddMultipleInstances: readField(
+      record,
+      "canAddMultipleInstances",
+      "CanAddMultipleInstances",
+    ),
+  };
+}
+
+function normalizeRegionPayload(value: unknown): unknown {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  const record = asRecord(value);
+  if (!record) {
+    return value;
+  }
+
+  return {
+    ...record,
+    id: readField(record, "id", "Id"),
+    name: readField(record, "name", "Name"),
+  };
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
+}
+
+function readField(record: Record<string, unknown>, ...keys: string[]): unknown {
+  for (const key of keys) {
+    if (key in record) {
+      return record[key];
+    }
+  }
+  return undefined;
+}
+
 function summarizeSnapshotForDiagnostics(
   snapshot: z.infer<typeof blueprintVersionSchema>,
 ): Record<string, unknown> {
@@ -475,7 +602,7 @@ function summarizeSnapshotForDiagnostics(
   if (snapshot.isLatest !== undefined) {
     summary.isLatest = snapshot.isLatest;
   }
-  if (snapshot.type) {
+  if (snapshot.type !== undefined) {
     summary.type = snapshot.type;
   }
   if (snapshot.createTime) {
