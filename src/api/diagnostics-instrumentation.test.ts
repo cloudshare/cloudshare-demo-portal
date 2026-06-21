@@ -355,6 +355,34 @@ describe("handleGetDiagnosticLog", () => {
     expect(entries[0].customerId).toBe("customer-a");
   });
 
+  it("filters by ExamAttempt ID within the Customer scope", async () => {
+    const repository = createInMemoryDiagnosticLogRepository();
+    await repository.append({
+      source: "scheduling",
+      operation: "exam_attempt.schedule",
+      outcome: "success",
+      message: "a",
+      customerId: "customer-a",
+      examAttemptId: "attempt-1",
+    });
+    await repository.append({
+      source: "scheduling",
+      operation: "exam_attempt.schedule",
+      outcome: "success",
+      message: "b",
+      customerId: "customer-a",
+      examAttemptId: "attempt-2",
+    });
+
+    const response = await handleGetDiagnosticLog(
+      { diagnostics: repository, logger: noopLogger },
+      { query: { examAttemptId: "attempt-1" }, customerId: "customer-a" },
+    );
+    const entries = response.body.entries as Array<{ examAttemptId: string }>;
+    expect(entries).toHaveLength(1);
+    expect(entries[0].examAttemptId).toBe("attempt-1");
+  });
+
   it("ignores a client-supplied customerId and trusts the session scope", async () => {
     const repository = createInMemoryDiagnosticLogRepository();
     await repository.append({

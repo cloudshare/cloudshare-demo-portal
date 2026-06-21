@@ -75,6 +75,8 @@ export interface DiagnosticLogEntryInput {
 export interface DiagnosticLogQuery {
   /** Exact Customer match — the primary isolation boundary for the read API. */
   readonly customerId?: string;
+  /** Trace one ExamAttempt thread end to end. Matched on the first-class column. */
+  readonly examAttemptId?: string;
   readonly from?: Date;
   readonly to?: Date;
   readonly limit?: number;
@@ -116,8 +118,6 @@ const SENSITIVE_KEY_PATTERNS = [
   "api_key",
   "authorization",
   "credential",
-  "loginurl",
-  "login_url",
   "bearer",
   "hmac",
   "ciphertext",

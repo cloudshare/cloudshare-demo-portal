@@ -83,6 +83,7 @@ interface CandidateSchedulingDeps {
   readonly connections: CloudShareConnectionRepository;
   readonly cloudshare: CloudShareClientFactory;
   readonly logger: Logger;
+  readonly diagnostics?: DiagnosticRecorder;
   readonly now?: () => Date;
   readonly newId?: () => string;
   readonly newCorrelationId?: () => string;
@@ -241,6 +242,7 @@ export async function handleScheduleCandidateExam(
         labs,
         newId: deps.newId ?? randomUUID,
         now: deps.now ?? (() => new Date()),
+        diagnostics: deps.diagnostics,
       },
       {
         customerId: request.customerId,
@@ -250,6 +252,7 @@ export async function handleScheduleCandidateExam(
         candidateLastName: request.candidateLastName.trim(),
         examId: (body as { examId: string }).examId.trim(),
         scheduledFor: new Date((body as { scheduledFor: string }).scheduledFor),
+        correlationId,
       },
     );
 
