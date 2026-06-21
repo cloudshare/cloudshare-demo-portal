@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Logger } from "@/observability/logger";
 import type { EventLogRepository } from "@/domain/event-log";
+import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
@@ -49,6 +50,8 @@ interface SupportDiagnosticDeps {
   readonly eventLog: EventLogRepository;
   readonly newCorrelationId?: () => string;
   readonly now?: () => Date;
+  readonly diagnostics?: DiagnosticRecorder;
+  readonly candidateEmail?: string;
 }
 
 interface EnvironmentCorrelationDeps {
@@ -120,6 +123,16 @@ export async function handleSuspendExam(
         },
       };
     }
+    const anchors = {
+      source: "runtime" as const,
+      customerId: reconciledAttempt.customerId ?? null,
+      candidateEmail: deps.candidateEmail ?? null,
+      examId: reconciledAttempt.examId ?? null,
+      examAttemptId,
+      correlationId: null as string | null,
+      actor: { type: "candidate" as const, id: reconciledAttempt.candidateId ?? null, email: deps.candidateEmail ?? null },
+      subject: { type: "exam_attempt" as const, id: examAttemptId },
+    };
     const correlation = await ensureExamAttemptEnvironmentCorrelation(deps, {
       examAttemptId,
       operation: "exam_suspend",
@@ -138,10 +151,28 @@ export async function handleSuspendExam(
         ),
       },
     );
+    await deps.diagnostics?.record({ ...anchors, level: "info", operation: "exam_attempt.suspend", outcome: "success", message: "Exam suspended" });
     deps.logger.info("exam suspended", { examAttemptId });
     return { status: 200, body: { status: "suspended", examAttemptId } };
   } catch (err) {
-    return handleTimerSyncError(deps, err, "suspend", examAttemptId);
+    const resp = await handleTimerSyncError(deps, err, "suspend", examAttemptId);
+    if (resp.status !== 200) {
+      await deps.diagnostics?.record({
+        source: "runtime" as const,
+        customerId: null,
+        candidateEmail: deps.candidateEmail ?? null,
+        examId: null,
+        examAttemptId,
+        actor: { type: "candidate" as const, id: null, email: deps.candidateEmail ?? null },
+        subject: { type: "exam_attempt" as const, id: examAttemptId },
+        level: "warn",
+        operation: "exam_attempt.suspend",
+        outcome: "failure",
+        message: "Exam suspend failed",
+        details: { error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+    return resp;
   }
 }
 
@@ -193,6 +224,16 @@ export async function handleResumeExam(
         },
       };
     }
+    const anchors = {
+      source: "runtime" as const,
+      customerId: reconciledAttempt.customerId ?? null,
+      candidateEmail: deps.candidateEmail ?? null,
+      examId: reconciledAttempt.examId ?? null,
+      examAttemptId,
+      correlationId: null as string | null,
+      actor: { type: "candidate" as const, id: reconciledAttempt.candidateId ?? null, email: deps.candidateEmail ?? null },
+      subject: { type: "exam_attempt" as const, id: examAttemptId },
+    };
     const correlation = await ensureExamAttemptEnvironmentCorrelation(deps, {
       examAttemptId,
       operation: "exam_resume",
@@ -211,6 +252,7 @@ export async function handleResumeExam(
         ),
       },
     );
+    await deps.diagnostics?.record({ ...anchors, level: "info", operation: "exam_attempt.resume", outcome: "success", message: "Exam resumed" });
     deps.logger.info("exam resumed", {
       examAttemptId,
       environmentExternalId: result.environmentExternalId,
@@ -225,7 +267,24 @@ export async function handleResumeExam(
       },
     };
   } catch (err) {
-    return handleTimerSyncError(deps, err, "resume", examAttemptId);
+    const resp = await handleTimerSyncError(deps, err, "resume", examAttemptId);
+    if (resp.status !== 200) {
+      await deps.diagnostics?.record({
+        source: "runtime" as const,
+        customerId: null,
+        candidateEmail: deps.candidateEmail ?? null,
+        examId: null,
+        examAttemptId,
+        actor: { type: "candidate" as const, id: null, email: deps.candidateEmail ?? null },
+        subject: { type: "exam_attempt" as const, id: examAttemptId },
+        level: "warn",
+        operation: "exam_attempt.resume",
+        outcome: "failure",
+        message: "Exam resume failed",
+        details: { error: err instanceof Error ? err.message : String(err) },
+      });
+    }
+    return resp;
   }
 }
 
@@ -233,6 +292,16 @@ export async function runHeartbeatAutoSuspend(
   deps: HeartbeatAutoSuspendHandlerDeps,
   examAttemptId: string,
 ): Promise<void> {
+  const attempt = await deps.attempts.findById(examAttemptId);
+  const anchors = {
+    source: "runtime" as const,
+    customerId: attempt?.customerId ?? null,
+    candidateEmail: deps.candidateEmail ?? null,
+    examId: attempt?.examId ?? null,
+    examAttemptId,
+    actor: { type: "candidate" as const, id: attempt?.candidateId ?? null, email: deps.candidateEmail ?? null },
+    subject: { type: "exam_attempt" as const, id: examAttemptId },
+  };
   try {
     const correlation = await ensureExamAttemptEnvironmentCorrelation(deps, {
       examAttemptId,
@@ -252,7 +321,16 @@ export async function runHeartbeatAutoSuspend(
         ),
       },
     );
+    await deps.diagnostics?.record({ ...anchors, level: "info", operation: "exam_attempt.heartbeat_auto_suspend", outcome: "success", message: "Exam auto-suspended by heartbeat expiry" });
   } catch (err) {
+    await deps.diagnostics?.record({
+      ...anchors,
+      level: "warn",
+      operation: "exam_attempt.heartbeat_auto_suspend",
+      outcome: "failure",
+      message: "Heartbeat auto-suspend failed",
+      details: { error: err instanceof Error ? err.message : String(err) },
+    });
     await reportFailureDiagnostic(
       deps,
       err,

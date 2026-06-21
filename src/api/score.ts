@@ -14,6 +14,7 @@ import {
   CloudShareResponseError,
   CloudShareTransportError,
 } from "@/integrations/cloudshare";
+import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 
 export interface ScoreHandlerDeps {
   readonly attempts: ExamAttemptRepository;
@@ -31,6 +32,7 @@ export interface ScoreHandlerDeps {
   readonly limitations: readonly string[];
   readonly now?: () => Date;
   readonly newCorrelationId?: () => string;
+  readonly diagnostics?: DiagnosticRecorder;
 }
 
 export interface ScoreRequest {
@@ -77,6 +79,16 @@ export async function handleGetCandidateScore(
       body: { error: "score is only available after the exam attempt is completed" },
     };
   }
+
+  const anchors = {
+    source: "runtime" as const,
+    customerId: attempt.customerId ?? null,
+    candidateEmail: null as string | null,
+    examId: attempt.examId ?? null,
+    examAttemptId: attempt.id,
+    actor: { type: "candidate" as const, id: attempt.candidateId, email: null as string | null },
+    subject: { type: "exam_attempt" as const, id: attempt.id },
+  };
 
   const exam = await deps.exams.findById(attempt.examId);
   if (!exam || exam.customerId !== request.session.customerId) {
@@ -159,8 +171,27 @@ export async function handleGetCandidateScore(
       launch,
     );
     if (!resolvedParticipantId.ok) {
+      await deps.diagnostics?.record({
+        ...anchors,
+        level: "warn",
+        operation: "exam_attempt.score.correlate_environment",
+        outcome: "failure",
+        message: "Score retrieval failed: could not correlate CloudShare environment participant",
+      });
       return resolvedParticipantId.response;
     }
+
+    await deps.diagnostics?.record({
+      ...anchors,
+      level: "info",
+      operation: "exam_attempt.score.correlate_environment",
+      outcome: "success",
+      message: "CloudShare environment participant resolved for score retrieval",
+      externalIds: {
+        ...(launch.experienceId ? { experienceId: launch.experienceId } : {}),
+        participantId: resolvedParticipantId.participantId,
+      },
+    });
 
     const scoreRetriever = deps.createScoreRetriever(connection);
     const result = await resolveExamAttemptScore(
@@ -189,6 +220,14 @@ export async function handleGetCandidateScore(
           reason: result.reason,
         },
         occurredAt: new Date(result.retrievedAt),
+      });
+      await deps.diagnostics?.record({
+        ...anchors,
+        level: "info",
+        operation: "exam_attempt.score.retrieve",
+        outcome: "success",
+        message: "Score retrieved — no score available yet",
+        response: { scoreAvailable: false, reason: result.reason },
       });
       return {
         status: 200,
@@ -219,6 +258,20 @@ export async function handleGetCandidateScore(
         stepsTotal: result.stepsTotal,
       },
       occurredAt: new Date(result.retrievedAt),
+    });
+
+    await deps.diagnostics?.record({
+      ...anchors,
+      level: "info",
+      operation: "exam_attempt.score.retrieve",
+      outcome: "success",
+      message: "Score retrieved successfully",
+      response: {
+        scoreAvailable: true,
+        percentComplete: result.percentComplete,
+        stepsCompleted: result.stepsCompleted,
+        stepsTotal: result.stepsTotal,
+      },
     });
 
     return {
@@ -273,6 +326,19 @@ export async function handleGetCandidateScore(
         },
         error: "Score retrieval failed.",
         occurredAt: deps.now?.() ?? new Date(),
+      });
+      await deps.diagnostics?.record({
+        ...anchors,
+        level: "warn",
+        operation: "exam_attempt.score.retrieve",
+        outcome: "failure",
+        message: "Score retrieval failed",
+        details: {
+          attemptedOperation: asString(diagnostic.attemptedOperation),
+          integrationSurface: asString(diagnostic.integrationSurface),
+          failureMode: asString(diagnostic.failureMode),
+          correlationId,
+        },
       });
       deps.logger.warn("candidate score retrieval failed", diagnostic);
       return {
