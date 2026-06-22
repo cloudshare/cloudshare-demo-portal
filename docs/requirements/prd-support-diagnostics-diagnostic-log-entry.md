@@ -34,7 +34,7 @@ Existing prototype support-log rows are development data and do not need migrati
 11. As a Helios admin, I want ExamAttempt scheduling, CloudShare training creation, student add, and sponsored-link creation to appear in one correlated thread, so that provisioning issues can be diagnosed end to end.
 12. As a Helios admin, I want Candidate enter, suspend, resume, heartbeat auto-suspend, and score retrieval to appear in one correlated thread, so that runtime issues can be diagnosed end to end.
 13. As a Helios admin, I want raw request/response details when supportability requires them, so that CloudShare issues can be verified without external tooling.
-14. As a Helios admin, I want secrets, API keys, bearer tokens, sponsored-link URLs, and authorization headers redacted, so that diagnostics do not leak credentials.
+14. As a Helios admin, I want secrets, API keys, bearer tokens, authorization headers, and webhook secrets redacted while CloudShare sponsored-link `loginUrl` values remain available in admin-only diagnostics, so that diagnostics preserve support evidence without leaking non-diagnostic credentials.
 15. As a Helios admin, I want an explicitly enabled, time-boxed sensitive diagnostic mode, so that replicable integration issues can be diagnosed when normal redaction hides material needed to prove the problem.
 16. As a Helios admin, I want missing-signature and invalid-signature webhook attempts to expose safe metadata but not arbitrary raw untrusted request bodies during normal logging, so that public webhook traffic cannot become a sensitive data sink.
 17. As a Helios admin, I want DiagnosticLogEntry rows to be append-only, so that the log remains a record of what was known at the time.
@@ -57,7 +57,7 @@ Existing prototype support-log rows are development data and do not need migrati
 - Audit Trail remains separate. Audit answers who changed what and whether it was allowed; Support diagnostics answer what the platform did and how to trace behavior. Some actions emit both.
 - Event Log is not a primary support workflow. Events that matter to support should appear as DiagnosticLogEntries or correlated timeline rows.
 - Existing prototype support-log rows are disposable development data and should not constrain the new model.
-- Normal DiagnosticLogEntry output must redact secrets, API keys, bearer tokens, sponsored-link URLs, authorization headers, and other sensitive values.
+- Normal DiagnosticLogEntry output must redact secrets, API keys, bearer tokens, authorization headers, webhook secrets, and other sensitive values. CloudShare sponsored-link `loginUrl` values are an explicit exception for admin-only diagnostic evidence: they may be retained in DiagnosticLogEntry data, but they remain server-only and must never be returned to Candidate/client-facing responses or rendered in the portal UI.
 - Sensitive diagnostic capture may exist, but only as an explicit debug mode with strong guardrails: disabled by default, admin/operator visible, audited when enabled/disabled, time-boxed with automatic expiry, restricted to a specific Customer or diagnostic scope where possible, and clearly marked in the UI. It exists for replicable issues where normal redaction prevents diagnosis, not for routine logging.
 - First write-path instrumentation should cover Candidate account creation; Candidate login/logout attempts; Customer admin login/logout attempts; Candidate ExamAttempt scheduling; CloudShare training creation; Candidate participant/student add; sponsored-link creation; Candidate enter/resume/suspend; CloudShare webhook receive/verify/reconcile; Guided Journey score retrieval; and CloudShare resource-sync reads.
 - Exam authoring and lifecycle changes should emit diagnostics alongside audits, but they are lower priority than the candidate exam delivery path.
@@ -67,7 +67,7 @@ Existing prototype support-log rows are development data and do not need migrati
 - Test through the highest stable seams: framework-agnostic API/domain handlers for write-path emission and the Support diagnostic read API for search/filter behavior.
 - Repository tests should prove DiagnosticLogEntry persists first-class correlation fields and structured request/response/details safely.
 - API/domain tests should prove success and failure paths emit diagnostic entries with the expected anchors.
-- Redaction tests should prove secrets, auth headers, API keys, sponsored links, bearer tokens, and untrusted webhook raw bodies do not leak.
+- Redaction tests should prove secrets, auth headers, API keys, bearer tokens, webhook secrets, and untrusted webhook raw bodies do not leak, while admin-only DiagnosticLogEntry data may retain CloudShare sponsored-link `loginUrl` values.
 - Sensitive diagnostic mode tests should prove sensitive capture is disabled by default, expires automatically, emits audit/diagnostic records when toggled, and changes captured fields only within the intended scope.
 - Support read-model tests should prove filtering by Candidate email, Exam ID, ExamAttempt ID, operation, outcome, correlation ID, CloudShare external IDs, and time range.
 - UI tests or browser smoke tests should prove the Support page filters the diagnostic log itself, not unrelated monitoring widgets.

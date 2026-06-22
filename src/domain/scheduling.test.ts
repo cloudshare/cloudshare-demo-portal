@@ -389,7 +389,7 @@ describe("scheduleExam", () => {
     });
 
     const sponsoredLink = thread.find((e) => e.operation === "cloudshare.create_sponsored_link");
-    expect(sponsoredLink?.response).toMatchObject({ loginUrl: "[REDACTED]" });
+    expect(sponsoredLink?.response).toMatchObject({ loginUrl: SPONSORED_LINK_URL });
   });
 
   it("records a failure diagnostic for the failing CloudShare op and emits no later steps", async () => {
@@ -550,7 +550,7 @@ describe("scheduleExam", () => {
     });
   });
 
-  it("redacts sponsored-link loginUrl from failed sponsored-link diagnostics", async () => {
+  it("retains sponsored-link loginUrl in failed sponsored-link diagnostics for admin support", async () => {
     const { exams, attempts, launches } = await setup();
     const repository = createInMemoryDiagnosticLogRepository();
     const diagnostics = createDiagnosticRecorder({ repository });
@@ -605,7 +605,7 @@ describe("scheduleExam", () => {
     });
     expect(
       (failure?.details as { responseBody?: { loginUrl?: string } })?.responseBody?.loginUrl,
-    ).toBe("[REDACTED]");
+    ).toBe("https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/leak-token");
   });
 
   it("rejects non-future schedule times", async () => {

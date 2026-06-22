@@ -15,6 +15,9 @@ environment while the experience window and policy are live. The portal therefor
   the **launch-window time gate**, then issues a **302 redirect** to the `loginUrl`.
 - Keeps the opener portal page alive with the **retained child-window handle**, which drives the
   heartbeat and `childWindow.closed` liveness/auto-suspend.
+- May retain the `loginUrl` in **admin-only diagnostic logs** as support evidence. That does not
+  weaken the server-only rule: the URL is still never returned to Candidate/client-facing APIs or
+  rendered in the portal UI.
 
 ## Why
 
