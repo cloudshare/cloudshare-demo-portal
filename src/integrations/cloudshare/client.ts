@@ -45,10 +45,51 @@ export interface V3RequestSpec<T> {
   readonly schema: ZodType<T, ZodType["_def"], unknown>;
 }
 
+export interface CloudShareRequestDiagnostics {
+  readonly method: Method;
+  readonly path: string;
+  readonly headers?: Record<string, string>;
+  readonly body?: unknown;
+}
+
+export interface CloudShareResponseDiagnostics {
+  readonly status: number;
+  readonly headers?: Record<string, string | string[]>;
+  readonly body: unknown;
+  readonly network?: {
+    readonly localAddress?: string;
+    readonly localFamily?: string;
+    readonly localPort?: number;
+    readonly remoteAddress?: string;
+    readonly remoteFamily?: string;
+    readonly remotePort?: number;
+    readonly transport?: string;
+  };
+  readonly tls?: {
+    readonly protocol?: string;
+    readonly cipher?: unknown;
+    readonly authorized?: boolean;
+    readonly authorizationError?: string | null;
+  };
+}
+
+export interface CloudShareDetailedResult<T> {
+  readonly data: T;
+  readonly host: string;
+  readonly integrationSurface: string;
+  readonly request: CloudShareRequestDiagnostics;
+  readonly response: CloudShareResponseDiagnostics;
+}
+
 export interface CloudShareClient {
   requestV4<T>(spec: V4RequestSpec<T>): Promise<T>;
   requestV3<T>(spec: V3RequestSpec<T>): Promise<T>;
   requestV3Text(spec: Omit<V3RequestSpec<never>, "schema">): Promise<string>;
+  requestV4Detailed?<T>(spec: V4RequestSpec<T>): Promise<CloudShareDetailedResult<T>>;
+  requestV3Detailed?<T>(spec: V3RequestSpec<T>): Promise<CloudShareDetailedResult<T>>;
+  requestV3TextDetailed?(
+    spec: Omit<V3RequestSpec<never>, "schema">,
+  ): Promise<CloudShareDetailedResult<string>>;
 }
 
 export interface CloudShareClientOptions {
@@ -82,6 +123,15 @@ function sanitizeHeaders(headers: Record<string, string> | undefined): Record<st
   }
 
   const sanitized = { ...headers };
+  for (const [key, value] of Object.entries(headers)) {
+    if (/signature/i.test(key)) {
+      sanitized[key] = "[REDACTED]";
+    } else if (/authorization/i.test(key) && key !== "authorization") {
+      sanitized[key] = "[REDACTED]";
+    } else {
+      sanitized[key] = value;
+    }
+  }
   const authorization = headers.authorization ?? headers.Authorization;
   if (authorization) {
     if (authorization.startsWith("Bearer ")) {
@@ -105,6 +155,11 @@ function sanitizeResponseHeaders(
   }
 
   const sanitized = { ...headers };
+  for (const key of Object.keys(headers)) {
+    if (/signature/i.test(key)) {
+      sanitized[key] = "[REDACTED]";
+    }
+  }
   const setCookie = headers["set-cookie"];
   if (setCookie) {
     sanitized["set-cookie"] = Array.isArray(setCookie)
@@ -134,6 +189,14 @@ function sanitizeResponseBody(body: string): string {
   }
 }
 
+function sanitizeResponseBodyValue(body: string): unknown {
+  try {
+    return redactSensitiveBodyFields(JSON.parse(body));
+  } catch {
+    return redactSensitiveText(body);
+  }
+}
+
 function redactSensitiveBodyFields(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map(redactSensitiveBodyFields);
@@ -144,7 +207,7 @@ function redactSensitiveBodyFields(value: unknown): unknown {
 
   const redacted: Record<string, unknown> = {};
   for (const [key, fieldValue] of Object.entries(value)) {
-    if (/api[-_]?key|secret|token|hmac|passphrase|password|login[-_]?url/i.test(key)) {
+    if (/api[-_]?key|secret|token|hmac|signature|passphrase|password|login[-_]?url/i.test(key)) {
       redacted[key] = "[REDACTED]";
       continue;
     }
@@ -207,10 +270,10 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
     });
   }
 
-  async function execute<T>(
+  async function executeDetailed<T>(
     request: HttpRequest,
     schema: ZodType<T, ZodType["_def"], unknown>,
-  ): Promise<T> {
+  ): Promise<CloudShareDetailedResult<T>> {
     const requestInfo = describeRequest(request.url);
     trace("info", "cloudshare request sent", request);
 
@@ -304,120 +367,198 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
         },
       );
     }
-    return parsed.data;
+    return {
+      data: parsed.data,
+      host: requestInfo.host,
+      integrationSurface: requestInfo.integrationSurface,
+      request: {
+        method: request.method,
+        path: requestInfo.path,
+        ...(sanitizeHeaders(request.headers)
+          ? { headers: sanitizeHeaders(request.headers)! }
+          : {}),
+        ...(sanitizeBody(request.body) !== undefined
+          ? { body: sanitizeBody(request.body) }
+          : {}),
+      },
+      response: {
+        status: response.status,
+        ...(sanitizeResponseHeaders(response.headers)
+          ? { headers: sanitizeResponseHeaders(response.headers)! }
+          : {}),
+        body: sanitizeResponseBodyValue(response.body),
+        ...(response.network ? { network: response.network } : {}),
+        ...(response.tls ? { tls: response.tls } : {}),
+      },
+    };
   }
 
-  return {
-    async requestV4<T>(spec: V4RequestSpec<T>): Promise<T> {
-      const token = await opts.tokenProvider.getToken();
-      const headers: Record<string, string> = { authorization: `Bearer ${token}` };
-      let body: string | undefined;
-      if (spec.body !== undefined) {
-        headers["content-type"] = "application/json";
-        body = JSON.stringify(spec.body);
-      }
-      return execute(
-        {
-          method: spec.method,
-          url: buildUrl(opts.endpoints.v4BaseUrl, spec.path, spec.query),
-          headers,
-          body,
-        },
-        spec.schema,
-      );
-    },
+  async function performV4Detailed<T>(
+    spec: V4RequestSpec<T>,
+  ): Promise<CloudShareDetailedResult<T>> {
+    const token = await opts.tokenProvider.getToken();
+    const headers: Record<string, string> = { authorization: `Bearer ${token}` };
+    let body: string | undefined;
+    if (spec.body !== undefined) {
+      headers["content-type"] = "application/json";
+      body = JSON.stringify(spec.body);
+    }
+    return executeDetailed(
+      {
+        method: spec.method,
+        url: buildUrl(opts.endpoints.v4BaseUrl, spec.path, spec.query),
+        headers,
+        body,
+      },
+      spec.schema,
+    );
+  }
 
-    async requestV3<T>(spec: V3RequestSpec<T>): Promise<T> {
-      const unsignedUrl = buildUrl(opts.endpoints.v3BaseUrl, spec.path, spec.query);
-      const auth = signV3Request({
-        apiId: opts.v3.apiId,
-        apiKey: opts.v3.apiKey,
-        fullUrl: unsignedUrl,
-        now: opts.now,
-        newToken: opts.newToken,
-      });
-      return execute(
-        {
-          method: spec.method,
-          url: unsignedUrl,
-          headers: {
-            authorization: buildV3AuthorizationHeader(auth),
-          },
-        },
-        spec.schema,
-      );
-    },
-
-    async requestV3Text(spec: Omit<V3RequestSpec<never>, "schema">): Promise<string> {
-      const unsignedUrl = buildUrl(opts.endpoints.v3BaseUrl, spec.path, spec.query);
-      const auth = signV3Request({
-        apiId: opts.v3.apiId,
-        apiKey: opts.v3.apiKey,
-        fullUrl: unsignedUrl,
-        now: opts.now,
-        newToken: opts.newToken,
-      });
-      const request: HttpRequest = {
+  async function performV3Detailed<T>(
+    spec: V3RequestSpec<T>,
+  ): Promise<CloudShareDetailedResult<T>> {
+    const unsignedUrl = buildUrl(opts.endpoints.v3BaseUrl, spec.path, spec.query);
+    const auth = signV3Request({
+      apiId: opts.v3.apiId,
+      apiKey: opts.v3.apiKey,
+      fullUrl: unsignedUrl,
+      now: opts.now,
+      newToken: opts.newToken,
+    });
+    return executeDetailed(
+      {
         method: spec.method,
         url: unsignedUrl,
         headers: {
           authorization: buildV3AuthorizationHeader(auth),
         },
-      };
+      },
+      spec.schema,
+    );
+  }
 
-      trace("info", "cloudshare request sent", request);
-      const requestInfo = describeRequest(request.url);
+  async function performV3TextDetailed(
+    spec: Omit<V3RequestSpec<never>, "schema">,
+  ): Promise<CloudShareDetailedResult<string>> {
+    const unsignedUrl = buildUrl(opts.endpoints.v3BaseUrl, spec.path, spec.query);
+    const auth = signV3Request({
+      apiId: opts.v3.apiId,
+      apiKey: opts.v3.apiKey,
+      fullUrl: unsignedUrl,
+      now: opts.now,
+      newToken: opts.newToken,
+    });
+    const request: HttpRequest = {
+      method: spec.method,
+      url: unsignedUrl,
+      headers: {
+        authorization: buildV3AuthorizationHeader(auth),
+      },
+    };
 
-      let response;
-      try {
-        response = await opts.http.send(request);
-      } catch (cause) {
-        trace("warn", "cloudshare transport failure", request, {
-          failureMode: "transport",
-          error: cause instanceof Error ? cause.message : String(cause),
-        });
-        throw new CloudShareTransportError(
-          `CloudShare request to ${unsignedUrl} failed to reach the server`,
-          {
-            method: spec.method,
-            host: requestInfo.host,
-            path: requestInfo.path,
-            integrationSurface: requestInfo.integrationSurface,
-            requestHeaders: sanitizeHeaders(request.headers),
-            requestBody: sanitizeBody(request.body),
-            cause: cause instanceof Error ? cause.message : String(cause),
-          },
-        );
-      }
+    trace("info", "cloudshare request sent", request);
+    const requestInfo = describeRequest(request.url);
 
-      trace("info", "cloudshare response received", request, {
-        responseStatus: response.status,
-        responseHeaders: sanitizeResponseHeaders(response.headers),
-        responseBody: sanitizeResponseBody(response.body),
-        network: response.network,
-        tls: response.tls,
+    let response;
+    try {
+      response = await opts.http.send(request);
+    } catch (cause) {
+      trace("warn", "cloudshare transport failure", request, {
+        failureMode: "transport",
+        error: cause instanceof Error ? cause.message : String(cause),
       });
+      throw new CloudShareTransportError(
+        `CloudShare request to ${unsignedUrl} failed to reach the server`,
+        {
+          method: spec.method,
+          host: requestInfo.host,
+          path: requestInfo.path,
+          integrationSurface: requestInfo.integrationSurface,
+          requestHeaders: sanitizeHeaders(request.headers),
+          requestBody: sanitizeBody(request.body),
+          cause: cause instanceof Error ? cause.message : String(cause),
+        },
+      );
+    }
 
-      if (response.status < 200 || response.status >= 300) {
-        throw new CloudShareRequestError(
-          `CloudShare request to ${unsignedUrl} returned ${response.status}`,
-          response.status,
-          {
-            method: spec.method,
-            host: requestInfo.host,
-            path: requestInfo.path,
-            integrationSurface: requestInfo.integrationSurface,
-            requestHeaders: sanitizeHeaders(request.headers),
-            requestBody: sanitizeBody(request.body),
-            responseHeaders: sanitizeResponseHeaders(response.headers),
-            responseBody: sanitizeResponseBody(response.body),
-            network: response.network,
-            tls: response.tls,
-          },
-        );
-      }
+    trace("info", "cloudshare response received", request, {
+      responseStatus: response.status,
+      responseHeaders: sanitizeResponseHeaders(response.headers),
+      responseBody: sanitizeResponseBody(response.body),
+      network: response.network,
+      tls: response.tls,
+    });
 
-      return response.body;
+    if (response.status < 200 || response.status >= 300) {
+      throw new CloudShareRequestError(
+        `CloudShare request to ${unsignedUrl} returned ${response.status}`,
+        response.status,
+        {
+          method: spec.method,
+          host: requestInfo.host,
+          path: requestInfo.path,
+          integrationSurface: requestInfo.integrationSurface,
+          requestHeaders: sanitizeHeaders(request.headers),
+          requestBody: sanitizeBody(request.body),
+          responseHeaders: sanitizeResponseHeaders(response.headers),
+          responseBody: sanitizeResponseBody(response.body),
+          network: response.network,
+          tls: response.tls,
+        },
+      );
+    }
+
+    return {
+      data: response.body,
+      host: requestInfo.host,
+      integrationSurface: requestInfo.integrationSurface,
+      request: {
+        method: request.method,
+        path: requestInfo.path,
+        ...(sanitizeHeaders(request.headers)
+          ? { headers: sanitizeHeaders(request.headers)! }
+          : {}),
+      },
+      response: {
+        status: response.status,
+        ...(sanitizeResponseHeaders(response.headers)
+          ? { headers: sanitizeResponseHeaders(response.headers)! }
+          : {}),
+        body: sanitizeResponseBodyValue(response.body),
+        ...(response.network ? { network: response.network } : {}),
+        ...(response.tls ? { tls: response.tls } : {}),
+      },
+    };
+  }
+
+  return {
+    async requestV4<T>(spec: V4RequestSpec<T>): Promise<T> {
+      const result = await performV4Detailed(spec);
+      return result.data;
+    },
+
+    async requestV4Detailed<T>(spec: V4RequestSpec<T>): Promise<CloudShareDetailedResult<T>> {
+      return performV4Detailed(spec);
+    },
+
+    async requestV3<T>(spec: V3RequestSpec<T>): Promise<T> {
+      const result = await performV3Detailed(spec);
+      return result.data;
+    },
+
+    async requestV3Detailed<T>(spec: V3RequestSpec<T>): Promise<CloudShareDetailedResult<T>> {
+      return performV3Detailed(spec);
+    },
+
+    async requestV3Text(spec: Omit<V3RequestSpec<never>, "schema">): Promise<string> {
+      const result = await performV3TextDetailed(spec);
+      return result.data;
+    },
+
+    async requestV3TextDetailed(
+      spec: Omit<V3RequestSpec<never>, "schema">,
+    ): Promise<CloudShareDetailedResult<string>> {
+      return performV3TextDetailed(spec);
     },
   };
 }

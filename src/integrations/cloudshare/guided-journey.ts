@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { CloudShareClient } from "./client";
+import type { CloudShareClient, CloudShareDetailedResult } from "./client";
 import type {
   DiagnosticScoreRetrievalProvider,
   ParticipantProgress,
@@ -116,20 +116,41 @@ async function fetchParticipantProgressForDiagnostics(
   const request = { method: "GET", path } as const;
 
   let responseBody: unknown;
+  let detailedResponse: CloudShareDetailedResult<unknown> | null = null;
   try {
-    responseBody = await client.requestV4<unknown>({
-      method: request.method,
-      path: request.path,
-      schema: z.unknown(),
-    });
+    if (typeof client.requestV4Detailed === "function") {
+      detailedResponse = await client.requestV4Detailed<unknown>({
+        method: request.method,
+        path: request.path,
+        schema: z.unknown(),
+      });
+      responseBody = detailedResponse.data;
+    } else {
+      responseBody = await client.requestV4<unknown>({
+        method: request.method,
+        path: request.path,
+        schema: z.unknown(),
+      });
+    }
   } catch (error) {
     if (error instanceof CloudShareRequestError && error.status === 404) {
       return {
         progress: null,
-        request,
+        request: {
+          ...request,
+          ...(error.context?.requestHeaders
+            ? { headers: error.context.requestHeaders as Record<string, string> }
+            : {}),
+          ...(error.context?.requestBody !== undefined
+            ? { body: error.context.requestBody }
+            : {}),
+        },
         response: {
           status: 404,
           body: null,
+          ...(error.context?.responseHeaders
+            ? { headers: error.context.responseHeaders as Record<string, string | string[]> }
+            : {}),
         },
       };
     }
@@ -154,10 +175,13 @@ async function fetchParticipantProgressForDiagnostics(
 
   return {
     progress,
-    request,
+    request: detailedResponse?.request ?? request,
     response: {
-      status: 200,
-      body: responseBody,
+      status: detailedResponse?.response.status ?? 200,
+      ...(detailedResponse?.response.headers
+        ? { headers: detailedResponse.response.headers }
+        : {}),
+      body: detailedResponse?.response.body ?? responseBody,
     },
   };
 }
@@ -375,7 +399,7 @@ function redactSensitiveGuidedJourneyValue(value: unknown): unknown {
 
   const redacted: Record<string, unknown> = {};
   for (const [key, fieldValue] of Object.entries(value)) {
-    if (/api[-_]?key|secret|token|hmac|passphrase|password|login[-_]?url/i.test(key)) {
+    if (/api[-_]?key|secret|token|hmac|signature|passphrase|password|login[-_]?url/i.test(key)) {
       redacted[key] = "[REDACTED]";
       continue;
     }

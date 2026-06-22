@@ -147,13 +147,21 @@ const SENSITIVE_KEY_PATTERNS = [
   "apikey",
   "api_key",
   "authorization",
+  "signature",
   "credential",
   "bearer",
   "hmac",
   "ciphertext",
 ];
 
-const NON_SENSITIVE_KEYS = new Set(["idempotencyKey", "storedWebhookSecretLength"]);
+const NON_SENSITIVE_KEYS = new Set([
+  "idempotencyKey",
+  "storedWebhookSecretLength",
+  "signaturePresent",
+  "signatureMatched",
+  "signatureScheme",
+  "signatureHeader",
+]);
 
 function isSensitiveKey(key: string): boolean {
   if (NON_SENSITIVE_KEYS.has(key)) {

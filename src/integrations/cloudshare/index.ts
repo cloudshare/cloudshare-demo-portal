@@ -18,7 +18,10 @@ export * from "./errors";
 export type { HttpClient, HttpRequest, HttpResponse } from "./http";
 export type {
   CloudShareClient,
+  CloudShareDetailedResult,
   CloudShareEndpoints,
+  CloudShareRequestDiagnostics,
+  CloudShareResponseDiagnostics,
   V3RequestSpec,
   V4RequestSpec,
 } from "./client";

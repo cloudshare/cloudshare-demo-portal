@@ -122,7 +122,10 @@ describe("admin sync resources route", () => {
       operation: "cloudshare.resource_sync.projects.read",
       outcome: "success",
       request: { method: "GET", path: "/projects" },
-      response: { itemCount: 1, resourceIds: ["project-1"] },
+      response: {
+        status: 200,
+        body: [{ id: "project-1", name: "Helios Project" }],
+      },
       details: { integrationSurface: "cloudshare.v3.projects" },
       externalIds: { resourceType: "project" },
     });
@@ -132,7 +135,10 @@ describe("admin sync resources route", () => {
       operation: "cloudshare.resource_sync.regions.read",
       outcome: "success",
       request: { method: "GET", path: "/regions" },
-      response: { itemCount: 1, resourceIds: ["region-1"] },
+      response: {
+        status: 200,
+        body: [{ id: "region-1", name: "EU West" }],
+      },
       details: { integrationSurface: "cloudshare.v3.regions" },
       externalIds: { resourceType: "region" },
     });
@@ -142,7 +148,10 @@ describe("admin sync resources route", () => {
       operation: "cloudshare.resource_sync.blueprints.read",
       outcome: "success",
       request: { method: "GET", path: "/projects/project-1/blueprints" },
-      response: { itemCount: 1, resourceIds: ["bp-1"] },
+      response: {
+        status: 200,
+        body: [{ id: "bp-1", name: "Helios Blueprint" }],
+      },
       details: { integrationSurface: "cloudshare.v3.projects.blueprints" },
       externalIds: { resourceType: "blueprint", projectId: "project-1" },
     });
@@ -152,7 +161,10 @@ describe("admin sync resources route", () => {
       operation: "cloudshare.resource_sync.policies.read",
       outcome: "success",
       request: { method: "GET", path: "/projects/project-1/policies" },
-      response: { itemCount: 1, resourceIds: ["policy-1"] },
+      response: {
+        status: 200,
+        body: [{ id: "policy-1", name: "Timed Policy" }],
+      },
       details: { integrationSurface: "cloudshare.v3.projects.policies" },
       externalIds: { resourceType: "policy", projectId: "project-1" },
     });

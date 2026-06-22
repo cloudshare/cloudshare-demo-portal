@@ -9,23 +9,42 @@ import {
 import type { CloudShareClient } from "./client";
 
 function makeClient(responses: Record<string, unknown>): CloudShareClient {
+  const requestV4Impl = ({ path, schema }: { path: string; schema?: { parse(value: unknown): unknown } }) => {
+    const key = `v4:${path}`;
+    if (key in responses) {
+      const value = responses[key];
+      return Promise.resolve(schema ? schema.parse(value) : value);
+    }
+    return Promise.reject(new Error(`No mock for v4 ${path}`));
+  };
+  const requestV3Impl = ({ path, schema }: { path: string; schema?: { parse(value: unknown): unknown } }) => {
+    const key = `v3:${path}`;
+    if (key in responses) {
+      const value = responses[key];
+      return Promise.resolve(schema ? schema.parse(value) : value);
+    }
+    return Promise.reject(new Error(`No mock for v3 ${path}`));
+  };
+
   return {
-    requestV4: vi.fn().mockImplementation(({ path, schema }: { path: string; schema?: { parse(value: unknown): unknown } }) => {
-      const key = `v4:${path}`;
-      if (key in responses) {
-        const value = responses[key];
-        return Promise.resolve(schema ? schema.parse(value) : value);
-      }
-      return Promise.reject(new Error(`No mock for v4 ${path}`));
-    }),
-    requestV3: vi.fn().mockImplementation(({ path, schema }: { path: string; schema?: { parse(value: unknown): unknown } }) => {
-      const key = `v3:${path}`;
-      if (key in responses) {
-        const value = responses[key];
-        return Promise.resolve(schema ? schema.parse(value) : value);
-      }
-      return Promise.reject(new Error(`No mock for v3 ${path}`));
-    }),
+    requestV4: vi.fn().mockImplementation(requestV4Impl),
+    requestV4Detailed: vi.fn().mockImplementation(async (spec: { path: string; method: string; schema?: { parse(value: unknown): unknown } }) => ({
+      data: await requestV4Impl(spec),
+      host: "api.accelerate.cloudshare.com",
+      integrationSurface: "cloudshare.v4",
+      request: { method: spec.method, path: spec.path },
+      response: { status: 200, body: responses[`v4:${spec.path}`] },
+    })),
+    requestV3: vi.fn().mockImplementation(requestV3Impl),
+    requestV3Detailed: vi.fn().mockImplementation(async (spec: { path: string; method: string; schema?: { parse(value: unknown): unknown } }) => ({
+      data: await requestV3Impl(spec),
+      host: "use.cloudshare.com",
+      integrationSurface: "cloudshare.v3",
+      request: { method: spec.method, path: spec.path },
+      response: { status: 200, body: responses[`v3:${spec.path}`] },
+    })),
+    requestV3Text: vi.fn(),
+    requestV3TextDetailed: vi.fn(),
   } as unknown as CloudShareClient;
 }
 

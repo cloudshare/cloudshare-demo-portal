@@ -1,5 +1,10 @@
 import { z } from "zod";
-import type { CloudShareClient } from "./client";
+import type {
+  CloudShareClient,
+  CloudShareDetailedResult,
+  CloudShareRequestDiagnostics,
+  CloudShareResponseDiagnostics,
+} from "./client";
 import type { CloudShareResourceLister } from "@/domain/resource-sync";
 
 const REDACTED = "[REDACTED]";
@@ -130,6 +135,7 @@ export interface CloudShareBlueprintDetail {
   readonly defaultSnapshotId: string | null;
   readonly snapshots: CloudShareBlueprintSnapshot[];
   readonly diagnosticSummary?: Record<string, unknown>;
+  readonly diagnosticResponse?: Record<string, unknown>;
 }
 
 export interface CloudShareExamAuthoringSource {
@@ -168,6 +174,7 @@ export interface CloudShareResourceReadSuccess {
   readonly path: string;
   readonly resourceType: "project" | "region" | "blueprint" | "policy";
   readonly resourceIds?: Record<string, string>;
+  readonly request?: Record<string, unknown>;
   readonly response: Record<string, unknown>;
 }
 
@@ -185,6 +192,51 @@ export interface CloudShareResourceListerOptions {
   readonly onReadFailure?: (spec: CloudShareResourceReadFailure) => Promise<void> | void;
 }
 
+function toDiagnosticExchange(
+  detailed: {
+    readonly request: CloudShareRequestDiagnostics;
+    readonly response: CloudShareResponseDiagnostics;
+  },
+): { request: Record<string, unknown>; response: Record<string, unknown> } {
+  return {
+    request: {
+      method: detailed.request.method,
+      path: detailed.request.path,
+      ...(detailed.request.headers ? { headers: detailed.request.headers } : {}),
+      ...(detailed.request.body !== undefined ? { body: detailed.request.body } : {}),
+    },
+    response: {
+      status: detailed.response.status,
+      ...(detailed.response.headers ? { headers: detailed.response.headers } : {}),
+      body: detailed.response.body,
+    },
+  };
+}
+
+async function requestV3WithDiagnostics<T>(
+  client: CloudShareClient,
+  spec: {
+    readonly method: "GET" | "POST" | "PUT" | "DELETE";
+    readonly path: string;
+    readonly schema: z.ZodType<T, z.ZodType["_def"], unknown>;
+  },
+): Promise<{
+  data: T;
+  request: CloudShareRequestDiagnostics;
+  response: CloudShareResponseDiagnostics;
+}> {
+  if ("requestV3Detailed" in client && typeof client.requestV3Detailed === "function") {
+    return client.requestV3Detailed(spec) as Promise<CloudShareDetailedResult<T>>;
+  }
+
+  const data = await client.requestV3(spec);
+  return {
+    data,
+    request: { method: spec.method, path: spec.path },
+    response: { status: 200, body: data },
+  };
+}
+
 export function createCloudShareResourceLister(
   client: CloudShareClient,
   options: CloudShareResourceListerOptions = {},
@@ -196,18 +248,19 @@ export function createCloudShareResourceLister(
 
   function loadProjects(): Promise<Array<{ id: string; name: string }>> {
     if (!projectsPromise) {
-      projectsPromise = client
-        .requestV3({ method: "GET", path: "/projects", schema: projectListSchema })
-        .then(async (projects) => {
+      projectsPromise = requestV3WithDiagnostics(client, {
+        method: "GET",
+        path: "/projects",
+        schema: projectListSchema,
+      })
+        .then(async (detailed) => {
+          const projects = detailed.data;
           await options.onReadSuccess?.({
             operation: "cloudshare.resource_sync.projects.read",
             integrationSurface: "cloudshare.v3.projects",
             path: "/projects",
             resourceType: "project",
-            response: {
-              itemCount: projects.length,
-              resourceIds: projects.map((project) => project.id),
-            },
+            ...toDiagnosticExchange(detailed),
           });
           return projects;
         })
@@ -227,13 +280,13 @@ export function createCloudShareResourceLister(
 
   function loadRegions(): Promise<Array<{ id: string; name: string; friendlyName?: string }>> {
     if (!regionsPromise) {
-      regionsPromise = client
-        .requestV3({
+      regionsPromise = requestV3WithDiagnostics(client, {
           method: "GET",
           path: "/regions",
           schema: regionListSchema,
         })
-        .then(async (regions) => {
+        .then(async (detailed) => {
+          const regions = detailed.data;
           const mapped = regions.map((region) => ({
             id: region.id,
             name: region.name,
@@ -244,10 +297,7 @@ export function createCloudShareResourceLister(
             integrationSurface: "cloudshare.v3.regions",
             path: "/regions",
             resourceType: "region",
-            response: {
-              itemCount: mapped.length,
-              resourceIds: mapped.map((region) => region.id),
-            },
+            ...toDiagnosticExchange(detailed),
           });
           return mapped;
         })
@@ -278,21 +328,19 @@ export function createCloudShareResourceLister(
         projects.map(async (project) => {
           const path = `/projects/${project.id}/blueprints`;
           try {
-            const result = await client.requestV3({
+            const detailed = await requestV3WithDiagnostics(client, {
               method: "GET",
               path,
               schema: blueprintListSchema,
             });
+            const result = detailed.data;
             await options.onReadSuccess?.({
               operation: "cloudshare.resource_sync.blueprints.read",
               integrationSurface: "cloudshare.v3.projects.blueprints",
               path,
               resourceType: "blueprint",
               resourceIds: { projectId: project.id },
-              response: {
-                itemCount: result.length,
-                resourceIds: result.map((blueprint) => blueprint.id),
-              },
+              ...toDiagnosticExchange(detailed),
             });
             return result.map((blueprint) => ({
               id: blueprint.id,
@@ -319,21 +367,19 @@ export function createCloudShareResourceLister(
         projects.map(async (project) => {
           const path = `/projects/${project.id}/policies`;
           try {
-            const result = await client.requestV3({
+            const detailed = await requestV3WithDiagnostics(client, {
               method: "GET",
               path,
               schema: policyListSchema,
             });
+            const result = detailed.data;
             await options.onReadSuccess?.({
               operation: "cloudshare.resource_sync.policies.read",
               integrationSurface: "cloudshare.v3.projects.policies",
               path,
               resourceType: "policy",
               resourceIds: { projectId: project.id },
-              response: {
-                itemCount: result.length,
-                resourceIds: result.map((policy) => policy.id),
-              },
+              ...toDiagnosticExchange(detailed),
             });
             return result.map((policy) => ({
               id: policy.id,
@@ -410,7 +456,7 @@ export function createCloudShareExamAuthoringSource(
       );
     },
     async getBlueprintDetail(projectId, blueprintId) {
-      const detail = await client.requestV3({
+      const detailed = await requestV3WithDiagnostics(client, {
         method: "GET",
         path: `/projects/${projectId}/blueprints/${blueprintId}`,
         schema: z.preprocess(
@@ -418,6 +464,7 @@ export function createCloudShareExamAuthoringSource(
           blueprintDetailSchema,
         ),
       });
+      const detail = detailed.data;
 
       return {
         id: detail.id,
@@ -426,6 +473,11 @@ export function createCloudShareExamAuthoringSource(
         defaultSnapshotId:
           detail.createFromVersions.find((snapshot) => snapshot.isDefault)?.id ?? null,
         diagnosticSummary: summarizeBlueprintDetailForDiagnostics(detail),
+        diagnosticResponse: {
+          status: detailed.response.status,
+          ...(detailed.response.headers ? { headers: detailed.response.headers } : {}),
+          body: detailed.response.body as Record<string, unknown>,
+        },
         snapshots: detail.createFromVersions.map((snapshot) => ({
           id: snapshot.id,
           name: snapshot.name,

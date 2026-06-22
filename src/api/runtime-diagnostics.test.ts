@@ -817,8 +817,16 @@ describe("score diagnostics", () => {
             failedRate: 0,
             notInitiatedRate: 0.25,
           },
-          request: { method: "GET", path: "/guided-journey/progress/exp-s1/student-1" },
-          response: { status: 200, body: rawProgressPayload },
+          request: {
+            method: "GET",
+            path: "/guided-journey/progress/exp-s1/student-1",
+            headers: { authorization: "Bearer [REDACTED]" },
+          },
+          response: {
+            status: 200,
+            headers: { "content-type": "application/json" },
+            body: rawProgressPayload,
+          },
         }),
       } satisfies DiagnosticScoreRetrievalProvider,
     });
@@ -841,9 +849,11 @@ describe("score diagnostics", () => {
     expect((retrieve as { request?: Record<string, unknown> }).request).toEqual({
       method: "GET",
       path: "/guided-journey/progress/exp-s1/student-1",
+      headers: { authorization: "[REDACTED]" },
     });
     expect((retrieve as { response?: Record<string, unknown> }).response).toEqual({
       status: 200,
+      headers: { "content-type": "application/json" },
       body: rawProgressPayload,
     });
   });

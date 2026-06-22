@@ -248,8 +248,8 @@ export async function handleGetCandidateScore(
         message: "Score retrieved — no score available yet",
         ...(scoreRetrieval
           ? {
-              request: scoreRetrieval.request,
-              response: scoreRetrieval.response,
+              request: { ...scoreRetrieval.request },
+              response: scoreRetrieval.response ? { ...scoreRetrieval.response } : null,
             }
           : {
               response: { scoreAvailable: false, reason: result.reason },
@@ -295,8 +295,8 @@ export async function handleGetCandidateScore(
       message: "Score retrieved successfully",
       ...(scoreRetrieval
         ? {
-            request: scoreRetrieval.request,
-            response: scoreRetrieval.response,
+            request: { ...scoreRetrieval.request },
+            response: scoreRetrieval.response ? { ...scoreRetrieval.response } : null,
           }
         : {
             response: {
@@ -369,6 +369,8 @@ export async function handleGetCandidateScore(
         operation: "exam_attempt.score.retrieve",
         outcome: "failure",
         message: "Score retrieval failed",
+        request: diagnosticRequestFields(diagnostic),
+        response: diagnosticResponseFields(diagnostic),
         details: {
           attemptedOperation: asString(diagnostic.attemptedOperation),
           integrationSurface: asString(diagnostic.integrationSurface),
@@ -771,7 +773,7 @@ function redactDiagnosticSupportValue(value: unknown): unknown {
 
   const redacted: Record<string, unknown> = {};
   for (const [key, fieldValue] of Object.entries(value)) {
-    if (/api[-_]?key|secret|token|hmac|passphrase|password|login[-_]?url|authorization/i.test(key)) {
+    if (/api[-_]?key|secret|token|hmac|signature|passphrase|password|login[-_]?url|authorization/i.test(key)) {
       redacted[key] = "[REDACTED]";
       continue;
     }
@@ -836,5 +838,32 @@ function toSupportDetailFields(
     responseBody: redactDiagnosticSupportValue(diagnostic.responseBody),
     trainingId: asString(diagnostic.trainingId),
     participantEmail: asString(diagnostic.participantEmail),
+  };
+}
+
+function diagnosticRequestFields(
+  diagnostic: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    ...(asString(diagnostic.method) ? { method: asString(diagnostic.method)! } : {}),
+    ...(asString(diagnostic.path) ? { path: asString(diagnostic.path)! } : {}),
+    ...(diagnostic.requestHeaders ? { headers: redactDiagnosticSupportValue(diagnostic.requestHeaders) } : {}),
+    ...(diagnostic.requestBody !== undefined
+      ? { body: redactDiagnosticSupportValue(diagnostic.requestBody) }
+      : {}),
+  };
+}
+
+function diagnosticResponseFields(
+  diagnostic: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    ...(asNumber(diagnostic.responseStatus) !== undefined
+      ? { status: asNumber(diagnostic.responseStatus)! }
+      : {}),
+    ...(diagnostic.responseHeaders ? { headers: redactDiagnosticSupportValue(diagnostic.responseHeaders) } : {}),
+    ...(diagnostic.responseBody !== undefined
+      ? { body: redactDiagnosticSupportValue(diagnostic.responseBody) }
+      : {}),
   };
 }

@@ -168,7 +168,7 @@ function buildResourceReadSuccessEntry(
     operation: spec.operation,
     outcome: "success",
     message: `${spec.resourceType} resource read succeeded`,
-    request: { method: "GET", path: spec.path },
+    request: spec.request ?? { method: "GET", path: spec.path },
     response: spec.response,
     details: { integrationSurface: spec.integrationSurface },
     externalIds: { resourceType: spec.resourceType, ...(spec.resourceIds ?? {}) },
@@ -197,9 +197,18 @@ function buildResourceReadFailureEntry(
       ...(cloudShareError?.context?.requestHeaders
         ? { headers: cloudShareError.context.requestHeaders }
         : {}),
+      ...(cloudShareError?.context?.requestBody !== undefined
+        ? { body: cloudShareError.context.requestBody }
+        : {}),
     },
     response: {
       ...(diagnostic.responseStatus !== undefined ? { status: diagnostic.responseStatus } : {}),
+      ...(cloudShareError?.context?.responseHeaders
+        ? { headers: cloudShareError.context.responseHeaders }
+        : {}),
+      ...(cloudShareError?.context?.responseBody !== undefined
+        ? { body: cloudShareError.context.responseBody }
+        : {}),
     },
     details: {
       integrationSurface: spec.integrationSurface,

@@ -36,7 +36,10 @@ describe("redactDiagnosticInput", () => {
       request: {
         email: "candidate@example.com",
         password: "hunter2",
-        headers: { authorization: "Bearer abc.def" },
+        headers: {
+          authorization: "Bearer abc.def",
+          "x-cloudshare-signature": "raw-signature-value",
+        },
       },
       response: { token: "sek-123", status: 200 },
       details: { apiKey: "key-xyz", note: "fine" },
@@ -45,7 +48,10 @@ describe("redactDiagnosticInput", () => {
     expect(redacted.request).toEqual({
       email: "candidate@example.com",
       password: "[REDACTED]",
-      headers: { authorization: "[REDACTED]" },
+      headers: {
+        authorization: "[REDACTED]",
+        "x-cloudshare-signature": "[REDACTED]",
+      },
     });
     expect(redacted.response).toEqual({ token: "[REDACTED]", status: 200 });
     expect(redacted.details).toEqual({ apiKey: "[REDACTED]", note: "fine" });
