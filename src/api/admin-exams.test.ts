@@ -387,7 +387,10 @@ describe("admin exam authoring handlers", () => {
           new CloudShareRequestError("403 forbidden", 403, {
             method: "GET",
             requestHeaders: { authorization: "cs_sha1 [REDACTED]" },
-            responseBody: "{\"error\":\"forbidden\"}",
+            responseBody: JSON.stringify({
+              error: "forbidden",
+              signature: "sig-secret",
+            }),
           }),
         ),
     });
@@ -434,7 +437,13 @@ describe("admin exam authoring handlers", () => {
         path: "/projects/project-1/policies",
         headers: { authorization: "[REDACTED]" },
       },
-      response: { status: 403 },
+      response: {
+        status: 403,
+        body: {
+          error: "forbidden",
+          signature: "[REDACTED]",
+        },
+      },
     });
   });
 

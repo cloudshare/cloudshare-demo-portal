@@ -755,7 +755,7 @@ function redactDiagnosticSupportValue(value: unknown): unknown {
   if (typeof value === "string") {
     try {
       const parsed = JSON.parse(value);
-      return JSON.stringify(redactDiagnosticSupportValue(parsed));
+      return redactDiagnosticSupportValue(parsed);
     } catch {
       return value
       .replace(/https?:\/\/\S*(?:ClassSponsoredLink|SponsoredLink|Ent\/Login)\S*/gi, "[REDACTED]")

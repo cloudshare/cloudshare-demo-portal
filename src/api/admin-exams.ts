@@ -780,7 +780,7 @@ async function handleCloudShareFailure(
           ? { headers: cloudShareError.context.requestHeaders }
           : {}),
         ...(cloudShareError.context?.requestBody !== undefined
-          ? { body: cloudShareError.context.requestBody }
+          ? { body: normalizeDiagnosticPayload(cloudShareError.context.requestBody) }
           : {}),
       },
       response: {
@@ -789,7 +789,7 @@ async function handleCloudShareFailure(
           ? { headers: cloudShareError.context.responseHeaders }
           : {}),
         ...(cloudShareError.context?.responseBody !== undefined
-          ? { body: cloudShareError.context.responseBody }
+          ? { body: normalizeDiagnosticPayload(cloudShareError.context.responseBody) }
           : {}),
       },
       details: {
@@ -869,6 +869,18 @@ function buildDiagnostic(
   }
 
   return diagnostic;
+}
+
+function normalizeDiagnosticPayload(value: unknown): unknown {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
 }
 
 function parseUpdateDraftExamInput(

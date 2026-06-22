@@ -198,7 +198,7 @@ function buildResourceReadFailureEntry(
         ? { headers: cloudShareError.context.requestHeaders }
         : {}),
       ...(cloudShareError?.context?.requestBody !== undefined
-        ? { body: cloudShareError.context.requestBody }
+        ? { body: normalizeDiagnosticPayload(cloudShareError.context.requestBody) }
         : {}),
     },
     response: {
@@ -207,7 +207,7 @@ function buildResourceReadFailureEntry(
         ? { headers: cloudShareError.context.responseHeaders }
         : {}),
       ...(cloudShareError?.context?.responseBody !== undefined
-        ? { body: cloudShareError.context.responseBody }
+        ? { body: normalizeDiagnosticPayload(cloudShareError.context.responseBody) }
         : {}),
     },
     details: {
@@ -275,6 +275,18 @@ function buildCloudShareFailureDiagnostic(
   }
 
   return diagnostic;
+}
+
+function normalizeDiagnosticPayload(value: unknown): unknown {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
 }
 
 // --- Event log ---

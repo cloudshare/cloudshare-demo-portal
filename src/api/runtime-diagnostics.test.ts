@@ -924,6 +924,12 @@ describe("score diagnostics", () => {
       integrationSurface: "cloudshare.v4.guided_journey.progress",
       failureMode: "unexpected_response",
     });
+    expect(failure?.response).toEqual({
+      body: {
+        hello: "world",
+        token: "[REDACTED]",
+      },
+    });
     expect(JSON.stringify(failure)).not.toContain("secret");
   });
 
