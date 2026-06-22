@@ -2,7 +2,11 @@ import { describe, it, expect, vi } from "vitest";
 import { handleGetCandidateScore } from "./score";
 import type { Logger } from "@/observability/logger";
 import type { AuditRepository } from "@/domain/audit-trail";
-import type { ScoreRetrievalProvider, ParticipantProgress } from "@/domain/score-result";
+import type {
+  DiagnosticScoreRetrievalProvider,
+  ScoreRetrievalProvider,
+  ParticipantProgress,
+} from "@/domain/score-result";
 import type { LabLaunchRepository, LabLaunch } from "@/domain/lab-launch";
 import type { ExamAttemptRepository, ExamAttempt } from "@/domain/exam-attempt";
 import type { ExamRepository, Exam } from "@/domain/exam-catalog";
@@ -10,7 +14,7 @@ import type {
   CloudShareConnectionRecord,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
-import { CloudShareTransportError } from "@/integrations/cloudshare";
+import { CloudShareResponseError, CloudShareTransportError } from "@/integrations/cloudshare";
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -444,6 +448,63 @@ describe("handleGetCandidateScore", () => {
           method: "GET",
           path: "/guided-journey/progress/exp-1/student-1",
           failureMode: "transport",
+        }),
+      }),
+    );
+  });
+
+  it("returns a supportable 502 when the diagnostics-aware Guided Journey path gets an unsupported payload", async () => {
+    const diagnosticsAwareRetriever: DiagnosticScoreRetrievalProvider = {
+      getParticipantProgress: vi.fn(),
+      getParticipantProgressForDiagnostics: vi.fn().mockRejectedValue(
+        new CloudShareResponseError("CloudShare Guided Journey progress payload was unsupported", {
+          method: "GET",
+          path: "/guided-journey/progress/exp-1/student-1",
+          integrationSurface: "cloudshare.v4.guided_journey.progress",
+          responseBody: JSON.stringify({ token: "secret", hello: "world" }),
+          issues: ["Unsupported Guided Journey progress payload"],
+        }),
+      ),
+    };
+    const deps = makeDeps();
+    deps.createScoreRetriever.mockReturnValue(diagnosticsAwareRetriever);
+
+    const result = await handleGetCandidateScore(deps, {
+      query: { examAttemptId: "attempt-1" },
+      session: {
+        userId: "candidate-1",
+        customerId: "customer-1",
+        role: "candidate",
+      },
+    });
+
+    expect(result).toEqual({
+      status: 502,
+      body: {
+        error: "score retrieval failed",
+        correlationId: "corr-123",
+      },
+    });
+    expect(deps.logger.warn).toHaveBeenCalledWith(
+      "candidate score retrieval failed",
+      expect.objectContaining({
+        attemptedOperation: "get_guided_journey_progress",
+        integrationSurface: "cloudshare.v4.guided_journey.progress",
+        path: "/guided-journey/progress/exp-1/student-1",
+        failureMode: "unexpected_response",
+      }),
+    );
+    expect(JSON.stringify((deps.logger.warn as ReturnType<typeof vi.fn>).mock.calls)).not.toContain("secret");
+    expect(deps.audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        examAttemptId: "attempt-1",
+        action: "score_retrieved",
+        outcome: "failure",
+        details: expect.objectContaining({
+          integrationSurface: "cloudshare.v4.guided_journey.progress",
+          method: "GET",
+          path: "/guided-journey/progress/exp-1/student-1",
+          failureMode: "unexpected_response",
         }),
       }),
     );

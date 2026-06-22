@@ -201,6 +201,7 @@ export async function handleGetCandidateScore(
     const scoreRetriever = deps.createScoreRetriever(connection);
     const scoreRetrieval = await getScoreProgressForDiagnostics(
       scoreRetriever,
+      examAttemptId,
       launch.experienceId,
       resolvedParticipantId.participantId,
     );
@@ -613,8 +614,8 @@ function toCloudShareDiagnostic(
     path: cause.context?.path ?? base.path,
     host: cause.context?.host,
     integrationSurface: cause.context?.integrationSurface ?? base.integrationSurface,
-    requestHeaders: cause.context?.requestHeaders,
-    requestBody: cause.context?.requestBody,
+    requestHeaders: redactDiagnosticSupportValue(cause.context?.requestHeaders),
+    requestBody: redactDiagnosticSupportValue(cause.context?.requestBody),
   };
 
   if (cause instanceof CloudShareRequestError) {
@@ -622,8 +623,8 @@ function toCloudShareDiagnostic(
       ...shared,
       failureMode: "http_status",
       responseStatus: cause.status,
-      responseHeaders: cause.context?.responseHeaders,
-      responseBody: cause.context?.responseBody,
+      responseHeaders: redactDiagnosticSupportValue(cause.context?.responseHeaders),
+      responseBody: redactDiagnosticSupportValue(cause.context?.responseBody),
       network: cause.context?.network,
       tls: cause.context?.tls,
     };
@@ -640,8 +641,8 @@ function toCloudShareDiagnostic(
   return {
     ...shared,
     failureMode: "unexpected_response",
-    responseHeaders: cause.context?.responseHeaders,
-    responseBody: cause.context?.responseBody,
+    responseHeaders: redactDiagnosticSupportValue(cause.context?.responseHeaders),
+    responseBody: redactDiagnosticSupportValue(cause.context?.responseBody),
     network: cause.context?.network,
     tls: cause.context?.tls,
     issues: cause.context?.issues,
@@ -688,6 +689,7 @@ function asNumber(value: unknown): number | undefined {
 
 async function getScoreProgressForDiagnostics(
   scoreRetriever: ScoreRetrievalProvider,
+  examAttemptId: string,
   experienceId: string,
   participantId: string,
 ): Promise<ParticipantProgressDiagnostics | null> {
@@ -695,7 +697,16 @@ async function getScoreProgressForDiagnostics(
     return null;
   }
 
-  return scoreRetriever.getParticipantProgressForDiagnostics(experienceId, participantId);
+  try {
+    return await scoreRetriever.getParticipantProgressForDiagnostics(experienceId, participantId);
+  } catch (cause) {
+    throw new ScoreRetrievalError("Failed to retrieve Guided Journey progress", {
+      examAttemptId,
+      experienceId,
+      cause,
+      causeMessage: cause instanceof Error ? cause.message : String(cause),
+    });
+  }
 }
 
 function hasDiagnosticScoreRetrieval(
@@ -703,4 +714,37 @@ function hasDiagnosticScoreRetrieval(
 ): scoreRetriever is DiagnosticScoreRetrievalProvider {
   return "getParticipantProgressForDiagnostics" in scoreRetriever &&
     typeof scoreRetriever.getParticipantProgressForDiagnostics === "function";
+}
+
+function redactDiagnosticSupportValue(value: unknown): unknown {
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return JSON.stringify(redactDiagnosticSupportValue(parsed));
+    } catch {
+      return value
+      .replace(/https?:\/\/\S*(?:ClassSponsoredLink|SponsoredLink|Ent\/Login)\S*/gi, "[REDACTED]")
+      .replace(/([?&](?:token|access_token|loginUrl)=)[^&\s"]+/gi, "$1[REDACTED]");
+    }
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => redactDiagnosticSupportValue(item));
+  }
+
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  const redacted: Record<string, unknown> = {};
+  for (const [key, fieldValue] of Object.entries(value)) {
+    if (/api[-_]?key|secret|token|hmac|passphrase|password|login[-_]?url|authorization/i.test(key)) {
+      redacted[key] = "[REDACTED]";
+      continue;
+    }
+
+    redacted[key] = redactDiagnosticSupportValue(fieldValue);
+  }
+
+  return redacted;
 }

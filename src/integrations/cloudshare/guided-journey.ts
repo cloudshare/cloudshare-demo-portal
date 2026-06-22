@@ -6,7 +6,7 @@ import type {
   ParticipantProgressDiagnostics,
   ScoreRetrievalProvider,
 } from "@/domain/score-result";
-import { CloudShareRequestError } from "./errors";
+import { CloudShareRequestError, CloudShareResponseError } from "./errors";
 
 /**
  * CloudShare implementation of the {@link ScoreRetrievalProvider} port.
@@ -128,8 +128,24 @@ async function fetchParticipantProgressForDiagnostics(
     throw error;
   }
 
+  let progress: ParticipantProgress | null;
+  const parsed = guidedJourneyProgressSchema.safeParse(responseBody);
+  if (!parsed.success) {
+    throw new CloudShareResponseError(
+      "CloudShare Guided Journey progress payload was unsupported",
+      {
+        method: request.method,
+        path: request.path,
+        integrationSurface: "cloudshare.v4.guided_journey.progress",
+        responseBody: serializeGuidedJourneyResponseBody(responseBody),
+        issues: parsed.error.issues.map((issue) => issue.message),
+      },
+    );
+  }
+  progress = parsed.data;
+
   return {
-    progress: guidedJourneyProgressSchema.parse(responseBody),
+    progress,
     request,
     response: {
       status: 200,
@@ -330,4 +346,42 @@ function readBooleanCandidate(record: Record<string, unknown>, keys: readonly st
     }
   }
   return null;
+}
+
+function serializeGuidedJourneyResponseBody(body: unknown): string {
+  try {
+    return JSON.stringify(redactSensitiveGuidedJourneyValue(body));
+  } catch {
+    return String(body);
+  }
+}
+
+function redactSensitiveGuidedJourneyValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(redactSensitiveGuidedJourneyValue);
+  }
+
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  const redacted: Record<string, unknown> = {};
+  for (const [key, fieldValue] of Object.entries(value)) {
+    if (/api[-_]?key|secret|token|hmac|passphrase|password|login[-_]?url/i.test(key)) {
+      redacted[key] = "[REDACTED]";
+      continue;
+    }
+
+    redacted[key] =
+      typeof fieldValue === "string"
+        ? redactSensitiveGuidedJourneyText(fieldValue)
+        : redactSensitiveGuidedJourneyValue(fieldValue);
+  }
+  return redacted;
+}
+
+function redactSensitiveGuidedJourneyText(value: string): string {
+  return value
+    .replace(/https?:\/\/\S*(?:ClassSponsoredLink|SponsoredLink|Ent\/Login)\S*/gi, "[REDACTED]")
+    .replace(/([?&](?:token|access_token|loginUrl)=)[^&\s"]+/gi, "$1[REDACTED]");
 }

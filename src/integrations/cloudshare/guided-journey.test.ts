@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { createCloudShareGuidedJourneyProvider } from "./guided-journey";
 import type { CloudShareClient } from "./client";
-import { CloudShareRequestError } from "./errors";
+import { CloudShareRequestError, CloudShareResponseError } from "./errors";
 
 function makeClient(response: unknown): CloudShareClient {
   return {
@@ -255,5 +255,27 @@ describe("createCloudShareGuidedJourneyProvider", () => {
     const provider = createCloudShareGuidedJourneyProvider(client);
 
     await expect(provider.getParticipantProgress("exp-1", "student-1")).rejects.toThrow("upstream failure");
+  });
+
+  it("raises CloudShareResponseError with response details when the diagnostics-aware path gets an unsupported payload", async () => {
+    const client = makeClient("not-an-object");
+    const provider = createCloudShareGuidedJourneyProvider(client);
+
+    await expect(
+      provider.getParticipantProgressForDiagnostics("exp-1", "student-1"),
+    ).rejects.toMatchObject({
+      name: "CloudShareResponseError",
+      context: expect.objectContaining({
+        method: "GET",
+        path: "/guided-journey/progress/exp-1/student-1",
+        integrationSurface: "cloudshare.v4.guided_journey.progress",
+        responseBody: JSON.stringify("not-an-object"),
+        issues: ["Unsupported Guided Journey progress payload"],
+      }),
+    });
+
+    await expect(
+      provider.getParticipantProgressForDiagnostics("exp-1", "student-1"),
+    ).rejects.toBeInstanceOf(CloudShareResponseError);
   });
 });
