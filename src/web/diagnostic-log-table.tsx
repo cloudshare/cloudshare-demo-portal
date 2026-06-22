@@ -1,4 +1,8 @@
 import React, { Fragment, useMemo } from "react";
+import {
+  deriveDiagnosticQuickFacts,
+  deriveDiagnosticSupportHints,
+} from "./diagnostic-support-hints";
 
 export interface DiagnosticLogTableEntry {
   id: string;
@@ -158,6 +162,49 @@ function StructuredDetailBlock(props: {
   );
 }
 
+function QuickFactsBlock(props: {
+  readonly facts: readonly { label: string; value: string }[];
+}) {
+  return (
+    <div style={{ marginBottom: "0.9rem" }}>
+      <strong>Quick facts</strong>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "max-content 1fr",
+          gap: "0.2rem 0.75rem",
+          marginTop: "0.35rem",
+        }}
+      >
+        {props.facts.map((fact) => (
+          <Fragment key={`${fact.label}:${fact.value}`}>
+            <span style={{ color: "#555" }}>{fact.label}</span>
+            <span>{fact.value}</span>
+          </Fragment>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SupportHintsBlock(props: {
+  readonly hints: readonly { title: string; body: string }[];
+}) {
+  return (
+    <div style={{ marginBottom: "0.9rem" }}>
+      <strong>Support hints</strong>
+      <div style={{ marginTop: "0.35rem" }}>
+        {props.hints.map((hint) => (
+          <div key={hint.title} style={{ marginBottom: "0.5rem" }}>
+            <div style={{ fontWeight: 600 }}>{hint.title}</div>
+            <div style={{ marginTop: "0.15rem", color: "#444" }}>{hint.body}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function DiagnosticLogTable({
   entries,
   expandedDiagnosticId,
@@ -198,6 +245,8 @@ export function DiagnosticLogTable({
             const isExpanded = expandedDiagnosticId === entry.id;
             const displayExternalIds = getDisplayExternalIds(entry.externalIds);
             const integrationSurface = readIntegrationSurface(entry.details);
+            const hints = deriveDiagnosticSupportHints(entry);
+            const quickFacts = deriveDiagnosticQuickFacts(entry);
             const sections = [
               hasStructuredContent(displayExternalIds) ? { label: "External IDs", value: displayExternalIds! } : null,
               hasStructuredContent(entry.request) ? { label: "Request", value: entry.request! } : null,
@@ -271,6 +320,8 @@ export function DiagnosticLogTable({
                 {isExpanded && (
                   <tr key={`${entry.id}-detail`}>
                     <td colSpan={15} style={{ padding: "0.5rem 1rem", background: "#f7f7f7", fontFamily: "monospace", fontSize: "0.78rem" }}>
+                      {hints.length > 0 ? <SupportHintsBlock hints={hints} /> : null}
+                      {quickFacts.length > 0 ? <QuickFactsBlock facts={quickFacts} /> : null}
                       {sections.length > 0 ? (
                         sections.map((section) => (
                           <StructuredDetailBlock key={section.label} label={section.label} value={section.value} />

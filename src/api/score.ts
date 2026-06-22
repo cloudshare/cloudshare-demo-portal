@@ -176,13 +176,6 @@ export async function handleGetCandidateScore(
       launch,
     );
     if (!resolvedParticipantId.ok) {
-      await deps.diagnostics?.record({
-        ...anchors,
-        level: "warn",
-        operation: "exam_attempt.score.correlate_environment",
-        outcome: "failure",
-        message: "Score retrieval failed: could not correlate CloudShare environment participant",
-      });
       return resolvedParticipantId.response;
     }
 
@@ -427,6 +420,15 @@ async function resolveLaunchParticipantId(
       failureMode: "missing_participant_id",
       error: "CloudShare participantId is not recorded for this lab launch.",
     };
+    await deps.diagnostics?.record({
+      ...scoreDiagnosticAnchors(examAttemptId, customerId, candidateId, launch, correlationId),
+      level: "warn",
+      operation: "exam_attempt.score.correlate_environment",
+      outcome: "failure",
+      message: "Score retrieval failed: could not correlate CloudShare environment participant",
+      externalIds: scoreCorrelationExternalIds(launch),
+      details: toSupportDetailFields(diagnostic),
+    });
     await writeScoreFailureAudit(
       deps,
       examAttemptId,
@@ -464,6 +466,15 @@ async function resolveLaunchParticipantId(
       launch,
       error,
     );
+    await deps.diagnostics?.record({
+      ...scoreDiagnosticAnchors(examAttemptId, customerId, candidateId, launch, correlationId),
+      level: "warn",
+      operation: "exam_attempt.score.correlate_environment",
+      outcome: "failure",
+      message: "Score retrieval failed: could not correlate CloudShare environment participant",
+      externalIds: scoreCorrelationExternalIds(launch),
+      details: toSupportDetailFields(diagnostic),
+    });
     await writeScoreFailureAudit(
       deps,
       examAttemptId,
@@ -496,6 +507,15 @@ async function resolveLaunchParticipantId(
     launch,
     "missing_participant_id",
   );
+  await deps.diagnostics?.record({
+    ...scoreDiagnosticAnchors(examAttemptId, customerId, candidateId, launch, correlationId),
+    level: "warn",
+    operation: "exam_attempt.score.correlate_environment",
+    outcome: "failure",
+    message: "Score retrieval failed: could not correlate CloudShare environment participant",
+    externalIds: scoreCorrelationExternalIds(launch),
+    details: toSupportDetailFields(diagnostic),
+  });
   await writeScoreFailureAudit(
     deps,
     examAttemptId,
@@ -747,4 +767,61 @@ function redactDiagnosticSupportValue(value: unknown): unknown {
   }
 
   return redacted;
+}
+
+function scoreDiagnosticAnchors(
+  examAttemptId: string,
+  customerId: string,
+  candidateId: string,
+  launch: {
+    readonly experienceId: string;
+    readonly participantEmail?: string;
+  },
+  correlationId?: string,
+) {
+  return {
+    source: "runtime" as const,
+    customerId,
+    candidateEmail: launch.participantEmail ?? null,
+    examAttemptId,
+    correlationId: correlationId ?? null,
+    actor: { type: "candidate" as const, id: candidateId, email: launch.participantEmail ?? null },
+    subject: { type: "exam_attempt" as const, id: examAttemptId },
+  };
+}
+
+function scoreCorrelationExternalIds(launch: {
+  readonly experienceId: string;
+  readonly trainingId?: string;
+}): Record<string, string> {
+  return {
+    experienceId: launch.experienceId,
+    ...(launch.trainingId ? { trainingId: launch.trainingId } : {}),
+  };
+}
+
+function toSupportDetailFields(
+  diagnostic: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    attemptedOperation: asString(diagnostic.attemptedOperation),
+    integrationSurface: asString(diagnostic.integrationSurface),
+    method: asString(diagnostic.method),
+    path: asString(diagnostic.path),
+    failureMode: asString(diagnostic.failureMode),
+    responseStatus: asNumber(diagnostic.responseStatus),
+    correlationId: asString(diagnostic.correlationId),
+    error: asString(diagnostic.error),
+    host: asString(diagnostic.host),
+    network: redactDiagnosticSupportValue(diagnostic.network),
+    tls: redactDiagnosticSupportValue(diagnostic.tls),
+    cause: redactDiagnosticSupportValue(diagnostic.cause),
+    issues: redactDiagnosticSupportValue(diagnostic.issues),
+    requestHeaders: redactDiagnosticSupportValue(diagnostic.requestHeaders),
+    requestBody: redactDiagnosticSupportValue(diagnostic.requestBody),
+    responseHeaders: redactDiagnosticSupportValue(diagnostic.responseHeaders),
+    responseBody: redactDiagnosticSupportValue(diagnostic.responseBody),
+    trainingId: asString(diagnostic.trainingId),
+    participantEmail: asString(diagnostic.participantEmail),
+  };
 }
