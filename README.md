@@ -122,6 +122,9 @@ npm run build        # Production build
 local development `DATABASE_URL` from `.env`, so running the suite should not delete QA data from
 the dev portal database.
 
+Repo-local agent helpers such as `.agents/`, `create-issues.sh`, and `update-issue-rules.sh` are
+treated as personal workflow artifacts and are intentionally kept out of the tracked toolchain.
+
 ### Live E2E credentials
 
 Live CloudShare E2E tests read credentials from `.env.e2e.local`, which is ignored
