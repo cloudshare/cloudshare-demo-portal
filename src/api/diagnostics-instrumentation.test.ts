@@ -570,6 +570,44 @@ describe("handleGetDiagnosticLog", () => {
     });
   });
 
+  it("reports hasMore at the max page size by probing the next row", async () => {
+    const repository = createInMemoryDiagnosticLogRepository();
+    for (let index = 0; index < 501; index += 1) {
+      await repository.append({
+        occurredAt: new Date(`2026-06-21T10:${String(Math.floor(index / 60)).padStart(2, "0")}:${String(index % 60).padStart(2, "0")}.000Z`),
+        source: "runtime",
+        operation: "exam_attempt.enter",
+        outcome: "success",
+        message: `entry-${index}`,
+        customerId: "customer-a",
+      });
+    }
+
+    const response = await handleGetDiagnosticLog(
+      { diagnostics: repository, logger: noopLogger },
+      {
+        query: {
+          limit: "500",
+          offset: "0",
+        },
+        customerId: "customer-a",
+      },
+    );
+
+    const body = response.body as {
+      entries: Array<{ message: string }>;
+      page: { limit: number; offset: number; returned: number; hasMore: boolean; nextOffset: number | null };
+    };
+    expect(body.entries).toHaveLength(500);
+    expect(body.page).toEqual({
+      limit: 500,
+      offset: 0,
+      returned: 500,
+      hasMore: true,
+      nextOffset: 500,
+    });
+  });
+
   it("ignores a client-supplied customerId and trusts the session scope", async () => {
     const repository = createInMemoryDiagnosticLogRepository();
     await repository.append({

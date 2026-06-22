@@ -389,7 +389,7 @@ describe("scheduleExam", () => {
     });
 
     const sponsoredLink = thread.find((e) => e.operation === "cloudshare.create_sponsored_link");
-    expect(sponsoredLink?.response).toMatchObject({ loginUrl: SPONSORED_LINK_URL });
+    expect(sponsoredLink?.response).toMatchObject({ loginUrl: "[REDACTED]" });
   });
 
   it("records a failure diagnostic for the failing CloudShare op and emits no later steps", async () => {
@@ -550,7 +550,7 @@ describe("scheduleExam", () => {
     });
   });
 
-  it("records failure detail for a failed sponsored-link operation including the response body", async () => {
+  it("redacts sponsored-link loginUrl from failed sponsored-link diagnostics", async () => {
     const { exams, attempts, launches } = await setup();
     const repository = createInMemoryDiagnosticLogRepository();
     const diagnostics = createDiagnosticRecorder({ repository });
@@ -603,11 +603,9 @@ describe("scheduleExam", () => {
       integrationSurface: "cloudshare.v4.training.sponsored_link",
       responseStatus: 400,
     });
-    // loginUrl key is no longer redacted in admin-only diagnostic logs (ADR-002:
-    // the real protection is the server-side 302 redirect, not log redaction).
     expect(
       (failure?.details as { responseBody?: { loginUrl?: string } })?.responseBody?.loginUrl,
-    ).toBe("https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/leak-token");
+    ).toBe("[REDACTED]");
   });
 
   it("rejects non-future schedule times", async () => {

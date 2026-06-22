@@ -42,7 +42,6 @@ export const ADMIN_TABS: readonly AdminTab[] = [
   "audit",
   "events",
   "diagnostics",
-  "support",
   "resources",
 ];
 
@@ -89,9 +88,9 @@ export function getAdminTabLabel(tab: AdminTab): string {
     case "events":
       return "Event Log";
     case "diagnostics":
-      return "Diagnostic Log";
+      return "Support Diagnostics";
     case "support":
-      return "Support Workbench";
+      return "Legacy Support Logs";
     case "resources":
       return "Resources";
   }

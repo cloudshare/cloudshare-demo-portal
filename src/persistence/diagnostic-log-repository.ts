@@ -221,38 +221,28 @@ export function createPrismaDiagnosticLogRepository(
               ...(query.to ? { lte: query.to } : {}),
             }
           : undefined;
-      const candidateEmail = query.candidateEmail?.toLowerCase();
-      const containsExternalId =
-        query.externalId !== undefined ? JSON.stringify(query.externalId).slice(1, -1) : undefined;
-      const containsIntegrationSurface =
-        query.integrationSurface !== undefined
-          ? JSON.stringify(query.integrationSurface).slice(1, -1)
-          : undefined;
 
       const rows = (await prisma.diagnosticLogEntry.findMany({
         where: {
           ...(query.customerId !== undefined ? { customerId: query.customerId } : {}),
           ...(query.examId !== undefined ? { examId: query.examId } : {}),
           ...(query.examAttemptId !== undefined ? { examAttemptId: query.examAttemptId } : {}),
-          ...(candidateEmail !== undefined ? { candidateEmail } : {}),
           ...(query.operation !== undefined ? { operation: query.operation } : {}),
           ...(query.outcome !== undefined ? { outcome: query.outcome } : {}),
           ...(query.source !== undefined ? { source: query.source } : {}),
           ...(query.correlationId !== undefined ? { correlationId: query.correlationId } : {}),
-          ...(containsExternalId !== undefined
-            ? { externalIdsJson: { contains: containsExternalId } }
-            : {}),
-          ...(containsIntegrationSurface !== undefined
-            ? { detailsJson: { contains: containsIntegrationSurface } }
-            : {}),
           ...(occurredAt ? { occurredAt } : {}),
         },
         orderBy: { occurredAt: "desc" },
-        skip: offset,
-        take: limit,
+        // Exact matching on nested JSON fields happens after row materialisation
+        // so pagination semantics apply to the exact filtered set, not to a
+        // substring-prefiltered superset that can omit valid matches.
       })) as DiagnosticLogRow[];
 
-      return rows.map(rowToEntry).filter((entry) => matchesQuery(entry, query));
+      return rows
+        .map(rowToEntry)
+        .filter((entry) => matchesQuery(entry, query))
+        .slice(offset, offset + limit);
     },
 
     async reset(): Promise<void> {

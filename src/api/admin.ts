@@ -363,10 +363,18 @@ export async function handleGetDiagnosticLog(
       : 0;
   const entries = await deps.diagnostics.query({
     ...query,
-    limit: pageLimit + 1,
+    limit: pageLimit,
   });
-  const hasMore = entries.length > pageLimit;
-  const pageEntries = hasMore ? entries.slice(0, pageLimit) : entries;
+  const pageEntries = entries;
+  const hasMore =
+    pageEntries.length === pageLimit &&
+    (
+      await deps.diagnostics.query({
+        ...query,
+        limit: 1,
+        offset: pageOffset + pageEntries.length,
+      })
+    ).length > 0;
 
   return {
     status: 200,

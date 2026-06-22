@@ -144,6 +144,8 @@ const SENSITIVE_KEY_PATTERNS = [
   "password",
   "secret",
   "token",
+  "loginurl",
+  "login_url",
   "apikey",
   "api_key",
   "authorization",
@@ -168,6 +170,14 @@ function scrubSecretsFromString(value: string, secrets: string[]): string {
   for (const secret of secrets) {
     if (secret) out = out.split(secret).join(REDACTED);
   }
+  out = out.replace(
+    /https?:\/\/[^\s"]*ClassSponsoredLink[^\s"]*/gi,
+    REDACTED,
+  );
+  out = out.replace(
+    /https?:\/\/[^\s"]*\/Ent\/Login\.aspx\?token=[^\s"]*/gi,
+    REDACTED,
+  );
   return out;
 }
 

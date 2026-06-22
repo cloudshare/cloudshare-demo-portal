@@ -97,6 +97,47 @@ describe("redactDiagnosticInput", () => {
     });
     expect(redacted.externalIds).toEqual({ environmentId: "env_1", apiKey: "[REDACTED]" });
   });
+
+  it("treats sponsored-link loginUrl as a bearer credential", () => {
+    const redacted = redactDiagnosticInput({
+      source: "integration",
+      operation: "cloudshare.create_sponsored_link",
+      outcome: "success",
+      message: "Created sponsored link",
+      response: {
+        loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret-token",
+      },
+      details: {
+        responseBody: {
+          loginUrl: "https://classic.cloudshare.com/Ent/Login.aspx?token=demo-sponsored-token",
+        },
+      },
+    });
+
+    expect(redacted.response).toEqual({ loginUrl: "[REDACTED]" });
+    expect(redacted.details).toEqual({
+      responseBody: {
+        loginUrl: "[REDACTED]",
+      },
+    });
+  });
+
+  it("scrubs sponsored-link URLs embedded in arbitrary strings", () => {
+    const redacted = redactDiagnosticInput({
+      source: "integration",
+      operation: "cloudshare.create_sponsored_link",
+      outcome: "failure",
+      message:
+        "CloudShare returned https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret-token",
+      details: {
+        trace:
+          "redirect target https://classic.cloudshare.com/Ent/Login.aspx?token=demo-sponsored-token",
+      },
+    });
+
+    expect(redacted.message).toBe("CloudShare returned [REDACTED]");
+    expect(redacted.details).toEqual({ trace: "redirect target [REDACTED]" });
+  });
 });
 
 describe("boundDiagnosticLimit", () => {

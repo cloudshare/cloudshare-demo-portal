@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -2002,7 +2003,8 @@ export function AdminConsole({ email }: AdminConsoleProps) {
         <section>
           <p style={{ color: "#555", marginTop: 0 }}>
             The correlated diagnostic log: what the portal did, in what order, and how to trace it.
-            Entries are append-only and scoped to your Customer. Timestamps are ISO 8601 in UTC.
+            Entries are append-only and scoped to your Customer. This is the primary support workflow.
+            Session Monitoring remains the current-state queue view. Timestamps are ISO 8601 in UTC.
             Secrets and credentials are redacted.
           </p>
           <div
@@ -2163,22 +2165,20 @@ export function AdminConsole({ email }: AdminConsoleProps) {
               }
             />
           )}
-        </section>
-      )}
-
-      {tab === "support" && (
-        <section>
-          <p style={{ color: "#555", marginTop: 0 }}>
-            Recent CloudShare webhook trust-gate diagnostics appear first. Structured server logs stay available
-            below. All timestamps are ISO 8601 in UTC. Secure values stay redacted.
-          </p>
-          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "1rem" }}>
-            <button onClick={onLoadSupportWorkbench} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
-              {loading ? "Loading..." : "Load Recent Webhook Diagnostics"}
-            </button>
-            <button onClick={onLoadSupportLog} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
-              {loading ? "Loading..." : "Load Full Support Log"}
-            </button>
+          <div style={{ marginTop: "2rem" }}>
+            <h2 style={{ marginBottom: "0.5rem", fontSize: "1rem" }}>Legacy support traces</h2>
+            <p style={{ color: "#555", marginTop: 0 }}>
+              Older webhook trust-gate widgets and structured server logs remain available here as
+              secondary evidence while support workflows move to the correlated Diagnostic Log above.
+            </p>
+            <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "1rem" }}>
+              <button onClick={onLoadSupportWorkbench} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
+                {loading ? "Loading..." : "Load Recent Webhook Diagnostics"}
+              </button>
+              <button onClick={onLoadSupportLog} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
+                {loading ? "Loading..." : "Load Full Support Log"}
+              </button>
+            </div>
           </div>
           {supportWorkbenchDiagnostics && (
             <div style={{ marginBottom: "1.5rem" }}>
