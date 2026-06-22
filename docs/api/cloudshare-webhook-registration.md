@@ -57,7 +57,7 @@ https://<current-public-base-url>/api/webhooks/cloudshare/<opaque-token>
    - invalid signatures return `401`
    - duplicate deliveries return `200`
    - accepted deliveries trigger the authoritative poll/reconcile path
-   - support log entries appear without exposing the webhook secret, API key, sponsored link, or auth headers
+   - support log entries appear without exposing the webhook secret, API key, or auth headers; admin-only support diagnostics may retain and display sponsored-link `loginUrl` values as support evidence
 
 ## Notes
 
