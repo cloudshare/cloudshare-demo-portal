@@ -26,6 +26,7 @@ export interface AdminMonitoringAttemptRepository {
 }
 
 export interface MonitoringTimelineAuditEntry {
+  readonly id: string;
   readonly kind: "audit";
   readonly occurredAt: string;
   readonly action: AuditRecord["action"];
@@ -35,6 +36,7 @@ export interface MonitoringTimelineAuditEntry {
 }
 
 export interface MonitoringTimelineFailureEntry {
+  readonly id: string;
   readonly kind: "failure";
   readonly occurredAt: string;
   readonly eventType: string;
@@ -58,6 +60,20 @@ export interface MonitoringAttemptResult {
   readonly percentComplete?: number;
   readonly stepsCompleted?: number;
   readonly stepsTotal?: number;
+}
+
+export interface AdminMonitoringHistoryPageRequest {
+  readonly limit: number;
+  readonly offset: number;
+}
+
+export interface AdminMonitoringHistoryPage {
+  readonly limit: number;
+  readonly offset: number;
+  readonly returned: number;
+  readonly total: number;
+  readonly hasMore: boolean;
+  readonly nextOffset: number | null;
 }
 
 export interface MonitoringAttemptView {
@@ -95,12 +111,14 @@ export interface AdminMonitoringView {
     readonly suspended: readonly MonitoringAttemptView[];
   };
   readonly history: readonly MonitoringAttemptView[];
+  readonly historyPage: AdminMonitoringHistoryPage;
 }
 
 export function buildAdminMonitoringView(input: {
   readonly attempts: readonly MonitoringAttemptRecord[];
   readonly auditRecords: readonly AuditRecord[];
   readonly eventLog: readonly EventLogRecord[];
+  readonly historyPage: AdminMonitoringHistoryPageRequest;
 }): AdminMonitoringView {
   const attemptsById = new Set(input.attempts.map((attempt) => attempt.id));
   const auditByAttemptId = groupBy(input.auditRecords, (record) => record.examAttemptId);
@@ -118,6 +136,13 @@ export function buildAdminMonitoringView(input: {
         failureEventsByAttemptId.get(attempt.id) ?? [],
       ),
     );
+  const terminalHistory = attemptViews.filter(
+    (attempt) => attempt.status === "completed" || attempt.status === "expired",
+  );
+  const historyOffset = boundMonitoringHistoryOffset(input.historyPage.offset);
+  const historyLimit = boundMonitoringHistoryLimit(input.historyPage.limit);
+  const history = terminalHistory.slice(historyOffset, historyOffset + historyLimit);
+  const hasMore = historyOffset + history.length < terminalHistory.length;
 
   return {
     summary: {
@@ -134,9 +159,15 @@ export function buildAdminMonitoringView(input: {
       inProgress: attemptViews.filter((attempt) => attempt.status === "in_progress"),
       suspended: attemptViews.filter((attempt) => attempt.status === "suspended"),
     },
-    history: attemptViews.filter(
-      (attempt) => attempt.status === "completed" || attempt.status === "expired",
-    ),
+    history,
+    historyPage: {
+      limit: historyLimit,
+      offset: historyOffset,
+      returned: history.length,
+      total: terminalHistory.length,
+      hasMore,
+      nextOffset: hasMore ? historyOffset + history.length : null,
+    },
   };
 }
 
@@ -172,6 +203,7 @@ function buildTimeline(
   return [
     ...auditRecords.map(
       (record): MonitoringTimelineAuditEntry => ({
+        id: record.id,
         kind: "audit",
         occurredAt: record.occurredAt.toISOString(),
         action: record.action,
@@ -182,6 +214,7 @@ function buildTimeline(
     ),
     ...failureEvents.map(
       (event): MonitoringTimelineFailureEntry => ({
+        id: event.eventId,
         kind: "failure",
         occurredAt: event.occurredAt.toISOString(),
         eventType: event.type,
@@ -282,6 +315,25 @@ function countByStatus(
   status: MonitoringAttemptRecord["status"],
 ): number {
   return attempts.filter((attempt) => attempt.status === status).length;
+}
+
+export const DEFAULT_MONITORING_HISTORY_LIMIT = 25;
+export const MAX_MONITORING_HISTORY_LIMIT = 100;
+
+function boundMonitoringHistoryLimit(limit: number): number {
+  if (!Number.isFinite(limit) || limit <= 0) {
+    return DEFAULT_MONITORING_HISTORY_LIMIT;
+  }
+
+  return Math.min(Math.floor(limit), MAX_MONITORING_HISTORY_LIMIT);
+}
+
+function boundMonitoringHistoryOffset(offset: number): number {
+  if (!Number.isFinite(offset) || offset <= 0) {
+    return 0;
+  }
+
+  return Math.floor(offset);
 }
 
 function readStringField(

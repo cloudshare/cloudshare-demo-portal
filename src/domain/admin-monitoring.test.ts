@@ -56,6 +56,65 @@ function makeEvent(partial: Partial<EventLogRecord> = {}): EventLogRecord {
 }
 
 describe("buildAdminMonitoringView", () => {
+  it("bounds terminal history to the requested page while preserving the full completed and expired summary counts", () => {
+    const view = buildAdminMonitoringView({
+      attempts: [
+        makeAttempt({
+          id: "attempt-scheduled",
+          status: "scheduled",
+          scheduledFor: new Date("2026-06-22T09:00:00.000Z"),
+          createdAt: new Date("2026-06-21T09:00:00.000Z"),
+        }),
+        makeAttempt({
+          id: "attempt-completed-3",
+          status: "completed",
+          scheduledFor: new Date("2026-06-21T12:00:00.000Z"),
+          createdAt: new Date("2026-06-20T12:00:00.000Z"),
+        }),
+        makeAttempt({
+          id: "attempt-expired-2",
+          status: "expired",
+          scheduledFor: new Date("2026-06-21T11:00:00.000Z"),
+          createdAt: new Date("2026-06-20T11:00:00.000Z"),
+        }),
+        makeAttempt({
+          id: "attempt-completed-1",
+          status: "completed",
+          scheduledFor: new Date("2026-06-21T10:00:00.000Z"),
+          createdAt: new Date("2026-06-20T10:00:00.000Z"),
+        }),
+      ],
+      auditRecords: [],
+      eventLog: [],
+      historyPage: {
+        limit: 2,
+        offset: 1,
+      },
+    });
+
+    expect(view.summary).toEqual({
+      scheduled: 1,
+      ready: 0,
+      inProgress: 0,
+      suspended: 0,
+      completed: 2,
+      expired: 1,
+    });
+    expect(view.currentAttempts.scheduled).toHaveLength(1);
+    expect(view.history.map((attempt) => attempt.id)).toEqual([
+      "attempt-expired-2",
+      "attempt-completed-1",
+    ]);
+    expect(view.historyPage).toEqual({
+      limit: 2,
+      offset: 1,
+      returned: 2,
+      total: 3,
+      hasMore: false,
+      nextOffset: null,
+    });
+  });
+
   it("groups current attempts by active state and puts completed attempts into history with a timeline", () => {
     const view = buildAdminMonitoringView({
       attempts: [
@@ -121,6 +180,10 @@ describe("buildAdminMonitoringView", () => {
           },
         }),
       ],
+      historyPage: {
+        limit: 25,
+        offset: 0,
+      },
     });
 
     expect(view.summary).toEqual({
@@ -197,6 +260,10 @@ describe("buildAdminMonitoringView", () => {
           payload: { examAttemptId: "attempt-expired" },
         }),
       ],
+      historyPage: {
+        limit: 25,
+        offset: 0,
+      },
     });
 
     expect(view.history).toEqual([
@@ -245,6 +312,10 @@ describe("buildAdminMonitoringView", () => {
           },
         }),
       ],
+      historyPage: {
+        limit: 25,
+        offset: 0,
+      },
     });
 
     expect(view.history[0]?.timeline).toEqual([
