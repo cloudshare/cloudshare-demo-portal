@@ -65,6 +65,7 @@ export function CandidateLabShell({
     examAttemptId,
     examTitle: labStatus.examTitle,
     timeLimitMinutes: labStatus.timeLimitMinutes,
+    scheduledFor: labStatus.scheduledFor,
   }) : null;
 
   return (
@@ -84,6 +85,9 @@ export function CandidateLabShell({
           ) : null}
           {presentation?.timeLimitLabel ? (
             <p style={{ margin: "0.35rem 0 0", color: "#555" }}>{presentation.timeLimitLabel}</p>
+          ) : null}
+          {presentation?.scheduledForLabel ? (
+            <p style={{ margin: "0.35rem 0 0", color: "#555" }}>{presentation.scheduledForLabel}</p>
           ) : null}
         </div>
         <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>

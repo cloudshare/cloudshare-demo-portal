@@ -221,6 +221,8 @@ describe("handleGetCandidateScore", () => {
     expect(result.status).toBe(200);
     expect(result.body).toEqual({
       examAttemptId: "attempt-1",
+      examTitle: "Helios Exam",
+      scheduledFor: "2026-06-16T09:00:00.000Z",
       experienceId: "exp-1",
       scoreRetrievalEnabled: false,
       scoreAvailable: false,
@@ -329,6 +331,8 @@ describe("handleGetCandidateScore", () => {
     expect(result.status).toBe(200);
     expect(result.body).toEqual({
       examAttemptId: "attempt-1",
+      examTitle: "Helios Exam",
+      scheduledFor: "2026-06-16T09:00:00.000Z",
       experienceId: "exp-1",
       scoreRetrievalEnabled: true,
       scoreAvailable: true,
@@ -378,6 +382,8 @@ describe("handleGetCandidateScore", () => {
     expect(result.status).toBe(200);
     expect(result.body).toEqual({
       examAttemptId: "attempt-1",
+      examTitle: "Helios Exam",
+      scheduledFor: "2026-06-16T09:00:00.000Z",
       experienceId: "exp-1",
       scoreRetrievalEnabled: true,
       scoreAvailable: false,
