@@ -25,6 +25,7 @@ export interface DiagnosticLogTableProps {
   readonly entries: readonly DiagnosticLogTableEntry[];
   readonly expandedDiagnosticId: string | null;
   readonly onToggleExpanded: (id: string) => void;
+  readonly onOpenExamAttempt?: (examAttemptId: string) => void;
 }
 
 const MAX_RENDERED_DETAIL_CHARS = 12_000;
@@ -148,6 +149,7 @@ export function DiagnosticLogTable({
   entries,
   expandedDiagnosticId,
   onToggleExpanded,
+  onOpenExamAttempt,
 }: DiagnosticLogTableProps) {
   return (
     <div style={{ overflowX: "auto" }}>
@@ -224,7 +226,30 @@ export function DiagnosticLogTable({
                   <td style={{ padding: "0.4rem" }}>{formatSubject(entry.subject)}</td>
                   <td style={{ padding: "0.4rem" }}>{entry.candidateEmail ?? "—"}</td>
                   <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{entry.examId ?? "—"}</td>
-                  <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{entry.examAttemptId ?? "—"}</td>
+                  <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>
+                    {entry.examAttemptId && onOpenExamAttempt ? (
+                      <button
+                        type="button"
+                        aria-label={`Open ExamAttempt drilldown for ${entry.examAttemptId}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onOpenExamAttempt(entry.examAttemptId!);
+                        }}
+                        style={{
+                          padding: 0,
+                          border: "none",
+                          background: "transparent",
+                          color: "#0b57d0",
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        {entry.examAttemptId}
+                      </button>
+                    ) : (
+                      entry.examAttemptId ?? "—"
+                    )}
+                  </td>
                   <td style={{ padding: "0.4rem" }}>{formatExternalIds(displayExternalIds)}</td>
                   <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{entry.correlationId ?? "—"}</td>
                   <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{summariseRequestResponse(entry)}</td>

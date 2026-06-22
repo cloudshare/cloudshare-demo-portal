@@ -27,8 +27,10 @@ import {
   DiagnosticLogTable,
   type DiagnosticLogTableEntry as DiagnosticLogEntry,
 } from "./diagnostic-log-table";
+import { ExamAttemptDiagnosticDrilldown } from "./exam-attempt-diagnostic-drilldown";
 import { EventLogTable } from "./event-log-table";
 import { SupportLogTable } from "./support-log-table";
+import type { ExamAttemptDiagnosticDrilldownReadModel } from "@/api/admin-exam-attempt-diagnostics";
 import type {
   AdminMonitoringView as MonitoringView,
   MonitoringAttemptView as MonitoringAttempt,
@@ -94,6 +96,11 @@ interface DiagnosticLogPageResponse {
   returned: number;
   hasMore: boolean;
   nextOffset: number | null;
+}
+
+interface ExamAttemptDiagnosticDrilldownResponse {
+  drilldown?: ExamAttemptDiagnosticDrilldownReadModel;
+  error?: string;
 }
 
 interface ConnectionDiagnostic {
@@ -266,6 +273,11 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   const [diagnosticFilters, setDiagnosticFilters] = useState<DiagnosticLogFilters>({});
   const [diagnosticPage, setDiagnosticPage] = useState<DiagnosticLogPageResponse | null>(null);
   const [expandedDiagnosticId, setExpandedDiagnosticId] = useState<string | null>(null);
+  const [diagnosticDrilldown, setDiagnosticDrilldown] =
+    useState<ExamAttemptDiagnosticDrilldownReadModel | null>(null);
+  const [diagnosticDrilldownAttemptId, setDiagnosticDrilldownAttemptId] = useState<string | null>(null);
+  const [diagnosticDrilldownLoading, setDiagnosticDrilldownLoading] = useState(false);
+  const [diagnosticDrilldownError, setDiagnosticDrilldownError] = useState<string | null>(null);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [connection, setConnection] = useState<ConnectionState | null>(null);
   const [apiId, setApiId] = useState("");
@@ -484,6 +496,39 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function openExamAttemptDiagnosticDrilldown(examAttemptId: string) {
+    setDiagnosticDrilldownAttemptId(examAttemptId);
+    setDiagnosticDrilldownLoading(true);
+    setDiagnosticDrilldownError(null);
+    try {
+      const res = await fetchAdmin(
+        `/api/admin/diagnostics/attempts/${encodeURIComponent(examAttemptId)}`,
+      );
+      const data = (await res.json()) as ExamAttemptDiagnosticDrilldownResponse;
+      if (!res.ok) {
+        setDiagnosticDrilldown(null);
+        setDiagnosticDrilldownError(data.error ?? "Failed to load ExamAttempt diagnostic drilldown");
+        return;
+      }
+      setDiagnosticDrilldown(data.drilldown ?? null);
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
+      setDiagnosticDrilldown(null);
+      setDiagnosticDrilldownError("Failed to load ExamAttempt diagnostic drilldown");
+    } finally {
+      setDiagnosticDrilldownLoading(false);
+    }
+  }
+
+  function closeExamAttemptDiagnosticDrilldown() {
+    setDiagnosticDrilldown(null);
+    setDiagnosticDrilldownAttemptId(null);
+    setDiagnosticDrilldownError(null);
+    setDiagnosticDrilldownLoading(false);
   }
 
   async function loadEvents() {
@@ -1872,6 +1917,15 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                             <div>Scheduled (UTC): {formatUtcTimestamp(attempt.scheduledFor)}</div>
                             <div>Training ID: {attempt.trainingId ?? "-"}</div>
                             <div>Environment: {attempt.environmentExternalId ?? "-"}</div>
+                            <div>
+                              <button
+                                type="button"
+                                onClick={() => void openExamAttemptDiagnosticDrilldown(attempt.id)}
+                                style={{ padding: "0.35rem 0.75rem" }}
+                              >
+                                Open support drilldown
+                              </button>
+                            </div>
                             <div style={{ overflowX: "auto" }}>
                               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
                                 <thead>
@@ -1936,6 +1990,15 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                           <div>Scheduled (UTC): {formatUtcTimestamp(attempt.scheduledFor)}</div>
                           <div>Training ID: {attempt.trainingId ?? "-"}</div>
                           <div>Environment: {attempt.environmentExternalId ?? "-"}</div>
+                          <div>
+                            <button
+                              type="button"
+                              onClick={() => void openExamAttemptDiagnosticDrilldown(attempt.id)}
+                              style={{ padding: "0.35rem 0.75rem" }}
+                            >
+                              Open support drilldown
+                            </button>
+                          </div>
                           <div style={{ overflowX: "auto" }}>
                             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
                               <thead>
@@ -2163,6 +2226,15 @@ export function AdminConsole({ email }: AdminConsoleProps) {
               onToggleExpanded={(id) =>
                 setExpandedDiagnosticId(expandedDiagnosticId === id ? null : id)
               }
+              onOpenExamAttempt={(examAttemptId) => void openExamAttemptDiagnosticDrilldown(examAttemptId)}
+            />
+          )}
+          {(diagnosticDrilldownAttemptId || diagnosticDrilldownLoading || diagnosticDrilldownError || diagnosticDrilldown) && (
+            <ExamAttemptDiagnosticDrilldown
+              drilldown={diagnosticDrilldown}
+              loading={diagnosticDrilldownLoading}
+              error={diagnosticDrilldownError}
+              onClose={closeExamAttemptDiagnosticDrilldown}
             />
           )}
           <div style={{ marginTop: "2rem" }}>
@@ -2249,6 +2321,16 @@ export function AdminConsole({ email }: AdminConsoleProps) {
           )}
         </section>
       )}
+
+      {tab === "monitoring" &&
+        (diagnosticDrilldownAttemptId || diagnosticDrilldownLoading || diagnosticDrilldownError || diagnosticDrilldown) && (
+          <ExamAttemptDiagnosticDrilldown
+            drilldown={diagnosticDrilldown}
+            loading={diagnosticDrilldownLoading}
+            error={diagnosticDrilldownError}
+            onClose={closeExamAttemptDiagnosticDrilldown}
+          />
+        )}
 
       {tab === "resources" && (
         <section>

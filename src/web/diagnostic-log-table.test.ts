@@ -72,6 +72,7 @@ describe("DiagnosticLogTable", () => {
         ],
         expandedDiagnosticId: null,
         onToggleExpanded: () => {},
+        onOpenExamAttempt: () => {},
       }),
     );
 
@@ -87,6 +88,7 @@ describe("DiagnosticLogTable", () => {
     expect(html).toContain("environmentId: env-1");
     expect(html).toContain("POST /api/exam/resume");
     expect(html).toContain("HTTP 502");
+    expect(html).toContain('aria-label="Open ExamAttempt drilldown for attempt-1"');
   });
 
   it("canonicalises duplicate experience identifiers in CloudShare ID displays without hiding distinct values", () => {
