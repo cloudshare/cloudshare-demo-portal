@@ -209,4 +209,53 @@ describe("DiagnosticLogTable", () => {
     expect(html).toContain("... truncated");
     expect(html).not.toContain("x".repeat(15_000));
   });
+
+  it("renders support hints and quick facts above raw diagnostic evidence in the expanded view", () => {
+    const html = renderToStaticMarkup(
+      createElement(DiagnosticLogTable, {
+        entries: [
+          {
+            id: "diag-hints",
+            occurredAt: "2026-06-21T10:00:00.000Z",
+            level: "warn",
+            source: "cloudshare-webhook",
+            operation: "cloudshare.webhook.verify_signature",
+            outcome: "failure",
+            customerId: "customer-helios",
+            actor: { type: "system" },
+            subject: { type: "customer", id: "customer-helios" },
+            message: "CloudShare webhook signature did not match",
+            correlationId: "corr-hint",
+            candidateEmail: null,
+            examId: null,
+            examAttemptId: null,
+            request: {
+              method: "POST",
+              path: "/api/webhooks/cloudshare/{webhookPathToken}",
+            },
+            details: {
+              integrationSurface: "cloudshare.v3.webhook",
+              signaturePresent: true,
+              signatureMatched: false,
+              failureMode: "invalid_signature",
+              responseBody: {
+                loginUrl: "https://use.cloudshare.com/Ent/Login.aspx?token=admin-evidence",
+              },
+            },
+          },
+        ],
+        expandedDiagnosticId: "diag-hints",
+        onToggleExpanded: () => {},
+      }),
+    );
+
+    expect(html).toContain("Support hints");
+    expect(html).toContain("Webhook signature mismatch");
+    expect(html).toContain("Quick facts");
+    expect(html).toContain("cloudshare.v3.webhook");
+    expect(html).toContain("POST /api/webhooks/cloudshare/{webhookPathToken}");
+    expect(html).toContain("Correlation");
+    expect(html).toContain("Request");
+    expect(html).toContain("admin-evidence");
+  });
 });
