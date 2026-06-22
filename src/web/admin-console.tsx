@@ -8,9 +8,11 @@ import {
   ADMIN_SESSION_EXPIRED_MESSAGE,
   type AdminTab,
   beginLatestOnlyRequest,
+  beginExamAttemptDiagnosticDrilldownRequest,
   buildDiagnosticLogQueryString,
   buildWebhookCallbackUrl,
   buildEventRecordRowKey,
+  closeExamAttemptDiagnosticDrilldownRequest,
   type DiagnosticLogFilters,
   getAdminTabLabel,
   getAllowedRegionValidationMessage,
@@ -20,6 +22,7 @@ import {
   isLatestOnlyResponse,
   normaliseDiagnosticLogFilters,
   reconcileAllowedRegionIds,
+  shouldApplyExamAttemptDiagnosticDrilldownResponse,
   shouldClearAdminBannerOnTabChange,
   shouldShowCandidateProvisioning,
 } from "./admin-console-state";
@@ -238,6 +241,15 @@ function isAdminSessionExpiredError(error: unknown): error is AdminSessionExpire
   return error instanceof AdminSessionExpiredError;
 }
 
+function isAbortError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "name" in error &&
+    (error as { name?: string }).name === "AbortError"
+  );
+}
+
 export function AdminConsole({ email }: AdminConsoleProps) {
   const router = useRouter();
   const [tab, setTab] = useState<AdminTab>("connection");
@@ -262,6 +274,8 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   const [examCorrelationId, setExamCorrelationId] = useState<string | null>(null);
   const projectResourcesRequestIdRef = useRef(0);
   const blueprintDetailRequestIdRef = useRef(0);
+  const diagnosticDrilldownRequestRef = useRef({ requestId: 0, attemptId: null as string | null });
+  const diagnosticDrilldownAbortControllerRef = useRef<AbortController | null>(null);
   const [examAttemptFilter, setExamAttemptFilter] = useState("");
   const [auditRecords, setAuditRecords] = useState<AuditRecord[] | null>(null);
   const [eventRecords, setEventRecords] = useState<EventLogRecord[] | null>(null);
@@ -499,14 +513,32 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   }
 
   async function openExamAttemptDiagnosticDrilldown(examAttemptId: string) {
+    diagnosticDrilldownAbortControllerRef.current?.abort();
+    const requestState = beginExamAttemptDiagnosticDrilldownRequest(
+      diagnosticDrilldownRequestRef.current,
+      examAttemptId,
+    );
+    diagnosticDrilldownRequestRef.current = requestState;
+    const abortController = new AbortController();
+    diagnosticDrilldownAbortControllerRef.current = abortController;
     setDiagnosticDrilldownAttemptId(examAttemptId);
+    setDiagnosticDrilldown(null);
     setDiagnosticDrilldownLoading(true);
     setDiagnosticDrilldownError(null);
     try {
       const res = await fetchAdmin(
         `/api/admin/diagnostics/attempts/${encodeURIComponent(examAttemptId)}`,
+        { signal: abortController.signal },
       );
       const data = (await res.json()) as ExamAttemptDiagnosticDrilldownResponse;
+      if (
+        !shouldApplyExamAttemptDiagnosticDrilldownResponse(diagnosticDrilldownRequestRef.current, {
+          requestId: requestState.requestId,
+          attemptId: examAttemptId,
+        })
+      ) {
+        return;
+      }
       if (!res.ok) {
         setDiagnosticDrilldown(null);
         setDiagnosticDrilldownError(data.error ?? "Failed to load ExamAttempt diagnostic drilldown");
@@ -514,17 +546,41 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       }
       setDiagnosticDrilldown(data.drilldown ?? null);
     } catch (caughtError) {
+      if (isAbortError(caughtError)) {
+        return;
+      }
       if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
+      if (
+        !shouldApplyExamAttemptDiagnosticDrilldownResponse(diagnosticDrilldownRequestRef.current, {
+          requestId: requestState.requestId,
+          attemptId: examAttemptId,
+        })
+      ) {
         return;
       }
       setDiagnosticDrilldown(null);
       setDiagnosticDrilldownError("Failed to load ExamAttempt diagnostic drilldown");
     } finally {
-      setDiagnosticDrilldownLoading(false);
+      if (
+        shouldApplyExamAttemptDiagnosticDrilldownResponse(diagnosticDrilldownRequestRef.current, {
+          requestId: requestState.requestId,
+          attemptId: examAttemptId,
+        })
+      ) {
+        diagnosticDrilldownAbortControllerRef.current = null;
+        setDiagnosticDrilldownLoading(false);
+      }
     }
   }
 
   function closeExamAttemptDiagnosticDrilldown() {
+    diagnosticDrilldownAbortControllerRef.current?.abort();
+    diagnosticDrilldownAbortControllerRef.current = null;
+    diagnosticDrilldownRequestRef.current = closeExamAttemptDiagnosticDrilldownRequest(
+      diagnosticDrilldownRequestRef.current,
+    );
     setDiagnosticDrilldown(null);
     setDiagnosticDrilldownAttemptId(null);
     setDiagnosticDrilldownError(null);

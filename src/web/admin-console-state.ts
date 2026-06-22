@@ -73,6 +73,37 @@ export function isLatestOnlyResponse(activeRequestId: number, responseRequestId:
   return activeRequestId === responseRequestId;
 }
 
+export interface ExamAttemptDiagnosticDrilldownRequestState {
+  readonly requestId: number;
+  readonly attemptId: string | null;
+}
+
+export function beginExamAttemptDiagnosticDrilldownRequest(
+  state: ExamAttemptDiagnosticDrilldownRequestState,
+  attemptId: string,
+): ExamAttemptDiagnosticDrilldownRequestState {
+  return {
+    requestId: beginLatestOnlyRequest(state.requestId),
+    attemptId,
+  };
+}
+
+export function closeExamAttemptDiagnosticDrilldownRequest(
+  state: ExamAttemptDiagnosticDrilldownRequestState,
+): ExamAttemptDiagnosticDrilldownRequestState {
+  return {
+    requestId: beginLatestOnlyRequest(state.requestId),
+    attemptId: null,
+  };
+}
+
+export function shouldApplyExamAttemptDiagnosticDrilldownResponse(
+  state: ExamAttemptDiagnosticDrilldownRequestState,
+  response: { readonly requestId: number; readonly attemptId: string },
+): boolean {
+  return state.requestId === response.requestId && state.attemptId === response.attemptId;
+}
+
 export function getAdminTabLabel(tab: AdminTab): string {
   switch (tab) {
     case "connection":

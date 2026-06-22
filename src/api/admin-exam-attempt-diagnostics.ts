@@ -21,6 +21,11 @@ export interface AdminExamAttemptDiagnosticDrilldownResponse {
 
 export interface ExamAttemptDiagnosticDrilldownReadModel {
   readonly timelineSource: "diagnostic_log_entry";
+  readonly timelinePage: {
+    readonly limit: number;
+    readonly returned: number;
+    readonly hasMore: boolean;
+  };
   readonly candidate: {
     readonly id: string;
     readonly email: string;
@@ -93,12 +98,26 @@ export async function handleGetAdminExamAttemptDiagnosticDrilldown(
     .slice()
     .reverse()
     .map(toTimelineEntry);
+  const hasMore =
+    (
+      await deps.diagnostics.query({
+        customerId: request.customerId,
+        examAttemptId,
+        limit: 1,
+        offset: MAX_DIAGNOSTIC_QUERY_LIMIT,
+      })
+    ).length > 0;
 
   return {
     status: 200,
     body: {
       drilldown: {
         timelineSource: "diagnostic_log_entry",
+        timelinePage: {
+          limit: MAX_DIAGNOSTIC_QUERY_LIMIT,
+          returned: timeline.length,
+          hasMore,
+        },
         candidate: {
           id: context.candidateId,
           email: context.candidateEmail,

@@ -6,6 +6,11 @@ import type { ExamAttemptDiagnosticDrilldownReadModel } from "@/api/admin-exam-a
 
 const DRILLDOWN: ExamAttemptDiagnosticDrilldownReadModel = {
   timelineSource: "diagnostic_log_entry",
+  timelinePage: {
+    limit: 500,
+    returned: 1,
+    hasMore: false,
+  },
   candidate: {
     id: "candidate-1",
     email: "candidate@helioscx.demo",
@@ -119,5 +124,47 @@ describe("ExamAttemptDiagnosticDrilldown", () => {
 
     expect(html).toContain('id="exam-attempt-diagnostic-entry-diag-1"');
     expect(html).toContain('data-timeline-entry-id="diag-1"');
+  });
+
+  it("renders a truncation notice for oversized structured detail payloads", () => {
+    const html = renderToStaticMarkup(
+      createElement(ExamAttemptDiagnosticDrilldown, {
+        drilldown: {
+          ...DRILLDOWN,
+          timeline: [
+            {
+              ...DRILLDOWN.timeline[0],
+              details: { largePayload: "x".repeat(12_500) },
+            },
+          ],
+        },
+        loading: false,
+        error: null,
+        onClose: () => {},
+      }),
+    );
+
+    expect(html).toContain("Detail output truncated in the drilldown view");
+    expect(html).toContain("... truncated");
+  });
+
+  it("shows when the drilldown timeline is capped and older rows remain filtered elsewhere", () => {
+    const html = renderToStaticMarkup(
+      createElement(ExamAttemptDiagnosticDrilldown, {
+        drilldown: {
+          ...DRILLDOWN,
+          timelinePage: {
+            limit: 500,
+            returned: 500,
+            hasMore: true,
+          },
+        },
+        loading: false,
+        error: null,
+        onClose: () => {},
+      }),
+    );
+
+    expect(html).toContain("Showing the first 500 timeline entries.");
   });
 });

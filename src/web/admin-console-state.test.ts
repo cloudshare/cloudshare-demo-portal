@@ -3,8 +3,10 @@ import {
   ADMIN_SESSION_EXPIRED_MESSAGE,
   ADMIN_TABS,
   beginLatestOnlyRequest,
+  beginExamAttemptDiagnosticDrilldownRequest,
   buildDiagnosticLogQueryString,
   buildWebhookCallbackUrl,
+  closeExamAttemptDiagnosticDrilldownRequest,
   getAdminTabLabel,
   getAllowedRegionValidationMessage,
   getExamAuthoringMode,
@@ -14,6 +16,7 @@ import {
   isAdminSessionExpiredStatus,
   isLatestOnlyResponse,
   reconcileAllowedRegionIds,
+  shouldApplyExamAttemptDiagnosticDrilldownResponse,
   shouldShowCandidateProvisioning,
   shouldClearAdminBannerOnTabChange,
 } from "./admin-console-state";
@@ -27,6 +30,37 @@ describe("latest-only request coordination", () => {
   it("treats only the active request response as current", () => {
     expect(isLatestOnlyResponse(2, 2)).toBe(true);
     expect(isLatestOnlyResponse(2, 1)).toBe(false);
+  });
+
+  it("ignores a stale drilldown response after a different ExamAttempt is opened", () => {
+    const first = beginExamAttemptDiagnosticDrilldownRequest({ requestId: 0, attemptId: null }, "attempt-a");
+    const second = beginExamAttemptDiagnosticDrilldownRequest(first, "attempt-b");
+
+    expect(
+      shouldApplyExamAttemptDiagnosticDrilldownResponse(second, {
+        requestId: first.requestId,
+        attemptId: "attempt-a",
+      }),
+    ).toBe(false);
+    expect(
+      shouldApplyExamAttemptDiagnosticDrilldownResponse(second, {
+        requestId: second.requestId,
+        attemptId: "attempt-b",
+      }),
+    ).toBe(true);
+  });
+
+  it("invalidates an in-flight drilldown response when the panel is closed", () => {
+    const opened = beginExamAttemptDiagnosticDrilldownRequest({ requestId: 0, attemptId: null }, "attempt-a");
+    const closed = closeExamAttemptDiagnosticDrilldownRequest(opened);
+
+    expect(
+      shouldApplyExamAttemptDiagnosticDrilldownResponse(closed, {
+        requestId: opened.requestId,
+        attemptId: "attempt-a",
+      }),
+    ).toBe(false);
+    expect(closed.attemptId).toBeNull();
   });
 });
 

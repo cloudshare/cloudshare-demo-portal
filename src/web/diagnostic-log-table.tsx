@@ -28,13 +28,13 @@ export interface DiagnosticLogTableProps {
   readonly onOpenExamAttempt?: (examAttemptId: string) => void;
 }
 
-const MAX_RENDERED_DETAIL_CHARS = 12_000;
+export const MAX_RENDERED_DETAIL_CHARS = 12_000;
 
 function hasStructuredContent(value: Record<string, unknown> | Record<string, string> | null | undefined): boolean {
   return !!value && Object.keys(value).length > 0;
 }
 
-function formatStructuredValue(value: Record<string, unknown> | Record<string, string>): {
+export function formatStructuredValue(value: Record<string, unknown> | Record<string, string>): {
   readonly text: string;
   readonly truncated: boolean;
   readonly omittedCharacters: number;

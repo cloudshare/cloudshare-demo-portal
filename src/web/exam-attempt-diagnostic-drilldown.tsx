@@ -3,6 +3,7 @@ import type {
   ExamAttemptDiagnosticDrilldownReadModel,
   ExamAttemptDiagnosticTimelineEntry,
 } from "@/api/admin-exam-attempt-diagnostics";
+import { formatStructuredValue } from "./diagnostic-log-table";
 
 export interface ExamAttemptDiagnosticDrilldownProps {
   readonly drilldown: ExamAttemptDiagnosticDrilldownReadModel | null;
@@ -24,15 +25,38 @@ function renderCandidateName(firstName: string | null, lastName: string | null):
   return fullName || "Unavailable";
 }
 
-function renderStructured(value: Record<string, unknown> | Record<string, string> | null): string {
-  if (!value || Object.keys(value).length === 0) {
-    return "Unavailable";
-  }
-  return JSON.stringify(value, null, 2);
-}
-
 function buildTimelineDomId(entry: ExamAttemptDiagnosticTimelineEntry): string {
   return `exam-attempt-diagnostic-entry-${entry.id}`;
+}
+
+function StructuredDetailBlock(props: {
+  readonly label: string;
+  readonly value: Record<string, unknown> | Record<string, string> | null;
+}) {
+  if (!props.value || Object.keys(props.value).length === 0) {
+    return (
+      <div>
+        <strong>{props.label}</strong>
+        <div style={{ marginTop: "0.25rem" }}>Unavailable</div>
+      </div>
+    );
+  }
+
+  const formatted = formatStructuredValue(props.value);
+
+  return (
+    <div>
+      <strong>{props.label}</strong>
+      <pre style={{ margin: "0.25rem 0 0", whiteSpace: "pre-wrap", maxHeight: "20rem", overflow: "auto" }}>
+        {formatted.text}
+      </pre>
+      {formatted.truncated ? (
+        <div style={{ marginTop: "0.35rem", color: "#666" }}>
+          Detail output truncated in the drilldown view ({formatted.omittedCharacters.toLocaleString()} more characters omitted).
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 export function ExamAttemptDiagnosticDrilldown({
@@ -129,6 +153,11 @@ export function ExamAttemptDiagnosticDrilldown({
 
           <section>
             <h3 style={{ margin: "0 0 0.5rem", fontSize: "0.95rem" }}>Timeline</h3>
+            {drilldown.timelinePage.hasMore ? (
+              <div style={{ marginBottom: "0.75rem", color: "#666", fontSize: "0.88rem" }}>
+                Showing the first {drilldown.timelinePage.returned} timeline entries. Older diagnostic rows remain available in Support Diagnostics filters.
+              </div>
+            ) : null}
             <div style={{ display: "grid", gap: "0.75rem" }}>
               {drilldown.timeline.length === 0 ? (
                 <div style={{ color: "#666" }}>No DiagnosticLogEntry rows recorded for this ExamAttempt yet.</div>
@@ -159,7 +188,10 @@ export function ExamAttemptDiagnosticDrilldown({
                         <strong>Correlation ID:</strong> {renderOptional(entry.correlationId)}
                       </div>
                       <div>
-                        <strong>CloudShare / external IDs:</strong> {renderStructured(entry.externalIds)}
+                        <strong>CloudShare / external IDs:</strong>{" "}
+                        {entry.externalIds && Object.keys(entry.externalIds).length > 0
+                          ? JSON.stringify(entry.externalIds)
+                          : "Unavailable"}
                       </div>
                       <div>
                         <strong>Request / response:</strong> {entry.requestResponseSummary}
@@ -167,24 +199,9 @@ export function ExamAttemptDiagnosticDrilldown({
                       <div>
                         <strong>Message:</strong> {entry.message}
                       </div>
-                      <div>
-                        <strong>Request</strong>
-                        <pre style={{ margin: "0.25rem 0 0", whiteSpace: "pre-wrap" }}>
-                          {renderStructured(entry.request)}
-                        </pre>
-                      </div>
-                      <div>
-                        <strong>Response</strong>
-                        <pre style={{ margin: "0.25rem 0 0", whiteSpace: "pre-wrap" }}>
-                          {renderStructured(entry.response)}
-                        </pre>
-                      </div>
-                      <div>
-                        <strong>Details</strong>
-                        <pre style={{ margin: "0.25rem 0 0", whiteSpace: "pre-wrap" }}>
-                          {renderStructured(entry.details)}
-                        </pre>
-                      </div>
+                      <StructuredDetailBlock label="Request" value={entry.request} />
+                      <StructuredDetailBlock label="Response" value={entry.response} />
+                      <StructuredDetailBlock label="Details" value={entry.details} />
                     </div>
                   </details>
                 ))

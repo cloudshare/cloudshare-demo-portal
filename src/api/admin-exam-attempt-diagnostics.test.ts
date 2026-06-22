@@ -109,6 +109,11 @@ describe("handleGetAdminExamAttemptDiagnosticDrilldown", () => {
     const drilldown = response.body.drilldown!;
     expect(drilldown).toMatchObject({
       timelineSource: "diagnostic_log_entry",
+      timelinePage: {
+        limit: 500,
+        returned: 2,
+        hasMore: false,
+      },
       attempt: {
         id: "attempt-1",
         status: "suspended",
@@ -176,6 +181,11 @@ describe("handleGetAdminExamAttemptDiagnosticDrilldown", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.drilldown?.timelineSource).toBe("diagnostic_log_entry");
+    expect(response.body.drilldown?.timelinePage).toEqual({
+      limit: 500,
+      returned: 0,
+      hasMore: false,
+    });
     expect(response.body.drilldown?.timeline).toEqual([]);
   });
 
@@ -238,6 +248,39 @@ describe("handleGetAdminExamAttemptDiagnosticDrilldown", () => {
       responseBody: {
         loginUrl: "https://use.cloudshare.com/Ent/Login.aspx?token=admin-evidence",
       },
+    });
+  });
+
+  it("reports when older timeline rows exist beyond the drilldown cap", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+
+    for (let index = 0; index < 501; index += 1) {
+      await diagnostics.append({
+        occurredAt: new Date(Date.UTC(2026, 5, 21, 10, 0, index)),
+        source: "runtime",
+        operation: `exam_attempt.event_${index}`,
+        outcome: "success",
+        message: `Diagnostic ${index}`,
+        customerId: "customer-a",
+        examId: "exam-1",
+        examAttemptId: "attempt-1",
+      });
+    }
+
+    const response = await handleGetAdminExamAttemptDiagnosticDrilldown(
+      {
+        contexts: makeContextRepository(BASE_CONTEXT),
+        diagnostics,
+        logger: makeLogger(),
+      },
+      { customerId: "customer-a", examAttemptId: "attempt-1" },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.drilldown?.timelinePage).toEqual({
+      limit: 500,
+      returned: 500,
+      hasMore: true,
     });
   });
 });

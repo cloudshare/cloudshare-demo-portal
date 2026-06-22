@@ -18,7 +18,15 @@ export function createPrismaAdminExamAttemptDiagnosticContextRepository(
           customerId,
         },
         include: {
-          exam: true,
+          exam: {
+            select: {
+              id: true,
+              customerId: true,
+              title: true,
+              status: true,
+              scoreRetrievalEnabled: true,
+            },
+          },
           labLaunch: true,
         },
       });
@@ -27,8 +35,15 @@ export function createPrismaAdminExamAttemptDiagnosticContextRepository(
         return null;
       }
 
-      const candidate = await prisma.user.findUnique({
-        where: { id: row.candidateId },
+      if (row.exam.customerId !== customerId) {
+        return null;
+      }
+
+      const candidate = await prisma.user.findFirst({
+        where: {
+          id: row.candidateId,
+          customerId,
+        },
         select: {
           id: true,
           email: true,
