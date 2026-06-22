@@ -278,4 +278,52 @@ describe("createCloudShareGuidedJourneyProvider", () => {
       provider.getParticipantProgressForDiagnostics("exp-1", "student-1"),
     ).rejects.toBeInstanceOf(CloudShareResponseError);
   });
+
+  it("raises CloudShareResponseError with validation issues when a recognized payload has a rate above 1", async () => {
+    const payload = {
+      exploredRate: 1.2,
+      sectionStatuses: [
+        {
+          number: 0,
+          name: "Check pfSense WAN Interface",
+          status: "explored",
+        },
+      ],
+    };
+    const client = makeClient(payload);
+    const provider = createCloudShareGuidedJourneyProvider(client);
+
+    await expect(
+      provider.getParticipantProgressForDiagnostics("exp-1", "student-1"),
+    ).rejects.toMatchObject({
+      name: "CloudShareResponseError",
+      context: expect.objectContaining({
+        responseBody: JSON.stringify(payload),
+        issues: expect.arrayContaining(["Number must be less than or equal to 1"]),
+      }),
+    });
+  });
+
+  it("raises CloudShareResponseError with validation issues when completed steps exceed total steps", async () => {
+    const payload = {
+      progressRate: 50,
+      completedSections: 2,
+      totalSections: 1,
+      sections: [
+        { id: "t1", name: "Configure routing", status: "completed" },
+      ],
+    };
+    const client = makeClient(payload);
+    const provider = createCloudShareGuidedJourneyProvider(client);
+
+    await expect(
+      provider.getParticipantProgressForDiagnostics("exp-1", "student-1"),
+    ).rejects.toMatchObject({
+      name: "CloudShareResponseError",
+      context: expect.objectContaining({
+        responseBody: JSON.stringify(payload),
+        issues: expect.arrayContaining(["stepsCompleted must not exceed stepsTotal"]),
+      }),
+    });
+  });
 });

@@ -916,4 +916,36 @@ describe("score diagnostics", () => {
     });
     expect(JSON.stringify(failure)).not.toContain("secret");
   });
+
+  it("emits exam_attempt.score.retrieve failure with unexpected_response details when a recognized payload fails normalized validation", async () => {
+    const malformedRetriever: DiagnosticScoreRetrievalProvider = {
+      getParticipantProgress: vi.fn(),
+      getParticipantProgressForDiagnostics: vi.fn().mockRejectedValue(
+        new CloudShareResponseError("CloudShare Guided Journey progress payload was unsupported", {
+          method: "GET",
+          path: "/guided-journey/progress/exp-s1/student-1",
+          integrationSurface: "cloudshare.v4.guided_journey.progress",
+          responseBody: JSON.stringify({ exploredRate: 1.2, token: "secret" }),
+          issues: ["Number must be less than or equal to 1"],
+        }),
+      ),
+    };
+    const deps = makeScoreDeps({ scoreRetriever: malformedRetriever });
+
+    const resp = await handleGetCandidateScore(deps, {
+      query: { examAttemptId: "sa-1" },
+      session: SCORE_SESSION,
+    });
+    expect(resp.status).toBe(502);
+
+    const entries = await deps._repository.query({ examAttemptId: "sa-1" });
+    const failure = entries.find((e) => e.operation === "exam_attempt.score.retrieve" && e.outcome === "failure");
+    expect(failure?.details).toMatchObject({
+      method: "GET",
+      path: "/guided-journey/progress/exp-s1/student-1",
+      integrationSurface: "cloudshare.v4.guided_journey.progress",
+      failureMode: "unexpected_response",
+    });
+    expect(JSON.stringify(failure)).not.toContain("secret");
+  });
 });

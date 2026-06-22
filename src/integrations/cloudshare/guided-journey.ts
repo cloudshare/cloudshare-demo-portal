@@ -76,7 +76,15 @@ const guidedJourneyProgressSchema = z.unknown().transform<ParticipantProgress | 
     return null;
   }
 
-  return normalizedProgressSchema.parse(normalized);
+  const parsed = normalizedProgressSchema.safeParse(normalized);
+  if (!parsed.success) {
+    for (const issue of parsed.error.issues) {
+      ctx.addIssue(issue);
+    }
+    return z.NEVER;
+  }
+
+  return parsed.data;
 });
 
 export function createCloudShareGuidedJourneyProvider(
