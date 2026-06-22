@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
+  PRISMA_DIAGNOSTIC_SCAN_BATCH_SIZE,
   createInMemoryDiagnosticLogRepository,
   createPrismaDiagnosticLogRepository,
 } from "./diagnostic-log-repository";
@@ -121,6 +122,176 @@ describe("createPrismaDiagnosticLogRepository", () => {
     const limited = await repo.query({ customerId: "cust_1", limit: 2 });
     expect(limited).toHaveLength(2);
   });
+
+  it("filters by first-class and correlated support fields", async () => {
+    const repo = createPrismaDiagnosticLogRepository(prisma);
+    await repo.append({
+      occurredAt: new Date("2026-06-20T10:00:00.000Z"),
+      source: "runtime",
+      operation: "exam_attempt.resume",
+      outcome: "failure",
+      message: "match",
+      customerId: "cust_1",
+      candidateEmail: "candidate@helioscx.demo",
+      correlationId: "corr-1",
+      externalIds: { environmentId: "env-1" },
+      details: { integrationSurface: "cloudshare.v4.environment" },
+    });
+    await repo.append({
+      occurredAt: new Date("2026-06-20T10:01:00.000Z"),
+      source: "runtime",
+      operation: "exam_attempt.resume",
+      outcome: "success",
+      message: "other",
+      customerId: "cust_1",
+      candidateEmail: "other@helioscx.demo",
+      correlationId: "corr-2",
+      externalIds: { environmentId: "env-2" },
+      details: { integrationSurface: "cloudshare.v4.environment" },
+    });
+
+    const matched = await repo.query({
+      customerId: "cust_1",
+      candidateEmail: "candidate@helioscx.demo",
+      outcome: "failure",
+      correlationId: "corr-1",
+      integrationSurface: "cloudshare.v4.environment",
+      externalId: "env-1",
+    });
+
+    expect(matched).toHaveLength(1);
+    expect(matched[0].message).toBe("match");
+  });
+
+  it("supports offset pagination", async () => {
+    const repo = createPrismaDiagnosticLogRepository(prisma);
+    for (let i = 0; i < 4; i++) {
+      await repo.append({
+        occurredAt: new Date(`2026-06-20T10:00:0${i}.000Z`),
+        source: "auth",
+        operation: "portal.login",
+        outcome: "success",
+        message: `m${i}`,
+        customerId: "cust_1",
+      });
+    }
+
+    const paged = await repo.query({ customerId: "cust_1", limit: 2, offset: 1 });
+    expect(paged.map((entry) => entry.message)).toEqual(["m2", "m1"]);
+  });
+
+  it("does exact externalId filtering before pagination so env-1 is not lost behind env-10", async () => {
+    const repo = createPrismaDiagnosticLogRepository(prisma);
+    await repo.append({
+      occurredAt: new Date("2026-06-20T10:02:00.000Z"),
+      source: "runtime",
+      operation: "exam_attempt.resume",
+      outcome: "failure",
+      message: "env-10 newer",
+      customerId: "cust_1",
+      externalIds: { environmentId: "env-10" },
+      details: { integrationSurface: "cloudshare.v4.environment" },
+    });
+    await repo.append({
+      occurredAt: new Date("2026-06-20T10:01:00.000Z"),
+      source: "runtime",
+      operation: "exam_attempt.resume",
+      outcome: "failure",
+      message: "env-1 exact",
+      customerId: "cust_1",
+      externalIds: { environmentId: "env-1" },
+      details: { integrationSurface: "cloudshare.v4.environment" },
+    });
+
+    const page = await repo.query({
+      customerId: "cust_1",
+      integrationSurface: "cloudshare.v4.environment",
+      externalId: "env-1",
+      limit: 1,
+      offset: 0,
+    });
+
+    expect(page.map((entry) => entry.message)).toEqual(["env-1 exact"]);
+  });
+
+  it("matches candidate email case-insensitively even when the stored row uses mixed case", async () => {
+    const repo = createPrismaDiagnosticLogRepository(prisma);
+    await repo.append({
+      occurredAt: new Date("2026-06-20T10:00:00.000Z"),
+      source: "runtime",
+      operation: "exam_attempt.resume",
+      outcome: "success",
+      message: "mixed-case email",
+      customerId: "cust_1",
+      candidateEmail: "Candidate@HeliosCX.demo",
+    });
+
+    const matched = await repo.query({
+      customerId: "cust_1",
+      candidateEmail: "candidate@helioscx.demo",
+    });
+
+    expect(matched).toHaveLength(1);
+    expect(matched[0].message).toBe("mixed-case email");
+  });
+
+  it("uses bounded batch scans for exact post-filter queries instead of reading the whole result set at once", async () => {
+    const rows = Array.from({ length: PRISMA_DIAGNOSTIC_SCAN_BATCH_SIZE + 20 }, (_, index) => ({
+      id: `diag-${index}`,
+      occurredAt: new Date(`2026-06-20T10:${String(Math.floor(index / 60)).padStart(2, "0")}:${String(index % 60).padStart(2, "0")}.000Z`),
+      level: "info",
+      source: "runtime",
+      operation: "exam_attempt.resume",
+      outcome: "success",
+      customerId: "cust_1",
+      actorType: null,
+      actorId: null,
+      actorEmail: null,
+      subjectType: null,
+      subjectId: null,
+      message: `row-${index}`,
+      correlationId: null,
+      candidateEmail: index === PRISMA_DIAGNOSTIC_SCAN_BATCH_SIZE + 5 ? "Candidate@HeliosCX.demo" : null,
+      examId: null,
+      examAttemptId: null,
+      externalIdsJson:
+        index === PRISMA_DIAGNOSTIC_SCAN_BATCH_SIZE + 5
+          ? JSON.stringify({ environmentId: "env-1" })
+          : JSON.stringify({ environmentId: `env-${index}` }),
+      requestJson: null,
+      responseJson: null,
+      detailsJson:
+        index === PRISMA_DIAGNOSTIC_SCAN_BATCH_SIZE + 5
+          ? JSON.stringify({ integrationSurface: "cloudshare.v4.environment" })
+          : JSON.stringify({ integrationSurface: "cloudshare.v4.other" }),
+    }));
+    const findMany = async (args: { skip?: number; take?: number }) => {
+      expect(args.take).toBe(PRISMA_DIAGNOSTIC_SCAN_BATCH_SIZE);
+      const skip = args.skip ?? 0;
+      return rows.slice(skip, skip + (args.take ?? 0));
+    };
+
+    const repo = createPrismaDiagnosticLogRepository({
+      diagnosticLogEntry: {
+        create: async () => {
+          throw new Error("unused");
+        },
+        findMany,
+        deleteMany: async () => ({ count: 0 }),
+      },
+    } as unknown as PrismaClient);
+
+    const matched = await repo.query({
+      customerId: "cust_1",
+      candidateEmail: "candidate@helioscx.demo",
+      integrationSurface: "cloudshare.v4.environment",
+      externalId: "env-1",
+      limit: 1,
+    });
+
+    expect(matched).toHaveLength(1);
+    expect(matched[0].message).toBe(`row-${PRISMA_DIAGNOSTIC_SCAN_BATCH_SIZE + 5}`);
+  });
 });
 
 describe("createInMemoryDiagnosticLogRepository", () => {
@@ -145,5 +316,79 @@ describe("createInMemoryDiagnosticLogRepository", () => {
 
     expect(await repo.query({ customerId: "cust_a" })).toHaveLength(1);
     expect((await repo.query())[0].message).toBe("b");
+  });
+
+  it("matches the Prisma repository contract for correlated filters and paging", async () => {
+    const repo = createInMemoryDiagnosticLogRepository();
+    await repo.append({
+      occurredAt: new Date("2026-06-20T10:00:00.000Z"),
+      source: "runtime",
+      operation: "exam_attempt.resume",
+      outcome: "failure",
+      message: "match",
+      customerId: "cust_1",
+      candidateEmail: "candidate@helioscx.demo",
+      correlationId: "corr-1",
+      externalIds: { environmentId: "env-1" },
+      details: { integrationSurface: "cloudshare.v4.environment" },
+    });
+    await repo.append({
+      occurredAt: new Date("2026-06-20T10:00:01.000Z"),
+      source: "runtime",
+      operation: "exam_attempt.resume",
+      outcome: "failure",
+      message: "later",
+      customerId: "cust_1",
+      candidateEmail: "candidate@helioscx.demo",
+      correlationId: "corr-2",
+      externalIds: { environmentId: "env-2" },
+      details: { integrationSurface: "cloudshare.v4.environment" },
+    });
+
+    expect(
+      await repo.query({
+        customerId: "cust_1",
+        candidateEmail: "candidate@helioscx.demo",
+        correlationId: "corr-1",
+        integrationSurface: "cloudshare.v4.environment",
+        externalId: "env-1",
+      }),
+    ).toHaveLength(1);
+    expect(
+      (await repo.query({ customerId: "cust_1", limit: 1, offset: 1 }))[0].message,
+    ).toBe("match");
+  });
+
+  it("matches the Prisma contract for exact externalId pagination", async () => {
+    const repo = createInMemoryDiagnosticLogRepository();
+    await repo.append({
+      occurredAt: new Date("2026-06-20T10:02:00.000Z"),
+      source: "runtime",
+      operation: "exam_attempt.resume",
+      outcome: "failure",
+      message: "env-10 newer",
+      customerId: "cust_1",
+      externalIds: { environmentId: "env-10" },
+      details: { integrationSurface: "cloudshare.v4.environment" },
+    });
+    await repo.append({
+      occurredAt: new Date("2026-06-20T10:01:00.000Z"),
+      source: "runtime",
+      operation: "exam_attempt.resume",
+      outcome: "failure",
+      message: "env-1 exact",
+      customerId: "cust_1",
+      externalIds: { environmentId: "env-1" },
+      details: { integrationSurface: "cloudshare.v4.environment" },
+    });
+
+    expect(
+      await repo.query({
+        customerId: "cust_1",
+        integrationSurface: "cloudshare.v4.environment",
+        externalId: "env-1",
+        limit: 1,
+      }),
+    ).toMatchObject([expect.objectContaining({ message: "env-1 exact" })]);
   });
 });

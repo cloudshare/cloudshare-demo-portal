@@ -423,6 +423,191 @@ describe("handleGetDiagnosticLog", () => {
     expect(entries[0]).toMatchObject({ examId: "exam-1", operation: "exam.publish" });
   });
 
+  it("filters by candidate email, outcome, source, correlation ID, integration surface, and external ID", async () => {
+    const repository = createInMemoryDiagnosticLogRepository();
+    await repository.append({
+      occurredAt: new Date("2026-06-21T10:00:00.000Z"),
+      source: "runtime",
+      operation: "exam_attempt.resume",
+      outcome: "failure",
+      message: "resume failed",
+      customerId: "customer-a",
+      candidateEmail: "candidate@helioscx.demo",
+      correlationId: "corr-match",
+      externalIds: {
+        environmentId: "env-123",
+        trainingId: "training-456",
+      },
+      details: {
+        integrationSurface: "cloudshare.v4.environment",
+      },
+    });
+    await repository.append({
+      occurredAt: new Date("2026-06-21T10:01:00.000Z"),
+      source: "runtime",
+      operation: "exam_attempt.resume",
+      outcome: "success",
+      message: "resume worked",
+      customerId: "customer-a",
+      candidateEmail: "other@helioscx.demo",
+      correlationId: "corr-other",
+      externalIds: {
+        environmentId: "env-999",
+      },
+      details: {
+        integrationSurface: "cloudshare.v4.environment",
+      },
+    });
+
+    const response = await handleGetDiagnosticLog(
+      { diagnostics: repository, logger: noopLogger },
+      {
+        query: {
+          candidateEmail: "Candidate@HeliosCX.demo",
+          outcome: "failure",
+          source: "runtime",
+          correlationId: "corr-match",
+          integrationSurface: "cloudshare.v4.environment",
+          externalId: "env-123",
+        },
+        customerId: "customer-a",
+      },
+    );
+
+    const entries = response.body.entries as Array<{ candidateEmail: string; correlationId: string }>;
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({
+      candidateEmail: "candidate@helioscx.demo",
+      correlationId: "corr-match",
+    });
+  });
+
+  it("filters by inclusive time range", async () => {
+    const repository = createInMemoryDiagnosticLogRepository();
+    await repository.append({
+      occurredAt: new Date("2026-06-21T09:59:59.000Z"),
+      source: "runtime",
+      operation: "exam_attempt.enter",
+      outcome: "success",
+      message: "before",
+      customerId: "customer-a",
+    });
+    await repository.append({
+      occurredAt: new Date("2026-06-21T10:00:00.000Z"),
+      source: "runtime",
+      operation: "exam_attempt.enter",
+      outcome: "success",
+      message: "inside-start",
+      customerId: "customer-a",
+    });
+    await repository.append({
+      occurredAt: new Date("2026-06-21T10:15:00.000Z"),
+      source: "runtime",
+      operation: "exam_attempt.enter",
+      outcome: "success",
+      message: "inside-end",
+      customerId: "customer-a",
+    });
+    await repository.append({
+      occurredAt: new Date("2026-06-21T10:15:01.000Z"),
+      source: "runtime",
+      operation: "exam_attempt.enter",
+      outcome: "success",
+      message: "after",
+      customerId: "customer-a",
+    });
+
+    const response = await handleGetDiagnosticLog(
+      { diagnostics: repository, logger: noopLogger },
+      {
+        query: {
+          from: "2026-06-21T10:00:00.000Z",
+          to: "2026-06-21T10:15:00.000Z",
+        },
+        customerId: "customer-a",
+      },
+    );
+
+    const entries = response.body.entries as Array<{ message: string }>;
+    expect(entries.map((entry) => entry.message)).toEqual(["inside-end", "inside-start"]);
+  });
+
+  it("returns bounded results with pagination metadata", async () => {
+    const repository = createInMemoryDiagnosticLogRepository();
+    for (let index = 0; index < 3; index += 1) {
+      await repository.append({
+        occurredAt: new Date(`2026-06-21T10:00:0${index}.000Z`),
+        source: "runtime",
+        operation: "exam_attempt.enter",
+        outcome: "success",
+        message: `entry-${index}`,
+        customerId: "customer-a",
+      });
+    }
+
+    const response = await handleGetDiagnosticLog(
+      { diagnostics: repository, logger: noopLogger },
+      {
+        query: {
+          limit: "2",
+          offset: "1",
+        },
+        customerId: "customer-a",
+      },
+    );
+
+    const body = response.body as {
+      entries: Array<{ message: string }>;
+      page: { limit: number; offset: number; returned: number; hasMore: boolean; nextOffset: number | null };
+    };
+    expect(body.entries.map((entry) => entry.message)).toEqual(["entry-1", "entry-0"]);
+    expect(body.page).toEqual({
+      limit: 2,
+      offset: 1,
+      returned: 2,
+      hasMore: false,
+      nextOffset: null,
+    });
+  });
+
+  it("reports hasMore at the max page size by probing the next row", async () => {
+    const repository = createInMemoryDiagnosticLogRepository();
+    for (let index = 0; index < 501; index += 1) {
+      await repository.append({
+        occurredAt: new Date(`2026-06-21T10:${String(Math.floor(index / 60)).padStart(2, "0")}:${String(index % 60).padStart(2, "0")}.000Z`),
+        source: "runtime",
+        operation: "exam_attempt.enter",
+        outcome: "success",
+        message: `entry-${index}`,
+        customerId: "customer-a",
+      });
+    }
+
+    const response = await handleGetDiagnosticLog(
+      { diagnostics: repository, logger: noopLogger },
+      {
+        query: {
+          limit: "500",
+          offset: "0",
+        },
+        customerId: "customer-a",
+      },
+    );
+
+    const body = response.body as {
+      entries: Array<{ message: string }>;
+      page: { limit: number; offset: number; returned: number; hasMore: boolean; nextOffset: number | null };
+    };
+    expect(body.entries).toHaveLength(500);
+    expect(body.page).toEqual({
+      limit: 500,
+      offset: 0,
+      returned: 500,
+      hasMore: true,
+      nextOffset: 500,
+    });
+  });
+
   it("ignores a client-supplied customerId and trusts the session scope", async () => {
     const repository = createInMemoryDiagnosticLogRepository();
     await repository.append({

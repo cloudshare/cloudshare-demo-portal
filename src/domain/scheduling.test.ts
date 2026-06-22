@@ -550,7 +550,7 @@ describe("scheduleExam", () => {
     });
   });
 
-  it("records failure detail for a failed sponsored-link operation including the response body", async () => {
+  it("retains sponsored-link loginUrl in failed sponsored-link diagnostics for admin support", async () => {
     const { exams, attempts, launches } = await setup();
     const repository = createInMemoryDiagnosticLogRepository();
     const diagnostics = createDiagnosticRecorder({ repository });
@@ -603,8 +603,6 @@ describe("scheduleExam", () => {
       integrationSurface: "cloudshare.v4.training.sponsored_link",
       responseStatus: 400,
     });
-    // loginUrl key is no longer redacted in admin-only diagnostic logs (ADR-002:
-    // the real protection is the server-side 302 redirect, not log redaction).
     expect(
       (failure?.details as { responseBody?: { loginUrl?: string } })?.responseBody?.loginUrl,
     ).toBe("https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/leak-token");

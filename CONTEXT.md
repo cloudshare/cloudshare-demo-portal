@@ -149,11 +149,15 @@ be first-class so support filtering and tracing are reliable.
 Existing prototype support-log rows are not product data and should not constrain the new model.
 They may be discarded, reset, or archived during development; do not preserve a legacy shape if it
 weakens the DiagnosticLogEntry design.
-Normal diagnostics must redact secrets, API keys, bearer tokens, sponsored-link URLs, authorization
-headers, and similar sensitive values. A sensitive diagnostic mode may exist for replicable issues
-where redaction prevents diagnosis, but it must be explicit, audited, time-boxed with automatic
-expiry, disabled by default, scoped as narrowly as possible, and clearly visible to operators while
-enabled.
+Normal diagnostics must redact secrets, API keys, bearer tokens, authorization headers, webhook
+secrets, and similar sensitive values. CloudShare sponsored-link `loginUrl` values are an explicit
+admin-diagnostic exception: they may be retained in Diagnostic Log Entries as support evidence, but
+remain server-only and must never appear in candidate/client-facing responses, candidate/client-facing
+Portal UI, or non-admin APIs. Admin-only DiagnosticLogEntry and Support Diagnostics surfaces may
+display them as support evidence. A
+sensitive diagnostic mode may exist for replicable issues where redaction prevents diagnosis, but it
+must be explicit, audited, time-boxed with automatic expiry, disabled by default, scoped as narrowly
+as possible, and clearly visible to operators while enabled.
 The first DiagnosticLogEntry write-path slice should instrument the most support-critical flows:
 Candidate account creation; Candidate login/logout attempts; Customer admin login/logout attempts;
 Candidate ExamAttempt scheduling; CloudShare training creation; Candidate participant/student add;

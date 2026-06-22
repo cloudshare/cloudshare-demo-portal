@@ -2,6 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 import type { LogLevel } from "@/observability/logger";
 import {
   boundDiagnosticLimit,
+  boundDiagnosticOffset,
   type DiagnosticLogEntry,
   type DiagnosticLogEntryInput,
   type DiagnosticLogQuery,
@@ -51,7 +52,34 @@ function matchesQuery(entry: DiagnosticLogEntry, query: DiagnosticLogQuery): boo
   if (query.examAttemptId !== undefined && entry.examAttemptId !== query.examAttemptId) {
     return false;
   }
+  if (
+    query.candidateEmail !== undefined &&
+    entry.candidateEmail?.toLowerCase() !== query.candidateEmail.toLowerCase()
+  ) {
+    return false;
+  }
   if (query.operation !== undefined && entry.operation !== query.operation) {
+    return false;
+  }
+  if (query.outcome !== undefined && entry.outcome !== query.outcome) {
+    return false;
+  }
+  if (query.source !== undefined && entry.source !== query.source) {
+    return false;
+  }
+  if (query.correlationId !== undefined && entry.correlationId !== query.correlationId) {
+    return false;
+  }
+  if (
+    query.integrationSurface !== undefined &&
+    entry.details?.integrationSurface !== query.integrationSurface
+  ) {
+    return false;
+  }
+  if (
+    query.externalId !== undefined &&
+    !Object.values(entry.externalIds ?? {}).includes(query.externalId)
+  ) {
     return false;
   }
   if (query.from && entry.occurredAt.getTime() < query.from.getTime()) {
@@ -79,9 +107,11 @@ export function createInMemoryDiagnosticLogRepository(): DiagnosticLogRepository
 
     async query(query: DiagnosticLogQuery = {}): Promise<DiagnosticLogEntry[]> {
       const limit = boundDiagnosticLimit(query.limit);
+      const offset = boundDiagnosticOffset(query.offset);
       return entries
         .filter((entry) => matchesQuery(entry, query))
         .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime())
+        .slice(offset)
         .slice(0, limit);
     },
 
@@ -114,6 +144,8 @@ interface DiagnosticLogRow {
   responseJson: string | null;
   detailsJson: string | null;
 }
+
+export const PRISMA_DIAGNOSTIC_SCAN_BATCH_SIZE = 100;
 
 function parseJson<T>(json: string | null): T | null {
   if (json === null) return null;
@@ -183,6 +215,11 @@ export function createPrismaDiagnosticLogRepository(
 
     async query(query: DiagnosticLogQuery = {}): Promise<DiagnosticLogEntry[]> {
       const limit = boundDiagnosticLimit(query.limit);
+      const offset = boundDiagnosticOffset(query.offset);
+      const needsExactPostFilter =
+        query.candidateEmail !== undefined ||
+        query.integrationSurface !== undefined ||
+        query.externalId !== undefined;
       const occurredAt =
         query.from || query.to
           ? {
@@ -191,19 +228,57 @@ export function createPrismaDiagnosticLogRepository(
             }
           : undefined;
 
-      const rows = (await prisma.diagnosticLogEntry.findMany({
-        where: {
-          ...(query.customerId !== undefined ? { customerId: query.customerId } : {}),
-          ...(query.examId !== undefined ? { examId: query.examId } : {}),
-          ...(query.examAttemptId !== undefined ? { examAttemptId: query.examAttemptId } : {}),
-          ...(query.operation !== undefined ? { operation: query.operation } : {}),
-          ...(occurredAt ? { occurredAt } : {}),
-        },
-        orderBy: { occurredAt: "desc" },
-        take: limit,
-      })) as DiagnosticLogRow[];
+      const where = {
+        ...(query.customerId !== undefined ? { customerId: query.customerId } : {}),
+        ...(query.examId !== undefined ? { examId: query.examId } : {}),
+        ...(query.examAttemptId !== undefined ? { examAttemptId: query.examAttemptId } : {}),
+        ...(query.operation !== undefined ? { operation: query.operation } : {}),
+        ...(query.outcome !== undefined ? { outcome: query.outcome } : {}),
+        ...(query.source !== undefined ? { source: query.source } : {}),
+        ...(query.correlationId !== undefined ? { correlationId: query.correlationId } : {}),
+        ...(occurredAt ? { occurredAt } : {}),
+      };
 
-      return rows.map(rowToEntry);
+      if (!needsExactPostFilter) {
+        const rows = (await prisma.diagnosticLogEntry.findMany({
+          where,
+          orderBy: { occurredAt: "desc" },
+          skip: offset,
+          take: limit,
+        })) as DiagnosticLogRow[];
+
+        return rows.map(rowToEntry);
+      }
+
+      const matched: DiagnosticLogEntry[] = [];
+      const targetMatchCount = offset + limit;
+      let scanOffset = 0;
+
+      while (matched.length < targetMatchCount) {
+        const rows = (await prisma.diagnosticLogEntry.findMany({
+          where,
+          orderBy: { occurredAt: "desc" },
+          skip: scanOffset,
+          take: PRISMA_DIAGNOSTIC_SCAN_BATCH_SIZE,
+        })) as DiagnosticLogRow[];
+
+        if (rows.length === 0) {
+          break;
+        }
+
+        matched.push(
+          ...rows
+            .map(rowToEntry)
+            .filter((entry) => matchesQuery(entry, query)),
+        );
+
+        scanOffset += rows.length;
+        if (rows.length < PRISMA_DIAGNOSTIC_SCAN_BATCH_SIZE) {
+          break;
+        }
+      }
+
+      return matched.slice(offset, offset + limit);
     },
 
     async reset(): Promise<void> {

@@ -5,10 +5,12 @@ import type { EventLogRepository } from "@/domain/event-log";
 import type { SupportLogRepository } from "@/domain/support-log";
 import type {
   DiagnosticLogEntry,
+  DiagnosticOutcome,
   DiagnosticLogEntryInput,
   DiagnosticRecorder,
   DiagnosticLogRepository,
 } from "@/domain/diagnostic-log";
+import { MAX_DIAGNOSTIC_QUERY_LIMIT } from "@/domain/diagnostic-log";
 import {
   CloudShareError,
   CloudShareRequestError,
@@ -321,21 +323,79 @@ export async function handleGetDiagnosticLog(
   const to = parseDate(request.query.to);
   const examId = request.query.examId?.trim();
   const examAttemptId = request.query.examAttemptId?.trim();
+  const candidateEmail = request.query.candidateEmail?.trim().toLowerCase();
   const operation = request.query.operation?.trim();
+  const outcome = parseDiagnosticOutcome(request.query.outcome);
+  const source = request.query.source?.trim();
+  const correlationId = request.query.correlationId?.trim();
+  const integrationSurface = request.query.integrationSurface?.trim();
+  const externalId = request.query.externalId?.trim();
   const limitParam = request.query.limit;
   const limit = limitParam ? parseInt(limitParam, 10) : undefined;
+  const offsetParam = request.query.offset;
+  const offset = offsetParam ? parseInt(offsetParam, 10) : undefined;
 
-  const entries = await deps.diagnostics.query({
+  const boundedLimit =
+    limit !== undefined && !Number.isNaN(limit)
+      ? Math.min(Math.max(Math.floor(limit), 1), MAX_DIAGNOSTIC_QUERY_LIMIT)
+      : undefined;
+
+  const query = {
     customerId: request.customerId,
     ...(examId ? { examId } : {}),
     ...(examAttemptId ? { examAttemptId } : {}),
+    ...(candidateEmail ? { candidateEmail } : {}),
     ...(operation ? { operation } : {}),
+    ...(outcome ? { outcome } : {}),
+    ...(source ? { source } : {}),
+    ...(correlationId ? { correlationId } : {}),
+    ...(integrationSurface ? { integrationSurface } : {}),
+    ...(externalId ? { externalId } : {}),
     ...(from ? { from } : {}),
     ...(to ? { to } : {}),
-    ...(limit !== undefined && !Number.isNaN(limit) ? { limit } : {}),
-  });
+    ...(offset !== undefined && !Number.isNaN(offset) ? { offset } : {}),
+  } as const;
 
-  return { status: 200, body: { entries: entries.map(serialiseDiagnosticEntry) } };
+  const pageLimit = boundedLimit ?? 100;
+  const pageOffset =
+    offset !== undefined && !Number.isNaN(offset) && Number.isFinite(offset) && offset > 0
+      ? Math.floor(offset)
+      : 0;
+  const entries = await deps.diagnostics.query({
+    ...query,
+    limit: pageLimit,
+  });
+  const pageEntries = entries;
+  const hasMore =
+    pageEntries.length === pageLimit &&
+    (
+      await deps.diagnostics.query({
+        ...query,
+        limit: 1,
+        offset: pageOffset + pageEntries.length,
+      })
+    ).length > 0;
+
+  return {
+    status: 200,
+    body: {
+      entries: pageEntries.map(serialiseDiagnosticEntry),
+      page: {
+        limit: pageLimit,
+        offset: pageOffset,
+        returned: pageEntries.length,
+        hasMore,
+        nextOffset: hasMore ? pageOffset + pageEntries.length : null,
+      },
+    },
+  };
+}
+
+function parseDiagnosticOutcome(value: string | undefined): DiagnosticOutcome | undefined {
+  if (value === "success" || value === "failure") {
+    return value;
+  }
+  return undefined;
 }
 
 function parseDate(value: string | undefined): Date | undefined {

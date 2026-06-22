@@ -4,6 +4,25 @@ export interface ExamAuthoringMode {
   readonly tupleChangeHint: string | null;
 }
 
+export interface DiagnosticLogFilters {
+  readonly examAttemptId?: string;
+  readonly examId?: string;
+  readonly candidateEmail?: string;
+  readonly operation?: string;
+  readonly outcome?: "success" | "failure";
+  readonly source?: string;
+  readonly integrationSurface?: string;
+  readonly correlationId?: string;
+  readonly externalId?: string;
+  readonly from?: string;
+  readonly to?: string;
+}
+
+export interface DiagnosticLogPage {
+  readonly limit: number;
+  readonly offset: number;
+}
+
 export type AdminTab =
   | "connection"
   | "exams"
@@ -23,7 +42,6 @@ export const ADMIN_TABS: readonly AdminTab[] = [
   "audit",
   "events",
   "diagnostics",
-  "support",
   "resources",
 ];
 
@@ -70,9 +88,9 @@ export function getAdminTabLabel(tab: AdminTab): string {
     case "events":
       return "Event Log";
     case "diagnostics":
-      return "Diagnostic Log";
+      return "Support Diagnostics";
     case "support":
-      return "Support Workbench";
+      return "Legacy Support Logs";
     case "resources":
       return "Resources";
   }
@@ -84,6 +102,58 @@ export function shouldShowCandidateProvisioning(tab: AdminTab): boolean {
 
 export function shouldClearAdminBannerOnTabChange(from: AdminTab, to: AdminTab): boolean {
   return from !== to;
+}
+
+function normaliseOptionalText(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+export function normaliseDiagnosticLogFilters(
+  filters: DiagnosticLogFilters,
+): DiagnosticLogFilters {
+  return {
+    ...(normaliseOptionalText(filters.examAttemptId)
+      ? { examAttemptId: normaliseOptionalText(filters.examAttemptId) }
+      : {}),
+    ...(normaliseOptionalText(filters.examId) ? { examId: normaliseOptionalText(filters.examId) } : {}),
+    ...(normaliseOptionalText(filters.candidateEmail)
+      ? { candidateEmail: normaliseOptionalText(filters.candidateEmail)?.toLowerCase() }
+      : {}),
+    ...(normaliseOptionalText(filters.operation)
+      ? { operation: normaliseOptionalText(filters.operation) }
+      : {}),
+    ...(filters.outcome ? { outcome: filters.outcome } : {}),
+    ...(normaliseOptionalText(filters.source) ? { source: normaliseOptionalText(filters.source) } : {}),
+    ...(normaliseOptionalText(filters.integrationSurface)
+      ? { integrationSurface: normaliseOptionalText(filters.integrationSurface) }
+      : {}),
+    ...(normaliseOptionalText(filters.correlationId)
+      ? { correlationId: normaliseOptionalText(filters.correlationId) }
+      : {}),
+    ...(normaliseOptionalText(filters.externalId)
+      ? { externalId: normaliseOptionalText(filters.externalId) }
+      : {}),
+    ...(normaliseOptionalText(filters.from) ? { from: normaliseOptionalText(filters.from) } : {}),
+    ...(normaliseOptionalText(filters.to) ? { to: normaliseOptionalText(filters.to) } : {}),
+  };
+}
+
+export function buildDiagnosticLogQueryString(
+  filters: DiagnosticLogFilters,
+  page: DiagnosticLogPage,
+): string {
+  const params = new URLSearchParams();
+  const normalised = normaliseDiagnosticLogFilters(filters);
+  for (const [key, value] of Object.entries(normalised)) {
+    if (value) {
+      params.set(key, value);
+    }
+  }
+  params.set("limit", String(page.limit));
+  params.set("offset", String(page.offset));
+  const query = params.toString();
+  return query ? `?${query}` : "";
 }
 
 export function buildWebhookCallbackUrl(

@@ -3,11 +3,14 @@ import {
   ADMIN_SESSION_EXPIRED_MESSAGE,
   ADMIN_TABS,
   beginLatestOnlyRequest,
+  buildDiagnosticLogQueryString,
   buildWebhookCallbackUrl,
   getAdminTabLabel,
   getAllowedRegionValidationMessage,
   getExamAuthoringMode,
   getCompatibleRegions,
+  normaliseDiagnosticLogFilters,
+  type DiagnosticLogFilters,
   isAdminSessionExpiredStatus,
   isLatestOnlyResponse,
   reconcileAllowedRegionIds,
@@ -52,9 +55,9 @@ describe("admin tab model", () => {
     expect(ADMIN_TABS).toContain("monitoring");
     expect(getAdminTabLabel("candidates")).toBe("Candidates");
     expect(getAdminTabLabel("monitoring")).toBe("Session Monitoring");
-    expect(getAdminTabLabel("support")).toBe("Support Workbench");
     expect(ADMIN_TABS).toContain("diagnostics");
-    expect(getAdminTabLabel("diagnostics")).toBe("Diagnostic Log");
+    expect(ADMIN_TABS).not.toContain("support");
+    expect(getAdminTabLabel("diagnostics")).toBe("Support Diagnostics");
     expect(shouldShowCandidateProvisioning("diagnostics")).toBe(false);
     expect(shouldShowCandidateProvisioning("candidates")).toBe(true);
     expect(shouldShowCandidateProvisioning("connection")).toBe(false);
@@ -69,6 +72,55 @@ describe("admin tab model", () => {
   it("clears dismissible admin banners only when changing tabs", () => {
     expect(shouldClearAdminBannerOnTabChange("candidates", "exams")).toBe(true);
     expect(shouldClearAdminBannerOnTabChange("candidates", "candidates")).toBe(false);
+  });
+});
+
+describe("diagnostic log filter state", () => {
+  it("normalises filter input for a stable diagnostic query", () => {
+    const filters: DiagnosticLogFilters = normaliseDiagnosticLogFilters({
+      examAttemptId: "  attempt-1  ",
+      examId: " exam-1 ",
+      candidateEmail: " Candidate@HeliosCX.demo ",
+      operation: " exam_attempt.resume ",
+      outcome: "failure",
+      source: " runtime ",
+      integrationSurface: " cloudshare.v4.environment ",
+      correlationId: " corr-1 ",
+      externalId: " env-123 ",
+      from: " 2026-06-21T10:00 ",
+      to: " 2026-06-21T11:00 ",
+    });
+
+    expect(filters).toEqual({
+      examAttemptId: "attempt-1",
+      examId: "exam-1",
+      candidateEmail: "candidate@helioscx.demo",
+      operation: "exam_attempt.resume",
+      outcome: "failure",
+      source: "runtime",
+      integrationSurface: "cloudshare.v4.environment",
+      correlationId: "corr-1",
+      externalId: "env-123",
+      from: "2026-06-21T10:00",
+      to: "2026-06-21T11:00",
+    });
+  });
+
+  it("serialises only active filters plus bounded page parameters", () => {
+    const query = buildDiagnosticLogQueryString(
+      {
+        examAttemptId: "attempt-1",
+        candidateEmail: "candidate@helioscx.demo",
+        outcome: "failure",
+        source: "runtime",
+        externalId: "env-123",
+      },
+      { limit: 50, offset: 100 },
+    );
+
+    expect(query).toBe(
+      "?examAttemptId=attempt-1&candidateEmail=candidate%40helioscx.demo&outcome=failure&source=runtime&externalId=env-123&limit=50&offset=100",
+    );
   });
 });
 

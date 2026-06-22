@@ -79,11 +79,30 @@ export interface DiagnosticLogQuery {
   readonly examId?: string;
   /** Trace one ExamAttempt thread end to end. Matched on the first-class column. */
   readonly examAttemptId?: string;
+  /** Case-insensitive exact Candidate email match. */
+  readonly candidateEmail?: string;
   /** Exact operation match for support filtering. */
   readonly operation?: string;
+  /** Exact outcome match for support filtering. */
+  readonly outcome?: DiagnosticOutcome;
+  /** Exact source match for support filtering. */
+  readonly source?: string;
+  /** Exact correlation match for support tracing. */
+  readonly correlationId?: string;
+  /**
+   * Exact integration surface match, typically emitted in `details.integrationSurface`.
+   * Not every row carries it.
+   */
+  readonly integrationSurface?: string;
+  /**
+   * Exact CloudShare/external identifier match against structured `externalIds`
+   * values, e.g. environmentId/trainingId/participantId.
+   */
+  readonly externalId?: string;
   readonly from?: Date;
   readonly to?: Date;
   readonly limit?: number;
+  readonly offset?: number;
 }
 
 export interface DiagnosticLogRepository {
@@ -105,6 +124,13 @@ export function boundDiagnosticLimit(limit?: number): number {
   return Math.min(Math.floor(limit), MAX_DIAGNOSTIC_QUERY_LIMIT);
 }
 
+export function boundDiagnosticOffset(offset?: number): number {
+  if (offset === undefined || !Number.isFinite(offset) || offset <= 0) {
+    return 0;
+  }
+  return Math.floor(offset);
+}
+
 // --- Redaction -------------------------------------------------------------
 
 const REDACTED = "[REDACTED]";
@@ -112,7 +138,7 @@ const REDACTED = "[REDACTED]";
 /**
  * Field names whose values are always scrubbed in normal mode. Matched
  * case-insensitively as a substring so `apiKey`, `webhookSecret`,
- * `authorization`, `loginUrl`, etc. are all covered.
+ * `authorization`, etc. are all covered.
  */
 const SENSITIVE_KEY_PATTERNS = [
   "password",
