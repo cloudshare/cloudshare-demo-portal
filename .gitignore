@@ -5,6 +5,12 @@
 # committed (breaks on other checkouts / CI — see claude-code-action ENOENT).
 .claude/skills
 
+# Local agent / issue-workflow artifacts are per-machine helpers, not supported
+# repo tooling; keep them untracked.
+.agents/
+create-issues.sh
+update-issue-rules.sh
+
 # dependencies
 /node_modules
 
