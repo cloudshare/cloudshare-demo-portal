@@ -139,6 +139,64 @@ describe("createCloudShareGuidedJourneyProvider", () => {
     });
   });
 
+  it("preserves the raw Guided Journey payload for diagnostics while keeping normalized progress", async () => {
+    const client = makeClient(liveApiResponse);
+    const provider = createCloudShareGuidedJourneyProvider(client);
+
+    const result = await provider.getParticipantProgressForDiagnostics(
+      "EX8FegB45PLVmyn8LgPRXPuA2",
+      "PTdBBgMl9ryrQzFBToh3aqew2",
+    );
+
+    expect(result).toEqual({
+      progress: {
+        percentComplete: 50,
+        stepsCompleted: 2,
+        stepsTotal: 4,
+        exploredRate: 0.5,
+        inProgressRate: 0.5,
+        notStartedRate: 0,
+        passedRate: 0.25,
+        failedRate: 0.25,
+        notInitiatedRate: 0,
+        steps: [
+          {
+            stepId: "0:Check pfSense WAN Interface",
+            title: "Check pfSense WAN Interface",
+            completed: true,
+            status: "explored",
+          },
+          {
+            stepId: "0:Section Name",
+            title: "Section Name",
+            completed: false,
+            status: "in Progress",
+          },
+          {
+            stepId: "1:Check the LAN interface",
+            title: "Check the LAN interface",
+            completed: true,
+            status: "explored",
+          },
+          {
+            stepId: "2:Section Name 3",
+            title: "Section Name 3",
+            completed: false,
+            status: "in Progress",
+          },
+        ],
+      },
+      request: {
+        method: "GET",
+        path: "/guided-journey/progress/EX8FegB45PLVmyn8LgPRXPuA2/PTdBBgMl9ryrQzFBToh3aqew2",
+      },
+      response: {
+        status: 200,
+        body: liveApiResponse,
+      },
+    });
+  });
+
   it("treats documented numeric completed-style statuses as completed steps", async () => {
     const client = makeClient({
       participantId: "student-1",

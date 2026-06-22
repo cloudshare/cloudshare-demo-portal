@@ -24,7 +24,7 @@ import type { EnvironmentStateSource } from "@/domain/environment";
 import type { CloudShareClientFactory, CloudShareConnectionRepository } from "@/domain/cloudshare-connection";
 import type { ExamRepository, Exam } from "@/domain/exam-catalog";
 import type { AuditRepository } from "@/domain/audit-trail";
-import type { ScoreRetrievalProvider } from "@/domain/score-result";
+import type { DiagnosticScoreRetrievalProvider, ScoreRetrievalProvider } from "@/domain/score-result";
 import type { ParticipantLister } from "@/domain/environment-correlation";
 import type { CloudShareConnectionRecord } from "@/domain/cloudshare-connection";
 import { CloudShareRequestError } from "@/integrations/cloudshare";
@@ -659,7 +659,7 @@ const SCORE_CONNECTION: CloudShareConnectionRecord = {
 };
 
 function makeScoreDeps(overrides: {
-  scoreRetriever?: ScoreRetrievalProvider;
+  scoreRetriever?: ScoreRetrievalProvider | DiagnosticScoreRetrievalProvider;
   participantLister?: ParticipantLister;
 } = {}): ScoreHandlerDeps & { _recorder: DiagnosticRecorder; _repository: ReturnType<typeof createInMemoryDiagnosticLogRepository> } {
   const { repository, recorder } = diagnosticsHarness();
@@ -759,8 +759,69 @@ describe("score diagnostics", () => {
     });
   });
 
-  it("emits exam_attempt.score.retrieve success with score data in response field", async () => {
-    const deps = makeScoreDeps();
+  it("emits exam_attempt.score.retrieve success with the raw CloudShare response in the diagnostic payload", async () => {
+    const rawProgressPayload = {
+      exploredRate: 0.5,
+      inProgressRate: 0.25,
+      notStartedRate: 0.25,
+      passedRate: 0.25,
+      failedRate: 0,
+      notInitiatedRate: 0.25,
+      sectionStatuses: [
+        {
+          number: 0,
+          name: "Check pfSense WAN Interface",
+          status: "explored",
+          isInFocus: false,
+          timeSpent: 338.24936349999996,
+        },
+        {
+          number: 1,
+          name: "Validate output",
+          status: "inProgress",
+          isInFocus: false,
+          timeSpent: 7.1577779999999995,
+        },
+      ],
+    };
+    const deps = makeScoreDeps({
+      scoreRetriever: {
+        getParticipantProgress: vi.fn().mockResolvedValue({
+          percentComplete: 50,
+          stepsCompleted: 1,
+          stepsTotal: 2,
+          steps: [
+            { stepId: "0:Check pfSense WAN Interface", title: "Check pfSense WAN Interface", completed: true, status: "explored" },
+            { stepId: "1:Validate output", title: "Validate output", completed: false, status: "in Progress" },
+          ],
+          exploredRate: 0.5,
+          inProgressRate: 0.25,
+          notStartedRate: 0.25,
+          passedRate: 0.25,
+          failedRate: 0,
+          notInitiatedRate: 0.25,
+        }),
+        getParticipantProgressForDiagnostics: vi.fn().mockResolvedValue({
+          progress: {
+            percentComplete: 50,
+            stepsCompleted: 1,
+            stepsTotal: 2,
+            steps: [
+              { stepId: "0:Check pfSense WAN Interface", title: "Check pfSense WAN Interface", completed: true, status: "explored" },
+              { stepId: "1:Validate output", title: "Validate output", completed: false, status: "in Progress" },
+            ],
+            exploredRate: 0.5,
+            inProgressRate: 0.25,
+            notStartedRate: 0.25,
+            passedRate: 0.25,
+            failedRate: 0,
+            notInitiatedRate: 0.25,
+          },
+          request: { method: "GET", path: "/guided-journey/progress/exp-s1/student-1" },
+          response: { status: 200, body: rawProgressPayload },
+        }),
+      } satisfies DiagnosticScoreRetrievalProvider,
+    });
 
     const resp = await handleGetCandidateScore(deps, {
       query: { examAttemptId: "sa-1" },
@@ -777,8 +838,14 @@ describe("score diagnostics", () => {
       examAttemptId: "sa-1",
       customerId: "customer-1",
     });
-    const response = (retrieve as { response?: Record<string, unknown> }).response;
-    expect(response).toMatchObject({ scoreAvailable: true, percentComplete: 80 });
+    expect((retrieve as { request?: Record<string, unknown> }).request).toEqual({
+      method: "GET",
+      path: "/guided-journey/progress/exp-s1/student-1",
+    });
+    expect((retrieve as { response?: Record<string, unknown> }).response).toEqual({
+      status: 200,
+      body: rawProgressPayload,
+    });
   });
 
   it("emits exam_attempt.score.retrieve failure when score retrieval throws ScoreRetrievalError", async () => {

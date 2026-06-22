@@ -1,11 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import {
-  buildMonitoringHistoryAttemptKey,
-  buildMonitoringTimelineEntryKey,
-  SessionMonitoringPanel,
-} from "./session-monitoring-panel";
+import { buildMonitoringHistoryAttemptKey, SessionMonitoringPanel } from "./session-monitoring-panel";
 import type { AdminMonitoringView, MonitoringAttemptView } from "@/domain/admin-monitoring";
 
 function makeAttempt(partial: Partial<MonitoringAttemptView> = {}): MonitoringAttemptView {
@@ -110,19 +106,16 @@ describe("SessionMonitoringPanel", () => {
     expect(html).toContain("Completed / expired history (showing 1 of 3)");
     expect(html).toContain("Load more history");
     expect(html).toContain("Open in Support Diagnostics");
+    expect(html).toContain("Durable history lives in Support Diagnostics.");
+    expect(html).not.toContain("No timeline entries recorded.");
+    expect(html).not.toContain("<table");
   });
 });
 
 describe("monitoring row keys", () => {
-  it("builds stable keys for terminal-history rows and timeline rows", () => {
+  it("builds stable keys for terminal-history rows", () => {
     const attempt = makeAttempt();
 
     expect(buildMonitoringHistoryAttemptKey(attempt)).toBe("attempt-1");
-    expect(buildMonitoringTimelineEntryKey(attempt.id, attempt.timeline[0]!)).toBe(
-      "attempt-1-audit-audit-1",
-    );
-    expect(buildMonitoringTimelineEntryKey(attempt.id, attempt.timeline[1]!)).toBe(
-      "attempt-1-failure-event-1",
-    );
   });
 });

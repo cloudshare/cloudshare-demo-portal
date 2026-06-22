@@ -1,6 +1,11 @@
 import { z } from "zod";
 import type { CloudShareClient } from "./client";
-import type { ParticipantProgress, ScoreRetrievalProvider } from "@/domain/score-result";
+import type {
+  DiagnosticScoreRetrievalProvider,
+  ParticipantProgress,
+  ParticipantProgressDiagnostics,
+  ScoreRetrievalProvider,
+} from "@/domain/score-result";
 import { CloudShareRequestError } from "./errors";
 
 /**
@@ -76,27 +81,59 @@ const guidedJourneyProgressSchema = z.unknown().transform<ParticipantProgress | 
 
 export function createCloudShareGuidedJourneyProvider(
   client: CloudShareClient,
-): ScoreRetrievalProvider {
+): ScoreRetrievalProvider & DiagnosticScoreRetrievalProvider {
   return {
     async getParticipantProgress(
       experienceId: string,
       participantId: string,
     ): Promise<ParticipantProgress | null> {
-      let response: ParticipantProgress | null;
-      try {
-        response = await client.requestV4<ParticipantProgress | null>({
-          method: "GET",
-          path: `/guided-journey/progress/${experienceId}/${participantId}`,
-          schema: guidedJourneyProgressSchema,
-        });
-      } catch (error) {
-        if (error instanceof CloudShareRequestError && error.status === 404) {
-          return null;
-        }
-        throw error;
-      }
+      const result = await fetchParticipantProgressForDiagnostics(client, experienceId, participantId);
+      return result.progress;
+    },
+    async getParticipantProgressForDiagnostics(
+      experienceId: string,
+      participantId: string,
+    ): Promise<ParticipantProgressDiagnostics> {
+      return fetchParticipantProgressForDiagnostics(client, experienceId, participantId);
+    },
+  };
+}
 
-      return response;
+async function fetchParticipantProgressForDiagnostics(
+  client: CloudShareClient,
+  experienceId: string,
+  participantId: string,
+): Promise<ParticipantProgressDiagnostics> {
+  const path = `/guided-journey/progress/${experienceId}/${participantId}`;
+  const request = { method: "GET", path } as const;
+
+  let responseBody: unknown;
+  try {
+    responseBody = await client.requestV4<unknown>({
+      method: request.method,
+      path: request.path,
+      schema: z.unknown(),
+    });
+  } catch (error) {
+    if (error instanceof CloudShareRequestError && error.status === 404) {
+      return {
+        progress: null,
+        request,
+        response: {
+          status: 404,
+          body: null,
+        },
+      };
+    }
+    throw error;
+  }
+
+  return {
+    progress: guidedJourneyProgressSchema.parse(responseBody),
+    request,
+    response: {
+      status: 200,
+      body: responseBody,
     },
   };
 }

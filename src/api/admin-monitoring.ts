@@ -44,15 +44,6 @@ export async function handleGetAdminMonitoring(
     }),
   ]);
 
-  const renderedAttemptIds = [...new Set([...currentAttempts, ...history.attempts].map((attempt) => attempt.id))];
-  const [auditRecords, eventLog] =
-    renderedAttemptIds.length === 0
-      ? [[], []]
-      : await Promise.all([
-          deps.audit.listByExamAttemptIds(renderedAttemptIds),
-          deps.eventLog.listFailureEventsByExamAttemptIds(renderedAttemptIds),
-        ]);
-
   return {
     status: 200,
     body: {
@@ -60,8 +51,8 @@ export async function handleGetAdminMonitoring(
         summary,
         currentAttempts,
         history,
-        auditRecords,
-        eventLog,
+        auditRecords: [],
+        eventLog: [],
       }),
     },
   };

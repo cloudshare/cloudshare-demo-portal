@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { resolveExamAttemptScore, type ScoreRetrievalProvider } from "@/domain/score-result";
+import {
+  resolveExamAttemptScore,
+  type DiagnosticScoreRetrievalProvider,
+  type ParticipantProgressDiagnostics,
+  type ScoreRetrievalProvider,
+} from "@/domain/score-result";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { ExamRepository } from "@/domain/exam-catalog";
 import type { AuditRepository } from "@/domain/audit-trail";
@@ -194,9 +199,18 @@ export async function handleGetCandidateScore(
     });
 
     const scoreRetriever = deps.createScoreRetriever(connection);
+    const scoreRetrieval = await getScoreProgressForDiagnostics(
+      scoreRetriever,
+      launch.experienceId,
+      resolvedParticipantId.participantId,
+    );
     const result = await resolveExamAttemptScore(
       {
-        scoreRetriever,
+        scoreRetriever: scoreRetrieval
+          ? {
+              getParticipantProgress: async () => scoreRetrieval.progress,
+            }
+          : scoreRetriever,
         now: deps.now,
       },
       {
@@ -227,7 +241,14 @@ export async function handleGetCandidateScore(
         operation: "exam_attempt.score.retrieve",
         outcome: "success",
         message: "Score retrieved — no score available yet",
-        response: { scoreAvailable: false, reason: result.reason },
+        ...(scoreRetrieval
+          ? {
+              request: scoreRetrieval.request,
+              response: scoreRetrieval.response,
+            }
+          : {
+              response: { scoreAvailable: false, reason: result.reason },
+            }),
       });
       return {
         status: 200,
@@ -266,12 +287,19 @@ export async function handleGetCandidateScore(
       operation: "exam_attempt.score.retrieve",
       outcome: "success",
       message: "Score retrieved successfully",
-      response: {
-        scoreAvailable: true,
-        percentComplete: result.percentComplete,
-        stepsCompleted: result.stepsCompleted,
-        stepsTotal: result.stepsTotal,
-      },
+      ...(scoreRetrieval
+        ? {
+            request: scoreRetrieval.request,
+            response: scoreRetrieval.response,
+          }
+        : {
+            response: {
+              scoreAvailable: true,
+              percentComplete: result.percentComplete,
+              stepsCompleted: result.stepsCompleted,
+              stepsTotal: result.stepsTotal,
+            },
+          }),
     });
 
     return {
@@ -656,4 +684,23 @@ function asString(value: unknown): string | undefined {
 
 function asNumber(value: unknown): number | undefined {
   return typeof value === "number" ? value : undefined;
+}
+
+async function getScoreProgressForDiagnostics(
+  scoreRetriever: ScoreRetrievalProvider,
+  experienceId: string,
+  participantId: string,
+): Promise<ParticipantProgressDiagnostics | null> {
+  if (!hasDiagnosticScoreRetrieval(scoreRetriever)) {
+    return null;
+  }
+
+  return scoreRetriever.getParticipantProgressForDiagnostics(experienceId, participantId);
+}
+
+function hasDiagnosticScoreRetrieval(
+  scoreRetriever: ScoreRetrievalProvider,
+): scoreRetriever is DiagnosticScoreRetrievalProvider {
+  return "getParticipantProgressForDiagnostics" in scoreRetriever &&
+    typeof scoreRetriever.getParticipantProgressForDiagnostics === "function";
 }

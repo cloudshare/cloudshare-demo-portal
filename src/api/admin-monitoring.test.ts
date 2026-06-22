@@ -89,7 +89,7 @@ function makeEventLog(records: unknown[] = []): EventLogRepository {
 }
 
 describe("handleGetAdminMonitoring", () => {
-  it("requests summary, current queues, and the terminal-history page separately, and only loads timelines for rendered attempts", async () => {
+  it("requests summary, current queues, and the terminal-history page separately without loading volatile timeline stores", async () => {
     const attempts = makeAttemptRepository({
       summary: makeSummary({
         scheduled: 1,
@@ -139,16 +139,8 @@ describe("handleGetAdminMonitoring", () => {
       limit: 2,
       offset: 1,
     });
-    expect(audit.listByExamAttemptIds).toHaveBeenCalledWith([
-      "attempt-current",
-      "attempt-history-2",
-      "attempt-history-1",
-    ]);
-    expect(eventLog.listFailureEventsByExamAttemptIds).toHaveBeenCalledWith([
-      "attempt-current",
-      "attempt-history-2",
-      "attempt-history-1",
-    ]);
+    expect(audit.listByExamAttemptIds).not.toHaveBeenCalled();
+    expect(eventLog.listFailureEventsByExamAttemptIds).not.toHaveBeenCalled();
     expect(response.body.monitoring.historyPage).toEqual({
       limit: 2,
       offset: 1,
@@ -213,7 +205,7 @@ describe("handleGetAdminMonitoring", () => {
     });
   });
 
-  it("includes an expired provisioning failure attempt in monitoring history with its failure timeline", async () => {
+  it("keeps expired provisioning failures in monitoring history without surfacing a volatile timeline", async () => {
     const response = await handleGetAdminMonitoring(
       {
         attempts: makeAttemptRepository({
@@ -257,30 +249,20 @@ describe("handleGetAdminMonitoring", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({
-      monitoring: expect.objectContaining({
-        summary: {
-          scheduled: 0,
-          ready: 0,
-          inProgress: 0,
-          suspended: 0,
-          completed: 0,
-          expired: 1,
-        },
-        history: [
-          expect.objectContaining({
-            id: "attempt-failed",
-            status: "expired",
-            timeline: [
-              expect.objectContaining({
-                kind: "audit",
-                action: "lab_launch_failed",
-                outcome: "failure",
-              }),
-            ],
-          }),
-        ],
-      }),
+    expect(response.body.monitoring.summary).toEqual({
+      scheduled: 0,
+      ready: 0,
+      inProgress: 0,
+      suspended: 0,
+      completed: 0,
+      expired: 1,
     });
+    expect(response.body.monitoring.history).toEqual([
+      expect.objectContaining({
+        id: "attempt-failed",
+        status: "expired",
+        timeline: [],
+      }),
+    ]);
   });
 });

@@ -4,7 +4,6 @@ import type {
   AdminMonitoringView,
   MonitoringAttemptResult,
   MonitoringAttemptView,
-  MonitoringTimelineEntry,
 } from "@/domain/admin-monitoring";
 
 export interface SessionMonitoringPanelProps {
@@ -43,24 +42,8 @@ function formatMonitoringResult(result: MonitoringAttemptResult | undefined): st
   return `${percent}${steps}`;
 }
 
-function formatTimelineEntry(entry: MonitoringTimelineEntry): string {
-  if (entry.kind === "audit") {
-    return entry.error ?? (entry.details ? JSON.stringify(entry.details) : "-");
-  }
-  const status = typeof entry.responseStatus === "number" ? `HTTP ${entry.responseStatus}` : entry.failureMode ?? "failure";
-  const attemptedOperation = entry.attemptedOperation ? `${entry.attemptedOperation} ` : "";
-  return `${attemptedOperation}${status}`.trim();
-}
-
 export function buildMonitoringHistoryAttemptKey(attempt: Pick<MonitoringAttemptView, "id">): string {
   return attempt.id;
-}
-
-export function buildMonitoringTimelineEntryKey(
-  examAttemptId: string,
-  entry: MonitoringTimelineEntry,
-): string {
-  return `${examAttemptId}-${entry.kind}-${entry.id}`;
 }
 
 function renderAttemptCard(
@@ -82,45 +65,8 @@ function renderAttemptCard(
           scheduledForLabel={formatUtcTimestamp(attempt.scheduledFor)}
           onOpenSupportDiagnostics={onOpenSupportDiagnostics}
         />
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
-            <thead>
-              <tr style={{ background: "#f5f5f5" }}>
-                {["Time", "Kind", "Event", "Outcome", "Details"].map((heading) => (
-                  <th key={heading} style={{ textAlign: "left", padding: "0.35rem", borderBottom: "1px solid #ddd" }}>
-                    {heading}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {attempt.timeline.length === 0 && (
-                <tr>
-                  <td colSpan={5} style={{ padding: "0.4rem", color: "#666" }}>
-                    No timeline entries recorded.
-                  </td>
-                </tr>
-              )}
-              {attempt.timeline.map((entry) => (
-                <tr
-                  key={buildMonitoringTimelineEntryKey(attempt.id, entry)}
-                  style={{ borderBottom: "1px solid #eee", verticalAlign: "top" }}
-                >
-                  <td style={{ padding: "0.35rem", whiteSpace: "nowrap" }}>
-                    {formatUtcTimestamp(entry.occurredAt)}
-                  </td>
-                  <td style={{ padding: "0.35rem" }}>{entry.kind}</td>
-                  <td style={{ padding: "0.35rem" }}>{entry.kind === "audit" ? entry.action : entry.eventType}</td>
-                  <td style={{ padding: "0.35rem" }}>
-                    {entry.kind === "audit"
-                      ? entry.outcome
-                      : (typeof entry.responseStatus === "number" ? `HTTP ${entry.responseStatus}` : entry.failureMode ?? "-")}
-                  </td>
-                  <td style={{ padding: "0.35rem", color: "#444" }}>{formatTimelineEntry(entry)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div style={{ color: "#555" }}>
+          Durable history lives in Support Diagnostics.
         </div>
       </div>
     </details>
