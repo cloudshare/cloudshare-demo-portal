@@ -973,15 +973,18 @@ describe("score diagnostics", () => {
 
     expect(resp.status).toBe(502);
     const entries = await repository.query({ examAttemptId: "sa-1" });
-    const failure = entries.find(
+    const failures = entries.filter(
       (entry) =>
         entry.operation === "exam_attempt.score.correlate_environment" &&
         entry.outcome === "failure",
     );
+    expect(failures).toHaveLength(1);
+    const failure = failures[0];
     expect(failure).toBeDefined();
     expect(failure).toMatchObject({
       customerId: "customer-1",
       examAttemptId: "sa-1",
+      correlationId: "score-corr-missing-participant",
       details: {
         attemptedOperation: "resolve_training_participant",
         integrationSurface: "cloudshare.v4.training.participant_list",
@@ -992,6 +995,69 @@ describe("score diagnostics", () => {
       externalIds: {
         experienceId: "exp-s1",
         trainingId: "EXtraining-s1",
+      },
+    });
+  });
+
+  it("emits a single correlate-environment failure row with first-class correlationId when launch correlation data is incomplete", async () => {
+    const attempts = createInMemoryExamAttemptRepository();
+    void attempts.save(SCORE_ATTEMPT);
+
+    const launches = createInMemoryLabLaunchRepository();
+    void launches.save({
+      ...SCORE_LAUNCH,
+      participantId: undefined,
+      participantEmail: undefined,
+    });
+
+    const { repository, recorder } = diagnosticsHarness();
+    const deps: ScoreHandlerDeps = {
+      attempts,
+      launches,
+      exams: {
+        save: vi.fn(),
+        findById: vi.fn().mockResolvedValue(SCORE_EXAM),
+        listByCustomerId: vi.fn().mockResolvedValue([]),
+      },
+      audit: {
+        write: vi.fn().mockResolvedValue(undefined),
+        listByExamAttemptId: vi.fn().mockResolvedValue([]),
+        listByExamAttemptIds: vi.fn().mockResolvedValue([]),
+        listAll: vi.fn().mockResolvedValue([]),
+      },
+      connections: {
+        save: vi.fn(),
+        findByCustomerId: vi.fn().mockResolvedValue(SCORE_CONNECTION),
+        findByWebhookPathToken: vi.fn(),
+        markVerified: vi.fn(),
+      },
+      createScoreRetriever: vi.fn(),
+      createParticipantLister: vi.fn(),
+      logger: makeLogger(),
+      limitations: [],
+      now: () => new Date("2026-06-15T10:00:00.000Z"),
+      newCorrelationId: () => "score-corr-incomplete",
+      diagnostics: recorder,
+    };
+
+    const resp = await handleGetCandidateScore(deps, {
+      query: { examAttemptId: "sa-1" },
+      session: SCORE_SESSION,
+    });
+
+    expect(resp.status).toBe(502);
+    const failures = (await repository.query({ examAttemptId: "sa-1" })).filter(
+      (entry) =>
+        entry.operation === "exam_attempt.score.correlate_environment" &&
+        entry.outcome === "failure",
+    );
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({
+      correlationId: "score-corr-incomplete",
+      details: {
+        failureMode: "missing_participant_id",
+        path: "/v4/trainings/EXtraining-s1/students",
+        participantEmail: undefined,
       },
     });
   });

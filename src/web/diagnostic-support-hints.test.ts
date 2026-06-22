@@ -56,11 +56,11 @@ describe("deriveDiagnosticSupportHints", () => {
     const hints = deriveDiagnosticSupportHints(
       makeEntry({
         source: "cloudshare-webhook",
-        operation: "cloudshare.webhook.receive",
-        message: "CloudShare webhook rejected: missing signature",
+        operation: "cloudshare.webhook.verify_signature",
+        message: "CloudShare webhook signature missing",
         details: {
-          trustGateOutcome: "missing_signature",
           signaturePresent: false,
+          signatureMatched: false,
         },
       }),
     );
@@ -73,8 +73,8 @@ describe("deriveDiagnosticSupportHints", () => {
     ]);
   });
 
-  it("distinguishes Guided Journey participant-correlation gaps from CloudShare score retrieval failures", () => {
-    const correlationHints = deriveDiagnosticSupportHints(
+  it("distinguishes Guided Journey participant-list failure modes from score retrieval failures", () => {
+    const incompleteHints = deriveDiagnosticSupportHints(
       makeEntry({
         operation: "exam_attempt.score.correlate_environment",
         message: "Score retrieval failed: could not correlate CloudShare environment participant",
@@ -84,6 +84,35 @@ describe("deriveDiagnosticSupportHints", () => {
           method: "GET",
           path: "/v4/trainings/training-1/students",
           failureMode: "missing_participant_id",
+        },
+      }),
+    );
+    const participantHints = deriveDiagnosticSupportHints(
+      makeEntry({
+        operation: "exam_attempt.score.correlate_environment",
+        message: "Score retrieval failed: could not correlate CloudShare environment participant",
+        details: {
+          attemptedOperation: "resolve_training_participant",
+          integrationSurface: "cloudshare.v4.training.participant_list",
+          method: "GET",
+          path: "/v4/trainings/training-1/students",
+          failureMode: "missing_participant_id",
+          participantEmail: "candidate@helioscx.demo",
+          trainingId: "training-1",
+        },
+      }),
+    );
+    const participantListFailureHints = deriveDiagnosticSupportHints(
+      makeEntry({
+        operation: "exam_attempt.score.correlate_environment",
+        message: "Score retrieval failed: could not correlate CloudShare environment participant",
+        details: {
+          attemptedOperation: "resolve_training_participant",
+          integrationSurface: "cloudshare.v4.training.participant_list",
+          method: "GET",
+          path: "/v4/trainings/training-1/students",
+          failureMode: "http_status",
+          responseStatus: 502,
         },
       }),
     );
@@ -102,9 +131,19 @@ describe("deriveDiagnosticSupportHints", () => {
       }),
     );
 
-    expect(correlationHints[0]).toEqual(
+    expect(incompleteHints[0]).toEqual(
+      expect.objectContaining({
+        title: "Guided Journey correlation data is incomplete",
+      }),
+    );
+    expect(participantHints[0]).toEqual(
       expect.objectContaining({
         title: "Guided Journey participant could not be correlated",
+      }),
+    );
+    expect(participantListFailureHints[0]).toEqual(
+      expect.objectContaining({
+        title: "CloudShare participant lookup failed",
       }),
     );
     expect(responseHints[0]).toEqual(

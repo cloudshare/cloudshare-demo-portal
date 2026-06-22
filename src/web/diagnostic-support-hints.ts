@@ -36,6 +36,16 @@ export function deriveDiagnosticSupportHints(
     return [];
   }
 
+  if (isMissingWebhookSignature(entry)) {
+    return [
+      {
+        title: "Webhook request was not verifiable",
+        body:
+          "The CloudShare signature header was missing, so this request was not verifiable as CloudShare-originated. Check the webhook sender, tunnel/proxy behavior, and header forwarding before trusting the payload.",
+      },
+    ];
+  }
+
   if (entry.operation === "cloudshare.webhook.verify_signature") {
     return [
       {
@@ -46,22 +56,13 @@ export function deriveDiagnosticSupportHints(
     ];
   }
 
-  if (readString(entry.details, "trustGateOutcome") === "missing_signature") {
-    return [
-      {
-        title: "Webhook request was not verifiable",
-        body:
-          "The CloudShare signature header was missing, so this request was not verifiable as CloudShare-originated. Check the webhook sender, tunnel/proxy behavior, and header forwarding before trusting the payload.",
-      },
-    ];
-  }
-
   if (entry.operation === "exam_attempt.score.correlate_environment") {
     const path = readString(entry.details, "path");
-    const trainingIdMissing = path?.includes("{trainingId}") ?? false;
     const failureMode = readString(entry.details, "failureMode");
+    const participantEmail = readString(entry.details, "participantEmail");
+    const trainingId = readString(entry.details, "trainingId");
 
-    if (failureMode === "missing_participant_id" && trainingIdMissing) {
+    if (failureMode === "missing_participant_id" && (!trainingId || !participantEmail)) {
       return [
         {
           title: "Guided Journey correlation data is incomplete",
@@ -71,11 +72,41 @@ export function deriveDiagnosticSupportHints(
       ];
     }
 
+    if (failureMode === "missing_participant_id" || ((path?.includes("/students") ?? false) && failureMode === "unknown")) {
+      return [
+        {
+          title: "Guided Journey participant could not be correlated",
+          body:
+            "The portal could not map this ExamAttempt to a CloudShare training participant. Check the training roster, participant email, and stored CloudShare IDs before retrying score retrieval.",
+        },
+      ];
+    }
+
+    if (failureMode === "unexpected_response") {
+      return [
+        {
+          title: "CloudShare participant lookup returned an unexpected payload",
+          body:
+            "CloudShare responded to the participant-list request, but the payload could not be normalized into a participant correlation result. Review the raw response below and use the correlation ID to trace the request.",
+        },
+      ];
+    }
+
+    if (failureMode === "http_status" || failureMode === "transport") {
+      return [
+        {
+          title: "CloudShare participant lookup failed",
+          body:
+            "The participant-list request failed at the CloudShare boundary before the portal could resolve a participant. Use the quick facts below to confirm the method/path, failure mode, response status, and correlation ID.",
+        },
+      ];
+    }
+
     return [
       {
-        title: "Guided Journey participant could not be correlated",
+        title: "Guided Journey correlation failed",
         body:
-          "The portal could not map this ExamAttempt to a CloudShare training participant. Check the training roster, participant email, and stored CloudShare IDs before retrying score retrieval.",
+          "The portal could not complete Guided Journey participant correlation for this ExamAttempt. Use the quick facts and raw evidence below to confirm which CloudShare lookup failed and why.",
       },
     ];
   }
@@ -226,6 +257,12 @@ function hasCloudShareFailureShape(entry: SupportDiagnosticEntry): boolean {
   );
 }
 
+function isMissingWebhookSignature(entry: SupportDiagnosticEntry): boolean {
+  const trustGateOutcome = readString(entry.details, "trustGateOutcome");
+  const signaturePresent = readBoolean(entry.details, "signaturePresent");
+  return trustGateOutcome === "missing_signature" || signaturePresent === false;
+}
+
 function readString(
   record: Record<string, unknown> | null | undefined,
   key: string,
@@ -238,4 +275,11 @@ function readNumber(
   key: string,
 ): number | null {
   return typeof record?.[key] === "number" ? (record[key] as number) : null;
+}
+
+function readBoolean(
+  record: Record<string, unknown> | null | undefined,
+  key: string,
+): boolean | null {
+  return typeof record?.[key] === "boolean" ? (record[key] as boolean) : null;
 }

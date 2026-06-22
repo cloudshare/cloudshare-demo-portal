@@ -176,13 +176,6 @@ export async function handleGetCandidateScore(
       launch,
     );
     if (!resolvedParticipantId.ok) {
-      await deps.diagnostics?.record({
-        ...anchors,
-        level: "warn",
-        operation: "exam_attempt.score.correlate_environment",
-        outcome: "failure",
-        message: "Score retrieval failed: could not correlate CloudShare environment participant",
-      });
       return resolvedParticipantId.response;
     }
 
@@ -428,7 +421,7 @@ async function resolveLaunchParticipantId(
       error: "CloudShare participantId is not recorded for this lab launch.",
     };
     await deps.diagnostics?.record({
-      ...scoreDiagnosticAnchors(examAttemptId, customerId, candidateId, launch),
+      ...scoreDiagnosticAnchors(examAttemptId, customerId, candidateId, launch, correlationId),
       level: "warn",
       operation: "exam_attempt.score.correlate_environment",
       outcome: "failure",
@@ -474,7 +467,7 @@ async function resolveLaunchParticipantId(
       error,
     );
     await deps.diagnostics?.record({
-      ...scoreDiagnosticAnchors(examAttemptId, customerId, candidateId, launch),
+      ...scoreDiagnosticAnchors(examAttemptId, customerId, candidateId, launch, correlationId),
       level: "warn",
       operation: "exam_attempt.score.correlate_environment",
       outcome: "failure",
@@ -515,7 +508,7 @@ async function resolveLaunchParticipantId(
     "missing_participant_id",
   );
   await deps.diagnostics?.record({
-    ...scoreDiagnosticAnchors(examAttemptId, customerId, candidateId, launch),
+    ...scoreDiagnosticAnchors(examAttemptId, customerId, candidateId, launch, correlationId),
     level: "warn",
     operation: "exam_attempt.score.correlate_environment",
     outcome: "failure",
@@ -784,12 +777,14 @@ function scoreDiagnosticAnchors(
     readonly experienceId: string;
     readonly participantEmail?: string;
   },
+  correlationId?: string,
 ) {
   return {
     source: "runtime" as const,
     customerId,
     candidateEmail: launch.participantEmail ?? null,
     examAttemptId,
+    correlationId: correlationId ?? null,
     actor: { type: "candidate" as const, id: candidateId, email: launch.participantEmail ?? null },
     subject: { type: "exam_attempt" as const, id: examAttemptId },
   };
