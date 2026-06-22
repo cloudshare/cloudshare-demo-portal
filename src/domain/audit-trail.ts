@@ -32,6 +32,7 @@ export interface AuditRecord {
 export interface AuditRepository {
   write(record: AuditRecord): Promise<void>;
   listByExamAttemptId(examAttemptId: string): Promise<AuditRecord[]>;
+  listByExamAttemptIds(examAttemptIds: readonly string[]): Promise<AuditRecord[]>;
   /** Returns records newest-first. `limit` caps the result set (default: no limit). */
   listAll(limit?: number): Promise<AuditRecord[]>;
 }

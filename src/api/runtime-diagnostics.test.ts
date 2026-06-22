@@ -57,6 +57,7 @@ function makeLogger(): Logger {
 function makeEventLog(): EventLogRepository {
   return {
     append: vi.fn().mockResolvedValue(undefined),
+    listFailureEventsByExamAttemptIds: vi.fn().mockResolvedValue([]),
     listAll: vi.fn().mockResolvedValue([]),
   };
 }
@@ -678,6 +679,7 @@ function makeScoreDeps(overrides: {
   const audit: AuditRepository = {
     write: vi.fn().mockResolvedValue(undefined),
     listByExamAttemptId: vi.fn().mockResolvedValue([]),
+    listByExamAttemptIds: vi.fn().mockResolvedValue([]),
     listAll: vi.fn().mockResolvedValue([]),
   };
 

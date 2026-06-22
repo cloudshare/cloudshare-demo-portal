@@ -21,8 +21,29 @@ export interface MonitoringAttemptRecord {
   readonly scoreRetrievalEnabled: boolean;
 }
 
+export interface AdminMonitoringSummary {
+  readonly scheduled: number;
+  readonly ready: number;
+  readonly inProgress: number;
+  readonly suspended: number;
+  readonly completed: number;
+  readonly expired: number;
+}
+
+export interface MonitoringAttemptPage {
+  readonly attempts: readonly MonitoringAttemptRecord[];
+  readonly total: number;
+  readonly limit: number;
+  readonly offset: number;
+}
+
 export interface AdminMonitoringAttemptRepository {
-  listByCustomerId(customerId: string): Promise<MonitoringAttemptRecord[]>;
+  countSummaryByCustomerId(customerId: string): Promise<AdminMonitoringSummary>;
+  listCurrentByCustomerId(customerId: string): Promise<MonitoringAttemptRecord[]>;
+  listHistoryPageByCustomerId(
+    customerId: string,
+    page: AdminMonitoringHistoryPageRequest,
+  ): Promise<MonitoringAttemptPage>;
 }
 
 export interface MonitoringTimelineAuditEntry {
@@ -96,14 +117,7 @@ export interface MonitoringAttemptView {
 }
 
 export interface AdminMonitoringView {
-  readonly summary: {
-    readonly scheduled: number;
-    readonly ready: number;
-    readonly inProgress: number;
-    readonly suspended: number;
-    readonly completed: number;
-    readonly expired: number;
-  };
+  readonly summary: AdminMonitoringSummary;
   readonly currentAttempts: {
     readonly scheduled: readonly MonitoringAttemptView[];
     readonly ready: readonly MonitoringAttemptView[];
@@ -115,19 +129,21 @@ export interface AdminMonitoringView {
 }
 
 export function buildAdminMonitoringView(input: {
-  readonly attempts: readonly MonitoringAttemptRecord[];
+  readonly summary: AdminMonitoringSummary;
+  readonly currentAttempts: readonly MonitoringAttemptRecord[];
+  readonly history: MonitoringAttemptPage;
   readonly auditRecords: readonly AuditRecord[];
   readonly eventLog: readonly EventLogRecord[];
-  readonly historyPage: AdminMonitoringHistoryPageRequest;
 }): AdminMonitoringView {
-  const attemptsById = new Set(input.attempts.map((attempt) => attempt.id));
+  const visibleAttempts = [...input.currentAttempts, ...input.history.attempts];
+  const attemptsById = new Set(visibleAttempts.map((attempt) => attempt.id));
   const auditByAttemptId = groupBy(input.auditRecords, (record) => record.examAttemptId);
   const failureEventsByAttemptId = groupBy(
     input.eventLog.filter((event) => isFailureEventForAttempts(event, attemptsById)),
     (event) => readStringField(event.payload, "examAttemptId")!,
   );
 
-  const attemptViews = [...input.attempts]
+  const currentAttemptViews = [...input.currentAttempts]
     .sort(compareAttemptsNewestFirst)
     .map((attempt) =>
       toAttemptView(
@@ -136,37 +152,35 @@ export function buildAdminMonitoringView(input: {
         failureEventsByAttemptId.get(attempt.id) ?? [],
       ),
     );
-  const terminalHistory = attemptViews.filter(
-    (attempt) => attempt.status === "completed" || attempt.status === "expired",
-  );
-  const historyOffset = boundMonitoringHistoryOffset(input.historyPage.offset);
-  const historyLimit = boundMonitoringHistoryLimit(input.historyPage.limit);
-  const history = terminalHistory.slice(historyOffset, historyOffset + historyLimit);
-  const hasMore = historyOffset + history.length < terminalHistory.length;
+  const historyAttemptViews = [...input.history.attempts]
+    .sort(compareAttemptsNewestFirst)
+    .map((attempt) =>
+      toAttemptView(
+        attempt,
+        auditByAttemptId.get(attempt.id) ?? [],
+        failureEventsByAttemptId.get(attempt.id) ?? [],
+      ),
+    );
+  const historyOffset = boundMonitoringHistoryOffset(input.history.offset);
+  const historyLimit = boundMonitoringHistoryLimit(input.history.limit);
+  const hasMore = historyOffset + historyAttemptViews.length < input.history.total;
 
   return {
-    summary: {
-      scheduled: countByStatus(input.attempts, "scheduled"),
-      ready: countByStatus(input.attempts, "ready"),
-      inProgress: countByStatus(input.attempts, "in_progress"),
-      suspended: countByStatus(input.attempts, "suspended"),
-      completed: countByStatus(input.attempts, "completed"),
-      expired: countByStatus(input.attempts, "expired"),
-    },
+    summary: input.summary,
     currentAttempts: {
-      scheduled: attemptViews.filter((attempt) => attempt.status === "scheduled"),
-      ready: attemptViews.filter((attempt) => attempt.status === "ready"),
-      inProgress: attemptViews.filter((attempt) => attempt.status === "in_progress"),
-      suspended: attemptViews.filter((attempt) => attempt.status === "suspended"),
+      scheduled: currentAttemptViews.filter((attempt) => attempt.status === "scheduled"),
+      ready: currentAttemptViews.filter((attempt) => attempt.status === "ready"),
+      inProgress: currentAttemptViews.filter((attempt) => attempt.status === "in_progress"),
+      suspended: currentAttemptViews.filter((attempt) => attempt.status === "suspended"),
     },
-    history,
+    history: historyAttemptViews,
     historyPage: {
       limit: historyLimit,
       offset: historyOffset,
-      returned: history.length,
-      total: terminalHistory.length,
+      returned: historyAttemptViews.length,
+      total: input.history.total,
       hasMore,
-      nextOffset: hasMore ? historyOffset + history.length : null,
+      nextOffset: hasMore ? historyOffset + historyAttemptViews.length : null,
     },
   };
 }
@@ -308,13 +322,6 @@ function compareAttemptsNewestFirst(
     return scheduledDiff;
   }
   return right.createdAt.getTime() - left.createdAt.getTime();
-}
-
-function countByStatus(
-  attempts: readonly MonitoringAttemptRecord[],
-  status: MonitoringAttemptRecord["status"],
-): number {
-  return attempts.filter((attempt) => attempt.status === status).length;
 }
 
 export const DEFAULT_MONITORING_HISTORY_LIMIT = 25;

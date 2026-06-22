@@ -12,6 +12,20 @@ export function createInMemoryEventLogRepository(): EventLogRepository & {
       records.push(record);
     },
 
+    async listFailureEventsByExamAttemptIds(
+      examAttemptIds: readonly string[],
+    ): Promise<EventLogRecord[]> {
+      const ids = new Set(examAttemptIds);
+      return records.filter((record) => {
+        if (!record.type.endsWith(".failed")) {
+          return false;
+        }
+
+        const examAttemptId = record.payload.examAttemptId;
+        return typeof examAttemptId === "string" && ids.has(examAttemptId);
+      });
+    },
+
     async listAll(limit?: number): Promise<EventLogRecord[]> {
       const sorted = [...records].sort(
         (a, b) => b.occurredAt.getTime() - a.occurredAt.getTime(),

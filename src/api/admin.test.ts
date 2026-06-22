@@ -38,6 +38,7 @@ function makeRecord(partial: Partial<AuditRecord> = {}): AuditRecord {
 function makeEventLog(records: unknown[] = []): EventLogRepository {
   return {
     append: vi.fn(),
+    listFailureEventsByExamAttemptIds: vi.fn().mockResolvedValue([]),
     listAll: vi.fn().mockResolvedValue(records),
   };
 }

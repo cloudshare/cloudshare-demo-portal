@@ -124,6 +124,7 @@ function makeDeps(input?: {
   const audit: AuditRepository = {
     write: vi.fn(),
     listByExamAttemptId: vi.fn(),
+    listByExamAttemptIds: vi.fn().mockResolvedValue([]),
     listAll: vi.fn(),
   };
   const connections: CloudShareConnectionRepository = {

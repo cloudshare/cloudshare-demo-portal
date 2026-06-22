@@ -32,29 +32,36 @@ export async function handleGetAdminMonitoring(
     readonly query?: Record<string, string | undefined>;
   },
 ): Promise<AdminMonitoringResponse> {
-  const attempts = await deps.attempts.listByCustomerId(request.customerId);
-  const attemptIds = new Set(attempts.map((attempt) => attempt.id));
-  const auditRecords = (await deps.audit.listAll()).filter((record) =>
-    attemptIds.has(record.examAttemptId),
-  );
-  const eventLog = (await deps.eventLog.listAll()).filter((event) => {
-    const examAttemptId = event.payload.examAttemptId;
-    return typeof examAttemptId === "string" && attemptIds.has(examAttemptId);
-  });
   const historyLimit = boundMonitoringHistoryLimit(request.query?.historyLimit);
   const historyOffset = boundMonitoringHistoryOffset(request.query?.historyOffset);
+
+  const [summary, currentAttempts, history] = await Promise.all([
+    deps.attempts.countSummaryByCustomerId(request.customerId),
+    deps.attempts.listCurrentByCustomerId(request.customerId),
+    deps.attempts.listHistoryPageByCustomerId(request.customerId, {
+      limit: historyLimit,
+      offset: historyOffset,
+    }),
+  ]);
+
+  const renderedAttemptIds = [...new Set([...currentAttempts, ...history.attempts].map((attempt) => attempt.id))];
+  const [auditRecords, eventLog] =
+    renderedAttemptIds.length === 0
+      ? [[], []]
+      : await Promise.all([
+          deps.audit.listByExamAttemptIds(renderedAttemptIds),
+          deps.eventLog.listFailureEventsByExamAttemptIds(renderedAttemptIds),
+        ]);
 
   return {
     status: 200,
     body: {
       monitoring: buildAdminMonitoringView({
-        attempts,
+        summary,
+        currentAttempts,
+        history,
         auditRecords,
         eventLog,
-        historyPage: {
-          limit: historyLimit,
-          offset: historyOffset,
-        },
       }),
     },
   };

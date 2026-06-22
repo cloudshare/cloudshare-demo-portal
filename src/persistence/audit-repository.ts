@@ -14,6 +14,11 @@ export function createInMemoryAuditRepository(): AuditRepository & {
       return records.filter((r) => r.examAttemptId === examAttemptId);
     },
 
+    async listByExamAttemptIds(examAttemptIds: readonly string[]): Promise<AuditRecord[]> {
+      const ids = new Set(examAttemptIds);
+      return records.filter((record) => ids.has(record.examAttemptId));
+    },
+
     async listAll(limit?: number): Promise<AuditRecord[]> {
       const sorted = [...records].sort(
         (a, b) => b.occurredAt.getTime() - a.occurredAt.getTime(),
