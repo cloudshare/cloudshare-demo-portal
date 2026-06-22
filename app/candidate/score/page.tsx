@@ -1,3 +1,4 @@
+import React from "react";
 import { ScoreDisplay } from "@/web/score-display";
 
 /**
@@ -38,7 +39,6 @@ export default async function CandidateScorePage({
       }}
     >
       <h1 style={{ marginBottom: "0.35rem" }}>Session complete</h1>
-      <p style={{ marginTop: 0, color: "#555" }}>Exam attempt: {examAttemptId}</p>
       <ScoreDisplay examAttemptId={examAttemptId} />
     </main>
   );
