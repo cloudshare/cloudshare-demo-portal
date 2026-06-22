@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
+  PRISMA_DIAGNOSTIC_SCAN_BATCH_SIZE,
   createInMemoryDiagnosticLogRepository,
   createPrismaDiagnosticLogRepository,
 } from "./diagnostic-log-repository";
@@ -232,6 +233,64 @@ describe("createPrismaDiagnosticLogRepository", () => {
 
     expect(matched).toHaveLength(1);
     expect(matched[0].message).toBe("mixed-case email");
+  });
+
+  it("uses bounded batch scans for exact post-filter queries instead of reading the whole result set at once", async () => {
+    const rows = Array.from({ length: PRISMA_DIAGNOSTIC_SCAN_BATCH_SIZE + 20 }, (_, index) => ({
+      id: `diag-${index}`,
+      occurredAt: new Date(`2026-06-20T10:${String(Math.floor(index / 60)).padStart(2, "0")}:${String(index % 60).padStart(2, "0")}.000Z`),
+      level: "info",
+      source: "runtime",
+      operation: "exam_attempt.resume",
+      outcome: "success",
+      customerId: "cust_1",
+      actorType: null,
+      actorId: null,
+      actorEmail: null,
+      subjectType: null,
+      subjectId: null,
+      message: `row-${index}`,
+      correlationId: null,
+      candidateEmail: index === PRISMA_DIAGNOSTIC_SCAN_BATCH_SIZE + 5 ? "Candidate@HeliosCX.demo" : null,
+      examId: null,
+      examAttemptId: null,
+      externalIdsJson:
+        index === PRISMA_DIAGNOSTIC_SCAN_BATCH_SIZE + 5
+          ? JSON.stringify({ environmentId: "env-1" })
+          : JSON.stringify({ environmentId: `env-${index}` }),
+      requestJson: null,
+      responseJson: null,
+      detailsJson:
+        index === PRISMA_DIAGNOSTIC_SCAN_BATCH_SIZE + 5
+          ? JSON.stringify({ integrationSurface: "cloudshare.v4.environment" })
+          : JSON.stringify({ integrationSurface: "cloudshare.v4.other" }),
+    }));
+    const findMany = async (args: { skip?: number; take?: number }) => {
+      expect(args.take).toBe(PRISMA_DIAGNOSTIC_SCAN_BATCH_SIZE);
+      const skip = args.skip ?? 0;
+      return rows.slice(skip, skip + (args.take ?? 0));
+    };
+
+    const repo = createPrismaDiagnosticLogRepository({
+      diagnosticLogEntry: {
+        create: async () => {
+          throw new Error("unused");
+        },
+        findMany,
+        deleteMany: async () => ({ count: 0 }),
+      },
+    } as unknown as PrismaClient);
+
+    const matched = await repo.query({
+      customerId: "cust_1",
+      candidateEmail: "candidate@helioscx.demo",
+      integrationSurface: "cloudshare.v4.environment",
+      externalId: "env-1",
+      limit: 1,
+    });
+
+    expect(matched).toHaveLength(1);
+    expect(matched[0].message).toBe(`row-${PRISMA_DIAGNOSTIC_SCAN_BATCH_SIZE + 5}`);
   });
 });
 
