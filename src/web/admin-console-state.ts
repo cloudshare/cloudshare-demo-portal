@@ -1,3 +1,5 @@
+import type { AdminMonitoringView } from "@/domain/admin-monitoring";
+
 export interface ExamAuthoringMode {
   readonly isEditingDraft: boolean;
   readonly provisioningLocked: boolean;
@@ -160,6 +162,32 @@ export function buildDiagnosticLogQueryString(
   params.set("offset", String(page.offset));
   const query = params.toString();
   return query ? `?${query}` : "";
+}
+
+export function buildMonitoringHistoryQueryString(page: DiagnosticLogPage): string {
+  const params = new URLSearchParams();
+  params.set("historyLimit", String(page.limit));
+  params.set("historyOffset", String(page.offset));
+  return `?${params.toString()}`;
+}
+
+export function mergeMonitoringHistoryPage(
+  existing: AdminMonitoringView | null,
+  next: AdminMonitoringView,
+): AdminMonitoringView {
+  if (!existing || next.historyPage.offset === 0) {
+    return next;
+  }
+
+  const historyById = new Map(existing.history.map((attempt) => [attempt.id, attempt]));
+  for (const attempt of next.history) {
+    historyById.set(attempt.id, attempt);
+  }
+
+  return {
+    ...next,
+    history: [...historyById.values()],
+  };
 }
 
 export function buildExamAttemptDiagnosticsNavigation(

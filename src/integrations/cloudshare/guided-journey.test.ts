@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { createCloudShareGuidedJourneyProvider } from "./guided-journey";
 import type { CloudShareClient } from "./client";
-import { CloudShareRequestError } from "./errors";
+import { CloudShareRequestError, CloudShareResponseError } from "./errors";
 
 function makeClient(response: unknown): CloudShareClient {
   return {
@@ -139,6 +139,64 @@ describe("createCloudShareGuidedJourneyProvider", () => {
     });
   });
 
+  it("preserves the raw Guided Journey payload for diagnostics while keeping normalized progress", async () => {
+    const client = makeClient(liveApiResponse);
+    const provider = createCloudShareGuidedJourneyProvider(client);
+
+    const result = await provider.getParticipantProgressForDiagnostics(
+      "EX8FegB45PLVmyn8LgPRXPuA2",
+      "PTdBBgMl9ryrQzFBToh3aqew2",
+    );
+
+    expect(result).toEqual({
+      progress: {
+        percentComplete: 50,
+        stepsCompleted: 2,
+        stepsTotal: 4,
+        exploredRate: 0.5,
+        inProgressRate: 0.5,
+        notStartedRate: 0,
+        passedRate: 0.25,
+        failedRate: 0.25,
+        notInitiatedRate: 0,
+        steps: [
+          {
+            stepId: "0:Check pfSense WAN Interface",
+            title: "Check pfSense WAN Interface",
+            completed: true,
+            status: "explored",
+          },
+          {
+            stepId: "0:Section Name",
+            title: "Section Name",
+            completed: false,
+            status: "in Progress",
+          },
+          {
+            stepId: "1:Check the LAN interface",
+            title: "Check the LAN interface",
+            completed: true,
+            status: "explored",
+          },
+          {
+            stepId: "2:Section Name 3",
+            title: "Section Name 3",
+            completed: false,
+            status: "in Progress",
+          },
+        ],
+      },
+      request: {
+        method: "GET",
+        path: "/guided-journey/progress/EX8FegB45PLVmyn8LgPRXPuA2/PTdBBgMl9ryrQzFBToh3aqew2",
+      },
+      response: {
+        status: 200,
+        body: liveApiResponse,
+      },
+    });
+  });
+
   it("treats documented numeric completed-style statuses as completed steps", async () => {
     const client = makeClient({
       participantId: "student-1",
@@ -197,5 +255,75 @@ describe("createCloudShareGuidedJourneyProvider", () => {
     const provider = createCloudShareGuidedJourneyProvider(client);
 
     await expect(provider.getParticipantProgress("exp-1", "student-1")).rejects.toThrow("upstream failure");
+  });
+
+  it("raises CloudShareResponseError with response details when the diagnostics-aware path gets an unsupported payload", async () => {
+    const client = makeClient("not-an-object");
+    const provider = createCloudShareGuidedJourneyProvider(client);
+
+    await expect(
+      provider.getParticipantProgressForDiagnostics("exp-1", "student-1"),
+    ).rejects.toMatchObject({
+      name: "CloudShareResponseError",
+      context: expect.objectContaining({
+        method: "GET",
+        path: "/guided-journey/progress/exp-1/student-1",
+        integrationSurface: "cloudshare.v4.guided_journey.progress",
+        responseBody: JSON.stringify("not-an-object"),
+        issues: ["Unsupported Guided Journey progress payload"],
+      }),
+    });
+
+    await expect(
+      provider.getParticipantProgressForDiagnostics("exp-1", "student-1"),
+    ).rejects.toBeInstanceOf(CloudShareResponseError);
+  });
+
+  it("raises CloudShareResponseError with validation issues when a recognized payload has a rate above 1", async () => {
+    const payload = {
+      exploredRate: 1.2,
+      sectionStatuses: [
+        {
+          number: 0,
+          name: "Check pfSense WAN Interface",
+          status: "explored",
+        },
+      ],
+    };
+    const client = makeClient(payload);
+    const provider = createCloudShareGuidedJourneyProvider(client);
+
+    await expect(
+      provider.getParticipantProgressForDiagnostics("exp-1", "student-1"),
+    ).rejects.toMatchObject({
+      name: "CloudShareResponseError",
+      context: expect.objectContaining({
+        responseBody: JSON.stringify(payload),
+        issues: expect.arrayContaining(["Number must be less than or equal to 1"]),
+      }),
+    });
+  });
+
+  it("raises CloudShareResponseError with validation issues when completed steps exceed total steps", async () => {
+    const payload = {
+      progressRate: 50,
+      completedSections: 2,
+      totalSections: 1,
+      sections: [
+        { id: "t1", name: "Configure routing", status: "completed" },
+      ],
+    };
+    const client = makeClient(payload);
+    const provider = createCloudShareGuidedJourneyProvider(client);
+
+    await expect(
+      provider.getParticipantProgressForDiagnostics("exp-1", "student-1"),
+    ).rejects.toMatchObject({
+      name: "CloudShareResponseError",
+      context: expect.objectContaining({
+        responseBody: JSON.stringify(payload),
+        issues: expect.arrayContaining(["stepsCompleted must not exceed stepsTotal"]),
+      }),
+    });
   });
 });

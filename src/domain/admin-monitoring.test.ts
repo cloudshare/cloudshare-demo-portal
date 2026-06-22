@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildAdminMonitoringView, type MonitoringAttemptRecord } from "./admin-monitoring";
+import {
+  buildAdminMonitoringView,
+  type AdminMonitoringSummary,
+  type MonitoringAttemptPage,
+  type MonitoringAttemptRecord,
+} from "./admin-monitoring";
 import type { AuditRecord } from "./audit-trail";
 import type { EventLogRecord } from "./event-log";
 
@@ -55,10 +60,103 @@ function makeEvent(partial: Partial<EventLogRecord> = {}): EventLogRecord {
   };
 }
 
+function makeSummary(partial: Partial<AdminMonitoringSummary> = {}): AdminMonitoringSummary {
+  return {
+    scheduled: 0,
+    ready: 0,
+    inProgress: 0,
+    suspended: 0,
+    completed: 0,
+    expired: 0,
+    ...partial,
+  };
+}
+
+function makeHistoryPage(
+  attempts: readonly MonitoringAttemptRecord[],
+  partial: Partial<MonitoringAttemptPage> = {},
+): MonitoringAttemptPage {
+  return {
+    attempts,
+    total: attempts.length,
+    limit: 25,
+    offset: 0,
+    ...partial,
+  };
+}
+
 describe("buildAdminMonitoringView", () => {
+  it("uses the supplied terminal-history page while preserving full monitoring summary counts", () => {
+    const view = buildAdminMonitoringView({
+      summary: makeSummary({
+        scheduled: 1,
+        completed: 2,
+        expired: 1,
+      }),
+      currentAttempts: [
+        makeAttempt({
+          id: "attempt-scheduled",
+          status: "scheduled",
+          scheduledFor: new Date("2026-06-22T09:00:00.000Z"),
+          createdAt: new Date("2026-06-21T09:00:00.000Z"),
+        }),
+      ],
+      history: makeHistoryPage(
+        [
+          makeAttempt({
+            id: "attempt-completed-3",
+            status: "completed",
+            scheduledFor: new Date("2026-06-21T12:00:00.000Z"),
+            createdAt: new Date("2026-06-20T12:00:00.000Z"),
+          }),
+          makeAttempt({
+            id: "attempt-expired-2",
+            status: "expired",
+            scheduledFor: new Date("2026-06-21T11:00:00.000Z"),
+            createdAt: new Date("2026-06-20T11:00:00.000Z"),
+          }),
+        ],
+        {
+          total: 3,
+          limit: 2,
+          offset: 1,
+        },
+      ),
+      auditRecords: [],
+      eventLog: [],
+    });
+
+    expect(view.summary).toEqual({
+      scheduled: 1,
+      ready: 0,
+      inProgress: 0,
+      suspended: 0,
+      completed: 2,
+      expired: 1,
+    });
+    expect(view.currentAttempts.scheduled).toHaveLength(1);
+    expect(view.history.map((attempt) => attempt.id)).toEqual([
+      "attempt-completed-3",
+      "attempt-expired-2",
+    ]);
+    expect(view.historyPage).toEqual({
+      limit: 2,
+      offset: 1,
+      returned: 2,
+      total: 3,
+      hasMore: false,
+      nextOffset: null,
+    });
+  });
+
   it("groups current attempts by active state and puts completed attempts into history with a timeline", () => {
     const view = buildAdminMonitoringView({
-      attempts: [
+      summary: makeSummary({
+        scheduled: 1,
+        inProgress: 1,
+        completed: 1,
+      }),
+      currentAttempts: [
         makeAttempt(),
         makeAttempt({
           id: "attempt-2",
@@ -70,6 +168,8 @@ describe("buildAdminMonitoringView", () => {
           scheduledFor: new Date("2026-06-19T10:00:00.000Z"),
           createdAt: new Date("2026-06-18T10:00:00.000Z"),
         }),
+      ],
+      history: makeHistoryPage([
         makeAttempt({
           id: "attempt-3",
           candidateId: "candidate-3",
@@ -81,7 +181,7 @@ describe("buildAdminMonitoringView", () => {
           createdAt: new Date("2026-06-16T09:00:00.000Z"),
           scoreRetrievalEnabled: true,
         }),
-      ],
+      ]),
       auditRecords: [
         makeAudit(),
         makeAudit({
@@ -171,7 +271,11 @@ describe("buildAdminMonitoringView", () => {
 
   it("ignores unrelated event log entries and falls back to status-only results when no score audit exists", () => {
     const view = buildAdminMonitoringView({
-      attempts: [
+      summary: makeSummary({
+        expired: 1,
+      }),
+      currentAttempts: [],
+      history: makeHistoryPage([
         makeAttempt({
           id: "attempt-expired",
           status: "expired",
@@ -179,7 +283,7 @@ describe("buildAdminMonitoringView", () => {
           candidateLastName: null,
           candidateEmail: "expired@helioscx.demo",
         }),
-      ],
+      ]),
       auditRecords: [],
       eventLog: [
         makeEvent({
@@ -214,7 +318,11 @@ describe("buildAdminMonitoringView", () => {
 
   it("redacts sensitive audit and event details from monitoring timelines", () => {
     const view = buildAdminMonitoringView({
-      attempts: [makeAttempt({ status: "completed" })],
+      summary: makeSummary({
+        completed: 1,
+      }),
+      currentAttempts: [],
+      history: makeHistoryPage([makeAttempt({ status: "completed" })]),
       auditRecords: [
         makeAudit({
           action: "lab_launched",

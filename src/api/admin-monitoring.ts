@@ -1,5 +1,7 @@
 import {
   buildAdminMonitoringView,
+  DEFAULT_MONITORING_HISTORY_LIMIT,
+  MAX_MONITORING_HISTORY_LIMIT,
   type AdminMonitoringAttemptRepository,
   type AdminMonitoringView,
 } from "@/domain/admin-monitoring";
@@ -25,26 +27,59 @@ export interface AdminMonitoringResponseBody {
 
 export async function handleGetAdminMonitoring(
   deps: AdminMonitoringHandlerDeps,
-  request: { readonly customerId: string },
+  request: {
+    readonly customerId: string;
+    readonly query?: Record<string, string | undefined>;
+  },
 ): Promise<AdminMonitoringResponse> {
-  const attempts = await deps.attempts.listByCustomerId(request.customerId);
-  const attemptIds = new Set(attempts.map((attempt) => attempt.id));
-  const auditRecords = (await deps.audit.listAll()).filter((record) =>
-    attemptIds.has(record.examAttemptId),
-  );
-  const eventLog = (await deps.eventLog.listAll()).filter((event) => {
-    const examAttemptId = event.payload.examAttemptId;
-    return typeof examAttemptId === "string" && attemptIds.has(examAttemptId);
-  });
+  const historyLimit = boundMonitoringHistoryLimit(request.query?.historyLimit);
+  const historyOffset = boundMonitoringHistoryOffset(request.query?.historyOffset);
+
+  const [summary, currentAttempts, history] = await Promise.all([
+    deps.attempts.countSummaryByCustomerId(request.customerId),
+    deps.attempts.listCurrentByCustomerId(request.customerId),
+    deps.attempts.listHistoryPageByCustomerId(request.customerId, {
+      limit: historyLimit,
+      offset: historyOffset,
+    }),
+  ]);
 
   return {
     status: 200,
     body: {
       monitoring: buildAdminMonitoringView({
-        attempts,
-        auditRecords,
-        eventLog,
+        summary,
+        currentAttempts,
+        history,
+        auditRecords: [],
+        eventLog: [],
       }),
     },
   };
+}
+
+function boundMonitoringHistoryLimit(limit: string | undefined): number {
+  if (!limit) {
+    return DEFAULT_MONITORING_HISTORY_LIMIT;
+  }
+
+  const parsed = Number.parseInt(limit, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_MONITORING_HISTORY_LIMIT;
+  }
+
+  return Math.min(Math.floor(parsed), MAX_MONITORING_HISTORY_LIMIT);
+}
+
+function boundMonitoringHistoryOffset(offset: string | undefined): number {
+  if (!offset) {
+    return 0;
+  }
+
+  const parsed = Number.parseInt(offset, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 0;
+  }
+
+  return Math.floor(parsed);
 }

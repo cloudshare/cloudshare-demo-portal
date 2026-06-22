@@ -30,6 +30,22 @@ export interface ParticipantProgress {
   readonly notInitiatedRate: number;
 }
 
+export interface ParticipantProgressDiagnosticRequest extends Record<string, unknown> {
+  readonly method: string;
+  readonly path: string;
+}
+
+export interface ParticipantProgressDiagnosticResponse extends Record<string, unknown> {
+  readonly status: number;
+  readonly body: unknown;
+}
+
+export interface ParticipantProgressDiagnostics {
+  readonly progress: ParticipantProgress | null;
+  readonly request: ParticipantProgressDiagnosticRequest;
+  readonly response: ParticipantProgressDiagnosticResponse | null;
+}
+
 /** Enriched score result, combining participant progress with exam attempt context. */
 export interface ScoreResult {
   readonly examAttemptId: string;
@@ -68,6 +84,13 @@ export interface ScoreRetrievalProvider {
     experienceId: string,
     participantId: string,
   ): Promise<ParticipantProgress | null>;
+}
+
+export interface DiagnosticScoreRetrievalProvider extends ScoreRetrievalProvider {
+  getParticipantProgressForDiagnostics(
+    experienceId: string,
+    participantId: string,
+  ): Promise<ParticipantProgressDiagnostics>;
 }
 
 // --- Use case ---

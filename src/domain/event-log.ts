@@ -13,6 +13,7 @@ export interface EventLogRecord {
 
 export interface EventLogRepository {
   append(record: EventLogRecord): Promise<void>;
+  listFailureEventsByExamAttemptIds(examAttemptIds: readonly string[]): Promise<EventLogRecord[]>;
   /** Returns records newest-first. `limit` caps the result set (default: no limit). */
   listAll(limit?: number): Promise<EventLogRecord[]>;
 }

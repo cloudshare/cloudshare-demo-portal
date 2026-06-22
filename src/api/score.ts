@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { resolveExamAttemptScore, type ScoreRetrievalProvider } from "@/domain/score-result";
+import {
+  resolveExamAttemptScore,
+  type DiagnosticScoreRetrievalProvider,
+  type ParticipantProgressDiagnostics,
+  type ScoreRetrievalProvider,
+} from "@/domain/score-result";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { ExamRepository } from "@/domain/exam-catalog";
 import type { AuditRepository } from "@/domain/audit-trail";
@@ -194,9 +199,19 @@ export async function handleGetCandidateScore(
     });
 
     const scoreRetriever = deps.createScoreRetriever(connection);
+    const scoreRetrieval = await getScoreProgressForDiagnostics(
+      scoreRetriever,
+      examAttemptId,
+      launch.experienceId,
+      resolvedParticipantId.participantId,
+    );
     const result = await resolveExamAttemptScore(
       {
-        scoreRetriever,
+        scoreRetriever: scoreRetrieval
+          ? {
+              getParticipantProgress: async () => scoreRetrieval.progress,
+            }
+          : scoreRetriever,
         now: deps.now,
       },
       {
@@ -227,7 +242,14 @@ export async function handleGetCandidateScore(
         operation: "exam_attempt.score.retrieve",
         outcome: "success",
         message: "Score retrieved — no score available yet",
-        response: { scoreAvailable: false, reason: result.reason },
+        ...(scoreRetrieval
+          ? {
+              request: scoreRetrieval.request,
+              response: scoreRetrieval.response,
+            }
+          : {
+              response: { scoreAvailable: false, reason: result.reason },
+            }),
       });
       return {
         status: 200,
@@ -266,12 +288,19 @@ export async function handleGetCandidateScore(
       operation: "exam_attempt.score.retrieve",
       outcome: "success",
       message: "Score retrieved successfully",
-      response: {
-        scoreAvailable: true,
-        percentComplete: result.percentComplete,
-        stepsCompleted: result.stepsCompleted,
-        stepsTotal: result.stepsTotal,
-      },
+      ...(scoreRetrieval
+        ? {
+            request: scoreRetrieval.request,
+            response: scoreRetrieval.response,
+          }
+        : {
+            response: {
+              scoreAvailable: true,
+              percentComplete: result.percentComplete,
+              stepsCompleted: result.stepsCompleted,
+              stepsTotal: result.stepsTotal,
+            },
+          }),
     });
 
     return {
@@ -585,8 +614,8 @@ function toCloudShareDiagnostic(
     path: cause.context?.path ?? base.path,
     host: cause.context?.host,
     integrationSurface: cause.context?.integrationSurface ?? base.integrationSurface,
-    requestHeaders: cause.context?.requestHeaders,
-    requestBody: cause.context?.requestBody,
+    requestHeaders: redactDiagnosticSupportValue(cause.context?.requestHeaders),
+    requestBody: redactDiagnosticSupportValue(cause.context?.requestBody),
   };
 
   if (cause instanceof CloudShareRequestError) {
@@ -594,8 +623,8 @@ function toCloudShareDiagnostic(
       ...shared,
       failureMode: "http_status",
       responseStatus: cause.status,
-      responseHeaders: cause.context?.responseHeaders,
-      responseBody: cause.context?.responseBody,
+      responseHeaders: redactDiagnosticSupportValue(cause.context?.responseHeaders),
+      responseBody: redactDiagnosticSupportValue(cause.context?.responseBody),
       network: cause.context?.network,
       tls: cause.context?.tls,
     };
@@ -612,8 +641,8 @@ function toCloudShareDiagnostic(
   return {
     ...shared,
     failureMode: "unexpected_response",
-    responseHeaders: cause.context?.responseHeaders,
-    responseBody: cause.context?.responseBody,
+    responseHeaders: redactDiagnosticSupportValue(cause.context?.responseHeaders),
+    responseBody: redactDiagnosticSupportValue(cause.context?.responseBody),
     network: cause.context?.network,
     tls: cause.context?.tls,
     issues: cause.context?.issues,
@@ -656,4 +685,66 @@ function asString(value: unknown): string | undefined {
 
 function asNumber(value: unknown): number | undefined {
   return typeof value === "number" ? value : undefined;
+}
+
+async function getScoreProgressForDiagnostics(
+  scoreRetriever: ScoreRetrievalProvider,
+  examAttemptId: string,
+  experienceId: string,
+  participantId: string,
+): Promise<ParticipantProgressDiagnostics | null> {
+  if (!hasDiagnosticScoreRetrieval(scoreRetriever)) {
+    return null;
+  }
+
+  try {
+    return await scoreRetriever.getParticipantProgressForDiagnostics(experienceId, participantId);
+  } catch (cause) {
+    throw new ScoreRetrievalError("Failed to retrieve Guided Journey progress", {
+      examAttemptId,
+      experienceId,
+      cause,
+      causeMessage: cause instanceof Error ? cause.message : String(cause),
+    });
+  }
+}
+
+function hasDiagnosticScoreRetrieval(
+  scoreRetriever: ScoreRetrievalProvider,
+): scoreRetriever is DiagnosticScoreRetrievalProvider {
+  return "getParticipantProgressForDiagnostics" in scoreRetriever &&
+    typeof scoreRetriever.getParticipantProgressForDiagnostics === "function";
+}
+
+function redactDiagnosticSupportValue(value: unknown): unknown {
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return JSON.stringify(redactDiagnosticSupportValue(parsed));
+    } catch {
+      return value
+      .replace(/https?:\/\/\S*(?:ClassSponsoredLink|SponsoredLink|Ent\/Login)\S*/gi, "[REDACTED]")
+      .replace(/([?&](?:token|access_token|loginUrl)=)[^&\s"]+/gi, "$1[REDACTED]");
+    }
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => redactDiagnosticSupportValue(item));
+  }
+
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  const redacted: Record<string, unknown> = {};
+  for (const [key, fieldValue] of Object.entries(value)) {
+    if (/api[-_]?key|secret|token|hmac|passphrase|password|login[-_]?url|authorization/i.test(key)) {
+      redacted[key] = "[REDACTED]";
+      continue;
+    }
+
+    redacted[key] = redactDiagnosticSupportValue(fieldValue);
+  }
+
+  return redacted;
 }

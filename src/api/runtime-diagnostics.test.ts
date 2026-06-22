@@ -24,10 +24,10 @@ import type { EnvironmentStateSource } from "@/domain/environment";
 import type { CloudShareClientFactory, CloudShareConnectionRepository } from "@/domain/cloudshare-connection";
 import type { ExamRepository, Exam } from "@/domain/exam-catalog";
 import type { AuditRepository } from "@/domain/audit-trail";
-import type { ScoreRetrievalProvider } from "@/domain/score-result";
+import type { DiagnosticScoreRetrievalProvider, ScoreRetrievalProvider } from "@/domain/score-result";
 import type { ParticipantLister } from "@/domain/environment-correlation";
 import type { CloudShareConnectionRecord } from "@/domain/cloudshare-connection";
-import { CloudShareRequestError } from "@/integrations/cloudshare";
+import { CloudShareRequestError, CloudShareResponseError } from "@/integrations/cloudshare";
 import { ScoreRetrievalError } from "@/domain/errors";
 import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-repository";
 import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repository";
@@ -57,6 +57,7 @@ function makeLogger(): Logger {
 function makeEventLog(): EventLogRepository {
   return {
     append: vi.fn().mockResolvedValue(undefined),
+    listFailureEventsByExamAttemptIds: vi.fn().mockResolvedValue([]),
     listAll: vi.fn().mockResolvedValue([]),
   };
 }
@@ -658,7 +659,7 @@ const SCORE_CONNECTION: CloudShareConnectionRecord = {
 };
 
 function makeScoreDeps(overrides: {
-  scoreRetriever?: ScoreRetrievalProvider;
+  scoreRetriever?: ScoreRetrievalProvider | DiagnosticScoreRetrievalProvider;
   participantLister?: ParticipantLister;
 } = {}): ScoreHandlerDeps & { _recorder: DiagnosticRecorder; _repository: ReturnType<typeof createInMemoryDiagnosticLogRepository> } {
   const { repository, recorder } = diagnosticsHarness();
@@ -678,6 +679,7 @@ function makeScoreDeps(overrides: {
   const audit: AuditRepository = {
     write: vi.fn().mockResolvedValue(undefined),
     listByExamAttemptId: vi.fn().mockResolvedValue([]),
+    listByExamAttemptIds: vi.fn().mockResolvedValue([]),
     listAll: vi.fn().mockResolvedValue([]),
   };
 
@@ -757,8 +759,69 @@ describe("score diagnostics", () => {
     });
   });
 
-  it("emits exam_attempt.score.retrieve success with score data in response field", async () => {
-    const deps = makeScoreDeps();
+  it("emits exam_attempt.score.retrieve success with the raw CloudShare response in the diagnostic payload", async () => {
+    const rawProgressPayload = {
+      exploredRate: 0.5,
+      inProgressRate: 0.25,
+      notStartedRate: 0.25,
+      passedRate: 0.25,
+      failedRate: 0,
+      notInitiatedRate: 0.25,
+      sectionStatuses: [
+        {
+          number: 0,
+          name: "Check pfSense WAN Interface",
+          status: "explored",
+          isInFocus: false,
+          timeSpent: 338.24936349999996,
+        },
+        {
+          number: 1,
+          name: "Validate output",
+          status: "inProgress",
+          isInFocus: false,
+          timeSpent: 7.1577779999999995,
+        },
+      ],
+    };
+    const deps = makeScoreDeps({
+      scoreRetriever: {
+        getParticipantProgress: vi.fn().mockResolvedValue({
+          percentComplete: 50,
+          stepsCompleted: 1,
+          stepsTotal: 2,
+          steps: [
+            { stepId: "0:Check pfSense WAN Interface", title: "Check pfSense WAN Interface", completed: true, status: "explored" },
+            { stepId: "1:Validate output", title: "Validate output", completed: false, status: "in Progress" },
+          ],
+          exploredRate: 0.5,
+          inProgressRate: 0.25,
+          notStartedRate: 0.25,
+          passedRate: 0.25,
+          failedRate: 0,
+          notInitiatedRate: 0.25,
+        }),
+        getParticipantProgressForDiagnostics: vi.fn().mockResolvedValue({
+          progress: {
+            percentComplete: 50,
+            stepsCompleted: 1,
+            stepsTotal: 2,
+            steps: [
+              { stepId: "0:Check pfSense WAN Interface", title: "Check pfSense WAN Interface", completed: true, status: "explored" },
+              { stepId: "1:Validate output", title: "Validate output", completed: false, status: "in Progress" },
+            ],
+            exploredRate: 0.5,
+            inProgressRate: 0.25,
+            notStartedRate: 0.25,
+            passedRate: 0.25,
+            failedRate: 0,
+            notInitiatedRate: 0.25,
+          },
+          request: { method: "GET", path: "/guided-journey/progress/exp-s1/student-1" },
+          response: { status: 200, body: rawProgressPayload },
+        }),
+      } satisfies DiagnosticScoreRetrievalProvider,
+    });
 
     const resp = await handleGetCandidateScore(deps, {
       query: { examAttemptId: "sa-1" },
@@ -775,8 +838,14 @@ describe("score diagnostics", () => {
       examAttemptId: "sa-1",
       customerId: "customer-1",
     });
-    const response = (retrieve as { response?: Record<string, unknown> }).response;
-    expect(response).toMatchObject({ scoreAvailable: true, percentComplete: 80 });
+    expect((retrieve as { request?: Record<string, unknown> }).request).toEqual({
+      method: "GET",
+      path: "/guided-journey/progress/exp-s1/student-1",
+    });
+    expect((retrieve as { response?: Record<string, unknown> }).response).toEqual({
+      status: 200,
+      body: rawProgressPayload,
+    });
   });
 
   it("emits exam_attempt.score.retrieve failure when score retrieval throws ScoreRetrievalError", async () => {
@@ -813,5 +882,70 @@ describe("score diagnostics", () => {
       integrationSurface: "cloudshare.v4.guided_journey.progress",
       failureMode: "http_status",
     });
+  });
+
+  it("emits exam_attempt.score.retrieve failure when diagnostics-aware score retrieval gets an unsupported payload", async () => {
+    const malformedRetriever: DiagnosticScoreRetrievalProvider = {
+      getParticipantProgress: vi.fn(),
+      getParticipantProgressForDiagnostics: vi.fn().mockRejectedValue(
+        new CloudShareResponseError("CloudShare Guided Journey progress payload was unsupported", {
+          method: "GET",
+          path: "/guided-journey/progress/exp-s1/student-1",
+          integrationSurface: "cloudshare.v4.guided_journey.progress",
+          responseBody: JSON.stringify({ hello: "world", token: "secret" }),
+          issues: ["Unsupported Guided Journey progress payload"],
+        }),
+      ),
+    };
+    const deps = makeScoreDeps({ scoreRetriever: malformedRetriever });
+
+    const resp = await handleGetCandidateScore(deps, {
+      query: { examAttemptId: "sa-1" },
+      session: SCORE_SESSION,
+    });
+    expect(resp.status).toBe(502);
+
+    const entries = await deps._repository.query({ examAttemptId: "sa-1" });
+    const failure = entries.find((e) => e.operation === "exam_attempt.score.retrieve" && e.outcome === "failure");
+    expect(failure).toBeDefined();
+    expect(failure?.details).toMatchObject({
+      method: "GET",
+      path: "/guided-journey/progress/exp-s1/student-1",
+      integrationSurface: "cloudshare.v4.guided_journey.progress",
+      failureMode: "unexpected_response",
+    });
+    expect(JSON.stringify(failure)).not.toContain("secret");
+  });
+
+  it("emits exam_attempt.score.retrieve failure with unexpected_response details when a recognized payload fails normalized validation", async () => {
+    const malformedRetriever: DiagnosticScoreRetrievalProvider = {
+      getParticipantProgress: vi.fn(),
+      getParticipantProgressForDiagnostics: vi.fn().mockRejectedValue(
+        new CloudShareResponseError("CloudShare Guided Journey progress payload was unsupported", {
+          method: "GET",
+          path: "/guided-journey/progress/exp-s1/student-1",
+          integrationSurface: "cloudshare.v4.guided_journey.progress",
+          responseBody: JSON.stringify({ exploredRate: 1.2, token: "secret" }),
+          issues: ["Number must be less than or equal to 1"],
+        }),
+      ),
+    };
+    const deps = makeScoreDeps({ scoreRetriever: malformedRetriever });
+
+    const resp = await handleGetCandidateScore(deps, {
+      query: { examAttemptId: "sa-1" },
+      session: SCORE_SESSION,
+    });
+    expect(resp.status).toBe(502);
+
+    const entries = await deps._repository.query({ examAttemptId: "sa-1" });
+    const failure = entries.find((e) => e.operation === "exam_attempt.score.retrieve" && e.outcome === "failure");
+    expect(failure?.details).toMatchObject({
+      method: "GET",
+      path: "/guided-journey/progress/exp-s1/student-1",
+      integrationSurface: "cloudshare.v4.guided_journey.progress",
+      failureMode: "unexpected_response",
+    });
+    expect(JSON.stringify(failure)).not.toContain("secret");
   });
 });

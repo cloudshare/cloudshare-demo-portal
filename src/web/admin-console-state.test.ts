@@ -3,8 +3,10 @@ import {
   ADMIN_SESSION_EXPIRED_MESSAGE,
   ADMIN_TABS,
   beginLatestOnlyRequest,
+  buildMonitoringHistoryQueryString,
   buildExamAttemptDiagnosticsNavigation,
   buildDiagnosticLogQueryString,
+  mergeMonitoringHistoryPage,
   buildWebhookCallbackUrl,
   getAdminTabLabel,
   getAllowedRegionValidationMessage,
@@ -18,6 +20,7 @@ import {
   shouldShowCandidateProvisioning,
   shouldClearAdminBannerOnTabChange,
 } from "./admin-console-state";
+import type { AdminMonitoringView } from "@/domain/admin-monitoring";
 
 describe("latest-only request coordination", () => {
   it("increments the active request id for each new request", () => {
@@ -142,6 +145,133 @@ describe("diagnostic log filter state", () => {
     expect(query).toBe(
       "?examAttemptId=attempt-1&candidateEmail=candidate%40helioscx.demo&outcome=failure&source=runtime&externalId=env-123&limit=50&offset=100",
     );
+  });
+});
+
+describe("monitoring history state", () => {
+  function makeMonitoringView(partial: Partial<AdminMonitoringView> = {}): AdminMonitoringView {
+    return {
+      summary: {
+        scheduled: 1,
+        ready: 0,
+        inProgress: 0,
+        suspended: 0,
+        completed: 2,
+        expired: 1,
+      },
+      currentAttempts: {
+        scheduled: [],
+        ready: [],
+        inProgress: [],
+        suspended: [],
+      },
+      history: [],
+      historyPage: {
+        limit: 2,
+        offset: 0,
+        returned: 0,
+        total: 3,
+        hasMore: false,
+        nextOffset: null,
+      },
+      ...partial,
+    };
+  }
+
+  it("serialises bounded terminal-history paging parameters for the monitoring API", () => {
+    expect(buildMonitoringHistoryQueryString({ limit: 25, offset: 50 })).toBe(
+      "?historyLimit=25&historyOffset=50",
+    );
+  });
+
+  it("merges the next completed and expired history page without duplicating attempts", () => {
+    const merged = mergeMonitoringHistoryPage(
+      makeMonitoringView({
+        history: [
+          {
+            id: "attempt-3",
+            examId: "exam-3",
+            examTitle: "Helios Advanced",
+            candidateId: "candidate-3",
+            candidateName: "Jordan Park",
+            candidateEmail: "jordan@helioscx.demo",
+            status: "completed",
+            scheduledFor: "2026-06-21T12:00:00.000Z",
+            createdAt: "2026-06-20T12:00:00.000Z",
+            trainingId: null,
+            experienceId: null,
+            environmentExternalId: null,
+            participantId: null,
+            scoreRetrievalEnabled: false,
+            timeline: [],
+          },
+        ],
+        historyPage: {
+          limit: 2,
+          offset: 0,
+          returned: 1,
+          total: 3,
+          hasMore: true,
+          nextOffset: 1,
+        },
+      }),
+      makeMonitoringView({
+        history: [
+          {
+            id: "attempt-3",
+            examId: "exam-3",
+            examTitle: "Helios Advanced",
+            candidateId: "candidate-3",
+            candidateName: "Jordan Park",
+            candidateEmail: "jordan@helioscx.demo",
+            status: "completed",
+            scheduledFor: "2026-06-21T12:00:00.000Z",
+            createdAt: "2026-06-20T12:00:00.000Z",
+            trainingId: null,
+            experienceId: null,
+            environmentExternalId: null,
+            participantId: null,
+            scoreRetrievalEnabled: false,
+            timeline: [],
+          },
+          {
+            id: "attempt-2",
+            examId: "exam-2",
+            examTitle: "Helios Operations",
+            candidateId: "candidate-2",
+            candidateName: "Casey Rivera",
+            candidateEmail: "casey@helioscx.demo",
+            status: "expired",
+            scheduledFor: "2026-06-21T11:00:00.000Z",
+            createdAt: "2026-06-20T11:00:00.000Z",
+            trainingId: null,
+            experienceId: null,
+            environmentExternalId: null,
+            participantId: null,
+            scoreRetrievalEnabled: false,
+            timeline: [],
+          },
+        ],
+        historyPage: {
+          limit: 2,
+          offset: 1,
+          returned: 2,
+          total: 3,
+          hasMore: false,
+          nextOffset: null,
+        },
+      }),
+    );
+
+    expect(merged.history.map((attempt) => attempt.id)).toEqual(["attempt-3", "attempt-2"]);
+    expect(merged.historyPage).toEqual({
+      limit: 2,
+      offset: 1,
+      returned: 2,
+      total: 3,
+      hasMore: false,
+      nextOffset: null,
+    });
   });
 });
 

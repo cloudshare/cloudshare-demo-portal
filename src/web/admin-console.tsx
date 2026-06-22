@@ -8,6 +8,7 @@ import {
   ADMIN_SESSION_EXPIRED_MESSAGE,
   type AdminTab,
   beginLatestOnlyRequest,
+  buildMonitoringHistoryQueryString,
   buildExamAttemptDiagnosticsNavigation,
   buildDiagnosticLogQueryString,
   buildWebhookCallbackUrl,
@@ -19,6 +20,7 @@ import {
   getExamAuthoringMode,
   isAdminSessionExpiredStatus,
   isLatestOnlyResponse,
+  mergeMonitoringHistoryPage,
   normaliseDiagnosticLogFilters,
   reconcileAllowedRegionIds,
   shouldClearAdminBannerOnTabChange,
@@ -29,14 +31,9 @@ import {
   type DiagnosticLogTableEntry as DiagnosticLogEntry,
 } from "./diagnostic-log-table";
 import { EventLogTable } from "./event-log-table";
-import { MonitoringAttemptDetails } from "./monitoring-attempt-details";
+import { SessionMonitoringPanel } from "./session-monitoring-panel";
 import { SupportLogTable } from "./support-log-table";
-import type {
-  AdminMonitoringView as MonitoringView,
-  MonitoringAttemptView as MonitoringAttempt,
-  MonitoringAttemptResult,
-  MonitoringTimelineEntry,
-} from "@/domain/admin-monitoring";
+import type { AdminMonitoringView as MonitoringView } from "@/domain/admin-monitoring";
 
 interface AdminConsoleProps {
   readonly email: string;
@@ -190,34 +187,6 @@ function stripHtmlToText(value: string | null | undefined): string {
     .replace(/&quot;/gi, "\"")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-function formatAttemptStatus(status: MonitoringAttempt["status"]): string {
-  return status.replaceAll("_", " ");
-}
-
-function formatMonitoringResult(result: MonitoringAttemptResult | undefined): string {
-  if (!result) {
-    return "-";
-  }
-  if (!result.scoreAvailable) {
-    return formatAttemptStatus(result.status);
-  }
-  const percent = typeof result.percentComplete === "number" ? `${result.percentComplete}%` : "Score";
-  const steps =
-    typeof result.stepsCompleted === "number" && typeof result.stepsTotal === "number"
-      ? ` (${result.stepsCompleted}/${result.stepsTotal} steps)`
-      : "";
-  return `${percent}${steps}`;
-}
-
-function formatTimelineEntry(entry: MonitoringTimelineEntry): string {
-  if (entry.kind === "audit") {
-    return entry.error ?? (entry.details ? JSON.stringify(entry.details) : "-");
-  }
-  const status = typeof entry.responseStatus === "number" ? `HTTP ${entry.responseStatus}` : entry.failureMode ?? "failure";
-  const attemptedOperation = entry.attemptedOperation ? `${entry.attemptedOperation} ` : "";
-  return `${attemptedOperation}${status}`.trim();
 }
 
 class AdminSessionExpiredError extends Error {
@@ -467,17 +436,20 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     }
   }
 
-  async function loadMonitoring() {
+  async function loadMonitoring(historyOffset = 0) {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetchAdmin("/api/admin/monitoring");
+      const query = buildMonitoringHistoryQueryString({ limit: 25, offset: historyOffset });
+      const res = await fetchAdmin(`/api/admin/monitoring${query}`);
       const data = (await res.json()) as { monitoring?: MonitoringView; error?: string };
       if (!res.ok) {
         setError(data.error ?? "Failed to load session monitoring");
         return;
       }
-      setMonitoring(data.monitoring ?? null);
+      setMonitoring((current) =>
+        data.monitoring ? mergeMonitoringHistoryPage(historyOffset === 0 ? null : current, data.monitoring) : null,
+      );
     } catch (caughtError) {
       if (isAdminSessionExpiredError(caughtError)) {
         return;
@@ -496,6 +468,15 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     if (tab === "diagnostics") {
       void loadDiagnostics(false, navigation.pageOffset, navigation.filters);
     }
+  }
+
+  function loadMoreMonitoringHistory() {
+    const nextOffset = monitoring?.historyPage.nextOffset;
+    if (typeof nextOffset !== "number") {
+      return;
+    }
+
+    void loadMonitoring(nextOffset);
   }
 
   async function loadEvents() {
@@ -1832,168 +1813,21 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       )}
 
       {tab === "monitoring" && (
-        <section style={{ display: "grid", gap: "1rem" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "center", flexWrap: "wrap" }}>
-            <p style={{ margin: 0, color: "#555" }}>
-              Current attempts are grouped by state. History shows terminal attempts and any stored result summary.
-            </p>
+        monitoring ? (
+          <SessionMonitoringPanel
+            monitoring={monitoring}
+            loading={loading}
+            onRefresh={() => void loadMonitoring()}
+            onLoadMoreHistory={loadMoreMonitoringHistory}
+            onOpenSupportDiagnostics={openExamAttemptSupportDiagnostics}
+          />
+        ) : (
+          <section>
             <button onClick={() => void loadMonitoring()} disabled={loading} style={{ padding: "0.45rem 0.9rem" }}>
               {loading ? "Loading..." : "Refresh Monitoring"}
             </button>
-          </div>
-
-          {monitoring && (
-            <>
-              <div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))" }}>
-                {[
-                  ["Scheduled", monitoring.summary.scheduled],
-                  ["Ready", monitoring.summary.ready],
-                  ["In progress", monitoring.summary.inProgress],
-                  ["Suspended", monitoring.summary.suspended],
-                  ["Completed", monitoring.summary.completed],
-                  ["Expired", monitoring.summary.expired],
-                ].map(([label, count]) => (
-                  <div key={label} style={{ background: "#f7f7f8", borderRadius: "8px", padding: "0.9rem" }}>
-                    <div style={{ color: "#555", fontSize: "0.85rem" }}>{label}</div>
-                    <div style={{ fontSize: "1.5rem", fontWeight: 700 }}>{count}</div>
-                  </div>
-                ))}
-              </div>
-
-              {([
-                ["Scheduled", monitoring.currentAttempts.scheduled],
-                ["Ready", monitoring.currentAttempts.ready],
-                ["In Progress", monitoring.currentAttempts.inProgress],
-                ["Suspended", monitoring.currentAttempts.suspended],
-              ] as const).map(([label, attempts]) => (
-                <div key={label} style={{ background: "#f7f7f8", borderRadius: "8px", padding: "1rem" }}>
-                  <h2 style={{ marginTop: 0, marginBottom: "0.75rem", fontSize: "1rem" }}>
-                    {label} ({attempts.length})
-                  </h2>
-                  {attempts.length === 0 ? (
-                    <p style={{ margin: 0, color: "#666" }}>No current attempts in this state.</p>
-                  ) : (
-                    <div style={{ display: "grid", gap: "0.75rem" }}>
-                      {attempts.map((attempt) => (
-                        <details key={attempt.id} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "0.75rem 0.9rem" }}>
-                          <summary style={{ cursor: "pointer", fontWeight: 600 }}>
-                            {attempt.candidateName} · {attempt.examTitle} · {formatAttemptStatus(attempt.status)}
-                          </summary>
-                          <MonitoringAttemptDetails
-                            attempt={attempt}
-                            scheduledForLabel={formatUtcTimestamp(attempt.scheduledFor)}
-                            onOpenSupportDiagnostics={openExamAttemptSupportDiagnostics}
-                          />
-                          <div style={{ overflowX: "auto" }}>
-                            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
-                              <thead>
-                                <tr style={{ background: "#f5f5f5" }}>
-                                  {["Time", "Kind", "Event", "Outcome", "Details"].map((heading) => (
-                                    <th key={heading} style={{ textAlign: "left", padding: "0.35rem", borderBottom: "1px solid #ddd" }}>
-                                      {heading}
-                                    </th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {attempt.timeline.length === 0 && (
-                                  <tr>
-                                    <td colSpan={5} style={{ padding: "0.4rem", color: "#666" }}>
-                                      No timeline entries recorded.
-                                    </td>
-                                  </tr>
-                                )}
-                                {attempt.timeline.map((entry, index) => (
-                                  <tr key={`${attempt.id}-${entry.occurredAt}-${entry.kind}-${index}`} style={{ borderBottom: "1px solid #eee", verticalAlign: "top" }}>
-                                    <td style={{ padding: "0.35rem", whiteSpace: "nowrap" }}>
-                                      {formatUtcTimestamp(entry.occurredAt)}
-                                    </td>
-                                    <td style={{ padding: "0.35rem" }}>{entry.kind}</td>
-                                    <td style={{ padding: "0.35rem" }}>{entry.kind === "audit" ? entry.action : entry.eventType}</td>
-                                    <td style={{ padding: "0.35rem" }}>
-                                      {entry.kind === "audit"
-                                        ? entry.outcome
-                                        : (typeof entry.responseStatus === "number" ? `HTTP ${entry.responseStatus}` : entry.failureMode ?? "-")}
-                                    </td>
-                                    <td style={{ padding: "0.35rem", color: "#444" }}>{formatTimelineEntry(entry)}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </details>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-
-              <div style={{ background: "#f7f7f8", borderRadius: "8px", padding: "1rem" }}>
-                <h2 style={{ marginTop: 0, marginBottom: "0.75rem", fontSize: "1rem" }}>
-                  Completed / expired attempts ({monitoring.history.length})
-                </h2>
-                {monitoring.history.length === 0 ? (
-                  <p style={{ margin: 0, color: "#666" }}>No completed or expired attempts yet.</p>
-                ) : (
-                  <div style={{ display: "grid", gap: "0.75rem" }}>
-                    {monitoring.history.map((attempt) => (
-                      <details key={attempt.id} style={{ background: "#fff", border: "1px solid #e5e7eb", borderRadius: "8px", padding: "0.75rem 0.9rem" }}>
-                        <summary style={{ cursor: "pointer", fontWeight: 600 }}>
-                          {attempt.candidateName} · {attempt.examTitle} · {formatMonitoringResult(attempt.result)}
-                        </summary>
-                        <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.75rem", fontSize: "0.9rem" }}>
-                          <div>Status: {formatAttemptStatus(attempt.status)}</div>
-                          <MonitoringAttemptDetails
-                            attempt={attempt}
-                            scheduledForLabel={formatUtcTimestamp(attempt.scheduledFor)}
-                            onOpenSupportDiagnostics={openExamAttemptSupportDiagnostics}
-                          />
-                          <div style={{ overflowX: "auto" }}>
-                            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
-                              <thead>
-                                <tr style={{ background: "#f5f5f5" }}>
-                                  {["Time", "Kind", "Event", "Outcome", "Details"].map((heading) => (
-                                    <th key={heading} style={{ textAlign: "left", padding: "0.35rem", borderBottom: "1px solid #ddd" }}>
-                                      {heading}
-                                    </th>
-                                  ))}
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {attempt.timeline.length === 0 && (
-                                  <tr>
-                                    <td colSpan={5} style={{ padding: "0.4rem", color: "#666" }}>
-                                      No timeline entries recorded.
-                                    </td>
-                                  </tr>
-                                )}
-                                {attempt.timeline.map((entry, index) => (
-                                  <tr key={`${attempt.id}-${entry.occurredAt}-${entry.kind}-${index}`} style={{ borderBottom: "1px solid #eee", verticalAlign: "top" }}>
-                                    <td style={{ padding: "0.35rem", whiteSpace: "nowrap" }}>
-                                      {formatUtcTimestamp(entry.occurredAt)}
-                                    </td>
-                                    <td style={{ padding: "0.35rem" }}>{entry.kind}</td>
-                                    <td style={{ padding: "0.35rem" }}>{entry.kind === "audit" ? entry.action : entry.eventType}</td>
-                                    <td style={{ padding: "0.35rem" }}>
-                                      {entry.kind === "audit"
-                                        ? entry.outcome
-                                        : (typeof entry.responseStatus === "number" ? `HTTP ${entry.responseStatus}` : entry.failureMode ?? "-")}
-                                    </td>
-                                    <td style={{ padding: "0.35rem", color: "#444" }}>{formatTimelineEntry(entry)}</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-                      </details>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </section>
+          </section>
+        )
       )}
 
       {tab === "events" && (

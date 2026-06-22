@@ -1,7 +1,12 @@
 import { z } from "zod";
 import type { CloudShareClient } from "./client";
-import type { ParticipantProgress, ScoreRetrievalProvider } from "@/domain/score-result";
-import { CloudShareRequestError } from "./errors";
+import type {
+  DiagnosticScoreRetrievalProvider,
+  ParticipantProgress,
+  ParticipantProgressDiagnostics,
+  ScoreRetrievalProvider,
+} from "@/domain/score-result";
+import { CloudShareRequestError, CloudShareResponseError } from "./errors";
 
 /**
  * CloudShare implementation of the {@link ScoreRetrievalProvider} port.
@@ -71,32 +76,88 @@ const guidedJourneyProgressSchema = z.unknown().transform<ParticipantProgress | 
     return null;
   }
 
-  return normalizedProgressSchema.parse(normalized);
+  const parsed = normalizedProgressSchema.safeParse(normalized);
+  if (!parsed.success) {
+    for (const issue of parsed.error.issues) {
+      ctx.addIssue(issue);
+    }
+    return z.NEVER;
+  }
+
+  return parsed.data;
 });
 
 export function createCloudShareGuidedJourneyProvider(
   client: CloudShareClient,
-): ScoreRetrievalProvider {
+): ScoreRetrievalProvider & DiagnosticScoreRetrievalProvider {
   return {
     async getParticipantProgress(
       experienceId: string,
       participantId: string,
     ): Promise<ParticipantProgress | null> {
-      let response: ParticipantProgress | null;
-      try {
-        response = await client.requestV4<ParticipantProgress | null>({
-          method: "GET",
-          path: `/guided-journey/progress/${experienceId}/${participantId}`,
-          schema: guidedJourneyProgressSchema,
-        });
-      } catch (error) {
-        if (error instanceof CloudShareRequestError && error.status === 404) {
-          return null;
-        }
-        throw error;
-      }
+      const result = await fetchParticipantProgressForDiagnostics(client, experienceId, participantId);
+      return result.progress;
+    },
+    async getParticipantProgressForDiagnostics(
+      experienceId: string,
+      participantId: string,
+    ): Promise<ParticipantProgressDiagnostics> {
+      return fetchParticipantProgressForDiagnostics(client, experienceId, participantId);
+    },
+  };
+}
 
-      return response;
+async function fetchParticipantProgressForDiagnostics(
+  client: CloudShareClient,
+  experienceId: string,
+  participantId: string,
+): Promise<ParticipantProgressDiagnostics> {
+  const path = `/guided-journey/progress/${experienceId}/${participantId}`;
+  const request = { method: "GET", path } as const;
+
+  let responseBody: unknown;
+  try {
+    responseBody = await client.requestV4<unknown>({
+      method: request.method,
+      path: request.path,
+      schema: z.unknown(),
+    });
+  } catch (error) {
+    if (error instanceof CloudShareRequestError && error.status === 404) {
+      return {
+        progress: null,
+        request,
+        response: {
+          status: 404,
+          body: null,
+        },
+      };
+    }
+    throw error;
+  }
+
+  let progress: ParticipantProgress | null;
+  const parsed = guidedJourneyProgressSchema.safeParse(responseBody);
+  if (!parsed.success) {
+    throw new CloudShareResponseError(
+      "CloudShare Guided Journey progress payload was unsupported",
+      {
+        method: request.method,
+        path: request.path,
+        integrationSurface: "cloudshare.v4.guided_journey.progress",
+        responseBody: serializeGuidedJourneyResponseBody(responseBody),
+        issues: parsed.error.issues.map((issue) => issue.message),
+      },
+    );
+  }
+  progress = parsed.data;
+
+  return {
+    progress,
+    request,
+    response: {
+      status: 200,
+      body: responseBody,
     },
   };
 }
@@ -293,4 +354,42 @@ function readBooleanCandidate(record: Record<string, unknown>, keys: readonly st
     }
   }
   return null;
+}
+
+function serializeGuidedJourneyResponseBody(body: unknown): string {
+  try {
+    return JSON.stringify(redactSensitiveGuidedJourneyValue(body));
+  } catch {
+    return String(body);
+  }
+}
+
+function redactSensitiveGuidedJourneyValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(redactSensitiveGuidedJourneyValue);
+  }
+
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  const redacted: Record<string, unknown> = {};
+  for (const [key, fieldValue] of Object.entries(value)) {
+    if (/api[-_]?key|secret|token|hmac|passphrase|password|login[-_]?url/i.test(key)) {
+      redacted[key] = "[REDACTED]";
+      continue;
+    }
+
+    redacted[key] =
+      typeof fieldValue === "string"
+        ? redactSensitiveGuidedJourneyText(fieldValue)
+        : redactSensitiveGuidedJourneyValue(fieldValue);
+  }
+  return redacted;
+}
+
+function redactSensitiveGuidedJourneyText(value: string): string {
+  return value
+    .replace(/https?:\/\/\S*(?:ClassSponsoredLink|SponsoredLink|Ent\/Login)\S*/gi, "[REDACTED]")
+    .replace(/([?&](?:token|access_token|loginUrl)=)[^&\s"]+/gi, "$1[REDACTED]");
 }
