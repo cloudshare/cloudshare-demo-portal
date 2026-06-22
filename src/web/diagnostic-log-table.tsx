@@ -58,13 +58,39 @@ function formatSubject(subject: DiagnosticLogTableEntry["subject"]): string {
   return subject ? `${subject.type}${subject.id ? ` (${subject.id})` : ""}` : "—";
 }
 
-function formatExternalIds(externalIds: DiagnosticLogTableEntry["externalIds"]): string {
+function getDisplayExternalIds(
+  externalIds: DiagnosticLogTableEntry["externalIds"],
+): DiagnosticLogTableEntry["externalIds"] {
   if (!externalIds || Object.keys(externalIds).length === 0) {
+    return externalIds;
+  }
+
+  const displayIds = { ...externalIds };
+  if (displayIds.experienceId) {
+    if (displayIds.trainingId === displayIds.experienceId) {
+      delete displayIds.trainingId;
+    }
+    if (displayIds.salesId === displayIds.experienceId) {
+      delete displayIds.salesId;
+    }
+  }
+
+  return displayIds;
+}
+
+function formatExternalIds(externalIds: DiagnosticLogTableEntry["externalIds"]): string {
+  const displayIds = getDisplayExternalIds(externalIds);
+
+  if (!displayIds || Object.keys(displayIds).length === 0) {
     return "—";
   }
-  return Object.entries(externalIds)
+  return Object.entries(displayIds)
     .map(([key, value]) => `${key}: ${value}`)
     .join(", ");
+}
+
+function readIntegrationSurface(details: DiagnosticLogTableEntry["details"]): string | null {
+  return typeof details?.integrationSurface === "string" ? details.integrationSurface : null;
 }
 
 function summariseRequestResponse(entry: DiagnosticLogTableEntry): string {
@@ -155,8 +181,10 @@ export function DiagnosticLogTable({
           )}
           {entries.map((entry) => {
             const isExpanded = expandedDiagnosticId === entry.id;
+            const displayExternalIds = getDisplayExternalIds(entry.externalIds);
+            const integrationSurface = readIntegrationSurface(entry.details);
             const sections = [
-              hasStructuredContent(entry.externalIds) ? { label: "External IDs", value: entry.externalIds! } : null,
+              hasStructuredContent(displayExternalIds) ? { label: "External IDs", value: displayExternalIds! } : null,
               hasStructuredContent(entry.request) ? { label: "Request", value: entry.request! } : null,
               hasStructuredContent(entry.response) ? { label: "Response", value: entry.response! } : null,
               hasStructuredContent(entry.details) ? { label: "Details", value: entry.details! } : null,
@@ -174,7 +202,14 @@ export function DiagnosticLogTable({
                   </td>
                   <td style={{ padding: "0.4rem" }}>{entry.level}</td>
                   <td style={{ padding: "0.4rem" }}>{entry.source}</td>
-                  <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{entry.operation}</td>
+                  <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>
+                    <div>{entry.operation}</div>
+                    {integrationSurface ? (
+                      <div style={{ marginTop: "0.2rem", color: "#666", fontSize: "0.75rem" }}>
+                        Surface: {integrationSurface}
+                      </div>
+                    ) : null}
+                  </td>
                   <td
                     style={{
                       padding: "0.4rem",
@@ -190,7 +225,7 @@ export function DiagnosticLogTable({
                   <td style={{ padding: "0.4rem" }}>{entry.candidateEmail ?? "—"}</td>
                   <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{entry.examId ?? "—"}</td>
                   <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{entry.examAttemptId ?? "—"}</td>
-                  <td style={{ padding: "0.4rem" }}>{formatExternalIds(entry.externalIds)}</td>
+                  <td style={{ padding: "0.4rem" }}>{formatExternalIds(displayExternalIds)}</td>
                   <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{entry.correlationId ?? "—"}</td>
                   <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{summariseRequestResponse(entry)}</td>
                   <td style={{ padding: "0.4rem" }}>{entry.message}</td>
