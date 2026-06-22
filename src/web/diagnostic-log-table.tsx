@@ -67,6 +67,15 @@ function getDisplayExternalIds(
   }
 
   const displayIds = { ...externalIds };
+  const experienceId =
+    displayIds.experienceId ??
+    [displayIds.trainingId, displayIds.salesId].find((value) => isCloudShareExperienceId(value)) ??
+    null;
+
+  if (experienceId && !displayIds.experienceId) {
+    displayIds.experienceId = experienceId;
+  }
+
   if (displayIds.experienceId) {
     if (displayIds.trainingId === displayIds.experienceId) {
       delete displayIds.trainingId;
@@ -77,6 +86,10 @@ function getDisplayExternalIds(
   }
 
   return displayIds;
+}
+
+function isCloudShareExperienceId(value: string | undefined): boolean {
+  return typeof value === "string" && value.startsWith("EX");
 }
 
 function formatExternalIds(externalIds: DiagnosticLogTableEntry["externalIds"]): string {

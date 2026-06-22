@@ -96,6 +96,26 @@ describe("DiagnosticLogTable", () => {
       createElement(DiagnosticLogTable, {
         entries: [
           {
+            id: "diag-promoted",
+            occurredAt: "2026-06-21T09:55:00.000Z",
+            level: "info",
+            source: "runtime",
+            operation: "exam_attempt.score.retrieve",
+            outcome: "success",
+            customerId: "customer-helios",
+            actor: { type: "candidate", id: "candidate-0", email: "candidate0@helioscx.demo" },
+            subject: { type: "exam_attempt", id: "attempt-0" },
+            message: "Score retrieved successfully",
+            correlationId: "corr-promoted",
+            candidateEmail: "candidate0@helioscx.demo",
+            examId: "exam-0",
+            examAttemptId: "attempt-0",
+            externalIds: {
+              trainingId: "EXtraining-0",
+              participantId: "participant-0",
+            },
+          },
+          {
             id: "diag-deduped",
             occurredAt: "2026-06-21T10:00:00.000Z",
             level: "info",
@@ -144,6 +164,9 @@ describe("DiagnosticLogTable", () => {
       }),
     );
 
+    expect(html).toContain("experienceId: EXtraining-0");
+    expect(html).toContain("participantId: participant-0");
+    expect(html).not.toContain("trainingId: EXtraining-0");
     expect(html).toContain("experienceId: exp-shared");
     expect(html).toContain("participantId: participant-1");
     expect(html).not.toContain("trainingId: exp-shared");
