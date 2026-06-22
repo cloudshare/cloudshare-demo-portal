@@ -3,6 +3,7 @@ import {
   ADMIN_SESSION_EXPIRED_MESSAGE,
   ADMIN_TABS,
   beginLatestOnlyRequest,
+  buildExamAttemptDiagnosticsNavigation,
   buildDiagnosticLogQueryString,
   buildWebhookCallbackUrl,
   getAdminTabLabel,
@@ -27,6 +28,26 @@ describe("latest-only request coordination", () => {
   it("treats only the active request response as current", () => {
     expect(isLatestOnlyResponse(2, 2)).toBe(true);
     expect(isLatestOnlyResponse(2, 1)).toBe(false);
+  });
+
+  it("switches Session Monitoring drilldown actions to Support Diagnostics with the ExamAttempt filter applied", () => {
+    expect(
+      buildExamAttemptDiagnosticsNavigation(
+        {
+          source: "runtime",
+          outcome: "failure",
+        },
+        "  attempt-a  ",
+      ),
+    ).toEqual({
+      tab: "diagnostics",
+      filters: {
+        source: "runtime",
+        outcome: "failure",
+        examAttemptId: "attempt-a",
+      },
+      pageOffset: 0,
+    });
   });
 });
 

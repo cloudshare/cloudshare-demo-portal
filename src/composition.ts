@@ -77,9 +77,11 @@ import type {
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
 import type { AdminMonitoringAttemptRepository } from "@/domain/admin-monitoring";
+import type { AdminExamAttemptDiagnosticContextRepository } from "@/domain/admin-exam-attempt-diagnostics";
 import type { ExamRepository } from "@/domain/exam-catalog";
 import type { ExamAuthoringCacheRepository } from "@/persistence/exam-authoring-cache-repository";
 import { createSecretBox } from "@/security/secret-box";
+import { createPrismaAdminExamAttemptDiagnosticContextRepository } from "@/persistence/prisma-admin-exam-attempt-diagnostic-context-repository";
 
 /**
  * Composition root. The framework-agnostic modules are pure and dependency-free;
@@ -131,6 +133,7 @@ export interface Services {
   /** Redaction-applying write seam every instrumented flow records through. */
   diagnosticRecorder: DiagnosticRecorder;
   adminMonitoringAttempts: AdminMonitoringAttemptRepository;
+  adminExamAttemptDiagnosticContexts: AdminExamAttemptDiagnosticContextRepository;
   exams: ExamRepository;
   examAuthoringCache: ExamAuthoringCacheRepository;
   cloudshareConnections: CloudShareConnectionRepository;
@@ -305,6 +308,8 @@ export function getServices(): Services {
   const resources = createInMemoryResourceRepository();
   const exams = createPrismaExamCatalogRepository(prisma);
   const adminMonitoringAttempts = createPrismaAdminMonitoringAttemptRepository(prisma);
+  const adminExamAttemptDiagnosticContexts =
+    createPrismaAdminExamAttemptDiagnosticContextRepository(prisma);
   const examAuthoringCache = createInMemoryExamAuthoringCacheRepository();
   const cloudshareSecretBox = createSecretBox(
     Buffer.from(config.secrets.portalMasterKey, "base64"),
@@ -455,6 +460,7 @@ export function getServices(): Services {
     diagnostics,
     diagnosticRecorder,
     adminMonitoringAttempts,
+    adminExamAttemptDiagnosticContexts,
     exams,
     examAuthoringCache,
     cloudshareConnections,

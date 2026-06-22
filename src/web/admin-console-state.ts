@@ -23,6 +23,12 @@ export interface DiagnosticLogPage {
   readonly offset: number;
 }
 
+export interface ExamAttemptDiagnosticsNavigation {
+  readonly tab: "diagnostics";
+  readonly filters: DiagnosticLogFilters;
+  readonly pageOffset: 0;
+}
+
 export type AdminTab =
   | "connection"
   | "exams"
@@ -154,6 +160,20 @@ export function buildDiagnosticLogQueryString(
   params.set("offset", String(page.offset));
   const query = params.toString();
   return query ? `?${query}` : "";
+}
+
+export function buildExamAttemptDiagnosticsNavigation(
+  filters: DiagnosticLogFilters,
+  examAttemptId: string,
+): ExamAttemptDiagnosticsNavigation {
+  return {
+    tab: "diagnostics",
+    filters: {
+      ...filters,
+      examAttemptId: examAttemptId.trim(),
+    },
+    pageOffset: 0,
+  };
 }
 
 export function buildWebhookCallbackUrl(

@@ -8,6 +8,7 @@ import {
   ADMIN_SESSION_EXPIRED_MESSAGE,
   type AdminTab,
   beginLatestOnlyRequest,
+  buildExamAttemptDiagnosticsNavigation,
   buildDiagnosticLogQueryString,
   buildWebhookCallbackUrl,
   buildEventRecordRowKey,
@@ -28,6 +29,7 @@ import {
   type DiagnosticLogTableEntry as DiagnosticLogEntry,
 } from "./diagnostic-log-table";
 import { EventLogTable } from "./event-log-table";
+import { MonitoringAttemptDetails } from "./monitoring-attempt-details";
 import { SupportLogTable } from "./support-log-table";
 import type {
   AdminMonitoringView as MonitoringView,
@@ -483,6 +485,16 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       setError("Failed to load session monitoring");
     } finally {
       setLoading(false);
+    }
+  }
+
+  function openExamAttemptSupportDiagnostics(examAttemptId: string) {
+    const navigation = buildExamAttemptDiagnosticsNavigation(diagnosticFilters, examAttemptId);
+    setDiagnosticFilters(navigation.filters);
+    setExpandedDiagnosticId(null);
+    setTab(navigation.tab);
+    if (tab === "diagnostics") {
+      void loadDiagnostics(false, navigation.pageOffset, navigation.filters);
     }
   }
 
@@ -1867,48 +1879,47 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                           <summary style={{ cursor: "pointer", fontWeight: 600 }}>
                             {attempt.candidateName} · {attempt.examTitle} · {formatAttemptStatus(attempt.status)}
                           </summary>
-                          <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.75rem", fontSize: "0.9rem" }}>
-                            <div>Candidate: {attempt.candidateEmail}</div>
-                            <div>Scheduled (UTC): {formatUtcTimestamp(attempt.scheduledFor)}</div>
-                            <div>Training ID: {attempt.trainingId ?? "-"}</div>
-                            <div>Environment: {attempt.environmentExternalId ?? "-"}</div>
-                            <div style={{ overflowX: "auto" }}>
-                              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
-                                <thead>
-                                  <tr style={{ background: "#f5f5f5" }}>
-                                    {["Time", "Kind", "Event", "Outcome", "Details"].map((heading) => (
-                                      <th key={heading} style={{ textAlign: "left", padding: "0.35rem", borderBottom: "1px solid #ddd" }}>
-                                        {heading}
-                                      </th>
-                                    ))}
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {attempt.timeline.length === 0 && (
-                                    <tr>
-                                      <td colSpan={5} style={{ padding: "0.4rem", color: "#666" }}>
-                                        No timeline entries recorded.
-                                      </td>
-                                    </tr>
-                                  )}
-                                  {attempt.timeline.map((entry, index) => (
-                                    <tr key={`${attempt.id}-${entry.occurredAt}-${entry.kind}-${index}`} style={{ borderBottom: "1px solid #eee", verticalAlign: "top" }}>
-                                      <td style={{ padding: "0.35rem", whiteSpace: "nowrap" }}>
-                                        {formatUtcTimestamp(entry.occurredAt)}
-                                      </td>
-                                      <td style={{ padding: "0.35rem" }}>{entry.kind}</td>
-                                      <td style={{ padding: "0.35rem" }}>{entry.kind === "audit" ? entry.action : entry.eventType}</td>
-                                      <td style={{ padding: "0.35rem" }}>
-                                        {entry.kind === "audit"
-                                          ? entry.outcome
-                                          : (typeof entry.responseStatus === "number" ? `HTTP ${entry.responseStatus}` : entry.failureMode ?? "-")}
-                                      </td>
-                                      <td style={{ padding: "0.35rem", color: "#444" }}>{formatTimelineEntry(entry)}</td>
-                                    </tr>
+                          <MonitoringAttemptDetails
+                            attempt={attempt}
+                            scheduledForLabel={formatUtcTimestamp(attempt.scheduledFor)}
+                            onOpenSupportDiagnostics={openExamAttemptSupportDiagnostics}
+                          />
+                          <div style={{ overflowX: "auto" }}>
+                            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
+                              <thead>
+                                <tr style={{ background: "#f5f5f5" }}>
+                                  {["Time", "Kind", "Event", "Outcome", "Details"].map((heading) => (
+                                    <th key={heading} style={{ textAlign: "left", padding: "0.35rem", borderBottom: "1px solid #ddd" }}>
+                                      {heading}
+                                    </th>
                                   ))}
-                                </tbody>
-                              </table>
-                            </div>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {attempt.timeline.length === 0 && (
+                                  <tr>
+                                    <td colSpan={5} style={{ padding: "0.4rem", color: "#666" }}>
+                                      No timeline entries recorded.
+                                    </td>
+                                  </tr>
+                                )}
+                                {attempt.timeline.map((entry, index) => (
+                                  <tr key={`${attempt.id}-${entry.occurredAt}-${entry.kind}-${index}`} style={{ borderBottom: "1px solid #eee", verticalAlign: "top" }}>
+                                    <td style={{ padding: "0.35rem", whiteSpace: "nowrap" }}>
+                                      {formatUtcTimestamp(entry.occurredAt)}
+                                    </td>
+                                    <td style={{ padding: "0.35rem" }}>{entry.kind}</td>
+                                    <td style={{ padding: "0.35rem" }}>{entry.kind === "audit" ? entry.action : entry.eventType}</td>
+                                    <td style={{ padding: "0.35rem" }}>
+                                      {entry.kind === "audit"
+                                        ? entry.outcome
+                                        : (typeof entry.responseStatus === "number" ? `HTTP ${entry.responseStatus}` : entry.failureMode ?? "-")}
+                                    </td>
+                                    <td style={{ padding: "0.35rem", color: "#444" }}>{formatTimelineEntry(entry)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
                           </div>
                         </details>
                       ))}
@@ -1931,11 +1942,12 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                           {attempt.candidateName} · {attempt.examTitle} · {formatMonitoringResult(attempt.result)}
                         </summary>
                         <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.75rem", fontSize: "0.9rem" }}>
-                          <div>Candidate: {attempt.candidateEmail}</div>
                           <div>Status: {formatAttemptStatus(attempt.status)}</div>
-                          <div>Scheduled (UTC): {formatUtcTimestamp(attempt.scheduledFor)}</div>
-                          <div>Training ID: {attempt.trainingId ?? "-"}</div>
-                          <div>Environment: {attempt.environmentExternalId ?? "-"}</div>
+                          <MonitoringAttemptDetails
+                            attempt={attempt}
+                            scheduledForLabel={formatUtcTimestamp(attempt.scheduledFor)}
+                            onOpenSupportDiagnostics={openExamAttemptSupportDiagnostics}
+                          />
                           <div style={{ overflowX: "auto" }}>
                             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
                               <thead>
@@ -2156,6 +2168,21 @@ export function AdminConsole({ email }: AdminConsoleProps) {
               </div>
             </div>
           )}
+          {diagnosticFilters.examAttemptId ? (
+            <div
+              style={{
+                marginBottom: "0.75rem",
+                padding: "0.65rem 0.8rem",
+                border: "1px solid #dbe4ff",
+                borderRadius: "8px",
+                background: "#f5f8ff",
+                color: "#123",
+              }}
+            >
+              Filtered to ExamAttempt ID{" "}
+              <span style={{ fontFamily: "monospace" }}>{diagnosticFilters.examAttemptId}</span>.
+            </div>
+          ) : null}
           {diagnosticEntries && (
             <DiagnosticLogTable
               entries={diagnosticEntries}
@@ -2163,6 +2190,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
               onToggleExpanded={(id) =>
                 setExpandedDiagnosticId(expandedDiagnosticId === id ? null : id)
               }
+              onOpenExamAttempt={openExamAttemptSupportDiagnostics}
             />
           )}
           <div style={{ marginTop: "2rem" }}>

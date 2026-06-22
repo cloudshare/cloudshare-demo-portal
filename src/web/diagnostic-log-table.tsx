@@ -25,15 +25,16 @@ export interface DiagnosticLogTableProps {
   readonly entries: readonly DiagnosticLogTableEntry[];
   readonly expandedDiagnosticId: string | null;
   readonly onToggleExpanded: (id: string) => void;
+  readonly onOpenExamAttempt?: (examAttemptId: string) => void;
 }
 
-const MAX_RENDERED_DETAIL_CHARS = 12_000;
+export const MAX_RENDERED_DETAIL_CHARS = 12_000;
 
 function hasStructuredContent(value: Record<string, unknown> | Record<string, string> | null | undefined): boolean {
   return !!value && Object.keys(value).length > 0;
 }
 
-function formatStructuredValue(value: Record<string, unknown> | Record<string, string>): {
+export function formatStructuredValue(value: Record<string, unknown> | Record<string, string>): {
   readonly text: string;
   readonly truncated: boolean;
   readonly omittedCharacters: number;
@@ -66,6 +67,15 @@ function getDisplayExternalIds(
   }
 
   const displayIds = { ...externalIds };
+  const experienceId =
+    displayIds.experienceId ??
+    [displayIds.trainingId, displayIds.salesId].find((value) => isCloudShareExperienceId(value)) ??
+    null;
+
+  if (experienceId && !displayIds.experienceId) {
+    displayIds.experienceId = experienceId;
+  }
+
   if (displayIds.experienceId) {
     if (displayIds.trainingId === displayIds.experienceId) {
       delete displayIds.trainingId;
@@ -76,6 +86,10 @@ function getDisplayExternalIds(
   }
 
   return displayIds;
+}
+
+function isCloudShareExperienceId(value: string | undefined): boolean {
+  return typeof value === "string" && value.startsWith("EX");
 }
 
 function formatExternalIds(externalIds: DiagnosticLogTableEntry["externalIds"]): string {
@@ -148,6 +162,7 @@ export function DiagnosticLogTable({
   entries,
   expandedDiagnosticId,
   onToggleExpanded,
+  onOpenExamAttempt,
 }: DiagnosticLogTableProps) {
   return (
     <div style={{ overflowX: "auto" }}>
@@ -224,7 +239,30 @@ export function DiagnosticLogTable({
                   <td style={{ padding: "0.4rem" }}>{formatSubject(entry.subject)}</td>
                   <td style={{ padding: "0.4rem" }}>{entry.candidateEmail ?? "—"}</td>
                   <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{entry.examId ?? "—"}</td>
-                  <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{entry.examAttemptId ?? "—"}</td>
+                  <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>
+                    {entry.examAttemptId && onOpenExamAttempt ? (
+                      <button
+                        type="button"
+                        aria-label={`Filter Support Diagnostics by ExamAttempt ${entry.examAttemptId}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onOpenExamAttempt(entry.examAttemptId!);
+                        }}
+                        style={{
+                          padding: 0,
+                          border: "none",
+                          background: "transparent",
+                          color: "#0b57d0",
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        {entry.examAttemptId}
+                      </button>
+                    ) : (
+                      entry.examAttemptId ?? "—"
+                    )}
+                  </td>
                   <td style={{ padding: "0.4rem" }}>{formatExternalIds(displayExternalIds)}</td>
                   <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{entry.correlationId ?? "—"}</td>
                   <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{summariseRequestResponse(entry)}</td>

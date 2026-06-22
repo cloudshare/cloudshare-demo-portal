@@ -72,6 +72,7 @@ describe("DiagnosticLogTable", () => {
         ],
         expandedDiagnosticId: null,
         onToggleExpanded: () => {},
+        onOpenExamAttempt: () => {},
       }),
     );
 
@@ -87,12 +88,33 @@ describe("DiagnosticLogTable", () => {
     expect(html).toContain("environmentId: env-1");
     expect(html).toContain("POST /api/exam/resume");
     expect(html).toContain("HTTP 502");
+    expect(html).toContain('aria-label="Filter Support Diagnostics by ExamAttempt attempt-1"');
   });
 
   it("canonicalises duplicate experience identifiers in CloudShare ID displays without hiding distinct values", () => {
     const html = renderToStaticMarkup(
       createElement(DiagnosticLogTable, {
         entries: [
+          {
+            id: "diag-promoted",
+            occurredAt: "2026-06-21T09:55:00.000Z",
+            level: "info",
+            source: "runtime",
+            operation: "exam_attempt.score.retrieve",
+            outcome: "success",
+            customerId: "customer-helios",
+            actor: { type: "candidate", id: "candidate-0", email: "candidate0@helioscx.demo" },
+            subject: { type: "exam_attempt", id: "attempt-0" },
+            message: "Score retrieved successfully",
+            correlationId: "corr-promoted",
+            candidateEmail: "candidate0@helioscx.demo",
+            examId: "exam-0",
+            examAttemptId: "attempt-0",
+            externalIds: {
+              trainingId: "EXtraining-0",
+              participantId: "participant-0",
+            },
+          },
           {
             id: "diag-deduped",
             occurredAt: "2026-06-21T10:00:00.000Z",
@@ -142,6 +164,9 @@ describe("DiagnosticLogTable", () => {
       }),
     );
 
+    expect(html).toContain("experienceId: EXtraining-0");
+    expect(html).toContain("participantId: participant-0");
+    expect(html).not.toContain("trainingId: EXtraining-0");
     expect(html).toContain("experienceId: exp-shared");
     expect(html).toContain("participantId: participant-1");
     expect(html).not.toContain("trainingId: exp-shared");
