@@ -58,6 +58,38 @@ function formatSubject(subject: DiagnosticLogTableEntry["subject"]): string {
   return subject ? `${subject.type}${subject.id ? ` (${subject.id})` : ""}` : "—";
 }
 
+function formatExternalIds(externalIds: DiagnosticLogTableEntry["externalIds"]): string {
+  if (!externalIds || Object.keys(externalIds).length === 0) {
+    return "—";
+  }
+  return Object.entries(externalIds)
+    .map(([key, value]) => `${key}: ${value}`)
+    .join(", ");
+}
+
+function summariseRequestResponse(entry: DiagnosticLogTableEntry): string {
+  const method = typeof entry.request?.method === "string" ? entry.request.method : null;
+  const path = typeof entry.request?.path === "string" ? entry.request.path : null;
+  const status =
+    typeof entry.response?.status === "number"
+      ? `HTTP ${entry.response.status}`
+      : typeof entry.response?.status === "string"
+        ? `HTTP ${entry.response.status}`
+        : null;
+
+  const summary = [method, path].filter((value): value is string => !!value).join(" ");
+  if (summary && status) {
+    return `${summary} -> ${status}`;
+  }
+  if (summary) {
+    return summary;
+  }
+  if (status) {
+    return status;
+  }
+  return "—";
+}
+
 function StructuredDetailBlock(props: {
   readonly label: string;
   readonly value: Record<string, unknown> | Record<string, string>;
@@ -105,14 +137,18 @@ export function DiagnosticLogTable({
             <th style={{ padding: "0.4rem" }}>Actor</th>
             <th style={{ padding: "0.4rem" }}>Subject</th>
             <th style={{ padding: "0.4rem" }}>Candidate</th>
+            <th style={{ padding: "0.4rem" }}>Exam</th>
+            <th style={{ padding: "0.4rem" }}>Attempt</th>
+            <th style={{ padding: "0.4rem" }}>CloudShare IDs</th>
             <th style={{ padding: "0.4rem" }}>Correlation</th>
+            <th style={{ padding: "0.4rem" }}>Request / Response</th>
             <th style={{ padding: "0.4rem" }}>Message</th>
           </tr>
         </thead>
         <tbody>
           {entries.length === 0 && (
             <tr>
-              <td colSpan={11} style={{ padding: "0.75rem", color: "#666" }}>
+              <td colSpan={15} style={{ padding: "0.75rem", color: "#666" }}>
                 No diagnostic entries yet.
               </td>
             </tr>
@@ -152,12 +188,16 @@ export function DiagnosticLogTable({
                   <td style={{ padding: "0.4rem" }}>{formatActor(entry.actor)}</td>
                   <td style={{ padding: "0.4rem" }}>{formatSubject(entry.subject)}</td>
                   <td style={{ padding: "0.4rem" }}>{entry.candidateEmail ?? "—"}</td>
+                  <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{entry.examId ?? "—"}</td>
+                  <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{entry.examAttemptId ?? "—"}</td>
+                  <td style={{ padding: "0.4rem" }}>{formatExternalIds(entry.externalIds)}</td>
                   <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{entry.correlationId ?? "—"}</td>
+                  <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{summariseRequestResponse(entry)}</td>
                   <td style={{ padding: "0.4rem" }}>{entry.message}</td>
                 </tr>
                 {isExpanded && (
                   <tr key={`${entry.id}-detail`}>
-                    <td colSpan={11} style={{ padding: "0.5rem 1rem", background: "#f7f7f7", fontFamily: "monospace", fontSize: "0.78rem" }}>
+                    <td colSpan={15} style={{ padding: "0.5rem 1rem", background: "#f7f7f7", fontFamily: "monospace", fontSize: "0.78rem" }}>
                       {sections.length > 0 ? (
                         sections.map((section) => (
                           <StructuredDetailBlock key={section.label} label={section.label} value={section.value} />

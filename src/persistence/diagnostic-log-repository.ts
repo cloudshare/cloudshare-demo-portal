@@ -2,6 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 import type { LogLevel } from "@/observability/logger";
 import {
   boundDiagnosticLimit,
+  boundDiagnosticOffset,
   type DiagnosticLogEntry,
   type DiagnosticLogEntryInput,
   type DiagnosticLogQuery,
@@ -51,7 +52,34 @@ function matchesQuery(entry: DiagnosticLogEntry, query: DiagnosticLogQuery): boo
   if (query.examAttemptId !== undefined && entry.examAttemptId !== query.examAttemptId) {
     return false;
   }
+  if (
+    query.candidateEmail !== undefined &&
+    entry.candidateEmail?.toLowerCase() !== query.candidateEmail.toLowerCase()
+  ) {
+    return false;
+  }
   if (query.operation !== undefined && entry.operation !== query.operation) {
+    return false;
+  }
+  if (query.outcome !== undefined && entry.outcome !== query.outcome) {
+    return false;
+  }
+  if (query.source !== undefined && entry.source !== query.source) {
+    return false;
+  }
+  if (query.correlationId !== undefined && entry.correlationId !== query.correlationId) {
+    return false;
+  }
+  if (
+    query.integrationSurface !== undefined &&
+    entry.details?.integrationSurface !== query.integrationSurface
+  ) {
+    return false;
+  }
+  if (
+    query.externalId !== undefined &&
+    !Object.values(entry.externalIds ?? {}).includes(query.externalId)
+  ) {
     return false;
   }
   if (query.from && entry.occurredAt.getTime() < query.from.getTime()) {
@@ -79,9 +107,11 @@ export function createInMemoryDiagnosticLogRepository(): DiagnosticLogRepository
 
     async query(query: DiagnosticLogQuery = {}): Promise<DiagnosticLogEntry[]> {
       const limit = boundDiagnosticLimit(query.limit);
+      const offset = boundDiagnosticOffset(query.offset);
       return entries
         .filter((entry) => matchesQuery(entry, query))
         .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime())
+        .slice(offset)
         .slice(0, limit);
     },
 
@@ -183,6 +213,7 @@ export function createPrismaDiagnosticLogRepository(
 
     async query(query: DiagnosticLogQuery = {}): Promise<DiagnosticLogEntry[]> {
       const limit = boundDiagnosticLimit(query.limit);
+      const offset = boundDiagnosticOffset(query.offset);
       const occurredAt =
         query.from || query.to
           ? {
@@ -190,20 +221,38 @@ export function createPrismaDiagnosticLogRepository(
               ...(query.to ? { lte: query.to } : {}),
             }
           : undefined;
+      const candidateEmail = query.candidateEmail?.toLowerCase();
+      const containsExternalId =
+        query.externalId !== undefined ? JSON.stringify(query.externalId).slice(1, -1) : undefined;
+      const containsIntegrationSurface =
+        query.integrationSurface !== undefined
+          ? JSON.stringify(query.integrationSurface).slice(1, -1)
+          : undefined;
 
       const rows = (await prisma.diagnosticLogEntry.findMany({
         where: {
           ...(query.customerId !== undefined ? { customerId: query.customerId } : {}),
           ...(query.examId !== undefined ? { examId: query.examId } : {}),
           ...(query.examAttemptId !== undefined ? { examAttemptId: query.examAttemptId } : {}),
+          ...(candidateEmail !== undefined ? { candidateEmail } : {}),
           ...(query.operation !== undefined ? { operation: query.operation } : {}),
+          ...(query.outcome !== undefined ? { outcome: query.outcome } : {}),
+          ...(query.source !== undefined ? { source: query.source } : {}),
+          ...(query.correlationId !== undefined ? { correlationId: query.correlationId } : {}),
+          ...(containsExternalId !== undefined
+            ? { externalIdsJson: { contains: containsExternalId } }
+            : {}),
+          ...(containsIntegrationSurface !== undefined
+            ? { detailsJson: { contains: containsIntegrationSurface } }
+            : {}),
           ...(occurredAt ? { occurredAt } : {}),
         },
         orderBy: { occurredAt: "desc" },
+        skip: offset,
         take: limit,
       })) as DiagnosticLogRow[];
 
-      return rows.map(rowToEntry);
+      return rows.map(rowToEntry).filter((entry) => matchesQuery(entry, query));
     },
 
     async reset(): Promise<void> {

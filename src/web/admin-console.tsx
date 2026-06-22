@@ -7,14 +7,17 @@ import {
   ADMIN_SESSION_EXPIRED_MESSAGE,
   type AdminTab,
   beginLatestOnlyRequest,
+  buildDiagnosticLogQueryString,
   buildWebhookCallbackUrl,
   buildEventRecordRowKey,
+  type DiagnosticLogFilters,
   getAdminTabLabel,
   getAllowedRegionValidationMessage,
   getCompatibleRegions,
   getExamAuthoringMode,
   isAdminSessionExpiredStatus,
   isLatestOnlyResponse,
+  normaliseDiagnosticLogFilters,
   reconcileAllowedRegionIds,
   shouldClearAdminBannerOnTabChange,
   shouldShowCandidateProvisioning,
@@ -82,6 +85,14 @@ interface SupportWorkbenchDiagnostic {
   rawBodySha256: string | null;
   signaturePresent: boolean | null;
   trustGateReason: string | null;
+}
+
+interface DiagnosticLogPageResponse {
+  limit: number;
+  offset: number;
+  returned: number;
+  hasMore: boolean;
+  nextOffset: number | null;
 }
 
 interface ConnectionDiagnostic {
@@ -213,6 +224,8 @@ class AdminSessionExpiredError extends Error {
   }
 }
 
+const DIAGNOSTIC_PAGE_LIMIT = 50;
+
 function isAdminSessionExpiredError(error: unknown): error is AdminSessionExpiredError {
   return error instanceof AdminSessionExpiredError;
 }
@@ -249,6 +262,8 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     SupportWorkbenchDiagnostic[] | null
   >(null);
   const [diagnosticEntries, setDiagnosticEntries] = useState<DiagnosticLogEntry[] | null>(null);
+  const [diagnosticFilters, setDiagnosticFilters] = useState<DiagnosticLogFilters>({});
+  const [diagnosticPage, setDiagnosticPage] = useState<DiagnosticLogPageResponse | null>(null);
   const [expandedDiagnosticId, setExpandedDiagnosticId] = useState<string | null>(null);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [connection, setConnection] = useState<ConnectionState | null>(null);
@@ -281,6 +296,9 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     }
     if (tab === "monitoring") {
       void loadMonitoring();
+    }
+    if (tab === "diagnostics") {
+      void loadDiagnostics();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
@@ -551,14 +569,26 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     }
   }
 
-  async function loadDiagnostics(background = false) {
+  async function loadDiagnostics(
+    background = false,
+    offset = 0,
+    filters: DiagnosticLogFilters = diagnosticFilters,
+  ) {
     if (!background) {
       setLoading(true);
       setError(null);
     }
     try {
-      const res = await fetchAdmin("/api/admin/diagnostics?limit=200");
-      const data = (await res.json()) as { entries?: DiagnosticLogEntry[]; error?: string };
+      const query = buildDiagnosticLogQueryString(
+        normaliseDiagnosticLogFilters(filters),
+        { limit: DIAGNOSTIC_PAGE_LIMIT, offset },
+      );
+      const res = await fetchAdmin(`/api/admin/diagnostics${query}`);
+      const data = (await res.json()) as {
+        entries?: DiagnosticLogEntry[];
+        page?: DiagnosticLogPageResponse;
+        error?: string;
+      };
       if (!res.ok) {
         if (!background) {
           setError(data.error ?? "Failed to load diagnostic log");
@@ -566,6 +596,16 @@ export function AdminConsole({ email }: AdminConsoleProps) {
         return;
       }
       setDiagnosticEntries(data.entries ?? []);
+      setDiagnosticPage(
+        data.page ?? {
+          limit: DIAGNOSTIC_PAGE_LIMIT,
+          offset,
+          returned: data.entries?.length ?? 0,
+          hasMore: false,
+          nextOffset: null,
+        },
+      );
+      setExpandedDiagnosticId(null);
     } catch (caughtError) {
       if (isAdminSessionExpiredError(caughtError)) {
         return;
@@ -581,7 +621,38 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   }
 
   function onLoadDiagnostics() {
-    void loadDiagnostics();
+    void loadDiagnostics(false, 0);
+  }
+
+  function setDiagnosticFilter<K extends keyof DiagnosticLogFilters>(
+    key: K,
+    value: DiagnosticLogFilters[K],
+  ) {
+    setDiagnosticFilters((current) => ({ ...current, [key]: value }));
+  }
+
+  function applyDiagnosticFilters() {
+    void loadDiagnostics(false, 0);
+  }
+
+  function clearDiagnosticFilters() {
+    const clearedFilters: DiagnosticLogFilters = {};
+    setDiagnosticFilters(clearedFilters);
+    setDiagnosticPage(null);
+    setExpandedDiagnosticId(null);
+    void loadDiagnostics(false, 0, clearedFilters);
+  }
+
+  function loadPreviousDiagnosticPage() {
+    const nextOffset = Math.max((diagnosticPage?.offset ?? 0) - DIAGNOSTIC_PAGE_LIMIT, 0);
+    void loadDiagnostics(false, nextOffset);
+  }
+
+  function loadNextDiagnosticPage() {
+    if (diagnosticPage?.nextOffset === null || diagnosticPage?.nextOffset === undefined) {
+      return;
+    }
+    void loadDiagnostics(false, diagnosticPage.nextOffset);
   }
 
   function onLoadSupportLog() {
@@ -1934,11 +2005,155 @@ export function AdminConsole({ email }: AdminConsoleProps) {
             Entries are append-only and scoped to your Customer. Timestamps are ISO 8601 in UTC.
             Secrets and credentials are redacted.
           </p>
+          <div
+            style={{
+              display: "grid",
+              gap: "0.75rem",
+              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              marginBottom: "1rem",
+              alignItems: "end",
+            }}
+          >
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              <span>ExamAttempt ID</span>
+              <input
+                value={diagnosticFilters.examAttemptId ?? ""}
+                onChange={(event) => setDiagnosticFilter("examAttemptId", event.target.value)}
+                placeholder="attempt-123"
+              />
+            </label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              <span>Exam ID</span>
+              <input
+                value={diagnosticFilters.examId ?? ""}
+                onChange={(event) => setDiagnosticFilter("examId", event.target.value)}
+                placeholder="exam-123"
+              />
+            </label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              <span>Candidate email</span>
+              <input
+                value={diagnosticFilters.candidateEmail ?? ""}
+                onChange={(event) => setDiagnosticFilter("candidateEmail", event.target.value)}
+                placeholder="candidate@helioscx.demo"
+              />
+            </label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              <span>Operation</span>
+              <input
+                value={diagnosticFilters.operation ?? ""}
+                onChange={(event) => setDiagnosticFilter("operation", event.target.value)}
+                placeholder="exam_attempt.resume"
+              />
+            </label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              <span>Outcome</span>
+              <select
+                value={diagnosticFilters.outcome ?? ""}
+                onChange={(event) =>
+                  setDiagnosticFilter(
+                    "outcome",
+                    (event.target.value || undefined) as DiagnosticLogFilters["outcome"],
+                  )
+                }
+              >
+                <option value="">All</option>
+                <option value="success">Success</option>
+                <option value="failure">Failure</option>
+              </select>
+            </label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              <span>Source</span>
+              <input
+                value={diagnosticFilters.source ?? ""}
+                onChange={(event) => setDiagnosticFilter("source", event.target.value)}
+                placeholder="runtime"
+              />
+            </label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              <span>Integration surface</span>
+              <input
+                value={diagnosticFilters.integrationSurface ?? ""}
+                onChange={(event) => setDiagnosticFilter("integrationSurface", event.target.value)}
+                placeholder="cloudshare.v4.environment"
+              />
+            </label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              <span>Correlation ID</span>
+              <input
+                value={diagnosticFilters.correlationId ?? ""}
+                onChange={(event) => setDiagnosticFilter("correlationId", event.target.value)}
+                placeholder="corr-123"
+              />
+            </label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              <span>CloudShare / external ID</span>
+              <input
+                value={diagnosticFilters.externalId ?? ""}
+                onChange={(event) => setDiagnosticFilter("externalId", event.target.value)}
+                placeholder="env-123"
+              />
+            </label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              <span>From (UTC ISO)</span>
+              <input
+                value={diagnosticFilters.from ?? ""}
+                onChange={(event) => setDiagnosticFilter("from", event.target.value)}
+                placeholder="2026-06-21T10:00:00.000Z"
+              />
+            </label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              <span>To (UTC ISO)</span>
+              <input
+                value={diagnosticFilters.to ?? ""}
+                onChange={(event) => setDiagnosticFilter("to", event.target.value)}
+                placeholder="2026-06-21T11:00:00.000Z"
+              />
+            </label>
+          </div>
           <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "1rem" }}>
+            <button onClick={applyDiagnosticFilters} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
+              {loading ? "Loading..." : "Apply Filters"}
+            </button>
+            <button onClick={clearDiagnosticFilters} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
+              Clear Filters
+            </button>
             <button onClick={onLoadDiagnostics} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
-              {loading ? "Loading..." : "Load Diagnostic Log"}
+              Refresh Page
             </button>
           </div>
+          {diagnosticPage && (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: "0.75rem",
+                flexWrap: "wrap",
+                alignItems: "center",
+                marginBottom: "0.75rem",
+              }}
+            >
+              <div style={{ color: "#555" }}>
+                Showing {diagnosticPage.returned} entries starting at row {diagnosticPage.offset + 1}.
+              </div>
+              <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
+                <button
+                  onClick={loadPreviousDiagnosticPage}
+                  disabled={loading || (diagnosticPage.offset ?? 0) === 0}
+                  style={{ padding: "0.4rem 1rem" }}
+                >
+                  Previous
+                </button>
+                <button
+                  onClick={loadNextDiagnosticPage}
+                  disabled={loading || !diagnosticPage.hasMore}
+                  style={{ padding: "0.4rem 1rem" }}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
           {diagnosticEntries && (
             <DiagnosticLogTable
               entries={diagnosticEntries}
