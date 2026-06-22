@@ -5,7 +5,7 @@
 > This file is a quick orientation; where it differs from those documents, **they win.**
 > The earlier Genesys/Kryterion "proctoring" framing is **retired** (see the 2026-06-13
 > grill-with-docs re-scope, `docs/discovery/2026-06-13-grill-with-docs-synthesis.md`).
-> The Matt Pocock skills (`/tdd`, `/diagnose`, `/zoom-out`, …) are available here too — use them.
+> The Matt Pocock skills (`/tdd`, `/diagnose-bugs`, `/zoom-out`, …) are available here too — use them.
 
 ## Project purpose
 
@@ -32,7 +32,7 @@ showing real CloudShare behaviour, CloudShare wins.
 3. Convert agreed scope into a PRD using `/to-prd`. **Done** — PRD v2.
 4. Break the PRD into vertical slices using `/to-issues`. **Done** — GitHub issues #39–#47.
 5. Use `/tdd` for every feature or behavioural change.
-6. Use `/diagnose` for bugs, broken tests, unclear runtime behaviour, or integration failures.
+6. Use `/diagnose-bugs` for bugs, broken tests, unclear runtime behaviour, or integration failures.
 7. Use `/zoom-out` before changing architecture or module boundaries.
 8. Use `/improve-codebase-architecture` regularly, especially after several features have landed.
 
