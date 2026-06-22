@@ -56,6 +56,11 @@ export interface ScoreResponse {
   readonly body: Record<string, unknown>;
 }
 
+type ScoreMetadata = {
+  readonly examTitle: string;
+  readonly scheduledFor: string | null;
+};
+
 export async function handleGetCandidateScore(
   deps: ScoreHandlerDeps,
   request: ScoreRequest,
@@ -100,6 +105,11 @@ export async function handleGetCandidateScore(
     return { status: 404, body: { error: "exam not found for attempt" } };
   }
 
+  const metadata: ScoreMetadata = {
+    examTitle: exam.title,
+    scheduledFor: attempt.scheduledFor?.toISOString() ?? null,
+  };
+
   const launch = await deps.launches.findByExamAttemptId(examAttemptId);
   if (!launch) {
     return { status: 404, body: { error: "no lab launch found for exam attempt" } };
@@ -108,6 +118,7 @@ export async function handleGetCandidateScore(
   if (!exam.scoreRetrievalEnabled) {
     const body = {
       examAttemptId,
+      ...metadata,
       experienceId: launch.experienceId,
       scoreRetrievalEnabled: false,
       scoreAvailable: false,
@@ -248,6 +259,7 @@ export async function handleGetCandidateScore(
         status: 200,
         body: {
           examAttemptId: result.examAttemptId,
+          ...metadata,
           experienceId: result.experienceId,
           scoreRetrievalEnabled: true,
           scoreAvailable: false,
@@ -300,6 +312,7 @@ export async function handleGetCandidateScore(
       status: 200,
       body: {
         examAttemptId: result.examAttemptId,
+        ...metadata,
         experienceId: result.experienceId,
         scoreRetrievalEnabled: true,
         scoreAvailable: true,

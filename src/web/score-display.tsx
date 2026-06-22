@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { ScoreResult } from "@/domain/score-result";
+import { getCandidateScorePresentation } from "./candidate-score-state";
 
 interface ScoreDisplayProps {
   examAttemptId: string;
@@ -12,12 +13,16 @@ type FetchState = "loading" | "loaded" | "error";
 
 type ScorePayload =
   | (ScoreResult & {
+      examTitle: string;
+      scheduledFor: string | null;
       scoreRetrievalEnabled: true;
       scoreAvailable: true;
       limitations: string[];
     })
   | {
       examAttemptId: string;
+      examTitle: string;
+      scheduledFor: string | null;
       experienceId: string;
       scoreRetrievalEnabled: boolean;
       scoreAvailable: false;
@@ -112,6 +117,12 @@ export function ScoreDisplay({ examAttemptId }: ScoreDisplayProps) {
 
   if (!score) return null;
 
+  const presentation = getCandidateScorePresentation({
+    examAttemptId: score.examAttemptId,
+    examTitle: score.examTitle,
+    scheduledFor: score.scheduledFor,
+  });
+
   return (
     <section
       style={{
@@ -125,7 +136,11 @@ export function ScoreDisplay({ examAttemptId }: ScoreDisplayProps) {
     >
       <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "flex-start", flexWrap: "wrap" }}>
         <div>
-          <h2 style={{ margin: 0 }}>Guided Journey score</h2>
+          <h2 style={{ margin: 0 }}>{presentation.heading}</h2>
+          <p style={{ margin: "0.35rem 0 0", color: "#555" }}>{presentation.supportDetail}</p>
+          {presentation.scheduledForLabel ? (
+            <p style={{ margin: "0.35rem 0 0", color: "#555" }}>{presentation.scheduledForLabel}</p>
+          ) : null}
           <p style={{ margin: "0.35rem 0 0", color: "#555" }}>
             Review the recorded CloudShare progress for this completed exam attempt.
           </p>

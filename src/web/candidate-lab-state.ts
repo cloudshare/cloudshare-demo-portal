@@ -26,6 +26,7 @@ export function getCandidateLabPresentation(input: {
   readonly examAttemptId: string;
   readonly examTitle: string;
   readonly timeLimitMinutes: number;
+  readonly scheduledFor: string | null;
 }) {
   return {
     heading: input.examTitle,
@@ -37,6 +38,20 @@ export function getCandidateLabPresentation(input: {
     showCandidateHomeLink: true,
     showScoreLink: input.status === "completed",
     supportDetail: `Exam attempt: ${input.examAttemptId}`,
+    scheduledForLabel: formatScheduledForLabel(input.scheduledFor),
     timeLimitLabel: `${input.timeLimitMinutes} minute limit`,
   };
+}
+
+function formatScheduledForLabel(scheduledFor: string | null): string | null {
+  if (!scheduledFor) {
+    return null;
+  }
+
+  const scheduledForDate = new Date(scheduledFor);
+  if (Number.isNaN(scheduledForDate.getTime())) {
+    return null;
+  }
+
+  return `Scheduled for ${scheduledForDate.toLocaleString()}`;
 }
