@@ -25,6 +25,21 @@ function renderCandidateName(firstName: string | null, lastName: string | null):
   return fullName || "Unavailable";
 }
 
+function buildCloudShareIdRows(
+  cloudShare: ExamAttemptDiagnosticDrilldownReadModel["cloudShare"],
+): Array<{ label: string; value: string | null }> {
+  const trainingId = cloudShare.trainingId?.trim() || null;
+  const experienceId = cloudShare.experienceId?.trim() || trainingId;
+
+  return [
+    { label: "Experience ID", value: experienceId },
+    ...(trainingId && trainingId !== experienceId ? [{ label: "Training ID", value: trainingId }] : []),
+    { label: "Environment external ID", value: cloudShare.environmentExternalId },
+    { label: "Environment ID", value: cloudShare.environmentId },
+    { label: "Participant ID", value: cloudShare.participantId },
+  ];
+}
+
 function buildTimelineDomId(entry: ExamAttemptDiagnosticTimelineEntry): string {
   return `exam-attempt-diagnostic-entry-${entry.id}`;
 }
@@ -133,21 +148,11 @@ export function ExamAttemptDiagnosticDrilldown({
           <section>
             <h3 style={{ margin: "0 0 0.5rem", fontSize: "0.95rem" }}>CloudShare IDs</h3>
             <div style={{ display: "grid", gap: "0.35rem", fontSize: "0.9rem" }}>
-              <div>
-                <strong>Training ID:</strong> {renderOptional(drilldown.cloudShare.trainingId)}
-              </div>
-              <div>
-                <strong>Experience ID:</strong> {renderOptional(drilldown.cloudShare.experienceId)}
-              </div>
-              <div>
-                <strong>Environment external ID:</strong> {renderOptional(drilldown.cloudShare.environmentExternalId)}
-              </div>
-              <div>
-                <strong>Environment ID:</strong> {renderOptional(drilldown.cloudShare.environmentId)}
-              </div>
-              <div>
-                <strong>Participant ID:</strong> {renderOptional(drilldown.cloudShare.participantId)}
-              </div>
+              {buildCloudShareIdRows(drilldown.cloudShare).map((row) => (
+                <div key={row.label}>
+                  <strong>{row.label}:</strong> {renderOptional(row.value)}
+                </div>
+              ))}
             </div>
           </section>
 

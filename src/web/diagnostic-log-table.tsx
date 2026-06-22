@@ -230,7 +230,7 @@ export function DiagnosticLogTable({
                     {entry.examAttemptId && onOpenExamAttempt ? (
                       <button
                         type="button"
-                        aria-label={`Open ExamAttempt drilldown for ${entry.examAttemptId}`}
+                        aria-label={`Filter Support Diagnostics by ExamAttempt ${entry.examAttemptId}`}
                         onClick={(event) => {
                           event.stopPropagation();
                           onOpenExamAttempt(entry.examAttemptId!);

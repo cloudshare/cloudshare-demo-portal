@@ -23,6 +23,12 @@ export interface DiagnosticLogPage {
   readonly offset: number;
 }
 
+export interface ExamAttemptDiagnosticsNavigation {
+  readonly tab: "diagnostics";
+  readonly filters: DiagnosticLogFilters;
+  readonly pageOffset: 0;
+}
+
 export type AdminTab =
   | "connection"
   | "exams"
@@ -71,37 +77,6 @@ export function beginLatestOnlyRequest(activeRequestId: number): number {
 
 export function isLatestOnlyResponse(activeRequestId: number, responseRequestId: number): boolean {
   return activeRequestId === responseRequestId;
-}
-
-export interface ExamAttemptDiagnosticDrilldownRequestState {
-  readonly requestId: number;
-  readonly attemptId: string | null;
-}
-
-export function beginExamAttemptDiagnosticDrilldownRequest(
-  state: ExamAttemptDiagnosticDrilldownRequestState,
-  attemptId: string,
-): ExamAttemptDiagnosticDrilldownRequestState {
-  return {
-    requestId: beginLatestOnlyRequest(state.requestId),
-    attemptId,
-  };
-}
-
-export function closeExamAttemptDiagnosticDrilldownRequest(
-  state: ExamAttemptDiagnosticDrilldownRequestState,
-): ExamAttemptDiagnosticDrilldownRequestState {
-  return {
-    requestId: beginLatestOnlyRequest(state.requestId),
-    attemptId: null,
-  };
-}
-
-export function shouldApplyExamAttemptDiagnosticDrilldownResponse(
-  state: ExamAttemptDiagnosticDrilldownRequestState,
-  response: { readonly requestId: number; readonly attemptId: string },
-): boolean {
-  return state.requestId === response.requestId && state.attemptId === response.attemptId;
 }
 
 export function getAdminTabLabel(tab: AdminTab): string {
@@ -185,6 +160,20 @@ export function buildDiagnosticLogQueryString(
   params.set("offset", String(page.offset));
   const query = params.toString();
   return query ? `?${query}` : "";
+}
+
+export function buildExamAttemptDiagnosticsNavigation(
+  filters: DiagnosticLogFilters,
+  examAttemptId: string,
+): ExamAttemptDiagnosticsNavigation {
+  return {
+    tab: "diagnostics",
+    filters: {
+      ...filters,
+      examAttemptId: examAttemptId.trim(),
+    },
+    pageOffset: 0,
+  };
 }
 
 export function buildWebhookCallbackUrl(

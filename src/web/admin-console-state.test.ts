@@ -3,10 +3,9 @@ import {
   ADMIN_SESSION_EXPIRED_MESSAGE,
   ADMIN_TABS,
   beginLatestOnlyRequest,
-  beginExamAttemptDiagnosticDrilldownRequest,
+  buildExamAttemptDiagnosticsNavigation,
   buildDiagnosticLogQueryString,
   buildWebhookCallbackUrl,
-  closeExamAttemptDiagnosticDrilldownRequest,
   getAdminTabLabel,
   getAllowedRegionValidationMessage,
   getExamAuthoringMode,
@@ -16,7 +15,6 @@ import {
   isAdminSessionExpiredStatus,
   isLatestOnlyResponse,
   reconcileAllowedRegionIds,
-  shouldApplyExamAttemptDiagnosticDrilldownResponse,
   shouldShowCandidateProvisioning,
   shouldClearAdminBannerOnTabChange,
 } from "./admin-console-state";
@@ -32,35 +30,24 @@ describe("latest-only request coordination", () => {
     expect(isLatestOnlyResponse(2, 1)).toBe(false);
   });
 
-  it("ignores a stale drilldown response after a different ExamAttempt is opened", () => {
-    const first = beginExamAttemptDiagnosticDrilldownRequest({ requestId: 0, attemptId: null }, "attempt-a");
-    const second = beginExamAttemptDiagnosticDrilldownRequest(first, "attempt-b");
-
+  it("switches Session Monitoring drilldown actions to Support Diagnostics with the ExamAttempt filter applied", () => {
     expect(
-      shouldApplyExamAttemptDiagnosticDrilldownResponse(second, {
-        requestId: first.requestId,
-        attemptId: "attempt-a",
-      }),
-    ).toBe(false);
-    expect(
-      shouldApplyExamAttemptDiagnosticDrilldownResponse(second, {
-        requestId: second.requestId,
-        attemptId: "attempt-b",
-      }),
-    ).toBe(true);
-  });
-
-  it("invalidates an in-flight drilldown response when the panel is closed", () => {
-    const opened = beginExamAttemptDiagnosticDrilldownRequest({ requestId: 0, attemptId: null }, "attempt-a");
-    const closed = closeExamAttemptDiagnosticDrilldownRequest(opened);
-
-    expect(
-      shouldApplyExamAttemptDiagnosticDrilldownResponse(closed, {
-        requestId: opened.requestId,
-        attemptId: "attempt-a",
-      }),
-    ).toBe(false);
-    expect(closed.attemptId).toBeNull();
+      buildExamAttemptDiagnosticsNavigation(
+        {
+          source: "runtime",
+          outcome: "failure",
+        },
+        "  attempt-a  ",
+      ),
+    ).toEqual({
+      tab: "diagnostics",
+      filters: {
+        source: "runtime",
+        outcome: "failure",
+        examAttemptId: "attempt-a",
+      },
+      pageOffset: 0,
+    });
   });
 });
 

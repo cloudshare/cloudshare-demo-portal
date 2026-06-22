@@ -8,11 +8,10 @@ import {
   ADMIN_SESSION_EXPIRED_MESSAGE,
   type AdminTab,
   beginLatestOnlyRequest,
-  beginExamAttemptDiagnosticDrilldownRequest,
+  buildExamAttemptDiagnosticsNavigation,
   buildDiagnosticLogQueryString,
   buildWebhookCallbackUrl,
   buildEventRecordRowKey,
-  closeExamAttemptDiagnosticDrilldownRequest,
   type DiagnosticLogFilters,
   getAdminTabLabel,
   getAllowedRegionValidationMessage,
@@ -22,7 +21,6 @@ import {
   isLatestOnlyResponse,
   normaliseDiagnosticLogFilters,
   reconcileAllowedRegionIds,
-  shouldApplyExamAttemptDiagnosticDrilldownResponse,
   shouldClearAdminBannerOnTabChange,
   shouldShowCandidateProvisioning,
 } from "./admin-console-state";
@@ -30,10 +28,9 @@ import {
   DiagnosticLogTable,
   type DiagnosticLogTableEntry as DiagnosticLogEntry,
 } from "./diagnostic-log-table";
-import { ExamAttemptDiagnosticDrilldown } from "./exam-attempt-diagnostic-drilldown";
 import { EventLogTable } from "./event-log-table";
+import { MonitoringAttemptDetails } from "./monitoring-attempt-details";
 import { SupportLogTable } from "./support-log-table";
-import type { ExamAttemptDiagnosticDrilldownReadModel } from "@/api/admin-exam-attempt-diagnostics";
 import type {
   AdminMonitoringView as MonitoringView,
   MonitoringAttemptView as MonitoringAttempt,
@@ -99,11 +96,6 @@ interface DiagnosticLogPageResponse {
   returned: number;
   hasMore: boolean;
   nextOffset: number | null;
-}
-
-interface ExamAttemptDiagnosticDrilldownResponse {
-  drilldown?: ExamAttemptDiagnosticDrilldownReadModel;
-  error?: string;
 }
 
 interface ConnectionDiagnostic {
@@ -241,15 +233,6 @@ function isAdminSessionExpiredError(error: unknown): error is AdminSessionExpire
   return error instanceof AdminSessionExpiredError;
 }
 
-function isAbortError(error: unknown): boolean {
-  return (
-    typeof error === "object" &&
-    error !== null &&
-    "name" in error &&
-    (error as { name?: string }).name === "AbortError"
-  );
-}
-
 export function AdminConsole({ email }: AdminConsoleProps) {
   const router = useRouter();
   const [tab, setTab] = useState<AdminTab>("connection");
@@ -274,8 +257,6 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   const [examCorrelationId, setExamCorrelationId] = useState<string | null>(null);
   const projectResourcesRequestIdRef = useRef(0);
   const blueprintDetailRequestIdRef = useRef(0);
-  const diagnosticDrilldownRequestRef = useRef({ requestId: 0, attemptId: null as string | null });
-  const diagnosticDrilldownAbortControllerRef = useRef<AbortController | null>(null);
   const [examAttemptFilter, setExamAttemptFilter] = useState("");
   const [auditRecords, setAuditRecords] = useState<AuditRecord[] | null>(null);
   const [eventRecords, setEventRecords] = useState<EventLogRecord[] | null>(null);
@@ -287,11 +268,6 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   const [diagnosticFilters, setDiagnosticFilters] = useState<DiagnosticLogFilters>({});
   const [diagnosticPage, setDiagnosticPage] = useState<DiagnosticLogPageResponse | null>(null);
   const [expandedDiagnosticId, setExpandedDiagnosticId] = useState<string | null>(null);
-  const [diagnosticDrilldown, setDiagnosticDrilldown] =
-    useState<ExamAttemptDiagnosticDrilldownReadModel | null>(null);
-  const [diagnosticDrilldownAttemptId, setDiagnosticDrilldownAttemptId] = useState<string | null>(null);
-  const [diagnosticDrilldownLoading, setDiagnosticDrilldownLoading] = useState(false);
-  const [diagnosticDrilldownError, setDiagnosticDrilldownError] = useState<string | null>(null);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [connection, setConnection] = useState<ConnectionState | null>(null);
   const [apiId, setApiId] = useState("");
@@ -512,79 +488,14 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     }
   }
 
-  async function openExamAttemptDiagnosticDrilldown(examAttemptId: string) {
-    diagnosticDrilldownAbortControllerRef.current?.abort();
-    const requestState = beginExamAttemptDiagnosticDrilldownRequest(
-      diagnosticDrilldownRequestRef.current,
-      examAttemptId,
-    );
-    diagnosticDrilldownRequestRef.current = requestState;
-    const abortController = new AbortController();
-    diagnosticDrilldownAbortControllerRef.current = abortController;
-    setDiagnosticDrilldownAttemptId(examAttemptId);
-    setDiagnosticDrilldown(null);
-    setDiagnosticDrilldownLoading(true);
-    setDiagnosticDrilldownError(null);
-    try {
-      const res = await fetchAdmin(
-        `/api/admin/diagnostics/attempts/${encodeURIComponent(examAttemptId)}`,
-        { signal: abortController.signal },
-      );
-      const data = (await res.json()) as ExamAttemptDiagnosticDrilldownResponse;
-      if (
-        !shouldApplyExamAttemptDiagnosticDrilldownResponse(diagnosticDrilldownRequestRef.current, {
-          requestId: requestState.requestId,
-          attemptId: examAttemptId,
-        })
-      ) {
-        return;
-      }
-      if (!res.ok) {
-        setDiagnosticDrilldown(null);
-        setDiagnosticDrilldownError(data.error ?? "Failed to load ExamAttempt diagnostic drilldown");
-        return;
-      }
-      setDiagnosticDrilldown(data.drilldown ?? null);
-    } catch (caughtError) {
-      if (isAbortError(caughtError)) {
-        return;
-      }
-      if (isAdminSessionExpiredError(caughtError)) {
-        return;
-      }
-      if (
-        !shouldApplyExamAttemptDiagnosticDrilldownResponse(diagnosticDrilldownRequestRef.current, {
-          requestId: requestState.requestId,
-          attemptId: examAttemptId,
-        })
-      ) {
-        return;
-      }
-      setDiagnosticDrilldown(null);
-      setDiagnosticDrilldownError("Failed to load ExamAttempt diagnostic drilldown");
-    } finally {
-      if (
-        shouldApplyExamAttemptDiagnosticDrilldownResponse(diagnosticDrilldownRequestRef.current, {
-          requestId: requestState.requestId,
-          attemptId: examAttemptId,
-        })
-      ) {
-        diagnosticDrilldownAbortControllerRef.current = null;
-        setDiagnosticDrilldownLoading(false);
-      }
+  function openExamAttemptSupportDiagnostics(examAttemptId: string) {
+    const navigation = buildExamAttemptDiagnosticsNavigation(diagnosticFilters, examAttemptId);
+    setDiagnosticFilters(navigation.filters);
+    setExpandedDiagnosticId(null);
+    setTab(navigation.tab);
+    if (tab === "diagnostics") {
+      void loadDiagnostics(false, navigation.pageOffset, navigation.filters);
     }
-  }
-
-  function closeExamAttemptDiagnosticDrilldown() {
-    diagnosticDrilldownAbortControllerRef.current?.abort();
-    diagnosticDrilldownAbortControllerRef.current = null;
-    diagnosticDrilldownRequestRef.current = closeExamAttemptDiagnosticDrilldownRequest(
-      diagnosticDrilldownRequestRef.current,
-    );
-    setDiagnosticDrilldown(null);
-    setDiagnosticDrilldownAttemptId(null);
-    setDiagnosticDrilldownError(null);
-    setDiagnosticDrilldownLoading(false);
   }
 
   async function loadEvents() {
@@ -1968,57 +1879,47 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                           <summary style={{ cursor: "pointer", fontWeight: 600 }}>
                             {attempt.candidateName} · {attempt.examTitle} · {formatAttemptStatus(attempt.status)}
                           </summary>
-                          <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.75rem", fontSize: "0.9rem" }}>
-                            <div>Candidate: {attempt.candidateEmail}</div>
-                            <div>Scheduled (UTC): {formatUtcTimestamp(attempt.scheduledFor)}</div>
-                            <div>Training ID: {attempt.trainingId ?? "-"}</div>
-                            <div>Environment: {attempt.environmentExternalId ?? "-"}</div>
-                            <div>
-                              <button
-                                type="button"
-                                onClick={() => void openExamAttemptDiagnosticDrilldown(attempt.id)}
-                                style={{ padding: "0.35rem 0.75rem" }}
-                              >
-                                Open support drilldown
-                              </button>
-                            </div>
-                            <div style={{ overflowX: "auto" }}>
-                              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
-                                <thead>
-                                  <tr style={{ background: "#f5f5f5" }}>
-                                    {["Time", "Kind", "Event", "Outcome", "Details"].map((heading) => (
-                                      <th key={heading} style={{ textAlign: "left", padding: "0.35rem", borderBottom: "1px solid #ddd" }}>
-                                        {heading}
-                                      </th>
-                                    ))}
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {attempt.timeline.length === 0 && (
-                                    <tr>
-                                      <td colSpan={5} style={{ padding: "0.4rem", color: "#666" }}>
-                                        No timeline entries recorded.
-                                      </td>
-                                    </tr>
-                                  )}
-                                  {attempt.timeline.map((entry, index) => (
-                                    <tr key={`${attempt.id}-${entry.occurredAt}-${entry.kind}-${index}`} style={{ borderBottom: "1px solid #eee", verticalAlign: "top" }}>
-                                      <td style={{ padding: "0.35rem", whiteSpace: "nowrap" }}>
-                                        {formatUtcTimestamp(entry.occurredAt)}
-                                      </td>
-                                      <td style={{ padding: "0.35rem" }}>{entry.kind}</td>
-                                      <td style={{ padding: "0.35rem" }}>{entry.kind === "audit" ? entry.action : entry.eventType}</td>
-                                      <td style={{ padding: "0.35rem" }}>
-                                        {entry.kind === "audit"
-                                          ? entry.outcome
-                                          : (typeof entry.responseStatus === "number" ? `HTTP ${entry.responseStatus}` : entry.failureMode ?? "-")}
-                                      </td>
-                                      <td style={{ padding: "0.35rem", color: "#444" }}>{formatTimelineEntry(entry)}</td>
-                                    </tr>
+                          <MonitoringAttemptDetails
+                            attempt={attempt}
+                            scheduledForLabel={formatUtcTimestamp(attempt.scheduledFor)}
+                            onOpenSupportDiagnostics={openExamAttemptSupportDiagnostics}
+                          />
+                          <div style={{ overflowX: "auto" }}>
+                            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
+                              <thead>
+                                <tr style={{ background: "#f5f5f5" }}>
+                                  {["Time", "Kind", "Event", "Outcome", "Details"].map((heading) => (
+                                    <th key={heading} style={{ textAlign: "left", padding: "0.35rem", borderBottom: "1px solid #ddd" }}>
+                                      {heading}
+                                    </th>
                                   ))}
-                                </tbody>
-                              </table>
-                            </div>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {attempt.timeline.length === 0 && (
+                                  <tr>
+                                    <td colSpan={5} style={{ padding: "0.4rem", color: "#666" }}>
+                                      No timeline entries recorded.
+                                    </td>
+                                  </tr>
+                                )}
+                                {attempt.timeline.map((entry, index) => (
+                                  <tr key={`${attempt.id}-${entry.occurredAt}-${entry.kind}-${index}`} style={{ borderBottom: "1px solid #eee", verticalAlign: "top" }}>
+                                    <td style={{ padding: "0.35rem", whiteSpace: "nowrap" }}>
+                                      {formatUtcTimestamp(entry.occurredAt)}
+                                    </td>
+                                    <td style={{ padding: "0.35rem" }}>{entry.kind}</td>
+                                    <td style={{ padding: "0.35rem" }}>{entry.kind === "audit" ? entry.action : entry.eventType}</td>
+                                    <td style={{ padding: "0.35rem" }}>
+                                      {entry.kind === "audit"
+                                        ? entry.outcome
+                                        : (typeof entry.responseStatus === "number" ? `HTTP ${entry.responseStatus}` : entry.failureMode ?? "-")}
+                                    </td>
+                                    <td style={{ padding: "0.35rem", color: "#444" }}>{formatTimelineEntry(entry)}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
                           </div>
                         </details>
                       ))}
@@ -2041,20 +1942,12 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                           {attempt.candidateName} · {attempt.examTitle} · {formatMonitoringResult(attempt.result)}
                         </summary>
                         <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.75rem", fontSize: "0.9rem" }}>
-                          <div>Candidate: {attempt.candidateEmail}</div>
                           <div>Status: {formatAttemptStatus(attempt.status)}</div>
-                          <div>Scheduled (UTC): {formatUtcTimestamp(attempt.scheduledFor)}</div>
-                          <div>Training ID: {attempt.trainingId ?? "-"}</div>
-                          <div>Environment: {attempt.environmentExternalId ?? "-"}</div>
-                          <div>
-                            <button
-                              type="button"
-                              onClick={() => void openExamAttemptDiagnosticDrilldown(attempt.id)}
-                              style={{ padding: "0.35rem 0.75rem" }}
-                            >
-                              Open support drilldown
-                            </button>
-                          </div>
+                          <MonitoringAttemptDetails
+                            attempt={attempt}
+                            scheduledForLabel={formatUtcTimestamp(attempt.scheduledFor)}
+                            onOpenSupportDiagnostics={openExamAttemptSupportDiagnostics}
+                          />
                           <div style={{ overflowX: "auto" }}>
                             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
                               <thead>
@@ -2275,6 +2168,21 @@ export function AdminConsole({ email }: AdminConsoleProps) {
               </div>
             </div>
           )}
+          {diagnosticFilters.examAttemptId ? (
+            <div
+              style={{
+                marginBottom: "0.75rem",
+                padding: "0.65rem 0.8rem",
+                border: "1px solid #dbe4ff",
+                borderRadius: "8px",
+                background: "#f5f8ff",
+                color: "#123",
+              }}
+            >
+              Filtered to ExamAttempt ID{" "}
+              <span style={{ fontFamily: "monospace" }}>{diagnosticFilters.examAttemptId}</span>.
+            </div>
+          ) : null}
           {diagnosticEntries && (
             <DiagnosticLogTable
               entries={diagnosticEntries}
@@ -2282,15 +2190,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
               onToggleExpanded={(id) =>
                 setExpandedDiagnosticId(expandedDiagnosticId === id ? null : id)
               }
-              onOpenExamAttempt={(examAttemptId) => void openExamAttemptDiagnosticDrilldown(examAttemptId)}
-            />
-          )}
-          {(diagnosticDrilldownAttemptId || diagnosticDrilldownLoading || diagnosticDrilldownError || diagnosticDrilldown) && (
-            <ExamAttemptDiagnosticDrilldown
-              drilldown={diagnosticDrilldown}
-              loading={diagnosticDrilldownLoading}
-              error={diagnosticDrilldownError}
-              onClose={closeExamAttemptDiagnosticDrilldown}
+              onOpenExamAttempt={openExamAttemptSupportDiagnostics}
             />
           )}
           <div style={{ marginTop: "2rem" }}>
@@ -2377,16 +2277,6 @@ export function AdminConsole({ email }: AdminConsoleProps) {
           )}
         </section>
       )}
-
-      {tab === "monitoring" &&
-        (diagnosticDrilldownAttemptId || diagnosticDrilldownLoading || diagnosticDrilldownError || diagnosticDrilldown) && (
-          <ExamAttemptDiagnosticDrilldown
-            drilldown={diagnosticDrilldown}
-            loading={diagnosticDrilldownLoading}
-            error={diagnosticDrilldownError}
-            onClose={closeExamAttemptDiagnosticDrilldown}
-          />
-        )}
 
       {tab === "resources" && (
         <section>

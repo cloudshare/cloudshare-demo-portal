@@ -82,7 +82,7 @@ describe("ExamAttemptDiagnosticDrilldown", () => {
     expect(html).toContain("Scoring:</strong> Enabled");
   });
 
-  it("renders missing optional CloudShare IDs as Unavailable instead of a broken blank value", () => {
+  it("renders the shared CloudShare EX identifier as Experience ID and keeps missing optional IDs readable", () => {
     const html = renderToStaticMarkup(
       createElement(ExamAttemptDiagnosticDrilldown, {
         drilldown: DRILLDOWN,
@@ -92,7 +92,8 @@ describe("ExamAttemptDiagnosticDrilldown", () => {
       }),
     );
 
-    expect(html).toContain("Experience ID:</strong> Unavailable");
+    expect(html).toContain("Experience ID:</strong> training-1");
+    expect(html).not.toContain("Training ID:</strong> training-1");
     expect(html).toContain("Environment external ID:</strong> Unavailable");
     expect(html).toContain("Environment ID:</strong> Unavailable");
   });
