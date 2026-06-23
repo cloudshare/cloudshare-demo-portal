@@ -11,6 +11,7 @@ export type LaunchState =
 
 export type AttemptStatus = "ready" | "in_progress" | "suspended" | "completed";
 export type RecoveryAction = "enter" | "resume" | "reopen";
+export type LaunchAction = "enter" | "resume";
 
 export function updateCandidateLabStatus(
   current: CandidateLabStatus | null,
@@ -77,4 +78,15 @@ export function getLauncherRecoveryAction(
     default:
       return null;
   }
+}
+
+export function getAttemptStatusAfterLaunchTransition(
+  currentStatus: AttemptStatus,
+  action: LaunchAction,
+): AttemptStatus {
+  if (action === "resume" && currentStatus === "suspended") {
+    return "in_progress";
+  }
+
+  return currentStatus;
 }

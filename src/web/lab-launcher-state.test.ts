@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  getAttemptStatusAfterLaunchTransition,
   getLauncherRecoveryAction,
   getLauncherSyncTarget,
   updateCandidateLabStatus,
@@ -57,5 +58,11 @@ describe("lab launcher state helpers", () => {
       label: "Resume exam",
     });
     expect(getLauncherRecoveryAction("completed")).toBeNull();
+  });
+
+  it("promotes a resumed attempt to in-progress before popup recovery is rendered", () => {
+    expect(getAttemptStatusAfterLaunchTransition("suspended", "resume")).toBe("in_progress");
+    expect(getAttemptStatusAfterLaunchTransition("ready", "enter")).toBe("ready");
+    expect(getAttemptStatusAfterLaunchTransition("in_progress", "resume")).toBe("in_progress");
   });
 });

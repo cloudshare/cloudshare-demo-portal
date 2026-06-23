@@ -38,17 +38,18 @@ export async function handleEnterExam(
   deps: EnterExamDeps,
   request: EnterExamRequest,
 ): Promise<EnterExamResponse> {
-  const existing = inFlightEnterRequests.get(request.examAttemptId);
+  const requestKey = buildEnterRequestKey(request);
+  const existing = inFlightEnterRequests.get(requestKey);
   if (existing) {
     return existing;
   }
 
   const pending = handleEnterExamOnce(deps, request).finally(() => {
-    if (inFlightEnterRequests.get(request.examAttemptId) === pending) {
-      inFlightEnterRequests.delete(request.examAttemptId);
+    if (inFlightEnterRequests.get(requestKey) === pending) {
+      inFlightEnterRequests.delete(requestKey);
     }
   });
-  inFlightEnterRequests.set(request.examAttemptId, pending);
+  inFlightEnterRequests.set(requestKey, pending);
   return pending;
 }
 
@@ -203,4 +204,8 @@ function textResponse(status: number, body: string): EnterExamResponse {
     },
     body,
   };
+}
+
+function buildEnterRequestKey(request: EnterExamRequest): string {
+  return `${request.candidateId}:${request.examAttemptId}`;
 }

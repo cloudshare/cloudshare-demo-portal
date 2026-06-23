@@ -4,7 +4,12 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { openEnterExamWindow } from "./enter-exam";
 import { isLabWindowOpen } from "./lab-window";
 import { preflightLabAction, resumeLabAttempt, suspendLabAttempt, type CandidateLabStatus, type AttemptStatus } from "./lab-launcher-client";
-import { getLauncherRecoveryAction, getLauncherSyncTarget, type LaunchState } from "./lab-launcher-state";
+import {
+  getAttemptStatusAfterLaunchTransition,
+  getLauncherRecoveryAction,
+  getLauncherSyncTarget,
+  type LaunchState,
+} from "./lab-launcher-state";
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const CHILD_POLL_INTERVAL_MS = 3_000;
@@ -35,6 +40,7 @@ export function LabLauncher({
         : "idle",
   );
   const [message, setMessage] = useState<string>("");
+  const [launcherAttemptStatus, setLauncherAttemptStatus] = useState<AttemptStatus>(currentAttemptStatus);
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const childPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const actionInFlightRef = useRef(false);
@@ -45,6 +51,7 @@ export function LabLauncher({
 
   useEffect(() => {
     currentAttemptStatusRef.current = currentAttemptStatus;
+    setLauncherAttemptStatus(currentAttemptStatus);
   }, [currentAttemptStatus]);
 
   useEffect(() => {
@@ -56,6 +63,8 @@ export function LabLauncher({
   }, [onLabStatusLoaded]);
 
   const reportAttemptStatusChange = useCallback((status: AttemptStatus) => {
+    currentAttemptStatusRef.current = status;
+    setLauncherAttemptStatus(status);
     if (lastReportedAttemptStatusRef.current === status) {
       return;
     }
@@ -269,8 +278,10 @@ export function LabLauncher({
         setMessage(result.message);
         return;
       }
+      reportAttemptStatusChange(
+        getAttemptStatusAfterLaunchTransition(currentAttemptStatusRef.current, "resume"),
+      );
       openEnterExamWindow(examAttemptId);
-      reportAttemptStatusChange("in_progress");
       setState("open");
     } catch (err) {
       setState("error");
@@ -328,7 +339,7 @@ export function LabLauncher({
         </button>
       )}
       {state === "error" && (() => {
-        const recoveryAction = getLauncherRecoveryAction(currentAttemptStatus);
+        const recoveryAction = getLauncherRecoveryAction(launcherAttemptStatus);
         if (!recoveryAction) {
           return null;
         }
