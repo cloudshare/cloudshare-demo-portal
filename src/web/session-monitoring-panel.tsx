@@ -184,7 +184,7 @@ function renderAttemptCard(
         }}
       >
         <span style={{ minWidth: 0, flex: "1 1 auto", overflowWrap: "anywhere" }}>
-          {attempt.candidateName} · {attempt.examTitle} · {formatMonitoringResult(attempt.result)}
+          {attempt.candidateName} · {attempt.candidateEmail} · {attempt.examTitle} · {formatMonitoringResult(attempt.result)}
         </span>
         {showStatusBadge ? (
           <span

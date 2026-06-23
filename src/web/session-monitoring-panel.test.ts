@@ -176,6 +176,43 @@ describe("SessionMonitoringPanel", () => {
 
     expect(html.match(/>suspended</g)?.length).toBe(1);
   });
+
+  it("leads attempt summaries with candidate identity before exam details", () => {
+    const html = renderToStaticMarkup(
+      createElement(SessionMonitoringPanel, {
+        monitoring: makeMonitoringView({
+          currentAttempts: {
+            scheduled: [
+              makeAttempt({
+                candidateName: "Scheduled Candidate",
+                candidateEmail: "scheduled.candidate@helioscx.demo",
+                examTitle: "Scheduled Exam",
+                status: "scheduled",
+              }),
+            ],
+            ready: [],
+            inProgress: [],
+            suspended: [],
+          },
+          history: [
+            makeAttempt({
+              candidateName: "History Candidate",
+              candidateEmail: "history.candidate@helioscx.demo",
+              examTitle: "History Exam",
+              status: "completed",
+            }),
+          ],
+        }),
+        loading: false,
+        onRefresh: () => {},
+        onLoadMoreHistory: () => {},
+        onOpenSupportDiagnostics: () => {},
+      }),
+    );
+
+    expect(html).toContain("Scheduled Candidate · scheduled.candidate@helioscx.demo · Scheduled Exam");
+    expect(html).toContain("History Candidate · history.candidate@helioscx.demo · History Exam");
+  });
 });
 
 describe("monitoring row keys", () => {
