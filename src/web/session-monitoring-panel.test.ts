@@ -177,7 +177,7 @@ describe("SessionMonitoringPanel", () => {
     expect(html.match(/>suspended</g)?.length).toBe(1);
   });
 
-  it("leads attempt summaries with candidate identity before exam details", () => {
+  it("leads attempt summaries with a bold candidate line and a normal exam line", () => {
     const html = renderToStaticMarkup(
       createElement(SessionMonitoringPanel, {
         monitoring: makeMonitoringView({
@@ -210,8 +210,10 @@ describe("SessionMonitoringPanel", () => {
       }),
     );
 
-    expect(html).toContain("Scheduled Candidate · scheduled.candidate@helioscx.demo · Scheduled Exam");
-    expect(html).toContain("History Candidate · history.candidate@helioscx.demo · History Exam");
+    expect(html).toContain("<strong style=\"color:#111827;font-weight:700\">Scheduled Candidate (scheduled.candidate@helioscx.demo)</strong>");
+    expect(html).toContain("<span style=\"color:#4b5563;font-weight:400\">Scheduled Exam");
+    expect(html).toContain("<strong style=\"color:#111827;font-weight:700\">History Candidate (history.candidate@helioscx.demo)</strong>");
+    expect(html).toContain("<span style=\"color:#4b5563;font-weight:400\">History Exam");
   });
 });
 

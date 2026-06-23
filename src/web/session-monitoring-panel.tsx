@@ -183,8 +183,14 @@ function renderAttemptCard(
           alignItems: "flex-start",
         }}
       >
-        <span style={{ minWidth: 0, flex: "1 1 auto", overflowWrap: "anywhere" }}>
-          {attempt.candidateName} · {attempt.candidateEmail} · {attempt.examTitle} · {formatMonitoringResult(attempt.result)}
+        <span style={{ minWidth: 0, flex: "1 1 auto", overflowWrap: "anywhere", display: "grid", gap: "0.1rem" }}>
+          <strong style={{ color: "#111827", fontWeight: 700 }}>
+            {attempt.candidateName} ({attempt.candidateEmail})
+          </strong>
+          <span style={{ color: "#4b5563", fontWeight: 400 }}>
+            {attempt.examTitle}
+            {attempt.result ? ` · ${formatMonitoringResult(attempt.result)}` : ""}
+          </span>
         </span>
         {showStatusBadge ? (
           <span
