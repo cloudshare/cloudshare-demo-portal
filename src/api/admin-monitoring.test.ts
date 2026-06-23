@@ -1,13 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { handleGetAdminMonitoring } from "./admin-monitoring";
-import type { AuditRepository } from "@/domain/audit-trail";
 import type {
   AdminMonitoringAttemptRepository,
   AdminMonitoringSummary,
   MonitoringAttemptPage,
   MonitoringAttemptRecord,
 } from "@/domain/admin-monitoring";
-import type { EventLogRepository } from "@/domain/event-log";
+import type { DiagnosticLogEntry, DiagnosticLogRepository } from "@/domain/diagnostic-log";
 import type { Logger } from "@/observability/logger";
 
 function makeLogger(): Logger {
@@ -71,64 +70,99 @@ function makeAttemptRepository(overrides?: {
   };
 }
 
-function makeAuditRepository(records: unknown[] = []): AuditRepository {
+function makeDiagnosticEntry(
+  partial: Partial<DiagnosticLogEntry> = {},
+): DiagnosticLogEntry {
   return {
-    write: vi.fn(),
-    listByExamAttemptId: vi.fn(),
-    listByExamAttemptIds: vi.fn().mockResolvedValue(records),
-    listAll: vi.fn(),
+    id: "diag-1",
+    occurredAt: new Date("2026-06-18T09:02:00.000Z"),
+    level: "info",
+    source: "runtime",
+    operation: "exam_attempt.schedule",
+    outcome: "success",
+    customerId: "customer-1",
+    actor: null,
+    subject: { type: "exam_attempt", id: "attempt-1" },
+    message: "ExamAttempt scheduled",
+    correlationId: "corr-1",
+    candidateEmail: "candidate@helioscx.demo",
+    examId: "exam-1",
+    examAttemptId: "attempt-1",
+    externalIds: null,
+    request: null,
+    response: null,
+    details: null,
+    ...partial,
   };
 }
 
-function makeEventLog(records: unknown[] = []): EventLogRepository {
+function makeDiagnosticRepository(recordsByAttemptId: Record<string, DiagnosticLogEntry[]> = {}): DiagnosticLogRepository {
   return {
     append: vi.fn(),
-    listFailureEventsByExamAttemptIds: vi.fn().mockResolvedValue(records),
-    listAll: vi.fn(),
+    query: vi.fn().mockImplementation(async (query) => {
+      if (!query?.examAttemptId) {
+        return [];
+      }
+      return recordsByAttemptId[query.examAttemptId] ?? [];
+    }),
   };
 }
 
 describe("handleGetAdminMonitoring", () => {
-  it("requests summary, current queues, and the terminal-history page separately without loading volatile timeline stores", async () => {
+  it("reconstructs visible attempt timelines from persisted diagnostics", async () => {
     const attempts = makeAttemptRepository({
       summary: makeSummary({
         scheduled: 1,
-        completed: 3,
-        expired: 2,
+        completed: 1,
       }),
       currentAttempts: [makeAttempt({ id: "attempt-current" })],
       history: {
         attempts: [
           makeAttempt({
-            id: "attempt-history-2",
+            id: "attempt-history-1",
             status: "completed",
           }),
-          makeAttempt({
-            id: "attempt-history-1",
-            status: "expired",
-          }),
         ],
-        total: 5,
-        limit: 2,
-        offset: 1,
+        total: 1,
+        limit: 25,
+        offset: 0,
       },
     });
-    const audit = makeAuditRepository([]);
-    const eventLog = makeEventLog([]);
+    const diagnostics = makeDiagnosticRepository({
+      "attempt-current": [
+        makeDiagnosticEntry({
+          id: "diag-current-scheduled",
+          examAttemptId: "attempt-current",
+          operation: "exam_attempt.schedule",
+          message: "ExamAttempt scheduled",
+        }),
+      ],
+      "attempt-history-1": [
+        makeDiagnosticEntry({
+          id: "diag-history-enter",
+          examAttemptId: "attempt-history-1",
+          occurredAt: new Date("2026-06-18T09:03:00.000Z"),
+          operation: "exam_attempt.enter",
+          message: "Candidate entered exam - redirecting to CloudShare",
+        }),
+        makeDiagnosticEntry({
+          id: "diag-history-complete",
+          examAttemptId: "attempt-history-1",
+          occurredAt: new Date("2026-06-18T09:04:00.000Z"),
+          operation: "exam_attempt.complete",
+          message: "Exam completed",
+        }),
+      ],
+    });
 
     const response = await handleGetAdminMonitoring(
       {
         attempts,
-        audit,
-        eventLog,
+        diagnostics,
         logger: makeLogger(),
       },
       {
         customerId: "customer-1",
-        query: {
-          historyLimit: "2",
-          historyOffset: "1",
-        },
       },
     );
 
@@ -136,19 +170,36 @@ describe("handleGetAdminMonitoring", () => {
     expect(attempts.countSummaryByCustomerId).toHaveBeenCalledWith("customer-1");
     expect(attempts.listCurrentByCustomerId).toHaveBeenCalledWith("customer-1");
     expect(attempts.listHistoryPageByCustomerId).toHaveBeenCalledWith("customer-1", {
-      limit: 2,
-      offset: 1,
+      limit: 25,
+      offset: 0,
     });
-    expect(audit.listByExamAttemptIds).not.toHaveBeenCalled();
-    expect(eventLog.listFailureEventsByExamAttemptIds).not.toHaveBeenCalled();
-    expect(response.body.monitoring.historyPage).toEqual({
-      limit: 2,
-      offset: 1,
-      returned: 2,
-      total: 5,
-      hasMore: true,
-      nextOffset: 3,
+    expect(diagnostics.query).toHaveBeenCalledTimes(2);
+    expect(diagnostics.query).toHaveBeenNthCalledWith(1, {
+      customerId: "customer-1",
+      examAttemptId: "attempt-current",
+      limit: 500,
     });
+    expect(diagnostics.query).toHaveBeenNthCalledWith(2, {
+      customerId: "customer-1",
+      examAttemptId: "attempt-history-1",
+      limit: 500,
+    });
+    expect(response.body.monitoring.currentAttempts.scheduled[0]?.timeline).toEqual([
+      expect.objectContaining({
+        id: "diag-current-scheduled",
+        operation: "exam_attempt.schedule",
+      }),
+    ]);
+    expect(response.body.monitoring.history[0]?.timeline).toEqual([
+      expect.objectContaining({
+        id: "diag-history-enter",
+        operation: "exam_attempt.enter",
+      }),
+      expect.objectContaining({
+        id: "diag-history-complete",
+        operation: "exam_attempt.complete",
+      }),
+    ]);
   });
 
   it("returns grouped current attempts and history for the admin customer", async () => {
@@ -166,8 +217,7 @@ describe("handleGetAdminMonitoring", () => {
             }),
           ],
         }),
-        audit: makeAuditRepository([]),
-        eventLog: makeEventLog([]),
+        diagnostics: makeDiagnosticRepository(),
         logger: makeLogger(),
       },
       { customerId: "customer-1" },
@@ -223,26 +273,26 @@ describe("handleGetAdminMonitoring", () => {
             offset: 0,
           },
         }),
-        audit: makeAuditRepository([
-          {
-            id: "attempt-failed:audit",
-            examAttemptId: "attempt-failed",
-            candidateId: "candidate-1",
-            action: "lab_launch_failed",
-            outcome: "failure",
-            details: {
-              attemptedOperation: "add_participant",
-              integrationSurface: "cloudshare.v4.training.participant",
-              method: "POST",
-              path: "/v4/trainings/training-1/students",
-              failureMode: "http_status",
-              responseStatus: 403,
-            },
-            error: "CloudShare provisioning failed for the scheduled exam.",
-            occurredAt: new Date("2026-06-18T09:02:00.000Z"),
-          },
-        ]),
-        eventLog: makeEventLog([]),
+        diagnostics: makeDiagnosticRepository({
+          "attempt-failed": [
+            makeDiagnosticEntry({
+              id: "diag-attempt-failed",
+              examAttemptId: "attempt-failed",
+              level: "warn",
+              operation: "cloudshare.add_participant",
+              outcome: "failure",
+              message: "CloudShare add participant failed",
+              details: {
+                attemptedOperation: "add_participant",
+                integrationSurface: "cloudshare.v4.training.participant",
+                method: "POST",
+                path: "/v4/trainings/training-1/students",
+                failureMode: "http_status",
+                responseStatus: 403,
+              },
+            }),
+          ],
+        }),
         logger: makeLogger(),
       },
       { customerId: "customer-1" },
@@ -261,7 +311,13 @@ describe("handleGetAdminMonitoring", () => {
       expect.objectContaining({
         id: "attempt-failed",
         status: "expired",
-        timeline: [],
+        timeline: [
+          expect.objectContaining({
+            id: "diag-attempt-failed",
+            operation: "cloudshare.add_participant",
+            outcome: "failure",
+          }),
+        ],
       }),
     ]);
   });

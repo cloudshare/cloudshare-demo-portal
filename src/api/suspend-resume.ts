@@ -29,6 +29,7 @@ import { ensureExamAttemptEnvironmentCorrelation } from "./exam-attempt-environm
 import type { ExamClock } from "@/domain/exam-clock";
 import type { ExamRepository } from "@/domain/exam-catalog";
 import { reconcileExamAttemptCompletion } from "@/domain/exam-attempt-completion";
+import { recordExamAttemptCompletionDiagnostic } from "./exam-attempt-completion-diagnostics";
 
 /**
  * Framework-agnostic handlers for the candidate-initiated suspend and resume
@@ -124,7 +125,7 @@ export async function handleSuspendExam(
   };
 
   try {
-    await reconcileExamAttemptCompletion(
+    const completion = await reconcileExamAttemptCompletion(
       {
         attempts: deps.attempts,
         exams: deps.exams ?? emptyExamRepository(),
@@ -135,6 +136,13 @@ export async function handleSuspendExam(
     const reconciledAttempt = await deps.attempts.findById(examAttemptId);
     if (!reconciledAttempt) {
       return { status: 404, body: { error: "exam attempt not found" } };
+    }
+    if (completion?.changed && completion.status === "completed") {
+      await recordExamAttemptCompletionDiagnostic(
+        deps.diagnostics,
+        reconciledAttempt,
+        deps.candidateEmail,
+      );
     }
     anchors = anchorsForAttempt(reconciledAttempt, deps.candidateEmail);
     if (reconciledAttempt.status !== "in_progress") {
@@ -244,7 +252,7 @@ export async function handleResumeExam(
   };
 
   try {
-    await reconcileExamAttemptCompletion(
+    const completion = await reconcileExamAttemptCompletion(
       {
         attempts: deps.attempts,
         exams: deps.exams ?? emptyExamRepository(),
@@ -255,6 +263,13 @@ export async function handleResumeExam(
     const reconciledAttempt = await deps.attempts.findById(examAttemptId);
     if (!reconciledAttempt) {
       return { status: 404, body: { error: "exam attempt not found" } };
+    }
+    if (completion?.changed && completion.status === "completed") {
+      await recordExamAttemptCompletionDiagnostic(
+        deps.diagnostics,
+        reconciledAttempt,
+        deps.candidateEmail,
+      );
     }
     anchors = anchorsForAttempt(reconciledAttempt, deps.candidateEmail);
     if (reconciledAttempt.status === "in_progress") {

@@ -7,6 +7,8 @@ import type { ExamTimer } from "@/domain/timer-sync";
 import { createExamClock, createInMemoryExamClockRepository } from "@/domain/exam-clock";
 import { createInMemoryExamCatalogRepository } from "@/persistence/exam-catalog-repository";
 import { createDraftExam, publishExam } from "@/domain/exam-catalog";
+import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
+import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -216,6 +218,8 @@ describe("handleEnterExam", () => {
     const exams = await seedExam();
     const clockRepository = createInMemoryExamClockRepository();
     const timer = makeTimer();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
     const clocks = createExamClock({
       clocks: clockRepository,
       now: () => new Date("2026-06-15T16:00:30.000Z"),
@@ -256,6 +260,8 @@ describe("handleEnterExam", () => {
         exams,
         clocks,
         timer,
+        diagnostics,
+        candidateEmail: "candidate@helioscx.demo",
         logger: makeLogger(),
         now: () => new Date("2026-06-15T16:00:30.000Z"),
       },
@@ -269,5 +275,18 @@ describe("handleEnterExam", () => {
     await expect(attempts.findById("attempt-1")).resolves.toMatchObject({
       status: "completed",
     });
+    await expect(
+      diagnosticsRepository.query({ examAttemptId: "attempt-1" }),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation: "exam_attempt.complete",
+          outcome: "success",
+          customerId: "customer-1",
+          candidateEmail: "candidate@helioscx.demo",
+          examAttemptId: "attempt-1",
+        }),
+      ]),
+    );
   });
 });

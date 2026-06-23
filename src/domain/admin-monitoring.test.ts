@@ -5,8 +5,7 @@ import {
   type MonitoringAttemptPage,
   type MonitoringAttemptRecord,
 } from "./admin-monitoring";
-import type { AuditRecord } from "./audit-trail";
-import type { EventLogRecord } from "./event-log";
+import type { DiagnosticLogEntry } from "./diagnostic-log";
 
 function makeAttempt(
   partial: Partial<MonitoringAttemptRecord> = {},
@@ -32,30 +31,28 @@ function makeAttempt(
   };
 }
 
-function makeAudit(partial: Partial<AuditRecord> = {}): AuditRecord {
+function makeDiagnostic(
+  partial: Partial<DiagnosticLogEntry> = {},
+): DiagnosticLogEntry {
   return {
-    id: "audit-1",
-    examAttemptId: "attempt-1",
-    action: "lab_launched",
-    outcome: "success",
+    id: "diag-1",
     occurredAt: new Date("2026-06-19T09:00:00.000Z"),
-    ...partial,
-  };
-}
-
-function makeEvent(partial: Partial<EventLogRecord> = {}): EventLogRecord {
-  return {
-    eventId: "event-1",
-    type: "cloudshare.exam_suspend.failed",
-    occurredAt: new Date("2026-06-19T09:10:00.000Z"),
-    payload: {
-      examAttemptId: "attempt-1",
-      attemptedOperation: "suspend_environment",
-      integrationSurface: "cloudshare.v3.env.action.suspend",
-      failureMode: "http_status",
-      responseStatus: 502,
-      correlationId: "corr-1",
-    },
+    level: "info",
+    source: "runtime",
+    operation: "exam_attempt.schedule",
+    outcome: "success",
+    customerId: "customer-1",
+    actor: null,
+    subject: { type: "exam_attempt", id: "attempt-1" },
+    message: "ExamAttempt scheduled",
+    correlationId: "corr-1",
+    candidateEmail: "candidate.one@helioscx.demo",
+    examId: "exam-1",
+    examAttemptId: "attempt-1",
+    externalIds: null,
+    request: null,
+    response: null,
+    details: null,
     ...partial,
   };
 }
@@ -122,8 +119,7 @@ describe("buildAdminMonitoringView", () => {
           offset: 1,
         },
       ),
-      auditRecords: [],
-      eventLog: [],
+      diagnosticRecords: [],
     });
 
     expect(view.summary).toEqual({
@@ -182,22 +178,24 @@ describe("buildAdminMonitoringView", () => {
           scoreRetrievalEnabled: true,
         }),
       ]),
-      auditRecords: [
-        makeAudit(),
-        makeAudit({
-          id: "audit-2",
+      diagnosticRecords: [
+        makeDiagnostic(),
+        makeDiagnostic({
+          id: "diag-2",
           examAttemptId: "attempt-3",
-          action: "lab_resumed",
+          operation: "exam_attempt.resume",
           outcome: "success",
           occurredAt: new Date("2026-06-17T09:15:00.000Z"),
+          message: "Exam resumed",
         }),
-        makeAudit({
-          id: "audit-3",
+        makeDiagnostic({
+          id: "diag-3",
           examAttemptId: "attempt-3",
-          action: "score_retrieved",
+          operation: "exam_attempt.score.retrieve",
           outcome: "success",
           occurredAt: new Date("2026-06-17T10:05:00.000Z"),
-          details: {
+          message: "Score retrieved successfully",
+          response: {
             percentComplete: 75,
             stepsCompleted: 3,
             stepsTotal: 4,
@@ -205,17 +203,20 @@ describe("buildAdminMonitoringView", () => {
             loginUrl: "https://use.cloudshare.com/secret",
           },
         }),
-      ],
-      eventLog: [
-        makeEvent({
-          eventId: "event-2",
+        makeDiagnostic({
+          id: "diag-4",
           occurredAt: new Date("2026-06-17T09:20:00.000Z"),
-          payload: {
-            examAttemptId: "attempt-3",
+          examAttemptId: "attempt-3",
+          level: "warn",
+          source: "runtime",
+          operation: "exam_attempt.resume",
+          outcome: "failure",
+          message: "Exam resume failed",
+          correlationId: "corr-2",
+          details: {
             attemptedOperation: "resume_environment",
             integrationSurface: "cloudshare.v3.env.action.resume",
             failureMode: "transport",
-            correlationId: "corr-2",
             requestHeaders: { authorization: "Bearer secret" },
             responseBody: "{\"loginUrl\":\"https://use.cloudshare.com/secret\"}",
           },
@@ -247,29 +248,25 @@ describe("buildAdminMonitoringView", () => {
     });
     expect(view.history[0].timeline).toEqual([
       expect.objectContaining({
-        kind: "audit",
-        action: "lab_resumed",
+        kind: "diagnostic",
+        operation: "exam_attempt.resume",
+        outcome: "success",
       }),
       expect.objectContaining({
-        kind: "failure",
-        eventType: "cloudshare.exam_suspend.failed",
-        integrationSurface: "cloudshare.v3.env.action.resume",
-        failureMode: "transport",
+        kind: "diagnostic",
+        operation: "exam_attempt.resume",
+        outcome: "failure",
+        correlationId: "corr-2",
       }),
       expect.objectContaining({
-        kind: "audit",
-        action: "score_retrieved",
-        details: {
-          percentComplete: 75,
-          stepsCompleted: 3,
-          stepsTotal: 4,
-          scoreAvailable: true,
-        },
+        kind: "diagnostic",
+        operation: "exam_attempt.score.retrieve",
+        outcome: "success",
       }),
     ]);
   });
 
-  it("ignores unrelated event log entries and falls back to status-only results when no score audit exists", () => {
+  it("ignores unrelated diagnostics and falls back to status-only results when no score retrieval exists", () => {
     const view = buildAdminMonitoringView({
       summary: makeSummary({
         expired: 1,
@@ -284,21 +281,17 @@ describe("buildAdminMonitoringView", () => {
           candidateEmail: "expired@helioscx.demo",
         }),
       ]),
-      auditRecords: [],
-      eventLog: [
-        makeEvent({
-          eventId: "event-unrelated",
-          payload: {
-            examAttemptId: "different-attempt",
-            attemptedOperation: "suspend_environment",
-            integrationSurface: "cloudshare.v3.env.action.suspend",
-            failureMode: "transport",
-          },
+      diagnosticRecords: [
+        makeDiagnostic({
+          id: "diag-unrelated",
+          examAttemptId: "different-attempt",
+          operation: "exam_attempt.resume",
         }),
-        makeEvent({
-          eventId: "event-nonfailure",
-          type: "exam_attempt.created",
-          payload: { examAttemptId: "attempt-expired" },
+        makeDiagnostic({
+          id: "diag-no-score",
+          examAttemptId: "attempt-expired",
+          operation: "exam_attempt.enter",
+          message: "Candidate entered exam - redirecting to CloudShare",
         }),
       ],
     });
@@ -311,21 +304,28 @@ describe("buildAdminMonitoringView", () => {
           status: "expired",
           scoreAvailable: false,
         },
-        timeline: [],
+        timeline: [
+          expect.objectContaining({
+            id: "diag-no-score",
+            operation: "exam_attempt.enter",
+            outcome: "success",
+          }),
+        ],
       }),
     ]);
   });
 
-  it("redacts sensitive audit and event details from monitoring timelines", () => {
+  it("redacts sensitive diagnostic details from monitoring timelines", () => {
     const view = buildAdminMonitoringView({
       summary: makeSummary({
         completed: 1,
       }),
       currentAttempts: [],
       history: makeHistoryPage([makeAttempt({ status: "completed" })]),
-      auditRecords: [
-        makeAudit({
-          action: "lab_launched",
+      diagnosticRecords: [
+        makeDiagnostic({
+          operation: "cloudshare.create_sponsored_link",
+          message: "Failed with sponsored-link https://use.cloudshare.com/secret",
           details: {
             trainingId: "training-1",
             experienceId: "experience-1",
@@ -334,13 +334,14 @@ describe("buildAdminMonitoringView", () => {
             token: "abcd1234",
             requestBody: { loginUrl: "https://use.cloudshare.com/secret" },
           },
-          error: "Failed with sponsored-link https://use.cloudshare.com/secret",
         }),
-      ],
-      eventLog: [
-        makeEvent({
-          payload: {
-            examAttemptId: "attempt-1",
+        makeDiagnostic({
+          id: "diag-2",
+          level: "warn",
+          operation: "exam_attempt.resume",
+          outcome: "failure",
+          message: "request failed with api key secret",
+          details: {
             attemptedOperation: "create_sponsored_link",
             integrationSurface: "cloudshare.v4.training.sponsored_link",
             failureMode: "http_status",
@@ -357,22 +358,18 @@ describe("buildAdminMonitoringView", () => {
 
     expect(view.history[0]?.timeline).toEqual([
       expect.objectContaining({
-        kind: "audit",
+        kind: "diagnostic",
         details: {
           trainingId: "training-1",
           experienceId: "experience-1",
         },
-        error: "[REDACTED]",
+        message: "[REDACTED]",
       }),
       expect.objectContaining({
-        kind: "failure",
-        eventType: "cloudshare.exam_suspend.failed",
-        attemptedOperation: "create_sponsored_link",
-        integrationSurface: "cloudshare.v4.training.sponsored_link",
-        failureMode: "http_status",
-        responseStatus: 502,
+        kind: "diagnostic",
+        operation: "exam_attempt.resume",
         correlationId: "corr-1",
-        error: "[REDACTED]",
+        message: "[REDACTED]",
       }),
     ]);
   });

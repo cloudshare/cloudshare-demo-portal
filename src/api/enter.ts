@@ -6,6 +6,7 @@ import type { LabLaunchRepository } from "@/domain/lab-launch";
 import type { ExamTimer } from "@/domain/timer-sync";
 import { reconcileExamAttemptCompletion } from "@/domain/exam-attempt-completion";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
+import { recordExamAttemptCompletionDiagnostic } from "./exam-attempt-completion-diagnostics";
 
 export interface EnterExamDeps {
   readonly attempts: ExamAttemptRepository;
@@ -69,7 +70,7 @@ export async function handleEnterExam(
     return textResponse(403, "Exam entry is not allowed for this candidate.");
   }
 
-  await reconcileExamAttemptCompletion(
+  const completion = await reconcileExamAttemptCompletion(
     {
       attempts: deps.attempts,
       exams: deps.exams ?? emptyExamRepository(),
@@ -81,6 +82,13 @@ export async function handleEnterExam(
   attempt = await deps.attempts.findById(request.examAttemptId);
   if (!attempt) {
     return textResponse(404, "Exam attempt not found.");
+  }
+  if (completion?.changed && completion.status === "completed") {
+    await recordExamAttemptCompletionDiagnostic(
+      deps.diagnostics,
+      attempt,
+      deps.candidateEmail,
+    );
   }
 
   const anchors = {

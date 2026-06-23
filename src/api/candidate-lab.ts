@@ -3,11 +3,15 @@ import type { ExamRepository } from "@/domain/exam-catalog";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { Logger } from "@/observability/logger";
 import { reconcileExamAttemptCompletion } from "@/domain/exam-attempt-completion";
+import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
+import { recordExamAttemptCompletionDiagnostic } from "./exam-attempt-completion-diagnostics";
 
 export interface CandidateLabStatusDeps {
   readonly attempts: ExamAttemptRepository;
   readonly exams: ExamRepository;
   readonly clocks?: ExamClock;
+  readonly diagnostics?: DiagnosticRecorder;
+  readonly candidateEmail?: string;
   readonly logger: Logger;
 }
 
@@ -38,13 +42,20 @@ export async function handleGetCandidateLabStatus(
     return { status: 403, body: { error: "forbidden" } };
   }
 
-  await reconcileExamAttemptCompletion(deps, {
+  const completion = await reconcileExamAttemptCompletion(deps, {
     examAttemptId: request.examAttemptId,
   });
 
   const reconciledAttempt = await deps.attempts.findById(request.examAttemptId);
   if (!reconciledAttempt) {
     return { status: 404, body: { error: "exam attempt not found" } };
+  }
+  if (completion?.changed && completion.status === "completed") {
+    await recordExamAttemptCompletionDiagnostic(
+      deps.diagnostics,
+      reconciledAttempt,
+      deps.candidateEmail,
+    );
   }
 
   const exam = await deps.exams.findById(reconciledAttempt.examId);
