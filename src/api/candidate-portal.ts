@@ -38,6 +38,7 @@ import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import { correlateEnvironmentForExamAttempt } from "@/domain/environment-correlation";
 import { reconcileExamAttemptCompletion } from "@/domain/exam-attempt-completion";
 import { randomUUID } from "node:crypto";
+import { recordExamAttemptCompletionDiagnostic } from "./exam-attempt-completion-diagnostics";
 
 export const SELF_REGISTER_CUSTOMER_SLUG = "helios-cx";
 
@@ -73,6 +74,7 @@ interface CandidateDashboardDeps extends CandidateExamCatalogDeps {
   readonly connections?: CloudShareConnectionRepository;
   readonly cloudshare?: CloudShareClientFactory;
   readonly eventLog?: EventLogRepository;
+  readonly diagnostics?: DiagnosticRecorder;
   readonly now?: () => Date;
   readonly newCorrelationId?: () => string;
 }
@@ -154,7 +156,7 @@ export async function handleGetCandidateDashboard(
   const attempts = await deps.attempts.listByCandidate(request.candidateId);
 
   for (const attempt of attempts) {
-    await reconcileExamAttemptCompletion(
+    const completion = await reconcileExamAttemptCompletion(
       {
         attempts: deps.attempts,
         exams: deps.repository,
@@ -162,6 +164,16 @@ export async function handleGetCandidateDashboard(
       },
       { examAttemptId: attempt.id },
     );
+    if (completion?.changed && completion.status === "completed") {
+      const refreshedAttempt = await deps.attempts.findById(attempt.id);
+      if (refreshedAttempt) {
+        await recordExamAttemptCompletionDiagnostic(
+          deps.diagnostics,
+          refreshedAttempt,
+          null,
+        );
+      }
+    }
   }
 
   const reconciledAttempts = await deps.attempts.listByCandidate(request.candidateId);

@@ -1,5 +1,4 @@
-import type { AuditRecord } from "./audit-trail";
-import type { EventLogRecord } from "./event-log";
+import type { DiagnosticLogEntry } from "./diagnostic-log";
 import type { ExamAttemptStatus } from "./exam-attempt";
 
 export interface MonitoringAttemptRecord {
@@ -46,34 +45,20 @@ export interface AdminMonitoringAttemptRepository {
   ): Promise<MonitoringAttemptPage>;
 }
 
-export interface MonitoringTimelineAuditEntry {
+export interface MonitoringTimelineDiagnosticEntry {
   readonly id: string;
-  readonly kind: "audit";
+  readonly kind: "diagnostic";
   readonly occurredAt: string;
-  readonly action: AuditRecord["action"];
-  readonly outcome: AuditRecord["outcome"];
+  readonly level: DiagnosticLogEntry["level"];
+  readonly source: string;
+  readonly operation: string;
+  readonly outcome: DiagnosticLogEntry["outcome"];
+  readonly message: string;
   readonly details?: Record<string, string | number | boolean | null>;
-  readonly error?: string;
+  readonly correlationId?: string | null;
 }
 
-export interface MonitoringTimelineFailureEntry {
-  readonly id: string;
-  readonly kind: "failure";
-  readonly occurredAt: string;
-  readonly eventType: string;
-  readonly attemptedOperation: string | null;
-  readonly integrationSurface: string | null;
-  readonly method: string | null;
-  readonly path: string | null;
-  readonly failureMode: string | null;
-  readonly responseStatus: number | null;
-  readonly correlationId: string | null;
-  readonly error: string | null;
-}
-
-export type MonitoringTimelineEntry =
-  | MonitoringTimelineAuditEntry
-  | MonitoringTimelineFailureEntry;
+export type MonitoringTimelineEntry = MonitoringTimelineDiagnosticEntry;
 
 export interface MonitoringAttemptResult {
   readonly status: "completed" | "expired";
@@ -132,15 +117,15 @@ export function buildAdminMonitoringView(input: {
   readonly summary: AdminMonitoringSummary;
   readonly currentAttempts: readonly MonitoringAttemptRecord[];
   readonly history: MonitoringAttemptPage;
-  readonly auditRecords: readonly AuditRecord[];
-  readonly eventLog: readonly EventLogRecord[];
+  readonly diagnosticRecords: readonly DiagnosticLogEntry[];
 }): AdminMonitoringView {
   const visibleAttempts = [...input.currentAttempts, ...input.history.attempts];
-  const attemptsById = new Set(visibleAttempts.map((attempt) => attempt.id));
-  const auditByAttemptId = groupBy(input.auditRecords, (record) => record.examAttemptId);
-  const failureEventsByAttemptId = groupBy(
-    input.eventLog.filter((event) => isFailureEventForAttempts(event, attemptsById)),
-    (event) => readStringField(event.payload, "examAttemptId")!,
+  const diagnosticsByAttemptId = groupBy(
+    input.diagnosticRecords.filter(
+      (record): record is DiagnosticLogEntry & { examAttemptId: string } =>
+        typeof record.examAttemptId === "string" && record.examAttemptId.length > 0,
+    ),
+    (record) => record.examAttemptId,
   );
 
   const currentAttemptViews = [...input.currentAttempts]
@@ -148,8 +133,7 @@ export function buildAdminMonitoringView(input: {
     .map((attempt) =>
       toAttemptView(
         attempt,
-        auditByAttemptId.get(attempt.id) ?? [],
-        failureEventsByAttemptId.get(attempt.id) ?? [],
+        diagnosticsByAttemptId.get(attempt.id) ?? [],
       ),
     );
   const historyAttemptViews = [...input.history.attempts]
@@ -157,8 +141,7 @@ export function buildAdminMonitoringView(input: {
     .map((attempt) =>
       toAttemptView(
         attempt,
-        auditByAttemptId.get(attempt.id) ?? [],
-        failureEventsByAttemptId.get(attempt.id) ?? [],
+        diagnosticsByAttemptId.get(attempt.id) ?? [],
       ),
     );
   const historyOffset = boundMonitoringHistoryOffset(input.history.offset);
@@ -187,8 +170,7 @@ export function buildAdminMonitoringView(input: {
 
 function toAttemptView(
   attempt: MonitoringAttemptRecord,
-  auditRecords: readonly AuditRecord[],
-  failureEvents: readonly EventLogRecord[],
+  diagnosticRecords: readonly DiagnosticLogEntry[],
 ): MonitoringAttemptView {
   return {
     id: attempt.id,
@@ -205,63 +187,57 @@ function toAttemptView(
     environmentExternalId: attempt.environmentExternalId,
     participantId: attempt.participantId,
     scoreRetrievalEnabled: attempt.scoreRetrievalEnabled,
-    timeline: buildTimeline(auditRecords, failureEvents),
-    result: buildResult(attempt.status, auditRecords),
+    timeline: buildTimeline(diagnosticRecords),
+    result: buildResult(attempt.status, diagnosticRecords),
   };
 }
 
 function buildTimeline(
-  auditRecords: readonly AuditRecord[],
-  failureEvents: readonly EventLogRecord[],
+  diagnosticRecords: readonly DiagnosticLogEntry[],
 ): readonly MonitoringTimelineEntry[] {
-  return [
-    ...auditRecords.map(
-      (record): MonitoringTimelineAuditEntry => ({
+  return diagnosticRecords
+    .map(
+      (record): MonitoringTimelineDiagnosticEntry => ({
         id: record.id,
-        kind: "audit",
+        kind: "diagnostic",
         occurredAt: record.occurredAt.toISOString(),
-        action: record.action,
+        level: record.level,
+        source: record.source,
+        operation: record.operation,
         outcome: record.outcome,
+        message: sanitizeFreeText(record.message) ?? "",
         details: sanitizeDetails(record.details),
-        error: sanitizeFreeText(record.error) ?? undefined,
+        correlationId: record.correlationId,
       }),
-    ),
-    ...failureEvents.map(
-      (event): MonitoringTimelineFailureEntry => ({
-        id: event.eventId,
-        kind: "failure",
-        occurredAt: event.occurredAt.toISOString(),
-        eventType: event.type,
-        attemptedOperation: readStringField(event.payload, "attemptedOperation"),
-        integrationSurface: readStringField(event.payload, "integrationSurface"),
-        method: readStringField(event.payload, "method") ?? null,
-        path: readStringField(event.payload, "path") ?? null,
-        failureMode: readStringField(event.payload, "failureMode"),
-        responseStatus: readNumberField(event.payload, "responseStatus"),
-        correlationId: readStringField(event.payload, "correlationId"),
-        error: sanitizeFreeText(readStringField(event.payload, "error")) ?? null,
-      }),
-    ),
-  ].sort((left, right) => left.occurredAt.localeCompare(right.occurredAt));
+    )
+    .sort((left, right) => left.occurredAt.localeCompare(right.occurredAt));
 }
 
 function buildResult(
   status: MonitoringAttemptRecord["status"],
-  auditRecords: readonly AuditRecord[],
+  diagnosticRecords: readonly DiagnosticLogEntry[],
 ): MonitoringAttemptResult | undefined {
   if (status !== "completed" && status !== "expired") {
     return undefined;
   }
 
-  const latestScoreAudit = [...auditRecords]
-    .filter((record) => record.action === "score_retrieved" && record.outcome === "success")
+  const latestScoreDiagnostic = [...diagnosticRecords]
+    .filter(
+      (record) =>
+        record.operation === "exam_attempt.score.retrieve" && record.outcome === "success",
+    )
     .sort((left, right) => right.occurredAt.getTime() - left.occurredAt.getTime())[0];
 
-  if (!latestScoreAudit?.details) {
+  const scoreResponse =
+    latestScoreDiagnostic?.response && typeof latestScoreDiagnostic.response === "object"
+      ? latestScoreDiagnostic.response
+      : null;
+
+  if (!scoreResponse) {
     return { status, scoreAvailable: false };
   }
 
-  const scoreAvailable = latestScoreAudit.details.scoreAvailable;
+  const scoreAvailable = scoreResponse.scoreAvailable;
   if (scoreAvailable !== true) {
     return { status, scoreAvailable: false };
   }
@@ -269,9 +245,9 @@ function buildResult(
   return {
     status,
     scoreAvailable: true,
-    percentComplete: asNumber(latestScoreAudit.details.percentComplete),
-    stepsCompleted: asNumber(latestScoreAudit.details.stepsCompleted),
-    stepsTotal: asNumber(latestScoreAudit.details.stepsTotal),
+    percentComplete: asNumber(scoreResponse.percentComplete),
+    stepsCompleted: asNumber(scoreResponse.stepsCompleted),
+    stepsTotal: asNumber(scoreResponse.stepsTotal),
   };
 }
 
@@ -280,18 +256,6 @@ function formatCandidateName(attempt: MonitoringAttemptRecord): string {
   const lastName = attempt.candidateLastName?.trim() ?? "";
   const fullName = `${firstName} ${lastName}`.trim();
   return fullName || attempt.candidateEmail;
-}
-
-function isFailureEventForAttempts(
-  event: EventLogRecord,
-  attemptIds: ReadonlySet<string>,
-): boolean {
-  if (!event.type.endsWith(".failed")) {
-    return false;
-  }
-
-  const examAttemptId = readStringField(event.payload, "examAttemptId");
-  return examAttemptId !== null && attemptIds.has(examAttemptId);
 }
 
 function groupBy<T>(
@@ -343,27 +307,15 @@ function boundMonitoringHistoryOffset(offset: number): number {
   return Math.floor(offset);
 }
 
-function readStringField(
-  fields: Record<string, unknown>,
-  key: string,
-): string | null {
-  const value = fields[key];
-  return typeof value === "string" && value.length > 0 ? value : null;
-}
-
-function readNumberField(
-  fields: Record<string, unknown>,
-  key: string,
-): number | null {
-  const value = fields[key];
-  return typeof value === "number" ? value : null;
-}
-
 function asNumber(value: unknown): number | undefined {
   return typeof value === "number" ? value : undefined;
 }
 
 const SAFE_DETAIL_KEYS = new Set([
+  "attemptStatus",
+  "currentStatus",
+  "expectedStatus",
+  "expiredDueTo",
   "trainingId",
   "experienceId",
   "environmentExternalId",
@@ -383,7 +335,7 @@ const SAFE_DETAIL_KEYS = new Set([
 ]);
 
 function sanitizeDetails(
-  details: Record<string, unknown> | undefined,
+  details: Record<string, unknown> | null | undefined,
 ): Record<string, string | number | boolean | null> | undefined {
   if (!details) {
     return undefined;

@@ -17,8 +17,7 @@ export async function GET(request: Request) {
   const response = await handleGetAdminMonitoring(
     {
       attempts: services.adminMonitoringAttempts,
-      audit: services.audit,
-      eventLog: services.eventLog,
+      diagnostics: services.diagnostics,
       logger: services.logger,
     },
     {

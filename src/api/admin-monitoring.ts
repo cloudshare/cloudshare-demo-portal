@@ -5,14 +5,12 @@ import {
   type AdminMonitoringAttemptRepository,
   type AdminMonitoringView,
 } from "@/domain/admin-monitoring";
-import type { AuditRepository } from "@/domain/audit-trail";
-import type { EventLogRepository } from "@/domain/event-log";
+import { MAX_DIAGNOSTIC_QUERY_LIMIT, type DiagnosticLogRepository } from "@/domain/diagnostic-log";
 import type { Logger } from "@/observability/logger";
 
 export interface AdminMonitoringHandlerDeps {
   readonly attempts: AdminMonitoringAttemptRepository;
-  readonly audit: AuditRepository;
-  readonly eventLog: EventLogRepository;
+  readonly diagnostics: DiagnosticLogRepository;
   readonly logger: Logger;
 }
 
@@ -43,6 +41,18 @@ export async function handleGetAdminMonitoring(
       offset: historyOffset,
     }),
   ]);
+  const visibleAttemptIds = [...new Set([...currentAttempts, ...history.attempts].map((attempt) => attempt.id))];
+  const diagnosticRecords = (
+    await Promise.all(
+      visibleAttemptIds.map((examAttemptId) =>
+        deps.diagnostics.query({
+          customerId: request.customerId,
+          examAttemptId,
+          limit: MAX_DIAGNOSTIC_QUERY_LIMIT,
+        }),
+      ),
+    )
+  ).flat();
 
   return {
     status: 200,
@@ -51,8 +61,7 @@ export async function handleGetAdminMonitoring(
         summary,
         currentAttempts,
         history,
-        auditRecords: [],
-        eventLog: [],
+        diagnosticRecords,
       }),
     },
   };
