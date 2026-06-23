@@ -97,7 +97,7 @@ const sectionBodyStyle: React.CSSProperties = {
 const contentGridStyle: React.CSSProperties = {
   display: "grid",
   gap: "1rem",
-  gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
   alignItems: "start",
 };
 
