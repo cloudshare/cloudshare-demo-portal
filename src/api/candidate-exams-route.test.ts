@@ -4,6 +4,8 @@ import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-
 import { createInMemoryExamCatalogRepository } from "@/persistence/exam-catalog-repository";
 import { createExamClock, createInMemoryExamClockRepository } from "@/domain/exam-clock";
 import { createDraftExam, publishExam } from "@/domain/exam-catalog";
+import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
+import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 
 const {
   mockCookies,
@@ -39,6 +41,8 @@ describe("candidate exams route", () => {
     const exams = createInMemoryExamCatalogRepository();
     const attempts = createInMemoryExamAttemptRepository();
     const clockRepository = createInMemoryExamClockRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnosticRecorder = createDiagnosticRecorder({ repository: diagnosticsRepository });
     const clocks = createExamClock({
       clocks: clockRepository,
       now: () => new Date("2026-06-18T10:00:30.000Z"),
@@ -99,6 +103,7 @@ describe("candidate exams route", () => {
       cloudshareConnections: { findByCustomerId: vi.fn().mockResolvedValue(null) },
       cloudshareClientFactory: { forConnection: vi.fn() },
       eventLog: { append: vi.fn() },
+      diagnosticRecorder,
       logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     });
     mockGetPortalSession.mockResolvedValue({
@@ -132,5 +137,19 @@ describe("candidate exams route", () => {
         },
       ],
     });
+    await expect(
+      diagnosticsRepository.query({ customerId: "customer-1", examAttemptId: "attempt-1" }),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation: "exam_attempt.complete",
+          outcome: "success",
+          customerId: "customer-1",
+          candidateEmail: null,
+          examId: "exam-1",
+          examAttemptId: "attempt-1",
+        }),
+      ]),
+    );
   });
 });
