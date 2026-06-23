@@ -77,6 +77,59 @@ function makeAuthoringSource(
       name: "Helios Exam Blueprint",
       description: "Blueprint-backed description",
       defaultSnapshotId: "snap-1",
+      diagnosticResponse: {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+        },
+        body: {
+          id: "bp-1",
+          name: "Helios Exam Blueprint",
+          description: "Blueprint-backed description",
+          type: "VmBlueprint",
+          creationDate: "2026-06-14T11:00:00.000Z",
+          resources: { ram: 16, cpu: 8 },
+          numberOfMachines: 1,
+          imageUrl: {
+            path: "/bp-1.png",
+            imageToken: "[REDACTED]",
+          },
+          createFromVersions: [
+            {
+              id: "snap-1",
+              name: "Default Snapshot",
+              isDefault: true,
+              isLatest: true,
+              type: "snapshot",
+              regions: [{ id: "region-1" }, { id: "region-2" }],
+              resources: { ram: 8, cpu: 4 },
+              machines: [
+                {
+                  id: "machine-1",
+                  name: "Primary VM",
+                  osTypeName: "Windows Server 2022",
+                  resources: { ram: 8, cpu: 4 },
+                  isSaaS: false,
+                  httpAccessEnabled: true,
+                  resumeType: "resume",
+                  bootOrder: 1,
+                  canAddMultipleInstances: false,
+                },
+              ],
+            },
+            {
+              id: "snap-2",
+              name: "Older Snapshot",
+              isDefault: false,
+              isLatest: false,
+              type: "snapshot",
+              regions: [{ id: "region-3" }],
+              resources: { ram: 4, cpu: 2 },
+              machines: [],
+            },
+          ],
+        },
+      },
       diagnosticSummary: {
         blueprintId: "bp-1",
         name: "Helios Exam Blueprint",
@@ -334,7 +387,10 @@ describe("admin exam authoring handlers", () => {
           new CloudShareRequestError("403 forbidden", 403, {
             method: "GET",
             requestHeaders: { authorization: "cs_sha1 [REDACTED]" },
-            responseBody: "{\"error\":\"forbidden\"}",
+            responseBody: JSON.stringify({
+              error: "forbidden",
+              signature: "sig-secret",
+            }),
           }),
         ),
     });
@@ -381,7 +437,13 @@ describe("admin exam authoring handlers", () => {
         path: "/projects/project-1/policies",
         headers: { authorization: "[REDACTED]" },
       },
-      response: { status: 403 },
+      response: {
+        status: 403,
+        body: {
+          error: "forbidden",
+          signature: "[REDACTED]",
+        },
+      },
     });
   });
 
@@ -1246,52 +1308,57 @@ describe("admin exam catalog handlers", () => {
         blueprintId: "bp-1",
       },
       response: {
-        blueprintId: "bp-1",
-        name: "Helios Exam Blueprint",
-        description: "Blueprint-backed description",
-        type: "VmBlueprint",
-        creationDate: "2026-06-14T11:00:00.000Z",
-        resources: { ram: 16, cpu: 8 },
-        numberOfMachines: 1,
-        imageUrl: { present: true, path: "/bp-1.png" },
-        defaultSnapshotId: "snap-1",
-        snapshotCount: 2,
-        snapshots: [
-          {
-            id: "snap-1",
-            name: "Default Snapshot",
-            isDefault: true,
-            isLatest: true,
-            type: "snapshot",
-            regions: [{ id: "region-1" }, { id: "region-2" }],
-            resources: { ram: 8, cpu: 4 },
-            machineCount: 1,
-            machines: [
-              {
-                id: "machine-1",
-                name: "Primary VM",
-                osTypeName: "Windows Server 2022",
-                resources: { ram: 8, cpu: 4 },
-                isSaaS: false,
-                httpAccessEnabled: true,
-                resumeType: "resume",
-                bootOrder: 1,
-                canAddMultipleInstances: false,
-              },
-            ],
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+        },
+        body: {
+          id: "bp-1",
+          name: "Helios Exam Blueprint",
+          description: "Blueprint-backed description",
+          type: "VmBlueprint",
+          creationDate: "2026-06-14T11:00:00.000Z",
+          resources: { ram: 16, cpu: 8 },
+          numberOfMachines: 1,
+          imageUrl: {
+            path: "/bp-1.png",
+            imageToken: "[REDACTED]",
           },
-          {
-            id: "snap-2",
-            name: "Older Snapshot",
-            isDefault: false,
-            isLatest: false,
-            type: "snapshot",
-            regions: [{ id: "region-3" }],
-            resources: { ram: 4, cpu: 2 },
-            machineCount: 0,
-            machines: [],
-          },
-        ],
+          createFromVersions: [
+            {
+              id: "snap-1",
+              name: "Default Snapshot",
+              isDefault: true,
+              isLatest: true,
+              type: "snapshot",
+              regions: [{ id: "region-1" }, { id: "region-2" }],
+              resources: { ram: 8, cpu: 4 },
+              machines: [
+                {
+                  id: "machine-1",
+                  name: "Primary VM",
+                  osTypeName: "Windows Server 2022",
+                  resources: { ram: 8, cpu: 4 },
+                  isSaaS: false,
+                  httpAccessEnabled: true,
+                  resumeType: "resume",
+                  bootOrder: 1,
+                  canAddMultipleInstances: false,
+                },
+              ],
+            },
+            {
+              id: "snap-2",
+              name: "Older Snapshot",
+              isDefault: false,
+              isLatest: false,
+              type: "snapshot",
+              regions: [{ id: "region-3" }],
+              resources: { ram: 4, cpu: 2 },
+              machines: [],
+            },
+          ],
+        },
       },
     });
 

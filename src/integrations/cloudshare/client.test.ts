@@ -310,6 +310,39 @@ describe("createCloudShareClient — error mapping", () => {
       client.requestV4({ method: "GET", path: "/projects", schema: projectsSchema }),
     ).rejects.toBeInstanceOf(CloudShareResponseError);
   });
+
+  it("retains parsed redacted JSON error bodies in request-error context", async () => {
+    const { http } = capturingHttp({
+      status: 403,
+      body: JSON.stringify({ error: "forbidden", apiKey: "secret-key" }),
+      headers: { "content-type": "application/json" },
+    });
+    const client = clientWith(http);
+
+    await expect(
+      client.requestV4({ method: "GET", path: "/projects", schema: projectsSchema }),
+    ).rejects.toMatchObject({
+      context: expect.objectContaining({
+        responseBody: {
+          error: "forbidden",
+          apiKey: "[REDACTED]",
+        },
+      }),
+    });
+  });
+
+  it("retains raw text error bodies when they are not JSON", async () => {
+    const { http } = capturingHttp({ status: 500, body: "gateway unavailable" });
+    const client = clientWith(http);
+
+    await expect(
+      client.requestV4({ method: "GET", path: "/projects", schema: projectsSchema }),
+    ).rejects.toMatchObject({
+      context: expect.objectContaining({
+        responseBody: "gateway unavailable",
+      }),
+    });
+  });
 });
 
 describe("createCloudShareClient — fixture replay (no live calls)", () => {

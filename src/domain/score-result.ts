@@ -30,14 +30,17 @@ export interface ParticipantProgress {
   readonly notInitiatedRate: number;
 }
 
-export interface ParticipantProgressDiagnosticRequest extends Record<string, unknown> {
+export interface ParticipantProgressDiagnosticRequest {
   readonly method: string;
   readonly path: string;
+  readonly headers?: Record<string, string>;
+  readonly body?: unknown;
 }
 
-export interface ParticipantProgressDiagnosticResponse extends Record<string, unknown> {
+export interface ParticipantProgressDiagnosticResponse {
   readonly status: number;
   readonly body: unknown;
+  readonly headers?: Record<string, string | string[]>;
 }
 
 export interface ParticipantProgressDiagnostics {

@@ -683,6 +683,7 @@ async function recordResourceRead(
     readonly path: string;
     readonly resourceType: string;
     readonly resourceIds?: Record<string, string>;
+    readonly request?: Record<string, unknown>;
     readonly response: Record<string, unknown>;
   },
 ): Promise<void> {
@@ -693,7 +694,7 @@ async function recordResourceRead(
     operation: spec.operation,
     outcome: "success",
     message: `${spec.resourceType} resource read succeeded`,
-    request: { method: "GET", path: spec.path },
+    request: spec.request ?? { method: "GET", path: spec.path },
     response: spec.response,
     details: { integrationSurface: spec.integrationSurface },
     externalIds: { resourceType: spec.resourceType, ...(spec.resourceIds ?? {}) },
@@ -705,8 +706,9 @@ function buildBlueprintDetailDiagnosticResponse(blueprint: {
   readonly defaultSnapshotId: string | null;
   readonly snapshots: ReadonlyArray<unknown>;
   readonly diagnosticSummary?: Record<string, unknown>;
+  readonly diagnosticResponse?: Record<string, unknown>;
 }): Record<string, unknown> {
-  return (
+  return blueprint.diagnosticResponse ?? (
     blueprint.diagnosticSummary ?? {
       blueprintId: blueprint.id,
       defaultSnapshotId: blueprint.defaultSnapshotId,
@@ -715,10 +717,19 @@ function buildBlueprintDetailDiagnosticResponse(blueprint: {
   );
 }
 
-function stripBlueprintDiagnosticSummary<T extends { readonly diagnosticSummary?: Record<string, unknown> }>(
+function stripBlueprintDiagnosticSummary<
+  T extends {
+    readonly diagnosticSummary?: Record<string, unknown>;
+    readonly diagnosticResponse?: Record<string, unknown>;
+  },
+>(
   blueprint: T,
-): Omit<T, "diagnosticSummary"> {
-  const { diagnosticSummary: _diagnosticSummary, ...rest } = blueprint;
+): Omit<T, "diagnosticSummary" | "diagnosticResponse"> {
+  const {
+    diagnosticSummary: _diagnosticSummary,
+    diagnosticResponse: _diagnosticResponse,
+    ...rest
+  } = blueprint;
   return rest;
 }
 
@@ -768,9 +779,18 @@ async function handleCloudShareFailure(
         ...(cloudShareError.context?.requestHeaders
           ? { headers: cloudShareError.context.requestHeaders }
           : {}),
+        ...(cloudShareError.context?.requestBody !== undefined
+          ? { body: normalizeDiagnosticPayload(cloudShareError.context.requestBody) }
+          : {}),
       },
       response: {
         ...(diagnostic.responseStatus !== undefined ? { status: diagnostic.responseStatus } : {}),
+        ...(cloudShareError.context?.responseHeaders
+          ? { headers: cloudShareError.context.responseHeaders }
+          : {}),
+        ...(cloudShareError.context?.responseBody !== undefined
+          ? { body: normalizeDiagnosticPayload(cloudShareError.context.responseBody) }
+          : {}),
       },
       details: {
         integrationSurface: spec.integrationSurface,
@@ -849,6 +869,18 @@ function buildDiagnostic(
   }
 
   return diagnostic;
+}
+
+function normalizeDiagnosticPayload(value: unknown): unknown {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  try {
+    return JSON.parse(value);
+  } catch {
+    return value;
+  }
 }
 
 function parseUpdateDraftExamInput(
