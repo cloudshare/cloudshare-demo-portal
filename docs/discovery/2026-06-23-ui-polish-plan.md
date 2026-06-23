@@ -1,59 +1,85 @@
-# UI Polish Plan — Admin and Candidate Surfaces
+# UI Polish Plan - Admin and Candidate Surfaces
 
-**Date:** 2026-06-23  
+**Date:** 2026-06-23
 **Scope:** planning only. No product behavior changes in this document.
 
 ## What this is
 
-This is a narrow UI polish backlog for issue #99. It keeps the current functional flow intact and
-focuses on layout, hierarchy, and responsive clarity.
+This is the planning slice for issue #99. It audits the current admin and candidate surfaces, separates
+visual/information-hierarchy work from functional bugs, and turns the result into an ordered backlog.
 
 ## What this is not
 
 - Not a redesign.
 - Not a CloudShare integration change.
-- Not a fix for functional bugs such as overlapping attempts (#103) or the CloudShare suspend /
-  resume gap (#104).
+- Not a product-behavior change.
+- Not a duplicate of the functional follow-ups already tracked in #103 and #104.
 
-## Observed pain points
+## Functional follow-ups kept separate
 
-- Admin support work is functional, but the diagnostics page is dense and the current context is too
-  easy to miss when a drilldown changes filters or opens a deeper view.
-- Wide admin tables are acceptable on desktop, but they read as heavy and cramped on smaller
-  screens.
-- Candidate home is usable, but published exams and scheduled attempts sit at the same visual
-  weight.
-- Candidate lab and score pages are sparse wrappers around working features; they need a clearer
-  attempt frame and stronger action grouping.
+The audit found two live issues that should stay out of this polish backlog:
 
-## Ordered slices
+- #103 covers overlapping candidate attempts for the same exam.
+- #104 covers the CloudShare suspend / resume 500 gap during rapid transitions.
 
-1. **Admin diagnostics frame and table density**
-   Make the active investigation context obvious at the top of the Diagnostics tab, keep the primary
-   Diagnostic Log visually dominant, and make the legacy/raw evidence area secondary.  
-   **Smoke:** 1440px desktop and 390px mobile; confirm drilldowns still land on the same filtered
-   view and tables still overflow intentionally rather than breaking layout.
+Those are behavior and integration follow-ups, not UI polish slices.
 
-2. **Candidate home hierarchy**
-   Tighten the exam cards and scheduled-attempt section so the candidate can scan status, timing, and
-   the primary action faster.  
-   **Smoke:** wide and narrow viewport; confirm schedule, enter/resume, and score actions still
-   route exactly as before.
+## Audit summary
 
-3. **Candidate lab and score framing**
-   Add a stronger attempt header and action grouping to the dedicated lab and score pages without
-   changing the child-window flow or score content.  
-   **Smoke:** open a lab attempt, confirm the attempt identity/state is clear, then open the score
-   page and confirm the same attempt framing remains visible.
+The current portal is usable, but several high-frequency workflows are harder to scan than they need
+to be:
 
-4. **Shared responsive panel behavior**
-   Normalize the spacing and panel treatment used by dense admin/candidate surfaces so desktop views
-   feel less empty while small screens stay readable.  
-   **Smoke:** verify the common panel/table patterns still fit within the viewport and do not create
-   horizontal clipping beyond the intended table overflow.
+- Session Monitoring shows the right data and actions, but the summary strip, queue/history split,
+  and attempt cards read as flat and take longer to parse.
+- Support Diagnostics has the correct evidence, but the filter panel and diagnostic rows are dense,
+  which slows forensic work.
+- The admin shell exposes the right tabs, but the support-related journey is not visually cohesive
+  enough to guide operators from monitoring into diagnostics and back.
+- Candidate home puts scheduling, readiness, and return-to-exam actions in the same visual weight,
+  which makes the landing page harder to scan.
+- Candidate lab and score pages are working wrappers, but the status, recovery, and completion
+  frames are too generic for the highest-stress moments in the flow.
+
+## Ordered backlog
+
+1. **Admin: Session Monitoring scanability**
+   Preserve the current data and actions, but improve the status strip, queue/history separation,
+   and attempt-card scanability so the live operational view is easier to read quickly.
+   **Smoke:** `/admin?tab=monitoring` on desktop and mobile; active queue/history screenshots;
+   empty-state screenshot; no overlap or clipping.
+
+2. **Admin: Support Diagnostics table ergonomics**
+   Keep the current filter semantics and evidence model, but make the investigative filter panel and
+   diagnostic rows easier to scan, including expanded evidence order and drilldown hints.
+   **Smoke:** `/admin?tab=diagnostics&examAttemptId=...` and `&correlationId=...`; expand a row;
+   desktop and narrow viewport overflow / wrapping checks.
+
+3. **Admin: Console navigation and support workflow context**
+   Make the active tab and support-oriented context obvious in the shell so Session Monitoring and
+   Support Diagnostics read as one support workflow without changing routing or state behavior.
+   **Smoke:** `/admin`, `/admin?tab=monitoring`, `/admin?tab=diagnostics`; verify active tab,
+   content, and preserved switching state.
+
+4. **Candidate: Home layout and hierarchy**
+   Split the candidate landing page into clearer sections for account/header, scheduled attempts, and
+   published exams so the primary scheduling and launch actions are easier to find.
+   **Smoke:** `/candidate` with no exams/loading; `/candidate` with published exams and
+   scheduled/ready/completed attempts; 390px and 1440px screenshots.
+
+5. **Candidate: Lab shell status and recovery clarity**
+   Add a tighter summary frame for attempt identity, timing, and recovery state so launch, resume,
+   suspend, and error states are easier to understand without changing behavior.
+   **Smoke:** lab page in ready, in_progress, suspended, and completed states; popup-blocked and
+   open-failed presentation; mobile wrapping; desktop header/status/launcher cohesion.
+
+6. **Candidate: Session complete / score page polish**
+   Improve the completion shell and score summary composition so the end-state metrics and
+   limitations are more legible while keeping the same retrieval behavior.
+   **Smoke:** score available; no score; API error state; mobile stacking; desktop metric alignment.
 
 ## Implementation order
 
-Do the admin diagnostics slice first, then the candidate home slice, then the lab/score slice, and
-leave shared responsive cleanup last unless one of the earlier slices needs a tiny reusable helper.
-
+Do the admin monitoring slice first because it is the most operationally dense and gives the best
+support-work baseline. Follow with diagnostics, then the console context slice, then the candidate
+home, lab, and score slices in that order so the candidate journey is refined from the entry page to
+the end-state pages without broadening scope into unrelated behavior changes.
