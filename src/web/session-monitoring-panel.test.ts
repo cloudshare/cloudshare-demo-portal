@@ -112,6 +112,30 @@ describe("SessionMonitoringPanel", () => {
     expect(html).not.toContain("No timeline entries recorded.");
     expect(html).not.toContain("<table");
   });
+
+  it("hardens the attempt summary identity text so long values can wrap without crowding the status badge", () => {
+    const html = renderToStaticMarkup(
+      createElement(SessionMonitoringPanel, {
+        monitoring: makeMonitoringView({
+          history: [
+            makeAttempt({
+              candidateName:
+                "Casey Rivera With A Very Long Candidate Name That Should Wrap On Narrow Screens",
+              examTitle: "Helios CX Analyst Certification Experience With A Very Long Title",
+            }),
+          ],
+        }),
+        loading: false,
+        onRefresh: () => {},
+        onLoadMoreHistory: () => {},
+        onOpenSupportDiagnostics: () => {},
+      }),
+    );
+
+    expect(html).toContain("overflow-wrap:anywhere");
+    expect(html).toContain("Very Long Candidate Name");
+    expect(html).toContain("Very Long Title");
+  });
 });
 
 describe("monitoring row keys", () => {

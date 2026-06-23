@@ -143,7 +143,7 @@ function renderAttemptCard(
           alignItems: "flex-start",
         }}
       >
-        <span style={{ minWidth: 0 }}>
+        <span style={{ minWidth: 0, flex: "1 1 auto", overflowWrap: "anywhere" }}>
           {attempt.candidateName} · {attempt.examTitle} · {formatMonitoringResult(attempt.result)}
         </span>
         <span
