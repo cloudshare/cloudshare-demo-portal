@@ -32,6 +32,13 @@ export interface ExamAttemptDiagnosticsNavigation {
   readonly href: string;
 }
 
+export interface CorrelationDiagnosticsNavigation {
+  readonly tab: "diagnostics";
+  readonly filters: DiagnosticLogFilters;
+  readonly pageOffset: 0;
+  readonly href: string;
+}
+
 export interface AdminConsoleRouteState {
   readonly tab: AdminTab;
   readonly diagnosticFilters: DiagnosticLogFilters;
@@ -197,11 +204,9 @@ export function mergeMonitoringHistoryPage(
 }
 
 export function buildExamAttemptDiagnosticsNavigation(
-  filters: DiagnosticLogFilters,
   examAttemptId: string,
 ): ExamAttemptDiagnosticsNavigation {
   const nextFilters = {
-    ...filters,
     examAttemptId: examAttemptId.trim(),
   };
 
@@ -213,11 +218,20 @@ export function buildExamAttemptDiagnosticsNavigation(
   };
 }
 
-export function buildCorrelationDiagnosticsHref(correlationId: string): string {
-  return buildAdminConsoleHref({
+export function buildCorrelationDiagnosticsNavigation(
+  correlationId: string,
+): CorrelationDiagnosticsNavigation {
+  const nextFilters = { correlationId: correlationId.trim() };
+
+  return {
     tab: "diagnostics",
-    diagnosticFilters: { correlationId: correlationId.trim() },
-  });
+    filters: nextFilters,
+    pageOffset: 0,
+    href: buildAdminConsoleHref({
+      tab: "diagnostics",
+      diagnosticFilters: nextFilters,
+    }),
+  };
 }
 
 export function buildAdminConsoleHref(route: AdminConsoleRouteState): string {

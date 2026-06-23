@@ -11,7 +11,7 @@ interface AdminPageProps {
   readonly searchParams?: Promise<Record<string, string | string[] | undefined>>;
 }
 
-export default async function AdminPage({ searchParams }: AdminPageProps = {}) {
+export default async function AdminPage({ searchParams }: AdminPageProps) {
   const services = getServices();
   const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
   const session = await getPortalSession(services, sessionId);

@@ -9,7 +9,7 @@ import {
   type AdminTab,
   beginLatestOnlyRequest,
   buildAdminConsoleHref,
-  buildCorrelationDiagnosticsHref,
+  buildCorrelationDiagnosticsNavigation,
   buildMonitoringHistoryQueryString,
   buildExamAttemptDiagnosticsNavigation,
   buildDiagnosticLogQueryString,
@@ -402,7 +402,6 @@ export function AdminConsole({
         setConnectionDiagnostic(data.diagnostic ?? null);
         setConnectionCorrelationId(data.correlationId ?? null);
         setConnectionOccurredAt(data.occurredAt ?? null);
-        void loadSupportLog(true);
         return;
       }
       await loadConnection();
@@ -469,7 +468,7 @@ export function AdminConsole({
   }
 
   function openExamAttemptSupportDiagnostics(examAttemptId: string) {
-    const navigation = buildExamAttemptDiagnosticsNavigation(diagnosticFilters, examAttemptId);
+    const navigation = buildExamAttemptDiagnosticsNavigation(examAttemptId);
     router.push(navigation.href);
     setDiagnosticFilters(navigation.filters);
     setExpandedDiagnosticId(null);
@@ -480,13 +479,13 @@ export function AdminConsole({
   }
 
   function openCorrelationSupportDiagnostics(correlationId: string) {
-    const href = buildCorrelationDiagnosticsHref(correlationId);
-    router.push(href);
-    setDiagnosticFilters({ correlationId: correlationId.trim() });
+    const navigation = buildCorrelationDiagnosticsNavigation(correlationId);
+    router.push(navigation.href);
+    setDiagnosticFilters(navigation.filters);
     setExpandedDiagnosticId(null);
-    setTab("diagnostics");
+    setTab(navigation.tab);
     if (tab === "diagnostics") {
-      void loadDiagnostics(false, 0, { correlationId: correlationId.trim() });
+      void loadDiagnostics(false, navigation.pageOffset, navigation.filters);
     }
   }
 
@@ -741,7 +740,6 @@ export function AdminConsole({
         setError(data.error ?? "Failed to load exam authoring resources");
         setExamCorrelationId(data.correlationId ?? null);
         setExamDiagnostic(data.diagnostic ?? null);
-        void loadSupportLog(true);
         return;
       }
 
@@ -799,7 +797,6 @@ export function AdminConsole({
         setError(data.error ?? "Failed to load project resources");
         setExamCorrelationId(data.correlationId ?? null);
         setExamDiagnostic(data.diagnostic ?? null);
-        void loadSupportLog(true);
         return;
       }
 
@@ -878,7 +875,6 @@ export function AdminConsole({
         setError(data.error ?? "Failed to load blueprint detail");
         setExamCorrelationId(data.correlationId ?? null);
         setExamDiagnostic(data.diagnostic ?? null);
-        void loadSupportLog(true);
         return;
       }
 

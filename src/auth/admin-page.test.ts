@@ -42,7 +42,7 @@ describe("admin page routing", () => {
   it("redirects anonymous users to /login", async () => {
     mockGetPortalSession.mockResolvedValue(null);
 
-    await expect(AdminPage()).rejects.toThrow("redirect:/login");
+    await expect(AdminPage({})).rejects.toThrow("redirect:/login");
     expect(mockRedirect).toHaveBeenCalledWith("/login");
   });
 
@@ -54,7 +54,7 @@ describe("admin page routing", () => {
       role: "candidate",
     });
 
-    await expect(AdminPage()).rejects.toThrow("redirect:/candidate");
+    await expect(AdminPage({})).rejects.toThrow("redirect:/candidate");
     expect(mockRedirect).toHaveBeenCalledWith("/candidate");
   });
 
@@ -66,7 +66,7 @@ describe("admin page routing", () => {
       role: "admin",
     });
 
-    const page = await AdminPage();
+    const page = await AdminPage({});
     expect(page).toMatchObject({
       props: { email: "admin@helioscx.demo" },
     });

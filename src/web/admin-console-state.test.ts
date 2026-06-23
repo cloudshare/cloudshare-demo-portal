@@ -4,7 +4,7 @@ import {
   ADMIN_TABS,
   beginLatestOnlyRequest,
   buildAdminConsoleHref,
-  buildCorrelationDiagnosticsHref,
+  buildCorrelationDiagnosticsNavigation,
   buildMonitoringHistoryQueryString,
   buildExamAttemptDiagnosticsNavigation,
   buildDiagnosticLogQueryString,
@@ -37,23 +37,35 @@ describe("latest-only request coordination", () => {
   });
 
   it("switches Session Monitoring drilldown actions to Support Diagnostics with the ExamAttempt filter applied", () => {
-    expect(
-      buildExamAttemptDiagnosticsNavigation(
-        {
-          source: "runtime",
-          outcome: "failure",
-        },
-        "  attempt-a  ",
-      ),
-    ).toEqual({
+    expect(buildExamAttemptDiagnosticsNavigation("  attempt-a  ")).toEqual({
       tab: "diagnostics",
       filters: {
-        source: "runtime",
-        outcome: "failure",
         examAttemptId: "attempt-a",
       },
       pageOffset: 0,
-      href: "/admin?tab=diagnostics&examAttemptId=attempt-a&outcome=failure&source=runtime",
+      href: "/admin?tab=diagnostics&examAttemptId=attempt-a",
+    });
+  });
+
+  it("drops stale diagnostic filters when Session Monitoring opens an ExamAttempt investigation", () => {
+    const navigation = buildExamAttemptDiagnosticsNavigation("attempt-a");
+
+    expect(navigation.filters).toEqual({ examAttemptId: "attempt-a" });
+    expect(navigation.href).not.toContain("correlationId=");
+    expect(navigation.href).not.toContain("candidateEmail=");
+    expect(navigation.href).not.toContain("source=");
+    expect(parseAdminConsoleRouteState({
+      tab: "diagnostics",
+      examAttemptId: "attempt-a",
+      source: "runtime",
+      candidateEmail: "candidate@helioscx.demo",
+    })).toEqual({
+      tab: "diagnostics",
+      diagnosticFilters: {
+        examAttemptId: "attempt-a",
+        source: "runtime",
+        candidateEmail: "candidate@helioscx.demo",
+      },
     });
   });
 });
@@ -164,9 +176,12 @@ describe("diagnostic log filter state", () => {
     ).toBe(
       "/admin?tab=diagnostics&examAttemptId=attempt-1&candidateEmail=candidate%40helioscx.demo&correlationId=corr-1",
     );
-    expect(buildCorrelationDiagnosticsHref(" corr-9 ")).toBe(
-      "/admin?tab=diagnostics&correlationId=corr-9",
-    );
+    expect(buildCorrelationDiagnosticsNavigation(" corr-9 ")).toEqual({
+      tab: "diagnostics",
+      filters: { correlationId: "corr-9" },
+      pageOffset: 0,
+      href: "/admin?tab=diagnostics&correlationId=corr-9",
+    });
   });
 
   it("parses admin route state so linked investigations reopen on the diagnostics tab with filters applied", () => {
@@ -191,6 +206,28 @@ describe("diagnostic log filter state", () => {
     expect(parseAdminConsoleRouteState({ tab: "monitoring", examAttemptId: "attempt-9" })).toEqual({
       tab: "monitoring",
       diagnosticFilters: {},
+    });
+  });
+
+  it("round-trips investigation links so attempt and correlation workflows land on the intended primary diagnostic context", () => {
+    expect(
+      parseAdminConsoleRouteState({
+        tab: "diagnostics",
+        examAttemptId: "attempt-41",
+      }),
+    ).toEqual({
+      tab: "diagnostics",
+      diagnosticFilters: { examAttemptId: "attempt-41" },
+    });
+
+    expect(
+      parseAdminConsoleRouteState({
+        tab: "diagnostics",
+        correlationId: "corr-41",
+      }),
+    ).toEqual({
+      tab: "diagnostics",
+      diagnosticFilters: { correlationId: "corr-41" },
     });
   });
 });
