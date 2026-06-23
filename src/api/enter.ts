@@ -32,8 +32,27 @@ export interface EnterExamResponse {
 }
 
 const ENTERABLE_STATUSES = new Set(["ready", "in_progress"]);
+const inFlightEnterRequests = new Map<string, Promise<EnterExamResponse>>();
 
 export async function handleEnterExam(
+  deps: EnterExamDeps,
+  request: EnterExamRequest,
+): Promise<EnterExamResponse> {
+  const existing = inFlightEnterRequests.get(request.examAttemptId);
+  if (existing) {
+    return existing;
+  }
+
+  const pending = handleEnterExamOnce(deps, request).finally(() => {
+    if (inFlightEnterRequests.get(request.examAttemptId) === pending) {
+      inFlightEnterRequests.delete(request.examAttemptId);
+    }
+  });
+  inFlightEnterRequests.set(request.examAttemptId, pending);
+  return pending;
+}
+
+async function handleEnterExamOnce(
   deps: EnterExamDeps,
   request: EnterExamRequest,
 ): Promise<EnterExamResponse> {

@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { openEnterExamWindow } from "./enter-exam";
 import { isLabWindowOpen } from "./lab-window";
 import { preflightLabAction, resumeLabAttempt, suspendLabAttempt, type CandidateLabStatus, type AttemptStatus } from "./lab-launcher-client";
-import { getLauncherSyncTarget, type LaunchState } from "./lab-launcher-state";
+import { getLauncherRecoveryAction, getLauncherSyncTarget, type LaunchState } from "./lab-launcher-state";
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const CHILD_POLL_INTERVAL_MS = 3_000;
@@ -37,6 +37,7 @@ export function LabLauncher({
   const [message, setMessage] = useState<string>("");
   const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const childPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const actionInFlightRef = useRef(false);
   const lastReportedAttemptStatusRef = useRef<AttemptStatus | null>(null);
   const currentAttemptStatusRef = useRef(currentAttemptStatus);
   const onAttemptStatusChangeRef = useRef(onAttemptStatusChange);
@@ -126,9 +127,14 @@ export function LabLauncher({
   }
 
   async function suspendNow() {
+    if (actionInFlightRef.current) {
+      return;
+    }
+    actionInFlightRef.current = true;
     if (currentAttemptStatusRef.current === "completed") {
       setState("completed");
       setMessage("Examination complete.");
+      actionInFlightRef.current = false;
       return;
     }
     stopHeartbeat();
@@ -136,6 +142,15 @@ export function LabLauncher({
     setState("suspending");
     try {
       const result = await suspendLabAttempt(fetch, examAttemptId);
+      if (result.kind === "pending") {
+        if (result.labStatus) {
+          reportLabStatusLoaded(result.labStatus);
+          reportAttemptStatusChange(result.labStatus.status);
+        }
+        setState(result.labStatus?.status === "suspended" ? "suspended" : "open");
+        setMessage(result.message);
+        return;
+      }
       if (result.kind === "completed") {
         reportLabStatusLoaded(result.labStatus);
         syncToAuthoritativeAttemptStatus("completed");
@@ -156,13 +171,20 @@ export function LabLauncher({
     } catch (err) {
       setState("error");
       setMessage(err instanceof Error ? err.message : "suspend failed");
+    } finally {
+      actionInFlightRef.current = false;
     }
   }
 
   async function launch() {
+    if (actionInFlightRef.current) {
+      return;
+    }
+    actionInFlightRef.current = true;
     if (currentAttemptStatusRef.current === "completed") {
       setState("completed");
       setMessage("Examination complete.");
+      actionInFlightRef.current = false;
       return;
     }
     try {
@@ -183,19 +205,26 @@ export function LabLauncher({
         setMessage(preflight.message);
         return;
       }
-      reportAttemptStatusChange("in_progress");
       openEnterExamWindow(examAttemptId);
+      reportAttemptStatusChange("in_progress");
       setState("open");
     } catch (err) {
       setState("error");
-      setMessage(err instanceof Error ? err.message : "launch failed");
+      setMessage(formatLaunchError(err, currentAttemptStatusRef.current));
+    } finally {
+      actionInFlightRef.current = false;
     }
   }
 
   async function resumeNow() {
+    if (actionInFlightRef.current) {
+      return;
+    }
+    actionInFlightRef.current = true;
     if (currentAttemptStatusRef.current === "completed") {
       setState("completed");
       setMessage("Examination complete.");
+      actionInFlightRef.current = false;
       return;
     }
     try {
@@ -217,6 +246,15 @@ export function LabLauncher({
         return;
       }
       const result = await resumeLabAttempt(fetch, examAttemptId);
+      if (result.kind === "pending") {
+        if (result.labStatus) {
+          reportLabStatusLoaded(result.labStatus);
+          reportAttemptStatusChange(result.labStatus.status);
+        }
+        setState(result.labStatus?.status === "suspended" ? "suspended" : "error");
+        setMessage(result.message);
+        return;
+      }
       if (result.kind === "completed") {
         reportLabStatusLoaded(result.labStatus);
         syncToAuthoritativeAttemptStatus("completed");
@@ -231,12 +269,14 @@ export function LabLauncher({
         setMessage(result.message);
         return;
       }
-      reportAttemptStatusChange("in_progress");
       openEnterExamWindow(examAttemptId);
+      reportAttemptStatusChange("in_progress");
       setState("open");
     } catch (err) {
       setState("error");
-      setMessage(err instanceof Error ? err.message : "resume failed");
+      setMessage(formatLaunchError(err, currentAttemptStatusRef.current));
+    } finally {
+      actionInFlightRef.current = false;
     }
   }
 
@@ -282,11 +322,26 @@ export function LabLauncher({
 
   return (
     <div>
-      {(state === "idle" || state === "error") && (
+      {state === "idle" && (
         <button type="button" onClick={launch}>
           Enter exam
         </button>
       )}
+      {state === "error" && (() => {
+        const recoveryAction = getLauncherRecoveryAction(currentAttemptStatus);
+        if (!recoveryAction) {
+          return null;
+        }
+        const onClick =
+          recoveryAction.action === "resume"
+            ? resumeNow
+            : launch;
+        return (
+          <button type="button" onClick={onClick}>
+            {recoveryAction.label}
+          </button>
+        );
+      })()}
       {state === "suspended" && (
         <button type="button" onClick={resumeNow}>
           Resume exam
@@ -322,4 +377,18 @@ export function LabLauncher({
       )}
     </div>
   );
+}
+
+function formatLaunchError(error: unknown, attemptStatus: AttemptStatus): string {
+  const fallback = error instanceof Error ? error.message : "launch failed";
+  if (typeof fallback !== "string") {
+    return "launch failed";
+  }
+  if (!/popup blocked|could not be opened/i.test(fallback)) {
+    return fallback;
+  }
+  const recoveryAction = getLauncherRecoveryAction(attemptStatus);
+  return recoveryAction?.action === "reopen"
+    ? "The exam window was blocked by your browser. Allow popups for this site, then use Open exam window to retry."
+    : "The exam window was blocked by your browser. Allow popups for this site, then try again.";
 }

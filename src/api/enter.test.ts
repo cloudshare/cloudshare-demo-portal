@@ -289,4 +289,86 @@ describe("handleEnterExam", () => {
       ]),
     );
   });
+
+  it("treats concurrent fast enter requests as a single transition and redirects both callers", async () => {
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const examAttemptId = "attempt-coalesce";
+    const releaseTimerResume: { current: undefined | (() => void) } = { current: undefined };
+    const timer = {
+      resumed: [] as string[],
+      pauseTimer: vi.fn().mockResolvedValue(undefined),
+      resumeTimer: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            timer.resumed.push(examAttemptId);
+            releaseTimerResume.current = resolve;
+          }),
+      ),
+    } satisfies ExamTimer & { resumed: string[] };
+
+    await attempts.save({
+      id: examAttemptId,
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "ready",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    await launches.save({
+      id: "launch-1",
+      examAttemptId,
+      candidateId: "candidate-1",
+      participantEmail: "candidate@helioscx.demo",
+      trainingId: "training-1",
+      experienceId: "training-1",
+      loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret",
+      status: "launched",
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+
+    const deps = {
+      attempts,
+      launches,
+      timer,
+      logger: makeLogger(),
+      now: () => new Date("2026-06-15T16:00:00.000Z"),
+    };
+
+    const first = handleEnterExam(deps, {
+      examAttemptId,
+      candidateId: "candidate-1",
+    });
+    const second = handleEnterExam(deps, {
+      examAttemptId,
+      candidateId: "candidate-1",
+    });
+
+    try {
+      await vi.waitFor(() => {
+        expect(timer.resumeTimer).toHaveBeenCalledTimes(1);
+      });
+
+      if (releaseTimerResume.current) {
+        releaseTimerResume.current();
+      }
+
+      await expect(first).resolves.toMatchObject({
+        status: 302,
+        body: "Redirecting to the CloudShare lab.",
+      });
+      await expect(second).resolves.toMatchObject({
+        status: 302,
+        body: "Redirecting to the CloudShare lab.",
+      });
+      expect(timer.resumed).toEqual([examAttemptId]);
+      await expect(attempts.findById(examAttemptId)).resolves.toMatchObject({
+        status: "in_progress",
+      });
+    } finally {
+      if (releaseTimerResume.current) {
+        releaseTimerResume.current();
+      }
+    }
+  });
 });
