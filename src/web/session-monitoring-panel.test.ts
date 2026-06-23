@@ -106,7 +106,7 @@ describe("SessionMonitoringPanel", () => {
     expect(html).toContain("Completed / expired history (showing 1 of 3)");
     expect(html).toContain("Load more history");
     expect(html).toContain("Open in Support Diagnostics");
-    expect(html).toContain("Durable history lives in Support Diagnostics.");
+    expect(html).toContain("Investigation opens Support Diagnostics filtered to this ExamAttempt ID.");
     expect(html).not.toContain("No timeline entries recorded.");
     expect(html).not.toContain("<table");
   });

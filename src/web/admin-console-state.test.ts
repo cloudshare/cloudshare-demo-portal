@@ -3,6 +3,8 @@ import {
   ADMIN_SESSION_EXPIRED_MESSAGE,
   ADMIN_TABS,
   beginLatestOnlyRequest,
+  buildAdminConsoleHref,
+  buildCorrelationDiagnosticsHref,
   buildMonitoringHistoryQueryString,
   buildExamAttemptDiagnosticsNavigation,
   buildDiagnosticLogQueryString,
@@ -13,6 +15,7 @@ import {
   getExamAuthoringMode,
   getCompatibleRegions,
   normaliseDiagnosticLogFilters,
+  parseAdminConsoleRouteState,
   type DiagnosticLogFilters,
   isAdminSessionExpiredStatus,
   isLatestOnlyResponse,
@@ -50,6 +53,7 @@ describe("latest-only request coordination", () => {
         examAttemptId: "attempt-a",
       },
       pageOffset: 0,
+      href: "/admin?tab=diagnostics&examAttemptId=attempt-a&outcome=failure&source=runtime",
     });
   });
 });
@@ -145,6 +149,49 @@ describe("diagnostic log filter state", () => {
     expect(query).toBe(
       "?examAttemptId=attempt-1&candidateEmail=candidate%40helioscx.demo&outcome=failure&source=runtime&externalId=env-123&limit=50&offset=100",
     );
+  });
+
+  it("builds an admin diagnostics URL that makes the diagnostic log the primary investigation surface", () => {
+    expect(
+      buildAdminConsoleHref({
+        tab: "diagnostics",
+        diagnosticFilters: {
+          examAttemptId: "attempt-1",
+          candidateEmail: "Candidate@HeliosCX.demo",
+          correlationId: "corr-1",
+        },
+      }),
+    ).toBe(
+      "/admin?tab=diagnostics&examAttemptId=attempt-1&candidateEmail=candidate%40helioscx.demo&correlationId=corr-1",
+    );
+    expect(buildCorrelationDiagnosticsHref(" corr-9 ")).toBe(
+      "/admin?tab=diagnostics&correlationId=corr-9",
+    );
+  });
+
+  it("parses admin route state so linked investigations reopen on the diagnostics tab with filters applied", () => {
+    expect(
+      parseAdminConsoleRouteState({
+        tab: "diagnostics",
+        examAttemptId: " attempt-9 ",
+        candidateEmail: " Candidate@HeliosCX.demo ",
+        correlationId: [" corr-99 "],
+        outcome: "failure",
+      }),
+    ).toEqual({
+      tab: "diagnostics",
+      diagnosticFilters: {
+        examAttemptId: "attempt-9",
+        candidateEmail: "candidate@helioscx.demo",
+        correlationId: "corr-99",
+        outcome: "failure",
+      },
+    });
+
+    expect(parseAdminConsoleRouteState({ tab: "monitoring", examAttemptId: "attempt-9" })).toEqual({
+      tab: "monitoring",
+      diagnosticFilters: {},
+    });
   });
 });
 

@@ -5,11 +5,17 @@ import { getServices } from "@/composition";
 import { getPortalSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { AdminConsole } from "@/web/admin-console";
+import { parseAdminConsoleRouteState } from "@/web/admin-console-state";
 
-export default async function AdminPage() {
+interface AdminPageProps {
+  readonly searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}
+
+export default async function AdminPage({ searchParams }: AdminPageProps = {}) {
   const services = getServices();
   const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
   const session = await getPortalSession(services, sessionId);
+  const routeState = parseAdminConsoleRouteState((await searchParams) ?? {});
 
   if (!session) {
     redirect("/login");
@@ -18,5 +24,12 @@ export default async function AdminPage() {
     redirect("/candidate");
   }
 
-  return <AdminConsole email={session.email} />;
+  return (
+    <AdminConsole
+      key={`${routeState.tab}:${JSON.stringify(routeState.diagnosticFilters)}`}
+      email={session.email}
+      initialTab={routeState.tab}
+      initialDiagnosticFilters={routeState.diagnosticFilters}
+    />
+  );
 }

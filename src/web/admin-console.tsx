@@ -8,6 +8,8 @@ import {
   ADMIN_SESSION_EXPIRED_MESSAGE,
   type AdminTab,
   beginLatestOnlyRequest,
+  buildAdminConsoleHref,
+  buildCorrelationDiagnosticsHref,
   buildMonitoringHistoryQueryString,
   buildExamAttemptDiagnosticsNavigation,
   buildDiagnosticLogQueryString,
@@ -37,6 +39,8 @@ import type { AdminMonitoringView as MonitoringView } from "@/domain/admin-monit
 
 interface AdminConsoleProps {
   readonly email: string;
+  readonly initialTab?: AdminTab;
+  readonly initialDiagnosticFilters?: DiagnosticLogFilters;
 }
 
 interface ConnectionState {
@@ -202,9 +206,13 @@ function isAdminSessionExpiredError(error: unknown): error is AdminSessionExpire
   return error instanceof AdminSessionExpiredError;
 }
 
-export function AdminConsole({ email }: AdminConsoleProps) {
+export function AdminConsole({
+  email,
+  initialTab = "connection",
+  initialDiagnosticFilters = {},
+}: AdminConsoleProps) {
   const router = useRouter();
-  const [tab, setTab] = useState<AdminTab>("connection");
+  const [tab, setTab] = useState<AdminTab>(initialTab);
   const [projects, setProjects] = useState<NamedResource[]>([]);
   const [regions, setRegions] = useState<NamedResource[]>([]);
   const [blueprints, setBlueprints] = useState<NamedResource[]>([]);
@@ -234,7 +242,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
     SupportWorkbenchDiagnostic[] | null
   >(null);
   const [diagnosticEntries, setDiagnosticEntries] = useState<DiagnosticLogEntry[] | null>(null);
-  const [diagnosticFilters, setDiagnosticFilters] = useState<DiagnosticLogFilters>({});
+  const [diagnosticFilters, setDiagnosticFilters] = useState<DiagnosticLogFilters>(initialDiagnosticFilters);
   const [diagnosticPage, setDiagnosticPage] = useState<DiagnosticLogPageResponse | null>(null);
   const [expandedDiagnosticId, setExpandedDiagnosticId] = useState<string | null>(null);
   const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
@@ -390,7 +398,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
       };
       if (!response.ok) {
         setError(data.error ?? "CloudShare connection test failed");
-        setConnectionWarning("CloudShare connection test failed. Check the warning details and support log.");
+        setConnectionWarning("CloudShare connection test failed. Open Support Diagnostics with the correlation ID for the primary investigation view.");
         setConnectionDiagnostic(data.diagnostic ?? null);
         setConnectionCorrelationId(data.correlationId ?? null);
         setConnectionOccurredAt(data.occurredAt ?? null);
@@ -406,7 +414,7 @@ export function AdminConsole({ email }: AdminConsoleProps) {
         return;
       }
       setError("CloudShare connection test failed");
-      setConnectionWarning("CloudShare connection test failed. Check the support log for more detail.");
+      setConnectionWarning("CloudShare connection test failed. Open Support Diagnostics for more detail.");
     } finally {
       setLoading(false);
     }
@@ -462,11 +470,23 @@ export function AdminConsole({ email }: AdminConsoleProps) {
 
   function openExamAttemptSupportDiagnostics(examAttemptId: string) {
     const navigation = buildExamAttemptDiagnosticsNavigation(diagnosticFilters, examAttemptId);
+    router.push(navigation.href);
     setDiagnosticFilters(navigation.filters);
     setExpandedDiagnosticId(null);
     setTab(navigation.tab);
     if (tab === "diagnostics") {
       void loadDiagnostics(false, navigation.pageOffset, navigation.filters);
+    }
+  }
+
+  function openCorrelationSupportDiagnostics(correlationId: string) {
+    const href = buildCorrelationDiagnosticsHref(correlationId);
+    router.push(href);
+    setDiagnosticFilters({ correlationId: correlationId.trim() });
+    setExpandedDiagnosticId(null);
+    setTab("diagnostics");
+    if (tab === "diagnostics") {
+      void loadDiagnostics(false, 0, { correlationId: correlationId.trim() });
     }
   }
 
@@ -626,11 +646,23 @@ export function AdminConsole({ email }: AdminConsoleProps) {
   }
 
   function applyDiagnosticFilters() {
+    router.push(
+      buildAdminConsoleHref({
+        tab: "diagnostics",
+        diagnosticFilters,
+      }),
+    );
     void loadDiagnostics(false, 0);
   }
 
   function clearDiagnosticFilters() {
     const clearedFilters: DiagnosticLogFilters = {};
+    router.push(
+      buildAdminConsoleHref({
+        tab: "diagnostics",
+        diagnosticFilters: clearedFilters,
+      }),
+    );
     setDiagnosticFilters(clearedFilters);
     setDiagnosticPage(null);
     setExpandedDiagnosticId(null);
@@ -1175,6 +1207,12 @@ export function AdminConsole({ email }: AdminConsoleProps) {
                 setError(null);
                 setCandidateMessage(null);
               }
+              router.push(
+                buildAdminConsoleHref({
+                  tab: t,
+                  diagnosticFilters,
+                }),
+              );
               setTab(t);
             }}
             style={{
@@ -1204,15 +1242,33 @@ export function AdminConsole({ email }: AdminConsoleProps) {
             </button>
           </div>
           {tab === "exams" && examCorrelationId ? (
-            <p style={{ margin: 0, fontSize: "0.85rem" }}>
-              See <strong>Support Log</strong> with correlation ID{" "}
-              <span style={{ fontFamily: "monospace" }}>{examCorrelationId}</span>.
-            </p>
+            <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", alignItems: "center" }}>
+              <p style={{ margin: 0, fontSize: "0.85rem" }}>
+                Open <strong>Support Diagnostics</strong> filtered by correlation ID{" "}
+                <span style={{ fontFamily: "monospace" }}>{examCorrelationId}</span>.
+              </p>
+              <button
+                type="button"
+                onClick={() => openCorrelationSupportDiagnostics(examCorrelationId)}
+                style={{ padding: "0.3rem 0.65rem" }}
+              >
+                Open Support Diagnostics
+              </button>
+            </div>
           ) : connectionCorrelationId ? (
-            <p style={{ margin: 0, fontSize: "0.85rem" }}>
-              See <strong>Support Log</strong> with correlation ID{" "}
-              <span style={{ fontFamily: "monospace" }}>{connectionCorrelationId}</span>.
-            </p>
+            <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", alignItems: "center" }}>
+              <p style={{ margin: 0, fontSize: "0.85rem" }}>
+                Open <strong>Support Diagnostics</strong> filtered by correlation ID{" "}
+                <span style={{ fontFamily: "monospace" }}>{connectionCorrelationId}</span>.
+              </p>
+              <button
+                type="button"
+                onClick={() => openCorrelationSupportDiagnostics(connectionCorrelationId)}
+                style={{ padding: "0.3rem 0.65rem" }}
+              >
+                Open Support Diagnostics
+              </button>
+            </div>
           ) : null}
         </div>
       )}
@@ -1298,11 +1354,20 @@ export function AdminConsole({ email }: AdminConsoleProps) {
           </div>
           {connectionWarning && (
             <div style={{ color: "#7a4b00", background: "#fff7e6", padding: "0.75rem", borderRadius: "6px", display: "grid", gap: "0.4rem" }}>
-              <p style={{ margin: 0 }}>The CloudShare connection test failed. Check the Support Log for details.</p>
+              <p style={{ margin: 0 }}>The CloudShare connection test failed. Support Diagnostics is the primary investigation view.</p>
               {connectionCorrelationId && (
-                <p style={{ margin: 0, fontSize: "0.85rem" }}>
-                  Correlation ID: <span style={{ fontFamily: "monospace" }}>{connectionCorrelationId}</span>
-                </p>
+                <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", alignItems: "center" }}>
+                  <p style={{ margin: 0, fontSize: "0.85rem" }}>
+                    Correlation ID: <span style={{ fontFamily: "monospace" }}>{connectionCorrelationId}</span>
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => openCorrelationSupportDiagnostics(connectionCorrelationId)}
+                    style={{ padding: "0.3rem 0.65rem" }}
+                  >
+                    Open Support Diagnostics
+                  </button>
+                </div>
               )}
             </div>
           )}
@@ -1850,8 +1915,8 @@ export function AdminConsole({ email }: AdminConsoleProps) {
           <p style={{ color: "#555", marginTop: 0 }}>
             The correlated diagnostic log: what the portal did, in what order, and how to trace it.
             Entries are append-only and scoped to your Customer. This is the primary support workflow.
-            Session Monitoring remains the current-state queue view. Timestamps are ISO 8601 in UTC.
-            Secrets and credentials are redacted.
+            Session Monitoring remains the current-state queue view and should link into this tab for
+            forensic investigation. Timestamps are ISO 8601 in UTC. Secrets and credentials are redacted.
           </p>
           <div
             style={{
@@ -2017,6 +2082,21 @@ export function AdminConsole({ email }: AdminConsoleProps) {
               <span style={{ fontFamily: "monospace" }}>{diagnosticFilters.examAttemptId}</span>.
             </div>
           ) : null}
+          {!diagnosticFilters.examAttemptId && diagnosticFilters.correlationId ? (
+            <div
+              style={{
+                marginBottom: "0.75rem",
+                padding: "0.65rem 0.8rem",
+                border: "1px solid #dbe4ff",
+                borderRadius: "8px",
+                background: "#f5f8ff",
+                color: "#123",
+              }}
+            >
+              Filtered to correlation ID{" "}
+              <span style={{ fontFamily: "monospace" }}>{diagnosticFilters.correlationId}</span>.
+            </div>
+          ) : null}
           {diagnosticEntries && (
             <DiagnosticLogTable
               entries={diagnosticEntries}
@@ -2028,10 +2108,10 @@ export function AdminConsole({ email }: AdminConsoleProps) {
             />
           )}
           <div style={{ marginTop: "2rem" }}>
-            <h2 style={{ marginBottom: "0.5rem", fontSize: "1rem" }}>Legacy support traces</h2>
+            <h2 style={{ marginBottom: "0.5rem", fontSize: "1rem" }}>Legacy/raw support traces</h2>
             <p style={{ color: "#555", marginTop: 0 }}>
-              Older webhook trust-gate widgets and structured server logs remain available here as
-              secondary evidence while support workflows move to the correlated Diagnostic Log above.
+              Transitional webhook widgets and the older server Support Log remain here only as
+              secondary raw evidence when something has not yet been promoted into the Diagnostic Log.
             </p>
             <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "1rem" }}>
               <button onClick={onLoadSupportWorkbench} disabled={loading} style={{ padding: "0.4rem 1rem" }}>

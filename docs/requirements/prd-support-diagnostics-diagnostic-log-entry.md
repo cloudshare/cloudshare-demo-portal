@@ -54,6 +54,7 @@ Existing prototype support-log rows are development data and do not need migrati
 - Diagnostic entries are append-only evidence. Do not mutate old rows to add identifiers that were unknown at the time.
 - Later discoveries, such as environment correlation, should emit new entries that include the newly discovered ID and the known thread identifiers.
 - Session Monitoring remains the current-state queue surface. Support should not duplicate Session Monitoring queues as its primary workflow.
+- Admin investigation actions should route into the Diagnostic Log with pre-applied filters such as ExamAttempt ID or correlation ID. The older Support Log remains only as a transitional raw-evidence fallback, not the primary investigation view.
 - Audit Trail remains separate. Audit answers who changed what and whether it was allowed; Support diagnostics answer what the platform did and how to trace behavior. Some actions emit both.
 - Event Log is not a primary support workflow. Events that matter to support should appear as DiagnosticLogEntries or correlated timeline rows.
 - Existing prototype support-log rows are disposable development data and should not constrain the new model.
