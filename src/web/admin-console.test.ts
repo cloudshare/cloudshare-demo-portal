@@ -18,4 +18,38 @@ describe("AdminConsole", () => {
     expect(html).not.toContain("Support Workbench");
     expect(html).toContain("Session Monitoring");
   });
+
+  it("reopens on the Diagnostic Log tab when route state links to an ExamAttempt investigation", () => {
+    const html = renderToStaticMarkup(
+      createElement(AdminConsole, {
+        email: "admin@helioscx.demo",
+        initialTab: "diagnostics",
+        initialDiagnosticFilters: {
+          examAttemptId: "attempt-42",
+          correlationId: "corr-42",
+        },
+      }),
+    );
+
+    expect(html).toContain("This is the primary support workflow.");
+    expect(html).toContain("Filtered to ExamAttempt ID");
+    expect(html).toContain("attempt-42");
+    expect(html).toContain("Legacy/raw support traces");
+  });
+
+  it("reopens on the Diagnostic Log tab when route state links from a correlation-based support action", () => {
+    const html = renderToStaticMarkup(
+      createElement(AdminConsole, {
+        email: "admin@helioscx.demo",
+        initialTab: "diagnostics",
+        initialDiagnosticFilters: {
+          correlationId: "corr-42",
+        },
+      }),
+    );
+
+    expect(html).toContain("This is the primary support workflow.");
+    expect(html).toContain("Filtered to correlation ID");
+    expect(html).toContain("corr-42");
+  });
 });

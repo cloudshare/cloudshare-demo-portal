@@ -29,6 +29,19 @@ export interface ExamAttemptDiagnosticsNavigation {
   readonly tab: "diagnostics";
   readonly filters: DiagnosticLogFilters;
   readonly pageOffset: 0;
+  readonly href: string;
+}
+
+export interface CorrelationDiagnosticsNavigation {
+  readonly tab: "diagnostics";
+  readonly filters: DiagnosticLogFilters;
+  readonly pageOffset: 0;
+  readonly href: string;
+}
+
+export interface AdminConsoleRouteState {
+  readonly tab: AdminTab;
+  readonly diagnosticFilters: DiagnosticLogFilters;
 }
 
 export type AdminTab =
@@ -191,17 +204,104 @@ export function mergeMonitoringHistoryPage(
 }
 
 export function buildExamAttemptDiagnosticsNavigation(
-  filters: DiagnosticLogFilters,
   examAttemptId: string,
 ): ExamAttemptDiagnosticsNavigation {
+  const nextFilters = {
+    examAttemptId: examAttemptId.trim(),
+  };
+
   return {
     tab: "diagnostics",
-    filters: {
-      ...filters,
-      examAttemptId: examAttemptId.trim(),
-    },
+    filters: nextFilters,
     pageOffset: 0,
+    href: buildAdminConsoleHref({ tab: "diagnostics", diagnosticFilters: nextFilters }),
   };
+}
+
+export function buildCorrelationDiagnosticsNavigation(
+  correlationId: string,
+): CorrelationDiagnosticsNavigation {
+  const nextFilters = { correlationId: correlationId.trim() };
+
+  return {
+    tab: "diagnostics",
+    filters: nextFilters,
+    pageOffset: 0,
+    href: buildAdminConsoleHref({
+      tab: "diagnostics",
+      diagnosticFilters: nextFilters,
+    }),
+  };
+}
+
+export function buildAdminConsoleHref(route: AdminConsoleRouteState): string {
+  const params = new URLSearchParams();
+  params.set("tab", route.tab);
+
+  if (route.tab === "diagnostics") {
+    const filters = normaliseDiagnosticLogFilters(route.diagnosticFilters);
+    for (const [key, value] of Object.entries(filters)) {
+      if (value) {
+        params.set(key, value);
+      }
+    }
+  }
+
+  const query = params.toString();
+  return query ? `/admin?${query}` : "/admin";
+}
+
+export function parseAdminConsoleRouteState(input: {
+  readonly tab?: string | readonly string[];
+  readonly examAttemptId?: string | readonly string[];
+  readonly examId?: string | readonly string[];
+  readonly candidateEmail?: string | readonly string[];
+  readonly operation?: string | readonly string[];
+  readonly outcome?: string | readonly string[];
+  readonly source?: string | readonly string[];
+  readonly integrationSurface?: string | readonly string[];
+  readonly correlationId?: string | readonly string[];
+  readonly externalId?: string | readonly string[];
+  readonly from?: string | readonly string[];
+  readonly to?: string | readonly string[];
+}): AdminConsoleRouteState {
+  const tab = parseAdminTab(input.tab);
+  if (tab !== "diagnostics") {
+    return { tab, diagnosticFilters: {} };
+  }
+
+  return {
+    tab,
+    diagnosticFilters: normaliseDiagnosticLogFilters({
+      examAttemptId: readRouteValue(input.examAttemptId),
+      examId: readRouteValue(input.examId),
+      candidateEmail: readRouteValue(input.candidateEmail),
+      operation: readRouteValue(input.operation),
+      outcome: parseOutcome(input.outcome),
+      source: readRouteValue(input.source),
+      integrationSurface: readRouteValue(input.integrationSurface),
+      correlationId: readRouteValue(input.correlationId),
+      externalId: readRouteValue(input.externalId),
+      from: readRouteValue(input.from),
+      to: readRouteValue(input.to),
+    }),
+  };
+}
+
+function readRouteValue(value: string | readonly string[] | undefined): string | undefined {
+  return typeof value === "string" ? value : value?.[0];
+}
+
+function parseAdminTab(value: string | readonly string[] | undefined): AdminTab {
+  const candidate = readRouteValue(value);
+  return ADMIN_TABS.includes(candidate as AdminTab) ? (candidate as AdminTab) : "connection";
+}
+
+function parseOutcome(
+  value: string | readonly string[] | undefined,
+): DiagnosticLogFilters["outcome"] | undefined {
+  const candidate = readRouteValue(value);
+  return candidate === "success" || candidate === "failure" ? candidate : undefined;
 }
 
 export function buildWebhookCallbackUrl(

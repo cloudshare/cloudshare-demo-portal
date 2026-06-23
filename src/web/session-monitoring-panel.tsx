@@ -66,7 +66,7 @@ function renderAttemptCard(
           onOpenSupportDiagnostics={onOpenSupportDiagnostics}
         />
         <div style={{ color: "#555" }}>
-          Durable history lives in Support Diagnostics.
+          Investigation opens Support Diagnostics filtered to this ExamAttempt ID.
         </div>
       </div>
     </details>
