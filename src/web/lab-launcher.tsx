@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { openEnterExamWindow } from "./enter-exam";
 import { isLabWindowOpen } from "./lab-window";
 import { preflightLabAction, resumeLabAttempt, suspendLabAttempt, type CandidateLabStatus, type AttemptStatus } from "./lab-launcher-client";
+import { describeAndReportLaunchFailure } from "./lab-launcher-runtime-diagnostics";
 import {
   getAttemptStatusAfterLaunchTransition,
   getLauncherRecoveryAction,
@@ -214,12 +215,28 @@ export function LabLauncher({
         setMessage(preflight.message);
         return;
       }
-      openEnterExamWindow(examAttemptId);
+      try {
+        openEnterExamWindow(examAttemptId);
+      } catch (error) {
+        setState("error");
+        setMessage(
+          await describeAndReportLaunchFailure(fetch, {
+            error,
+            examAttemptId,
+            attemptedAction:
+              currentAttemptStatusRef.current === "in_progress" ? "open" : "enter",
+            attemptStatus: currentAttemptStatusRef.current,
+          }),
+        );
+        return;
+      }
       reportAttemptStatusChange("in_progress");
       setState("open");
     } catch (err) {
       setState("error");
-      setMessage(formatLaunchError(err, currentAttemptStatusRef.current));
+      setMessage(
+        err instanceof Error ? err.message : "launch failed",
+      );
     } finally {
       actionInFlightRef.current = false;
     }
@@ -281,11 +298,27 @@ export function LabLauncher({
       reportAttemptStatusChange(
         getAttemptStatusAfterLaunchTransition(currentAttemptStatusRef.current, "resume"),
       );
-      openEnterExamWindow(examAttemptId);
+      try {
+        openEnterExamWindow(examAttemptId);
+      } catch (error) {
+        setState("error");
+        setMessage(
+          await describeAndReportLaunchFailure(fetch, {
+            error,
+            examAttemptId,
+            attemptedAction:
+              currentAttemptStatusRef.current === "in_progress" ? "open" : "resume",
+            attemptStatus: currentAttemptStatusRef.current,
+          }),
+        );
+        return;
+      }
       setState("open");
     } catch (err) {
       setState("error");
-      setMessage(formatLaunchError(err, currentAttemptStatusRef.current));
+      setMessage(
+        err instanceof Error ? err.message : "resume failed",
+      );
     } finally {
       actionInFlightRef.current = false;
     }
@@ -388,18 +421,4 @@ export function LabLauncher({
       )}
     </div>
   );
-}
-
-function formatLaunchError(error: unknown, attemptStatus: AttemptStatus): string {
-  const fallback = error instanceof Error ? error.message : "launch failed";
-  if (typeof fallback !== "string") {
-    return "launch failed";
-  }
-  if (!/popup blocked|could not be opened/i.test(fallback)) {
-    return fallback;
-  }
-  const recoveryAction = getLauncherRecoveryAction(attemptStatus);
-  return recoveryAction?.action === "reopen"
-    ? "The exam window was blocked by your browser. Allow popups for this site, then use Open exam window to retry."
-    : "The exam window was blocked by your browser. Allow popups for this site, then try again.";
 }
