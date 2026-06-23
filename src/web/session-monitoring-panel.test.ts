@@ -90,7 +90,7 @@ function makeMonitoringView(partial: Partial<AdminMonitoringView> = {}): AdminMo
 }
 
 describe("SessionMonitoringPanel", () => {
-  it("renders current-state monitoring copy, bounded terminal-history copy, and the Support Diagnostics handoff", () => {
+  it("renders the monitoring status strip, separated live and history sections, and the Support Diagnostics handoff", () => {
     const html = renderToStaticMarkup(
       createElement(SessionMonitoringPanel, {
         monitoring: makeMonitoringView(),
@@ -101,8 +101,10 @@ describe("SessionMonitoringPanel", () => {
       }),
     );
 
+    expect(html).toContain("Monitoring status");
     expect(html).toContain("Session Monitoring is the current-state operations surface for active ExamAttempts.");
     expect(html).toContain("Use Support Diagnostics for the forensic trace of what happened and in what order.");
+    expect(html).toContain("Live queues");
     expect(html).toContain("Completed / expired history (showing 1 of 3)");
     expect(html).toContain("Load more history");
     expect(html).toContain("Open in Support Diagnostics");

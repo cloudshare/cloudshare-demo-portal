@@ -38,6 +38,45 @@ export function buildMonitoringAttemptDetailFields(
   ];
 }
 
+const attemptDetailsGridStyle: React.CSSProperties = {
+  display: "grid",
+  gap: "0.75rem",
+  marginTop: "0.9rem",
+  fontSize: "0.9rem",
+};
+
+const detailPairGridStyle: React.CSSProperties = {
+  display: "grid",
+  gap: "0.6rem",
+  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+};
+
+const detailPairStyle: React.CSSProperties = {
+  display: "grid",
+  gap: "0.2rem",
+  padding: "0.65rem 0.75rem",
+  border: "1px solid #e5e7eb",
+  borderRadius: "6px",
+  background: "#fafafa",
+};
+
+const detailLabelStyle: React.CSSProperties = {
+  color: "#4b5563",
+  fontSize: "0.75rem",
+  fontWeight: 600,
+};
+
+const detailValueStyle: React.CSSProperties = {
+  color: "#111827",
+  fontWeight: 500,
+  wordBreak: "break-word",
+};
+
+const actionRowStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "flex-start",
+};
+
 export function MonitoringAttemptDetails({
   attempt,
   scheduledForLabel,
@@ -46,15 +85,26 @@ export function MonitoringAttemptDetails({
   const detailFields = buildMonitoringAttemptDetailFields(attempt);
 
   return (
-    <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.75rem", fontSize: "0.9rem" }}>
-      <div>Candidate: {attempt.candidateEmail}</div>
-      <div>Scheduled (UTC): {scheduledForLabel}</div>
-      {detailFields.map((field) => (
-        <div key={field.label}>
-          {field.label}: {field.value}
+    <div style={attemptDetailsGridStyle}>
+      <div style={detailPairGridStyle}>
+        <div style={detailPairStyle}>
+          <div style={detailLabelStyle}>Candidate</div>
+          <div style={detailValueStyle}>{attempt.candidateEmail}</div>
         </div>
-      ))}
-      <div>
+        <div style={detailPairStyle}>
+          <div style={detailLabelStyle}>Scheduled (UTC)</div>
+          <div style={detailValueStyle}>{scheduledForLabel}</div>
+        </div>
+      </div>
+      <div style={detailPairGridStyle}>
+        {detailFields.map((field) => (
+          <div key={field.label} style={detailPairStyle}>
+            <div style={detailLabelStyle}>{field.label}</div>
+            <div style={detailValueStyle}>{field.value}</div>
+          </div>
+        ))}
+      </div>
+      <div style={actionRowStyle}>
         <button
           type="button"
           onClick={() => onOpenSupportDiagnostics(attempt.id)}
