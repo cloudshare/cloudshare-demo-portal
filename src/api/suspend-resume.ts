@@ -75,6 +75,18 @@ interface FailureHandlingSpec {
   readonly logMessage: string;
 }
 
+interface PendingTransitionResponseSpec {
+  readonly body: {
+    readonly status: "pending";
+    readonly operation: "suspend" | "resume";
+    readonly examAttemptId: string;
+    readonly retryable: true;
+    readonly message: string;
+    readonly correlationId: string;
+  };
+  readonly status: 202;
+}
+
 interface RuntimeDiagnosticAnchors {
   readonly source: "runtime";
   readonly customerId: string | null;
@@ -96,6 +108,8 @@ class CustomerEnvironmentAccessError extends Error {
   }
 }
 
+const inFlightTransitions = new Map<string, Promise<SuspendResumeResponse>>();
+
 // --- Suspend ---
 
 export interface SuspendHandlerDeps
@@ -112,7 +126,16 @@ export async function handleSuspendExam(
   if (!examAttemptId) {
     return { status: 400, body: { error: "examAttemptId is required" } };
   }
+  return coalesceTransition(`suspend:${examAttemptId}`, () =>
+    handleSuspendExamOnce(deps, request, examAttemptId),
+  );
+}
 
+async function handleSuspendExamOnce(
+  deps: SuspendHandlerDeps,
+  request: SuspendResumeRequest,
+  examAttemptId: string,
+): Promise<SuspendResumeResponse> {
   let anchors: RuntimeDiagnosticAnchors = {
     source: "runtime" as const,
     customerId: null as string | null,
@@ -239,7 +262,16 @@ export async function handleResumeExam(
   if (!examAttemptId) {
     return { status: 400, body: { error: "examAttemptId is required" } };
   }
+  return coalesceTransition(`resume:${examAttemptId}`, () =>
+    handleResumeExamOnce(deps, request, examAttemptId),
+  );
+}
 
+async function handleResumeExamOnce(
+  deps: ResumeHandlerDeps,
+  request: SuspendResumeRequest,
+  examAttemptId: string,
+): Promise<SuspendResumeResponse> {
   let anchors: RuntimeDiagnosticAnchors = {
     source: "runtime" as const,
     customerId: null as string | null,
@@ -708,7 +740,12 @@ async function reportFailureDiagnostic(
       payload: diagnostic,
     });
     deps.logger.warn(spec.logMessage, diagnostic);
-    return { status: 502, body: { error: `exam ${spec.action} failed`, correlationId } };
+    return (
+      buildPendingTransitionResponse(spec.action, examAttemptId, err, correlationId) ?? {
+        status: 502,
+        body: { error: `exam ${spec.action} failed`, correlationId },
+      }
+    );
   }
 
   if (isCloudShareFailure(err)) {
@@ -732,6 +769,56 @@ async function reportFailureDiagnostic(
   }
 
   return null;
+}
+
+function coalesceTransition(
+  key: string,
+  factory: () => Promise<SuspendResumeResponse>,
+): Promise<SuspendResumeResponse> {
+  const existing = inFlightTransitions.get(key);
+  if (existing) {
+    return existing;
+  }
+
+  const pending = factory().finally(() => {
+    if (inFlightTransitions.get(key) === pending) {
+      inFlightTransitions.delete(key);
+    }
+  });
+  inFlightTransitions.set(key, pending);
+  return pending;
+}
+
+function buildPendingTransitionResponse(
+  action: "suspend" | "resume",
+  examAttemptId: string,
+  err: TimerSyncError,
+  correlationId: string,
+): PendingTransitionResponseSpec | null {
+  const failureMode =
+    typeof err.context?.failureMode === "string"
+      ? err.context.failureMode
+      : /^Timed out waiting for environment to become /i.test(err.message)
+        ? "confirmation_timeout"
+        : null;
+  if (failureMode !== "confirmation_timeout" && failureMode !== "not_correlated_yet") {
+    return null;
+  }
+
+  return {
+    status: 202,
+    body: {
+      status: "pending",
+      operation: action,
+      examAttemptId,
+      retryable: true,
+      correlationId,
+      message:
+        action === "resume"
+          ? "CloudShare is still resuming your lab. Wait a few seconds, then retry Resume exam."
+          : "CloudShare is still suspending your lab. Wait a few seconds, then retry Suspend lab.",
+    },
+  };
 }
 
 function buildTimerSyncDiagnostic(

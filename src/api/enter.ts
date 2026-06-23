@@ -32,8 +32,28 @@ export interface EnterExamResponse {
 }
 
 const ENTERABLE_STATUSES = new Set(["ready", "in_progress"]);
+const inFlightEnterRequests = new Map<string, Promise<EnterExamResponse>>();
 
 export async function handleEnterExam(
+  deps: EnterExamDeps,
+  request: EnterExamRequest,
+): Promise<EnterExamResponse> {
+  const requestKey = buildEnterRequestKey(request);
+  const existing = inFlightEnterRequests.get(requestKey);
+  if (existing) {
+    return existing;
+  }
+
+  const pending = handleEnterExamOnce(deps, request).finally(() => {
+    if (inFlightEnterRequests.get(requestKey) === pending) {
+      inFlightEnterRequests.delete(requestKey);
+    }
+  });
+  inFlightEnterRequests.set(requestKey, pending);
+  return pending;
+}
+
+async function handleEnterExamOnce(
   deps: EnterExamDeps,
   request: EnterExamRequest,
 ): Promise<EnterExamResponse> {
@@ -184,4 +204,8 @@ function textResponse(status: number, body: string): EnterExamResponse {
     },
     body,
   };
+}
+
+function buildEnterRequestKey(request: EnterExamRequest): string {
+  return `${request.candidateId}:${request.examAttemptId}`;
 }

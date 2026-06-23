@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  getAttemptStatusAfterLaunchTransition,
+  getLauncherRecoveryAction,
   getLauncherSyncTarget,
   updateCandidateLabStatus,
   updateCandidateLabStatusAttemptState,
@@ -40,5 +42,27 @@ describe("lab launcher state helpers", () => {
       message: "Lab suspended.",
     });
     expect(getLauncherSyncTarget("ready")).toBeNull();
+  });
+
+  it("maps recovery actions to the authoritative attempt status after launch or popup errors", () => {
+    expect(getLauncherRecoveryAction("ready")).toEqual({
+      action: "enter",
+      label: "Enter exam",
+    });
+    expect(getLauncherRecoveryAction("in_progress")).toEqual({
+      action: "reopen",
+      label: "Open exam window",
+    });
+    expect(getLauncherRecoveryAction("suspended")).toEqual({
+      action: "resume",
+      label: "Resume exam",
+    });
+    expect(getLauncherRecoveryAction("completed")).toBeNull();
+  });
+
+  it("promotes a resumed attempt to in-progress before popup recovery is rendered", () => {
+    expect(getAttemptStatusAfterLaunchTransition("suspended", "resume")).toBe("in_progress");
+    expect(getAttemptStatusAfterLaunchTransition("ready", "enter")).toBe("ready");
+    expect(getAttemptStatusAfterLaunchTransition("in_progress", "resume")).toBe("in_progress");
   });
 });

@@ -600,8 +600,15 @@ describe("handleSuspendExam", () => {
 
     const resp = await handleSuspendExam(deps, { body: { examAttemptId: "ea-1" } });
 
-    expect(resp.status).toBe(502);
-    expect(resp.body).toEqual({ error: "exam suspend failed", correlationId: "corr-suspend" });
+    expect(resp.status).toBe(202);
+    expect(resp.body).toEqual({
+      status: "pending",
+      operation: "suspend",
+      examAttemptId: "ea-1",
+      retryable: true,
+      correlationId: "corr-suspend",
+      message: "CloudShare is still suspending your lab. Wait a few seconds, then retry Suspend lab.",
+    });
     expect(customerClient.requestV3).not.toHaveBeenCalled();
     await expect(launches.findByExamAttemptId("ea-1")).resolves.not.toMatchObject({
       environmentId: "ENKolD1-ab84YIxODeMGob9A2",
@@ -659,8 +666,15 @@ describe("handleSuspendExam", () => {
 
     const resp = await handleSuspendExam(deps, { body: { examAttemptId: "ea-1" } });
 
-    expect(resp.status).toBe(502);
-    expect(resp.body).toEqual({ error: "exam suspend failed", correlationId: "corr-suspend" });
+    expect(resp.status).toBe(202);
+    expect(resp.body).toEqual({
+      status: "pending",
+      operation: "suspend",
+      examAttemptId: "ea-1",
+      retryable: true,
+      correlationId: "corr-suspend",
+      message: "CloudShare is still suspending your lab. Wait a few seconds, then retry Suspend lab.",
+    });
     expect(customerClient.requestV3).not.toHaveBeenCalled();
     expect(deps.eventLog.append).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -720,8 +734,15 @@ describe("handleSuspendExam", () => {
       deps,
       { body: { examAttemptId: "ea-1" } },
     );
-    expect(resp.status).toBe(502);
-    expect(resp.body).toMatchObject({ error: "exam suspend failed", correlationId: "corr-suspend" });
+    expect(resp.status).toBe(202);
+    expect(resp.body).toEqual({
+      status: "pending",
+      operation: "suspend",
+      examAttemptId: "ea-1",
+      retryable: true,
+      correlationId: "corr-suspend",
+      message: "CloudShare is still suspending your lab. Wait a few seconds, then retry Suspend lab.",
+    });
     expect(deps.eventLog.append).toHaveBeenCalledWith(
       expect.objectContaining({
         eventId: "corr-suspend",
@@ -932,7 +953,7 @@ describe("handleResumeExam", () => {
     expect(resp.status).toBe(404);
   });
 
-  it("returns 502 when poll times out", async () => {
+  it("returns a retryable pending response when poll confirmation times out", async () => {
     const deps = await makeResumeDeps({
         cloudshare: {
           forConnection: vi.fn().mockReturnValue(
@@ -950,8 +971,15 @@ describe("handleResumeExam", () => {
       deps,
       { body: { examAttemptId: "ea-1" } },
     );
-    expect(resp.status).toBe(502);
-    expect(resp.body).toEqual({ error: "exam resume failed", correlationId: "corr-resume" });
+    expect(resp.status).toBe(202);
+    expect(resp.body).toEqual({
+      status: "pending",
+      operation: "resume",
+      examAttemptId: "ea-1",
+      retryable: true,
+      correlationId: "corr-resume",
+      message: "CloudShare is still resuming your lab. Wait a few seconds, then retry Resume exam.",
+    });
     expect(deps.eventLog.append).toHaveBeenCalledWith(
       expect.objectContaining({
         eventId: "corr-resume",
@@ -1085,6 +1113,88 @@ describe("handleResumeExam", () => {
     expect(deps.eventLog.append).not.toHaveBeenCalled();
   });
 
+  it("coalesces concurrent fast resume requests into one CloudShare transition", async () => {
+    const examAttemptId = "ea-coalesce";
+    const releaseResume: { current: undefined | (() => void) } = { current: undefined };
+    const customerClient = makeCloudShareClient({
+      requestV3Text: vi.fn(
+        () =>
+          new Promise<string>((resolve) => {
+            releaseResume.current = () => resolve("");
+          }),
+      ) as unknown as CloudShareClient["requestV3Text"],
+      requestV3: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+        if (spec.path.startsWith("/envs/")) {
+          return spec.schema.parse({ envStatus: "Running" });
+        }
+        throw new Error(`unexpected v3 path ${spec.path}`);
+      }) as unknown as CloudShareClient["requestV3"],
+      requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+        if (spec.path === "/trainings/EXtraining-1/students") {
+          return spec.schema.parse([
+            {
+              email: "candidate@helioscx.demo",
+              environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+              environmentStatus: "ready",
+            },
+          ]);
+        }
+        throw new Error(`unexpected v4 path ${spec.path}`);
+      }) as unknown as CloudShareClient["requestV4"],
+    });
+    const timer = {
+      pauseTimer: vi.fn(),
+      resumeTimer: vi.fn().mockResolvedValue(undefined),
+    };
+    const attempts = await makeAttemptsFor(examAttemptId, "suspended");
+    const launches = makeLaunches({
+      ...launch,
+      examAttemptId,
+    });
+    const deps = await makeResumeDeps({
+      attempts,
+      launches,
+      timer,
+      cloudshare: {
+        forConnection: vi.fn().mockReturnValue(customerClient),
+      },
+    });
+
+    const first = handleResumeExam(deps, { body: { examAttemptId } });
+    const second = handleResumeExam(deps, { body: { examAttemptId } });
+
+    try {
+      await vi.waitFor(() => {
+        expect(customerClient.requestV3Text).toHaveBeenCalledTimes(1);
+      });
+
+      if (releaseResume.current) {
+        releaseResume.current();
+      }
+
+      await expect(first).resolves.toMatchObject({
+        status: 200,
+        body: expect.objectContaining({
+          status: "resumed",
+          examAttemptId,
+        }),
+      });
+      await expect(second).resolves.toMatchObject({
+        status: 200,
+        body: expect.objectContaining({
+          status: "resumed",
+          examAttemptId,
+        }),
+      });
+      expect(timer.resumeTimer).toHaveBeenCalledTimes(1);
+      expect(deps.eventLog.append).not.toHaveBeenCalled();
+    } finally {
+      if (releaseResume.current) {
+        releaseResume.current();
+      }
+    }
+  });
+
   it("falls back to the normal CloudShare failure diagnostic when already-active recovery itself fails", async () => {
     const customerClient = makeCloudShareClient({
       requestV3Text: vi.fn(async () => {
@@ -1190,8 +1300,15 @@ describe("handleResumeExam", () => {
 
     const resp = await handleResumeExam(deps, { body: { examAttemptId: "ea-1" } });
 
-    expect(resp.status).toBe(502);
-    expect(resp.body).toEqual({ error: "exam resume failed", correlationId: "corr-resume" });
+    expect(resp.status).toBe(202);
+    expect(resp.body).toEqual({
+      status: "pending",
+      operation: "resume",
+      examAttemptId: "ea-1",
+      retryable: true,
+      correlationId: "corr-resume",
+      message: "CloudShare is still resuming your lab. Wait a few seconds, then retry Resume exam.",
+    });
     expect(customerClient.requestV3).not.toHaveBeenCalled();
     expect(deps.eventLog.append).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -784,6 +784,38 @@ the diagnostic `externalIds`. Confirm the add-students response shape against th
 
 ---
 
+## GAP-18 — Rapid suspend/resume can return transient v3 environment action 500 while CloudShare state settles
+
+| Field | Detail |
+|---|---|
+| **Status** | Confirmed — observed during live QA follow-up for PR #102 / issue #104 |
+| **Verified live** | Yes |
+
+**Observed behaviour**
+
+When the same environment is suspended and then resumed again in very quick succession, CloudShare's
+v3 environment action path can transiently return `500` while the environment state is still
+settling. In the live QA run this surfaced on the resume path (`PUT /api/v3/envs/actions/resume`)
+even though the ExamAttempt remained recoverable once the environment finished transitioning.
+
+**Impact on certification use**
+
+- The portal must treat this as a recoverable external-state race, not a terminal Candidate failure.
+- Candidate recovery should continue to rely on the authoritative ExamAttempt/environment state and
+  allow retry/open once CloudShare settles.
+- Support diagnostics for this case must preserve the CloudShare method, path, response status,
+  correlation ID, ExamAttempt ID, and environment ID so admins can distinguish a transient
+  CloudShare settle race from a broken entitlement or launch mapping.
+
+**Action required (if applicable):**
+
+Backlog issue #104 tracks any deeper product/workflow mitigation beyond the current recoverable
+portal behavior and diagnostics coverage.
+
+**Code reference:** `src/api/suspend-resume.ts`, `src/web/lab-launcher.tsx`
+
+---
+
 ## Gap template
 
 Copy this section when appending a new gap discovered during implementation:

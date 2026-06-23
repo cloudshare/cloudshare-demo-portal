@@ -167,6 +167,51 @@ describe("lab launcher client helpers", () => {
     );
   });
 
+  it("maps a retryable pending resume response to a recoverable suspended state", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 202,
+        json: async () => ({
+          status: "pending",
+          operation: "resume",
+          retryable: true,
+          message: "CloudShare is still resuming your lab. Wait a few seconds, then retry Resume exam.",
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          examAttemptId: "attempt-1",
+          examTitle: "Helios Guided Journey",
+          timeLimitMinutes: 60,
+          status: "suspended",
+          scheduledFor: "2026-06-18T09:00:00.000Z",
+        }),
+      });
+
+    const result = await resumeLabAttempt(fetchImpl, "attempt-1");
+
+    expect(result).toEqual({
+      kind: "pending",
+      labStatus: {
+        examAttemptId: "attempt-1",
+        examTitle: "Helios Guided Journey",
+        timeLimitMinutes: 60,
+        status: "suspended",
+        scheduledFor: "2026-06-18T09:00:00.000Z",
+      },
+      message: "CloudShare is still resuming your lab. Wait a few seconds, then retry Resume exam.",
+    });
+    expect(fetchImpl).toHaveBeenNthCalledWith(
+      2,
+      "/api/exam/status?examAttemptId=attempt-1",
+      { cache: "no-store" },
+    );
+  });
+
   it("refreshes authoritative status after a suspend 409 so the lab UI can settle to completed", async () => {
     const fetchImpl = vi
       .fn()
