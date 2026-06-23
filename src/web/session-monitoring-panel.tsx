@@ -120,6 +120,43 @@ const queueListStyle: React.CSSProperties = {
   gap: "0.75rem",
 };
 
+const queueCardBaseStyle: React.CSSProperties = {
+  display: "grid",
+  gap: "0.75rem",
+  padding: "0.9rem",
+  borderRadius: "6px",
+  border: "1px solid #d1d5db",
+};
+
+const queueHeadingStyle: React.CSSProperties = {
+  margin: 0,
+  fontSize: "0.95rem",
+  color: "#111827",
+};
+
+const queueCountPillStyle: React.CSSProperties = {
+  padding: "0.15rem 0.45rem",
+  borderRadius: "999px",
+  border: "1px solid #d1d5db",
+  background: "rgba(255, 255, 255, 0.72)",
+  color: "#374151",
+  fontSize: "0.75rem",
+  fontWeight: 600,
+  whiteSpace: "nowrap",
+};
+
+const liveQueueStyles = {
+  scheduled: { background: "#f7fbff", borderColor: "#c7ddff" },
+  ready: { background: "#f7fff9", borderColor: "#c9ebd3" },
+  inProgress: { background: "#fffaf2", borderColor: "#f1d6a8" },
+  suspended: { background: "#fff7f7", borderColor: "#f0c4c4" },
+} satisfies Record<string, Pick<React.CSSProperties, "background" | "borderColor">>;
+
+const historyCardStyle: React.CSSProperties = {
+  background: "#f7f9ff",
+  border: "1px solid #d7def3",
+};
+
 export function buildMonitoringHistoryAttemptKey(attempt: Pick<MonitoringAttemptView, "id">): string {
   return attempt.id;
 }
@@ -127,7 +164,10 @@ export function buildMonitoringHistoryAttemptKey(attempt: Pick<MonitoringAttempt
 function renderAttemptCard(
   attempt: MonitoringAttemptView,
   onOpenSupportDiagnostics: (examAttemptId: string) => void,
+  options: { readonly showStatusBadge?: boolean } = {},
 ) {
+  const showStatusBadge = options.showStatusBadge ?? true;
+
   return (
     <details
       key={buildMonitoringHistoryAttemptKey(attempt)}
@@ -146,20 +186,22 @@ function renderAttemptCard(
         <span style={{ minWidth: 0, flex: "1 1 auto", overflowWrap: "anywhere" }}>
           {attempt.candidateName} · {attempt.examTitle} · {formatMonitoringResult(attempt.result)}
         </span>
-        <span
-          style={{
-            padding: "0.2rem 0.45rem",
-            borderRadius: "999px",
-            background: "#f8fafc",
-            border: "1px solid #d1d5db",
-            color: "#374151",
-            fontSize: "0.75rem",
-            fontWeight: 600,
-            whiteSpace: "nowrap",
-          }}
-        >
-          {formatAttemptStatus(attempt.status)}
-        </span>
+        {showStatusBadge ? (
+          <span
+            style={{
+              padding: "0.2rem 0.45rem",
+              borderRadius: "999px",
+              background: "#f8fafc",
+              border: "1px solid #d1d5db",
+              color: "#374151",
+              fontSize: "0.75rem",
+              fontWeight: 600,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {formatAttemptStatus(attempt.status)}
+          </span>
+        ) : null}
       </summary>
       <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.75rem", fontSize: "0.9rem" }}>
         <MonitoringAttemptDetails
@@ -173,11 +215,6 @@ function renderAttemptCard(
       </div>
     </details>
   );
-}
-
-interface MonitoringQueueSection {
-  readonly label: string;
-  readonly attempts: readonly MonitoringAttemptView[];
 }
 
 export function SessionMonitoringPanel({
@@ -197,10 +234,30 @@ export function SessionMonitoringPanel({
   ] as const;
 
   const liveQueues = [
-    { label: "Scheduled queue", attempts: monitoring.currentAttempts.scheduled },
-    { label: "Ready queue", attempts: monitoring.currentAttempts.ready },
-    { label: "In-progress queue", attempts: monitoring.currentAttempts.inProgress },
-    { label: "Suspended queue", attempts: monitoring.currentAttempts.suspended },
+    {
+      label: "Scheduled queue",
+      attempts: monitoring.currentAttempts.scheduled,
+      style: liveQueueStyles.scheduled,
+      badgeCount: monitoring.currentAttempts.scheduled.length,
+    },
+    {
+      label: "Ready queue",
+      attempts: monitoring.currentAttempts.ready,
+      style: liveQueueStyles.ready,
+      badgeCount: monitoring.currentAttempts.ready.length,
+    },
+    {
+      label: "In-progress queue",
+      attempts: monitoring.currentAttempts.inProgress,
+      style: liveQueueStyles.inProgress,
+      badgeCount: monitoring.currentAttempts.inProgress.length,
+    },
+    {
+      label: "Suspended queue",
+      attempts: monitoring.currentAttempts.suspended,
+      style: liveQueueStyles.suspended,
+      badgeCount: monitoring.currentAttempts.suspended.length,
+    },
   ] as const;
 
   return (
@@ -234,14 +291,17 @@ export function SessionMonitoringPanel({
             </h2>
             <p style={sectionBodyStyle}>Current ExamAttempts by state, grouped for quick scanning.</p>
           </div>
-          {liveQueues.map(({ label, attempts }: MonitoringQueueSection) => (
-            <div key={label}>
-              <h3 style={{ margin: "0 0 0.5rem", fontSize: "0.95rem", color: "#111827" }}>{label}</h3>
+          {liveQueues.map(({ label, attempts, style, badgeCount }) => (
+            <div key={label} style={{ ...queueCardBaseStyle, ...style }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "center" }}>
+                <h3 style={queueHeadingStyle}>{label}</h3>
+                <span style={queueCountPillStyle}>{badgeCount}</span>
+              </div>
               {attempts.length === 0 ? (
                 <p style={{ margin: 0, color: "#6b7280" }}>No attempts in this queue.</p>
               ) : (
                 <div style={queueListStyle}>
-                  {attempts.map((attempt) => renderAttemptCard(attempt, onOpenSupportDiagnostics))}
+                  {attempts.map((attempt) => renderAttemptCard(attempt, onOpenSupportDiagnostics, { showStatusBadge: false }))}
                 </div>
               )}
             </div>
@@ -266,7 +326,9 @@ export function SessionMonitoringPanel({
             <p style={{ margin: 0, color: "#6b7280" }}>No completed or expired attempts yet.</p>
           ) : (
             <div style={queueListStyle}>
-              {monitoring.history.map((attempt) => renderAttemptCard(attempt, onOpenSupportDiagnostics))}
+              {monitoring.history.map((attempt) =>
+                renderAttemptCard(attempt, onOpenSupportDiagnostics, { showStatusBadge: true }),
+              )}
             </div>
           )}
         </section>

@@ -136,6 +136,46 @@ describe("SessionMonitoringPanel", () => {
     expect(html).toContain("Very Long Candidate Name");
     expect(html).toContain("Very Long Title");
   });
+
+  it("keeps status badges off current queue cards while retaining them in bounded history", () => {
+    const html = renderToStaticMarkup(
+      createElement(SessionMonitoringPanel, {
+        monitoring: makeMonitoringView({
+          currentAttempts: {
+            scheduled: [
+              makeAttempt({
+                status: "scheduled",
+                candidateName: "Scheduled Candidate",
+                examTitle: "Scheduled Exam",
+              }),
+            ],
+            ready: [],
+            inProgress: [],
+            suspended: [
+              makeAttempt({
+                status: "suspended",
+                candidateName: "Suspended Candidate",
+                examTitle: "Suspended Exam",
+              }),
+            ],
+          },
+          history: [
+            makeAttempt({
+              status: "suspended",
+              candidateName: "History Candidate",
+              examTitle: "History Exam",
+            }),
+          ],
+        }),
+        loading: false,
+        onRefresh: () => {},
+        onLoadMoreHistory: () => {},
+        onOpenSupportDiagnostics: () => {},
+      }),
+    );
+
+    expect(html.match(/>suspended</g)?.length).toBe(1);
+  });
 });
 
 describe("monitoring row keys", () => {
