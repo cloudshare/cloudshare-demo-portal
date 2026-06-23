@@ -23,6 +23,7 @@ export async function GET(request: Request) {
       attempts: services.examAttempts,
       exams: services.exams,
       clocks: services.examClock,
+      diagnostics: services.diagnosticRecorder,
       logger: services.logger,
     },
     {

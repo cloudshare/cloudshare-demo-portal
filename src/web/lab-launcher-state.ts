@@ -10,6 +10,8 @@ export type LaunchState =
   | "error";
 
 export type AttemptStatus = "ready" | "in_progress" | "suspended" | "completed";
+export type RecoveryAction = "enter" | "resume" | "reopen";
+export type LaunchAction = "enter" | "resume";
 
 export function updateCandidateLabStatus(
   current: CandidateLabStatus | null,
@@ -61,4 +63,30 @@ export function getLauncherSyncTarget(
   }
 
   return null;
+}
+
+export function getLauncherRecoveryAction(
+  attemptStatus: AttemptStatus,
+): { action: RecoveryAction; label: string } | null {
+  switch (attemptStatus) {
+    case "ready":
+      return { action: "enter", label: "Enter exam" };
+    case "in_progress":
+      return { action: "reopen", label: "Open exam window" };
+    case "suspended":
+      return { action: "resume", label: "Resume exam" };
+    default:
+      return null;
+  }
+}
+
+export function getAttemptStatusAfterLaunchTransition(
+  currentStatus: AttemptStatus,
+  action: LaunchAction,
+): AttemptStatus {
+  if (action === "resume" && currentStatus === "suspended") {
+    return "in_progress";
+  }
+
+  return currentStatus;
 }

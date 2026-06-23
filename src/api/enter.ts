@@ -6,6 +6,7 @@ import type { LabLaunchRepository } from "@/domain/lab-launch";
 import type { ExamTimer } from "@/domain/timer-sync";
 import { reconcileExamAttemptCompletion } from "@/domain/exam-attempt-completion";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
+import { recordExamAttemptCompletionDiagnostic } from "./exam-attempt-completion-diagnostics";
 
 export interface EnterExamDeps {
   readonly attempts: ExamAttemptRepository;
@@ -31,8 +32,28 @@ export interface EnterExamResponse {
 }
 
 const ENTERABLE_STATUSES = new Set(["ready", "in_progress"]);
+const inFlightEnterRequests = new Map<string, Promise<EnterExamResponse>>();
 
 export async function handleEnterExam(
+  deps: EnterExamDeps,
+  request: EnterExamRequest,
+): Promise<EnterExamResponse> {
+  const requestKey = buildEnterRequestKey(request);
+  const existing = inFlightEnterRequests.get(requestKey);
+  if (existing) {
+    return existing;
+  }
+
+  const pending = handleEnterExamOnce(deps, request).finally(() => {
+    if (inFlightEnterRequests.get(requestKey) === pending) {
+      inFlightEnterRequests.delete(requestKey);
+    }
+  });
+  inFlightEnterRequests.set(requestKey, pending);
+  return pending;
+}
+
+async function handleEnterExamOnce(
   deps: EnterExamDeps,
   request: EnterExamRequest,
 ): Promise<EnterExamResponse> {
@@ -69,7 +90,7 @@ export async function handleEnterExam(
     return textResponse(403, "Exam entry is not allowed for this candidate.");
   }
 
-  await reconcileExamAttemptCompletion(
+  const completion = await reconcileExamAttemptCompletion(
     {
       attempts: deps.attempts,
       exams: deps.exams ?? emptyExamRepository(),
@@ -81,6 +102,13 @@ export async function handleEnterExam(
   attempt = await deps.attempts.findById(request.examAttemptId);
   if (!attempt) {
     return textResponse(404, "Exam attempt not found.");
+  }
+  if (completion?.changed && completion.status === "completed") {
+    await recordExamAttemptCompletionDiagnostic(
+      deps.diagnostics,
+      attempt,
+      deps.candidateEmail,
+    );
   }
 
   const anchors = {
@@ -176,4 +204,8 @@ function textResponse(status: number, body: string): EnterExamResponse {
     },
     body,
   };
+}
+
+function buildEnterRequestKey(request: EnterExamRequest): string {
+  return `${request.candidateId}:${request.examAttemptId}`;
 }

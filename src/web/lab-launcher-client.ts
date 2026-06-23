@@ -90,6 +90,7 @@ export async function suspendLabAttempt(
 ):
   Promise<
     | { kind: "suspended"; message: string }
+    | { kind: "pending"; labStatus: CandidateLabStatus | null; message: string }
     | { kind: "completed"; labStatus: CandidateLabStatus; message: string }
     | { kind: "blocked"; labStatus: CandidateLabStatus | null; message: string }
   > {
@@ -98,6 +99,16 @@ export async function suspendLabAttempt(
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ examAttemptId }),
   });
+  const detail = await response.json().catch(() => ({}));
+
+  if (response.status === 202) {
+    const labStatus = await loadCandidateLabStatus(fetchImpl, examAttemptId).catch(() => null);
+    return {
+      kind: "pending",
+      labStatus,
+      message: readError(detail, "Suspend is still processing. Wait a few seconds, then retry."),
+    };
+  }
 
   if (response.ok) {
     return {
@@ -106,7 +117,6 @@ export async function suspendLabAttempt(
     };
   }
 
-  const detail = await response.json().catch(() => ({}));
   if (response.status === 409) {
     const labStatus = await loadCandidateLabStatus(fetchImpl, examAttemptId).catch(() => null);
     if (labStatus?.status === "completed") {
@@ -131,6 +141,7 @@ export async function resumeLabAttempt(
   examAttemptId: string,
 ): Promise<
   | { kind: "resumed"; disposition: "resumed" | "already_active" }
+  | { kind: "pending"; labStatus: CandidateLabStatus | null; message: string }
   | { kind: "completed"; labStatus: CandidateLabStatus; message: string }
   | { kind: "blocked"; labStatus: CandidateLabStatus | null; message: string }
 > {
@@ -141,6 +152,18 @@ export async function resumeLabAttempt(
   });
 
   const detail = await response.json().catch(() => ({}));
+  if (response.status === 202) {
+    const labStatus = await loadCandidateLabStatus(fetchImpl, examAttemptId).catch(() => null);
+    return {
+      kind: "pending",
+      labStatus,
+      message: readError(
+        detail,
+        "CloudShare is still resuming your lab. Wait a few seconds, then retry Resume exam.",
+      ),
+    };
+  }
+
   if (response.ok) {
     const disposition =
       typeof (detail as { resumeDisposition?: unknown }).resumeDisposition === "string"
