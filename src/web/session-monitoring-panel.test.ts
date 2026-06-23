@@ -90,7 +90,7 @@ function makeMonitoringView(partial: Partial<AdminMonitoringView> = {}): AdminMo
 }
 
 describe("SessionMonitoringPanel", () => {
-  it("renders current-state monitoring copy, bounded terminal-history copy, and the Support Diagnostics handoff", () => {
+  it("renders the monitoring status strip, separated live and history sections, and the Support Diagnostics handoff", () => {
     const html = renderToStaticMarkup(
       createElement(SessionMonitoringPanel, {
         monitoring: makeMonitoringView(),
@@ -101,14 +101,119 @@ describe("SessionMonitoringPanel", () => {
       }),
     );
 
+    expect(html).toContain("Monitoring status");
     expect(html).toContain("Session Monitoring is the current-state operations surface for active ExamAttempts.");
     expect(html).toContain("Use Support Diagnostics for the forensic trace of what happened and in what order.");
+    expect(html).toContain("Live queues");
     expect(html).toContain("Completed / expired history (showing 1 of 3)");
     expect(html).toContain("Load more history");
     expect(html).toContain("Open in Support Diagnostics");
     expect(html).toContain("Investigation opens Support Diagnostics filtered to this ExamAttempt ID.");
     expect(html).not.toContain("No timeline entries recorded.");
     expect(html).not.toContain("<table");
+  });
+
+  it("hardens the attempt summary identity text so long values can wrap without crowding the status badge", () => {
+    const html = renderToStaticMarkup(
+      createElement(SessionMonitoringPanel, {
+        monitoring: makeMonitoringView({
+          history: [
+            makeAttempt({
+              candidateName:
+                "Casey Rivera With A Very Long Candidate Name That Should Wrap On Narrow Screens",
+              examTitle: "Helios CX Analyst Certification Experience With A Very Long Title",
+            }),
+          ],
+        }),
+        loading: false,
+        onRefresh: () => {},
+        onLoadMoreHistory: () => {},
+        onOpenSupportDiagnostics: () => {},
+      }),
+    );
+
+    expect(html).toContain("overflow-wrap:anywhere");
+    expect(html).toContain("Very Long Candidate Name");
+    expect(html).toContain("Very Long Title");
+  });
+
+  it("keeps status badges off current queue cards while retaining them in bounded history", () => {
+    const html = renderToStaticMarkup(
+      createElement(SessionMonitoringPanel, {
+        monitoring: makeMonitoringView({
+          currentAttempts: {
+            scheduled: [
+              makeAttempt({
+                status: "scheduled",
+                candidateName: "Scheduled Candidate",
+                examTitle: "Scheduled Exam",
+              }),
+            ],
+            ready: [],
+            inProgress: [],
+            suspended: [
+              makeAttempt({
+                status: "suspended",
+                candidateName: "Suspended Candidate",
+                examTitle: "Suspended Exam",
+              }),
+            ],
+          },
+          history: [
+            makeAttempt({
+              status: "suspended",
+              candidateName: "History Candidate",
+              examTitle: "History Exam",
+            }),
+          ],
+        }),
+        loading: false,
+        onRefresh: () => {},
+        onLoadMoreHistory: () => {},
+        onOpenSupportDiagnostics: () => {},
+      }),
+    );
+
+    expect(html.match(/>suspended</g)?.length).toBe(1);
+  });
+
+  it("leads attempt summaries with a bold candidate line and a normal exam line", () => {
+    const html = renderToStaticMarkup(
+      createElement(SessionMonitoringPanel, {
+        monitoring: makeMonitoringView({
+          currentAttempts: {
+            scheduled: [
+              makeAttempt({
+                candidateName: "Scheduled Candidate",
+                candidateEmail: "scheduled.candidate@helioscx.demo",
+                examTitle: "Scheduled Exam",
+                status: "scheduled",
+              }),
+            ],
+            ready: [],
+            inProgress: [],
+            suspended: [],
+          },
+          history: [
+            makeAttempt({
+              candidateName: "History Candidate",
+              candidateEmail: "history.candidate@helioscx.demo",
+              examTitle: "History Exam",
+              status: "completed",
+            }),
+          ],
+        }),
+        loading: false,
+        onRefresh: () => {},
+        onLoadMoreHistory: () => {},
+        onOpenSupportDiagnostics: () => {},
+      }),
+    );
+
+    expect(html).toContain("<strong style=\"color:#111827;font-weight:700\">Scheduled Candidate (scheduled.candidate@helioscx.demo)</strong>");
+    expect(html).toContain("<span style=\"color:#4b5563;font-weight:400\">Scheduled Exam");
+    expect(html).toContain("<strong style=\"color:#111827;font-weight:700\">History Candidate (history.candidate@helioscx.demo)</strong>");
+    expect(html).toContain("<span style=\"color:#4b5563;font-weight:400\">History Exam");
   });
 });
 

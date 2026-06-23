@@ -64,9 +64,16 @@ describe("MonitoringAttemptDetails", () => {
       }),
     );
 
-    expect(html).toContain("ExamAttempt ID: attempt-1");
-    expect(html).toContain("Exam ID: exam-1");
-    expect(html).toContain("Experience ID: exp-shared");
+    expect(html).toContain("Candidate");
+    expect(html).toContain("candidate@helioscx.demo");
+    expect(html).toContain("Scheduled (UTC)");
+    expect(html).toContain("2026-06-21T09:00:00.000Z");
+    expect(html).toContain("ExamAttempt ID");
+    expect(html).toContain("attempt-1");
+    expect(html).toContain("Exam ID");
+    expect(html).toContain("exam-1");
+    expect(html).toContain("Experience ID");
+    expect(html).toContain("exp-shared");
     expect(html).not.toContain("Training ID: exp-shared");
     expect(html).toContain("Open in Support Diagnostics");
     expect(html).not.toContain("Open support drilldown");
