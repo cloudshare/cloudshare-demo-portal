@@ -79,7 +79,9 @@ const statusMetricStyle: React.CSSProperties = {
   minWidth: "120px",
   flex: "1 1 120px",
   padding: "0.75rem 0.85rem",
-  border: "1px solid #d1d5db",
+  borderWidth: "1px",
+  borderStyle: "solid",
+  borderColor: "#d1d5db",
   borderRadius: "6px",
   background: "#fff",
 };

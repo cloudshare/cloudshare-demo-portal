@@ -338,6 +338,12 @@ describe("SessionMonitoringPanel", () => {
     );
 
     expect(html).toContain("aria-pressed=\"true\"");
+    const selectedStatusMetricButton = html.match(/<button type="button" aria-pressed="true" style="[^"]+"/)?.[0];
+
+    expect(selectedStatusMetricButton).toContain("border-width:1px");
+    expect(selectedStatusMetricButton).toContain("border-style:solid");
+    expect(selectedStatusMetricButton).toContain("border-color:#1d4ed8");
+    expect(selectedStatusMetricButton).not.toContain("border:1px solid");
     expect(html).toContain("2 monitoring filters active.");
     expect(html).toContain("No attempts match the current monitoring filters.");
   });
