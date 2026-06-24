@@ -1,6 +1,11 @@
 import { InvalidExamAttemptStatusError, LabLaunchNotFoundError, TimerSyncError } from "./errors";
 import type { ExamAttemptRepository } from "./exam-attempt";
-import type { EnvironmentController, EnvironmentStateSource, EnvironmentStatus } from "./environment";
+import type {
+  EnvironmentCommandResult,
+  EnvironmentController,
+  EnvironmentStateSource,
+  EnvironmentStatus,
+} from "./environment";
 import type { ExamAttemptStatus } from "./exam-attempt";
 import type { LabLaunchRepository, LabProvisioner } from "./lab-launch";
 
@@ -97,7 +102,7 @@ export interface SuspendExamInput {
 export async function suspendExam(
   deps: SuspendExamDeps,
   input: SuspendExamInput,
-): Promise<void> {
+): Promise<EnvironmentCommandResult> {
   await requireAttemptStatus(deps.attempts, input.examAttemptId, "in_progress", "suspend");
   const launch = await deps.launches.findByExamAttemptId(input.examAttemptId);
   if (!launch) {
@@ -109,7 +114,7 @@ export async function suspendExam(
     input.verifiedEnvironmentExternalId,
   );
 
-  await deps.controller.suspendEnvironment(environmentExternalId);
+  const commandResult = await deps.controller.suspendEnvironment(environmentExternalId);
   await pollUntilStatus(
     deps.source,
     deps.sleep,
@@ -119,6 +124,7 @@ export async function suspendExam(
   );
   await deps.timer.pauseTimer(input.examAttemptId);
   await persistAttemptStatus(deps.attempts, input.examAttemptId, "suspended");
+  return commandResult;
 }
 
 // --- resumeExam ---
@@ -143,6 +149,7 @@ export interface ResumeExamResult {
   readonly environmentExternalId: string;
   /** ~2-hour CloudShare preservation window, in ms. Surface this to the UI. */
   readonly suspendedPreservationLimitMs: number;
+  readonly commandResult: EnvironmentCommandResult;
 }
 
 export async function resumeExam(
@@ -160,7 +167,7 @@ export async function resumeExam(
     input.verifiedEnvironmentExternalId,
   );
 
-  await deps.controller.resumeEnvironment(environmentExternalId);
+  const commandResult = await deps.controller.resumeEnvironment(environmentExternalId);
   await pollUntilAnyStatus(
     deps.source,
     deps.sleep,
@@ -176,6 +183,7 @@ export async function resumeExam(
   return {
     environmentExternalId,
     suspendedPreservationLimitMs: SUSPENDED_PRESERVATION_LIMIT_MS,
+    commandResult,
   };
 }
 

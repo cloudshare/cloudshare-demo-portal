@@ -64,6 +64,19 @@ export interface EnvironmentStateSource {
   ): Promise<EnvironmentStateSnapshot | null>;
 }
 
+export interface EnvironmentCommandResult {
+  readonly attemptedOperation: "suspend_environment" | "resume_environment";
+  readonly integrationSurface: string;
+  readonly method: "PUT";
+  readonly path: string;
+  readonly host?: string;
+  readonly externalIds: {
+    readonly environmentId: string;
+  };
+  readonly request?: Readonly<Record<string, unknown>> | null;
+  readonly response?: Readonly<Record<string, unknown>> | null;
+}
+
 /**
  * CloudShare environment lifecycle commands — suspend and resume. Implemented by
  * the live CloudShare integration and the environment simulator (demo). Kept here
@@ -71,6 +84,6 @@ export interface EnvironmentStateSource {
  * co-located.
  */
 export interface EnvironmentController {
-  suspendEnvironment(environmentExternalId: string): Promise<void>;
-  resumeEnvironment(environmentExternalId: string): Promise<void>;
+  suspendEnvironment(environmentExternalId: string): Promise<EnvironmentCommandResult>;
+  resumeEnvironment(environmentExternalId: string): Promise<EnvironmentCommandResult>;
 }

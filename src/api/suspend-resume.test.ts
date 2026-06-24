@@ -25,6 +25,7 @@ import {
   CloudShareTransportError,
 } from "@/integrations/cloudshare";
 import type { CloudShareClient } from "@/integrations/cloudshare";
+import type { EnvironmentCommandResult } from "@/domain/environment";
 
 const noSleep = () => Promise.resolve();
 
@@ -119,8 +120,29 @@ function makeClock(nowIso = "2026-06-15T10:10:00.000Z"): {
 
 function makeController(): EnvironmentController {
   return {
-    suspendEnvironment: () => Promise.resolve(),
-    resumeEnvironment: () => Promise.resolve(),
+    suspendEnvironment: () => Promise.resolve(makeCommandResult("suspend", "ENVS-default-live-env-1")),
+    resumeEnvironment: () => Promise.resolve(makeCommandResult("resume", "ENVS-default-live-env-1")),
+  };
+}
+
+function makeCommandResult(
+  action: "suspend" | "resume",
+  environmentId: string,
+): EnvironmentCommandResult {
+  return {
+    attemptedOperation: `${action}_environment`,
+    integrationSurface: `cloudshare.v3.env.action.${action}`,
+    method: "PUT",
+    path: `/api/v3/envs/actions/${action}`,
+    externalIds: { environmentId },
+    request: {
+      method: "PUT",
+      path: `/api/v3/envs/actions/${action}`,
+    },
+    response: {
+      status: 200,
+      body: "",
+    },
   };
 }
 

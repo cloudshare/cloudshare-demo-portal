@@ -71,25 +71,38 @@ export async function POST(request: Request) {
     );
   }
 
-  if (access.attempt.status !== "in_progress") {
+  const attemptAfterReconciliation = await services.examAttempts.findById(examAttemptId);
+  if (!attemptAfterReconciliation) {
+    return NextResponse.json({ error: "exam attempt not found" }, { status: 404 });
+  }
+
+  if (attemptAfterReconciliation.status === "suspended") {
+    heartbeatAutoSuspend.removeHeartbeat(examAttemptId);
+    return NextResponse.json(
+      { status: "suspended", attemptStatus: "suspended" },
+      { status: 200 },
+    );
+  }
+
+  if (attemptAfterReconciliation.status !== "in_progress") {
     return NextResponse.json({ error: "exam attempt is not in progress" }, { status: 409 });
   }
 
   const resp = await handleHeartbeat({ autoSuspend: heartbeatAutoSuspend, logger }, { body });
   await services.diagnosticRecorder.record({
-    source: "runtime",
-    customerId: access.attempt.customerId ?? null,
-    candidateEmail: portalSession?.email ?? null,
-    examId: access.attempt.examId ?? null,
-    examAttemptId,
-    level: "info",
-    operation: "exam_attempt.heartbeat.receive",
-    outcome: "success",
-    message: "Heartbeat received for in-progress exam attempt",
-    actor: { type: "candidate", id: access.attempt.candidateId ?? null, email: portalSession?.email ?? null },
-    subject: { type: "exam_attempt", id: examAttemptId },
-    details: { route: "/api/heartbeat" },
-  });
+      source: "runtime",
+      customerId: attemptAfterReconciliation.customerId ?? null,
+      candidateEmail: portalSession?.email ?? null,
+      examId: attemptAfterReconciliation.examId ?? null,
+      examAttemptId,
+      level: "info",
+      operation: "exam_attempt.heartbeat.receive",
+      outcome: "success",
+      message: "Heartbeat received for in-progress exam attempt",
+      actor: { type: "candidate", id: attemptAfterReconciliation.candidateId ?? null, email: portalSession?.email ?? null },
+      subject: { type: "exam_attempt", id: examAttemptId },
+      details: { route: "/api/heartbeat" },
+    });
   return NextResponse.json(
     {
       ...resp.body,

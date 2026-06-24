@@ -158,14 +158,14 @@ describe("candidate exam mutation routes", () => {
     expect(services.audit.write).not.toHaveBeenCalled();
   });
 
-  it("rejects heartbeat when the candidate attempt is not in progress", async () => {
+  it("rejects heartbeat when the candidate attempt is not in an active state that can sync the launcher", async () => {
     const services = makeServices();
     services.examAttempts.findById = vi.fn().mockResolvedValue({
       id: "ea-1",
       customerId: "customer-1",
       candidateId: "candidate-owner",
       examId: "exam-1",
-      status: "suspended",
+      status: "expired",
       scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
       createdAt: new Date("2026-06-15T10:00:00.000Z"),
     });
@@ -221,6 +221,38 @@ describe("candidate exam mutation routes", () => {
     expect(await heartbeatResponse.json()).toEqual({
       status: "completed",
       attemptStatus: "completed",
+    });
+    expect(services.heartbeatAutoSuspend.recordHeartbeat).not.toHaveBeenCalled();
+    expect(services.heartbeatAutoSuspend.removeHeartbeat).toHaveBeenCalledWith("ea-1");
+  });
+
+  it("surfaces suspended attempt status through heartbeat after server-side auto-suspend", async () => {
+    const services = makeServices();
+    services.examAttempts.findById = vi.fn().mockResolvedValue({
+      id: "ea-1",
+      customerId: "customer-1",
+      candidateId: "candidate-owner",
+      examId: "exam-1",
+      status: "suspended",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    mockGetServices.mockReturnValue(services);
+    mockGetPortalSession.mockResolvedValue({
+      sessionId: "portal-session-1",
+      userId: "candidate-owner",
+      customerId: "customer-1",
+      role: "candidate",
+      email: "candidate@example.com",
+      issuedAtMs: 1,
+    });
+
+    const heartbeatResponse = await heartbeatPOST(makeRequest("http://localhost/api/heartbeat"));
+
+    expect(heartbeatResponse.status).toBe(200);
+    expect(await heartbeatResponse.json()).toEqual({
+      status: "suspended",
+      attemptStatus: "suspended",
     });
     expect(services.heartbeatAutoSuspend.recordHeartbeat).not.toHaveBeenCalled();
     expect(services.heartbeatAutoSuspend.removeHeartbeat).toHaveBeenCalledWith("ea-1");

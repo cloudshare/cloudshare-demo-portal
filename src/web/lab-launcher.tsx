@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { openEnterExamWindow } from "./enter-exam";
 import { isLabWindowOpen } from "./lab-window";
-import { preflightLabAction, resumeLabAttempt, suspendLabAttempt, type CandidateLabStatus, type AttemptStatus } from "./lab-launcher-client";
+import { preflightLabAction, readHeartbeatAttemptStatus, resumeLabAttempt, suspendLabAttempt, type CandidateLabStatus, type AttemptStatus } from "./lab-launcher-client";
 import { describeAndReportLaunchFailure } from "./lab-launcher-runtime-diagnostics";
 import {
   getAttemptStatusAfterLaunchTransition,
@@ -96,9 +96,10 @@ export function LabLauncher({
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ examAttemptId }),
     });
-    const body = (await response.json().catch(() => ({}))) as { attemptStatus?: AttemptStatus };
-    if (body.attemptStatus === "completed") {
-      syncToAuthoritativeAttemptStatus("completed");
+    const body = await response.json().catch(() => ({}));
+    const attemptStatus = readHeartbeatAttemptStatus(body);
+    if (attemptStatus === "suspended" || attemptStatus === "completed") {
+      syncToAuthoritativeAttemptStatus(attemptStatus);
     }
   }
 

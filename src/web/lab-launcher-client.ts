@@ -31,6 +31,19 @@ export async function loadCandidateLabStatus(
   return json as CandidateLabStatus;
 }
 
+export function readHeartbeatAttemptStatus(payload: unknown): AttemptStatus | null {
+  if (typeof payload !== "object" || payload === null) {
+    return null;
+  }
+
+  const attemptStatus = (payload as { attemptStatus?: unknown }).attemptStatus;
+  return attemptStatus === "in_progress" ||
+    attemptStatus === "suspended" ||
+    attemptStatus === "completed"
+    ? attemptStatus
+    : null;
+}
+
 export async function preflightLabAction(
   fetchImpl: FetchLike,
   input: {
