@@ -36,6 +36,16 @@ showing real CloudShare behaviour, CloudShare wins.
 7. Use `/zoom-out` before changing architecture or module boundaries.
 8. Use `/improve-codebase-architecture` regularly, especially after several features have landed.
 
+## Local server convention
+
+- Keep port `3000` available for the user-owned tunnel-facing server. The user may stop/restart that
+  tunnel independently, and it should continue to point at their service on `localhost:3000`.
+- When Codex needs its own local Next.js dev server for checks or QA, prefer `localhost:3025`
+  (`npm run dev -- -p 3025`) unless the user asks for a different port.
+- The `3000` and `3025` servers are expected to use the same repo `.env` and therefore the same local
+  database. Actions performed through `3025` should be visible to the tunnel-facing `3000` server as
+  long as both servers are running against the same environment.
+
 ## Engineering discipline
 
 - Work in small vertical slices (one GitHub issue at a time, in dependency order).
