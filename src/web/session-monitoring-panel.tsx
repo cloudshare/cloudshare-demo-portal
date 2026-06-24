@@ -37,6 +37,13 @@ function formatUtcTimestamp(value: string | null | undefined): string {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
 }
 
+function getLatestInteractionAt(attempt: Pick<MonitoringAttemptView, "timeline">): string | null {
+  return attempt.timeline
+    .map((entry) => entry.occurredAt)
+    .filter((occurredAt) => occurredAt.trim().length > 0)
+    .sort((left, right) => right.localeCompare(left))[0] ?? null;
+}
+
 function formatAttemptStatus(status: MonitoringAttemptView["status"]): string {
   return status.replaceAll("_", " ");
 }
@@ -296,12 +303,17 @@ function renderAttemptCard(
         }}
       >
         <span style={{ minWidth: 0, flex: "1 1 auto", overflowWrap: "anywhere", display: "grid", gap: "0.1rem" }}>
-          <strong style={{ color: "#111827", fontWeight: 700 }}>
-            {attempt.candidateName} ({attempt.candidateEmail})
-          </strong>
+          <span style={{ color: "#111827", fontWeight: 500 }}>
+            {attempt.candidateName}{" "}
+            <strong style={{ color: "#111827", fontWeight: 700 }}>{attempt.candidateEmail}</strong>
+          </span>
           <span style={{ color: "#4b5563", fontWeight: 400 }}>
             {attempt.examTitle}
             {attempt.result ? ` · ${formatMonitoringResult(attempt.result)}` : ""}
+          </span>
+          <span style={{ color: "#6b7280", fontSize: "0.78rem", fontWeight: 400 }}>
+            Scheduled: {formatUtcTimestamp(attempt.scheduledFor)} · Last interaction:{" "}
+            {formatUtcTimestamp(getLatestInteractionAt(attempt))}
           </span>
         </span>
         {showStatusBadge ? (
