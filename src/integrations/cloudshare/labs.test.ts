@@ -111,6 +111,65 @@ describe("cloudShareLabProvisioner — request shape", () => {
     expect(link.loginUrl).toContain("classic.cloudshare.com");
   });
 
+  it("returns top-level response diagnostics for addParticipant", async () => {
+    const requestV4Detailed = vi.fn(
+      async (spec: { path: string; body?: unknown; schema: { parse(value: unknown): unknown } }) => ({
+        data: spec.schema.parse([
+          {
+            email: "candidate@helioscx.demo",
+            firstName: "Candidate",
+            lastName: "Demo",
+          },
+        ]),
+        host: "api.accelerate.cloudshare.com",
+        integrationSurface: "cloudshare.v4.training.participant",
+        request: {
+          method: "POST",
+          path: spec.path,
+          body: spec.body,
+        },
+        response: {
+          status: 200,
+          headers: { "content-type": "application/json" },
+          body: [
+            {
+              email: "candidate@helioscx.demo",
+              firstName: "Candidate",
+              lastName: "Demo",
+            },
+          ],
+        },
+      }),
+    );
+    const client = {
+      requestV4Detailed,
+      requestV4: vi.fn(),
+      requestV3: vi.fn(),
+    } as unknown as CloudShareClient;
+    const labs = createCloudShareLabProvisioner(client);
+
+    const result = await labs.addParticipant!({
+      trainingId: "training-1",
+      email: "candidate@helioscx.demo",
+      firstName: "Candidate",
+      lastName: "Demo",
+    });
+
+    expect(result).toEqual({
+      response: {
+        status: 200,
+        headers: { "content-type": "application/json" },
+        body: [
+          {
+            email: "candidate@helioscx.demo",
+            firstName: "Candidate",
+            lastName: "Demo",
+          },
+        ],
+      },
+    });
+  });
+
   it("accepts documented all-teams array casing while resolving a Team ID", async () => {
     const requestV3 = vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) =>
       spec.schema.parse([{ Id: "TM-team-2", Name: "Helios Team" }]),
@@ -175,7 +234,18 @@ describe("cloudShareLabProvisioner — fixture mode (live/fixture parity)", () =
         firstName: "Candidate",
         lastName: "Demo",
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toMatchObject({
+      response: {
+        status: 200,
+        body: [
+          {
+            email: "candidate@helioscx.demo",
+            firstName: "Candidate",
+            lastName: "Demo",
+          },
+        ],
+      },
+    });
 
     const { loginUrl } = await labs.createSponsoredLink({
       trainingId,

@@ -48,6 +48,12 @@ function makeLabs(order: string[] = []): LabProvisioner {
     },
     async addParticipant() {
       order.push("addParticipant");
+      return {
+        response: {
+          status: 200,
+          body: [{ email: "candidate@helioscx.demo", firstName: "Candidate", lastName: "Demo" }],
+        },
+      };
     },
     async createSponsoredLink() {
       order.push("createSponsoredLink");
@@ -78,6 +84,12 @@ describe("scheduleExam", () => {
     const order: string[] = [];
     const addParticipant = vi.fn(async () => {
       order.push("addParticipant");
+      return {
+        response: {
+          status: 200,
+          body: [{ email: "candidate@helioscx.demo", firstName: "Candidate", lastName: "Demo" }],
+        },
+      };
     });
     const createSponsoredLink = vi.fn(async () => {
       order.push("createSponsoredLink");
@@ -387,6 +399,10 @@ describe("scheduleExam", () => {
       email: "candidate@helioscx.demo",
       trainingId: "training-1",
     });
+    expect(addParticipant?.response).toMatchObject({
+      status: 200,
+      body: [{ email: "candidate@helioscx.demo", firstName: "Candidate", lastName: "Demo" }],
+    });
 
     const sponsoredLink = thread.find((e) => e.operation === "cloudshare.create_sponsored_link");
     expect(sponsoredLink?.response).toMatchObject({ loginUrl: SPONSORED_LINK_URL });
@@ -450,6 +466,10 @@ describe("scheduleExam", () => {
       failureMode: "http_status",
       integrationSurface: "cloudshare.v4.training.participant",
       responseStatus: 403,
+    });
+    expect(failure?.response).toMatchObject({
+      status: 403,
+      body: '{"error":"forbidden"}',
     });
   });
 

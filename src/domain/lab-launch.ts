@@ -82,6 +82,13 @@ export interface AddParticipantInput {
   readonly firstName: string;
   readonly lastName: string;
 }
+export interface AddParticipantResult {
+  readonly response: {
+    readonly status: number;
+    readonly headers?: Record<string, string | string[]>;
+    readonly body: unknown;
+  };
+}
 export interface CreateSponsoredLinkInput {
   readonly experienceId?: string;
   readonly trainingId?: string;
@@ -95,7 +102,7 @@ export interface CreateSponsoredLinkResult {
 
 export interface LabProvisioner {
   createTraining?(input: CreateTrainingInput): Promise<CreateTrainingResult>;
-  addParticipant?(input: AddParticipantInput): Promise<void>;
+  addParticipant?(input: AddParticipantInput): Promise<AddParticipantResult>;
   createExperience(input: CreateExperienceInput): Promise<CreateExperienceResult>;
   /** Register the candidate. Throws on failure — never resolves on a skipped registration. */
   addStudent(input: AddStudentInput): Promise<void>;

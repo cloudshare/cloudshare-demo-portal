@@ -42,6 +42,49 @@ function describeProvisioningCause(cause: unknown): Record<string, unknown> {
   };
 }
 
+function extractProvisioningRequest(cause: unknown): Record<string, unknown> | undefined {
+  const ctx = ((cause as { context?: Record<string, unknown> } | undefined)?.context ?? {}) as Record<
+    string,
+    unknown
+  >;
+  const method = ctx.method;
+  const path = ctx.path;
+  const requestHeaders = ctx.requestHeaders;
+  const requestBody = ctx.requestBody;
+  if (
+    method === undefined &&
+    path === undefined &&
+    requestHeaders === undefined &&
+    requestBody === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    ...(typeof method === "string" ? { method } : {}),
+    ...(typeof path === "string" ? { path } : {}),
+    ...(requestHeaders !== undefined ? { headers: requestHeaders } : {}),
+    ...(requestBody !== undefined ? { body: requestBody } : {}),
+  };
+}
+
+function extractProvisioningResponse(cause: unknown): Record<string, unknown> | undefined {
+  const err = cause as { status?: number; context?: Record<string, unknown> } | undefined;
+  const ctx = (err?.context ?? {}) as Record<string, unknown>;
+  const status = typeof err?.status === "number" ? err.status : ctx.status;
+  const responseHeaders = ctx.responseHeaders;
+  const responseBody = ctx.responseBody;
+  if (status === undefined && responseHeaders === undefined && responseBody === undefined) {
+    return undefined;
+  }
+
+  return {
+    ...(typeof status === "number" ? { status } : {}),
+    ...(responseHeaders !== undefined ? { headers: responseHeaders } : {}),
+    ...(responseBody !== undefined ? { body: responseBody } : {}),
+  };
+}
+
 const COLD_START_WARNING_WINDOW_MS = 5 * 60 * 60 * 1000;
 const CLOUDSHARE_TRAINING_NAME_MAX_LENGTH = 100;
 
@@ -153,16 +196,21 @@ export async function scheduleExam(
     extra?: { externalIds?: Record<string, string>; request?: Record<string, unknown>; response?: Record<string, unknown> },
   ) =>
     deps.diagnostics?.record({ ...anchors, level: "info", operation, outcome: "success", message, ...extra });
-  const recordFailure = (op: ProvisioningOperation, cause: unknown, externalIds?: Record<string, string>) =>
-    deps.diagnostics?.record({
+  const recordFailure = (op: ProvisioningOperation, cause: unknown, externalIds?: Record<string, string>) => {
+    const request = extractProvisioningRequest(cause);
+    const response = extractProvisioningResponse(cause);
+    return deps.diagnostics?.record({
       ...anchors,
       level: "warn",
       operation: `cloudshare.${op}`,
       outcome: "failure",
       message: `CloudShare ${op.replace(/_/g, " ")} failed`,
       ...(externalIds ? { externalIds } : {}),
+      ...(request ? { request } : {}),
+      ...(response ? { response } : {}),
       details: { attemptedOperation: op, integrationSurface: PROVISIONING_SURFACE[op], ...describeProvisioningCause(cause) },
     });
+  };
 
   await recordSuccess("exam_attempt.schedule", "ExamAttempt scheduled", {
     request: { scheduledFor: input.scheduledFor.toISOString() },
@@ -249,8 +297,9 @@ export async function scheduleExam(
     firstName: input.candidateFirstName.trim(),
     lastName: input.candidateLastName.trim(),
   };
+  let addParticipantResult;
   try {
-    await participantAdder({
+    addParticipantResult = await participantAdder({
       trainingId,
       email: input.candidateEmail,
       firstName: participant.firstName,
@@ -288,6 +337,7 @@ export async function scheduleExam(
         lastName: participant.lastName,
       },
     },
+    response: addParticipantResult.response,
   });
 
   let loginUrl: string;

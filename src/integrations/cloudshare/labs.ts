@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { CloudShareClient } from "./client";
 import type {
   AddParticipantInput,
+  AddParticipantResult,
   AddStudentInput,
   CreateExperienceInput,
   CreateExperienceResult,
@@ -11,6 +12,7 @@ import type {
   CreateSponsoredLinkResult,
   LabProvisioner,
 } from "@/domain/lab-launch";
+import type { CloudShareDetailedResult } from "./client";
 
 /**
  * CloudShare implementation of the {@link LabProvisioner} port, built on the v4
@@ -84,6 +86,35 @@ export function createCloudShareLabProvisioner(
   client: CloudShareClient,
   observer?: CloudShareLabProvisionerObserver,
 ): LabProvisioner {
+  async function requestV4WithDiagnostics<T>(
+    spec: {
+      readonly method: "GET" | "POST" | "PUT" | "DELETE";
+      readonly path: string;
+      readonly body?: unknown;
+      readonly schema: z.ZodType<T, z.ZodType["_def"], unknown>;
+    },
+  ): Promise<CloudShareDetailedResult<T>> {
+    if ("requestV4Detailed" in client && typeof client.requestV4Detailed === "function") {
+      return client.requestV4Detailed(spec) as Promise<CloudShareDetailedResult<T>>;
+    }
+
+    const data = await client.requestV4(spec);
+    return {
+      data,
+      host: "unknown",
+      integrationSurface: "cloudshare.v4",
+      request: {
+        method: spec.method,
+        path: spec.path,
+        ...(spec.body !== undefined ? { body: spec.body } : {}),
+      },
+      response: {
+        status: 200,
+        body: data,
+      },
+    };
+  }
+
   return {
     async createTraining(input: CreateTrainingInput): Promise<CreateTrainingResult> {
       let teams: ProjectTeam[];
@@ -149,8 +180,8 @@ export function createCloudShareLabProvisioner(
       return { trainingId: training.id, teamId, teamCount: teams.length };
     },
 
-    async addParticipant(input: AddParticipantInput): Promise<void> {
-      await client.requestV4({
+    async addParticipant(input: AddParticipantInput): Promise<AddParticipantResult> {
+      const detailed = await requestV4WithDiagnostics({
         method: "POST",
         path: `/trainings/${input.trainingId}/students`,
         body: [
@@ -162,6 +193,13 @@ export function createCloudShareLabProvisioner(
         ],
         schema: addTrainingStudentsSchema,
       });
+      return {
+        response: {
+          status: detailed.response.status,
+          ...(detailed.response.headers ? { headers: detailed.response.headers } : {}),
+          body: detailed.response.body,
+        },
+      };
     },
 
     async createExperience(input: CreateExperienceInput): Promise<CreateExperienceResult> {
