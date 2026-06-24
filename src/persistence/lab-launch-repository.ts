@@ -26,6 +26,19 @@ export function createInMemoryLabLaunchRepository(): LabLaunchRepository & {
     ): Promise<LabLaunch | null> {
       return [...byId.values()].find((l) => l.environmentExternalId === environmentExternalId) ?? null;
     },
+    async findPendingEnvironmentCorrelation({ participantEmail }: {
+      customerId: string;
+      participantEmail: string;
+      environmentName: string | null;
+    }): Promise<LabLaunch | null> {
+      return [...byId.values()]
+        .filter((launch) =>
+          launch.participantEmail?.trim().toLowerCase() === participantEmail.trim().toLowerCase() &&
+          !launch.environmentExternalId &&
+          !launch.environmentId,
+        )
+        .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())[0] ?? null;
+    },
     reset(): void {
       byId.clear();
     },

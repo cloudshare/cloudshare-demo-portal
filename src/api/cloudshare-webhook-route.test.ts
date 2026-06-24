@@ -61,6 +61,8 @@ describe("CloudShare webhook route", () => {
       environments: {},
       labLaunches: {
         findByCustomerIdAndEnvironmentExternalId: vi.fn().mockResolvedValue(null),
+        findPendingEnvironmentCorrelation: vi.fn().mockResolvedValue(null),
+        save: vi.fn(),
       },
       examAttempts: {
         findById: vi.fn().mockResolvedValue(null),
@@ -73,7 +75,13 @@ describe("CloudShare webhook route", () => {
     mockCreateCloudShareEnvironmentSource.mockReturnValue(customerSource);
     mockReconcileEnvironment.mockResolvedValue(null);
     mockHandleCloudShareWebhook.mockImplementation(async (deps) => {
-      await deps.reconcile(customerConnection, "env-ext-1");
+      await deps.reconcile(customerConnection, "env-ext-1", {
+        event: "environment.created",
+        environmentExternalId: "env-ext-1",
+        ownerEmail: null,
+        environmentName: null,
+        createdAt: "2026-06-08T10:00:00Z",
+      });
       return { status: 202, body: { status: "accepted" } };
     });
     mockGetServices.mockReturnValue(services);
@@ -101,6 +109,97 @@ describe("CloudShare webhook route", () => {
     expect(mockReconcileEnvironment).not.toHaveBeenCalledWith(
       expect.objectContaining({ source: globalSource }),
       "env-ext-1",
+    );
+  });
+
+  it("persists the first CloudShare environment ID on a pending LabLaunch using webhook owner and environment name", async () => {
+    const customerConnection = {
+      customerId: "customer-helios",
+      apiId: "api-id",
+      apiKey: "api-key",
+      webhookSecret: "whsec",
+      webhookPathToken: "whk-helios",
+      connectedAt: new Date("2026-06-01T00:00:00Z"),
+      verifiedAt: null,
+    };
+    const pendingLaunch = {
+      id: "launch-1",
+      examAttemptId: "attempt-1",
+      candidateId: "candidate-1",
+      participantEmail: "candidate4@myplace.demo",
+      trainingId: "EX3s7GRuHHng7ozvYmj3GmIA2",
+      experienceId: "EX3s7GRuHHng7ozvYmj3GmIA2",
+      loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/token",
+      status: "launched",
+      createdAt: new Date("2026-06-24T17:33:03.249Z"),
+    };
+    const services = {
+      ensurePortalSeeded: vi.fn().mockResolvedValue(undefined),
+      cloudshareConnections: {},
+      webhookIdempotency: {},
+      logger: {},
+      eventLog: {},
+      cloudshareClientFactory: {
+        forConnection: vi.fn().mockReturnValue({ kind: "customer-client" }),
+      },
+      environments: {},
+      labLaunches: {
+        findByCustomerIdAndEnvironmentExternalId: vi.fn().mockResolvedValue(null),
+        findPendingEnvironmentCorrelation: vi.fn().mockResolvedValue(pendingLaunch),
+        save: vi.fn().mockResolvedValue(undefined),
+      },
+      examAttempts: {
+        findById: vi.fn().mockResolvedValue({
+          id: "attempt-1",
+          customerId: "customer-helios",
+          examId: "exam-windows",
+        }),
+      },
+      diagnosticRecorder: {
+        record: vi.fn(),
+      },
+    };
+
+    mockCreateCloudShareEnvironmentSource.mockReturnValue({ kind: "customer-source" });
+    mockReconcileEnvironment.mockResolvedValue({ environmentExternalId: "ENybZr43dp5ClmLagSs6qdJg2", status: "created" });
+    mockHandleCloudShareWebhook.mockImplementation(async (deps) => {
+      const event = {
+        event: "environment.created",
+        environmentExternalId: "ENybZr43dp5ClmLagSs6qdJg2",
+        ownerEmail: "candidate4@myplace.demo",
+        environmentName: "Windows Boxes",
+        createdAt: "2026-06-19T21:09:52.4912512",
+      } as const;
+      const correlation = await deps.resolveCorrelation(customerConnection, event);
+      const reconcile = await deps.reconcile(customerConnection, event.environmentExternalId, event);
+      return { status: 202, body: { status: "accepted", correlation, reconcile } };
+    });
+    mockGetServices.mockReturnValue(services);
+
+    const response = await POST(
+      new Request("http://localhost:3000/api/webhooks/cloudshare/whk-helios", {
+        method: "POST",
+        body: JSON.stringify({ Event: "environment.created" }),
+        headers: { "x-cloudshare-signature": "sig" },
+      }),
+      { params: Promise.resolve({ webhookPathToken: "whk-helios" }) },
+    );
+
+    expect(response.status).toBe(202);
+    expect(services.labLaunches.findPendingEnvironmentCorrelation).toHaveBeenCalledWith({
+      customerId: "customer-helios",
+      participantEmail: "candidate4@myplace.demo",
+      environmentName: "Windows Boxes",
+    });
+    expect(services.labLaunches.save).toHaveBeenCalledWith({
+      ...pendingLaunch,
+      environmentExternalId: "ENybZr43dp5ClmLagSs6qdJg2",
+      environmentId: "ENybZr43dp5ClmLagSs6qdJg2",
+    });
+    expect(services.examAttempts.findById).toHaveBeenCalledWith("attempt-1");
+    expect(mockReconcileEnvironment).toHaveBeenCalledWith(
+      expect.any(Object),
+      "ENybZr43dp5ClmLagSs6qdJg2",
     );
   });
 });

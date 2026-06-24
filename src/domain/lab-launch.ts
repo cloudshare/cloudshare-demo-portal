@@ -43,6 +43,11 @@ export interface LabLaunchRepository {
     customerId: string,
     environmentExternalId: string,
   ): Promise<LabLaunch | null>;
+  findPendingEnvironmentCorrelation?(input: {
+    readonly customerId: string;
+    readonly participantEmail: string;
+    readonly environmentName: string | null;
+  }): Promise<LabLaunch | null>;
 }
 
 // --- LabProvisioner port (implemented by the CloudShare integration) ---

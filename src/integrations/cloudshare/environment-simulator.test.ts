@@ -24,6 +24,8 @@ describe("CloudShare environment simulator", () => {
       expect(parsed.event).toEqual({
         event: "environment.suspended",
         environmentExternalId: "env-1",
+        ownerEmail: "candidate@example.com",
+        environmentName: "Simulated Environment",
         createdAt: "2026-06-08T10:00:00.000Z",
       });
     }

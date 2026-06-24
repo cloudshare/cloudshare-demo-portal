@@ -3,7 +3,11 @@ import { getServices } from "@/composition";
 import { handleCloudShareWebhook } from "@/api/cloudshare-webhook";
 import { reconcileEnvironment } from "@/domain/environment-reconcile";
 import { createCloudShareEnvironmentSource } from "@/integrations/cloudshare/environment";
-import { CLOUDSHARE_WEBHOOK_SIGNATURE_HEADER } from "@/integrations/cloudshare/webhooks";
+import {
+  CLOUDSHARE_WEBHOOK_SIGNATURE_HEADER,
+  type CloudShareEnvironmentEvent,
+} from "@/integrations/cloudshare/webhooks";
+import type { CloudShareConnectionRecord } from "@/domain/cloudshare-connection";
 
 /**
  * Inbound CloudShare environment webhook. The opaque path token resolves the
@@ -25,7 +29,9 @@ export async function POST(
     {
       connections: services.cloudshareConnections,
       idempotency: services.webhookIdempotency,
-      reconcile: (connection, environmentExternalId) =>
+      resolveCorrelation: (connection, event) =>
+        resolveWebhookEnvironmentCorrelation(services, connection, event),
+      reconcile: (connection, environmentExternalId, event) =>
         reconcileEnvironment(
           {
             source: createCloudShareEnvironmentSource(
@@ -36,10 +42,8 @@ export async function POST(
           },
           environmentExternalId,
         ).then(async (record) => {
-          const launch = await services.labLaunches.findByCustomerIdAndEnvironmentExternalId(
-            connection.customerId,
-            environmentExternalId,
-          );
+          const correlation = await resolveWebhookEnvironmentCorrelation(services, connection, event);
+          const launch = correlation.launch;
           const attempt = launch
             ? await services.examAttempts.findById(launch.examAttemptId)
             : null;
@@ -65,4 +69,66 @@ export async function POST(
   );
 
   return NextResponse.json(body, { status });
+}
+
+async function resolveWebhookEnvironmentCorrelation(
+  services: ReturnType<typeof getServices>,
+  connection: CloudShareConnectionRecord,
+  event: CloudShareEnvironmentEvent,
+) {
+  const existingLaunch = await services.labLaunches.findByCustomerIdAndEnvironmentExternalId(
+    connection.customerId,
+    event.environmentExternalId,
+  );
+  if (existingLaunch) {
+    const attempt = await services.examAttempts.findById(existingLaunch.examAttemptId);
+    return {
+      launch: existingLaunch,
+      customerId: attempt?.customerId ?? connection.customerId,
+      examAttemptId: attempt?.id ?? null,
+      examId: attempt?.examId ?? null,
+      candidateEmail: existingLaunch.participantEmail ?? null,
+    };
+  }
+
+  if (!event.ownerEmail || !services.labLaunches.findPendingEnvironmentCorrelation) {
+    return {
+      launch: null,
+      customerId: connection.customerId,
+      examAttemptId: null,
+      examId: null,
+      candidateEmail: null,
+    };
+  }
+
+  const pendingLaunch = await services.labLaunches.findPendingEnvironmentCorrelation({
+    customerId: connection.customerId,
+    participantEmail: event.ownerEmail,
+    environmentName: event.environmentName,
+  });
+  if (!pendingLaunch) {
+    return {
+      launch: null,
+      customerId: connection.customerId,
+      examAttemptId: null,
+      examId: null,
+      candidateEmail: event.ownerEmail,
+    };
+  }
+
+  const correlatedLaunch = {
+    ...pendingLaunch,
+    environmentExternalId: event.environmentExternalId,
+    environmentId: event.environmentExternalId,
+  };
+  await services.labLaunches.save(correlatedLaunch);
+
+  const attempt = await services.examAttempts.findById(correlatedLaunch.examAttemptId);
+  return {
+    launch: correlatedLaunch,
+    customerId: attempt?.customerId ?? connection.customerId,
+    examAttemptId: attempt?.id ?? null,
+    examId: attempt?.examId ?? null,
+    candidateEmail: correlatedLaunch.participantEmail ?? event.ownerEmail,
+  };
 }

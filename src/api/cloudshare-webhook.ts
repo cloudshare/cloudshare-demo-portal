@@ -6,6 +6,7 @@ import {
 } from "@/integrations/cloudshare/webhook-receiver";
 import {
   CLOUDSHARE_WEBHOOK_SIGNATURE_HEADER,
+  type CloudShareEnvironmentEvent,
 } from "@/integrations/cloudshare/webhooks";
 import type { WebhookIdempotencyStore } from "@/domain/webhook";
 import type { EventLogRepository } from "@/domain/event-log";
@@ -39,16 +40,28 @@ import type {
 export interface CloudShareWebhookDeps {
   readonly connections: CloudShareConnectionRepository;
   readonly idempotency: WebhookIdempotencyStore;
+  readonly resolveCorrelation?: (
+    connection: CloudShareConnectionRecord,
+    event: CloudShareEnvironmentEvent,
+  ) => Promise<WebhookEventCorrelation | null>;
   /** Trigger the authoritative poll-and-reconcile for one environment. */
   readonly reconcile: (
     connection: CloudShareConnectionRecord,
     environmentExternalId: string,
+    event: CloudShareEnvironmentEvent,
   ) => Promise<unknown>;
   readonly logger: Logger;
   readonly eventLog: EventLogRepository;
   readonly diagnostics?: DiagnosticRecorder;
   readonly now?: () => Date;
   readonly newEventId?: () => string;
+}
+
+export interface WebhookEventCorrelation {
+  readonly customerId?: string | null;
+  readonly examAttemptId?: string | null;
+  readonly examId?: string | null;
+  readonly candidateEmail?: string | null;
 }
 
 export interface CloudShareWebhookResponse {
@@ -438,11 +451,19 @@ export async function handleCloudShareWebhook(
 
       case "accepted": {
         const { event, idempotencyKey } = outcome;
+        const eventCorrelation =
+          (await deps.resolveCorrelation?.(connection, event)) ?? null;
         await recordDiagnostic(deps.diagnostics, {
           source: "cloudshare-webhook",
           operation: "cloudshare.webhook.verify_signature",
           outcome: "success",
-          customerId: connection.customerId,
+          customerId: eventCorrelation?.customerId ?? connection.customerId,
+          candidateEmail: eventCorrelation?.candidateEmail ?? null,
+          examId: eventCorrelation?.examId ?? null,
+          examAttemptId: eventCorrelation?.examAttemptId ?? null,
+          subject: eventCorrelation?.examAttemptId
+            ? { type: "exam_attempt", id: eventCorrelation.examAttemptId }
+            : null,
           message: "CloudShare webhook signature verified",
           externalIds: {
             webhookPathFingerprint,
@@ -461,7 +482,13 @@ export async function handleCloudShareWebhook(
           source: "cloudshare-webhook",
           operation: "cloudshare.webhook.receive",
           outcome: "success",
-          customerId: connection.customerId,
+          customerId: eventCorrelation?.customerId ?? connection.customerId,
+          candidateEmail: eventCorrelation?.candidateEmail ?? null,
+          examId: eventCorrelation?.examId ?? null,
+          examAttemptId: eventCorrelation?.examAttemptId ?? null,
+          subject: eventCorrelation?.examAttemptId
+            ? { type: "exam_attempt", id: eventCorrelation.examAttemptId }
+            : null,
           message: "CloudShare webhook accepted",
           externalIds: {
             webhookPathFingerprint,
@@ -502,7 +529,7 @@ export async function handleCloudShareWebhook(
         // The webhook is only a hint; the poll is the source of truth. Best-effort:
         // a failure here is logged, not surfaced, because the next event/poll recovers.
         try {
-          const reconcileResult = await deps.reconcile(connection, event.environmentExternalId);
+          const reconcileResult = await deps.reconcile(connection, event.environmentExternalId, event);
           const reconcileDiagnostic = asWebhookReconcileDiagnostic(reconcileResult);
           await recordDiagnostic(deps.diagnostics, {
             source: "cloudshare-webhook",
