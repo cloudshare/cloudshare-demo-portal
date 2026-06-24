@@ -52,4 +52,19 @@ describe("AdminConsole", () => {
     expect(html).toContain("Filtered to correlation ID");
     expect(html).toContain("corr-42");
   });
+
+  it("renders diagnostics filters as a grouped investigative panel", () => {
+    const html = renderToStaticMarkup(
+      createElement(AdminConsole, {
+        email: "admin@helioscx.demo",
+        initialTab: "diagnostics",
+      }),
+    );
+
+    expect(html).toContain("Investigative filters");
+    expect(html).toContain("Investigation thread");
+    expect(html).toContain("Event details");
+    expect(html).toContain("Apply Filters");
+    expect(html).toContain("Refresh Page");
+  });
 });

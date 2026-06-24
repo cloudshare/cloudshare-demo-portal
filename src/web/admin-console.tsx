@@ -1916,120 +1916,178 @@ export function AdminConsole({
           </p>
           <div
             style={{
-              display: "grid",
-              gap: "0.75rem",
-              gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+              border: "1px solid #dfe3eb",
+              borderRadius: "8px",
+              background: "#f8fafc",
+              padding: "1rem",
               marginBottom: "1rem",
-              alignItems: "end",
             }}
           >
-            <label style={{ display: "grid", gap: "0.35rem" }}>
-              <span>ExamAttempt ID</span>
-              <input
-                value={diagnosticFilters.examAttemptId ?? ""}
-                onChange={(event) => setDiagnosticFilter("examAttemptId", event.target.value)}
-                placeholder="attempt-123"
-              />
-            </label>
-            <label style={{ display: "grid", gap: "0.35rem" }}>
-              <span>Exam ID</span>
-              <input
-                value={diagnosticFilters.examId ?? ""}
-                onChange={(event) => setDiagnosticFilter("examId", event.target.value)}
-                placeholder="exam-123"
-              />
-            </label>
-            <label style={{ display: "grid", gap: "0.35rem" }}>
-              <span>Candidate email</span>
-              <input
-                value={diagnosticFilters.candidateEmail ?? ""}
-                onChange={(event) => setDiagnosticFilter("candidateEmail", event.target.value)}
-                placeholder="candidate@helioscx.demo"
-              />
-            </label>
-            <label style={{ display: "grid", gap: "0.35rem" }}>
-              <span>Operation</span>
-              <input
-                value={diagnosticFilters.operation ?? ""}
-                onChange={(event) => setDiagnosticFilter("operation", event.target.value)}
-                placeholder="exam_attempt.resume"
-              />
-            </label>
-            <label style={{ display: "grid", gap: "0.35rem" }}>
-              <span>Outcome</span>
-              <select
-                value={diagnosticFilters.outcome ?? ""}
-                onChange={(event) =>
-                  setDiagnosticFilter(
-                    "outcome",
-                    (event.target.value || undefined) as DiagnosticLogFilters["outcome"],
-                  )
-                }
+            <div style={{ marginBottom: "0.9rem" }}>
+              <h2 style={{ margin: 0, fontSize: "1rem" }}>Investigative filters</h2>
+              <p style={{ color: "#555", margin: "0.35rem 0 0" }}>
+                Follow an ExamAttempt, correlation thread, or CloudShare event without changing the
+                underlying diagnostic filtering rules.
+              </p>
+            </div>
+            <div style={{ display: "grid", gap: "0.9rem" }}>
+              <fieldset
+                style={{
+                  margin: 0,
+                  border: "1px solid #d7dce4",
+                  borderRadius: "8px",
+                  padding: "0.8rem",
+                  minWidth: 0,
+                  background: "#fff",
+                }}
               >
-                <option value="">All</option>
-                <option value="success">Success</option>
-                <option value="failure">Failure</option>
-              </select>
-            </label>
-            <label style={{ display: "grid", gap: "0.35rem" }}>
-              <span>Source</span>
-              <input
-                value={diagnosticFilters.source ?? ""}
-                onChange={(event) => setDiagnosticFilter("source", event.target.value)}
-                placeholder="runtime"
-              />
-            </label>
-            <label style={{ display: "grid", gap: "0.35rem" }}>
-              <span>Integration surface</span>
-              <input
-                value={diagnosticFilters.integrationSurface ?? ""}
-                onChange={(event) => setDiagnosticFilter("integrationSurface", event.target.value)}
-                placeholder="cloudshare.v4.environment"
-              />
-            </label>
-            <label style={{ display: "grid", gap: "0.35rem" }}>
-              <span>Correlation ID</span>
-              <input
-                value={diagnosticFilters.correlationId ?? ""}
-                onChange={(event) => setDiagnosticFilter("correlationId", event.target.value)}
-                placeholder="corr-123"
-              />
-            </label>
-            <label style={{ display: "grid", gap: "0.35rem" }}>
-              <span>CloudShare / external ID</span>
-              <input
-                value={diagnosticFilters.externalId ?? ""}
-                onChange={(event) => setDiagnosticFilter("externalId", event.target.value)}
-                placeholder="env-123"
-              />
-            </label>
-            <label style={{ display: "grid", gap: "0.35rem" }}>
-              <span>From (UTC ISO)</span>
-              <input
-                value={diagnosticFilters.from ?? ""}
-                onChange={(event) => setDiagnosticFilter("from", event.target.value)}
-                placeholder="2026-06-21T10:00:00.000Z"
-              />
-            </label>
-            <label style={{ display: "grid", gap: "0.35rem" }}>
-              <span>To (UTC ISO)</span>
-              <input
-                value={diagnosticFilters.to ?? ""}
-                onChange={(event) => setDiagnosticFilter("to", event.target.value)}
-                placeholder="2026-06-21T11:00:00.000Z"
-              />
-            </label>
-          </div>
-          <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "1rem" }}>
-            <button onClick={applyDiagnosticFilters} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
-              {loading ? "Loading..." : "Apply Filters"}
-            </button>
-            <button onClick={clearDiagnosticFilters} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
-              Clear Filters
-            </button>
-            <button onClick={onLoadDiagnostics} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
-              Refresh Page
-            </button>
+                <legend style={{ padding: "0 0.35rem", fontWeight: 600 }}>Investigation thread</legend>
+                <div
+                  style={{
+                    display: "grid",
+                    gap: "0.75rem",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    alignItems: "end",
+                  }}
+                >
+                  <label style={{ display: "grid", gap: "0.35rem" }}>
+                    <span>ExamAttempt ID</span>
+                    <input
+                      value={diagnosticFilters.examAttemptId ?? ""}
+                      onChange={(event) => setDiagnosticFilter("examAttemptId", event.target.value)}
+                      placeholder="attempt-123"
+                    />
+                  </label>
+                  <label style={{ display: "grid", gap: "0.35rem" }}>
+                    <span>Correlation ID</span>
+                    <input
+                      value={diagnosticFilters.correlationId ?? ""}
+                      onChange={(event) => setDiagnosticFilter("correlationId", event.target.value)}
+                      placeholder="corr-123"
+                    />
+                  </label>
+                  <label style={{ display: "grid", gap: "0.35rem" }}>
+                    <span>Candidate email</span>
+                    <input
+                      value={diagnosticFilters.candidateEmail ?? ""}
+                      onChange={(event) => setDiagnosticFilter("candidateEmail", event.target.value)}
+                      placeholder="candidate@helioscx.demo"
+                    />
+                  </label>
+                  <label style={{ display: "grid", gap: "0.35rem" }}>
+                    <span>Exam ID</span>
+                    <input
+                      value={diagnosticFilters.examId ?? ""}
+                      onChange={(event) => setDiagnosticFilter("examId", event.target.value)}
+                      placeholder="exam-123"
+                    />
+                  </label>
+                  <label style={{ display: "grid", gap: "0.35rem" }}>
+                    <span>CloudShare / external ID</span>
+                    <input
+                      value={diagnosticFilters.externalId ?? ""}
+                      onChange={(event) => setDiagnosticFilter("externalId", event.target.value)}
+                      placeholder="env-123"
+                    />
+                  </label>
+                </div>
+              </fieldset>
+              <fieldset
+                style={{
+                  margin: 0,
+                  border: "1px solid #d7dce4",
+                  borderRadius: "8px",
+                  padding: "0.8rem",
+                  minWidth: 0,
+                  background: "#fff",
+                }}
+              >
+                <legend style={{ padding: "0 0.35rem", fontWeight: 600 }}>Event details</legend>
+                <div
+                  style={{
+                    display: "grid",
+                    gap: "0.75rem",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                    alignItems: "end",
+                  }}
+                >
+                  <label style={{ display: "grid", gap: "0.35rem" }}>
+                    <span>Operation</span>
+                    <input
+                      value={diagnosticFilters.operation ?? ""}
+                      onChange={(event) => setDiagnosticFilter("operation", event.target.value)}
+                      placeholder="exam_attempt.resume"
+                    />
+                  </label>
+                  <label style={{ display: "grid", gap: "0.35rem" }}>
+                    <span>Outcome</span>
+                    <select
+                      value={diagnosticFilters.outcome ?? ""}
+                      onChange={(event) =>
+                        setDiagnosticFilter(
+                          "outcome",
+                          (event.target.value || undefined) as DiagnosticLogFilters["outcome"],
+                        )
+                      }
+                    >
+                      <option value="">All</option>
+                      <option value="success">Success</option>
+                      <option value="failure">Failure</option>
+                    </select>
+                  </label>
+                  <label style={{ display: "grid", gap: "0.35rem" }}>
+                    <span>Source</span>
+                    <input
+                      value={diagnosticFilters.source ?? ""}
+                      onChange={(event) => setDiagnosticFilter("source", event.target.value)}
+                      placeholder="runtime"
+                    />
+                  </label>
+                  <label style={{ display: "grid", gap: "0.35rem" }}>
+                    <span>Integration surface</span>
+                    <input
+                      value={diagnosticFilters.integrationSurface ?? ""}
+                      onChange={(event) => setDiagnosticFilter("integrationSurface", event.target.value)}
+                      placeholder="cloudshare.v4.environment"
+                    />
+                  </label>
+                  <label style={{ display: "grid", gap: "0.35rem" }}>
+                    <span>From (UTC ISO)</span>
+                    <input
+                      value={diagnosticFilters.from ?? ""}
+                      onChange={(event) => setDiagnosticFilter("from", event.target.value)}
+                      placeholder="2026-06-21T10:00:00.000Z"
+                    />
+                  </label>
+                  <label style={{ display: "grid", gap: "0.35rem" }}>
+                    <span>To (UTC ISO)</span>
+                    <input
+                      value={diagnosticFilters.to ?? ""}
+                      onChange={(event) => setDiagnosticFilter("to", event.target.value)}
+                      placeholder="2026-06-21T11:00:00.000Z"
+                    />
+                  </label>
+                </div>
+              </fieldset>
+            </div>
+            <div
+              style={{
+                display: "flex",
+                gap: "0.75rem",
+                flexWrap: "wrap",
+                marginTop: "0.9rem",
+              }}
+            >
+              <button onClick={applyDiagnosticFilters} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
+                {loading ? "Loading..." : "Apply Filters"}
+              </button>
+              <button onClick={clearDiagnosticFilters} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
+                Clear Filters
+              </button>
+              <button onClick={onLoadDiagnostics} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
+                Refresh Page
+              </button>
+            </div>
           </div>
           {diagnosticPage && (
             <div

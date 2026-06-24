@@ -89,6 +89,10 @@ describe("DiagnosticLogTable", () => {
     expect(html).toContain("POST /api/exam/resume");
     expect(html).toContain("HTTP 502");
     expect(html).toContain('aria-label="Filter Support Diagnostics by ExamAttempt attempt-1"');
+    expect(html).toContain(">Event<");
+    expect(html).toContain(">Support anchors<");
+    expect(html).toContain(">Correlation and evidence<");
+    expect(html).toContain('aria-label="Expand diagnostic entry diag-summary"');
   });
 
   it("canonicalises duplicate experience identifiers in CloudShare ID displays without hiding distinct values", () => {
@@ -257,5 +261,52 @@ describe("DiagnosticLogTable", () => {
     expect(html).toContain("Correlation");
     expect(html).toContain("Request");
     expect(html).toContain("admin-evidence");
+  });
+
+  it("preserves the expanded evidence order for support investigations", () => {
+    const html = renderToStaticMarkup(
+      createElement(DiagnosticLogTable, {
+        entries: [
+          {
+            id: "diag-order",
+            occurredAt: "2026-06-21T10:00:00.000Z",
+            level: "warn",
+            source: "runtime",
+            operation: "exam_attempt.resume",
+            outcome: "failure",
+            customerId: "customer-helios",
+            actor: { type: "candidate", id: "candidate-1", email: "candidate@helioscx.demo" },
+            subject: { type: "exam_attempt", id: "attempt-1" },
+            message: "Exam resume failed",
+            correlationId: "corr-order",
+            candidateEmail: "candidate@helioscx.demo",
+            examId: "exam-1",
+            examAttemptId: "attempt-1",
+            externalIds: {
+              environmentId: "env-1",
+            },
+            request: {
+              method: "POST",
+              path: "/api/exam/resume",
+            },
+            response: {
+              status: 502,
+            },
+            details: {
+              integrationSurface: "cloudshare.v4.environment",
+              failureMode: "http_status",
+            },
+          },
+        ],
+        expandedDiagnosticId: "diag-order",
+        onToggleExpanded: () => {},
+      }),
+    );
+
+    expect(html.indexOf("<strong>Support hints</strong>")).toBeLessThan(html.indexOf("<strong>Quick facts</strong>"));
+    expect(html.indexOf("<strong>Quick facts</strong>")).toBeLessThan(html.indexOf("<strong>External IDs</strong>"));
+    expect(html.indexOf("<strong>External IDs</strong>")).toBeLessThan(html.indexOf("<strong>Request</strong>"));
+    expect(html.indexOf("<strong>Request</strong>")).toBeLessThan(html.indexOf("<strong>Response</strong>"));
+    expect(html.indexOf("<strong>Response</strong>")).toBeLessThan(html.indexOf("<strong>Details</strong>"));
   });
 });
