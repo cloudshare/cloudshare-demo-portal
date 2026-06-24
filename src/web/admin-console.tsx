@@ -201,6 +201,19 @@ class AdminSessionExpiredError extends Error {
 }
 
 const DIAGNOSTIC_PAGE_LIMIT = 50;
+const SUPPORT_WORKFLOW_TABS = new Set<AdminTab>(["monitoring", "diagnostics"]);
+
+function getAdminShellWorkflowSummary(tab: AdminTab): string {
+  if (tab === "monitoring") {
+    return "Monitor current ExamAttempt state, then open Support Diagnostics for the forensic trace.";
+  }
+
+  if (tab === "diagnostics") {
+    return "Trace what happened by ExamAttempt, correlation ID, Candidate, Exam, or CloudShare identifier.";
+  }
+
+  return "Use Session Monitoring for current ExamAttempt state and Support Diagnostics for investigation history.";
+}
 
 function isAdminSessionExpiredError(error: unknown): error is AdminSessionExpiredError {
   return error instanceof AdminSessionExpiredError;
@@ -1155,6 +1168,7 @@ export function AdminConsole({
   const blueprintSummary = selectedBlueprint
     ? stripHtmlToText(selectedBlueprint.description || blueprintDetail?.description || "")
     : "";
+  const activeTabLabel = getAdminTabLabel(tab);
 
   useEffect(() => {
     const nextSelectedRegionIds = reconcileAllowedRegionIds(selectedAllowedRegionIds, compatibleRegions);
@@ -1194,36 +1208,96 @@ export function AdminConsole({
           Log out
         </button>
       </div>
-      <nav style={{ display: "flex", gap: "0.75rem", marginBottom: "1.5rem", flexWrap: "wrap" }}>
-        {ADMIN_TABS.map((t) => (
-          <button
-            key={t}
-            onClick={() => {
-              if (shouldClearAdminBannerOnTabChange(tab, t)) {
-                setError(null);
-                setCandidateMessage(null);
-              }
-              router.push(
-                buildAdminConsoleHref({
-                  tab: t,
-                  diagnosticFilters,
-                }),
-              );
-              setTab(t);
-            }}
+      <nav
+        aria-label="Admin console sections"
+        style={{ display: "flex", gap: "0.75rem", marginBottom: "0.85rem", flexWrap: "wrap" }}
+      >
+        {ADMIN_TABS.map((t) => {
+          const isActive = tab === t;
+          const isSupportWorkflow = SUPPORT_WORKFLOW_TABS.has(t);
+
+          return (
+            <button
+              key={t}
+              type="button"
+              aria-current={isActive ? "page" : undefined}
+              onClick={() => {
+                if (shouldClearAdminBannerOnTabChange(tab, t)) {
+                  setError(null);
+                  setCandidateMessage(null);
+                }
+                router.push(
+                  buildAdminConsoleHref({
+                    tab: t,
+                    diagnosticFilters,
+                  }),
+                );
+                setTab(t);
+              }}
+              style={{
+                padding: "0.55rem 0.95rem",
+                background: isActive ? "#0f172a" : isSupportWorkflow ? "#eef4ff" : "#f3f4f6",
+                color: isActive ? "#fff" : "#111827",
+                border: isActive ? "2px solid #2563eb" : "1px solid #d1d5db",
+                borderRadius: "6px",
+                cursor: "pointer",
+                fontWeight: isActive ? 700 : 600,
+                boxShadow: isActive ? "0 0 0 3px rgba(37, 99, 235, 0.18)" : "none",
+              }}
+            >
+              {getAdminTabLabel(t)}
+            </button>
+          );
+        })}
+      </nav>
+      <section
+        aria-label="Admin workflow context"
+        style={{
+          display: "grid",
+          gap: "0.65rem",
+          border: "1px solid #d7dce4",
+          borderLeft: SUPPORT_WORKFLOW_TABS.has(tab) ? "4px solid #2563eb" : "4px solid #94a3b8",
+          borderRadius: "8px",
+          background: SUPPORT_WORKFLOW_TABS.has(tab) ? "#f8fbff" : "#f8fafc",
+          padding: "0.85rem 1rem",
+          marginBottom: "1.5rem",
+        }}
+      >
+        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "baseline" }}>
+          <strong>Active workflow: {activeTabLabel}</strong>
+          <span style={{ color: "#64748b" }}>Monitoring -&gt; Diagnostics support handoff</span>
+        </div>
+        <p style={{ margin: 0, color: "#475569" }}>{getAdminShellWorkflowSummary(tab)}</p>
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+          <span
             style={{
-              padding: "0.5rem 0.9rem",
-              background: tab === t ? "#111827" : "#eee",
-              color: tab === t ? "#fff" : "#111",
-              border: "none",
+              padding: "0.2rem 0.45rem",
               borderRadius: "6px",
-              cursor: "pointer",
+              background: tab === "monitoring" ? "#1d4ed8" : "#e0e7ff",
+              color: tab === "monitoring" ? "#fff" : "#1e3a8a",
+              fontWeight: 700,
+              fontSize: "0.8rem",
             }}
           >
-            {getAdminTabLabel(t)}
-          </button>
-        ))}
-      </nav>
+            Monitoring
+          </span>
+          <span aria-hidden="true" style={{ color: "#64748b" }}>
+            -&gt;
+          </span>
+          <span
+            style={{
+              padding: "0.2rem 0.45rem",
+              borderRadius: "6px",
+              background: tab === "diagnostics" ? "#1d4ed8" : "#e0e7ff",
+              color: tab === "diagnostics" ? "#fff" : "#1e3a8a",
+              fontWeight: 700,
+              fontSize: "0.8rem",
+            }}
+          >
+            Diagnostics
+          </span>
+        </div>
+      </section>
 
       {error && (
         <div style={{ color: "#b00020", background: "#fff0f0", padding: "0.75rem", borderRadius: "6px", display: "grid", gap: "0.5rem" }}>
