@@ -188,7 +188,7 @@ describe("SessionMonitoringPanel", () => {
     expect(html.match(/>suspended</g)?.length).toBe(1);
   });
 
-  it("leads attempt summaries with a bold candidate line and a normal exam line", () => {
+  it("leads attempt summaries with candidate identity, exam timing, and latest interaction context", () => {
     const html = renderToStaticMarkup(
       createElement(SessionMonitoringPanel, {
         monitoring: makeMonitoringView({
@@ -199,6 +199,29 @@ describe("SessionMonitoringPanel", () => {
                 candidateEmail: "scheduled.candidate@helioscx.demo",
                 examTitle: "Scheduled Exam",
                 status: "scheduled",
+                scheduledFor: "2026-06-21T12:00:00.000Z",
+                timeline: [
+                  {
+                    id: "diag-latest",
+                    kind: "diagnostic",
+                    occurredAt: "2026-06-21T12:08:30.000Z",
+                    level: "info",
+                    source: "runtime",
+                    operation: "exam_attempt.heartbeat.receive",
+                    outcome: "success",
+                    message: "Heartbeat received",
+                  },
+                  {
+                    id: "diag-earlier",
+                    kind: "diagnostic",
+                    occurredAt: "2026-06-21T12:04:00.000Z",
+                    level: "info",
+                    source: "runtime",
+                    operation: "exam_attempt.enter",
+                    outcome: "success",
+                    message: "Exam entered",
+                  },
+                ],
               }),
             ],
             ready: [],
@@ -211,6 +234,8 @@ describe("SessionMonitoringPanel", () => {
               candidateEmail: "history.candidate@helioscx.demo",
               examTitle: "History Exam",
               status: "completed",
+              scheduledFor: null,
+              timeline: [],
             }),
           ],
         }),
@@ -221,10 +246,14 @@ describe("SessionMonitoringPanel", () => {
       }),
     );
 
-    expect(html).toContain("<strong style=\"color:#111827;font-weight:700\">Scheduled Candidate (scheduled.candidate@helioscx.demo)</strong>");
+    expect(html).toContain("Scheduled Candidate <strong style=\"color:#111827;font-weight:700\">scheduled.candidate@helioscx.demo</strong>");
     expect(html).toContain("<span style=\"color:#4b5563;font-weight:400\">Scheduled Exam");
-    expect(html).toContain("<strong style=\"color:#111827;font-weight:700\">History Candidate (history.candidate@helioscx.demo)</strong>");
+    expect(html).toContain("Scheduled: 2026-06-21T12:00:00.000Z");
+    expect(html).toContain("Last interaction: 2026-06-21T12:08:30.000Z");
+    expect(html).toContain("History Candidate <strong style=\"color:#111827;font-weight:700\">history.candidate@helioscx.demo</strong>");
     expect(html).toContain("<span style=\"color:#4b5563;font-weight:400\">History Exam");
+    expect(html).toContain("Scheduled: -");
+    expect(html).toContain("Last interaction: -");
   });
 
   it("filters the monitoring view by status, candidate email, and exam or ExamAttempt lookup without changing summary counts", () => {
