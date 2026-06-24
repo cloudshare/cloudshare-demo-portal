@@ -1,7 +1,11 @@
-import { createElement } from "react";
+import React, { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
-import { buildMonitoringHistoryAttemptKey, SessionMonitoringPanel } from "./session-monitoring-panel";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  applyMonitoringFilters,
+  buildMonitoringHistoryAttemptKey,
+  SessionMonitoringPanel,
+} from "./session-monitoring-panel";
 import type { AdminMonitoringView, MonitoringAttemptView } from "@/domain/admin-monitoring";
 
 function makeAttempt(partial: Partial<MonitoringAttemptView> = {}): MonitoringAttemptView {
@@ -90,6 +94,10 @@ function makeMonitoringView(partial: Partial<AdminMonitoringView> = {}): AdminMo
 }
 
 describe("SessionMonitoringPanel", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it("renders the monitoring status strip, separated live and history sections, and the Support Diagnostics handoff", () => {
     const html = renderToStaticMarkup(
       createElement(SessionMonitoringPanel, {
@@ -102,6 +110,9 @@ describe("SessionMonitoringPanel", () => {
     );
 
     expect(html).toContain("Monitoring status");
+    expect(html).toContain("Candidate email");
+    expect(html).toContain("Exam ID or ExamAttempt ID");
+    expect(html).toContain("Clear filters");
     expect(html).toContain("Session Monitoring is the current-state operations surface for active ExamAttempts.");
     expect(html).toContain("Use Support Diagnostics for the forensic trace of what happened and in what order.");
     expect(html).toContain("Live queues");
@@ -214,6 +225,176 @@ describe("SessionMonitoringPanel", () => {
     expect(html).toContain("<span style=\"color:#4b5563;font-weight:400\">Scheduled Exam");
     expect(html).toContain("<strong style=\"color:#111827;font-weight:700\">History Candidate (history.candidate@helioscx.demo)</strong>");
     expect(html).toContain("<span style=\"color:#4b5563;font-weight:400\">History Exam");
+  });
+
+  it("filters the monitoring view by status, candidate email, and exam or ExamAttempt lookup without changing summary counts", () => {
+    const filtered = applyMonitoringFilters(
+      makeMonitoringView({
+        summary: {
+          scheduled: 4,
+          ready: 3,
+          inProgress: 2,
+          suspended: 1,
+          completed: 5,
+          expired: 2,
+        },
+        currentAttempts: {
+          scheduled: [
+            makeAttempt({
+              id: "attempt-scheduled",
+              status: "scheduled",
+              examId: "exam-alpha",
+              candidateEmail: "alex@helioscx.demo",
+            }),
+          ],
+          ready: [
+            makeAttempt({
+              id: "attempt-ready",
+              status: "ready",
+              examId: "exam-beta",
+              candidateEmail: "blair@helioscx.demo",
+            }),
+          ],
+          inProgress: [],
+          suspended: [],
+        },
+        history: [
+          makeAttempt({
+            id: "attempt-completed",
+            status: "completed",
+            examId: "exam-alpha",
+            candidateEmail: "alex@helioscx.demo",
+          }),
+          makeAttempt({
+            id: "attempt-expired",
+            status: "expired",
+            examId: "exam-gamma",
+            candidateEmail: "casey@helioscx.demo",
+          }),
+        ],
+      }),
+      {
+        status: "completed",
+        candidateEmail: " ALEX@helioscx.demo ",
+        identifier: " exam-alpha ",
+      },
+    );
+
+    expect(filtered.summary).toEqual({
+      scheduled: 4,
+      ready: 3,
+      inProgress: 2,
+      suspended: 1,
+      completed: 5,
+      expired: 2,
+    });
+    expect(filtered.currentAttempts.scheduled).toEqual([]);
+    expect(filtered.currentAttempts.ready).toEqual([]);
+    expect(filtered.history.map((attempt) => attempt.id)).toEqual(["attempt-completed"]);
+
+    const byAttemptId = applyMonitoringFilters(filtered, {
+      status: "completed",
+      candidateEmail: "alex@helioscx.demo",
+      identifier: "attempt-completed",
+    });
+
+    expect(byAttemptId.history.map((attempt) => attempt.id)).toEqual(["attempt-completed"]);
+  });
+
+  it("shows the selected monitoring status filter and explains when no attempts match it", () => {
+    vi.spyOn(React, "useState").mockReturnValueOnce([
+      {
+        status: "expired",
+        candidateEmail: "nobody@helioscx.demo",
+        identifier: "",
+      },
+      () => undefined,
+    ]);
+
+    const html = renderToStaticMarkup(
+      createElement(SessionMonitoringPanel, {
+        monitoring: makeMonitoringView({
+          currentAttempts: {
+            scheduled: [],
+            ready: [],
+            inProgress: [],
+            suspended: [],
+          },
+          history: [],
+          historyPage: {
+            limit: 25,
+            offset: 0,
+            returned: 0,
+            total: 0,
+            hasMore: false,
+            nextOffset: null,
+          },
+        }),
+        loading: false,
+        onRefresh: () => {},
+        onLoadMoreHistory: () => {},
+        onOpenSupportDiagnostics: () => {},
+      }),
+    );
+
+    expect(html).toContain("aria-pressed=\"true\"");
+    const selectedStatusMetricButton = html.match(/<button type="button" aria-pressed="true" style="[^"]+"/)?.[0];
+
+    expect(selectedStatusMetricButton).toContain("border-width:1px");
+    expect(selectedStatusMetricButton).toContain("border-style:solid");
+    expect(selectedStatusMetricButton).toContain("border-color:#1d4ed8");
+    expect(selectedStatusMetricButton).not.toContain("border:1px solid");
+    expect(html).toContain("2 monitoring filters active.");
+    expect(html).toContain("No attempts match the current monitoring filters.");
+  });
+
+  it("keeps the history empty state scoped when a filtered live queue still has matches", () => {
+    vi.spyOn(React, "useState").mockReturnValueOnce([
+      {
+        status: null,
+        candidateEmail: "",
+        identifier: "742ffd2b-55e4-437b-8276-9574eefe58a0",
+      },
+      () => undefined,
+    ]);
+
+    const html = renderToStaticMarkup(
+      createElement(SessionMonitoringPanel, {
+        monitoring: makeMonitoringView({
+          currentAttempts: {
+            scheduled: [],
+            ready: [
+              makeAttempt({
+                id: "742ffd2b-55e4-437b-8276-9574eefe58a0",
+                status: "ready",
+                examTitle: "Windows Boxes",
+                candidateName: "Live Candidate",
+                candidateEmail: "live.candidate@helioscx.demo",
+              }),
+            ],
+            inProgress: [],
+            suspended: [],
+          },
+          history: [],
+          historyPage: {
+            limit: 25,
+            offset: 0,
+            returned: 0,
+            total: 0,
+            hasMore: false,
+            nextOffset: null,
+          },
+        }),
+        loading: false,
+        onRefresh: () => {},
+        onLoadMoreHistory: () => {},
+        onOpenSupportDiagnostics: () => {},
+      }),
+    );
+
+    expect(html).toContain("Windows Boxes");
+    expect(html).toContain("No completed or expired attempts match the current monitoring filters.");
+    expect(html).not.toContain("No attempts match the current monitoring filters.");
   });
 });
 
