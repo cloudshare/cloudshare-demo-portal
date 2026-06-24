@@ -1,5 +1,5 @@
 import type { CloudShareClient } from "./client";
-import type { EnvironmentController } from "@/domain/environment";
+import type { EnvironmentCommandResult, EnvironmentController } from "@/domain/environment";
 
 /**
  * CloudShare implementation of the {@link EnvironmentController} port — issues
@@ -11,21 +11,58 @@ import type { EnvironmentController } from "@/domain/environment";
 export function createCloudShareEnvironmentController(
   client: CloudShareClient,
 ): EnvironmentController {
-  return {
-    async suspendEnvironment(environmentExternalId: string): Promise<void> {
-      await client.requestV3Text({
+  async function runCommand(
+    environmentExternalId: string,
+    action: "suspend" | "resume",
+  ): Promise<EnvironmentCommandResult> {
+    const path = `/envs/actions/${action}`;
+    const attemptedOperation = `${action}_environment` as const;
+    const integrationSurface = `cloudshare.v3.env.action.${action}`;
+
+    if (client.requestV3TextDetailed) {
+      const result = await client.requestV3TextDetailed({
         method: "PUT",
-        path: "/envs/actions/suspend",
+        path,
         query: { envId: environmentExternalId },
       });
+      return {
+        attemptedOperation,
+        integrationSurface,
+        method: "PUT",
+        path: `/api/v3${path}`,
+        host: result.host,
+        externalIds: { environmentId: environmentExternalId },
+        request: { ...result.request },
+        response: { ...result.response },
+      };
+    }
+
+    const body = await client.requestV3Text({
+      method: "PUT",
+      path,
+      query: { envId: environmentExternalId },
+    });
+    return {
+      attemptedOperation,
+      integrationSurface,
+      method: "PUT",
+      path: `/api/v3${path}`,
+      externalIds: { environmentId: environmentExternalId },
+      request: {
+        method: "PUT",
+        path: `/api/v3${path}`,
+      },
+      response: body.length > 0 ? { body } : null,
+    };
+  }
+
+  return {
+    async suspendEnvironment(environmentExternalId: string): Promise<EnvironmentCommandResult> {
+      return runCommand(environmentExternalId, "suspend");
     },
 
-    async resumeEnvironment(environmentExternalId: string): Promise<void> {
-      await client.requestV3Text({
-        method: "PUT",
-        path: "/envs/actions/resume",
-        query: { envId: environmentExternalId },
-      });
+    async resumeEnvironment(environmentExternalId: string): Promise<EnvironmentCommandResult> {
+      return runCommand(environmentExternalId, "resume");
     },
   };
 }

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   loadCandidateLabStatus,
   preflightLabAction,
+  readHeartbeatAttemptStatus,
   resumeLabAttempt,
   suspendLabAttempt,
 } from "./lab-launcher-client";
@@ -260,5 +261,13 @@ describe("lab launcher client helpers", () => {
         "attempt-missing",
       ),
     ).rejects.toThrow("exam attempt not found");
+  });
+
+  it("reads an authoritative suspended attempt status from heartbeat responses", () => {
+    expect(readHeartbeatAttemptStatus({ attemptStatus: "suspended" })).toBe("suspended");
+    expect(readHeartbeatAttemptStatus({ attemptStatus: "completed" })).toBe("completed");
+    expect(readHeartbeatAttemptStatus({ attemptStatus: "in_progress" })).toBe("in_progress");
+    expect(readHeartbeatAttemptStatus({ attemptStatus: "ready" })).toBeNull();
+    expect(readHeartbeatAttemptStatus({ status: "ok" })).toBeNull();
   });
 });

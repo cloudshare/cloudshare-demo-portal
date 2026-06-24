@@ -7,18 +7,57 @@ function mockClient(over: Partial<CloudShareClient> = {}): CloudShareClient {
     requestV4: vi.fn().mockResolvedValue({}),
     requestV3: vi.fn(),
     requestV3Text: vi.fn().mockResolvedValue(""),
+    requestV3TextDetailed: vi.fn().mockResolvedValue({
+      data: "",
+      host: "use.cloudshare.com",
+      integrationSurface: "cloudshare.v3",
+      request: {
+        method: "PUT",
+        path: "/api/v3/envs/actions/suspend",
+      },
+      response: {
+        status: 200,
+        body: "",
+      },
+    }),
     ...over,
   } as CloudShareClient;
 }
 
 describe("createCloudShareEnvironmentController", () => {
   it("issues a PUT to the documented v3 suspend action endpoint for the given CloudShare envId", async () => {
-    const requestV3Text = vi.fn().mockResolvedValue("");
-    const controller = createCloudShareEnvironmentController(mockClient({ requestV3Text }));
+    const requestV3TextDetailed = vi.fn().mockResolvedValue({
+      data: "",
+      host: "use.cloudshare.com",
+      integrationSurface: "cloudshare.v3",
+      request: {
+        method: "PUT",
+        path: "/api/v3/envs/actions/suspend",
+      },
+      response: {
+        status: 200,
+        body: "",
+      },
+    });
+    const controller = createCloudShareEnvironmentController(mockClient({ requestV3TextDetailed }));
 
-    await controller.suspendEnvironment("ENVS2n38LTNdcC4sHsqnjRzg2");
+    await expect(controller.suspendEnvironment("ENVS2n38LTNdcC4sHsqnjRzg2")).resolves.toMatchObject({
+      attemptedOperation: "suspend_environment",
+      integrationSurface: "cloudshare.v3.env.action.suspend",
+      request: {
+        method: "PUT",
+        path: "/api/v3/envs/actions/suspend",
+      },
+      response: {
+        status: 200,
+        body: "",
+      },
+      externalIds: {
+        environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+      },
+    });
 
-    expect(requestV3Text).toHaveBeenCalledWith(
+    expect(requestV3TextDetailed).toHaveBeenCalledWith(
       expect.objectContaining({
         method: "PUT",
         path: "/envs/actions/suspend",
@@ -28,12 +67,38 @@ describe("createCloudShareEnvironmentController", () => {
   });
 
   it("issues a PUT to the documented v3 resume action endpoint for the given CloudShare envId", async () => {
-    const requestV3Text = vi.fn().mockResolvedValue("");
-    const controller = createCloudShareEnvironmentController(mockClient({ requestV3Text }));
+    const requestV3TextDetailed = vi.fn().mockResolvedValue({
+      data: "",
+      host: "use.cloudshare.com",
+      integrationSurface: "cloudshare.v3",
+      request: {
+        method: "PUT",
+        path: "/api/v3/envs/actions/resume",
+      },
+      response: {
+        status: 200,
+        body: "",
+      },
+    });
+    const controller = createCloudShareEnvironmentController(mockClient({ requestV3TextDetailed }));
 
-    await controller.resumeEnvironment("ENVS2n38LTNdcC4sHsqnjRzg2");
+    await expect(controller.resumeEnvironment("ENVS2n38LTNdcC4sHsqnjRzg2")).resolves.toMatchObject({
+      attemptedOperation: "resume_environment",
+      integrationSurface: "cloudshare.v3.env.action.resume",
+      request: {
+        method: "PUT",
+        path: "/api/v3/envs/actions/resume",
+      },
+      response: {
+        status: 200,
+        body: "",
+      },
+      externalIds: {
+        environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+      },
+    });
 
-    expect(requestV3Text).toHaveBeenCalledWith(
+    expect(requestV3TextDetailed).toHaveBeenCalledWith(
       expect.objectContaining({
         method: "PUT",
         path: "/envs/actions/resume",
@@ -45,7 +110,10 @@ describe("createCloudShareEnvironmentController", () => {
   it("propagates CloudShare errors from suspendEnvironment", async () => {
     const err = new Error("CloudShare 502");
     const controller = createCloudShareEnvironmentController(
-      mockClient({ requestV3Text: vi.fn().mockRejectedValue(err) }),
+      mockClient({
+        requestV3TextDetailed: vi.fn().mockRejectedValue(err),
+        requestV3Text: vi.fn().mockRejectedValue(err),
+      }),
     );
 
     await expect(controller.suspendEnvironment("env-1")).rejects.toThrow("CloudShare 502");
@@ -54,7 +122,10 @@ describe("createCloudShareEnvironmentController", () => {
   it("propagates CloudShare errors from resumeEnvironment", async () => {
     const err = new Error("CloudShare 503");
     const controller = createCloudShareEnvironmentController(
-      mockClient({ requestV3Text: vi.fn().mockRejectedValue(err) }),
+      mockClient({
+        requestV3TextDetailed: vi.fn().mockRejectedValue(err),
+        requestV3Text: vi.fn().mockRejectedValue(err),
+      }),
     );
 
     await expect(controller.resumeEnvironment("env-1")).rejects.toThrow("CloudShare 503");

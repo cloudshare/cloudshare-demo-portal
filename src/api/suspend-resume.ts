@@ -30,6 +30,7 @@ import type { ExamClock } from "@/domain/exam-clock";
 import type { ExamRepository } from "@/domain/exam-catalog";
 import { reconcileExamAttemptCompletion } from "@/domain/exam-attempt-completion";
 import { recordExamAttemptCompletionDiagnostic } from "./exam-attempt-completion-diagnostics";
+import type { EnvironmentCommandResult } from "@/domain/environment";
 
 /**
  * Framework-agnostic handlers for the candidate-initiated suspend and resume
@@ -196,7 +197,7 @@ async function handleSuspendExamOnce(
       examAttemptId,
       operation: "exam_suspend",
     });
-    await suspendExam(
+    const commandResult = await suspendExam(
       {
         ...deps,
         ...(await resolveCustomerEnvironmentAccess(deps, examAttemptId)),
@@ -210,7 +211,14 @@ async function handleSuspendExamOnce(
         ),
       },
     );
-    await deps.diagnostics?.record({ ...anchors, level: "info", operation: "exam_attempt.suspend", outcome: "success", message: "Exam suspended" });
+    await deps.diagnostics?.record({
+      ...anchors,
+      ...commandResultToDiagnostic(commandResult),
+      level: "info",
+      operation: "exam_attempt.suspend",
+      outcome: "success",
+      message: "Exam suspended",
+    });
     deps.logger.info("exam suspended", {
       examAttemptId,
       customerId: anchors.customerId,
@@ -353,7 +361,14 @@ async function handleResumeExamOnce(
         ),
       },
     );
-    await deps.diagnostics?.record({ ...anchors, level: "info", operation: "exam_attempt.resume", outcome: "success", message: "Exam resumed" });
+    await deps.diagnostics?.record({
+      ...anchors,
+      ...commandResultToDiagnostic(result.commandResult),
+      level: "info",
+      operation: "exam_attempt.resume",
+      outcome: "success",
+      message: "Exam resumed",
+    });
     deps.logger.info("exam resumed", {
       examAttemptId,
       customerId: anchors.customerId,
@@ -416,7 +431,7 @@ export async function runHeartbeatAutoSuspend(
       examAttemptId,
       operation: "heartbeat_auto_suspend",
     });
-    await suspendExam(
+    const commandResult = await suspendExam(
       {
         ...deps,
         ...(await resolveCustomerEnvironmentAccess(deps, examAttemptId)),
@@ -430,7 +445,14 @@ export async function runHeartbeatAutoSuspend(
         ),
       },
     );
-    await deps.diagnostics?.record({ ...anchors, level: "info", operation: "exam_attempt.heartbeat_auto_suspend", outcome: "success", message: "Exam auto-suspended by heartbeat expiry" });
+    await deps.diagnostics?.record({
+      ...anchors,
+      ...commandResultToDiagnostic(commandResult),
+      level: "info",
+      operation: "exam_attempt.heartbeat_auto_suspend",
+      outcome: "success",
+      message: "Exam auto-suspended by heartbeat expiry",
+    });
   } catch (err) {
     await deps.diagnostics?.record({
       ...anchors,
@@ -464,6 +486,28 @@ function extractExamAttemptId(body: unknown): string | null {
   return typeof examAttemptId === "string" && examAttemptId.trim().length > 0
     ? examAttemptId.trim()
     : null;
+}
+
+function commandResultToDiagnostic(
+  commandResult: EnvironmentCommandResult,
+): Pick<RuntimeDiagnosticAnchors, never> & {
+  readonly externalIds: { readonly environmentId: string };
+  readonly request?: Record<string, unknown> | null;
+  readonly response?: Record<string, unknown> | null;
+  readonly details: Record<string, unknown>;
+} {
+  return {
+    externalIds: commandResult.externalIds,
+    request: commandResult.request ?? null,
+    response: commandResult.response ?? null,
+    details: {
+      attemptedOperation: commandResult.attemptedOperation,
+      integrationSurface: commandResult.integrationSurface,
+      method: commandResult.method,
+      path: commandResult.path,
+      ...(commandResult.host ? { host: commandResult.host } : {}),
+    },
+  };
 }
 
 async function resolveCustomerEnvironmentAccess(

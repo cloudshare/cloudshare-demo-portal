@@ -141,6 +141,19 @@ function makeSuspendCloudShareFactory(): CloudShareClientFactory {
         throw new Error(`unexpected v3 path ${spec.path}`);
       }) as never,
       requestV3Text: vi.fn().mockResolvedValue(""),
+      requestV3TextDetailed: vi.fn().mockResolvedValue({
+        data: "",
+        host: "use.cloudshare.com",
+        integrationSurface: "cloudshare.v3",
+        request: {
+          method: "PUT",
+          path: "/api/v3/envs/actions/suspend",
+        },
+        response: {
+          status: 200,
+          body: "",
+        },
+      }),
       requestV4: vi.fn(async (spec: { path: string; schema: { parse(v: unknown): unknown } }) => {
         if (spec.path === "/trainings/EXtraining-1/students") {
           return spec.schema.parse([
@@ -166,6 +179,19 @@ function makeResumeCloudShareFactory(): CloudShareClientFactory {
         throw new Error(`unexpected v3 path ${spec.path}`);
       }) as never,
       requestV3Text: vi.fn().mockResolvedValue(""),
+      requestV3TextDetailed: vi.fn().mockResolvedValue({
+        data: "",
+        host: "use.cloudshare.com",
+        integrationSurface: "cloudshare.v3",
+        request: {
+          method: "PUT",
+          path: "/api/v3/envs/actions/resume",
+        },
+        response: {
+          status: 200,
+          body: "",
+        },
+      }),
       requestV4: vi.fn(async (spec: { path: string; schema: { parse(v: unknown): unknown } }) => {
         if (spec.path === "/trainings/EXtraining-1/students") {
           return spec.schema.parse([
@@ -286,7 +312,7 @@ describe("handleEnterExam diagnostics", () => {
 // ---------------------------------------------------------------------------
 
 describe("handleSuspendExam diagnostics", () => {
-  it("emits exam_attempt.suspend success", async () => {
+  it("emits exam_attempt.suspend success with CloudShare command evidence", async () => {
     const { repository, recorder } = diagnosticsHarness();
     const attempts = makeAttempts({ ...BASE_ATTEMPT, status: "in_progress" });
     const launches = makeLaunches();
@@ -319,6 +345,23 @@ describe("handleSuspendExam diagnostics", () => {
       examAttemptId: "ea-1",
       customerId: "customer-1",
       candidateEmail: "candidate@helioscx.demo",
+      externalIds: {
+        environmentId: "ENVS-env-1",
+      },
+      details: {
+        attemptedOperation: "suspend_environment",
+        integrationSurface: "cloudshare.v3.env.action.suspend",
+        method: "PUT",
+        path: "/api/v3/envs/actions/suspend",
+      },
+      request: {
+        method: "PUT",
+        path: "/api/v3/envs/actions/suspend",
+      },
+      response: {
+        status: 200,
+        body: "",
+      },
     });
   });
 
@@ -362,7 +405,7 @@ describe("handleSuspendExam diagnostics", () => {
 // ---------------------------------------------------------------------------
 
 describe("handleResumeExam diagnostics", () => {
-  it("emits exam_attempt.resume success", async () => {
+  it("emits exam_attempt.resume success with CloudShare command evidence", async () => {
     const { repository, recorder } = diagnosticsHarness();
     const attempts = makeAttempts({ ...BASE_ATTEMPT, status: "suspended" });
     const launches = makeLaunches();
@@ -399,6 +442,23 @@ describe("handleResumeExam diagnostics", () => {
       examAttemptId: "ea-1",
       customerId: "customer-1",
       candidateEmail: "candidate@helioscx.demo",
+      externalIds: {
+        environmentId: "ENVS-env-1",
+      },
+      details: {
+        attemptedOperation: "resume_environment",
+        integrationSurface: "cloudshare.v3.env.action.resume",
+        method: "PUT",
+        path: "/api/v3/envs/actions/resume",
+      },
+      request: {
+        method: "PUT",
+        path: "/api/v3/envs/actions/resume",
+      },
+      response: {
+        status: 200,
+        body: "",
+      },
     });
   });
 
@@ -561,7 +621,7 @@ describe("handleResumeExam diagnostics", () => {
 // ---------------------------------------------------------------------------
 
 describe("runHeartbeatAutoSuspend diagnostics", () => {
-  it("emits exam_attempt.heartbeat_auto_suspend success", async () => {
+  it("emits exam_attempt.heartbeat_auto_suspend success with CloudShare command evidence", async () => {
     const { repository, recorder } = diagnosticsHarness();
     const attempts = makeAttempts({ ...BASE_ATTEMPT, status: "in_progress" });
     const launches = makeLaunches();
@@ -592,6 +652,23 @@ describe("runHeartbeatAutoSuspend diagnostics", () => {
       outcome: "success",
       examAttemptId: "ea-1",
       customerId: "customer-1",
+      externalIds: {
+        environmentId: "ENVS-env-1",
+      },
+      details: {
+        attemptedOperation: "suspend_environment",
+        integrationSurface: "cloudshare.v3.env.action.suspend",
+        method: "PUT",
+        path: "/api/v3/envs/actions/suspend",
+      },
+      request: {
+        method: "PUT",
+        path: "/api/v3/envs/actions/suspend",
+      },
+      response: {
+        status: 200,
+        body: "",
+      },
     });
   });
 });

@@ -9,6 +9,7 @@ import {
   type ResumeExamDeps,
 } from "./timer-sync";
 import type { EnvironmentStateSource } from "./environment";
+import type { EnvironmentCommandResult } from "./environment";
 import type { LabLaunch, LabLaunchRepository, LabProvisioner } from "./lab-launch";
 import { TimerSyncError, LabLaunchNotFoundError } from "./errors";
 import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-repository";
@@ -32,8 +33,35 @@ function makeController(): EnvironmentController & { suspended: string[]; resume
   return {
     suspended,
     resumed,
-    suspendEnvironment: (id) => { suspended.push(id); return Promise.resolve(); },
-    resumeEnvironment: (id) => { resumed.push(id); return Promise.resolve(); },
+    suspendEnvironment: (id) => {
+      suspended.push(id);
+      return Promise.resolve(makeCommandResult("suspend", id));
+    },
+    resumeEnvironment: (id) => {
+      resumed.push(id);
+      return Promise.resolve(makeCommandResult("resume", id));
+    },
+  };
+}
+
+function makeCommandResult(
+  action: "suspend" | "resume",
+  environmentId: string,
+): EnvironmentCommandResult {
+  return {
+    attemptedOperation: `${action}_environment`,
+    integrationSurface: `cloudshare.v3.env.action.${action}`,
+    method: "PUT",
+    path: `/api/v3/envs/actions/${action}`,
+    externalIds: { environmentId },
+    request: {
+      method: "PUT",
+      path: `/api/v3/envs/actions/${action}`,
+    },
+    response: {
+      status: 200,
+      body: "",
+    },
   };
 }
 

@@ -110,12 +110,42 @@ export function createCloudShareEnvironmentSimulator(opts: {
       return { environmentExternalId, status };
     },
 
-    async suspendEnvironment(environmentExternalId: string): Promise<void> {
+    async suspendEnvironment(environmentExternalId: string) {
       statusByExternalId.set(environmentExternalId, "suspended");
+      return {
+        attemptedOperation: "suspend_environment" as const,
+        integrationSurface: "cloudshare.simulator.env.action.suspend",
+        method: "PUT" as const,
+        path: "/api/v3/envs/actions/suspend",
+        externalIds: { environmentId: environmentExternalId },
+        request: {
+          method: "PUT",
+          path: "/api/v3/envs/actions/suspend",
+        },
+        response: {
+          status: 200,
+          body: "",
+        },
+      };
     },
 
-    async resumeEnvironment(environmentExternalId: string): Promise<void> {
+    async resumeEnvironment(environmentExternalId: string) {
       statusByExternalId.set(environmentExternalId, "running");
+      return {
+        attemptedOperation: "resume_environment" as const,
+        integrationSurface: "cloudshare.simulator.env.action.resume",
+        method: "PUT" as const,
+        path: "/api/v3/envs/actions/resume",
+        externalIds: { environmentId: environmentExternalId },
+        request: {
+          method: "PUT",
+          path: "/api/v3/envs/actions/resume",
+        },
+        response: {
+          status: 200,
+          body: "",
+        },
+      };
     },
 
     reset(): void {
