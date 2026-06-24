@@ -55,7 +55,8 @@ https://<current-public-base-url>/api/webhooks/cloudshare/<opaque-token>
 7. Trigger a CloudShare environment lifecycle event and confirm:
    - the webhook request hits the portal route
    - invalid signatures return `401`
-   - duplicate deliveries return `200`
+   - repeat deliveries return `202` and trigger the idempotent poll/reconcile path; do not use
+     CloudShare `CreatedAt` as a duplicate or event-time signal
    - accepted deliveries trigger the authoritative poll/reconcile path
    - support log entries appear without exposing the webhook secret, API key, or auth headers; admin-only support diagnostics may retain and display sponsored-link `loginUrl` values as support evidence
 

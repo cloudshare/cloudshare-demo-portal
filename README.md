@@ -292,10 +292,11 @@ pipeline (`src/api/cloudshare-webhook.ts` → `webhook-receiver.ts`):
 2. **Validate** the payload with Zod. Live v3 deliveries may send `Payload` as a JSON
    string with PascalCase keys, so the adapter normalises `EnvironmentExternalId` /
    `EnvironmentId` before the domain sees it. Malformed → **400** (logged with issues).
-3. **Dedupe** via a Customer-scoped idempotency key synthesised from
-   `(Customer, environment identifier, Event, CreatedAt)` — CloudShare sends no unique event id
-   and no custom headers. A replay → **200** (acknowledged, not reprocessed).
-4. **Accepted** events → **202**, and trigger a reconcile.
+3. **Record a diagnostic fingerprint** from `(Customer, environment identifier, Event, CreatedAt)`.
+   CloudShare sends no unique event id and no custom headers, and live QA showed `CreatedAt` is
+   the webhook definition creation time rather than the event time. The fingerprint is support
+   evidence only; verified lifecycle events are not suppressed by it.
+4. **Accepted** events → **202**, and trigger an idempotent reconcile.
 
 **Webhooks are only a hint.** `reconcileEnvironment` (domain) polls `GET environment`
 — the authoritative `EnvironmentStateSource` — and the *polled* status, never the

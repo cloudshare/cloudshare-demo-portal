@@ -94,33 +94,41 @@ provisioning.
 
 | Field | Detail |
 |---|---|
-| **Status** | Confirmed — design decision in Slice 6 |
-| **Verified live** | No (modelled from documentation) |
+| **Status** | Confirmed — design decision in Slice 6; `CreatedAt` semantics corrected from live QA |
+| **Verified live** | Partial — `CreatedAt` behaviour observed live on 2026-06-24; delivery retry guarantees still unverified |
 
 **Observed behaviour**
 
 CloudShare webhook deliveries have three known reliability problems:
 
-1. **No unique event ID per delivery.** There is no `eventId` or idempotency key in
-   the payload or headers, so the receiver cannot deduplicate retries without tracking
-   its own hash of the payload fields (`event + environmentExternalId + createdAt`).
+1. **No unique event ID or event timestamp per delivery.** There is no `eventId` or
+   idempotency key in the payload or headers. Live QA also confirmed that the envelope
+   `CreatedAt` value is the creation time of the CloudShare webhook definition, not the
+   lifecycle event occurrence time. Different event types from the same webhook
+   configuration can share the same `CreatedAt`, so it is not usable for ordering,
+   freshness checks, or hard idempotency.
 2. **No custom header support.** Callers cannot add custom metadata headers (e.g., a
    per-tenant routing key or a delivery ID). The only authentication signal is the
    HMAC signature in `x-cloudshare-signature` (header name unverified — assumption).
 3. **Delivery is best-effort.** Missed events are not replayed; the portal must treat
    webhooks as "hints" and treat the result of polling `GET /environments` as the
-   authoritative state.
+   authoritative state. Any synthesized key that includes `CreatedAt` is support evidence
+   only, not a processing gate.
 
 **Impact on certification use**
 
-- A proctored exam session that misses a `suspended` or `resumed` event risks the
-  Kryterion timer going out of sync with the lab state.
+- A candidate exam session that misses a `suspended`, `resumed`, or `archived` event risks
+  the portal timer or launch page going out of sync with the lab state.
 - The portal mitigates this by making webhooks hints only: all state changes are
   confirmed by a follow-up poll of `GET /environments`, which is the source of truth.
-- Duplicate/out-of-order events are safe because reconciliation is idempotent.
+- Duplicate/out-of-order events are safe because reconciliation is idempotent, and verified
+  lifecycle webhooks are still accepted even when their diagnostic fingerprint repeats.
+- Admin diagnostics should retain the event type, environment id, raw body hash, and
+  synthesized fingerprint for support evidence, but must not present `CreatedAt` as the
+  event creation time.
 
-**Code reference:** `src/integrations/cloudshare/webhooks.ts`,
-`src/domain/environment-reconcile.ts`
+**Code reference:** `src/integrations/cloudshare/webhook-receiver.ts`,
+`src/domain/webhook.ts`, `src/domain/environment-reconcile.ts`
 
 ---
 
@@ -544,8 +552,9 @@ the documented object-style payload and the live string/PascalCase payload, norm
   `ExamAttempt`; correlation still requires a **portal-owned `trainingId ↔ Candidate ↔ environmentId`
   mapping**, populated/reconciled via the v4 **list-students-in-a-training** endpoint.
 - Webhooks become optional; **polling list-students / `GET environment` is the source of truth**.
-  For the v3 webhook body, idempotency is keyed on
-  `(customerId, normalisedEnvironmentId, event, createdAt)`.
+  A synthesized key based on `(customerId, normalisedEnvironmentId, event, CreatedAt)` may
+  be recorded as support evidence only. It must not suppress processing because live QA
+  confirmed `CreatedAt` is the webhook definition creation time, not the event time.
 - Slice 9 now parses the documented v3 webhook envelope plus the live JSON-string `Payload` variant.
 
 **Update (2026-06-15, Slice 5 implementation assumption):** the exact response envelope for
@@ -890,5 +899,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-06-19 (recorded Guided Journey progress endpoint correction, participant-id correlation requirement, and prior training-students / envId findings).
+*Last updated: 2026-06-24 (recorded CloudShare webhook `CreatedAt` as webhook-definition time, not event time; retained polling/reconcile as the source of truth).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*
