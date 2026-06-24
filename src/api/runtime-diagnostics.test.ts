@@ -388,6 +388,9 @@ describe("handleSuspendExam diagnostics", () => {
 
     const resp = await handleSuspendExam(deps, { body: { examAttemptId: "ea-1" } });
     expect(resp.status).not.toBe(200);
+    const correlationId = resp.body.correlationId;
+    expect(typeof correlationId).toBe("string");
+    if (typeof correlationId !== "string") throw new Error("missing response correlationId");
 
     const entries = await repository.query({ examAttemptId: "ea-1" });
     const failure = entries.find((e) => e.operation === "exam_attempt.suspend" && e.outcome === "failure");
@@ -396,7 +399,15 @@ describe("handleSuspendExam diagnostics", () => {
       source: "runtime",
       outcome: "failure",
       examAttemptId: "ea-1",
+      correlationId,
     });
+    await expect(repository.query({ correlationId })).resolves.toContainEqual(
+      expect.objectContaining({
+        operation: "exam_attempt.suspend",
+        outcome: "failure",
+        examAttemptId: "ea-1",
+      }),
+    );
   });
 });
 
@@ -594,6 +605,9 @@ describe("handleResumeExam diagnostics", () => {
 
     const resp = await handleResumeExam(deps, { body: { examAttemptId: "ea-1" } });
     expect(resp.status).toBe(502);
+    const correlationId = resp.body.correlationId;
+    expect(typeof correlationId).toBe("string");
+    if (typeof correlationId !== "string") throw new Error("missing response correlationId");
 
     const entries = await repository.query({ examAttemptId: "ea-1" });
     const failure = entries.find((e) => e.operation === "exam_attempt.resume" && e.outcome === "failure");
@@ -605,7 +619,15 @@ describe("handleResumeExam diagnostics", () => {
       examId: "exam-1",
       customerId: "customer-1",
       candidateEmail: "candidate@helioscx.demo",
+      correlationId,
     });
+    await expect(repository.query({ correlationId })).resolves.toContainEqual(
+      expect.objectContaining({
+        operation: "exam_attempt.resume",
+        outcome: "failure",
+        examAttemptId: "ea-1",
+      }),
+    );
     expect(failure?.details).toMatchObject({
       method: "PUT",
       path: "/api/v3/envs/actions/resume",

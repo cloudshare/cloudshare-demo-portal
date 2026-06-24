@@ -233,6 +233,7 @@ async function handleSuspendExamOnce(
         typeof resp.body.correlationId === "string" ? resp.body.correlationId : undefined;
       await deps.diagnostics?.record({
         ...anchors,
+        ...(correlationId ? { correlationId } : {}),
         level: "warn",
         operation: "exam_attempt.suspend",
         outcome: "failure",
@@ -397,6 +398,7 @@ async function handleResumeExamOnce(
         typeof resp.body.correlationId === "string" ? resp.body.correlationId : undefined;
       await deps.diagnostics?.record({
         ...anchors,
+        ...(correlationId ? { correlationId } : {}),
         level: "warn",
         operation: "exam_attempt.resume",
         outcome: "failure",
