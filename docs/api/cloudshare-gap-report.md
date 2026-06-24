@@ -94,12 +94,12 @@ provisioning.
 
 | Field | Detail |
 |---|---|
-| **Status** | Confirmed — design decision in Slice 6; `CreatedAt` semantics corrected from live QA |
-| **Verified live** | Partial — `CreatedAt` behaviour observed live on 2026-06-24; delivery retry guarantees still unverified |
+| **Status** | Confirmed — design decision in Slice 6; `CreatedAt` and delayed archive delivery semantics corrected from live QA |
+| **Verified live** | Partial — `CreatedAt` behaviour and delayed archive delivery observed live on 2026-06-24; delivery retry guarantees still unverified |
 
 **Observed behaviour**
 
-CloudShare webhook deliveries have three known reliability problems:
+CloudShare webhook deliveries have four known reliability problems:
 
 1. **No unique event ID or event timestamp per delivery.** There is no `eventId` or
    idempotency key in the payload or headers. Live QA also confirmed that the envelope
@@ -114,6 +114,12 @@ CloudShare webhook deliveries have three known reliability problems:
    webhooks as "hints" and treat the result of polling `GET /environments` as the
    authoritative state. Any synthesized key that includes `CreatedAt` is support evidence
    only, not a processing gate.
+4. **Lifecycle webhook delivery can lag portal state transitions.** Live QA on
+   2026-06-24 showed an exam attempt completing at `2026-06-24T19:45:24.897Z` by portal
+   runtime reconciliation, while the matching CloudShare `environment.archived` webhook
+   for environment `ENN_FkNYEmuHdXixiVS-Kfcw2` arrived at `2026-06-24T19:59:22.674Z`
+   — approximately 13m58s later. Completion workflows must not rely on archive webhook
+   timing.
 
 **Impact on certification use**
 
@@ -126,6 +132,9 @@ CloudShare webhook deliveries have three known reliability problems:
 - Admin diagnostics should retain the event type, environment id, raw body hash, and
   synthesized fingerprint for support evidence, but must not present `CreatedAt` as the
   event creation time.
+- When the portal completes an attempt by its own runtime clock, diagnostics must record an
+  immediate authoritative CloudShare environment poll so support can distinguish "completed,
+  CloudShare still running/suspended" from "completed, archive webhook arrived later".
 
 **Code reference:** `src/integrations/cloudshare/webhook-receiver.ts`,
 `src/domain/webhook.ts`, `src/domain/environment-reconcile.ts`
@@ -906,5 +915,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-06-24 (recorded CloudShare webhook `CreatedAt` as webhook-definition time and `EnvironmentName` as the CloudShare environment/blueprint display name, not portal event metadata; retained polling/reconcile as the source of truth).
+*Last updated: 2026-06-24 (recorded CloudShare webhook `CreatedAt` as webhook-definition time, `EnvironmentName` as the CloudShare environment/blueprint display name, and archive webhook delivery lag after portal completion; retained polling/reconcile as the source of truth).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*
