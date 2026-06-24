@@ -175,31 +175,48 @@ function sanitizeBody(body: string | undefined): unknown {
   }
 
   try {
-    return redactSensitiveBodyFields(JSON.parse(body));
+    return redactSensitiveBodyFields(JSON.parse(body), { preserveSponsoredLinkLoginUrl: false });
   } catch {
     return body;
   }
 }
 
-function sanitizeResponseBody(body: string): string {
+function sanitizeResponseBody(body: string, requestPath: string): string {
   try {
-    return JSON.stringify(redactSensitiveBodyFields(JSON.parse(body)));
+    return JSON.stringify(
+      redactSensitiveBodyFields(JSON.parse(body), {
+        preserveSponsoredLinkLoginUrl: isSponsoredLinkPath(requestPath),
+      }),
+    );
   } catch {
-    return redactSensitiveText(body);
+    return redactSensitiveText(body, {
+      preserveSponsoredLinkLoginUrl: isSponsoredLinkPath(requestPath),
+    });
   }
 }
 
-function sanitizeResponseBodyValue(body: string): unknown {
+function sanitizeResponseBodyValue(body: string, requestPath: string): unknown {
   try {
-    return redactSensitiveBodyFields(JSON.parse(body));
+    return redactSensitiveBodyFields(JSON.parse(body), {
+      preserveSponsoredLinkLoginUrl: isSponsoredLinkPath(requestPath),
+    });
   } catch {
-    return redactSensitiveText(body);
+    return redactSensitiveText(body, {
+      preserveSponsoredLinkLoginUrl: isSponsoredLinkPath(requestPath),
+    });
   }
 }
 
-function redactSensitiveBodyFields(value: unknown): unknown {
+function isSponsoredLinkPath(path: string): boolean {
+  return /\/sponsored-link$/i.test(path);
+}
+
+function redactSensitiveBodyFields(
+  value: unknown,
+  options: { preserveSponsoredLinkLoginUrl: boolean },
+): unknown {
   if (Array.isArray(value)) {
-    return value.map(redactSensitiveBodyFields);
+    return value.map((item) => redactSensitiveBodyFields(item, options));
   }
   if (!value || typeof value !== "object") {
     return value;
@@ -207,19 +224,43 @@ function redactSensitiveBodyFields(value: unknown): unknown {
 
   const redacted: Record<string, unknown> = {};
   for (const [key, fieldValue] of Object.entries(value)) {
-    if (/api[-_]?key|secret|token|hmac|signature|passphrase|password|login[-_]?url/i.test(key)) {
+    if (/api[-_]?key|secret|token|hmac|signature|passphrase|password/i.test(key)) {
+      redacted[key] = "[REDACTED]";
+      continue;
+    }
+    if (/login[-_]?url/i.test(key) && !options.preserveSponsoredLinkLoginUrl) {
       redacted[key] = "[REDACTED]";
       continue;
     }
     redacted[key] =
       typeof fieldValue === "string"
-        ? redactSensitiveText(fieldValue)
-        : redactSensitiveBodyFields(fieldValue);
+        ? redactSensitiveText(fieldValue, options)
+        : redactSensitiveBodyFields(fieldValue, options);
   }
   return redacted;
 }
 
-function redactSensitiveText(value: string): string {
+function redactSensitiveText(
+  value: string,
+  options: { preserveSponsoredLinkLoginUrl: boolean },
+): string {
+  if (options.preserveSponsoredLinkLoginUrl) {
+    const preservedUrls: string[] = [];
+    const protectedValue = value.replace(
+      /https?:\/\/\S*(?:ClassSponsoredLink|SponsoredLink|Ent\/Login)\S*/gi,
+      (match) => {
+        const marker = `__PRESERVED_SPONSORED_LINK_${preservedUrls.length}__`;
+        preservedUrls.push(match);
+        return marker;
+      },
+    );
+
+    return protectedValue
+      .replace(/([?&](?:token|access_token|loginUrl)=)[^&\s"]+/gi, "$1[REDACTED]")
+      .replace(/__PRESERVED_SPONSORED_LINK_(\d+)__/g, (_marker, index: string) => {
+        return preservedUrls[Number(index)] ?? _marker;
+      });
+  }
   return value
     .replace(/https?:\/\/\S*(?:ClassSponsoredLink|SponsoredLink|Ent\/Login)\S*/gi, "[REDACTED]")
     .replace(/([?&](?:token|access_token|loginUrl)=)[^&\s"]+/gi, "$1[REDACTED]");
@@ -302,7 +343,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
     trace("info", "cloudshare response received", request, {
       responseStatus: response.status,
       responseHeaders: sanitizeResponseHeaders(response.headers),
-      responseBody: sanitizeResponseBody(response.body),
+      responseBody: sanitizeResponseBody(response.body, requestInfo.path),
       network: response.network,
       tls: response.tls,
     });
@@ -319,7 +360,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           requestHeaders: sanitizeHeaders(request.headers),
           requestBody: sanitizeBody(request.body),
           responseHeaders: sanitizeResponseHeaders(response.headers),
-          responseBody: sanitizeResponseBodyValue(response.body),
+          responseBody: sanitizeResponseBodyValue(response.body, requestInfo.path),
           network: response.network,
           tls: response.tls,
         },
@@ -341,7 +382,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           requestHeaders: sanitizeHeaders(request.headers),
           requestBody: sanitizeBody(request.body),
           responseHeaders: sanitizeResponseHeaders(response.headers),
-          responseBody: sanitizeResponseBodyValue(response.body),
+          responseBody: sanitizeResponseBodyValue(response.body, requestInfo.path),
           network: response.network,
           tls: response.tls,
         },
@@ -361,7 +402,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           requestHeaders: sanitizeHeaders(request.headers),
           requestBody: sanitizeBody(request.body),
           responseHeaders: sanitizeResponseHeaders(response.headers),
-          responseBody: sanitizeResponseBodyValue(response.body),
+          responseBody: sanitizeResponseBodyValue(response.body, requestInfo.path),
           network: response.network,
           tls: response.tls,
           issues: parsed.error.issues.map((i) => i.message),
@@ -387,7 +428,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
         ...(sanitizeResponseHeaders(response.headers)
           ? { headers: sanitizeResponseHeaders(response.headers)! }
           : {}),
-        body: sanitizeResponseBodyValue(response.body),
+        body: sanitizeResponseBodyValue(response.body, requestInfo.path),
         ...(response.network ? { network: response.network } : {}),
         ...(response.tls ? { tls: response.tls } : {}),
       },
@@ -485,7 +526,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
     trace("info", "cloudshare response received", request, {
       responseStatus: response.status,
       responseHeaders: sanitizeResponseHeaders(response.headers),
-      responseBody: sanitizeResponseBody(response.body),
+      responseBody: sanitizeResponseBody(response.body, requestInfo.path),
       network: response.network,
       tls: response.tls,
     });
@@ -502,7 +543,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           requestHeaders: sanitizeHeaders(request.headers),
           requestBody: sanitizeBody(request.body),
           responseHeaders: sanitizeResponseHeaders(response.headers),
-          responseBody: sanitizeResponseBodyValue(response.body),
+          responseBody: sanitizeResponseBodyValue(response.body, requestInfo.path),
           network: response.network,
           tls: response.tls,
         },
@@ -525,7 +566,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
         ...(sanitizeResponseHeaders(response.headers)
           ? { headers: sanitizeResponseHeaders(response.headers)! }
           : {}),
-        body: sanitizeResponseBodyValue(response.body),
+        body: sanitizeResponseBodyValue(response.body, requestInfo.path),
         ...(response.network ? { network: response.network } : {}),
         ...(response.tls ? { tls: response.tls } : {}),
       },

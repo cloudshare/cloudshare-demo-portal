@@ -110,7 +110,7 @@ describe("createCloudShareClient — v4", () => {
     });
   });
 
-  it("redacts sponsored-link login URLs from response diagnostics", async () => {
+  it("retains sponsored-link login URLs in response diagnostics for admin support evidence", async () => {
     const trace = vi.fn();
     const { http } = capturingHttp(
       ok({ loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret-token" }),
@@ -130,11 +130,10 @@ describe("createCloudShareClient — v4", () => {
     });
 
     const responseTrace = trace.mock.calls[1]?.[0].fields;
-    expect(JSON.stringify(responseTrace)).not.toContain("secret-token");
-    expect(JSON.stringify(responseTrace)).not.toContain("ClassSponsoredLink");
     expect(responseTrace).toEqual(
       expect.objectContaining({
-        responseBody: "{\"loginUrl\":\"[REDACTED]\"}",
+        responseBody:
+          "{\"loginUrl\":\"https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret-token\"}",
       }),
     );
   });
