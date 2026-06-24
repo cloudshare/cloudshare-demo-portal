@@ -1,14 +1,17 @@
 /**
- * Idempotency port for inbound webhooks. CloudShare may deliver the same event more
- * than once (retries, replays), so every event is reduced to a synthesised key and
- * checked here before it is acted on. The store is the at-most-once gate; the
- * polling reconcile is the safety net that keeps even a slipped-through duplicate
- * harmless. Implemented in the persistence layer.
+ * Best-effort idempotency marker for inbound webhooks. CloudShare may deliver the
+ * same event more than once, but live environment lifecycle payloads do not expose
+ * a reliable unique event id and can reuse `CreatedAt` across distinct transitions.
+ * The receiver therefore records the synthesised key for support correlation while
+ * still accepting verified lifecycle webhooks; the authoritative polling reconcile
+ * is idempotent and safe under replay.
  */
 export interface WebhookIdempotencyStore {
   /**
    * Atomically record a key. Returns `true` if it had not been seen before (and is
-   * now recorded), `false` if it is a duplicate that should not be reprocessed.
+   * now recorded), `false` if it was already seen. Callers may use this as
+   * support metadata; for CloudShare environment lifecycle events it must not be
+   * used as a hard processing gate.
    */
   markIfNew(key: string): Promise<boolean>;
 }

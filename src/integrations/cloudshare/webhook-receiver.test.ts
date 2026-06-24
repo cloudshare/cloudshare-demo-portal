@@ -83,7 +83,7 @@ describe("receiveWebhook", () => {
     if (result.kind === "invalid_payload") expect(result.issues.length).toBeGreaterThan(0);
   });
 
-  it("dedupes a replayed event: first accepted, second flagged duplicate", async () => {
+  it("accepts repeated lifecycle webhooks because CloudShare reuses CreatedAt across distinct transitions", async () => {
     const d = deps();
     const signed = { rawBody: body, signature: computeWebhookSignature(body, SECRET) };
 
@@ -91,8 +91,8 @@ describe("receiveWebhook", () => {
     const second = await receiveWebhook(d, signed);
 
     expect(first.kind).toBe("accepted");
-    expect(second.kind).toBe("duplicate");
-    if (first.kind === "accepted" && second.kind === "duplicate") {
+    expect(second.kind).toBe("accepted");
+    if (first.kind === "accepted" && second.kind === "accepted") {
       expect(second.idempotencyKey).toBe(first.idempotencyKey);
     }
   });

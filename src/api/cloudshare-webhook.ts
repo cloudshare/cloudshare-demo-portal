@@ -18,14 +18,13 @@ import type {
 
 /**
  * Framework-agnostic handler for the inbound CloudShare webhook endpoint. It owns
- * the policy — verify, validate, dedupe, then trigger the authoritative poll — and
+ * the policy — verify, validate, then trigger the authoritative poll — and
  * returns a plain `{ status, body }` the Next.js route serialises. Keeping it free
  * of request/response framework types makes the whole policy unit-testable.
  *
  * HTTP contract:
  *  - 401 invalid signature   — rejected before the payload is trusted
  *  - 400 invalid payload     — failed Zod validation (logged with issues)
- *  - 200 duplicate           — replayed event, acknowledged but not reprocessed
  *  - 202 accepted            — event taken; a `GET environment` reconcile is triggered
  *
  * A reconcile failure is logged but still returns 202: the webhook is only a hint,
@@ -383,71 +382,6 @@ export async function handleCloudShareWebhook(
           },
         });
         return { status: 400, body: { status: "invalid_payload" } };
-
-      case "duplicate":
-        await recordDiagnostic(deps.diagnostics, {
-          source: "cloudshare-webhook",
-          operation: "cloudshare.webhook.verify_signature",
-          outcome: "success",
-          customerId: connection.customerId,
-          message: "CloudShare webhook signature verified",
-          externalIds: { webhookPathFingerprint },
-          details: {
-            signaturePresent: true,
-            signatureMatched: true,
-            signatureScheme: "HMAC-SHA256 base64 over exact raw request body",
-            storedWebhookSecretLength: connection.webhookSecret.length,
-            signatureHeader,
-            rawBodySha256,
-          },
-        });
-        await recordDiagnostic(deps.diagnostics, {
-          source: "cloudshare-webhook",
-          level: "warn",
-          operation: "cloudshare.webhook.receive",
-          outcome: "failure",
-          customerId: connection.customerId,
-          message: "CloudShare webhook ignored: duplicate event",
-          externalIds: {
-            webhookPathFingerprint,
-            ...(isWebhookBodySummary(requestBodySummary) &&
-            typeof requestBodySummary.payload?.EnvironmentExternalId === "string"
-              ? {
-                  environmentExternalId: requestBodySummary.payload.EnvironmentExternalId,
-                }
-              : {}),
-            idempotencyKey: outcome.idempotencyKey,
-          },
-          request: {
-            method: "POST",
-            path,
-            requestBodyBytes,
-            rawBodySha256,
-          },
-          details: {
-            eventType: isWebhookBodySummary(requestBodySummary)
-              ? requestBodySummary.envelope.Event
-              : null,
-            signaturePresent: true,
-            signatureHeader,
-            webhookSummary: requestBodySummary,
-            trustGateOutcome: "duplicate",
-          },
-        });
-        deps.logger.info("cloudshare webhook ignored: duplicate event", {
-          customerId: connection.customerId,
-          webhookPathFingerprint,
-          idempotencyKey: outcome.idempotencyKey,
-        });
-        await appendWebhookEvent(deps, {
-          type: "cloudshare.webhook.duplicate",
-          payload: {
-            customerId: connection.customerId,
-            webhookPathFingerprint,
-            idempotencyKey: outcome.idempotencyKey,
-          },
-        });
-        return { status: 200, body: { status: "duplicate" } };
 
       case "accepted": {
         const { event, idempotencyKey } = outcome;

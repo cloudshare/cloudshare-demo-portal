@@ -13,10 +13,14 @@ import {
  *   1. Verify the HMAC signature over the raw body — unauthenticated requests are
  *      rejected before anything else looks at the payload.
  *   2. Validate the payload shape with Zod.
- *   3. Dedupe via the synthesised idempotency key, so a retry/replay is a no-op.
+ *   3. Compute and record a best-effort idempotency key for support correlation.
  *
  * An `accepted` outcome means "act on this": the route then triggers the polling
  * reconcile, which — not the event payload — is the authoritative state driver.
+ * Live CloudShare payloads currently reuse `CreatedAt` from the environment
+ * creation time across later lifecycle events, so the synthesised key is not
+ * reliable enough to suppress repeat deliveries. Reconcile is idempotent, so
+ * accepting a replay is safer than dropping a legitimate later transition.
  *
  * The same path serves real CloudShare webhooks (live mode, via the tunnel) and the
  * environment simulator's identically-signed payloads (demo mode).
@@ -37,7 +41,6 @@ export interface RawWebhookRequest {
 
 export type WebhookOutcome =
   | { readonly kind: "accepted"; readonly event: CloudShareEnvironmentEvent; readonly idempotencyKey: string }
-  | { readonly kind: "duplicate"; readonly idempotencyKey: string }
   | { readonly kind: "missing_signature" }
   | { readonly kind: "invalid_signature" }
   | { readonly kind: "invalid_payload"; readonly issues: string[] };
@@ -60,10 +63,7 @@ export async function receiveWebhook(
   }
 
   const idempotencyKey = `${deps.idempotencyScope}:${synthesiseIdempotencyKey(parsed.event)}`;
-  const isNew = await deps.idempotency.markIfNew(idempotencyKey);
-  if (!isNew) {
-    return { kind: "duplicate", idempotencyKey };
-  }
+  await deps.idempotency.markIfNew(idempotencyKey);
 
   return { kind: "accepted", event: parsed.event, idempotencyKey };
 }

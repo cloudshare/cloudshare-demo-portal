@@ -331,7 +331,7 @@ describe("handleCloudShareWebhook", () => {
     expect(reconcile).not.toHaveBeenCalled();
   });
 
-  it("acknowledges a duplicate with 200 and reconciles only once across replays", async () => {
+  it("accepts repeated lifecycle webhook deliveries and reconciles each one", async () => {
     const { helios, reconcile, deps } = setup();
     const signed = helios.emit({ environmentExternalId: "env-ext-1", event: "environment.created", at });
 
@@ -345,8 +345,8 @@ describe("handleCloudShareWebhook", () => {
     });
 
     expect(first.status).toBe(202);
-    expect(second.status).toBe(200);
-    expect(reconcile).toHaveBeenCalledTimes(1);
+    expect(second.status).toBe(202);
+    expect(reconcile).toHaveBeenCalledTimes(2);
   });
 
   it("scopes webhook idempotency by Customer so two Customers cannot suppress each other", async () => {
@@ -440,12 +440,6 @@ describe("handleCloudShareWebhook", () => {
     expect(events).toHaveLength(2);
     expect(events).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({
-          type: "cloudshare.webhook.duplicate",
-          payload: expect.objectContaining({
-            customerId: "customer-helios",
-          }),
-        }),
         expect.objectContaining({
           type: "cloudshare.webhook.accepted",
           payload: expect.objectContaining({
@@ -781,14 +775,6 @@ describe("handleCloudShareWebhook", () => {
           customerId: "customer-helios",
           details: expect.objectContaining({
             trustGateOutcome: "invalid_payload",
-          }),
-        }),
-        expect.objectContaining({
-          operation: "cloudshare.webhook.receive",
-          outcome: "failure",
-          customerId: "customer-helios",
-          details: expect.objectContaining({
-            trustGateOutcome: "duplicate",
           }),
         }),
         expect.objectContaining({

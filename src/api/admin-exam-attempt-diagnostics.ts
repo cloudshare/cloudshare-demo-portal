@@ -9,6 +9,9 @@ export interface AdminExamAttemptDiagnosticDrilldownHandlerDeps {
   readonly contexts: AdminExamAttemptDiagnosticContextRepository;
   readonly diagnostics: DiagnosticLogRepository;
   readonly logger: Logger;
+  readonly refreshEnvironmentStatus?: (
+    context: AdminExamAttemptDiagnosticContextRecord,
+  ) => Promise<void>;
 }
 
 export interface AdminExamAttemptDiagnosticDrilldownResponse {
@@ -88,6 +91,20 @@ export async function handleGetAdminExamAttemptDiagnosticDrilldown(
         error: `ExamAttempt ${examAttemptId} was not found for customer ${request.customerId}`,
       },
     };
+  }
+
+  if (context.environmentExternalId || context.environmentId) {
+    try {
+      await deps.refreshEnvironmentStatus?.(context);
+    } catch (error) {
+      deps.logger.warn("admin exam attempt environment status refresh failed", {
+        customerId: request.customerId,
+        examAttemptId,
+        environmentExternalId: context.environmentExternalId,
+        environmentId: context.environmentId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   const timeline = (await deps.diagnostics.query({

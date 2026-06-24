@@ -189,6 +189,61 @@ describe("handleGetAdminExamAttemptDiagnosticDrilldown", () => {
     expect(response.body.drilldown?.timeline).toEqual([]);
   });
 
+  it("refreshes CloudShare environment status before reading the timeline so archived state is visible without a webhook", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+
+    const response = await handleGetAdminExamAttemptDiagnosticDrilldown(
+      {
+        contexts: makeContextRepository(BASE_CONTEXT),
+        diagnostics,
+        logger: makeLogger(),
+        refreshEnvironmentStatus: vi.fn(async (context) => {
+          await diagnostics.append({
+            occurredAt: new Date("2026-06-21T10:12:00.000Z"),
+            source: "admin-diagnostics",
+            operation: "cloudshare.environment.reconcile",
+            outcome: "success",
+            message: "CloudShare environment status refreshed",
+            customerId: context.customerId,
+            examId: context.examId,
+            examAttemptId: context.attemptId,
+            candidateEmail: context.candidateEmail,
+            externalIds: {
+              environmentExternalId: context.environmentExternalId ?? context.environmentId ?? "",
+              environmentStatus: "archived",
+            },
+            request: {
+              method: "GET",
+              path: "/api/v3/envs/{envId}",
+            },
+            response: {
+              status: 200,
+              body: { status: "Archived" },
+            },
+            details: {
+              integrationSurface: "cloudshare.v3.env",
+              refreshedBy: "admin_exam_attempt_diagnostics",
+            },
+          });
+        }),
+      },
+      { customerId: "customer-a", examAttemptId: "attempt-1" },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.drilldown?.timeline).toEqual([
+      expect.objectContaining({
+        operation: "cloudshare.environment.reconcile",
+        outcome: "success",
+        message: "CloudShare environment status refreshed",
+        externalIds: expect.objectContaining({
+          environmentExternalId: "env-external-1",
+          environmentStatus: "archived",
+        }),
+      }),
+    ]);
+  });
+
   it("returns redacted structured details while preserving admin-only loginUrl diagnostic evidence", async () => {
     const diagnostics = createInMemoryDiagnosticLogRepository();
     const recorder = createDiagnosticRecorder({
