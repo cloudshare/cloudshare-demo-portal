@@ -46,6 +46,16 @@ showing real CloudShare behaviour, CloudShare wins.
   database. Actions performed through `3025` should be visible to the tunnel-facing `3000` server as
   long as both servers are running against the same environment.
 
+## QA operating notes
+
+- Do not hand vague failure-path QA back to the user. If QA requires triggering errors such as
+  suspend/resume integration failures, first look for a safe simulated path the agent can run.
+- Prefer delegating simulated failure-path QA to a focused sub-agent when available. The sub-agent
+  should create disposable local data, call the real HTTP/API route on the Codex-owned server
+  (`localhost:3025` by convention), capture the observable evidence, and clean up its test data.
+- The orchestration agent still owns the QA result: review the sub-agent's evidence, verify cleanup,
+  update the PR notes, and clearly separate simulated QA from live CloudShare E2E verification.
+
 ## Engineering discipline
 
 - Work in small vertical slices (one GitHub issue at a time, in dependency order).
