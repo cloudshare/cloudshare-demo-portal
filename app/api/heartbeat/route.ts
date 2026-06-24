@@ -6,6 +6,8 @@ import { handleHeartbeat } from "@/api/heartbeat";
 import { authorizeCandidateExamAttemptAccess } from "@/api/candidate-exam-attempt-access";
 import { reconcileExamAttemptCompletion } from "@/domain/exam-attempt-completion";
 import { getPortalSession } from "@/auth/portal-session";
+import { recordExamAttemptCompletionEnvironmentDiagnostic } from "@/api/exam-attempt-completion-diagnostics";
+import { createCloudShareEnvironmentSource } from "@/integrations/cloudshare/environment";
 
 /**
  * Client heartbeat endpoint. The candidate page POSTs here while a lab is
@@ -65,6 +67,29 @@ export async function POST(request: Request) {
       subject: { type: "exam_attempt", id: examAttemptId },
       details: { reason: "heartbeat_reconciliation" },
     });
+    const completedAttempt = await services.examAttempts.findById(examAttemptId);
+    if (completedAttempt) {
+      const connection = completedAttempt.customerId && services.cloudshareConnections?.findByCustomerId
+        ? await services.cloudshareConnections.findByCustomerId(completedAttempt.customerId)
+        : null;
+      const source = connection && services.cloudshareClientFactory?.forConnection
+        ? createCloudShareEnvironmentSource(
+            services.cloudshareClientFactory.forConnection(connection),
+          )
+        : services.environmentSource;
+      await recordExamAttemptCompletionEnvironmentDiagnostic(
+        {
+          diagnostics: services.diagnosticRecorder,
+          source,
+        },
+        {
+          attempt: completedAttempt,
+          launch: access.launch,
+          candidateEmail: portalSession?.email ?? null,
+          completionReason: "heartbeat_reconciliation",
+        },
+      );
+    }
     return NextResponse.json(
       { status: "completed", attemptStatus: "completed" },
       { status: 200 },
