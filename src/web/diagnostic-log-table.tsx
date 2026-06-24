@@ -34,6 +34,24 @@ export interface DiagnosticLogTableProps {
 
 export const MAX_RENDERED_DETAIL_CHARS = 12_000;
 
+const CELL_PADDING = "0.55rem 0.6rem";
+const HEADER_CELL_STYLE = {
+  padding: CELL_PADDING,
+  textAlign: "left" as const,
+  verticalAlign: "bottom" as const,
+};
+const BODY_CELL_STYLE = {
+  padding: CELL_PADDING,
+  verticalAlign: "top" as const,
+  borderBottom: "1px solid #e5e7eb",
+  lineHeight: 1.45,
+};
+const MUTED_TEXT_STYLE = {
+  color: "#5f6368",
+  fontSize: "0.74rem",
+  lineHeight: 1.35,
+};
+
 function hasStructuredContent(value: Record<string, unknown> | Record<string, string> | null | undefined): boolean {
   return !!value && Object.keys(value).length > 0;
 }
@@ -205,6 +223,18 @@ function SupportHintsBlock(props: {
   );
 }
 
+function renderTextValue(value: string | null | undefined, monospace = false): React.ReactNode {
+  if (!value) {
+    return <span style={{ color: "#888" }}>—</span>;
+  }
+
+  return (
+    <span style={monospace ? { fontFamily: "monospace", wordBreak: "break-word" } : { wordBreak: "break-word" }}>
+      {value}
+    </span>
+  );
+}
+
 export function DiagnosticLogTable({
   entries,
   expandedDiagnosticId,
@@ -212,36 +242,80 @@ export function DiagnosticLogTable({
   onOpenExamAttempt,
 }: DiagnosticLogTableProps) {
   return (
-    <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.82rem" }}>
+    <div
+      style={{
+        overflowX: "auto",
+        border: "1px solid #dfe3eb",
+        borderRadius: "8px",
+        background: "#fff",
+      }}
+    >
+      <table
+        style={{
+          width: "100%",
+          minWidth: "110rem",
+          borderCollapse: "separate",
+          borderSpacing: 0,
+          tableLayout: "fixed",
+          fontSize: "0.82rem",
+        }}
+      >
+        <colgroup>
+          <col style={{ width: "11.5rem" }} />
+          <col style={{ width: "5.25rem" }} />
+          <col style={{ width: "7rem" }} />
+          <col style={{ width: "12rem" }} />
+          <col style={{ width: "6rem" }} />
+          <col style={{ width: "8rem" }} />
+          <col style={{ width: "11rem" }} />
+          <col style={{ width: "10rem" }} />
+          <col style={{ width: "12rem" }} />
+          <col style={{ width: "7rem" }} />
+          <col style={{ width: "8rem" }} />
+          <col style={{ width: "14rem" }} />
+          <col style={{ width: "9rem" }} />
+          <col style={{ width: "12rem" }} />
+          <col style={{ width: "14rem" }} />
+        </colgroup>
         <thead>
-          <tr style={{ textAlign: "left", borderBottom: "2px solid #ddd" }}>
-            <th style={{ padding: "0.4rem" }}>Occurred (UTC)</th>
-            <th style={{ padding: "0.4rem" }}>Level</th>
-            <th style={{ padding: "0.4rem" }}>Source</th>
-            <th style={{ padding: "0.4rem" }}>Operation</th>
-            <th style={{ padding: "0.4rem" }}>Outcome</th>
-            <th style={{ padding: "0.4rem" }}>Customer</th>
-            <th style={{ padding: "0.4rem" }}>Actor</th>
-            <th style={{ padding: "0.4rem" }}>Subject</th>
-            <th style={{ padding: "0.4rem" }}>Candidate</th>
-            <th style={{ padding: "0.4rem" }}>Exam</th>
-            <th style={{ padding: "0.4rem" }}>Attempt</th>
-            <th style={{ padding: "0.4rem" }}>CloudShare IDs</th>
-            <th style={{ padding: "0.4rem" }}>Correlation</th>
-            <th style={{ padding: "0.4rem" }}>Request / Response</th>
-            <th style={{ padding: "0.4rem" }}>Message</th>
+          <tr style={{ background: "#f8fafc", color: "#4b5563" }}>
+            <th colSpan={5} style={{ ...HEADER_CELL_STYLE, borderBottom: "1px solid #d7dce4", fontSize: "0.73rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+              Event
+            </th>
+            <th colSpan={6} style={{ ...HEADER_CELL_STYLE, borderBottom: "1px solid #d7dce4", fontSize: "0.73rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+              Support anchors
+            </th>
+            <th colSpan={4} style={{ ...HEADER_CELL_STYLE, borderBottom: "1px solid #d7dce4", fontSize: "0.73rem", textTransform: "uppercase", letterSpacing: "0.04em" }}>
+              Correlation and evidence
+            </th>
+          </tr>
+          <tr style={{ textAlign: "left", background: "#f8fafc" }}>
+            <th style={{ ...HEADER_CELL_STYLE, borderBottom: "2px solid #d7dce4" }}>Occurred (UTC)</th>
+            <th style={{ ...HEADER_CELL_STYLE, borderBottom: "2px solid #d7dce4" }}>Level</th>
+            <th style={{ ...HEADER_CELL_STYLE, borderBottom: "2px solid #d7dce4" }}>Source</th>
+            <th style={{ ...HEADER_CELL_STYLE, borderBottom: "2px solid #d7dce4" }}>Operation</th>
+            <th style={{ ...HEADER_CELL_STYLE, borderBottom: "2px solid #d7dce4" }}>Outcome</th>
+            <th style={{ ...HEADER_CELL_STYLE, borderBottom: "2px solid #d7dce4" }}>Customer</th>
+            <th style={{ ...HEADER_CELL_STYLE, borderBottom: "2px solid #d7dce4" }}>Actor</th>
+            <th style={{ ...HEADER_CELL_STYLE, borderBottom: "2px solid #d7dce4" }}>Subject</th>
+            <th style={{ ...HEADER_CELL_STYLE, borderBottom: "2px solid #d7dce4" }}>Candidate</th>
+            <th style={{ ...HEADER_CELL_STYLE, borderBottom: "2px solid #d7dce4" }}>Exam</th>
+            <th style={{ ...HEADER_CELL_STYLE, borderBottom: "2px solid #d7dce4" }}>Attempt</th>
+            <th style={{ ...HEADER_CELL_STYLE, borderBottom: "2px solid #d7dce4" }}>CloudShare IDs</th>
+            <th style={{ ...HEADER_CELL_STYLE, borderBottom: "2px solid #d7dce4" }}>Correlation</th>
+            <th style={{ ...HEADER_CELL_STYLE, borderBottom: "2px solid #d7dce4" }}>Request / Response</th>
+            <th style={{ ...HEADER_CELL_STYLE, borderBottom: "2px solid #d7dce4" }}>Message</th>
           </tr>
         </thead>
         <tbody>
           {entries.length === 0 && (
             <tr>
-              <td colSpan={15} style={{ padding: "0.75rem", color: "#666" }}>
+              <td colSpan={15} style={{ padding: "0.85rem", color: "#666" }}>
                 No diagnostic entries yet.
               </td>
             </tr>
           )}
-          {entries.map((entry) => {
+          {entries.map((entry, index) => {
             const isExpanded = expandedDiagnosticId === entry.id;
             const displayExternalIds = getDisplayExternalIds(entry.externalIds);
             const integrationSurface = readIntegrationSurface(entry.details);
@@ -257,69 +331,137 @@ export function DiagnosticLogTable({
             return (
               <Fragment key={entry.id}>
                 <tr
-                  style={{ borderBottom: "1px solid #eee", verticalAlign: "top", cursor: "pointer" }}
+                  style={{
+                    verticalAlign: "top",
+                    cursor: "pointer",
+                    background: index % 2 === 0 ? "#fff" : "#fbfcfe",
+                  }}
                   onClick={() => onToggleExpanded(entry.id)}
                 >
-                  <td style={{ padding: "0.4rem", fontFamily: "monospace", whiteSpace: "nowrap", cursor: "pointer" }}>
-                    {isExpanded ? "▼ " : "▶ "}
-                    {entry.occurredAt}
+                  <td style={{ ...BODY_CELL_STYLE, fontFamily: "monospace" }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: "0.5rem" }}>
+                      <button
+                        type="button"
+                        aria-label={`${isExpanded ? "Collapse" : "Expand"} diagnostic entry ${entry.id}`}
+                        aria-expanded={isExpanded}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onToggleExpanded(entry.id);
+                        }}
+                        style={{
+                          width: "1.5rem",
+                          height: "1.5rem",
+                          border: "1px solid #cfd6e4",
+                          borderRadius: "4px",
+                          background: "#fff",
+                          color: "#334155",
+                          cursor: "pointer",
+                          flex: "0 0 auto",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        {isExpanded ? "▼" : "▶"}
+                      </button>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ whiteSpace: "nowrap" }}>{entry.occurredAt}</div>
+                        <div style={MUTED_TEXT_STYLE}>{isExpanded ? "Evidence expanded" : "Expand for evidence"}</div>
+                      </div>
+                    </div>
                   </td>
-                  <td style={{ padding: "0.4rem" }}>{entry.level}</td>
-                  <td style={{ padding: "0.4rem" }}>{entry.source}</td>
-                  <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>
-                    <div>{entry.operation}</div>
+                  <td style={BODY_CELL_STYLE}>
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        padding: "0.12rem 0.45rem",
+                        borderRadius: "999px",
+                        background: entry.level === "error" ? "#fde8e8" : entry.level === "warn" ? "#fff4db" : "#edf4ff",
+                        color: entry.level === "error" ? "#9b1c1c" : entry.level === "warn" ? "#8a5a00" : "#1d4ed8",
+                        fontWeight: 600,
+                        textTransform: "uppercase",
+                        fontSize: "0.72rem",
+                      }}
+                    >
+                      {entry.level}
+                    </span>
+                  </td>
+                  <td style={BODY_CELL_STYLE}>{renderTextValue(entry.source)}</td>
+                  <td style={{ ...BODY_CELL_STYLE, fontFamily: "monospace" }}>
+                    <div style={{ wordBreak: "break-word" }}>{entry.operation}</div>
                     {integrationSurface ? (
-                      <div style={{ marginTop: "0.2rem", color: "#666", fontSize: "0.75rem" }}>
+                      <div style={{ marginTop: "0.2rem", ...MUTED_TEXT_STYLE }}>
                         Surface: {integrationSurface}
                       </div>
                     ) : null}
                   </td>
-                  <td
-                    style={{
-                      padding: "0.4rem",
-                      color: entry.outcome === "failure" ? "#b00020" : "#0a7",
-                      fontWeight: 600,
-                    }}
-                  >
-                    {entry.outcome}
+                  <td style={BODY_CELL_STYLE}>
+                    <span
+                      style={{
+                        display: "inline-flex",
+                        alignItems: "center",
+                        padding: "0.12rem 0.45rem",
+                        borderRadius: "999px",
+                        background: entry.outcome === "failure" ? "#fde8e8" : "#e7f7ef",
+                        color: entry.outcome === "failure" ? "#b00020" : "#0f766e",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {entry.outcome}
+                    </span>
                   </td>
-                  <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{entry.customerId ?? "—"}</td>
-                  <td style={{ padding: "0.4rem" }}>{formatActor(entry.actor)}</td>
-                  <td style={{ padding: "0.4rem" }}>{formatSubject(entry.subject)}</td>
-                  <td style={{ padding: "0.4rem" }}>{entry.candidateEmail ?? "—"}</td>
-                  <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{entry.examId ?? "—"}</td>
-                  <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>
+                  <td style={BODY_CELL_STYLE}>{renderTextValue(entry.customerId, true)}</td>
+                  <td style={BODY_CELL_STYLE}>{renderTextValue(formatActor(entry.actor))}</td>
+                  <td style={BODY_CELL_STYLE}>{renderTextValue(formatSubject(entry.subject))}</td>
+                  <td style={BODY_CELL_STYLE}>{renderTextValue(entry.candidateEmail)}</td>
+                  <td style={BODY_CELL_STYLE}>{renderTextValue(entry.examId, true)}</td>
+                  <td style={{ ...BODY_CELL_STYLE, fontFamily: "monospace" }}>
                     {entry.examAttemptId && onOpenExamAttempt ? (
-                      <button
-                        type="button"
-                        aria-label={`Filter Support Diagnostics by ExamAttempt ${entry.examAttemptId}`}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onOpenExamAttempt(entry.examAttemptId!);
-                        }}
-                        style={{
-                          padding: 0,
-                          border: "none",
-                          background: "transparent",
-                          color: "#0b57d0",
-                          cursor: "pointer",
-                          fontFamily: "inherit",
-                        }}
-                      >
-                        {entry.examAttemptId}
-                      </button>
+                      <div style={{ display: "grid", gap: "0.2rem" }}>
+                        <button
+                          type="button"
+                          aria-label={`Filter Support Diagnostics by ExamAttempt ${entry.examAttemptId}`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onOpenExamAttempt(entry.examAttemptId!);
+                          }}
+                          style={{
+                            padding: 0,
+                            border: "none",
+                            background: "transparent",
+                            color: "#0b57d0",
+                            cursor: "pointer",
+                            fontFamily: "inherit",
+                            textAlign: "left",
+                            justifySelf: "start",
+                          }}
+                        >
+                          {entry.examAttemptId}
+                        </button>
+                        <span style={MUTED_TEXT_STYLE}>Open filtered thread</span>
+                      </div>
                     ) : (
-                      entry.examAttemptId ?? "—"
+                      renderTextValue(entry.examAttemptId, true)
                     )}
                   </td>
-                  <td style={{ padding: "0.4rem" }}>{formatExternalIds(displayExternalIds)}</td>
-                  <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{entry.correlationId ?? "—"}</td>
-                  <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{summariseRequestResponse(entry)}</td>
-                  <td style={{ padding: "0.4rem" }}>{entry.message}</td>
+                  <td style={BODY_CELL_STYLE}>{renderTextValue(formatExternalIds(displayExternalIds))}</td>
+                  <td style={BODY_CELL_STYLE}>{renderTextValue(entry.correlationId, true)}</td>
+                  <td style={{ ...BODY_CELL_STYLE, fontFamily: "monospace" }}>{renderTextValue(summariseRequestResponse(entry), true)}</td>
+                  <td style={BODY_CELL_STYLE}>
+                    <div style={{ fontWeight: 600, color: "#1f2937", wordBreak: "break-word" }}>{entry.message}</div>
+                  </td>
                 </tr>
                 {isExpanded && (
                   <tr key={`${entry.id}-detail`}>
-                    <td colSpan={15} style={{ padding: "0.5rem 1rem", background: "#f7f7f7", fontFamily: "monospace", fontSize: "0.78rem" }}>
+                    <td
+                      colSpan={15}
+                      style={{
+                        padding: "0.7rem 1rem 0.8rem",
+                        background: "#f7f9fc",
+                        fontFamily: "monospace",
+                        fontSize: "0.78rem",
+                        borderBottom: "1px solid #dfe3eb",
+                      }}
+                    >
                       {hints.length > 0 ? <SupportHintsBlock hints={hints} /> : null}
                       {quickFacts.length > 0 ? <QuickFactsBlock facts={quickFacts} /> : null}
                       {sections.length > 0 ? (
