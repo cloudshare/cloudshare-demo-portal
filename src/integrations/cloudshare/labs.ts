@@ -1,7 +1,8 @@
 import { z } from "zod";
-import type { CloudShareClient } from "./client";
+import type { CloudShareClient, CloudShareDetailedResult } from "./client";
 import type {
   AddParticipantInput,
+  AddParticipantResult,
   AddStudentInput,
   CreateExperienceInput,
   CreateExperienceResult,
@@ -72,6 +73,13 @@ export interface CloudShareLabProvisionerObserver {
   onTeamReadFailure?(event: CloudShareTeamReadFailureEvent): void | Promise<void>;
 }
 
+function requireDetailedV4Client(client: CloudShareClient): NonNullable<CloudShareClient["requestV4Detailed"]> {
+  if (typeof client.requestV4Detailed !== "function") {
+    throw new Error("CloudShare lab provisioning diagnostics require requestV4Detailed support.");
+  }
+  return client.requestV4Detailed.bind(client);
+}
+
 function inferFailureMode(error: unknown): CloudShareTeamReadFailureEvent["failureMode"] {
   const name = (error as { name?: unknown } | undefined)?.name;
   if (name === "CloudShareRequestError") return "http_status";
@@ -84,6 +92,19 @@ export function createCloudShareLabProvisioner(
   client: CloudShareClient,
   observer?: CloudShareLabProvisionerObserver,
 ): LabProvisioner {
+  const requestV4Detailed = requireDetailedV4Client(client);
+
+  async function requestV4WithDiagnostics<T>(
+    spec: {
+      readonly method: "GET" | "POST" | "PUT" | "DELETE";
+      readonly path: string;
+      readonly body?: unknown;
+      readonly schema: z.ZodType<T, z.ZodType["_def"], unknown>;
+    },
+  ): Promise<CloudShareDetailedResult<T>> {
+    return requestV4Detailed(spec) as Promise<CloudShareDetailedResult<T>>;
+  }
+
   return {
     async createTraining(input: CreateTrainingInput): Promise<CreateTrainingResult> {
       let teams: ProjectTeam[];
@@ -126,7 +147,7 @@ export function createCloudShareLabProvisioner(
         itemCount: teams.length,
       });
 
-      const training = await client.requestV4({
+      const training = await requestV4WithDiagnostics({
         method: "POST",
         path: "/trainings",
         body: {
@@ -146,11 +167,22 @@ export function createCloudShareLabProvisioner(
         },
         schema: experienceSchema,
       });
-      return { trainingId: training.id, teamId, teamCount: teams.length };
+      return {
+        trainingId: training.data.id,
+        teamId,
+        teamCount: teams.length,
+        integrationSurface: training.integrationSurface,
+        request: training.request,
+        response: {
+          status: training.response.status,
+          ...(training.response.headers ? { headers: training.response.headers } : {}),
+          body: training.response.body,
+        },
+      };
     },
 
-    async addParticipant(input: AddParticipantInput): Promise<void> {
-      await client.requestV4({
+    async addParticipant(input: AddParticipantInput): Promise<AddParticipantResult> {
+      const detailed = await requestV4WithDiagnostics({
         method: "POST",
         path: `/trainings/${input.trainingId}/students`,
         body: [
@@ -162,6 +194,15 @@ export function createCloudShareLabProvisioner(
         ],
         schema: addTrainingStudentsSchema,
       });
+      return {
+        integrationSurface: detailed.integrationSurface,
+        request: detailed.request,
+        response: {
+          status: detailed.response.status,
+          ...(detailed.response.headers ? { headers: detailed.response.headers } : {}),
+          body: detailed.response.body,
+        },
+      };
     },
 
     async createExperience(input: CreateExperienceInput): Promise<CreateExperienceResult> {
@@ -195,7 +236,7 @@ export function createCloudShareLabProvisioner(
     async createSponsoredLink(
       input: CreateSponsoredLinkInput,
     ): Promise<CreateSponsoredLinkResult> {
-      const link = await client.requestV4({
+      const link = await requestV4WithDiagnostics({
         method: "POST",
         path:
           input.trainingId !== undefined
@@ -211,7 +252,16 @@ export function createCloudShareLabProvisioner(
             : undefined,
         schema: sponsoredLinkSchema,
       });
-      return { loginUrl: link.loginUrl };
+      return {
+        loginUrl: link.data.loginUrl,
+        integrationSurface: link.integrationSurface,
+        request: link.request,
+        response: {
+          status: link.response.status,
+          ...(link.response.headers ? { headers: link.response.headers } : {}),
+          body: link.response.body,
+        },
+      };
     },
   };
 }

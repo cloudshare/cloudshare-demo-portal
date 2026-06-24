@@ -71,16 +71,39 @@ export interface CreateTrainingInput {
   readonly passphrase: string;
   readonly timeZoneId: string;
 }
+export interface ProvisioningRequestEvidence {
+  readonly method: string;
+  readonly path: string;
+  readonly headers?: Record<string, string>;
+  readonly body?: unknown;
+}
+export interface ProvisioningResponseEvidence {
+  readonly status: number;
+  readonly headers?: Record<string, string | string[]>;
+  readonly body: unknown;
+}
 export interface CreateTrainingResult {
   readonly trainingId: string;
   readonly teamId?: string;
   readonly teamCount?: number;
+  readonly integrationSurface?: string;
+  readonly request?: ProvisioningRequestEvidence;
+  readonly response?: ProvisioningResponseEvidence;
 }
 export interface AddParticipantInput {
   readonly trainingId: string;
   readonly email: string;
   readonly firstName: string;
   readonly lastName: string;
+}
+export interface AddParticipantResult {
+  readonly integrationSurface?: string;
+  readonly request?: ProvisioningRequestEvidence;
+  readonly response: {
+    readonly status: number;
+    readonly headers?: Record<string, string | string[]>;
+    readonly body: unknown;
+  };
 }
 export interface CreateSponsoredLinkInput {
   readonly experienceId?: string;
@@ -91,11 +114,14 @@ export interface CreateSponsoredLinkInput {
 }
 export interface CreateSponsoredLinkResult {
   readonly loginUrl: string;
+  readonly integrationSurface?: string;
+  readonly request?: ProvisioningRequestEvidence;
+  readonly response?: ProvisioningResponseEvidence;
 }
 
 export interface LabProvisioner {
   createTraining?(input: CreateTrainingInput): Promise<CreateTrainingResult>;
-  addParticipant?(input: AddParticipantInput): Promise<void>;
+  addParticipant?(input: AddParticipantInput): Promise<AddParticipantResult>;
   createExperience(input: CreateExperienceInput): Promise<CreateExperienceResult>;
   /** Register the candidate. Throws on failure — never resolves on a skipped registration. */
   addStudent(input: AddStudentInput): Promise<void>;

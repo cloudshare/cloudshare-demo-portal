@@ -44,14 +44,75 @@ function makeLabs(order: string[] = []): LabProvisioner {
     },
     async createTraining() {
       order.push("createTraining");
-      return { trainingId: "training-1", teamId: "team-1", teamCount: 1 };
+      return {
+        trainingId: "training-1",
+        teamId: "team-1",
+        teamCount: 1,
+        integrationSurface: "cloudshare.v4.training",
+        request: {
+          method: "POST",
+          path: "/trainings",
+          body: {
+            Name: "Helios Exam Blueprint - Asha Patel - candidate@helioscx.demo - 20260615T160000Z - 20260615T100000Z",
+            Start: "2026-06-15T16:00:00.000Z",
+            Type: "instructorLed",
+            ProjectId: "project-1",
+            TeamId: "team-1",
+            BlueprintIds: ["bp-1"],
+            PolicyId: "policy-1",
+            CloudshareRegionIds: ["region-1"],
+            MainInstructor: { Email: "instructor-1" },
+            TimeZone: "UTC",
+            Passphrase: "certalis-attempt-1",
+            UsersEarlyAccess: { GrantEarlyAccess: 2 },
+          },
+        },
+        response: {
+          status: 200,
+          body: { id: "training-1" },
+        },
+      };
     },
     async addParticipant() {
       order.push("addParticipant");
+      return {
+        integrationSurface: "cloudshare.v4.training.participant",
+        request: {
+          method: "POST",
+          path: "/trainings/training-1/students",
+          body: [
+            {
+              email: "candidate@helioscx.demo",
+              firstName: "Candidate",
+              lastName: "Demo",
+            },
+          ],
+        },
+        response: {
+          status: 200,
+          body: [{ email: "candidate@helioscx.demo", firstName: "Candidate", lastName: "Demo" }],
+        },
+      };
     },
     async createSponsoredLink() {
       order.push("createSponsoredLink");
-      return { loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/demo" };
+      return {
+        loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/demo",
+        integrationSurface: "cloudshare.v4.training.sponsored_link",
+        request: {
+          method: "POST",
+          path: "/trainings/training-1/sponsored-link",
+          body: {
+            email: "candidate@helioscx.demo",
+            firstName: "Candidate",
+            lastName: "Demo",
+          },
+        },
+        response: {
+          status: 200,
+          body: { loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/demo" },
+        },
+      };
     },
   };
 }
@@ -78,6 +139,12 @@ describe("scheduleExam", () => {
     const order: string[] = [];
     const addParticipant = vi.fn(async () => {
       order.push("addParticipant");
+      return {
+        response: {
+          status: 200,
+          body: [{ email: "candidate@helioscx.demo", firstName: "Candidate", lastName: "Demo" }],
+        },
+      };
     });
     const createSponsoredLink = vi.fn(async () => {
       order.push("createSponsoredLink");
@@ -327,7 +394,23 @@ describe("scheduleExam", () => {
         labs: {
           ...makeLabs(),
           async createSponsoredLink() {
-            return { loginUrl: SPONSORED_LINK_URL };
+            return {
+              loginUrl: SPONSORED_LINK_URL,
+              integrationSurface: "cloudshare.v4.training.sponsored_link",
+              request: {
+                method: "POST",
+                path: "/trainings/training-1/sponsored-link",
+                body: {
+                  email: "candidate@helioscx.demo",
+                  firstName: "Candidate",
+                  lastName: "Demo",
+                },
+              },
+              response: {
+                status: 200,
+                body: { loginUrl: SPONSORED_LINK_URL },
+              },
+            };
           },
         },
         newId: vi.fn().mockReturnValueOnce("attempt-1").mockReturnValueOnce("launch-1"),
@@ -371,25 +454,55 @@ describe("scheduleExam", () => {
     }
 
     const training = thread.find((e) => e.operation === "cloudshare.create_training");
+    expect(training?.details).toMatchObject({
+      integrationSurface: "cloudshare.v4.training",
+    });
     expect(training?.externalIds).toMatchObject({
       trainingId: "training-1",
       blueprintId: "bp-1",
       teamId: "team-1",
     });
     expect((training?.request as { body?: Record<string, unknown> })?.body).toMatchObject({
-      projectId: "project-1",
-      blueprintId: "bp-1",
-      policyId: "policy-1",
+      ProjectId: "project-1",
+      BlueprintIds: ["bp-1"],
+      PolicyId: "policy-1",
+    });
+    expect(training?.response).toMatchObject({
+      status: 200,
+      body: { id: "training-1" },
     });
 
     const addParticipant = thread.find((e) => e.operation === "cloudshare.add_participant");
-    expect((addParticipant?.request as { body?: Record<string, unknown> })?.body).toMatchObject({
-      email: "candidate@helioscx.demo",
-      trainingId: "training-1",
+    expect(addParticipant?.details).toMatchObject({
+      integrationSurface: "cloudshare.v4.training.participant",
+    });
+    expect(addParticipant?.request).toMatchObject({
+      method: "POST",
+      path: "/trainings/training-1/students",
+      body: [{ email: "candidate@helioscx.demo", firstName: "Candidate", lastName: "Demo" }],
+    });
+    expect(addParticipant?.response).toMatchObject({
+      status: 200,
+      body: [{ email: "candidate@helioscx.demo", firstName: "Candidate", lastName: "Demo" }],
     });
 
     const sponsoredLink = thread.find((e) => e.operation === "cloudshare.create_sponsored_link");
-    expect(sponsoredLink?.response).toMatchObject({ loginUrl: SPONSORED_LINK_URL });
+    expect(sponsoredLink?.details).toMatchObject({
+      integrationSurface: "cloudshare.v4.training.sponsored_link",
+    });
+    expect(sponsoredLink?.request).toMatchObject({
+      method: "POST",
+      path: "/trainings/training-1/sponsored-link",
+      body: {
+        email: "candidate@helioscx.demo",
+        firstName: "Candidate",
+        lastName: "Demo",
+      },
+    });
+    expect(sponsoredLink?.response).toMatchObject({
+      status: 200,
+      body: { loginUrl: SPONSORED_LINK_URL },
+    });
   });
 
   it("records a failure diagnostic for the failing CloudShare op and emits no later steps", async () => {
@@ -450,6 +563,10 @@ describe("scheduleExam", () => {
       failureMode: "http_status",
       integrationSurface: "cloudshare.v4.training.participant",
       responseStatus: 403,
+    });
+    expect(failure?.response).toMatchObject({
+      status: 403,
+      body: '{"error":"forbidden"}',
     });
   });
 
@@ -547,6 +664,64 @@ describe("scheduleExam", () => {
     expect(failure?.details).toMatchObject({
       failureMode: "transport",
       integrationSurface: "cloudshare.v4.training",
+    });
+  });
+
+  it("records top-level response evidence for schema-mismatch failures even when no status property is present", async () => {
+    const { exams, attempts, launches } = await setup();
+    const repository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository });
+
+    const responseError = Object.assign(new Error("unexpected payload"), {
+      name: "CloudShareResponseError",
+      context: {
+        integrationSurface: "cloudshare.v4.training.participant",
+        method: "POST",
+        path: "/trainings/training-1/students",
+        status: 422,
+        responseHeaders: { "content-type": "application/json" },
+        responseBody: { error: "unexpected-shape" },
+      },
+    });
+
+    await expect(
+      scheduleExam(
+        {
+          exams,
+          attempts,
+          launches,
+          labs: {
+            ...makeLabs(),
+            async addParticipant() {
+              throw responseError;
+            },
+          },
+          newId: vi.fn().mockReturnValueOnce("attempt-1").mockReturnValueOnce("launch-1"),
+          now: () => new Date("2026-06-15T10:00:00.000Z"),
+          diagnostics,
+        },
+        {
+          customerId: "customer-helios",
+          candidateId: "candidate-1",
+          candidateEmail: "candidate@helioscx.demo",
+          candidateFirstName: "Asha",
+          candidateLastName: "Patel",
+          examId: "exam-1",
+          scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+        },
+      ),
+    ).rejects.toBeInstanceOf(CloudShareProvisioningError);
+
+    const thread = await repository.query({ examAttemptId: "attempt-1" });
+    const failure = thread.find((e) => e.operation === "cloudshare.add_participant");
+    expect(failure?.response).toMatchObject({
+      status: 422,
+      headers: { "content-type": "application/json" },
+      body: { error: "unexpected-shape" },
+    });
+    expect(failure?.details).toMatchObject({
+      failureMode: "unexpected_response",
+      responseStatus: 422,
     });
   });
 

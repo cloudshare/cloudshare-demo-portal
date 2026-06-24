@@ -1,6 +1,12 @@
 import type { ExamRepository } from "./exam-catalog";
 import type { ExamAttempt, ExamAttemptRepository } from "./exam-attempt";
-import type { LabLaunch, LabLaunchRepository, LabProvisioner } from "./lab-launch";
+import type {
+  LabLaunch,
+  LabLaunchRepository,
+  LabProvisioner,
+  ProvisioningRequestEvidence,
+  ProvisioningResponseEvidence,
+} from "./lab-launch";
 import type { DiagnosticRecorder } from "./diagnostic-log";
 
 type ProvisioningOperation = "create_training" | "add_participant" | "create_sponsored_link";
@@ -39,6 +45,76 @@ function describeProvisioningCause(cause: unknown): Record<string, unknown> {
       typeof err?.status === "number" ? err.status : (ctx.status ?? null),
     responseBody: ctx.responseBody ?? null,
     error: cause instanceof Error ? cause.message : String(cause),
+  };
+}
+
+function extractProvisioningRequest(cause: unknown): Record<string, unknown> | undefined {
+  const ctx = ((cause as { context?: Record<string, unknown> } | undefined)?.context ?? {}) as Record<
+    string,
+    unknown
+  >;
+  const method = ctx.method;
+  const path = ctx.path;
+  const requestHeaders = ctx.requestHeaders;
+  const requestBody = ctx.requestBody;
+  if (
+    method === undefined &&
+    path === undefined &&
+    requestHeaders === undefined &&
+    requestBody === undefined
+  ) {
+    return undefined;
+  }
+
+  return {
+    ...(typeof method === "string" ? { method } : {}),
+    ...(typeof path === "string" ? { path } : {}),
+    ...(requestHeaders !== undefined ? { headers: requestHeaders } : {}),
+    ...(requestBody !== undefined ? { body: requestBody } : {}),
+  };
+}
+
+function extractProvisioningResponse(cause: unknown): Record<string, unknown> | undefined {
+  const err = cause as { status?: number; context?: Record<string, unknown> } | undefined;
+  const ctx = (err?.context ?? {}) as Record<string, unknown>;
+  const status = typeof err?.status === "number" ? err.status : ctx.status;
+  const responseHeaders = ctx.responseHeaders;
+  const responseBody = ctx.responseBody;
+  if (status === undefined && responseHeaders === undefined && responseBody === undefined) {
+    return undefined;
+  }
+
+  return {
+    ...(typeof status === "number" ? { status } : {}),
+    ...(responseHeaders !== undefined ? { headers: responseHeaders } : {}),
+    ...(responseBody !== undefined ? { body: responseBody } : {}),
+  };
+}
+
+function toDiagnosticRequestEvidence(
+  request: ProvisioningRequestEvidence | undefined,
+): Record<string, unknown> | undefined {
+  if (!request) {
+    return undefined;
+  }
+  return {
+    method: request.method,
+    path: request.path,
+    ...(request.headers ? { headers: request.headers } : {}),
+    ...(request.body !== undefined ? { body: request.body } : {}),
+  };
+}
+
+function toDiagnosticResponseEvidence(
+  response: ProvisioningResponseEvidence | undefined,
+): Record<string, unknown> | undefined {
+  if (!response) {
+    return undefined;
+  }
+  return {
+    status: response.status,
+    ...(response.headers ? { headers: response.headers } : {}),
+    body: response.body,
   };
 }
 
@@ -150,19 +226,29 @@ export async function scheduleExam(
   const recordSuccess = (
     operation: string,
     message: string,
-    extra?: { externalIds?: Record<string, string>; request?: Record<string, unknown>; response?: Record<string, unknown> },
+    extra?: {
+      externalIds?: Record<string, string>;
+      request?: Record<string, unknown>;
+      response?: Record<string, unknown>;
+      details?: Record<string, unknown>;
+    },
   ) =>
     deps.diagnostics?.record({ ...anchors, level: "info", operation, outcome: "success", message, ...extra });
-  const recordFailure = (op: ProvisioningOperation, cause: unknown, externalIds?: Record<string, string>) =>
-    deps.diagnostics?.record({
+  const recordFailure = (op: ProvisioningOperation, cause: unknown, externalIds?: Record<string, string>) => {
+    const request = extractProvisioningRequest(cause);
+    const response = extractProvisioningResponse(cause);
+    return deps.diagnostics?.record({
       ...anchors,
       level: "warn",
       operation: `cloudshare.${op}`,
       outcome: "failure",
       message: `CloudShare ${op.replace(/_/g, " ")} failed`,
       ...(externalIds ? { externalIds } : {}),
+      ...(request ? { request } : {}),
+      ...(response ? { response } : {}),
       details: { attemptedOperation: op, integrationSurface: PROVISIONING_SURFACE[op], ...describeProvisioningCause(cause) },
     });
+  };
 
   await recordSuccess("exam_attempt.schedule", "ExamAttempt scheduled", {
     request: { scheduledFor: input.scheduledFor.toISOString() },
@@ -185,6 +271,9 @@ export async function scheduleExam(
 
   let trainingId: string;
   let teamId: string | undefined;
+  let createTrainingIntegrationSurface: string | undefined;
+  let createTrainingRequest: ProvisioningRequestEvidence | undefined;
+  let createTrainingResponse: ProvisioningResponseEvidence | undefined;
   try {
     const training = await trainingCreator({
       title: trainingTitle,
@@ -199,6 +288,9 @@ export async function scheduleExam(
     });
     trainingId = training.trainingId;
     teamId = training.teamId;
+    createTrainingIntegrationSurface = training.integrationSurface;
+    createTrainingRequest = training.request;
+    createTrainingResponse = training.response;
   } catch (cause) {
     await recordFailure("create_training", cause);
     await deps.attempts.save({ ...attempt, status: "expired" });
@@ -228,29 +320,24 @@ export async function scheduleExam(
       ...(teamId ? { teamId } : {}),
       ...(regionIds ? { regionIds } : {}),
     },
-    request: {
-      method: "POST",
-      integrationSurface: PROVISIONING_SURFACE.create_training,
-      path: "/trainings",
-      body: {
-        title: trainingTitle,
-        scheduledFor: input.scheduledFor.toISOString(),
-        projectId: exam.projectId,
-        blueprintId: exam.blueprintId,
-        policyId: exam.policyId,
-        regionIds: exam.allowedRegions.map((r) => r.id),
-        instructorId: exam.instructorId,
-      },
-    },
-    response: { trainingId },
+    ...(toDiagnosticRequestEvidence(createTrainingRequest)
+      ? { request: toDiagnosticRequestEvidence(createTrainingRequest)! }
+      : {}),
+    ...(toDiagnosticResponseEvidence(createTrainingResponse)
+      ? { response: toDiagnosticResponseEvidence(createTrainingResponse)! }
+      : {}),
+    ...(createTrainingIntegrationSurface
+      ? { details: { integrationSurface: createTrainingIntegrationSurface } }
+      : {}),
   });
 
   const participant = {
     firstName: input.candidateFirstName.trim(),
     lastName: input.candidateLastName.trim(),
   };
+  let addParticipantResult;
   try {
-    await participantAdder({
+    addParticipantResult = await participantAdder({
       trainingId,
       email: input.candidateEmail,
       firstName: participant.firstName,
@@ -277,20 +364,19 @@ export async function scheduleExam(
 
   await recordSuccess("cloudshare.add_participant", "CloudShare participant added", {
     externalIds: { trainingId },
-    request: {
-      method: "POST",
-      integrationSurface: PROVISIONING_SURFACE.add_participant,
-      path: `/trainings/${trainingId}/students`,
-      body: {
-        trainingId,
-        email: input.candidateEmail,
-        firstName: participant.firstName,
-        lastName: participant.lastName,
-      },
-    },
+    ...(toDiagnosticRequestEvidence(addParticipantResult.request)
+      ? { request: toDiagnosticRequestEvidence(addParticipantResult.request)! }
+      : {}),
+    response: toDiagnosticResponseEvidence(addParticipantResult.response)!,
+    ...(addParticipantResult.integrationSurface
+      ? { details: { integrationSurface: addParticipantResult.integrationSurface } }
+      : {}),
   });
 
   let loginUrl: string;
+  let createSponsoredLinkIntegrationSurface: string | undefined;
+  let createSponsoredLinkRequest: ProvisioningRequestEvidence | undefined;
+  let createSponsoredLinkResponse: ProvisioningResponseEvidence | undefined;
   try {
     const sponsoredLink = await deps.labs.createSponsoredLink({
       trainingId,
@@ -299,6 +385,9 @@ export async function scheduleExam(
       lastName: participant.lastName,
     });
     loginUrl = sponsoredLink.loginUrl;
+    createSponsoredLinkIntegrationSurface = sponsoredLink.integrationSurface;
+    createSponsoredLinkRequest = sponsoredLink.request;
+    createSponsoredLinkResponse = sponsoredLink.response;
   } catch (cause) {
     await recordFailure("create_sponsored_link", cause, { trainingId });
     await deps.attempts.save({ ...attempt, status: "expired" });
@@ -320,18 +409,15 @@ export async function scheduleExam(
 
   await recordSuccess("cloudshare.create_sponsored_link", "CloudShare sponsored link created", {
     externalIds: { trainingId },
-    request: {
-      method: "POST",
-      integrationSurface: PROVISIONING_SURFACE.create_sponsored_link,
-      path: `/trainings/${trainingId}/sponsored-link`,
-      body: {
-        trainingId,
-        email: input.candidateEmail,
-        firstName: participant.firstName,
-        lastName: participant.lastName,
-      },
-    },
-    response: { loginUrl },
+    ...(toDiagnosticRequestEvidence(createSponsoredLinkRequest)
+      ? { request: toDiagnosticRequestEvidence(createSponsoredLinkRequest)! }
+      : {}),
+    ...(toDiagnosticResponseEvidence(createSponsoredLinkResponse)
+      ? { response: toDiagnosticResponseEvidence(createSponsoredLinkResponse)! }
+      : {}),
+    ...(createSponsoredLinkIntegrationSurface
+      ? { details: { integrationSurface: createSponsoredLinkIntegrationSurface } }
+      : {}),
   });
 
   const readyAttempt: ExamAttempt = { ...attempt, status: "ready" };

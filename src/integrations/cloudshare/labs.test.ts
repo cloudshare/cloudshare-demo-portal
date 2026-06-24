@@ -13,8 +13,16 @@ describe("cloudShareLabProvisioner — request shape", () => {
         rows: [{ id: "TM-team-1", name: "Helios Team" }],
       }),
     );
-    const requestV4 = vi.fn(async (_spec: unknown) => ({ id: "exp-1" }));
-    const client = { requestV4, requestV3 } as unknown as CloudShareClient;
+    const requestV4Detailed = vi.fn(
+      async (spec: { method: string; path: string; body: Record<string, unknown>; schema: { parse(value: unknown): unknown } }) => ({
+        data: spec.schema.parse({ id: "exp-1" }),
+        host: "api.accelerate.cloudshare.com",
+        integrationSurface: "cloudshare.v4.training",
+        request: { method: spec.method, path: spec.path, body: spec.body },
+        response: { status: 200, body: { id: "exp-1" } },
+      }),
+    );
+    const client = { requestV4Detailed, requestV4: vi.fn(), requestV3 } as unknown as CloudShareClient;
     const labs = createCloudShareLabProvisioner(client);
 
     const result = await labs.createTraining!({
@@ -29,7 +37,34 @@ describe("cloudShareLabProvisioner — request shape", () => {
       timeZoneId: "UTC",
     });
 
-    expect(result).toEqual({ trainingId: "exp-1", teamId: "TM-team-1", teamCount: 1 });
+    expect(result).toEqual({
+      trainingId: "exp-1",
+      teamId: "TM-team-1",
+      teamCount: 1,
+      integrationSurface: "cloudshare.v4.training",
+      request: {
+        method: "POST",
+        path: "/trainings",
+        body: {
+          Name: "Exam GCP-ASSOC",
+          Start: "2026-06-15T16:00:00.000Z",
+          Type: "instructorLed",
+          ProjectId: "project-1",
+          TeamId: "TM-team-1",
+          BlueprintIds: ["bp-1"],
+          PolicyId: "policy-1",
+          CloudshareRegionIds: ["region-1", "region-2"],
+          MainInstructor: { Email: "instructor@example.com" },
+          TimeZone: "UTC",
+          Passphrase: "certalis-attempt-1",
+          UsersEarlyAccess: { GrantEarlyAccess: 2 },
+        },
+      },
+      response: {
+        status: 200,
+        body: { id: "exp-1" },
+      },
+    });
     expect(requestV3).toHaveBeenCalledWith({
       method: "GET",
       path: "/teams",
@@ -43,7 +78,7 @@ describe("cloudShareLabProvisioner — request shape", () => {
       },
       schema: expect.anything(),
     });
-    const spec = requestV4.mock.calls[0][0] as unknown as {
+    const spec = requestV4Detailed.mock.calls[0][0] as unknown as {
       method: string;
       path: string;
       body: Record<string, unknown>;
@@ -67,18 +102,46 @@ describe("cloudShareLabProvisioner — request shape", () => {
   });
 
   it("targets the training-scoped participant and sponsored-link paths", async () => {
-    const requestV4 = vi.fn(async (spec: { path: string; body?: unknown; schema: { parse(value: unknown): unknown } }) =>
+    const requestV4Detailed = vi.fn(async (spec: { method: string; path: string; body?: unknown; schema: { parse(value: unknown): unknown } }) =>
       spec.path.endsWith("/sponsored-link")
-        ? spec.schema.parse({ loginUrl: "https://classic.cloudshare.com/login?t=x" })
-        : spec.schema.parse([
-            {
-              email: "candidate@helioscx.demo",
-              firstName: "Candidate",
-              lastName: "Demo",
+        ? {
+            data: spec.schema.parse({ loginUrl: "https://classic.cloudshare.com/login?t=x" }),
+            host: "api.accelerate.cloudshare.com",
+            integrationSurface: "cloudshare.v4.training.sponsored_link",
+            request: { method: spec.method, path: spec.path, body: spec.body },
+            response: {
+              status: 200,
+              body: { loginUrl: "https://classic.cloudshare.com/login?t=x" },
             },
-          ]),
+          }
+        : {
+            data: spec.schema.parse([
+              {
+                email: "candidate@helioscx.demo",
+                firstName: "Candidate",
+                lastName: "Demo",
+              },
+            ]),
+            host: "api.accelerate.cloudshare.com",
+            integrationSurface: "cloudshare.v4.training.participant",
+            request: { method: spec.method, path: spec.path, body: spec.body },
+            response: {
+              status: 200,
+              body: [
+                {
+                  email: "candidate@helioscx.demo",
+                  firstName: "Candidate",
+                  lastName: "Demo",
+                },
+              ],
+            },
+          },
     );
-    const client = { requestV4, requestV3: vi.fn() } as unknown as CloudShareClient;
+    const client = {
+      requestV4Detailed,
+      requestV4: vi.fn(),
+      requestV3: vi.fn(),
+    } as unknown as CloudShareClient;
     const labs = createCloudShareLabProvisioner(client);
 
     await labs.addParticipant!({
@@ -94,16 +157,16 @@ describe("cloudShareLabProvisioner — request shape", () => {
       lastName: "Demo",
     });
 
-    expect(requestV4.mock.calls[0][0].path).toBe("/trainings/training-1/students");
-    expect(requestV4.mock.calls[0][0].body).toEqual([
+    expect(requestV4Detailed.mock.calls[0][0].path).toBe("/trainings/training-1/students");
+    expect(requestV4Detailed.mock.calls[0][0].body).toEqual([
       {
         email: "candidate@helioscx.demo",
         firstName: "Candidate",
         lastName: "Demo",
       },
     ]);
-    expect(requestV4.mock.calls[1][0].path).toBe("/trainings/training-1/sponsored-link");
-    expect(requestV4.mock.calls[1][0].body).toEqual({
+    expect(requestV4Detailed.mock.calls[1][0].path).toBe("/trainings/training-1/sponsored-link");
+    expect(requestV4Detailed.mock.calls[1][0].body).toEqual({
       email: "candidate@helioscx.demo",
       firstName: "Candidate",
       lastName: "Demo",
@@ -111,12 +174,102 @@ describe("cloudShareLabProvisioner — request shape", () => {
     expect(link.loginUrl).toContain("classic.cloudshare.com");
   });
 
+  it("returns top-level response diagnostics for addParticipant", async () => {
+    const requestV4Detailed = vi.fn(
+      async (spec: { path: string; body?: unknown; schema: { parse(value: unknown): unknown } }) => ({
+        data: spec.schema.parse([
+          {
+            email: "candidate@helioscx.demo",
+            firstName: "Candidate",
+            lastName: "Demo",
+          },
+        ]),
+        host: "api.accelerate.cloudshare.com",
+        integrationSurface: "cloudshare.v4.training.participant",
+        request: {
+          method: "POST",
+          path: spec.path,
+          body: spec.body,
+        },
+        response: {
+          status: 200,
+          headers: { "content-type": "application/json" },
+          body: [
+            {
+              email: "candidate@helioscx.demo",
+              firstName: "Candidate",
+              lastName: "Demo",
+            },
+          ],
+        },
+      }),
+    );
+    const client = {
+      requestV4Detailed,
+      requestV4: vi.fn(),
+      requestV3: vi.fn(),
+    } as unknown as CloudShareClient;
+    const labs = createCloudShareLabProvisioner(client);
+
+    const result = await labs.addParticipant!({
+      trainingId: "training-1",
+      email: "candidate@helioscx.demo",
+      firstName: "Candidate",
+      lastName: "Demo",
+    });
+
+    expect(result).toEqual({
+      integrationSurface: "cloudshare.v4.training.participant",
+      request: {
+        method: "POST",
+        path: "/trainings/training-1/students",
+        body: [
+          {
+            email: "candidate@helioscx.demo",
+            firstName: "Candidate",
+            lastName: "Demo",
+          },
+        ],
+      },
+      response: {
+        status: 200,
+        headers: { "content-type": "application/json" },
+        body: [
+          {
+            email: "candidate@helioscx.demo",
+            firstName: "Candidate",
+            lastName: "Demo",
+          },
+        ],
+      },
+    });
+  });
+
+  it("fails fast when the client cannot provide v4 detailed diagnostics", async () => {
+    const client = {
+      requestV4: vi.fn(async () => ({ id: "exp-1" })),
+      requestV3: vi.fn(),
+    } as unknown as CloudShareClient;
+
+    expect(() => createCloudShareLabProvisioner(client)).toThrow(
+      "CloudShare lab provisioning diagnostics require requestV4Detailed support.",
+    );
+  });
+
   it("accepts documented all-teams array casing while resolving a Team ID", async () => {
     const requestV3 = vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) =>
       spec.schema.parse([{ Id: "TM-team-2", Name: "Helios Team" }]),
     );
-    const requestV4 = vi.fn(async (_spec: unknown) => ({ id: "exp-1" }));
-    const client = { requestV4, requestV3 } as unknown as CloudShareClient;
+    const requestV4Detailed = vi.fn(
+      async (spec: { method: string; path: string; body: { TeamId: string }; schema: { parse(value: unknown): unknown } }) => ({
+        data: spec.schema.parse({ id: "exp-1" }),
+        host: "api.accelerate.cloudshare.com",
+        integrationSurface: "cloudshare.v4.training",
+        request: { method: spec.method, path: spec.path, body: spec.body },
+        response: { status: 200, body: { id: "exp-1" } },
+      }),
+    );
+    const client = { requestV4Detailed, requestV4: vi.fn(), requestV3 } as unknown as CloudShareClient;
     const labs = createCloudShareLabProvisioner(client);
 
     await labs.createTraining!({
@@ -131,7 +284,7 @@ describe("cloudShareLabProvisioner — request shape", () => {
       timeZoneId: "UTC",
     });
 
-    const spec = requestV4.mock.calls[0][0] as { body: { TeamId: string } };
+    const spec = requestV4Detailed.mock.calls[0][0] as { body: { TeamId: string } };
     expect(spec.body.TeamId).toBe("TM-team-2");
   });
 });
@@ -175,7 +328,18 @@ describe("cloudShareLabProvisioner — fixture mode (live/fixture parity)", () =
         firstName: "Candidate",
         lastName: "Demo",
       }),
-    ).resolves.toBeUndefined();
+    ).resolves.toMatchObject({
+      response: {
+        status: 200,
+        body: [
+          {
+            email: "candidate@helioscx.demo",
+            firstName: "Candidate",
+            lastName: "Demo",
+          },
+        ],
+      },
+    });
 
     const { loginUrl } = await labs.createSponsoredLink({
       trainingId,

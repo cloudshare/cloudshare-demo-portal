@@ -110,7 +110,7 @@ describe("createCloudShareClient — v4", () => {
     });
   });
 
-  it("redacts sponsored-link login URLs from response diagnostics", async () => {
+  it("retains sponsored-link login URLs in response diagnostics for admin support evidence", async () => {
     const trace = vi.fn();
     const { http } = capturingHttp(
       ok({ loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret-token" }),
@@ -130,8 +130,63 @@ describe("createCloudShareClient — v4", () => {
     });
 
     const responseTrace = trace.mock.calls[1]?.[0].fields;
-    expect(JSON.stringify(responseTrace)).not.toContain("secret-token");
-    expect(JSON.stringify(responseTrace)).not.toContain("ClassSponsoredLink");
+    expect(responseTrace).toEqual(
+      expect.objectContaining({
+        responseBody:
+          "{\"loginUrl\":\"https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret-token\"}",
+      }),
+    );
+  });
+
+  it("retains sponsored-link login URLs in legacy sponsoredLinks response diagnostics for admin support evidence", async () => {
+    const trace = vi.fn();
+    const { http } = capturingHttp(
+      ok({ loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/legacy-token" }),
+    );
+    const client = createCloudShareClient({
+      http,
+      endpoints,
+      tokenProvider: stubTokenProvider,
+      v3: { apiId: "api-id", apiKey: "api-key" },
+      trace,
+    });
+
+    await client.requestV4({
+      method: "POST",
+      path: "/sponsoredLinks",
+      schema: z.object({ loginUrl: z.string() }),
+    });
+
+    const responseTrace = trace.mock.calls[1]?.[0].fields;
+    expect(responseTrace).toEqual(
+      expect.objectContaining({
+        responseBody:
+          "{\"loginUrl\":\"https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/legacy-token\"}",
+      }),
+    );
+  });
+
+  it("keeps loginUrl redacted in non-sponsored-link response diagnostics", async () => {
+    const trace = vi.fn();
+    const { http } = capturingHttp(
+      ok({ loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/should-redact" }),
+    );
+    const client = createCloudShareClient({
+      http,
+      endpoints,
+      tokenProvider: stubTokenProvider,
+      v3: { apiId: "api-id", apiKey: "api-key" },
+      trace,
+    });
+
+    await client.requestV4({
+      method: "GET",
+      path: "/projects",
+      schema: z.object({ loginUrl: z.string() }),
+    });
+
+    const responseTrace = trace.mock.calls[1]?.[0].fields;
+    expect(JSON.stringify(responseTrace)).not.toContain("should-redact");
     expect(responseTrace).toEqual(
       expect.objectContaining({
         responseBody: "{\"loginUrl\":\"[REDACTED]\"}",
@@ -286,9 +341,16 @@ describe("createCloudShareClient — error mapping", () => {
   it("raises CloudShareResponseError when the body fails schema validation", async () => {
     const { http } = capturingHttp(ok([{ id: 123 }]));
     const client = clientWith(http);
-    await expect(
-      client.requestV4({ method: "GET", path: "/projects", schema: projectsSchema }),
-    ).rejects.toBeInstanceOf(CloudShareResponseError);
+    try {
+      await client.requestV4({ method: "GET", path: "/projects", schema: projectsSchema });
+      throw new Error("expected requestV4 to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(CloudShareResponseError);
+      expect((error as CloudShareResponseError).context).toMatchObject({
+        status: 200,
+        responseBody: [{ id: 123 }],
+      });
+    }
   });
 
   it("maps a transport failure (http.send throws) to CloudShareTransportError", async () => {

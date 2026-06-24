@@ -67,29 +67,71 @@ function makeConnectionRepository(
 }
 
 function makeCloudShareFactory(overrides: Partial<ReturnType<CloudShareClientFactory["forConnection"]>> = {}): CloudShareClientFactory {
+  const requestV3 =
+    (overrides.requestV3 as ReturnType<CloudShareClientFactory["forConnection"]>["requestV3"] | undefined) ??
+    (vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+      if (spec.path === "/teams") {
+        return spec.schema.parse({ rows: [{ id: "TM-team-1", name: "Helios Team" }] });
+      }
+      throw new Error(`unexpected v3 path ${spec.path}`);
+    }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>["requestV3"]);
+
+  const requestV4 =
+    (overrides.requestV4 as ReturnType<CloudShareClientFactory["forConnection"]>["requestV4"] | undefined) ??
+    (vi.fn(async (spec: { path: string }) => {
+      if (spec.path === "/trainings") {
+        return { id: "EXtraining-1" };
+      }
+      if (spec.path === "/trainings/EXtraining-1/students") {
+        return [
+          {
+            email: "candidate@helioscx.demo",
+            firstName: "Asha",
+            lastName: "Patel",
+          },
+        ];
+      }
+      if (spec.path === "/trainings/EXtraining-1/sponsored-link") {
+        return {
+          loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/demo",
+        };
+      }
+      throw new Error(`unexpected path ${spec.path}`);
+    }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>["requestV4"]);
+
+  const requestV4Detailed =
+    (overrides.requestV4Detailed as ReturnType<CloudShareClientFactory["forConnection"]>["requestV4Detailed"] | undefined) ??
+    (vi.fn(async (spec: { method: string; path: string; body?: unknown; schema: { parse(value: unknown): unknown } }) => {
+      const raw = await (requestV4 as unknown as (spec: { path: string }) => Promise<unknown>)(spec);
+      const data = spec.schema.parse(raw);
+      return {
+        data,
+        host: "api.accelerate.cloudshare.com",
+        integrationSurface: spec.path === "/trainings"
+          ? "cloudshare.v4.training"
+          : spec.path.endsWith("/students")
+            ? "cloudshare.v4.training.participant"
+            : spec.path.endsWith("/sponsored-link")
+              ? "cloudshare.v4.training.sponsored_link"
+              : "cloudshare.v4",
+        request: {
+          method: spec.method,
+          path: spec.path,
+          ...(spec.body !== undefined ? { body: spec.body } : {}),
+        },
+        response: {
+          status: 200,
+          body: raw,
+        },
+      };
+    }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>["requestV4Detailed"]);
+
   return {
     forConnection: () => ({
-      requestV3: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
-        if (spec.path === "/teams") {
-          return spec.schema.parse({ rows: [{ id: "TM-team-1", name: "Helios Team" }] });
-        }
-        throw new Error(`unexpected v3 path ${spec.path}`);
-      }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>["requestV3"],
+      requestV3,
       requestV3Text: vi.fn(),
-      requestV4: vi.fn(async (spec: { path: string }) => {
-        if (spec.path === "/trainings") {
-          return { id: "EXtraining-1" };
-        }
-        if (spec.path === "/trainings/EXtraining-1/students") {
-          return {};
-        }
-        if (spec.path === "/trainings/EXtraining-1/sponsored-link") {
-          return {
-            loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/demo",
-          };
-        }
-        throw new Error(`unexpected path ${spec.path}`);
-      }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>["requestV4"],
+      requestV4,
+      requestV4Detailed,
       ...overrides,
     }),
   };
