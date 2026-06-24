@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { CloudShareClient } from "./client";
+import type { CloudShareClient, CloudShareDetailedResult } from "./client";
 import type {
   AddParticipantInput,
   AddParticipantResult,
@@ -12,7 +12,6 @@ import type {
   CreateSponsoredLinkResult,
   LabProvisioner,
 } from "@/domain/lab-launch";
-import type { CloudShareDetailedResult } from "./client";
 
 /**
  * CloudShare implementation of the {@link LabProvisioner} port, built on the v4
@@ -74,6 +73,13 @@ export interface CloudShareLabProvisionerObserver {
   onTeamReadFailure?(event: CloudShareTeamReadFailureEvent): void | Promise<void>;
 }
 
+function requireDetailedV4Client(client: CloudShareClient): NonNullable<CloudShareClient["requestV4Detailed"]> {
+  if (typeof client.requestV4Detailed !== "function") {
+    throw new Error("CloudShare lab provisioning diagnostics require requestV4Detailed support.");
+  }
+  return client.requestV4Detailed.bind(client);
+}
+
 function inferFailureMode(error: unknown): CloudShareTeamReadFailureEvent["failureMode"] {
   const name = (error as { name?: unknown } | undefined)?.name;
   if (name === "CloudShareRequestError") return "http_status";
@@ -86,6 +92,8 @@ export function createCloudShareLabProvisioner(
   client: CloudShareClient,
   observer?: CloudShareLabProvisionerObserver,
 ): LabProvisioner {
+  const requestV4Detailed = requireDetailedV4Client(client);
+
   async function requestV4WithDiagnostics<T>(
     spec: {
       readonly method: "GET" | "POST" | "PUT" | "DELETE";
@@ -94,25 +102,7 @@ export function createCloudShareLabProvisioner(
       readonly schema: z.ZodType<T, z.ZodType["_def"], unknown>;
     },
   ): Promise<CloudShareDetailedResult<T>> {
-    if ("requestV4Detailed" in client && typeof client.requestV4Detailed === "function") {
-      return client.requestV4Detailed(spec) as Promise<CloudShareDetailedResult<T>>;
-    }
-
-    const data = await client.requestV4(spec);
-    return {
-      data,
-      host: "unknown",
-      integrationSurface: "cloudshare.v4",
-      request: {
-        method: spec.method,
-        path: spec.path,
-        ...(spec.body !== undefined ? { body: spec.body } : {}),
-      },
-      response: {
-        status: 200,
-        body: data,
-      },
-    };
+    return requestV4Detailed(spec) as Promise<CloudShareDetailedResult<T>>;
   }
 
   return {
@@ -157,7 +147,7 @@ export function createCloudShareLabProvisioner(
         itemCount: teams.length,
       });
 
-      const training = await client.requestV4({
+      const training = await requestV4WithDiagnostics({
         method: "POST",
         path: "/trainings",
         body: {
@@ -177,7 +167,17 @@ export function createCloudShareLabProvisioner(
         },
         schema: experienceSchema,
       });
-      return { trainingId: training.id, teamId, teamCount: teams.length };
+      return {
+        trainingId: training.data.id,
+        teamId,
+        teamCount: teams.length,
+        request: training.request,
+        response: {
+          status: training.response.status,
+          ...(training.response.headers ? { headers: training.response.headers } : {}),
+          body: training.response.body,
+        },
+      };
     },
 
     async addParticipant(input: AddParticipantInput): Promise<AddParticipantResult> {
@@ -194,6 +194,7 @@ export function createCloudShareLabProvisioner(
         schema: addTrainingStudentsSchema,
       });
       return {
+        request: detailed.request,
         response: {
           status: detailed.response.status,
           ...(detailed.response.headers ? { headers: detailed.response.headers } : {}),
@@ -233,7 +234,7 @@ export function createCloudShareLabProvisioner(
     async createSponsoredLink(
       input: CreateSponsoredLinkInput,
     ): Promise<CreateSponsoredLinkResult> {
-      const link = await client.requestV4({
+      const link = await requestV4WithDiagnostics({
         method: "POST",
         path:
           input.trainingId !== undefined
@@ -249,7 +250,15 @@ export function createCloudShareLabProvisioner(
             : undefined,
         schema: sponsoredLinkSchema,
       });
-      return { loginUrl: link.loginUrl };
+      return {
+        loginUrl: link.data.loginUrl,
+        request: link.request,
+        response: {
+          status: link.response.status,
+          ...(link.response.headers ? { headers: link.response.headers } : {}),
+          body: link.response.body,
+        },
+      };
     },
   };
 }

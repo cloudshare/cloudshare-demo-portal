@@ -71,10 +71,23 @@ export interface CreateTrainingInput {
   readonly passphrase: string;
   readonly timeZoneId: string;
 }
+export interface ProvisioningRequestEvidence {
+  readonly method: string;
+  readonly path: string;
+  readonly headers?: Record<string, string>;
+  readonly body?: unknown;
+}
+export interface ProvisioningResponseEvidence {
+  readonly status: number;
+  readonly headers?: Record<string, string | string[]>;
+  readonly body: unknown;
+}
 export interface CreateTrainingResult {
   readonly trainingId: string;
   readonly teamId?: string;
   readonly teamCount?: number;
+  readonly request?: ProvisioningRequestEvidence;
+  readonly response?: ProvisioningResponseEvidence;
 }
 export interface AddParticipantInput {
   readonly trainingId: string;
@@ -83,6 +96,7 @@ export interface AddParticipantInput {
   readonly lastName: string;
 }
 export interface AddParticipantResult {
+  readonly request?: ProvisioningRequestEvidence;
   readonly response: {
     readonly status: number;
     readonly headers?: Record<string, string | string[]>;
@@ -98,6 +112,8 @@ export interface CreateSponsoredLinkInput {
 }
 export interface CreateSponsoredLinkResult {
   readonly loginUrl: string;
+  readonly request?: ProvisioningRequestEvidence;
+  readonly response?: ProvisioningResponseEvidence;
 }
 
 export interface LabProvisioner {
