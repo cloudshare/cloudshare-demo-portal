@@ -546,6 +546,13 @@ top-level envelope, but sent `Payload` as a JSON string with PascalCase keys. It
 the documented object-style payload and the live string/PascalCase payload, normalising to
 `EnvironmentExternalId` when present and otherwise falling back to `EnvironmentId`.
 
+**Update (2026-06-24, live QA correlation failure):** a real `environment.created` delivery for
+attempt `398d2976-0e2e-44c1-992d-3b44723668bc` included `OwnerEmail` and `EnvironmentId`, but
+`EnvironmentExternalId:null`. The payload `EnvironmentName` was the CloudShare environment/blueprint
+display name (`Linux Environment with xRDP v2`), not the portal Exam title. Pending launch
+correlation must therefore use the resolved Customer plus `OwnerEmail` plus the active uncorrelated
+`LabLaunch`; it must not require `EnvironmentName` to match the portal Exam name.
+
 **Impact on certification use**
 
 - The documented environment webhook payload is still insufficient to correlate directly to a portal
@@ -899,5 +906,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-06-24 (recorded CloudShare webhook `CreatedAt` as webhook-definition time, not event time; retained polling/reconcile as the source of truth).
+*Last updated: 2026-06-24 (recorded CloudShare webhook `CreatedAt` as webhook-definition time and `EnvironmentName` as the CloudShare environment/blueprint display name, not portal event metadata; retained polling/reconcile as the source of truth).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*

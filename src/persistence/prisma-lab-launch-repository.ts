@@ -65,7 +65,6 @@ export function createPrismaLabLaunchRepository(prisma: PrismaClient): LabLaunch
     async findPendingEnvironmentCorrelation({
       customerId,
       participantEmail,
-      environmentName,
     }: {
       customerId: string;
       participantEmail: string;
@@ -78,7 +77,9 @@ export function createPrismaLabLaunchRepository(prisma: PrismaClient): LabLaunch
           environmentId: null,
           examAttempt: {
             customerId,
-            ...(environmentName ? { exam: { title: environmentName } } : {}),
+            status: {
+              in: ["ready", "in_progress", "suspended"],
+            },
           },
         },
         orderBy: { createdAt: "desc" },

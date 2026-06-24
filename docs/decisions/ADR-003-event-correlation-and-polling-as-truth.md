@@ -5,8 +5,8 @@ assumed by `webhooks.ts` / `labs.ts`.
 
 ## Decision
 
-The CloudShare v3 environment webhook payload carries an environment identifier, an event type, and
-a timestamp — but **no reference to the experience/training** it belongs to, and the portal does
+The CloudShare v3 environment webhook payload carries an environment identifier and an event type,
+but **no usable event timestamp** and **no reference to the experience/training** it belongs to, and the portal does
 **not** mint environment IDs (environments are bound from a standby at login). Live payloads may send
 `Payload` as a JSON string with PascalCase `EnvironmentId` / nullable `EnvironmentExternalId`. So:
 
@@ -26,7 +26,13 @@ a timestamp — but **no reference to the experience/training** it belongs to, a
 - The portal only subscribes to environment lifecycle webhook events:
   `environment.created`, `environment.suspended`, `environment.resumed`, `environment.deleted`,
   `environment.extended`, and `environment.archived`.
-- Idempotency key becomes `(customerId, normalisedEnvironmentId, event, createdAt)`.
+- The synthesized `(customerId, normalisedEnvironmentId, event, CreatedAt)` key is diagnostic
+  evidence only. Live QA showed `CreatedAt` is the webhook definition creation time, not the event
+  time, so verified lifecycle webhooks must still trigger idempotent reconcile.
+- When an environment webhook arrives before list-students has populated the environment mapping,
+  the portal may correlate a pending launch from the resolved Customer plus `OwnerEmail` plus an
+  active uncorrelated `LabLaunch`. Do not match the webhook `EnvironmentName` to the portal Exam
+  title; live payloads use the CloudShare environment/blueprint display name.
 
 ## Why
 
