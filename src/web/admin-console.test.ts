@@ -19,6 +19,21 @@ describe("AdminConsole", () => {
     expect(html).toContain("Session Monitoring");
   });
 
+  it("renders an obvious active admin tab and support workflow context in the shell", () => {
+    const html = renderToStaticMarkup(
+      createElement(AdminConsole, {
+        email: "admin@helioscx.demo",
+        initialTab: "monitoring",
+      }),
+    );
+
+    expect(html).toContain('aria-current="page"');
+    expect(html).toContain("Active workflow: Session Monitoring");
+    expect(html).toContain("Monitor current ExamAttempt state, then open Support Diagnostics for the forensic trace.");
+    expect(html).toContain("Monitoring");
+    expect(html).toContain("Diagnostics");
+  });
+
   it("reopens on the Diagnostic Log tab when route state links to an ExamAttempt investigation", () => {
     const html = renderToStaticMarkup(
       createElement(AdminConsole, {
