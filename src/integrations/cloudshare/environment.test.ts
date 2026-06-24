@@ -33,20 +33,50 @@ describe("mapCloudShareEnvironmentStatus", () => {
 describe("createCloudShareEnvironmentSource", () => {
   it("polls the documented v3 env-by-id endpoint and maps envStatus", async () => {
     const requestV3 = vi.fn().mockResolvedValue({ envStatus: "Ready" });
-    const source = createCloudShareEnvironmentSource(client({ requestV3 }));
+    const requestV3Detailed = vi.fn().mockResolvedValue({
+      data: { envStatus: "Ready" },
+      host: "use.cloudshare.com",
+      integrationSurface: "cloudshare.v3",
+      request: {
+        method: "GET",
+        path: "/api/v3/envs/ENVS2n38LTNdcC4sHsqnjRzg2",
+        headers: {
+          authorization: "cs_sha1 userapiid:api-id;timestamp:123;token:[REDACTED];hmac:[REDACTED]",
+        },
+      },
+      response: {
+        status: 200,
+        headers: { "content-type": "application/json" },
+        body: { envStatus: "Ready" },
+      },
+    });
+    const source = createCloudShareEnvironmentSource(client({ requestV3, requestV3Detailed }));
 
     const snapshot = await source.getEnvironmentState("ENVS2n38LTNdcC4sHsqnjRzg2");
 
     expect(snapshot).toEqual({
       environmentExternalId: "ENVS2n38LTNdcC4sHsqnjRzg2",
       status: "running",
+      request: {
+        method: "GET",
+        path: "/api/v3/envs/ENVS2n38LTNdcC4sHsqnjRzg2",
+        headers: {
+          authorization: "cs_sha1 userapiid:api-id;timestamp:123;token:[REDACTED];hmac:[REDACTED]",
+        },
+      },
+      response: {
+        status: 200,
+        headers: { "content-type": "application/json" },
+        body: { envStatus: "Ready" },
+      },
     });
-    expect(requestV3).toHaveBeenCalledWith(
+    expect(requestV3Detailed).toHaveBeenCalledWith(
       expect.objectContaining({
         method: "GET",
         path: "/envs/ENVS2n38LTNdcC4sHsqnjRzg2",
       }),
     );
+    expect(requestV3).not.toHaveBeenCalled();
   });
 
   it("returns null when CloudShare reports the environment does not exist (404)", async () => {

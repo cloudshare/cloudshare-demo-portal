@@ -101,6 +101,8 @@ export async function recordExamAttemptCompletionEnvironmentDiagnostic(
         ...base.externalIds,
         ...(snapshot?.status ? { environmentStatus: snapshot.status } : {}),
       },
+      request: snapshot?.request ?? null,
+      response: snapshot?.response ?? null,
       details: {
         completionReason: input.completionReason,
         attemptedOperation: "get_environment",

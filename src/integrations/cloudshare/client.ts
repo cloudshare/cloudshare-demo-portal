@@ -48,6 +48,7 @@ export interface V3RequestSpec<T> {
 export interface CloudShareRequestDiagnostics {
   readonly method: Method;
   readonly path: string;
+  readonly query?: Record<string, string>;
   readonly headers?: Record<string, string>;
   readonly body?: unknown;
 }
@@ -143,6 +144,19 @@ function sanitizeHeaders(headers: Record<string, string> | undefined): Record<st
     } else {
       sanitized.authorization = "[REDACTED]";
     }
+  }
+  return sanitized;
+}
+
+function sanitizeQuery(query: Record<string, string> | undefined): Record<string, string> | undefined {
+  if (!query) {
+    return undefined;
+  }
+  const sanitized: Record<string, string> = {};
+  for (const [key, value] of Object.entries(query)) {
+    sanitized[key] = /api[-_]?key|secret|token|hmac|signature|passphrase|password/i.test(key)
+      ? "[REDACTED]"
+      : value;
   }
   return sanitized;
 }
@@ -294,6 +308,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
   ): void {
     const requestInfo = describeRequest(request.url);
     const requestBody = sanitizeBody(request.body);
+    const requestQuery = sanitizeQuery(extractQuery(request.url));
     opts.trace?.({
       level,
       message,
@@ -304,6 +319,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
         path: requestInfo.path,
         integrationSurface: requestInfo.integrationSurface,
         ...(opts.customerId ? { customerId: opts.customerId } : {}),
+        ...(requestQuery ? { requestQuery } : {}),
         requestHeaders: sanitizeHeaders(request.headers),
         ...(requestBody !== undefined ? { requestBody } : {}),
         ...fields,
@@ -333,6 +349,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           host: requestInfo.host,
           path: requestInfo.path,
           integrationSurface: requestInfo.integrationSurface,
+          requestQuery: sanitizeQuery(extractQuery(request.url)),
           requestHeaders: sanitizeHeaders(request.headers),
           requestBody: sanitizeBody(request.body),
           cause: cause instanceof Error ? cause.message : String(cause),
@@ -357,6 +374,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           host: requestInfo.host,
           path: requestInfo.path,
           integrationSurface: requestInfo.integrationSurface,
+          requestQuery: sanitizeQuery(extractQuery(request.url)),
           requestHeaders: sanitizeHeaders(request.headers),
           requestBody: sanitizeBody(request.body),
           responseHeaders: sanitizeResponseHeaders(response.headers),
@@ -379,6 +397,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           host: requestInfo.host,
           path: requestInfo.path,
           integrationSurface: requestInfo.integrationSurface,
+          requestQuery: sanitizeQuery(extractQuery(request.url)),
           requestHeaders: sanitizeHeaders(request.headers),
           requestBody: sanitizeBody(request.body),
           responseHeaders: sanitizeResponseHeaders(response.headers),
@@ -409,6 +428,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
         },
       );
     }
+    const requestQuery = sanitizeQuery(extractQuery(request.url));
     return {
       data: parsed.data,
       host: requestInfo.host,
@@ -416,6 +436,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
       request: {
         method: request.method,
         path: requestInfo.path,
+        ...(requestQuery ? { query: requestQuery } : {}),
         ...(sanitizeHeaders(request.headers)
           ? { headers: sanitizeHeaders(request.headers)! }
           : {}),
@@ -516,6 +537,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           host: requestInfo.host,
           path: requestInfo.path,
           integrationSurface: requestInfo.integrationSurface,
+          requestQuery: sanitizeQuery(extractQuery(request.url)),
           requestHeaders: sanitizeHeaders(request.headers),
           requestBody: sanitizeBody(request.body),
           cause: cause instanceof Error ? cause.message : String(cause),
@@ -540,6 +562,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           host: requestInfo.host,
           path: requestInfo.path,
           integrationSurface: requestInfo.integrationSurface,
+          requestQuery: sanitizeQuery(extractQuery(request.url)),
           requestHeaders: sanitizeHeaders(request.headers),
           requestBody: sanitizeBody(request.body),
           responseHeaders: sanitizeResponseHeaders(response.headers),
@@ -550,6 +573,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
       );
     }
 
+    const requestQuery = sanitizeQuery(extractQuery(request.url));
     return {
       data: response.body,
       host: requestInfo.host,
@@ -557,6 +581,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
       request: {
         method: request.method,
         path: requestInfo.path,
+        ...(requestQuery ? { query: requestQuery } : {}),
         ...(sanitizeHeaders(request.headers)
           ? { headers: sanitizeHeaders(request.headers)! }
           : {}),
@@ -603,4 +628,13 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
       return performV3TextDetailed(spec);
     },
   };
+}
+
+function extractQuery(urlText: string): Record<string, string> | undefined {
+  const url = new URL(urlText);
+  const query: Record<string, string> = {};
+  for (const [key, value] of url.searchParams.entries()) {
+    query[key] = value;
+  }
+  return Object.keys(query).length > 0 ? query : undefined;
 }

@@ -11,7 +11,11 @@ It exists because Slice 1 exposed that "tests exist" is not enough for integrati
 - Build through the real integration adapter seam. Mock CloudShare only at `integrations/cloudshare`, never inside `domain`.
 - Verify protocol details against the CloudShare docs, the known-good Postman implementation where available, and the live tenant before relying on them.
 - Treat local live credentials in `.env.e2e.local` as the development evidence path. Do not commit real credentials.
-- Add support diagnostics with the feature, not after the failure: operation, integration surface, request method/path, returned status or transport failure mode, correlation ID where useful, and redacted structured logs.
+- Add support diagnostics with the feature, not after the failure. Every CloudShare API diagnostic
+  must include the attempted operation, integration surface, correlation ID where useful, and
+  redacted structured HTTP evidence: request method, path, query parameters, request headers,
+  request body when present, response status, response headers, response body, and transport
+  failure details when no response was received.
 - Update `docs/api/cloudshare-gap-report.md` immediately when CloudShare behavior confirms or contradicts an assumption.
 - Keep fixture tests and live E2E tests separate: `npm test` must stay deterministic and offline; `npm run test:e2e:live` may call CloudShare.
 
@@ -22,7 +26,7 @@ It exists because Slice 1 exposed that "tests exist" is not enough for integrati
    response body, status codes, redaction rules, and idempotency / retry behavior.
 3. Identify every CloudShare endpoint, auth scheme, response shape, and failure mode the slice depends on.
 4. For any uncertain CloudShare behavior, write or run the smallest live probe at the integration seam before building UI or domain behavior around it.
-5. Decide the support diagnostic payload before implementation, so failures are supportable from the first live run.
+5. Decide the support diagnostic payload before implementation, so failures are supportable from the first live run. For CloudShare API calls, this payload must include redacted request and response evidence, not only a derived status or summary.
 
 ## During implementation
 

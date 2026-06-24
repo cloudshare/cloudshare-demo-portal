@@ -273,6 +273,37 @@ describe("createCloudShareClient — v3", () => {
     );
   });
 
+  it("includes redacted query parameters in detailed request diagnostics", async () => {
+    const { http } = capturingHttp({
+      status: 200,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ ok: true }),
+    });
+    const client = clientWith(http);
+
+    const result = await client.requestV3Detailed!({
+      method: "GET",
+      path: "/envs/EN123",
+      query: { include: "status", token: "secret-token" },
+      schema: z.object({ ok: z.boolean() }),
+    });
+
+    expect(result.request).toEqual({
+      method: "GET",
+      path: "/api/v3/envs/EN123",
+      query: { include: "status", token: "[REDACTED]" },
+      headers: {
+        authorization:
+          "cs_sha1 userapiid:api-id;timestamp:1700000000;token:[REDACTED];hmac:[REDACTED]",
+      },
+    });
+    expect(result.response).toEqual({
+      status: 200,
+      headers: { "content-type": "application/json" },
+      body: { ok: true },
+    });
+  });
+
   it("emits redacted request and response trace events", async () => {
     const trace = vi.fn();
     const { http } = capturingHttp({ status: 200, body: "{\"result\":\"Pong\"}" });

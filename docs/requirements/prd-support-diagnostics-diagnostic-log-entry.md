@@ -33,7 +33,7 @@ Existing prototype support-log rows are development data and do not need migrati
 10. As a Helios admin, I want admin login/logout attempts to appear in the diagnostic log, so that operator access can be diagnosed.
 11. As a Helios admin, I want ExamAttempt scheduling, CloudShare training creation, student add, and sponsored-link creation to appear in one correlated thread, so that provisioning issues can be diagnosed end to end.
 12. As a Helios admin, I want Candidate enter, suspend, resume, heartbeat auto-suspend, and score retrieval to appear in one correlated thread, so that runtime issues can be diagnosed end to end.
-13. As a Helios admin, I want raw request/response details when supportability requires them, so that CloudShare issues can be verified without external tooling.
+13. As a Helios admin, I want CloudShare API diagnostic entries to include redacted raw HTTP evidence — request method, path, query parameters, headers, request body when present, response status, response headers, and response body — so that CloudShare issues can be verified without external tooling.
 14. As a Helios admin, I want secrets, API keys, bearer tokens, authorization headers, and webhook secrets redacted while CloudShare sponsored-link `loginUrl` values remain available in admin-only diagnostics, so that diagnostics preserve support evidence without leaking non-diagnostic credentials.
 15. As a Helios admin, I want an explicitly enabled, time-boxed sensitive diagnostic mode, so that replicable integration issues can be diagnosed when normal redaction hides material needed to prove the problem.
 16. As a Helios admin, I want missing-signature and invalid-signature webhook attempts to expose safe metadata but not arbitrary raw untrusted request bodies during normal logging, so that public webhook traffic cannot become a sensitive data sink.
@@ -52,6 +52,10 @@ Existing prototype support-log rows are development data and do not need migrati
 - CloudShare identifiers should be represented as structured external IDs rather than hidden only in free-form JSON.
 - Free-form data may remain in details/request/response, but filtering-critical fields must be first-class.
 - Diagnostic entries are append-only evidence. Do not mutate old rows to add identifiers that were unknown at the time.
+- CloudShare API diagnostics must not stop at a derived status or summary. They must store the
+  redacted request and response evidence needed to reproduce and support the integration call:
+  method, path, query parameters, request headers, request body when present, response status,
+  response headers, response body, and transport failure details when no response was received.
 - Later discoveries, such as environment correlation, should emit new entries that include the newly discovered ID and the known thread identifiers.
 - Session Monitoring remains the current-state queue surface. Support should not duplicate Session Monitoring queues as its primary workflow.
 - Admin investigation actions should route into the Diagnostic Log with pre-applied filters such as ExamAttempt ID or correlation ID. The older Support Log remains only as a transitional raw-evidence fallback, not the primary investigation view.

@@ -57,14 +57,20 @@ export function createCloudShareEnvironmentSource(
   return {
     async getEnvironmentState(environmentExternalId: string) {
       try {
-        const env = await client.requestV3({
+        const request = {
           method: "GET",
           path: `/envs/${environmentExternalId}`,
           schema: v3EnvironmentSchema,
-        });
+        } as const;
+        const detailed = client.requestV3Detailed
+          ? await client.requestV3Detailed(request)
+          : null;
+        const env = detailed ? detailed.data : await client.requestV3(request);
         return {
           environmentExternalId,
           status: mapCloudShareEnvironmentStatus(env.envStatus ?? env.status ?? "unknown"),
+          request: detailed?.request ? { ...detailed.request } : null,
+          response: detailed?.response ? { ...detailed.response } : null,
         };
       } catch (err) {
         // A 404 means "no such environment" — a legitimate null, not a failure.

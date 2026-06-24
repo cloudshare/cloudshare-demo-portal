@@ -14,6 +14,23 @@ describe("exam attempt completion diagnostics", () => {
       getEnvironmentState: vi.fn(async (environmentExternalId: string) => ({
         environmentExternalId,
         status: "running" as const,
+        request: {
+          method: "GET",
+          path: `/envs/${environmentExternalId}`,
+          headers: {
+            authorization: "cs_sha1 userapiid:api-id;timestamp:123;token:[REDACTED];hmac:[REDACTED]",
+          },
+        },
+        response: {
+          status: 200,
+          headers: {
+            "content-type": "application/json",
+          },
+          body: {
+            envId: environmentExternalId,
+            envStatus: "Archived",
+          },
+        },
       })),
     };
 
@@ -77,6 +94,23 @@ describe("exam attempt completion diagnostics", () => {
             integrationSurface: "cloudshare.v3.env.get",
             environmentFound: true,
           }),
+          request: {
+            method: "GET",
+            path: "/envs/ENN_FkNYEmuHdXixiVS-Kfcw2",
+            headers: {
+              authorization: "[REDACTED]",
+            },
+          },
+          response: {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+            },
+            body: {
+              envId: "ENN_FkNYEmuHdXixiVS-Kfcw2",
+              envStatus: "Archived",
+            },
+          },
         }),
       ]),
     );

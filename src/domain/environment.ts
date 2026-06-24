@@ -51,6 +51,8 @@ export interface EnvironmentRepository {
 export interface EnvironmentStateSnapshot {
   readonly environmentExternalId: string;
   readonly status: EnvironmentStatus;
+  readonly request?: Readonly<Record<string, unknown>> | null;
+  readonly response?: Readonly<Record<string, unknown>> | null;
 }
 
 /**
