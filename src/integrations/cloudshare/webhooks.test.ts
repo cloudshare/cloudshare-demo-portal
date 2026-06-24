@@ -55,6 +55,8 @@ describe("parseWebhookEvent", () => {
       expect(result.event).toEqual<CloudShareEnvironmentEvent>({
         event: "environment.suspended",
         environmentExternalId: "env-ext-1",
+        ownerEmail: null,
+        environmentName: null,
         createdAt: "2026-06-08T10:00:00Z",
       });
     }
@@ -77,6 +79,7 @@ describe("parseWebhookEvent", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.event.environmentExternalId).toBe("env-ext-2");
+      expect(result.event.environmentName).toBe("Exam Lab");
     }
   });
 
@@ -105,6 +108,8 @@ describe("parseWebhookEvent", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.event.environmentExternalId).toBe("ENT0KnYJsuNgzaBZk9NdeDRQ2");
+      expect(result.event.environmentName).toBe("Linux Boxes");
+      expect(result.event.ownerEmail).toBe("Chris.Swinney+acceleratetesting@Cloudshare.com");
     }
   });
 
@@ -148,6 +153,8 @@ describe("synthesiseIdempotencyKey", () => {
   const base: CloudShareEnvironmentEvent = {
     event: "environment.suspended",
     environmentExternalId: "env-ext-1",
+    ownerEmail: null,
+    environmentName: null,
     createdAt: "2026-06-08T10:00:00Z",
   };
 

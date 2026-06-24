@@ -45,6 +45,8 @@ export type CloudShareEnvironmentEventType =
 export interface CloudShareEnvironmentEvent {
   readonly event: CloudShareEnvironmentEventType;
   readonly environmentExternalId: string;
+  readonly ownerEmail: string | null;
+  readonly environmentName: string | null;
   /** The event timestamp as CloudShare sent it; used verbatim in the idempotency key. */
   readonly createdAt: string;
 }
@@ -116,6 +118,11 @@ export function parseWebhookEvent(rawBody: string): ParseWebhookResult {
       event: {
         event: documented.data.Event,
         environmentExternalId,
+        ownerEmail: firstNonEmptyString(payload.value.ownerEmail, payload.value.OwnerEmail),
+        environmentName: firstNonEmptyString(
+          payload.value.environmentName,
+          payload.value.EnvironmentName,
+        ),
         createdAt: documented.data.CreatedAt,
       },
     };

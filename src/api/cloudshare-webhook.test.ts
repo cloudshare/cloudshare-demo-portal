@@ -11,6 +11,7 @@ import type { CloudShareWebhookDeps } from "./cloudshare-webhook";
 const HELIOS_SECRET = "helios-webhook-secret";
 const OTHER_SECRET = "other-webhook-secret";
 const at = new Date("2026-06-08T10:00:00Z");
+type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
 function setup() {
   const helios = createCloudShareEnvironmentSimulator({ secret: HELIOS_SECRET });
@@ -37,7 +38,7 @@ function setup() {
     connectedAt: new Date("2026-06-01T00:00:00Z"),
     verifiedAt: null,
   };
-  const deps = {
+  const deps: Mutable<CloudShareWebhookDeps> = {
     connections: {
       save: vi.fn(),
       findByCustomerId: vi.fn(),
@@ -288,7 +289,14 @@ describe("handleCloudShareWebhook", () => {
     });
 
     expect(res.status).toBe(202);
-    expect(reconcile).toHaveBeenCalledWith(heliosConnection, "env-ext-1");
+    expect(reconcile).toHaveBeenCalledWith(
+      heliosConnection,
+      "env-ext-1",
+      expect.objectContaining({
+        event: "environment.suspended",
+        environmentExternalId: "env-ext-1",
+      }),
+    );
   });
 
   it("rejects an invalid signature with 401 and never reconciles", async () => {
@@ -386,7 +394,6 @@ describe("handleCloudShareWebhook", () => {
       markIfNew: vi.fn(async () => {
         throw new Error("idempotency store DB timeout");
       }),
-      reset: vi.fn(),
     };
     const signed = helios.emit({ environmentExternalId: "env-ext-1", event: "environment.created", at });
 
@@ -532,6 +539,59 @@ describe("handleCloudShareWebhook", () => {
     expect(JSON.stringify(entries)).not.toContain(signed.rawBody);
     expect(JSON.stringify(entries)).not.toContain(signed.signature ?? "");
     expect(JSON.stringify(entries)).not.toContain("whk-helios");
+  });
+
+  it("records accepted webhook diagnostics on the ExamAttempt thread when pre-correlation is available", async () => {
+    const { helios, diagnostics, deps } = setup();
+    deps.resolveCorrelation = vi.fn(async () => ({
+      customerId: "customer-helios",
+      examAttemptId: "attempt-1",
+      examId: "exam-1",
+      candidateEmail: "candidate@helioscx.demo",
+    }));
+    deps.reconcile = vi.fn(
+      async (_connection: unknown, _environmentExternalId: string) => ({
+        environmentExternalId: "env-ext-1",
+        status: "running",
+        correlation: {
+          customerId: "customer-helios",
+          examAttemptId: "attempt-1",
+          examId: "exam-1",
+          candidateEmail: "candidate@helioscx.demo",
+        },
+      }),
+    );
+    const signed = helios.emit({ environmentExternalId: "env-ext-1", event: "environment.created", at });
+
+    const res = await handleCloudShareWebhook(deps, {
+      webhookPathToken: "whk-helios",
+      ...signed,
+    });
+
+    expect(res.status).toBe(202);
+    const thread = await diagnostics.query({ examAttemptId: "attempt-1" });
+    expect(thread).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation: "cloudshare.webhook.receive",
+          outcome: "success",
+          customerId: "customer-helios",
+          candidateEmail: "candidate@helioscx.demo",
+          examId: "exam-1",
+          examAttemptId: "attempt-1",
+          subject: { type: "exam_attempt", id: "attempt-1" },
+          details: expect.objectContaining({
+            eventType: "environment.created",
+            trustGateOutcome: "accepted",
+          }),
+        }),
+        expect.objectContaining({
+          operation: "cloudshare.webhook.reconcile",
+          outcome: "success",
+          examAttemptId: "attempt-1",
+        }),
+      ]),
+    );
   });
 
   it("records rejected webhook diagnostics at warn level with safe signature header metadata and allowlisted body summary", async () => {

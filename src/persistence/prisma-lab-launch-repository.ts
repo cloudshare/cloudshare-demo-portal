@@ -61,6 +61,30 @@ export function createPrismaLabLaunchRepository(prisma: PrismaClient): LabLaunch
       });
       return row ? toDomain(row) : null;
     },
+
+    async findPendingEnvironmentCorrelation({
+      customerId,
+      participantEmail,
+      environmentName,
+    }: {
+      customerId: string;
+      participantEmail: string;
+      environmentName: string | null;
+    }): Promise<LabLaunch | null> {
+      const row = await prisma.labLaunch.findFirst({
+        where: {
+          participantEmail,
+          environmentExternalId: null,
+          environmentId: null,
+          examAttempt: {
+            customerId,
+            ...(environmentName ? { exam: { title: environmentName } } : {}),
+          },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+      return row ? toDomain(row) : null;
+    },
   };
 }
 
