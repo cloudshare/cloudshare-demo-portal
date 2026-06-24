@@ -171,6 +171,7 @@ export function createCloudShareLabProvisioner(
         trainingId: training.data.id,
         teamId,
         teamCount: teams.length,
+        integrationSurface: training.integrationSurface,
         request: training.request,
         response: {
           status: training.response.status,
@@ -194,6 +195,7 @@ export function createCloudShareLabProvisioner(
         schema: addTrainingStudentsSchema,
       });
       return {
+        integrationSurface: detailed.integrationSurface,
         request: detailed.request,
         response: {
           status: detailed.response.status,
@@ -252,6 +254,7 @@ export function createCloudShareLabProvisioner(
       });
       return {
         loginUrl: link.data.loginUrl,
+        integrationSurface: link.integrationSurface,
         request: link.request,
         response: {
           status: link.response.status,

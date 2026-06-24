@@ -354,6 +354,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
         `CloudShare response from ${request.url} did not match the expected schema`,
         {
           method: request.method,
+          status: response.status,
           host: requestInfo.host,
           path: requestInfo.path,
           integrationSurface: requestInfo.integrationSurface,

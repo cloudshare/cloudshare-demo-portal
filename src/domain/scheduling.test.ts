@@ -48,6 +48,7 @@ function makeLabs(order: string[] = []): LabProvisioner {
         trainingId: "training-1",
         teamId: "team-1",
         teamCount: 1,
+        integrationSurface: "cloudshare.v4.training",
         request: {
           method: "POST",
           path: "/trainings",
@@ -75,6 +76,7 @@ function makeLabs(order: string[] = []): LabProvisioner {
     async addParticipant() {
       order.push("addParticipant");
       return {
+        integrationSurface: "cloudshare.v4.training.participant",
         request: {
           method: "POST",
           path: "/trainings/training-1/students",
@@ -96,6 +98,7 @@ function makeLabs(order: string[] = []): LabProvisioner {
       order.push("createSponsoredLink");
       return {
         loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/demo",
+        integrationSurface: "cloudshare.v4.training.sponsored_link",
         request: {
           method: "POST",
           path: "/trainings/training-1/sponsored-link",
@@ -393,6 +396,7 @@ describe("scheduleExam", () => {
           async createSponsoredLink() {
             return {
               loginUrl: SPONSORED_LINK_URL,
+              integrationSurface: "cloudshare.v4.training.sponsored_link",
               request: {
                 method: "POST",
                 path: "/trainings/training-1/sponsored-link",
@@ -450,6 +454,9 @@ describe("scheduleExam", () => {
     }
 
     const training = thread.find((e) => e.operation === "cloudshare.create_training");
+    expect(training?.details).toMatchObject({
+      integrationSurface: "cloudshare.v4.training",
+    });
     expect(training?.externalIds).toMatchObject({
       trainingId: "training-1",
       blueprintId: "bp-1",
@@ -466,6 +473,9 @@ describe("scheduleExam", () => {
     });
 
     const addParticipant = thread.find((e) => e.operation === "cloudshare.add_participant");
+    expect(addParticipant?.details).toMatchObject({
+      integrationSurface: "cloudshare.v4.training.participant",
+    });
     expect(addParticipant?.request).toMatchObject({
       method: "POST",
       path: "/trainings/training-1/students",
@@ -477,6 +487,9 @@ describe("scheduleExam", () => {
     });
 
     const sponsoredLink = thread.find((e) => e.operation === "cloudshare.create_sponsored_link");
+    expect(sponsoredLink?.details).toMatchObject({
+      integrationSurface: "cloudshare.v4.training.sponsored_link",
+    });
     expect(sponsoredLink?.request).toMatchObject({
       method: "POST",
       path: "/trainings/training-1/sponsored-link",
@@ -665,6 +678,7 @@ describe("scheduleExam", () => {
         integrationSurface: "cloudshare.v4.training.participant",
         method: "POST",
         path: "/trainings/training-1/students",
+        status: 422,
         responseHeaders: { "content-type": "application/json" },
         responseBody: { error: "unexpected-shape" },
       },
@@ -701,12 +715,13 @@ describe("scheduleExam", () => {
     const thread = await repository.query({ examAttemptId: "attempt-1" });
     const failure = thread.find((e) => e.operation === "cloudshare.add_participant");
     expect(failure?.response).toMatchObject({
+      status: 422,
       headers: { "content-type": "application/json" },
       body: { error: "unexpected-shape" },
     });
     expect(failure?.details).toMatchObject({
       failureMode: "unexpected_response",
-      responseStatus: null,
+      responseStatus: 422,
     });
   });
 

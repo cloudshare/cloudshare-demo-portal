@@ -226,7 +226,12 @@ export async function scheduleExam(
   const recordSuccess = (
     operation: string,
     message: string,
-    extra?: { externalIds?: Record<string, string>; request?: Record<string, unknown>; response?: Record<string, unknown> },
+    extra?: {
+      externalIds?: Record<string, string>;
+      request?: Record<string, unknown>;
+      response?: Record<string, unknown>;
+      details?: Record<string, unknown>;
+    },
   ) =>
     deps.diagnostics?.record({ ...anchors, level: "info", operation, outcome: "success", message, ...extra });
   const recordFailure = (op: ProvisioningOperation, cause: unknown, externalIds?: Record<string, string>) => {
@@ -266,6 +271,7 @@ export async function scheduleExam(
 
   let trainingId: string;
   let teamId: string | undefined;
+  let createTrainingIntegrationSurface: string | undefined;
   let createTrainingRequest: ProvisioningRequestEvidence | undefined;
   let createTrainingResponse: ProvisioningResponseEvidence | undefined;
   try {
@@ -282,6 +288,7 @@ export async function scheduleExam(
     });
     trainingId = training.trainingId;
     teamId = training.teamId;
+    createTrainingIntegrationSurface = training.integrationSurface;
     createTrainingRequest = training.request;
     createTrainingResponse = training.response;
   } catch (cause) {
@@ -318,6 +325,9 @@ export async function scheduleExam(
       : {}),
     ...(toDiagnosticResponseEvidence(createTrainingResponse)
       ? { response: toDiagnosticResponseEvidence(createTrainingResponse)! }
+      : {}),
+    ...(createTrainingIntegrationSurface
+      ? { details: { integrationSurface: createTrainingIntegrationSurface } }
       : {}),
   });
 
@@ -358,9 +368,13 @@ export async function scheduleExam(
       ? { request: toDiagnosticRequestEvidence(addParticipantResult.request)! }
       : {}),
     response: toDiagnosticResponseEvidence(addParticipantResult.response)!,
+    ...(addParticipantResult.integrationSurface
+      ? { details: { integrationSurface: addParticipantResult.integrationSurface } }
+      : {}),
   });
 
   let loginUrl: string;
+  let createSponsoredLinkIntegrationSurface: string | undefined;
   let createSponsoredLinkRequest: ProvisioningRequestEvidence | undefined;
   let createSponsoredLinkResponse: ProvisioningResponseEvidence | undefined;
   try {
@@ -371,6 +385,7 @@ export async function scheduleExam(
       lastName: participant.lastName,
     });
     loginUrl = sponsoredLink.loginUrl;
+    createSponsoredLinkIntegrationSurface = sponsoredLink.integrationSurface;
     createSponsoredLinkRequest = sponsoredLink.request;
     createSponsoredLinkResponse = sponsoredLink.response;
   } catch (cause) {
@@ -399,6 +414,9 @@ export async function scheduleExam(
       : {}),
     ...(toDiagnosticResponseEvidence(createSponsoredLinkResponse)
       ? { response: toDiagnosticResponseEvidence(createSponsoredLinkResponse)! }
+      : {}),
+    ...(createSponsoredLinkIntegrationSurface
+      ? { details: { integrationSurface: createSponsoredLinkIntegrationSurface } }
       : {}),
   });
 

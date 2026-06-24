@@ -41,6 +41,7 @@ describe("cloudShareLabProvisioner — request shape", () => {
       trainingId: "exp-1",
       teamId: "TM-team-1",
       teamCount: 1,
+      integrationSurface: "cloudshare.v4.training",
       request: {
         method: "POST",
         path: "/trainings",
@@ -218,6 +219,7 @@ describe("cloudShareLabProvisioner — request shape", () => {
     });
 
     expect(result).toEqual({
+      integrationSurface: "cloudshare.v4.training.participant",
       request: {
         method: "POST",
         path: "/trainings/training-1/students",

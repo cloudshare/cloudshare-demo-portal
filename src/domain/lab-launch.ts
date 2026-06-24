@@ -86,6 +86,7 @@ export interface CreateTrainingResult {
   readonly trainingId: string;
   readonly teamId?: string;
   readonly teamCount?: number;
+  readonly integrationSurface?: string;
   readonly request?: ProvisioningRequestEvidence;
   readonly response?: ProvisioningResponseEvidence;
 }
@@ -96,6 +97,7 @@ export interface AddParticipantInput {
   readonly lastName: string;
 }
 export interface AddParticipantResult {
+  readonly integrationSurface?: string;
   readonly request?: ProvisioningRequestEvidence;
   readonly response: {
     readonly status: number;
@@ -112,6 +114,7 @@ export interface CreateSponsoredLinkInput {
 }
 export interface CreateSponsoredLinkResult {
   readonly loginUrl: string;
+  readonly integrationSurface?: string;
   readonly request?: ProvisioningRequestEvidence;
   readonly response?: ProvisioningResponseEvidence;
 }

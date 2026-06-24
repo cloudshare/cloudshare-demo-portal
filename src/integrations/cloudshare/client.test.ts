@@ -286,9 +286,16 @@ describe("createCloudShareClient — error mapping", () => {
   it("raises CloudShareResponseError when the body fails schema validation", async () => {
     const { http } = capturingHttp(ok([{ id: 123 }]));
     const client = clientWith(http);
-    await expect(
-      client.requestV4({ method: "GET", path: "/projects", schema: projectsSchema }),
-    ).rejects.toBeInstanceOf(CloudShareResponseError);
+    try {
+      await client.requestV4({ method: "GET", path: "/projects", schema: projectsSchema });
+      throw new Error("expected requestV4 to throw");
+    } catch (error) {
+      expect(error).toBeInstanceOf(CloudShareResponseError);
+      expect((error as CloudShareResponseError).context).toMatchObject({
+        status: 200,
+        responseBody: [{ id: 123 }],
+      });
+    }
   });
 
   it("maps a transport failure (http.send throws) to CloudShareTransportError", async () => {
