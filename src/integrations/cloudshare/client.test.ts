@@ -138,6 +138,62 @@ describe("createCloudShareClient — v4", () => {
     );
   });
 
+  it("retains sponsored-link login URLs in legacy sponsoredLinks response diagnostics for admin support evidence", async () => {
+    const trace = vi.fn();
+    const { http } = capturingHttp(
+      ok({ loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/legacy-token" }),
+    );
+    const client = createCloudShareClient({
+      http,
+      endpoints,
+      tokenProvider: stubTokenProvider,
+      v3: { apiId: "api-id", apiKey: "api-key" },
+      trace,
+    });
+
+    await client.requestV4({
+      method: "POST",
+      path: "/sponsoredLinks",
+      schema: z.object({ loginUrl: z.string() }),
+    });
+
+    const responseTrace = trace.mock.calls[1]?.[0].fields;
+    expect(responseTrace).toEqual(
+      expect.objectContaining({
+        responseBody:
+          "{\"loginUrl\":\"https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/legacy-token\"}",
+      }),
+    );
+  });
+
+  it("keeps loginUrl redacted in non-sponsored-link response diagnostics", async () => {
+    const trace = vi.fn();
+    const { http } = capturingHttp(
+      ok({ loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/should-redact" }),
+    );
+    const client = createCloudShareClient({
+      http,
+      endpoints,
+      tokenProvider: stubTokenProvider,
+      v3: { apiId: "api-id", apiKey: "api-key" },
+      trace,
+    });
+
+    await client.requestV4({
+      method: "GET",
+      path: "/projects",
+      schema: z.object({ loginUrl: z.string() }),
+    });
+
+    const responseTrace = trace.mock.calls[1]?.[0].fields;
+    expect(JSON.stringify(responseTrace)).not.toContain("should-redact");
+    expect(responseTrace).toEqual(
+      expect.objectContaining({
+        responseBody: "{\"loginUrl\":\"[REDACTED]\"}",
+      }),
+    );
+  });
+
   it("includes customerId in CloudShare HTTP trace fields for customer-scoped v4 reads", async () => {
     const trace = vi.fn();
     const { http } = capturingHttp(ok({ percentComplete: 80 }));

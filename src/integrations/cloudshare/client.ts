@@ -208,7 +208,7 @@ function sanitizeResponseBodyValue(body: string, requestPath: string): unknown {
 }
 
 function isSponsoredLinkPath(path: string): boolean {
-  return /\/sponsored-link$/i.test(path);
+  return /\/(?:sponsored-link|sponsoredLinks)$/i.test(path);
 }
 
 function redactSensitiveBodyFields(
