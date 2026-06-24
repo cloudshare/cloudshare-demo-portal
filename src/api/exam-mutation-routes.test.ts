@@ -258,6 +258,46 @@ describe("candidate exam mutation routes", () => {
     expect(services.heartbeatAutoSuspend.removeHeartbeat).toHaveBeenCalledWith("ea-1");
   });
 
+  it("surfaces suspended attempt status if the attempt changes while heartbeat is accepted", async () => {
+    const services = makeServices();
+    const inProgressAttempt = {
+      id: "ea-1",
+      customerId: "customer-1",
+      candidateId: "candidate-owner",
+      examId: "exam-1",
+      status: "in_progress",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    };
+    const suspendedAttempt = {
+      ...inProgressAttempt,
+      status: "suspended",
+    };
+    services.examAttempts.findById = vi.fn()
+      .mockResolvedValueOnce(inProgressAttempt)
+      .mockResolvedValueOnce(inProgressAttempt)
+      .mockResolvedValueOnce(inProgressAttempt)
+      .mockResolvedValueOnce(suspendedAttempt);
+    mockGetServices.mockReturnValue(services);
+    mockGetPortalSession.mockResolvedValue({
+      sessionId: "portal-session-1",
+      userId: "candidate-owner",
+      customerId: "customer-1",
+      role: "candidate",
+      email: "candidate@example.com",
+      issuedAtMs: 1,
+    });
+
+    const heartbeatResponse = await heartbeatPOST(makeRequest("http://localhost/api/heartbeat"));
+
+    expect(heartbeatResponse.status).toBe(200);
+    expect(await heartbeatResponse.json()).toEqual({
+      status: "ok",
+      attemptStatus: "suspended",
+    });
+    expect(services.heartbeatAutoSuspend.recordHeartbeat).toHaveBeenCalledWith("ea-1");
+  });
+
   it("records a typed heartbeat-received diagnostic for an in-progress exam attempt", async () => {
     const services = makeServices();
     mockGetServices.mockReturnValue(services);

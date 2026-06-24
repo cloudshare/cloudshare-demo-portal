@@ -89,24 +89,30 @@ export async function POST(request: Request) {
   }
 
   const resp = await handleHeartbeat({ autoSuspend: heartbeatAutoSuspend, logger }, { body });
+  const attemptAfterHeartbeat = await services.examAttempts.findById(examAttemptId);
+  const authoritativeAttemptStatus =
+    attemptAfterHeartbeat?.status === "suspended" || attemptAfterHeartbeat?.status === "completed"
+      ? attemptAfterHeartbeat.status
+      : "in_progress";
+
   await services.diagnosticRecorder.record({
-      source: "runtime",
-      customerId: attemptAfterReconciliation.customerId ?? null,
-      candidateEmail: portalSession?.email ?? null,
-      examId: attemptAfterReconciliation.examId ?? null,
-      examAttemptId,
-      level: "info",
-      operation: "exam_attempt.heartbeat.receive",
-      outcome: "success",
-      message: "Heartbeat received for in-progress exam attempt",
-      actor: { type: "candidate", id: attemptAfterReconciliation.candidateId ?? null, email: portalSession?.email ?? null },
-      subject: { type: "exam_attempt", id: examAttemptId },
-      details: { route: "/api/heartbeat" },
-    });
+    source: "runtime",
+    customerId: attemptAfterReconciliation.customerId ?? null,
+    candidateEmail: portalSession?.email ?? null,
+    examId: attemptAfterReconciliation.examId ?? null,
+    examAttemptId,
+    level: "info",
+    operation: "exam_attempt.heartbeat.receive",
+    outcome: "success",
+    message: "Heartbeat received for in-progress exam attempt",
+    actor: { type: "candidate", id: attemptAfterReconciliation.candidateId ?? null, email: portalSession?.email ?? null },
+    subject: { type: "exam_attempt", id: examAttemptId },
+    details: { route: "/api/heartbeat" },
+  });
   return NextResponse.json(
     {
       ...resp.body,
-      attemptStatus: "in_progress",
+      attemptStatus: authoritativeAttemptStatus,
     },
     { status: resp.status },
   );
