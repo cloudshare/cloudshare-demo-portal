@@ -303,10 +303,24 @@ describe("DiagnosticLogTable", () => {
       }),
     );
 
-    expect(html.indexOf("<strong>Support hints</strong>")).toBeLessThan(html.indexOf("<strong>Quick facts</strong>"));
-    expect(html.indexOf("<strong>Quick facts</strong>")).toBeLessThan(html.indexOf("<strong>External IDs</strong>"));
-    expect(html.indexOf("<strong>External IDs</strong>")).toBeLessThan(html.indexOf("<strong>Request</strong>"));
-    expect(html.indexOf("<strong>Request</strong>")).toBeLessThan(html.indexOf("<strong>Response</strong>"));
-    expect(html.indexOf("<strong>Response</strong>")).toBeLessThan(html.indexOf("<strong>Details</strong>"));
+    const supportHintsIndex = html.indexOf("<strong>Support hints</strong>");
+    const quickFactsIndex = html.indexOf("<strong>Quick facts</strong>");
+    const externalIdsIndex = html.indexOf("<strong>External IDs</strong>");
+    const requestIndex = html.indexOf("<strong>Request</strong>");
+    const responseIndex = html.indexOf("<strong>Response</strong>");
+    const detailsIndex = html.indexOf("<strong>Details</strong>");
+
+    expect(supportHintsIndex).toBeGreaterThanOrEqual(0);
+    expect(quickFactsIndex).toBeGreaterThanOrEqual(0);
+    expect(externalIdsIndex).toBeGreaterThanOrEqual(0);
+    expect(requestIndex).toBeGreaterThanOrEqual(0);
+    expect(responseIndex).toBeGreaterThanOrEqual(0);
+    expect(detailsIndex).toBeGreaterThanOrEqual(0);
+
+    expect(supportHintsIndex).toBeLessThan(quickFactsIndex);
+    expect(quickFactsIndex).toBeLessThan(externalIdsIndex);
+    expect(externalIdsIndex).toBeLessThan(requestIndex);
+    expect(requestIndex).toBeLessThan(responseIndex);
+    expect(responseIndex).toBeLessThan(detailsIndex);
   });
 });
