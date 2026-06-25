@@ -151,6 +151,37 @@ async function makeExamRepository() {
 }
 
 describe("candidate scheduling handlers", () => {
+  it("keeps malformed schedule request validation in the candidate portal adapter", async () => {
+    const connections = makeConnectionRepository();
+
+    const response = await handleScheduleCandidateExam(
+      {
+        exams: await makeExamRepository(),
+        attempts: createInMemoryExamAttemptRepository(),
+        launches: createInMemoryLabLaunchRepository(),
+        audit: createInMemoryAuditRepository(),
+        eventLog: createInMemoryEventLogRepository(),
+        connections,
+        cloudshare: makeCloudShareFactory(),
+        logger: makeLogger(),
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        body: { examId: "exam-1" },
+      },
+    );
+
+    expect(response).toEqual({
+      status: 400,
+      body: { error: "examId and scheduledFor are required" },
+    });
+    expect(connections.findByCustomerId).not.toHaveBeenCalled();
+  });
+
   it("schedules an exam and never returns the sponsored loginUrl", async () => {
     const exams = await makeExamRepository();
     const attempts = createInMemoryExamAttemptRepository();
