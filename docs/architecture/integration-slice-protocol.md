@@ -11,6 +11,10 @@ It exists because Slice 1 exposed that "tests exist" is not enough for integrati
 - Build through the real integration adapter seam. Mock CloudShare only at `integrations/cloudshare`, never inside `domain`.
 - Verify protocol details against the CloudShare docs, the known-good Postman implementation where available, and the live tenant before relying on them.
 - Treat local live credentials in `.env.e2e.local` as the development evidence path. Do not commit real credentials.
+  In Codex worktrees where `.env.e2e.local` is absent, the user's seed credential file is
+  `D:\Code_projects\cloudshare-demo-portal\config\portal-seed.local.json`. Generate a temporary,
+  ignored `.env.e2e.local` from that JSON without printing secret values, run the live check, then
+  delete the generated env file.
 - Add support diagnostics with the feature, not after the failure. Every CloudShare API diagnostic
   must include the attempted operation, integration surface, correlation ID where useful, and
   redacted structured HTTP evidence: request method, path, query parameters, request headers,
