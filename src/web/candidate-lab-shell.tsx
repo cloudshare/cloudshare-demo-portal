@@ -9,6 +9,7 @@ import {
   updateCandidateLabStatus,
   updateCandidateLabStatusAttemptState,
 } from "./lab-launcher-state";
+import { useCandidateLogout } from "./candidate-logout";
 
 type AttemptStatus = "ready" | "in_progress" | "suspended" | "completed";
 
@@ -23,6 +24,7 @@ export function CandidateLabShell({
   const [labStatus, setLabStatus] = useState<CandidateLabStatus | null>(null);
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [statusError, setStatusError] = useState<string | null>(null);
+  const { presentation: logoutPresentation, logout } = useCandidateLogout(router);
 
   useEffect(() => {
     let cancelled = false;
@@ -53,12 +55,6 @@ export function CandidateLabShell({
       cancelled = true;
     };
   }, [examAttemptId]);
-
-  async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" });
-    router.push("/login");
-    router.refresh();
-  }
 
   const presentation = labStatus ? getCandidateLabPresentation({
     status: labStatus.status ?? initialAttemptStatus,
@@ -103,11 +99,26 @@ export function CandidateLabShell({
               View score
             </button>
           ) : null}
-          <button type="button" onClick={() => void logout()} style={{ padding: "0.55rem 0.9rem" }}>
-            Log out
+          <button
+            type="button"
+            onClick={() => void logout()}
+            disabled={logoutPresentation.disabled}
+            style={{ padding: "0.55rem 0.9rem" }}
+          >
+            {logoutPresentation.buttonLabel}
           </button>
         </div>
       </div>
+      {logoutPresentation.statusMessage ? (
+        <p role="status" style={{ marginTop: 0, marginBottom: "1rem", color: "#555" }}>
+          {logoutPresentation.statusMessage}
+        </p>
+      ) : null}
+      {logoutPresentation.errorMessage ? (
+        <p role="alert" style={{ marginTop: 0, marginBottom: "1rem", color: "#b00020" }}>
+          {logoutPresentation.errorMessage}
+        </p>
+      ) : null}
       {statusError ? (
         <p role="alert" style={{ marginTop: 0, marginBottom: "1rem", color: "#b00020" }}>
           Unable to load the current exam state. Return to Candidate Home and try again. Details: {statusError}

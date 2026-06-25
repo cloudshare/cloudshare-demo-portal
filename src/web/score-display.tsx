@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { ScoreResult } from "@/domain/score-result";
 import { getCandidateScorePresentation } from "./candidate-score-state";
+import { useCandidateLogout } from "./candidate-logout";
 
 interface ScoreDisplayProps {
   examAttemptId: string;
@@ -43,12 +44,7 @@ export function ScoreDisplay({ examAttemptId }: ScoreDisplayProps) {
   const [fetchState, setFetchState] = useState<FetchState>("loading");
   const [score, setScore] = useState<ScorePayload | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
-
-  async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" });
-    router.push("/login");
-    router.refresh();
-  }
+  const { presentation: logoutPresentation, logout } = useCandidateLogout(router);
 
   useEffect(() => {
     let cancelled = false;
@@ -107,10 +103,25 @@ export function ScoreDisplay({ examAttemptId }: ScoreDisplayProps) {
           <button type="button" onClick={() => router.push("/candidate")} style={{ padding: "0.55rem 0.9rem" }}>
             Back to Candidate Home
           </button>
-          <button type="button" onClick={() => void logout()} style={{ padding: "0.55rem 0.9rem" }}>
-            Log out
+          <button
+            type="button"
+            onClick={() => void logout()}
+            disabled={logoutPresentation.disabled}
+            style={{ padding: "0.55rem 0.9rem" }}
+          >
+            {logoutPresentation.buttonLabel}
           </button>
         </div>
+        {logoutPresentation.statusMessage ? (
+          <p role="status" style={{ margin: 0, color: "#555" }}>
+            {logoutPresentation.statusMessage}
+          </p>
+        ) : null}
+        {logoutPresentation.errorMessage ? (
+          <p role="alert" style={{ margin: 0, color: "#b00020" }}>
+            {logoutPresentation.errorMessage}
+          </p>
+        ) : null}
       </section>
     );
   }
@@ -149,11 +160,26 @@ export function ScoreDisplay({ examAttemptId }: ScoreDisplayProps) {
           <button type="button" onClick={() => router.push("/candidate")} style={{ padding: "0.55rem 0.9rem" }}>
             Back to Candidate Home
           </button>
-          <button type="button" onClick={() => void logout()} style={{ padding: "0.55rem 0.9rem" }}>
-            Log out
+          <button
+            type="button"
+            onClick={() => void logout()}
+            disabled={logoutPresentation.disabled}
+            style={{ padding: "0.55rem 0.9rem" }}
+          >
+            {logoutPresentation.buttonLabel}
           </button>
         </div>
       </div>
+      {logoutPresentation.statusMessage ? (
+        <p role="status" style={{ margin: 0, color: "#555" }}>
+          {logoutPresentation.statusMessage}
+        </p>
+      ) : null}
+      {logoutPresentation.errorMessage ? (
+        <p role="alert" style={{ margin: 0, color: "#b00020" }}>
+          {logoutPresentation.errorMessage}
+        </p>
+      ) : null}
 
       {score.scoreAvailable ? (
         <>

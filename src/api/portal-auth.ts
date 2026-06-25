@@ -39,6 +39,11 @@ export interface PortalAuthDeps {
    * Never affects the auth decision; absence simply leaves failures unattributed.
    */
   readonly users?: PortalUserStore;
+  /**
+   * Candidate runtime cleanup that must happen before the portal session is
+   * invalidated. Used to suspend running labs on explicit logout.
+   */
+  readonly onCandidateLogout?: (session: PortalSession) => Promise<void>;
 }
 
 export async function handlePortalLogin(
@@ -174,6 +179,10 @@ export async function handlePortalLogout(
     session = request.sessionId
       ? await deps.portalAuth.resume(request.sessionId)
       : null;
+
+    if (session?.role === "candidate") {
+      await deps.onCandidateLogout?.(session);
+    }
 
     if (request.sessionId) {
       await deps.portalAuth.signOut(request.sessionId);
