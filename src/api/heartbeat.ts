@@ -1,5 +1,11 @@
 import type { Logger } from "@/observability/logger";
 import type { HeartbeatAutoSuspend } from "@/domain/heartbeat-auto-suspend";
+import type { LabLaunch } from "@/domain/lab-launch";
+import {
+  recordExamAttemptHeartbeatRuntime,
+  type ExamAttemptHeartbeatStatusResponse,
+  type ManualHeartbeatRuntimeDeps,
+} from "./exam-attempt-heartbeat-status-runtime";
 
 /**
  * Framework-agnostic handler for the client heartbeat endpoint.
@@ -39,6 +45,17 @@ export async function handleHeartbeat(
   deps.autoSuspend.recordHeartbeat(examAttemptId);
   deps.logger.debug("heartbeat received", { examAttemptId });
   return { status: 200, body: { status: "ok" } };
+}
+
+export async function handleExamAttemptHeartbeat(
+  deps: ManualHeartbeatRuntimeDeps,
+  request: {
+    readonly examAttemptId: string;
+    readonly candidateId: string;
+    readonly launch: LabLaunch | null;
+  },
+): Promise<ExamAttemptHeartbeatStatusResponse> {
+  return recordExamAttemptHeartbeatRuntime(deps, request);
 }
 
 function extractExamAttemptId(body: unknown): string | null {
