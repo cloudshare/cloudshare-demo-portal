@@ -85,6 +85,10 @@ showing real CloudShare behaviour, CloudShare wins.
   without tests written for it is not done.
 - Local live credentials in `.env.e2e.local` are the evidence path for safe CloudShare E2E checks.
   Do not commit them; do use `npm run test:e2e:live` whenever the slice can be verified cheaply.
+  If `.env.e2e.local` is missing in a Codex worktree, the user's local seed credentials live at
+  `D:\Code_projects\cloudshare-demo-portal\config\portal-seed.local.json`; generate a temporary,
+  ignored `.env.e2e.local` from that file without printing secret values, run the live check, and
+  remove the generated env file afterward.
 
 ## Domain language
 

@@ -140,6 +140,16 @@ Fill `CLOUDSHARE_E2E_API_ID` and `CLOUDSHARE_E2E_API_KEY`, then run:
 npm run test:e2e:live
 ```
 
+For local Codex worktrees, the user's seed credential file is:
+
+```text
+D:\Code_projects\cloudshare-demo-portal\config\portal-seed.local.json
+```
+
+When `.env.e2e.local` is missing, generate a temporary ignored `.env.e2e.local`
+from that JSON without printing secret values, run `npm run test:e2e:live`, then
+delete the generated env file.
+
 The current live E2E test performs a real signed v3 `ping` and expects `pong`.
 Normal `npm test` excludes `*.e2e.test.ts`, so fixture/unit tests never call the
 live tenant accidentally.
