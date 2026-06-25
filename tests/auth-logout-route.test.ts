@@ -119,4 +119,22 @@ describe("POST /api/auth/logout", () => {
     );
     expect(services.portalAuth.signOut).toHaveBeenCalledWith("portal-session-1");
   });
+
+  it("keeps the Candidate session active when logout auto-suspend fails", async () => {
+    const services = makeServices();
+    mockGetServices.mockReturnValue(services);
+    mockHandleSuspendExam.mockResolvedValue({
+      status: 502,
+      body: { error: "CloudShare suspend request failed" },
+    });
+
+    await expect(POST()).rejects.toThrow(
+      "Logout auto-suspend failed for ExamAttempt attempt-running",
+    );
+
+    expect(mockHandleSuspendExam).toHaveBeenCalledTimes(1);
+    expect(services.portalAuth.signOut).not.toHaveBeenCalled();
+    expect(services.heartbeatAutoSuspend.removeHeartbeat).not.toHaveBeenCalled();
+    expect(services.audit.write).not.toHaveBeenCalled();
+  });
 });
