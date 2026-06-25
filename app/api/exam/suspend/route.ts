@@ -10,7 +10,7 @@ import type { AuditRecord } from "@/domain/audit-trail";
 
 /**
  * Candidate-initiated lab suspend. Suspends the CloudShare environment and
- * pauses the Kryterion authoritative exam timer once `Suspended` is confirmed
+ * pauses the portal-owned exam clock once `Suspended` is confirmed
  * by polling. The request body must contain `examAttemptId`.
  */
 export async function POST(request: Request) {
