@@ -34,6 +34,11 @@ import {
   type UpdateDraftExamInput,
 } from "@/domain/exam-catalog";
 import type { ExamAuthoringCacheRepository } from "@/persistence/exam-authoring-cache-repository";
+import {
+  getBlueprintDetailRuntime,
+  getExamAuthoringBootstrapRuntime,
+  getProjectResourcesRuntime,
+} from "./admin-exam-authoring-runtime";
 
 interface AdminExamResponse {
   readonly status: number;
@@ -100,226 +105,21 @@ export async function handleGetExamAuthoringBootstrap(
   deps: AdminExamAuthoringDeps,
   request: ResourceRequest,
 ): Promise<AdminExamResponse> {
-  const connection = await deps.connections.findByCustomerId(request.customerId);
-  if (!connection) {
-    return { status: 404, body: { error: "Save a CloudShare Connection before building Exams." } };
-  }
-
-  if (!request.refresh) {
-    const cached = await deps.cache.getBootstrap(request.customerId);
-    if (cached) {
-      return { status: 200, body: { source: "cache", ...cached } };
-    }
-  }
-
-  const source = resolveAuthoringSource(deps.cloudshare, connection);
-  let projects;
-  try {
-    projects = await source.listProjects();
-    await recordResourceRead(deps, {
-      customerId: request.customerId,
-      operation: "cloudshare.resource_sync.projects.read",
-      integrationSurface: "cloudshare.v3.projects",
-      path: "/projects",
-      resourceType: "project",
-      response: {
-        itemCount: projects.length,
-        resourceIds: projects.map((project) => project.id),
-      },
-    });
-  } catch (error) {
-    return await handleCloudShareFailure(deps, {
-      customerId: request.customerId,
-      operation: "cloudshare.resource_sync.projects.read",
-      integrationSurface: "cloudshare.v3.projects",
-      path: "/projects",
-      resourceType: "project",
-      error,
-    });
-  }
-
-  let regions;
-  try {
-    regions = await source.listRegions();
-    await recordResourceRead(deps, {
-      customerId: request.customerId,
-      operation: "cloudshare.resource_sync.regions.read",
-      integrationSurface: "cloudshare.v3.regions",
-      path: "/regions",
-      resourceType: "region",
-      response: {
-        itemCount: regions.length,
-        resourceIds: regions.map((region) => region.id),
-      },
-    });
-  } catch (error) {
-    return await handleCloudShareFailure(deps, {
-      customerId: request.customerId,
-      operation: "cloudshare.resource_sync.regions.read",
-      integrationSurface: "cloudshare.v3.regions",
-      path: "/regions",
-      resourceType: "region",
-      error,
-    });
-  }
-
-  await deps.cache.saveBootstrap(request.customerId, { projects, regions });
-  return { status: 200, body: { source: "live", projects, regions } };
+  return getExamAuthoringBootstrapRuntime(deps, request);
 }
 
 export async function handleGetProjectResources(
   deps: AdminExamAuthoringDeps,
   request: ProjectRequest,
 ): Promise<AdminExamResponse> {
-  if (!request.projectId.trim()) {
-    return { status: 400, body: { error: "projectId is required" } };
-  }
-
-  const connection = await deps.connections.findByCustomerId(request.customerId);
-  if (!connection) {
-    return { status: 404, body: { error: "Save a CloudShare Connection before building Exams." } };
-  }
-
-  if (!request.refresh) {
-    const cached = await deps.cache.getProjectResources(request.customerId, request.projectId);
-    if (cached) {
-      return {
-        status: 200,
-        body: { source: "cache", projectId: request.projectId, ...cached },
-      };
-    }
-  }
-
-  const source = resolveAuthoringSource(deps.cloudshare, connection);
-  let blueprints;
-  try {
-    blueprints = await source.listProjectBlueprints(request.projectId);
-    await recordResourceRead(deps, {
-      customerId: request.customerId,
-      operation: "cloudshare.resource_sync.blueprints.read",
-      integrationSurface: "cloudshare.v3.projects.blueprints",
-      path: `/projects/${request.projectId}/blueprints`,
-      resourceType: "blueprint",
-      resourceIds: { projectId: request.projectId },
-      response: {
-        itemCount: blueprints.length,
-        resourceIds: blueprints.map((blueprint) => blueprint.id),
-      },
-    });
-  } catch (error) {
-    return await handleCloudShareFailure(deps, {
-      customerId: request.customerId,
-      operation: "cloudshare.resource_sync.blueprints.read",
-      integrationSurface: "cloudshare.v3.projects.blueprints",
-      path: `/projects/${request.projectId}/blueprints`,
-      resourceType: "blueprint",
-      resourceIds: { projectId: request.projectId },
-      error,
-    });
-  }
-
-  let policies;
-  try {
-    policies = await source.listProjectPolicies(request.projectId);
-    await recordResourceRead(deps, {
-      customerId: request.customerId,
-      operation: "cloudshare.resource_sync.policies.read",
-      integrationSurface: "cloudshare.v3.projects.policies",
-      path: `/projects/${request.projectId}/policies`,
-      resourceType: "policy",
-      resourceIds: { projectId: request.projectId },
-      response: {
-        itemCount: policies.length,
-        resourceIds: policies.map((policy) => policy.id),
-      },
-    });
-  } catch (error) {
-    return await handleCloudShareFailure(deps, {
-      customerId: request.customerId,
-      operation: "cloudshare.resource_sync.policies.read",
-      integrationSurface: "cloudshare.v3.projects.policies",
-      path: `/projects/${request.projectId}/policies`,
-      resourceType: "policy",
-      resourceIds: { projectId: request.projectId },
-      error,
-    });
-  }
-
-  await deps.cache.saveProjectResources(request.customerId, request.projectId, {
-    blueprints,
-    policies,
-  });
-  return {
-    status: 200,
-    body: { source: "live", projectId: request.projectId, blueprints, policies },
-  };
+  return getProjectResourcesRuntime(deps, request);
 }
 
 export async function handleGetBlueprintDetail(
   deps: AdminExamAuthoringDeps,
   request: BlueprintRequest,
 ): Promise<AdminExamResponse> {
-  if (!request.projectId.trim() || !request.blueprintId.trim()) {
-    return { status: 400, body: { error: "projectId and blueprintId are required" } };
-  }
-
-  const connection = await deps.connections.findByCustomerId(request.customerId);
-  if (!connection) {
-    return { status: 404, body: { error: "Save a CloudShare Connection before building Exams." } };
-  }
-
-  if (!request.refresh) {
-    const cached = await deps.cache.getBlueprintDetail(
-      request.customerId,
-      request.projectId,
-      request.blueprintId,
-    );
-    if (cached) {
-      return {
-        status: 200,
-        body: {
-          source: "cache",
-          projectId: request.projectId,
-          blueprint: stripBlueprintDiagnosticSummary(cached),
-        },
-      };
-    }
-  }
-
-  const source = resolveAuthoringSource(deps.cloudshare, connection);
-  try {
-    const blueprint = await source.getBlueprintDetail(request.projectId, request.blueprintId);
-    const blueprintForClient = stripBlueprintDiagnosticSummary(blueprint);
-    await recordResourceRead(deps, {
-      customerId: request.customerId,
-      operation: "cloudshare.resource_sync.blueprint_detail.read",
-      integrationSurface: "cloudshare.v3.projects.blueprint_detail",
-      path: `/projects/${request.projectId}/blueprints/${request.blueprintId}`,
-      resourceType: "blueprint_detail",
-      resourceIds: { projectId: request.projectId, blueprintId: request.blueprintId },
-      response: buildBlueprintDetailDiagnosticResponse(blueprint),
-    });
-    await deps.cache.saveBlueprintDetail(
-      request.customerId,
-      request.projectId,
-      request.blueprintId,
-      blueprintForClient,
-    );
-    return {
-      status: 200,
-      body: { source: "live", projectId: request.projectId, blueprint: blueprintForClient },
-    };
-  } catch (error) {
-    return await handleCloudShareFailure(deps, {
-      customerId: request.customerId,
-      operation: "cloudshare.resource_sync.blueprint_detail.read",
-      integrationSurface: "cloudshare.v3.projects.blueprint_detail",
-      path: `/projects/${request.projectId}/blueprints/${request.blueprintId}`,
-      resourceType: "blueprint_detail",
-      resourceIds: { projectId: request.projectId, blueprintId: request.blueprintId },
-      error,
-    });
-  }
+  return getBlueprintDetailRuntime(deps, request);
 }
 
 export async function handleGetExamCatalog(
