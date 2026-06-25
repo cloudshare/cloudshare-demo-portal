@@ -147,7 +147,24 @@ export async function enterExamAttemptRuntime(
     return blocked(404, "Scheduled CloudShare launch not found.");
   }
 
-  await deps.timer?.resumeTimer(request.examAttemptId);
+  try {
+    await deps.timer?.resumeTimer(request.examAttemptId);
+  } catch (error) {
+    await deps.diagnostics?.record({
+      ...anchors,
+      level: "error",
+      operation: "exam_attempt.enter",
+      outcome: "failure",
+      message: "Exam entry failed while resuming the portal clock",
+      details: {
+        attemptStatus: attempt.status,
+        failureMode: "clock_resume_failed",
+        error: error instanceof Error ? error.message : String(error),
+      },
+    });
+    throw error;
+  }
+
   if (attempt.status === "ready") {
     await deps.attempts.save({
       ...attempt,

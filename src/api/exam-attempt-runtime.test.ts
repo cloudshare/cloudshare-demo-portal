@@ -4,6 +4,8 @@ import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repo
 import type { Logger } from "@/observability/logger";
 import type { ExamTimer } from "@/domain/timer-sync";
 import { enterExamAttemptRuntime } from "./exam-attempt-runtime";
+import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
+import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -156,6 +158,75 @@ describe("enterExamAttemptRuntime", () => {
     expect(timer.resumed).toEqual(["attempt-1"]);
     await expect(attempts.findById("attempt-1")).resolves.toMatchObject({
       status: "in_progress",
+    });
+  });
+
+  it("records a support diagnostic when clock resume fails", async () => {
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
+    const timer: ExamTimer = {
+      pauseTimer: vi.fn().mockResolvedValue(undefined),
+      resumeTimer: vi.fn().mockRejectedValue(new Error("clock unavailable")),
+    };
+
+    await attempts.save({
+      id: "attempt-1",
+      customerId: "customer-1",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "ready",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    await launches.save({
+      id: "launch-1",
+      examAttemptId: "attempt-1",
+      candidateId: "candidate-1",
+      participantEmail: "candidate@helioscx.demo",
+      trainingId: "training-1",
+      experienceId: "training-1",
+      loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret",
+      status: "launched",
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+
+    await expect(
+      enterExamAttemptRuntime(
+        {
+          attempts,
+          launches,
+          timer,
+          diagnostics,
+          candidateEmail: "candidate@helioscx.demo",
+          logger: makeLogger(),
+          now: () => new Date("2026-06-15T16:00:00.000Z"),
+        },
+        { examAttemptId: "attempt-1", candidateId: "candidate-1" },
+      ),
+    ).rejects.toThrow("clock unavailable");
+
+    await expect(diagnosticsRepository.query({ examAttemptId: "attempt-1" })).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation: "exam_attempt.enter",
+          outcome: "failure",
+          customerId: "customer-1",
+          candidateEmail: "candidate@helioscx.demo",
+          examId: "exam-1",
+          examAttemptId: "attempt-1",
+          message: "Exam entry failed while resuming the portal clock",
+          details: expect.objectContaining({
+            attemptStatus: "ready",
+            failureMode: "clock_resume_failed",
+            error: "clock unavailable",
+          }),
+        }),
+      ]),
+    );
+    await expect(attempts.findById("attempt-1")).resolves.toMatchObject({
+      status: "ready",
     });
   });
 });
