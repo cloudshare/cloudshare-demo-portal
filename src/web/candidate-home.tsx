@@ -17,6 +17,7 @@ import {
   getNextEnterabilityWakeUpDelayMs,
 } from "./candidate-home-state";
 import { formatCandidateAttemptStatus } from "./candidate-lab-state";
+import { useCandidateLogout } from "./candidate-logout";
 
 interface CandidateHomeProps {
   readonly email: string;
@@ -34,6 +35,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
   const [scheduleDrafts, setScheduleDrafts] = useState<Record<string, string>>({});
   const [coldStartNotice, setColdStartNotice] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const { presentation: logoutPresentation, logout } = useCandidateLogout(router);
 
   useEffect(() => {
     let cancelled = false;
@@ -99,12 +101,6 @@ export function CandidateHome({ email }: CandidateHomeProps) {
     return () => window.clearTimeout(timer);
   }, [dashboard.attempts, nowMs]);
 
-  async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" });
-    router.push("/login");
-    router.refresh();
-  }
-
   async function submitSchedule(examId: string) {
     const scheduledFor = scheduleDrafts[examId]?.trim();
     if (!scheduledFor) {
@@ -168,10 +164,24 @@ export function CandidateHome({ email }: CandidateHomeProps) {
           <h1 style={{ marginBottom: "0.35rem" }}>Candidate Home</h1>
           <p style={{ margin: 0, color: "#555" }}>Signed in as {email}</p>
         </div>
-        <button onClick={() => void logout()} style={{ padding: "0.55rem 0.9rem" }}>
-          Log out
+        <button
+          onClick={() => void logout()}
+          disabled={logoutPresentation.disabled}
+          style={{ padding: "0.55rem 0.9rem" }}
+        >
+          {logoutPresentation.buttonLabel}
         </button>
       </div>
+      {logoutPresentation.statusMessage ? (
+        <p role="status" style={{ marginTop: "-0.75rem", marginBottom: "1rem", color: "#555" }}>
+          {logoutPresentation.statusMessage}
+        </p>
+      ) : null}
+      {logoutPresentation.errorMessage ? (
+        <p role="alert" style={{ marginTop: "-0.75rem", marginBottom: "1rem", color: "#b00020" }}>
+          {logoutPresentation.errorMessage}
+        </p>
+      ) : null}
 
       <section style={{ display: "grid", gap: "1rem" }}>
         <div style={{ padding: "1rem", background: "#f7f7f8", borderRadius: "6px" }}>
