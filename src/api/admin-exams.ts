@@ -5,14 +5,9 @@ import type {
 import type { Logger } from "@/observability/logger";
 import type {
   DiagnosticActor,
-  DiagnosticLogEntryInput,
   DiagnosticRecorder,
 } from "@/domain/diagnostic-log";
-import {
-  ExamNotFoundError,
-  unpublishExam,
-  type ExamRepository,
-} from "@/domain/exam-catalog";
+import type { ExamRepository } from "@/domain/exam-catalog";
 import type { ExamAuthoringCacheRepository } from "@/persistence/exam-authoring-cache-repository";
 import {
   getBlueprintDetailRuntime,
@@ -28,6 +23,10 @@ import {
   publishAdminExamRuntime,
   type AdminExamPublishRuntimeDeps,
 } from "./admin-exam-publish-runtime";
+import {
+  unpublishAdminExamRuntime,
+  type AdminExamUnpublishRuntimeDeps,
+} from "./admin-exam-unpublish-runtime";
 
 interface AdminExamResponse {
   readonly status: number;
@@ -77,6 +76,7 @@ interface AdminExamCatalogDeps extends AdminExamDraftRuntimeDeps {
 }
 
 type AdminExamPublishDeps = AdminExamPublishRuntimeDeps;
+type AdminExamUnpublishDeps = AdminExamUnpublishRuntimeDeps;
 
 export async function handleGetExamAuthoringBootstrap(
   deps: AdminExamAuthoringDeps,
@@ -129,49 +129,8 @@ export async function handleUpdateDraftExam(
 }
 
 export async function handleUnpublishExam(
-  deps: Pick<AdminExamCatalogDeps, "repository" | "diagnostics" | "logger" | "now">,
+  deps: AdminExamUnpublishDeps,
   request: CustomerRequest & { readonly examId: string },
 ): Promise<AdminExamResponse> {
-  try {
-    const exam = await unpublishExam(
-      { repository: deps.repository, now: deps.now },
-      { customerId: request.customerId, examId: request.examId },
-    );
-    await safeRecordDiagnostic(deps, {
-      source: "admin-exams",
-      customerId: request.customerId,
-      actor: request.actor ?? null,
-      subject: { type: "exam", id: exam.id },
-      examId: exam.id,
-      level: "info",
-      operation: "exam.unpublish",
-      outcome: "success",
-      message: "Exam unpublished",
-      details: { changedFields: ["status", "publishedAt"] },
-    });
-    return { status: 200, body: { exam } };
-  } catch (error) {
-    if (error instanceof ExamNotFoundError) {
-      return { status: 404, body: { error: error.message } };
-    }
-    throw error;
-  }
-}
-
-async function safeRecordDiagnostic(
-  deps: { readonly diagnostics?: DiagnosticRecorder; readonly logger: Logger },
-  entry: DiagnosticLogEntryInput,
-): Promise<void> {
-  if (!deps.diagnostics) {
-    return;
-  }
-
-  try {
-    await deps.diagnostics.record(entry);
-  } catch (error) {
-    deps.logger.warn("admin exam diagnostic recording failed", {
-      operation: entry.operation,
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
+  return unpublishAdminExamRuntime(deps, request);
 }
