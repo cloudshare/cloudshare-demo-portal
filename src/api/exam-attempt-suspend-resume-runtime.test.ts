@@ -410,6 +410,7 @@ describe("suspendExamAttemptRuntime", () => {
       updatedAt: new Date("2026-06-15T15:59:30.000Z"),
     });
     const attempts = await makeAttempts("in_progress");
+    const diagnostics = { record: vi.fn().mockResolvedValue(undefined) };
 
     const customerClient = makeCloudShareClient({
       requestV3: vi.fn(),
@@ -425,6 +426,8 @@ describe("suspendExamAttemptRuntime", () => {
         attempts,
         clocks: clock,
         cloudshare,
+        diagnostics,
+        candidateEmail: "candidate@helioscx.demo",
       }),
       { examAttemptId: "ea-1" },
     );
@@ -442,6 +445,32 @@ describe("suspendExamAttemptRuntime", () => {
     expect(customerClient.requestV4).not.toHaveBeenCalled();
     expect(customerClient.requestV3).not.toHaveBeenCalled();
     expect(customerClient.requestV3Text).not.toHaveBeenCalled();
+    expect(diagnostics.record).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        operation: "exam_attempt.complete",
+        outcome: "success",
+        customerId: "customer-1",
+        candidateEmail: "candidate@helioscx.demo",
+        examId: "exam-1",
+        examAttemptId: "ea-1",
+        details: expect.objectContaining({
+          completedBy: "portal_runtime_reconciliation",
+          attemptStatus: "completed",
+        }),
+      }),
+    );
+    expect(diagnostics.record).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        operation: "exam_attempt.suspend",
+        outcome: "failure",
+        details: expect.objectContaining({
+          failureMode: "invalid_status",
+          currentStatus: "completed",
+        }),
+      }),
+    );
   });
 
   it("uses the attempt customer's CloudShare connection and envId semantics, not the global environment adapter", async () => {
@@ -905,6 +934,7 @@ describe("resumeExamAttemptRuntime", () => {
       updatedAt: new Date("2026-06-15T15:59:30.000Z"),
     });
     const attempts = await makeAttempts("suspended");
+    const diagnostics = { record: vi.fn().mockResolvedValue(undefined) };
 
     const customerClient = makeCloudShareClient({
       requestV3: vi.fn(),
@@ -920,6 +950,8 @@ describe("resumeExamAttemptRuntime", () => {
         attempts,
         clocks: clock,
         cloudshare,
+        diagnostics,
+        candidateEmail: "candidate@helioscx.demo",
       }),
       { examAttemptId: "ea-1" },
     );
@@ -937,6 +969,32 @@ describe("resumeExamAttemptRuntime", () => {
     expect(customerClient.requestV4).not.toHaveBeenCalled();
     expect(customerClient.requestV3).not.toHaveBeenCalled();
     expect(customerClient.requestV3Text).not.toHaveBeenCalled();
+    expect(diagnostics.record).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        operation: "exam_attempt.complete",
+        outcome: "success",
+        customerId: "customer-1",
+        candidateEmail: "candidate@helioscx.demo",
+        examId: "exam-1",
+        examAttemptId: "ea-1",
+        details: expect.objectContaining({
+          completedBy: "portal_runtime_reconciliation",
+          attemptStatus: "completed",
+        }),
+      }),
+    );
+    expect(diagnostics.record).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        operation: "exam_attempt.resume",
+        outcome: "failure",
+        details: expect.objectContaining({
+          failureMode: "invalid_status",
+          currentStatus: "completed",
+        }),
+      }),
+    );
   });
 
   it("returns 404 when no launch exists", async () => {

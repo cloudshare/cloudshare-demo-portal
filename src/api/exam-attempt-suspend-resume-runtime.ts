@@ -28,8 +28,7 @@ import { createCloudShareEnvironmentSource } from "@/integrations/cloudshare/env
 import { ensureExamAttemptEnvironmentCorrelation } from "./exam-attempt-environment-correlation";
 import type { ExamClock } from "@/domain/exam-clock";
 import type { ExamRepository } from "@/domain/exam-catalog";
-import { reconcileExamAttemptCompletion } from "@/domain/exam-attempt-completion";
-import { recordExamAttemptCompletionDiagnostic } from "./exam-attempt-completion-diagnostics";
+import { settleExamAttemptCompletion } from "./exam-attempt-completion-settlement";
 import type { EnvironmentCommandResult } from "@/domain/environment";
 
 /**
@@ -134,25 +133,20 @@ export async function suspendExamAttemptRuntime(
   };
 
   try {
-    const completion = await reconcileExamAttemptCompletion(
+    const settlement = await settleExamAttemptCompletion(
       {
         attempts: deps.attempts,
-        exams: deps.exams ?? emptyExamRepository(),
+        exams: deps.exams,
         clocks: deps.clocks,
+        diagnostics: deps.diagnostics,
+        candidateEmail: deps.candidateEmail,
       },
       { examAttemptId },
     );
-    const reconciledAttempt = await deps.attempts.findById(examAttemptId);
-    if (!reconciledAttempt) {
+    if (settlement.kind === "not_found") {
       return { status: 404, body: { error: "exam attempt not found" } };
     }
-    if (completion?.changed && completion.status === "completed") {
-      await recordExamAttemptCompletionDiagnostic(
-        deps.diagnostics,
-        reconciledAttempt,
-        deps.candidateEmail,
-      );
-    }
+    const reconciledAttempt = settlement.attempt;
     anchors = anchorsForAttempt(reconciledAttempt, deps.candidateEmail);
     if (reconciledAttempt.status !== "in_progress") {
       await deps.diagnostics?.record({
@@ -265,25 +259,20 @@ export async function resumeExamAttemptRuntime(
   };
 
   try {
-    const completion = await reconcileExamAttemptCompletion(
+    const settlement = await settleExamAttemptCompletion(
       {
         attempts: deps.attempts,
-        exams: deps.exams ?? emptyExamRepository(),
+        exams: deps.exams,
         clocks: deps.clocks,
+        diagnostics: deps.diagnostics,
+        candidateEmail: deps.candidateEmail,
       },
       { examAttemptId },
     );
-    const reconciledAttempt = await deps.attempts.findById(examAttemptId);
-    if (!reconciledAttempt) {
+    if (settlement.kind === "not_found") {
       return { status: 404, body: { error: "exam attempt not found" } };
     }
-    if (completion?.changed && completion.status === "completed") {
-      await recordExamAttemptCompletionDiagnostic(
-        deps.diagnostics,
-        reconciledAttempt,
-        deps.candidateEmail,
-      );
-    }
+    const reconciledAttempt = settlement.attempt;
     anchors = anchorsForAttempt(reconciledAttempt, deps.candidateEmail);
     if (reconciledAttempt.status === "in_progress") {
       const launch = await deps.launches.findByExamAttemptId(examAttemptId);
@@ -1019,12 +1008,4 @@ function stripDiagnosticEnvelope(
     ...rest
   } = diagnostic;
   return rest;
-}
-
-function emptyExamRepository(): ExamRepository {
-  return {
-    save: async () => {},
-    findById: async () => null,
-    listByCustomerId: async () => [],
-  };
 }
