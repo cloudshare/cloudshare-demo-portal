@@ -1,26 +1,13 @@
 import { NextResponse } from "next/server";
-import { getServices } from "@/composition";
+import { retiredLegacySimulatorExamFlowResponse } from "@/api/legacy-simulator-routes";
 
 /**
- * List the exams a candidate is eligible to book. Drives the self-service
- * booking screen — the Genesys simulator decides eligibility from prerequisite
- * training.
+ * Retired simulator eligibility endpoint.
+ *
+ * The active Certalis/Helios candidate catalog is `GET /api/candidate/exams`.
+ * Keeping this route connected to the old simulator flow exposes retired
+ * lifecycle state alongside the CloudShare runtime.
  */
-export async function GET(request: Request) {
-  const { genesys, logger } = getServices();
-
-  const candidateId = new URL(request.url).searchParams.get("candidateId");
-  if (!candidateId) {
-    return NextResponse.json({ error: "candidateId is required" }, { status: 400 });
-  }
-
-  try {
-    const exams = await genesys.listEligibleExams(candidateId);
-    return NextResponse.json({ exams });
-  } catch (err) {
-    logger.error("listing eligible exams failed", {
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return NextResponse.json({ error: "internal error" }, { status: 500 });
-  }
+export async function GET() {
+  return NextResponse.json(retiredLegacySimulatorExamFlowResponse, { status: 410 });
 }
