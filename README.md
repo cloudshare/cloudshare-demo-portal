@@ -260,19 +260,18 @@ Slice 3 moves Candidate identity onto the same portal user/session model as the 
   for the pre-slice candidate lab surfaces and is superseded for portal identity by the shared
   portal auth model.
 
-## Eligibility & exam booking
+## Candidate exam catalog & scheduling
 
-A candidate self-schedules with no admin in the loop:
+The active Certalis/Helios candidate flow is portal-authenticated:
 
-- The **Genesys simulator** decides which exams a candidate is eligible for from
-  invented-but-believable criteria (prerequisite training completed), behind the
-  `ExamEligibilityProvider` port. `GET /api/exams/eligible?candidateId=…`.
-- `bookExam` (domain) re-checks eligibility, persists a booked `ExamAttempt` via
-  the repository, and emits an `exam_attempt.created` **IntegrationEvent**.
-  `POST /api/exams/book` (403 if not eligible).
-- The in-process **event bus** carries IntegrationEvents; the downstream
-  lab-launch flow (later slice) subscribes to `exam_attempt.created`. A failing
-  subscriber is logged, never allowed to break publishing.
+- `GET /api/candidate/exams` returns published Exams for the signed-in Candidate's
+  Customer and the Candidate's current ExamAttempts.
+- `POST /api/candidate/exams` schedules an ExamAttempt and provisions the
+  CloudShare LabLaunch through the active per-Customer CloudShare flow.
+- The retired simulator booking routes, `GET /api/exams/eligible` and
+  `POST /api/exams/book`, now return `410 Gone` with replacement API details.
+  They are intentionally not connected to the old Genesys eligibility simulator
+  or `bookExam` flow.
 
 ## Lab launch (entitlement-gated)
 
