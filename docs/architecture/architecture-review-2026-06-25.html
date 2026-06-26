@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CloudShare Demo Portal Architecture Review</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>mermaid.initialize({ startOnLoad: true, theme: "base", themeVariables: { primaryColor: "#eef6ff", primaryBorderColor: "#2563eb", lineColor: "#64748b", fontFamily: "Inter, ui-sans-serif, system-ui" } });</script>
+  <style>
+    body { font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .mass { display:grid; gap:.5rem; }
+    .block { border:1px solid #cbd5e1; background:#f8fafc; border-radius:.5rem; padding:.65rem .75rem; font-size:.85rem; color:#334155; }
+    .block.hot { border-color:#fb7185; background:#fff1f2; color:#881337; }
+    .block.good { border-color:#22c55e; background:#f0fdf4; color:#14532d; }
+    .block.info { border-color:#38bdf8; background:#f0f9ff; color:#0c4a6e; }
+    .arrow { display:flex; align-items:center; justify-content:center; color:#64748b; font-weight:700; }
+    .diagram-title { font-size:.75rem; font-weight:700; letter-spacing:.04em; color:#64748b; text-transform:uppercase; }
+    .badge-strong { background:#dcfce7; color:#166534; border-color:#86efac; }
+    .badge-worth { background:#dbeafe; color:#1e40af; border-color:#93c5fd; }
+    .badge-spec { background:#fef3c7; color:#92400e; border-color:#fcd34d; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+  <main class="mx-auto max-w-7xl px-6 py-10">
+    <section class="mb-8">
+      <p class="text-sm font-semibold uppercase tracking-wide text-blue-700">Architecture review</p>
+      <h1 class="mt-2 text-4xl font-bold tracking-tight">CloudShare Demo Portal Deepening Opportunities</h1>
+      <p class="mt-4 max-w-4xl text-lg text-slate-700">This report follows the project glossary and the codebase-design vocabulary: module, interface, seam, adapter, depth, locality, leverage, and the deletion test. It was created by Matt's request-refactor-plan flow as a planning artifact; this copy was archived in the repository on 2026-06-26.</p>
+      <div class="mt-5 grid gap-3 md:grid-cols-4">
+        <div class="rounded-lg border border-slate-200 bg-white p-4"><div class="text-2xl font-bold">4</div><div class="text-sm text-slate-600">refactor candidates</div></div>
+        <div class="rounded-lg border border-slate-200 bg-white p-4"><div class="text-2xl font-bold">0</div><div class="text-sm text-slate-600">repo edits</div></div>
+        <div class="rounded-lg border border-slate-200 bg-white p-4"><div class="text-2xl font-bold">1022</div><div class="text-sm text-slate-600">lines in suspend/resume handler</div></div>
+        <div class="rounded-lg border border-slate-200 bg-white p-4"><div class="text-2xl font-bold">2272</div><div class="text-sm text-slate-600">lines in admin console</div></div>
+      </div>
+    </section>
+
+    <section class="mb-8 rounded-xl border border-blue-200 bg-blue-50 p-5">
+      <h2 class="text-xl font-semibold text-blue-950">Executive Read</h2>
+      <p class="mt-2 text-blue-950">The highest-leverage refactor is to deepen the active ExamAttempt runtime lifecycle module. Today, callers must remember a scattered sequence: settle completion, reload state, check entitlement, correlate environment, touch the clock, record diagnostics, and then perform the requested action. That hidden ordering is part of the interface, and it is duplicated across candidate-facing and admin-support paths.</p>
+    </section>
+
+    <div class="space-y-8">
+      <article class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 class="text-2xl font-semibold">1. Deepen ExamAttempt Runtime Lifecycle</h2>
+            <p class="mt-1 text-slate-600">Recommendation strength: <span class="inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold badge-strong">Strong</span></p>
+          </div>
+          <div class="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700">Primary seam: Candidate runtime operations</div>
+        </div>
+        <div class="mt-5 grid gap-5 lg:grid-cols-2">
+          <div>
+            <h3 class="font-semibold">Files</h3>
+            <ul class="mt-2 list-disc pl-5 text-sm text-slate-700">
+              <li>src/api/enter.ts</li>
+              <li>src/api/suspend-resume.ts</li>
+              <li>src/api/candidate-portal.ts</li>
+              <li>src/api/candidate-lab.ts</li>
+              <li>app/api/heartbeat/route.ts</li>
+              <li>src/domain/exam-clock.ts</li>
+              <li>src/domain/exam-attempt-completion.ts</li>
+            </ul>
+            <h3 class="mt-4 font-semibold">Problem</h3>
+            <p class="mt-2 text-sm text-slate-700">The clock module has useful depth, but the lifecycle interface around a current ExamAttempt is shallow. Multiple callers must know when to reconcile completion, reload status, validate access, record completion diagnostics, and proceed. This lowers locality and makes runtime bugs likely to be fixed in one path but missed in another.</p>
+            <h3 class="mt-4 font-semibold">Solution</h3>
+            <p class="mt-2 text-sm text-slate-700">Introduce a deeper runtime lifecycle module whose interface speaks in candidate-facing operations such as enter, suspend, resume, heartbeat/status, and read-current-attempt. Keep ExamClock as the lower-level implementation detail behind that interface.</p>
+            <h3 class="mt-4 font-semibold">Benefits</h3>
+            <p class="mt-2 text-sm text-slate-700">Leverage improves because tests and routes exercise the same lifecycle interface. Locality improves because completion settlement, status transition rules, and diagnostics ordering live in one implementation rather than several route handlers.</p>
+          </div>
+          <div class="grid gap-4 md:grid-cols-2">
+            <div>
+              <div class="diagram-title mb-2">Before</div>
+              <div class="mass">
+                <div class="block hot">/enter: reconcile + time gate + timer + diagnostics</div>
+                <div class="block hot">/suspend: reconcile + correlate + CloudShare + timer</div>
+                <div class="block hot">/resume: reconcile + correlate + CloudShare + timer</div>
+                <div class="block hot">/heartbeat: special completion path</div>
+                <div class="block info">ExamClock hides math but not lifecycle preconditions</div>
+              </div>
+            </div>
+            <div>
+              <div class="diagram-title mb-2">After</div>
+              <div class="mass">
+                <div class="block info">Routes call runtimeLifecycle.enter/suspend/resume/status</div>
+                <div class="arrow">↓</div>
+                <div class="block good">Runtime lifecycle settles, validates, transitions, records</div>
+                <div class="arrow">↓</div>
+                <div class="block">ExamClock, repositories, CloudShare adapters, diagnostics</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 class="text-2xl font-semibold">2. Retire or Quarantine Legacy Simulator Flow</h2>
+            <p class="mt-1 text-slate-600">Recommendation strength: <span class="inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold badge-strong">Strong</span></p>
+          </div>
+          <div class="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700">Primary seam: Active Certalis/Helios lifecycle</div>
+        </div>
+        <div class="mt-5 grid gap-5 lg:grid-cols-2">
+          <div>
+            <h3 class="font-semibold">Files</h3>
+            <ul class="mt-2 list-disc pl-5 text-sm text-slate-700">
+              <li>src/composition.ts</li>
+              <li>src/integrations/genesys/*</li>
+              <li>src/integrations/kryterion/*</li>
+              <li>app/api/exams/eligible/route.ts</li>
+              <li>app/api/exams/book/route.ts</li>
+              <li>src/api/demo-control.ts</li>
+              <li>src/domain/entitlement.ts</li>
+              <li>src/domain/exam-attempt.ts</li>
+            </ul>
+            <h3 class="mt-4 font-semibold">Problem</h3>
+            <p class="mt-2 text-sm text-slate-700">The retired Genesys/Kryterion framing is still active in composition, config, routes, demo control, tests, and vocabulary such as booked and Kryterion clock. The deletion test shows it is not merely dead code: deleting the retired adapters would still break route surfaces.</p>
+            <h3 class="mt-4 font-semibold">Solution</h3>
+            <p class="mt-2 text-sm text-slate-700">Choose one path: remove the retired flow completely, or quarantine it behind an explicit demo-only compatibility module with no candidate-facing route surface. The current Certalis/CloudShare lifecycle should be the interface most modules can see.</p>
+            <h3 class="mt-4 font-semibold">Benefits</h3>
+            <p class="mt-2 text-sm text-slate-700">Locality improves because lifecycle language stops being split between current and retired concepts. Leverage improves because scheduling, launch, and demo reset can be tested against the same domain vocabulary used by the product.</p>
+          </div>
+          <div>
+            <div class="mermaid rounded-lg border border-slate-200 bg-slate-50 p-3">
+flowchart LR
+  A["Retired routes /api/exams/*"] --> G["Genesys simulator"]
+  A --> K["Kryterion simulator"]
+  D["Demo control"] --> G
+  D --> K
+  C["Composition Services"] --> G
+  C --> K
+  N["Current Candidate scheduling"] --> CS["CloudShare training flow"]
+  classDef hot fill:#fff1f2,stroke:#fb7185,color:#881337;
+  classDef good fill:#f0fdf4,stroke:#22c55e,color:#14532d;
+  class A,G,K,D,C hot;
+  class N,CS good;
+            </div>
+            <div class="mt-4 grid gap-3 md:grid-cols-2">
+              <div class="block hot">Before: two lifecycles visible to callers</div>
+              <div class="block good">After: one active lifecycle, optional demo adapter hidden</div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 class="text-2xl font-semibold">3. Make DiagnosticLogEntry the Only Support Source of Truth</h2>
+            <p class="mt-1 text-slate-600">Recommendation strength: <span class="inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold badge-worth">Worth exploring</span></p>
+          </div>
+          <div class="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700">Primary seam: Support Diagnostics</div>
+        </div>
+        <div class="mt-5 grid gap-5 lg:grid-cols-2">
+          <div>
+            <h3 class="font-semibold">Files</h3>
+            <ul class="mt-2 list-disc pl-5 text-sm text-slate-700">
+              <li>src/domain/diagnostic-log.ts</li>
+              <li>src/domain/support-log.ts</li>
+              <li>src/api/support-workbench.ts</li>
+              <li>src/web/support-log-table.tsx</li>
+              <li>src/api/admin-monitoring.ts</li>
+              <li>src/domain/admin-monitoring.ts</li>
+              <li>prisma/schema.prisma</li>
+            </ul>
+            <h3 class="mt-4 font-semibold">Problem</h3>
+            <p class="mt-2 text-sm text-slate-700">DiagnosticLogEntry is already the deeper module: it has first-class anchors, redaction, append/query, and useful indexes. Legacy Support Log and Support Workbench remain shallow parallel surfaces, while Session Monitoring also reaches into diagnostics for forensic details.</p>
+            <h3 class="mt-4 font-semibold">Solution</h3>
+            <p class="mt-2 text-sm text-slate-700">Use DiagnosticLogEntry as the support evidence seam. Retire or demote Support Log/Support Workbench to internal evidence, and narrow Session Monitoring to current ExamAttempt queues plus compact operational facts.</p>
+            <h3 class="mt-4 font-semibold">Benefits</h3>
+            <p class="mt-2 text-sm text-slate-700">Locality improves because support filtering, redaction, correlation, and pagination concentrate behind one module. Session Monitoring becomes easier to evolve because it no longer has to understand forensic event semantics.</p>
+          </div>
+          <div class="grid gap-4 md:grid-cols-2">
+            <div>
+              <div class="diagram-title mb-2">Before</div>
+              <div class="mass">
+                <div class="block good">DiagnosticLogEntry</div>
+                <div class="block hot">SupportLog append/listAll</div>
+                <div class="block hot">SupportWorkbench webhook widget</div>
+                <div class="block hot">Session Monitoring diagnostic timelines</div>
+              </div>
+            </div>
+            <div>
+              <div class="diagram-title mb-2">After</div>
+              <div class="mass">
+                <div class="block good">DiagnosticLogEntry append/query/redact/correlate</div>
+                <div class="arrow">↓</div>
+                <div class="block info">Support Diagnostics reads forensic timeline</div>
+                <div class="block info">Session Monitoring links into diagnostics</div>
+                <div class="block">Audit Trail stays separate for who changed what</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </article>
+
+      <article class="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 class="text-2xl font-semibold">4. Deepen Route Workflow Interfaces from Composition</h2>
+            <p class="mt-1 text-slate-600">Recommendation strength: <span class="inline-flex rounded-full border px-2 py-0.5 text-xs font-semibold badge-worth">Worth exploring</span></p>
+          </div>
+          <div class="rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700">Primary seam: Workflow dependencies</div>
+        </div>
+        <div class="mt-5 grid gap-5 lg:grid-cols-2">
+          <div>
+            <h3 class="font-semibold">Files</h3>
+            <ul class="mt-2 list-disc pl-5 text-sm text-slate-700">
+              <li>src/composition.ts</li>
+              <li>app/api/heartbeat/route.ts</li>
+              <li>app/api/exam/score/route.ts</li>
+              <li>app/api/admin/diagnostics/attempts/[examAttemptId]/route.ts</li>
+              <li>src/api/admin-exam-attempt-diagnostics.ts</li>
+              <li>src/web/admin-console.tsx</li>
+              <li>src/web/admin-console-state.ts</li>
+            </ul>
+            <h3 class="mt-4 font-semibold">Problem</h3>
+            <p class="mt-2 text-sm text-slate-700">Composition is useful as a boot root, but shallow as an interface because routes receive the whole world. Some Next routes are thin framework adapters, while others construct CloudShare adapters and perform workflow reconciliation directly. AdminConsole has the same issue at the UI level.</p>
+            <h3 class="mt-4 font-semibold">Solution</h3>
+            <p class="mt-2 text-sm text-slate-700">Keep composition as the single boot implementation, but expose deeper workflow dependency modules: candidate scheduling, runtime lifecycle, support diagnostics, admin authoring, demo control. Standardize Next routes as cookies/session/body adapters over framework-agnostic handlers.</p>
+            <h3 class="mt-4 font-semibold">Benefits</h3>
+            <p class="mt-2 text-sm text-slate-700">Leverage improves because each route and test learns a smaller interface. Locality improves because CloudShare adapter construction, support refresh, and workflow policy move out of route files and into named modules.</p>
+          </div>
+          <div class="mermaid rounded-lg border border-slate-200 bg-slate-50 p-3">
+flowchart TB
+  subgraph Before
+    R1["Route files"] --> S["Services: everything"]
+    R1 --> C1["CloudShare adapter construction"]
+    R1 --> W1["Workflow policy"]
+  end
+  subgraph After
+    R2["Route files"] --> WF["Workflow dependency interface"]
+    WF --> S2["Composition root"]
+    WF --> A2["Adapters and repositories"]
+  end
+  classDef hot fill:#fff1f2,stroke:#fb7185,color:#881337;
+  classDef good fill:#f0fdf4,stroke:#22c55e,color:#14532d;
+  class R1,S,C1,W1 hot;
+  class R2,WF,S2,A2 good;
+          </div>
+        </div>
+      </article>
+    </div>
+
+    <section class="mt-8 rounded-xl border border-emerald-200 bg-emerald-50 p-6">
+      <h2 class="text-2xl font-semibold text-emerald-950">Top Recommendation</h2>
+      <p class="mt-2 text-emerald-950">Tackle <strong>Deepen ExamAttempt Runtime Lifecycle</strong> first. It is the most central module for the platform direction: certification, sales demonstrations, TMS flows, and broader CloudShare automation will all need a reliable way to answer “what is the current Customer-owned CloudShare runtime state, and what operation is allowed next?” It also creates a natural place to retire old booked/Kryterion vocabulary without mixing that cleanup into every route.</p>
+      <p class="mt-3 text-sm text-emerald-900">Suggested next conversation: which candidate should we explore first?</p>
+    </section>
+  </main>
+</body>
+</html>
