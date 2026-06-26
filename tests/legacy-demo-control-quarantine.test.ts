@@ -15,4 +15,12 @@ describe("legacy simulator demo-control quarantine", () => {
       expect(source).not.toContain("@/api/demo-control");
     }
   });
+
+  it("documents /demo as legacy simulator compatibility instead of an active API module", () => {
+    const readme = readFileSync("README.md", "utf8");
+
+    expect(readme).toContain("## Legacy Demo Control Panel");
+    expect(readme).toContain("src/api/legacy-simulator-demo-control.ts");
+    expect(readme).not.toContain("src/api/demo-control.ts");
+  });
 });
