@@ -270,7 +270,7 @@ The active Certalis/Helios candidate flow is portal-authenticated:
   CloudShare LabLaunch through the active per-Customer CloudShare flow.
 - The retired simulator booking routes, `GET /api/exams/eligible` and
   `POST /api/exams/book`, now return `410 Gone` with replacement API details.
-  They are intentionally not connected to the old Genesys eligibility simulator
+  They are intentionally not connected to the old simulator eligibility adapter
   or `bookExam` flow.
 
 ## Lab launch (entitlement-gated)

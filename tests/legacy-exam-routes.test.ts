@@ -18,7 +18,7 @@ describe("legacy simulator exam routes", () => {
     });
   });
 
-  it("quarantines the retired eligibility route without reaching Genesys composition", async () => {
+  it("quarantines the retired eligibility route without reaching legacy composition", async () => {
     const response = await getEligibleExams();
     const body = await response.json();
 
