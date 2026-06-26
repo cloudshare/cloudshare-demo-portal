@@ -55,6 +55,15 @@ showing real CloudShare behaviour, CloudShare wins.
   (`localhost:3025` by convention), capture the observable evidence, and clean up its test data.
 - The orchestration agent still owns the QA result: review the sub-agent's evidence, verify cleanup,
   update the PR notes, and clearly separate simulated QA from live CloudShare E2E verification.
+- Do not pause for a human check after every refactor slice by default. If the slice is
+  behavior-preserving, does not change active CloudShare runtime behaviour, and does not change
+  user-facing UI, the orchestration agent may treat targeted automated checks plus a concrete smoke
+  test as sufficient QA. In that case, record why human QA is not required in the PR, merge after a
+  clean implementation review, and continue directly into a new orchestration session/worktree for
+  the next refactor slice.
+- Human QA is still required for user-visible behaviour, UI changes, active CloudShare runtime
+  behaviour, live integration changes, or any slice where smoke evidence does not prove the changed
+  path.
 
 ## Engineering discipline
 
@@ -158,7 +167,9 @@ accumulate as local-only commits.
 - The implementation agent fixes review findings on the same PR branch. Re-review until the review
   agent reports no blocking findings.
 - Human QA is required before merge for user-visible or integration behaviour, especially CloudShare
-  flows.
+  flows. For behavior-preserving refactor slices with no UI change and no active CloudShare runtime
+  behaviour change, human QA is not required when targeted tests and smoke evidence prove the changed
+  path; the orchestration agent may merge and immediately start the next orchestration worktree.
 
 For each slice, before implementation starts:
 
@@ -208,8 +219,10 @@ After review and QA:
 
 - Address all blocking review findings on the same PR branch.
 - Re-run the relevant checks after fixes.
-- Record human QA/live verification in the PR or issue when required.
-- Merge only after review is clean and QA is accepted.
+- Record human QA/live verification in the PR or issue when required. For refactor-only slices that
+  do not require human QA, record the smoke evidence and the reason human QA is not needed.
+- Merge only after review is clean and required QA is accepted or explicitly not required by the
+  refactor-only rule above.
 - Confirm the linked issue closed automatically; if it did not, add a closing comment and close it
   manually.
 
