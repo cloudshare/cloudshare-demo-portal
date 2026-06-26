@@ -53,7 +53,7 @@ All variables are Zod-validated at boot; missing required values cause a fast-fa
 | `PORTAL_MASTER_KEY` | yes | — | Base64 32-byte key used to encrypt stored CloudShare credentials |
 | `PORTAL_MODE` | yes | `fixture` | `fixture` (simulators) or `live` (real CloudShare API) |
 | `DATABASE_URL` | yes | `file:./dev.db` | SQLite path |
-| `KRYTERION_TOKEN_SECRET` | yes | — | HMAC-SHA256 secret shared by the token simulator and auth layer |
+| `KRYTERION_TOKEN_SECRET` | yes | — | HMAC-SHA256 secret for the legacy token simulator retained by demo-only code |
 | `PORTAL_SEED_SOURCE` | no | `env` | `off`, `env`, or `file` for the seeded Helios admin/demo tenant |
 | `PORTAL_SEED_CONFIG_PATH` | no | `./config/portal-seed.local.json` | Local JSON seed file path when `PORTAL_SEED_SOURCE=file` |
 | `HELIOS_ADMIN_EMAIL` | `env` seed only | — | Seeded Helios admin login email |
@@ -256,9 +256,9 @@ Slice 3 moves Candidate identity onto the same portal user/session model as the 
   drives home routing (`/admin` vs `/candidate`).
 - Candidate exam discovery is server-side: `GET /api/candidate/exams` filters to the signed-in
   Candidate's Customer and returns **published Exams only**.
-- The older token-based candidate admission flow (`/api/candidate/admit`) remains in the repo only
-  for the pre-slice candidate lab surfaces and is superseded for portal identity by the shared
-  portal auth model.
+- The older token-based Candidate admission flow is retired at the public API boundary:
+  `POST /api/candidate/admit` and `GET /api/candidate/session` return `410 Gone` with replacement
+  API details. They are intentionally not connected to token-auth composition.
 
 ## Candidate exam catalog & scheduling
 
@@ -268,6 +268,9 @@ The active Certalis/Helios candidate flow is portal-authenticated:
   Customer and the Candidate's current ExamAttempts.
 - `POST /api/candidate/exams` schedules an ExamAttempt and provisions the
   CloudShare LabLaunch through the active per-Customer CloudShare flow.
+- `GET /api/auth/session` is the active session-resume endpoint for Candidates
+  and admins; the retired `GET /api/candidate/session` endpoint now returns
+  `410 Gone`.
 - The retired simulator booking routes, `GET /api/exams/eligible` and
   `POST /api/exams/book`, now return `410 Gone` with replacement API details.
   They are intentionally not connected to the old simulator eligibility adapter

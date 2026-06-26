@@ -8,3 +8,15 @@ export const retiredLegacySimulatorExamFlowResponse = {
     },
   },
 } as const;
+
+export const retiredLegacyTokenCandidateAdmissionResponse = {
+  error: {
+    code: "legacy_token_candidate_admission_retired",
+    message: "The retired token-based Candidate admission API is no longer active.",
+    replacements: {
+      login: "POST /api/auth/login",
+      session: "GET /api/auth/session",
+      catalog: "GET /api/candidate/exams",
+    },
+  },
+} as const;
