@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { handleGetDemoState, handleExecuteStep, handleResetDemo, type DemoControlDeps } from "./demo-control";
+import {
+  handleGetDemoState,
+  handleExecuteStep,
+  handleResetDemo,
+  type DemoControlDeps,
+} from "./legacy-simulator-demo-control";
 import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-repository";
 import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repository";
 import { createKryterionSimulator } from "@/integrations/kryterion/simulator";

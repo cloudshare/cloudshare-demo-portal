@@ -429,15 +429,17 @@ store — swappable for Prisma-backed adapters for deployments that must survive
 **Architecture separation:** `src/api/admin.ts` contains the three framework-agnostic handlers
 (testable without Next.js); `app/api/admin/*/route.ts` are the thin Next.js wrappers.
 
-## Demo Control Panel
+## Legacy Demo Control Panel
 
-Operator-facing panel at `/demo` that walks the proctoring happy path as ordered,
-state-gated steps. Each step unlocks only when its predecessor is done.
+Operator-facing panel at `/demo` that preserves the older deterministic simulator
+walkthrough as ordered, state-gated steps. This is retained as a compatibility
+surface for fixture demos; the active Certalis/Helios Candidate lifecycle uses
+the portal-authenticated Exam catalog, scheduling, and runtime APIs.
 
 **Steps (in order):**
 1. **Book Exam** — registers `cand-001` for `GCP-ASSOC` → creates `ExamAttempt`
 2. **Launch Lab** — provisions a CloudShare lab for the attempt → creates `LabLaunch`; seeds the demo simulator so the environment appears `running` immediately
-3. **Suspend Exam** — suspends the environment and pauses the Kryterion timer
+3. **Suspend Exam** — suspends the environment and pauses the legacy simulator timer
 4. **Resume Exam** — resumes the environment and restarts the timer
 5. **Retrieve Score** — fetches Guided Journey progress from CloudShare
 
@@ -445,7 +447,7 @@ state-gated steps. Each step unlocks only when its predecessor is done.
 - **Run** button on each step — execute one step manually
 - **▶ Auto-play** — runs all available steps sequentially from the current position
 - **↺ Reset** — clears all in-memory state (exam attempts, lab launches, environment
-  simulator, Kryterion timers) for a clean repeat run without restarting the server
+  simulator, legacy simulator timers) for a clean repeat run without restarting the server
 - **⟳ Refresh** — re-reads current domain state
 
 **State display:** the bottom panel shows live domain state (ExamAttempt ID, LabLaunch
@@ -454,11 +456,12 @@ ID, environment status, timer status and elapsed time, login URL).
 **Architecture:**
 - `src/domain/demo-control.ts` — `DemoStep`, `StepStatus`, `DemoGates`, `DEMO_SEED`,
   `STEP_META`, and the pure `computeStepStatuses` gating function
-- `src/api/demo-control.ts` — framework-agnostic `handleGetDemoState`, `handleExecuteStep`,
-  `handleResetDemo` handlers; composes existing use cases (`bookExam`, `launchLab`,
-  `suspendExam`, `resumeExam`, `retrieveScore`) in one place
+- `src/api/legacy-simulator-demo-control.ts` — quarantined framework-agnostic compatibility
+  handlers for `handleGetDemoState`, `handleExecuteStep`, and `handleResetDemo`; composes
+  the retired simulator use cases (`bookExam`, `launchLab`, `suspendExam`, `resumeExam`,
+  `retrieveScore`) in one place for `/demo` only
 - `app/api/demo/{state,step,reset}/route.ts` — thin Next.js route wrappers
 - `app/demo/page.tsx` — React client component (step list, auto-play, domain state table)
 - Each in-memory repository exposes a `reset()` method; the composition root's `resetDemo()`
-  calls them all, plus the environment simulator and Kryterion simulator, so a reset
+  calls them all, plus the environment simulator and legacy simulator timer, so a reset
   is a clean slate without a server restart
