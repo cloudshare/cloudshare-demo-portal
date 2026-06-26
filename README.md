@@ -451,7 +451,8 @@ the portal-authenticated Exam catalog, scheduling, and runtime APIs.
 - **⟳ Refresh** — re-reads current domain state
 
 **State display:** the bottom panel shows live domain state (ExamAttempt ID, LabLaunch
-ID, environment status, timer status and elapsed time, login URL).
+ID, environment status, timer status, and elapsed time). It does not expose the
+CloudShare sponsored-link login URL.
 
 **Architecture:**
 - `src/domain/demo-control.ts` — `DemoStep`, `StepStatus`, `DemoGates`, `DEMO_SEED`,
@@ -460,6 +461,8 @@ ID, environment status, timer status and elapsed time, login URL).
   handlers for `handleGetDemoState`, `handleExecuteStep`, and `handleResetDemo`; composes
   the retired simulator use cases (`bookExam`, `launchLab`, `suspendExam`, `resumeExam`,
   `retrieveScore`) in one place for `/demo` only
+- `src/composition.ts` exposes the retired simulator dependencies only through
+  `legacySimulatorDemo`, not as active top-level services
 - `app/api/demo/{state,step,reset}/route.ts` — thin Next.js route wrappers
 - `app/demo/page.tsx` — React client component (step list, auto-play, domain state table)
 - Each in-memory repository exposes a `reset()` method; the composition root's `resetDemo()`

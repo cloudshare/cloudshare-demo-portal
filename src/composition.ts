@@ -92,6 +92,11 @@ import { createPrismaAdminExamAttemptDiagnosticContextRepository } from "@/persi
  * SQLite connection pool during development hot-reloads.
  */
 
+export interface LegacySimulatorDemoServices {
+  readonly kryterion: KryterionSimulator;
+  readonly genesys: ExamEligibilityProvider;
+}
+
 export interface Services {
   config: Config;
   logger: Logger;
@@ -100,9 +105,9 @@ export interface Services {
   candidateAuth: CandidateAuthenticator;
   portalAuth: PortalAuthenticator;
   portalUsers: PortalUserRepository;
-  kryterion: KryterionSimulator;
+  /** Retired simulator dependencies retained only for the quarantined `/demo` compatibility surface. */
+  legacySimulatorDemo: LegacySimulatorDemoServices;
   examClock: ExamClock;
-  genesys: ExamEligibilityProvider;
   examAttempts: ExamAttemptRepository;
   events: IntegrationEventBus;
   labProvisioner: LabProvisioner;
@@ -439,9 +444,11 @@ export function getServices(): Services {
     candidateAuth,
     portalAuth,
     portalUsers,
-    kryterion,
+    legacySimulatorDemo: {
+      kryterion,
+      genesys,
+    },
     examClock,
-    genesys,
     examAttempts,
     events,
     labProvisioner,
