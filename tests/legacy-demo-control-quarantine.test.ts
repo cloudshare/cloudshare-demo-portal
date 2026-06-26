@@ -37,4 +37,14 @@ describe("legacy simulator demo-control quarantine", () => {
     expect(servicesInterface).not.toMatch(/\n\s+kryterion:/);
     expect(servicesInterface).not.toMatch(/\n\s+genesys:/);
   });
+
+  it("treats the legacy demo bundle as required service shape for hot reload reuse", () => {
+    const composition = readFileSync("src/composition.ts", "utf8");
+    const reuseGuard = composition.match(
+      /function isReusableServices\(services: Services\): boolean \{(?<body>[\s\S]*?)\n\}/,
+    )?.groups?.body;
+
+    expect(reuseGuard).toBeDefined();
+    expect(reuseGuard).toContain("legacySimulatorDemo");
+  });
 });

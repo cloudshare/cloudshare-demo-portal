@@ -484,6 +484,8 @@ export function getServices(): Services {
 function isReusableServices(services: Services): boolean {
   return (
     typeof services.cloudshareConnections?.findByWebhookPathToken === "function" &&
-    typeof services.cloudshareClientFactory?.forConnection === "function"
+    typeof services.cloudshareClientFactory?.forConnection === "function" &&
+    typeof services.legacySimulatorDemo?.kryterion?.getTimerState === "function" &&
+    typeof services.legacySimulatorDemo?.genesys?.listEligibleExams === "function"
   );
 }
