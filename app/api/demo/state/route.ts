@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getServices } from "@/composition";
-import { handleGetDemoState, buildDemoDeps } from "@/api/demo-control";
+import {
+  handleGetDemoState,
+  buildDemoDeps,
+} from "@/api/legacy-simulator-demo-control";
 
 /** GET /api/demo/state — returns the current Demo Control Panel state. */
 export async function GET() {

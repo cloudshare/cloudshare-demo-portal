@@ -23,10 +23,12 @@ import { suspendExam, resumeExam } from "@/domain/timer-sync";
 import { retrieveScore } from "@/domain/score-result";
 
 /**
- * Framework-agnostic Demo Control Panel handlers. These orchestrate the happy-path
- * demo by composing existing use cases in sequence, seeding the simulator state
- * after lab launch, and exposing a reset that returns all in-memory stores to a
- * clean baseline for repeat runs.
+ * Legacy simulator Demo Control Panel handlers.
+ *
+ * This module intentionally quarantines the retired Genesys/Kryterion simulator
+ * flow behind the remaining `/api/demo/*` compatibility surface. It preserves
+ * deterministic fixture/demo behavior, but it is not part of the active
+ * Certalis/Helios ExamAttempt runtime lifecycle.
  *
  * HTTP contracts:
  *   GET  /api/demo/state  — 200 { seed, steps, currentState }
