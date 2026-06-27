@@ -22,26 +22,38 @@ describe("legacy simulator demo-control quarantine", () => {
     expect(readme).toContain("## Legacy Demo Control Panel");
     expect(readme).toContain("src/api/legacy-simulator-demo-control.ts");
     expect(readme).toContain("legacySimulatorDemo");
+    expect(readme).toContain("legacyDemoRuntimeControls");
     expect(readme).toContain("It does not expose the");
     expect(readme).not.toContain("src/api/demo-control.ts");
   });
 
-  it("keeps retired simulator services out of the active top-level composition interface", () => {
+  it("keeps retired simulator services and deterministic demo controls in separate bundles", () => {
     const composition = readFileSync("src/composition.ts", "utf8");
     const legacyDemoServicesInterface = composition.match(
       /export interface LegacySimulatorDemoServices \{(?<body>[\s\S]*?)\n\}/,
+    )?.groups?.body;
+    const legacyDemoRuntimeControlsInterface = composition.match(
+      /export interface LegacyDemoRuntimeControls \{(?<body>[\s\S]*?)\n\}/,
     )?.groups?.body;
     const servicesInterface = composition.match(
       /export interface Services \{(?<body>[\s\S]*?)\n\}/,
     )?.groups?.body;
 
     expect(legacyDemoServicesInterface).toBeDefined();
-    expect(legacyDemoServicesInterface).toContain("completedDemoSteps");
-    expect(legacyDemoServicesInterface).toContain("markStepDone");
-    expect(legacyDemoServicesInterface).toContain("resetDemo");
+    expect(legacyDemoServicesInterface).toContain("kryterion");
+    expect(legacyDemoServicesInterface).toContain("genesys");
+    expect(legacyDemoServicesInterface).not.toContain("completedDemoSteps");
+    expect(legacyDemoServicesInterface).not.toContain("markStepDone");
+    expect(legacyDemoServicesInterface).not.toContain("resetDemo");
+
+    expect(legacyDemoRuntimeControlsInterface).toBeDefined();
+    expect(legacyDemoRuntimeControlsInterface).toContain("completedDemoSteps");
+    expect(legacyDemoRuntimeControlsInterface).toContain("markStepDone");
+    expect(legacyDemoRuntimeControlsInterface).toContain("resetDemo");
 
     expect(servicesInterface).toBeDefined();
     expect(servicesInterface).toContain("legacySimulatorDemo");
+    expect(servicesInterface).toContain("legacyDemoRuntimeControls");
     expect(servicesInterface).not.toMatch(/\n\s+kryterion:/);
     expect(servicesInterface).not.toMatch(/\n\s+genesys:/);
     expect(servicesInterface).not.toMatch(/\n\s+completedDemoSteps:/);
@@ -57,6 +69,7 @@ describe("legacy simulator demo-control quarantine", () => {
 
     expect(reuseGuard).toBeDefined();
     expect(reuseGuard).toContain("legacySimulatorDemo");
+    expect(reuseGuard).toContain("legacyDemoRuntimeControls");
     expect(reuseGuard).toContain("completedDemoSteps");
     expect(reuseGuard).toContain("markStepDone");
     expect(reuseGuard).toContain("resetDemo");
@@ -69,10 +82,12 @@ describe("legacy simulator demo-control quarantine", () => {
     )?.groups?.body;
 
     expect(buildDemoDeps).toBeDefined();
+    expect(buildDemoDeps).toContain("kryterion: svc.legacySimulatorDemo.kryterion");
+    expect(buildDemoDeps).toContain("genesys: svc.legacySimulatorDemo.genesys");
     expect(buildDemoDeps).toContain(
-      "completedDemoSteps: svc.legacySimulatorDemo.completedDemoSteps",
+      "completedDemoSteps: svc.legacyDemoRuntimeControls.completedDemoSteps",
     );
-    expect(buildDemoDeps).toContain("markStepDone: svc.legacySimulatorDemo.markStepDone");
-    expect(buildDemoDeps).toContain("resetDemoState: svc.legacySimulatorDemo.resetDemo");
+    expect(buildDemoDeps).toContain("markStepDone: svc.legacyDemoRuntimeControls.markStepDone");
+    expect(buildDemoDeps).toContain("resetDemoState: svc.legacyDemoRuntimeControls.resetDemo");
   });
 });

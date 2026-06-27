@@ -95,6 +95,9 @@ import { createPrismaAdminExamAttemptDiagnosticContextRepository } from "@/persi
 export interface LegacySimulatorDemoServices {
   readonly kryterion: KryterionSimulator;
   readonly genesys: ExamEligibilityProvider;
+}
+
+export interface LegacyDemoRuntimeControls {
   /**
    * Which demo steps have been explicitly completed in this server instance's
    * lifetime. Cleared by `resetDemo()` for repeat runs.
@@ -116,6 +119,8 @@ export interface Services {
   portalUsers: PortalUserRepository;
   /** Retired simulator dependencies retained only for the quarantined `/demo` compatibility surface. */
   legacySimulatorDemo: LegacySimulatorDemoServices;
+  /** Deterministic `/demo` progress/reset controls retained only for the legacy demo surface. */
+  legacyDemoRuntimeControls: LegacyDemoRuntimeControls;
   examClock: ExamClock;
   examAttempts: ExamAttemptRepository;
   events: IntegrationEventBus;
@@ -447,6 +452,8 @@ export function getServices(): Services {
     legacySimulatorDemo: {
       kryterion,
       genesys,
+    },
+    legacyDemoRuntimeControls: {
       completedDemoSteps,
       markStepDone,
       resetDemo,
@@ -487,8 +494,8 @@ function isReusableServices(services: Services): boolean {
     typeof services.cloudshareClientFactory?.forConnection === "function" &&
     typeof services.legacySimulatorDemo?.kryterion?.getTimerState === "function" &&
     typeof services.legacySimulatorDemo?.genesys?.listEligibleExams === "function" &&
-    typeof services.legacySimulatorDemo?.completedDemoSteps?.has === "function" &&
-    typeof services.legacySimulatorDemo?.markStepDone === "function" &&
-    typeof services.legacySimulatorDemo?.resetDemo === "function"
+    typeof services.legacyDemoRuntimeControls?.completedDemoSteps?.has === "function" &&
+    typeof services.legacyDemoRuntimeControls?.markStepDone === "function" &&
+    typeof services.legacyDemoRuntimeControls?.resetDemo === "function"
   );
 }
