@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getServices } from "@/composition";
-import { handleGetSupportLog } from "@/api/admin";
+import { buildAdminSupportLogDeps, handleGetSupportLog } from "@/api/admin";
 import { getPortalAdminSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 
@@ -16,7 +16,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const query = Object.fromEntries(url.searchParams.entries());
   const response = await handleGetSupportLog(
-    { supportLog: services.supportLog, logger: services.logger },
+    buildAdminSupportLogDeps(services),
     { query },
   );
 

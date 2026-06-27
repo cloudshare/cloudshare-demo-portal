@@ -313,6 +313,20 @@ export interface SupportLogHandlerDeps {
   readonly logger: Logger;
 }
 
+export interface AdminSupportLogServices {
+  readonly supportLog: SupportLogRepository;
+  readonly logger: Logger;
+}
+
+export function buildAdminSupportLogDeps(
+  services: AdminSupportLogServices,
+): SupportLogHandlerDeps {
+  return {
+    supportLog: services.supportLog,
+    logger: services.logger,
+  };
+}
+
 export async function handleGetSupportLog(
   deps: SupportLogHandlerDeps,
   request: AdminRequest,

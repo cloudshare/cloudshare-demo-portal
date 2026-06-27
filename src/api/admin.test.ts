@@ -1,9 +1,12 @@
+import { readFileSync } from "node:fs";
 import { describe, it, expect, vi } from "vitest";
 import {
+  buildAdminSupportLogDeps,
   handleGetAuditTrail,
   handleSyncResources,
   handleGetEventLog,
   handleGetSupportLog,
+  type AdminSupportLogServices,
 } from "./admin";
 import type { AuditRepository, AuditRecord } from "@/domain/audit-trail";
 import type { EventLogRepository } from "@/domain/event-log";
@@ -259,6 +262,27 @@ describe("handleGetEventLog", () => {
 });
 
 describe("handleGetSupportLog", () => {
+  it("maps the admin support-log route dependencies from composed portal services", () => {
+    const services = {
+      supportLog: makeSupportLog(),
+      logger: makeLogger(),
+    } satisfies AdminSupportLogServices;
+
+    const deps = buildAdminSupportLogDeps(services);
+
+    expect(deps).toEqual({
+      supportLog: services.supportLog,
+      logger: services.logger,
+    });
+  });
+
+  it("keeps the Next route adapter from inlining legacy support-log wiring", () => {
+    const routeSource = readFileSync("app/api/admin/support-log/route.ts", "utf8");
+
+    expect(routeSource).toContain("buildAdminSupportLogDeps");
+    expect(routeSource).not.toContain("supportLog: services.supportLog");
+  });
+
   it("returns 200 with support log entries", async () => {
     const supportLog = makeSupportLog([
       {
@@ -281,5 +305,29 @@ describe("handleGetSupportLog", () => {
     expect(result.status).toBe(200);
     const body = result.body as { records: unknown[] };
     expect(body.records).toHaveLength(1);
+  });
+
+  it("passes a valid limit query to the support-log repository", async () => {
+    const supportLog = makeSupportLog([]);
+
+    const result = await handleGetSupportLog(
+      { supportLog, logger: makeLogger() },
+      { query: { limit: "5" } },
+    );
+
+    expect(result.status).toBe(200);
+    expect(supportLog.listAll).toHaveBeenCalledWith(5);
+  });
+
+  it("ignores an invalid limit query", async () => {
+    const supportLog = makeSupportLog([]);
+
+    const result = await handleGetSupportLog(
+      { supportLog, logger: makeLogger() },
+      { query: { limit: "not-a-number" } },
+    );
+
+    expect(result.status).toBe(200);
+    expect(supportLog.listAll).toHaveBeenCalledWith(undefined);
   });
 });
