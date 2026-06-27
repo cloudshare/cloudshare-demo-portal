@@ -8,9 +8,8 @@ export const DEMO_SEED = {
 } as const;
 
 /**
- * Demo catalog and candidate training records for the Genesys simulator. This is
- * clearly-separated demo data, never production configuration — believable
- * Genesys-style certification exams gated behind prerequisite training courses.
+ * Retired demo catalog and Candidate training records for the legacy Genesys
+ * simulator. This is clearly separated demo data, never runtime configuration.
  */
 export const genesysDemoData: GenesysSimulatorData = {
   exams: [

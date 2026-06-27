@@ -21,6 +21,26 @@ const activeCandidateRuntimeFiles = [
 ] as const;
 
 describe("legacy simulator demo-control quarantine", () => {
+  it("keeps retired Genesys simulator code out of the active integrations tree", () => {
+    expect(existsSync("src/integrations/genesys")).toBe(false);
+    expect(existsSync("src/legacy-simulator/genesys/simulator.ts")).toBe(true);
+    expect(existsSync("src/legacy-simulator/genesys/demo-data.ts")).toBe(true);
+
+    const composition = readFileSync("src/composition.ts", "utf8");
+    const demoControl = readFileSync("src/api/legacy-simulator-demo-control.ts", "utf8");
+
+    expect(composition).toContain(
+      'import { createGenesysSimulator } from "@/legacy-simulator/genesys/simulator";',
+    );
+    expect(composition).toContain(
+      'import { genesysDemoData } from "@/legacy-simulator/genesys/demo-data";',
+    );
+    expect(demoControl).toContain(
+      'import { DEMO_SEED } from "@/legacy-simulator/genesys/demo-data";',
+    );
+    expect(`${composition}\n${demoControl}`).not.toContain("@/integrations/genesys");
+  });
+
   it("keeps the retired bookExam use case under an explicit legacy simulator path", () => {
     expect(existsSync("src/domain/booking.ts")).toBe(false);
     expect(existsSync("src/legacy-simulator/book-exam.ts")).toBe(true);

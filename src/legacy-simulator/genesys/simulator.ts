@@ -1,19 +1,15 @@
 import type { EligibleExam, ExamEligibilityProvider } from "@/domain/eligibility";
 
 /**
- * Genesys simulator. Stands in for the Genesys certification platform, deciding
- * which exams a candidate is eligible to book from invented-but-believable
- * criteria: a candidate is eligible for an exam once they have completed all of
- * its prerequisite training courses.
- *
- * Implements the {@link ExamEligibilityProvider} port, so the real Genesys API
- * can replace it without touching the booking use case.
+ * Retired Genesys simulator retained only for the legacy `/demo` compatibility
+ * flow. It decides which old demo exams a Candidate can see from
+ * invented-but-believable prerequisite training records.
  */
 
 export interface GenesysExam {
   readonly examId: string;
   readonly title: string;
-  /** Training course ids that must be completed before the exam is bookable. */
+  /** Training course ids completed before the old demo makes the exam available. */
   readonly prerequisites: string[];
 }
 

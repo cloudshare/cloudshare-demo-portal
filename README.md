@@ -187,7 +187,7 @@ Working repository for the CloudShare demo portal discovery, requirements, archi
 - `src/auth` — candidate authentication seam (see below)
 - `src/integrations/cloudshare` — CloudShare adapter (see below)
 - `src/integrations/kryterion` — Kryterion simulator (mints candidate exam tokens)
-- `src/integrations/genesys` — Genesys simulator (exam eligibility)
+- `src/legacy-simulator/genesys` — retired Genesys simulator compatibility data for `/demo`
 - `src/web` — browser-side helpers and client components (e.g. lab child-window)
 - `src/composition.ts` — composition root wiring the modules together
 
@@ -455,8 +455,10 @@ ID, environment status, timer status, and elapsed time). It does not expose the
 CloudShare sponsored-link login URL.
 
 **Architecture:**
-- `src/domain/demo-control.ts` — `DemoStep`, `StepStatus`, `DemoGates`, `DEMO_SEED`,
-  `STEP_META`, and the pure `computeStepStatuses` gating function
+- `src/domain/demo-control.ts` — `DemoStep`, `StepStatus`, `DemoGates`, `STEP_META`,
+  and the pure `computeStepStatuses` gating function
+- `src/legacy-simulator/genesys` — retired Genesys simulator and deterministic demo
+  seed data retained for `/demo` compatibility only
 - `src/legacy-simulator/book-exam.ts` — retired simulator `bookExam` compatibility
   use case retained for `/demo` only; active Candidate scheduling does not import it
 - `src/api/legacy-simulator-demo-control.ts` — quarantined framework-agnostic compatibility
