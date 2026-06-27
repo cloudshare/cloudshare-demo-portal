@@ -1,7 +1,12 @@
-import type { Services } from "@/composition";
-import type { ExamAttempt } from "@/domain/exam-attempt";
-import type { LabLaunch } from "@/domain/lab-launch";
-import { getPortalSession } from "@/auth/portal-session";
+import type { PortalSession } from "@/auth/portal-stores";
+import type { ExamAttempt, ExamAttemptRepository } from "@/domain/exam-attempt";
+import type { LabLaunch, LabLaunchRepository } from "@/domain/lab-launch";
+
+export interface CandidateExamAttemptAccessDeps {
+  readonly getPortalSession: (sessionId: string | undefined) => Promise<PortalSession | null>;
+  readonly examAttempts: Pick<ExamAttemptRepository, "findById">;
+  readonly labLaunches: Pick<LabLaunchRepository, "findByExamAttemptId">;
+}
 
 export type CandidateExamAttemptAccessResult =
   | {
@@ -22,7 +27,7 @@ export type CandidateExamAttemptAccessResult =
     };
 
 export async function authorizeCandidateExamAttemptAccess(
-  services: Services,
+  deps: CandidateExamAttemptAccessDeps,
   input: {
     readonly sessionId: string | undefined;
     readonly examAttemptId: string;
@@ -30,7 +35,7 @@ export async function authorizeCandidateExamAttemptAccess(
     readonly requireInProgress?: boolean;
   },
 ): Promise<CandidateExamAttemptAccessResult> {
-  const session = await getPortalSession(services, input.sessionId);
+  const session = await deps.getPortalSession(input.sessionId);
   if (!session || session.role !== "candidate") {
     return {
       ok: false,
@@ -41,7 +46,7 @@ export async function authorizeCandidateExamAttemptAccess(
     };
   }
 
-  const attempt = await services.examAttempts.findById(input.examAttemptId);
+  const attempt = await deps.examAttempts.findById(input.examAttemptId);
   if (
     !attempt ||
     attempt.candidateId !== session.userId ||
@@ -56,7 +61,7 @@ export async function authorizeCandidateExamAttemptAccess(
     };
   }
 
-  const launch = await services.labLaunches.findByExamAttemptId(input.examAttemptId);
+  const launch = await deps.labLaunches.findByExamAttemptId(input.examAttemptId);
   if (input.requireLaunch && !launch) {
     return {
       ok: false,

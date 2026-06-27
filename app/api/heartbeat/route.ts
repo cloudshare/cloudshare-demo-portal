@@ -28,7 +28,13 @@ export async function POST(request: Request) {
   }
 
   const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
-  const access = await authorizeCandidateExamAttemptAccess(services, {
+  const getCurrentPortalSession = (currentSessionId: string | undefined) =>
+    getPortalSession(services, currentSessionId);
+  const access = await authorizeCandidateExamAttemptAccess({
+    getPortalSession: getCurrentPortalSession,
+    examAttempts: services.examAttempts,
+    labLaunches: services.labLaunches,
+  }, {
     sessionId,
     examAttemptId,
     requireLaunch: true,
@@ -37,7 +43,7 @@ export async function POST(request: Request) {
     return NextResponse.json(access.response.body, { status: access.response.status });
   }
 
-  const portalSession = await getPortalSession(services, sessionId);
+  const portalSession = await getCurrentPortalSession(sessionId);
 
   const resp = await handleExamAttemptHeartbeat(
     buildExamAttemptHeartbeatDeps(services, {
