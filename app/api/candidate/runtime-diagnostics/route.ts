@@ -55,8 +55,14 @@ export async function POST(request: Request) {
   }
 
   const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
-  const session = await getPortalSession(services, sessionId);
-  const access = await authorizeCandidateExamAttemptAccess(services, {
+  const getCurrentPortalSession = (currentSessionId: string | undefined) =>
+    getPortalSession(services, currentSessionId);
+  const session = await getCurrentPortalSession(sessionId);
+  const access = await authorizeCandidateExamAttemptAccess({
+    getPortalSession: getCurrentPortalSession,
+    examAttempts: services.examAttempts,
+    labLaunches: services.labLaunches,
+  }, {
     sessionId,
     examAttemptId,
   });

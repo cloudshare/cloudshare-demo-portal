@@ -1,8 +1,13 @@
-import type { Services } from "@/composition";
+import type { PortalAuthenticator } from "./portal-auth";
 import type { PortalSession } from "./portal-stores";
 
+export interface PortalSessionDeps {
+  readonly portalAuth: Pick<PortalAuthenticator, "resume">;
+  readonly ensurePortalSeeded: () => Promise<void>;
+}
+
 export async function getPortalSession(
-  services: Services,
+  services: PortalSessionDeps,
   sessionId: string | undefined,
 ): Promise<PortalSession | null> {
   await services.ensurePortalSeeded();
@@ -13,7 +18,7 @@ export async function getPortalSession(
 }
 
 export async function getPortalAdminSession(
-  services: Services,
+  services: PortalSessionDeps,
   sessionId: string | undefined,
 ): Promise<PortalSession | null> {
   const session = await getPortalSession(services, sessionId);
