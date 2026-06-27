@@ -10,7 +10,7 @@ import type {
   EnvironmentStateSource,
   EnvironmentStatus,
 } from "./environment";
-import type { ExamAttemptStatus } from "./exam-attempt";
+import type { ActiveExamAttemptStatus, ExamAttemptStatus } from "./exam-attempt";
 import type { LabLaunchRepository, LabProvisioner } from "./lab-launch";
 
 /**
@@ -254,7 +254,7 @@ async function requireAttempt(
 async function requireAttemptStatus(
   attempts: ExamAttemptRepository,
   examAttemptId: string,
-  expectedStatus: "in_progress" | "suspended",
+  expectedStatus: Extract<ActiveExamAttemptStatus, "in_progress" | "suspended">,
   operation: "suspend" | "resume",
 ): Promise<void> {
   const attempt = await requireAttempt(attempts, examAttemptId);
