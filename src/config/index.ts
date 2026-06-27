@@ -28,8 +28,8 @@ const envSchema = z.object({
   CLOUDSHARE_V3_API_ID: z.string().optional().default(""),
   CLOUDSHARE_V3_API_KEY: z.string().optional().default(""),
   CLOUDSHARE_WEBHOOK_SECRET: z.string().optional().default(""),
-  // Kryterion (simulator) exam-token signing secret — HMAC key shared between
-  // the simulator that mints candidate tokens and the auth layer that verifies them.
+  // Legacy Kryterion simulator token signing secret, retained only for `/demo`
+  // compatibility. Active Candidates use portal email/password sessions.
   KRYTERION_TOKEN_SECRET: z.string().min(1),
 
   // Category 2 — runtime flags

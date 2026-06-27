@@ -6,12 +6,8 @@ import {
   type HeartbeatRepository,
 } from "@/persistence/heartbeat-repository";
 import {
-  createTokenCandidateAuthenticator,
-  createInMemoryConsumedTokenStore,
-  createInMemoryCandidateSessionStore,
   createPortalAuthenticator,
   hashPassword,
-  type CandidateAuthenticator,
   type PortalAuthenticator,
 } from "@/auth";
 import {
@@ -114,7 +110,6 @@ export interface Services {
   logger: Logger;
   prisma: PrismaClient;
   heartbeats: HeartbeatRepository;
-  candidateAuth: CandidateAuthenticator;
   portalAuth: PortalAuthenticator;
   portalUsers: PortalUserRepository;
   /** Retired simulator dependencies retained only for the quarantined `/demo` compatibility surface. */
@@ -237,16 +232,6 @@ export function getServices(): Services {
   };
   const heartbeats = createHeartbeatRepository(prisma);
 
-  // Candidate identity. Stores are in-memory for the demo (they survive page
-  // reloads within the running server); swap in Prisma-backed stores for a
-  // deployment that must survive restarts.
-  const consumedTokens = createInMemoryConsumedTokenStore();
-  const candidateSessions = createInMemoryCandidateSessionStore();
-  const candidateAuth = createTokenCandidateAuthenticator({
-    secret: config.secrets.kryterionTokenSecret,
-    consumedTokens,
-    sessions: candidateSessions,
-  });
   const portalUsers = createPortalUserRepository(prisma);
   const portalSessions = createPortalSessionStore(prisma);
   const portalAuth = createPortalAuthenticator({
@@ -436,8 +421,6 @@ export function getServices(): Services {
     environmentSimulator?.reset();
     kryterion.reset();
     heartbeatAutoSuspend.reset();
-    consumedTokens.reset();
-    candidateSessions.reset();
     completedDemoSteps.clear();
   }
 
@@ -446,7 +429,6 @@ export function getServices(): Services {
     logger,
     prisma,
     heartbeats,
-    candidateAuth,
     portalAuth,
     portalUsers,
     legacySimulatorDemo: {
