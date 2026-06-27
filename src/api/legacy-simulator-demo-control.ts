@@ -17,7 +17,7 @@ import {
   type StepStatus,
 } from "@/domain/demo-control";
 import { DEMO_SEED } from "@/integrations/genesys/demo-data";
-import { bookExam } from "@/domain/booking";
+import { bookExam } from "@/legacy-simulator/book-exam";
 import { launchLab } from "@/domain/lab-launch";
 import { suspendExam, resumeExam } from "@/domain/timer-sync";
 import { retrieveScore } from "@/domain/score-result";

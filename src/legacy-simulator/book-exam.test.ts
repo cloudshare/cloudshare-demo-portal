@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
-import { bookExam } from "./booking";
-import { NotEligibleError } from "./errors";
+import { bookExam } from "./book-exam";
+import { NotEligibleError } from "@/domain/errors";
 import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-repository";
-import type { ExamEligibilityProvider } from "./eligibility";
-import type { IntegrationEvent } from "./integration-event";
+import type { ExamEligibilityProvider } from "@/domain/eligibility";
+import type { IntegrationEvent } from "@/domain/integration-event";
 
 const eligibility: ExamEligibilityProvider = {
   async listEligibleExams() {
@@ -29,7 +29,7 @@ function deps(overrides: Partial<Parameters<typeof bookExam>[0]> = {}) {
   };
 }
 
-describe("bookExam", () => {
+describe("legacy simulator bookExam", () => {
   it("books an eligible exam: persists a booked ExamAttempt and returns it", async () => {
     const { d, attempts } = deps();
     const attempt = await bookExam(d, { candidateId: "c-1", examId: "GCP-001" });
