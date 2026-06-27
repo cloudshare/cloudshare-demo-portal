@@ -14,6 +14,22 @@ export interface AdminMonitoringHandlerDeps {
   readonly logger: Logger;
 }
 
+export interface AdminMonitoringServices {
+  readonly adminMonitoringAttempts: AdminMonitoringAttemptRepository;
+  readonly diagnostics: DiagnosticLogRepository;
+  readonly logger: Logger;
+}
+
+export function buildAdminMonitoringDeps(
+  services: AdminMonitoringServices,
+): AdminMonitoringHandlerDeps {
+  return {
+    attempts: services.adminMonitoringAttempts,
+    diagnostics: services.diagnostics,
+    logger: services.logger,
+  };
+}
+
 export interface AdminMonitoringResponse {
   readonly status: number;
   readonly body: AdminMonitoringResponseBody;

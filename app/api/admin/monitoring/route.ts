@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { getServices } from "@/composition";
 import { getPortalAdminSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
-import { handleGetAdminMonitoring } from "@/api/admin-monitoring";
+import { buildAdminMonitoringDeps, handleGetAdminMonitoring } from "@/api/admin-monitoring";
 
 export async function GET(request: Request) {
   const services = getServices();
@@ -15,11 +15,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
 
   const response = await handleGetAdminMonitoring(
-    {
-      attempts: services.adminMonitoringAttempts,
-      diagnostics: services.diagnostics,
-      logger: services.logger,
-    },
+    buildAdminMonitoringDeps(services),
     {
       customerId: session.customerId,
       query: {
