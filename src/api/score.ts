@@ -1,4 +1,10 @@
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
+import type { CloudShareClientFactory } from "@/domain/cloudshare-connection";
+import {
+  createCloudShareGuidedJourneyProvider,
+  SCORING_LIMITATIONS,
+} from "@/integrations/cloudshare/guided-journey";
+import { createCloudShareParticipantLister } from "@/integrations/cloudshare/participants";
 import {
   getExamAttemptScoreRuntime,
   type ExamAttemptScoreRuntimeDeps,
@@ -7,6 +13,17 @@ import {
 
 export interface ScoreHandlerDeps extends ExamAttemptScoreRuntimeDeps {
   readonly attempts: ExamAttemptRepository;
+}
+
+export interface CandidateScoreServices {
+  readonly examAttempts: ScoreHandlerDeps["attempts"];
+  readonly exams: ScoreHandlerDeps["exams"];
+  readonly labLaunches: ScoreHandlerDeps["launches"];
+  readonly audit: ScoreHandlerDeps["audit"];
+  readonly cloudshareConnections: ScoreHandlerDeps["connections"];
+  readonly cloudshareClientFactory: CloudShareClientFactory;
+  readonly logger: ScoreHandlerDeps["logger"];
+  readonly diagnosticRecorder: ScoreHandlerDeps["diagnostics"];
 }
 
 export interface ScoreRequest {
@@ -21,6 +38,29 @@ export interface ScoreRequest {
 }
 
 export type ScoreResponse = ExamAttemptScoreRuntimeResponse;
+
+export function buildCandidateScoreDeps(
+  services: CandidateScoreServices,
+): ScoreHandlerDeps {
+  return {
+    attempts: services.examAttempts,
+    exams: services.exams,
+    launches: services.labLaunches,
+    audit: services.audit,
+    connections: services.cloudshareConnections,
+    createScoreRetriever: (connection) =>
+      createCloudShareGuidedJourneyProvider(
+        services.cloudshareClientFactory.forConnection(connection),
+      ),
+    createParticipantLister: (connection) =>
+      createCloudShareParticipantLister(
+        services.cloudshareClientFactory.forConnection(connection),
+      ),
+    logger: services.logger,
+    limitations: SCORING_LIMITATIONS,
+    diagnostics: services.diagnosticRecorder,
+  };
+}
 
 export async function handleGetCandidateScore(
   deps: ScoreHandlerDeps,

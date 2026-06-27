@@ -1,5 +1,6 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { handleGetCandidateScore } from "./score";
+import { buildCandidateScoreDeps, handleGetCandidateScore } from "./score";
 import type { AuditRepository } from "@/domain/audit-trail";
 import type {
   CloudShareConnectionRecord,
@@ -9,6 +10,7 @@ import type { ExamAttempt, ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { Exam, ExamRepository } from "@/domain/exam-catalog";
 import type { LabLaunch, LabLaunchRepository } from "@/domain/lab-launch";
 import type { Logger } from "@/observability/logger";
+import type { CandidateScoreServices } from "./score";
 
 function makeAttempt(overrides: Partial<ExamAttempt> = {}): ExamAttempt {
   return {
@@ -125,6 +127,60 @@ const CANDIDATE_SESSION = {
   customerId: "customer-1",
   role: "candidate",
 };
+
+describe("buildCandidateScoreDeps", () => {
+  it("maps the candidate score runtime dependencies from composed portal services", () => {
+    const services = {
+      examAttempts: {},
+      exams: {},
+      labLaunches: {},
+      audit: {},
+      cloudshareConnections: {},
+      cloudshareClientFactory: {
+        forConnection: vi.fn().mockReturnValue({ requestV4: vi.fn() }),
+      },
+      logger: makeLogger(),
+      diagnosticRecorder: {},
+    } as unknown as CandidateScoreServices;
+
+    const deps = buildCandidateScoreDeps(services);
+
+    expect(deps).toMatchObject({
+      attempts: services.examAttempts,
+      exams: services.exams,
+      launches: services.labLaunches,
+      audit: services.audit,
+      connections: services.cloudshareConnections,
+      logger: services.logger,
+      diagnostics: services.diagnosticRecorder,
+    });
+    expect(deps.limitations.length).toBeGreaterThan(0);
+
+    const connection = {
+      customerId: "customer-1",
+      apiId: "api-id",
+      apiKey: "api-key",
+      webhookSecret: "webhook-secret",
+      webhookPathToken: "webhook-token",
+      connectedAt: new Date("2026-06-16T07:00:00.000Z"),
+      verifiedAt: null,
+    };
+    expect(deps.createScoreRetriever(connection)).toHaveProperty("getParticipantProgress");
+    expect(deps.createParticipantLister(connection)).toHaveProperty("listParticipants");
+    expect(services.cloudshareClientFactory.forConnection).toHaveBeenCalledTimes(2);
+    expect(services.cloudshareClientFactory.forConnection).toHaveBeenCalledWith(connection);
+  });
+
+  it("keeps the Next route adapter from constructing CloudShare score adapters", () => {
+    const routeSource = readFileSync("app/api/exam/score/route.ts", "utf8");
+
+    expect(routeSource).toContain("buildCandidateScoreDeps");
+    expect(routeSource).not.toContain("createCloudShareGuidedJourneyProvider");
+    expect(routeSource).not.toContain("createCloudShareParticipantLister");
+    expect(routeSource).not.toContain("SCORING_LIMITATIONS");
+    expect(routeSource).not.toContain("attempts: services.examAttempts");
+  });
+});
 
 describe("handleGetCandidateScore", () => {
   it("returns 401 when the request is not from an authenticated Candidate", async () => {
