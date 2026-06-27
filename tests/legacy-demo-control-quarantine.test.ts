@@ -41,6 +41,27 @@ describe("legacy simulator demo-control quarantine", () => {
     expect(`${composition}\n${demoControl}`).not.toContain("@/integrations/genesys");
   });
 
+  it("keeps retired Kryterion simulator code out of the active integrations tree", () => {
+    expect(existsSync("src/integrations/kryterion")).toBe(false);
+    expect(existsSync("src/legacy-simulator/kryterion/simulator.ts")).toBe(true);
+
+    const composition = readFileSync("src/composition.ts", "utf8");
+    const demoControl = readFileSync("src/api/legacy-simulator-demo-control.ts", "utf8");
+    const activeSources = [
+      composition,
+      demoControl,
+      ...activeCandidateRuntimeFiles.map((file) => readFileSync(file, "utf8")),
+    ].join("\n");
+
+    expect(composition).toContain(
+      'from "@/legacy-simulator/kryterion/simulator";',
+    );
+    expect(demoControl).toContain(
+      'from "@/legacy-simulator/kryterion/simulator";',
+    );
+    expect(activeSources).not.toContain("@/integrations/kryterion");
+  });
+
   it("keeps the retired bookExam use case under an explicit legacy simulator path", () => {
     expect(existsSync("src/domain/booking.ts")).toBe(false);
     expect(existsSync("src/legacy-simulator/book-exam.ts")).toBe(true);

@@ -7,7 +7,7 @@ import {
 } from "./legacy-simulator-demo-control";
 import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-repository";
 import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repository";
-import { createKryterionSimulator } from "@/integrations/kryterion/simulator";
+import { createKryterionSimulator } from "@/legacy-simulator/kryterion/simulator";
 import { createGenesysSimulator } from "@/legacy-simulator/genesys/simulator";
 import { genesysDemoData } from "@/legacy-simulator/genesys/demo-data";
 import { createCloudShareEnvironmentSimulator } from "@/integrations/cloudshare/environment-simulator";

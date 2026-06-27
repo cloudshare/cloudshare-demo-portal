@@ -17,7 +17,7 @@ import {
 import {
   createKryterionSimulator,
   type KryterionSimulator,
-} from "@/integrations/kryterion/simulator";
+} from "@/legacy-simulator/kryterion/simulator";
 import { createGenesysSimulator } from "@/legacy-simulator/genesys/simulator";
 import { genesysDemoData } from "@/legacy-simulator/genesys/demo-data";
 import { createInMemoryEventBus, type IntegrationEventBus } from "@/domain/event-bus";

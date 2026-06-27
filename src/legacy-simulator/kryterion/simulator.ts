@@ -3,16 +3,9 @@ import { signExamToken } from "@/auth/exam-token";
 import type { ExamTimer } from "@/domain/timer-sync";
 
 /**
- * Kryterion simulator. Stands in for the real Kryterion proctoring platform.
- *
- * In addition to minting short-lived signed exam tokens, the simulator now owns
- * the authoritative exam clock. `pauseTimer`/`resumeTimer` implement the
- * {@link ExamTimer} port so the domain timer-sync use cases can drive the clock
- * without knowing it is a simulator.
- *
- * When Kryterion is integrated for real, this module is replaced by an inbound
- * adapter over Kryterion's actual token/session/clock events — the domain port
- * seam is unchanged.
+ * Retired Kryterion simulator retained only for the legacy `/demo` compatibility
+ * surface. It mints short-lived signed exam tokens and implements the timer port
+ * used by that legacy flow.
  */
 
 export interface MintExamTokenInput {
