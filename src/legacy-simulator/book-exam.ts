@@ -1,17 +1,14 @@
-import type { ExamEligibilityProvider } from "./eligibility";
-import { NotEligibleError } from "./errors";
-import type { ExamAttempt, ExamAttemptRepository } from "./exam-attempt";
-import type { IntegrationEventPublisher } from "./integration-event";
+import type { ExamEligibilityProvider } from "@/domain/eligibility";
+import { NotEligibleError } from "@/domain/errors";
+import type { ExamAttempt, ExamAttemptRepository } from "@/domain/exam-attempt";
+import type { IntegrationEventPublisher } from "@/domain/integration-event";
 
 /**
- * Self-service exam booking — no admin in the loop. A candidate books an exam
- * they are eligible for; the use case creates and persists an {@link ExamAttempt}
- * and emits an `exam_attempt.created` IntegrationEvent that begins the downstream
- * lab-launch flow. Eligibility is re-checked here so the seam, not the UI, is the
- * authority on what may be booked.
+ * Retired simulator self-service exam booking.
  *
- * Pure and framework-agnostic: it depends only on ports, so it is exercised
- * directly in unit tests.
+ * This use case is retained only for the legacy `/demo` compatibility flow. The
+ * active Candidate lifecycle schedules ExamAttempts through the portal-authenticated
+ * scheduling/runtime APIs instead.
  */
 
 export interface BookExamDeps {

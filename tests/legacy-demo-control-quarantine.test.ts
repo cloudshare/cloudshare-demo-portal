@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const demoRouteFiles = [
@@ -7,7 +7,47 @@ const demoRouteFiles = [
   "app/api/demo/reset/route.ts",
 ] as const;
 
+const activeCandidateRuntimeFiles = [
+  "src/api/candidate-exam-attempt-access.ts",
+  "src/api/candidate-portal.ts",
+  "src/api/candidate-lab.ts",
+  "src/api/candidate-runtime-diagnostics.ts",
+  "src/api/enter.ts",
+  "src/api/exam-attempt-dashboard-runtime.ts",
+  "src/api/exam-attempt-runtime.ts",
+  "src/api/exam-attempt-scheduling-runtime.ts",
+  "src/api/exam-attempt-score-runtime.ts",
+  "src/api/exam-attempt-suspend-resume-runtime.ts",
+] as const;
+
 describe("legacy simulator demo-control quarantine", () => {
+  it("keeps the retired bookExam use case under an explicit legacy simulator path", () => {
+    expect(existsSync("src/domain/booking.ts")).toBe(false);
+    expect(existsSync("src/legacy-simulator/book-exam.ts")).toBe(true);
+  });
+
+  it("keeps active Candidate scheduling and runtime handlers from importing retired bookExam", () => {
+    const offenders = activeCandidateRuntimeFiles.filter((file) => {
+      const source = readFileSync(file, "utf8");
+      return (
+        source.includes("@/domain/booking") ||
+        source.includes("./booking") ||
+        source.includes("@/legacy-simulator/book-exam")
+      );
+    });
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("imports retired bookExam only from the legacy simulator compatibility module", () => {
+    const demoControl = readFileSync("src/api/legacy-simulator-demo-control.ts", "utf8");
+
+    expect(demoControl).toContain(
+      'import { bookExam } from "@/legacy-simulator/book-exam";',
+    );
+    expect(demoControl).not.toContain("@/domain/booking");
+  });
+
   it("keeps /api/demo route adapters pointed at the legacy simulator compatibility module", () => {
     for (const routeFile of demoRouteFiles) {
       const source = readFileSync(routeFile, "utf8");

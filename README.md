@@ -457,6 +457,8 @@ CloudShare sponsored-link login URL.
 **Architecture:**
 - `src/domain/demo-control.ts` — `DemoStep`, `StepStatus`, `DemoGates`, `DEMO_SEED`,
   `STEP_META`, and the pure `computeStepStatuses` gating function
+- `src/legacy-simulator/book-exam.ts` — retired simulator `bookExam` compatibility
+  use case retained for `/demo` only; active Candidate scheduling does not import it
 - `src/api/legacy-simulator-demo-control.ts` — quarantined framework-agnostic compatibility
   handlers for `handleGetDemoState`, `handleExecuteStep`, and `handleResetDemo`; composes
   the retired simulator use cases (`bookExam`, `launchLab`, `suspendExam`, `resumeExam`,
