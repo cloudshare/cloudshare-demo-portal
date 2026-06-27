@@ -82,6 +82,8 @@ describe("legacy simulator demo-control quarantine", () => {
     )?.groups?.body;
 
     expect(buildDemoDeps).toBeDefined();
+    expect(buildDemoDeps).toContain("kryterion: svc.legacySimulatorDemo.kryterion");
+    expect(buildDemoDeps).toContain("genesys: svc.legacySimulatorDemo.genesys");
     expect(buildDemoDeps).toContain(
       "completedDemoSteps: svc.legacyDemoRuntimeControls.completedDemoSteps",
     );
