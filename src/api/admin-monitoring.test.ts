@@ -1,5 +1,10 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { handleGetAdminMonitoring } from "./admin-monitoring";
+import {
+  buildAdminMonitoringDeps,
+  handleGetAdminMonitoring,
+  type AdminMonitoringServices,
+} from "./admin-monitoring";
 import type {
   AdminMonitoringAttemptRepository,
   AdminMonitoringSummary,
@@ -109,6 +114,30 @@ function makeDiagnosticRepository(recordsByAttemptId: Record<string, DiagnosticL
 }
 
 describe("handleGetAdminMonitoring", () => {
+  it("maps admin monitoring dependencies from composed portal services", () => {
+    const services = {
+      adminMonitoringAttempts: makeAttemptRepository(),
+      diagnostics: makeDiagnosticRepository(),
+      logger: makeLogger(),
+    } satisfies AdminMonitoringServices;
+
+    const deps = buildAdminMonitoringDeps(services);
+
+    expect(deps).toEqual({
+      attempts: services.adminMonitoringAttempts,
+      diagnostics: services.diagnostics,
+      logger: services.logger,
+    });
+  });
+
+  it("keeps the Next route adapter from inlining admin monitoring wiring", () => {
+    const routeSource = readFileSync("app/api/admin/monitoring/route.ts", "utf8");
+
+    expect(routeSource).toContain("buildAdminMonitoringDeps");
+    expect(routeSource).not.toContain("attempts: services.adminMonitoringAttempts");
+    expect(routeSource).not.toContain("diagnostics: services.diagnostics");
+  });
+
   it("reconstructs visible attempt timelines from persisted diagnostics", async () => {
     const attempts = makeAttemptRepository({
       summary: makeSummary({
