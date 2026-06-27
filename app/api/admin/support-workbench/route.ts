@@ -16,7 +16,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const query = Object.fromEntries(url.searchParams.entries());
   const response = await handleGetSupportWorkbench(
-    { supportLog: services.supportLog, logger: services.logger },
+    { diagnostics: services.diagnostics, logger: services.logger },
     { query },
   );
 

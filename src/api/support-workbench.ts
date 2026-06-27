@@ -1,5 +1,9 @@
 import type { Logger, LogLevel } from "@/observability/logger";
-import type { SupportLogRecord, SupportLogRepository } from "@/domain/support-log";
+import type { DiagnosticLogEntry, DiagnosticLogRepository } from "@/domain/diagnostic-log";
+
+const CLOUDSHARE_WEBHOOK_SOURCE = "cloudshare-webhook";
+const CLOUDSHARE_WEBHOOK_RECEIVE_OPERATION = "cloudshare.webhook.receive";
+const CLOUDSHARE_WEBHOOK_INTEGRATION_SURFACE = "cloudshare.v3.webhook";
 
 export interface SupportWorkbenchRequest {
   readonly query: Record<string, string | undefined>;
@@ -29,7 +33,7 @@ export interface SupportWorkbenchDiagnostic {
 }
 
 export interface SupportWorkbenchDeps {
-  readonly supportLog: SupportLogRepository;
+  readonly diagnostics: DiagnosticLogRepository;
   readonly logger: Logger;
 }
 
@@ -37,10 +41,13 @@ export async function handleGetSupportWorkbench(
   deps: SupportWorkbenchDeps,
   _request: SupportWorkbenchRequest,
 ): Promise<SupportWorkbenchResponse> {
-  const diagnostics = (await deps.supportLog.listAll(50))
-    .filter(isCloudShareWebhookDiagnostic)
-    .map(toSupportWorkbenchDiagnostic)
-    .slice(0, 20);
+  const diagnostics = (
+    await deps.diagnostics.query({
+      source: CLOUDSHARE_WEBHOOK_SOURCE,
+      operation: CLOUDSHARE_WEBHOOK_RECEIVE_OPERATION,
+      limit: 20,
+    })
+  ).map(toSupportWorkbenchDiagnostic);
 
   return {
     status: 200,
@@ -48,42 +55,49 @@ export async function handleGetSupportWorkbench(
   };
 }
 
-function isCloudShareWebhookDiagnostic(record: SupportLogRecord): boolean {
-  return (
-    readStringField(record.fields, "operation") === "receive_webhook" &&
-    readStringField(record.fields, "integrationSurface") === "cloudshare.v3.webhook"
-  );
-}
-
-function toSupportWorkbenchDiagnostic(record: SupportLogRecord): SupportWorkbenchDiagnostic {
+function toSupportWorkbenchDiagnostic(record: DiagnosticLogEntry): SupportWorkbenchDiagnostic {
   return {
-    timestamp: record.timestamp,
+    timestamp: record.occurredAt,
     level: record.level,
     message: record.message,
-    operation: readStringField(record.fields, "operation"),
-    integrationSurface: readStringField(record.fields, "integrationSurface"),
-    customerId: readStringField(record.fields, "customerId"),
-    webhookPathFingerprint: readStringField(record.fields, "webhookPathFingerprint"),
-    method: readStringField(record.fields, "method"),
-    path: readStringField(record.fields, "path"),
-    requestBodyBytes: readNumberField(record.fields, "requestBodyBytes"),
-    rawBodySha256: readStringField(record.fields, "rawBodySha256"),
-    signaturePresent: readBooleanField(record.fields, "signaturePresent"),
-    trustGateReason: readStringField(record.fields, "trustGateReason"),
+    operation: record.operation || null,
+    integrationSurface:
+      readStringField(record.details, "integrationSurface") ??
+      (record.source === CLOUDSHARE_WEBHOOK_SOURCE ? CLOUDSHARE_WEBHOOK_INTEGRATION_SURFACE : null),
+    customerId: record.customerId,
+    webhookPathFingerprint: readStringField(record.externalIds, "webhookPathFingerprint"),
+    method: readStringField(record.request, "method"),
+    path: readStringField(record.request, "path"),
+    requestBodyBytes: readNumberField(record.request, "requestBodyBytes"),
+    rawBodySha256: readStringField(record.request, "rawBodySha256"),
+    signaturePresent: readBooleanField(record.details, "signaturePresent"),
+    trustGateReason:
+      readStringField(record.details, "trustGateOutcome") ??
+      readStringField(record.details, "trustGateReason") ??
+      readStringField(record.details, "reason"),
   };
 }
 
-function readStringField(fields: Record<string, unknown>, key: string): string | null {
-  const value = fields[key];
+function readStringField(
+  fields: Readonly<Record<string, unknown>> | null | undefined,
+  key: string,
+): string | null {
+  const value = fields?.[key];
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
-function readNumberField(fields: Record<string, unknown>, key: string): number | null {
-  const value = fields[key];
+function readNumberField(
+  fields: Readonly<Record<string, unknown>> | null | undefined,
+  key: string,
+): number | null {
+  const value = fields?.[key];
   return typeof value === "number" ? value : null;
 }
 
-function readBooleanField(fields: Record<string, unknown>, key: string): boolean | null {
-  const value = fields[key];
+function readBooleanField(
+  fields: Readonly<Record<string, unknown>> | null | undefined,
+  key: string,
+): boolean | null {
+  const value = fields?.[key];
   return typeof value === "boolean" ? value : null;
 }

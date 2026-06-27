@@ -1,55 +1,85 @@
 import { describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { handleGetSupportWorkbench } from "./support-workbench";
-import type { SupportLogRepository } from "@/domain/support-log";
+import type { DiagnosticLogEntry, DiagnosticLogRepository } from "@/domain/diagnostic-log";
 import type { Logger } from "@/observability/logger";
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 }
 
-function makeSupportLog(records: Awaited<ReturnType<SupportLogRepository["listAll"]>>): SupportLogRepository {
+function makeDiagnostics(records: DiagnosticLogEntry[]): DiagnosticLogRepository {
   return {
     append: vi.fn(),
-    listAll: vi.fn().mockResolvedValue(records),
+    query: vi.fn().mockResolvedValue(records),
+  };
+}
+
+function diagnostic(overrides: Partial<DiagnosticLogEntry>): DiagnosticLogEntry {
+  return {
+    id: "diagnostic-1",
+    occurredAt: new Date("2026-06-20T10:00:00.000Z"),
+    level: "warn",
+    source: "cloudshare-webhook",
+    operation: "cloudshare.webhook.receive",
+    outcome: "failure",
+    customerId: null,
+    actor: null,
+    subject: null,
+    message: "CloudShare webhook rejected",
+    correlationId: null,
+    candidateEmail: null,
+    examId: null,
+    examAttemptId: null,
+    externalIds: null,
+    request: null,
+    response: null,
+    details: null,
+    ...overrides,
   };
 }
 
 describe("handleGetSupportWorkbench", () => {
   it("returns a minimal recent webhook diagnostics view for the tracer bullet", async () => {
-    const supportLog = makeSupportLog([
-      {
-        timestamp: new Date("2026-06-20T10:00:00.000Z"),
-        level: "warn",
-        message: "cloudshare webhook rejected: missing signature",
-        fields: {
-          operation: "receive_webhook",
-          integrationSurface: "cloudshare.v3.webhook",
-          customerId: "customer-helios",
+    const diagnostics = makeDiagnostics([
+      diagnostic({
+        customerId: "customer-helios",
+        message: "CloudShare webhook rejected: missing signature",
+        externalIds: {
           webhookPathFingerprint: "sha256:abcd1234",
+        },
+        request: {
           method: "POST",
           path: "/api/webhooks/cloudshare/whk-helios",
           requestBodyBytes: 123,
           rawBodySha256: "abc123",
-          signaturePresent: false,
-          trustGateReason:
-            "CloudShare signature header x-cloudshare-signature was absent.",
         },
-      },
+        details: {
+          signaturePresent: false,
+          signatureHeader: { present: false },
+          trustGateOutcome: "missing_signature",
+        },
+      }),
     ]);
 
     const result = await handleGetSupportWorkbench(
-      { supportLog, logger: makeLogger() },
+      { diagnostics, logger: makeLogger() },
       { query: {} },
     );
 
+    expect(diagnostics.query).toHaveBeenCalledWith({
+      source: "cloudshare-webhook",
+      operation: "cloudshare.webhook.receive",
+      limit: 20,
+    });
     expect(result.status).toBe(200);
     expect(result.body).toEqual({
       diagnostics: [
         {
           timestamp: new Date("2026-06-20T10:00:00.000Z"),
           level: "warn",
-          message: "cloudshare webhook rejected: missing signature",
-          operation: "receive_webhook",
+          message: "CloudShare webhook rejected: missing signature",
+          operation: "cloudshare.webhook.receive",
           integrationSurface: "cloudshare.v3.webhook",
           customerId: "customer-helios",
           webhookPathFingerprint: "sha256:abcd1234",
@@ -58,34 +88,37 @@ describe("handleGetSupportWorkbench", () => {
           requestBodyBytes: 123,
           rawBodySha256: "abc123",
           signaturePresent: false,
-          trustGateReason:
-            "CloudShare signature header x-cloudshare-signature was absent.",
+          trustGateReason: "missing_signature",
         },
       ],
     });
   });
 
   it("redacts raw request bodies for unknown webhook targets while preserving safe metadata", async () => {
-    const supportLog = makeSupportLog([
-      {
-        timestamp: new Date("2026-06-20T10:05:00.000Z"),
-        level: "warn",
-        message: "cloudshare webhook rejected: unknown webhook target",
-        fields: {
-          operation: "receive_webhook",
-          integrationSurface: "cloudshare.v3.webhook",
+    const diagnostics = makeDiagnostics([
+      diagnostic({
+        id: "diagnostic-2",
+        occurredAt: new Date("2026-06-20T10:05:00.000Z"),
+        message: "CloudShare webhook rejected: unknown target",
+        externalIds: {
           webhookPathFingerprint: "sha256:def45678",
+        },
+        request: {
           method: "POST",
           path: "/api/webhooks/cloudshare/unknown-token",
           requestBodyBytes: 88,
           rawBodySha256: "def456",
-          signaturePresent: false,
         },
-      },
+        details: {
+          signaturePresent: true,
+          signatureHeader: { present: true },
+          trustGateOutcome: "unknown_target",
+        },
+      }),
     ]);
 
     const result = await handleGetSupportWorkbench(
-      { supportLog, logger: makeLogger() },
+      { diagnostics, logger: makeLogger() },
       { query: {} },
     );
 
@@ -95,8 +128,8 @@ describe("handleGetSupportWorkbench", () => {
         {
           timestamp: new Date("2026-06-20T10:05:00.000Z"),
           level: "warn",
-          message: "cloudshare webhook rejected: unknown webhook target",
-          operation: "receive_webhook",
+          message: "CloudShare webhook rejected: unknown target",
+          operation: "cloudshare.webhook.receive",
           integrationSurface: "cloudshare.v3.webhook",
           customerId: null,
           webhookPathFingerprint: "sha256:def45678",
@@ -104,10 +137,16 @@ describe("handleGetSupportWorkbench", () => {
           path: "/api/webhooks/cloudshare/unknown-token",
           requestBodyBytes: 88,
           rawBodySha256: "def456",
-          signaturePresent: false,
-          trustGateReason: null,
+          signaturePresent: true,
+          trustGateReason: "unknown_target",
         },
       ],
     });
+  });
+
+  it("does not import the retired support-log domain module", () => {
+    const source = readFileSync(new URL("./support-workbench.ts", import.meta.url), "utf8");
+
+    expect(source).not.toContain("@/domain/" + "support-log");
   });
 });
