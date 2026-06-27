@@ -1,4 +1,4 @@
-import type { ExamTimer } from "./timer-sync";
+import type { ExamTimer } from "./exam-attempt-runtime-lifecycle";
 
 export type ExamClockStatus = "running" | "paused";
 

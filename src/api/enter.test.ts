@@ -3,7 +3,7 @@ import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-
 import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repository";
 import type { Logger } from "@/observability/logger";
 import { handleEnterExam } from "./enter";
-import type { ExamTimer } from "@/domain/timer-sync";
+import type { ExamTimer } from "@/domain/exam-attempt-runtime-lifecycle";
 import { createExamClock, createInMemoryExamClockRepository } from "@/domain/exam-clock";
 import { createInMemoryExamCatalogRepository } from "@/persistence/exam-catalog-repository";
 import { createDraftExam, publishExam } from "@/domain/exam-catalog";

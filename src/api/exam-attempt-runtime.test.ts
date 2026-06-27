@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-repository";
 import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repository";
 import type { Logger } from "@/observability/logger";
-import type { ExamTimer } from "@/domain/timer-sync";
+import type { ExamTimer } from "@/domain/exam-attempt-runtime-lifecycle";
 import { enterExamAttemptRuntime } from "./exam-attempt-runtime";
 import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";

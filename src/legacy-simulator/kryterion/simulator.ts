@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { signExamToken } from "@/auth/exam-token";
-import type { ExamTimer } from "@/domain/timer-sync";
+import type { ExamTimer } from "@/domain/exam-attempt-runtime-lifecycle";
 
 /**
  * Retired Kryterion simulator retained only for the legacy `/demo` compatibility

@@ -7,7 +7,7 @@ import {
   type EnvironmentController,
   type SuspendExamDeps,
   type ResumeExamDeps,
-} from "./timer-sync";
+} from "./exam-attempt-runtime-lifecycle";
 import type { EnvironmentStateSource } from "./environment";
 import type { EnvironmentCommandResult } from "./environment";
 import type { LabLaunch, LabLaunchRepository, LabProvisioner } from "./lab-launch";

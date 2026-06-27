@@ -5,7 +5,7 @@ import {
   runHeartbeatAutoSuspendRuntime,
 } from "./exam-attempt-suspend-resume-runtime";
 import type { SuspendHandlerDeps, ResumeHandlerDeps } from "./exam-attempt-suspend-resume-runtime";
-import type { ExamTimer, EnvironmentController } from "@/domain/timer-sync";
+import type { ExamTimer, EnvironmentController } from "@/domain/exam-attempt-runtime-lifecycle";
 import type { EnvironmentStateSource } from "@/domain/environment";
 import type { LabLaunch, LabLaunchRepository, LabProvisioner } from "@/domain/lab-launch";
 import type { Logger } from "@/observability/logger";

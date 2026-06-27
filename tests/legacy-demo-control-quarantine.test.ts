@@ -97,6 +97,31 @@ describe("legacy simulator demo-control quarantine", () => {
     expect(activeRuntimeLegacyEligibilityImports).toEqual([]);
   });
 
+  it("renames the active suspend/resume domain boundary to ExamAttempt runtime lifecycle", () => {
+    expect(existsSync("src/domain/timer-sync.ts")).toBe(false);
+    expect(existsSync("src/domain/exam-attempt-runtime-lifecycle.ts")).toBe(true);
+
+    const suspendResumeRuntime = readFileSync(
+      "src/api/exam-attempt-suspend-resume-runtime.ts",
+      "utf8",
+    );
+    const allSources = [...listSourceFiles("src"), ...listSourceFiles("tests")];
+    const retiredAliasedTimerSyncImport = ["@/domain", "timer-sync"].join("/");
+    const retiredRelativeTimerSyncImport = ["./", "timer-sync"].join("");
+    const retiredTimerSyncImports = allSources.filter((file) => {
+      const source = readFileSync(file, "utf8");
+      return (
+        source.includes(retiredAliasedTimerSyncImport) ||
+        source.includes(retiredRelativeTimerSyncImport)
+      );
+    });
+
+    expect(suspendResumeRuntime).toContain(
+      'from "@/domain/exam-attempt-runtime-lifecycle";',
+    );
+    expect(retiredTimerSyncImports).toEqual([]);
+  });
+
   it("keeps active Candidate scheduling and runtime handlers from importing retired bookExam", () => {
     const offenders = activeCandidateRuntimeFiles.filter((file) => {
       const source = readFileSync(file, "utf8");
