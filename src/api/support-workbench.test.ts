@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
-import { handleGetSupportWorkbench } from "./support-workbench";
+import {
+  buildSupportWorkbenchDeps,
+  handleGetSupportWorkbench,
+  type SupportWorkbenchServices,
+} from "./support-workbench";
 import type { DiagnosticLogEntry, DiagnosticLogRepository } from "@/domain/diagnostic-log";
 import type { Logger } from "@/observability/logger";
 
@@ -40,6 +44,27 @@ function diagnostic(overrides: Partial<DiagnosticLogEntry>): DiagnosticLogEntry 
 }
 
 describe("handleGetSupportWorkbench", () => {
+  it("maps Support Workbench dependencies from composed portal services", () => {
+    const services = {
+      diagnostics: makeDiagnostics([]),
+      logger: makeLogger(),
+    } satisfies SupportWorkbenchServices;
+
+    const deps = buildSupportWorkbenchDeps(services);
+
+    expect(deps).toEqual({
+      diagnostics: services.diagnostics,
+      logger: services.logger,
+    });
+  });
+
+  it("keeps the Next route adapter from inlining diagnostic-log wiring", () => {
+    const routeSource = readFileSync("app/api/admin/support-workbench/route.ts", "utf8");
+
+    expect(routeSource).toContain("buildSupportWorkbenchDeps");
+    expect(routeSource).not.toContain("diagnostics: services.diagnostics");
+  });
+
   it("returns a minimal recent webhook diagnostics view for the tracer bullet", async () => {
     const diagnostics = makeDiagnostics([
       diagnostic({
