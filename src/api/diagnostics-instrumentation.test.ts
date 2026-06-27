@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   createInMemoryPortalSessionStore,
@@ -16,7 +17,11 @@ import {
 } from "@/domain/diagnostic-log";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import { handlePortalLogin, handlePortalLogout } from "./portal-auth";
-import { handleGetDiagnosticLog } from "./admin";
+import {
+  buildAdminDiagnosticLogDeps,
+  handleGetDiagnosticLog,
+  type AdminDiagnosticLogServices,
+} from "./admin";
 import { handleCandidateSelfRegistration } from "./candidate-portal";
 
 const noopLogger = createLogger({ secrets: [], sink: () => {} });
@@ -327,6 +332,27 @@ describe("recorder → repository redaction (end to end)", () => {
 });
 
 describe("handleGetDiagnosticLog", () => {
+  it("maps admin diagnostic-log dependencies from composed portal services", () => {
+    const services = {
+      diagnostics: createInMemoryDiagnosticLogRepository(),
+      logger: noopLogger,
+    } satisfies AdminDiagnosticLogServices;
+
+    const deps = buildAdminDiagnosticLogDeps(services);
+
+    expect(deps).toEqual({
+      diagnostics: services.diagnostics,
+      logger: services.logger,
+    });
+  });
+
+  it("keeps the Next route adapter from inlining diagnostic-log wiring", () => {
+    const routeSource = readFileSync("app/api/admin/diagnostics/route.ts", "utf8");
+
+    expect(routeSource).toContain("buildAdminDiagnosticLogDeps");
+    expect(routeSource).not.toContain("diagnostics: services.diagnostics");
+  });
+
   it("returns only the caller's Customer entries (isolation)", async () => {
     const repository = createInMemoryDiagnosticLogRepository();
     await repository.append({

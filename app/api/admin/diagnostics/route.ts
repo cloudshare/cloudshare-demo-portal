@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getServices } from "@/composition";
-import { handleGetDiagnosticLog } from "@/api/admin";
+import { buildAdminDiagnosticLogDeps, handleGetDiagnosticLog } from "@/api/admin";
 import { getPortalAdminSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 
@@ -22,7 +22,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const query = Object.fromEntries(url.searchParams.entries());
   const response = await handleGetDiagnosticLog(
-    { diagnostics: services.diagnostics, logger: services.logger },
+    buildAdminDiagnosticLogDeps(services),
     { query, customerId: session.customerId },
   );
 

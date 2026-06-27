@@ -344,6 +344,20 @@ export interface DiagnosticLogHandlerDeps {
   readonly logger: Logger;
 }
 
+export interface AdminDiagnosticLogServices {
+  readonly diagnostics: DiagnosticLogRepository;
+  readonly logger: Logger;
+}
+
+export function buildAdminDiagnosticLogDeps(
+  services: AdminDiagnosticLogServices,
+): DiagnosticLogHandlerDeps {
+  return {
+    diagnostics: services.diagnostics,
+    logger: services.logger,
+  };
+}
+
 /**
  * Read the typed diagnostic log for one Customer. Customer scoping is enforced
  * server-side: the caller passes the authenticated admin's `customerId`, never a
