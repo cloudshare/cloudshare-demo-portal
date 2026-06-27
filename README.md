@@ -186,8 +186,8 @@ Working repository for the CloudShare demo portal discovery, requirements, archi
 - `src/api` — framework-agnostic request handlers (policy), wired to Next.js routes in `app/api`
 - `src/auth` — candidate authentication seam (see below)
 - `src/integrations/cloudshare` — CloudShare adapter (see below)
-- `src/integrations/kryterion` — Kryterion simulator (mints candidate exam tokens)
 - `src/legacy-simulator/genesys` — retired Genesys simulator compatibility data for `/demo`
+- `src/legacy-simulator/kryterion` — retired Kryterion simulator compatibility code for `/demo`
 - `src/web` — browser-side helpers and client components (e.g. lab child-window)
 - `src/composition.ts` — composition root wiring the modules together
 

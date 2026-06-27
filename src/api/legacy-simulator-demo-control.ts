@@ -7,7 +7,7 @@ import type { EnvironmentStateSource } from "@/domain/environment";
 import type { ExamEligibilityProvider } from "@/domain/eligibility";
 import type { IntegrationEventPublisher } from "@/domain/integration-event";
 import type { ScoreRetrievalProvider } from "@/domain/score-result";
-import type { KryterionSimulator } from "@/integrations/kryterion/simulator";
+import type { KryterionSimulator } from "@/legacy-simulator/kryterion/simulator";
 import type { CloudShareEnvironmentSimulator } from "@/integrations/cloudshare/environment-simulator";
 import {
   DEMO_STEPS,
