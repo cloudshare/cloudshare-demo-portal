@@ -158,6 +158,27 @@ describe("legacy simulator demo-control quarantine", () => {
     expect(activeRuntimeOffenders).toEqual([]);
   });
 
+  it("keeps retired token Candidate admission out of active auth and composition", () => {
+    expect(existsSync("src/auth/authenticator.ts")).toBe(false);
+    expect(existsSync("src/auth/exam-token.ts")).toBe(false);
+    expect(existsSync("src/auth/stores.ts")).toBe(false);
+    expect(existsSync("src/legacy-simulator/kryterion/exam-token.ts")).toBe(true);
+
+    const authIndex = readFileSync("src/auth/index.ts", "utf8");
+    const composition = readFileSync("src/composition.ts", "utf8");
+    const kryterionSimulator = readFileSync("src/legacy-simulator/kryterion/simulator.ts", "utf8");
+
+    expect(authIndex).not.toContain("CandidateAuthenticator");
+    expect(authIndex).not.toContain("createTokenCandidateAuthenticator");
+    expect(authIndex).not.toContain("verifyExamToken");
+    expect(authIndex).not.toContain("./exam-token");
+    expect(composition).not.toContain("candidateAuth");
+    expect(composition).not.toContain("createInMemoryConsumedTokenStore");
+    expect(composition).not.toContain("createInMemoryCandidateSessionStore");
+    expect(composition).not.toContain("createTokenCandidateAuthenticator");
+    expect(kryterionSimulator).toContain('import { signLegacyExamToken } from "./exam-token";');
+  });
+
   it("imports retired bookExam only from the legacy simulator compatibility module", () => {
     const demoControl = readFileSync("src/api/legacy-simulator-demo-control.ts", "utf8");
 

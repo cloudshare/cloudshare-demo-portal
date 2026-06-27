@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createKryterionSimulator } from "./simulator";
-import { verifyExamToken } from "@/auth/exam-token";
+import { verifyLegacyExamToken } from "./exam-token";
 import type { KryterionTimerState } from "./simulator";
 
 const secret = "kryterion-secret";
@@ -18,11 +18,11 @@ function makeSim(overrides = {}) {
 }
 
 describe("kryterionSimulator.mintExamToken", () => {
-  it("mints a token the auth layer accepts, bound to the given ExamAttempt", () => {
+  it("mints a token the legacy verifier accepts, bound to the given ExamAttempt", () => {
     const sim = makeSim();
     const token = sim.mintExamToken({ examAttemptId: "ea-77", candidateId: "cand-3" });
 
-    const claims = verifyExamToken(token, { secret, now: () => nowS * 1000 });
+    const claims = verifyLegacyExamToken(token, { secret, now: () => nowS * 1000 });
     expect(claims.examAttemptId).toBe("ea-77");
     expect(claims.candidateId).toBe("cand-3");
   });
@@ -30,7 +30,7 @@ describe("kryterionSimulator.mintExamToken", () => {
   it("sets a short TTL: iat = now, exp = now + ttlSeconds", () => {
     const sim = makeSim();
     const token = sim.mintExamToken({ examAttemptId: "ea-1", candidateId: "c-1" });
-    const claims = verifyExamToken(token, { secret, now: () => nowS * 1000 });
+    const claims = verifyLegacyExamToken(token, { secret, now: () => nowS * 1000 });
     expect(claims.iat).toBe(nowS);
     expect(claims.exp).toBe(nowS + 60);
   });
@@ -39,8 +39,8 @@ describe("kryterionSimulator.mintExamToken", () => {
     const sim = makeSim();
     const t1 = sim.mintExamToken({ examAttemptId: "ea-1", candidateId: "c-1" });
     const t2 = sim.mintExamToken({ examAttemptId: "ea-1", candidateId: "c-1" });
-    const c1 = verifyExamToken(t1, { secret, now: () => nowS * 1000 });
-    const c2 = verifyExamToken(t2, { secret, now: () => nowS * 1000 });
+    const c1 = verifyLegacyExamToken(t1, { secret, now: () => nowS * 1000 });
+    const c2 = verifyLegacyExamToken(t2, { secret, now: () => nowS * 1000 });
     expect(c1.jti).not.toBe(c2.jti);
   });
 });

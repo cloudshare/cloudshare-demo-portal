@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { signExamToken } from "@/auth/exam-token";
+import { signLegacyExamToken } from "./exam-token";
 import type { ExamTimer } from "@/domain/exam-attempt-runtime-lifecycle";
 
 /**
@@ -31,7 +31,7 @@ export interface KryterionSimulator extends ExamTimer {
 }
 
 export interface KryterionSimulatorOptions {
-  /** HMAC secret shared with the auth layer. */
+  /** HMAC secret shared with the legacy token verifier. */
   readonly secret: string;
   /** Token lifetime in seconds (short — exam tokens are redeemed immediately). */
   readonly ttlSeconds: number;
@@ -52,7 +52,7 @@ export function createKryterionSimulator(
   return {
     mintExamToken({ examAttemptId, candidateId }: MintExamTokenInput): string {
       const iat = Math.floor(now() / 1000);
-      return signExamToken(
+      return signLegacyExamToken(
         {
           jti: newJti(),
           examAttemptId,
