@@ -95,6 +95,15 @@ import { createPrismaAdminExamAttemptDiagnosticContextRepository } from "@/persi
 export interface LegacySimulatorDemoServices {
   readonly kryterion: KryterionSimulator;
   readonly genesys: ExamEligibilityProvider;
+  /**
+   * Which demo steps have been explicitly completed in this server instance's
+   * lifetime. Cleared by `resetDemo()` for repeat runs.
+   */
+  readonly completedDemoSteps: ReadonlySet<DemoStep>;
+  /** Record one completed demo step — the only external mutation path for completedDemoSteps. */
+  readonly markStepDone: (step: DemoStep) => void;
+  /** Reset all demo in-memory state for a clean repeat run. */
+  readonly resetDemo: () => Promise<void>;
 }
 
 export interface Services {
@@ -144,15 +153,6 @@ export interface Services {
   cloudshareConnections: CloudShareConnectionRepository;
   cloudshareClientFactory: CloudShareClientFactory;
   ensurePortalSeeded(): Promise<void>;
-  /**
-   * Which demo steps have been explicitly completed in this server instance's
-   * lifetime. Cleared by `resetDemo()` for repeat runs.
-   */
-  completedDemoSteps: ReadonlySet<DemoStep>;
-  /** Record one completed demo step — the only external mutation path for completedDemoSteps. */
-  markStepDone(step: DemoStep): void;
-  /** Reset all demo in-memory state for a clean repeat run. */
-  resetDemo(): Promise<void>;
 }
 
 const globalForServices = globalThis as unknown as {
@@ -447,6 +447,9 @@ export function getServices(): Services {
     legacySimulatorDemo: {
       kryterion,
       genesys,
+      completedDemoSteps,
+      markStepDone,
+      resetDemo,
     },
     examClock,
     examAttempts,
@@ -473,9 +476,6 @@ export function getServices(): Services {
     cloudshareConnections,
     cloudshareClientFactory,
     ensurePortalSeeded,
-    completedDemoSteps,
-    markStepDone,
-    resetDemo,
   };
   globalForServices.__portalServices = services;
   return services;
@@ -486,6 +486,9 @@ function isReusableServices(services: Services): boolean {
     typeof services.cloudshareConnections?.findByWebhookPathToken === "function" &&
     typeof services.cloudshareClientFactory?.forConnection === "function" &&
     typeof services.legacySimulatorDemo?.kryterion?.getTimerState === "function" &&
-    typeof services.legacySimulatorDemo?.genesys?.listEligibleExams === "function"
+    typeof services.legacySimulatorDemo?.genesys?.listEligibleExams === "function" &&
+    typeof services.legacySimulatorDemo?.completedDemoSteps?.has === "function" &&
+    typeof services.legacySimulatorDemo?.markStepDone === "function" &&
+    typeof services.legacySimulatorDemo?.resetDemo === "function"
   );
 }
