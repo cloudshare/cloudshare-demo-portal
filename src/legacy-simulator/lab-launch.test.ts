@@ -1,9 +1,10 @@
-import { describe, it, expect, vi } from "vitest";
-import { launchLab, type LabProvisioner } from "./lab-launch";
-import { LabLaunchError, NotEntitledError } from "./errors";
+import { describe, expect, it, vi } from "vitest";
+import { LabLaunchError, NotEntitledError } from "@/domain/errors";
+import type { ExamAttempt } from "@/domain/exam-attempt";
+import type { LabProvisioner } from "@/domain/lab-launch";
 import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-repository";
 import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repository";
-import type { ExamAttempt } from "./exam-attempt";
+import { launchLegacySimulatorLab } from "./lab-launch";
 
 const attempt: ExamAttempt = {
   id: "ea-1",
@@ -54,12 +55,12 @@ async function setup(labs: LabProvisioner, seed: ExamAttempt | null = attempt) {
   return { deps, launches };
 }
 
-describe("launchLab", () => {
+describe("launchLegacySimulatorLab", () => {
   it("provisions in strict order: experience -> add student -> sponsored link", async () => {
     const { labs, order } = provisioner();
     const { deps } = await setup(labs);
 
-    await launchLab(deps, { examAttemptId: "ea-1" });
+    await launchLegacySimulatorLab(deps, { examAttemptId: "ea-1" });
 
     expect(order).toEqual(["createExperience", "addStudent", "createSponsoredLink"]);
   });
@@ -68,7 +69,7 @@ describe("launchLab", () => {
     const { labs, createArgs } = provisioner();
     const { deps, launches } = await setup(labs);
 
-    const launch = await launchLab(deps, { examAttemptId: "ea-1" });
+    const launch = await launchLegacySimulatorLab(deps, { examAttemptId: "ea-1" });
 
     expect(createArgs()).toMatchObject({
       registeredStudentsOnly: true,
@@ -79,28 +80,38 @@ describe("launchLab", () => {
     expect(await launches.findByExamAttemptId("ea-1")).toEqual(launch);
   });
 
-  it("recomputes entitlement server-side: an unknown attempt is denied", async () => {
+  it("recomputes legacy demo entitlement server-side: an unknown attempt is denied", async () => {
     const { labs, order } = provisioner();
-    const { deps } = await setup(labs, null); // nothing persisted
+    const { deps } = await setup(labs, null);
 
-    await expect(launchLab(deps, { examAttemptId: "ghost" })).rejects.toBeInstanceOf(
-      NotEntitledError,
-    );
-    expect(order).toEqual([]); // no CloudShare calls for an unentitled attempt
+    await expect(
+      launchLegacySimulatorLab(deps, { examAttemptId: "ghost" }),
+    ).rejects.toBeInstanceOf(NotEntitledError);
+    expect(order).toEqual([]);
+  });
+
+  it("denies attempts that are not in the retired booked status", async () => {
+    const { labs, order } = provisioner();
+    const { deps } = await setup(labs, { ...attempt, status: "scheduled" });
+
+    await expect(
+      launchLegacySimulatorLab(deps, { examAttemptId: "ea-1" }),
+    ).rejects.toBeInstanceOf(NotEntitledError);
+    expect(order).toEqual([]);
   });
 
   it("returns the existing launch without re-provisioning when one already exists for the attempt", async () => {
     const { labs, order } = provisioner();
     const { deps, launches } = await setup(labs);
 
-    const first = await launchLab(deps, { examAttemptId: "ea-1" });
-    order.length = 0; // reset call log
+    const first = await launchLegacySimulatorLab(deps, { examAttemptId: "ea-1" });
+    order.length = 0;
 
-    const second = await launchLab(deps, { examAttemptId: "ea-1" });
+    const second = await launchLegacySimulatorLab(deps, { examAttemptId: "ea-1" });
 
     expect(second).toEqual(first);
-    expect(order).toEqual([]); // no new CloudShare calls
-    expect(await launches.findByExamAttemptId("ea-1")).toEqual(first); // not duplicated
+    expect(order).toEqual([]);
+    expect(await launches.findByExamAttemptId("ea-1")).toEqual(first);
   });
 
   it("surfaces an actionable error and aborts before the sponsored link when Add Student fails", async () => {
@@ -113,13 +124,11 @@ describe("launchLab", () => {
     });
     const { deps, launches } = await setup(labs);
 
-    await expect(launchLab(deps, { examAttemptId: "ea-1" })).rejects.toBeInstanceOf(
-      LabLaunchError,
-    );
-    // Got past createExperience; addStudent threw (hence LabLaunchError) and the
-    // flow aborted before the sponsored link.
+    await expect(
+      launchLegacySimulatorLab(deps, { examAttemptId: "ea-1" }),
+    ).rejects.toBeInstanceOf(LabLaunchError);
     expect(order).toEqual(["createExperience"]);
     expect(sponsored).not.toHaveBeenCalled();
-    expect(await launches.findByExamAttemptId("ea-1")).toBeNull(); // nothing persisted
+    expect(await launches.findByExamAttemptId("ea-1")).toBeNull();
   });
 });
