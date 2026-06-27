@@ -63,7 +63,7 @@ import {
 } from "@/persistence/portal-auth-repository";
 import { createCloudShareConnectionRepository } from "@/persistence/cloudshare-connection-repository";
 import type { ScoreRetrievalProvider } from "@/domain/score-result";
-import type { ExamEligibilityProvider } from "@/domain/eligibility";
+import type { ExamEligibilityProvider } from "@/legacy-simulator/eligibility";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { LabProvisioner, LabLaunchRepository } from "@/domain/lab-launch";
 import type { EnvironmentController, EnvironmentRepository, EnvironmentStateSource } from "@/domain/environment";

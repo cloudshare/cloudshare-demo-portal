@@ -1,4 +1,4 @@
-import type { ExamEligibilityProvider } from "@/domain/eligibility";
+import type { ExamEligibilityProvider } from "@/legacy-simulator/eligibility";
 import { NotEligibleError } from "@/domain/errors";
 import type { ExamAttempt, ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { IntegrationEventPublisher } from "@/domain/integration-event";

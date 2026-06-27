@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { bookExam } from "./book-exam";
 import { NotEligibleError } from "@/domain/errors";
 import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-repository";
-import type { ExamEligibilityProvider } from "@/domain/eligibility";
+import type { ExamEligibilityProvider } from "@/legacy-simulator/eligibility";
 import type { IntegrationEvent } from "@/domain/integration-event";
 
 const eligibility: ExamEligibilityProvider = {

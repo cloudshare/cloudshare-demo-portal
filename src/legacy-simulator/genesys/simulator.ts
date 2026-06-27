@@ -1,4 +1,4 @@
-import type { EligibleExam, ExamEligibilityProvider } from "@/domain/eligibility";
+import type { EligibleExam, ExamEligibilityProvider } from "@/legacy-simulator/eligibility";
 
 /**
  * Retired Genesys simulator retained only for the legacy `/demo` compatibility
