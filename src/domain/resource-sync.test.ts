@@ -6,13 +6,13 @@ import { createInMemoryResourceRepository } from "@/persistence/resource-reposit
 function makeLister(overrides: Partial<CloudShareResourceLister> = {}): CloudShareResourceLister {
   return {
     listProjects: vi.fn().mockResolvedValue([
-      { id: "p-1", name: "Genesys Certification" },
+      { id: "p-1", name: "Helios Certification Labs" },
     ]),
     listRegions: vi.fn().mockResolvedValue([
       { id: "r-1", name: "EU West" },
     ]),
     listBlueprints: vi.fn().mockResolvedValue([
-      { id: "bp-1", name: "Genesys Cloud Blueprint" },
+      { id: "bp-1", name: "Certalis Exam Blueprint" },
     ]),
     listPolicies: vi.fn().mockResolvedValue([
       { id: "pol-1", name: "Standard Exam Policy" },
@@ -36,7 +36,7 @@ describe("syncResources", () => {
     expect(result.byType.policy).toHaveLength(1);
     expect(result.byType.project[0]).toMatchObject({
       type: "project",
-      name: "Genesys Certification",
+      name: "Helios Certification Labs",
       cloudshareId: "p-1",
       syncedAt: now,
     });
@@ -48,7 +48,7 @@ describe("syncResources", () => {
 
     await syncResources({ lister, repository: repo });
 
-    const project = await repo.findByTypeAndName("project", "Genesys Certification");
+    const project = await repo.findByTypeAndName("project", "Helios Certification Labs");
     expect(project).not.toBeNull();
     expect(project!.cloudshareId).toBe("p-1");
   });
@@ -56,16 +56,16 @@ describe("syncResources", () => {
   it("overwrites existing mappings on re-sync", async () => {
     const repo = createInMemoryResourceRepository();
     const lister1 = makeLister({
-      listProjects: vi.fn().mockResolvedValue([{ id: "p-old", name: "Genesys Certification" }]),
+      listProjects: vi.fn().mockResolvedValue([{ id: "p-old", name: "Helios Certification Labs" }]),
     });
     await syncResources({ lister: lister1, repository: repo });
 
     const lister2 = makeLister({
-      listProjects: vi.fn().mockResolvedValue([{ id: "p-new", name: "Genesys Certification" }]),
+      listProjects: vi.fn().mockResolvedValue([{ id: "p-new", name: "Helios Certification Labs" }]),
     });
     await syncResources({ lister: lister2, repository: repo });
 
-    const project = await repo.findByTypeAndName("project", "Genesys Certification");
+    const project = await repo.findByTypeAndName("project", "Helios Certification Labs");
     expect(project!.cloudshareId).toBe("p-new");
   });
 

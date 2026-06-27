@@ -136,6 +136,24 @@ describe("legacy simulator demo-control quarantine", () => {
     expect(filesWithRetiredTimerSyncError).toEqual([]);
   });
 
+  it("keeps retired provider and booking vocabulary out of active comments and fixtures", () => {
+    const activeCommentAndFixtureFiles = [
+      "src/domain/integration-event.ts",
+      "src/domain/event-bus.ts",
+      "src/domain/resource-sync.test.ts",
+      "src/web/score-display.tsx",
+    ] as const;
+    const retiredVocabulary = /\b(?:Genesys|Kryterion|proctor|booking|booked)\b/i;
+
+    const offenders = activeCommentAndFixtureFiles.filter((file) =>
+      retiredVocabulary.test(readFileSync(file, "utf8")),
+    );
+    const composition = readFileSync("src/composition.ts", "utf8");
+
+    expect(offenders).toEqual([]);
+    expect(composition).not.toContain("Eligibility & booking");
+  });
+
   it("keeps active Candidate scheduling and runtime handlers from importing retired bookExam", () => {
     const offenders = activeCandidateRuntimeFiles.filter((file) => {
       const source = readFileSync(file, "utf8");

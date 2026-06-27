@@ -1,8 +1,9 @@
 /**
  * IntegrationEvents are the typed messages the portal exchanges to drive its
- * workflow — booking emits one, the lab-launch flow consumes it, and the admin
- * audit trail (later slice) logs them all. Keeping them a discriminated union
- * means every publisher and subscriber is type-checked against the same shapes.
+ * workflow. Candidate scheduling emits ExamAttempt events, runtime flows consume
+ * them, and the admin audit trail logs them all. Keeping them a discriminated
+ * union means every publisher and subscriber is type-checked against the same
+ * shapes.
  */
 
 interface BaseIntegrationEvent {
@@ -10,7 +11,7 @@ interface BaseIntegrationEvent {
   readonly occurredAt: Date;
 }
 
-/** Emitted when a candidate books an exam; begins the downstream lab-launch flow. */
+/** Emitted when a Candidate schedules an ExamAttempt; begins downstream runtime work. */
 export interface ExamAttemptCreatedEvent extends BaseIntegrationEvent {
   readonly type: "exam_attempt.created";
   readonly examAttemptId: string;
@@ -29,7 +30,7 @@ export type IntegrationEventOf<T extends IntegrationEventType> = Extract<
   { type: T }
 >;
 
-/** Outbound port: publish an IntegrationEvent. The booking use case depends on this. */
+/** Outbound port: publish an IntegrationEvent. Scheduling depends on this. */
 export interface IntegrationEventPublisher {
   publish(event: IntegrationEvent): Promise<void>;
 }
