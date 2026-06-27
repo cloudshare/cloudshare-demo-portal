@@ -11,7 +11,7 @@ import {
 import type { EnvironmentStateSource } from "./environment";
 import type { EnvironmentCommandResult } from "./environment";
 import type { LabLaunch, LabLaunchRepository, LabProvisioner } from "./lab-launch";
-import { TimerSyncError, LabLaunchNotFoundError } from "./errors";
+import { ExamAttemptRuntimeError, LabLaunchNotFoundError } from "./errors";
 import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-repository";
 
 const noSleep = () => Promise.resolve();
@@ -205,7 +205,7 @@ describe("suspendExam", () => {
     ).rejects.toBeInstanceOf(LabLaunchNotFoundError);
   });
 
-  it("LabLaunchNotFoundError is also a TimerSyncError (subtype check)", async () => {
+  it("LabLaunchNotFoundError is also an ExamAttemptRuntimeError (subtype check)", async () => {
     await expect(
       suspendExam(
         {
@@ -218,7 +218,7 @@ describe("suspendExam", () => {
         },
         { examAttemptId: "ea-missing" },
       ),
-    ).rejects.toBeInstanceOf(TimerSyncError);
+    ).rejects.toBeInstanceOf(ExamAttemptRuntimeError);
   });
 
   it("retries polling until the status reaches suspended", async () => {
@@ -241,7 +241,7 @@ describe("suspendExam", () => {
     expect(timer.paused).toEqual(["ea-1"]);
   });
 
-  it("throws TimerSyncError if the environment never reaches suspended within maxAttempts", async () => {
+  it("throws ExamAttemptRuntimeError if the environment never reaches suspended within maxAttempts", async () => {
     await expect(
       suspendExam(
         {
@@ -255,10 +255,10 @@ describe("suspendExam", () => {
         },
         { examAttemptId: "ea-1" },
       ),
-    ).rejects.toBeInstanceOf(TimerSyncError);
+    ).rejects.toBeInstanceOf(ExamAttemptRuntimeError);
   });
 
-  it("throws TimerSyncError (timeout) when the state source returns null for all polls", async () => {
+  it("throws ExamAttemptRuntimeError (timeout) when the state source returns null for all polls", async () => {
     await expect(
       suspendExam(
         {
@@ -272,7 +272,7 @@ describe("suspendExam", () => {
         },
         { examAttemptId: "ea-1" },
       ),
-    ).rejects.toBeInstanceOf(TimerSyncError);
+    ).rejects.toBeInstanceOf(ExamAttemptRuntimeError);
   });
 
   it("does NOT pause the timer if polling fails", async () => {
@@ -291,7 +291,7 @@ describe("suspendExam", () => {
         },
         { examAttemptId: "ea-1" },
       ),
-    ).rejects.toBeInstanceOf(TimerSyncError);
+    ).rejects.toBeInstanceOf(ExamAttemptRuntimeError);
     expect(timer.paused).toHaveLength(0);
   });
 
@@ -314,7 +314,7 @@ describe("suspendExam", () => {
           },
           { examAttemptId: "ea-1" },
         ),
-      ).rejects.toBeInstanceOf(TimerSyncError);
+      ).rejects.toBeInstanceOf(ExamAttemptRuntimeError);
 
       expect(controller.suspended).toHaveLength(0);
       expect(timer.paused).toHaveLength(0);
@@ -395,7 +395,7 @@ describe("resumeExam", () => {
     ).rejects.toBeInstanceOf(LabLaunchNotFoundError);
   });
 
-  it("throws TimerSyncError if the environment never reaches running within maxAttempts", async () => {
+  it("throws ExamAttemptRuntimeError if the environment never reaches running within maxAttempts", async () => {
     await expect(
       resumeExam(
         {
@@ -410,10 +410,10 @@ describe("resumeExam", () => {
         },
         { examAttemptId: "ea-1" },
       ),
-    ).rejects.toBeInstanceOf(TimerSyncError);
+    ).rejects.toBeInstanceOf(ExamAttemptRuntimeError);
   });
 
-  it("throws TimerSyncError (timeout) when state source returns null for all polls", async () => {
+  it("throws ExamAttemptRuntimeError (timeout) when state source returns null for all polls", async () => {
     await expect(
       resumeExam(
         {
@@ -428,7 +428,7 @@ describe("resumeExam", () => {
         },
         { examAttemptId: "ea-1" },
       ),
-    ).rejects.toBeInstanceOf(TimerSyncError);
+    ).rejects.toBeInstanceOf(ExamAttemptRuntimeError);
   });
 
   it("does NOT resume the timer if polling fails", async () => {
@@ -448,7 +448,7 @@ describe("resumeExam", () => {
         },
         { examAttemptId: "ea-1" },
       ),
-    ).rejects.toBeInstanceOf(TimerSyncError);
+    ).rejects.toBeInstanceOf(ExamAttemptRuntimeError);
     expect(timer.resumed).toHaveLength(0);
   });
 
@@ -474,7 +474,7 @@ describe("resumeExam", () => {
           },
           { examAttemptId: "ea-1" },
         ),
-      ).rejects.toBeInstanceOf(TimerSyncError);
+      ).rejects.toBeInstanceOf(ExamAttemptRuntimeError);
 
       expect(controller.resumed).toHaveLength(0);
       expect(timer.resumed).toHaveLength(0);

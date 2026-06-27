@@ -752,7 +752,7 @@ describe("suspendExamAttemptRuntime", () => {
     expect(resp.status).toBe(404);
   });
 
-  it("returns 502 when poll times out (TimerSyncError, not a not-found)", async () => {
+  it("returns 502 when poll times out (ExamAttemptRuntimeError, not a not-found)", async () => {
     const deps = await makeSuspendDeps({
         source: fixedSource("running"),
         poll: { maxAttempts: 1, intervalMs: 0 },
