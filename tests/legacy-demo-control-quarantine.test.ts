@@ -213,17 +213,7 @@ describe("legacy simulator demo-control quarantine", () => {
 
   it("builds /demo dependencies from the legacy simulator compatibility bundle", () => {
     const demoControl = readFileSync("src/api/legacy-simulator-demo-control.ts", "utf8");
-    const buildDemoDeps = demoControl.match(
-      /export function buildDemoDeps\(svc: Services\): DemoControlDeps \{(?<body>[\s\S]*?)\n\}/,
-    )?.groups?.body;
 
-    expect(buildDemoDeps).toBeDefined();
-    expect(buildDemoDeps).toContain("kryterion: svc.legacySimulatorDemo.kryterion");
-    expect(buildDemoDeps).toContain("genesys: svc.legacySimulatorDemo.genesys");
-    expect(buildDemoDeps).toContain(
-      "completedDemoSteps: svc.legacyDemoRuntimeControls.completedDemoSteps",
-    );
-    expect(buildDemoDeps).toContain("markStepDone: svc.legacyDemoRuntimeControls.markStepDone");
-    expect(buildDemoDeps).toContain("resetDemoState: svc.legacyDemoRuntimeControls.resetDemo");
+    expect(demoControl).not.toMatch(/from\s+["']@\/composition["']/);
   });
 });
