@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import {
   createDiagnosticRecorder,
@@ -9,7 +10,12 @@ import type {
 } from "@/domain/admin-exam-attempt-diagnostics";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import type { Logger } from "@/observability/logger";
-import { handleGetAdminExamAttemptDiagnosticDrilldown } from "./admin-exam-attempt-diagnostics";
+import {
+  buildAdminExamAttemptDiagnosticDrilldownDeps,
+  handleGetAdminExamAttemptDiagnosticDrilldown,
+  refreshCloudShareEnvironmentStatus,
+  type AdminExamAttemptDiagnosticDrilldownServices,
+} from "./admin-exam-attempt-diagnostics";
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -44,6 +50,144 @@ const BASE_CONTEXT: AdminExamAttemptDiagnosticContextRecord = {
   participantId: "participant-1",
   participantEmail: "candidate@helioscx.demo",
 };
+
+function makeDrilldownServices(
+  diagnostics: DiagnosticLogRepository = createInMemoryDiagnosticLogRepository(),
+): AdminExamAttemptDiagnosticDrilldownServices {
+  return {
+    adminExamAttemptDiagnosticContexts: makeContextRepository(BASE_CONTEXT),
+    diagnostics,
+    logger: makeLogger(),
+    cloudshareConnections: {
+      save: vi.fn(),
+      markVerified: vi.fn(),
+      findByCustomerId: vi.fn().mockResolvedValue(null),
+      findByWebhookPathToken: vi.fn(),
+    },
+    cloudshareClientFactory: {
+      forConnection: vi.fn().mockReturnValue({
+        requestV3: vi.fn().mockResolvedValue({ status: "Running" }),
+      }),
+    },
+    environments: {
+      findByExternalId: vi.fn(),
+      save: vi.fn().mockResolvedValue(undefined),
+    },
+    diagnosticRecorder: createDiagnosticRecorder({
+      repository: diagnostics,
+      secrets: [],
+    }),
+  };
+}
+
+describe("buildAdminExamAttemptDiagnosticDrilldownDeps", () => {
+  it("maps the admin diagnostic drilldown dependencies from composed portal services", () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    const services = makeDrilldownServices(diagnostics);
+
+    const deps = buildAdminExamAttemptDiagnosticDrilldownDeps(services);
+
+    expect(deps).toMatchObject({
+      contexts: services.adminExamAttemptDiagnosticContexts,
+      diagnostics,
+      logger: services.logger,
+    });
+    expect(deps.refreshEnvironmentStatus).toEqual(expect.any(Function));
+  });
+
+  it("keeps the Next route adapter from constructing CloudShare environment refresh wiring", () => {
+    const routeSource = readFileSync(
+      "app/api/admin/diagnostics/attempts/[examAttemptId]/route.ts",
+      "utf8",
+    );
+
+    expect(routeSource).toContain("buildAdminExamAttemptDiagnosticDrilldownDeps");
+    expect(routeSource).not.toContain("createCloudShareEnvironmentSource");
+    expect(routeSource).not.toContain("refreshCloudShareEnvironmentStatus");
+    expect(routeSource).not.toContain("contexts: services.adminExamAttemptDiagnosticContexts");
+  });
+});
+
+describe("refreshCloudShareEnvironmentStatus", () => {
+  it("records a diagnostic when the Customer has no CloudShare Connection", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    const services = makeDrilldownServices(diagnostics);
+
+    await refreshCloudShareEnvironmentStatus(services, BASE_CONTEXT);
+
+    expect(services.cloudshareConnections.findByCustomerId).toHaveBeenCalledWith("customer-a");
+    expect(services.cloudshareClientFactory.forConnection).not.toHaveBeenCalled();
+    expect(services.environments.save).not.toHaveBeenCalled();
+
+    const entries = await diagnostics.query({
+      customerId: "customer-a",
+      examAttemptId: "attempt-1",
+    });
+    expect(entries).toEqual([
+      expect.objectContaining({
+        source: "admin-diagnostics",
+        level: "warn",
+        operation: "cloudshare.environment.reconcile",
+        outcome: "failure",
+        message: "CloudShare environment status refresh skipped: missing CloudShare Connection",
+        externalIds: { environmentExternalId: "env-external-1" },
+        details: expect.objectContaining({
+          integrationSurface: "cloudshare.v3.env",
+          refreshedBy: "admin_exam_attempt_diagnostics",
+          reason: "missing_cloudshare_connection",
+        }),
+      }),
+    ]);
+  });
+
+  it("polls CloudShare environment state, persists it, and records the refresh diagnostic", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    const services = makeDrilldownServices(diagnostics);
+    const connection = {
+      customerId: "customer-a",
+      apiId: "api-id",
+      apiKey: "api-key",
+      webhookSecret: "webhook-secret",
+      webhookPathToken: "webhook-token",
+      connectedAt: new Date("2026-06-20T09:00:00.000Z"),
+      verifiedAt: null,
+    };
+    services.cloudshareConnections.findByCustomerId = vi.fn().mockResolvedValue(connection);
+
+    await refreshCloudShareEnvironmentStatus(services, BASE_CONTEXT);
+
+    expect(services.cloudshareClientFactory.forConnection).toHaveBeenCalledWith(connection);
+    expect(services.environments.save).toHaveBeenCalledWith({
+      environmentExternalId: "env-external-1",
+      status: "running",
+      observedAt: expect.any(Date),
+    });
+
+    const entries = await diagnostics.query({
+      customerId: "customer-a",
+      examAttemptId: "attempt-1",
+    });
+    expect(entries).toEqual([
+      expect.objectContaining({
+        source: "admin-diagnostics",
+        operation: "cloudshare.environment.reconcile",
+        outcome: "success",
+        message: "CloudShare environment status refreshed",
+        externalIds: {
+          environmentExternalId: "env-external-1",
+          environmentStatus: "running",
+        },
+        request: { method: "GET", path: "/api/v3/envs/{envId}" },
+        response: { status: 200, body: { status: "running" } },
+        details: expect.objectContaining({
+          integrationSurface: "cloudshare.v3.env",
+          refreshedBy: "admin_exam_attempt_diagnostics",
+          observedAt: expect.any(String),
+        }),
+      }),
+    ]);
+  });
+});
 
 describe("handleGetAdminExamAttemptDiagnosticDrilldown", () => {
   it("returns one customer-scoped drilldown with attempt context and chronological DiagnosticLogEntry timeline", async () => {
