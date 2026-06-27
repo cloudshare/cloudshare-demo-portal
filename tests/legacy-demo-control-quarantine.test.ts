@@ -135,6 +135,29 @@ describe("legacy simulator demo-control quarantine", () => {
     expect(offenders).toEqual([]);
   });
 
+  it("keeps retired booked entitlement and legacy LabLaunch out of the active domain", () => {
+    expect(existsSync("src/domain/entitlement.ts")).toBe(false);
+    expect(existsSync("src/legacy-simulator/lab-launch.ts")).toBe(true);
+
+    const activeDomainLabLaunch = readFileSync("src/domain/lab-launch.ts", "utf8");
+    const demoControl = readFileSync("src/api/legacy-simulator-demo-control.ts", "utf8");
+    const activeRuntimeOffenders = activeCandidateRuntimeFiles.filter((file) => {
+      const source = readFileSync(file, "utf8");
+      return (
+        source.includes("@/domain/entitlement") ||
+        source.includes("@/legacy-simulator/lab-launch") ||
+        source.includes("launchLegacySimulatorLab")
+      );
+    });
+
+    expect(activeDomainLabLaunch).not.toContain("computeEntitlement");
+    expect(activeDomainLabLaunch).not.toContain("launchLab(");
+    expect(demoControl).toContain(
+      'import { launchLegacySimulatorLab } from "@/legacy-simulator/lab-launch";',
+    );
+    expect(activeRuntimeOffenders).toEqual([]);
+  });
+
   it("imports retired bookExam only from the legacy simulator compatibility module", () => {
     const demoControl = readFileSync("src/api/legacy-simulator-demo-control.ts", "utf8");
 

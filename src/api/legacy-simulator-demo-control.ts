@@ -17,7 +17,7 @@ import {
 } from "@/domain/demo-control";
 import { DEMO_SEED } from "@/legacy-simulator/genesys/demo-data";
 import { bookExam } from "@/legacy-simulator/book-exam";
-import { launchLab } from "@/domain/lab-launch";
+import { launchLegacySimulatorLab } from "@/legacy-simulator/lab-launch";
 import { suspendExam, resumeExam } from "@/domain/exam-attempt-runtime-lifecycle";
 import { retrieveScore } from "@/domain/score-result";
 
@@ -254,7 +254,7 @@ async function runStep(
 
     case "launch_lab": {
       if (!ctx.examAttempt) throw new Error("no exam attempt found — run book_exam first");
-      const launch = await launchLab(
+      const launch = await launchLegacySimulatorLab(
         {
           attempts: deps.examAttempts,
           labs: deps.labProvisioner,
