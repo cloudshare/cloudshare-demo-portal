@@ -28,9 +28,43 @@ export interface HeartbeatRequest {
   readonly body: unknown;
 }
 
+export interface ExamAttemptHeartbeatDepsOptions {
+  readonly candidateEmail?: string;
+}
+
+export interface ExamAttemptHeartbeatServices {
+  readonly examAttempts: ManualHeartbeatRuntimeDeps["attempts"];
+  readonly exams: ManualHeartbeatRuntimeDeps["exams"];
+  readonly examClock: ManualHeartbeatRuntimeDeps["clocks"];
+  readonly heartbeatAutoSuspend: ManualHeartbeatRuntimeDeps["autoSuspend"];
+  readonly diagnosticRecorder: ManualHeartbeatRuntimeDeps["diagnostics"];
+  readonly logger: ManualHeartbeatRuntimeDeps["logger"];
+  readonly environmentSource: ManualHeartbeatRuntimeDeps["environmentSource"];
+  readonly cloudshareConnections: ManualHeartbeatRuntimeDeps["connections"];
+  readonly cloudshareClientFactory: ManualHeartbeatRuntimeDeps["cloudshare"];
+}
+
 export interface HeartbeatResponse {
   readonly status: number;
   readonly body: Record<string, unknown>;
+}
+
+export function buildExamAttemptHeartbeatDeps(
+  services: ExamAttemptHeartbeatServices,
+  options: ExamAttemptHeartbeatDepsOptions = {},
+): ManualHeartbeatRuntimeDeps {
+  return {
+    attempts: services.examAttempts,
+    exams: services.exams,
+    clocks: services.examClock,
+    autoSuspend: services.heartbeatAutoSuspend,
+    diagnostics: services.diagnosticRecorder,
+    logger: services.logger,
+    candidateEmail: options.candidateEmail,
+    environmentSource: services.environmentSource,
+    connections: services.cloudshareConnections,
+    cloudshare: services.cloudshareClientFactory,
+  };
 }
 
 export async function handleHeartbeat(
