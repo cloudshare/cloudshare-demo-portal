@@ -461,8 +461,9 @@ CloudShare sponsored-link login URL.
   handlers for `handleGetDemoState`, `handleExecuteStep`, and `handleResetDemo`; composes
   the retired simulator use cases (`bookExam`, `launchLab`, `suspendExam`, `resumeExam`,
   `retrieveScore`) in one place for `/demo` only
-- `src/composition.ts` exposes the retired simulator dependencies only through
-  `legacySimulatorDemo`, not as active top-level services
+- `src/composition.ts` exposes the retired simulator dependencies and demo-only
+  reset/progress controls only through `legacySimulatorDemo`, not as active
+  top-level services
 - `app/api/demo/{state,step,reset}/route.ts` — thin Next.js route wrappers
 - `app/demo/page.tsx` — React client component (step list, auto-play, domain state table)
 - Each in-memory repository exposes a `reset()` method; the composition root's `resetDemo()`
