@@ -18,8 +18,8 @@ import {
   createKryterionSimulator,
   type KryterionSimulator,
 } from "@/integrations/kryterion/simulator";
-import { createGenesysSimulator } from "@/integrations/genesys/simulator";
-import { genesysDemoData } from "@/integrations/genesys/demo-data";
+import { createGenesysSimulator } from "@/legacy-simulator/genesys/simulator";
+import { genesysDemoData } from "@/legacy-simulator/genesys/demo-data";
 import { createInMemoryEventBus, type IntegrationEventBus } from "@/domain/event-bus";
 import { createCloudShareIntegration } from "@/integrations/cloudshare";
 import { createCloudShareIntegrationForConnection } from "@/integrations/cloudshare";

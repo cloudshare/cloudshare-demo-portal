@@ -8,8 +8,8 @@ import {
 import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-repository";
 import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repository";
 import { createKryterionSimulator } from "@/integrations/kryterion/simulator";
-import { createGenesysSimulator } from "@/integrations/genesys/simulator";
-import { genesysDemoData } from "@/integrations/genesys/demo-data";
+import { createGenesysSimulator } from "@/legacy-simulator/genesys/simulator";
+import { genesysDemoData } from "@/legacy-simulator/genesys/demo-data";
 import { createCloudShareEnvironmentSimulator } from "@/integrations/cloudshare/environment-simulator";
 import { createInMemoryEventBus } from "@/domain/event-bus";
 import type { EnvironmentStateSource } from "@/domain/environment";
@@ -17,7 +17,7 @@ import type { LabProvisioner } from "@/domain/lab-launch";
 import type { Logger } from "@/observability/logger";
 import type { ScoreRetrievalProvider } from "@/domain/score-result";
 import type { DemoStep } from "@/domain/demo-control";
-import { DEMO_SEED } from "@/integrations/genesys/demo-data";
+import { DEMO_SEED } from "@/legacy-simulator/genesys/demo-data";
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
