@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const demoRouteFiles = [
@@ -19,6 +19,19 @@ const activeCandidateRuntimeFiles = [
   "src/api/exam-attempt-score-runtime.ts",
   "src/api/exam-attempt-suspend-resume-runtime.ts",
 ] as const;
+
+function listSourceFiles(directory: string): string[] {
+  return readdirSync(directory).flatMap((entry) => {
+    const path = `${directory}/${entry}`;
+    const stats = statSync(path);
+
+    if (stats.isDirectory()) {
+      return listSourceFiles(path);
+    }
+
+    return /\.(?:ts|tsx)$/.test(path) ? [path] : [];
+  });
+}
 
 describe("legacy simulator demo-control quarantine", () => {
   it("keeps retired Genesys simulator code out of the active integrations tree", () => {
@@ -65,6 +78,23 @@ describe("legacy simulator demo-control quarantine", () => {
   it("keeps the retired bookExam use case under an explicit legacy simulator path", () => {
     expect(existsSync("src/domain/booking.ts")).toBe(false);
     expect(existsSync("src/legacy-simulator/book-exam.ts")).toBe(true);
+  });
+
+  it("keeps retired eligibility in the legacy simulator quarantine", () => {
+    expect(existsSync("src/domain/eligibility.ts")).toBe(false);
+    expect(existsSync("src/legacy-simulator/eligibility.ts")).toBe(true);
+
+    const allSources = [...listSourceFiles("src"), ...listSourceFiles("tests")];
+    const retiredDomainEligibilityImport = ["@/domain", "eligibility"].join("/");
+    const domainEligibilityImports = allSources.filter((file) =>
+      readFileSync(file, "utf8").includes(retiredDomainEligibilityImport),
+    );
+    const activeRuntimeLegacyEligibilityImports = activeCandidateRuntimeFiles.filter((file) =>
+      readFileSync(file, "utf8").includes("@/legacy-simulator/eligibility"),
+    );
+
+    expect(domainEligibilityImports).toEqual([]);
+    expect(activeRuntimeLegacyEligibilityImports).toEqual([]);
   });
 
   it("keeps active Candidate scheduling and runtime handlers from importing retired bookExam", () => {

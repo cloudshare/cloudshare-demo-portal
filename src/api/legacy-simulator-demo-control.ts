@@ -4,7 +4,7 @@ import type { Logger } from "@/observability/logger";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { LabLaunchRepository, LabProvisioner } from "@/domain/lab-launch";
 import type { EnvironmentStateSource } from "@/domain/environment";
-import type { ExamEligibilityProvider } from "@/domain/eligibility";
+import type { ExamEligibilityProvider } from "@/legacy-simulator/eligibility";
 import type { IntegrationEventPublisher } from "@/domain/integration-event";
 import type { ScoreRetrievalProvider } from "@/domain/score-result";
 import type { KryterionSimulator } from "@/legacy-simulator/kryterion/simulator";
