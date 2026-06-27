@@ -243,9 +243,9 @@ export function getServices(): Services {
     ttlSeconds: 120,
   });
 
-  // Eligibility & booking. The event bus carries the exam_attempt.created event
-  // the downstream lab-launch flow (later slice) will subscribe to; a failing
-  // subscriber is logged, not allowed to break publishing.
+  // Legacy demo eligibility and active event bus. The bus carries
+  // exam_attempt.created events; a failing subscriber is logged, not allowed to
+  // break publishing.
   const genesys = createGenesysSimulator(genesysDemoData);
   // Each in-memory repo exposes reset() for the demo clean-slate operation.
   const examAttempts = createPrismaExamAttemptRepository(prisma);

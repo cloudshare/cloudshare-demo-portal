@@ -36,7 +36,7 @@ type ScorePayload =
 /**
  * Fetches and renders the candidate's Guided Journey score for a completed exam
  * attempt. Surfaces CloudShare's current scoring limitations inline so the
- * candidate (and any proctor viewing the demo) understands the scope of what is
+ * Candidate and support viewers understand the scope of what is
  * and is not captured.
  */
 export function ScoreDisplay({ examAttemptId }: ScoreDisplayProps) {

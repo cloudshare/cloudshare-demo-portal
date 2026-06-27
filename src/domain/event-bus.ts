@@ -6,9 +6,9 @@ import type {
 } from "./integration-event";
 
 /**
- * A minimal in-process pub/sub bus for IntegrationEvents. Publishers (e.g. the
- * booking use case) depend only on {@link IntegrationEventPublisher}; subscribers
- * (e.g. the lab-launch flow) register handlers by event type.
+ * A minimal in-process pub/sub bus for IntegrationEvents. Publishers depend only
+ * on {@link IntegrationEventPublisher}; subscribers register handlers by event
+ * type.
  *
  * Handlers are isolated: one throwing handler never stops the others, and its
  * error is routed to `onError` rather than escaping `publish`. This keeps event
