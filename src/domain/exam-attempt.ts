@@ -1,11 +1,14 @@
-export type ExamAttemptStatus =
-  | "booked"
+export type LegacyExamAttemptStatus = "booked";
+
+export type ActiveExamAttemptStatus =
   | "scheduled"
   | "ready"
   | "in_progress"
   | "suspended"
   | "completed"
   | "expired";
+
+export type ExamAttemptStatus = LegacyExamAttemptStatus | ActiveExamAttemptStatus;
 
 export interface ExamAttempt {
   readonly id: string;

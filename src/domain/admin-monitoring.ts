@@ -1,5 +1,5 @@
 import type { DiagnosticLogEntry } from "./diagnostic-log";
-import type { ExamAttemptStatus } from "./exam-attempt";
+import type { ActiveExamAttemptStatus } from "./exam-attempt";
 
 export interface MonitoringAttemptRecord {
   readonly id: string;
@@ -10,7 +10,7 @@ export interface MonitoringAttemptRecord {
   readonly candidateLastName: string | null;
   readonly examId: string;
   readonly examTitle: string;
-  readonly status: ExamAttemptStatus;
+  readonly status: ActiveExamAttemptStatus;
   readonly scheduledFor: Date | null;
   readonly createdAt: Date;
   readonly trainingId: string | null;
