@@ -1,4 +1,8 @@
-import { InvalidExamAttemptStatusError, LabLaunchNotFoundError, TimerSyncError } from "./errors";
+import {
+  ExamAttemptRuntimeError,
+  InvalidExamAttemptStatusError,
+  LabLaunchNotFoundError,
+} from "./errors";
 import type { ExamAttemptRepository } from "./exam-attempt";
 import type {
   EnvironmentCommandResult,
@@ -76,7 +80,7 @@ async function pollUntilAnyStatus(
     if (snapshot && targets.includes(snapshot.status)) return;
     if (attempt < opts.maxAttempts - 1) await sleep(opts.intervalMs);
   }
-  throw new TimerSyncError(
+  throw new ExamAttemptRuntimeError(
     `Timed out waiting for environment to become ${targetLabel}`,
     { environmentExternalId, target: targetLabel, maxAttempts: opts.maxAttempts },
   );
@@ -207,7 +211,7 @@ function requireEnvironmentExternalId(
           ? launch.environmentId
           : null;
   if (!correlatedEnvironmentId) {
-    throw new TimerSyncError("No CloudShare environment is correlated to this exam attempt yet.", {
+    throw new ExamAttemptRuntimeError("No CloudShare environment is correlated to this exam attempt yet.", {
       examAttemptId,
       labLaunchId: launch.id,
       trainingId: launch.trainingId,
@@ -242,7 +246,7 @@ async function requireAttempt(
 ) {
   const attempt = await attempts.findById(examAttemptId);
   if (!attempt) {
-    throw new TimerSyncError("Exam attempt not found.", { examAttemptId });
+    throw new ExamAttemptRuntimeError("Exam attempt not found.", { examAttemptId });
   }
   return attempt;
 }

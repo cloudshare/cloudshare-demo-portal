@@ -38,16 +38,16 @@ export class LabLaunchError extends DomainError {
   }
 }
 
-/** Suspend or resume of the exam environment + timer sync failed. */
-export class TimerSyncError extends DomainError {
+/** Active ExamAttempt runtime lifecycle failed during suspend/resume or state reconciliation. */
+export class ExamAttemptRuntimeError extends DomainError {
   constructor(message: string, context?: Record<string, unknown>) {
     super(message, context);
-    this.name = "TimerSyncError";
+    this.name = "ExamAttemptRuntimeError";
   }
 }
 
 /** No LabLaunch record was found for the given ExamAttempt (thrown by suspend/resume). */
-export class LabLaunchNotFoundError extends TimerSyncError {
+export class LabLaunchNotFoundError extends ExamAttemptRuntimeError {
   constructor(context?: Record<string, unknown>) {
     super("No lab launch found for exam attempt", context);
     this.name = "LabLaunchNotFoundError";
@@ -55,7 +55,7 @@ export class LabLaunchNotFoundError extends TimerSyncError {
 }
 
 /** A suspend/resume transition was requested from an invalid ExamAttempt lifecycle state. */
-export class InvalidExamAttemptStatusError extends TimerSyncError {
+export class InvalidExamAttemptStatusError extends ExamAttemptRuntimeError {
   constructor(context?: Record<string, unknown>) {
     super("Exam attempt is not in a valid status for this transition", context);
     this.name = "InvalidExamAttemptStatusError";

@@ -14,9 +14,9 @@ import {
   type ResumeExamDeps,
 } from "@/domain/exam-attempt-runtime-lifecycle";
 import {
+  ExamAttemptRuntimeError,
   InvalidExamAttemptStatusError,
   LabLaunchNotFoundError,
-  TimerSyncError,
 } from "@/domain/errors";
 import {
   CloudShareRequestError,
@@ -206,7 +206,7 @@ export async function suspendExamAttemptRuntime(
     });
     return { status: 200, body: { status: "suspended", examAttemptId } };
   } catch (err) {
-    const resp = await handleTimerSyncError(deps, err, "suspend", examAttemptId, anchors);
+    const resp = await handleExamAttemptRuntimeError(deps, err, "suspend", examAttemptId, anchors);
     if (resp.status !== 200) {
       const correlationId =
         typeof resp.body.correlationId === "string" ? resp.body.correlationId : undefined;
@@ -353,7 +353,7 @@ export async function resumeExamAttemptRuntime(
     if (recovered) {
       return recovered;
     }
-    const resp = await handleTimerSyncError(deps, err, "resume", examAttemptId, anchors);
+    const resp = await handleExamAttemptRuntimeError(deps, err, "resume", examAttemptId, anchors);
     if (resp.status !== 200) {
       const correlationId =
         typeof resp.body.correlationId === "string" ? resp.body.correlationId : undefined;
@@ -508,7 +508,7 @@ async function requireVerifiedEnvironmentExternalId(
   if (!launch) {
     return undefined;
   }
-  throw new TimerSyncError("No CloudShare environment is correlated to this exam attempt yet.", {
+  throw new ExamAttemptRuntimeError("No CloudShare environment is correlated to this exam attempt yet.", {
     examAttemptId,
     labLaunchId: launch.id,
     trainingId: launch.trainingId,
@@ -633,7 +633,7 @@ async function buildAlreadyActiveResumeResponse(
   };
 }
 
-async function handleTimerSyncError(
+async function handleExamAttemptRuntimeError(
   deps: SupportDiagnosticDeps,
   err: unknown,
   action: "suspend" | "resume",
@@ -722,9 +722,9 @@ async function reportFailureDiagnostic(
     return { status: 502, body: { error: `exam ${spec.action} failed`, correlationId } };
   }
 
-  if (err instanceof TimerSyncError) {
+  if (err instanceof ExamAttemptRuntimeError) {
     const correlationId = (deps.newCorrelationId ?? randomUUID)();
-    const diagnostic = buildTimerSyncDiagnostic(
+    const diagnostic = buildExamAttemptRuntimeDiagnostic(
       correlationId,
       spec.action,
       spec.operation,
@@ -773,7 +773,7 @@ async function reportFailureDiagnostic(
 function buildPendingTransitionResponse(
   action: "suspend" | "resume",
   examAttemptId: string,
-  err: TimerSyncError,
+  err: ExamAttemptRuntimeError,
   correlationId: string,
 ): PendingTransitionResponseSpec | null {
   const failureMode =
@@ -802,12 +802,12 @@ function buildPendingTransitionResponse(
   };
 }
 
-function buildTimerSyncDiagnostic(
+function buildExamAttemptRuntimeDiagnostic(
   correlationId: string,
   _action: "suspend" | "resume",
   operation: string,
   examAttemptId: string,
-  err: TimerSyncError,
+  err: ExamAttemptRuntimeError,
   anchors?: Pick<RuntimeDiagnosticAnchors, "customerId" | "candidateEmail" | "examId">,
 ): Record<string, unknown> {
   if (err.context?.failureMode === "not_correlated_yet") {
@@ -982,9 +982,9 @@ function extractRuntimeFailureDetails(
       currentStatus: err.context?.currentStatus,
     };
   }
-  if (err instanceof TimerSyncError) {
+  if (err instanceof ExamAttemptRuntimeError) {
     return stripDiagnosticEnvelope(
-      buildTimerSyncDiagnostic("", action, `exam_${action}`, examAttemptId, err),
+      buildExamAttemptRuntimeDiagnostic("", action, `exam_${action}`, examAttemptId, err),
     );
   }
   if (isCloudShareFailure(err)) {

@@ -122,6 +122,20 @@ describe("legacy simulator demo-control quarantine", () => {
     expect(retiredTimerSyncImports).toEqual([]);
   });
 
+  it("keeps retired timer-sync error vocabulary out of active runtime modules", () => {
+    const activeRuntimeBoundaryFiles = [
+      "src/domain/errors.ts",
+      "src/domain/exam-attempt-runtime-lifecycle.ts",
+      "src/api/exam-attempt-suspend-resume-runtime.ts",
+    ] as const;
+
+    const filesWithRetiredTimerSyncError = activeRuntimeBoundaryFiles.filter((file) =>
+      readFileSync(file, "utf8").includes("TimerSyncError"),
+    );
+
+    expect(filesWithRetiredTimerSyncError).toEqual([]);
+  });
+
   it("keeps active Candidate scheduling and runtime handlers from importing retired bookExam", () => {
     const offenders = activeCandidateRuntimeFiles.filter((file) => {
       const source = readFileSync(file, "utf8");
