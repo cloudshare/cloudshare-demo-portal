@@ -1,11 +1,15 @@
 import { readFileSync } from "node:fs";
 import { describe, it, expect, vi } from "vitest";
 import {
+  buildAdminAuditDeps,
+  buildAdminEventLogDeps,
   buildAdminSupportLogDeps,
   handleGetAuditTrail,
   handleSyncResources,
   handleGetEventLog,
   handleGetSupportLog,
+  type AdminAuditServices,
+  type AdminEventLogServices,
   type AdminSupportLogServices,
 } from "./admin";
 import type { AuditRepository, AuditRecord } from "@/domain/audit-trail";
@@ -126,6 +130,28 @@ function makeDiagnostics(): {
 }
 
 describe("handleGetAuditTrail", () => {
+  it("maps admin audit dependencies from composed portal services", () => {
+    const services = {
+      audit: createInMemoryAuditRepository(),
+      logger: makeLogger(),
+    } satisfies AdminAuditServices;
+
+    const deps = buildAdminAuditDeps(services);
+
+    expect(deps).toEqual({
+      audit: services.audit,
+      logger: services.logger,
+    });
+  });
+
+  it("keeps the audit route adapter from inlining audit wiring", () => {
+    const routeSource = readFileSync("app/api/admin/audit/route.ts", "utf8");
+
+    expect(routeSource).toContain("buildAdminAuditDeps");
+    expect(routeSource).not.toContain("const { audit, logger } = services");
+    expect(routeSource).not.toContain("handleGetAuditTrail({ audit, logger }");
+  });
+
   it("returns 200 with records for a specific examAttemptId", async () => {
     const audit = createInMemoryAuditRepository();
     await audit.write(makeRecord({ examAttemptId: "a-1", id: "r-1" }));
@@ -245,6 +271,28 @@ describe("handleSyncResources", () => {
 });
 
 describe("handleGetEventLog", () => {
+  it("maps admin event-log dependencies from composed portal services", () => {
+    const services = {
+      eventLog: makeEventLog(),
+      logger: makeLogger(),
+    } satisfies AdminEventLogServices;
+
+    const deps = buildAdminEventLogDeps(services);
+
+    expect(deps).toEqual({
+      eventLog: services.eventLog,
+      logger: services.logger,
+    });
+  });
+
+  it("keeps the event route adapter from inlining event-log wiring", () => {
+    const routeSource = readFileSync("app/api/admin/events/route.ts", "utf8");
+
+    expect(routeSource).toContain("buildAdminEventLogDeps");
+    expect(routeSource).not.toContain("const { eventLog, logger } = services");
+    expect(routeSource).not.toContain("handleGetEventLog({ eventLog, logger }");
+  });
+
   it("returns 200 with event log entries", async () => {
     const eventLog = makeEventLog([
       { eventId: "e-1", type: "exam_attempt.created", occurredAt: new Date(), payload: {} },

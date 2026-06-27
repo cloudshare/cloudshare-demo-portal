@@ -57,6 +57,18 @@ export interface AuditHandlerDeps {
   readonly logger: Logger;
 }
 
+export interface AdminAuditServices {
+  readonly audit: AuditRepository;
+  readonly logger: Logger;
+}
+
+export function buildAdminAuditDeps(services: AdminAuditServices): AuditHandlerDeps {
+  return {
+    audit: services.audit,
+    logger: services.logger,
+  };
+}
+
 export async function handleGetAuditTrail(
   deps: AuditHandlerDeps,
   request: AdminRequest,
@@ -294,6 +306,20 @@ function normalizeDiagnosticPayload(value: unknown): unknown {
 export interface EventLogHandlerDeps {
   readonly eventLog: EventLogRepository;
   readonly logger: Logger;
+}
+
+export interface AdminEventLogServices {
+  readonly eventLog: EventLogRepository;
+  readonly logger: Logger;
+}
+
+export function buildAdminEventLogDeps(
+  services: AdminEventLogServices,
+): EventLogHandlerDeps {
+  return {
+    eventLog: services.eventLog,
+    logger: services.logger,
+  };
 }
 
 export async function handleGetEventLog(
