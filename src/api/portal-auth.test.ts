@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { createPortalAuthenticator, hashPassword } from "@/auth";
 import {
@@ -5,9 +6,11 @@ import {
   createInMemoryPortalUserStore,
 } from "@/auth";
 import {
+  buildPortalSessionDeps,
   handleGetPortalSession,
   handlePortalLogin,
   handlePortalLogout,
+  type PortalSessionServices,
 } from "./portal-auth";
 
 async function makeDeps(role: "admin" | "candidate" = "admin") {
@@ -74,6 +77,24 @@ describe("handlePortalLogin", () => {
 });
 
 describe("handleGetPortalSession", () => {
+  it("maps portal session dependencies from composed portal services", async () => {
+    const deps = await makeDeps();
+    const services = {
+      portalAuth: deps.portalAuth,
+    } satisfies PortalSessionServices;
+
+    expect(buildPortalSessionDeps(services)).toEqual({
+      portalAuth: services.portalAuth,
+    });
+  });
+
+  it("keeps the session route from inlining portal auth wiring", () => {
+    const routeSource = readFileSync("app/api/auth/session/route.ts", "utf8");
+
+    expect(routeSource).toContain("buildPortalSessionDeps");
+    expect(routeSource).not.toContain("portalAuth: services.portalAuth");
+  });
+
   it("resumes a previously minted portal session", async () => {
     const deps = await makeDeps();
     const login = await handlePortalLogin(deps, {

@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { createPortalAuthenticator, hashPassword } from "@/auth";
 import {
@@ -13,9 +14,11 @@ import {
 import type { Logger } from "@/observability/logger";
 import type { PortalUserRepository } from "@/persistence/portal-auth-repository";
 import {
+  buildCandidateRegistrationDeps,
   handleAdminCreateCandidate,
   handleCandidateSelfRegistration,
   handleGetCandidateExamCatalog,
+  type CandidateRegistrationServices,
 } from "./candidate-portal";
 import { handlePortalLogin } from "./portal-auth";
 
@@ -93,6 +96,32 @@ function createStubPortalUserRepository(): PortalUserRepository {
 }
 
 describe("candidate registration and provisioning", () => {
+  it("maps candidate registration dependencies from composed portal services", () => {
+    const services = {
+      portalUsers: createStubPortalUserRepository(),
+      logger: makeLogger(),
+      diagnosticRecorder: undefined,
+    } satisfies CandidateRegistrationServices;
+
+    const deps = buildCandidateRegistrationDeps(services);
+
+    expect(deps).toEqual({
+      users: services.portalUsers,
+      logger: services.logger,
+      diagnostics: services.diagnosticRecorder,
+    });
+  });
+
+  it("keeps registration routes from inlining candidate registration wiring", () => {
+    const selfRegisterRoute = readFileSync("app/api/candidate/register/route.ts", "utf8");
+    const adminCreateRoute = readFileSync("app/api/admin/candidates/route.ts", "utf8");
+
+    expect(selfRegisterRoute).toContain("buildCandidateRegistrationDeps");
+    expect(adminCreateRoute).toContain("buildCandidateRegistrationDeps");
+    expect(selfRegisterRoute).not.toContain("users: services.portalUsers");
+    expect(adminCreateRoute).not.toContain("users: services.portalUsers");
+  });
+
   it("self-registers a Candidate into Helios CX", async () => {
     const users = createStubPortalUserRepository();
 

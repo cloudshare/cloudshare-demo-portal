@@ -46,6 +46,18 @@ export interface PortalAuthDeps {
   readonly onCandidateLogout?: (session: PortalSession) => Promise<void>;
 }
 
+export interface PortalSessionServices {
+  readonly portalAuth: PortalAuthenticator;
+}
+
+export function buildPortalSessionDeps(
+  services: PortalSessionServices,
+): Pick<PortalAuthDeps, "portalAuth"> {
+  return {
+    portalAuth: services.portalAuth,
+  };
+}
+
 export async function handlePortalLogin(
   deps: PortalAuthDeps,
   request: PortalAuthRequest,

@@ -34,11 +34,27 @@ interface CustomerRequest {
   readonly customerId: string;
 }
 
-interface CandidateRegistrationDeps {
+export interface CandidateRegistrationDeps {
   readonly users: PortalUserProvisioningStore;
   readonly logger: Logger;
   /** Optional support diagnostics; routes always wire it. Never throws. */
   readonly diagnostics?: DiagnosticRecorder;
+}
+
+export interface CandidateRegistrationServices {
+  readonly portalUsers: PortalUserProvisioningStore;
+  readonly logger: Logger;
+  readonly diagnosticRecorder?: DiagnosticRecorder;
+}
+
+export function buildCandidateRegistrationDeps(
+  services: CandidateRegistrationServices,
+): CandidateRegistrationDeps {
+  return {
+    users: services.portalUsers,
+    logger: services.logger,
+    diagnostics: services.diagnosticRecorder,
+  };
 }
 
 interface CandidateExamCatalogDeps {
