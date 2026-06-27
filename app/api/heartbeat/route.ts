@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getServices } from "@/composition";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
-import { handleExamAttemptHeartbeat } from "@/api/heartbeat";
+import { buildExamAttemptHeartbeatDeps, handleExamAttemptHeartbeat } from "@/api/heartbeat";
 import { authorizeCandidateExamAttemptAccess } from "@/api/candidate-exam-attempt-access";
 import { getPortalSession } from "@/auth/portal-session";
 
@@ -13,7 +13,6 @@ import { getPortalSession } from "@/auth/portal-session";
  */
 export async function POST(request: Request) {
   const services = getServices();
-  const { heartbeatAutoSuspend, logger } = services;
 
   let body: unknown;
   try {
@@ -41,18 +40,9 @@ export async function POST(request: Request) {
   const portalSession = await getPortalSession(services, sessionId);
 
   const resp = await handleExamAttemptHeartbeat(
-    {
-      attempts: services.examAttempts,
-      exams: services.exams,
-      clocks: services.examClock,
-      autoSuspend: heartbeatAutoSuspend,
-      diagnostics: services.diagnosticRecorder,
-      logger,
+    buildExamAttemptHeartbeatDeps(services, {
       candidateEmail: portalSession?.email ?? undefined,
-      environmentSource: services.environmentSource,
-      connections: services.cloudshareConnections,
-      cloudshare: services.cloudshareClientFactory,
-    },
+    }),
     {
       examAttemptId,
       candidateId: access.attempt.candidateId,

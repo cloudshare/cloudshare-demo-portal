@@ -1,7 +1,9 @@
+import { readFileSync } from "node:fs";
 import { describe, it, expect, vi } from "vitest";
-import { handleHeartbeat } from "./heartbeat";
+import { buildExamAttemptHeartbeatDeps, handleHeartbeat } from "./heartbeat";
 import type { Logger } from "@/observability/logger";
 import type { HeartbeatAutoSuspend } from "@/domain/heartbeat-auto-suspend";
+import type { ExamAttemptHeartbeatServices } from "./heartbeat";
 
 function makeLogger(): Logger {
   return {
@@ -64,5 +66,47 @@ describe("handleHeartbeat", () => {
     );
     expect(result.status).toBe(400);
     expect(autoSuspend.recordHeartbeat).not.toHaveBeenCalled();
+  });
+});
+
+describe("buildExamAttemptHeartbeatDeps", () => {
+  it("maps the heartbeat runtime dependencies from composed portal services", () => {
+    const services = {
+      examAttempts: {},
+      exams: {},
+      examClock: {},
+      heartbeatAutoSuspend: {},
+      diagnosticRecorder: {},
+      logger: makeLogger(),
+      environmentSource: {},
+      cloudshareConnections: {},
+      cloudshareClientFactory: {},
+    } as unknown as ExamAttemptHeartbeatServices;
+
+    const deps = buildExamAttemptHeartbeatDeps(services, {
+      candidateEmail: "candidate@example.com",
+    });
+
+    expect(deps).toEqual({
+      attempts: services.examAttempts,
+      exams: services.exams,
+      clocks: services.examClock,
+      autoSuspend: services.heartbeatAutoSuspend,
+      diagnostics: services.diagnosticRecorder,
+      logger: services.logger,
+      candidateEmail: "candidate@example.com",
+      environmentSource: services.environmentSource,
+      connections: services.cloudshareConnections,
+      cloudshare: services.cloudshareClientFactory,
+    });
+  });
+
+  it("keeps the Next route adapter from inlining heartbeat runtime dependencies", () => {
+    const routeSource = readFileSync("app/api/heartbeat/route.ts", "utf8");
+
+    expect(routeSource).toContain("buildExamAttemptHeartbeatDeps");
+    expect(routeSource).not.toContain("attempts: services.examAttempts");
+    expect(routeSource).not.toContain("autoSuspend: heartbeatAutoSuspend");
+    expect(routeSource).not.toContain("cloudshare: services.cloudshareClientFactory");
   });
 });
