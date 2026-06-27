@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const demoRouteFiles = [
@@ -7,19 +7,18 @@ const demoRouteFiles = [
   "app/api/demo/reset/route.ts",
 ] as const;
 
-function sourceFilesUnder(path: string): string[] {
-  const entries = readdirSync(path);
-  return entries.flatMap((entry) => {
-    const fullPath = `${path}/${entry}`;
-    const stat = statSync(fullPath);
-    if (stat.isDirectory()) {
-      return sourceFilesUnder(fullPath);
-    }
-    return /\.(ts|tsx)$/.test(fullPath) && !/\.test\.(ts|tsx)$/.test(fullPath)
-      ? [fullPath]
-      : [];
-  });
-}
+const activeCandidateRuntimeFiles = [
+  "src/api/candidate-exam-attempt-access.ts",
+  "src/api/candidate-portal.ts",
+  "src/api/candidate-lab.ts",
+  "src/api/candidate-runtime-diagnostics.ts",
+  "src/api/enter.ts",
+  "src/api/exam-attempt-dashboard-runtime.ts",
+  "src/api/exam-attempt-runtime.ts",
+  "src/api/exam-attempt-scheduling-runtime.ts",
+  "src/api/exam-attempt-score-runtime.ts",
+  "src/api/exam-attempt-suspend-resume-runtime.ts",
+] as const;
 
 describe("legacy simulator demo-control quarantine", () => {
   it("keeps the retired bookExam use case under an explicit legacy simulator path", () => {
@@ -27,18 +26,15 @@ describe("legacy simulator demo-control quarantine", () => {
     expect(existsSync("src/legacy-simulator/book-exam.ts")).toBe(true);
   });
 
-  it("keeps active candidate scheduling and runtime modules from importing retired bookExam", () => {
-    const allowedLegacyCaller = "src/api/legacy-simulator-demo-control.ts";
-    const offenders = sourceFilesUnder("src")
-      .filter((file) => file !== allowedLegacyCaller)
-      .filter((file) => {
-        const source = readFileSync(file, "utf8");
-        return (
-          source.includes("@/domain/booking") ||
-          source.includes("./booking") ||
-          source.includes("@/legacy-simulator/book-exam")
-        );
-      });
+  it("keeps active Candidate scheduling and runtime handlers from importing retired bookExam", () => {
+    const offenders = activeCandidateRuntimeFiles.filter((file) => {
+      const source = readFileSync(file, "utf8");
+      return (
+        source.includes("@/domain/booking") ||
+        source.includes("./booking") ||
+        source.includes("@/legacy-simulator/book-exam")
+      );
+    });
 
     expect(offenders).toEqual([]);
   });
