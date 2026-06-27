@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { getServices } from "@/composition";
-import { handleCandidateSelfRegistration } from "@/api/candidate-portal";
+import {
+  buildCandidateRegistrationDeps,
+  handleCandidateSelfRegistration,
+} from "@/api/candidate-portal";
 
 export async function POST(request: Request) {
   const services = getServices();
@@ -14,7 +17,7 @@ export async function POST(request: Request) {
   }
 
   const response = await handleCandidateSelfRegistration(
-    { users: services.portalUsers, logger: services.logger, diagnostics: services.diagnosticRecorder },
+    buildCandidateRegistrationDeps(services),
     { body },
   );
 

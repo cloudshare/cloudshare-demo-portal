@@ -3,7 +3,10 @@ import { cookies } from "next/headers";
 import { getServices } from "@/composition";
 import { getPortalAdminSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
-import { handleAdminCreateCandidate } from "@/api/candidate-portal";
+import {
+  buildCandidateRegistrationDeps,
+  handleAdminCreateCandidate,
+} from "@/api/candidate-portal";
 
 export async function POST(request: Request) {
   const services = getServices();
@@ -23,7 +26,7 @@ export async function POST(request: Request) {
   }
 
   const response = await handleAdminCreateCandidate(
-    { users: services.portalUsers, logger: services.logger, diagnostics: services.diagnosticRecorder },
+    buildCandidateRegistrationDeps(services),
     { customerId: session.customerId, body },
   );
 
