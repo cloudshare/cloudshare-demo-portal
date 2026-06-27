@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import type { Services } from "@/composition";
 import type { Logger } from "@/observability/logger";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { LabLaunchRepository, LabProvisioner } from "@/domain/lab-launch";
@@ -66,6 +65,26 @@ export interface DemoControlDeps {
   readonly newId: () => string;
   readonly now: () => Date;
   readonly sleep: (ms: number) => Promise<void>;
+}
+
+export interface DemoControlServices {
+  readonly logger: Logger;
+  readonly examAttempts: ExamAttemptRepository;
+  readonly labLaunches: LabLaunchRepository;
+  readonly environmentSource: EnvironmentStateSource;
+  readonly legacySimulatorDemo: {
+    readonly kryterion: KryterionSimulator;
+    readonly genesys: ExamEligibilityProvider;
+  };
+  readonly legacyDemoRuntimeControls: {
+    readonly completedDemoSteps: ReadonlySet<DemoStep>;
+    readonly markStepDone: (step: DemoStep) => void;
+    readonly resetDemo: () => Promise<void>;
+  };
+  readonly events: IntegrationEventPublisher;
+  readonly labProvisioner: LabProvisioner;
+  readonly environmentSimulator: CloudShareEnvironmentSimulator | null;
+  readonly scoreRetriever: ScoreRetrievalProvider;
 }
 
 // --- State reading helper ---
@@ -341,8 +360,8 @@ export async function handleResetDemo(deps: DemoControlDeps): Promise<DemoHandle
 
 // --- Deps factory ---
 
-/** Build the full DemoControlDeps from the composition root Services. */
-export function buildDemoDeps(svc: Services): DemoControlDeps {
+/** Build DemoControlDeps from the narrow legacy demo service shape. */
+export function buildDemoDeps(svc: DemoControlServices): DemoControlDeps {
   return {
     logger: svc.logger,
     examAttempts: svc.examAttempts,

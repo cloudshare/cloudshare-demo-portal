@@ -214,9 +214,11 @@ describe("legacy simulator demo-control quarantine", () => {
   it("builds /demo dependencies from the legacy simulator compatibility bundle", () => {
     const demoControl = readFileSync("src/api/legacy-simulator-demo-control.ts", "utf8");
     const buildDemoDeps = demoControl.match(
-      /export function buildDemoDeps\(svc: Services\): DemoControlDeps \{(?<body>[\s\S]*?)\n\}/,
+      /export function buildDemoDeps\(svc: DemoControlServices\): DemoControlDeps \{(?<body>[\s\S]*?)\n\}/,
     )?.groups?.body;
 
+    expect(demoControl).not.toContain("@/composition");
+    expect(demoControl).toContain("export interface DemoControlServices");
     expect(buildDemoDeps).toBeDefined();
     expect(buildDemoDeps).toContain("kryterion: svc.legacySimulatorDemo.kryterion");
     expect(buildDemoDeps).toContain("genesys: svc.legacySimulatorDemo.genesys");
