@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getServices } from "@/composition";
-import { handleGetEventLog } from "@/api/admin";
+import { buildAdminEventLogDeps, handleGetEventLog } from "@/api/admin";
 import { getPortalAdminSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 
@@ -14,10 +14,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const { eventLog, logger } = services;
   const url = new URL(request.url);
   const query = Object.fromEntries(url.searchParams.entries());
 
-  const resp = await handleGetEventLog({ eventLog, logger }, { query });
+  const resp = await handleGetEventLog(buildAdminEventLogDeps(services), { query });
   return NextResponse.json(resp.body, { status: resp.status });
 }
