@@ -37,6 +37,20 @@ export interface SupportWorkbenchDeps {
   readonly logger: Logger;
 }
 
+export interface SupportWorkbenchServices {
+  readonly diagnostics: DiagnosticLogRepository;
+  readonly logger: Logger;
+}
+
+export function buildSupportWorkbenchDeps(
+  services: SupportWorkbenchServices,
+): SupportWorkbenchDeps {
+  return {
+    diagnostics: services.diagnostics,
+    logger: services.logger,
+  };
+}
+
 export async function handleGetSupportWorkbench(
   deps: SupportWorkbenchDeps,
   _request: SupportWorkbenchRequest,
