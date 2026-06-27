@@ -384,7 +384,7 @@ heartbeat while the lab window is open:
   checks every `checkIntervalMs` (10 s). If any tracked attempt has not received
   a heartbeat within `HEARTBEAT_TIMEOUT_MS` (default 60 000 ms; overridable via
   `.env`), it calls `suspendExam` — which suspends the CloudShare environment and
-  pauses the Kryterion timer.
+  pauses the portal-owned exam clock.
 - **`childWindow.closed` polling** — `LabLauncher` polls the retained window handle
   every 3 seconds. If the lab window is detected as closed it proactively calls
   `POST /api/exam/suspend` rather than waiting for the server timeout.

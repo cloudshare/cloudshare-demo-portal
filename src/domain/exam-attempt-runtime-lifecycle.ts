@@ -10,7 +10,7 @@ import type { ExamAttemptStatus } from "./exam-attempt";
 import type { LabLaunchRepository, LabProvisioner } from "./lab-launch";
 
 /**
- * Suspend/resume synchronised with the Kryterion authoritative exam clock.
+ * Portal-owned ExamAttempt runtime lifecycle for suspend/resume and ExamClock updates.
  *
  * Flow for suspend:
  *   0. Confirm the ExamAttempt is currently `in_progress`.
@@ -19,11 +19,11 @@ import type { LabLaunchRepository, LabProvisioner } from "./lab-launch";
  *   3. Poll `EnvironmentStateSource` until status is `suspended` (webhook hints
  *      from Slice 6 may also trigger reconcile in parallel; this poll is the
  *      authoritative confirmation gate).
- *   4. Pause the Kryterion timer once confirmed.
+ *   4. Pause the portal-owned ExamClock once confirmed.
  *
  * Flow for resume is the mirror: confirm `suspended` → resume → poll until
  * CloudShare leaves the suspended state (`running` or `created`/preparing) →
- * resume timer. Re-entry still happens through `/enter`, which remains the
+ * resume the portal-owned ExamClock. Re-entry still happens through `/enter`, which remains the
  * only redirect source for the server-held sponsored link.
  *
  * CloudShare preserves a suspended environment for ~2 hours; the portal surfaces
@@ -38,7 +38,7 @@ export type { EnvironmentController } from "./environment";
 
 // --- Exam timer port ---
 
-/** Kryterion authoritative exam clock port. Implemented by the Kryterion integration. */
+/** Portal-owned ExamClock port for ExamAttempt runtime lifecycle transitions. */
 export interface ExamTimer {
   pauseTimer(examAttemptId: string): Promise<void>;
   resumeTimer(examAttemptId: string): Promise<void>;

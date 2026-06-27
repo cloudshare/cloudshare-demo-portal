@@ -12,7 +12,7 @@ import {
   SUSPENDED_PRESERVATION_LIMIT_MS,
   type SuspendExamDeps,
   type ResumeExamDeps,
-} from "@/domain/timer-sync";
+} from "@/domain/exam-attempt-runtime-lifecycle";
 import {
   InvalidExamAttemptStatusError,
   LabLaunchNotFoundError,

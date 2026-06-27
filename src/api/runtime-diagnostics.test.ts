@@ -19,7 +19,7 @@ import type { ExamAttempt, ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { LabLaunchRepository } from "@/domain/lab-launch";
 import type { EventLogRepository } from "@/domain/event-log";
 import type { Logger } from "@/observability/logger";
-import type { EnvironmentController } from "@/domain/timer-sync";
+import type { EnvironmentController } from "@/domain/exam-attempt-runtime-lifecycle";
 import type { EnvironmentStateSource } from "@/domain/environment";
 import type { CloudShareClientFactory, CloudShareConnectionRepository } from "@/domain/cloudshare-connection";
 import type { ExamRepository, Exam } from "@/domain/exam-catalog";

@@ -19,7 +19,7 @@ import {
 import { DEMO_SEED } from "@/legacy-simulator/genesys/demo-data";
 import { bookExam } from "@/legacy-simulator/book-exam";
 import { launchLab } from "@/domain/lab-launch";
-import { suspendExam, resumeExam } from "@/domain/timer-sync";
+import { suspendExam, resumeExam } from "@/domain/exam-attempt-runtime-lifecycle";
 import { retrieveScore } from "@/domain/score-result";
 
 /**

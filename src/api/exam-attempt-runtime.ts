@@ -4,7 +4,7 @@ import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { ExamClock } from "@/domain/exam-clock";
 import type { ExamRepository } from "@/domain/exam-catalog";
 import type { LabLaunchRepository } from "@/domain/lab-launch";
-import type { ExamTimer } from "@/domain/timer-sync";
+import type { ExamTimer } from "@/domain/exam-attempt-runtime-lifecycle";
 import type { Logger } from "@/observability/logger";
 import { recordExamAttemptCompletionDiagnostic } from "./exam-attempt-completion-diagnostics";
 
