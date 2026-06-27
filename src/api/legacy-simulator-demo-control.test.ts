@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
+  buildDemoDeps,
   handleGetDemoState,
   handleExecuteStep,
   handleResetDemo,
@@ -78,6 +79,57 @@ function makeDeps(overrides: Partial<DemoControlDeps> = {}): DemoControlDeps {
     ...overrides,
   };
 }
+
+function makeDemoServices(): Parameters<typeof buildDemoDeps>[0] {
+  const deps = makeDeps();
+  const resetDemo = vi.fn(async () => deps.resetDemoState());
+  return {
+    logger: deps.logger,
+    examAttempts: deps.examAttempts,
+    labLaunches: deps.labLaunches,
+    environmentSource: deps.environmentSource,
+    legacySimulatorDemo: {
+      kryterion: deps.kryterion,
+      genesys: deps.genesys,
+    },
+    legacyDemoRuntimeControls: {
+      completedDemoSteps: deps.completedDemoSteps,
+      markStepDone: deps.markStepDone,
+      resetDemo,
+    },
+    events: deps.events,
+    labProvisioner: deps.labProvisioner,
+    environmentSimulator: deps.environmentSimulator,
+    scoreRetriever: deps.scoreRetriever,
+  };
+}
+
+describe("buildDemoDeps", () => {
+  it("maps legacy simulator services and deterministic demo controls into DemoControlDeps", async () => {
+    const services = makeDemoServices();
+
+    const deps = buildDemoDeps(services);
+
+    expect(deps).toMatchObject({
+      logger: services.logger,
+      examAttempts: services.examAttempts,
+      labLaunches: services.labLaunches,
+      environmentSource: services.environmentSource,
+      kryterion: services.legacySimulatorDemo.kryterion,
+      completedDemoSteps: services.legacyDemoRuntimeControls.completedDemoSteps,
+      markStepDone: services.legacyDemoRuntimeControls.markStepDone,
+      genesys: services.legacySimulatorDemo.genesys,
+      events: services.events,
+      labProvisioner: services.labProvisioner,
+      environmentSimulator: services.environmentSimulator,
+      scoreRetriever: services.scoreRetriever,
+      resetDemoState: services.legacyDemoRuntimeControls.resetDemo,
+    });
+    expect(deps.newId()).not.toEqual(deps.newId());
+    expect(deps.now()).toBeInstanceOf(Date);
+    await expect(deps.sleep(0)).resolves.toBeUndefined();
+  });
+});
 
 // ─── handleGetDemoState ─────────────────────────────────────────────────────
 
