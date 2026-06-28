@@ -145,16 +145,6 @@ model EnvironmentRecord {
   observedAt            DateTime
 }
 
-model SupportLogEntry {
-  id        String   @id @default(cuid())
-  timestamp DateTime
-  level     String
-  message   String
-  fieldsJson String
-
-  @@index([timestamp])
-}
-
 // Typed, append-only support source of truth (ADR-004). Core correlation fields
 // are first-class columns so the Support read API filters on them directly and
 // never depends on brittle JSON-string search; only free-form structures are
