@@ -66,7 +66,7 @@ describe("createCloudShareClient — v4", () => {
     expect(last()?.headers?.authorization).toBe("Bearer test-bearer");
   });
 
-  it("emits redacted request bodies for support diagnostics", async () => {
+  it("emits support diagnostic request bodies while retaining training passphrases", async () => {
     const trace = vi.fn();
     const { http } = capturingHttp(ok({ id: "training-1" }));
     const client = createCloudShareClient({
@@ -103,9 +103,95 @@ describe("createCloudShareClient — v4", () => {
         },
         requestBody: {
           Name: "Exam GCP-ASSOC",
-          Passphrase: "[REDACTED]",
+          Passphrase: "certalis-attempt-1",
           MainInstructor: { Email: "instructor@example.com" },
         },
+      }),
+    });
+  });
+
+  it("still redacts true credentials from support diagnostic request bodies", async () => {
+    const trace = vi.fn();
+    const { http } = capturingHttp(ok({ id: "training-1" }));
+    const client = createCloudShareClient({
+      http,
+      endpoints,
+      tokenProvider: stubTokenProvider,
+      v3: { apiId: "api-id", apiKey: "api-key" },
+      trace,
+      customerId: "customer-helios",
+    });
+
+    await client.requestV4({
+      method: "POST",
+      path: "/trainings",
+      body: {
+        Name: "Exam GCP-ASSOC",
+        Passphrase: "certalis-attempt-1",
+        ApiKey: "cloudshare-api-key",
+        WebhookSecret: "webhook-secret",
+        Password: "actual-password",
+        Signature: "signed-value",
+      },
+      schema: z.object({ id: z.string() }),
+    });
+
+    expect(trace).toHaveBeenNthCalledWith(1, {
+      level: "info",
+      message: "cloudshare request sent",
+      fields: expect.objectContaining({
+        requestBody: {
+          Name: "Exam GCP-ASSOC",
+          Passphrase: "certalis-attempt-1",
+          ApiKey: "[REDACTED]",
+          WebhookSecret: "[REDACTED]",
+          Password: "[REDACTED]",
+          Signature: "[REDACTED]",
+        },
+      }),
+    });
+  });
+
+  it("retains training passphrases in response diagnostics", async () => {
+    const trace = vi.fn();
+    const { http } = capturingHttp(
+      ok({
+        id: "training-1",
+        Passphrase: "certalis-attempt-1",
+        passphrase: "candidate-visible-passphrase",
+        ApiKey: "cloudshare-api-key",
+      }),
+    );
+    const client = createCloudShareClient({
+      http,
+      endpoints,
+      tokenProvider: stubTokenProvider,
+      v3: { apiId: "api-id", apiKey: "api-key" },
+      trace,
+      customerId: "customer-helios",
+    });
+
+    await client.requestV4({
+      method: "POST",
+      path: "/trainings",
+      schema: z.object({
+        id: z.string(),
+        Passphrase: z.string(),
+        passphrase: z.string(),
+        ApiKey: z.string(),
+      }),
+    });
+
+    expect(trace).toHaveBeenNthCalledWith(2, {
+      level: "info",
+      message: "cloudshare response received",
+      fields: expect.objectContaining({
+        responseBody: JSON.stringify({
+          id: "training-1",
+          Passphrase: "certalis-attempt-1",
+          passphrase: "candidate-visible-passphrase",
+          ApiKey: "[REDACTED]",
+        }),
       }),
     });
   });
