@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { getServices } from "@/composition";
 import { getPortalAdminSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
-import { handleUnpublishExam } from "@/api/admin-exams";
+import { buildAdminExamUnpublishDeps, handleUnpublishExam } from "@/api/admin-exams";
 
 export async function POST(
   _request: Request,
@@ -18,11 +18,7 @@ export async function POST(
 
   const { examId } = await context.params;
   const response = await handleUnpublishExam(
-    {
-      repository: services.exams,
-      diagnostics: services.diagnosticRecorder,
-      logger: services.logger,
-    },
+    buildAdminExamUnpublishDeps(services),
     {
       customerId: session.customerId,
       actor: { type: "admin", id: session.userId, email: session.email },

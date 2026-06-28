@@ -78,6 +78,95 @@ interface AdminExamCatalogDeps extends AdminExamDraftRuntimeDeps {
 type AdminExamPublishDeps = AdminExamPublishRuntimeDeps;
 type AdminExamUnpublishDeps = AdminExamUnpublishRuntimeDeps;
 
+export interface AdminExamCatalogListServices {
+  readonly exams: ExamRepository;
+  readonly logger: Logger;
+}
+
+export interface AdminExamDraftServices extends AdminExamCatalogListServices {
+  readonly examAuthoringCache: ExamAuthoringCacheRepository;
+  readonly config: {
+    readonly seed: {
+      readonly heliosInstructor:
+        | {
+            readonly id: string;
+            readonly name: string;
+          }
+        | null;
+    };
+  };
+  readonly diagnosticRecorder?: DiagnosticRecorder;
+}
+
+export interface AdminExamDraftUpdateServices extends AdminExamCatalogListServices {
+  readonly examAuthoringCache: ExamAuthoringCacheRepository;
+  readonly diagnosticRecorder?: DiagnosticRecorder;
+}
+
+export interface AdminExamPublishServices extends AdminExamDraftUpdateServices {
+  readonly cloudshareConnections: CloudShareConnectionRepository;
+  readonly cloudshareClientFactory: CloudShareClientFactory;
+}
+
+export interface AdminExamUnpublishServices extends AdminExamCatalogListServices {
+  readonly diagnosticRecorder?: DiagnosticRecorder;
+}
+
+export function buildAdminExamCatalogListDeps(
+  services: AdminExamCatalogListServices,
+): Pick<AdminExamCatalogDeps, "repository" | "logger"> {
+  return {
+    repository: services.exams,
+    logger: services.logger,
+  };
+}
+
+export function buildAdminDraftExamDeps(
+  services: AdminExamDraftServices,
+): AdminExamCatalogDeps {
+  return {
+    repository: services.exams,
+    cache: services.examAuthoringCache,
+    instructor: services.config.seed.heliosInstructor,
+    diagnostics: services.diagnosticRecorder,
+    logger: services.logger,
+  };
+}
+
+export function buildAdminDraftExamUpdateDeps(
+  services: AdminExamDraftUpdateServices,
+): Pick<AdminExamCatalogDeps, "repository" | "cache" | "diagnostics" | "logger" | "now"> {
+  return {
+    repository: services.exams,
+    cache: services.examAuthoringCache,
+    diagnostics: services.diagnosticRecorder,
+    logger: services.logger,
+  };
+}
+
+export function buildAdminExamPublishDeps(
+  services: AdminExamPublishServices,
+): AdminExamPublishDeps {
+  return {
+    repository: services.exams,
+    connections: services.cloudshareConnections,
+    cloudshare: services.cloudshareClientFactory,
+    cache: services.examAuthoringCache,
+    diagnostics: services.diagnosticRecorder,
+    logger: services.logger,
+  };
+}
+
+export function buildAdminExamUnpublishDeps(
+  services: AdminExamUnpublishServices,
+): AdminExamUnpublishDeps {
+  return {
+    repository: services.exams,
+    diagnostics: services.diagnosticRecorder,
+    logger: services.logger,
+  };
+}
+
 export async function handleGetExamAuthoringBootstrap(
   deps: AdminExamAuthoringDeps,
   request: ResourceRequest,

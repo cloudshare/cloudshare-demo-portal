@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { getServices } from "@/composition";
 import { getPortalAdminSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
-import { handleUpdateDraftExam } from "@/api/admin-exams";
+import { buildAdminDraftExamUpdateDeps, handleUpdateDraftExam } from "@/api/admin-exams";
 
 export async function PATCH(
   request: Request,
@@ -25,12 +25,7 @@ export async function PATCH(
 
   const { examId } = await context.params;
   const response = await handleUpdateDraftExam(
-    {
-      repository: services.exams,
-      cache: services.examAuthoringCache,
-      diagnostics: services.diagnosticRecorder,
-      logger: services.logger,
-    },
+    buildAdminDraftExamUpdateDeps(services),
     {
       customerId: session.customerId,
       actor: { type: "admin", id: session.userId, email: session.email },
