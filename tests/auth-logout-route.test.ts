@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
@@ -88,6 +89,15 @@ describe("POST /api/auth/logout", () => {
       status: 200,
       body: { status: "suspended", examAttemptId: "attempt-running" },
     });
+  });
+
+  it("delegates logout auto-suspend dependency assembly to the runtime helper", () => {
+    const source = readFileSync("app/api/auth/logout/route.ts", "utf8");
+
+    expect(source).toContain("buildCandidateLogoutAutoSuspendDeps(services, session)");
+    expect(source).not.toContain("controller: services.environmentController");
+    expect(source).not.toContain("suspendExam: handleSuspendExam");
+    expect(source).not.toContain("candidateEmail: session.email");
   });
 
   it("auto-suspends running Candidate labs before signing out", async () => {

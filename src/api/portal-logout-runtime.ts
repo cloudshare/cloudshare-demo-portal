@@ -1,11 +1,29 @@
+import { randomUUID } from "node:crypto";
 import type { PortalSession } from "@/auth";
 import type { AuditRecord, AuditRepository } from "@/domain/audit-trail";
 import type { HeartbeatAutoSuspend } from "@/domain/heartbeat-auto-suspend";
+import { handleSuspendExam } from "./suspend-resume";
 import type {
   SuspendHandlerDeps,
   SuspendResumeRequest,
   SuspendResumeResponse,
 } from "./suspend-resume";
+
+export interface CandidateLogoutAutoSuspendServices {
+  readonly environmentController: SuspendHandlerDeps["controller"];
+  readonly environmentSource: SuspendHandlerDeps["source"];
+  readonly examClock: SuspendHandlerDeps["timer"] & SuspendHandlerDeps["clocks"];
+  readonly exams: SuspendHandlerDeps["exams"];
+  readonly examAttempts: SuspendHandlerDeps["attempts"];
+  readonly labLaunches: SuspendHandlerDeps["launches"];
+  readonly logger: SuspendHandlerDeps["logger"];
+  readonly eventLog: SuspendHandlerDeps["eventLog"];
+  readonly cloudshareConnections: SuspendHandlerDeps["connections"];
+  readonly cloudshareClientFactory: SuspendHandlerDeps["cloudshare"];
+  readonly diagnosticRecorder: SuspendHandlerDeps["diagnostics"];
+  readonly heartbeatAutoSuspend: Pick<HeartbeatAutoSuspend, "removeHeartbeat">;
+  readonly audit: Pick<AuditRepository, "write">;
+}
 
 export interface CandidateLogoutAutoSuspendDeps extends SuspendHandlerDeps {
   readonly suspendExam: (
@@ -16,6 +34,41 @@ export interface CandidateLogoutAutoSuspendDeps extends SuspendHandlerDeps {
   readonly audit: Pick<AuditRepository, "write">;
   readonly newId: () => string;
   readonly now: () => Date;
+}
+
+interface CandidateLogoutAutoSuspendDepsOptions {
+  readonly suspendExam?: CandidateLogoutAutoSuspendDeps["suspendExam"];
+  readonly sleep?: CandidateLogoutAutoSuspendDeps["sleep"];
+  readonly newId?: CandidateLogoutAutoSuspendDeps["newId"];
+  readonly now?: CandidateLogoutAutoSuspendDeps["now"];
+}
+
+export function buildCandidateLogoutAutoSuspendDeps(
+  services: CandidateLogoutAutoSuspendServices,
+  session: PortalSession,
+  options: CandidateLogoutAutoSuspendDepsOptions = {},
+): CandidateLogoutAutoSuspendDeps {
+  return {
+    controller: services.environmentController,
+    source: services.environmentSource,
+    timer: services.examClock,
+    exams: services.exams,
+    clocks: services.examClock,
+    attempts: services.examAttempts,
+    launches: services.labLaunches,
+    sleep: options.sleep ?? sleep,
+    logger: services.logger,
+    eventLog: services.eventLog,
+    connections: services.cloudshareConnections,
+    cloudshare: services.cloudshareClientFactory,
+    diagnostics: services.diagnosticRecorder,
+    candidateEmail: session.email ?? undefined,
+    suspendExam: options.suspendExam ?? handleSuspendExam,
+    heartbeatAutoSuspend: services.heartbeatAutoSuspend,
+    audit: services.audit,
+    newId: options.newId ?? randomUUID,
+    now: options.now ?? (() => new Date()),
+  };
 }
 
 export async function suspendCandidateRunningLabsForLogout(
@@ -45,4 +98,8 @@ export async function suspendCandidateRunningLabsForLogout(
       occurredAt: deps.now(),
     } satisfies AuditRecord);
   }
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
