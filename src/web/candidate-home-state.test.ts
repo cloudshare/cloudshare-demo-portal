@@ -4,6 +4,7 @@ import {
   buildScheduledAttemptViews,
   canEnterAttempt,
   getAttemptWaitingMessage,
+  getAttemptPrimaryAction,
   getLatestAttemptForExam,
   getNextEnterabilityWakeUpDelayMs,
 } from "./candidate-home-state";
@@ -67,6 +68,56 @@ describe("candidate home attempt state", () => {
         new Date("2026-06-16T15:00:00.000Z").getTime(),
       ),
     ).toMatch(/Enter exam becomes available/);
+  });
+
+  it.each([
+    {
+      attempt: dashboard.attempts[1] ?? null,
+      nowMs: new Date("2026-06-16T15:00:00.000Z").getTime(),
+      expected: { label: "Enter exam", disabled: true },
+    },
+    {
+      attempt: dashboard.attempts[1] ?? null,
+      nowMs: new Date("2026-06-16T16:00:00.000Z").getTime(),
+      expected: { label: "Enter exam", disabled: false },
+    },
+    {
+      attempt: {
+        id: "attempt-progress",
+        examId: "exam-1",
+        scheduledFor: "2026-06-16T16:00:00.000Z",
+        status: "in_progress" as const,
+      },
+      nowMs: new Date("2026-06-16T16:00:00.000Z").getTime(),
+      expected: { label: "Return to exam", disabled: false },
+    },
+    {
+      attempt: {
+        id: "attempt-suspended",
+        examId: "exam-1",
+        scheduledFor: "2026-06-16T16:00:00.000Z",
+        status: "suspended" as const,
+      },
+      nowMs: new Date("2026-06-16T16:00:00.000Z").getTime(),
+      expected: { label: "Resume exam", disabled: false },
+    },
+    {
+      attempt: {
+        id: "attempt-completed",
+        examId: "exam-1",
+        scheduledFor: "2026-06-16T16:00:00.000Z",
+        status: "completed" as const,
+      },
+      nowMs: new Date("2026-06-16T16:00:00.000Z").getTime(),
+      expected: { label: "View score", disabled: false },
+    },
+    {
+      attempt: dashboard.attempts[2] ?? null,
+      nowMs: new Date("2026-06-17T10:00:00.000Z").getTime(),
+      expected: { label: null, disabled: false },
+    },
+  ])("maps candidate-home primary actions without changing their behavior", ({ attempt, nowMs, expected }) => {
+    expect(getAttemptPrimaryAction(attempt, nowMs)).toEqual(expected);
   });
 
   it("computes a one-shot wake-up delay for the next ready attempt that will become enterable", () => {

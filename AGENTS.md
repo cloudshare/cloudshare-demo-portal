@@ -64,6 +64,10 @@ showing real CloudShare behaviour, CloudShare wins.
 - Human QA is still required for user-visible behaviour, UI changes, active CloudShare runtime
   behaviour, live integration changes, or any slice where smoke evidence does not prove the changed
   path.
+- For any UI path change, automated smoke must exercise the changed browser path, not only render it:
+  click or submit the changed controls, capture browser console errors/warnings, and record both the
+  interaction evidence and console result in the PR. Layout-only checks such as screenshots,
+  DOM presence, or overflow measurements are not enough by themselves.
 
 ## Engineering discipline
 

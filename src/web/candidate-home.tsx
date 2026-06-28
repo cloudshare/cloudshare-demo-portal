@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type CSSProperties, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   loadCandidateDashboard,
@@ -11,10 +11,10 @@ import {
 } from "./candidate-scheduling";
 import {
   buildScheduledAttemptViews,
-  canEnterAttempt,
   getAttemptWaitingMessage,
   getLatestAttemptForExam,
   getNextEnterabilityWakeUpDelayMs,
+  getAttemptPrimaryAction,
 } from "./candidate-home-state";
 import { formatCandidateAttemptStatus } from "./candidate-lab-state";
 import { useCandidateLogout } from "./candidate-logout";
@@ -158,164 +158,474 @@ export function CandidateHome({ email }: CandidateHomeProps) {
   const scheduledAttempts = buildScheduledAttemptViews(dashboard, nowMs);
 
   return (
-    <main style={{ fontFamily: "system-ui, sans-serif", padding: "2rem", maxWidth: "900px", margin: "0 auto" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", flexWrap: "wrap", marginBottom: "1.5rem" }}>
-        <div>
-          <h1 style={{ marginBottom: "0.35rem" }}>Candidate Home</h1>
-          <p style={{ margin: 0, color: "#555" }}>Signed in as {email}</p>
-        </div>
-        <button
-          onClick={() => void logout()}
-          disabled={logoutPresentation.disabled}
-          style={{ padding: "0.55rem 0.9rem" }}
+    <main
+      style={{
+        fontFamily: "system-ui, sans-serif",
+        padding: "2rem 1rem 3rem",
+        maxWidth: "1120px",
+        margin: "0 auto",
+      }}
+    >
+      <section
+        style={{
+          border: "1px solid #d9e1e8",
+          borderRadius: "8px",
+          padding: "1.5rem",
+          background: "#f7fafc",
+          marginBottom: "1.25rem",
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: "1rem",
+            flexWrap: "wrap",
+          }}
         >
-          {logoutPresentation.buttonLabel}
-        </button>
-      </div>
+          <div style={{ maxWidth: "42rem" }}>
+            <p style={{ margin: 0, color: "#5f6b76", fontSize: "0.9rem", fontWeight: 600 }}>
+              Certalis Candidate Portal
+            </p>
+            <h1 style={{ margin: "0.35rem 0 0.5rem", fontSize: "2rem" }}>Candidate Home</h1>
+            <p style={{ margin: 0, color: "#334155", lineHeight: 1.5 }}>
+              Review your scheduled Exams, enter or resume active sessions, and schedule the next
+              published Helios CX Exam from one place.
+            </p>
+          </div>
+          <div
+            style={{
+              display: "grid",
+              gap: "0.75rem",
+              justifyItems: "start",
+              minWidth: "min(100%, 16rem)",
+            }}
+          >
+            <div
+              style={{
+                border: "1px solid #d9e1e8",
+                borderRadius: "8px",
+                background: "#ffffff",
+                padding: "0.9rem 1rem",
+                minWidth: "min(100%, 18rem)",
+              }}
+            >
+              <p style={{ margin: 0, color: "#5f6b76", fontSize: "0.85rem" }}>Signed in as</p>
+              <p style={{ margin: "0.3rem 0 0", color: "#0f172a", fontWeight: 600, overflowWrap: "anywhere" }}>
+                {email}
+              </p>
+            </div>
+            <button
+              onClick={() => void logout()}
+              disabled={logoutPresentation.disabled}
+              style={getButtonStyle(secondaryButtonStyle, logoutPresentation.disabled)}
+            >
+              {logoutPresentation.buttonLabel}
+            </button>
+          </div>
+        </div>
+      </section>
       {logoutPresentation.statusMessage ? (
-        <p role="status" style={{ marginTop: "-0.75rem", marginBottom: "1rem", color: "#555" }}>
+        <p role="status" style={{ marginTop: 0, marginBottom: "1rem", color: "#555" }}>
           {logoutPresentation.statusMessage}
         </p>
       ) : null}
       {logoutPresentation.errorMessage ? (
-        <p role="alert" style={{ marginTop: "-0.75rem", marginBottom: "1rem", color: "#b00020" }}>
+        <p role="alert" style={{ marginTop: 0, marginBottom: "1rem", color: "#b00020" }}>
           {logoutPresentation.errorMessage}
         </p>
       ) : null}
 
       <section style={{ display: "grid", gap: "1rem" }}>
-        <div style={{ padding: "1rem", background: "#f7f7f8", borderRadius: "6px" }}>
-          Browse the published Helios CX Exams available to your account and schedule your next attempt.
-        </div>
-
-        {loading && <p style={{ margin: 0 }}>Loading candidate dashboard...</p>}
-        {error && <p style={{ margin: 0, color: "#b00020" }}>{error}</p>}
-        {coldStartNotice && <p style={{ margin: 0, color: "#7a4b00" }}>{coldStartNotice}</p>}
+        {loading && <p style={messagePanelStyle}>Loading candidate dashboard...</p>}
+        {error && (
+          <p style={{ ...messagePanelStyle, color: "#b00020", background: "#fff5f7", border: "1px solid #f1c7d0" }}>
+            {error}
+          </p>
+        )}
+        {coldStartNotice && (
+          <p
+            style={{ ...messagePanelStyle, color: "#7a4b00", background: "#fff8eb", border: "1px solid #f0d8a8" }}
+          >
+            {coldStartNotice}
+          </p>
+        )}
         {scheduledAttempts.length > 0 && (
-          <section style={{ border: "1px solid #ddd", borderRadius: "8px", padding: "1rem", background: "#fafafa" }}>
-            <h2 style={{ marginTop: 0, marginBottom: "0.75rem", fontSize: "1.05rem" }}>Scheduled Exams</h2>
+          <section style={sectionPanelStyle}>
+            <div style={sectionHeaderStyle}>
+              <div>
+                <p style={eyebrowStyle}>Scheduled attempts</p>
+                <h2 style={sectionTitleStyle}>Upcoming and active Exams</h2>
+              </div>
+              <p style={sectionCopyStyle}>
+                Use these actions to enter when your launch window opens, resume a suspended session,
+                or review a completed score.
+              </p>
+            </div>
             <div style={{ display: "grid", gap: "0.75rem" }}>
-              {scheduledAttempts.map((attempt) => (
-                <article
-                  key={attempt.attemptId}
-                  style={{ border: "1px solid #e3e3e3", borderRadius: "6px", padding: "0.85rem", background: "#fff" }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap", alignItems: "baseline" }}>
-                    <strong>{attempt.examTitle}</strong>
-                    <span style={{ color: "#555" }}>Attempt ID: {attempt.attemptId}</span>
-                  </div>
-                  <p style={{ margin: "0.45rem 0", color: "#333" }}>
-                    Scheduled for {attempt.scheduledFor ? new Date(attempt.scheduledFor).toLocaleString() : "TBD"}
-                  </p>
-                  <p style={{ margin: "0.45rem 0", color: "#0b5d3b" }}>
-                    Status: {formatCandidateAttemptStatus(attempt.status)}
-                  </p>
-                  {(attempt.status === "ready" || attempt.status === "in_progress" || attempt.status === "suspended") && (
-                    <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
-                      <button
-                        onClick={() => openLabConsole(attempt.attemptId, attempt.status)}
-                        disabled={attempt.status === "ready" ? !attempt.canEnter : false}
-                        style={{ padding: "0.55rem 0.9rem" }}
+              {scheduledAttempts.map((attempt) => {
+                const primaryAction = getAttemptPrimaryAction(
+                  {
+                    id: attempt.attemptId,
+                    examId: attempt.examId,
+                    scheduledFor: attempt.scheduledFor,
+                    status: attempt.status,
+                  },
+                  nowMs,
+                );
+
+                return (
+                  <article key={attempt.attemptId} style={cardStyle}>
+                    <div style={{ display: "grid", gap: "0.75rem" }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: "1rem",
+                          flexWrap: "wrap",
+                          alignItems: "flex-start",
+                        }}
                       >
-                        {attempt.status === "suspended"
-                          ? "Resume exam"
-                          : attempt.status === "in_progress"
-                            ? "Return to exam"
-                            : "Enter exam"}
-                      </button>
-                      {attempt.waitingMessage && attempt.status === "ready" && (
-                        <span style={{ color: "#555" }}>{attempt.waitingMessage}</span>
+                        <div>
+                          <strong style={{ display: "block", fontSize: "1rem", color: "#0f172a" }}>
+                            {attempt.examTitle}
+                          </strong>
+                          <p style={{ margin: "0.35rem 0 0", color: "#475569", overflowWrap: "anywhere" }}>
+                            Attempt ID: {attempt.attemptId}
+                          </p>
+                        </div>
+                        <span style={statusBadgeStyle}>{formatCandidateAttemptStatus(attempt.status)}</span>
+                      </div>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                          gap: "0.75rem",
+                        }}
+                      >
+                        <div style={metaItemStyle}>
+                          <span style={metaLabelStyle}>Scheduled for</span>
+                          <span style={metaValueStyle}>
+                            {attempt.scheduledFor ? new Date(attempt.scheduledFor).toLocaleString() : "TBD"}
+                          </span>
+                        </div>
+                        <div style={metaItemStyle}>
+                          <span style={metaLabelStyle}>State</span>
+                          <span style={metaValueStyle}>{formatCandidateAttemptStatus(attempt.status)}</span>
+                        </div>
+                      </div>
+                      {primaryAction.label && (
+                        <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+                          <button
+                            onClick={() => {
+                              if (primaryAction.label === "View score") {
+                                openScorePage(attempt.attemptId);
+                                return;
+                              }
+                              openLabConsole(attempt.attemptId, attempt.status);
+                            }}
+                            disabled={primaryAction.disabled}
+                            style={getButtonStyle(primaryButtonStyle, primaryAction.disabled)}
+                          >
+                            {primaryAction.label}
+                          </button>
+                          {attempt.waitingMessage && attempt.status === "ready" && (
+                            <span style={{ color: "#555", lineHeight: 1.4 }}>{attempt.waitingMessage}</span>
+                          )}
+                        </div>
                       )}
                     </div>
-                  )}
-                  {attempt.status === "completed" && (
-                    <button
-                      onClick={() => openScorePage(attempt.attemptId)}
-                      style={{ padding: "0.55rem 0.9rem" }}
-                    >
-                      View score
-                    </button>
-                  )}
-                </article>
-              ))}
+                  </article>
+                );
+              })}
             </div>
           </section>
         )}
         {!error && shouldShowNoPublishedExams({ loading, examCount: dashboard.exams.length }) && (
-          <p style={{ margin: 0 }}>No published Exams are available yet.</p>
+          <section style={sectionPanelStyle}>
+            <div style={sectionHeaderStyle}>
+              <div>
+                <p style={eyebrowStyle}>Published Exams</p>
+                <h2 style={sectionTitleStyle}>Schedule your next session</h2>
+              </div>
+            </div>
+            <p style={{ margin: 0, color: "#475569" }}>No published Exams are available yet.</p>
+          </section>
         )}
 
         {shouldShowPublishedExamList({ loading, examCount: dashboard.exams.length }) && (
-          <div style={{ display: "grid", gap: "0.9rem" }}>
-            {dashboard.exams.map((exam) => {
-              const attempt = attemptForExam(exam.id);
-              return (
-              <article key={exam.id} style={{ border: "1px solid #ddd", borderRadius: "8px", padding: "1rem" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "baseline", flexWrap: "wrap" }}>
-                  <h2 style={{ margin: 0, fontSize: "1.1rem" }}>{exam.title}</h2>
-                  <span style={{ color: "#555", fontSize: "0.95rem" }}>{exam.timeLimitMinutes} minute limit</span>
-                </div>
-                <p style={{ color: "#444" }}>{exam.description || "No description provided."}</p>
-                <p style={{ marginTop: "-0.2rem", color: "#555" }}>
-                  Guided Journey scoring: {exam.scoreRetrievalEnabled ? "Enabled" : "Not enabled for this Exam"}
-                </p>
-                {attempt && (
-                  <p style={{ marginTop: 0, color: "#0b5d3b" }}>
-                    Current attempt: {formatCandidateAttemptStatus(attempt.status)}
-                    {attempt.scheduledFor ? ` for ${new Date(attempt.scheduledFor).toLocaleString()}` : ""}
-                  </p>
-                )}
-                <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
-                  <input
-                    type="datetime-local"
-                    value={scheduleDrafts[exam.id] ?? ""}
-                    onChange={(event) =>
-                      setScheduleDrafts((current) => ({
-                        ...current,
-                        [exam.id]: event.target.value,
-                      }))
-                    }
-                  />
-                  <button
-                    onClick={() => void submitSchedule(exam.id)}
-                    disabled={submittingExamId === exam.id}
-                    style={{ padding: "0.55rem 0.9rem" }}
-                  >
-                    {submittingExamId === exam.id ? "Scheduling..." : "Schedule exam"}
-                  </button>
-                  {(attempt?.status === "ready" || attempt?.status === "in_progress" || attempt?.status === "suspended") && (
-                    <button
-                      onClick={() => openLabConsole(attempt.id, attempt.status)}
-                      disabled={attempt.status === "ready" ? !canEnterAttempt(attempt, nowMs) : false}
-                      style={{ padding: "0.55rem 0.9rem" }}
-                    >
-                      {attempt.status === "suspended"
-                        ? "Resume exam"
-                        : attempt.status === "in_progress"
-                          ? "Return to exam"
-                        : "Enter exam"}
-                    </button>
-                  )}
-                  {attempt?.status === "completed" && (
-                    <button
-                      onClick={() => openScorePage(attempt.id)}
-                      style={{ padding: "0.55rem 0.9rem" }}
-                    >
-                      View score
-                    </button>
-                  )}
-                </div>
-                {attempt?.status === "ready" && getAttemptWaitingMessage(attempt, nowMs) && (
-                  <p style={{ marginBottom: 0, color: "#555" }}>
-                    {getAttemptWaitingMessage(attempt, nowMs)}
-                  </p>
-                )}
-              </article>
-              );
-            })}
-          </div>
+          <section style={sectionPanelStyle}>
+            <div style={sectionHeaderStyle}>
+              <div>
+                <p style={eyebrowStyle}>Published Exams</p>
+                <h2 style={sectionTitleStyle}>Browse and schedule</h2>
+              </div>
+              <p style={sectionCopyStyle}>
+                Choose a time for an available Exam. Existing attempts remain visible so you can keep
+                your schedule and launch actions in view.
+              </p>
+            </div>
+            <div style={{ display: "grid", gap: "0.9rem" }}>
+              {dashboard.exams.map((exam) => {
+                const attempt = attemptForExam(exam.id);
+                const primaryAction = getAttemptPrimaryAction(attempt, nowMs);
+                return (
+                  <article key={exam.id} style={cardStyle}>
+                    <div style={{ display: "grid", gap: "1rem" }}>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          gap: "1rem",
+                          alignItems: "flex-start",
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <div style={{ maxWidth: "44rem" }}>
+                          <h3 style={{ margin: 0, fontSize: "1.1rem", color: "#0f172a" }}>{exam.title}</h3>
+                          <p style={{ margin: "0.5rem 0 0", color: "#444", lineHeight: 1.5 }}>
+                            {exam.description || "No description provided."}
+                          </p>
+                        </div>
+                        <span style={pillStyle}>{exam.timeLimitMinutes} minute limit</span>
+                      </div>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+                          gap: "0.75rem",
+                        }}
+                      >
+                        <div style={metaItemStyle}>
+                          <span style={metaLabelStyle}>Guided Journey scoring</span>
+                          <span style={metaValueStyle}>
+                            {exam.scoreRetrievalEnabled ? "Enabled" : "Not enabled for this Exam"}
+                          </span>
+                        </div>
+                        <div style={metaItemStyle}>
+                          <span style={metaLabelStyle}>Current attempt</span>
+                          <span style={metaValueStyle}>
+                            {attempt
+                              ? `${formatCandidateAttemptStatus(attempt.status)}${
+                                  attempt.scheduledFor
+                                    ? ` for ${new Date(attempt.scheduledFor).toLocaleString()}`
+                                    : ""
+                                }`
+                              : "No attempt scheduled"}
+                          </span>
+                        </div>
+                      </div>
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+                          gap: "0.9rem",
+                          alignItems: "end",
+                        }}
+                      >
+                        <label style={{ display: "grid", gap: "0.35rem" }}>
+                          <span style={{ color: "#475569", fontSize: "0.9rem", fontWeight: 600 }}>
+                            Schedule date and time
+                          </span>
+                          <input
+                            type="datetime-local"
+                            value={scheduleDrafts[exam.id] ?? ""}
+                            onChange={(event) =>
+                              setScheduleDrafts((current) => ({
+                                ...current,
+                                [exam.id]: event.target.value,
+                              }))
+                            }
+                            style={inputStyle}
+                          />
+                        </label>
+                        <div
+                          style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}
+                        >
+                          <button
+                            onClick={() => void submitSchedule(exam.id)}
+                            disabled={submittingExamId === exam.id}
+                            style={getButtonStyle(primaryButtonStyle, submittingExamId === exam.id)}
+                          >
+                            {submittingExamId === exam.id ? "Scheduling..." : "Schedule exam"}
+                          </button>
+                          {primaryAction.label && (
+                            <button
+                              onClick={() => {
+                                if (!attempt) {
+                                  return;
+                                }
+                                if (primaryAction.label === "View score") {
+                                  openScorePage(attempt.id);
+                                  return;
+                                }
+                                openLabConsole(attempt.id, attempt.status);
+                              }}
+                              disabled={primaryAction.disabled}
+                              style={getButtonStyle(secondaryButtonStyle, primaryAction.disabled)}
+                            >
+                              {primaryAction.label}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      {attempt?.status === "ready" && getAttemptWaitingMessage(attempt, nowMs) && (
+                        <p style={{ margin: 0, color: "#555", lineHeight: 1.4 }}>
+                          {getAttemptWaitingMessage(attempt, nowMs)}
+                        </p>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </section>
         )}
       </section>
     </main>
   );
 }
+
+const sectionPanelStyle: CSSProperties = {
+  border: "1px solid #d9e1e8",
+  borderRadius: "8px",
+  padding: "1.25rem",
+  background: "#ffffff",
+};
+
+const sectionHeaderStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: "1rem",
+  flexWrap: "wrap",
+  alignItems: "flex-end",
+  marginBottom: "1rem",
+};
+
+const sectionTitleStyle: CSSProperties = {
+  margin: "0.2rem 0 0",
+  fontSize: "1.2rem",
+  color: "#0f172a",
+};
+
+const sectionCopyStyle: CSSProperties = {
+  margin: 0,
+  color: "#475569",
+  maxWidth: "40rem",
+  lineHeight: 1.5,
+};
+
+const eyebrowStyle: CSSProperties = {
+  margin: 0,
+  color: "#5f6b76",
+  fontSize: "0.8rem",
+  fontWeight: 700,
+  letterSpacing: 0,
+  textTransform: "uppercase",
+};
+
+const cardStyle: CSSProperties = {
+  border: "1px solid #e2e8f0",
+  borderRadius: "8px",
+  padding: "1rem",
+  background: "#fcfdff",
+};
+
+const metaItemStyle: CSSProperties = {
+  display: "grid",
+  gap: "0.3rem",
+  padding: "0.85rem 0.9rem",
+  border: "1px solid #e2e8f0",
+  borderRadius: "8px",
+  background: "#ffffff",
+};
+
+const metaLabelStyle: CSSProperties = {
+  color: "#64748b",
+  fontSize: "0.82rem",
+  fontWeight: 600,
+};
+
+const metaValueStyle: CSSProperties = {
+  color: "#0f172a",
+  lineHeight: 1.4,
+  overflowWrap: "anywhere",
+};
+
+const statusBadgeStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  padding: "0.35rem 0.65rem",
+  borderRadius: "999px",
+  background: "#e8f1ff",
+  color: "#1d4f91",
+  fontWeight: 600,
+  whiteSpace: "nowrap",
+};
+
+const pillStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  padding: "0.35rem 0.65rem",
+  borderRadius: "999px",
+  background: "#eff6ff",
+  color: "#1e40af",
+  fontWeight: 600,
+  whiteSpace: "nowrap",
+};
+
+const primaryButtonStyle: CSSProperties = {
+  padding: "0.7rem 1rem",
+  borderRadius: "8px",
+  border: "1px solid #0f3d91",
+  background: "#0f3d91",
+  color: "#ffffff",
+  fontWeight: 600,
+};
+
+const secondaryButtonStyle: CSSProperties = {
+  padding: "0.7rem 1rem",
+  borderRadius: "8px",
+  border: "1px solid #cbd5e1",
+  background: "#ffffff",
+  color: "#0f172a",
+  fontWeight: 600,
+};
+
+const disabledButtonStyle: CSSProperties = {
+  background: "#e2e8f0",
+  border: "1px solid #cbd5e1",
+  color: "#94a3b8",
+  cursor: "not-allowed",
+  boxShadow: "none",
+};
+
+function getButtonStyle(baseStyle: CSSProperties, disabled: boolean): CSSProperties {
+  return disabled
+    ? {
+        ...baseStyle,
+        ...disabledButtonStyle,
+      }
+    : baseStyle;
+}
+
+const inputStyle: CSSProperties = {
+  width: "100%",
+  minWidth: 0,
+  padding: "0.7rem 0.75rem",
+  borderRadius: "8px",
+  border: "1px solid #cbd5e1",
+  background: "#ffffff",
+  color: "#0f172a",
+  boxSizing: "border-box",
+};
+
+const messagePanelStyle: CSSProperties = {
+  margin: 0,
+  padding: "0.95rem 1rem",
+  border: "1px solid #d9e1e8",
+  borderRadius: "8px",
+  background: "#f8fafc",
+  color: "#334155",
+};
