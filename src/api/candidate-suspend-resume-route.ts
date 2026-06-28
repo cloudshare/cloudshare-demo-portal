@@ -77,7 +77,7 @@ export async function handleCandidateSuspendExamRoute(
   services: CandidateSuspendResumeServices,
   request: CandidateSuspendResumeRouteRequest,
 ): Promise<SuspendResumeResponse> {
-  const examAttemptId = extractExamAttemptId(request.body);
+  const examAttemptId = extractRouteExamAttemptId(request.body);
   if (!examAttemptId) {
     return { status: 400, body: { error: "examAttemptId is required" } };
   }
@@ -114,7 +114,7 @@ export async function handleCandidateResumeExamRoute(
   services: CandidateSuspendResumeServices,
   request: CandidateSuspendResumeRouteRequest,
 ): Promise<SuspendResumeResponse> {
-  const examAttemptId = extractExamAttemptId(request.body);
+  const examAttemptId = extractRouteExamAttemptId(request.body);
   if (!examAttemptId) {
     return { status: 400, body: { error: "examAttemptId is required" } };
   }
@@ -147,12 +147,10 @@ export async function handleCandidateResumeExamRoute(
   return response;
 }
 
-function extractExamAttemptId(body: unknown): string | null {
+function extractRouteExamAttemptId(body: unknown): string | null {
   if (typeof body !== "object" || body === null) return null;
   const { examAttemptId } = body as { examAttemptId?: unknown };
-  return typeof examAttemptId === "string" && examAttemptId.trim().length > 0
-    ? examAttemptId.trim()
-    : null;
+  return typeof examAttemptId === "string" && examAttemptId.length > 0 ? examAttemptId : null;
 }
 
 async function recordSuspendSideEffects(
