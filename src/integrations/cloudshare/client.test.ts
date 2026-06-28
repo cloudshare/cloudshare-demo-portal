@@ -98,7 +98,7 @@ describe("createCloudShareClient — v4", () => {
         integrationSurface: "cloudshare.v4",
         customerId: "customer-helios",
         requestHeaders: {
-          authorization: "Bearer [REDACTED]",
+          authorization: "[REDACTED]",
           "content-type": "application/json",
         },
         requestBody: {
@@ -132,6 +132,11 @@ describe("createCloudShareClient — v4", () => {
         WebhookSecret: "webhook-secret",
         Password: "actual-password",
         Signature: "signed-value",
+        Authorization: "Bearer embedded-secret",
+        Credential: "credential-secret",
+        BearerToken: "token-secret",
+        diagnosticNote:
+          "Bearer embedded-secret cs_sha1 userapiid:api-id;timestamp:1700000000;token:tokfixed01;hmac:abc123",
       },
       schema: z.object({ id: z.string() }),
     });
@@ -147,6 +152,10 @@ describe("createCloudShareClient — v4", () => {
           WebhookSecret: "[REDACTED]",
           Password: "[REDACTED]",
           Signature: "[REDACTED]",
+          Authorization: "[REDACTED]",
+          Credential: "[REDACTED]",
+          BearerToken: "[REDACTED]",
+          diagnosticNote: "Bearer [REDACTED] cs_sha1 [REDACTED]",
         },
       }),
     });
@@ -379,8 +388,7 @@ describe("createCloudShareClient — v3", () => {
       path: "/api/v3/envs/EN123",
       query: { include: "status", token: "[REDACTED]" },
       headers: {
-        authorization:
-          "cs_sha1 userapiid:api-id;timestamp:1700000000;token:[REDACTED];hmac:[REDACTED]",
+        authorization: "[REDACTED]",
       },
     });
     expect(result.response).toEqual({
@@ -420,8 +428,7 @@ describe("createCloudShareClient — v3", () => {
         integrationSurface: "cloudshare.v3",
         customerId: "customer-helios",
         requestHeaders: {
-          authorization:
-            "cs_sha1 userapiid:api-id;timestamp:1700000000;token:[REDACTED];hmac:[REDACTED]",
+          authorization: "[REDACTED]",
         },
       },
     });
@@ -436,8 +443,7 @@ describe("createCloudShareClient — v3", () => {
         integrationSurface: "cloudshare.v3",
         customerId: "customer-helios",
         requestHeaders: {
-          authorization:
-            "cs_sha1 userapiid:api-id;timestamp:1700000000;token:[REDACTED];hmac:[REDACTED]",
+          authorization: "[REDACTED]",
         },
         responseStatus: 200,
         responseBody: "{\"result\":\"Pong\"}",
@@ -493,7 +499,14 @@ describe("createCloudShareClient — error mapping", () => {
   it("retains parsed redacted JSON error bodies in request-error context", async () => {
     const { http } = capturingHttp({
       status: 403,
-      body: JSON.stringify({ error: "forbidden", apiKey: "secret-key" }),
+      body: JSON.stringify({
+        error: "forbidden",
+        apiKey: "secret-key",
+        authorization: "Bearer secret-bearer-token",
+        credential: "credential-secret",
+        message:
+          "Bearer secret-bearer-token cs_sha1 userapiid:api-id;timestamp:1700000000;token:tokfixed01;hmac:abc123",
+      }),
       headers: { "content-type": "application/json" },
     });
     const client = clientWith(http);
@@ -505,6 +518,9 @@ describe("createCloudShareClient — error mapping", () => {
         responseBody: {
           error: "forbidden",
           apiKey: "[REDACTED]",
+          authorization: "[REDACTED]",
+          credential: "[REDACTED]",
+          message: "Bearer [REDACTED] cs_sha1 [REDACTED]",
         },
       }),
     });
