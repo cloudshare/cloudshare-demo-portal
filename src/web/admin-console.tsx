@@ -179,18 +179,6 @@ class AdminSessionExpiredError extends Error {
 const DIAGNOSTIC_PAGE_LIMIT = 50;
 const SUPPORT_WORKFLOW_TABS = new Set<AdminTab>(["monitoring", "diagnostics"]);
 
-function getAdminShellWorkflowSummary(tab: AdminTab): string {
-  if (tab === "monitoring") {
-    return "Monitor current ExamAttempt state, then open Support Diagnostics for the forensic trace.";
-  }
-
-  if (tab === "diagnostics") {
-    return "Trace what happened by ExamAttempt, correlation ID, Candidate, Exam, or CloudShare identifier.";
-  }
-
-  return "Use Session Monitoring for current ExamAttempt state and Support Diagnostics for investigation history.";
-}
-
 function isAdminSessionExpiredError(error: unknown): error is AdminSessionExpiredError {
   return error instanceof AdminSessionExpiredError;
 }
@@ -1069,7 +1057,6 @@ export function AdminConsole({
   const blueprintSummary = selectedBlueprint
     ? stripHtmlToText(selectedBlueprint.description || blueprintDetail?.description || "")
     : "";
-  const activeTabLabel = getAdminTabLabel(tab);
 
   useEffect(() => {
     const nextSelectedRegionIds = reconcileAllowedRegionIds(selectedAllowedRegionIds, compatibleRegions);
@@ -1151,54 +1138,6 @@ export function AdminConsole({
           );
         })}
       </nav>
-      <section
-        aria-label="Admin workflow context"
-        style={{
-          display: "grid",
-          gap: "0.65rem",
-          border: "1px solid #d7dce4",
-          borderLeft: SUPPORT_WORKFLOW_TABS.has(tab) ? "4px solid #2563eb" : "4px solid #94a3b8",
-          borderRadius: "8px",
-          background: SUPPORT_WORKFLOW_TABS.has(tab) ? "#f8fbff" : "#f8fafc",
-          padding: "0.85rem 1rem",
-          marginBottom: "1.5rem",
-        }}
-      >
-        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "baseline" }}>
-          <strong>Active workflow: {activeTabLabel}</strong>
-          <span style={{ color: "#64748b" }}>Monitoring -&gt; Diagnostics support handoff</span>
-        </div>
-        <p style={{ margin: 0, color: "#475569" }}>{getAdminShellWorkflowSummary(tab)}</p>
-        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
-          <span
-            style={{
-              padding: "0.2rem 0.45rem",
-              borderRadius: "6px",
-              background: tab === "monitoring" ? "#1d4ed8" : "#e0e7ff",
-              color: tab === "monitoring" ? "#fff" : "#1e3a8a",
-              fontWeight: 700,
-              fontSize: "0.8rem",
-            }}
-          >
-            Monitoring
-          </span>
-          <span aria-hidden="true" style={{ color: "#64748b" }}>
-            -&gt;
-          </span>
-          <span
-            style={{
-              padding: "0.2rem 0.45rem",
-              borderRadius: "6px",
-              background: tab === "diagnostics" ? "#1d4ed8" : "#e0e7ff",
-              color: tab === "diagnostics" ? "#fff" : "#1e3a8a",
-              fontWeight: 700,
-              fontSize: "0.8rem",
-            }}
-          >
-            Diagnostics
-          </span>
-        </div>
-      </section>
 
       {error && (
         <div style={{ color: "#b00020", background: "#fff0f0", padding: "0.75rem", borderRadius: "6px", display: "grid", gap: "0.5rem" }}>
