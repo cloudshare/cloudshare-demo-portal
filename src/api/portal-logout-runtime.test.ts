@@ -1,9 +1,10 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import type { PortalSession } from "@/auth";
 import {
+  buildCandidateLogoutAutoSuspendDeps,
   suspendCandidateRunningLabsForLogout,
   type CandidateLogoutAutoSuspendDeps,
+  type CandidateLogoutAutoSuspendServices,
 } from "./portal-logout-runtime";
 
 const session: PortalSession = {
@@ -66,12 +67,76 @@ function makeDeps(overrides: Partial<CandidateLogoutAutoSuspendDeps> = {}) {
   } as CandidateLogoutAutoSuspendDeps;
 }
 
-describe("suspendCandidateRunningLabsForLogout", () => {
-  it("uses a narrow runtime dependency interface instead of importing composition", () => {
-    const source = readFileSync("src/api/portal-logout-runtime.ts", "utf8");
+function makeServices(
+  overrides: Partial<CandidateLogoutAutoSuspendServices> = {},
+): CandidateLogoutAutoSuspendServices {
+  return {
+    environmentController: {},
+    environmentSource: {},
+    examClock: {},
+    exams: {},
+    examAttempts: {
+      listByCandidate: vi.fn().mockResolvedValue([
+        {
+          id: "attempt-running",
+          customerId: "customer-1",
+          candidateId: "candidate-1",
+          examId: "exam-1",
+          status: "in_progress",
+          scheduledFor: new Date("2026-06-25T09:00:00.000Z"),
+          createdAt: new Date("2026-06-25T08:00:00.000Z"),
+        },
+      ]),
+    },
+    labLaunches: {},
+    logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    eventLog: {},
+    cloudshareConnections: {},
+    cloudshareClientFactory: {},
+    diagnosticRecorder: { record: vi.fn().mockResolvedValue(undefined) },
+    heartbeatAutoSuspend: { removeHeartbeat: vi.fn() },
+    audit: { write: vi.fn().mockResolvedValue(undefined) },
+    ...overrides,
+  } as CandidateLogoutAutoSuspendServices;
+}
 
-    expect(source).not.toMatch(/from\s+["']@\/composition["']/);
-    expect(source).toContain("CandidateLogoutAutoSuspendDeps");
+describe("suspendCandidateRunningLabsForLogout", () => {
+  it("builds logout auto-suspend workflow deps from composed portal services", async () => {
+    const services = makeServices();
+    const customSleep = vi.fn().mockResolvedValue(undefined);
+    const suspendExam = vi.fn().mockImplementation(async (deps: CandidateLogoutAutoSuspendDeps) => {
+      expect(deps.candidateEmail).toBe("candidate@helioscx.demo");
+      expect(deps.sleep).toBe(customSleep);
+      return {
+        status: 200,
+        body: { status: "suspended", examAttemptId: "attempt-running" },
+      };
+    });
+
+    const deps = buildCandidateLogoutAutoSuspendDeps(services, session, {
+      suspendExam,
+      sleep: customSleep,
+      newId: () => "audit-from-builder",
+      now: () => new Date("2026-06-27T11:00:00.000Z"),
+    });
+
+    await suspendCandidateRunningLabsForLogout(deps, session);
+
+    expect(suspendExam).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attempts: services.examAttempts,
+        launches: services.labLaunches,
+        candidateEmail: "candidate@helioscx.demo",
+      }),
+      { body: { examAttemptId: "attempt-running" } },
+    );
+    expect(services.heartbeatAutoSuspend.removeHeartbeat).toHaveBeenCalledWith("attempt-running");
+    expect(services.audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "audit-from-builder",
+        occurredAt: new Date("2026-06-27T11:00:00.000Z"),
+      }),
+    );
   });
 
   it("suspends only running Candidate labs before logout cleanup completes", async () => {
