@@ -71,6 +71,16 @@ Existing prototype support-log rows are development data and do not need migrati
 - First write-path instrumentation should cover Candidate account creation; Candidate login/logout attempts; Customer admin login/logout attempts; Candidate ExamAttempt scheduling; CloudShare training creation; Candidate participant/student add; sponsored-link creation; Candidate enter/resume/suspend; CloudShare webhook receive/verify/reconcile; Guided Journey score retrieval; and CloudShare resource-sync reads.
 - Exam authoring and lifecycle changes should emit diagnostics alongside audits, but they are lower priority than the candidate exam delivery path.
 
+### Diagnostic body redaction taxonomy
+
+Diagnostic body redaction is classified by where evidence is exposed:
+
+- **True secrets, always redacted:** CloudShare API keys, OAuth bearer tokens, v3 `cs_sha1` nonces and HMAC values, authorization headers, webhook secrets, webhook signatures, raw credentials, passwords, cookies, ciphertext, and known literal secret values configured in the recorder/logger.
+- **Server-only admin-support evidence, retained in DiagnosticLogEntry/support diagnostics:** CloudShare sponsored-link `loginUrl` values returned by sponsored-link endpoints, CloudShare create-training `Passphrase`/`passphrase` values, request/response status and headers after true-secret redaction, CloudShare request paths and query values after true-secret redaction, and CloudShare response bodies after true-secret redaction. These values are support evidence for Helios admins and operators; they must not appear in Candidate/client-facing responses or Candidate/client-facing UI.
+- **Ordinary request/response evidence, retained:** CloudShare IDs, project/blueprint/policy/region/team/instructor IDs, training/experience/participant/environment IDs, Guided Journey progress fields, validation errors, transport details, response status codes, safe metadata such as `signaturePresent`/`signatureMatched`, and correlation IDs.
+
+The same taxonomy applies to client traces, request/response error contexts, scheduling diagnostics, suspend/resume and heartbeat diagnostics, Guided Journey score diagnostics, and resource diagnostics. Redaction utilities should prefer narrow key/value rules over broad substring bans when CloudShare uses support-evidence field names such as `Passphrase` or `loginUrl`.
+
 ## Testing Decisions
 
 - Test through the highest stable seams: framework-agnostic API/domain handlers for write-path emission and the Support diagnostic read API for search/filter behavior.

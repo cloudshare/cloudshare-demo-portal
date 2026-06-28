@@ -15,6 +15,8 @@ import type {
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
 import { CloudShareResponseError, CloudShareTransportError } from "@/integrations/cloudshare";
+import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
+import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -412,6 +414,60 @@ describe("getExamAttemptScoreRuntime", () => {
         }),
       }),
     );
+  });
+
+  it("retains admin support evidence in Guided Journey diagnostic bodies without exposing it to candidates", async () => {
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
+    const diagnosticsAwareRetriever: DiagnosticScoreRetrievalProvider = {
+      getParticipantProgress: vi.fn(),
+      getParticipantProgressForDiagnostics: vi.fn().mockRejectedValue(
+        new CloudShareResponseError("CloudShare Guided Journey progress payload was unsupported", {
+          method: "GET",
+          path: "/guided-journey/progress/exp-1/student-1",
+          integrationSurface: "cloudshare.v4.guided_journey.progress",
+          responseBody: JSON.stringify({
+            Passphrase: "certalis-attempt-1",
+            passphrase: "candidate-support-passphrase",
+            loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/support-token",
+            token: "actual-bearer-token",
+          }),
+          issues: ["Unsupported Guided Journey progress payload"],
+        }),
+      ),
+    };
+    const deps = {
+      ...makeDeps(),
+      diagnostics,
+    };
+    deps.createScoreRetriever.mockReturnValue(diagnosticsAwareRetriever);
+
+    const result = await getExamAttemptScoreRuntime(deps, makeRuntimeRequest());
+
+    expect(result).toEqual({
+      status: 502,
+      body: {
+        error: "score retrieval failed",
+        correlationId: "corr-123",
+      },
+    });
+
+    const entries = await diagnosticsRepository.query({ examAttemptId: "attempt-1" });
+    const entry = entries.find(
+      (candidate) =>
+        candidate.operation === "exam_attempt.score.retrieve" &&
+        candidate.outcome === "failure",
+    );
+    expect(entry?.response).toEqual({
+      body: {
+        Passphrase: "certalis-attempt-1",
+        passphrase: "candidate-support-passphrase",
+        loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/support-token",
+        token: "[REDACTED]",
+      },
+    });
+    expect(JSON.stringify(result.body)).not.toContain("support-token");
+    expect(JSON.stringify(entry)).not.toContain("actual-bearer-token");
   });
 
   it("backfills participant id from training participants when an older launch does not have one yet", async () => {
