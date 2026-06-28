@@ -1,6 +1,12 @@
 import type { ExamRepository } from "@/domain/exam-catalog";
+import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { Logger } from "@/observability/logger";
 import type { PortalUserProvisioningStore } from "@/auth";
+import type { AuditRepository } from "@/domain/audit-trail";
+import type {
+  CloudShareClientFactory,
+  CloudShareConnectionRepository,
+} from "@/domain/cloudshare-connection";
 import {
   PortalCustomerNotFoundError,
   PortalRegistrationValidationError,
@@ -9,6 +15,9 @@ import {
 } from "@/auth/portal-registration";
 import type { Exam } from "@/domain/exam-catalog";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
+import type { EventLogRepository } from "@/domain/event-log";
+import type { ExamClock } from "@/domain/exam-clock";
+import type { LabLaunchRepository } from "@/domain/lab-launch";
 import {
   getExamAttemptDashboardRuntime,
   type CandidateDashboardAttemptItem,
@@ -57,6 +66,38 @@ export function buildCandidateRegistrationDeps(
   };
 }
 
+export function buildCandidateDashboardDeps(
+  services: CandidateDashboardServices,
+): CandidateDashboardDeps {
+  return {
+    repository: services.exams,
+    attempts: services.examAttempts,
+    clocks: services.examClock,
+    launches: services.labLaunches,
+    connections: services.cloudshareConnections,
+    cloudshare: services.cloudshareClientFactory,
+    eventLog: services.eventLog,
+    diagnostics: services.diagnosticRecorder,
+    logger: services.logger,
+  };
+}
+
+export function buildCandidateSchedulingDeps(
+  services: CandidateSchedulingServices,
+): CandidateSchedulingDeps {
+  return {
+    exams: services.exams,
+    attempts: services.examAttempts,
+    launches: services.labLaunches,
+    audit: services.audit,
+    eventLog: services.eventLog,
+    connections: services.cloudshareConnections,
+    cloudshare: services.cloudshareClientFactory,
+    logger: services.logger,
+    diagnostics: services.diagnosticRecorder,
+  };
+}
+
 interface CandidateExamCatalogDeps {
   readonly repository: ExamRepository;
   readonly logger: Logger;
@@ -65,6 +106,30 @@ interface CandidateExamCatalogDeps {
 type CandidateDashboardDeps = ExamAttemptDashboardRuntimeDeps;
 
 type CandidateSchedulingDeps = ExamAttemptSchedulingRuntimeDeps;
+
+export interface CandidateDashboardServices {
+  readonly exams: ExamRepository;
+  readonly examAttempts: ExamAttemptRepository;
+  readonly examClock: ExamClock;
+  readonly labLaunches: LabLaunchRepository;
+  readonly cloudshareConnections: CloudShareConnectionRepository;
+  readonly cloudshareClientFactory: CloudShareClientFactory;
+  readonly eventLog: EventLogRepository;
+  readonly diagnosticRecorder: DiagnosticRecorder;
+  readonly logger: Logger;
+}
+
+export interface CandidateSchedulingServices {
+  readonly exams: ExamRepository;
+  readonly examAttempts: ExamAttemptRepository;
+  readonly labLaunches: LabLaunchRepository;
+  readonly audit: AuditRepository;
+  readonly eventLog: EventLogRepository;
+  readonly cloudshareConnections: CloudShareConnectionRepository;
+  readonly cloudshareClientFactory: CloudShareClientFactory;
+  readonly diagnosticRecorder: DiagnosticRecorder;
+  readonly logger: Logger;
+}
 
 export interface CandidateExamCatalogItem {
   readonly id: string;

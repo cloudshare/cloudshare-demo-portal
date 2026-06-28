@@ -12,6 +12,8 @@ import type { Logger } from "@/observability/logger";
 import type { CloudShareClientFactory, CloudShareConnectionRepository, CloudShareConnectionRecord } from "@/domain/cloudshare-connection";
 import { CloudShareRequestError, CloudShareResponseError } from "@/integrations/cloudshare";
 import {
+  buildCandidateDashboardDeps,
+  buildCandidateSchedulingDeps,
   handleGetCandidateDashboard,
   handleScheduleCandidateExam,
 } from "./candidate-portal";
@@ -151,6 +153,145 @@ async function makeExamRepository() {
 }
 
 describe("candidate scheduling handlers", () => {
+  it("builds Candidate dashboard dependencies from composed services without exposing sponsored links", async () => {
+    const exams = await makeExamRepository();
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const logger = makeLogger();
+
+    await attempts.save({
+      id: "attempt-ready",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "ready",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    await launches.save({
+      id: "launch-1",
+      examAttemptId: "attempt-ready",
+      candidateId: "candidate-1",
+      participantEmail: "candidate@helioscx.demo",
+      trainingId: "EXtraining-1",
+      experienceId: "EXtraining-1",
+      loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/demo",
+      status: "launched",
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+
+    const requestV4 = vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+      if (spec.path === "/trainings/EXtraining-1/students") {
+        return spec.schema.parse({
+          count: 1,
+          items: [
+            {
+              email: "candidate@helioscx.demo",
+              envStatus: "ready",
+              envId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+            },
+          ],
+        });
+      }
+      throw new Error(`unexpected path ${spec.path}`);
+    });
+
+    const deps = buildCandidateDashboardDeps({
+      exams,
+      examAttempts: attempts,
+      examClock: createExamClock({
+        clocks: createInMemoryExamClockRepository(),
+        now: () => new Date("2026-06-15T10:05:00.000Z"),
+      }),
+      labLaunches: launches,
+      cloudshareConnections: makeConnectionRepository(),
+      cloudshareClientFactory: makeCloudShareFactory({ requestV4: requestV4 as never }),
+      eventLog: createInMemoryEventLogRepository(),
+      diagnosticRecorder: createDiagnosticRecorder({
+        repository: createInMemoryDiagnosticLogRepository(),
+      }),
+      logger,
+    });
+
+    const dashboard = await handleGetCandidateDashboard(
+      deps,
+      { customerId: "customer-helios", candidateId: "candidate-1" },
+    );
+
+    expect(dashboard.status).toBe(200);
+    expect(requestV4).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "GET",
+        path: "/trainings/EXtraining-1/students",
+      }),
+    );
+    await expect(launches.findByExamAttemptId("attempt-ready")).resolves.toMatchObject({
+      environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+    });
+    expect(JSON.stringify(dashboard.body)).not.toContain("loginUrl");
+  });
+
+  it("builds Candidate scheduling dependencies from composed services and preserves scheduling behavior", async () => {
+    const exams = await makeExamRepository();
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const audit = createInMemoryAuditRepository();
+    const logger = makeLogger();
+
+    const deps = buildCandidateSchedulingDeps({
+      exams,
+      examAttempts: attempts,
+      labLaunches: launches,
+      audit,
+      eventLog: createInMemoryEventLogRepository(),
+      cloudshareConnections: makeConnectionRepository(),
+      cloudshareClientFactory: makeCloudShareFactory(),
+      diagnosticRecorder: createDiagnosticRecorder({
+        repository: createInMemoryDiagnosticLogRepository(),
+      }),
+      logger,
+    });
+
+    const response = await handleScheduleCandidateExam(
+      {
+        ...deps,
+        now: () => new Date("2026-06-15T10:00:00.000Z"),
+        newId: vi.fn().mockReturnValueOnce("attempt-1").mockReturnValueOnce("launch-1"),
+        newCorrelationId: () => "corr-builder-1",
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        body: {
+          examId: "exam-1",
+          scheduledFor: "2026-06-15T16:00:00.000Z",
+        },
+      },
+    );
+
+    expect(response.status).toBe(201);
+    expect(response.body).toEqual({
+      attempt: {
+        id: "attempt-1",
+        examId: "exam-1",
+        scheduledFor: "2026-06-15T16:00:00.000Z",
+        status: "ready",
+      },
+      coldStartLikely: false,
+      correlationId: "corr-builder-1",
+    });
+    expect(JSON.stringify(response.body)).not.toContain("loginUrl");
+    await expect(audit.listByExamAttemptId("attempt-1")).resolves.toEqual([
+      expect.objectContaining({
+        examAttemptId: "attempt-1",
+        action: "lab_launched",
+        outcome: "success",
+      }),
+    ]);
+  });
+
   it("keeps malformed schedule request validation in the candidate portal adapter", async () => {
     const connections = makeConnectionRepository();
 

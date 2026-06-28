@@ -4,6 +4,8 @@ import { getServices } from "@/composition";
 import { getPortalSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import {
+  buildCandidateDashboardDeps,
+  buildCandidateSchedulingDeps,
   handleGetCandidateDashboard,
   handleScheduleCandidateExam,
 } from "@/api/candidate-portal";
@@ -19,17 +21,7 @@ export async function GET() {
   }
 
   const response = await handleGetCandidateDashboard(
-    {
-      repository: services.exams,
-      attempts: services.examAttempts,
-      clocks: services.examClock,
-      launches: services.labLaunches,
-      connections: services.cloudshareConnections,
-      cloudshare: services.cloudshareClientFactory,
-      eventLog: services.eventLog,
-      diagnostics: services.diagnosticRecorder,
-      logger: services.logger,
-    },
+    buildCandidateDashboardDeps(services),
     { customerId: session.customerId, candidateId: session.userId },
   );
 
@@ -54,17 +46,7 @@ export async function POST(request: Request) {
   }
 
   const response = await handleScheduleCandidateExam(
-    {
-      exams: services.exams,
-      attempts: services.examAttempts,
-      launches: services.labLaunches,
-      audit: services.audit,
-      eventLog: services.eventLog,
-      connections: services.cloudshareConnections,
-      cloudshare: services.cloudshareClientFactory,
-      logger: services.logger,
-      diagnostics: services.diagnosticRecorder,
-    },
+    buildCandidateSchedulingDeps(services),
     {
       customerId: session.customerId,
       candidateId: session.userId,
