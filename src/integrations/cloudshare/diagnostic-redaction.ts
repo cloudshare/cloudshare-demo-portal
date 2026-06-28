@@ -7,6 +7,21 @@ export interface CloudShareDiagnosticRedactionOptions {
   readonly preserveSponsoredLinkLoginUrl?: boolean;
 }
 
+function isAlwaysRedactedKey(key: string): boolean {
+  return (
+    /api[-_]?key/i.test(key) ||
+    /webhook[-_]?secret/i.test(key) ||
+    /secret/i.test(key) ||
+    /password/i.test(key) ||
+    /credential/i.test(key) ||
+    /bearer/i.test(key) ||
+    /signature/i.test(key) ||
+    /hmac/i.test(key) ||
+    /^authorization$/i.test(key) ||
+    /auth(?:orization)?[-_ ]?(?:header|token|secret|key|value)?$/i.test(key)
+  );
+}
+
 function redactCloudShareAdminSupportText(
   value: string,
   options: CloudShareDiagnosticRedactionOptions,
@@ -59,7 +74,7 @@ export function redactCloudShareAdminSupportValue(
 
   const redacted: Record<string, unknown> = {};
   for (const [key, fieldValue] of Object.entries(value)) {
-    if (/api[-_]?key|secret|token|hmac|signature|password|authorization|credential|bearer|auth/i.test(key)) {
+    if (isAlwaysRedactedKey(key)) {
       redacted[key] = REDACTED;
       continue;
     }

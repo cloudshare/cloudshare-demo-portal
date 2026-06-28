@@ -330,6 +330,51 @@ describe("createCloudShareClient — v4", () => {
       }),
     );
   });
+
+  it("redacts credential-bearing response headers while preserving ordinary TLS support metadata elsewhere", async () => {
+    const { http } = capturingHttp({
+      status: 200,
+      headers: {
+        authorization: "Bearer upstream-secret",
+        "x-auth-token": "secret-auth-token",
+        "x-api-key": "secret-api-key",
+        "x-cloudshare-signature": "signature-secret",
+        "x-hmac": "hmac-secret",
+        "set-cookie": ["session=secret-cookie"],
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ ok: true }),
+      tls: {
+        authorized: false,
+        authorizationError: "SELF_SIGNED_CERT_IN_CHAIN",
+      },
+    });
+    const client = clientWith(http);
+
+    const result = await client.requestV4Detailed!({
+      method: "GET",
+      path: "/projects",
+      schema: z.object({ ok: z.boolean() }),
+    });
+
+    expect(result.response).toEqual({
+      status: 200,
+      headers: {
+        authorization: "[REDACTED]",
+        "x-auth-token": "[REDACTED]",
+        "x-api-key": "[REDACTED]",
+        "x-cloudshare-signature": "[REDACTED]",
+        "x-hmac": "[REDACTED]",
+        "set-cookie": ["[REDACTED]"],
+        "content-type": "application/json",
+      },
+      body: { ok: true },
+      tls: {
+        authorized: false,
+        authorizationError: "SELF_SIGNED_CERT_IN_CHAIN",
+      },
+    });
+  });
 });
 
 describe("createCloudShareClient — v3", () => {

@@ -149,17 +149,13 @@ function sanitizeResponseHeaders(
     return undefined;
   }
 
-  const sanitized = { ...headers };
-  for (const key of Object.keys(headers)) {
-    if (/signature/i.test(key)) {
-      sanitized[key] = "[REDACTED]";
-    }
-  }
-  const setCookie = headers["set-cookie"];
+  const sanitized = redactCloudShareAdminSupportValue(headers, {
+    preserveSponsoredLinkLoginUrl: false,
+  }) as Record<string, string | string[]>;
+  const setCookie = headers["set-cookie"] ?? headers["Set-Cookie"];
   if (setCookie) {
-    sanitized["set-cookie"] = Array.isArray(setCookie)
-      ? setCookie.map(() => "[REDACTED]")
-      : "[REDACTED]";
+    sanitized["set-cookie"] = Array.isArray(setCookie) ? setCookie.map(() => "[REDACTED]") : "[REDACTED]";
+    delete sanitized["Set-Cookie"];
   }
   return sanitized;
 }
