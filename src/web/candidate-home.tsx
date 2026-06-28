@@ -595,7 +595,7 @@ const secondaryButtonStyle: CSSProperties = {
 
 const disabledButtonStyle: CSSProperties = {
   background: "#e2e8f0",
-  borderColor: "#cbd5e1",
+  border: "1px solid #cbd5e1",
   color: "#94a3b8",
   cursor: "not-allowed",
   boxShadow: "none",
