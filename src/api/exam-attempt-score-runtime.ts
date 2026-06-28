@@ -145,7 +145,7 @@ export async function getExamAttemptScoreRuntime(
       diagnostic,
       "Score retrieval failed.",
     );
-    deps.logger.warn("candidate score retrieval failed", diagnostic);
+    logScoreRetrievalFailure(deps.logger, diagnostic);
     return {
       status: 502,
       body: {
@@ -359,7 +359,7 @@ export async function getExamAttemptScoreRuntime(
           correlationId,
         },
       });
-      deps.logger.warn("candidate score retrieval failed", diagnostic);
+      logScoreRetrievalFailure(deps.logger, diagnostic);
       return {
         status: 502,
         body: {
@@ -431,7 +431,7 @@ async function resolveLaunchParticipantId(
       diagnostic,
       "Score retrieval failed.",
     );
-    deps.logger.warn("candidate score retrieval failed", diagnostic);
+    logScoreRetrievalFailure(deps.logger, diagnostic);
     return {
       ok: false,
       response: {
@@ -477,7 +477,7 @@ async function resolveLaunchParticipantId(
       diagnostic,
       "Score retrieval failed.",
     );
-    deps.logger.warn("candidate score retrieval failed", diagnostic);
+    logScoreRetrievalFailure(deps.logger, diagnostic);
     return {
       ok: false,
       response: {
@@ -518,7 +518,7 @@ async function resolveLaunchParticipantId(
     diagnostic,
     "Score retrieval failed.",
   );
-  deps.logger.warn("candidate score retrieval failed", diagnostic);
+  logScoreRetrievalFailure(deps.logger, diagnostic);
   return {
     ok: false,
     response: {
@@ -731,6 +731,13 @@ function hasDiagnosticScoreRetrieval(
 
 function redactDiagnosticSupportValue(value: unknown): unknown {
   return redactCloudShareAdminSupportValue(value);
+}
+
+function logScoreRetrievalFailure(logger: Logger, diagnostic: Record<string, unknown>): void {
+  logger.warn(
+    "candidate score retrieval failed",
+    redactDiagnosticSupportValue(diagnostic) as Record<string, unknown>,
+  );
 }
 
 function scoreDiagnosticAnchors(
