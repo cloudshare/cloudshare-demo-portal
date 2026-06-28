@@ -219,7 +219,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
             <button
               onClick={() => void logout()}
               disabled={logoutPresentation.disabled}
-              style={secondaryButtonStyle}
+              style={getButtonStyle(secondaryButtonStyle, logoutPresentation.disabled)}
             >
               {logoutPresentation.buttonLabel}
             </button>
@@ -326,7 +326,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                               openLabConsole(attempt.attemptId, attempt.status);
                             }}
                             disabled={primaryAction.disabled}
-                            style={primaryButtonStyle}
+                            style={getButtonStyle(primaryButtonStyle, primaryAction.disabled)}
                           >
                             {primaryAction.label}
                           </button>
@@ -446,7 +446,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                           <button
                             onClick={() => void submitSchedule(exam.id)}
                             disabled={submittingExamId === exam.id}
-                            style={primaryButtonStyle}
+                            style={getButtonStyle(primaryButtonStyle, submittingExamId === exam.id)}
                           >
                             {submittingExamId === exam.id ? "Scheduling..." : "Schedule exam"}
                           </button>
@@ -463,7 +463,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                                 openLabConsole(attempt.id, attempt.status);
                               }}
                               disabled={primaryAction.disabled}
-                              style={secondaryButtonStyle}
+                              style={getButtonStyle(secondaryButtonStyle, primaryAction.disabled)}
                             >
                               {primaryAction.label}
                             </button>
@@ -592,6 +592,23 @@ const secondaryButtonStyle: CSSProperties = {
   color: "#0f172a",
   fontWeight: 600,
 };
+
+const disabledButtonStyle: CSSProperties = {
+  background: "#e2e8f0",
+  borderColor: "#cbd5e1",
+  color: "#94a3b8",
+  cursor: "not-allowed",
+  boxShadow: "none",
+};
+
+function getButtonStyle(baseStyle: CSSProperties, disabled: boolean): CSSProperties {
+  return disabled
+    ? {
+        ...baseStyle,
+        ...disabledButtonStyle,
+      }
+    : baseStyle;
+}
 
 const inputStyle: CSSProperties = {
   width: "100%",
