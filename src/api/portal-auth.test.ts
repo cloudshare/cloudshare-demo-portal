@@ -6,10 +6,14 @@ import {
   createInMemoryPortalUserStore,
 } from "@/auth";
 import {
+  buildPortalLoginDeps,
+  buildPortalLogoutDeps,
   buildPortalSessionDeps,
   handleGetPortalSession,
   handlePortalLogin,
   handlePortalLogout,
+  type PortalLoginServices,
+  type PortalLogoutServices,
   type PortalSessionServices,
 } from "./portal-auth";
 
@@ -40,6 +44,23 @@ async function makeDeps(role: "admin" | "candidate" = "admin") {
 }
 
 describe("handlePortalLogin", () => {
+  it("maps portal login dependencies from composed portal services", async () => {
+    const deps = await makeDeps();
+    const portalUsers = createInMemoryPortalUserStore([]);
+    const diagnosticRecorder = { record: vi.fn(async () => undefined) };
+    const services = {
+      portalAuth: deps.portalAuth,
+      diagnosticRecorder,
+      portalUsers,
+    } satisfies PortalLoginServices;
+
+    expect(buildPortalLoginDeps(services)).toEqual({
+      portalAuth: services.portalAuth,
+      diagnostics: diagnosticRecorder,
+      users: portalUsers,
+    });
+  });
+
   it("logs the Helios admin in and returns session details", async () => {
     const deps = await makeDeps();
 
@@ -215,5 +236,47 @@ describe("handleGetPortalSession", () => {
     );
 
     expect(onCandidateLogout).not.toHaveBeenCalled();
+  });
+
+  it("builds candidate logout runtime wiring from composed portal services", async () => {
+    const deps = await makeDeps("candidate");
+    const diagnosticRecorder = { record: vi.fn(async () => undefined) };
+    const buildRuntimeDeps = vi.fn(() => ({ runtime: "deps" }));
+    const suspendRunningLabs = vi.fn(async () => undefined);
+    const services = {
+      portalAuth: deps.portalAuth,
+      diagnosticRecorder,
+      environmentController: {} as never,
+      environmentSource: {} as never,
+      examClock: {} as never,
+      exams: {} as never,
+      examAttempts: {} as never,
+      labLaunches: {} as never,
+      logger: {} as never,
+      eventLog: {} as never,
+      cloudshareConnections: {} as never,
+      cloudshareClientFactory: {} as never,
+      heartbeatAutoSuspend: {} as never,
+      audit: {} as never,
+    } satisfies PortalLogoutServices;
+    const login = await handlePortalLogin(deps, {
+      body: {
+        email: "candidate@helioscx.demo",
+        password: "correct-horse-battery-staple",
+      },
+    });
+
+    const logoutDeps = buildPortalLogoutDeps(services, {
+      buildCandidateLogoutAutoSuspendDeps: buildRuntimeDeps as never,
+      suspendCandidateRunningLabsForLogout: suspendRunningLabs as never,
+    });
+
+    expect(logoutDeps.portalAuth).toBe(services.portalAuth);
+    expect(logoutDeps.diagnostics).toBe(diagnosticRecorder);
+
+    await logoutDeps.onCandidateLogout?.(login.session!);
+
+    expect(buildRuntimeDeps).toHaveBeenCalledWith(services, login.session);
+    expect(suspendRunningLabs).toHaveBeenCalledWith({ runtime: "deps" }, login.session);
   });
 });

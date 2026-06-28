@@ -5,6 +5,12 @@ import {
   type PortalUserStore,
 } from "@/auth";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
+import {
+  buildCandidateLogoutAutoSuspendDeps,
+  suspendCandidateRunningLabsForLogout,
+  type CandidateLogoutAutoSuspendDeps,
+  type CandidateLogoutAutoSuspendServices,
+} from "./portal-logout-runtime";
 
 export const PORTAL_SESSION_COOKIE = "portal_session";
 
@@ -50,11 +56,58 @@ export interface PortalSessionServices {
   readonly portalAuth: PortalAuthenticator;
 }
 
+export interface PortalLoginServices extends PortalSessionServices {
+  readonly diagnosticRecorder: DiagnosticRecorder;
+  readonly portalUsers: PortalUserStore;
+}
+
+interface PortalLogoutBuilderOptions {
+  readonly buildCandidateLogoutAutoSuspendDeps?: (
+    services: CandidateLogoutAutoSuspendServices,
+    session: PortalSession,
+  ) => CandidateLogoutAutoSuspendDeps;
+  readonly suspendCandidateRunningLabsForLogout?: (
+    deps: CandidateLogoutAutoSuspendDeps,
+    session: PortalSession,
+  ) => Promise<void>;
+}
+
+export interface PortalLogoutServices
+  extends PortalSessionServices,
+    CandidateLogoutAutoSuspendServices {
+  readonly diagnosticRecorder: DiagnosticRecorder;
+}
+
 export function buildPortalSessionDeps(
   services: PortalSessionServices,
 ): Pick<PortalAuthDeps, "portalAuth"> {
   return {
     portalAuth: services.portalAuth,
+  };
+}
+
+export function buildPortalLoginDeps(services: PortalLoginServices): PortalAuthDeps {
+  return {
+    portalAuth: services.portalAuth,
+    diagnostics: services.diagnosticRecorder,
+    users: services.portalUsers,
+  };
+}
+
+export function buildPortalLogoutDeps(
+  services: PortalLogoutServices,
+  options: PortalLogoutBuilderOptions = {},
+): PortalAuthDeps {
+  const buildRuntimeDeps =
+    options.buildCandidateLogoutAutoSuspendDeps ?? buildCandidateLogoutAutoSuspendDeps;
+  const suspendRunningLabs =
+    options.suspendCandidateRunningLabsForLogout ?? suspendCandidateRunningLabsForLogout;
+
+  return {
+    portalAuth: services.portalAuth,
+    diagnostics: services.diagnosticRecorder,
+    onCandidateLogout: (session) =>
+      suspendRunningLabs(buildRuntimeDeps(services, session), session),
   };
 }
 

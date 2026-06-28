@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServices } from "@/composition";
 import {
+  buildPortalLoginDeps,
   handlePortalLogin,
   PORTAL_SESSION_COOKIE,
 } from "@/api/portal-auth";
@@ -29,11 +30,7 @@ export async function POST(request: Request) {
   }
 
   const response = await handlePortalLogin(
-    {
-      portalAuth: services.portalAuth,
-      diagnostics: services.diagnosticRecorder,
-      users: services.portalUsers,
-    },
+    buildPortalLoginDeps(services),
     { body },
   );
 

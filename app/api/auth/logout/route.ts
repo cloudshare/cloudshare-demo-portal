@@ -2,31 +2,17 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getServices } from "@/composition";
 import {
+  buildPortalLogoutDeps,
   handlePortalLogout,
   PORTAL_SESSION_COOKIE,
 } from "@/api/portal-auth";
-import {
-  buildCandidateLogoutAutoSuspendDeps,
-  suspendCandidateRunningLabsForLogout,
-} from "@/api/portal-logout-runtime";
 
 export async function POST() {
   const services = getServices();
   await services.ensurePortalSeeded();
 
   const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
-  await handlePortalLogout(
-    {
-      portalAuth: services.portalAuth,
-      diagnostics: services.diagnosticRecorder,
-      onCandidateLogout: (session) =>
-        suspendCandidateRunningLabsForLogout(
-          buildCandidateLogoutAutoSuspendDeps(services, session),
-          session,
-        ),
-    },
-    { sessionId },
-  );
+  await handlePortalLogout(buildPortalLogoutDeps(services), { sessionId });
 
   const response = NextResponse.json({ ok: true }, { status: 200 });
   response.cookies.set(PORTAL_SESSION_COOKIE, "", {
