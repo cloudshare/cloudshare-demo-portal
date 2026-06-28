@@ -83,6 +83,14 @@ export interface AdminExamCatalogListServices {
   readonly logger: Logger;
 }
 
+export interface AdminExamAuthoringServices {
+  readonly cloudshareConnections: CloudShareConnectionRepository;
+  readonly cloudshareClientFactory: CloudShareClientFactory;
+  readonly examAuthoringCache: ExamAuthoringCacheRepository;
+  readonly diagnosticRecorder?: DiagnosticRecorder;
+  readonly logger: Logger;
+}
+
 export interface AdminExamDraftServices extends AdminExamCatalogListServices {
   readonly examAuthoringCache: ExamAuthoringCacheRepository;
   readonly config: {
@@ -117,6 +125,18 @@ export function buildAdminExamCatalogListDeps(
 ): Pick<AdminExamCatalogDeps, "repository" | "logger"> {
   return {
     repository: services.exams,
+    logger: services.logger,
+  };
+}
+
+export function buildAdminExamAuthoringDeps(
+  services: AdminExamAuthoringServices,
+): AdminExamAuthoringDeps {
+  return {
+    connections: services.cloudshareConnections,
+    cloudshare: services.cloudshareClientFactory,
+    cache: services.examAuthoringCache,
+    diagnostics: services.diagnosticRecorder,
     logger: services.logger,
   };
 }
