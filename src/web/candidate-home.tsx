@@ -240,13 +240,13 @@ export function CandidateHome({ email }: CandidateHomeProps) {
       <section style={{ display: "grid", gap: "1rem" }}>
         {loading && <p style={messagePanelStyle}>Loading candidate dashboard...</p>}
         {error && (
-          <p style={{ ...messagePanelStyle, color: "#b00020", background: "#fff5f7", borderColor: "#f1c7d0" }}>
+          <p style={{ ...messagePanelStyle, color: "#b00020", background: "#fff5f7", border: "1px solid #f1c7d0" }}>
             {error}
           </p>
         )}
         {coldStartNotice && (
           <p
-            style={{ ...messagePanelStyle, color: "#7a4b00", background: "#fff8eb", borderColor: "#f0d8a8" }}
+            style={{ ...messagePanelStyle, color: "#7a4b00", background: "#fff8eb", border: "1px solid #f0d8a8" }}
           >
             {coldStartNotice}
           </p>
