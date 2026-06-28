@@ -466,6 +466,7 @@ describe("scheduleExam", () => {
       ProjectId: "project-1",
       BlueprintIds: ["bp-1"],
       PolicyId: "policy-1",
+      Passphrase: "certalis-attempt-1",
     });
     expect(training?.response).toMatchObject({
       status: 200,
@@ -660,7 +661,9 @@ describe("scheduleExam", () => {
     expect(ops).toContain("cloudshare.create_training");
     expect(ops).not.toContain("cloudshare.add_participant");
     expect(ops).not.toContain("exam_attempt.provisioned");
-    const failure = thread.find((e) => e.outcome === "failure");
+    const failure = thread.find(
+      (e) => e.operation === "cloudshare.create_training" && e.outcome === "failure",
+    );
     expect(failure?.details).toMatchObject({
       failureMode: "transport",
       integrationSurface: "cloudshare.v4.training",

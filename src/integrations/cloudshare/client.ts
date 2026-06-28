@@ -154,7 +154,7 @@ function sanitizeQuery(query: Record<string, string> | undefined): Record<string
   }
   const sanitized: Record<string, string> = {};
   for (const [key, value] of Object.entries(query)) {
-    sanitized[key] = /api[-_]?key|secret|token|hmac|signature|passphrase|password/i.test(key)
+    sanitized[key] = /api[-_]?key|secret|token|hmac|signature|password/i.test(key)
       ? "[REDACTED]"
       : value;
   }
@@ -238,7 +238,7 @@ function redactSensitiveBodyFields(
 
   const redacted: Record<string, unknown> = {};
   for (const [key, fieldValue] of Object.entries(value)) {
-    if (/api[-_]?key|secret|token|hmac|signature|passphrase|password/i.test(key)) {
+    if (/api[-_]?key|secret|token|hmac|signature|password/i.test(key)) {
       redacted[key] = "[REDACTED]";
       continue;
     }
