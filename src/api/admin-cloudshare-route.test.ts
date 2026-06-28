@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { PUT } from "../../app/api/admin/cloudshare/route";
+import { GET, PUT } from "../../app/api/admin/cloudshare/route";
+import { POST } from "../../app/api/admin/cloudshare/test/route";
 
 const {
   mockCookies,
@@ -23,30 +24,31 @@ vi.mock("@/auth/portal-session", () => ({
   getPortalAdminSession: mockGetPortalAdminSession,
 }));
 
-describe("admin CloudShare route", () => {
+function makeServices(overrides?: Record<string, unknown>) {
+  return {
+    cloudshareConnections: {
+      save: vi.fn(),
+      markVerified: vi.fn().mockResolvedValue(undefined),
+      findByCustomerId: vi.fn().mockResolvedValue(null),
+      findByWebhookPathToken: vi.fn(),
+    },
+    cloudshareClientFactory: {},
+    examAuthoringCache: {
+      clearCustomer: vi.fn().mockResolvedValue(undefined),
+    },
+    diagnosticRecorder: {
+      record: vi.fn().mockResolvedValue(undefined),
+    },
+    logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
+    ...overrides,
+  };
+}
+
+describe("admin CloudShare routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCookies.mockResolvedValue({
       get: () => ({ value: "portal-session-1" }),
-    });
-  });
-
-  it("saves the Helios CX CloudShare Connection through the admin API route", async () => {
-    const save = vi.fn(async (connection) => ({
-      ...connection,
-      webhookPathToken: "whk-helios",
-      connectedAt: new Date("2026-06-13T20:30:00.000Z"),
-      verifiedAt: null,
-    }));
-
-    mockGetServices.mockReturnValue({
-      cloudshareConnections: {
-        save,
-        findByCustomerId: vi.fn().mockResolvedValue(null),
-        findByWebhookPathToken: vi.fn(),
-      },
-      cloudshareClientFactory: {},
-      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
     });
     mockGetPortalAdminSession.mockResolvedValue({
       sessionId: "portal-session-1",
@@ -54,6 +56,58 @@ describe("admin CloudShare route", () => {
       email: "admin@helioscx.demo",
       role: "admin",
     });
+  });
+
+  it("reads the Helios CX CloudShare Connection status through the admin GET route", async () => {
+    mockGetServices.mockReturnValue(
+      makeServices({
+        cloudshareConnections: {
+          save: vi.fn(),
+          markVerified: vi.fn().mockResolvedValue(undefined),
+          findByWebhookPathToken: vi.fn(),
+          findByCustomerId: vi.fn().mockResolvedValue({
+            customerId: "customer-helios",
+            apiId: "api-id",
+            apiKey: "api-key",
+            webhookSecret: "whsec",
+            webhookPathToken: "whk-helios",
+            connectedAt: new Date("2026-06-13T20:30:00.000Z"),
+            verifiedAt: new Date("2026-06-13T21:00:00.000Z"),
+          }),
+        },
+      }),
+    );
+
+    const response = await GET();
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      hasConnection: true,
+      connectedAt: "2026-06-13T20:30:00.000Z",
+      verifiedAt: "2026-06-13T21:00:00.000Z",
+      webhookPathToken: "whk-helios",
+      webhookPath: "/api/webhooks/cloudshare/whk-helios",
+    });
+  });
+
+  it("saves the Helios CX CloudShare Connection through the admin PUT route", async () => {
+    const save = vi.fn(async (connection) => ({
+      ...connection,
+      webhookPathToken: "whk-helios",
+      connectedAt: new Date("2026-06-13T20:30:00.000Z"),
+      verifiedAt: null,
+    }));
+
+    mockGetServices.mockReturnValue(
+      makeServices({
+        cloudshareConnections: {
+          save,
+          markVerified: vi.fn().mockResolvedValue(undefined),
+          findByCustomerId: vi.fn().mockResolvedValue(null),
+          findByWebhookPathToken: vi.fn(),
+        },
+      }),
+    );
 
     const response = await PUT(
       new Request("http://localhost:3000/api/admin/cloudshare", {
@@ -107,17 +161,16 @@ describe("admin CloudShare route", () => {
       verifiedAt: null,
     }));
 
-    mockGetServices.mockReturnValue({
-      cloudshareConnections: { save, findByCustomerId, findByWebhookPathToken: vi.fn() },
-      cloudshareClientFactory: {},
-      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
-    });
-    mockGetPortalAdminSession.mockResolvedValue({
-      sessionId: "portal-session-1",
-      customerId: "customer-helios",
-      email: "admin@helioscx.demo",
-      role: "admin",
-    });
+    mockGetServices.mockReturnValue(
+      makeServices({
+        cloudshareConnections: {
+          save,
+          markVerified: vi.fn().mockResolvedValue(undefined),
+          findByCustomerId,
+          findByWebhookPathToken: vi.fn(),
+        },
+      }),
+    );
 
     const response = await PUT(
       new Request("http://localhost:3000/api/admin/cloudshare", {
@@ -151,22 +204,17 @@ describe("admin CloudShare route", () => {
       verifiedAt: null,
     }));
 
-    mockGetServices.mockReturnValue({
-      cloudshareConnections: {
-        save,
-        findByCustomerId: vi.fn().mockResolvedValue(null),
-        findByWebhookPathToken: vi.fn(),
-      },
-      cloudshareClientFactory: {},
-      examAuthoringCache: cache,
-      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
-    });
-    mockGetPortalAdminSession.mockResolvedValue({
-      sessionId: "portal-session-1",
-      customerId: "customer-helios",
-      email: "admin@helioscx.demo",
-      role: "admin",
-    });
+    mockGetServices.mockReturnValue(
+      makeServices({
+        cloudshareConnections: {
+          save,
+          markVerified: vi.fn().mockResolvedValue(undefined),
+          findByCustomerId: vi.fn().mockResolvedValue(null),
+          findByWebhookPathToken: vi.fn(),
+        },
+        examAuthoringCache: cache,
+      }),
+    );
 
     const response = await PUT(
       new Request("http://localhost:3000/api/admin/cloudshare", {
@@ -184,31 +232,70 @@ describe("admin CloudShare route", () => {
     expect(cache.clearCustomer).toHaveBeenCalledWith("customer-helios");
   });
 
-  it("rejects anonymous admin save attempts", async () => {
-    mockGetServices.mockReturnValue({
-      cloudshareConnections: {
-        save: vi.fn(),
-        findByCustomerId: vi.fn().mockResolvedValue(null),
-        findByWebhookPathToken: vi.fn(),
-      },
-      cloudshareClientFactory: {},
-      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
-    });
-    mockGetPortalAdminSession.mockResolvedValue(null);
-
-    const response = await PUT(
-      new Request("http://localhost:3000/api/admin/cloudshare", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          apiId: "api-id",
-          apiKey: "api-key",
-          webhookSecret: "whsec",
-        }),
+  it("tests the stored CloudShare Connection through the admin test route", async () => {
+    mockGetServices.mockReturnValue(
+      makeServices({
+        cloudshareConnections: {
+          save: vi.fn(),
+          markVerified: vi.fn().mockResolvedValue(undefined),
+          findByWebhookPathToken: vi.fn(),
+          findByCustomerId: vi.fn().mockResolvedValue({
+            customerId: "customer-helios",
+            apiId: "api-id",
+            apiKey: "api-key",
+            webhookSecret: "whsec",
+            webhookPathToken: "whk-helios",
+            connectedAt: new Date("2026-06-13T20:30:00.000Z"),
+            verifiedAt: null,
+          }),
+        },
+        cloudshareClientFactory: {
+          forConnection: vi.fn().mockReturnValue({
+            requestV3Text: vi.fn().mockResolvedValue("{\"result\":\"Pong\"}"),
+            requestV3: vi.fn(),
+            requestV4: vi.fn(),
+          }),
+        },
       }),
     );
 
-    expect(response.status).toBe(401);
-    expect(await response.json()).toEqual({ error: "unauthorized" });
+    const response = await POST();
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      status: "connected",
+      message: "pong",
+      verifiedAt: expect.any(String),
+      correlationId: expect.any(String),
+      occurredAt: expect.any(String),
+    });
+  });
+
+  it("rejects anonymous admin route access", async () => {
+    mockGetServices.mockReturnValue(makeServices());
+    mockGetPortalAdminSession.mockResolvedValue(null);
+
+    const [getResponse, putResponse, postResponse] = await Promise.all([
+      GET(),
+      PUT(
+        new Request("http://localhost:3000/api/admin/cloudshare", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            apiId: "api-id",
+            apiKey: "api-key",
+            webhookSecret: "whsec",
+          }),
+        }),
+      ),
+      POST(),
+    ]);
+
+    await expect(getResponse.json()).resolves.toEqual({ error: "unauthorized" });
+    await expect(putResponse.json()).resolves.toEqual({ error: "unauthorized" });
+    await expect(postResponse.json()).resolves.toEqual({ error: "unauthorized" });
+    expect(getResponse.status).toBe(401);
+    expect(putResponse.status).toBe(401);
+    expect(postResponse.status).toBe(401);
   });
 });

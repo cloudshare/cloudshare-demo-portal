@@ -29,6 +29,40 @@ export interface AdminCloudShareDeps {
   readonly newCorrelationId?: () => string;
 }
 
+export interface AdminCloudShareConnectionServices {
+  readonly cloudshareConnections: CloudShareConnectionRepository;
+  readonly cloudshareClientFactory: CloudShareClientFactory;
+  readonly examAuthoringCache?: ExamAuthoringCacheRepository;
+  readonly logger: Logger;
+}
+
+export interface AdminCloudShareTestServices {
+  readonly cloudshareConnections: CloudShareConnectionRepository;
+  readonly cloudshareClientFactory: CloudShareClientFactory;
+  readonly logger: Logger;
+}
+
+export function buildAdminCloudShareConnectionDeps(
+  services: AdminCloudShareConnectionServices,
+): Pick<AdminCloudShareDeps, "connections" | "cloudshare" | "examAuthoringCache" | "logger"> {
+  return {
+    connections: services.cloudshareConnections,
+    cloudshare: services.cloudshareClientFactory,
+    examAuthoringCache: services.examAuthoringCache,
+    logger: services.logger,
+  };
+}
+
+export function buildAdminCloudShareTestDeps(
+  services: AdminCloudShareTestServices,
+): Pick<AdminCloudShareDeps, "connections" | "cloudshare" | "logger"> {
+  return {
+    connections: services.cloudshareConnections,
+    cloudshare: services.cloudshareClientFactory,
+    logger: services.logger,
+  };
+}
+
 export async function handleGetCloudShareConnection(
   deps: AdminCloudShareDeps,
   request: AdminCloudShareRequest,
