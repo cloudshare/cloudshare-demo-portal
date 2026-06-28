@@ -3,7 +3,10 @@ import { cookies } from "next/headers";
 import { getServices } from "@/composition";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { getPortalSession } from "@/auth/portal-session";
-import { handleGetCandidateLabStatus } from "@/api/candidate-lab";
+import {
+  buildCandidateLabStatusDeps,
+  handleGetCandidateLabStatus,
+} from "@/api/candidate-lab";
 
 export async function GET(request: Request) {
   const examAttemptId = new URL(request.url).searchParams.get("examAttemptId")?.trim();
@@ -19,13 +22,7 @@ export async function GET(request: Request) {
   }
 
   const response = await handleGetCandidateLabStatus(
-    {
-      attempts: services.examAttempts,
-      exams: services.exams,
-      clocks: services.examClock,
-      diagnostics: services.diagnosticRecorder,
-      logger: services.logger,
-    },
+    buildCandidateLabStatusDeps(services),
     {
       examAttemptId,
       candidateId: session.userId,
