@@ -3,7 +3,12 @@ import { cookies } from "next/headers";
 import { getServices } from "@/composition";
 import { getPortalAdminSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
-import { handleCreateDraftExam, handleGetExamCatalog } from "@/api/admin-exams";
+import {
+  buildAdminDraftExamDeps,
+  buildAdminExamCatalogListDeps,
+  handleCreateDraftExam,
+  handleGetExamCatalog,
+} from "@/api/admin-exams";
 
 export async function GET() {
   const services = getServices();
@@ -14,7 +19,7 @@ export async function GET() {
   }
 
   const response = await handleGetExamCatalog(
-    { repository: services.exams, logger: services.logger },
+    buildAdminExamCatalogListDeps(services),
     { customerId: session.customerId },
   );
   return NextResponse.json(response.body, { status: response.status });
@@ -36,13 +41,7 @@ export async function POST(request: Request) {
   }
 
   const response = await handleCreateDraftExam(
-    {
-      repository: services.exams,
-      cache: services.examAuthoringCache,
-      instructor: services.config.seed.heliosInstructor,
-      diagnostics: services.diagnosticRecorder,
-      logger: services.logger,
-    },
+    buildAdminDraftExamDeps(services),
     {
       customerId: session.customerId,
       actor: { type: "admin", id: session.userId, email: session.email },

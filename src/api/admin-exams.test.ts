@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  buildAdminDraftExamDeps,
+  buildAdminDraftExamUpdateDeps,
+  buildAdminExamCatalogListDeps,
+  buildAdminExamPublishDeps,
+  buildAdminExamUnpublishDeps,
   handleCreateDraftExam,
   handleGetBlueprintDetail,
   handleGetExamAuthoringBootstrap,
@@ -497,6 +502,114 @@ describe("admin exam catalog handlers", () => {
     id: "admin-1",
     email: "admin@helioscx.demo",
   } as const;
+
+  it("builds catalog list dependencies from composed services", () => {
+    const repository = createInMemoryExamCatalogRepository();
+    const logger = makeLogger();
+
+    expect(
+      buildAdminExamCatalogListDeps({
+        exams: repository,
+        logger,
+      }),
+    ).toEqual({
+      repository,
+      logger,
+    });
+  });
+
+  it("builds draft exam dependencies from composed services", () => {
+    const repository = createInMemoryExamCatalogRepository();
+    const cache = createInMemoryExamAuthoringCacheRepository();
+    const { recorder } = makeDiagnostics();
+    const logger = makeLogger();
+
+    expect(
+      buildAdminDraftExamDeps({
+        exams: repository,
+        examAuthoringCache: cache,
+        config: {
+          seed: {
+            heliosInstructor: configuredInstructor,
+          },
+        },
+        diagnosticRecorder: recorder,
+        logger,
+      }),
+    ).toEqual({
+      repository,
+      cache,
+      instructor: configuredInstructor,
+      diagnostics: recorder,
+      logger,
+    });
+  });
+
+  it("builds draft update dependencies from composed services", () => {
+    const repository = createInMemoryExamCatalogRepository();
+    const cache = createInMemoryExamAuthoringCacheRepository();
+    const { recorder } = makeDiagnostics();
+    const logger = makeLogger();
+
+    expect(
+      buildAdminDraftExamUpdateDeps({
+        exams: repository,
+        examAuthoringCache: cache,
+        diagnosticRecorder: recorder,
+        logger,
+      }),
+    ).toEqual({
+      repository,
+      cache,
+      diagnostics: recorder,
+      logger,
+    });
+  });
+
+  it("builds publish dependencies from composed services", () => {
+    const repository = createInMemoryExamCatalogRepository();
+    const cache = createInMemoryExamAuthoringCacheRepository();
+    const connections = makeConnections();
+    const cloudshare = makeCloudShareFactory(makeAuthoringSource());
+    const { recorder } = makeDiagnostics();
+    const logger = makeLogger();
+
+    expect(
+      buildAdminExamPublishDeps({
+        exams: repository,
+        examAuthoringCache: cache,
+        cloudshareConnections: connections,
+        cloudshareClientFactory: cloudshare,
+        diagnosticRecorder: recorder,
+        logger,
+      }),
+    ).toEqual({
+      repository,
+      connections,
+      cloudshare,
+      cache,
+      diagnostics: recorder,
+      logger,
+    });
+  });
+
+  it("builds unpublish dependencies from composed services", () => {
+    const repository = createInMemoryExamCatalogRepository();
+    const { recorder } = makeDiagnostics();
+    const logger = makeLogger();
+
+    expect(
+      buildAdminExamUnpublishDeps({
+        exams: repository,
+        diagnosticRecorder: recorder,
+        logger,
+      }),
+    ).toEqual({
+      repository,
+      diagnostics: recorder,
+      logger,
+    });
+  });
 
   it("creates a draft exam and returns it", async () => {
     const repository = createInMemoryExamCatalogRepository();
