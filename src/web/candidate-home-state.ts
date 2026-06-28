@@ -10,6 +10,11 @@ export interface CandidateScheduledAttemptView {
   readonly waitingMessage: string | null;
 }
 
+export interface CandidateAttemptPrimaryAction {
+  readonly label: "Enter exam" | "Return to exam" | "Resume exam" | "View score" | null;
+  readonly disabled: boolean;
+}
+
 const ENTERABILITY_TIMER_FUZZ_MS = 250;
 export const MAX_ENTERABILITY_WAKE_UP_DELAY_MS = 24 * 60 * 60 * 1000;
 
@@ -44,6 +49,40 @@ export function getAttemptWaitingMessage(
   return canEnterAttempt(attempt, nowMs)
     ? null
     : `Enter exam becomes available at ${new Date(attempt.scheduledFor).toLocaleString()}.`;
+}
+
+export function getAttemptPrimaryAction(
+  attempt: CandidateDashboardData["attempts"][number] | null,
+  nowMs: number,
+): CandidateAttemptPrimaryAction {
+  if (!attempt) {
+    return { label: null, disabled: false };
+  }
+
+  switch (attempt.status) {
+    case "ready":
+      return {
+        label: "Enter exam",
+        disabled: !canEnterAttempt(attempt, nowMs),
+      };
+    case "in_progress":
+      return {
+        label: "Return to exam",
+        disabled: false,
+      };
+    case "suspended":
+      return {
+        label: "Resume exam",
+        disabled: false,
+      };
+    case "completed":
+      return {
+        label: "View score",
+        disabled: false,
+      };
+    default:
+      return { label: null, disabled: false };
+  }
 }
 
 export function buildScheduledAttemptViews(
