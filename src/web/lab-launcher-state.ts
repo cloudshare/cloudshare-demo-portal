@@ -12,6 +12,13 @@ export type LaunchState =
 export type AttemptStatus = "ready" | "in_progress" | "suspended" | "completed";
 export type RecoveryAction = "enter" | "resume" | "reopen";
 export type LaunchAction = "enter" | "resume";
+export type LauncherPresentation = {
+  tone: "info" | "error";
+  title: string;
+  detail: string;
+  primaryActionLabel: string | null;
+  supportMessage: string | null;
+};
 
 export function updateCandidateLabStatus(
   current: CandidateLabStatus | null,
@@ -89,4 +96,78 @@ export function getAttemptStatusAfterLaunchTransition(
   }
 
   return currentStatus;
+}
+
+export function getLauncherPresentation(input: {
+  state: LaunchState;
+  attemptStatus: AttemptStatus;
+  message: string;
+}): LauncherPresentation {
+  switch (input.state) {
+    case "launching":
+      return {
+        tone: "info",
+        title: "Opening exam",
+        detail: "Your CloudShare lab is opening in a new window.",
+        primaryActionLabel: null,
+        supportMessage: null,
+      };
+    case "open":
+      return {
+        tone: "info",
+        title: "Exam window open",
+        detail: "Your CloudShare lab opened in a separate window for this ExamAttempt.",
+        primaryActionLabel: "Suspend lab",
+        supportMessage:
+          "Leaving or closing this page without suspending keeps your lab running and consuming time. Use Suspend lab to pause before stepping away.",
+      };
+    case "suspending":
+      return {
+        tone: "info",
+        title: "Suspending lab",
+        detail: "The portal is pausing your CloudShare lab and exam clock.",
+        primaryActionLabel: null,
+        supportMessage: null,
+      };
+    case "suspended":
+      return {
+        tone: "info",
+        title: "Lab suspended",
+        detail: input.message || "Lab suspended.",
+        primaryActionLabel: "Resume exam",
+        supportMessage: "Resume exam to reopen your CloudShare lab and continue the same ExamAttempt.",
+      };
+    case "completed":
+      return {
+        tone: "info",
+        title: "Examination complete",
+        detail: input.message || "Examination complete.",
+        primaryActionLabel: null,
+        supportMessage: null,
+      };
+    case "error": {
+      const recoveryAction = getLauncherRecoveryAction(input.attemptStatus);
+      return {
+        tone: "error",
+        title: recoveryAction ? "Recover your exam window" : "Exam action unavailable",
+        detail: input.message || "The portal could not complete that exam action.",
+        primaryActionLabel: recoveryAction?.label ?? null,
+        supportMessage: null,
+      };
+    }
+    case "idle":
+    default: {
+      const recoveryAction = getLauncherRecoveryAction(input.attemptStatus);
+      return {
+        tone: "info",
+        title: recoveryAction?.action === "resume" ? "Ready to resume" : "Ready to launch",
+        detail:
+          recoveryAction?.action === "resume"
+            ? "Resume exam to reopen your CloudShare lab in a new window."
+            : "Enter exam to open your CloudShare lab in a new window.",
+        primaryActionLabel: recoveryAction?.label ?? null,
+        supportMessage: null,
+      };
+    }
+  }
 }

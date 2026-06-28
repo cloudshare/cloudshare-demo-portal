@@ -7,6 +7,7 @@ import { preflightLabAction, readHeartbeatAttemptStatus, resumeLabAttempt, suspe
 import { describeAndReportLaunchFailure } from "./lab-launcher-runtime-diagnostics";
 import {
   getAttemptStatusAfterLaunchTransition,
+  getLauncherPresentation,
   getLauncherRecoveryAction,
   getLauncherSyncTarget,
   type LaunchState,
@@ -365,61 +366,98 @@ export function LabLauncher({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
 
+  const launcherPresentation = getLauncherPresentation({
+    state,
+    attemptStatus: launcherAttemptStatus,
+    message,
+  });
+  const recoveryAction =
+    state === "error" ? getLauncherRecoveryAction(launcherAttemptStatus) : null;
+
   return (
-    <div>
-      {state === "idle" && (
-        <button type="button" onClick={launch}>
-          Enter exam
-        </button>
-      )}
-      {state === "error" && (() => {
-        const recoveryAction = getLauncherRecoveryAction(launcherAttemptStatus);
-        if (!recoveryAction) {
-          return null;
-        }
-        const onClick =
-          recoveryAction.action === "resume"
-            ? resumeNow
-            : launch;
-        return (
-          <button type="button" onClick={onClick}>
-            {recoveryAction.label}
-          </button>
-        );
-      })()}
-      {state === "suspended" && (
-        <button type="button" onClick={resumeNow}>
-          Resume exam
-        </button>
-      )}
-      {state === "launching" && <p>Opening exam…</p>}
-
-      {state === "open" && (
-        <>
-          <p>Lab opened in a new window.</p>
-          <p role="note">
-            Leaving or closing this page without suspending keeps your lab running
-            and consuming time. Use the Suspend button to pause when stepping away.
+    <section
+      aria-label="Lab launcher"
+      style={{
+        border: `1px solid ${launcherPresentation.tone === "error" ? "#f5c2c7" : "#d9e2ec"}`,
+        borderRadius: "8px",
+        backgroundColor: launcherPresentation.tone === "error" ? "#fff5f5" : "#ffffff",
+        padding: "1rem 1.1rem",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          gap: "1rem",
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ flex: "1 1 320px" }}>
+          <p
+            style={{
+              margin: 0,
+              fontSize: "0.8rem",
+              fontWeight: 700,
+              color: launcherPresentation.tone === "error" ? "#b42318" : "#52606d",
+            }}
+          >
+            {launcherPresentation.tone === "error" ? "Recovery" : "Launcher status"}
           </p>
-          <button type="button" onClick={suspendNow}>
-            Suspend lab
-          </button>
-        </>
-      )}
-
-      {state === "suspending" && <p>Suspending lab…</p>}
-
-      {state === "suspended" && (
-        <p>{message || "Lab suspended."}</p>
-      )}
-
-      {state === "completed" && (
-        <p>{message || "Examination complete."}</p>
-      )}
-
-      {state === "error" && (
-        <p role="alert">Error: {message}</p>
-      )}
-    </div>
+          <h2 style={{ margin: "0.35rem 0 0.45rem", fontSize: "1.1rem", color: "#14213d" }}>
+            {launcherPresentation.title}
+          </h2>
+          <p
+            role={state === "error" ? "alert" : undefined}
+            style={{
+              margin: 0,
+              color: launcherPresentation.tone === "error" ? "#7a271a" : "#334e68",
+            }}
+          >
+            {launcherPresentation.detail}
+          </p>
+          {launcherPresentation.supportMessage ? (
+            <p role="note" style={{ margin: "0.75rem 0 0", color: "#52606d" }}>
+              {launcherPresentation.supportMessage}
+            </p>
+          ) : null}
+        </div>
+        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
+          {state === "idle" ? (
+            <button type="button" onClick={launch} style={primaryButtonStyle}>
+              Enter exam
+            </button>
+          ) : null}
+          {state === "error" && recoveryAction ? (
+            <button
+              type="button"
+              onClick={recoveryAction.action === "resume" ? resumeNow : launch}
+              style={primaryButtonStyle}
+            >
+              {recoveryAction.label}
+            </button>
+          ) : null}
+          {state === "suspended" ? (
+            <button type="button" onClick={resumeNow} style={primaryButtonStyle}>
+              Resume exam
+            </button>
+          ) : null}
+          {state === "open" ? (
+            <button type="button" onClick={suspendNow} style={primaryButtonStyle}>
+              Suspend lab
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </section>
   );
 }
+
+const primaryButtonStyle = {
+  padding: "0.75rem 1rem",
+  borderRadius: "8px",
+  border: "1px solid #0b5d3b",
+  backgroundColor: "#0b5d3b",
+  color: "#ffffff",
+  fontWeight: 700,
+} as const;
