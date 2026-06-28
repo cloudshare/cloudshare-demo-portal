@@ -19,7 +19,7 @@ describe("AdminConsole", () => {
     expect(html).toContain("Session Monitoring");
   });
 
-  it("renders an obvious active admin tab and support workflow context in the shell", () => {
+  it("renders an obvious active admin tab without the extra workflow context panel", () => {
     const html = renderToStaticMarkup(
       createElement(AdminConsole, {
         email: "admin@helioscx.demo",
@@ -28,10 +28,10 @@ describe("AdminConsole", () => {
     );
 
     expect(html).toContain('aria-current="page"');
-    expect(html).toContain("Active workflow: Session Monitoring");
-    expect(html).toContain("Monitor current ExamAttempt state, then open Support Diagnostics for the forensic trace.");
-    expect(html).toContain("Monitoring");
-    expect(html).toContain("Diagnostics");
+    expect(html).toContain("Session Monitoring");
+    expect(html).toContain("Support Diagnostics");
+    expect(html).not.toContain("Active workflow");
+    expect(html).not.toContain("Monitor current ExamAttempt state, then open Support Diagnostics for the forensic trace.");
   });
 
   it("reopens on the Diagnostic Log tab when route state links to an ExamAttempt investigation", () => {
