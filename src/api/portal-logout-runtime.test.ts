@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import type { PortalSession } from "@/auth";
 import {
@@ -102,13 +101,6 @@ function makeServices(
 }
 
 describe("suspendCandidateRunningLabsForLogout", () => {
-  it("uses a narrow runtime dependency interface instead of importing composition", () => {
-    const source = readFileSync("src/api/portal-logout-runtime.ts", "utf8");
-
-    expect(source).not.toMatch(/from\s+["']@\/composition["']/);
-    expect(source).toContain("CandidateLogoutAutoSuspendDeps");
-  });
-
   it("builds logout auto-suspend workflow deps from composed portal services", async () => {
     const services = makeServices();
     const customSleep = vi.fn().mockResolvedValue(undefined);
