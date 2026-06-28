@@ -1032,6 +1032,48 @@ describe("score diagnostics", () => {
     expect(JSON.stringify(failure)).not.toContain("secret");
   });
 
+  it("preserves admin-only CloudShare support evidence in score failure diagnostics while still redacting true credentials", async () => {
+    const malformedRetriever: DiagnosticScoreRetrievalProvider = {
+      getParticipantProgress: vi.fn(),
+      getParticipantProgressForDiagnostics: vi.fn().mockRejectedValue(
+        new CloudShareResponseError("CloudShare Guided Journey progress payload was unsupported", {
+          method: "GET",
+          path: "/guided-journey/progress/exp-s1/student-1",
+          integrationSurface: "cloudshare.v4.guided_journey.progress",
+          responseBody: JSON.stringify({
+            hello: "world",
+            passphrase: "candidate-visible-passphrase",
+            loginUrl: "https://use.cloudshare.com/Ent/Login.aspx?token=admin-evidence",
+            apiKey: "secret-api-key",
+            authorization: "Bearer secret-bearer-token",
+          }),
+          issues: ["Unsupported Guided Journey progress payload"],
+        }),
+      ),
+    };
+    const deps = makeScoreDeps({ scoreRetriever: malformedRetriever });
+
+    const resp = await handleGetCandidateScore(deps, {
+      query: { examAttemptId: "sa-1" },
+      session: SCORE_SESSION,
+    });
+    expect(resp.status).toBe(502);
+
+    const entries = await deps._repository.query({ examAttemptId: "sa-1" });
+    const failure = entries.find((e) => e.operation === "exam_attempt.score.retrieve" && e.outcome === "failure");
+    expect(failure?.response).toEqual({
+      body: {
+        hello: "world",
+        passphrase: "candidate-visible-passphrase",
+        loginUrl: "https://use.cloudshare.com/Ent/Login.aspx?token=admin-evidence",
+        apiKey: "[REDACTED]",
+        authorization: "[REDACTED]",
+      },
+    });
+    expect(JSON.stringify(failure)).not.toContain("secret-api-key");
+    expect(JSON.stringify(failure)).not.toContain("secret-bearer-token");
+  });
+
   it("emits exam_attempt.score.correlate_environment failure with participant-resolution details when participant correlation does not produce a participantId", async () => {
     const attempts = createInMemoryExamAttemptRepository();
     void attempts.save(SCORE_ATTEMPT);

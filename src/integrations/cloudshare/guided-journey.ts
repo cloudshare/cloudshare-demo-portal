@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { CloudShareClient, CloudShareDetailedResult } from "./client";
+import { redactCloudShareAdminSupportValue } from "./diagnostic-redaction";
 import type {
   DiagnosticScoreRetrievalProvider,
   ParticipantProgress,
@@ -382,38 +383,8 @@ function readBooleanCandidate(record: Record<string, unknown>, keys: readonly st
 
 function serializeGuidedJourneyResponseBody(body: unknown): string {
   try {
-    return JSON.stringify(redactSensitiveGuidedJourneyValue(body));
+    return JSON.stringify(redactCloudShareAdminSupportValue(body));
   } catch {
     return String(body);
   }
-}
-
-function redactSensitiveGuidedJourneyValue(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map(redactSensitiveGuidedJourneyValue);
-  }
-
-  if (!value || typeof value !== "object") {
-    return value;
-  }
-
-  const redacted: Record<string, unknown> = {};
-  for (const [key, fieldValue] of Object.entries(value)) {
-    if (/api[-_]?key|secret|token|hmac|signature|passphrase|password|login[-_]?url/i.test(key)) {
-      redacted[key] = "[REDACTED]";
-      continue;
-    }
-
-    redacted[key] =
-      typeof fieldValue === "string"
-        ? redactSensitiveGuidedJourneyText(fieldValue)
-        : redactSensitiveGuidedJourneyValue(fieldValue);
-  }
-  return redacted;
-}
-
-function redactSensitiveGuidedJourneyText(value: string): string {
-  return value
-    .replace(/https?:\/\/\S*(?:ClassSponsoredLink|SponsoredLink|Ent\/Login)\S*/gi, "[REDACTED]")
-    .replace(/([?&](?:token|access_token|loginUrl)=)[^&\s"]+/gi, "$1[REDACTED]");
 }
