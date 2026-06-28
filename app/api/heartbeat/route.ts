@@ -3,8 +3,10 @@ import { cookies } from "next/headers";
 import { getServices } from "@/composition";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { buildExamAttemptHeartbeatDeps, handleExamAttemptHeartbeat } from "@/api/heartbeat";
-import { authorizeCandidateExamAttemptAccess } from "@/api/candidate-exam-attempt-access";
-import { getPortalSession } from "@/auth/portal-session";
+import {
+  authorizeCandidateExamAttemptAccess,
+  buildCandidateExamAttemptAccessDeps,
+} from "@/api/candidate-exam-attempt-access";
 
 /**
  * Client heartbeat endpoint. The candidate page POSTs here while a lab is
@@ -28,13 +30,8 @@ export async function POST(request: Request) {
   }
 
   const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
-  const getCurrentPortalSession = (currentSessionId: string | undefined) =>
-    getPortalSession(services, currentSessionId);
-  const access = await authorizeCandidateExamAttemptAccess({
-    getPortalSession: getCurrentPortalSession,
-    examAttempts: services.examAttempts,
-    labLaunches: services.labLaunches,
-  }, {
+  const accessDeps = buildCandidateExamAttemptAccessDeps(services);
+  const access = await authorizeCandidateExamAttemptAccess(accessDeps, {
     sessionId,
     examAttemptId,
     requireLaunch: true,
@@ -43,7 +40,7 @@ export async function POST(request: Request) {
     return NextResponse.json(access.response.body, { status: access.response.status });
   }
 
-  const portalSession = await getCurrentPortalSession(sessionId);
+  const portalSession = await accessDeps.getPortalSession(sessionId);
 
   const resp = await handleExamAttemptHeartbeat(
     buildExamAttemptHeartbeatDeps(services, {

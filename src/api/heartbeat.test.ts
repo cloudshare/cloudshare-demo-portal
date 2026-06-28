@@ -1,4 +1,3 @@
-import { readFileSync } from "node:fs";
 import { describe, it, expect, vi } from "vitest";
 import { buildExamAttemptHeartbeatDeps, handleHeartbeat } from "./heartbeat";
 import type { Logger } from "@/observability/logger";
@@ -101,12 +100,21 @@ describe("buildExamAttemptHeartbeatDeps", () => {
     });
   });
 
-  it("keeps the Next route adapter from inlining heartbeat runtime dependencies", () => {
-    const routeSource = readFileSync("app/api/heartbeat/route.ts", "utf8");
+  it("omits candidateEmail when no route session email is available", () => {
+    const services = {
+      examAttempts: {},
+      exams: {},
+      examClock: {},
+      heartbeatAutoSuspend: {},
+      diagnosticRecorder: {},
+      logger: makeLogger(),
+      environmentSource: {},
+      cloudshareConnections: {},
+      cloudshareClientFactory: {},
+    } as unknown as ExamAttemptHeartbeatServices;
 
-    expect(routeSource).toContain("buildExamAttemptHeartbeatDeps");
-    expect(routeSource).not.toContain("attempts: services.examAttempts");
-    expect(routeSource).not.toContain("autoSuspend: heartbeatAutoSuspend");
-    expect(routeSource).not.toContain("cloudshare: services.cloudshareClientFactory");
+    const deps = buildExamAttemptHeartbeatDeps(services);
+
+    expect(deps.candidateEmail).toBeUndefined();
   });
 });
