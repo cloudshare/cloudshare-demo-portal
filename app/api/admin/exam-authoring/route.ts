@@ -3,7 +3,10 @@ import { cookies } from "next/headers";
 import { getServices } from "@/composition";
 import { getPortalAdminSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
-import { handleGetExamAuthoringBootstrap } from "@/api/admin-exams";
+import {
+  buildAdminExamAuthoringDeps,
+  handleGetExamAuthoringBootstrap,
+} from "@/api/admin-exams";
 
 export async function GET(request: Request) {
   const services = getServices();
@@ -16,13 +19,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const refresh = url.searchParams.get("refresh") === "true";
   const response = await handleGetExamAuthoringBootstrap(
-    {
-      connections: services.cloudshareConnections,
-      cloudshare: services.cloudshareClientFactory,
-      cache: services.examAuthoringCache,
-      diagnostics: services.diagnosticRecorder,
-      logger: services.logger,
-    },
+    buildAdminExamAuthoringDeps(services),
     { customerId: session.customerId, refresh },
   );
 

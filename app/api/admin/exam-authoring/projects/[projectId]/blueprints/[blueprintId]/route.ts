@@ -3,7 +3,10 @@ import { cookies } from "next/headers";
 import { getServices } from "@/composition";
 import { getPortalAdminSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
-import { handleGetBlueprintDetail } from "@/api/admin-exams";
+import {
+  buildAdminExamAuthoringDeps,
+  handleGetBlueprintDetail,
+} from "@/api/admin-exams";
 
 export async function GET(
   request: Request,
@@ -20,13 +23,7 @@ export async function GET(
   const refresh = url.searchParams.get("refresh") === "true";
   const { projectId, blueprintId } = await context.params;
   const response = await handleGetBlueprintDetail(
-    {
-      connections: services.cloudshareConnections,
-      cloudshare: services.cloudshareClientFactory,
-      cache: services.examAuthoringCache,
-      diagnostics: services.diagnosticRecorder,
-      logger: services.logger,
-    },
+    buildAdminExamAuthoringDeps(services),
     { customerId: session.customerId, projectId, blueprintId, refresh },
   );
 

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  buildAdminExamAuthoringDeps,
   buildAdminDraftExamDeps,
   buildAdminDraftExamUpdateDeps,
   buildAdminExamCatalogListDeps,
@@ -502,6 +503,30 @@ describe("admin exam catalog handlers", () => {
     id: "admin-1",
     email: "admin@helioscx.demo",
   } as const;
+
+  it("builds exam authoring resource dependencies from composed services", () => {
+    const connections = makeConnections();
+    const cloudshare = makeCloudShareFactory(makeAuthoringSource());
+    const cache = createInMemoryExamAuthoringCacheRepository();
+    const { recorder } = makeDiagnostics();
+    const logger = makeLogger();
+
+    expect(
+      buildAdminExamAuthoringDeps({
+        cloudshareConnections: connections,
+        cloudshareClientFactory: cloudshare,
+        examAuthoringCache: cache,
+        diagnosticRecorder: recorder,
+        logger,
+      }),
+    ).toEqual({
+      connections,
+      cloudshare,
+      cache,
+      diagnostics: recorder,
+      logger,
+    });
+  });
 
   it("builds catalog list dependencies from composed services", () => {
     const repository = createInMemoryExamCatalogRepository();
