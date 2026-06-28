@@ -1,6 +1,8 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
-import { authorizeCandidateExamAttemptAccess } from "./candidate-exam-attempt-access";
+import {
+  authorizeCandidateExamAttemptAccess,
+  buildCandidateExamAttemptAccessDeps,
+} from "./candidate-exam-attempt-access";
 import type { ExamAttempt } from "@/domain/exam-attempt";
 import type { LabLaunch } from "@/domain/lab-launch";
 import type { PortalSession } from "@/auth/portal-stores";
@@ -62,11 +64,29 @@ function makeDeps(input: {
 }
 
 describe("authorizeCandidateExamAttemptAccess", () => {
-  it("uses a narrow dependency interface instead of importing the composition root", () => {
-    const source = readFileSync("src/api/candidate-exam-attempt-access.ts", "utf8");
+  it("builds candidate access deps from portal services", async () => {
+    const session = makeSession();
+    const services = {
+      ensurePortalSeeded: vi.fn().mockResolvedValue(undefined),
+      portalAuth: {
+        resume: vi.fn().mockResolvedValue(session),
+      },
+      examAttempts: {
+        findById: vi.fn(),
+      },
+      labLaunches: {
+        findByExamAttemptId: vi.fn(),
+      },
+    };
 
-    expect(source).not.toMatch(/from\s+["']@\/composition["']/);
-    expect(source).toContain("CandidateExamAttemptAccessDeps");
+    const deps = buildCandidateExamAttemptAccessDeps(services);
+    const resumedSession = await deps.getPortalSession("session-1");
+
+    expect(resumedSession).toEqual(session);
+    expect(services.ensurePortalSeeded).toHaveBeenCalledTimes(1);
+    expect(services.portalAuth.resume).toHaveBeenCalledWith("session-1");
+    expect(deps.examAttempts).toBe(services.examAttempts);
+    expect(deps.labLaunches).toBe(services.labLaunches);
   });
 
   it("authorizes the owning Candidate for their ExamAttempt and LabLaunch", async () => {

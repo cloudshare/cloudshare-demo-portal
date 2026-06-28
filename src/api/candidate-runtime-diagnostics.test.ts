@@ -1,7 +1,22 @@
 import { describe, expect, it, vi } from "vitest";
-import { handleRecordCandidateLabLaunchFailure } from "./candidate-runtime-diagnostics";
+import {
+  buildCandidateRuntimeDiagnosticsDeps,
+  handleRecordCandidateLabLaunchFailure,
+} from "./candidate-runtime-diagnostics";
 
 describe("handleRecordCandidateLabLaunchFailure", () => {
+  it("maps the diagnostic recorder from composed portal services", () => {
+    const services = {
+      diagnosticRecorder: { record: vi.fn() },
+    };
+
+    const deps = buildCandidateRuntimeDiagnosticsDeps(services);
+
+    expect(deps).toEqual({
+      diagnostics: services.diagnosticRecorder,
+    });
+  });
+
   it("records a candidate-safe popup-blocked runtime diagnostic anchored to the exam attempt", async () => {
     const diagnostics = { record: vi.fn().mockResolvedValue(undefined) };
 

@@ -2,9 +2,12 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getServices } from "@/composition";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
-import { getPortalSession } from "@/auth/portal-session";
-import { authorizeCandidateExamAttemptAccess } from "@/api/candidate-exam-attempt-access";
 import {
+  authorizeCandidateExamAttemptAccess,
+  buildCandidateExamAttemptAccessDeps,
+} from "@/api/candidate-exam-attempt-access";
+import {
+  buildCandidateRuntimeDiagnosticsDeps,
   handleRecordCandidateLabLaunchFailure,
   type CandidateLabLaunchAttemptedAction,
   type CandidateLabLaunchFailureReason,
@@ -55,14 +58,9 @@ export async function POST(request: Request) {
   }
 
   const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
-  const getCurrentPortalSession = (currentSessionId: string | undefined) =>
-    getPortalSession(services, currentSessionId);
-  const session = await getCurrentPortalSession(sessionId);
-  const access = await authorizeCandidateExamAttemptAccess({
-    getPortalSession: getCurrentPortalSession,
-    examAttempts: services.examAttempts,
-    labLaunches: services.labLaunches,
-  }, {
+  const accessDeps = buildCandidateExamAttemptAccessDeps(services);
+  const session = await accessDeps.getPortalSession(sessionId);
+  const access = await authorizeCandidateExamAttemptAccess(accessDeps, {
     sessionId,
     examAttemptId,
   });
@@ -71,7 +69,7 @@ export async function POST(request: Request) {
   }
 
   const response = await handleRecordCandidateLabLaunchFailure(
-    { diagnostics: services.diagnosticRecorder },
+    buildCandidateRuntimeDiagnosticsDeps(services),
     {
       attempt: access.attempt,
       candidateId: access.session.userId,

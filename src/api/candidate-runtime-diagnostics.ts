@@ -8,9 +8,21 @@ export interface CandidateRuntimeDiagnosticsDeps {
   readonly diagnostics?: DiagnosticRecorder;
 }
 
+export interface CandidateRuntimeDiagnosticsServices {
+  readonly diagnosticRecorder?: DiagnosticRecorder;
+}
+
 export interface CandidateRuntimeDiagnosticsResponse {
   readonly status: number;
   readonly body: Record<string, unknown>;
+}
+
+export function buildCandidateRuntimeDiagnosticsDeps(
+  services: CandidateRuntimeDiagnosticsServices,
+): CandidateRuntimeDiagnosticsDeps {
+  return {
+    diagnostics: services.diagnosticRecorder,
+  };
 }
 
 export async function handleRecordCandidateLabLaunchFailure(

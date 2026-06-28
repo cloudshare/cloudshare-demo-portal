@@ -1,3 +1,4 @@
+import { getPortalSession, type PortalSessionDeps } from "@/auth/portal-session";
 import type { PortalSession } from "@/auth/portal-stores";
 import type { ExamAttempt, ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { LabLaunch, LabLaunchRepository } from "@/domain/lab-launch";
@@ -6,6 +7,11 @@ export interface CandidateExamAttemptAccessDeps {
   readonly getPortalSession: (sessionId: string | undefined) => Promise<PortalSession | null>;
   readonly examAttempts: Pick<ExamAttemptRepository, "findById">;
   readonly labLaunches: Pick<LabLaunchRepository, "findByExamAttemptId">;
+}
+
+export interface CandidateExamAttemptAccessServices extends PortalSessionDeps {
+  readonly examAttempts: CandidateExamAttemptAccessDeps["examAttempts"];
+  readonly labLaunches: CandidateExamAttemptAccessDeps["labLaunches"];
 }
 
 export type CandidateExamAttemptAccessResult =
@@ -25,6 +31,16 @@ export type CandidateExamAttemptAccessResult =
         readonly body: { error: string };
       };
     };
+
+export function buildCandidateExamAttemptAccessDeps(
+  services: CandidateExamAttemptAccessServices,
+): CandidateExamAttemptAccessDeps {
+  return {
+    getPortalSession: (sessionId) => getPortalSession(services, sessionId),
+    examAttempts: services.examAttempts,
+    labLaunches: services.labLaunches,
+  };
+}
 
 export async function authorizeCandidateExamAttemptAccess(
   deps: CandidateExamAttemptAccessDeps,
