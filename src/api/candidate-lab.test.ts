@@ -3,7 +3,36 @@ import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-
 import { createInMemoryExamCatalogRepository } from "@/persistence/exam-catalog-repository";
 import { createExamClock, createInMemoryExamClockRepository } from "@/domain/exam-clock";
 import { createDraftExam, publishExam } from "@/domain/exam-catalog";
-import { handleGetCandidateLabStatus } from "./candidate-lab";
+import {
+  buildCandidateLabStatusDeps,
+  handleGetCandidateLabStatus,
+  type CandidateLabStatusServices,
+} from "./candidate-lab";
+
+describe("buildCandidateLabStatusDeps", () => {
+  it("maps the candidate lab status runtime dependencies from composed portal services", () => {
+    const services = {
+      examAttempts: {},
+      exams: {},
+      examClock: {},
+      diagnosticRecorder: {},
+      logger: {
+        debug: vi.fn(),
+        info: vi.fn(),
+        warn: vi.fn(),
+        error: vi.fn(),
+      },
+    } as unknown as CandidateLabStatusServices;
+
+    expect(buildCandidateLabStatusDeps(services)).toEqual({
+      attempts: services.examAttempts,
+      exams: services.exams,
+      clocks: services.examClock,
+      diagnostics: services.diagnosticRecorder,
+      logger: services.logger,
+    });
+  });
+});
 
 describe("candidate lab status handler", () => {
   it("surfaces a completed exam attempt once clock reconciliation consumes the runtime", async () => {
