@@ -2,19 +2,18 @@ import { readFileSync } from "node:fs";
 import { describe, it, expect, vi } from "vitest";
 import {
   buildAdminAuditDeps,
+  buildAdminDiagnosticLogDeps,
   buildAdminEventLogDeps,
-  buildAdminSupportLogDeps,
   handleGetAuditTrail,
+  handleGetDiagnosticLog,
   handleSyncResources,
   handleGetEventLog,
-  handleGetSupportLog,
   type AdminAuditServices,
+  type AdminDiagnosticLogServices,
   type AdminEventLogServices,
-  type AdminSupportLogServices,
 } from "./admin";
 import type { AuditRepository, AuditRecord } from "@/domain/audit-trail";
 import type { EventLogRepository } from "@/domain/event-log";
-import type { SupportLogRepository } from "@/domain/support-log";
 import type {
   CloudShareClientFactory,
   CloudShareConnectionRecord,
@@ -110,13 +109,6 @@ function makeCloudShareClient(overrides: {
     requestV3,
     requestV4: overrides.requestV4 ?? vi.fn(),
     requestV3Text: vi.fn(),
-  };
-}
-
-function makeSupportLog(records: unknown[] = []): SupportLogRepository {
-  return {
-    append: vi.fn(),
-    listAll: vi.fn().mockResolvedValue(records),
   };
 }
 
@@ -309,73 +301,65 @@ describe("handleGetEventLog", () => {
   });
 });
 
-describe("handleGetSupportLog", () => {
-  it("maps the admin support-log route dependencies from composed portal services", () => {
+describe("handleGetDiagnosticLog", () => {
+  it("maps the admin diagnostics route dependencies from composed portal services", () => {
+    const diagnostics = makeDiagnostics();
     const services = {
-      supportLog: makeSupportLog(),
+      diagnostics: diagnostics.repository,
       logger: makeLogger(),
-    } satisfies AdminSupportLogServices;
+    } satisfies AdminDiagnosticLogServices;
 
-    const deps = buildAdminSupportLogDeps(services);
+    const deps = buildAdminDiagnosticLogDeps(services);
 
     expect(deps).toEqual({
-      supportLog: services.supportLog,
+      diagnostics: services.diagnostics,
       logger: services.logger,
     });
   });
 
-  it("keeps the Next route adapter from inlining legacy support-log wiring", () => {
-    const routeSource = readFileSync("app/api/admin/support-log/route.ts", "utf8");
+  it("keeps the Next route adapter on the typed diagnostic-log read API", () => {
+    const routeSource = readFileSync("app/api/admin/diagnostics/route.ts", "utf8");
 
-    expect(routeSource).toContain("buildAdminSupportLogDeps");
-    expect(routeSource).not.toContain("supportLog: services.supportLog");
+    expect(routeSource).toContain("buildAdminDiagnosticLogDeps");
+    expect(routeSource).toContain("handleGetDiagnosticLog");
+    expect(routeSource).not.toContain("supportLog");
   });
 
-  it("returns 200 with support log entries", async () => {
-    const supportLog = makeSupportLog([
-      {
-        timestamp: new Date(),
-        level: "warn",
-        message: "cloudshare connection test failed",
-        fields: {
-          correlationId: "corr-123",
-          integrationSurface: "cloudshare.v3.ping",
-          responseStatus: 401,
-        },
-      },
+  it("returns typed diagnostic entries filtered by ExamAttempt ID", async () => {
+    const diagnostics = makeDiagnostics();
+    await diagnostics.recorder.record({
+      source: "runtime",
+      operation: "exam_attempt.resume",
+      outcome: "failure",
+      message: "Exam resume failed",
+      customerId: "customer-1",
+      candidateEmail: "candidate@helioscx.demo",
+      examId: "exam-1",
+      examAttemptId: "attempt-1",
+      correlationId: "corr-1",
+      details: { integrationSurface: "cloudshare.v4.environment" },
+    });
+    await diagnostics.recorder.record({
+      source: "runtime",
+      operation: "exam_attempt.resume",
+      outcome: "success",
+      message: "Other attempt resumed",
+      customerId: "customer-1",
+      examAttemptId: "attempt-2",
+    });
+
+    const result = await handleGetDiagnosticLog(
+      { diagnostics: diagnostics.repository, logger: makeLogger() },
+      { customerId: "customer-1", query: { examAttemptId: "attempt-1" } },
+    );
+
+    expect(result.status).toBe(200);
+    const body = result.body as { entries: Array<{ examAttemptId: string; message: string }> };
+    expect(body.entries).toEqual([
+      expect.objectContaining({
+        examAttemptId: "attempt-1",
+        message: "Exam resume failed",
+      }),
     ]);
-
-    const result = await handleGetSupportLog(
-      { supportLog, logger: makeLogger() },
-      { query: {} },
-    );
-
-    expect(result.status).toBe(200);
-    const body = result.body as { records: unknown[] };
-    expect(body.records).toHaveLength(1);
-  });
-
-  it("passes a valid limit query to the support-log repository", async () => {
-    const supportLog = makeSupportLog([]);
-
-    const result = await handleGetSupportLog(
-      { supportLog, logger: makeLogger() },
-      { query: { limit: "5" } },
-    );
-
-    expect(result.status).toBe(200);
-    expect(supportLog.listAll).toHaveBeenCalledWith(5);
-  });
-
-  it("ignores an invalid limit query", async () => {
-    const supportLog = makeSupportLog([]);
-
-    const result = await handleGetSupportLog(
-      { supportLog, logger: makeLogger() },
-      { query: { limit: "not-a-number" } },
-    );
-
-    expect(result.status).toBe(200);
-    expect(supportLog.listAll).toHaveBeenCalledWith(undefined);
   });
 });

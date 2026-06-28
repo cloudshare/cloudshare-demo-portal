@@ -38,7 +38,6 @@ import { createCloudShareGuidedJourneyProvider } from "@/integrations/cloudshare
 import { createInMemoryAuditRepository } from "@/persistence/audit-repository";
 import { createInMemoryResourceRepository } from "@/persistence/resource-repository";
 import { createInMemoryEventLogRepository } from "@/persistence/event-log-repository";
-import { createPrismaSupportLogRepository } from "@/persistence/support-log-repository";
 import { createPrismaDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import {
   createDiagnosticRecorder,
@@ -67,7 +66,6 @@ import type { WebhookIdempotencyStore } from "@/domain/webhook";
 import type { AuditRepository } from "@/domain/audit-trail";
 import type { ResourceRepository } from "@/domain/resource-sync";
 import type { EventLogRepository } from "@/domain/event-log";
-import type { SupportLogRepository } from "@/domain/support-log";
 import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
@@ -140,8 +138,6 @@ export interface Services {
   resources: ResourceRepository;
   /** All integration events received/emitted during this server instance's lifetime. */
   eventLog: EventLogRepository;
-  /** Structured, redacted server logs surfaced to admins for troubleshooting. */
-  supportLog: SupportLogRepository;
   /** Typed, append-only diagnostic log — the Support read model (ADR-004). */
   diagnostics: DiagnosticLogRepository;
   /** Redaction-applying write seam every instrumented flow records through. */
@@ -175,31 +171,11 @@ export function getServices(): Services {
 
   const config = loadConfig(process.env);
   const prisma = new PrismaClient();
-  const supportLog = createPrismaSupportLogRepository(prisma);
   const diagnostics = createPrismaDiagnosticLogRepository(prisma);
   const logger = createLogger({
     secrets: secretValues(config),
     sink: (line: string) => {
       process.stdout.write(line + "\n");
-      const parsed = JSON.parse(line) as {
-        level: "debug" | "info" | "warn" | "error";
-        message: string;
-        timestamp: string;
-        [key: string]: unknown;
-      };
-      const { level, message, timestamp, ...fields } = parsed;
-      void supportLog.append({
-        level,
-        message,
-        timestamp: new Date(timestamp),
-        fields,
-      }).catch((error) => {
-        process.stderr.write(
-          `support log append failed: ${
-            error instanceof Error ? error.message : String(error)
-          }\n`,
-        );
-      });
     },
   });
   const diagnosticRecorder = createDiagnosticRecorder({
@@ -414,7 +390,6 @@ export function getServices(): Services {
     await prisma.environmentRecord.deleteMany();
     audit.reset();
     eventLog.reset();
-    await supportLog.reset();
     await diagnostics.reset();
     examAuthoringCache.reset();
     webhookIdempotency.reset();
@@ -455,7 +430,6 @@ export function getServices(): Services {
     audit,
     resources,
     eventLog,
-    supportLog,
     diagnostics,
     diagnosticRecorder,
     adminMonitoringAttempts,
