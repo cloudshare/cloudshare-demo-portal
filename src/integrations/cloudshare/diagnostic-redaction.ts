@@ -10,7 +10,6 @@ export interface CloudShareDiagnosticRedactionOptions {
 function isAlwaysRedactedKey(key: string): boolean {
   return (
     /api[-_]?key/i.test(key) ||
-    /token/i.test(key) ||
     /webhook[-_]?secret/i.test(key) ||
     /secret/i.test(key) ||
     /password/i.test(key) ||
@@ -18,6 +17,8 @@ function isAlwaysRedactedKey(key: string): boolean {
     /bearer/i.test(key) ||
     /signature/i.test(key) ||
     /hmac/i.test(key) ||
+    /^token$/i.test(key) ||
+    /access[-_ ]?token/i.test(key) ||
     /^authorization$/i.test(key) ||
     /auth(?:orization)?[-_ ]?(?:header|token|secret|key|value)?$/i.test(key)
   );
