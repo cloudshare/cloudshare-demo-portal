@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getServices } from "@/composition";
 import {
+  buildAdminCloudShareConnectionDeps,
   handleGetCloudShareConnection,
   handleSaveCloudShareConnection,
 } from "@/api/admin-cloudshare";
@@ -25,12 +26,7 @@ export async function GET() {
   }
 
   const response = await handleGetCloudShareConnection(
-    {
-      connections: services.cloudshareConnections,
-      cloudshare: services.cloudshareClientFactory,
-      examAuthoringCache: services.examAuthoringCache,
-      logger: services.logger,
-    },
+    buildAdminCloudShareConnectionDeps(services),
     { customerId: session.customerId },
   );
   return NextResponse.json(response.body, { status: response.status });
@@ -50,12 +46,7 @@ export async function PUT(request: Request) {
   }
 
   const response = await handleSaveCloudShareConnection(
-    {
-      connections: services.cloudshareConnections,
-      cloudshare: services.cloudshareClientFactory,
-      examAuthoringCache: services.examAuthoringCache,
-      logger: services.logger,
-    },
+    buildAdminCloudShareConnectionDeps(services),
     { customerId: session.customerId, body },
   );
   return NextResponse.json(response.body, { status: response.status });

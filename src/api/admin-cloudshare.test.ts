@@ -1,5 +1,7 @@
 import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 import {
+  buildAdminCloudShareConnectionDeps,
+  buildAdminCloudShareTestDeps,
   handleGetCloudShareConnection,
   handleSaveCloudShareConnection,
   handleTestCloudShareConnection,
@@ -11,6 +13,7 @@ import { PrismaClient } from "@prisma/client";
 import type { CloudShareClientFactory } from "@/domain/cloudshare-connection";
 import { CloudShareRequestError } from "@/integrations/cloudshare";
 import { createInMemoryExamAuthoringCacheRepository } from "@/persistence/exam-authoring-cache-repository";
+import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 
 const prisma = new PrismaClient();
 const createdCustomerIds = new Set<string>();
@@ -89,6 +92,41 @@ async function makeDeps() {
 }
 
 describe("admin CloudShare handlers", () => {
+  it("builds CloudShare Connection deps from services for status and save workflows", async () => {
+    const deps = await makeDeps();
+    const cache = createInMemoryExamAuthoringCacheRepository();
+    const services = {
+      cloudshareConnections: deps.connections,
+      cloudshareClientFactory: deps.cloudshare,
+      examAuthoringCache: cache,
+      logger: deps.logger,
+    };
+
+    expect(buildAdminCloudShareConnectionDeps(services)).toEqual({
+      connections: deps.connections,
+      cloudshare: deps.cloudshare,
+      examAuthoringCache: cache,
+      logger: deps.logger,
+    });
+  });
+
+  it("builds CloudShare test deps from services for connection verification", async () => {
+    const deps = await makeDeps();
+    const diagnostics = { record: vi.fn() } as DiagnosticRecorder;
+    const services = {
+      cloudshareConnections: deps.connections,
+      cloudshareClientFactory: deps.cloudshare,
+      diagnosticRecorder: diagnostics,
+      logger: deps.logger,
+    };
+
+    expect(buildAdminCloudShareTestDeps(services)).toEqual({
+      connections: deps.connections,
+      cloudshare: deps.cloudshare,
+      logger: deps.logger,
+    });
+  });
+
   it("persists a CloudShare Connection and reports only connection status metadata", async () => {
     const deps = await makeDeps();
 
