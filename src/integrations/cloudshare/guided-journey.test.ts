@@ -314,7 +314,7 @@ describe("createCloudShareGuidedJourneyProvider", () => {
           passphrase: "candidate-visible-passphrase",
           loginUrl: "https://use.cloudshare.com/Ent/Login.aspx?token=admin-evidence",
           apiKey: "[REDACTED]",
-          authorization: "[REDACTED]",
+          authorization: "Bearer [REDACTED]",
         }),
       }),
     });

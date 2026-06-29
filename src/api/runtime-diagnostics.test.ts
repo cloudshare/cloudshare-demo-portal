@@ -1001,7 +1001,7 @@ describe("score diagnostics", () => {
           method: "GET",
           path: "/guided-journey/progress/exp-s1/student-1",
           integrationSurface: "cloudshare.v4.guided_journey.progress",
-          responseBody: JSON.stringify({ hello: "world", token: "secret" }),
+          responseBody: JSON.stringify({ hello: "world", token: "support-evidence-token" }),
           issues: ["Unsupported Guided Journey progress payload"],
         }),
       ),
@@ -1026,10 +1026,10 @@ describe("score diagnostics", () => {
     expect(failure?.response).toEqual({
       body: {
         hello: "world",
-        token: "[REDACTED]",
+        token: "support-evidence-token",
       },
     });
-    expect(JSON.stringify(failure)).not.toContain("secret");
+    expect(JSON.stringify(failure)).toContain("support-evidence-token");
   });
 
   it("preserves admin-only CloudShare support evidence in score failure diagnostics while still redacting true credentials", async () => {
@@ -1067,7 +1067,7 @@ describe("score diagnostics", () => {
         passphrase: "candidate-visible-passphrase",
         loginUrl: "https://use.cloudshare.com/Ent/Login.aspx?token=admin-evidence",
         apiKey: "[REDACTED]",
-        authorization: "[REDACTED]",
+        authorization: "Bearer [REDACTED]",
       },
     });
     expect(JSON.stringify(failure)).not.toContain("secret-api-key");
@@ -1227,7 +1227,11 @@ describe("score diagnostics", () => {
           method: "GET",
           path: "/guided-journey/progress/exp-s1/student-1",
           integrationSurface: "cloudshare.v4.guided_journey.progress",
-          responseBody: JSON.stringify({ exploredRate: 1.2, token: "secret" }),
+          responseBody: JSON.stringify({
+            exploredRate: 1.2,
+            token: "support-evidence-token",
+            accessToken: "secret-access-token",
+          }),
           issues: ["Number must be less than or equal to 1"],
         }),
       ),
@@ -1248,6 +1252,7 @@ describe("score diagnostics", () => {
       integrationSurface: "cloudshare.v4.guided_journey.progress",
       failureMode: "unexpected_response",
     });
-    expect(JSON.stringify(failure)).not.toContain("secret");
+    expect(JSON.stringify(failure)).toContain("support-evidence-token");
+    expect(JSON.stringify(failure)).not.toContain("secret-access-token");
   });
 });

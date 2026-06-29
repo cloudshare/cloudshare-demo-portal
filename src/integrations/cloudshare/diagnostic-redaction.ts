@@ -5,9 +5,29 @@ const sponsoredLinkUrlPattern =
 
 export interface CloudShareDiagnosticRedactionOptions {
   readonly preserveSponsoredLinkLoginUrl?: boolean;
+  readonly redactTokenLikeKeys?: boolean;
 }
 
-function isAlwaysRedactedKey(key: string): boolean {
+function isAlwaysRedactedKey(
+  key: string,
+  options: CloudShareDiagnosticRedactionOptions,
+): boolean {
+  if (options.redactTokenLikeKeys) {
+    return (
+      /api[-_]?key/i.test(key) ||
+      /webhook[-_]?secret/i.test(key) ||
+      /secret/i.test(key) ||
+      /password/i.test(key) ||
+      /credential/i.test(key) ||
+      /bearer/i.test(key) ||
+      /signature/i.test(key) ||
+      /hmac/i.test(key) ||
+      /token/i.test(key) ||
+      /^authorization$/i.test(key) ||
+      /auth(?:orization)?[-_ ]?(?:header|token|secret|key|value)?$/i.test(key)
+    );
+  }
+
   return (
     /api[-_]?key/i.test(key) ||
     /webhook[-_]?secret/i.test(key) ||
@@ -17,10 +37,8 @@ function isAlwaysRedactedKey(key: string): boolean {
     /bearer/i.test(key) ||
     /signature/i.test(key) ||
     /hmac/i.test(key) ||
-    /^token$/i.test(key) ||
     /access[-_ ]?token/i.test(key) ||
-    /^authorization$/i.test(key) ||
-    /auth(?:orization)?[-_ ]?(?:header|token|secret|key|value)?$/i.test(key)
+    /auth(?:orization)?[-_ ]?(?:header|token|secret|key|value)$/i.test(key)
   );
 }
 
@@ -76,7 +94,7 @@ export function redactCloudShareAdminSupportValue(
 
   const redacted: Record<string, unknown> = {};
   for (const [key, fieldValue] of Object.entries(value)) {
-    if (isAlwaysRedactedKey(key)) {
+    if (isAlwaysRedactedKey(key, options)) {
       redacted[key] = REDACTED;
       continue;
     }

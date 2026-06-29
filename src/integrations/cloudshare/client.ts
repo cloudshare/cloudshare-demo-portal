@@ -126,6 +126,7 @@ function sanitizeHeaders(headers: Record<string, string> | undefined): Record<st
 
   return redactCloudShareAdminSupportValue(headers, {
     preserveSponsoredLinkLoginUrl: false,
+    redactTokenLikeKeys: true,
   }) as Record<string, string>;
 }
 
@@ -151,6 +152,7 @@ function sanitizeResponseHeaders(
 
   const sanitized = redactCloudShareAdminSupportValue(headers, {
     preserveSponsoredLinkLoginUrl: false,
+    redactTokenLikeKeys: true,
   }) as Record<string, string | string[]>;
   const setCookie = headers["set-cookie"] ?? headers["Set-Cookie"];
   if (setCookie) {

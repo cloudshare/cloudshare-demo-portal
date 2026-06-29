@@ -882,11 +882,14 @@ diagnostics, and resource diagnostics:
   HMAC/signature values, passwords, and actual credentials.
 - **Admin-only server evidence:** sponsored-link `loginUrl` values and training `passphrase`
   values remain visible in admin-only `DiagnosticLogEntry` evidence.
-- **Ordinary support evidence:** non-credential request/response fields remain visible.
+- **Ordinary support evidence:** CloudShare request bodies, response bodies, and parsed webhook
+  event payloads remain visible by default, including auth-adjacent body field names such as
+  `token` or `authorization` when they are payload evidence rather than actual credentials.
 
 Candidate/client-facing APIs remain stricter: admin-only evidence such as `loginUrl` must not
 appear in candidate responses or candidate-facing UI even though it can appear in admin support
-diagnostics.
+diagnostics. Header values remain conservatively redacted for now; a future guarded sensitive
+diagnostic flag may make selected header values visible when needed.
 
 **Action required:**
 

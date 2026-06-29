@@ -152,7 +152,7 @@ describe("createCloudShareClient — v4", () => {
           WebhookSecret: "[REDACTED]",
           Password: "[REDACTED]",
           Signature: "[REDACTED]",
-          Authorization: "[REDACTED]",
+          Authorization: "Bearer [REDACTED]",
           Credential: "[REDACTED]",
           BearerToken: "[REDACTED]",
           diagnosticNote: "Bearer [REDACTED] cs_sha1 [REDACTED]",
@@ -563,7 +563,7 @@ describe("createCloudShareClient — error mapping", () => {
         responseBody: {
           error: "forbidden",
           apiKey: "[REDACTED]",
-          authorization: "[REDACTED]",
+          authorization: "Bearer [REDACTED]",
           credential: "[REDACTED]",
           message: "Bearer [REDACTED] cs_sha1 [REDACTED]",
         },

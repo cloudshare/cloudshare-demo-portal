@@ -163,11 +163,28 @@ const NON_SENSITIVE_KEYS = new Set([
   "signatureHeader",
 ]);
 
-function isSensitiveKey(key: string): boolean {
+type DiagnosticRedactionContext = "default" | "headers" | "bodyEvidence";
+
+function isSensitiveKey(key: string, context: DiagnosticRedactionContext): boolean {
   if (NON_SENSITIVE_KEYS.has(key)) {
     return false;
   }
   const k = key.toLowerCase();
+  if (context === "bodyEvidence") {
+    return [
+      "password",
+      "secret",
+      "apikey",
+      "api_key",
+      "signature",
+      "credential",
+      "bearer",
+      "hmac",
+      "ciphertext",
+      "accesstoken",
+      "access_token",
+    ].some((pattern) => k.includes(pattern));
+  }
   return SENSITIVE_KEY_PATTERNS.some((pattern) => k.includes(pattern));
 }
 
@@ -179,26 +196,42 @@ function scrubSecretsFromString(value: string, secrets: string[]): string {
   return out;
 }
 
-function redactValue(value: unknown, secrets: string[]): unknown {
+function redactValue(
+  value: unknown,
+  secrets: string[],
+  context: DiagnosticRedactionContext = "default",
+): unknown {
   if (typeof value === "string") {
     return scrubSecretsFromString(value, secrets);
   }
   if (Array.isArray(value)) {
-    return value.map((item) => redactValue(item, secrets));
+    return value.map((item) => redactValue(item, secrets, context));
   }
   if (value && typeof value === "object") {
-    return redactRecord(value as Record<string, unknown>, secrets);
+    return redactRecord(value as Record<string, unknown>, secrets, context);
   }
   return value;
+}
+
+function childRedactionContext(key: string, parent: DiagnosticRedactionContext): DiagnosticRedactionContext {
+  if (/^(?:headers|requestHeaders|responseHeaders)$/i.test(key)) {
+    return "headers";
+  }
+  if (/^(?:body|requestBody|responseBody|webhookSummary|payload|envelope)$/i.test(key)) {
+    return "bodyEvidence";
+  }
+  return parent;
 }
 
 function redactRecord(
   record: Record<string, unknown>,
   secrets: string[],
+  context: DiagnosticRedactionContext = "default",
 ): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(record)) {
-    out[key] = isSensitiveKey(key) ? REDACTED : redactValue(value, secrets);
+    const childContext = childRedactionContext(key, context);
+    out[key] = isSensitiveKey(key, context) ? REDACTED : redactValue(value, secrets, childContext);
   }
   return out;
 }
