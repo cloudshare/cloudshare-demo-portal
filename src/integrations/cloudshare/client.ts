@@ -4,6 +4,7 @@ import {
   CloudShareResponseError,
   CloudShareTransportError,
 } from "./errors";
+import { redactCloudShareAdminSupportValue } from "./diagnostic-redaction";
 import type { HttpClient, HttpRequest } from "./http";
 import { buildV3AuthorizationHeader, signV3Request } from "./signing";
 import type { V4TokenProvider } from "./v4-auth";
@@ -123,29 +124,10 @@ function sanitizeHeaders(headers: Record<string, string> | undefined): Record<st
     return undefined;
   }
 
-  const sanitized = { ...headers };
-  for (const [key, value] of Object.entries(headers)) {
-    if (/signature/i.test(key)) {
-      sanitized[key] = "[REDACTED]";
-    } else if (/authorization/i.test(key) && key !== "authorization") {
-      sanitized[key] = "[REDACTED]";
-    } else {
-      sanitized[key] = value;
-    }
-  }
-  const authorization = headers.authorization ?? headers.Authorization;
-  if (authorization) {
-    if (authorization.startsWith("Bearer ")) {
-      sanitized.authorization = "Bearer [REDACTED]";
-    } else if (authorization.startsWith("cs_sha1 ")) {
-      sanitized.authorization = authorization
-        .replace(/token:[^;]+/, "token:[REDACTED]")
-        .replace(/hmac:[^;]+/, "hmac:[REDACTED]");
-    } else {
-      sanitized.authorization = "[REDACTED]";
-    }
-  }
-  return sanitized;
+  return redactCloudShareAdminSupportValue(headers, {
+    preserveSponsoredLinkLoginUrl: false,
+    redactTokenLikeKeys: true,
+  }) as Record<string, string>;
 }
 
 function sanitizeQuery(query: Record<string, string> | undefined): Record<string, string> | undefined {
@@ -168,17 +150,14 @@ function sanitizeResponseHeaders(
     return undefined;
   }
 
-  const sanitized = { ...headers };
-  for (const key of Object.keys(headers)) {
-    if (/signature/i.test(key)) {
-      sanitized[key] = "[REDACTED]";
-    }
-  }
-  const setCookie = headers["set-cookie"];
+  const sanitized = redactCloudShareAdminSupportValue(headers, {
+    preserveSponsoredLinkLoginUrl: false,
+    redactTokenLikeKeys: true,
+  }) as Record<string, string | string[]>;
+  const setCookie = headers["set-cookie"] ?? headers["Set-Cookie"];
   if (setCookie) {
-    sanitized["set-cookie"] = Array.isArray(setCookie)
-      ? setCookie.map(() => "[REDACTED]")
-      : "[REDACTED]";
+    sanitized["set-cookie"] = Array.isArray(setCookie) ? setCookie.map(() => "[REDACTED]") : "[REDACTED]";
+    delete sanitized["Set-Cookie"];
   }
   return sanitized;
 }
@@ -189,33 +168,37 @@ function sanitizeBody(body: string | undefined): unknown {
   }
 
   try {
-    return redactSensitiveBodyFields(JSON.parse(body), { preserveSponsoredLinkLoginUrl: false });
+    return redactCloudShareAdminSupportValue(JSON.parse(body), {
+      preserveSponsoredLinkLoginUrl: false,
+    });
   } catch {
-    return body;
+    return redactCloudShareAdminSupportValue(body, {
+      preserveSponsoredLinkLoginUrl: false,
+    });
   }
 }
 
 function sanitizeResponseBody(body: string, requestPath: string): string {
   try {
     return JSON.stringify(
-      redactSensitiveBodyFields(JSON.parse(body), {
+      redactCloudShareAdminSupportValue(JSON.parse(body), {
         preserveSponsoredLinkLoginUrl: isSponsoredLinkPath(requestPath),
       }),
     );
   } catch {
-    return redactSensitiveText(body, {
+    return redactCloudShareAdminSupportValue(body, {
       preserveSponsoredLinkLoginUrl: isSponsoredLinkPath(requestPath),
-    });
+    }) as string;
   }
 }
 
 function sanitizeResponseBodyValue(body: string, requestPath: string): unknown {
   try {
-    return redactSensitiveBodyFields(JSON.parse(body), {
+    return redactCloudShareAdminSupportValue(JSON.parse(body), {
       preserveSponsoredLinkLoginUrl: isSponsoredLinkPath(requestPath),
     });
   } catch {
-    return redactSensitiveText(body, {
+    return redactCloudShareAdminSupportValue(body, {
       preserveSponsoredLinkLoginUrl: isSponsoredLinkPath(requestPath),
     });
   }
@@ -223,61 +206,6 @@ function sanitizeResponseBodyValue(body: string, requestPath: string): unknown {
 
 function isSponsoredLinkPath(path: string): boolean {
   return /\/(?:sponsored-link|sponsoredLinks)$/i.test(path);
-}
-
-function redactSensitiveBodyFields(
-  value: unknown,
-  options: { preserveSponsoredLinkLoginUrl: boolean },
-): unknown {
-  if (Array.isArray(value)) {
-    return value.map((item) => redactSensitiveBodyFields(item, options));
-  }
-  if (!value || typeof value !== "object") {
-    return value;
-  }
-
-  const redacted: Record<string, unknown> = {};
-  for (const [key, fieldValue] of Object.entries(value)) {
-    if (/api[-_]?key|secret|token|hmac|signature|password/i.test(key)) {
-      redacted[key] = "[REDACTED]";
-      continue;
-    }
-    if (/login[-_]?url/i.test(key) && !options.preserveSponsoredLinkLoginUrl) {
-      redacted[key] = "[REDACTED]";
-      continue;
-    }
-    redacted[key] =
-      typeof fieldValue === "string"
-        ? redactSensitiveText(fieldValue, options)
-        : redactSensitiveBodyFields(fieldValue, options);
-  }
-  return redacted;
-}
-
-function redactSensitiveText(
-  value: string,
-  options: { preserveSponsoredLinkLoginUrl: boolean },
-): string {
-  if (options.preserveSponsoredLinkLoginUrl) {
-    const preservedUrls: string[] = [];
-    const protectedValue = value.replace(
-      /https?:\/\/\S*(?:ClassSponsoredLink|SponsoredLink|Ent\/Login)\S*/gi,
-      (match) => {
-        const marker = `__PRESERVED_SPONSORED_LINK_${preservedUrls.length}__`;
-        preservedUrls.push(match);
-        return marker;
-      },
-    );
-
-    return protectedValue
-      .replace(/([?&](?:token|access_token|loginUrl)=)[^&\s"]+/gi, "$1[REDACTED]")
-      .replace(/__PRESERVED_SPONSORED_LINK_(\d+)__/g, (_marker, index: string) => {
-        return preservedUrls[Number(index)] ?? _marker;
-      });
-  }
-  return value
-    .replace(/https?:\/\/\S*(?:ClassSponsoredLink|SponsoredLink|Ent\/Login)\S*/gi, "[REDACTED]")
-    .replace(/([?&](?:token|access_token|loginUrl)=)[^&\s"]+/gi, "$1[REDACTED]");
 }
 
 function describeRequest(urlText: string): {

@@ -19,6 +19,7 @@ import {
   CloudShareResponseError,
   CloudShareTransportError,
 } from "@/integrations/cloudshare";
+import { redactCloudShareAdminSupportValue } from "@/integrations/cloudshare/diagnostic-redaction";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 
 export interface ExamAttemptScoreRuntimeDeps {
@@ -144,7 +145,7 @@ export async function getExamAttemptScoreRuntime(
       diagnostic,
       "Score retrieval failed.",
     );
-    deps.logger.warn("candidate score retrieval failed", diagnostic);
+    logScoreRetrievalFailure(deps.logger, diagnostic);
     return {
       status: 502,
       body: {
@@ -358,7 +359,7 @@ export async function getExamAttemptScoreRuntime(
           correlationId,
         },
       });
-      deps.logger.warn("candidate score retrieval failed", diagnostic);
+      logScoreRetrievalFailure(deps.logger, diagnostic);
       return {
         status: 502,
         body: {
@@ -430,7 +431,7 @@ async function resolveLaunchParticipantId(
       diagnostic,
       "Score retrieval failed.",
     );
-    deps.logger.warn("candidate score retrieval failed", diagnostic);
+    logScoreRetrievalFailure(deps.logger, diagnostic);
     return {
       ok: false,
       response: {
@@ -476,7 +477,7 @@ async function resolveLaunchParticipantId(
       diagnostic,
       "Score retrieval failed.",
     );
-    deps.logger.warn("candidate score retrieval failed", diagnostic);
+    logScoreRetrievalFailure(deps.logger, diagnostic);
     return {
       ok: false,
       response: {
@@ -517,7 +518,7 @@ async function resolveLaunchParticipantId(
     diagnostic,
     "Score retrieval failed.",
   );
-  deps.logger.warn("candidate score retrieval failed", diagnostic);
+  logScoreRetrievalFailure(deps.logger, diagnostic);
   return {
     ok: false,
     response: {
@@ -729,36 +730,14 @@ function hasDiagnosticScoreRetrieval(
 }
 
 function redactDiagnosticSupportValue(value: unknown): unknown {
-  if (typeof value === "string") {
-    try {
-      const parsed = JSON.parse(value);
-      return redactDiagnosticSupportValue(parsed);
-    } catch {
-      return value
-      .replace(/https?:\/\/\S*(?:ClassSponsoredLink|SponsoredLink|Ent\/Login)\S*/gi, "[REDACTED]")
-      .replace(/([?&](?:token|access_token|loginUrl)=)[^&\s"]+/gi, "$1[REDACTED]");
-    }
-  }
+  return redactCloudShareAdminSupportValue(value);
+}
 
-  if (Array.isArray(value)) {
-    return value.map((item) => redactDiagnosticSupportValue(item));
-  }
-
-  if (!value || typeof value !== "object") {
-    return value;
-  }
-
-  const redacted: Record<string, unknown> = {};
-  for (const [key, fieldValue] of Object.entries(value)) {
-    if (/api[-_]?key|secret|token|hmac|signature|passphrase|password|login[-_]?url|authorization/i.test(key)) {
-      redacted[key] = "[REDACTED]";
-      continue;
-    }
-
-    redacted[key] = redactDiagnosticSupportValue(fieldValue);
-  }
-
-  return redacted;
+function logScoreRetrievalFailure(logger: Logger, diagnostic: Record<string, unknown>): void {
+  logger.warn(
+    "candidate score retrieval failed",
+    redactDiagnosticSupportValue(diagnostic) as Record<string, unknown>,
+  );
 }
 
 function scoreDiagnosticAnchors(

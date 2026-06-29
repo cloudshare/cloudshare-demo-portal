@@ -279,6 +279,47 @@ describe("createCloudShareGuidedJourneyProvider", () => {
     ).rejects.toBeInstanceOf(CloudShareResponseError);
   });
 
+  it("preserves admin-only support evidence in unsupported Guided Journey payload diagnostics while redacting true credentials", async () => {
+    const payload = {
+      exploredRate: 1.2,
+      sectionStatuses: [
+        {
+          number: 0,
+          name: "Broken section",
+          status: "explored",
+        },
+      ],
+      passphrase: "candidate-visible-passphrase",
+      loginUrl: "https://use.cloudshare.com/Ent/Login.aspx?token=admin-evidence",
+      apiKey: "secret-api-key",
+      authorization: "Bearer secret-bearer-token",
+    };
+    const client = makeClient(payload);
+    const provider = createCloudShareGuidedJourneyProvider(client);
+
+    await expect(
+      provider.getParticipantProgressForDiagnostics("exp-1", "student-1"),
+    ).rejects.toMatchObject({
+      name: "CloudShareResponseError",
+      context: expect.objectContaining({
+        responseBody: JSON.stringify({
+          exploredRate: 1.2,
+          sectionStatuses: [
+            {
+              number: 0,
+              name: "Broken section",
+              status: "explored",
+            },
+          ],
+          passphrase: "candidate-visible-passphrase",
+          loginUrl: "https://use.cloudshare.com/Ent/Login.aspx?token=admin-evidence",
+          apiKey: "[REDACTED]",
+          authorization: "Bearer [REDACTED]",
+        }),
+      }),
+    });
+  });
+
   it("raises CloudShareResponseError with validation issues when a recognized payload has a rate above 1", async () => {
     const payload = {
       exploredRate: 1.2,

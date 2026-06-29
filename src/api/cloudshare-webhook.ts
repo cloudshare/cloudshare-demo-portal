@@ -8,6 +8,7 @@ import {
   CLOUDSHARE_WEBHOOK_SIGNATURE_HEADER,
   type CloudShareEnvironmentEvent,
 } from "@/integrations/cloudshare/webhooks";
+import { redactCloudShareAdminSupportValue } from "@/integrations/cloudshare/diagnostic-redaction";
 import type { WebhookIdempotencyStore } from "@/domain/webhook";
 import type { EventLogRepository } from "@/domain/event-log";
 import type { DiagnosticRecorder, DiagnosticLogEntryInput } from "@/domain/diagnostic-log";
@@ -632,6 +633,7 @@ function summariseWebhookPayload(payload: unknown): Record<string, unknown> | nu
   }
   const fields = parsedPayload as Record<string, unknown>;
   return {
+    ...(redactCloudShareAdminSupportValue(fields) as Record<string, unknown>),
     EnvironmentId: stringOrNull(fields.EnvironmentId ?? fields.environmentId),
     EnvironmentExternalId: stringOrNull(
       fields.EnvironmentExternalId ?? fields.environmentExternalId,

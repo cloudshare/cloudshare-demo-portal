@@ -62,17 +62,31 @@ Existing prototype support-log rows are development data and do not need migrati
 - Audit Trail remains separate. Audit answers who changed what and whether it was allowed; Support diagnostics answer what the platform did and how to trace behavior. Some actions emit both.
 - Event Log is not a primary support workflow. Events that matter to support should appear as DiagnosticLogEntries or correlated timeline rows.
 - Existing prototype support-log rows are disposable development data and should not constrain the new model.
-- Normal DiagnosticLogEntry output must redact secrets, API keys, bearer tokens, authorization headers, webhook secrets, and other sensitive values. CloudShare sponsored-link `loginUrl` values are an explicit exception for admin-only diagnostic evidence: they may be retained in DiagnosticLogEntry data, but they remain server-only and must never be returned to Candidate/client-facing responses, Candidate/client-facing UI, or non-admin APIs. Admin-only DiagnosticLogEntry and Support Diagnostics surfaces may display them as support evidence.
+- Normal DiagnosticLogEntry output follows a three-way taxonomy:
+  - **Always redact:** secrets, API keys, bearer tokens, authorization headers, webhook secrets, HMAC/signature values, passwords, and other actual credentials.
+  - **Admin-only support evidence:** CloudShare sponsored-link `loginUrl` values and training `passphrase` values may be retained in DiagnosticLogEntry data for admin-only support workflows, but they remain server-only and must never be returned to Candidate/client-facing responses, Candidate/client-facing UI, or non-admin APIs.
+  - **Ordinary request/response evidence:** CloudShare request bodies, response bodies, parsed webhook event payloads, and other non-credential CloudShare fields remain visible so support can verify what CloudShare accepted, rejected, returned, or emitted.
+  Admin-only DiagnosticLogEntry and Support Diagnostics surfaces may display the admin-only evidence above as support evidence.
 - Sensitive diagnostic capture may exist, but only as an explicit debug mode with strong guardrails: disabled by default, admin/operator visible, audited when enabled/disabled, time-boxed with automatic expiry, restricted to a specific Customer or diagnostic scope where possible, and clearly marked in the UI. It exists for replicable issues where normal redaction prevents diagnosis, not for routine logging.
 - First write-path instrumentation should cover Candidate account creation; Candidate login/logout attempts; Customer admin login/logout attempts; Candidate ExamAttempt scheduling; CloudShare training creation; Candidate participant/student add; sponsored-link creation; Candidate enter/resume/suspend; CloudShare webhook receive/verify/reconcile; Guided Journey score retrieval; and CloudShare resource-sync reads.
 - Exam authoring and lifecycle changes should emit diagnostics alongside audits, but they are lower priority than the candidate exam delivery path.
+
+### Diagnostic body redaction taxonomy
+
+Diagnostic body redaction is classified by where evidence is exposed:
+
+- **True secrets, always redacted:** CloudShare API keys, OAuth bearer tokens, v3 `cs_sha1` nonces and HMAC values, authorization headers, webhook secrets, webhook signatures, raw credentials, passwords, cookies, ciphertext, and known literal secret values configured in the recorder/logger.
+- **Server-only admin-support evidence, retained in DiagnosticLogEntry/support diagnostics:** CloudShare sponsored-link `loginUrl` values returned by sponsored-link endpoints, CloudShare create-training `Passphrase`/`passphrase` values, request/response status and headers after true-secret redaction, CloudShare request paths and query values after true-secret redaction, CloudShare request/response bodies after true-secret redaction, and parsed webhook event payloads after true-secret redaction. These values are support evidence for Helios admins and operators; they must not appear in Candidate/client-facing responses or Candidate/client-facing UI.
+- **Ordinary request/response evidence, retained:** CloudShare IDs, project/blueprint/policy/region/team/instructor IDs, training/experience/participant/environment IDs, Guided Journey progress fields, validation errors, transport details, response status codes, safe metadata such as `signaturePresent`/`signatureMatched`, body fields named `token` or `authorization` when they are CloudShare payload evidence rather than actual credentials, and correlation IDs.
+
+The same taxonomy applies to client traces, request/response error contexts, scheduling diagnostics, suspend/resume and heartbeat diagnostics, Guided Journey score diagnostics, resource diagnostics, and webhook diagnostics. Redaction utilities should prefer narrow key/value rules over broad substring bans when CloudShare uses support-evidence field names such as `Passphrase`, `loginUrl`, `token`, or `authorization` inside request/response bodies or parsed webhook payloads. Header values remain conservative and may stay redacted until a guarded sensitive diagnostic flag exists.
 
 ## Testing Decisions
 
 - Test through the highest stable seams: framework-agnostic API/domain handlers for write-path emission and the Support diagnostic read API for search/filter behavior.
 - Repository tests should prove DiagnosticLogEntry persists first-class correlation fields and structured request/response/details safely.
 - API/domain tests should prove success and failure paths emit diagnostic entries with the expected anchors.
-- Redaction tests should prove secrets, auth headers, API keys, bearer tokens, webhook secrets, and untrusted webhook raw bodies do not leak, while admin-only DiagnosticLogEntry data may retain CloudShare sponsored-link `loginUrl` values.
+- Redaction tests should prove secrets, auth headers, API keys, bearer tokens, webhook secrets, HMAC/signature values, and untrusted webhook raw bodies do not leak, while admin-only DiagnosticLogEntry data may retain CloudShare sponsored-link `loginUrl` values and training `passphrase` values.
 - Sensitive diagnostic mode tests should prove sensitive capture is disabled by default, expires automatically, emits audit/diagnostic records when toggled, and changes captured fields only within the intended scope.
 - Support read-model tests should prove filtering by Candidate email, Exam ID, ExamAttempt ID, operation, outcome, correlation ID, CloudShare external IDs, and time range.
 - UI tests or browser smoke tests should prove the Support page filters the diagnostic log itself, not unrelated monitoring widgets.

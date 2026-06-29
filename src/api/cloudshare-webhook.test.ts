@@ -671,6 +671,46 @@ describe("handleCloudShareWebhook", () => {
     expect(JSON.stringify(entries)).not.toContain("invalid-signature-value");
   });
 
+  it("records the full parsed webhook event payload as support evidence", async () => {
+    const { diagnostics, deps } = setup();
+    const rawBody = JSON.stringify({
+      Event: "environment.created",
+      CreatedAt: at.toISOString(),
+      CreatedByEmail: "owner@example.test",
+      Payload: JSON.stringify({
+        EnvironmentId: "env-1",
+        EnvironmentExternalId: "env-ext-invalid",
+        EnvironmentName: "Helios Candidate Lab",
+        OwnerEmail: "owner@example.test",
+        CustomCloudShareField: "support-evidence",
+        token: "payload-token-evidence",
+        authorization: "payload-authorization-evidence",
+      }),
+    });
+
+    const res = await handleCloudShareWebhook(deps, {
+      webhookPathToken: "whk-helios",
+      rawBody,
+      signature: "invalid-signature-value",
+    });
+
+    expect(res.status).toBe(401);
+    const entries = await diagnostics.query({ customerId: "customer-helios" });
+    const receive = entries.find((entry) => entry.operation === "cloudshare.webhook.receive");
+    expect(receive?.details).toEqual(
+      expect.objectContaining({
+        webhookSummary: expect.objectContaining({
+          payload: expect.objectContaining({
+            CustomCloudShareField: "support-evidence",
+            token: "payload-token-evidence",
+            authorization: "payload-authorization-evidence",
+          }),
+        }),
+      }),
+    );
+    expect(JSON.stringify(entries)).not.toContain("invalid-signature-value");
+  });
+
   it("records the full typed failure diagnostic matrix without raw body leakage", async () => {
     const { helios, diagnostics, deps } = setup();
     const invalidSignatureRawBody = JSON.stringify({

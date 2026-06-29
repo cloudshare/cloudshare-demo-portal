@@ -874,6 +874,23 @@ rejections that return a 2xx with an error payload, soft failures, or unexpected
 The principle is: **both successful and failing responses must be logged** — throwing away response
 data makes the platform significantly harder to support.
 
+**Update (2026-06-29, issue #244 redaction taxonomy audit):** CloudShare diagnostic bodies now use
+an explicit three-way taxonomy across client traces, scheduling/runtime diagnostics, Guided Journey
+diagnostics, and resource diagnostics:
+
+- **Always redact:** API keys, bearer tokens, authorization headers, webhook secrets,
+  HMAC/signature values, passwords, and actual credentials.
+- **Admin-only server evidence:** sponsored-link `loginUrl` values and training `passphrase`
+  values remain visible in admin-only `DiagnosticLogEntry` evidence.
+- **Ordinary support evidence:** CloudShare request bodies, response bodies, and parsed webhook
+  event payloads remain visible by default, including auth-adjacent body field names such as
+  `token` or `authorization` when they are payload evidence rather than actual credentials.
+
+Candidate/client-facing APIs remain stricter: admin-only evidence such as `loginUrl` must not
+appear in candidate responses or candidate-facing UI even though it can appear in admin support
+diagnostics. Header values remain conservatively redacted for now; a future guarded sensitive
+diagnostic flag may make selected header values visible when needed.
+
 **Action required:**
 
 A dedicated slice must:
