@@ -1,9 +1,12 @@
 "use client";
 
+import React from "react";
+import type { CSSProperties } from "react";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { ScoreResult } from "@/domain/score-result";
 import { getCandidateScorePresentation } from "./candidate-score-state";
+import type { CandidateLogoutPresentation } from "./candidate-logout";
 import { useCandidateLogout } from "./candidate-logout";
 
 interface ScoreDisplayProps {
@@ -32,6 +35,12 @@ type ScorePayload =
       retrievedAt: string;
       limitations: string[];
     };
+
+interface ScorePanelActionProps {
+  readonly logoutPresentation: CandidateLogoutPresentation;
+  readonly onBackToCandidateHome: () => void;
+  readonly onLogout: () => void | Promise<void>;
+}
 
 /**
  * Fetches and renders the candidate's Guided Journey score for a completed exam
@@ -86,43 +95,12 @@ export function ScoreDisplay({ examAttemptId }: ScoreDisplayProps) {
 
   if (fetchState === "error") {
     return (
-      <section
-        style={{
-          display: "grid",
-          gap: "1rem",
-          border: "1px solid #e5e7eb",
-          borderRadius: "10px",
-          padding: "1.25rem",
-          background: "#fff",
-        }}
-      >
-        <p role="alert" style={{ margin: 0, color: "#b00020" }}>
-          Could not load score: {errorMessage}
-        </p>
-        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-          <button type="button" onClick={() => router.push("/candidate")} style={{ padding: "0.55rem 0.9rem" }}>
-            Back to Candidate Home
-          </button>
-          <button
-            type="button"
-            onClick={() => void logout()}
-            disabled={logoutPresentation.disabled}
-            style={{ padding: "0.55rem 0.9rem" }}
-          >
-            {logoutPresentation.buttonLabel}
-          </button>
-        </div>
-        {logoutPresentation.statusMessage ? (
-          <p role="status" style={{ margin: 0, color: "#555" }}>
-            {logoutPresentation.statusMessage}
-          </p>
-        ) : null}
-        {logoutPresentation.errorMessage ? (
-          <p role="alert" style={{ margin: 0, color: "#b00020" }}>
-            {logoutPresentation.errorMessage}
-          </p>
-        ) : null}
-      </section>
+      <ScoreErrorPanel
+        errorMessage={errorMessage}
+        logoutPresentation={logoutPresentation}
+        onBackToCandidateHome={() => router.push("/candidate")}
+        onLogout={() => void logout()}
+      />
     );
   }
 
@@ -135,112 +113,176 @@ export function ScoreDisplay({ examAttemptId }: ScoreDisplayProps) {
   });
 
   return (
-    <section
-      style={{
-        display: "grid",
-        gap: "1.25rem",
-        border: "1px solid #e5e7eb",
-        borderRadius: "10px",
-        padding: "1.25rem",
-        background: "#fff",
-      }}
-    >
-      <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "flex-start", flexWrap: "wrap" }}>
-        <div>
-          <h2 style={{ margin: 0 }}>{presentation.heading}</h2>
-          <p style={{ margin: "0.35rem 0 0", color: "#555" }}>{presentation.supportDetail}</p>
-          {presentation.scheduledForLabel ? (
-            <p style={{ margin: "0.35rem 0 0", color: "#555" }}>{presentation.scheduledForLabel}</p>
-          ) : null}
-          <p style={{ margin: "0.35rem 0 0", color: "#555" }}>
-            Review the recorded CloudShare progress for this completed exam attempt.
+    <ScoreLoadedPanel
+      score={score}
+      logoutPresentation={logoutPresentation}
+      onBackToCandidateHome={() => router.push("/candidate")}
+      onLogout={() => void logout()}
+      presentation={presentation}
+    />
+  );
+}
+
+function formatRate(value: number): string {
+  return `${Math.round(value * 100)}%`;
+}
+
+export function ScoreLoadedPanel({
+  score,
+  logoutPresentation,
+  onBackToCandidateHome,
+  onLogout,
+  presentation = getCandidateScorePresentation({
+    examAttemptId: score.examAttemptId,
+    examTitle: score.examTitle,
+    scheduledFor: score.scheduledFor,
+  }),
+}: {
+  readonly score: ScorePayload;
+  readonly logoutPresentation: CandidateLogoutPresentation;
+  readonly onBackToCandidateHome: () => void;
+  readonly onLogout: () => void | Promise<void>;
+  readonly presentation?: ReturnType<typeof getCandidateScorePresentation>;
+}) {
+  return (
+    <section style={panelStyle}>
+      <div style={headerLayoutStyle}>
+        <div style={{ display: "grid", gap: "0.5rem" }}>
+          <p style={eyebrowStyle}>Completion summary</p>
+          <div style={{ display: "grid", gap: "0.35rem" }}>
+            <h2 style={{ margin: 0 }}>{presentation.heading}</h2>
+            <p style={supportTextStyle}>{presentation.supportDetail}</p>
+            {presentation.scheduledForLabel ? (
+              <p style={supportTextStyle}>{presentation.scheduledForLabel}</p>
+            ) : null}
+          </div>
+          <p style={{ margin: 0, color: "#334155" }}>
+            Review the recorded CloudShare Guided Journey result for this completed ExamAttempt.
           </p>
         </div>
-        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-          <button type="button" onClick={() => router.push("/candidate")} style={{ padding: "0.55rem 0.9rem" }}>
-            Back to Candidate Home
-          </button>
-          <button
-            type="button"
-            onClick={() => void logout()}
-            disabled={logoutPresentation.disabled}
-            style={{ padding: "0.55rem 0.9rem" }}
-          >
-            {logoutPresentation.buttonLabel}
-          </button>
-        </div>
+        <ScorePanelActions
+          logoutPresentation={logoutPresentation}
+          onBackToCandidateHome={onBackToCandidateHome}
+          onLogout={onLogout}
+        />
       </div>
+
       {logoutPresentation.statusMessage ? (
-        <p role="status" style={{ margin: 0, color: "#555" }}>
+        <p role="status" style={supportTextStyle}>
           {logoutPresentation.statusMessage}
         </p>
       ) : null}
       {logoutPresentation.errorMessage ? (
-        <p role="alert" style={{ margin: 0, color: "#b00020" }}>
+        <p role="alert" style={errorTextStyle}>
           {logoutPresentation.errorMessage}
         </p>
       ) : null}
 
       {score.scoreAvailable ? (
         <>
-          <p style={{ margin: 0 }}>
-            <strong>{score.percentComplete}%</strong> sections explored, passed, or otherwise completed
-          </p>
-          <p style={{ margin: 0, color: "#333" }}>
-            {score.stepsCompleted} of {score.stepsTotal} sections are currently marked explored or complete.
-          </p>
+          <section style={summaryCardStyle}>
+            <div style={{ display: "grid", gap: "0.4rem" }}>
+              <p style={eyebrowStyle}>Result summary</p>
+              <h3 style={{ margin: 0, fontSize: "1.8rem", lineHeight: 1.1 }}>
+                {score.percentComplete}% complete
+              </h3>
+              <p style={{ margin: 0, color: "#1e293b" }}>
+                {score.stepsCompleted} of {score.stepsTotal} Guided Journey steps are marked explored or complete.
+              </p>
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+                gap: "0.75rem",
+              }}
+            >
+              <SummaryStat label="Steps completed" value={`${score.stepsCompleted} of ${score.stepsTotal}`} />
+              <SummaryStat label="Passed rate" value={formatRate(score.passedRate)} />
+              <SummaryStat label="Last retrieved" value={formatRetrievedAt(score.retrievedAt)} />
+            </div>
+          </section>
 
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-              gap: "0.75rem",
-            }}
-          >
-            {[
-              ["Passed rate", score.passedRate],
-              ["Failed rate", score.failedRate],
-              ["Explored rate", score.exploredRate],
-              ["In progress rate", score.inProgressRate],
-              ["Not started rate", score.notStartedRate],
-              ["Not initiated rate", score.notInitiatedRate],
-            ].map(([label, value]) => (
-              <div
-                key={label}
-                style={{ border: "1px solid #e5e7eb", borderRadius: "8px", padding: "0.75rem", background: "#fafafa" }}
-              >
-                <div style={{ fontSize: "0.9rem", color: "#555" }}>{label}</div>
-                <div style={{ fontSize: "1.15rem", fontWeight: 600 }}>{formatRate(value as number)}</div>
-              </div>
-            ))}
-          </div>
-
-          {score.steps.length > 0 && (
-            <ul style={{ margin: 0, paddingLeft: "1.2rem" }}>
-              {score.steps.map((step) => (
-                <li key={step.stepId} style={{ marginBottom: "0.35rem" }}>
-                  {step.completed ? "✓" : "○"} {step.title}
-                  {step.status ? ` (${step.status})` : ""}
-                </li>
+          <section style={{ display: "grid", gap: "0.75rem" }}>
+            <div>
+              <h3 style={{ margin: 0 }}>Metric tiles</h3>
+              <p style={{ margin: "0.35rem 0 0", color: "#475569" }}>
+                Compare how CloudShare marked each Guided Journey state for this attempt.
+              </p>
+            </div>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+                gap: "0.75rem",
+              }}
+            >
+              {[
+                { label: "Passed rate", value: score.passedRate },
+                { label: "Failed rate", value: score.failedRate },
+                { label: "Explored rate", value: score.exploredRate },
+                { label: "In progress rate", value: score.inProgressRate },
+                { label: "Not started rate", value: score.notStartedRate },
+                { label: "Not initiated rate", value: score.notInitiatedRate },
+              ].map(({ label, value }) => (
+                <SummaryStat key={label} label={label} value={formatRate(value)} />
               ))}
-            </ul>
-          )}
+            </div>
+          </section>
+
+          {score.steps.length > 0 ? (
+            <section style={{ display: "grid", gap: "0.75rem" }}>
+              <div>
+                <h3 style={{ margin: 0 }}>Step progress</h3>
+                <p style={{ margin: "0.35rem 0 0", color: "#475569" }}>
+                  CloudShare records the final state of each Guided Journey step listed below.
+                </p>
+              </div>
+              <ol
+                style={{
+                  display: "grid",
+                  gap: "0.75rem",
+                  margin: 0,
+                  paddingLeft: "1.25rem",
+                }}
+              >
+                {score.steps.map((step) => (
+                  <li key={step.stepId} style={{ paddingLeft: "0.25rem" }}>
+                    <div style={stepCardStyle}>
+                      <div style={{ display: "grid", gap: "0.2rem" }}>
+                        <strong>{step.title}</strong>
+                        <span style={{ color: "#475569" }}>
+                          {step.completed ? "Completed" : "Not completed"}
+                        </span>
+                      </div>
+                      {step.status ? <span style={stepStatusStyle}>{step.status}</span> : null}
+                    </div>
+                  </li>
+                ))}
+              </ol>
+            </section>
+          ) : null}
         </>
       ) : (
-        <p style={{ margin: 0 }}>{score.message}</p>
+        <section style={summaryCardStyle}>
+          <div style={{ display: "grid", gap: "0.4rem" }}>
+            <p style={eyebrowStyle}>Result summary</p>
+            <h3 style={{ margin: 0 }}>No score available</h3>
+            <p style={{ margin: 0, color: "#1e293b" }}>{score.message}</p>
+          </div>
+        </section>
       )}
 
-      <section
-        aria-label="Scoring limitations"
-        style={{ display: "grid", gap: "0.75rem", padding: "1rem", borderRadius: "8px", background: "#f8fafc" }}
-      >
-        <h3 style={{ margin: 0 }}>About this score</h3>
-        <p style={{ margin: 0 }}>
-          CloudShare Guided Journey scoring has the following known limitations.
-        </p>
-        <ul style={{ margin: 0, paddingLeft: "1.2rem" }}>
+      <section aria-label="Scoring limitations" style={limitationsCardStyle}>
+        <div style={{ display: "grid", gap: "0.35rem" }}>
+          <h3 style={{ margin: 0 }}>Scoring limitations</h3>
+          <p style={{ margin: 0, color: "#334155" }}>
+            CloudShare Guided Journey scoring has the following known limitations.
+          </p>
+        </div>
+        <ul style={{ margin: 0, paddingLeft: "1.2rem", display: "grid", gap: "0.45rem" }}>
           {score.limitations.map((limitation, i) => (
-            <li key={i} style={{ marginBottom: "0.35rem" }}>{limitation}</li>
+            <li key={i}>{limitation}</li>
           ))}
         </ul>
       </section>
@@ -248,6 +290,177 @@ export function ScoreDisplay({ examAttemptId }: ScoreDisplayProps) {
   );
 }
 
-function formatRate(value: number): string {
-  return `${Math.round(value * 100)}%`;
+export function ScoreErrorPanel({
+  errorMessage,
+  logoutPresentation,
+  onBackToCandidateHome,
+  onLogout,
+}: ScorePanelActionProps & { readonly errorMessage: string }) {
+  return (
+    <section style={panelStyle}>
+      <div style={{ display: "grid", gap: "0.5rem" }}>
+        <p style={eyebrowStyle}>Completion summary</p>
+        <h2 style={{ margin: 0 }}>Score unavailable</h2>
+        <p role="alert" style={errorTextStyle}>
+          Could not load score: {errorMessage}
+        </p>
+      </div>
+      <ScorePanelActions
+        logoutPresentation={logoutPresentation}
+        onBackToCandidateHome={onBackToCandidateHome}
+        onLogout={onLogout}
+      />
+      {logoutPresentation.statusMessage ? (
+        <p role="status" style={supportTextStyle}>
+          {logoutPresentation.statusMessage}
+        </p>
+      ) : null}
+      {logoutPresentation.errorMessage ? (
+        <p role="alert" style={errorTextStyle}>
+          {logoutPresentation.errorMessage}
+        </p>
+      ) : null}
+    </section>
+  );
 }
+
+function ScorePanelActions({
+  logoutPresentation,
+  onBackToCandidateHome,
+  onLogout,
+}: ScorePanelActionProps) {
+  return (
+    <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "flex-start" }}>
+      <button type="button" onClick={onBackToCandidateHome} style={secondaryButtonStyle}>
+        Back to Candidate Home
+      </button>
+      <button
+        type="button"
+        onClick={() => void onLogout()}
+        disabled={logoutPresentation.disabled}
+        style={primaryButtonStyle}
+      >
+        {logoutPresentation.buttonLabel}
+      </button>
+    </div>
+  );
+}
+
+function SummaryStat({ label, value }: { readonly label: string; readonly value: string }) {
+  return (
+    <div style={statCardStyle}>
+      <span style={{ color: "#475569", fontSize: "0.9rem" }}>{label}</span>
+      <strong style={{ fontSize: "1.15rem", lineHeight: 1.2 }}>{value}</strong>
+    </div>
+  );
+}
+
+function formatRetrievedAt(retrievedAt: string): string {
+  const date = new Date(retrievedAt);
+  if (Number.isNaN(date.getTime())) {
+    return "Unavailable";
+  }
+
+  return date.toLocaleString();
+}
+
+const panelStyle = {
+  display: "grid",
+  gap: "1.25rem",
+  border: "1px solid #dbe2ea",
+  borderRadius: "10px",
+  padding: "1.25rem",
+  background: "#ffffff",
+  boxShadow: "0 1px 2px rgba(15, 23, 42, 0.06)",
+} satisfies CSSProperties;
+
+const headerLayoutStyle = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: "1rem",
+  alignItems: "flex-start",
+  flexWrap: "wrap",
+} satisfies CSSProperties;
+
+const summaryCardStyle = {
+  display: "grid",
+  gap: "1rem",
+  padding: "1rem",
+  borderRadius: "8px",
+  background: "#eff6ff",
+  border: "1px solid #bfdbfe",
+} satisfies CSSProperties;
+
+const limitationsCardStyle = {
+  display: "grid",
+  gap: "0.75rem",
+  padding: "1rem",
+  borderRadius: "8px",
+  background: "#f8fafc",
+  border: "1px solid #e2e8f0",
+} satisfies CSSProperties;
+
+const statCardStyle = {
+  display: "grid",
+  gap: "0.35rem",
+  border: "1px solid #e2e8f0",
+  borderRadius: "8px",
+  padding: "0.85rem",
+  background: "#ffffff",
+  minHeight: "5.5rem",
+} satisfies CSSProperties;
+
+const stepCardStyle = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: "0.75rem",
+  alignItems: "flex-start",
+  flexWrap: "wrap",
+  border: "1px solid #e2e8f0",
+  borderRadius: "8px",
+  padding: "0.85rem",
+  background: "#ffffff",
+} satisfies CSSProperties;
+
+const stepStatusStyle = {
+  color: "#0f172a",
+  background: "#e2e8f0",
+  borderRadius: "999px",
+  padding: "0.25rem 0.6rem",
+  fontSize: "0.9rem",
+} satisfies CSSProperties;
+
+const primaryButtonStyle = {
+  padding: "0.6rem 1rem",
+  borderRadius: "8px",
+  border: "1px solid #0f172a",
+  background: "#0f172a",
+  color: "#ffffff",
+} satisfies CSSProperties;
+
+const secondaryButtonStyle = {
+  padding: "0.6rem 1rem",
+  borderRadius: "8px",
+  border: "1px solid #cbd5e1",
+  background: "#ffffff",
+  color: "#0f172a",
+} satisfies CSSProperties;
+
+const supportTextStyle = {
+  margin: 0,
+  color: "#475569",
+} satisfies CSSProperties;
+
+const errorTextStyle = {
+  margin: 0,
+  color: "#b00020",
+} satisfies CSSProperties;
+
+const eyebrowStyle = {
+  margin: 0,
+  color: "#1d4ed8",
+  fontSize: "0.85rem",
+  fontWeight: 600,
+  textTransform: "uppercase",
+  letterSpacing: 0,
+} satisfies CSSProperties;

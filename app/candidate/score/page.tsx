@@ -34,11 +34,14 @@ export default async function CandidateScorePage({
       style={{
         fontFamily: "system-ui, sans-serif",
         padding: "2rem",
-        maxWidth: "720px",
+        maxWidth: "960px",
         margin: "0 auto",
       }}
     >
       <h1 style={{ marginBottom: "0.35rem" }}>Session complete</h1>
+      <p style={{ margin: "0 0 1rem", color: "#475569" }}>
+        Review your final Guided Journey result and any CloudShare scoring limitations for this ExamAttempt.
+      </p>
       <ScoreDisplay examAttemptId={examAttemptId} />
     </main>
   );

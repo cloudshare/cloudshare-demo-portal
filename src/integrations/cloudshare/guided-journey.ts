@@ -33,7 +33,6 @@ export const SCORING_LIMITATIONS = [
   "Scoring uses bitmap checkpoints: visual state comparison only, not process-level capture.",
   "End-state verification only — approach and intermediate steps are not assessed.",
   "Deterministic script-based verification is not generally available until Q3 2026.",
-  "CloudShare Guided Journey passedRate and failedRate are raw per-section rates and may not sum to 100%.",
   "Final certification decisions may use criteria outside this portal's Guided Journey score.",
 ] as const;
 

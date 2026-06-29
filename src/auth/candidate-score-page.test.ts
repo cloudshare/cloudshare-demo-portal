@@ -16,25 +16,30 @@ describe("candidate score page", () => {
       }),
     });
 
-    expect(page).toMatchObject({
-      type: "main",
-      props: {
-        children: [
-          expect.objectContaining({
-            type: "h1",
-            props: expect.objectContaining({
-              children: "Session complete",
-            }),
+    expect(page).toMatchObject({ type: "main" });
+    expect(page.props.children).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "h1",
+          props: expect.objectContaining({
+            children: "Session complete",
           }),
-          {
-            type: expect.any(Function),
-            props: {
-              examAttemptId: "ea-1",
-            },
+        }),
+        expect.objectContaining({
+          type: "p",
+          props: expect.objectContaining({
+            children:
+              "Review your final Guided Journey result and any CloudShare scoring limitations for this ExamAttempt.",
+          }),
+        }),
+        expect.objectContaining({
+          type: expect.any(Function),
+          props: {
+            examAttemptId: "ea-1",
           },
-        ],
-      },
-    });
+        }),
+      ]),
+    );
   });
 
   it("renders the missing-attempt message when no exam attempt id is present", async () => {
