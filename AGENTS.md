@@ -45,6 +45,10 @@ showing real CloudShare behaviour, CloudShare wins.
 - The `3000` and `3025` servers are expected to use the same repo `.env` and therefore the same local
   database. Actions performed through `3025` should be visible to the tunnel-facing `3000` server as
   long as both servers are running against the same environment.
+- Before requesting human QA, explicitly state whether the change is available in the user's main
+  project folder (`D:\Code_projects\cloudshare-demo-portal`) and therefore on their port `3000`
+  server after restart. If it is not, state the PR branch/commit that must be checked out there, or
+  state that QA should use the Codex-owned `3025` server instead.
 
 ## QA operating notes
 
@@ -218,6 +222,8 @@ Then update the PR summary including:
 - Why it changed
 - Tests added/updated
 - Risks or follow-up work
+- Human QA server availability: whether the change is present in `D:\Code_projects\cloudshare-demo-portal`
+  on port `3000`, or the exact branch/commit/server URL QA should use instead
 
 After review and QA:
 
