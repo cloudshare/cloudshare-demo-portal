@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   formatCandidateAttemptStatus,
   getCandidateLabPresentation,
@@ -6,8 +6,18 @@ import {
 } from "./candidate-lab-state";
 
 describe("candidate lab state", () => {
+  const originalTimezone = process.env.TZ;
   const scheduledFor = "2026-06-18T09:00:00.000Z";
-  const scheduledForLabel = `Scheduled for ${new Date(scheduledFor).toLocaleString()}`;
+  const scheduledForValue = "2026-06-18 10:00";
+  const scheduledForLabel = `Scheduled for ${scheduledForValue}`;
+
+  beforeAll(() => {
+    process.env.TZ = "Europe/London";
+  });
+
+  afterAll(() => {
+    process.env.TZ = originalTimezone;
+  });
 
   it("formats raw attempt statuses into human-readable labels", () => {
     expect(formatCandidateAttemptStatus("in_progress")).toBe("In progress");
@@ -59,7 +69,7 @@ describe("candidate lab state", () => {
           { label: "ExamAttempt ID", value: "attempt-1" },
           { label: "Status", value: formatCandidateAttemptStatus(status) },
           { label: "Time limit", value: "60 minute limit" },
-          { label: "Scheduled for", value: new Date(scheduledFor).toLocaleString() },
+          { label: "Scheduled for", value: scheduledForValue },
         ]),
       });
     },

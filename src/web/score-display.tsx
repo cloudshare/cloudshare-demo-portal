@@ -5,6 +5,7 @@ import type { CSSProperties } from "react";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { ScoreResult } from "@/domain/score-result";
+import { formatCandidateScheduledDateTime } from "./candidate-date-format";
 import { getCandidateScorePresentation } from "./candidate-score-state";
 import type { CandidateLogoutPresentation } from "./candidate-logout";
 import { useCandidateLogout } from "./candidate-logout";
@@ -356,12 +357,7 @@ function SummaryStat({ label, value }: { readonly label: string; readonly value:
 }
 
 function formatRetrievedAt(retrievedAt: string): string {
-  const date = new Date(retrievedAt);
-  if (Number.isNaN(date.getTime())) {
-    return "Unavailable";
-  }
-
-  return date.toLocaleString();
+  return formatCandidateScheduledDateTime(retrievedAt) ?? "Unavailable";
 }
 
 const panelStyle = {

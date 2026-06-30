@@ -1,10 +1,18 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { ScoreErrorPanel, ScoreLoadedPanel } from "./score-display";
 
 describe("ScoreLoadedPanel", () => {
+  const originalTimezone = process.env.TZ;
+
+  afterEach(() => {
+    process.env.TZ = originalTimezone;
+  });
+
   it("renders a clear completion summary with metrics, steps, limitations, and candidate actions when a score is available", () => {
+    process.env.TZ = "Europe/London";
+
     const html = renderToStaticMarkup(
       createElement(ScoreLoadedPanel, {
         score: {
@@ -50,6 +58,9 @@ describe("ScoreLoadedPanel", () => {
     expect(html).toContain("82% complete");
     expect(html).toContain("9 of 11");
     expect(html).toContain("Passed rate");
+    expect(html).toContain("Last retrieved");
+    expect(html).toContain("2026-06-18 11:30");
+    expect(html).not.toContain("6/18/2026");
     expect(html).toContain("Step progress");
     expect(html).toContain("Create the queue");
     expect(html).toContain("Scoring limitations");

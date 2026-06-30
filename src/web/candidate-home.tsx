@@ -15,8 +15,10 @@ import {
   getLatestAttemptForExam,
   getNextEnterabilityWakeUpDelayMs,
   getAttemptPrimaryAction,
+  getCandidateCurrentAttemptLabel,
 } from "./candidate-home-state";
 import { formatCandidateAttemptStatus } from "./candidate-lab-state";
+import { formatCandidateScheduledDateTime } from "./candidate-date-format";
 import {
   candidateHomeAccountActionsStyle,
   candidateHomeAccountPanelStyle,
@@ -108,7 +110,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
   }, [dashboard.attempts, nowMs]);
 
   async function submitSchedule(examId: string) {
-    const scheduledFor = scheduleDrafts[examId]?.trim();
+    const scheduledFor = scheduleDrafts[examId];
     if (!scheduledFor) {
       setError("Choose a future date and time before scheduling.");
       return;
@@ -290,7 +292,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                         <div style={metaItemStyle}>
                           <span style={metaLabelStyle}>Scheduled for</span>
                           <span style={metaValueStyle}>
-                            {attempt.scheduledFor ? new Date(attempt.scheduledFor).toLocaleString() : "TBD"}
+                            {formatCandidateScheduledDateTime(attempt.scheduledFor) ?? "TBD"}
                           </span>
                         </div>
                         <div style={metaItemStyle}>
@@ -389,13 +391,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                         <div style={metaItemStyle}>
                           <span style={metaLabelStyle}>Current attempt</span>
                           <span style={metaValueStyle}>
-                            {attempt
-                              ? `${formatCandidateAttemptStatus(attempt.status)}${
-                                  attempt.scheduledFor
-                                    ? ` for ${new Date(attempt.scheduledFor).toLocaleString()}`
-                                    : ""
-                                }`
-                              : "No attempt scheduled"}
+                            {getCandidateCurrentAttemptLabel(attempt)}
                           </span>
                         </div>
                       </div>
