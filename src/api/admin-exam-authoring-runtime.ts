@@ -193,6 +193,19 @@ export async function getProjectResourcesRuntime(
         resourceIds: policies.map((policy) => policy.id),
       },
     });
+    await Promise.all(
+      policies.map((policy) =>
+        recordResourceRead(deps, {
+          customerId: request.customerId,
+          operation: "cloudshare.resource_sync.policy_detail.read",
+          integrationSurface: "cloudshare.v3.projects.policy_detail",
+          path: `/projects/${request.projectId}/policies/${policy.id}`,
+          resourceType: "policy_detail",
+          resourceIds: { projectId: request.projectId, policyId: policy.id },
+          response: buildPolicyDetailDiagnosticResponse(policy),
+        }),
+      ),
+    );
   } catch (error) {
     return await handleCloudShareFailure(deps, {
       customerId: request.customerId,
@@ -325,6 +338,24 @@ async function recordResourceRead(
     details: { integrationSurface: spec.integrationSurface },
     externalIds: { resourceType: spec.resourceType, ...(spec.resourceIds ?? {}) },
   });
+}
+
+function buildPolicyDetailDiagnosticResponse(policy: {
+  readonly id: string;
+  readonly name: string;
+  readonly runtimeLeaseMinutes?: number | null;
+  readonly storageLeaseMinutes?: number | null;
+}): Record<string, unknown> {
+  return {
+    policyId: policy.id,
+    name: policy.name,
+    ...(policy.runtimeLeaseMinutes !== undefined
+      ? { runtimeLeaseMinutes: policy.runtimeLeaseMinutes }
+      : {}),
+    ...(policy.storageLeaseMinutes !== undefined
+      ? { storageLeaseMinutes: policy.storageLeaseMinutes }
+      : {}),
+  };
 }
 
 function buildBlueprintDetailDiagnosticResponse(blueprint: {

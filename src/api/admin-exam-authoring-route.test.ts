@@ -52,7 +52,12 @@ function makeAuthoringSource(): CloudShareExamAuthoringSource {
       { id: "bp-1", name: "Helios Blueprint", description: "Blueprint-backed description" },
     ]),
     listProjectPolicies: vi.fn().mockResolvedValue([
-      { id: "policy-1", name: "Timed Policy", runtimeLeaseMinutes: 240 },
+      {
+        id: "policy-1",
+        name: "Timed Policy",
+        runtimeLeaseMinutes: 240,
+        storageLeaseMinutes: 2880,
+      },
     ]),
     getBlueprintDetail: vi.fn().mockResolvedValue({
       id: "bp-1",
@@ -177,6 +182,7 @@ describe("admin exam authoring routes", () => {
     expect(entries.map((entry) => entry.operation).sort()).toEqual([
       "cloudshare.resource_sync.blueprints.read",
       "cloudshare.resource_sync.policies.read",
+      "cloudshare.resource_sync.policy_detail.read",
     ]);
     expect(entries.find((entry) => entry.operation === "cloudshare.resource_sync.blueprints.read")).toMatchObject({
       request: { method: "GET", path: "/projects/project-1/blueprints" },
@@ -185,6 +191,20 @@ describe("admin exam authoring routes", () => {
     expect(entries.find((entry) => entry.operation === "cloudshare.resource_sync.policies.read")).toMatchObject({
       request: { method: "GET", path: "/projects/project-1/policies" },
       externalIds: { resourceType: "policy", projectId: "project-1" },
+    });
+    expect(entries.find((entry) => entry.operation === "cloudshare.resource_sync.policy_detail.read")).toMatchObject({
+      request: { method: "GET", path: "/projects/project-1/policies/policy-1" },
+      response: {
+        policyId: "policy-1",
+        name: "Timed Policy",
+        runtimeLeaseMinutes: 240,
+        storageLeaseMinutes: 2880,
+      },
+      externalIds: {
+        resourceType: "policy_detail",
+        projectId: "project-1",
+        policyId: "policy-1",
+      },
     });
   });
 

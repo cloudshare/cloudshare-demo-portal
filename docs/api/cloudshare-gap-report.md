@@ -790,6 +790,13 @@ live-verified v3 Project policy detail endpoint
 `GET /api/v3/projects/{projectId}/policies/{policyId}` for fields such as `runtimeLeaseMinutes` and
 `storageLeaseMinutes`.
 
+**Update (2026-07-01, Issue #251 supportability follow-up):** live admin project-resource refresh
+now records one admin-visible `cloudshare.resource_sync.policy_detail.read` diagnostic per Policy
+detail request, in addition to the aggregate `cloudshare.resource_sync.policies.read` entry. Each
+detail diagnostic records `GET /projects/{projectId}/policies/{policyId}`, external IDs for
+`resourceType: policy_detail`, Project, and Policy, and the policy lease evidence used by authoring:
+Policy ID/name plus `runtimeLeaseMinutes` and `storageLeaseMinutes` when CloudShare returns them.
+
 **Action required:** keep the remaining CloudShare create-training assumptions under review:
 confirm whether `MainInstructor.Email` should come from the configured instructor email rather than
 an opaque member ID, confirm the sponsored-link body shape, and update this entry immediately if any

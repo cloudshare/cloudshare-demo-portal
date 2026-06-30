@@ -119,6 +119,7 @@ const policyDetailSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   runtimeLeaseMinutes: z.number().int().positive().optional(),
+  storageLeaseMinutes: z.number().int().positive().optional(),
 });
 
 export interface CloudShareBlueprintSnapshot {
@@ -146,7 +147,14 @@ export interface CloudShareExamAuthoringSource {
   ): Promise<Array<{ id: string; name: string; description: string }>>;
   listProjectPolicies(
     projectId: string,
-  ): Promise<Array<{ id: string; name: string; runtimeLeaseMinutes: number | null }>>;
+  ): Promise<
+    Array<{
+      id: string;
+      name: string;
+      runtimeLeaseMinutes: number | null;
+      storageLeaseMinutes?: number | null;
+    }>
+  >;
   getBlueprintDetail(projectId: string, blueprintId: string): Promise<CloudShareBlueprintDetail>;
 }
 
@@ -442,15 +450,17 @@ export function createCloudShareExamAuthoringSource(
       });
       return Promise.all(
         policies.map(async (policy) => {
-          const detail = await client.requestV3({
+          const detailed = await requestV3WithDiagnostics(client, {
             method: "GET",
             path: `/projects/${projectId}/policies/${policy.id}`,
             schema: policyDetailSchema,
           });
+          const detail = detailed.data;
           return {
             id: policy.id,
             name: policy.name,
             runtimeLeaseMinutes: detail.runtimeLeaseMinutes ?? null,
+            storageLeaseMinutes: detail.storageLeaseMinutes ?? null,
           };
         }),
       );

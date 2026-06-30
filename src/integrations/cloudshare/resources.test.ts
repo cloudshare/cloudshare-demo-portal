@@ -136,12 +136,18 @@ describe("createCloudShareExamAuthoringSource", () => {
           projectId: "p-1",
           allowEnvironmentCreation: true,
           runtimeLeaseMinutes: 240,
+          storageLeaseMinutes: 2880,
         },
       }),
     );
 
     await expect(source.listProjectPolicies("p-1")).resolves.toEqual([
-      { id: "pol-1", name: "Timed Policy", runtimeLeaseMinutes: 240 },
+      {
+        id: "pol-1",
+        name: "Timed Policy",
+        runtimeLeaseMinutes: 240,
+        storageLeaseMinutes: 2880,
+      },
     ]);
   });
 
