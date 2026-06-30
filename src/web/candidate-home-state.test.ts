@@ -67,7 +67,7 @@ describe("candidate home attempt state", () => {
         dashboard.attempts[1] ?? null,
         new Date("2026-06-16T15:00:00.000Z").getTime(),
       ),
-    ).toMatch(/Enter exam becomes available/);
+    ).toBe("Enter exam becomes available at 2026-06-16 16:00 UTC.");
   });
 
   it.each([

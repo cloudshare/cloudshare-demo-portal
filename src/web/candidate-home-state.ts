@@ -1,4 +1,5 @@
 import type { CandidateDashboardData } from "./candidate-scheduling";
+import { formatCandidateScheduledDateTime } from "./candidate-date-format";
 
 export interface CandidateScheduledAttemptView {
   readonly attemptId: string;
@@ -46,9 +47,14 @@ export function getAttemptWaitingMessage(
     return null;
   }
 
+  const scheduledForLabel = formatCandidateScheduledDateTime(attempt.scheduledFor);
+  if (!scheduledForLabel) {
+    return null;
+  }
+
   return canEnterAttempt(attempt, nowMs)
     ? null
-    : `Enter exam becomes available at ${new Date(attempt.scheduledFor).toLocaleString()}.`;
+    : `Enter exam becomes available at ${scheduledForLabel}.`;
 }
 
 export function getAttemptPrimaryAction(

@@ -7,7 +7,8 @@ import {
 
 describe("candidate lab state", () => {
   const scheduledFor = "2026-06-18T09:00:00.000Z";
-  const scheduledForLabel = `Scheduled for ${new Date(scheduledFor).toLocaleString()}`;
+  const scheduledForValue = "2026-06-18 09:00 UTC";
+  const scheduledForLabel = `Scheduled for ${scheduledForValue}`;
 
   it("formats raw attempt statuses into human-readable labels", () => {
     expect(formatCandidateAttemptStatus("in_progress")).toBe("In progress");
@@ -59,7 +60,7 @@ describe("candidate lab state", () => {
           { label: "ExamAttempt ID", value: "attempt-1" },
           { label: "Status", value: formatCandidateAttemptStatus(status) },
           { label: "Time limit", value: "60 minute limit" },
-          { label: "Scheduled for", value: new Date(scheduledFor).toLocaleString() },
+          { label: "Scheduled for", value: scheduledForValue },
         ]),
       });
     },

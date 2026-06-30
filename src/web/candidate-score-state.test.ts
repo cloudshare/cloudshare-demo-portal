@@ -12,7 +12,7 @@ describe("candidate score state", () => {
     ).toEqual({
       heading: "Helios Guided Journey",
       supportDetail: "Exam attempt: attempt-1",
-      scheduledForLabel: `Scheduled for ${new Date("2026-06-18T09:00:00.000Z").toLocaleString()}`,
+      scheduledForLabel: "Scheduled for 2026-06-18 09:00 UTC",
     });
   });
 

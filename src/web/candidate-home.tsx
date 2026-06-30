@@ -17,6 +17,7 @@ import {
   getAttemptPrimaryAction,
 } from "./candidate-home-state";
 import { formatCandidateAttemptStatus } from "./candidate-lab-state";
+import { formatCandidateScheduledDateTime } from "./candidate-date-format";
 import {
   candidateHomeAccountActionsStyle,
   candidateHomeAccountPanelStyle,
@@ -290,7 +291,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                         <div style={metaItemStyle}>
                           <span style={metaLabelStyle}>Scheduled for</span>
                           <span style={metaValueStyle}>
-                            {attempt.scheduledFor ? new Date(attempt.scheduledFor).toLocaleString() : "TBD"}
+                            {formatCandidateScheduledDateTime(attempt.scheduledFor) ?? "TBD"}
                           </span>
                         </div>
                         <div style={metaItemStyle}>
@@ -392,7 +393,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                             {attempt
                               ? `${formatCandidateAttemptStatus(attempt.status)}${
                                   attempt.scheduledFor
-                                    ? ` for ${new Date(attempt.scheduledFor).toLocaleString()}`
+                                    ? ` for ${formatCandidateScheduledDateTime(attempt.scheduledFor)}`
                                     : ""
                                 }`
                               : "No attempt scheduled"}

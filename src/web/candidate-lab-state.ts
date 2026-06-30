@@ -1,4 +1,5 @@
 import type { CandidateDashboardData } from "./candidate-scheduling";
+import { formatCandidateScheduledForLabel } from "./candidate-date-format";
 
 export type CandidateLabSummaryItem = {
   label: string;
@@ -51,7 +52,7 @@ export function getCandidateLabPresentation(input: {
   readonly scheduledFor: string | null;
 }): CandidateLabPresentation {
   const statusLabel = formatCandidateAttemptStatus(input.status);
-  const scheduledForLabel = formatScheduledForLabel(input.scheduledFor);
+  const scheduledForLabel = formatCandidateScheduledForLabel(input.scheduledFor);
   const timeLimitLabel = `${input.timeLimitMinutes} minute limit`;
 
   return {
@@ -131,15 +132,3 @@ function getCandidateLabActionCopy(
   }
 }
 
-function formatScheduledForLabel(scheduledFor: string | null): string | null {
-  if (!scheduledFor) {
-    return null;
-  }
-
-  const scheduledForDate = new Date(scheduledFor);
-  if (Number.isNaN(scheduledForDate.getTime())) {
-    return null;
-  }
-
-  return `Scheduled for ${scheduledForDate.toLocaleString()}`;
-}
