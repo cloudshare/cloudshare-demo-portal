@@ -776,9 +776,9 @@ name.
 page was reachable but did not expose the create-training operation model in static HTML during
 agent verification, so live tenant behavior is the evidence path for this field.
 
-**Action required:** rerun the real candidate scheduling flow against the live tenant, confirm
-whether `MainInstructor.Email` should come from the configured instructor email rather than an
-opaque member ID, confirm the sponsored-link body shape, and update this entry immediately if any
+**Action required:** keep the remaining CloudShare create-training assumptions under review:
+confirm whether `MainInstructor.Email` should come from the configured instructor email rather than
+an opaque member ID, confirm the sponsored-link body shape, and update this entry immediately if any
 remaining field names, required fields, enum values, or path semantics differ.
 
 **Code reference:** `src/integrations/cloudshare/labs.ts`, `src/domain/scheduling.ts`
