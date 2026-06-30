@@ -15,6 +15,7 @@ import {
   getLatestAttemptForExam,
   getNextEnterabilityWakeUpDelayMs,
   getAttemptPrimaryAction,
+  getCandidateCurrentAttemptLabel,
 } from "./candidate-home-state";
 import { formatCandidateAttemptStatus } from "./candidate-lab-state";
 import { formatCandidateScheduledDateTime } from "./candidate-date-format";
@@ -390,13 +391,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                         <div style={metaItemStyle}>
                           <span style={metaLabelStyle}>Current attempt</span>
                           <span style={metaValueStyle}>
-                            {attempt
-                              ? `${formatCandidateAttemptStatus(attempt.status)}${
-                                  attempt.scheduledFor
-                                    ? ` for ${formatCandidateScheduledDateTime(attempt.scheduledFor)}`
-                                    : ""
-                                }`
-                              : "No attempt scheduled"}
+                            {getCandidateCurrentAttemptLabel(attempt)}
                           </span>
                         </div>
                       </div>

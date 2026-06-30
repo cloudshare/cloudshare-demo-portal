@@ -1,10 +1,11 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   MAX_ENTERABILITY_WAKE_UP_DELAY_MS,
   buildScheduledAttemptViews,
   canEnterAttempt,
   getAttemptWaitingMessage,
   getAttemptPrimaryAction,
+  getCandidateCurrentAttemptLabel,
   getLatestAttemptForExam,
   getNextEnterabilityWakeUpDelayMs,
 } from "./candidate-home-state";
@@ -38,6 +39,16 @@ const dashboard: CandidateDashboardData = {
 };
 
 describe("candidate home attempt state", () => {
+  const originalTimezone = process.env.TZ;
+
+  beforeAll(() => {
+    process.env.TZ = "Europe/London";
+  });
+
+  afterAll(() => {
+    process.env.TZ = originalTimezone;
+  });
+
   it("picks the latest attempt for an exam", () => {
     expect(getLatestAttemptForExam(dashboard.attempts, "exam-1")?.id).toBe("attempt-ready");
   });
@@ -67,7 +78,22 @@ describe("candidate home attempt state", () => {
         dashboard.attempts[1] ?? null,
         new Date("2026-06-16T15:00:00.000Z").getTime(),
       ),
-    ).toBe("Enter exam becomes available at 2026-06-16 16:00 UTC.");
+    ).toBe("Enter exam becomes available at 2026-06-16 17:00.");
+  });
+
+  it("formats the current-attempt label without appending invalid scheduled times", () => {
+    expect(getCandidateCurrentAttemptLabel(dashboard.attempts[1] ?? null)).toBe(
+      "Ready for 2026-06-16 17:00",
+    );
+    expect(
+      getCandidateCurrentAttemptLabel({
+        id: "attempt-invalid",
+        examId: "exam-1",
+        scheduledFor: "not-a-date",
+        status: "ready",
+      }),
+    ).toBe("Ready");
+    expect(getCandidateCurrentAttemptLabel(null)).toBe("No attempt scheduled");
   });
 
   it.each([

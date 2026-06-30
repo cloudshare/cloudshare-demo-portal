@@ -1,7 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { getCandidateScorePresentation } from "./candidate-score-state";
 
 describe("candidate score state", () => {
+  const originalTimezone = process.env.TZ;
+
+  beforeAll(() => {
+    process.env.TZ = "Europe/London";
+  });
+
+  afterAll(() => {
+    process.env.TZ = originalTimezone;
+  });
+
   it("formats the completed score page metadata with exam title and scheduled time", () => {
     expect(
       getCandidateScorePresentation({
@@ -12,7 +22,7 @@ describe("candidate score state", () => {
     ).toEqual({
       heading: "Helios Guided Journey",
       supportDetail: "Exam attempt: attempt-1",
-      scheduledForLabel: "Scheduled for 2026-06-18 09:00 UTC",
+      scheduledForLabel: "Scheduled for 2026-06-18 10:00",
     });
   });
 

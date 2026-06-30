@@ -1,5 +1,6 @@
 import type { CandidateDashboardData } from "./candidate-scheduling";
 import { formatCandidateScheduledDateTime } from "./candidate-date-format";
+import { formatCandidateAttemptStatus } from "./candidate-lab-state";
 
 export interface CandidateScheduledAttemptView {
   readonly attemptId: string;
@@ -89,6 +90,17 @@ export function getAttemptPrimaryAction(
     default:
       return { label: null, disabled: false };
   }
+}
+
+export function getCandidateCurrentAttemptLabel(
+  attempt: CandidateDashboardData["attempts"][number] | null,
+): string {
+  if (!attempt) {
+    return "No attempt scheduled";
+  }
+
+  const scheduledFor = formatCandidateScheduledDateTime(attempt.scheduledFor);
+  return `${formatCandidateAttemptStatus(attempt.status)}${scheduledFor ? ` for ${scheduledFor}` : ""}`;
 }
 
 export function buildScheduledAttemptViews(
