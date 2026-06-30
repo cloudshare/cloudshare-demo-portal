@@ -780,9 +780,13 @@ agent verification, so live tenant behavior is the evidence path for this field.
 `POST /v4/trainings` is the CloudShare training/Experience run-window end, not the storage-release
 time. For a Policy with a 10-minute runtime lease and a separate 2-day storage lease, the portal
 should send `End = Start + 10 minutes`; the 2-day storage release remains Policy-owned CloudShare
-retention behavior and is not controlled by the v4 create-training `End` field. Do not infer that
-the Policy edit UI's MVC token URL is required for this slice: the portal's read-side Policy evidence
-path remains the live-verified v3 Project policy detail endpoint
+retention behavior and is not controlled by the v4 create-training `End` field. The CloudShare GUI's
+Policy details page may use an MVC URL such as
+`/Ent/PackagesReport.mvc/Details?token={policyIdWithoutPoPrefix}` (for example, Policy
+`POavMAu1wiaVydJdYUOAExJg2` is viewed with `token=avMAu1wiaVydJdYUOAExJg2`), but this is UI routing
+evidence rather than the portal's API contract. Do not infer that the Policy edit/details MVC token
+URL is required for this slice: the portal's read-side Policy evidence path remains the
+live-verified v3 Project policy detail endpoint
 `GET /api/v3/projects/{projectId}/policies/{policyId}` for fields such as `runtimeLeaseMinutes` and
 `storageLeaseMinutes`.
 
