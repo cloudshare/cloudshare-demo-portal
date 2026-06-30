@@ -17,6 +17,12 @@ import {
   getAttemptPrimaryAction,
 } from "./candidate-home-state";
 import { formatCandidateAttemptStatus } from "./candidate-lab-state";
+import {
+  candidateHomeAccountActionsStyle,
+  candidateHomeAccountPanelStyle,
+  candidateHomeHeaderIntroStyle,
+  candidateHomeHeaderStyle,
+} from "./candidate-home-layout";
 import { useCandidateLogout } from "./candidate-logout";
 
 interface CandidateHomeProps {
@@ -175,16 +181,8 @@ export function CandidateHome({ email }: CandidateHomeProps) {
           marginBottom: "1.25rem",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "flex-start",
-            gap: "1rem",
-            flexWrap: "wrap",
-          }}
-        >
-          <div style={{ maxWidth: "42rem" }}>
+        <div style={candidateHomeHeaderStyle}>
+          <div style={candidateHomeHeaderIntroStyle}>
             <p style={{ margin: 0, color: "#5f6b76", fontSize: "0.9rem", fontWeight: 600 }}>
               Certalis Candidate Portal
             </p>
@@ -194,23 +192,8 @@ export function CandidateHome({ email }: CandidateHomeProps) {
               published Helios CX Exam from one place.
             </p>
           </div>
-          <div
-            style={{
-              display: "grid",
-              gap: "0.75rem",
-              justifyItems: "start",
-              minWidth: "min(100%, 16rem)",
-            }}
-          >
-            <div
-              style={{
-                border: "1px solid #d9e1e8",
-                borderRadius: "8px",
-                background: "#ffffff",
-                padding: "0.9rem 1rem",
-                minWidth: "min(100%, 18rem)",
-              }}
-            >
+          <div style={candidateHomeAccountActionsStyle}>
+            <div style={candidateHomeAccountPanelStyle}>
               <p style={{ margin: 0, color: "#5f6b76", fontSize: "0.85rem" }}>Signed in as</p>
               <p style={{ margin: "0.3rem 0 0", color: "#0f172a", fontWeight: 600, overflowWrap: "anywhere" }}>
                 {email}
