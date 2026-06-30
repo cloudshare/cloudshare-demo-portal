@@ -796,6 +796,8 @@ detail request, in addition to the aggregate `cloudshare.resource_sync.policies.
 detail diagnostic records `GET /projects/{projectId}/policies/{policyId}`, external IDs for
 `resourceType: policy_detail`, Project, and Policy, and the policy lease evidence used by authoring:
 Policy ID/name plus `runtimeLeaseMinutes` and `storageLeaseMinutes` when CloudShare returns them.
+Failed detail reads are classified the same way, so support sees the exact Policy detail path and
+Policy ID instead of only the aggregate Project Policy list read.
 
 **Action required:** keep the remaining CloudShare create-training assumptions under review:
 confirm whether `MainInstructor.Email` should come from the configured instructor email rather than

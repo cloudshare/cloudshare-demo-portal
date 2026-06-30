@@ -139,22 +139,22 @@ export interface CloudShareBlueprintDetail {
   readonly diagnosticResponse?: Record<string, unknown>;
 }
 
+export interface CloudShareExamAuthoringPolicy {
+  readonly id: string;
+  readonly name: string;
+  readonly runtimeLeaseMinutes: number | null;
+  readonly storageLeaseMinutes?: number | null;
+  readonly diagnosticRequest?: Record<string, unknown>;
+  readonly diagnosticResponse?: Record<string, unknown>;
+}
+
 export interface CloudShareExamAuthoringSource {
   listProjects(): Promise<Array<{ id: string; name: string }>>;
   listRegions(): Promise<Array<{ id: string; name: string; friendlyName?: string }>>;
   listProjectBlueprints(
     projectId: string,
   ): Promise<Array<{ id: string; name: string; description: string }>>;
-  listProjectPolicies(
-    projectId: string,
-  ): Promise<
-    Array<{
-      id: string;
-      name: string;
-      runtimeLeaseMinutes: number | null;
-      storageLeaseMinutes?: number | null;
-    }>
-  >;
+  listProjectPolicies(projectId: string): Promise<CloudShareExamAuthoringPolicy[]>;
   getBlueprintDetail(projectId: string, blueprintId: string): Promise<CloudShareBlueprintDetail>;
 }
 
@@ -456,11 +456,14 @@ export function createCloudShareExamAuthoringSource(
             schema: policyDetailSchema,
           });
           const detail = detailed.data;
+          const exchange = toDiagnosticExchange(detailed);
           return {
             id: policy.id,
             name: policy.name,
             runtimeLeaseMinutes: detail.runtimeLeaseMinutes ?? null,
             storageLeaseMinutes: detail.storageLeaseMinutes ?? null,
+            diagnosticRequest: exchange.request,
+            diagnosticResponse: exchange.response,
           };
         }),
       );

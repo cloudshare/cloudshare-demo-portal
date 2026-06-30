@@ -141,12 +141,25 @@ describe("createCloudShareExamAuthoringSource", () => {
       }),
     );
 
-    await expect(source.listProjectPolicies("p-1")).resolves.toEqual([
+    await expect(source.listProjectPolicies("p-1")).resolves.toMatchObject([
       {
         id: "pol-1",
         name: "Timed Policy",
         runtimeLeaseMinutes: 240,
         storageLeaseMinutes: 2880,
+        diagnosticRequest: {
+          method: "GET",
+          path: "/projects/p-1/policies/pol-1",
+        },
+        diagnosticResponse: {
+          status: 200,
+          body: {
+            id: "pol-1",
+            name: "Timed Policy",
+            runtimeLeaseMinutes: 240,
+            storageLeaseMinutes: 2880,
+          },
+        },
       },
     ]);
   });

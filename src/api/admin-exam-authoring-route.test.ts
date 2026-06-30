@@ -4,6 +4,7 @@ import { GET as getProjectResources } from "../../app/api/admin/exam-authoring/p
 import { GET as getBlueprintDetail } from "../../app/api/admin/exam-authoring/projects/[projectId]/blueprints/[blueprintId]/route";
 import type { CloudShareConnectionRecord } from "@/domain/cloudshare-connection";
 import type { CloudShareExamAuthoringSource } from "@/integrations/cloudshare/resources";
+import { CloudShareRequestError } from "@/integrations/cloudshare";
 import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import { createInMemoryExamAuthoringCacheRepository } from "@/persistence/exam-authoring-cache-repository";
@@ -57,6 +58,20 @@ function makeAuthoringSource(): CloudShareExamAuthoringSource {
         name: "Timed Policy",
         runtimeLeaseMinutes: 240,
         storageLeaseMinutes: 2880,
+        diagnosticRequest: {
+          method: "GET",
+          path: "/projects/project-1/policies/policy-1",
+          headers: { accept: "application/json" },
+        },
+        diagnosticResponse: {
+          status: 200,
+          body: {
+            id: "policy-1",
+            name: "Timed Policy",
+            runtimeLeaseMinutes: 240,
+            storageLeaseMinutes: 2880,
+          },
+        },
       },
     ]),
     getBlueprintDetail: vi.fn().mockResolvedValue({
@@ -175,6 +190,19 @@ describe("admin exam authoring routes", () => {
     );
 
     expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body).toMatchObject({
+      policies: [
+        {
+          id: "policy-1",
+          name: "Timed Policy",
+          runtimeLeaseMinutes: 240,
+          storageLeaseMinutes: 2880,
+        },
+      ],
+    });
+    expect(body.policies[0]).not.toHaveProperty("diagnosticRequest");
+    expect(body.policies[0]).not.toHaveProperty("diagnosticResponse");
 
     const entries = await diagnosticsRepository.query({
       customerId: "customer-helios",
@@ -195,10 +223,85 @@ describe("admin exam authoring routes", () => {
     expect(entries.find((entry) => entry.operation === "cloudshare.resource_sync.policy_detail.read")).toMatchObject({
       request: { method: "GET", path: "/projects/project-1/policies/policy-1" },
       response: {
+        status: 200,
         policyId: "policy-1",
         name: "Timed Policy",
         runtimeLeaseMinutes: 240,
         storageLeaseMinutes: 2880,
+        body: {
+          id: "policy-1",
+          name: "Timed Policy",
+          runtimeLeaseMinutes: 240,
+          storageLeaseMinutes: 2880,
+        },
+      },
+      externalIds: {
+        resourceType: "policy_detail",
+        projectId: "project-1",
+        policyId: "policy-1",
+      },
+    });
+  });
+
+  it("records policy-detail failure diagnostics through the real route path", async () => {
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnosticRecorder = createDiagnosticRecorder({
+      repository: diagnosticsRepository,
+      secrets: ["api-id", "api-key"],
+    });
+    const cloudshareClient = {
+      ...makeAuthoringSource(),
+      listProjectPolicies: vi.fn().mockRejectedValue(
+        new CloudShareRequestError("403 forbidden", 403, {
+          method: "GET",
+          path: "/projects/project-1/policies/policy-1",
+          requestHeaders: { authorization: "cs_sha1 [REDACTED]" },
+          responseBody: JSON.stringify({ error: "forbidden" }),
+        }),
+      ),
+    };
+
+    mockGetServices.mockReturnValue({
+      cloudshareConnections: {
+        save: vi.fn(),
+        findByCustomerId: vi.fn().mockResolvedValue(makeConnection()),
+        findByWebhookPathToken: vi.fn(),
+        markVerified: vi.fn(),
+      },
+      cloudshareClientFactory: {
+        forConnection: vi.fn().mockReturnValue(cloudshareClient),
+      },
+      examAuthoringCache: createInMemoryExamAuthoringCacheRepository(),
+      diagnosticRecorder,
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    });
+
+    const response = await getProjectResources(
+      new Request("http://localhost/api/admin/exam-authoring/projects/project-1?refresh=true"),
+      { params: Promise.resolve({ projectId: "project-1" }) },
+    );
+
+    expect(response.status).toBe(502);
+
+    const [entry] = await diagnosticsRepository.query({
+      customerId: "customer-helios",
+      operation: "cloudshare.resource_sync.policy_detail.read",
+    });
+    expect(entry).toMatchObject({
+      operation: "cloudshare.resource_sync.policy_detail.read",
+      outcome: "failure",
+      request: {
+        method: "GET",
+        path: "/projects/project-1/policies/policy-1",
+        headers: { authorization: "[REDACTED]" },
+      },
+      response: {
+        status: 403,
+        body: { error: "forbidden" },
+      },
+      details: {
+        integrationSurface: "cloudshare.v3.projects.policy_detail",
+        failureMode: "http_status",
       },
       externalIds: {
         resourceType: "policy_detail",
