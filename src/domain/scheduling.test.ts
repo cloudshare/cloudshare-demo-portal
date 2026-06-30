@@ -55,6 +55,7 @@ function makeLabs(order: string[] = []): LabProvisioner {
           body: {
             Name: "Helios Exam Blueprint - Asha Patel - candidate@helioscx.demo - 20260615T160000Z - 20260615T100000Z",
             Start: "2026-06-15T16:00:00.000Z",
+            End: "2026-06-15T17:30:00.000Z",
             Type: "instructorLed",
             ProjectId: "project-1",
             TeamId: "team-1",
@@ -252,6 +253,44 @@ describe("scheduleExam", () => {
       expect.objectContaining({
         title:
           "Helios Exam Blueprint - Asha Patel - candidate@helioscx.demo - 20260620T160000Z - 20260615T101230Z",
+      }),
+    );
+  });
+
+  it("passes the Exam time limit as the CloudShare training end time", async () => {
+    const { exams, attempts, launches } = await setup({ timeLimitMinutes: 135 });
+    const createTraining = vi.fn(async (_input: CreateTrainingInput) => ({ trainingId: "training-1" }));
+
+    await scheduleExam(
+      {
+        exams,
+        attempts,
+        launches,
+        labs: {
+          ...makeLabs(),
+          createTraining,
+        },
+        newId: vi
+          .fn()
+          .mockReturnValueOnce("attempt-1")
+          .mockReturnValueOnce("launch-1"),
+        now: () => new Date("2026-06-15T10:00:00.000Z"),
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        examId: "exam-1",
+        scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      },
+    );
+
+    expect(createTraining).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+        endsAt: new Date("2026-06-15T18:15:00.000Z"),
       }),
     );
   });
@@ -466,6 +505,7 @@ describe("scheduleExam", () => {
       ProjectId: "project-1",
       BlueprintIds: ["bp-1"],
       PolicyId: "policy-1",
+      End: "2026-06-15T17:30:00.000Z",
       Passphrase: "certalis-attempt-1",
     });
     expect(training?.response).toMatchObject({

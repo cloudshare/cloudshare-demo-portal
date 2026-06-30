@@ -55,6 +55,7 @@ export interface AddStudentInput {
 export interface CreateTrainingInput {
   readonly title: string;
   readonly scheduledFor: Date;
+  readonly endsAt: Date;
   readonly projectId: string;
   readonly blueprintId: string;
   readonly policyId: string;

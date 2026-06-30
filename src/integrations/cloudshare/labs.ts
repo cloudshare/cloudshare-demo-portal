@@ -153,6 +153,7 @@ export function createCloudShareLabProvisioner(
         body: {
           Name: input.title,
           Start: input.scheduledFor.toISOString(),
+          End: input.endsAt.toISOString(),
           Type: "instructorLed",
           ProjectId: input.projectId,
           TeamId: teamId,

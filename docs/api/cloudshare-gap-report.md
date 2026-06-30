@@ -700,6 +700,8 @@ The current adapter sends:
 
 - `Name`
 - `Start` as the candidate's scheduled ISO timestamp
+- `End` as `Start + Exam.timeLimitMinutes`; live Issue #251 verification confirmed CloudShare
+  accepts this field and returns the expected `end` on the created training
 - `Type: "instructorLed"`
 - `ProjectId`
 - `TeamId` resolved from the selected Project through the CloudShare adapter
@@ -763,6 +765,16 @@ candidate email, scheduled UTC timestamp, and booking-created UTC timestamp, the
 truncates identity fields when needed so the full name stays within 100 characters. This keeps names
 human-readable without random suffixes and makes retries after partial provisioning produce a fresh
 name.
+
+**Update (2026-06-30, Issue #251 live verification):** scheduling now sends a PascalCase
+`End` field in the `POST /v4/trainings` body, derived from the Exam's persisted
+`timeLimitMinutes` (`Start + timeLimitMinutes`). A real Candidate UI scheduling flow for the
+10-minute `Windows Boxes` Exam created training `EXVUAmxA5jgVfM29E2D4cTNA2`; the admin-visible
+`cloudshare.create_training` diagnostic recorded `Start: 2026-06-30T15:48:00.000Z` and
+`End: 2026-06-30T15:58:00.000Z`, and a live `GET /v4/trainings/{id}` readback returned
+`start: 2026-06-30T15:48:00` and `end: 2026-06-30T15:58:00`. The public Stoplight documentation
+page was reachable but did not expose the create-training operation model in static HTML during
+agent verification, so live tenant behavior is the evidence path for this field.
 
 **Action required:** rerun the real candidate scheduling flow against the live tenant, confirm
 whether `MainInstructor.Email` should come from the configured instructor email rather than an
