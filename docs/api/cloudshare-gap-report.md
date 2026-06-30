@@ -776,6 +776,16 @@ name.
 page was reachable but did not expose the create-training operation model in static HTML during
 agent verification, so live tenant behavior is the evidence path for this field.
 
+**Update (2026-07-01, Issue #251 QA clarification):** the `End` field on
+`POST /v4/trainings` is the CloudShare training/Experience run-window end, not the storage-release
+time. For a Policy with a 10-minute runtime lease and a separate 2-day storage lease, the portal
+should send `End = Start + 10 minutes`; the 2-day storage release remains Policy-owned CloudShare
+retention behavior and is not controlled by the v4 create-training `End` field. Do not infer that
+the Policy edit UI's MVC token URL is required for this slice: the portal's read-side Policy evidence
+path remains the live-verified v3 Project policy detail endpoint
+`GET /api/v3/projects/{projectId}/policies/{policyId}` for fields such as `runtimeLeaseMinutes` and
+`storageLeaseMinutes`.
+
 **Action required:** keep the remaining CloudShare create-training assumptions under review:
 confirm whether `MainInstructor.Email` should come from the configured instructor email rather than
 an opaque member ID, confirm the sponsored-link body shape, and update this entry immediately if any
