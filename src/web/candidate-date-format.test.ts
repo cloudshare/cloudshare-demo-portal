@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   formatCandidateScheduledDateTime,
   formatCandidateScheduledForLabel,
+  parseCandidateLocalDateTimeInput,
 } from "./candidate-date-format";
 
 describe("candidate scheduled date formatting", () => {
@@ -37,5 +38,25 @@ describe("candidate scheduled date formatting", () => {
     expect(formatCandidateScheduledDateTime("not-a-date")).toBeNull();
     expect(formatCandidateScheduledForLabel(null)).toBeNull();
     expect(formatCandidateScheduledForLabel("not-a-date")).toBeNull();
+  });
+
+  it("parses visible ISO-style local schedule input to the API timestamp", () => {
+    process.env.TZ = "Europe/London";
+
+    expect(parseCandidateLocalDateTimeInput("2026-06-18 09:00")).toBe(
+      "2026-06-18T08:00:00.000Z",
+    );
+    expect(parseCandidateLocalDateTimeInput(" 2026-06-18 09:00 ")).toBe(
+      "2026-06-18T08:00:00.000Z",
+    );
+  });
+
+  it("rejects missing or invalid visible schedule input", () => {
+    expect(parseCandidateLocalDateTimeInput("")).toBeNull();
+    expect(parseCandidateLocalDateTimeInput("2026-06-18T09:00")).toBeNull();
+    expect(parseCandidateLocalDateTimeInput("18/06/2026 09:00")).toBeNull();
+    expect(parseCandidateLocalDateTimeInput("2026-02-30 09:00")).toBeNull();
+    expect(parseCandidateLocalDateTimeInput("2026-06-18 24:00")).toBeNull();
+    expect(parseCandidateLocalDateTimeInput("not-a-date")).toBeNull();
   });
 });

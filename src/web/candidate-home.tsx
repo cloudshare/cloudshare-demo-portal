@@ -18,7 +18,10 @@ import {
   getCandidateCurrentAttemptLabel,
 } from "./candidate-home-state";
 import { formatCandidateAttemptStatus } from "./candidate-lab-state";
-import { formatCandidateScheduledDateTime } from "./candidate-date-format";
+import {
+  formatCandidateScheduledDateTime,
+  parseCandidateLocalDateTimeInput,
+} from "./candidate-date-format";
 import {
   candidateHomeAccountActionsStyle,
   candidateHomeAccountPanelStyle,
@@ -110,7 +113,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
   }, [dashboard.attempts, nowMs]);
 
   async function submitSchedule(examId: string) {
-    const scheduledFor = scheduleDrafts[examId]?.trim();
+    const scheduledFor = parseCandidateLocalDateTimeInput(scheduleDrafts[examId] ?? "");
     if (!scheduledFor) {
       setError("Choose a future date and time before scheduling.");
       return;
@@ -122,7 +125,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
     try {
       const result = await scheduleCandidateExam(fetch, {
         examId,
-        scheduledFor: new Date(scheduledFor).toISOString(),
+        scheduledFor,
       });
       setDashboard((current) => ({
         ...current,
@@ -408,7 +411,9 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                             Schedule date and time
                           </span>
                           <input
-                            type="datetime-local"
+                            type="text"
+                            inputMode="numeric"
+                            placeholder="yyyy-mm-dd HH:mm"
                             value={scheduleDrafts[exam.id] ?? ""}
                             onChange={(event) =>
                               setScheduleDrafts((current) => ({
