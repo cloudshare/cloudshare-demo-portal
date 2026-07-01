@@ -90,6 +90,13 @@ export function getAttemptPrimaryAction(
     return { label: null, disabled: false };
   }
 
+  if (attempt.status === "completed" && exam?.scoreRetrievalEnabled) {
+    return {
+      label: "View score",
+      disabled: false,
+    };
+  }
+
   if (isAttemptOpenPeriodClosed(attempt, nowMs, exam)) {
     return isStartedAttemptStatus(attempt.status) && exam?.scoreRetrievalEnabled
       ? { label: "View score", disabled: false }
@@ -113,12 +120,7 @@ export function getAttemptPrimaryAction(
         disabled: false,
       };
     case "completed":
-      return isAttemptOpenPeriodClosed(attempt, nowMs, exam) && exam?.scoreRetrievalEnabled
-        ? {
-            label: "View score",
-            disabled: false,
-          }
-        : { label: null, disabled: false };
+      return { label: null, disabled: false };
     default:
       return { label: null, disabled: false };
   }

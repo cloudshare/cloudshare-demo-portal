@@ -103,6 +103,21 @@ describe("candidate home attempt state", () => {
     });
   });
 
+  it("keeps score review available for completed Guided Journey attempts before the open window closes", () => {
+    const completedAttempt = {
+      id: "attempt-completed",
+      examId: "exam-1",
+      scheduledFor: "2026-06-16T16:00:00.000Z",
+      status: "completed" as const,
+    };
+    const nowMs = new Date("2026-06-16T16:30:00.000Z").getTime();
+
+    expect(getAttemptPrimaryAction(completedAttempt, nowMs, dashboard.exams[0])).toEqual({
+      label: "View score",
+      disabled: false,
+    });
+  });
+
   it("uses attempt-scoped Exam timing when the Exam is no longer in the published catalog", () => {
     const nowMs = new Date("2026-06-16T18:00:01.000Z").getTime();
     const views = buildScheduledAttemptViews(
@@ -218,7 +233,7 @@ describe("candidate home attempt state", () => {
       },
       exam: dashboard.exams[0] ?? null,
       nowMs: new Date("2026-06-16T16:00:00.000Z").getTime(),
-      expected: { label: null, disabled: false },
+      expected: { label: "View score", disabled: false },
     },
     {
       attempt: {
