@@ -59,6 +59,7 @@ describe("exam status route", () => {
         title: "Helios Guided Journey",
         description: "Hands-on exam",
         timeLimitMinutes: 60,
+        openPeriodMinutes: 120,
         scoreRetrievalEnabled: true,
         projectId: "project-1",
         projectName: "Helios CX",
@@ -120,6 +121,10 @@ describe("exam status route", () => {
       examAttemptId: "attempt-1",
       examTitle: "Helios Guided Journey",
       timeLimitMinutes: 60,
+      openPeriodMinutes: 120,
+      scoreRetrievalEnabled: true,
+      openPeriodEndsAt: "2026-06-18T11:00:00.000Z",
+      openPeriodClosed: true,
       status: "completed",
       scheduledFor: "2026-06-18T09:00:00.000Z",
     });

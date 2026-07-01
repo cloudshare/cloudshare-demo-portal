@@ -30,7 +30,9 @@ export function updateCandidateLabStatus(
     current.examTitle === next.examTitle &&
     current.timeLimitMinutes === next.timeLimitMinutes &&
     current.status === next.status &&
-    current.scheduledFor === next.scheduledFor
+    current.scheduledFor === next.scheduledFor &&
+    current.openPeriodEndsAt === next.openPeriodEndsAt &&
+    current.openPeriodClosed === next.openPeriodClosed
   ) {
     return current;
   }
@@ -74,7 +76,12 @@ export function getLauncherSyncTarget(
 
 export function getLauncherRecoveryAction(
   attemptStatus: AttemptStatus,
+  openPeriodClosed = false,
 ): { action: RecoveryAction; label: string } | null {
+  if (openPeriodClosed) {
+    return null;
+  }
+
   switch (attemptStatus) {
     case "ready":
       return { action: "enter", label: "Enter exam" };
@@ -102,7 +109,18 @@ export function getLauncherPresentation(input: {
   state: LaunchState;
   attemptStatus: AttemptStatus;
   message: string;
+  openPeriodClosed?: boolean;
 }): LauncherPresentation {
+  if (input.openPeriodClosed) {
+    return {
+      tone: "info",
+      title: "Exam open period closed",
+      detail: input.message || "This Exam open period has closed. Return to Candidate Home to review available score actions.",
+      primaryActionLabel: null,
+      supportMessage: null,
+    };
+  }
+
   switch (input.state) {
     case "launching":
       return {
@@ -146,7 +164,7 @@ export function getLauncherPresentation(input: {
         supportMessage: null,
       };
     case "error": {
-      const recoveryAction = getLauncherRecoveryAction(input.attemptStatus);
+      const recoveryAction = getLauncherRecoveryAction(input.attemptStatus, input.openPeriodClosed);
       return {
         tone: "error",
         title: recoveryAction ? "Recover your exam window" : "Exam action unavailable",
@@ -157,7 +175,7 @@ export function getLauncherPresentation(input: {
     }
     case "idle":
     default: {
-      const recoveryAction = getLauncherRecoveryAction(input.attemptStatus);
+      const recoveryAction = getLauncherRecoveryAction(input.attemptStatus, input.openPeriodClosed);
       return {
         tone: "info",
         title: recoveryAction?.action === "resume" ? "Ready to resume" : "Ready to launch",

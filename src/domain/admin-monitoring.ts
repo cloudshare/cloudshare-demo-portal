@@ -10,6 +10,7 @@ export interface MonitoringAttemptRecord {
   readonly candidateLastName: string | null;
   readonly examId: string;
   readonly examTitle: string;
+  readonly examOpenPeriodMinutes: number;
   readonly status: ActiveExamAttemptStatus;
   readonly scheduledFor: Date | null;
   readonly createdAt: Date;
@@ -86,6 +87,7 @@ export interface MonitoringAttemptView {
   readonly id: string;
   readonly examId: string;
   readonly examTitle: string;
+  readonly examOpenPeriodMinutes: number;
   readonly candidateId: string;
   readonly candidateName: string;
   readonly candidateEmail: string;
@@ -118,8 +120,9 @@ export function buildAdminMonitoringView(input: {
   readonly currentAttempts: readonly MonitoringAttemptRecord[];
   readonly history: MonitoringAttemptPage;
   readonly diagnosticRecords: readonly DiagnosticLogEntry[];
+  readonly now?: Date;
 }): AdminMonitoringView {
-  const visibleAttempts = [...input.currentAttempts, ...input.history.attempts];
+  const now = input.now ?? new Date();
   const diagnosticsByAttemptId = groupBy(
     input.diagnosticRecords.filter(
       (record): record is DiagnosticLogEntry & { examAttemptId: string } =>
@@ -128,40 +131,58 @@ export function buildAdminMonitoringView(input: {
     (record) => record.examAttemptId,
   );
 
-  const currentAttemptViews = [...input.currentAttempts]
+  const currentAttemptsWithDerivedStatus = [...input.currentAttempts]
     .sort(compareAttemptsNewestFirst)
+    .map((attempt) => ({
+      raw: attempt,
+      derived: deriveMonitoringAttemptStatus(attempt, now),
+    }));
+  const currentAttemptViews = currentAttemptsWithDerivedStatus
     .map((attempt) =>
       toAttemptView(
-        attempt,
-        diagnosticsByAttemptId.get(attempt.id) ?? [],
+        attempt.derived,
+        diagnosticsByAttemptId.get(attempt.derived.id) ?? [],
       ),
     );
   const historyAttemptViews = [...input.history.attempts]
     .sort(compareAttemptsNewestFirst)
     .map((attempt) =>
       toAttemptView(
-        attempt,
+        deriveMonitoringAttemptStatus(attempt, now),
         diagnosticsByAttemptId.get(attempt.id) ?? [],
       ),
     );
+  const liveAttemptViews = currentAttemptViews.filter(
+    (attempt) =>
+      attempt.status === "scheduled" ||
+      attempt.status === "ready" ||
+      attempt.status === "in_progress" ||
+      attempt.status === "suspended",
+  );
+  const derivedTerminalViews = currentAttemptViews.filter(
+    (attempt) => attempt.status === "completed" || attempt.status === "expired",
+  );
+  const terminalHistoryViews = [...derivedTerminalViews, ...historyAttemptViews].sort(
+    compareAttemptViewsNewestFirst,
+  );
   const historyOffset = boundMonitoringHistoryOffset(input.history.offset);
   const historyLimit = boundMonitoringHistoryLimit(input.history.limit);
   const hasMore = historyOffset + historyAttemptViews.length < input.history.total;
 
   return {
-    summary: input.summary,
+    summary: deriveMonitoringSummary(input.summary, currentAttemptsWithDerivedStatus),
     currentAttempts: {
-      scheduled: currentAttemptViews.filter((attempt) => attempt.status === "scheduled"),
-      ready: currentAttemptViews.filter((attempt) => attempt.status === "ready"),
-      inProgress: currentAttemptViews.filter((attempt) => attempt.status === "in_progress"),
-      suspended: currentAttemptViews.filter((attempt) => attempt.status === "suspended"),
+      scheduled: liveAttemptViews.filter((attempt) => attempt.status === "scheduled"),
+      ready: liveAttemptViews.filter((attempt) => attempt.status === "ready"),
+      inProgress: liveAttemptViews.filter((attempt) => attempt.status === "in_progress"),
+      suspended: liveAttemptViews.filter((attempt) => attempt.status === "suspended"),
     },
-    history: historyAttemptViews,
+    history: terminalHistoryViews,
     historyPage: {
       limit: historyLimit,
       offset: historyOffset,
-      returned: historyAttemptViews.length,
-      total: input.history.total,
+      returned: terminalHistoryViews.length,
+      total: input.history.total + derivedTerminalViews.length,
       hasMore,
       nextOffset: hasMore ? historyOffset + historyAttemptViews.length : null,
     },
@@ -180,6 +201,7 @@ function toAttemptView(
     candidateName: formatCandidateName(attempt),
     candidateEmail: attempt.candidateEmail,
     status: attempt.status,
+    examOpenPeriodMinutes: attempt.examOpenPeriodMinutes,
     scheduledFor: attempt.scheduledFor?.toISOString() ?? null,
     createdAt: attempt.createdAt.toISOString(),
     trainingId: attempt.trainingId,
@@ -190,6 +212,116 @@ function toAttemptView(
     timeline: buildTimeline(diagnosticRecords),
     result: buildResult(attempt.status, diagnosticRecords),
   };
+}
+
+function deriveMonitoringAttemptStatus(
+  attempt: MonitoringAttemptRecord,
+  now: Date,
+): MonitoringAttemptRecord {
+  if (!isOpenPeriodClosed(attempt, now)) {
+    return attempt;
+  }
+
+  if (attempt.status === "scheduled" || attempt.status === "ready") {
+    return { ...attempt, status: "expired" };
+  }
+
+  if (attempt.status === "in_progress" || attempt.status === "suspended") {
+    return { ...attempt, status: "completed" };
+  }
+
+  return attempt;
+}
+
+function isOpenPeriodClosed(
+  attempt: Pick<MonitoringAttemptRecord, "scheduledFor" | "examOpenPeriodMinutes">,
+  now: Date,
+): boolean {
+  if (!attempt.scheduledFor || !Number.isFinite(attempt.examOpenPeriodMinutes)) {
+    return false;
+  }
+
+  return now.getTime() >= attempt.scheduledFor.getTime() + attempt.examOpenPeriodMinutes * 60_000;
+}
+
+function deriveMonitoringSummary(
+  rawSummary: AdminMonitoringSummary,
+  currentAttemptsWithDerivedStatus: readonly {
+    readonly raw: MonitoringAttemptRecord;
+    readonly derived: MonitoringAttemptRecord;
+  }[],
+): AdminMonitoringSummary {
+  const counts = {
+    scheduled: rawSummary.scheduled,
+    ready: rawSummary.ready,
+    inProgress: rawSummary.inProgress,
+    suspended: rawSummary.suspended,
+    completed: rawSummary.completed,
+    expired: rawSummary.expired,
+  };
+  for (const { raw, derived } of currentAttemptsWithDerivedStatus) {
+    if (raw.status === derived.status) {
+      continue;
+    }
+    decrementSummaryStatus(counts, raw.status);
+    incrementSummaryStatus(counts, derived.status);
+  }
+  return counts;
+}
+
+type MutableMonitoringSummary = {
+  scheduled: number;
+  ready: number;
+  inProgress: number;
+  suspended: number;
+  completed: number;
+  expired: number;
+};
+
+function decrementSummaryStatus(summary: MutableMonitoringSummary, status: MonitoringAttemptRecord["status"]): void {
+  switch (status) {
+    case "scheduled":
+      summary.scheduled = Math.max(0, summary.scheduled - 1);
+      break;
+    case "ready":
+      summary.ready = Math.max(0, summary.ready - 1);
+      break;
+    case "in_progress":
+      summary.inProgress = Math.max(0, summary.inProgress - 1);
+      break;
+    case "suspended":
+      summary.suspended = Math.max(0, summary.suspended - 1);
+      break;
+    case "completed":
+      summary.completed = Math.max(0, summary.completed - 1);
+      break;
+    case "expired":
+      summary.expired = Math.max(0, summary.expired - 1);
+      break;
+  }
+}
+
+function incrementSummaryStatus(summary: MutableMonitoringSummary, status: MonitoringAttemptRecord["status"]): void {
+  switch (status) {
+    case "scheduled":
+      summary.scheduled += 1;
+      break;
+    case "ready":
+      summary.ready += 1;
+      break;
+    case "in_progress":
+      summary.inProgress += 1;
+      break;
+    case "suspended":
+      summary.suspended += 1;
+      break;
+    case "completed":
+      summary.completed += 1;
+      break;
+    case "expired":
+      summary.expired += 1;
+      break;
+  }
 }
 
 function buildTimeline(
@@ -286,6 +418,19 @@ function compareAttemptsNewestFirst(
     return scheduledDiff;
   }
   return right.createdAt.getTime() - left.createdAt.getTime();
+}
+
+function compareAttemptViewsNewestFirst(
+  left: MonitoringAttemptView,
+  right: MonitoringAttemptView,
+): number {
+  const scheduledDiff =
+    new Date(right.scheduledFor ?? right.createdAt).getTime() -
+    new Date(left.scheduledFor ?? left.createdAt).getTime();
+  if (scheduledDiff !== 0) {
+    return scheduledDiff;
+  }
+  return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
 }
 
 export const DEFAULT_MONITORING_HISTORY_LIMIT = 25;

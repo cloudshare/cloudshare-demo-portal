@@ -4,11 +4,16 @@ export interface CandidateDashboardData {
     readonly title: string;
     readonly description: string;
     readonly timeLimitMinutes: number;
+    readonly openPeriodMinutes: number;
     readonly scoreRetrievalEnabled: boolean;
   }>;
   readonly attempts: Array<{
     readonly id: string;
     readonly examId: string;
+    readonly examTitle?: string;
+    readonly timeLimitMinutes?: number;
+    readonly openPeriodMinutes?: number;
+    readonly scoreRetrievalEnabled?: boolean;
     readonly scheduledFor: string | null;
     readonly status:
       | "scheduled"

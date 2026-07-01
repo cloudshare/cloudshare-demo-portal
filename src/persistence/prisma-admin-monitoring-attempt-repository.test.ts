@@ -73,6 +73,46 @@ describe("createPrismaAdminMonitoringAttemptRepository", () => {
     });
   });
 
+  it("maps the authored Exam open period into monitoring attempt records", async () => {
+    const prisma = makePrisma({
+      examAttemptFindMany: vi.fn().mockResolvedValue([
+        {
+          id: "attempt-1",
+          customerId: "customer-a",
+          candidateId: "candidate-1",
+          examId: "exam-1",
+          status: "ready",
+          scheduledFor: new Date("2026-07-01T09:00:00.000Z"),
+          createdAt: new Date("2026-07-01T08:00:00.000Z"),
+          exam: {
+            title: "Windows Boxes",
+            openPeriodMinutes: 20,
+            scoreRetrievalEnabled: true,
+          },
+          labLaunch: null,
+        },
+      ]),
+      userFindMany: vi.fn().mockResolvedValue([
+        {
+          id: "candidate-1",
+          email: "candidate@myplace.demo",
+          firstName: "Test",
+          lastName: "Candidate",
+        },
+      ]),
+    });
+
+    const repository = createPrismaAdminMonitoringAttemptRepository(prisma);
+
+    await expect(repository.listCurrentByCustomerId("customer-a")).resolves.toEqual([
+      expect.objectContaining({
+        id: "attempt-1",
+        examOpenPeriodMinutes: 20,
+        candidateEmail: "candidate@myplace.demo",
+      }),
+    ]);
+  });
+
   it("loads only the requested terminal-history page and counts the full terminal set separately", async () => {
     const prisma = makePrisma({
       examAttemptCount: vi.fn().mockResolvedValue(42),

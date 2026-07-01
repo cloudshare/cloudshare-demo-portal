@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-repository";
+import { createInMemoryExamCatalogRepository } from "@/persistence/exam-catalog-repository";
 import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repository";
 import type { Logger } from "@/observability/logger";
 import type { ExamTimer } from "@/domain/exam-attempt-runtime-lifecycle";
@@ -156,6 +157,81 @@ describe("enterExamAttemptRuntime", () => {
       location: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret",
     });
     expect(timer.resumed).toEqual(["attempt-1"]);
+    await expect(attempts.findById("attempt-1")).resolves.toMatchObject({
+      status: "in_progress",
+    });
+  });
+
+  it("blocks entry after the authored Exam open period without resuming the clock or exposing the sponsored link", async () => {
+    const attempts = createInMemoryExamAttemptRepository();
+    const exams = createInMemoryExamCatalogRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const timer = makeTimer();
+
+    await exams.save({
+      id: "exam-1",
+      customerId: "customer-1",
+      title: "Helios Fundamentals",
+      description: "",
+      timeLimitMinutes: 60,
+      storageLeaseMinutes: 1440,
+      openPeriodMinutes: 120,
+      scoreRetrievalEnabled: true,
+      status: "published",
+      publishedAt: new Date("2026-06-15T10:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-15T10:00:00.000Z"),
+      projectId: "project-1",
+      projectName: "Project 1",
+      blueprintId: "blueprint-1",
+      blueprintName: "Blueprint 1",
+      snapshotId: "snapshot-1",
+      snapshotName: "Snapshot 1",
+      allowedRegions: [{ id: "region-1", name: "Region 1" }],
+      policyId: "policy-1",
+      policyName: "Policy 1",
+      instructorId: "instructor-1",
+      instructorName: "Instructor 1",
+    });
+    await attempts.save({
+      id: "attempt-1",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "in_progress",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    await launches.save({
+      id: "launch-1",
+      examAttemptId: "attempt-1",
+      candidateId: "candidate-1",
+      participantEmail: "candidate@helioscx.demo",
+      trainingId: "training-1",
+      experienceId: "training-1",
+      loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret",
+      status: "launched",
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+
+    const result = await enterExamAttemptRuntime(
+      {
+        attempts,
+        exams,
+        launches,
+        timer,
+        logger: makeLogger(),
+        now: () => new Date("2026-06-15T18:00:00.000Z"),
+      },
+      { examAttemptId: "attempt-1", candidateId: "candidate-1" },
+    );
+
+    expect(result).toEqual({
+      kind: "blocked",
+      status: 403,
+      body: { message: "Exam entry is not available after the Exam open period has closed." },
+    });
+    expect(JSON.stringify(result)).not.toContain("secret");
+    expect(timer.resumed).toEqual([]);
     await expect(attempts.findById("attempt-1")).resolves.toMatchObject({
       status: "in_progress",
     });

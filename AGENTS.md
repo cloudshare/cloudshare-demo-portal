@@ -1,7 +1,7 @@
 # CloudShare Demo Portal — Codex Instructions
 
 > **Source of truth for scope, domain & decisions:** `CONTEXT.md` (glossary),
-> `docs/decisions/ADR-001..ADR-003`, and `docs/requirements/prd-cloudshare-demo-portal-v2.md`.
+> `docs/decisions/ADR-001..ADR-005`, and `docs/requirements/prd-cloudshare-demo-portal-v2.md`.
 > This file is a quick orientation; where it differs from those documents, **they win.**
 > The earlier Genesys/Kryterion "proctoring" framing is **retired** (see the 2026-06-13
 > grill-with-docs re-scope, `docs/discovery/2026-06-13-grill-with-docs-synthesis.md`).
@@ -45,6 +45,17 @@ showing real CloudShare behaviour, CloudShare wins.
 - The `3000` and `3025` servers are expected to use the same repo `.env` and therefore the same local
   database. Actions performed through `3025` should be visible to the tunnel-facing `3000` server as
   long as both servers are running against the same environment.
+- Before requesting human QA, explicitly state whether the change is available in the user's main
+  project folder (`D:\Code_projects\cloudshare-demo-portal`) and therefore on their port `3000`
+  server after restart. If it is not, state the PR branch/commit that must be checked out there, or
+  state that QA should use the Codex-owned `3025` server instead.
+- When a branch adds or changes Prisma schema/migrations, do not hand the port `3000` checkout to
+  human QA until that checkout has had its Prisma client regenerated and its local database migrated
+  or deliberately reset from a backup. A clean git checkout alone is not enough for schema-changing
+  slices.
+- Before human QA on port `3000`, smoke-test the changed path against the same `D:\Code_projects`
+  checkout and port the user will use. Codex-owned `3025` smoke is useful but does not prove the
+  tunnel-facing server is ready.
 
 ## QA operating notes
 
@@ -82,6 +93,10 @@ showing real CloudShare behaviour, CloudShare wins.
 - Do not couple UI components directly to **CloudShare** APIs — go through the integration adapter.
 - The CloudShare client is instantiated **per-Customer** from a stored, encrypted `CloudShareConnection`
   (ADR-001) — never from global env vars.
+- Keep CloudShare-backed Exam timing explicit (ADR-005): Policy `runtimeLeaseMinutes` feeds the
+  Candidate's `Exam.timeLimitMinutes`; manually authored `Exam.openPeriodMinutes` defines the v4
+  training/Experience `End`; Policy `storageLeaseMinutes` is retention/validation evidence, not the
+  direct Experience duration.
 - CloudShare v3 `cs_sha1` signing must follow CloudShare's documented wire format exactly:
   `Authorization: cs_sha1 userapiid:<id>;timestamp:<epoch-seconds>;token:<nonce>;hmac:<sha1>`.
   The `token` nonce is exactly **10 alphanumeric characters**. Do not use UUIDs.
@@ -218,6 +233,8 @@ Then update the PR summary including:
 - Why it changed
 - Tests added/updated
 - Risks or follow-up work
+- Human QA server availability: whether the change is present in `D:\Code_projects\cloudshare-demo-portal`
+  on port `3000`, or the exact branch/commit/server URL QA should use instead
 
 After review and QA:
 

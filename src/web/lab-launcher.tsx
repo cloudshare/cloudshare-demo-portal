@@ -26,11 +26,13 @@ const CHILD_POLL_INTERVAL_MS = 3_000;
 export function LabLauncher({
   examAttemptId,
   currentAttemptStatus = "ready",
+  openPeriodClosed = false,
   onAttemptStatusChange,
   onLabStatusLoaded,
 }: {
   examAttemptId: string;
   currentAttemptStatus?: AttemptStatus;
+  openPeriodClosed?: boolean;
   onAttemptStatusChange?: (status: AttemptStatus) => void;
   onLabStatusLoaded?: (status: CandidateLabStatus) => void;
 }) {
@@ -370,9 +372,10 @@ export function LabLauncher({
     state,
     attemptStatus: launcherAttemptStatus,
     message,
+    openPeriodClosed,
   });
   const recoveryAction =
-    state === "error" ? getLauncherRecoveryAction(launcherAttemptStatus) : null;
+    state === "error" ? getLauncherRecoveryAction(launcherAttemptStatus, openPeriodClosed) : null;
 
   return (
     <section
@@ -423,7 +426,7 @@ export function LabLauncher({
           ) : null}
         </div>
         <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
-          {state === "idle" ? (
+          {state === "idle" && !openPeriodClosed ? (
             <button type="button" onClick={launch} style={primaryButtonStyle}>
               Enter exam
             </button>
@@ -437,12 +440,12 @@ export function LabLauncher({
               {recoveryAction.label}
             </button>
           ) : null}
-          {state === "suspended" ? (
+          {state === "suspended" && !openPeriodClosed ? (
             <button type="button" onClick={resumeNow} style={primaryButtonStyle}>
               Resume exam
             </button>
           ) : null}
-          {state === "open" ? (
+          {state === "open" && !openPeriodClosed ? (
             <button type="button" onClick={suspendNow} style={primaryButtonStyle}>
               Suspend lab
             </button>

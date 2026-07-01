@@ -14,6 +14,9 @@ describe("lab launcher state helpers", () => {
       examAttemptId: "attempt-1",
       examTitle: "Helios Guided Journey",
       timeLimitMinutes: 60,
+      openPeriodEndsAt: "2026-06-19T11:00:00.000Z",
+      openPeriodClosed: false,
+      scoreRetrievalEnabled: true,
       status: "completed" as const,
       scheduledFor: "2026-06-19T09:00:00.000Z",
     };
@@ -26,6 +29,9 @@ describe("lab launcher state helpers", () => {
       examAttemptId: "attempt-1",
       examTitle: "Helios Guided Journey",
       timeLimitMinutes: 60,
+      openPeriodEndsAt: "2026-06-19T11:00:00.000Z",
+      openPeriodClosed: false,
+      scoreRetrievalEnabled: true,
       status: "completed" as const,
       scheduledFor: "2026-06-19T09:00:00.000Z",
     };
@@ -115,6 +121,24 @@ describe("lab launcher state helpers", () => {
       detail: "Lab suspended. You can resume your session when ready.",
       primaryActionLabel: "Resume exam",
       supportMessage: "Resume exam to reopen your CloudShare lab and continue the same ExamAttempt.",
+    });
+  });
+
+  it("suppresses launch and resume recovery once the authored open period has closed", () => {
+    expect(getLauncherRecoveryAction("suspended", true)).toBeNull();
+    expect(
+      getLauncherPresentation({
+        state: "suspended",
+        attemptStatus: "suspended",
+        openPeriodClosed: true,
+        message: "",
+      }),
+    ).toEqual({
+      tone: "info",
+      title: "Exam open period closed",
+      detail: "This Exam open period has closed. Return to Candidate Home to review available score actions.",
+      primaryActionLabel: null,
+      supportMessage: null,
     });
   });
 });

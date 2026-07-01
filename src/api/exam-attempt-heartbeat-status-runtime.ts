@@ -21,6 +21,7 @@ export interface ExamAttemptHeartbeatStatusDeps {
   readonly attempts: ExamAttemptRepository;
   readonly exams: ExamRepository;
   readonly clocks?: ExamClock;
+  readonly now?: () => Date;
   readonly diagnostics?: DiagnosticRecorder;
   readonly candidateEmail?: string;
   readonly logger: Logger;
@@ -95,10 +96,38 @@ export async function getCandidateLabStatusRuntime(
       examAttemptId: reconciledAttempt.id,
       examTitle: exam.title,
       timeLimitMinutes: exam.timeLimitMinutes,
+      openPeriodMinutes: exam.openPeriodMinutes,
+      scoreRetrievalEnabled: exam.scoreRetrievalEnabled,
       status: reconciledAttempt.status,
       scheduledFor: reconciledAttempt.scheduledFor?.toISOString() ?? null,
+      openPeriodEndsAt: getOpenPeriodEndsAt(reconciledAttempt.scheduledFor, exam.openPeriodMinutes),
+      openPeriodClosed: isOpenPeriodClosed(
+        reconciledAttempt.scheduledFor,
+        exam.openPeriodMinutes,
+        (deps.now ?? (() => new Date()))(),
+      ),
     },
   };
+}
+
+function getOpenPeriodEndsAt(scheduledFor: Date | null | undefined, openPeriodMinutes: number): string | null {
+  if (!scheduledFor) {
+    return null;
+  }
+
+  return new Date(scheduledFor.getTime() + openPeriodMinutes * 60_000).toISOString();
+}
+
+function isOpenPeriodClosed(
+  scheduledFor: Date | null | undefined,
+  openPeriodMinutes: number,
+  now: Date,
+): boolean {
+  if (!scheduledFor) {
+    return false;
+  }
+
+  return now.getTime() >= scheduledFor.getTime() + openPeriodMinutes * 60_000;
 }
 
 export async function recordExamAttemptHeartbeatRuntime(

@@ -32,3 +32,38 @@ export const candidateHomeAccountPanelStyle: CSSProperties = {
   minWidth: 0,
   boxSizing: "border-box",
 };
+
+export const publishedExamHeaderStyle: CSSProperties = {
+  display: "grid",
+  gap: "0.5rem",
+};
+
+export const publishedExamTitleRowStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: "1rem",
+  alignItems: "flex-start",
+  flexWrap: "wrap",
+};
+
+export const publishedExamTitleBlockStyle: CSSProperties = {
+  minWidth: 0,
+  flex: "1 1 18rem",
+};
+
+export const publishedExamDescriptionStyle: CSSProperties = {
+  margin: "0.5rem 0 0",
+  color: "#444",
+  lineHeight: 1.5,
+  maxWidth: "44rem",
+};
+
+export const publishedExamDurationPillsStyle: CSSProperties = {
+  display: "flex",
+  gap: "0.5rem",
+  flexWrap: "wrap",
+  justifyContent: "flex-end",
+  flex: "1 1 auto",
+  minWidth: 0,
+  maxWidth: "100%",
+};

@@ -6,6 +6,7 @@ export interface NamedCloudShareResource {
   readonly friendlyName?: string;
   readonly description?: string;
   readonly runtimeLeaseMinutes?: number | null;
+  readonly storageLeaseMinutes?: number | null;
 }
 
 export interface ExamAuthoringCacheRepository {

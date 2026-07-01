@@ -104,6 +104,7 @@ async function mapAttemptRows(
     createdAt: Date;
     exam: {
       title: string;
+      openPeriodMinutes: number;
       scoreRetrievalEnabled: boolean;
     };
     labLaunch: {
@@ -142,6 +143,7 @@ async function mapAttemptRows(
       candidateLastName: candidate?.lastName ?? null,
       examId: row.examId,
       examTitle: row.exam.title,
+      examOpenPeriodMinutes: row.exam.openPeriodMinutes,
       status: row.status as MonitoringAttemptRecord["status"],
       scheduledFor: row.scheduledFor,
       createdAt: row.createdAt,

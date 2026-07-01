@@ -28,6 +28,7 @@ function makeExamInput(overrides: Partial<CreateDraftExamInput> = {}): CreateDra
     title: "Helios CloudShare Fundamentals",
     description: "Hands-on certification exam.",
     timeLimitMinutes: 240,
+    openPeriodMinutes: 720,
     scoreRetrievalEnabled: false,
     projectId: "project-1",
     projectName: "Helios CX Project",

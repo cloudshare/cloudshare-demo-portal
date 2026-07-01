@@ -123,7 +123,9 @@ export async function enterExamAttemptRuntime(
     return blocked(403, "Exam entry is not available for this attempt.");
   }
 
-  if (!attempt.scheduledFor || (deps.now ?? (() => new Date()))().getTime() < attempt.scheduledFor.getTime()) {
+  const now = (deps.now ?? (() => new Date()))();
+
+  if (!attempt.scheduledFor || now.getTime() < attempt.scheduledFor.getTime()) {
     await deps.diagnostics?.record({
       ...anchors,
       level: "warn",
@@ -133,6 +135,23 @@ export async function enterExamAttemptRuntime(
       details: { scheduledFor: attempt.scheduledFor?.toISOString() },
     });
     return blocked(403, "Exam entry is not available before the scheduled start time.");
+  }
+
+  const exam = deps.exams ? await deps.exams.findById(attempt.examId) : null;
+  if (exam && now.getTime() >= attempt.scheduledFor.getTime() + exam.openPeriodMinutes * 60_000) {
+    await deps.diagnostics?.record({
+      ...anchors,
+      level: "warn",
+      operation: "exam_attempt.enter",
+      outcome: "failure",
+      message: "Exam entry not available after the authored open period",
+      details: {
+        scheduledFor: attempt.scheduledFor.toISOString(),
+        openPeriodMinutes: exam.openPeriodMinutes,
+        openPeriodEndedAt: new Date(attempt.scheduledFor.getTime() + exam.openPeriodMinutes * 60_000).toISOString(),
+      },
+    });
+    return blocked(403, "Exam entry is not available after the Exam open period has closed.");
   }
 
   const launch = await deps.launches.findByExamAttemptId(request.examAttemptId);

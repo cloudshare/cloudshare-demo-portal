@@ -40,8 +40,18 @@ async function seedAuthoringCache(
       { id: "bp-1", name: "Helios Exam Blueprint", description: "Blueprint-backed description" },
     ],
     policies: [
-      { id: "policy-1", name: "Standard Exam Policy", runtimeLeaseMinutes: 240 },
-      { id: "policy-2", name: "Extended Exam Policy", runtimeLeaseMinutes: 120 },
+      {
+        id: "policy-1",
+        name: "Standard Exam Policy",
+        runtimeLeaseMinutes: 240,
+        storageLeaseMinutes: 2880,
+      },
+      {
+        id: "policy-2",
+        name: "Extended Exam Policy",
+        runtimeLeaseMinutes: 120,
+        storageLeaseMinutes: 1440,
+      },
     ],
   });
   await cache.saveBlueprintDetail("customer-1", "project-1", "bp-1", {
@@ -99,6 +109,7 @@ describe("admin draft exam runtime", () => {
           snapshotId: "snap-1",
           allowedRegionIds: ["region-1", "region-2"],
           policyId: "policy-1",
+          openPeriodMinutes: 720,
         },
       },
     );
@@ -110,6 +121,8 @@ describe("admin draft exam runtime", () => {
         status: "draft",
         title: "Helios CloudShare Fundamentals",
         timeLimitMinutes: 240,
+        storageLeaseMinutes: 2880,
+        openPeriodMinutes: 720,
         projectName: "Helios CX Project",
         allowedRegions: [
           { id: "region-1", name: "EU West" },
@@ -134,6 +147,7 @@ describe("admin draft exam runtime", () => {
           "description",
           "scoreRetrievalEnabled",
           "policyId",
+          "openPeriodMinutes",
           "allowedRegions",
           "status",
         ],
@@ -166,6 +180,7 @@ describe("admin draft exam runtime", () => {
           snapshotId: "snap-1",
           allowedRegionIds: ["region-1"],
           policyId: "policy-1",
+          openPeriodMinutes: 720,
         },
       },
     );
@@ -188,6 +203,7 @@ describe("admin draft exam runtime", () => {
           scoreRetrievalEnabled: true,
           allowedRegionIds: ["region-2"],
           policyId: "policy-2",
+          openPeriodMinutes: 360,
         },
       },
     );
@@ -198,6 +214,8 @@ describe("admin draft exam runtime", () => {
         id: "exam-1",
         title: "Helios Blueprint Exam",
         timeLimitMinutes: 120,
+        storageLeaseMinutes: 1440,
+        openPeriodMinutes: 360,
         scoreRetrievalEnabled: true,
         allowedRegions: [{ id: "region-2", name: "US East" }],
         policyId: "policy-2",
@@ -222,9 +240,130 @@ describe("admin draft exam runtime", () => {
           "policyId",
           "policyName",
           "timeLimitMinutes",
+          "openPeriodMinutes",
+          "storageLeaseMinutes",
           "allowedRegions",
         ],
       },
+    });
+  });
+
+  it("persists a manual open period when the selected Policy lacks storage lease evidence", async () => {
+    const repository = createInMemoryExamCatalogRepository();
+    const cache = createInMemoryExamAuthoringCacheRepository();
+    await seedAuthoringCache(cache);
+    await cache.saveProjectResources("customer-1", "project-1", {
+      blueprints: [
+        { id: "bp-1", name: "Helios Exam Blueprint", description: "Blueprint-backed description" },
+      ],
+      policies: [
+        {
+          id: "policy-1",
+          name: "Standard Exam Policy",
+          runtimeLeaseMinutes: 240,
+          storageLeaseMinutes: null,
+        },
+      ],
+    });
+
+    const result = await createAdminDraftExamRuntime(
+      {
+        repository,
+        cache,
+        instructor,
+        logger: makeLogger(),
+      },
+      {
+        customerId: "customer-1",
+        body: {
+          title: "Helios CloudShare Fundamentals",
+          description: "Hands-on certification exam.",
+          scoreRetrievalEnabled: true,
+          projectId: "project-1",
+          blueprintId: "bp-1",
+          snapshotId: "snap-1",
+          allowedRegionIds: ["region-1"],
+          policyId: "policy-1",
+          openPeriodMinutes: 360,
+        },
+      },
+    );
+
+    expect(result.status).toBe(201);
+    expect(result.body).toMatchObject({
+      exam: {
+        timeLimitMinutes: 240,
+        storageLeaseMinutes: null,
+        openPeriodMinutes: 360,
+      },
+    });
+  });
+
+  it("rejects an open period shorter than the selected Policy runtime lease", async () => {
+    const repository = createInMemoryExamCatalogRepository();
+    const cache = createInMemoryExamAuthoringCacheRepository();
+    await seedAuthoringCache(cache);
+
+    const result = await createAdminDraftExamRuntime(
+      {
+        repository,
+        cache,
+        instructor,
+        logger: makeLogger(),
+      },
+      {
+        customerId: "customer-1",
+        body: {
+          title: "Helios CloudShare Fundamentals",
+          description: "Hands-on certification exam.",
+          scoreRetrievalEnabled: true,
+          projectId: "project-1",
+          blueprintId: "bp-1",
+          snapshotId: "snap-1",
+          allowedRegionIds: ["region-1"],
+          policyId: "policy-1",
+          openPeriodMinutes: 120,
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      status: 400,
+      body: { error: "Open period must be at least the Policy runtime lease." },
+    });
+  });
+
+  it("rejects an open period longer than available Policy storage retention", async () => {
+    const repository = createInMemoryExamCatalogRepository();
+    const cache = createInMemoryExamAuthoringCacheRepository();
+    await seedAuthoringCache(cache);
+
+    const result = await createAdminDraftExamRuntime(
+      {
+        repository,
+        cache,
+        instructor,
+        logger: makeLogger(),
+      },
+      {
+        customerId: "customer-1",
+        body: {
+          title: "Helios CloudShare Fundamentals",
+          description: "Hands-on certification exam.",
+          scoreRetrievalEnabled: true,
+          projectId: "project-1",
+          blueprintId: "bp-1",
+          snapshotId: "snap-1",
+          allowedRegionIds: ["region-1"],
+          policyId: "policy-1",
+          openPeriodMinutes: 3000,
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      status: 400,
+      body: { error: "Open period must not exceed the Policy storage lease." },
     });
   });
 });

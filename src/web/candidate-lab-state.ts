@@ -50,20 +50,24 @@ export function getCandidateLabPresentation(input: {
   readonly examTitle: string;
   readonly timeLimitMinutes: number;
   readonly scheduledFor: string | null;
+  readonly openPeriodEndsAt?: string | null;
+  readonly openPeriodClosed?: boolean;
 }): CandidateLabPresentation {
   const statusLabel = formatCandidateAttemptStatus(input.status);
   const scheduledForLabel = formatCandidateScheduledForLabel(input.scheduledFor);
   const timeLimitLabel = `${input.timeLimitMinutes} minute limit`;
+  const openPeriodEndsAtLabel = input.openPeriodEndsAt ? formatCandidateScheduledForLabel(input.openPeriodEndsAt) : null;
+  const openPeriodClosed = input.openPeriodClosed === true;
 
   return {
     heading: input.examTitle,
     statusLabel,
-    notice: null,
-    showEnter: input.status === "ready" || input.status === "in_progress",
-    showSuspend: input.status === "in_progress",
-    showResume: input.status === "suspended",
+    notice: openPeriodClosed ? "This Exam open period has closed." : null,
+    showEnter: !openPeriodClosed && (input.status === "ready" || input.status === "in_progress"),
+    showSuspend: !openPeriodClosed && input.status === "in_progress",
+    showResume: !openPeriodClosed && input.status === "suspended",
     showCandidateHomeLink: true,
-    showScoreLink: input.status === "completed",
+    showScoreLink: input.status === "completed" || (openPeriodClosed && (input.status === "in_progress" || input.status === "suspended")),
     supportDetail: `Exam attempt: ${input.examAttemptId}`,
     scheduledForLabel,
     timeLimitLabel,
@@ -72,8 +76,9 @@ export function getCandidateLabPresentation(input: {
       statusLabel,
       timeLimitLabel,
       scheduledForLabel,
+      openPeriodEndsAtLabel,
     }),
-    ...getCandidateLabActionCopy(input.status),
+    ...getCandidateLabActionCopy(input.status, openPeriodClosed),
   };
 }
 
@@ -82,6 +87,7 @@ function buildCandidateLabSummaryItems(input: {
   readonly statusLabel: string;
   readonly timeLimitLabel: string;
   readonly scheduledForLabel: string | null;
+  readonly openPeriodEndsAtLabel: string | null;
 }): CandidateLabSummaryItem[] {
   const items: CandidateLabSummaryItem[] = [
     { label: "ExamAttempt ID", value: input.examAttemptId },
@@ -96,12 +102,27 @@ function buildCandidateLabSummaryItems(input: {
     });
   }
 
+  if (input.openPeriodEndsAtLabel) {
+    items.push({
+      label: "Open until",
+      value: input.openPeriodEndsAtLabel.replace(/^Scheduled for /, ""),
+    });
+  }
+
   return items;
 }
 
 function getCandidateLabActionCopy(
   status: CandidateDashboardData["attempts"][number]["status"],
+  openPeriodClosed = false,
 ): Pick<CandidateLabPresentation, "actionTitle" | "actionDetail"> {
+  if (openPeriodClosed) {
+    return {
+      actionTitle: "This Exam open period has closed",
+      actionDetail: "Launch and resume actions are no longer available for this ExamAttempt.",
+    };
+  }
+
   switch (status) {
     case "ready":
       return {

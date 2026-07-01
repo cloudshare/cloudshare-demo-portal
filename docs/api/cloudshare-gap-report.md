@@ -700,6 +700,8 @@ The current adapter sends:
 
 - `Name`
 - `Start` as the candidate's scheduled ISO timestamp
+- `End` as `Start + Exam.openPeriodMinutes`; live Issue #251 verification confirmed CloudShare
+  accepts this field and returns the expected `end` on the created training
 - `Type: "instructorLed"`
 - `ProjectId`
 - `TeamId` resolved from the selected Project through the CloudShare adapter
@@ -764,9 +766,40 @@ truncates identity fields when needed so the full name stays within 100 characte
 human-readable without random suffixes and makes retries after partial provisioning produce a fresh
 name.
 
-**Action required:** rerun the real candidate scheduling flow against the live tenant, confirm
-whether `MainInstructor.Email` should come from the configured instructor email rather than an
-opaque member ID, confirm the sponsored-link body shape, and update this entry immediately if any
+**Update (2026-06-30, Issue #251 live verification):** scheduling now sends a PascalCase
+`End` field in the `POST /v4/trainings` body. A real Candidate UI scheduling flow for the
+10-minute `Windows Boxes` Exam created training `EXVUAmxA5jgVfM29E2D4cTNA2`; the admin-visible
+`cloudshare.create_training` diagnostic recorded `Start: 2026-06-30T15:48:00.000Z` and
+`End: 2026-06-30T15:58:00.000Z`, and a live `GET /v4/trainings/{id}` readback returned
+`start: 2026-06-30T15:48:00` and `end: 2026-06-30T15:58:00`. The public Stoplight documentation
+page was reachable but did not expose the create-training operation model in static HTML during
+agent verification, so live tenant behavior is the evidence path for this field.
+
+**Update (2026-07-01, Issue #251 QA clarification):** the Project Policy detail endpoint is
+undocumented but live-observed:
+`GET /api/v3/projects/PRCU02uuokHPBfjMedkmradg2/policies/POavMAu1wiaVydJdYUOAExJg2` returned
+`runtimeLeaseMinutes: 10`, `storageLeaseMinutes: 2880`, `allowSuspendLease`, `suspendLease`, and
+related Policy fields. The CloudShare GUI's MVC Policy details page is not needed for this slice and
+is not part of the portal API contract. `runtimeLeaseMinutes` is consumed only while the environment
+is running and remains the Certalis ExamAttempt timer (`Exam.timeLimitMinutes`). `storageLeaseMinutes`
+is continuous CloudShare retention/TTL evidence from environment spin-up and supports validation and
+review-buffer evidence; it does not directly define the CloudShare v4 training/Experience `End`.
+The portal persists a manually authored `Exam.openPeriodMinutes`, validates it is at least the
+runtime time limit and no longer than known storage retention, and sends
+`End = scheduledFor + Exam.openPeriodMinutes`. Environment extensions are ignored for this slice.
+
+**Update (2026-07-01, Issue #251 supportability follow-up):** live admin project-resource refresh
+now records one admin-visible `cloudshare.resource_sync.policy_detail.read` diagnostic per Policy
+detail request, in addition to the aggregate `cloudshare.resource_sync.policies.read` entry. Each
+detail diagnostic records `GET /projects/{projectId}/policies/{policyId}`, external IDs for
+`resourceType: policy_detail`, Project, and Policy, and the policy lease evidence used by authoring:
+Policy ID/name plus `runtimeLeaseMinutes` and `storageLeaseMinutes` when CloudShare returns them.
+Failed detail reads are classified the same way, so support sees the exact Policy detail path and
+Policy ID instead of only the aggregate Project Policy list read.
+
+**Action required:** keep the remaining CloudShare create-training assumptions under review:
+confirm whether `MainInstructor.Email` should come from the configured instructor email rather than
+an opaque member ID, confirm the sponsored-link body shape, and update this entry immediately if any
 remaining field names, required fields, enum values, or path semantics differ.
 
 **Code reference:** `src/integrations/cloudshare/labs.ts`, `src/domain/scheduling.ts`

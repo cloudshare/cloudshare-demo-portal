@@ -76,7 +76,12 @@ function makeAuthoringSource(
       },
     ]),
     listProjectPolicies: vi.fn().mockResolvedValue([
-      { id: "policy-1", name: "Standard Exam Policy", runtimeLeaseMinutes: 240 },
+      {
+        id: "policy-1",
+        name: "Standard Exam Policy",
+        runtimeLeaseMinutes: 240,
+        storageLeaseMinutes: 2880,
+      },
     ]),
     getBlueprintDetail: vi.fn().mockResolvedValue({
       id: "bp-1",
@@ -233,7 +238,14 @@ async function seedAuthoringCache(
     blueprints: [
       { id: "bp-1", name: "Helios Exam Blueprint", description: "Blueprint-backed description" },
     ],
-    policies: [{ id: "policy-1", name: "Standard Exam Policy", runtimeLeaseMinutes: 240 }],
+    policies: [
+      {
+        id: "policy-1",
+        name: "Standard Exam Policy",
+        runtimeLeaseMinutes: 240,
+        storageLeaseMinutes: 2880,
+      },
+    ],
   });
   await cache.saveBlueprintDetail("customer-1", "project-1", "bp-1", {
     id: "bp-1",
@@ -344,7 +356,14 @@ describe("admin exam authoring handlers", () => {
           description: "Blueprint-backed description",
         },
       ],
-      policies: [{ id: "policy-1", name: "Standard Exam Policy", runtimeLeaseMinutes: 240 }],
+      policies: [
+        {
+          id: "policy-1",
+          name: "Standard Exam Policy",
+          runtimeLeaseMinutes: 240,
+          storageLeaseMinutes: 2880,
+        },
+      ],
     });
     expect(source.listProjectBlueprints).toHaveBeenCalledWith("project-1");
     expect(source.listProjectPolicies).toHaveBeenCalledWith("project-1");
@@ -665,6 +684,7 @@ describe("admin exam catalog handlers", () => {
           snapshotId: "snap-1",
           allowedRegionIds: ["region-1", "region-2"],
           policyId: "policy-1",
+          openPeriodMinutes: 720,
         },
       },
     );
@@ -676,6 +696,7 @@ describe("admin exam catalog handlers", () => {
         status: "draft",
         title: "Helios CloudShare Fundamentals",
         timeLimitMinutes: 240,
+        openPeriodMinutes: 720,
         projectName: "Helios CX Project",
         allowedRegions: [
           { id: "region-1", name: "EU West" },
@@ -704,6 +725,7 @@ describe("admin exam catalog handlers", () => {
           "description",
           "scoreRetrievalEnabled",
           "policyId",
+          "openPeriodMinutes",
           "allowedRegions",
           "status",
         ],
@@ -738,6 +760,7 @@ describe("admin exam catalog handlers", () => {
           snapshotId: "snap-1",
           allowedRegionIds: ["region-1"],
           policyId: "policy-1",
+          openPeriodMinutes: 720,
         },
       },
     );
@@ -748,6 +771,7 @@ describe("admin exam catalog handlers", () => {
         id: "exam-1",
         description: "",
         timeLimitMinutes: 240,
+        openPeriodMinutes: 720,
       },
     });
   });
@@ -778,6 +802,7 @@ describe("admin exam catalog handlers", () => {
           snapshotId: "snap-1",
           allowedRegionIds: [],
           policyId: "policy-1",
+          openPeriodMinutes: 720,
         },
       },
     );
@@ -828,6 +853,7 @@ describe("admin exam catalog handlers", () => {
           snapshotId: "snap-1",
           allowedRegionIds: ["region-1"],
           policyId: "policy-1",
+          openPeriodMinutes: 720,
         },
       },
     );
@@ -864,6 +890,7 @@ describe("admin exam catalog handlers", () => {
           snapshotId: "snap-1",
           allowedRegionIds: ["region-1", "region-3"],
           policyId: "policy-1",
+          openPeriodMinutes: 720,
         },
       },
     );
@@ -973,6 +1000,7 @@ describe("admin exam catalog handlers", () => {
           snapshotId: "snap-2",
           allowedRegionIds: ["region-1"],
           policyId: "policy-1",
+          openPeriodMinutes: 720,
         },
       },
     );
@@ -1008,6 +1036,7 @@ describe("admin exam catalog handlers", () => {
           snapshotId: "snap-1",
           allowedRegionIds: ["region-1", "region-2"],
           policyId: "policy-1",
+          openPeriodMinutes: 720,
         },
       },
     );
@@ -1071,6 +1100,7 @@ describe("admin exam catalog handlers", () => {
           snapshotId: "snap-1",
           allowedRegionIds: ["region-1", "region-2"],
           policyId: "policy-1",
+          openPeriodMinutes: 720,
         },
       },
     );
@@ -1137,6 +1167,7 @@ describe("admin exam catalog handlers", () => {
           snapshotId: "snap-1",
           allowedRegionIds: ["region-1"],
           policyId: "policy-1",
+          openPeriodMinutes: 720,
         },
       },
     );
@@ -1199,6 +1230,7 @@ describe("admin exam catalog handlers", () => {
           snapshotId: "snap-1",
           allowedRegionIds: ["region-1"],
           policyId: "policy-1",
+          openPeriodMinutes: 720,
         },
       },
     );
@@ -1259,8 +1291,18 @@ describe("admin exam catalog handlers", () => {
         { id: "bp-1", name: "Helios Exam Blueprint", description: "Blueprint-backed description" },
       ],
       policies: [
-        { id: "policy-1", name: "Standard Exam Policy", runtimeLeaseMinutes: 240 },
-        { id: "policy-2", name: "Extended Exam Policy", runtimeLeaseMinutes: 120 },
+        {
+          id: "policy-1",
+          name: "Standard Exam Policy",
+          runtimeLeaseMinutes: 240,
+          storageLeaseMinutes: 2880,
+        },
+        {
+          id: "policy-2",
+          name: "Extended Exam Policy",
+          runtimeLeaseMinutes: 120,
+          storageLeaseMinutes: 1440,
+        },
       ],
     });
     await handleCreateDraftExam(
@@ -1285,6 +1327,7 @@ describe("admin exam catalog handlers", () => {
           snapshotId: "snap-1",
           allowedRegionIds: ["region-1"],
           policyId: "policy-1",
+          openPeriodMinutes: 720,
         },
       },
     );
@@ -1308,6 +1351,7 @@ describe("admin exam catalog handlers", () => {
           scoreRetrievalEnabled: true,
           allowedRegionIds: ["region-2"],
           policyId: "policy-2",
+          openPeriodMinutes: 360,
         },
       },
     );
@@ -1320,6 +1364,7 @@ describe("admin exam catalog handlers", () => {
         title: "Helios Blueprint Exam",
         description: "Updated description.",
         timeLimitMinutes: 120,
+        openPeriodMinutes: 360,
         scoreRetrievalEnabled: true,
         allowedRegions: [{ id: "region-2", name: "US East" }],
         policyId: "policy-2",
@@ -1346,6 +1391,8 @@ describe("admin exam catalog handlers", () => {
           "policyId",
           "policyName",
           "timeLimitMinutes",
+          "openPeriodMinutes",
+          "storageLeaseMinutes",
           "allowedRegions",
         ],
       },
@@ -1380,6 +1427,7 @@ describe("admin exam catalog handlers", () => {
           snapshotId: "snap-1",
           allowedRegionIds: ["region-1"],
           policyId: "policy-1",
+          openPeriodMinutes: 720,
         },
       },
     );

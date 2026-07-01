@@ -28,6 +28,7 @@ describe("cloudShareLabProvisioner — request shape", () => {
     const result = await labs.createTraining!({
       title: "Exam GCP-ASSOC",
       scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      endsAt: new Date("2026-06-15T17:30:00.000Z"),
       projectId: "project-1",
       blueprintId: "bp-1",
       policyId: "policy-1",
@@ -48,6 +49,7 @@ describe("cloudShareLabProvisioner — request shape", () => {
         body: {
           Name: "Exam GCP-ASSOC",
           Start: "2026-06-15T16:00:00.000Z",
+          End: "2026-06-15T17:30:00.000Z",
           Type: "instructorLed",
           ProjectId: "project-1",
           TeamId: "TM-team-1",
@@ -88,6 +90,7 @@ describe("cloudShareLabProvisioner — request shape", () => {
     expect(spec.body).toEqual({
       Name: "Exam GCP-ASSOC",
       Start: "2026-06-15T16:00:00.000Z",
+      End: "2026-06-15T17:30:00.000Z",
       Type: "instructorLed",
       ProjectId: "project-1",
       TeamId: "TM-team-1",
@@ -275,6 +278,7 @@ describe("cloudShareLabProvisioner — request shape", () => {
     await labs.createTraining!({
       title: "Exam GCP-ASSOC",
       scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      endsAt: new Date("2026-06-15T17:30:00.000Z"),
       projectId: "project-1",
       blueprintId: "bp-1",
       policyId: "policy-1",
@@ -311,6 +315,7 @@ describe("cloudShareLabProvisioner — fixture mode (live/fixture parity)", () =
     const { trainingId } = await labs.createTraining!({
       title: "Exam GCP-ASSOC",
       scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      endsAt: new Date("2026-06-15T17:30:00.000Z"),
       projectId: "project-1",
       blueprintId: "bp-1",
       policyId: "policy-1",

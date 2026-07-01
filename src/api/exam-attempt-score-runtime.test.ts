@@ -42,6 +42,7 @@ function makeExam(overrides: Partial<Exam> = {}): Exam {
     title: "Helios Exam",
     description: "Guided Journey scoring",
     timeLimitMinutes: 90,
+    openPeriodMinutes: 120,
     scoreRetrievalEnabled: true,
     status: "published",
     publishedAt: new Date("2026-06-16T07:00:00.000Z"),
@@ -226,19 +227,63 @@ describe("getExamAttemptScoreRuntime", () => {
     );
   });
 
-  it("returns 409 and does not call CloudShare before the exam attempt is completed", async () => {
+  it("returns 409 and does not call CloudShare before a started exam attempt's open period has closed", async () => {
     const deps = makeDeps();
 
     const result = await getExamAttemptScoreRuntime(
       deps,
-      makeRuntimeRequest({ status: "in_progress" }),
+      makeRuntimeRequest({
+        status: "in_progress",
+        scheduledFor: new Date("2026-06-16T11:30:00.000Z"),
+      }),
     );
 
     expect(result).toEqual({
       status: 409,
-      body: { error: "score is only available after the exam attempt is completed" },
+      body: { error: "score is only available after the exam attempt is completed or the Exam open period has closed" },
     });
-    expect(deps.exams.findById).not.toHaveBeenCalled();
+    expect(deps.exams.findById).toHaveBeenCalledWith("exam-1");
+    expect(deps.launches.findByExamAttemptId).not.toHaveBeenCalled();
+    expect(deps.connections.findByCustomerId).not.toHaveBeenCalled();
+    expect(deps.createScoreRetriever).not.toHaveBeenCalled();
+  });
+
+  it("returns the candidate score for a started attempt after the authored open period closes", async () => {
+    const deps = makeDeps();
+
+    const result = await getExamAttemptScoreRuntime(
+      deps,
+      makeRuntimeRequest({
+        status: "suspended",
+        scheduledFor: new Date("2026-06-16T09:00:00.000Z"),
+      }),
+    );
+
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({
+      examAttemptId: "attempt-1",
+      scoreRetrievalEnabled: true,
+      scoreAvailable: true,
+      percentComplete: 75,
+    });
+    expect(deps.scoreRetriever.getParticipantProgress).toHaveBeenCalledWith("exp-1", "student-1");
+  });
+
+  it("does not allow a never-started closed attempt to retrieve a score", async () => {
+    const deps = makeDeps();
+
+    const result = await getExamAttemptScoreRuntime(
+      deps,
+      makeRuntimeRequest({
+        status: "ready",
+        scheduledFor: new Date("2026-06-16T09:00:00.000Z"),
+      }),
+    );
+
+    expect(result).toEqual({
+      status: 409,
+      body: { error: "score is only available after the exam attempt is completed or the Exam open period has closed" },
+    });
     expect(deps.launches.findByExamAttemptId).not.toHaveBeenCalled();
     expect(deps.connections.findByCustomerId).not.toHaveBeenCalled();
     expect(deps.createScoreRetriever).not.toHaveBeenCalled();

@@ -53,6 +53,8 @@ describe("Prisma exam catalog repository", () => {
       title: "Helios CloudShare Fundamentals",
       description: "",
       timeLimitMinutes: 240,
+      storageLeaseMinutes: 2880,
+      openPeriodMinutes: 720,
       scoreRetrievalEnabled: true,
       status: "draft" as const,
       publishedAt: null,

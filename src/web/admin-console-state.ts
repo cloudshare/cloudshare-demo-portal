@@ -79,6 +79,43 @@ interface NamedResource {
   readonly friendlyName?: string;
 }
 
+interface PolicyLeaseEvidence {
+  readonly runtimeLeaseMinutes?: number | null;
+  readonly storageLeaseMinutes?: number | null;
+}
+
+export function getDefaultOpenPeriodMinutes(policy: PolicyLeaseEvidence | null | undefined): string {
+  if (!policy?.runtimeLeaseMinutes) {
+    return "";
+  }
+
+  if (policy.storageLeaseMinutes && policy.storageLeaseMinutes < policy.runtimeLeaseMinutes) {
+    return String(policy.storageLeaseMinutes);
+  }
+
+  return String(policy.runtimeLeaseMinutes);
+}
+
+export function getResetOpenPeriodMinutes(input: {
+  readonly explicitOpenPeriodMinutes?: string;
+  readonly selectedPolicy: PolicyLeaseEvidence | null | undefined;
+  readonly fallbackRuntimeLeaseMinutes?: string | number | null;
+}): string {
+  if (input.explicitOpenPeriodMinutes !== undefined) {
+    return input.explicitOpenPeriodMinutes;
+  }
+
+  const policyDefault = getDefaultOpenPeriodMinutes(input.selectedPolicy);
+  if (policyDefault) {
+    return policyDefault;
+  }
+
+  const fallbackRuntimeLeaseMinutes = Number(input.fallbackRuntimeLeaseMinutes);
+  return Number.isFinite(fallbackRuntimeLeaseMinutes) && fallbackRuntimeLeaseMinutes > 0
+    ? String(fallbackRuntimeLeaseMinutes)
+    : "";
+}
+
 interface BlueprintSnapshot {
   readonly id: string;
   readonly name: string;

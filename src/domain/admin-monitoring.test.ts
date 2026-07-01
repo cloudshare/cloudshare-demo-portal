@@ -19,6 +19,7 @@ function makeAttempt(
     candidateLastName: "Rivera",
     examId: "exam-1",
     examTitle: "Helios CX Fundamentals",
+    examOpenPeriodMinutes: 120,
     status: "scheduled",
     scheduledFor: new Date("2026-06-19T09:00:00.000Z"),
     createdAt: new Date("2026-06-18T09:00:00.000Z"),
@@ -85,6 +86,7 @@ function makeHistoryPage(
 describe("buildAdminMonitoringView", () => {
   it("uses the supplied terminal-history page while preserving full monitoring summary counts", () => {
     const view = buildAdminMonitoringView({
+      now: new Date("2026-06-18T00:00:00.000Z"),
       summary: makeSummary({
         scheduled: 1,
         completed: 2,
@@ -145,8 +147,50 @@ describe("buildAdminMonitoringView", () => {
     });
   });
 
+  it("presents active attempts whose authored open period has closed as terminal monitoring state", () => {
+    const view = buildAdminMonitoringView({
+      now: new Date("2026-06-19T11:00:00.000Z"),
+      summary: makeSummary({
+        ready: 1,
+        suspended: 1,
+      }),
+      currentAttempts: [
+        makeAttempt({
+          id: "attempt-ready-closed",
+          status: "ready",
+          scheduledFor: new Date("2026-06-19T09:00:00.000Z"),
+          examOpenPeriodMinutes: 60,
+        }),
+        makeAttempt({
+          id: "attempt-suspended-closed",
+          status: "suspended",
+          scheduledFor: new Date("2026-06-19T09:00:00.000Z"),
+          examOpenPeriodMinutes: 60,
+        }),
+      ],
+      history: makeHistoryPage([]),
+      diagnosticRecords: [],
+    });
+
+    expect(view.summary).toEqual({
+      scheduled: 0,
+      ready: 0,
+      inProgress: 0,
+      suspended: 0,
+      completed: 1,
+      expired: 1,
+    });
+    expect(view.currentAttempts.ready).toEqual([]);
+    expect(view.currentAttempts.suspended).toEqual([]);
+    expect(view.history.map((attempt) => [attempt.id, attempt.status])).toEqual([
+      ["attempt-ready-closed", "expired"],
+      ["attempt-suspended-closed", "completed"],
+    ]);
+  });
+
   it("groups current attempts by active state and puts completed attempts into history with a timeline", () => {
     const view = buildAdminMonitoringView({
+      now: new Date("2026-06-18T00:00:00.000Z"),
       summary: makeSummary({
         scheduled: 1,
         inProgress: 1,
@@ -268,6 +312,7 @@ describe("buildAdminMonitoringView", () => {
 
   it("ignores unrelated diagnostics and falls back to status-only results when no score retrieval exists", () => {
     const view = buildAdminMonitoringView({
+      now: new Date("2026-06-18T00:00:00.000Z"),
       summary: makeSummary({
         expired: 1,
       }),
@@ -317,6 +362,7 @@ describe("buildAdminMonitoringView", () => {
 
   it("redacts sensitive diagnostic details from monitoring timelines", () => {
     const view = buildAdminMonitoringView({
+      now: new Date("2026-06-18T00:00:00.000Z"),
       summary: makeSummary({
         completed: 1,
       }),

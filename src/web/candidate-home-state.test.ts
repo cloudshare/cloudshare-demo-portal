@@ -1,10 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   MAX_ENTERABILITY_WAKE_UP_DELAY_MS,
+  buildCandidateExamDurationLabels,
   buildScheduledAttemptViews,
   canEnterAttempt,
   getAttemptWaitingMessage,
   getAttemptPrimaryAction,
+  getCandidateAttemptDisplayStatus,
   getCandidateCurrentAttemptLabel,
   getLatestAttemptForExam,
   getNextEnterabilityWakeUpDelayMs,
@@ -13,8 +15,8 @@ import type { CandidateDashboardData } from "./candidate-scheduling";
 
 const dashboard: CandidateDashboardData = {
   exams: [
-    { id: "exam-1", title: "Helios Fundamentals", description: "", timeLimitMinutes: 90, scoreRetrievalEnabled: true },
-    { id: "exam-2", title: "Operations Lab", description: "", timeLimitMinutes: 60, scoreRetrievalEnabled: false },
+    { id: "exam-1", title: "Helios Fundamentals", description: "", timeLimitMinutes: 90, openPeriodMinutes: 120, scoreRetrievalEnabled: true },
+    { id: "exam-2", title: "Operations Lab", description: "", timeLimitMinutes: 60, openPeriodMinutes: 90, scoreRetrievalEnabled: false },
   ],
   attempts: [
     {
@@ -63,6 +65,97 @@ describe("candidate home attempt state", () => {
     ]);
   });
 
+  it("shows scheduled open-window end details from the authored Exam open period", () => {
+    const views = buildScheduledAttemptViews(dashboard, new Date("2026-06-16T16:00:00.000Z").getTime());
+
+    expect(views.find((view) => view.attemptId === "attempt-ready")).toMatchObject({
+      scheduledEnd: "2026-06-16T18:00:00.000Z",
+      scheduledWindowLabel: "Starts 2026-06-16 17:00 · Closes 2026-06-16 19:00 (120 min)",
+    });
+  });
+
+  it("derives closed-window candidate display state without changing the raw attempt lifecycle", () => {
+    const closedReadyAttempt = {
+      id: "attempt-ready-closed",
+      examId: "exam-1",
+      scheduledFor: "2026-06-16T16:00:00.000Z",
+      status: "ready" as const,
+    };
+    const closedSuspendedAttempt = {
+      id: "attempt-suspended-closed",
+      examId: "exam-1",
+      scheduledFor: "2026-06-16T16:00:00.000Z",
+      status: "suspended" as const,
+    };
+    const nowMs = new Date("2026-06-16T18:00:01.000Z").getTime();
+
+    expect(getCandidateAttemptDisplayStatus(closedReadyAttempt, nowMs, dashboard.exams[0])).toBe("expired");
+    expect(getCandidateAttemptDisplayStatus(closedSuspendedAttempt, nowMs, dashboard.exams[0])).toBe("completed");
+    expect(
+      getCandidateCurrentAttemptLabel(closedSuspendedAttempt, nowMs, dashboard.exams[0]),
+    ).toBe("Completed for 2026-06-16 17:00");
+    expect(buildScheduledAttemptViews({
+      exams: dashboard.exams,
+      attempts: [closedReadyAttempt],
+    }, nowMs)[0]).toMatchObject({
+      status: "ready",
+      displayStatus: "expired",
+    });
+  });
+
+  it("keeps score review available for completed Guided Journey attempts before the open window closes", () => {
+    const completedAttempt = {
+      id: "attempt-completed",
+      examId: "exam-1",
+      scheduledFor: "2026-06-16T16:00:00.000Z",
+      status: "completed" as const,
+    };
+    const nowMs = new Date("2026-06-16T16:30:00.000Z").getTime();
+
+    expect(getAttemptPrimaryAction(completedAttempt, nowMs, dashboard.exams[0])).toEqual({
+      label: "View score",
+      disabled: false,
+    });
+  });
+
+  it("uses attempt-scoped Exam timing when the Exam is no longer in the published catalog", () => {
+    const nowMs = new Date("2026-06-16T18:00:01.000Z").getTime();
+    const views = buildScheduledAttemptViews(
+      {
+        exams: [],
+        attempts: [
+          {
+            id: "attempt-unpublished-ready",
+            examId: "exam-unpublished",
+            examTitle: "Unpublished Windows Boxes",
+            timeLimitMinutes: 10,
+            openPeriodMinutes: 20,
+            scoreRetrievalEnabled: true,
+            scheduledFor: "2026-06-16T16:00:00.000Z",
+            status: "ready",
+          },
+        ],
+      },
+      nowMs,
+    );
+
+    expect(views[0]).toMatchObject({
+      examTitle: "Unpublished Windows Boxes",
+      openPeriodMinutes: 20,
+      scoreRetrievalEnabled: true,
+      displayStatus: "expired",
+      scheduledWindowLabel: "Starts 2026-06-16 17:00 · Closes 2026-06-16 17:20 (20 min)",
+    });
+  });
+
+  it("builds candidate-facing labels for runtime limit and open period", () => {
+    expect(buildCandidateExamDurationLabels(dashboard.exams[0]!)).toEqual({
+      runtimeLimit: "90 minute runtime limit",
+      openWindow: "120 minute open window",
+      openPeriodDetail: "120 minutes from scheduled start",
+    });
+  });
+
   it("allows enter only for ready attempts at or after the scheduled time", () => {
     expect(
       canEnterAttempt(dashboard.attempts[1] ?? null, new Date("2026-06-16T16:00:00.000Z").getTime()),
@@ -99,11 +192,13 @@ describe("candidate home attempt state", () => {
   it.each([
     {
       attempt: dashboard.attempts[1] ?? null,
+      exam: dashboard.exams[0] ?? null,
       nowMs: new Date("2026-06-16T15:00:00.000Z").getTime(),
       expected: { label: "Enter exam", disabled: true },
     },
     {
       attempt: dashboard.attempts[1] ?? null,
+      exam: dashboard.exams[0] ?? null,
       nowMs: new Date("2026-06-16T16:00:00.000Z").getTime(),
       expected: { label: "Enter exam", disabled: false },
     },
@@ -114,6 +209,7 @@ describe("candidate home attempt state", () => {
         scheduledFor: "2026-06-16T16:00:00.000Z",
         status: "in_progress" as const,
       },
+      exam: dashboard.exams[0] ?? null,
       nowMs: new Date("2026-06-16T16:00:00.000Z").getTime(),
       expected: { label: "Return to exam", disabled: false },
     },
@@ -124,6 +220,7 @@ describe("candidate home attempt state", () => {
         scheduledFor: "2026-06-16T16:00:00.000Z",
         status: "suspended" as const,
       },
+      exam: dashboard.exams[0] ?? null,
       nowMs: new Date("2026-06-16T16:00:00.000Z").getTime(),
       expected: { label: "Resume exam", disabled: false },
     },
@@ -134,22 +231,81 @@ describe("candidate home attempt state", () => {
         scheduledFor: "2026-06-16T16:00:00.000Z",
         status: "completed" as const,
       },
+      exam: dashboard.exams[0] ?? null,
       nowMs: new Date("2026-06-16T16:00:00.000Z").getTime(),
       expected: { label: "View score", disabled: false },
     },
     {
+      attempt: {
+        id: "attempt-completed",
+        examId: "exam-1",
+        scheduledFor: "2026-06-16T16:00:00.000Z",
+        status: "completed" as const,
+      },
+      exam: dashboard.exams[0] ?? null,
+      nowMs: new Date("2026-06-16T18:00:01.000Z").getTime(),
+      expected: { label: "View score", disabled: false },
+    },
+    {
       attempt: dashboard.attempts[2] ?? null,
+      exam: dashboard.exams[1] ?? null,
       nowMs: new Date("2026-06-17T10:00:00.000Z").getTime(),
       expected: { label: null, disabled: false },
     },
-  ])("maps candidate-home primary actions without changing their behavior", ({ attempt, nowMs, expected }) => {
-    expect(getAttemptPrimaryAction(attempt, nowMs)).toEqual(expected);
+    {
+      attempt: dashboard.attempts[1] ?? null,
+      exam: dashboard.exams[0] ?? null,
+      nowMs: new Date("2026-06-16T18:00:01.000Z").getTime(),
+      expected: { label: null, disabled: false },
+    },
+    {
+      attempt: {
+        id: "attempt-progress",
+        examId: "exam-1",
+        scheduledFor: "2026-06-16T16:00:00.000Z",
+        status: "in_progress" as const,
+      },
+      exam: dashboard.exams[0] ?? null,
+      nowMs: new Date("2026-06-16T18:00:01.000Z").getTime(),
+      expected: { label: "View score", disabled: false },
+    },
+    {
+      attempt: {
+        id: "attempt-suspended",
+        examId: "exam-2",
+        scheduledFor: "2026-06-16T16:00:00.000Z",
+        status: "suspended" as const,
+      },
+      exam: dashboard.exams[1] ?? null,
+      nowMs: new Date("2026-06-16T17:30:01.000Z").getTime(),
+      expected: { label: null, disabled: false },
+    },
+  ])("maps candidate-home primary actions from the portal-owned open window", ({ attempt, exam, nowMs, expected }) => {
+    expect(getAttemptPrimaryAction(attempt, nowMs, exam)).toEqual(expected);
   });
 
   it("computes a one-shot wake-up delay for the next ready attempt that will become enterable", () => {
     const delayMs = getNextEnterabilityWakeUpDelayMs(
       dashboard.attempts,
       new Date("2026-06-16T15:59:59.000Z").getTime(),
+    );
+
+    expect(delayMs).toBeGreaterThan(1_000);
+    expect(delayMs).toBeLessThanOrEqual(1_500);
+  });
+
+  it("computes a wake-up delay for an active attempt when its authored open period closes", () => {
+    const delayMs = getNextEnterabilityWakeUpDelayMs(
+      [
+        {
+          id: "attempt-progress",
+          examId: "exam-1",
+          scheduledFor: "2026-06-16T16:00:00.000Z",
+          status: "in_progress",
+        },
+      ],
+      new Date("2026-06-16T17:59:59.000Z").getTime(),
+      dashboard.exams,
     );
 
     expect(delayMs).toBeGreaterThan(1_000);

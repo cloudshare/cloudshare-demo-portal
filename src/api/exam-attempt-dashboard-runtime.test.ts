@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createExamClock, createInMemoryExamClockRepository } from "@/domain/exam-clock";
-import { createDraftExam, publishExam, type CreateDraftExamInput } from "@/domain/exam-catalog";
+import { createDraftExam, publishExam, unpublishExam, type CreateDraftExamInput } from "@/domain/exam-catalog";
 import type { CloudShareClientFactory, CloudShareConnectionRecord, CloudShareConnectionRepository } from "@/domain/cloudshare-connection";
 import { CloudShareRequestError, CloudShareResponseError } from "@/integrations/cloudshare";
 import type { Logger } from "@/observability/logger";
@@ -27,6 +27,7 @@ function makeExamInput(overrides: Partial<CreateDraftExamInput> = {}): CreateDra
     title: "Helios CloudShare Fundamentals",
     description: "Hands-on certification exam.",
     timeLimitMinutes: 90,
+    openPeriodMinutes: 120,
     scoreRetrievalEnabled: false,
     projectId: "project-1",
     projectName: "Helios CX Project",
@@ -142,6 +143,7 @@ describe("getExamAttemptDashboardRuntime", () => {
           title: "Helios CloudShare Fundamentals",
           description: "Hands-on certification exam.",
           timeLimitMinutes: 90,
+          openPeriodMinutes: 120,
           scoreRetrievalEnabled: false,
         },
       ],
@@ -149,18 +151,65 @@ describe("getExamAttemptDashboardRuntime", () => {
         {
           id: "attempt-in-progress",
           examId: "exam-1",
+          examTitle: "Helios CloudShare Fundamentals",
+          timeLimitMinutes: 90,
+          openPeriodMinutes: 120,
+          scoreRetrievalEnabled: false,
           scheduledFor: "2026-06-15T16:00:00.000Z",
           status: "in_progress",
         },
         {
           id: "attempt-completed",
           examId: "exam-1",
+          examTitle: "Helios CloudShare Fundamentals",
+          timeLimitMinutes: 90,
+          openPeriodMinutes: 120,
+          scoreRetrievalEnabled: false,
           scheduledFor: "2026-06-16T16:00:00.000Z",
           status: "completed",
         },
       ],
     });
     expect(JSON.stringify(dashboard.body)).not.toContain("loginUrl");
+  });
+
+  it("keeps Exam timing metadata on attempts after the Exam is unpublished", async () => {
+    const exams = await makeExamRepository();
+    await unpublishExam(
+      { repository: exams, now: () => new Date("2026-06-15T09:10:00.000Z") },
+      { customerId: "customer-helios", examId: "exam-1" },
+    );
+    const attempts = createInMemoryExamAttemptRepository();
+    const logger = makeLogger();
+
+    await attempts.save({
+      id: "attempt-ready",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "ready",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+
+    const dashboard = await getExamAttemptDashboardRuntime(
+      { repository: exams, attempts, logger },
+      { customerId: "customer-helios", candidateId: "candidate-1" },
+    );
+
+    expect(dashboard.body).toEqual({
+      exams: [],
+      attempts: [
+        expect.objectContaining({
+          id: "attempt-ready",
+          examId: "exam-1",
+          examTitle: "Helios CloudShare Fundamentals",
+          timeLimitMinutes: 90,
+          openPeriodMinutes: 120,
+          scoreRetrievalEnabled: false,
+          status: "ready",
+        }),
+      ],
+    });
   });
 
   it("reconciles exhausted runtime to completed and records completion diagnostics", async () => {

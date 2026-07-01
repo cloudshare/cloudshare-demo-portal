@@ -4,8 +4,12 @@ export type CandidateLabStatus = {
   examAttemptId: string;
   examTitle: string;
   timeLimitMinutes: number;
+  openPeriodMinutes?: number;
+  scoreRetrievalEnabled?: boolean;
   status: AttemptStatus;
   scheduledFor: string | null;
+  openPeriodEndsAt?: string | null;
+  openPeriodClosed?: boolean;
 };
 
 interface JsonResponse {
@@ -64,6 +68,17 @@ export async function preflightLabAction(
       kind: "completed",
       labStatus,
       message: "Examination complete.",
+    };
+  }
+
+  if (labStatus.openPeriodClosed === true) {
+    return {
+      kind: "blocked",
+      labStatus,
+      message:
+        input.action === "resume"
+          ? "Exam resume is not available after the Exam open period has closed."
+          : "Exam entry is not available after the Exam open period has closed.",
     };
   }
 
@@ -205,6 +220,13 @@ export async function resumeLabAttempt(
   }
 
   const labStatus = await loadCandidateLabStatus(fetchImpl, examAttemptId).catch(() => null);
+  if (labStatus?.openPeriodClosed === true) {
+    return {
+      kind: "blocked",
+      labStatus,
+      message: "Exam entry is not available after the Exam open period has closed.",
+    };
+  }
   if (labStatus?.status === "completed") {
     return {
       kind: "completed",

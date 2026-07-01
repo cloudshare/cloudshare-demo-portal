@@ -193,25 +193,43 @@ export async function getProjectResourcesRuntime(
         resourceIds: policies.map((policy) => policy.id),
       },
     });
+    await Promise.all(
+      policies.map((policy) =>
+        recordResourceRead(deps, {
+          customerId: request.customerId,
+          operation: "cloudshare.resource_sync.policy_detail.read",
+          integrationSurface: "cloudshare.v3.projects.policy_detail",
+          path: `/projects/${request.projectId}/policies/${policy.id}`,
+          resourceType: "policy_detail",
+          resourceIds: { projectId: request.projectId, policyId: policy.id },
+          request: buildPolicyDetailDiagnosticRequest(
+            policy,
+            `/projects/${request.projectId}/policies/${policy.id}`,
+          ),
+          response: buildPolicyDetailDiagnosticResponse(policy),
+        }),
+      ),
+    );
   } catch (error) {
-    return await handleCloudShareFailure(deps, {
-      customerId: request.customerId,
-      operation: "cloudshare.resource_sync.policies.read",
-      integrationSurface: "cloudshare.v3.projects.policies",
-      path: `/projects/${request.projectId}/policies`,
-      resourceType: "policy",
-      resourceIds: { projectId: request.projectId },
-      error,
-    });
+    return await handleCloudShareFailure(
+      deps,
+      buildPolicyReadFailureSpec(request.customerId, request.projectId, error),
+    );
   }
 
+  const policiesForClient = policies.map(stripPolicyDiagnosticExchange);
   await deps.cache.saveProjectResources(request.customerId, request.projectId, {
     blueprints,
-    policies,
+    policies: policiesForClient,
   });
   return {
     status: 200,
-    body: { source: "live", projectId: request.projectId, blueprints, policies },
+    body: {
+      source: "live",
+      projectId: request.projectId,
+      blueprints,
+      policies: policiesForClient,
+    },
   };
 }
 
@@ -325,6 +343,103 @@ async function recordResourceRead(
     details: { integrationSurface: spec.integrationSurface },
     externalIds: { resourceType: spec.resourceType, ...(spec.resourceIds ?? {}) },
   });
+}
+
+function buildPolicyDetailDiagnosticResponse(policy: {
+  readonly id: string;
+  readonly name: string;
+  readonly runtimeLeaseMinutes?: number | null;
+  readonly storageLeaseMinutes?: number | null;
+  readonly diagnosticResponse?: Record<string, unknown>;
+}): Record<string, unknown> {
+  return {
+    policyId: policy.id,
+    name: policy.name,
+    ...(policy.runtimeLeaseMinutes !== undefined
+      ? { runtimeLeaseMinutes: policy.runtimeLeaseMinutes }
+      : {}),
+    ...(policy.storageLeaseMinutes !== undefined
+      ? { storageLeaseMinutes: policy.storageLeaseMinutes }
+      : {}),
+    ...(policy.diagnosticResponse ?? {}),
+  };
+}
+
+function buildPolicyDetailDiagnosticRequest(
+  policy: { readonly diagnosticRequest?: Record<string, unknown> },
+  path: string,
+): Record<string, unknown> {
+  return policy.diagnosticRequest ?? { method: "GET", path };
+}
+
+function stripPolicyDiagnosticExchange<
+  T extends {
+    readonly diagnosticRequest?: Record<string, unknown>;
+    readonly diagnosticResponse?: Record<string, unknown>;
+  },
+>(policy: T): Omit<T, "diagnosticRequest" | "diagnosticResponse"> {
+  const {
+    diagnosticRequest: _diagnosticRequest,
+    diagnosticResponse: _diagnosticResponse,
+    ...rest
+  } = policy;
+  return rest;
+}
+
+function buildPolicyReadFailureSpec(
+  customerId: string,
+  projectId: string,
+  error: unknown,
+): ResourceDiagnosticFailureSpec {
+  const detailFailure = getProjectPolicyDetailFailure(projectId, error);
+  if (detailFailure) {
+    return {
+      customerId,
+      operation: "cloudshare.resource_sync.policy_detail.read",
+      integrationSurface: "cloudshare.v3.projects.policy_detail",
+      path: detailFailure.path,
+      resourceType: "policy_detail",
+      resourceIds: { projectId, policyId: detailFailure.policyId },
+      error,
+    };
+  }
+
+  return {
+    customerId,
+    operation: "cloudshare.resource_sync.policies.read",
+    integrationSurface: "cloudshare.v3.projects.policies",
+    path: `/projects/${projectId}/policies`,
+    resourceType: "policy",
+    resourceIds: { projectId },
+    error,
+  };
+}
+
+function getProjectPolicyDetailFailure(
+  projectId: string,
+  error: unknown,
+): { path: string; policyId: string } | null {
+  const cloudShareError = asCloudShareErrorLike(error);
+  const rawPath = cloudShareError?.context?.path;
+  if (typeof rawPath !== "string") {
+    return null;
+  }
+
+  const normalizedPath = rawPath.startsWith("/api/v3/")
+    ? rawPath.slice("/api/v3".length)
+    : rawPath;
+  const pathWithoutQuery = normalizedPath.split(/[?#]/, 1)[0] ?? normalizedPath;
+  const prefix = `/projects/${projectId}/policies/`;
+  if (!pathWithoutQuery.startsWith(prefix)) {
+    return null;
+  }
+
+  const policyId = pathWithoutQuery.slice(prefix.length);
+  if (!policyId || policyId.includes("/")) {
+    return null;
+  }
+
+  return { path: pathWithoutQuery, policyId };
 }
 
 function buildBlueprintDetailDiagnosticResponse(blueprint: {

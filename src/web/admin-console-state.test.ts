@@ -14,6 +14,8 @@ import {
   getAllowedRegionValidationMessage,
   getExamAuthoringMode,
   getCompatibleRegions,
+  getDefaultOpenPeriodMinutes,
+  getResetOpenPeriodMinutes,
   normaliseDiagnosticLogFilters,
   parseAdminConsoleRouteState,
   type DiagnosticLogFilters,
@@ -86,6 +88,58 @@ describe("getExamAuthoringMode", () => {
       tupleChangeHint:
         "Project, Blueprint, and Snapshot are locked while editing a draft. Policy and allowed Regions can still be changed.",
     });
+  });
+});
+
+describe("getDefaultOpenPeriodMinutes", () => {
+  it("defaults Exam open period from runtime lease, not storage retention", () => {
+    expect(
+      getDefaultOpenPeriodMinutes({
+        runtimeLeaseMinutes: 90,
+        storageLeaseMinutes: 2880,
+      }),
+    ).toBe("90");
+  });
+
+  it("leaves open period blank when runtime lease evidence is missing", () => {
+    expect(getDefaultOpenPeriodMinutes({ storageLeaseMinutes: 2880 })).toBe("");
+  });
+
+  it("keeps the default within known storage retention evidence", () => {
+    expect(
+      getDefaultOpenPeriodMinutes({
+        runtimeLeaseMinutes: 180,
+        storageLeaseMinutes: 120,
+      }),
+    ).toBe("120");
+  });
+});
+
+describe("getResetOpenPeriodMinutes", () => {
+  it("uses an explicit open period when hydrating a draft for editing", () => {
+    expect(
+      getResetOpenPeriodMinutes({
+        explicitOpenPeriodMinutes: "720",
+        selectedPolicy: { runtimeLeaseMinutes: 90, storageLeaseMinutes: 2880 },
+      }),
+    ).toBe("720");
+  });
+
+  it("falls back to the selected Policy default when clearing the authoring form", () => {
+    expect(
+      getResetOpenPeriodMinutes({
+        selectedPolicy: { runtimeLeaseMinutes: 120, storageLeaseMinutes: 1440 },
+      }),
+    ).toBe("120");
+  });
+
+  it("falls back to the current runtime lease when selected Policy evidence is temporarily unavailable", () => {
+    expect(
+      getResetOpenPeriodMinutes({
+        selectedPolicy: null,
+        fallbackRuntimeLeaseMinutes: "90",
+      }),
+    ).toBe("90");
   });
 });
 
@@ -279,6 +333,7 @@ describe("monitoring history state", () => {
             candidateId: "candidate-3",
             candidateName: "Jordan Park",
             candidateEmail: "jordan@helioscx.demo",
+            examOpenPeriodMinutes: 90,
             status: "completed",
             scheduledFor: "2026-06-21T12:00:00.000Z",
             createdAt: "2026-06-20T12:00:00.000Z",
@@ -308,6 +363,7 @@ describe("monitoring history state", () => {
             candidateId: "candidate-3",
             candidateName: "Jordan Park",
             candidateEmail: "jordan@helioscx.demo",
+            examOpenPeriodMinutes: 90,
             status: "completed",
             scheduledFor: "2026-06-21T12:00:00.000Z",
             createdAt: "2026-06-20T12:00:00.000Z",
@@ -325,6 +381,7 @@ describe("monitoring history state", () => {
             candidateId: "candidate-2",
             candidateName: "Casey Rivera",
             candidateEmail: "casey@helioscx.demo",
+            examOpenPeriodMinutes: 90,
             status: "expired",
             scheduledFor: "2026-06-21T11:00:00.000Z",
             createdAt: "2026-06-20T11:00:00.000Z",

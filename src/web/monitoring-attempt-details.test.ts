@@ -14,6 +14,7 @@ const BASE_ATTEMPT: MonitoringAttemptView = {
   candidateId: "candidate-1",
   candidateName: "Casey Rivera",
   candidateEmail: "candidate@helioscx.demo",
+  examOpenPeriodMinutes: 90,
   status: "ready",
   scheduledFor: "2026-06-21T09:00:00.000Z",
   createdAt: "2026-06-20T09:00:00.000Z",

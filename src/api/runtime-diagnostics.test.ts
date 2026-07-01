@@ -715,6 +715,7 @@ const SCORE_EXAM: Exam = {
   title: "Test Exam",
   description: "desc",
   timeLimitMinutes: 60,
+  openPeriodMinutes: 120,
   scoreRetrievalEnabled: true,
   status: "published",
   publishedAt: new Date("2026-06-15T07:00:00.000Z"),
