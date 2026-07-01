@@ -1,7 +1,7 @@
 # CloudShare Demo Portal — Codex Instructions
 
 > **Source of truth for scope, domain & decisions:** `CONTEXT.md` (glossary),
-> `docs/decisions/ADR-001..ADR-003`, and `docs/requirements/prd-cloudshare-demo-portal-v2.md`.
+> `docs/decisions/ADR-001..ADR-005`, and `docs/requirements/prd-cloudshare-demo-portal-v2.md`.
 > This file is a quick orientation; where it differs from those documents, **they win.**
 > The earlier Genesys/Kryterion "proctoring" framing is **retired** (see the 2026-06-13
 > grill-with-docs re-scope, `docs/discovery/2026-06-13-grill-with-docs-synthesis.md`).
@@ -86,6 +86,10 @@ showing real CloudShare behaviour, CloudShare wins.
 - Do not couple UI components directly to **CloudShare** APIs — go through the integration adapter.
 - The CloudShare client is instantiated **per-Customer** from a stored, encrypted `CloudShareConnection`
   (ADR-001) — never from global env vars.
+- Keep CloudShare-backed Exam timing explicit (ADR-005): Policy `runtimeLeaseMinutes` feeds the
+  Candidate's `Exam.timeLimitMinutes`; manually authored `Exam.openPeriodMinutes` defines the v4
+  training/Experience `End`; Policy `storageLeaseMinutes` is retention/validation evidence, not the
+  direct Experience duration.
 - CloudShare v3 `cs_sha1` signing must follow CloudShare's documented wire format exactly:
   `Authorization: cs_sha1 userapiid:<id>;timestamp:<epoch-seconds>;token:<nonce>;hmac:<sha1>`.
   The `token` nonce is exactly **10 alphanumeric characters**. Do not use UUIDs.
