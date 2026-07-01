@@ -74,6 +74,7 @@ describe("PrismaExamClockRepository", () => {
         title: "Clock Persistence Exam",
         description: "Exam clock persistence test",
         timeLimitMinutes: 90,
+        openPeriodMinutes: 120,
         scoreRetrievalEnabled: false,
         status: "published",
         publishedAt: new Date("2026-06-15T09:00:00.000Z"),

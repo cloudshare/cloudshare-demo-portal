@@ -42,6 +42,7 @@ async function makePublishedExam() {
       title: "Helios Guided Journey",
       description: "Hands-on exam",
       timeLimitMinutes: 90,
+      openPeriodMinutes: 120,
       scoreRetrievalEnabled: true,
       projectId: "project-1",
       projectName: "Helios CX",

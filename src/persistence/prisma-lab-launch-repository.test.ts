@@ -43,6 +43,7 @@ describe("createPrismaLabLaunchRepository", () => {
         title: "Helios Network Security Exam",
         description: "",
         timeLimitMinutes: 120,
+        openPeriodMinutes: 180,
         scoreRetrievalEnabled: false,
         status: "published",
         publishedAt: new Date("2026-06-24T12:00:00.000Z"),

@@ -278,10 +278,7 @@ export async function scheduleExam(
     const training = await trainingCreator({
       title: trainingTitle,
       scheduledFor: input.scheduledFor,
-      endsAt: new Date(
-        input.scheduledFor.getTime() +
-          (exam.storageLeaseMinutes ?? exam.timeLimitMinutes) * 60 * 1000,
-      ),
+      endsAt: new Date(input.scheduledFor.getTime() + exam.openPeriodMinutes * 60 * 1000),
       projectId: exam.projectId,
       blueprintId: exam.blueprintId,
       policyId: exam.policyId,

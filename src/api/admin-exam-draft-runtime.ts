@@ -100,6 +100,7 @@ export async function createAdminDraftExamRuntime(
           "description",
           "scoreRetrievalEnabled",
           "policyId",
+          "openPeriodMinutes",
           "allowedRegions",
           "status",
         ],
@@ -200,6 +201,7 @@ function summariseExamChanges(before: Exam, after: Exam): string[] {
   if (before.policyId !== after.policyId) changedFields.push("policyId");
   if (before.policyName !== after.policyName) changedFields.push("policyName");
   if (before.timeLimitMinutes !== after.timeLimitMinutes) changedFields.push("timeLimitMinutes");
+  if (before.openPeriodMinutes !== after.openPeriodMinutes) changedFields.push("openPeriodMinutes");
   if (before.storageLeaseMinutes !== after.storageLeaseMinutes) {
     changedFields.push("storageLeaseMinutes");
   }
@@ -254,6 +256,7 @@ async function parseMutableDraftExamInput(
     typeof candidate.description !== "string" ||
     typeof candidate.scoreRetrievalEnabled !== "boolean" ||
     typeof candidate.policyId !== "string" ||
+    typeof candidate.openPeriodMinutes !== "number" ||
     !Array.isArray(candidate.allowedRegionIds) ||
     candidate.allowedRegionIds.some((regionId) => typeof regionId !== "string")
   ) {
@@ -309,9 +312,11 @@ async function parseMutableDraftExamInput(
   if (policy.runtimeLeaseMinutes === null || policy.runtimeLeaseMinutes === undefined) {
     return null;
   }
-  if (policy.storageLeaseMinutes === null || policy.storageLeaseMinutes === undefined) {
-    return null;
-  }
+  validateOpenPeriodMinutes(
+    candidate.openPeriodMinutes,
+    policy.runtimeLeaseMinutes,
+    policy.storageLeaseMinutes,
+  );
 
   return {
     customerId,
@@ -321,6 +326,7 @@ async function parseMutableDraftExamInput(
     scoreRetrievalEnabled: candidate.scoreRetrievalEnabled,
     timeLimitMinutes: policy.runtimeLeaseMinutes,
     storageLeaseMinutes: policy.storageLeaseMinutes,
+    openPeriodMinutes: candidate.openPeriodMinutes,
     allowedRegions: allowedRegions.map((region) => ({
       id: region!.id,
       name: region!.friendlyName?.trim() || region!.name,
@@ -348,6 +354,7 @@ async function parseCreateDraftExamInput(
     typeof candidate.projectId !== "string" ||
     typeof candidate.blueprintId !== "string" ||
     typeof candidate.snapshotId !== "string" ||
+    typeof candidate.openPeriodMinutes !== "number" ||
     !Array.isArray(candidate.allowedRegionIds) ||
     candidate.allowedRegionIds.some((regionId) => typeof regionId !== "string") ||
     typeof candidate.policyId !== "string"
@@ -404,9 +411,11 @@ async function parseCreateDraftExamInput(
   if (policy.runtimeLeaseMinutes === null || policy.runtimeLeaseMinutes === undefined) {
     return null;
   }
-  if (policy.storageLeaseMinutes === null || policy.storageLeaseMinutes === undefined) {
-    return null;
-  }
+  validateOpenPeriodMinutes(
+    candidate.openPeriodMinutes,
+    policy.runtimeLeaseMinutes,
+    policy.storageLeaseMinutes,
+  );
 
   return {
     customerId,
@@ -414,6 +423,7 @@ async function parseCreateDraftExamInput(
     description: candidate.description,
     timeLimitMinutes: policy.runtimeLeaseMinutes,
     storageLeaseMinutes: policy.storageLeaseMinutes,
+    openPeriodMinutes: candidate.openPeriodMinutes,
     scoreRetrievalEnabled: candidate.scoreRetrievalEnabled,
     projectId: candidate.projectId,
     projectName: project.name,
@@ -430,4 +440,20 @@ async function parseCreateDraftExamInput(
     instructorId: instructor.id,
     instructorName: instructor.name,
   };
+}
+
+function validateOpenPeriodMinutes(
+  openPeriodMinutes: number,
+  timeLimitMinutes: number,
+  storageLeaseMinutes: number | null | undefined,
+): void {
+  if (!Number.isInteger(openPeriodMinutes) || openPeriodMinutes <= 0) {
+    throw new DraftExamValidationError("openPeriodMinutes must be a positive integer.");
+  }
+  if (openPeriodMinutes < timeLimitMinutes) {
+    throw new DraftExamValidationError("Open period must be at least the Policy runtime lease.");
+  }
+  if (storageLeaseMinutes !== null && storageLeaseMinutes !== undefined && openPeriodMinutes > storageLeaseMinutes) {
+    throw new DraftExamValidationError("Open period must not exceed the Policy storage lease.");
+  }
 }

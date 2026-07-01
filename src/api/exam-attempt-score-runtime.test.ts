@@ -42,6 +42,7 @@ function makeExam(overrides: Partial<Exam> = {}): Exam {
     title: "Helios Exam",
     description: "Guided Journey scoring",
     timeLimitMinutes: 90,
+    openPeriodMinutes: 120,
     scoreRetrievalEnabled: true,
     status: "published",
     publishedAt: new Date("2026-06-16T07:00:00.000Z"),

@@ -700,7 +700,7 @@ The current adapter sends:
 
 - `Name`
 - `Start` as the candidate's scheduled ISO timestamp
-- `End` as `Start + Exam.timeLimitMinutes`; live Issue #251 verification confirmed CloudShare
+- `End` as `Start + Exam.openPeriodMinutes`; live Issue #251 verification confirmed CloudShare
   accepts this field and returns the expected `end` on the created training
 - `Type: "instructorLed"`
 - `ProjectId`
@@ -767,8 +767,7 @@ human-readable without random suffixes and makes retries after partial provision
 name.
 
 **Update (2026-06-30, Issue #251 live verification):** scheduling now sends a PascalCase
-`End` field in the `POST /v4/trainings` body, derived from the Exam's persisted
-`timeLimitMinutes` (`Start + timeLimitMinutes`). A real Candidate UI scheduling flow for the
+`End` field in the `POST /v4/trainings` body. A real Candidate UI scheduling flow for the
 10-minute `Windows Boxes` Exam created training `EXVUAmxA5jgVfM29E2D4cTNA2`; the admin-visible
 `cloudshare.create_training` diagnostic recorded `Start: 2026-06-30T15:48:00.000Z` and
 `End: 2026-06-30T15:58:00.000Z`, and a live `GET /v4/trainings/{id}` readback returned
@@ -783,9 +782,11 @@ undocumented but live-observed:
 related Policy fields. The CloudShare GUI's MVC Policy details page is not needed for this slice and
 is not part of the portal API contract. `runtimeLeaseMinutes` is consumed only while the environment
 is running and remains the Certalis ExamAttempt timer (`Exam.timeLimitMinutes`). `storageLeaseMinutes`
-is the continuous TTL from environment spin-up and defines the CloudShare v4 training/Experience
-`End`; for a Policy with a 10-minute runtime lease and 2-day storage lease, the portal sends
-`End = Start + 2880 minutes`. Environment extensions are ignored for this slice.
+is continuous CloudShare retention/TTL evidence from environment spin-up and supports validation and
+review-buffer evidence; it does not directly define the CloudShare v4 training/Experience `End`.
+The portal persists a manually authored `Exam.openPeriodMinutes`, validates it is at least the
+runtime time limit and no longer than known storage retention, and sends
+`End = scheduledFor + Exam.openPeriodMinutes`. Environment extensions are ignored for this slice.
 
 **Update (2026-07-01, Issue #251 supportability follow-up):** live admin project-resource refresh
 now records one admin-visible `cloudshare.resource_sync.policy_detail.read` diagnostic per Policy

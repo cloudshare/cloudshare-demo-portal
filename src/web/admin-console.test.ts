@@ -82,6 +82,19 @@ describe("AdminConsole", () => {
     expect(html).toContain("Refresh Page");
   });
 
+  it("renders the manually authored Exam open period field", () => {
+    const html = renderToStaticMarkup(
+      createElement(AdminConsole, {
+        email: "admin@helioscx.demo",
+        initialTab: "exams",
+      }),
+    );
+
+    expect(html).toContain("Open period (minutes)");
+    expect(html).toContain("CloudShare Experience duration from scheduled start");
+    expect(html).toContain("Time limit follows the selected CloudShare Policy runtime lease.");
+  });
+
   it("renders Support Diagnostics without legacy workbench or support-log controls", () => {
     const html = renderToStaticMarkup(
       createElement(AdminConsole, {

@@ -684,6 +684,7 @@ describe("admin exam catalog handlers", () => {
           snapshotId: "snap-1",
           allowedRegionIds: ["region-1", "region-2"],
           policyId: "policy-1",
+          openPeriodMinutes: 720,
         },
       },
     );
@@ -695,6 +696,7 @@ describe("admin exam catalog handlers", () => {
         status: "draft",
         title: "Helios CloudShare Fundamentals",
         timeLimitMinutes: 240,
+        openPeriodMinutes: 720,
         projectName: "Helios CX Project",
         allowedRegions: [
           { id: "region-1", name: "EU West" },
@@ -723,6 +725,7 @@ describe("admin exam catalog handlers", () => {
           "description",
           "scoreRetrievalEnabled",
           "policyId",
+          "openPeriodMinutes",
           "allowedRegions",
           "status",
         ],
@@ -757,6 +760,7 @@ describe("admin exam catalog handlers", () => {
           snapshotId: "snap-1",
           allowedRegionIds: ["region-1"],
           policyId: "policy-1",
+          openPeriodMinutes: 720,
         },
       },
     );
@@ -767,6 +771,7 @@ describe("admin exam catalog handlers", () => {
         id: "exam-1",
         description: "",
         timeLimitMinutes: 240,
+        openPeriodMinutes: 720,
       },
     });
   });
@@ -797,6 +802,7 @@ describe("admin exam catalog handlers", () => {
           snapshotId: "snap-1",
           allowedRegionIds: [],
           policyId: "policy-1",
+          openPeriodMinutes: 720,
         },
       },
     );
@@ -847,6 +853,7 @@ describe("admin exam catalog handlers", () => {
           snapshotId: "snap-1",
           allowedRegionIds: ["region-1"],
           policyId: "policy-1",
+          openPeriodMinutes: 720,
         },
       },
     );
@@ -883,6 +890,7 @@ describe("admin exam catalog handlers", () => {
           snapshotId: "snap-1",
           allowedRegionIds: ["region-1", "region-3"],
           policyId: "policy-1",
+          openPeriodMinutes: 720,
         },
       },
     );
@@ -992,6 +1000,7 @@ describe("admin exam catalog handlers", () => {
           snapshotId: "snap-2",
           allowedRegionIds: ["region-1"],
           policyId: "policy-1",
+          openPeriodMinutes: 720,
         },
       },
     );
@@ -1027,6 +1036,7 @@ describe("admin exam catalog handlers", () => {
           snapshotId: "snap-1",
           allowedRegionIds: ["region-1", "region-2"],
           policyId: "policy-1",
+          openPeriodMinutes: 720,
         },
       },
     );
@@ -1090,6 +1100,7 @@ describe("admin exam catalog handlers", () => {
           snapshotId: "snap-1",
           allowedRegionIds: ["region-1", "region-2"],
           policyId: "policy-1",
+          openPeriodMinutes: 720,
         },
       },
     );
@@ -1156,6 +1167,7 @@ describe("admin exam catalog handlers", () => {
           snapshotId: "snap-1",
           allowedRegionIds: ["region-1"],
           policyId: "policy-1",
+          openPeriodMinutes: 720,
         },
       },
     );
@@ -1218,6 +1230,7 @@ describe("admin exam catalog handlers", () => {
           snapshotId: "snap-1",
           allowedRegionIds: ["region-1"],
           policyId: "policy-1",
+          openPeriodMinutes: 720,
         },
       },
     );
@@ -1314,6 +1327,7 @@ describe("admin exam catalog handlers", () => {
           snapshotId: "snap-1",
           allowedRegionIds: ["region-1"],
           policyId: "policy-1",
+          openPeriodMinutes: 720,
         },
       },
     );
@@ -1337,6 +1351,7 @@ describe("admin exam catalog handlers", () => {
           scoreRetrievalEnabled: true,
           allowedRegionIds: ["region-2"],
           policyId: "policy-2",
+          openPeriodMinutes: 360,
         },
       },
     );
@@ -1349,6 +1364,7 @@ describe("admin exam catalog handlers", () => {
         title: "Helios Blueprint Exam",
         description: "Updated description.",
         timeLimitMinutes: 120,
+        openPeriodMinutes: 360,
         scoreRetrievalEnabled: true,
         allowedRegions: [{ id: "region-2", name: "US East" }],
         policyId: "policy-2",
@@ -1375,6 +1391,7 @@ describe("admin exam catalog handlers", () => {
           "policyId",
           "policyName",
           "timeLimitMinutes",
+          "openPeriodMinutes",
           "storageLeaseMinutes",
           "allowedRegions",
         ],
@@ -1410,6 +1427,7 @@ describe("admin exam catalog handlers", () => {
           snapshotId: "snap-1",
           allowedRegionIds: ["region-1"],
           policyId: "policy-1",
+          openPeriodMinutes: 720,
         },
       },
     );

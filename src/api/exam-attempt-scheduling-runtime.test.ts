@@ -29,6 +29,7 @@ function makeExamInput(overrides: Partial<CreateDraftExamInput> = {}): CreateDra
     description: "Hands-on certification exam.",
     timeLimitMinutes: 90,
     storageLeaseMinutes: 90,
+    openPeriodMinutes: 90,
     scoreRetrievalEnabled: false,
     projectId: "project-1",
     projectName: "Helios CX Project",
@@ -221,7 +222,7 @@ describe("ExamAttempt scheduling runtime", () => {
     ]);
   });
 
-  it("uses the Policy storage lease for the CloudShare create-training End", async () => {
+  it("uses the Exam open period for the CloudShare create-training End", async () => {
     const requestV4Detailed = vi.fn(
       async (spec: {
         method: string;
@@ -259,6 +260,7 @@ describe("ExamAttempt scheduling runtime", () => {
     const exams = await makeExamRepository({
       timeLimitMinutes: 10,
       storageLeaseMinutes: 2880,
+      openPeriodMinutes: 60,
     });
 
     const response = await scheduleExamAttemptRuntime(
@@ -297,13 +299,14 @@ describe("ExamAttempt scheduling runtime", () => {
         path: "/trainings",
         body: expect.objectContaining({
           Start: "2026-06-15T16:00:00.000Z",
-          End: "2026-06-17T16:00:00.000Z",
+          End: "2026-06-15T17:00:00.000Z",
         }),
       }),
     );
     await expect(exams.findById("exam-1")).resolves.toMatchObject({
       timeLimitMinutes: 10,
       storageLeaseMinutes: 2880,
+      openPeriodMinutes: 60,
     });
   });
 

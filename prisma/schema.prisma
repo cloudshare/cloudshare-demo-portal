@@ -69,6 +69,7 @@ model Exam {
   description           String
   timeLimitMinutes      Int
   storageLeaseMinutes   Int?
+  openPeriodMinutes     Int
   scoreRetrievalEnabled Boolean
   status                String
   publishedAt           DateTime?

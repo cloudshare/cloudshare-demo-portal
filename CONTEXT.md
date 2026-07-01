@@ -187,7 +187,11 @@ belongs to all teams.
 A Project-scoped setting defining the lifetime of an environment. An Exam selects one Policy from
 the selected Project (v3 `GET /api/v3/projects/{projectId}/policies`). A broader
 `GET /api/v3/policies` surface may return visible policies across Projects for a CloudShare
-Connection, but the portal does not treat that as the primary contract.
+Connection, but the portal does not treat that as the primary contract. Policy detail is read
+through the undocumented but live-observed v3 path
+`GET /api/v3/projects/{projectId}/policies/{policyId}` when lease evidence is needed:
+`runtimeLeaseMinutes` feeds the Certalis ExamAttempt timer, while `storageLeaseMinutes` is
+continuous CloudShare retention/TTL evidence.
 
 **Blueprint**:
 A reusable "folder" of environment metadata plus **Snapshots**. Can exist across Projects and
@@ -238,15 +242,19 @@ experience, so each Exam carries an explicit flag stating whether to retrieve sc
 The **catalog item** the Helios admin publishes. Binds a single CloudShare provisioning tuple —
 **Project + Blueprint + Snapshot** (the Blueprint's current default for experience-based launches)
 **+ Region + Policy + Instructor** —
-plus candidate-facing metadata (title, description, **per-Exam time limit**, published/draft flag,
-and a **score-retrieval flag** stating whether the underlying blueprint has a Guided Journey to
-score). Exam authoring is **Project-first**: the Helios admin selects a Project, then chooses
+plus candidate-facing metadata (title, description, **per-Exam time limit**, manually authored
+**open period**, published/draft flag, and a **score-retrieval flag** stating whether the underlying
+blueprint has a Guided Journey to score). Exam authoring is **Project-first**: the Helios admin selects a Project, then chooses
 Project-scoped Blueprints, Policies, and Blueprint-detail Snapshots for that Project; Region comes
 from the global Region reference list. Instructor is the explicitly configured seeded CloudShare
 service-account member until a Project-member read endpoint is verified. For Slice 2, the selected
 Policy's `runtimeLeaseMinutes` is the portal's exam time-limit source rather than a manual admin
-override. The Candidate is added as the single Participant at launch, not at definition time. What
-a Candidate selects and consumes; the unit this portal actually delivers.
+override. `openPeriodMinutes` is manually editable and defines the CloudShare training/Experience
+End (`scheduledFor + openPeriodMinutes`); it must be at least the runtime time limit and, when
+Policy `storageLeaseMinutes` is known, no longer than that storage retention. `storageLeaseMinutes`
+is retained as Policy evidence and validation/review context, not as the direct scheduling End.
+The Candidate is added as the single Participant at launch, not at definition time. What a Candidate
+selects and consumes; the unit this portal actually delivers.
 _Avoid_: test, assessment; do **not** call the catalog item a "Certification".
 
 **Certification**:

@@ -19,6 +19,7 @@ function makeExamInput(overrides: Partial<CreateDraftExamInput> = {}): CreateDra
     description: "Hands-on certification exam.",
     timeLimitMinutes: 90,
     storageLeaseMinutes: 90,
+    openPeriodMinutes: 90,
     scoreRetrievalEnabled: false,
     projectId: "project-1",
     projectName: "Helios CX Project",
@@ -35,11 +36,11 @@ function makeExamInput(overrides: Partial<CreateDraftExamInput> = {}): CreateDra
   };
 }
 
-it("uses the Policy storage lease for CloudShare training End while preserving the runtime Exam timer", async () => {
+it("uses the authored open period for CloudShare training End while preserving the runtime Exam timer", async () => {
   const exams = createInMemoryExamCatalogRepository();
   await createDraftExam(
     { repository: exams, now: () => new Date("2026-06-15T09:00:00.000Z"), newId: () => "exam-1" },
-    makeExamInput({ timeLimitMinutes: 10, storageLeaseMinutes: 2880 }),
+    makeExamInput({ timeLimitMinutes: 10, storageLeaseMinutes: 2880, openPeriodMinutes: 60 }),
   );
   await publishExam(
     { repository: exams, now: () => new Date("2026-06-15T09:05:00.000Z") },
@@ -84,12 +85,13 @@ it("uses the Policy storage lease for CloudShare training End while preserving t
   expect(createTraining).toHaveBeenCalledWith(
     expect.objectContaining({
       scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
-      endsAt: new Date("2026-06-17T16:00:00.000Z"),
+      endsAt: new Date("2026-06-15T17:00:00.000Z"),
     }),
   );
   await expect(exams.findById("exam-1")).resolves.toMatchObject({
     timeLimitMinutes: 10,
     storageLeaseMinutes: 2880,
+    openPeriodMinutes: 60,
   });
 });
 
@@ -316,10 +318,11 @@ describe("scheduleExam", () => {
     );
   });
 
-  it("passes the Exam storage lease as the CloudShare training end time", async () => {
+  it("passes the Exam open period as the CloudShare training end time", async () => {
     const { exams, attempts, launches } = await setup({
       timeLimitMinutes: 90,
-      storageLeaseMinutes: 135,
+      storageLeaseMinutes: 2880,
+      openPeriodMinutes: 135,
     });
     const createTraining = vi.fn(async (_input: CreateTrainingInput) => ({ trainingId: "training-1" }));
 

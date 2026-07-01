@@ -59,6 +59,7 @@ describe("exam status route", () => {
         title: "Helios Guided Journey",
         description: "Hands-on exam",
         timeLimitMinutes: 60,
+        openPeriodMinutes: 120,
         scoreRetrievalEnabled: true,
         projectId: "project-1",
         projectName: "Helios CX",

@@ -54,8 +54,8 @@ first-class deliverable.
 6. As a Helios admin, I want to list the projects in my subscription, so that I can pick where exams are provisioned.
 7. As a Helios admin, I want to list the Blueprints for a chosen Project, then inspect Blueprint detail including Snapshots and the default Snapshot, so that I can see which environment version an Experience-based Exam will use.
 8. As a Helios admin, I want the portal to reflect the blueprint's current default Snapshot for Experience-based Exam launches, so that the portal does not imply it can override CloudShare's launch behavior.
-9. As a Helios admin, I want to choose a Project-scoped Policy and one or more allowed Regions for an Exam from the selected Blueprint default Snapshot deployment set, so that environment lifetime and CloudShare placement stay valid.
-10. As a Helios admin, I want candidate-facing exam metadata (title, description, time limit) to be prepared from the selected CloudShare resources, so that candidates understand what they are scheduling without the portal inventing conflicting launch settings.
+9. As a Helios admin, I want to choose a Project-scoped Policy, one or more allowed Regions, and a manually authored Exam open period from the selected Blueprint default Snapshot deployment set, so that environment lifetime and CloudShare placement stay valid.
+10. As a Helios admin, I want candidate-facing exam metadata (title, description, time limit, open period) to be prepared from the selected CloudShare resources, so that candidates understand what they are scheduling without the portal inventing conflicting launch settings.
 11. As a Helios admin, I want to mark whether an exam retrieves Guided Journey scores, so that the portal only requests progress when a journey exists.
 12. As a Helios admin, I want to publish or unpublish an exam (draft vs published), so that candidates only see exams that are ready.
 
@@ -153,8 +153,8 @@ first-class deliverable.
 ### Exam catalog
 - An **Exam** belongs to a Customer and binds a provisioning tuple — **project, blueprint, snapshot
   (the Blueprint's current default for Experience-based launches), allowed Region set (a non-empty subset of that default Snapshot's deployed Regions), policy, instructor (a seeded service-account project
-  member)** — plus metadata (title, description, per-Exam **time limit** sourced from the selected Policy runtime lease, **published/draft**, and a
-  **score-retrieval flag**). The blueprint/policy/project/allowed-Region selection replaces the global
+  member)** — plus metadata (title, description, per-Exam **time limit** sourced from the selected Policy runtime lease, manually authored
+  **open period**, **published/draft**, and a **score-retrieval flag**). The blueprint/policy/project/allowed-Region selection replaces the global
   `DEMO_*` env vars.
 - Exam authoring is **Project-first**, not global-resource-first. The intended admin workflow is:
   sync/list Projects, sync/list global Regions, select a Project, then fetch or read cached
@@ -164,6 +164,13 @@ first-class deliverable.
   Snapshot detail is informative for Experience-based launches: the portal records the current
   default Snapshot, constrains allowed Regions to that Snapshot's deployed Region set, and does not
   directly select a non-default Blueprint version.
+- Policy detail lease evidence is read through the undocumented but live-observed v3 endpoint
+  `GET /api/v3/projects/{projectId}/policies/{policyId}`. `runtimeLeaseMinutes` remains the
+  Certalis ExamAttempt timer (`Exam.timeLimitMinutes`). `storageLeaseMinutes` is retained as
+  continuous CloudShare retention/TTL evidence and bounds authoring when present; it does not
+  directly define the v4 training End. The manually authored `openPeriodMinutes` defines the
+  CloudShare training/Experience End and must satisfy `openPeriodMinutes >= timeLimitMinutes` and,
+  when storage evidence is available, `openPeriodMinutes <= storageLeaseMinutes`.
 - The current admin **Resources** tab is a stopgap sync surface for early integration evidence. It
   should not be treated as the long-term Exam-authoring model, and the portal should not assume that
   syncing every visible project-scoped object across every Project is the default design.
@@ -185,7 +192,7 @@ first-class deliverable.
 - `ExamAttempt` carries `scheduledFor` and a lifecycle: `scheduled → provisioned(ready) →
   in_progress → suspended ⇄ in_progress → completed / expired`.
 - **At scheduling**, the `LabLaunch` flow runs immediately: create training (`instructorLed`,
-  `start = scheduledFor`) → add participant → create sponsored link. No background scheduler; the
+  `start = scheduledFor`, `End = scheduledFor + Exam.openPeriodMinutes`) → add participant → create sponsored link. No background scheduler; the
   environment is provisioned by CloudShare **on login** (warm standby ≥5h ahead, else cold). A
   warning is shown when scheduling within ~5h.
 - Training creation uses CloudShare's Team ID, not Project ID. Because v4 training creation requires

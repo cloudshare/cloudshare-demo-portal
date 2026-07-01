@@ -1,2 +1,2 @@
--- Persist the CloudShare Policy storage lease used to calculate v4 training End.
+-- Persist CloudShare Policy storage lease retention evidence.
 ALTER TABLE "Exam" ADD COLUMN "storageLeaseMinutes" INTEGER;

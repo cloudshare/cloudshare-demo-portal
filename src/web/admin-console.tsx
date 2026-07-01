@@ -104,6 +104,7 @@ interface NamedResource {
   friendlyName?: string;
   description?: string;
   runtimeLeaseMinutes?: number | null;
+  storageLeaseMinutes?: number | null;
 }
 
 interface BlueprintSnapshot {
@@ -126,6 +127,8 @@ interface ExamRecord {
   title: string;
   description: string;
   timeLimitMinutes: number;
+  storageLeaseMinutes?: number | null;
+  openPeriodMinutes: number;
   scoreRetrievalEnabled: boolean;
   status: "draft" | "published";
   publishedAt: string | null;
@@ -202,6 +205,7 @@ export function AdminConsole({
   const [examTitle, setExamTitle] = useState("");
   const [examDescription, setExamDescription] = useState("");
   const [timeLimitMinutes, setTimeLimitMinutes] = useState("90");
+  const [openPeriodMinutes, setOpenPeriodMinutes] = useState("90");
   const [scoreRetrievalEnabled, setScoreRetrievalEnabled] = useState(false);
   const [editingExamId, setEditingExamId] = useState<string | null>(null);
   const [examCatalog, setExamCatalog] = useState<ExamRecord[]>([]);
@@ -595,6 +599,7 @@ export function AdminConsole({
     description?: string;
     scoreRetrievalEnabled?: boolean;
     timeLimitMinutes?: string;
+    openPeriodMinutes?: string;
   }) {
     setEditingExamId(null);
     setExamMessage(null);
@@ -602,6 +607,7 @@ export function AdminConsole({
     setExamDescription(next?.description ?? stripHtmlToText(blueprintDetail?.description) ?? "");
     setScoreRetrievalEnabled(next?.scoreRetrievalEnabled ?? false);
     setTimeLimitMinutes(next?.timeLimitMinutes ?? "");
+    setOpenPeriodMinutes(next?.openPeriodMinutes ?? "");
   }
 
   async function syncResources() {
@@ -752,6 +758,13 @@ export function AdminConsole({
     if (selectedPolicy?.runtimeLeaseMinutes) {
       setTimeLimitMinutes(String(selectedPolicy.runtimeLeaseMinutes));
     }
+    if (!editingExamId) {
+      if (selectedPolicy?.storageLeaseMinutes) {
+        setOpenPeriodMinutes(String(selectedPolicy.storageLeaseMinutes));
+      } else if (selectedPolicy?.runtimeLeaseMinutes) {
+        setOpenPeriodMinutes(String(selectedPolicy.runtimeLeaseMinutes));
+      }
+    }
   }
 
   async function loadBlueprintDetail(projectId: string, blueprintId: string, refresh = false) {
@@ -835,6 +848,7 @@ export function AdminConsole({
         (item) => item.id === blueprintDetail.defaultSnapshotId,
       );
       const policyTimeLimitMinutes = policy?.runtimeLeaseMinutes ?? null;
+      const parsedOpenPeriodMinutes = Number(openPeriodMinutes);
       const validationMessage = getAllowedRegionValidationMessage(
         selectedAllowedRegionIds,
         compatibleRegions,
@@ -847,6 +861,22 @@ export function AdminConsole({
 
       if (!project || !blueprint || !policy || !snapshot || !policyTimeLimitMinutes) {
         setError("Select a project, blueprint, policy, and allowed Region set before saving the Exam.");
+        return;
+      }
+      if (!Number.isInteger(parsedOpenPeriodMinutes) || parsedOpenPeriodMinutes <= 0) {
+        setError("Open period must be a positive whole number of minutes.");
+        return;
+      }
+      if (parsedOpenPeriodMinutes < policyTimeLimitMinutes) {
+        setError("Open period must be at least the Policy runtime lease.");
+        return;
+      }
+      if (
+        policy.storageLeaseMinutes !== null &&
+        policy.storageLeaseMinutes !== undefined &&
+        parsedOpenPeriodMinutes > policy.storageLeaseMinutes
+      ) {
+        setError("Open period must not exceed the Policy storage lease.");
         return;
       }
 
@@ -863,6 +893,7 @@ export function AdminConsole({
             scoreRetrievalEnabled,
             allowedRegionIds: selectedAllowedRegionIds,
             policyId: policy.id,
+            openPeriodMinutes: parsedOpenPeriodMinutes,
             ...(editingExamId
               ? {}
               : {
@@ -962,6 +993,7 @@ export function AdminConsole({
       setExamDescription(exam.description);
       setScoreRetrievalEnabled(exam.scoreRetrievalEnabled);
       setTimeLimitMinutes(String(exam.timeLimitMinutes));
+      setOpenPeriodMinutes(String(exam.openPeriodMinutes));
     } finally {
       setLoading(false);
     }
@@ -1500,7 +1532,17 @@ export function AdminConsole({
               <select
                 value={selectedPolicyId}
                 onChange={(event) => {
-                  setSelectedPolicyId(event.target.value);
+                  const nextPolicyId = event.target.value;
+                  const nextPolicy = policies.find((policy) => policy.id === nextPolicyId);
+                  setSelectedPolicyId(nextPolicyId);
+                  if (nextPolicy?.runtimeLeaseMinutes) {
+                    setTimeLimitMinutes(String(nextPolicy.runtimeLeaseMinutes));
+                  }
+                  if (nextPolicy?.storageLeaseMinutes) {
+                    setOpenPeriodMinutes(String(nextPolicy.storageLeaseMinutes));
+                  } else if (nextPolicy?.runtimeLeaseMinutes) {
+                    setOpenPeriodMinutes(String(nextPolicy.runtimeLeaseMinutes));
+                  }
                 }}
                 style={compactFieldStyle}
               >
@@ -1572,6 +1614,9 @@ export function AdminConsole({
               {selectedPolicy?.runtimeLeaseMinutes
                 ? ` · ${selectedPolicy.runtimeLeaseMinutes} minute runtime lease`
                 : ""}
+              {selectedPolicy?.storageLeaseMinutes
+                ? ` · ${selectedPolicy.storageLeaseMinutes} minute storage retention`
+                : ""}
             </div>
             <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
               Allowed Regions:{" "}
@@ -1617,7 +1662,21 @@ export function AdminConsole({
                 style={{ ...compactFieldStyle, background: "#f9fafb" }}
               />
               <span style={{ color: "#666", fontSize: "0.85rem" }}>
-                Time limit follows the selected CloudShare Policy runtime lease for this slice.
+                Time limit follows the selected CloudShare Policy runtime lease.
+              </span>
+            </label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              <span>Open period (minutes)</span>
+              <input
+                type="number"
+                min={Number(effectiveTimeLimitMinutes) || 1}
+                max={selectedPolicy?.storageLeaseMinutes ?? undefined}
+                value={openPeriodMinutes}
+                onChange={(event) => setOpenPeriodMinutes(event.target.value)}
+                style={compactFieldStyle}
+              />
+              <span style={{ color: "#666", fontSize: "0.85rem" }}>
+                CloudShare Experience duration from scheduled start; defaults from Policy storage retention.
               </span>
             </label>
             <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", gridColumn: "1 / -1" }}>
@@ -1651,7 +1710,7 @@ export function AdminConsole({
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
               <thead>
                 <tr style={{ background: "#f5f5f5" }}>
-                  {["Title", "Status", "Project", "Blueprint / Snapshot", "Allowed Regions", "Policy", "Score", "Action"].map((heading) => (
+                  {["Title", "Status", "Project", "Blueprint / Snapshot", "Allowed Regions", "Policy", "Duration", "Score", "Action"].map((heading) => (
                     <th key={heading} style={{ textAlign: "left", padding: "0.4rem", borderBottom: "1px solid #ddd" }}>
                       {heading}
                     </th>
@@ -1661,7 +1720,7 @@ export function AdminConsole({
               <tbody>
                 {examCatalog.length === 0 && (
                   <tr>
-                    <td colSpan={8} style={{ padding: "0.5rem", color: "#666" }}>
+                    <td colSpan={9} style={{ padding: "0.5rem", color: "#666" }}>
                       No exams yet.
                     </td>
                   </tr>
@@ -1689,6 +1748,17 @@ export function AdminConsole({
                       {exam.allowedRegions.map((region) => region.name).join(", ")}
                     </td>
                     <td style={{ padding: "0.4rem" }}>{exam.policyName}</td>
+                    <td style={{ padding: "0.4rem" }}>
+                      <div>{exam.timeLimitMinutes} min runtime</div>
+                      <div style={{ color: "#666", fontSize: "0.75rem" }}>
+                        {exam.openPeriodMinutes} min open
+                      </div>
+                      {exam.storageLeaseMinutes ? (
+                        <div style={{ color: "#666", fontSize: "0.75rem" }}>
+                          {exam.storageLeaseMinutes} min storage
+                        </div>
+                      ) : null}
+                    </td>
                     <td style={{ padding: "0.4rem" }}>{exam.scoreRetrievalEnabled ? "Enabled" : "Off"}</td>
                     <td style={{ padding: "0.4rem" }}>
                       {exam.status === "draft" ? (
