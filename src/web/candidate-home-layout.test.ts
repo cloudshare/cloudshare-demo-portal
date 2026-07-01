@@ -1,4 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { PublishedExamCardHeader } from "./candidate-home";
 import {
   candidateHomeAccountActionsStyle,
   candidateHomeAccountPanelStyle,
@@ -48,7 +51,25 @@ describe("candidate home layout", () => {
     });
     expect(publishedExamDurationPillsStyle).toMatchObject({
       justifyContent: "flex-end",
-      flex: "0 0 auto",
+      flex: "1 1 auto",
+      minWidth: 0,
+      maxWidth: "100%",
     });
+
+    const html = renderToStaticMarkup(
+      createElement(PublishedExamCardHeader, {
+        title: "Linux Environment with xRDP v2",
+        description:
+          "This deliberately long description mirrors a real Exam description and must sit below the title row instead of pushing duration pills beneath itself.",
+        runtimeLimit: "20160 minute runtime limit",
+        openWindow: "20160 minute open window",
+      }),
+    );
+    expect(html.indexOf("Linux Environment with xRDP v2")).toBeLessThan(
+      html.indexOf("20160 minute runtime limit"),
+    );
+    expect(html.indexOf("20160 minute open window")).toBeLessThan(
+      html.indexOf("This deliberately long description"),
+    );
   });
 });

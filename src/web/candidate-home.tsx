@@ -1,6 +1,6 @@
 "use client";
 
-import { type CSSProperties, useEffect, useState } from "react";
+import React, { type CSSProperties, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   loadCandidateDashboard,
@@ -41,6 +41,35 @@ type ScheduleFeedback = {
   readonly kind: "error" | "warning";
   readonly message: string;
 };
+
+export function PublishedExamCardHeader({
+  title,
+  description,
+  runtimeLimit,
+  openWindow,
+}: {
+  readonly title: string;
+  readonly description: string;
+  readonly runtimeLimit: string;
+  readonly openWindow: string;
+}) {
+  return (
+    <div style={publishedExamHeaderStyle}>
+      <div style={publishedExamTitleRowStyle}>
+        <div style={publishedExamTitleBlockStyle}>
+          <h3 style={{ margin: 0, fontSize: "1.1rem", color: "#0f172a" }}>{title}</h3>
+        </div>
+        <div style={publishedExamDurationPillsStyle}>
+          <span style={pillStyle}>{runtimeLimit}</span>
+          <span style={pillStyle}>{openWindow}</span>
+        </div>
+      </div>
+      <p style={publishedExamDescriptionStyle}>
+        {description || "No description provided."}
+      </p>
+    </div>
+  );
+}
 
 export function CandidateHome({ email }: CandidateHomeProps) {
   const router = useRouter();
@@ -407,20 +436,12 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                 return (
                   <article key={exam.id} style={cardStyle}>
                     <div style={{ display: "grid", gap: "1rem" }}>
-                      <div style={publishedExamHeaderStyle}>
-                        <div style={publishedExamTitleRowStyle}>
-                          <div style={publishedExamTitleBlockStyle}>
-                            <h3 style={{ margin: 0, fontSize: "1.1rem", color: "#0f172a" }}>{exam.title}</h3>
-                          </div>
-                          <div style={publishedExamDurationPillsStyle}>
-                            <span style={pillStyle}>{durationLabels.runtimeLimit}</span>
-                            <span style={pillStyle}>{durationLabels.openWindow}</span>
-                          </div>
-                        </div>
-                        <p style={publishedExamDescriptionStyle}>
-                          {exam.description || "No description provided."}
-                        </p>
-                      </div>
+                      <PublishedExamCardHeader
+                        title={exam.title}
+                        description={exam.description}
+                        runtimeLimit={durationLabels.runtimeLimit}
+                        openWindow={durationLabels.openWindow}
+                      />
                       <div
                         style={{
                           display: "grid",

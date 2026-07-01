@@ -63,5 +63,7 @@ export const publishedExamDurationPillsStyle: CSSProperties = {
   gap: "0.5rem",
   flexWrap: "wrap",
   justifyContent: "flex-end",
-  flex: "0 0 auto",
+  flex: "1 1 auto",
+  minWidth: 0,
+  maxWidth: "100%",
 };
