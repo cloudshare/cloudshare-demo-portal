@@ -143,6 +143,7 @@ describe("getExamAttemptDashboardRuntime", () => {
           title: "Helios CloudShare Fundamentals",
           description: "Hands-on certification exam.",
           timeLimitMinutes: 90,
+          openPeriodMinutes: 120,
           scoreRetrievalEnabled: false,
         },
       ],

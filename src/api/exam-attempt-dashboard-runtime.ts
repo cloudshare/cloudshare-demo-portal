@@ -47,6 +47,7 @@ export interface CandidateDashboardExamItem {
   readonly title: string;
   readonly description: string;
   readonly timeLimitMinutes: number;
+  readonly openPeriodMinutes: number;
   readonly scoreRetrievalEnabled: boolean;
 }
 
@@ -120,6 +121,7 @@ function toCandidateDashboardExamItem(exam: Exam): CandidateDashboardExamItem {
     title: exam.title,
     description: exam.description,
     timeLimitMinutes: exam.timeLimitMinutes,
+    openPeriodMinutes: exam.openPeriodMinutes,
     scoreRetrievalEnabled: exam.scoreRetrievalEnabled,
   };
 }

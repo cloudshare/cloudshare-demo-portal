@@ -61,7 +61,7 @@ SELECT
     "description",
     "timeLimitMinutes",
     "storageLeaseMinutes",
-    COALESCE("storageLeaseMinutes", "timeLimitMinutes"),
+    "timeLimitMinutes",
     "scoreRetrievalEnabled",
     "status",
     "publishedAt",
