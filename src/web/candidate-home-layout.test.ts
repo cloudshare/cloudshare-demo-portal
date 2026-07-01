@@ -4,6 +4,10 @@ import {
   candidateHomeAccountPanelStyle,
   candidateHomeHeaderIntroStyle,
   candidateHomeHeaderStyle,
+  publishedExamDescriptionStyle,
+  publishedExamDurationPillsStyle,
+  publishedExamHeaderStyle,
+  publishedExamTitleRowStyle,
 } from "./candidate-home-layout";
 
 describe("candidate home layout", () => {
@@ -26,6 +30,25 @@ describe("candidate home layout", () => {
       width: "100%",
       minWidth: 0,
       boxSizing: "border-box",
+    });
+  });
+
+  it("keeps published Exam duration pills aligned with the title when descriptions are long", () => {
+    expect(publishedExamHeaderStyle).toMatchObject({
+      display: "grid",
+      gap: "0.5rem",
+    });
+    expect(publishedExamTitleRowStyle).toMatchObject({
+      display: "flex",
+      justifyContent: "space-between",
+      flexWrap: "wrap",
+    });
+    expect(publishedExamDescriptionStyle).toMatchObject({
+      maxWidth: "44rem",
+    });
+    expect(publishedExamDurationPillsStyle).toMatchObject({
+      justifyContent: "flex-end",
+      flex: "0 0 auto",
     });
   });
 });

@@ -25,6 +25,11 @@ import {
   candidateHomeAccountPanelStyle,
   candidateHomeHeaderIntroStyle,
   candidateHomeHeaderStyle,
+  publishedExamDescriptionStyle,
+  publishedExamDurationPillsStyle,
+  publishedExamHeaderStyle,
+  publishedExamTitleBlockStyle,
+  publishedExamTitleRowStyle,
 } from "./candidate-home-layout";
 import { useCandidateLogout } from "./candidate-logout";
 
@@ -402,25 +407,19 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                 return (
                   <article key={exam.id} style={cardStyle}>
                     <div style={{ display: "grid", gap: "1rem" }}>
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          gap: "1rem",
-                          alignItems: "flex-start",
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        <div style={{ maxWidth: "44rem" }}>
-                          <h3 style={{ margin: 0, fontSize: "1.1rem", color: "#0f172a" }}>{exam.title}</h3>
-                          <p style={{ margin: "0.5rem 0 0", color: "#444", lineHeight: 1.5 }}>
-                            {exam.description || "No description provided."}
-                          </p>
+                      <div style={publishedExamHeaderStyle}>
+                        <div style={publishedExamTitleRowStyle}>
+                          <div style={publishedExamTitleBlockStyle}>
+                            <h3 style={{ margin: 0, fontSize: "1.1rem", color: "#0f172a" }}>{exam.title}</h3>
+                          </div>
+                          <div style={publishedExamDurationPillsStyle}>
+                            <span style={pillStyle}>{durationLabels.runtimeLimit}</span>
+                            <span style={pillStyle}>{durationLabels.openWindow}</span>
+                          </div>
                         </div>
-                        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                          <span style={pillStyle}>{durationLabels.runtimeLimit}</span>
-                          <span style={pillStyle}>{durationLabels.openWindow}</span>
-                        </div>
+                        <p style={publishedExamDescriptionStyle}>
+                          {exam.description || "No description provided."}
+                        </p>
                       </div>
                       <div
                         style={{

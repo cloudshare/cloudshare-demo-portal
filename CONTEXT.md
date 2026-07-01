@@ -264,4 +264,8 @@ demo models a single **Exam** within it.
 
 **ExamAttempt**:
 A Candidate's specific attempt at an Exam — the spine the launch, timer, and scoring hang off.
+When the Exam open period closes, an attempt is presented as **expired** if it never started
+Candidate runtime/scorable work, and as **completed** if it did start runtime/scorable work
+(`in_progress`, `suspended`, or an already completed attempt). This presentation distinction keeps
+closed-but-never-used attempts separate from attempts that may have Guided Journey score evidence.
 _Avoid_: booking, session (when the ExamAttempt aggregate is meant).
