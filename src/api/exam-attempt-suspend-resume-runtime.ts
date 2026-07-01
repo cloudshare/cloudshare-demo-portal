@@ -274,6 +274,32 @@ export async function resumeExamAttemptRuntime(
     }
     const reconciledAttempt = settlement.attempt;
     anchors = anchorsForAttempt(reconciledAttempt, deps.candidateEmail);
+    const resumeOpenPeriodEnd = await getResumeOpenPeriodEnd(deps, reconciledAttempt);
+    if (resumeOpenPeriodEnd && (deps.now ?? (() => new Date()))().getTime() >= resumeOpenPeriodEnd.getTime()) {
+      await deps.diagnostics?.record({
+        ...anchors,
+        level: "warn",
+        operation: "exam_attempt.resume",
+        outcome: "failure",
+        message: "Exam resume failed: authored open period is closed",
+        details: {
+          failureMode: "open_period_closed",
+          currentStatus: reconciledAttempt.status,
+          scheduledFor: reconciledAttempt.scheduledFor?.toISOString() ?? null,
+          openPeriodEndsAt: resumeOpenPeriodEnd.toISOString(),
+        },
+      });
+      return {
+        status: 409,
+        body: {
+          error: "Exam resume is not available after the Exam open period has closed.",
+          examAttemptId,
+          operation: "resume",
+          currentStatus: reconciledAttempt.status,
+          openPeriodEndsAt: resumeOpenPeriodEnd.toISOString(),
+        },
+      };
+    }
     if (reconciledAttempt.status === "in_progress") {
       const launch = await deps.launches.findByExamAttemptId(examAttemptId);
       return buildAlreadyActiveResumeResponse(deps, examAttemptId, anchors, launch, {
@@ -373,6 +399,29 @@ export async function resumeExamAttemptRuntime(
     }
     return resp;
   }
+}
+
+async function getResumeOpenPeriodEnd(
+  deps: Pick<ResumeHandlerDeps, "exams" | "now">,
+  attempt: {
+    readonly examId: string;
+    readonly scheduledFor?: Date | null;
+    readonly status: string;
+  },
+): Promise<Date | null> {
+  if (!deps.exams || !attempt.scheduledFor) {
+    return null;
+  }
+  if (attempt.status !== "in_progress" && attempt.status !== "suspended") {
+    return null;
+  }
+
+  const exam = await deps.exams.findById(attempt.examId);
+  if (!exam) {
+    return null;
+  }
+
+  return new Date(attempt.scheduledFor.getTime() + exam.openPeriodMinutes * 60_000);
 }
 
 export async function runHeartbeatAutoSuspendRuntime(

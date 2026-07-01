@@ -235,6 +235,7 @@ describe("getCandidateLabStatusRuntime", () => {
         exams: await makePublishedExam(),
         clocks,
         diagnostics: { record: vi.fn().mockResolvedValue(undefined) },
+        now: () => new Date("2026-06-18T10:30:00.000Z"),
         logger: makeLogger(),
       },
       {
@@ -249,7 +250,53 @@ describe("getCandidateLabStatusRuntime", () => {
         examAttemptId: "ea-1",
         examTitle: "Helios Guided Journey",
         timeLimitMinutes: 90,
+        openPeriodMinutes: 120,
+        openPeriodEndsAt: "2026-06-18T11:00:00.000Z",
+        openPeriodClosed: false,
+        scoreRetrievalEnabled: true,
         status: "completed",
+        scheduledFor: "2026-06-18T09:00:00.000Z",
+      },
+    });
+  });
+
+  it("returns authored open-period closure context for stale lab pages", async () => {
+    const attempts = createInMemoryExamAttemptRepository();
+
+    await attempts.save({
+      id: "ea-1",
+      customerId: "customer-1",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "suspended",
+      scheduledFor: new Date("2026-06-18T09:00:00.000Z"),
+      createdAt: new Date("2026-06-18T08:55:00.000Z"),
+    });
+
+    const response = await getCandidateLabStatusRuntime(
+      {
+        attempts,
+        exams: await makePublishedExam(),
+        now: () => new Date("2026-06-18T11:00:00.000Z"),
+        logger: makeLogger(),
+      },
+      {
+        examAttemptId: "ea-1",
+        candidateId: "candidate-1",
+      },
+    );
+
+    expect(response).toEqual({
+      status: 200,
+      body: {
+        examAttemptId: "ea-1",
+        examTitle: "Helios Guided Journey",
+        timeLimitMinutes: 90,
+        openPeriodMinutes: 120,
+        openPeriodEndsAt: "2026-06-18T11:00:00.000Z",
+        openPeriodClosed: true,
+        scoreRetrievalEnabled: true,
+        status: "suspended",
         scheduledFor: "2026-06-18T09:00:00.000Z",
       },
     });

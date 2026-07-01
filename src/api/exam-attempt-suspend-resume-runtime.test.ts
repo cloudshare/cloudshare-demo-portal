@@ -998,6 +998,62 @@ describe("resumeExamAttemptRuntime", () => {
     );
   });
 
+  it("blocks resume after the authored open period closes without calling CloudShare", async () => {
+    const attempts = createInMemoryExamAttemptRepository();
+    await attempts.save({
+      id: "ea-1",
+      customerId: "customer-1",
+      candidateId: "cand-1",
+      examId: "exam-1",
+      status: "suspended",
+      scheduledFor: new Date("2026-06-15T09:00:00.000Z"),
+      createdAt: new Date("2026-06-15T08:55:00.000Z"),
+    });
+    const customerClient = makeCloudShareClient({
+      requestV3: vi.fn(),
+      requestV3Text: vi.fn(),
+      requestV4: vi.fn(),
+    });
+    const cloudshare = {
+      forConnection: vi.fn().mockReturnValue(customerClient),
+    } satisfies CloudShareClientFactory;
+    const diagnostics = { record: vi.fn().mockResolvedValue(undefined) };
+
+    const resp = await resumeExamAttemptRuntime(
+      await makeResumeDeps({
+        attempts,
+        cloudshare,
+        diagnostics,
+        now: () => new Date("2026-06-15T11:00:00.000Z"),
+      }),
+      { examAttemptId: "ea-1" },
+    );
+
+    expect(resp.status).toBe(409);
+    expect(resp.body).toEqual({
+      error: "Exam resume is not available after the Exam open period has closed.",
+      examAttemptId: "ea-1",
+      operation: "resume",
+      currentStatus: "suspended",
+      openPeriodEndsAt: "2026-06-15T11:00:00.000Z",
+    });
+    expect(cloudshare.forConnection).not.toHaveBeenCalled();
+    expect(customerClient.requestV4).not.toHaveBeenCalled();
+    expect(customerClient.requestV3).not.toHaveBeenCalled();
+    expect(customerClient.requestV3Text).not.toHaveBeenCalled();
+    expect(diagnostics.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: "exam_attempt.resume",
+        outcome: "failure",
+        details: expect.objectContaining({
+          failureMode: "open_period_closed",
+          currentStatus: "suspended",
+          openPeriodEndsAt: "2026-06-15T11:00:00.000Z",
+        }),
+      }),
+    );
+  });
+
   it("returns 404 when no launch exists", async () => {
     const resp = await resumeExamAttemptRuntime(
       await makeResumeDeps({

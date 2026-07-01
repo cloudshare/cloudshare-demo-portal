@@ -16,6 +16,9 @@ describe("lab launcher client helpers", () => {
         examAttemptId: "attempt-2",
         examTitle: "Helios Guided Journey",
         timeLimitMinutes: 60,
+        openPeriodEndsAt: "2026-06-18T11:00:00.000Z",
+        openPeriodClosed: false,
+        scoreRetrievalEnabled: true,
         status: "ready",
         scheduledFor: "2026-06-18T10:00:00.000Z",
       }),
@@ -38,6 +41,9 @@ describe("lab launcher client helpers", () => {
         examAttemptId: "attempt-2",
         examTitle: "Helios Guided Journey",
         timeLimitMinutes: 60,
+        openPeriodEndsAt: "2026-06-18T11:00:00.000Z",
+        openPeriodClosed: false,
+        scoreRetrievalEnabled: true,
         status: "ready",
         scheduledFor: "2026-06-18T10:00:00.000Z",
       },
@@ -53,6 +59,9 @@ describe("lab launcher client helpers", () => {
         examAttemptId: "attempt-1",
         examTitle: "Helios Guided Journey",
         timeLimitMinutes: 60,
+        openPeriodEndsAt: "2026-06-18T11:00:00.000Z",
+        openPeriodClosed: false,
+        scoreRetrievalEnabled: true,
         status: "completed",
         scheduledFor: "2026-06-18T09:00:00.000Z",
       }),
@@ -73,6 +82,9 @@ describe("lab launcher client helpers", () => {
         examAttemptId: "attempt-1",
         examTitle: "Helios Guided Journey",
         timeLimitMinutes: 60,
+        openPeriodEndsAt: "2026-06-18T11:00:00.000Z",
+        openPeriodClosed: false,
+        scoreRetrievalEnabled: true,
         status: "completed",
         scheduledFor: "2026-06-18T09:00:00.000Z",
       },
@@ -88,6 +100,9 @@ describe("lab launcher client helpers", () => {
         examAttemptId: "attempt-1",
         examTitle: "Helios Guided Journey",
         timeLimitMinutes: 60,
+        openPeriodEndsAt: "2026-06-18T11:00:00.000Z",
+        openPeriodClosed: false,
+        scoreRetrievalEnabled: true,
         status: "in_progress",
         scheduledFor: "2026-06-18T09:00:00.000Z",
       }),
@@ -104,9 +119,69 @@ describe("lab launcher client helpers", () => {
         examAttemptId: "attempt-1",
         examTitle: "Helios Guided Journey",
         timeLimitMinutes: 60,
+        openPeriodEndsAt: "2026-06-18T11:00:00.000Z",
+        openPeriodClosed: false,
+        scoreRetrievalEnabled: true,
         status: "in_progress",
         scheduledFor: "2026-06-18T09:00:00.000Z",
       },
+    });
+  });
+
+  it("blocks enter and resume preflight after the authored open period closes", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        examAttemptId: "attempt-closed",
+        examTitle: "Helios Guided Journey",
+        timeLimitMinutes: 60,
+        openPeriodEndsAt: "2026-06-18T11:00:00.000Z",
+        openPeriodClosed: true,
+        scoreRetrievalEnabled: true,
+        status: "suspended",
+        scheduledFor: "2026-06-18T09:00:00.000Z",
+      }),
+    });
+
+    await expect(
+      preflightLabAction(fetchImpl, {
+        examAttemptId: "attempt-closed",
+        action: "enter",
+      }),
+    ).resolves.toEqual({
+      kind: "blocked",
+      labStatus: {
+        examAttemptId: "attempt-closed",
+        examTitle: "Helios Guided Journey",
+        timeLimitMinutes: 60,
+        openPeriodEndsAt: "2026-06-18T11:00:00.000Z",
+        openPeriodClosed: true,
+        scoreRetrievalEnabled: true,
+        status: "suspended",
+        scheduledFor: "2026-06-18T09:00:00.000Z",
+      },
+      message: "Exam entry is not available after the Exam open period has closed.",
+    });
+
+    await expect(
+      preflightLabAction(fetchImpl, {
+        examAttemptId: "attempt-closed",
+        action: "resume",
+      }),
+    ).resolves.toEqual({
+      kind: "blocked",
+      labStatus: {
+        examAttemptId: "attempt-closed",
+        examTitle: "Helios Guided Journey",
+        timeLimitMinutes: 60,
+        openPeriodEndsAt: "2026-06-18T11:00:00.000Z",
+        openPeriodClosed: true,
+        scoreRetrievalEnabled: true,
+        status: "suspended",
+        scheduledFor: "2026-06-18T09:00:00.000Z",
+      },
+      message: "Exam resume is not available after the Exam open period has closed.",
     });
   });
 

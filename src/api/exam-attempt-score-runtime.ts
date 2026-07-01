@@ -61,10 +61,16 @@ export async function getExamAttemptScoreRuntime(
 ): Promise<ExamAttemptScoreRuntimeResponse> {
   const { attempt } = request;
   const examAttemptId = attempt.id;
-  if (attempt.status !== "completed") {
+
+  const exam = await deps.exams.findById(attempt.examId);
+  if (!exam || exam.customerId !== request.customerId) {
+    return { status: 404, body: { error: "exam not found for attempt" } };
+  }
+
+  if (!isScoreEligibleAttempt(attempt, exam.openPeriodMinutes, (deps.now ?? (() => new Date()))())) {
     return {
       status: 409,
-      body: { error: "score is only available after the exam attempt is completed" },
+      body: { error: "score is only available after the exam attempt is completed or the Exam open period has closed" },
     };
   }
 
@@ -77,11 +83,6 @@ export async function getExamAttemptScoreRuntime(
     actor: { type: "candidate" as const, id: attempt.candidateId, email: null as string | null },
     subject: { type: "exam_attempt" as const, id: attempt.id },
   };
-
-  const exam = await deps.exams.findById(attempt.examId);
-  if (!exam || exam.customerId !== request.customerId) {
-    return { status: 404, body: { error: "exam not found for attempt" } };
-  }
 
   const metadata: ScoreMetadata = {
     examTitle: exam.title,
@@ -377,6 +378,21 @@ export async function getExamAttemptScoreRuntime(
     });
     return { status: 500, body: { error: "internal error" } };
   }
+}
+
+function isScoreEligibleAttempt(
+  attempt: ExamAttempt,
+  openPeriodMinutes: number,
+  now: Date,
+): boolean {
+  if (attempt.status === "completed") {
+    return true;
+  }
+  if ((attempt.status !== "in_progress" && attempt.status !== "suspended") || !attempt.scheduledFor) {
+    return false;
+  }
+
+  return now.getTime() >= attempt.scheduledFor.getTime() + openPeriodMinutes * 60_000;
 }
 
 async function resolveLaunchParticipantId(

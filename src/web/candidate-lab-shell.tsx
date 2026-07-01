@@ -62,6 +62,8 @@ export function CandidateLabShell({
     examTitle: labStatus.examTitle,
     timeLimitMinutes: labStatus.timeLimitMinutes,
     scheduledFor: labStatus.scheduledFor,
+    openPeriodEndsAt: labStatus.openPeriodEndsAt ?? null,
+    openPeriodClosed: labStatus.openPeriodClosed === true,
   }) : null;
 
   return (
@@ -195,6 +197,7 @@ export function CandidateLabShell({
         <LabLauncher
           examAttemptId={examAttemptId}
           currentAttemptStatus={labStatus.status ?? initialAttemptStatus}
+          openPeriodClosed={labStatus.openPeriodClosed === true}
           onAttemptStatusChange={(status) =>
             setLabStatus((current) => updateCandidateLabStatusAttemptState(current, status))
           }
