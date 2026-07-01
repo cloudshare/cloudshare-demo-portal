@@ -132,6 +132,15 @@ describe("getResetOpenPeriodMinutes", () => {
       }),
     ).toBe("120");
   });
+
+  it("falls back to the current runtime lease when selected Policy evidence is temporarily unavailable", () => {
+    expect(
+      getResetOpenPeriodMinutes({
+        selectedPolicy: null,
+        fallbackRuntimeLeaseMinutes: "90",
+      }),
+    ).toBe("90");
+  });
 });
 
 describe("admin tab model", () => {

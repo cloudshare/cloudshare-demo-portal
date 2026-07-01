@@ -109,10 +109,12 @@ export function getAttemptPrimaryAction(
         disabled: false,
       };
     case "completed":
-      return {
-        label: "View score",
-        disabled: false,
-      };
+      return isAttemptOpenPeriodClosed(attempt, nowMs, exam) && exam?.scoreRetrievalEnabled
+        ? {
+            label: "View score",
+            disabled: false,
+          }
+        : { label: null, disabled: false };
     default:
       return { label: null, disabled: false };
   }

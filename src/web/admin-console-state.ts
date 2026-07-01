@@ -99,8 +99,21 @@ export function getDefaultOpenPeriodMinutes(policy: PolicyLeaseEvidence | null |
 export function getResetOpenPeriodMinutes(input: {
   readonly explicitOpenPeriodMinutes?: string;
   readonly selectedPolicy: PolicyLeaseEvidence | null | undefined;
+  readonly fallbackRuntimeLeaseMinutes?: string | number | null;
 }): string {
-  return input.explicitOpenPeriodMinutes ?? getDefaultOpenPeriodMinutes(input.selectedPolicy);
+  if (input.explicitOpenPeriodMinutes !== undefined) {
+    return input.explicitOpenPeriodMinutes;
+  }
+
+  const policyDefault = getDefaultOpenPeriodMinutes(input.selectedPolicy);
+  if (policyDefault) {
+    return policyDefault;
+  }
+
+  const fallbackRuntimeLeaseMinutes = Number(input.fallbackRuntimeLeaseMinutes);
+  return Number.isFinite(fallbackRuntimeLeaseMinutes) && fallbackRuntimeLeaseMinutes > 0
+    ? String(fallbackRuntimeLeaseMinutes)
+    : "";
 }
 
 interface BlueprintSnapshot {

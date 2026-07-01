@@ -615,6 +615,7 @@ export function AdminConsole({
       getResetOpenPeriodMinutes({
         explicitOpenPeriodMinutes: next?.openPeriodMinutes,
         selectedPolicy,
+        fallbackRuntimeLeaseMinutes: timeLimitMinutes,
       }),
     );
   }
@@ -723,7 +724,7 @@ export function AdminConsole({
 
       const nextBlueprints = data.blueprints ?? [];
       const nextPolicies = data.policies ?? [];
-      setBluePrintState(nextBlueprints, nextPolicies, preferredPolicyId);
+      const nextPolicy = setBluePrintState(nextBlueprints, nextPolicies, preferredPolicyId);
       const desiredBlueprintId = preferredBlueprintId ?? selectedBlueprintId;
       const nextBlueprintId = nextBlueprints.some((blueprint) => blueprint.id === desiredBlueprintId)
         ? desiredBlueprintId
@@ -734,7 +735,7 @@ export function AdminConsole({
       if (nextBlueprintId) {
         const blueprintId = nextBlueprintId;
         setSelectedBlueprintId(blueprintId);
-        void loadBlueprintDetail(projectId, blueprintId, refresh);
+        void loadBlueprintDetail(projectId, blueprintId, refresh, nextPolicy);
       } else {
         setBlueprintDetail(null);
       }
@@ -755,7 +756,7 @@ export function AdminConsole({
     nextBlueprints: NamedResource[],
     nextPolicies: NamedResource[],
     preferredPolicyId?: string,
-  ) {
+  ): NamedResource | undefined {
     setBlueprints(nextBlueprints);
     setPolicies(nextPolicies);
     const desiredPolicyId = preferredPolicyId ?? selectedPolicyId;
@@ -770,9 +771,15 @@ export function AdminConsole({
     if (!editingExamId) {
       setOpenPeriodMinutes(getDefaultOpenPeriodMinutes(selectedPolicy));
     }
+    return selectedPolicy;
   }
 
-  async function loadBlueprintDetail(projectId: string, blueprintId: string, refresh = false) {
+  async function loadBlueprintDetail(
+    projectId: string,
+    blueprintId: string,
+    refresh = false,
+    policyForDefault: NamedResource | null | undefined = selectedPolicy,
+  ) {
     const requestId = beginLatestOnlyRequest(blueprintDetailRequestIdRef.current);
     blueprintDetailRequestIdRef.current = requestId;
     setLoading(true);
@@ -810,7 +817,7 @@ export function AdminConsole({
       if (!editingExamId && detail) {
         setExamTitle(detail.name);
         setExamDescription(stripHtmlToText(detail.description));
-        setOpenPeriodMinutes(getDefaultOpenPeriodMinutes(selectedPolicy));
+        setOpenPeriodMinutes(getDefaultOpenPeriodMinutes(policyForDefault));
       }
     } catch (caughtError) {
       if (isAdminSessionExpiredError(caughtError)) {

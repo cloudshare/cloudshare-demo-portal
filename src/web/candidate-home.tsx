@@ -48,7 +48,6 @@ export function CandidateHome({ email }: CandidateHomeProps) {
   const [submittingExamId, setSubmittingExamId] = useState<string | null>(null);
   const [scheduleDrafts, setScheduleDrafts] = useState<Record<string, string>>({});
   const [scheduleFeedback, setScheduleFeedback] = useState<Record<string, ScheduleFeedback>>({});
-  const [coldStartNotice, setColdStartNotice] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const { presentation: logoutPresentation, logout } = useCandidateLogout(router);
 
@@ -128,7 +127,6 @@ export function CandidateHome({ email }: CandidateHomeProps) {
 
     setSubmittingExamId(examId);
     setError(null);
-    setColdStartNotice(null);
     setScheduleFeedback((current) => {
       const next = { ...current };
       delete next[examId];
@@ -149,7 +147,6 @@ export function CandidateHome({ email }: CandidateHomeProps) {
       setNowMs(Date.now());
       if (result.coldStartLikely) {
         const message = "Scheduled within five hours: CloudShare may cold-start the environment on login.";
-        setColdStartNotice(message);
         setScheduleFeedback((current) => ({
           ...current,
           [examId]: { kind: "warning", message },
@@ -252,13 +249,6 @@ export function CandidateHome({ email }: CandidateHomeProps) {
         {error && (
           <p style={{ ...messagePanelStyle, color: "#b00020", background: "#fff5f7", border: "1px solid #f1c7d0" }}>
             {error}
-          </p>
-        )}
-        {coldStartNotice && (
-          <p
-            style={{ ...messagePanelStyle, color: "#7a4b00", background: "#fff8eb", border: "1px solid #f0d8a8" }}
-          >
-            {coldStartNotice}
           </p>
         )}
         {scheduledAttempts.length > 0 && (

@@ -158,6 +158,17 @@ describe("candidate home attempt state", () => {
       },
       exam: dashboard.exams[0] ?? null,
       nowMs: new Date("2026-06-16T16:00:00.000Z").getTime(),
+      expected: { label: null, disabled: false },
+    },
+    {
+      attempt: {
+        id: "attempt-completed",
+        examId: "exam-1",
+        scheduledFor: "2026-06-16T16:00:00.000Z",
+        status: "completed" as const,
+      },
+      exam: dashboard.exams[0] ?? null,
+      nowMs: new Date("2026-06-16T18:00:01.000Z").getTime(),
       expected: { label: "View score", disabled: false },
     },
     {
