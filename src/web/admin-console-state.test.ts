@@ -15,6 +15,7 @@ import {
   getExamAuthoringMode,
   getCompatibleRegions,
   getDefaultOpenPeriodMinutes,
+  getResetOpenPeriodMinutes,
   normaliseDiagnosticLogFilters,
   parseAdminConsoleRouteState,
   type DiagnosticLogFilters,
@@ -102,6 +103,34 @@ describe("getDefaultOpenPeriodMinutes", () => {
 
   it("leaves open period blank when runtime lease evidence is missing", () => {
     expect(getDefaultOpenPeriodMinutes({ storageLeaseMinutes: 2880 })).toBe("");
+  });
+
+  it("keeps the default within known storage retention evidence", () => {
+    expect(
+      getDefaultOpenPeriodMinutes({
+        runtimeLeaseMinutes: 180,
+        storageLeaseMinutes: 120,
+      }),
+    ).toBe("120");
+  });
+});
+
+describe("getResetOpenPeriodMinutes", () => {
+  it("uses an explicit open period when hydrating a draft for editing", () => {
+    expect(
+      getResetOpenPeriodMinutes({
+        explicitOpenPeriodMinutes: "720",
+        selectedPolicy: { runtimeLeaseMinutes: 90, storageLeaseMinutes: 2880 },
+      }),
+    ).toBe("720");
+  });
+
+  it("falls back to the selected Policy default when clearing the authoring form", () => {
+    expect(
+      getResetOpenPeriodMinutes({
+        selectedPolicy: { runtimeLeaseMinutes: 120, storageLeaseMinutes: 1440 },
+      }),
+    ).toBe("120");
   });
 });
 

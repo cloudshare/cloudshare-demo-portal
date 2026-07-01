@@ -85,7 +85,22 @@ interface PolicyLeaseEvidence {
 }
 
 export function getDefaultOpenPeriodMinutes(policy: PolicyLeaseEvidence | null | undefined): string {
-  return policy?.runtimeLeaseMinutes ? String(policy.runtimeLeaseMinutes) : "";
+  if (!policy?.runtimeLeaseMinutes) {
+    return "";
+  }
+
+  if (policy.storageLeaseMinutes && policy.storageLeaseMinutes < policy.runtimeLeaseMinutes) {
+    return String(policy.storageLeaseMinutes);
+  }
+
+  return String(policy.runtimeLeaseMinutes);
+}
+
+export function getResetOpenPeriodMinutes(input: {
+  readonly explicitOpenPeriodMinutes?: string;
+  readonly selectedPolicy: PolicyLeaseEvidence | null | undefined;
+}): string {
+  return input.explicitOpenPeriodMinutes ?? getDefaultOpenPeriodMinutes(input.selectedPolicy);
 }
 
 interface BlueprintSnapshot {

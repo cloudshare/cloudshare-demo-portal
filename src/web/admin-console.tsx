@@ -21,6 +21,7 @@ import {
   getCompatibleRegions,
   getDefaultOpenPeriodMinutes,
   getExamAuthoringMode,
+  getResetOpenPeriodMinutes,
   isAdminSessionExpiredStatus,
   isLatestOnlyResponse,
   mergeMonitoringHistoryPage,
@@ -212,6 +213,7 @@ export function AdminConsole({
   const [examCatalog, setExamCatalog] = useState<ExamRecord[]>([]);
   const [monitoring, setMonitoring] = useState<MonitoringView | null>(null);
   const [examMessage, setExamMessage] = useState<string | null>(null);
+  const [examFormFeedback, setExamFormFeedback] = useState<string | null>(null);
   const [examDiagnostic, setExamDiagnostic] = useState<ConnectionDiagnostic | null>(null);
   const [examCorrelationId, setExamCorrelationId] = useState<string | null>(null);
   const projectResourcesRequestIdRef = useRef(0);
@@ -604,11 +606,17 @@ export function AdminConsole({
   }) {
     setEditingExamId(null);
     setExamMessage(null);
+    setExamFormFeedback(null);
     setExamTitle(next?.title ?? blueprintDetail?.name ?? "");
     setExamDescription(next?.description ?? stripHtmlToText(blueprintDetail?.description) ?? "");
     setScoreRetrievalEnabled(next?.scoreRetrievalEnabled ?? false);
     setTimeLimitMinutes(next?.timeLimitMinutes ?? "");
-    setOpenPeriodMinutes(next?.openPeriodMinutes ?? "");
+    setOpenPeriodMinutes(
+      getResetOpenPeriodMinutes({
+        explicitOpenPeriodMinutes: next?.openPeriodMinutes,
+        selectedPolicy,
+      }),
+    );
   }
 
   async function syncResources() {
@@ -802,6 +810,7 @@ export function AdminConsole({
       if (!editingExamId && detail) {
         setExamTitle(detail.name);
         setExamDescription(stripHtmlToText(detail.description));
+        setOpenPeriodMinutes(getDefaultOpenPeriodMinutes(selectedPolicy));
       }
     } catch (caughtError) {
       if (isAdminSessionExpiredError(caughtError)) {
@@ -837,6 +846,7 @@ export function AdminConsole({
     setLoading(true);
     setError(null);
     setExamMessage(null);
+    setExamFormFeedback(null);
     try {
       const project = projects.find((item) => item.id === selectedProjectId);
       const blueprint = blueprints.find((item) => item.id === selectedBlueprintId);
@@ -853,19 +863,26 @@ export function AdminConsole({
 
       if (validationMessage) {
         setError(validationMessage);
+        setExamFormFeedback(validationMessage);
         return;
       }
 
       if (!project || !blueprint || !policy || !snapshot || !policyTimeLimitMinutes) {
-        setError("Select a project, blueprint, policy, and allowed Region set before saving the Exam.");
+        const message = "Select a project, blueprint, policy, and allowed Region set before saving the Exam.";
+        setError(message);
+        setExamFormFeedback(message);
         return;
       }
       if (!Number.isInteger(parsedOpenPeriodMinutes) || parsedOpenPeriodMinutes <= 0) {
-        setError("Open period must be a positive whole number of minutes.");
+        const message = "Open period must be a positive whole number of minutes.";
+        setError(message);
+        setExamFormFeedback(message);
         return;
       }
       if (parsedOpenPeriodMinutes < policyTimeLimitMinutes) {
-        setError("Open period must be at least the Policy runtime lease.");
+        const message = "Open period must be at least the Policy runtime lease.";
+        setError(message);
+        setExamFormFeedback(message);
         return;
       }
       if (
@@ -873,7 +890,9 @@ export function AdminConsole({
         policy.storageLeaseMinutes !== undefined &&
         parsedOpenPeriodMinutes > policy.storageLeaseMinutes
       ) {
-        setError("Open period must not exceed the Policy storage lease.");
+        const message = "Open period must not exceed the Policy storage lease.";
+        setError(message);
+        setExamFormFeedback(message);
         return;
       }
 
@@ -907,7 +926,9 @@ export function AdminConsole({
       );
       const data = (await response.json()) as { error?: string };
       if (!response.ok) {
-        setError(data.error ?? "Failed to save draft exam");
+        const message = data.error ?? "Failed to save draft exam";
+        setError(message);
+        setExamFormFeedback(message);
         return;
       }
 
@@ -1489,6 +1510,8 @@ export function AdminConsole({
                   const nextBlueprintId = event.target.value;
                   setSelectedBlueprintId(nextBlueprintId);
                   setEditingExamId(null);
+                  setExamFormFeedback(null);
+                  setOpenPeriodMinutes(getDefaultOpenPeriodMinutes(selectedPolicy));
                   if (selectedProjectId && nextBlueprintId) {
                     void loadBlueprintDetail(selectedProjectId, nextBlueprintId, true);
                   }
@@ -1535,6 +1558,7 @@ export function AdminConsole({
                   if (nextPolicy?.runtimeLeaseMinutes) {
                     setTimeLimitMinutes(String(nextPolicy.runtimeLeaseMinutes));
                   }
+                  setExamFormFeedback(null);
                   setOpenPeriodMinutes(getDefaultOpenPeriodMinutes(nextPolicy));
                 }}
                 style={compactFieldStyle}
@@ -1665,10 +1689,14 @@ export function AdminConsole({
                 min={Number(effectiveTimeLimitMinutes) || 1}
                 max={selectedPolicy?.storageLeaseMinutes ?? undefined}
                 value={openPeriodMinutes}
-                onChange={(event) => setOpenPeriodMinutes(event.target.value)}
+                onChange={(event) => {
+                  setOpenPeriodMinutes(event.target.value);
+                  setExamFormFeedback(null);
+                }}
                 style={compactFieldStyle}
+                aria-describedby="exam-open-period-help exam-form-feedback"
               />
-              <span style={{ color: "#666", fontSize: "0.85rem" }}>
+              <span id="exam-open-period-help" style={{ color: "#666", fontSize: "0.85rem" }}>
                 CloudShare Experience duration from scheduled start; defaults to the Policy runtime lease.
               </span>
             </label>
@@ -1697,6 +1725,22 @@ export function AdminConsole({
             )}
             {examMessage && <span style={{ color: "#0a7a28" }}>{examMessage}</span>}
           </div>
+          {examFormFeedback && (
+            <p
+              id="exam-form-feedback"
+              role="alert"
+              style={{
+                margin: "-0.25rem 0 0",
+                color: "#b42318",
+                background: "#fff5f7",
+                border: "1px solid #f1c7d0",
+                borderRadius: "6px",
+                padding: "0.75rem 0.9rem",
+              }}
+            >
+              {examFormFeedback}
+            </p>
+          )}
 
           <div style={{ overflowX: "auto" }}>
             <h2 style={{ marginBottom: "0.6rem" }}>Current Exam Catalog</h2>

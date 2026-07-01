@@ -32,6 +32,11 @@ interface CandidateHomeProps {
   readonly email: string;
 }
 
+type ScheduleFeedback = {
+  readonly kind: "error" | "warning";
+  readonly message: string;
+};
+
 export function CandidateHome({ email }: CandidateHomeProps) {
   const router = useRouter();
   const [dashboard, setDashboard] = useState<CandidateDashboardData>({
@@ -42,6 +47,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
   const [loading, setLoading] = useState(true);
   const [submittingExamId, setSubmittingExamId] = useState<string | null>(null);
   const [scheduleDrafts, setScheduleDrafts] = useState<Record<string, string>>({});
+  const [scheduleFeedback, setScheduleFeedback] = useState<Record<string, ScheduleFeedback>>({});
   const [coldStartNotice, setColdStartNotice] = useState<string | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const { presentation: logoutPresentation, logout } = useCandidateLogout(router);
@@ -98,7 +104,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
   }, []);
 
   useEffect(() => {
-    const delayMs = getNextEnterabilityWakeUpDelayMs(dashboard.attempts, nowMs);
+    const delayMs = getNextEnterabilityWakeUpDelayMs(dashboard.attempts, nowMs, dashboard.exams);
     if (delayMs === null) {
       return;
     }
@@ -108,18 +114,26 @@ export function CandidateHome({ email }: CandidateHomeProps) {
     }, delayMs);
 
     return () => window.clearTimeout(timer);
-  }, [dashboard.attempts, nowMs]);
+  }, [dashboard.attempts, dashboard.exams, nowMs]);
 
   async function submitSchedule(examId: string) {
     const scheduledFor = scheduleDrafts[examId];
     if (!scheduledFor) {
-      setError("Choose a future date and time before scheduling.");
+      setScheduleFeedback((current) => ({
+        ...current,
+        [examId]: { kind: "error", message: "Choose a future date and time before scheduling." },
+      }));
       return;
     }
 
     setSubmittingExamId(examId);
     setError(null);
     setColdStartNotice(null);
+    setScheduleFeedback((current) => {
+      const next = { ...current };
+      delete next[examId];
+      return next;
+    });
     try {
       const result = await scheduleCandidateExam(fetch, {
         examId,
@@ -134,12 +148,21 @@ export function CandidateHome({ email }: CandidateHomeProps) {
       }));
       setNowMs(Date.now());
       if (result.coldStartLikely) {
-        setColdStartNotice(
-          "Scheduled within five hours: CloudShare may cold-start the environment on login.",
-        );
+        const message = "Scheduled within five hours: CloudShare may cold-start the environment on login.";
+        setColdStartNotice(message);
+        setScheduleFeedback((current) => ({
+          ...current,
+          [examId]: { kind: "warning", message },
+        }));
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Failed to schedule exam");
+      setScheduleFeedback((current) => ({
+        ...current,
+        [examId]: {
+          kind: "error",
+          message: cause instanceof Error ? cause.message : "Failed to schedule exam",
+        },
+      }));
     } finally {
       setSubmittingExamId(null);
     }
@@ -165,6 +188,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
   }
 
   const scheduledAttempts = buildScheduledAttemptViews(dashboard, nowMs);
+  const examsById = new Map(dashboard.exams.map((exam) => [exam.id, exam]));
 
   return (
     <main
@@ -251,6 +275,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
             </div>
             <div style={{ display: "grid", gap: "0.75rem" }}>
               {scheduledAttempts.map((attempt) => {
+                const exam = examsById.get(attempt.examId) ?? null;
                 const primaryAction = getAttemptPrimaryAction(
                   {
                     id: attempt.attemptId,
@@ -259,6 +284,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                     status: attempt.status,
                   },
                   nowMs,
+                  exam,
                 );
 
                 return (
@@ -295,6 +321,10 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                           <span style={metaValueStyle}>
                             {formatCandidateScheduledDateTime(attempt.scheduledFor) ?? "TBD"}
                           </span>
+                        </div>
+                        <div style={metaItemStyle}>
+                          <span style={metaLabelStyle}>Open window</span>
+                          <span style={metaValueStyle}>{attempt.scheduledWindowLabel ?? "TBD"}</span>
                         </div>
                         <div style={metaItemStyle}>
                           <span style={metaLabelStyle}>State</span>
@@ -355,8 +385,9 @@ export function CandidateHome({ email }: CandidateHomeProps) {
             <div style={{ display: "grid", gap: "0.9rem" }}>
               {dashboard.exams.map((exam) => {
                 const attempt = attemptForExam(exam.id);
-                const primaryAction = getAttemptPrimaryAction(attempt, nowMs);
+                const primaryAction = getAttemptPrimaryAction(attempt, nowMs, exam);
                 const durationLabels = buildCandidateExamDurationLabels(exam);
+                const feedback = scheduleFeedback[exam.id] ?? null;
                 return (
                   <article key={exam.id} style={cardStyle}>
                     <div style={{ display: "grid", gap: "1rem" }}>
@@ -421,12 +452,17 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                           <input
                             type="datetime-local"
                             value={scheduleDrafts[exam.id] ?? ""}
-                            onChange={(event) =>
+                            onChange={(event) => {
                               setScheduleDrafts((current) => ({
                                 ...current,
                                 [exam.id]: event.target.value,
-                              }))
-                            }
+                              }));
+                              setScheduleFeedback((current) => {
+                                const next = { ...current };
+                                delete next[exam.id];
+                                return next;
+                              });
+                            }}
                             style={inputStyle}
                           />
                         </label>
@@ -460,9 +496,22 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                           )}
                         </div>
                       </div>
-                      {attempt?.status === "ready" && getAttemptWaitingMessage(attempt, nowMs) && (
+                      {feedback && (
+                        <p
+                          role={feedback.kind === "error" ? "alert" : "status"}
+                          style={{
+                            ...messagePanelStyle,
+                            color: feedback.kind === "error" ? "#b00020" : "#7a4b00",
+                            background: feedback.kind === "error" ? "#fff5f7" : "#fff8eb",
+                            border: feedback.kind === "error" ? "1px solid #f1c7d0" : "1px solid #f0d8a8",
+                          }}
+                        >
+                          {feedback.message}
+                        </p>
+                      )}
+                      {attempt?.status === "ready" && getAttemptWaitingMessage(attempt, nowMs, exam) && (
                         <p style={{ margin: 0, color: "#555", lineHeight: 1.4 }}>
-                          {getAttemptWaitingMessage(attempt, nowMs)}
+                          {getAttemptWaitingMessage(attempt, nowMs, exam)}
                         </p>
                       )}
                     </div>
