@@ -297,12 +297,12 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                             Attempt ID: {attempt.attemptId}
                           </p>
                         </div>
-                        <span style={statusBadgeStyle}>{formatCandidateAttemptStatus(attempt.status)}</span>
+                        <span style={statusBadgeStyle}>{formatCandidateAttemptStatus(attempt.displayStatus)}</span>
                       </div>
                       <div
                         style={{
                           display: "grid",
-                          gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                          gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
                           gap: "0.75rem",
                         }}
                       >
@@ -314,11 +314,21 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                         </div>
                         <div style={metaItemStyle}>
                           <span style={metaLabelStyle}>Open window</span>
-                          <span style={metaValueStyle}>{attempt.scheduledWindowLabel ?? "TBD"}</span>
-                        </div>
-                        <div style={metaItemStyle}>
-                          <span style={metaLabelStyle}>State</span>
-                          <span style={metaValueStyle}>{formatCandidateAttemptStatus(attempt.status)}</span>
+                          <span style={{ ...metaValueStyle, display: "grid", gap: "0.15rem" }}>
+                            {attempt.scheduledFor && attempt.scheduledEnd ? (
+                              <>
+                                <span>
+                                  Starts {formatCandidateScheduledDateTime(attempt.scheduledFor) ?? "TBD"}
+                                </span>
+                                <span>
+                                  Closes {formatCandidateScheduledDateTime(attempt.scheduledEnd) ?? "TBD"}
+                                  {exam ? ` (${exam.openPeriodMinutes} min)` : ""}
+                                </span>
+                              </>
+                            ) : (
+                              "TBD"
+                            )}
+                          </span>
                         </div>
                       </div>
                       {primaryAction.label && (
@@ -423,7 +433,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                         <div style={metaItemStyle}>
                           <span style={metaLabelStyle}>Current attempt</span>
                           <span style={metaValueStyle}>
-                            {getCandidateCurrentAttemptLabel(attempt)}
+                            {getCandidateCurrentAttemptLabel(attempt, nowMs, exam)}
                           </span>
                         </div>
                       </div>

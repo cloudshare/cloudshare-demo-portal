@@ -10,6 +10,7 @@ export interface CandidateScheduledAttemptView {
   readonly scheduledEnd: string | null;
   readonly scheduledWindowLabel: string | null;
   readonly status: CandidateDashboardData["attempts"][number]["status"];
+  readonly displayStatus: CandidateDashboardData["attempts"][number]["status"];
   readonly canEnter: boolean;
   readonly waitingMessage: string | null;
 }
@@ -122,13 +123,35 @@ export function getAttemptPrimaryAction(
 
 export function getCandidateCurrentAttemptLabel(
   attempt: CandidateDashboardData["attempts"][number] | null,
+  nowMs?: number,
+  exam?: CandidateDashboardData["exams"][number] | null,
 ): string {
   if (!attempt) {
     return "No attempt scheduled";
   }
 
   const scheduledFor = formatCandidateScheduledDateTime(attempt.scheduledFor);
-  return `${formatCandidateAttemptStatus(attempt.status)}${scheduledFor ? ` for ${scheduledFor}` : ""}`;
+  return `${formatCandidateAttemptStatus(getCandidateAttemptDisplayStatus(attempt, nowMs, exam))}${scheduledFor ? ` for ${scheduledFor}` : ""}`;
+}
+
+export function getCandidateAttemptDisplayStatus(
+  attempt: CandidateDashboardData["attempts"][number],
+  nowMs?: number,
+  exam?: CandidateDashboardData["exams"][number] | null,
+): CandidateDashboardData["attempts"][number]["status"] {
+  if (nowMs === undefined || !isAttemptOpenPeriodClosed(attempt, nowMs, exam)) {
+    return attempt.status;
+  }
+
+  if (attempt.status === "scheduled" || attempt.status === "ready") {
+    return "expired";
+  }
+
+  if (attempt.status === "in_progress" || attempt.status === "suspended") {
+    return "completed";
+  }
+
+  return attempt.status;
 }
 
 export function buildScheduledAttemptViews(
@@ -149,6 +172,7 @@ export function buildScheduledAttemptViews(
         scheduledEnd: getAttemptOpenPeriodEnd(attempt, exam),
         scheduledWindowLabel: getAttemptOpenPeriodLabel(attempt, exam),
         status: attempt.status,
+        displayStatus: getCandidateAttemptDisplayStatus(attempt, nowMs, exam),
         canEnter: canEnterAttempt(attempt, nowMs, exam),
         waitingMessage: getAttemptWaitingMessage(attempt, nowMs, exam),
       };
@@ -178,7 +202,7 @@ function getAttemptOpenPeriodLabel(
     return null;
   }
 
-  return `${startLabel} to ${endLabel} (${exam.openPeriodMinutes} min)`;
+  return `Starts ${startLabel} · Closes ${endLabel} (${exam.openPeriodMinutes} min)`;
 }
 
 function getAttemptOpenPeriodEndMs(

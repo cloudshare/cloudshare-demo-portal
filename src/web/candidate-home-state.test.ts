@@ -6,6 +6,7 @@ import {
   canEnterAttempt,
   getAttemptWaitingMessage,
   getAttemptPrimaryAction,
+  getCandidateAttemptDisplayStatus,
   getCandidateCurrentAttemptLabel,
   getLatestAttemptForExam,
   getNextEnterabilityWakeUpDelayMs,
@@ -69,7 +70,36 @@ describe("candidate home attempt state", () => {
 
     expect(views.find((view) => view.attemptId === "attempt-ready")).toMatchObject({
       scheduledEnd: "2026-06-16T18:00:00.000Z",
-      scheduledWindowLabel: "2026-06-16 17:00 to 2026-06-16 19:00 (120 min)",
+      scheduledWindowLabel: "Starts 2026-06-16 17:00 · Closes 2026-06-16 19:00 (120 min)",
+    });
+  });
+
+  it("derives closed-window candidate display state without changing the raw attempt lifecycle", () => {
+    const closedReadyAttempt = {
+      id: "attempt-ready-closed",
+      examId: "exam-1",
+      scheduledFor: "2026-06-16T16:00:00.000Z",
+      status: "ready" as const,
+    };
+    const closedSuspendedAttempt = {
+      id: "attempt-suspended-closed",
+      examId: "exam-1",
+      scheduledFor: "2026-06-16T16:00:00.000Z",
+      status: "suspended" as const,
+    };
+    const nowMs = new Date("2026-06-16T18:00:01.000Z").getTime();
+
+    expect(getCandidateAttemptDisplayStatus(closedReadyAttempt, nowMs, dashboard.exams[0])).toBe("expired");
+    expect(getCandidateAttemptDisplayStatus(closedSuspendedAttempt, nowMs, dashboard.exams[0])).toBe("completed");
+    expect(
+      getCandidateCurrentAttemptLabel(closedSuspendedAttempt, nowMs, dashboard.exams[0]),
+    ).toBe("Completed for 2026-06-16 17:00");
+    expect(buildScheduledAttemptViews({
+      exams: dashboard.exams,
+      attempts: [closedReadyAttempt],
+    }, nowMs)[0]).toMatchObject({
+      status: "ready",
+      displayStatus: "expired",
     });
   });
 
