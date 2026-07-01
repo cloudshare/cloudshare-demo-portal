@@ -134,6 +134,10 @@ describe("candidate exams route", () => {
         {
           id: "attempt-1",
           examId: "exam-1",
+          examTitle: "Helios Guided Journey",
+          timeLimitMinutes: 60,
+          openPeriodMinutes: 120,
+          scoreRetrievalEnabled: true,
           scheduledFor: "2026-06-18T09:00:00.000Z",
           status: "completed",
         },

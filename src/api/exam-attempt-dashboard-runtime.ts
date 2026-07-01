@@ -54,6 +54,10 @@ export interface CandidateDashboardExamItem {
 export interface CandidateDashboardAttemptItem {
   readonly id: string;
   readonly examId: string;
+  readonly examTitle: string;
+  readonly timeLimitMinutes: number;
+  readonly openPeriodMinutes: number;
+  readonly scoreRetrievalEnabled: boolean;
   readonly scheduledFor: string | null;
   readonly status:
     | "scheduled"
@@ -98,6 +102,7 @@ export async function getExamAttemptDashboardRuntime(
     request.customerId,
     reconciledAttempts.map((attempt) => attempt.id),
   );
+  const examsById = new Map(exams.map((exam) => [exam.id, exam]));
 
   return {
     status: 200,
@@ -105,12 +110,19 @@ export async function getExamAttemptDashboardRuntime(
       exams: exams
         .filter((exam) => exam.status === "published")
         .map(toCandidateDashboardExamItem),
-      attempts: reconciledAttempts.map((attempt) => ({
-        id: attempt.id,
-        examId: attempt.examId,
-        scheduledFor: attempt.scheduledFor?.toISOString() ?? null,
-        status: attempt.status as CandidateDashboardAttemptItem["status"],
-      })),
+      attempts: reconciledAttempts.map((attempt) => {
+        const exam = examsById.get(attempt.examId);
+        return {
+          id: attempt.id,
+          examId: attempt.examId,
+          examTitle: exam?.title ?? attempt.examId,
+          timeLimitMinutes: exam?.timeLimitMinutes ?? 0,
+          openPeriodMinutes: exam?.openPeriodMinutes ?? 0,
+          scoreRetrievalEnabled: exam?.scoreRetrievalEnabled ?? false,
+          scheduledFor: attempt.scheduledFor?.toISOString() ?? null,
+          status: attempt.status as CandidateDashboardAttemptItem["status"],
+        };
+      }),
     },
   };
 }

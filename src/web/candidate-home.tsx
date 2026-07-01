@@ -265,7 +265,18 @@ export function CandidateHome({ email }: CandidateHomeProps) {
             </div>
             <div style={{ display: "grid", gap: "0.75rem" }}>
               {scheduledAttempts.map((attempt) => {
-                const exam = examsById.get(attempt.examId) ?? null;
+                const exam = examsById.get(attempt.examId) ?? (
+                  attempt.openPeriodMinutes && attempt.timeLimitMinutes
+                    ? {
+                        id: attempt.examId,
+                        title: attempt.examTitle,
+                        description: "",
+                        timeLimitMinutes: attempt.timeLimitMinutes,
+                        openPeriodMinutes: attempt.openPeriodMinutes,
+                        scoreRetrievalEnabled: attempt.scoreRetrievalEnabled,
+                      }
+                    : null
+                );
                 const primaryAction = getAttemptPrimaryAction(
                   {
                     id: attempt.attemptId,

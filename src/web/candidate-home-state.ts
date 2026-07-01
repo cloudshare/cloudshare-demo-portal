@@ -6,6 +6,9 @@ export interface CandidateScheduledAttemptView {
   readonly attemptId: string;
   readonly examId: string;
   readonly examTitle: string;
+  readonly timeLimitMinutes: number | null;
+  readonly openPeriodMinutes: number | null;
+  readonly scoreRetrievalEnabled: boolean;
   readonly scheduledFor: string | null;
   readonly scheduledEnd: string | null;
   readonly scheduledWindowLabel: string | null;
@@ -163,11 +166,14 @@ export function buildScheduledAttemptViews(
   return [...dashboard.attempts]
     .sort((left, right) => (right.scheduledFor ?? "").localeCompare(left.scheduledFor ?? ""))
     .map((attempt) => {
-      const exam = exams.get(attempt.examId) ?? null;
+      const exam = getAttemptExamContext(attempt, exams.get(attempt.examId) ?? null);
       return {
         attemptId: attempt.id,
         examId: attempt.examId,
-        examTitle: exam?.title ?? attempt.examId,
+        examTitle: exam?.title ?? attempt.examTitle ?? attempt.examId,
+        timeLimitMinutes: exam?.timeLimitMinutes ?? attempt.timeLimitMinutes ?? null,
+        openPeriodMinutes: exam?.openPeriodMinutes ?? attempt.openPeriodMinutes ?? null,
+        scoreRetrievalEnabled: exam?.scoreRetrievalEnabled ?? attempt.scoreRetrievalEnabled === true,
         scheduledFor: attempt.scheduledFor,
         scheduledEnd: getAttemptOpenPeriodEnd(attempt, exam),
         scheduledWindowLabel: getAttemptOpenPeriodLabel(attempt, exam),
@@ -209,7 +215,8 @@ function getAttemptOpenPeriodEndMs(
   attempt: CandidateDashboardData["attempts"][number] | null,
   exam: CandidateDashboardData["exams"][number] | null | undefined,
 ): number | null {
-  if (!attempt?.scheduledFor || !exam?.openPeriodMinutes) {
+  const openPeriodMinutes = exam?.openPeriodMinutes ?? attempt?.openPeriodMinutes;
+  if (!attempt?.scheduledFor || !openPeriodMinutes) {
     return null;
   }
 
@@ -218,7 +225,7 @@ function getAttemptOpenPeriodEndMs(
     return null;
   }
 
-  return scheduledForMs + exam.openPeriodMinutes * 60_000;
+  return scheduledForMs + openPeriodMinutes * 60_000;
 }
 
 function isAttemptOpenPeriodClosed(
@@ -232,6 +239,30 @@ function isAttemptOpenPeriodClosed(
 
 function isStartedAttemptStatus(status: CandidateDashboardData["attempts"][number]["status"]): boolean {
   return status === "in_progress" || status === "suspended" || status === "completed";
+}
+
+function getAttemptExamContext(
+  attempt: CandidateDashboardData["attempts"][number],
+  exam: CandidateDashboardData["exams"][number] | null,
+): CandidateDashboardData["exams"][number] | null {
+  if (exam) {
+    return exam;
+  }
+  if (
+    typeof attempt.examTitle !== "string" ||
+    typeof attempt.timeLimitMinutes !== "number" ||
+    typeof attempt.openPeriodMinutes !== "number"
+  ) {
+    return null;
+  }
+  return {
+    id: attempt.examId,
+    title: attempt.examTitle,
+    description: "",
+    timeLimitMinutes: attempt.timeLimitMinutes,
+    openPeriodMinutes: attempt.openPeriodMinutes,
+    scoreRetrievalEnabled: attempt.scoreRetrievalEnabled === true,
+  };
 }
 
 export function getNextEnterabilityWakeUpDelayMs(

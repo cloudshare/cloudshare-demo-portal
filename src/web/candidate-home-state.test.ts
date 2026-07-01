@@ -103,6 +103,36 @@ describe("candidate home attempt state", () => {
     });
   });
 
+  it("uses attempt-scoped Exam timing when the Exam is no longer in the published catalog", () => {
+    const nowMs = new Date("2026-06-16T18:00:01.000Z").getTime();
+    const views = buildScheduledAttemptViews(
+      {
+        exams: [],
+        attempts: [
+          {
+            id: "attempt-unpublished-ready",
+            examId: "exam-unpublished",
+            examTitle: "Unpublished Windows Boxes",
+            timeLimitMinutes: 10,
+            openPeriodMinutes: 20,
+            scoreRetrievalEnabled: true,
+            scheduledFor: "2026-06-16T16:00:00.000Z",
+            status: "ready",
+          },
+        ],
+      },
+      nowMs,
+    );
+
+    expect(views[0]).toMatchObject({
+      examTitle: "Unpublished Windows Boxes",
+      openPeriodMinutes: 20,
+      scoreRetrievalEnabled: true,
+      displayStatus: "expired",
+      scheduledWindowLabel: "Starts 2026-06-16 17:00 · Closes 2026-06-16 17:20 (20 min)",
+    });
+  });
+
   it("builds candidate-facing labels for runtime limit and open period", () => {
     expect(buildCandidateExamDurationLabels(dashboard.exams[0]!)).toEqual({
       runtimeLimit: "90 minute runtime limit",
