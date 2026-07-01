@@ -11,7 +11,7 @@ describe("candidate scheduling client", () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        exams: [{ id: "exam-1", title: "Exam", description: "", timeLimitMinutes: 90 }],
+        exams: [{ id: "exam-1", title: "Exam", description: "", timeLimitMinutes: 90, openPeriodMinutes: 120 }],
         attempts: [{ id: "attempt-1", examId: "exam-1", scheduledFor: "2026-06-15T16:00:00.000Z", status: "ready" }],
       }),
     });

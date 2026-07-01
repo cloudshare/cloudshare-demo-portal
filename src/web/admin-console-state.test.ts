@@ -14,6 +14,7 @@ import {
   getAllowedRegionValidationMessage,
   getExamAuthoringMode,
   getCompatibleRegions,
+  getDefaultOpenPeriodMinutes,
   normaliseDiagnosticLogFilters,
   parseAdminConsoleRouteState,
   type DiagnosticLogFilters,
@@ -86,6 +87,21 @@ describe("getExamAuthoringMode", () => {
       tupleChangeHint:
         "Project, Blueprint, and Snapshot are locked while editing a draft. Policy and allowed Regions can still be changed.",
     });
+  });
+});
+
+describe("getDefaultOpenPeriodMinutes", () => {
+  it("defaults Exam open period from runtime lease, not storage retention", () => {
+    expect(
+      getDefaultOpenPeriodMinutes({
+        runtimeLeaseMinutes: 90,
+        storageLeaseMinutes: 2880,
+      }),
+    ).toBe("90");
+  });
+
+  it("leaves open period blank when runtime lease evidence is missing", () => {
+    expect(getDefaultOpenPeriodMinutes({ storageLeaseMinutes: 2880 })).toBe("");
   });
 });
 

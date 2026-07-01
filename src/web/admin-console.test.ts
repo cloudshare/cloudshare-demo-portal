@@ -92,7 +92,9 @@ describe("AdminConsole", () => {
 
     expect(html).toContain("Open period (minutes)");
     expect(html).toContain("CloudShare Experience duration from scheduled start");
+    expect(html).toContain("defaults to the Policy runtime lease");
     expect(html).toContain("Time limit follows the selected CloudShare Policy runtime lease.");
+    expect(html).not.toContain("defaults from Policy storage retention");
   });
 
   it("renders Support Diagnostics without legacy workbench or support-log controls", () => {

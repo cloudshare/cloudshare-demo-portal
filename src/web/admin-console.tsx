@@ -19,6 +19,7 @@ import {
   getAdminTabLabel,
   getAllowedRegionValidationMessage,
   getCompatibleRegions,
+  getDefaultOpenPeriodMinutes,
   getExamAuthoringMode,
   isAdminSessionExpiredStatus,
   isLatestOnlyResponse,
@@ -759,11 +760,7 @@ export function AdminConsole({
       setTimeLimitMinutes(String(selectedPolicy.runtimeLeaseMinutes));
     }
     if (!editingExamId) {
-      if (selectedPolicy?.storageLeaseMinutes) {
-        setOpenPeriodMinutes(String(selectedPolicy.storageLeaseMinutes));
-      } else if (selectedPolicy?.runtimeLeaseMinutes) {
-        setOpenPeriodMinutes(String(selectedPolicy.runtimeLeaseMinutes));
-      }
+      setOpenPeriodMinutes(getDefaultOpenPeriodMinutes(selectedPolicy));
     }
   }
 
@@ -1538,11 +1535,7 @@ export function AdminConsole({
                   if (nextPolicy?.runtimeLeaseMinutes) {
                     setTimeLimitMinutes(String(nextPolicy.runtimeLeaseMinutes));
                   }
-                  if (nextPolicy?.storageLeaseMinutes) {
-                    setOpenPeriodMinutes(String(nextPolicy.storageLeaseMinutes));
-                  } else if (nextPolicy?.runtimeLeaseMinutes) {
-                    setOpenPeriodMinutes(String(nextPolicy.runtimeLeaseMinutes));
-                  }
+                  setOpenPeriodMinutes(getDefaultOpenPeriodMinutes(nextPolicy));
                 }}
                 style={compactFieldStyle}
               >
@@ -1676,7 +1669,7 @@ export function AdminConsole({
                 style={compactFieldStyle}
               />
               <span style={{ color: "#666", fontSize: "0.85rem" }}>
-                CloudShare Experience duration from scheduled start; defaults from Policy storage retention.
+                CloudShare Experience duration from scheduled start; defaults to the Policy runtime lease.
               </span>
             </label>
             <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", gridColumn: "1 / -1" }}>

@@ -17,6 +17,16 @@ export interface CandidateAttemptPrimaryAction {
   readonly disabled: boolean;
 }
 
+export function buildCandidateExamDurationLabels(
+  exam: CandidateDashboardData["exams"][number],
+): { readonly runtimeLimit: string; readonly openWindow: string; readonly openPeriodDetail: string } {
+  return {
+    runtimeLimit: `${exam.timeLimitMinutes} minute runtime limit`,
+    openWindow: `${exam.openPeriodMinutes} minute open window`,
+    openPeriodDetail: `${exam.openPeriodMinutes} minutes from scheduled start`,
+  };
+}
+
 const ENTERABILITY_TIMER_FUZZ_MS = 250;
 export const MAX_ENTERABILITY_WAKE_UP_DELAY_MS = 24 * 60 * 60 * 1000;
 

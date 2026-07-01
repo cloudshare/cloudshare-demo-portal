@@ -278,6 +278,7 @@ describe("candidate exam catalog", () => {
           title: "Published Exam",
           description: "Hands-on certification exam.",
           timeLimitMinutes: 90,
+          openPeriodMinutes: 120,
           scoreRetrievalEnabled: false,
         },
       ],
@@ -327,6 +328,7 @@ describe("candidate exam catalog", () => {
           title: "Score On",
           description: "Hands-on certification exam.",
           timeLimitMinutes: 90,
+          openPeriodMinutes: 120,
           scoreRetrievalEnabled: true,
         },
         {
@@ -334,6 +336,7 @@ describe("candidate exam catalog", () => {
           title: "Score Off",
           description: "Hands-on certification exam.",
           timeLimitMinutes: 90,
+          openPeriodMinutes: 120,
           scoreRetrievalEnabled: false,
         },
       ],

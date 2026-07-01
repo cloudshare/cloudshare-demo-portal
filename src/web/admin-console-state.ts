@@ -79,6 +79,15 @@ interface NamedResource {
   readonly friendlyName?: string;
 }
 
+interface PolicyLeaseEvidence {
+  readonly runtimeLeaseMinutes?: number | null;
+  readonly storageLeaseMinutes?: number | null;
+}
+
+export function getDefaultOpenPeriodMinutes(policy: PolicyLeaseEvidence | null | undefined): string {
+  return policy?.runtimeLeaseMinutes ? String(policy.runtimeLeaseMinutes) : "";
+}
+
 interface BlueprintSnapshot {
   readonly id: string;
   readonly name: string;

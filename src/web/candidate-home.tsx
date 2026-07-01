@@ -10,6 +10,7 @@ import {
   type CandidateDashboardData,
 } from "./candidate-scheduling";
 import {
+  buildCandidateExamDurationLabels,
   buildScheduledAttemptViews,
   getAttemptWaitingMessage,
   getLatestAttemptForExam,
@@ -355,6 +356,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
               {dashboard.exams.map((exam) => {
                 const attempt = attemptForExam(exam.id);
                 const primaryAction = getAttemptPrimaryAction(attempt, nowMs);
+                const durationLabels = buildCandidateExamDurationLabels(exam);
                 return (
                   <article key={exam.id} style={cardStyle}>
                     <div style={{ display: "grid", gap: "1rem" }}>
@@ -373,7 +375,10 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                             {exam.description || "No description provided."}
                           </p>
                         </div>
-                        <span style={pillStyle}>{exam.timeLimitMinutes} minute limit</span>
+                        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                          <span style={pillStyle}>{durationLabels.runtimeLimit}</span>
+                          <span style={pillStyle}>{durationLabels.openWindow}</span>
+                        </div>
                       </div>
                       <div
                         style={{
@@ -382,6 +387,12 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                           gap: "0.75rem",
                         }}
                       >
+                        <div style={metaItemStyle}>
+                          <span style={metaLabelStyle}>Open period</span>
+                          <span style={metaValueStyle}>
+                            {durationLabels.openPeriodDetail}
+                          </span>
+                        </div>
                         <div style={metaItemStyle}>
                           <span style={metaLabelStyle}>Guided Journey scoring</span>
                           <span style={metaValueStyle}>

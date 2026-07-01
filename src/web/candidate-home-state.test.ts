@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   MAX_ENTERABILITY_WAKE_UP_DELAY_MS,
+  buildCandidateExamDurationLabels,
   buildScheduledAttemptViews,
   canEnterAttempt,
   getAttemptWaitingMessage,
@@ -13,8 +14,8 @@ import type { CandidateDashboardData } from "./candidate-scheduling";
 
 const dashboard: CandidateDashboardData = {
   exams: [
-    { id: "exam-1", title: "Helios Fundamentals", description: "", timeLimitMinutes: 90, scoreRetrievalEnabled: true },
-    { id: "exam-2", title: "Operations Lab", description: "", timeLimitMinutes: 60, scoreRetrievalEnabled: false },
+    { id: "exam-1", title: "Helios Fundamentals", description: "", timeLimitMinutes: 90, openPeriodMinutes: 120, scoreRetrievalEnabled: true },
+    { id: "exam-2", title: "Operations Lab", description: "", timeLimitMinutes: 60, openPeriodMinutes: 90, scoreRetrievalEnabled: false },
   ],
   attempts: [
     {
@@ -61,6 +62,14 @@ describe("candidate home attempt state", () => {
       ["attempt-ready", "Helios Fundamentals"],
       ["attempt-older", "Helios Fundamentals"],
     ]);
+  });
+
+  it("builds candidate-facing labels for runtime limit and open period", () => {
+    expect(buildCandidateExamDurationLabels(dashboard.exams[0]!)).toEqual({
+      runtimeLimit: "90 minute runtime limit",
+      openWindow: "120 minute open window",
+      openPeriodDetail: "120 minutes from scheduled start",
+    });
   });
 
   it("allows enter only for ready attempts at or after the scheduled time", () => {
