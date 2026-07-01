@@ -200,6 +200,9 @@ function summariseExamChanges(before: Exam, after: Exam): string[] {
   if (before.policyId !== after.policyId) changedFields.push("policyId");
   if (before.policyName !== after.policyName) changedFields.push("policyName");
   if (before.timeLimitMinutes !== after.timeLimitMinutes) changedFields.push("timeLimitMinutes");
+  if (before.storageLeaseMinutes !== after.storageLeaseMinutes) {
+    changedFields.push("storageLeaseMinutes");
+  }
   if (JSON.stringify(before.allowedRegions) !== JSON.stringify(after.allowedRegions)) {
     changedFields.push("allowedRegions");
   }
@@ -306,6 +309,9 @@ async function parseMutableDraftExamInput(
   if (policy.runtimeLeaseMinutes === null || policy.runtimeLeaseMinutes === undefined) {
     return null;
   }
+  if (policy.storageLeaseMinutes === null || policy.storageLeaseMinutes === undefined) {
+    return null;
+  }
 
   return {
     customerId,
@@ -314,6 +320,7 @@ async function parseMutableDraftExamInput(
     description: candidate.description,
     scoreRetrievalEnabled: candidate.scoreRetrievalEnabled,
     timeLimitMinutes: policy.runtimeLeaseMinutes,
+    storageLeaseMinutes: policy.storageLeaseMinutes,
     allowedRegions: allowedRegions.map((region) => ({
       id: region!.id,
       name: region!.friendlyName?.trim() || region!.name,
@@ -397,12 +404,16 @@ async function parseCreateDraftExamInput(
   if (policy.runtimeLeaseMinutes === null || policy.runtimeLeaseMinutes === undefined) {
     return null;
   }
+  if (policy.storageLeaseMinutes === null || policy.storageLeaseMinutes === undefined) {
+    return null;
+  }
 
   return {
     customerId,
     title: candidate.title,
     description: candidate.description,
     timeLimitMinutes: policy.runtimeLeaseMinutes,
+    storageLeaseMinutes: policy.storageLeaseMinutes,
     scoreRetrievalEnabled: candidate.scoreRetrievalEnabled,
     projectId: candidate.projectId,
     projectName: project.name,

@@ -76,7 +76,12 @@ function makeAuthoringSource(
       },
     ]),
     listProjectPolicies: vi.fn().mockResolvedValue([
-      { id: "policy-1", name: "Standard Exam Policy", runtimeLeaseMinutes: 240 },
+      {
+        id: "policy-1",
+        name: "Standard Exam Policy",
+        runtimeLeaseMinutes: 240,
+        storageLeaseMinutes: 2880,
+      },
     ]),
     getBlueprintDetail: vi.fn().mockResolvedValue({
       id: "bp-1",
@@ -233,7 +238,14 @@ async function seedAuthoringCache(
     blueprints: [
       { id: "bp-1", name: "Helios Exam Blueprint", description: "Blueprint-backed description" },
     ],
-    policies: [{ id: "policy-1", name: "Standard Exam Policy", runtimeLeaseMinutes: 240 }],
+    policies: [
+      {
+        id: "policy-1",
+        name: "Standard Exam Policy",
+        runtimeLeaseMinutes: 240,
+        storageLeaseMinutes: 2880,
+      },
+    ],
   });
   await cache.saveBlueprintDetail("customer-1", "project-1", "bp-1", {
     id: "bp-1",
@@ -344,7 +356,14 @@ describe("admin exam authoring handlers", () => {
           description: "Blueprint-backed description",
         },
       ],
-      policies: [{ id: "policy-1", name: "Standard Exam Policy", runtimeLeaseMinutes: 240 }],
+      policies: [
+        {
+          id: "policy-1",
+          name: "Standard Exam Policy",
+          runtimeLeaseMinutes: 240,
+          storageLeaseMinutes: 2880,
+        },
+      ],
     });
     expect(source.listProjectBlueprints).toHaveBeenCalledWith("project-1");
     expect(source.listProjectPolicies).toHaveBeenCalledWith("project-1");
@@ -1259,8 +1278,18 @@ describe("admin exam catalog handlers", () => {
         { id: "bp-1", name: "Helios Exam Blueprint", description: "Blueprint-backed description" },
       ],
       policies: [
-        { id: "policy-1", name: "Standard Exam Policy", runtimeLeaseMinutes: 240 },
-        { id: "policy-2", name: "Extended Exam Policy", runtimeLeaseMinutes: 120 },
+        {
+          id: "policy-1",
+          name: "Standard Exam Policy",
+          runtimeLeaseMinutes: 240,
+          storageLeaseMinutes: 2880,
+        },
+        {
+          id: "policy-2",
+          name: "Extended Exam Policy",
+          runtimeLeaseMinutes: 120,
+          storageLeaseMinutes: 1440,
+        },
       ],
     });
     await handleCreateDraftExam(
@@ -1346,6 +1375,7 @@ describe("admin exam catalog handlers", () => {
           "policyId",
           "policyName",
           "timeLimitMinutes",
+          "storageLeaseMinutes",
           "allowedRegions",
         ],
       },

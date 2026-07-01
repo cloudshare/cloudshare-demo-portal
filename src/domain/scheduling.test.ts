@@ -18,6 +18,7 @@ function makeExamInput(overrides: Partial<CreateDraftExamInput> = {}): CreateDra
     title: "Helios CloudShare Fundamentals",
     description: "Hands-on certification exam.",
     timeLimitMinutes: 90,
+    storageLeaseMinutes: 90,
     scoreRetrievalEnabled: false,
     projectId: "project-1",
     projectName: "Helios CX Project",
@@ -33,6 +34,64 @@ function makeExamInput(overrides: Partial<CreateDraftExamInput> = {}): CreateDra
     ...overrides,
   };
 }
+
+it("uses the Policy storage lease for CloudShare training End while preserving the runtime Exam timer", async () => {
+  const exams = createInMemoryExamCatalogRepository();
+  await createDraftExam(
+    { repository: exams, now: () => new Date("2026-06-15T09:00:00.000Z"), newId: () => "exam-1" },
+    makeExamInput({ timeLimitMinutes: 10, storageLeaseMinutes: 2880 }),
+  );
+  await publishExam(
+    { repository: exams, now: () => new Date("2026-06-15T09:05:00.000Z") },
+    { customerId: "customer-helios", examId: "exam-1" },
+  );
+  const createTraining = vi.fn(async (input: CreateTrainingInput) => ({
+    trainingId: "training-1",
+    request: {
+      method: "POST",
+      path: "/trainings",
+      body: {
+        Start: input.scheduledFor.toISOString(),
+        End: input.endsAt.toISOString(),
+      },
+    },
+    response: { status: 200, body: { id: "training-1" } },
+  }));
+
+  await scheduleExam(
+    {
+      exams,
+      attempts: createInMemoryExamAttemptRepository(),
+      launches: createInMemoryLabLaunchRepository(),
+      labs: {
+        ...makeLabs(),
+        createTraining,
+      },
+      newId: vi.fn().mockReturnValueOnce("attempt-1").mockReturnValueOnce("launch-1"),
+      now: () => new Date("2026-06-15T10:00:00.000Z"),
+    },
+    {
+      customerId: "customer-helios",
+      candidateId: "candidate-1",
+      candidateEmail: "candidate@helioscx.demo",
+      candidateFirstName: "Asha",
+      candidateLastName: "Patel",
+      examId: "exam-1",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+    },
+  );
+
+  expect(createTraining).toHaveBeenCalledWith(
+    expect.objectContaining({
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      endsAt: new Date("2026-06-17T16:00:00.000Z"),
+    }),
+  );
+  await expect(exams.findById("exam-1")).resolves.toMatchObject({
+    timeLimitMinutes: 10,
+    storageLeaseMinutes: 2880,
+  });
+});
 
 function makeLabs(order: string[] = []): LabProvisioner {
   return {
@@ -257,8 +316,11 @@ describe("scheduleExam", () => {
     );
   });
 
-  it("passes the Exam time limit as the CloudShare training end time", async () => {
-    const { exams, attempts, launches } = await setup({ timeLimitMinutes: 135 });
+  it("passes the Exam storage lease as the CloudShare training end time", async () => {
+    const { exams, attempts, launches } = await setup({
+      timeLimitMinutes: 90,
+      storageLeaseMinutes: 135,
+    });
     const createTraining = vi.fn(async (_input: CreateTrainingInput) => ({ trainingId: "training-1" }));
 
     await scheduleExam(

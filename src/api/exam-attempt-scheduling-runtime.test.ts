@@ -28,6 +28,7 @@ function makeExamInput(overrides: Partial<CreateDraftExamInput> = {}): CreateDra
     title: "Helios CloudShare Fundamentals",
     description: "Hands-on certification exam.",
     timeLimitMinutes: 90,
+    storageLeaseMinutes: 90,
     scoreRetrievalEnabled: false,
     projectId: "project-1",
     projectName: "Helios CX Project",
@@ -152,11 +153,11 @@ function makeCloudShareFactory(
   };
 }
 
-async function makeExamRepository() {
+async function makeExamRepository(overrides: Partial<CreateDraftExamInput> = {}) {
   const exams = createInMemoryExamCatalogRepository();
   await createDraftExam(
     { repository: exams, now: () => new Date("2026-06-15T09:00:00.000Z"), newId: () => "exam-1" },
-    makeExamInput(),
+    makeExamInput(overrides),
   );
   await publishExam(
     { repository: exams, now: () => new Date("2026-06-15T09:05:00.000Z") },
@@ -218,6 +219,92 @@ describe("ExamAttempt scheduling runtime", () => {
         outcome: "success",
       }),
     ]);
+  });
+
+  it("uses the Policy storage lease for the CloudShare create-training End", async () => {
+    const requestV4Detailed = vi.fn(
+      async (spec: {
+        method: string;
+        path: string;
+        body?: unknown;
+        schema: { parse(value: unknown): unknown };
+      }) => {
+        const raw =
+          spec.path === "/trainings"
+            ? { id: "EXtraining-1" }
+            : spec.path === "/trainings/EXtraining-1/students"
+              ? [{ email: "candidate@helioscx.demo", firstName: "Asha", lastName: "Patel" }]
+              : spec.path === "/trainings/EXtraining-1/sponsored-link"
+                ? {
+                    loginUrl:
+                      "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/demo",
+                  }
+                : null;
+        if (!raw) {
+          throw new Error(`unexpected path ${spec.path}`);
+        }
+        return {
+          data: spec.schema.parse(raw),
+          host: "api.accelerate.cloudshare.com",
+          integrationSurface: "cloudshare.v4.training",
+          request: {
+            method: spec.method,
+            path: spec.path,
+            ...(spec.body !== undefined ? { body: spec.body } : {}),
+          },
+          response: { status: 200, body: raw },
+        };
+      },
+    );
+    const exams = await makeExamRepository({
+      timeLimitMinutes: 10,
+      storageLeaseMinutes: 2880,
+    });
+
+    const response = await scheduleExamAttemptRuntime(
+      {
+        exams,
+        attempts: createInMemoryExamAttemptRepository(),
+        launches: createInMemoryLabLaunchRepository(),
+        audit: createInMemoryAuditRepository(),
+        eventLog: createInMemoryEventLogRepository(),
+        connections: makeConnectionRepository(),
+        cloudshare: makeCloudShareFactory({
+          requestV4Detailed:
+            requestV4Detailed as unknown as ReturnType<
+              CloudShareClientFactory["forConnection"]
+            >["requestV4Detailed"],
+        }),
+        logger: makeLogger(),
+        now: () => new Date("2026-06-15T10:00:00.000Z"),
+        newId: vi.fn().mockReturnValueOnce("attempt-1").mockReturnValueOnce("launch-1"),
+        newCorrelationId: () => "corr-1",
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        examId: "exam-1",
+        scheduledFor: "2026-06-15T16:00:00.000Z",
+      },
+    );
+
+    expect(response.status).toBe(201);
+    expect(requestV4Detailed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path: "/trainings",
+        body: expect.objectContaining({
+          Start: "2026-06-15T16:00:00.000Z",
+          End: "2026-06-17T16:00:00.000Z",
+        }),
+      }),
+    );
+    await expect(exams.findById("exam-1")).resolves.toMatchObject({
+      timeLimitMinutes: 10,
+      storageLeaseMinutes: 2880,
+    });
   });
 
   it("returns 409 before provisioning when the Customer has no CloudShare connection", async () => {

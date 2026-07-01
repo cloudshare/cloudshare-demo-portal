@@ -40,8 +40,18 @@ async function seedAuthoringCache(
       { id: "bp-1", name: "Helios Exam Blueprint", description: "Blueprint-backed description" },
     ],
     policies: [
-      { id: "policy-1", name: "Standard Exam Policy", runtimeLeaseMinutes: 240 },
-      { id: "policy-2", name: "Extended Exam Policy", runtimeLeaseMinutes: 120 },
+      {
+        id: "policy-1",
+        name: "Standard Exam Policy",
+        runtimeLeaseMinutes: 240,
+        storageLeaseMinutes: 2880,
+      },
+      {
+        id: "policy-2",
+        name: "Extended Exam Policy",
+        runtimeLeaseMinutes: 120,
+        storageLeaseMinutes: 1440,
+      },
     ],
   });
   await cache.saveBlueprintDetail("customer-1", "project-1", "bp-1", {
@@ -110,6 +120,7 @@ describe("admin draft exam runtime", () => {
         status: "draft",
         title: "Helios CloudShare Fundamentals",
         timeLimitMinutes: 240,
+        storageLeaseMinutes: 2880,
         projectName: "Helios CX Project",
         allowedRegions: [
           { id: "region-1", name: "EU West" },
@@ -198,6 +209,7 @@ describe("admin draft exam runtime", () => {
         id: "exam-1",
         title: "Helios Blueprint Exam",
         timeLimitMinutes: 120,
+        storageLeaseMinutes: 1440,
         scoreRetrievalEnabled: true,
         allowedRegions: [{ id: "region-2", name: "US East" }],
         policyId: "policy-2",
@@ -222,8 +234,57 @@ describe("admin draft exam runtime", () => {
           "policyId",
           "policyName",
           "timeLimitMinutes",
+          "storageLeaseMinutes",
           "allowedRegions",
         ],
+      },
+    });
+  });
+
+  it("rejects draft creation when the selected Policy lacks storage lease evidence", async () => {
+    const repository = createInMemoryExamCatalogRepository();
+    const cache = createInMemoryExamAuthoringCacheRepository();
+    await seedAuthoringCache(cache);
+    await cache.saveProjectResources("customer-1", "project-1", {
+      blueprints: [
+        { id: "bp-1", name: "Helios Exam Blueprint", description: "Blueprint-backed description" },
+      ],
+      policies: [
+        {
+          id: "policy-1",
+          name: "Standard Exam Policy",
+          runtimeLeaseMinutes: 240,
+          storageLeaseMinutes: null,
+        },
+      ],
+    });
+
+    const result = await createAdminDraftExamRuntime(
+      {
+        repository,
+        cache,
+        instructor,
+        logger: makeLogger(),
+      },
+      {
+        customerId: "customer-1",
+        body: {
+          title: "Helios CloudShare Fundamentals",
+          description: "Hands-on certification exam.",
+          scoreRetrievalEnabled: true,
+          projectId: "project-1",
+          blueprintId: "bp-1",
+          snapshotId: "snap-1",
+          allowedRegionIds: ["region-1"],
+          policyId: "policy-1",
+        },
+      },
+    );
+
+    expect(result).toEqual({
+      status: 400,
+      body: {
+        error: "Refresh CloudShare authoring resources and reselect the Exam provisioning tuple.",
       },
     });
   });

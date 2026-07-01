@@ -31,6 +31,7 @@ function serialize(exam: Exam) {
     title: exam.title,
     description: exam.description,
     timeLimitMinutes: exam.timeLimitMinutes,
+    storageLeaseMinutes: exam.storageLeaseMinutes ?? null,
     scoreRetrievalEnabled: exam.scoreRetrievalEnabled,
     status: exam.status,
     publishedAt: exam.publishedAt,
@@ -56,6 +57,7 @@ function hydrate(row: {
   title: string;
   description: string;
   timeLimitMinutes: number;
+  storageLeaseMinutes: number | null;
   scoreRetrievalEnabled: boolean;
   status: string;
   publishedAt: Date | null;
@@ -79,6 +81,7 @@ function hydrate(row: {
     title: row.title,
     description: row.description,
     timeLimitMinutes: row.timeLimitMinutes,
+    storageLeaseMinutes: row.storageLeaseMinutes,
     scoreRetrievalEnabled: row.scoreRetrievalEnabled,
     status: row.status as Exam["status"],
     publishedAt: row.publishedAt,

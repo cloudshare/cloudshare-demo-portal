@@ -8,6 +8,7 @@ export interface Exam {
   readonly title: string;
   readonly description: string;
   readonly timeLimitMinutes: number;
+  readonly storageLeaseMinutes?: number | null;
   readonly scoreRetrievalEnabled: boolean;
   readonly status: ExamStatus;
   readonly publishedAt: Date | null;
@@ -36,6 +37,7 @@ export interface CreateDraftExamInput {
   readonly title: string;
   readonly description: string;
   readonly timeLimitMinutes: number;
+  readonly storageLeaseMinutes?: number | null;
   readonly scoreRetrievalEnabled: boolean;
   readonly projectId: string;
   readonly projectName: string;
@@ -84,6 +86,7 @@ export interface UpdateDraftExamInput {
   readonly description: string;
   readonly scoreRetrievalEnabled: boolean;
   readonly timeLimitMinutes: number;
+  readonly storageLeaseMinutes?: number | null;
   readonly allowedRegions: readonly ExamRegion[];
   readonly policyId: string;
   readonly policyName: string;
@@ -106,6 +109,7 @@ export async function createDraftExam(
     title: input.title.trim(),
     description: input.description.trim(),
     timeLimitMinutes: input.timeLimitMinutes,
+    storageLeaseMinutes: input.storageLeaseMinutes ?? null,
     scoreRetrievalEnabled: input.scoreRetrievalEnabled,
     status: "draft",
     publishedAt: null,
@@ -178,6 +182,7 @@ export async function updateDraftExam(
     description: input.description.trim(),
     scoreRetrievalEnabled: input.scoreRetrievalEnabled,
     timeLimitMinutes: input.timeLimitMinutes,
+    storageLeaseMinutes: input.storageLeaseMinutes ?? null,
     allowedRegions: input.allowedRegions.map((region) => ({
       id: region.id.trim(),
       name: region.name.trim(),
@@ -245,5 +250,12 @@ function validateDraftInput(input: CreateDraftExamInput): void {
 
   if (!Number.isInteger(input.timeLimitMinutes) || input.timeLimitMinutes <= 0) {
     throw new DraftExamValidationError("timeLimitMinutes must be a positive integer.");
+  }
+  if (
+    input.storageLeaseMinutes !== null &&
+    input.storageLeaseMinutes !== undefined &&
+    (!Number.isInteger(input.storageLeaseMinutes) || input.storageLeaseMinutes <= 0)
+  ) {
+    throw new DraftExamValidationError("storageLeaseMinutes must be a positive integer.");
   }
 }
