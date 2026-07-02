@@ -1,4 +1,5 @@
 import type { AdminMonitoringView } from "@/domain/admin-monitoring";
+import { isPortalSessionExpiredStatus } from "./session-expiry";
 
 export interface ExamAuthoringMode {
   readonly isEditingDraft: boolean;
@@ -70,7 +71,7 @@ export const ADMIN_SESSION_EXPIRED_MESSAGE =
   "Your admin session has expired. Sign in again to continue.";
 
 export function isAdminSessionExpiredStatus(status: number): boolean {
-  return status === 401;
+  return isPortalSessionExpiredStatus(status);
 }
 
 interface NamedResource {

@@ -1,3 +1,10 @@
+import {
+  PortalSessionExpiredError,
+  isPortalSessionExpiredStatus,
+} from "./session-expiry";
+
+export { isPortalSessionExpiredError } from "./session-expiry";
+
 export interface CandidateDashboardData {
   readonly exams: Array<{
     readonly id: string;
@@ -52,6 +59,7 @@ export function shouldShowNoPublishedExams(input: {
 
 interface JsonResponse {
   readonly ok: boolean;
+  readonly status?: number;
   json(): Promise<unknown>;
 }
 
@@ -59,6 +67,9 @@ type FetchLike = (input: string, init?: RequestInit) => Promise<JsonResponse>;
 
 export async function loadCandidateDashboard(fetchImpl: FetchLike): Promise<CandidateDashboardData> {
   const response = await fetchImpl("/api/candidate/exams");
+  if (isPortalSessionExpiredStatus(response.status ?? 0)) {
+    throw new PortalSessionExpiredError();
+  }
   const json = await response.json();
   assertNoLoginUrl(json);
   if (!response.ok) {
@@ -76,6 +87,9 @@ export async function scheduleCandidateExam(
     headers: { "content-type": "application/json" },
     body: JSON.stringify(input),
   });
+  if (isPortalSessionExpiredStatus(response.status ?? 0)) {
+    throw new PortalSessionExpiredError();
+  }
   const json = await response.json();
   assertNoLoginUrl(json);
   if (!response.ok) {
