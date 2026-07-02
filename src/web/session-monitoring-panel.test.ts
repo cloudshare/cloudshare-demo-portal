@@ -257,6 +257,59 @@ describe("SessionMonitoringPanel", () => {
     expect(html).toContain("Last interaction: -");
   });
 
+  it("shows the authored Exam open window and duration in live queue summaries", () => {
+    const html = renderToStaticMarkup(
+      createElement(SessionMonitoringPanel, {
+        monitoring: makeMonitoringView({
+          currentAttempts: {
+            scheduled: [],
+            ready: [],
+            inProgress: [],
+            suspended: [
+              makeAttempt({
+                candidateName: "Suspended Candidate",
+                candidateEmail: "suspended.candidate@helioscx.demo",
+                examTitle: "Suspended Exam",
+                status: "suspended",
+                scheduledFor: "2026-07-02T14:54:00.000Z",
+                examOpenPeriodMinutes: 30,
+              }),
+            ],
+          },
+          history: [],
+        }),
+        loading: false,
+        onRefresh: () => {},
+        onLoadMoreHistory: () => {},
+        onOpenSupportDiagnostics: () => {},
+      }),
+    );
+
+    expect(html).toContain(
+      "Open window: 2026-07-02T14:54:00.000Z to 2026-07-02T15:24:00.000Z (30 min)",
+    );
+    expect(html).toContain("Open window (UTC)");
+    expect(html).toContain("Starts 2026-07-02T14:54:00.000Z");
+    expect(html).toContain("Closes 2026-07-02T15:24:00.000Z");
+    expect(html).toContain("Duration 30 min");
+  });
+
+  it("keeps investigation filter fields from overlapping at narrow monitoring widths", () => {
+    const html = renderToStaticMarkup(
+      createElement(SessionMonitoringPanel, {
+        monitoring: makeMonitoringView(),
+        loading: false,
+        onRefresh: () => {},
+        onLoadMoreHistory: () => {},
+        onOpenSupportDiagnostics: () => {},
+      }),
+    );
+
+    expect(html).toContain("grid-template-columns:repeat(auto-fit, minmax(min(100%, 260px), 1fr))");
+    expect(html).toContain("min-width:0");
+    expect(html).toContain("box-sizing:border-box");
+  });
+
   it("filters the monitoring view by status, candidate email, and exam or ExamAttempt lookup without changing summary counts", () => {
     const filtered = applyMonitoringFilters(
       makeMonitoringView({

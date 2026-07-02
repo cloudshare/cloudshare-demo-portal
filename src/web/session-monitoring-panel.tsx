@@ -37,6 +37,22 @@ function formatUtcTimestamp(value: string | null | undefined): string {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
 }
 
+function formatOpenWindowSummary(
+  attempt: Pick<MonitoringAttemptView, "scheduledFor" | "examOpenPeriodMinutes">,
+): string {
+  const startLabel = formatUtcTimestamp(attempt.scheduledFor);
+  const parsedStart = attempt.scheduledFor ? new Date(attempt.scheduledFor) : null;
+  const endLabel =
+    parsedStart && !Number.isNaN(parsedStart.getTime()) && Number.isFinite(attempt.examOpenPeriodMinutes)
+      ? new Date(parsedStart.getTime() + attempt.examOpenPeriodMinutes * 60_000).toISOString()
+      : "-";
+  const durationLabel = Number.isFinite(attempt.examOpenPeriodMinutes)
+    ? `${attempt.examOpenPeriodMinutes} min`
+    : "-";
+
+  return `Open window: ${startLabel} to ${endLabel} (${durationLabel})`;
+}
+
 function getLatestInteractionAt(attempt: Pick<MonitoringAttemptView, "timeline">): string | null {
   return attempt.timeline
     .map((entry) => entry.occurredAt)
@@ -135,7 +151,7 @@ const filterPanelStyle: React.CSSProperties = {
 const filterGridStyle: React.CSSProperties = {
   display: "grid",
   gap: "0.75rem",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))",
   alignItems: "end",
 };
 
@@ -144,10 +160,13 @@ const filterLabelStyle: React.CSSProperties = {
   gap: "0.35rem",
   color: "#111827",
   fontSize: "0.9rem",
+  minWidth: 0,
 };
 
 const filterInputStyle: React.CSSProperties = {
   width: "100%",
+  minWidth: 0,
+  boxSizing: "border-box",
   padding: "0.45rem 0.55rem",
   border: "1px solid #cbd5e1",
   borderRadius: "6px",
@@ -314,6 +333,9 @@ function renderAttemptCard(
           <span style={{ color: "#6b7280", fontSize: "0.78rem", fontWeight: 400 }}>
             Scheduled: {formatUtcTimestamp(attempt.scheduledFor)} · Last interaction:{" "}
             {formatUtcTimestamp(getLatestInteractionAt(attempt))}
+          </span>
+          <span style={{ color: "#6b7280", fontSize: "0.78rem", fontWeight: 400 }}>
+            {formatOpenWindowSummary(attempt)}
           </span>
         </span>
         {showStatusBadge ? (

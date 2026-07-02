@@ -17,6 +17,38 @@ function toDisplayValue(value: string | null | undefined): string {
   return trimmed && trimmed.length > 0 ? trimmed : "-";
 }
 
+function formatUtcTimestamp(value: string | null | undefined): string {
+  if (!value) {
+    return "-";
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
+}
+
+function formatOpenWindowEnd(
+  attempt: Pick<MonitoringAttemptView, "scheduledFor" | "examOpenPeriodMinutes">,
+): string {
+  if (!attempt.scheduledFor || !Number.isFinite(attempt.examOpenPeriodMinutes)) {
+    return "-";
+  }
+
+  const start = new Date(attempt.scheduledFor);
+  if (Number.isNaN(start.getTime())) {
+    return "-";
+  }
+
+  return new Date(start.getTime() + attempt.examOpenPeriodMinutes * 60_000).toISOString();
+}
+
+function formatOpenWindowDuration(minutes: number): string {
+  if (!Number.isFinite(minutes)) {
+    return "-";
+  }
+
+  return `${minutes} min`;
+}
+
 export function buildMonitoringAttemptDetailFields(
   attempt: Pick<
     MonitoringAttemptView,
@@ -94,6 +126,16 @@ export function MonitoringAttemptDetails({
         <div style={detailPairStyle}>
           <div style={detailLabelStyle}>Scheduled (UTC)</div>
           <div style={detailValueStyle}>{scheduledForLabel}</div>
+        </div>
+        <div style={detailPairStyle}>
+          <div style={detailLabelStyle}>Open window (UTC)</div>
+          <div style={detailValueStyle}>
+            Starts {formatUtcTimestamp(attempt.scheduledFor)}
+            <br />
+            Closes {formatOpenWindowEnd(attempt)}
+            <br />
+            Duration {formatOpenWindowDuration(attempt.examOpenPeriodMinutes)}
+          </div>
         </div>
       </div>
       <div style={detailPairGridStyle}>
