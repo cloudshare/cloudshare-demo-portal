@@ -1,6 +1,6 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   buildMonitoringAttemptDetailFields,
   MonitoringAttemptDetails,
@@ -56,6 +56,12 @@ describe("buildMonitoringAttemptDetailFields", () => {
 });
 
 describe("MonitoringAttemptDetails", () => {
+  const originalTimezone = process.env.TZ;
+
+  afterEach(() => {
+    process.env.TZ = originalTimezone;
+  });
+
   it("renders the monitoring identifiers and the Support Diagnostics action label", () => {
     const html = renderToStaticMarkup(
       createElement(MonitoringAttemptDetails, {
@@ -80,6 +86,8 @@ describe("MonitoringAttemptDetails", () => {
   });
 
   it("renders latest interaction as ancillary monitoring detail", () => {
+    process.env.TZ = "Europe/London";
+
     const html = renderToStaticMarkup(
       createElement(MonitoringAttemptDetails, {
         attempt: {
@@ -112,7 +120,8 @@ describe("MonitoringAttemptDetails", () => {
     );
 
     expect(html).toContain("Last interaction");
-    expect(html).toContain("2026-06-21 09:11:30");
+    expect(html).toContain("2026-06-21 10:11:30");
     expect(html).not.toContain("2026-06-21T09:11:30.000Z");
+    expect(html).not.toContain("2026-06-21 09:11:30");
   });
 });

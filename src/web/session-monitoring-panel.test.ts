@@ -95,7 +95,10 @@ function makeMonitoringView(partial: Partial<AdminMonitoringView> = {}): AdminMo
 }
 
 describe("SessionMonitoringPanel", () => {
+  const originalTimezone = process.env.TZ;
+
   afterEach(() => {
+    process.env.TZ = originalTimezone;
     vi.restoreAllMocks();
   });
 
@@ -263,6 +266,8 @@ describe("SessionMonitoringPanel", () => {
   });
 
   it("shows the authored Exam open window only once per attempt summary", () => {
+    process.env.TZ = "Europe/London";
+
     const html = renderToStaticMarkup(
       createElement(SessionMonitoringPanel, {
         monitoring: makeMonitoringView({
@@ -291,11 +296,13 @@ describe("SessionMonitoringPanel", () => {
     );
 
     expect(html.match(/Open window/g)?.length).toBe(1);
-    expect(html).toContain("Starts 2026-07-02 14:54");
-    expect(html).toContain("Closes 2026-07-02 15:24");
+    expect(html).toContain("Starts 2026-07-02 15:54");
+    expect(html).toContain("Closes 2026-07-02 16:24");
     expect(html).toContain("Duration 30 min");
     expect(html).not.toContain("2026-07-02T14:54:00.000Z");
     expect(html).not.toContain("2026-07-02T15:24:00.000Z");
+    expect(html).not.toContain("Starts 2026-07-02 14:54");
+    expect(html).not.toContain("Closes 2026-07-02 15:24");
     expect(html).not.toContain("Scheduled (UTC)");
     expect(html).not.toContain("Open window (UTC)");
   });

@@ -1,5 +1,6 @@
 import React from "react";
 import type { MonitoringAttemptView } from "@/domain/admin-monitoring";
+import { formatLocalDateTimeSecond } from "./candidate-date-format";
 
 export interface MonitoringAttemptDetailField {
   readonly label: string;
@@ -16,13 +17,12 @@ function toDisplayValue(value: string | null | undefined): string {
   return trimmed && trimmed.length > 0 ? trimmed : "-";
 }
 
-function formatUtcSecondTimestamp(value: string | null | undefined): string {
+function formatLocalSecondTimestamp(value: string | null | undefined): string {
   if (!value) {
     return "-";
   }
 
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString().slice(0, 19).replace("T", " ");
+  return formatLocalDateTimeSecond(value) ?? value;
 }
 
 function getLatestInteractionAt(attempt: Pick<MonitoringAttemptView, "timeline">): string | null {
@@ -97,7 +97,7 @@ export function MonitoringAttemptDetails({
   onOpenSupportDiagnostics,
 }: MonitoringAttemptDetailsProps) {
   const detailFields = buildMonitoringAttemptDetailFields(attempt);
-  const latestInteractionLabel = formatUtcSecondTimestamp(getLatestInteractionAt(attempt));
+  const latestInteractionLabel = formatLocalSecondTimestamp(getLatestInteractionAt(attempt));
 
   return (
     <div style={attemptDetailsGridStyle}>

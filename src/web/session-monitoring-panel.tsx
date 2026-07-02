@@ -1,4 +1,5 @@
 import React from "react";
+import { formatLocalDateTimeMinute } from "./candidate-date-format";
 import { MonitoringAttemptDetails } from "./monitoring-attempt-details";
 import type {
   AdminMonitoringView,
@@ -28,23 +29,22 @@ const EMPTY_MONITORING_FILTERS: MonitoringFilters = {
   identifier: "",
 };
 
-function formatUtcMinuteTimestamp(value: string | null | undefined): string {
+function formatLocalMinuteTimestamp(value: string | null | undefined): string {
   if (!value) {
     return "-";
   }
 
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString().slice(0, 16).replace("T", " ");
+  return formatLocalDateTimeMinute(value) ?? value;
 }
 
 function getOpenWindowSummary(
   attempt: Pick<MonitoringAttemptView, "scheduledFor" | "examOpenPeriodMinutes">,
 ): { readonly startLabel: string; readonly endLabel: string; readonly durationLabel: string } {
-  const startLabel = formatUtcMinuteTimestamp(attempt.scheduledFor);
+  const startLabel = formatLocalMinuteTimestamp(attempt.scheduledFor);
   const parsedStart = attempt.scheduledFor ? new Date(attempt.scheduledFor) : null;
   const endLabel =
     parsedStart && !Number.isNaN(parsedStart.getTime()) && Number.isFinite(attempt.examOpenPeriodMinutes)
-      ? formatUtcMinuteTimestamp(
+      ? formatLocalMinuteTimestamp(
           new Date(parsedStart.getTime() + attempt.examOpenPeriodMinutes * 60_000).toISOString(),
         )
       : "-";
