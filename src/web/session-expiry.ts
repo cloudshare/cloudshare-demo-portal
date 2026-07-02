@@ -88,6 +88,10 @@ export function startPortalSessionWatchdog({
     }
 
     const sessionState = await checkPortalSession(fetchImpl);
+    if (stopped || observedExpiredSession) {
+      return;
+    }
+
     if (sessionState !== "expired") {
       return;
     }

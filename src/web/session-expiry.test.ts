@@ -56,4 +56,32 @@ describe("portal session expiry helpers", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(clearIntervalFn).toHaveBeenCalledWith(123);
   });
+
+  it("does not report an expired session after the watchdog is stopped mid-check", async () => {
+    let resolveSession!: (value: { status: number }) => void;
+    const fetchImpl = vi.fn(
+      () =>
+        new Promise<{ status: number }>((resolve) => {
+          resolveSession = resolve;
+        }),
+    );
+    const onExpired = vi.fn();
+    const clearIntervalFn = vi.fn();
+    const setIntervalFn = vi.fn().mockReturnValue(123);
+
+    const watchdog = startPortalSessionWatchdog({
+      fetchImpl,
+      onExpired,
+      setIntervalFn,
+      clearIntervalFn,
+    });
+    const pendingCheck = watchdog.checkNow();
+
+    watchdog.stop();
+    resolveSession({ status: 401 });
+    await pendingCheck;
+
+    expect(onExpired).not.toHaveBeenCalled();
+    expect(clearIntervalFn).toHaveBeenCalledWith(123);
+  });
 });
