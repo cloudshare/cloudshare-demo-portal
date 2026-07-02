@@ -20,10 +20,14 @@ const v3EnvironmentSchema = z
     message: "Expected CloudShare environment status field",
   });
 
+const cloudShareDateTimeString = z.string().min(1);
+
 const v4TrainingSchema = z.object({
   id: z.string().min(1),
-  end: z.string().datetime().optional(),
-  End: z.string().datetime().optional(),
+  start: cloudShareDateTimeString.optional(),
+  Start: cloudShareDateTimeString.optional(),
+  end: cloudShareDateTimeString.optional(),
+  End: cloudShareDateTimeString.optional(),
   status: z.string().min(1).optional(),
   Status: z.string().min(1).optional(),
 });

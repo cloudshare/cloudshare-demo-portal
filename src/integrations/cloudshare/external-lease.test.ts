@@ -112,6 +112,69 @@ describe("external lease inspection", () => {
     });
   });
 
+  it("treats a live-shaped ended training readback as an expired external lease", async () => {
+    const client = makeClient({
+      requestV4Detailed: vi.fn().mockImplementation(
+        async <T>(spec: V4RequestSpec<T>): Promise<CloudShareDetailedResult<T>> => ({
+          data: {
+            id: "EXVUAmxA5jgVfM29E2D4cTNA2",
+            start: "2026-06-30T15:48:00",
+            end: "2026-06-30T15:58:00",
+            status: "ended",
+          } as T,
+          host: "api.accelerate.cloudshare.com",
+          integrationSurface: "cloudshare.v4.training.get",
+          request: {
+            method: spec.method,
+            path: `/v4${spec.path}`,
+          },
+          response: {
+            status: 200,
+            body: {
+              id: "EXVUAmxA5jgVfM29E2D4cTNA2",
+              start: "2026-06-30T15:48:00",
+              end: "2026-06-30T15:58:00",
+              status: "ended",
+            },
+          },
+        }),
+      ),
+    });
+
+    const lease = await inspectCloudShareTrainingLease(
+      client,
+      "EXVUAmxA5jgVfM29E2D4cTNA2",
+      {
+        now: new Date("2026-07-02T12:00:00.000Z"),
+      },
+    );
+
+    expect(lease).toMatchObject({
+      kind: "expired",
+      target: "training",
+      attemptedOperation: "get_training",
+      integrationSurface: "cloudshare.v4.training.get",
+      method: "GET",
+      path: "/v4/trainings/EXVUAmxA5jgVfM29E2D4cTNA2",
+      environmentStatus: "ended",
+      leaseEndsAt: "2026-06-30T15:58:00",
+      reason: "status_terminal",
+      request: {
+        method: "GET",
+        path: "/v4/trainings/EXVUAmxA5jgVfM29E2D4cTNA2",
+      },
+      response: {
+        status: 200,
+        body: {
+          id: "EXVUAmxA5jgVfM29E2D4cTNA2",
+          start: "2026-06-30T15:48:00",
+          end: "2026-06-30T15:58:00",
+          status: "ended",
+        },
+      },
+    });
+  });
+
   it("preserves non-404 environment inspection failures as actionable diagnostics evidence", async () => {
     const client = makeClient({
       requestV3Detailed: vi.fn(async () => {
