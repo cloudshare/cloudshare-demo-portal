@@ -16,13 +16,13 @@ function toDisplayValue(value: string | null | undefined): string {
   return trimmed && trimmed.length > 0 ? trimmed : "-";
 }
 
-function formatUtcTimestamp(value: string | null | undefined): string {
+function formatUtcSecondTimestamp(value: string | null | undefined): string {
   if (!value) {
     return "-";
   }
 
   const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString().slice(0, 19).replace("T", " ");
 }
 
 function getLatestInteractionAt(attempt: Pick<MonitoringAttemptView, "timeline">): string | null {
@@ -97,7 +97,7 @@ export function MonitoringAttemptDetails({
   onOpenSupportDiagnostics,
 }: MonitoringAttemptDetailsProps) {
   const detailFields = buildMonitoringAttemptDetailFields(attempt);
-  const latestInteractionLabel = formatUtcTimestamp(getLatestInteractionAt(attempt));
+  const latestInteractionLabel = formatUtcSecondTimestamp(getLatestInteractionAt(attempt));
 
   return (
     <div style={attemptDetailsGridStyle}>

@@ -112,6 +112,7 @@ describe("MonitoringAttemptDetails", () => {
     );
 
     expect(html).toContain("Last interaction");
-    expect(html).toContain("2026-06-21T09:11:30.000Z");
+    expect(html).toContain("2026-06-21 09:11:30");
+    expect(html).not.toContain("2026-06-21T09:11:30.000Z");
   });
 });

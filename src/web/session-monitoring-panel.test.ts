@@ -250,9 +250,11 @@ describe("SessionMonitoringPanel", () => {
     expect(html).toContain("Scheduled Candidate <strong style=\"color:#111827;font-weight:700\">scheduled.candidate@helioscx.demo</strong>");
     expect(html).toContain("<span style=\"color:#4b5563;font-weight:400\">Scheduled Exam");
     expect(html).toContain("Open window");
-    expect(html).toContain("Starts 2026-06-21T12:00:00.000Z");
-    expect(html).toContain("Closes 2026-06-21T13:30:00.000Z");
+    expect(html).toContain("Starts 2026-06-21 12:00");
+    expect(html).toContain("Closes 2026-06-21 13:30");
     expect(html).toContain("Duration 90 min");
+    expect(html).not.toContain("2026-06-21T12:00:00.000Z");
+    expect(html).not.toContain("2026-06-21T13:30:00.000Z");
     expect(html).toContain("History Candidate <strong style=\"color:#111827;font-weight:700\">history.candidate@helioscx.demo</strong>");
     expect(html).toContain("<span style=\"color:#4b5563;font-weight:400\">History Exam");
     expect(html).toContain("Starts -");
@@ -289,9 +291,11 @@ describe("SessionMonitoringPanel", () => {
     );
 
     expect(html.match(/Open window/g)?.length).toBe(1);
-    expect(html).toContain("Starts 2026-07-02T14:54:00.000Z");
-    expect(html).toContain("Closes 2026-07-02T15:24:00.000Z");
+    expect(html).toContain("Starts 2026-07-02 14:54");
+    expect(html).toContain("Closes 2026-07-02 15:24");
     expect(html).toContain("Duration 30 min");
+    expect(html).not.toContain("2026-07-02T14:54:00.000Z");
+    expect(html).not.toContain("2026-07-02T15:24:00.000Z");
     expect(html).not.toContain("Scheduled (UTC)");
     expect(html).not.toContain("Open window (UTC)");
   });
