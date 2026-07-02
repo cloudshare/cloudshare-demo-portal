@@ -37,9 +37,9 @@ function formatUtcTimestamp(value: string | null | undefined): string {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
 }
 
-function formatOpenWindowSummary(
+function getOpenWindowSummary(
   attempt: Pick<MonitoringAttemptView, "scheduledFor" | "examOpenPeriodMinutes">,
-): string {
+): { readonly startLabel: string; readonly endLabel: string; readonly durationLabel: string } {
   const startLabel = formatUtcTimestamp(attempt.scheduledFor);
   const parsedStart = attempt.scheduledFor ? new Date(attempt.scheduledFor) : null;
   const endLabel =
@@ -50,14 +50,7 @@ function formatOpenWindowSummary(
     ? `${attempt.examOpenPeriodMinutes} min`
     : "-";
 
-  return `Open window: ${startLabel} to ${endLabel} (${durationLabel})`;
-}
-
-function getLatestInteractionAt(attempt: Pick<MonitoringAttemptView, "timeline">): string | null {
-  return attempt.timeline
-    .map((entry) => entry.occurredAt)
-    .filter((occurredAt) => occurredAt.trim().length > 0)
-    .sort((left, right) => right.localeCompare(left))[0] ?? null;
+  return { startLabel, endLabel, durationLabel };
 }
 
 function formatAttemptStatus(status: MonitoringAttemptView["status"]): string {
@@ -305,6 +298,7 @@ function renderAttemptCard(
   options: { readonly showStatusBadge?: boolean } = {},
 ) {
   const showStatusBadge = options.showStatusBadge ?? true;
+  const openWindow = getOpenWindowSummary(attempt);
 
   return (
     <details
@@ -330,12 +324,19 @@ function renderAttemptCard(
             {attempt.examTitle}
             {attempt.result ? ` · ${formatMonitoringResult(attempt.result)}` : ""}
           </span>
-          <span style={{ color: "#6b7280", fontSize: "0.78rem", fontWeight: 400 }}>
-            Scheduled: {formatUtcTimestamp(attempt.scheduledFor)} · Last interaction:{" "}
-            {formatUtcTimestamp(getLatestInteractionAt(attempt))}
-          </span>
-          <span style={{ color: "#6b7280", fontSize: "0.78rem", fontWeight: 400 }}>
-            {formatOpenWindowSummary(attempt)}
+          <span
+            style={{
+              color: "#4b5563",
+              fontSize: "0.82rem",
+              fontWeight: 400,
+              display: "grid",
+              gap: "0.1rem",
+            }}
+          >
+            <span style={{ color: "#374151", fontWeight: 600 }}>Open window</span>
+            <span>Starts {openWindow.startLabel}</span>
+            <span>Closes {openWindow.endLabel}</span>
+            <span>Duration {openWindow.durationLabel}</span>
           </span>
         </span>
         {showStatusBadge ? (
@@ -358,7 +359,6 @@ function renderAttemptCard(
       <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.75rem", fontSize: "0.9rem" }}>
         <MonitoringAttemptDetails
           attempt={attempt}
-          scheduledForLabel={formatUtcTimestamp(attempt.scheduledFor)}
           onOpenSupportDiagnostics={onOpenSupportDiagnostics}
         />
         <div style={{ color: "#555" }}>

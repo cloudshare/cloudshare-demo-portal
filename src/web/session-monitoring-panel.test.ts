@@ -189,7 +189,7 @@ describe("SessionMonitoringPanel", () => {
     expect(html.match(/>suspended</g)?.length).toBe(1);
   });
 
-  it("leads attempt summaries with candidate identity, exam timing, and latest interaction context", () => {
+  it("leads attempt summaries with candidate identity, exam title, and one compact open-window display", () => {
     const html = renderToStaticMarkup(
       createElement(SessionMonitoringPanel, {
         monitoring: makeMonitoringView({
@@ -249,15 +249,18 @@ describe("SessionMonitoringPanel", () => {
 
     expect(html).toContain("Scheduled Candidate <strong style=\"color:#111827;font-weight:700\">scheduled.candidate@helioscx.demo</strong>");
     expect(html).toContain("<span style=\"color:#4b5563;font-weight:400\">Scheduled Exam");
-    expect(html).toContain("Scheduled: 2026-06-21T12:00:00.000Z");
-    expect(html).toContain("Last interaction: 2026-06-21T12:08:30.000Z");
+    expect(html).toContain("Open window");
+    expect(html).toContain("Starts 2026-06-21T12:00:00.000Z");
+    expect(html).toContain("Closes 2026-06-21T13:30:00.000Z");
+    expect(html).toContain("Duration 90 min");
     expect(html).toContain("History Candidate <strong style=\"color:#111827;font-weight:700\">history.candidate@helioscx.demo</strong>");
     expect(html).toContain("<span style=\"color:#4b5563;font-weight:400\">History Exam");
-    expect(html).toContain("Scheduled: -");
-    expect(html).toContain("Last interaction: -");
+    expect(html).toContain("Starts -");
+    expect(html).toContain("Closes -");
+    expect(html).not.toContain("Last interaction:");
   });
 
-  it("shows the authored Exam open window and duration in live queue summaries", () => {
+  it("shows the authored Exam open window only once per attempt summary", () => {
     const html = renderToStaticMarkup(
       createElement(SessionMonitoringPanel, {
         monitoring: makeMonitoringView({
@@ -285,13 +288,12 @@ describe("SessionMonitoringPanel", () => {
       }),
     );
 
-    expect(html).toContain(
-      "Open window: 2026-07-02T14:54:00.000Z to 2026-07-02T15:24:00.000Z (30 min)",
-    );
-    expect(html).toContain("Open window (UTC)");
+    expect(html.match(/Open window/g)?.length).toBe(1);
     expect(html).toContain("Starts 2026-07-02T14:54:00.000Z");
     expect(html).toContain("Closes 2026-07-02T15:24:00.000Z");
     expect(html).toContain("Duration 30 min");
+    expect(html).not.toContain("Scheduled (UTC)");
+    expect(html).not.toContain("Open window (UTC)");
   });
 
   it("keeps investigation filter fields from overlapping at narrow monitoring widths", () => {

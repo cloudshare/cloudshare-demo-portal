@@ -8,7 +8,6 @@ export interface MonitoringAttemptDetailField {
 
 export interface MonitoringAttemptDetailsProps {
   readonly attempt: MonitoringAttemptView;
-  readonly scheduledForLabel: string;
   readonly onOpenSupportDiagnostics: (examAttemptId: string) => void;
 }
 
@@ -26,27 +25,11 @@ function formatUtcTimestamp(value: string | null | undefined): string {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
 }
 
-function formatOpenWindowEnd(
-  attempt: Pick<MonitoringAttemptView, "scheduledFor" | "examOpenPeriodMinutes">,
-): string {
-  if (!attempt.scheduledFor || !Number.isFinite(attempt.examOpenPeriodMinutes)) {
-    return "-";
-  }
-
-  const start = new Date(attempt.scheduledFor);
-  if (Number.isNaN(start.getTime())) {
-    return "-";
-  }
-
-  return new Date(start.getTime() + attempt.examOpenPeriodMinutes * 60_000).toISOString();
-}
-
-function formatOpenWindowDuration(minutes: number): string {
-  if (!Number.isFinite(minutes)) {
-    return "-";
-  }
-
-  return `${minutes} min`;
+function getLatestInteractionAt(attempt: Pick<MonitoringAttemptView, "timeline">): string | null {
+  return attempt.timeline
+    .map((entry) => entry.occurredAt)
+    .filter((occurredAt) => occurredAt.trim().length > 0)
+    .sort((left, right) => right.localeCompare(left))[0] ?? null;
 }
 
 export function buildMonitoringAttemptDetailFields(
@@ -111,10 +94,10 @@ const actionRowStyle: React.CSSProperties = {
 
 export function MonitoringAttemptDetails({
   attempt,
-  scheduledForLabel,
   onOpenSupportDiagnostics,
 }: MonitoringAttemptDetailsProps) {
   const detailFields = buildMonitoringAttemptDetailFields(attempt);
+  const latestInteractionLabel = formatUtcTimestamp(getLatestInteractionAt(attempt));
 
   return (
     <div style={attemptDetailsGridStyle}>
@@ -124,21 +107,9 @@ export function MonitoringAttemptDetails({
           <div style={detailValueStyle}>{attempt.candidateEmail}</div>
         </div>
         <div style={detailPairStyle}>
-          <div style={detailLabelStyle}>Scheduled (UTC)</div>
-          <div style={detailValueStyle}>{scheduledForLabel}</div>
+          <div style={detailLabelStyle}>Last interaction</div>
+          <div style={detailValueStyle}>{latestInteractionLabel}</div>
         </div>
-        <div style={detailPairStyle}>
-          <div style={detailLabelStyle}>Open window (UTC)</div>
-          <div style={detailValueStyle}>
-            Starts {formatUtcTimestamp(attempt.scheduledFor)}
-            <br />
-            Closes {formatOpenWindowEnd(attempt)}
-            <br />
-            Duration {formatOpenWindowDuration(attempt.examOpenPeriodMinutes)}
-          </div>
-        </div>
-      </div>
-      <div style={detailPairGridStyle}>
         {detailFields.map((field) => (
           <div key={field.label} style={detailPairStyle}>
             <div style={detailLabelStyle}>{field.label}</div>
