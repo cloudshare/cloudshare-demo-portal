@@ -378,8 +378,30 @@ export async function resumeExamAttemptRuntime(
             ? { environmentExternalId: externalLease.environmentExternalId }
             : {}),
         },
-        request: externalLease.request ?? null,
-        response: externalLease.response ?? null,
+        request: externalLease.request
+          ? {
+              method: externalLease.request.method,
+              path: externalLease.request.path,
+              ...(externalLease.request.query ? { query: externalLease.request.query } : {}),
+              ...(externalLease.request.headers ? { headers: externalLease.request.headers } : {}),
+              ...(externalLease.request.body !== undefined
+                ? { body: externalLease.request.body }
+                : {}),
+            }
+          : null,
+        response: externalLease.response
+          ? {
+              status: externalLease.response.status,
+              ...(externalLease.response.headers
+                ? { headers: externalLease.response.headers }
+                : {}),
+              body: externalLease.response.body,
+              ...(externalLease.response.network
+                ? { network: externalLease.response.network }
+                : {}),
+              ...(externalLease.response.tls ? { tls: externalLease.response.tls } : {}),
+            }
+          : null,
         details: {
           failureMode: "external_lease_expired",
           currentStatus: "expired",
