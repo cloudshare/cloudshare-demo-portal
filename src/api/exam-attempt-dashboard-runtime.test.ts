@@ -442,6 +442,8 @@ describe("getExamAttemptDashboardRuntime", () => {
     const exams = await makeExamRepository();
     const attempts = createInMemoryExamAttemptRepository();
     const launches = createInMemoryLabLaunchRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
     const logger = makeLogger();
 
     await attempts.save({
@@ -485,6 +487,7 @@ describe("getExamAttemptDashboardRuntime", () => {
             throw new Error(`unexpected path ${spec.path}`);
           }) as never,
         }),
+        diagnostics,
         logger,
       },
       { customerId: "customer-helios", candidateId: "candidate-1" },
@@ -499,6 +502,129 @@ describe("getExamAttemptDashboardRuntime", () => {
         },
       ],
     });
+    await expect(attempts.findById("attempt-suspended")).resolves.toMatchObject({
+      status: "expired",
+    });
+    await expect(
+      diagnosticsRepository.query({ examAttemptId: "attempt-suspended" }),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation: "exam_attempt.expired",
+          outcome: "success",
+          details: expect.objectContaining({
+            attemptedOperation: "get_environment",
+            integrationSurface: "cloudshare.v3.env.get",
+            failureMode: "external_lease_expired",
+            reason: "not_found",
+            responseStatus: 404,
+          }),
+          request: {
+            method: "GET",
+            path: "/v3/envs/ENVS-expired-1",
+          },
+          response: {
+            status: 404,
+          },
+        }),
+      ]),
+    );
+  });
+
+  it("records actionable diagnostics when external lease inspection fails without marking the attempt expired", async () => {
+    const exams = await makeExamRepository();
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
+    const logger = makeLogger();
+
+    await attempts.save({
+      id: "attempt-suspended",
+      customerId: "customer-helios",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "suspended",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    await launches.save({
+      id: "launch-1",
+      examAttemptId: "attempt-suspended",
+      candidateId: "candidate-1",
+      participantEmail: "candidate@helioscx.demo",
+      trainingId: "EXtraining-1",
+      experienceId: "EXtraining-1",
+      environmentExternalId: "ENVS-live-1",
+      environmentId: "ENVS-live-1",
+      loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/demo",
+      status: "launched",
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+
+    const dashboard = await getExamAttemptDashboardRuntime(
+      {
+        repository: exams,
+        attempts,
+        launches,
+        connections: makeConnectionRepository(),
+        cloudshare: makeCloudShareFactory({
+          requestV3: vi.fn(async (spec: { path: string }) => {
+            if (spec.path === "/envs/ENVS-live-1") {
+              throw new CloudShareRequestError("forbidden", 403, {
+                method: "GET",
+                path: "/v3/envs/ENVS-live-1",
+                integrationSurface: "cloudshare.v3.env.get",
+                responseHeaders: { "content-type": "application/json" },
+                responseBody: { message: "Forbidden" },
+              });
+            }
+            throw new Error(`unexpected path ${spec.path}`);
+          }) as never,
+        }),
+        diagnostics,
+        logger,
+      },
+      { customerId: "customer-helios", candidateId: "candidate-1" },
+    );
+
+    expect(dashboard.status).toBe(200);
+    expect(dashboard.body).toMatchObject({
+      attempts: [
+        {
+          id: "attempt-suspended",
+          status: "suspended",
+        },
+      ],
+    });
+    await expect(attempts.findById("attempt-suspended")).resolves.toMatchObject({
+      status: "suspended",
+    });
+    await expect(
+      diagnosticsRepository.query({ examAttemptId: "attempt-suspended" }),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation: "cloudshare.exam_attempt_external_lease.read",
+          outcome: "failure",
+          request: {
+            method: "GET",
+            path: "/v3/envs/ENVS-live-1",
+          },
+          response: {
+            status: 403,
+            headers: { "content-type": "application/json" },
+            body: { message: "Forbidden" },
+          },
+          details: expect.objectContaining({
+            attemptedOperation: "get_environment",
+            integrationSurface: "cloudshare.v3.env.get",
+            failureMode: "http_status",
+            responseStatus: 403,
+          }),
+        }),
+      ]),
+    );
   });
 
   it("preserves unexpected_response diagnostics when list-students schema parsing fails", async () => {

@@ -17,7 +17,11 @@ import {
 import { createCloudShareParticipantLister } from "@/integrations/cloudshare/participants";
 import type { Logger } from "@/observability/logger";
 import { recordExamAttemptCompletionDiagnostic } from "./exam-attempt-completion-diagnostics";
-import { inspectExamAttemptExternalLease } from "./exam-attempt-external-lease";
+import {
+  inspectExamAttemptExternalLease,
+  reconcileExpiredExamAttemptExternalLease,
+  recordExamAttemptExternalLeaseInspectionFailure,
+} from "./exam-attempt-external-lease";
 
 export interface ExamAttemptDashboardRuntimeDeps {
   readonly repository: ExamRepository;
@@ -139,6 +143,8 @@ async function deriveExternalLeaseStatusOverrides(
   attempts: readonly {
     readonly id: string;
     readonly customerId?: string;
+    readonly candidateId: string;
+    readonly examId: string;
     readonly status: string;
   }[],
 ): Promise<Map<string, CandidateDashboardAttemptItem["status"]>> {
@@ -161,13 +167,42 @@ async function deriveExternalLeaseStatusOverrides(
         launches: deps.launches,
         connections: deps.connections,
         cloudshare: deps.cloudshare,
+        attempts: deps.attempts,
+        diagnostics: deps.diagnostics,
+        now: deps.now,
       },
       {
         examAttemptId: attempt.id,
         customerId: attempt.customerId ?? null,
       },
     );
+    await recordExamAttemptExternalLeaseInspectionFailure(deps, {
+      inspection: lease,
+      customerId: attempt.customerId ?? null,
+      examId: attempt.examId,
+      candidateId: null,
+      candidateEmail: null,
+      source: "candidate_dashboard",
+      actorType: "system",
+      message: "CloudShare external lease inspection failed during candidate dashboard reconciliation",
+    });
     if (lease.kind === "expired") {
+      await reconcileExpiredExamAttemptExternalLease(
+        {
+          attempts: deps.attempts,
+          diagnostics: deps.diagnostics,
+        },
+        {
+          inspection: lease,
+          customerId: attempt.customerId ?? null,
+          examId: attempt.examId,
+          candidateId: null,
+          candidateEmail: null,
+          source: "candidate_dashboard",
+          actorType: "system",
+          message: "ExamAttempt expired from authoritative CloudShare external lease reconciliation",
+        },
+      );
       overrides.set(attempt.id, "expired");
     }
   }

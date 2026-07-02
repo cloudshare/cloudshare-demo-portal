@@ -30,7 +30,11 @@ import type { ExamClock } from "@/domain/exam-clock";
 import type { ExamRepository } from "@/domain/exam-catalog";
 import { settleExamAttemptCompletion } from "./exam-attempt-completion-settlement";
 import type { EnvironmentCommandResult } from "@/domain/environment";
-import { inspectExamAttemptExternalLease } from "./exam-attempt-external-lease";
+import {
+  inspectExamAttemptExternalLease,
+  reconcileExpiredExamAttemptExternalLease,
+  recordExamAttemptExternalLeaseInspectionFailure,
+} from "./exam-attempt-external-lease";
 
 /**
  * Framework-agnostic runtime operations for candidate-initiated suspend,
@@ -341,7 +345,27 @@ export async function resumeExamAttemptRuntime(
       customerId: reconciledAttempt.customerId ?? null,
       environmentExternalId: correlation.actionableEnvironmentId,
     });
+    await recordExamAttemptExternalLeaseInspectionFailure(deps, {
+      inspection: externalLease,
+      customerId: reconciledAttempt.customerId ?? null,
+      examId: reconciledAttempt.examId,
+      candidateId: reconciledAttempt.candidateId,
+      candidateEmail: deps.candidateEmail ?? null,
+      source: "runtime",
+      actorType: "candidate",
+      message: "CloudShare external lease inspection failed during exam resume",
+    });
     if (externalLease.kind === "expired") {
+      await reconcileExpiredExamAttemptExternalLease(deps, {
+        inspection: externalLease,
+        customerId: reconciledAttempt.customerId ?? null,
+        examId: reconciledAttempt.examId,
+        candidateId: reconciledAttempt.candidateId,
+        candidateEmail: deps.candidateEmail ?? null,
+        source: "runtime",
+        actorType: "candidate",
+        message: "ExamAttempt expired from authoritative CloudShare external lease reconciliation",
+      });
       await deps.diagnostics?.record({
         ...anchors,
         level: "warn",

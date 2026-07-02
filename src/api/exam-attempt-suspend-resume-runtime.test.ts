@@ -1176,6 +1176,30 @@ describe("resumeExamAttemptRuntime", () => {
         }),
       }),
     );
+    await expect(deps.attempts.findById("ea-1")).resolves.toMatchObject({
+      status: "expired",
+    });
+    expect(diagnostics.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: "exam_attempt.expired",
+        outcome: "success",
+        examAttemptId: "ea-1",
+        request: {
+          method: "GET",
+          path: "/v3/envs/ENVS2n38LTNdcC4sHsqnjRzg2",
+        },
+        response: {
+          status: 404,
+        },
+        details: expect.objectContaining({
+          attemptedOperation: "get_environment",
+          integrationSurface: "cloudshare.v3.env.get",
+          failureMode: "external_lease_expired",
+          reason: "not_found",
+          attemptStatus: "expired",
+        }),
+      }),
+    );
   });
 
   it("treats a repeated resume request after a successful resume as idempotent", async () => {

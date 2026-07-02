@@ -306,6 +306,127 @@ describe("handleEnterExam", () => {
     expect(JSON.stringify(response)).not.toContain("secret");
   });
 
+  it("blocks entry, persists expired status, and records reconciliation diagnostics when the CloudShare training end has passed without an environment correlation", async () => {
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
+
+    await attempts.save({
+      id: "attempt-expired-training",
+      customerId: "customer-1",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "ready",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    await launches.save({
+      id: "launch-1",
+      examAttemptId: "attempt-expired-training",
+      candidateId: "candidate-1",
+      participantEmail: "candidate@helioscx.demo",
+      trainingId: "EXtraining-1",
+      experienceId: "EXtraining-1",
+      loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret",
+      status: "launched",
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+
+    const response = await handleEnterExam(
+      {
+        attempts,
+        launches,
+        connections: makeConnections(),
+        cloudshare: {
+          forConnection: () => ({
+            requestV3: vi.fn(),
+            requestV3Text: vi.fn(),
+            requestV4: vi.fn(),
+            requestV4Detailed: vi.fn(async (spec: { path: string }) => {
+              if (spec.path === "/trainings/EXtraining-1") {
+                return {
+                  data: {
+                    id: "EXtraining-1",
+                    end: "2026-06-15T15:59:00.000Z",
+                    status: "active",
+                  },
+                  host: "api.accelerate.cloudshare.com",
+                  integrationSurface: "cloudshare.v4.training.get",
+                  request: {
+                    method: "GET",
+                    path: "/v4/trainings/EXtraining-1",
+                  },
+                  response: {
+                    status: 200,
+                    body: {
+                      id: "EXtraining-1",
+                      end: "2026-06-15T15:59:00.000Z",
+                      status: "active",
+                    },
+                  },
+                };
+              }
+              throw new Error(`unexpected path ${spec.path}`);
+            }),
+          }),
+        },
+        diagnostics,
+        candidateEmail: "candidate@helioscx.demo",
+        logger: makeLogger(),
+        now: () => new Date("2026-06-15T16:00:00.000Z"),
+      },
+      { examAttemptId: "attempt-expired-training", candidateId: "candidate-1" },
+    );
+
+    expect(response.status).toBe(409);
+    expect(response.body).toBe(
+      "Exam entry is no longer available because the CloudShare lab has expired.",
+    );
+    await expect(attempts.findById("attempt-expired-training")).resolves.toMatchObject({
+      status: "expired",
+    });
+    await expect(
+      diagnosticsRepository.query({ examAttemptId: "attempt-expired-training" }),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation: "exam_attempt.expired",
+          outcome: "success",
+          examAttemptId: "attempt-expired-training",
+          request: {
+            method: "GET",
+            path: "/v4/trainings/EXtraining-1",
+          },
+          response: {
+            status: 200,
+            body: {
+              id: "EXtraining-1",
+              end: "2026-06-15T15:59:00.000Z",
+              status: "active",
+            },
+          },
+          details: expect.objectContaining({
+            attemptedOperation: "get_training",
+            integrationSurface: "cloudshare.v4.training.get",
+            failureMode: "external_lease_expired",
+            reason: "end_elapsed",
+            leaseEndsAt: "2026-06-15T15:59:00.000Z",
+            attemptStatus: "expired",
+          }),
+        }),
+        expect.objectContaining({
+          operation: "exam_attempt.enter",
+          outcome: "failure",
+          details: expect.objectContaining({
+            failureMode: "external_lease_expired",
+            attemptStatus: "expired",
+          }),
+        }),
+      ]),
+    );
+  });
+
   it("reconciles runtime exhaustion before redirect and completes the attempt instead of entering", async () => {
     const attempts = createInMemoryExamAttemptRepository();
     const launches = createInMemoryLabLaunchRepository();

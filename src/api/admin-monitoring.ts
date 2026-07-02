@@ -9,10 +9,16 @@ import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
+import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import { MAX_DIAGNOSTIC_QUERY_LIMIT, type DiagnosticLogRepository } from "@/domain/diagnostic-log";
+import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { LabLaunchRepository } from "@/domain/lab-launch";
 import type { Logger } from "@/observability/logger";
-import { inspectExamAttemptExternalLease } from "./exam-attempt-external-lease";
+import {
+  inspectExamAttemptExternalLease,
+  reconcileExpiredExamAttemptExternalLease,
+  recordExamAttemptExternalLeaseInspectionFailure,
+} from "./exam-attempt-external-lease";
 
 export interface AdminMonitoringHandlerDeps {
   readonly attempts: AdminMonitoringAttemptRepository;
@@ -20,6 +26,8 @@ export interface AdminMonitoringHandlerDeps {
   readonly launches?: LabLaunchRepository;
   readonly connections?: CloudShareConnectionRepository;
   readonly cloudshare?: CloudShareClientFactory;
+  readonly examAttempts?: ExamAttemptRepository;
+  readonly diagnosticRecorder?: DiagnosticRecorder;
   readonly logger: Logger;
 }
 
@@ -29,6 +37,8 @@ export interface AdminMonitoringServices {
   readonly labLaunches?: LabLaunchRepository;
   readonly cloudshareConnections?: CloudShareConnectionRepository;
   readonly cloudshareClientFactory?: CloudShareClientFactory;
+  readonly examAttempts?: ExamAttemptRepository;
+  readonly diagnosticRecorder?: DiagnosticRecorder;
   readonly logger: Logger;
 }
 
@@ -38,9 +48,11 @@ export function buildAdminMonitoringDeps(
   return {
     attempts: services.adminMonitoringAttempts,
     diagnostics: services.diagnostics,
-    launches: services.labLaunches,
-    connections: services.cloudshareConnections,
-    cloudshare: services.cloudshareClientFactory,
+    ...(services.labLaunches ? { launches: services.labLaunches } : {}),
+    ...(services.cloudshareConnections ? { connections: services.cloudshareConnections } : {}),
+    ...(services.cloudshareClientFactory ? { cloudshare: services.cloudshareClientFactory } : {}),
+    ...(services.examAttempts ? { examAttempts: services.examAttempts } : {}),
+    ...(services.diagnosticRecorder ? { diagnosticRecorder: services.diagnosticRecorder } : {}),
     logger: services.logger,
   };
 }
@@ -104,10 +116,15 @@ export async function handleGetAdminMonitoring(
 }
 
 async function deriveAdminMonitoringExternalLeaseOverrides(
-  deps: Pick<AdminMonitoringHandlerDeps, "launches" | "connections" | "cloudshare">,
+  deps: Pick<
+    AdminMonitoringHandlerDeps,
+    "launches" | "connections" | "cloudshare" | "examAttempts" | "diagnosticRecorder"
+  >,
   attempts: readonly {
     readonly id: string;
     readonly customerId: string;
+    readonly candidateId: string;
+    readonly examId: string;
     readonly status: "scheduled" | "ready" | "in_progress" | "suspended" | "completed" | "expired";
   }[],
 ): Promise<Record<string, "expired">> {
@@ -130,13 +147,44 @@ async function deriveAdminMonitoringExternalLeaseOverrides(
         launches: deps.launches,
         connections: deps.connections,
         cloudshare: deps.cloudshare,
+        attempts: deps.examAttempts,
+        diagnostics: deps.diagnosticRecorder,
       },
       {
         examAttemptId: attempt.id,
         customerId: attempt.customerId,
       },
     );
+    await recordExamAttemptExternalLeaseInspectionFailure(
+      { diagnostics: deps.diagnosticRecorder },
+      {
+        inspection: lease,
+        customerId: attempt.customerId,
+        examId: attempt.examId,
+        candidateId: null,
+        candidateEmail: null,
+        source: "admin_monitoring",
+        actorType: "admin",
+        message: "CloudShare external lease inspection failed during admin monitoring reconciliation",
+      },
+    );
     if (lease.kind === "expired") {
+      await reconcileExpiredExamAttemptExternalLease(
+        {
+          attempts: deps.examAttempts,
+          diagnostics: deps.diagnosticRecorder,
+        },
+        {
+          inspection: lease,
+          customerId: attempt.customerId,
+          examId: attempt.examId,
+          candidateId: null,
+          candidateEmail: null,
+          source: "admin_monitoring",
+          actorType: "admin",
+          message: "ExamAttempt expired from authoritative CloudShare external lease reconciliation",
+        },
+      );
       overrides[attempt.id] = "expired";
     }
   }
