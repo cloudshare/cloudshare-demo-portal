@@ -419,7 +419,7 @@ describe("handleEnterExam", () => {
     );
   });
 
-  it("blocks after the authored open period before inspecting an experience-only CloudShare training id", async () => {
+  it("reconciles an experience-only CloudShare training id after the authored open period closes", async () => {
     const attempts = createInMemoryExamAttemptRepository();
     const launches = createInMemoryLabLaunchRepository();
     const exams = await seedExam();
@@ -493,13 +493,18 @@ describe("handleEnterExam", () => {
       { examAttemptId: "attempt-expired-experience-only", candidateId: "candidate-1" },
     );
 
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(409);
     expect(response.body).toBe(
-      "Exam entry is not available after the Exam open period has closed.",
+      "Exam entry is no longer available because the CloudShare lab has expired.",
     );
-    expect(requestV4Detailed).not.toHaveBeenCalled();
+    expect(requestV4Detailed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "GET",
+        path: "/trainings/EXtraining-1",
+      }),
+    );
     await expect(attempts.findById("attempt-expired-experience-only")).resolves.toMatchObject({
-      status: "ready",
+      status: "expired",
     });
   });
 

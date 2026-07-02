@@ -149,21 +149,7 @@ export async function enterExamAttemptRuntime(
   }
 
   const exam = deps.exams ? await deps.exams.findById(attempt.examId) : null;
-  if (exam && now.getTime() >= attempt.scheduledFor.getTime() + exam.openPeriodMinutes * 60_000) {
-    await deps.diagnostics?.record({
-      ...anchors,
-      level: "warn",
-      operation: "exam_attempt.enter",
-      outcome: "failure",
-      message: "Exam entry not available after the authored open period",
-      details: {
-        scheduledFor: attempt.scheduledFor.toISOString(),
-        openPeriodMinutes: exam.openPeriodMinutes,
-        openPeriodEndedAt: new Date(attempt.scheduledFor.getTime() + exam.openPeriodMinutes * 60_000).toISOString(),
-      },
-    });
-    return blocked(403, "Exam entry is not available after the Exam open period has closed.");
-  }
+  const authoredOpenPeriodClosed = hasAuthoredOpenPeriodClosed(attempt.scheduledFor, exam, now);
 
   const launch = await deps.launches.findByExamAttemptId(request.examAttemptId);
   if (!launch) {
@@ -177,7 +163,7 @@ export async function enterExamAttemptRuntime(
     return blocked(404, "Scheduled CloudShare launch not found.");
   }
 
-  if (hasAuthoredOpenPeriodClosed(attempt.scheduledFor, exam, now)) {
+  if (authoredOpenPeriodClosed) {
     const externalLease = await inspectExamAttemptExternalLease(deps, {
       examAttemptId: request.examAttemptId,
       customerId: attempt.customerId ?? null,
@@ -250,6 +236,24 @@ export async function enterExamAttemptRuntime(
         "Exam entry is no longer available because the CloudShare lab has expired.",
       );
     }
+  }
+
+  if (authoredOpenPeriodClosed) {
+    await deps.diagnostics?.record({
+      ...anchors,
+      level: "warn",
+      operation: "exam_attempt.enter",
+      outcome: "failure",
+      message: "Exam entry not available after the authored open period",
+      details: {
+        scheduledFor: attempt.scheduledFor.toISOString(),
+        openPeriodMinutes: exam?.openPeriodMinutes ?? null,
+        openPeriodEndedAt: exam
+          ? new Date(attempt.scheduledFor.getTime() + exam.openPeriodMinutes * 60_000).toISOString()
+          : null,
+      },
+    });
+    return blocked(403, "Exam entry is not available after the Exam open period has closed.");
   }
 
   try {

@@ -281,31 +281,7 @@ export async function resumeExamAttemptRuntime(
     anchors = anchorsForAttempt(reconciledAttempt, deps.candidateEmail);
     const resumeOpenPeriodEnd = await getResumeOpenPeriodEnd(deps, reconciledAttempt);
     const now = (deps.now ?? (() => new Date()))();
-    if (resumeOpenPeriodEnd && now.getTime() >= resumeOpenPeriodEnd.getTime()) {
-      await deps.diagnostics?.record({
-        ...anchors,
-        level: "warn",
-        operation: "exam_attempt.resume",
-        outcome: "failure",
-        message: "Exam resume failed: authored open period is closed",
-        details: {
-          failureMode: "open_period_closed",
-          currentStatus: reconciledAttempt.status,
-          scheduledFor: reconciledAttempt.scheduledFor?.toISOString() ?? null,
-          openPeriodEndsAt: resumeOpenPeriodEnd.toISOString(),
-        },
-      });
-      return {
-        status: 409,
-        body: {
-          error: "Exam resume is not available after the Exam open period has closed.",
-          examAttemptId,
-          operation: "resume",
-          currentStatus: reconciledAttempt.status,
-          openPeriodEndsAt: resumeOpenPeriodEnd.toISOString(),
-        },
-      };
-    }
+    const authoredOpenPeriodClosed = !!resumeOpenPeriodEnd && now.getTime() >= resumeOpenPeriodEnd.getTime();
     if (reconciledAttempt.status === "in_progress") {
       const launch = await deps.launches.findByExamAttemptId(examAttemptId);
       return buildAlreadyActiveResumeResponse(deps, examAttemptId, anchors, launch, {
@@ -341,7 +317,7 @@ export async function resumeExamAttemptRuntime(
       examAttemptId,
       operation: "exam_resume",
     });
-    if (!resumeOpenPeriodEnd || now.getTime() >= resumeOpenPeriodEnd.getTime()) {
+    if (!resumeOpenPeriodEnd || authoredOpenPeriodClosed) {
       const externalLease = await inspectExamAttemptExternalLease(deps, {
         examAttemptId,
         customerId: reconciledAttempt.customerId ?? null,
@@ -420,6 +396,31 @@ export async function resumeExamAttemptRuntime(
           },
         };
       }
+    }
+    if (authoredOpenPeriodClosed) {
+      await deps.diagnostics?.record({
+        ...anchors,
+        level: "warn",
+        operation: "exam_attempt.resume",
+        outcome: "failure",
+        message: "Exam resume failed: authored open period is closed",
+        details: {
+          failureMode: "open_period_closed",
+          currentStatus: reconciledAttempt.status,
+          scheduledFor: reconciledAttempt.scheduledFor?.toISOString() ?? null,
+          openPeriodEndsAt: resumeOpenPeriodEnd.toISOString(),
+        },
+      });
+      return {
+        status: 409,
+        body: {
+          error: "Exam resume is not available after the Exam open period has closed.",
+          examAttemptId,
+          operation: "resume",
+          currentStatus: reconciledAttempt.status,
+          openPeriodEndsAt: resumeOpenPeriodEnd.toISOString(),
+        },
+      };
     }
     const result = await resumeExam(
       {
