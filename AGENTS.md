@@ -45,17 +45,20 @@ showing real CloudShare behaviour, CloudShare wins.
 - The `3000` and `3025` servers are expected to use the same repo `.env` and therefore the same local
   database. Actions performed through `3025` should be visible to the tunnel-facing `3000` server as
   long as both servers are running against the same environment.
-- Before requesting human QA, explicitly state whether the change is available in the user's main
-  project folder (`D:\Code_projects\cloudshare-demo-portal`) and therefore on their port `3000`
-  server after restart. If it is not, state the PR branch/commit that must be checked out there, or
-  state that QA should use the Codex-owned `3025` server instead.
+- Before requesting human QA, make the user's main project folder
+  (`D:\Code_projects\cloudshare-demo-portal`) ready by default: fast-forward or check out the PR QA
+  branch to the reviewed head commit, regenerate/migrate if required, restart or positively confirm
+  the port `3000` server is serving from that checkout, smoke-test the changed path on
+  `http://localhost:3000`, and report the exact branch and commit. Do not ask the user to update the
+  checkout manually unless the main project folder has uncommitted user work or another explicit
+  blocker.
 - When a branch adds or changes Prisma schema/migrations, do not hand the port `3000` checkout to
   human QA until that checkout has had its Prisma client regenerated and its local database migrated
   or deliberately reset from a backup. A clean git checkout alone is not enough for schema-changing
   slices.
 - Before human QA on port `3000`, smoke-test the changed path against the same `D:\Code_projects`
-  checkout and port the user will use. Codex-owned `3025` smoke is useful but does not prove the
-  tunnel-facing server is ready.
+  checkout and port the user will use after the checkout has been updated. Codex-owned `3025` smoke
+  is useful but does not prove the tunnel-facing server is ready.
 
 ## QA operating notes
 
