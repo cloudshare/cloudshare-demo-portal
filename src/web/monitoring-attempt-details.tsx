@@ -1,5 +1,6 @@
 import React from "react";
 import type { MonitoringAttemptView } from "@/domain/admin-monitoring";
+import { formatLocalDateTimeSecond } from "./candidate-date-format";
 
 export interface MonitoringAttemptDetailField {
   readonly label: string;
@@ -8,13 +9,27 @@ export interface MonitoringAttemptDetailField {
 
 export interface MonitoringAttemptDetailsProps {
   readonly attempt: MonitoringAttemptView;
-  readonly scheduledForLabel: string;
   readonly onOpenSupportDiagnostics: (examAttemptId: string) => void;
 }
 
 function toDisplayValue(value: string | null | undefined): string {
   const trimmed = value?.trim();
   return trimmed && trimmed.length > 0 ? trimmed : "-";
+}
+
+function formatLocalSecondTimestamp(value: string | null | undefined): string {
+  if (!value) {
+    return "-";
+  }
+
+  return formatLocalDateTimeSecond(value) ?? value;
+}
+
+function getLatestInteractionAt(attempt: Pick<MonitoringAttemptView, "timeline">): string | null {
+  return attempt.timeline
+    .map((entry) => entry.occurredAt)
+    .filter((occurredAt) => occurredAt.trim().length > 0)
+    .sort((left, right) => right.localeCompare(left))[0] ?? null;
 }
 
 export function buildMonitoringAttemptDetailFields(
@@ -79,10 +94,10 @@ const actionRowStyle: React.CSSProperties = {
 
 export function MonitoringAttemptDetails({
   attempt,
-  scheduledForLabel,
   onOpenSupportDiagnostics,
 }: MonitoringAttemptDetailsProps) {
   const detailFields = buildMonitoringAttemptDetailFields(attempt);
+  const latestInteractionLabel = formatLocalSecondTimestamp(getLatestInteractionAt(attempt));
 
   return (
     <div style={attemptDetailsGridStyle}>
@@ -92,11 +107,9 @@ export function MonitoringAttemptDetails({
           <div style={detailValueStyle}>{attempt.candidateEmail}</div>
         </div>
         <div style={detailPairStyle}>
-          <div style={detailLabelStyle}>Scheduled (UTC)</div>
-          <div style={detailValueStyle}>{scheduledForLabel}</div>
+          <div style={detailLabelStyle}>Last interaction</div>
+          <div style={detailValueStyle}>{latestInteractionLabel}</div>
         </div>
-      </div>
-      <div style={detailPairGridStyle}>
         {detailFields.map((field) => (
           <div key={field.label} style={detailPairStyle}>
             <div style={detailLabelStyle}>{field.label}</div>

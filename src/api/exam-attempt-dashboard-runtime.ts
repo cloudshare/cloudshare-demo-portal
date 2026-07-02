@@ -17,6 +17,11 @@ import {
 import { createCloudShareParticipantLister } from "@/integrations/cloudshare/participants";
 import type { Logger } from "@/observability/logger";
 import { recordExamAttemptCompletionDiagnostic } from "./exam-attempt-completion-diagnostics";
+import {
+  inspectExamAttemptExternalLease,
+  reconcileExpiredExamAttemptExternalLease,
+  recordExamAttemptExternalLeaseInspectionFailure,
+} from "./exam-attempt-external-lease";
 
 export interface ExamAttemptDashboardRuntimeDeps {
   readonly repository: ExamRepository;
@@ -103,6 +108,11 @@ export async function getExamAttemptDashboardRuntime(
     reconciledAttempts.map((attempt) => attempt.id),
   );
   const examsById = new Map(exams.map((exam) => [exam.id, exam]));
+  const externalLeaseOverrides = await deriveExternalLeaseStatusOverrides(
+    deps,
+    reconciledAttempts,
+    examsById,
+  );
 
   return {
     status: 200,
@@ -120,11 +130,104 @@ export async function getExamAttemptDashboardRuntime(
           openPeriodMinutes: exam?.openPeriodMinutes ?? 0,
           scoreRetrievalEnabled: exam?.scoreRetrievalEnabled ?? false,
           scheduledFor: attempt.scheduledFor?.toISOString() ?? null,
-          status: attempt.status as CandidateDashboardAttemptItem["status"],
+          status:
+            externalLeaseOverrides.get(attempt.id) ??
+            (attempt.status as CandidateDashboardAttemptItem["status"]),
         };
       }),
     },
   };
+}
+
+async function deriveExternalLeaseStatusOverrides(
+  deps: ExamAttemptDashboardRuntimeDeps,
+  attempts: readonly {
+    readonly id: string;
+    readonly customerId?: string;
+    readonly candidateId: string;
+    readonly examId: string;
+    readonly status: string;
+    readonly scheduledFor?: Date | null;
+  }[],
+  examsById: ReadonlyMap<string, Exam>,
+): Promise<Map<string, CandidateDashboardAttemptItem["status"]>> {
+  const overrides = new Map<string, CandidateDashboardAttemptItem["status"]>();
+  if (!deps.launches || !deps.connections || !deps.cloudshare) {
+    return overrides;
+  }
+
+  for (const attempt of attempts) {
+    if (
+      attempt.status !== "ready" &&
+      attempt.status !== "in_progress" &&
+      attempt.status !== "suspended"
+    ) {
+      continue;
+    }
+    const exam = examsById.get(attempt.examId);
+    if (!hasAuthoredOpenPeriodClosed(attempt.scheduledFor ?? null, exam, deps.now)) {
+      continue;
+    }
+
+    const lease = await inspectExamAttemptExternalLease(
+      {
+        launches: deps.launches,
+        connections: deps.connections,
+        cloudshare: deps.cloudshare,
+        attempts: deps.attempts,
+        diagnostics: deps.diagnostics,
+        now: deps.now,
+      },
+      {
+        examAttemptId: attempt.id,
+        customerId: attempt.customerId ?? null,
+      },
+    );
+    await recordExamAttemptExternalLeaseInspectionFailure(deps, {
+      inspection: lease,
+      customerId: attempt.customerId ?? null,
+      examId: attempt.examId,
+      candidateId: null,
+      candidateEmail: null,
+      source: "candidate_dashboard",
+      actorType: "system",
+      message: "CloudShare external lease inspection failed during candidate dashboard reconciliation",
+    });
+    if (lease.kind === "expired") {
+      await reconcileExpiredExamAttemptExternalLease(
+        {
+          attempts: deps.attempts,
+          diagnostics: deps.diagnostics,
+        },
+        {
+          inspection: lease,
+          customerId: attempt.customerId ?? null,
+          examId: attempt.examId,
+          candidateId: null,
+          candidateEmail: null,
+          source: "candidate_dashboard",
+          actorType: "system",
+          message: "ExamAttempt expired from authoritative CloudShare external lease reconciliation",
+        },
+      );
+      overrides.set(attempt.id, "expired");
+    }
+  }
+
+  return overrides;
+}
+
+function hasAuthoredOpenPeriodClosed(
+  scheduledFor: Date | null,
+  exam: Pick<Exam, "openPeriodMinutes"> | undefined,
+  now: (() => Date) | undefined,
+): boolean {
+  if (!scheduledFor || !exam) {
+    return false;
+  }
+
+  const openPeriodEndsAt = scheduledFor.getTime() + exam.openPeriodMinutes * 60_000;
+  return (now ?? (() => new Date()))().getTime() >= openPeriodEndsAt;
 }
 
 function toCandidateDashboardExamItem(exam: Exam): CandidateDashboardExamItem {

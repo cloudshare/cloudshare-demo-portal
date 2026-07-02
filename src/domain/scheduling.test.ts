@@ -427,7 +427,7 @@ describe("scheduleExam", () => {
     expect(result.coldStartLikely).toBe(true);
   });
 
-  it("persists a failed provisioning attempt as expired and does not create a lab launch", async () => {
+  it("removes a failed provisioning attempt from the candidate lifecycle and does not create a lab launch", async () => {
     const { exams, attempts, launches } = await setup();
     const order: string[] = [];
     const sponsoredLink = vi.fn();
@@ -475,13 +475,7 @@ describe("scheduleExam", () => {
 
     expect(order).toEqual(["createTraining", "addParticipant"]);
     expect(sponsoredLink).not.toHaveBeenCalled();
-    await expect(attempts.findById("attempt-1")).resolves.toMatchObject({
-      id: "attempt-1",
-      candidateId: "candidate-1",
-      examId: "exam-1",
-      status: "expired",
-      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
-    });
+    await expect(attempts.findById("attempt-1")).resolves.toBeNull();
     await expect(launches.findByExamAttemptId("attempt-1")).resolves.toBeNull();
   });
 
@@ -676,7 +670,7 @@ describe("scheduleExam", () => {
     });
   });
 
-  it("records an exam_attempt.expired entry with outcome failure when addParticipant throws", async () => {
+  it("records an exam_attempt.provisioning_failed entry with outcome failure when addParticipant throws", async () => {
     const { exams, attempts, launches } = await setup();
     const repository = createInMemoryDiagnosticLogRepository();
     const diagnostics = createDiagnosticRecorder({ repository });
@@ -711,12 +705,13 @@ describe("scheduleExam", () => {
     ).rejects.toBeInstanceOf(CloudShareProvisioningError);
 
     const thread = await repository.query({ examAttemptId: "attempt-1" });
-    const expiredEntry = thread.find(
-      (e) => e.operation === "exam_attempt.expired" && e.outcome === "failure",
+    const failureEntry = thread.find(
+      (e) => e.operation === "exam_attempt.provisioning_failed" && e.outcome === "failure",
     );
-    expect(expiredEntry).toBeDefined();
-    expect(expiredEntry?.level).toBe("error");
-    expect(expiredEntry?.details).toMatchObject({ expiredDueTo: "add_participant" });
+    expect(failureEntry).toBeDefined();
+    expect(failureEntry?.level).toBe("error");
+    expect(failureEntry?.details).toMatchObject({ failedDuring: "add_participant" });
+    expect(thread.some((e) => e.operation === "exam_attempt.expired")).toBe(false);
   });
 
   it("records a transport-mode failure for training creation and emits no later steps", async () => {

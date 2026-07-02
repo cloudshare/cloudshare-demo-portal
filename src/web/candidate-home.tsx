@@ -1,6 +1,6 @@
 "use client";
 
-import React, { type CSSProperties, useEffect, useState } from "react";
+import React, { type CSSProperties, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   loadCandidateDashboard,
@@ -12,6 +12,7 @@ import {
 import {
   buildCandidateExamDurationLabels,
   buildScheduledAttemptViews,
+  COLD_START_WARNING_MESSAGE,
   getAttemptWaitingMessage,
   getLatestAttemptForExam,
   getNextEnterabilityWakeUpDelayMs,
@@ -32,6 +33,10 @@ import {
   publishedExamTitleRowStyle,
 } from "./candidate-home-layout";
 import { useCandidateLogout } from "./candidate-logout";
+import {
+  isPortalSessionExpiredError,
+  startPortalSessionWatchdog,
+} from "./session-expiry";
 
 interface CandidateHomeProps {
   readonly email: string;
@@ -83,9 +88,36 @@ export function CandidateHome({ email }: CandidateHomeProps) {
   const [scheduleDrafts, setScheduleDrafts] = useState<Record<string, string>>({});
   const [scheduleFeedback, setScheduleFeedback] = useState<Record<string, ScheduleFeedback>>({});
   const [nowMs, setNowMs] = useState(() => Date.now());
+  const [sessionExpired, setSessionExpired] = useState(false);
   const { presentation: logoutPresentation, logout } = useCandidateLogout(router);
 
+  const handleCandidateSessionExpired = useCallback(() => {
+    setSessionExpired(true);
+    setError(null);
+    setScheduleFeedback({});
+    router.replace("/login");
+    router.refresh();
+  }, [router]);
+
   useEffect(() => {
+    if (sessionExpired) {
+      return;
+    }
+
+    const watchdog = startPortalSessionWatchdog({
+      fetchImpl: fetch,
+      onExpired: handleCandidateSessionExpired,
+    });
+    void watchdog.checkNow();
+
+    return () => watchdog.stop();
+  }, [handleCandidateSessionExpired, sessionExpired]);
+
+  useEffect(() => {
+    if (sessionExpired) {
+      return;
+    }
+
     let cancelled = false;
     let refreshInFlight = false;
 
@@ -103,8 +135,12 @@ export function CandidateHome({ email }: CandidateHomeProps) {
           setDashboard(await loadCandidateDashboard(fetch));
           setNowMs(Date.now());
         }
-      } catch {
+      } catch (caughtError) {
         if (!cancelled) {
+          if (isPortalSessionExpiredError(caughtError)) {
+            handleCandidateSessionExpired();
+            return;
+          }
           setError("Failed to load candidate dashboard");
         }
       } finally {
@@ -134,7 +170,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
       window.removeEventListener("focus", refreshIfVisible);
       document.removeEventListener("visibilitychange", refreshIfVisible);
     };
-  }, []);
+  }, [handleCandidateSessionExpired, sessionExpired]);
 
   useEffect(() => {
     const delayMs = getNextEnterabilityWakeUpDelayMs(dashboard.attempts, nowMs, dashboard.exams);
@@ -180,13 +216,16 @@ export function CandidateHome({ email }: CandidateHomeProps) {
       }));
       setNowMs(Date.now());
       if (result.coldStartLikely) {
-        const message = "Scheduled within five hours: CloudShare may cold-start the environment on login.";
         setScheduleFeedback((current) => ({
           ...current,
-          [examId]: { kind: "warning", message },
+          [examId]: { kind: "warning", message: COLD_START_WARNING_MESSAGE },
         }));
       }
     } catch (cause) {
+      if (isPortalSessionExpiredError(cause)) {
+        handleCandidateSessionExpired();
+        return;
+      }
       setScheduleFeedback((current) => ({
         ...current,
         [examId]: {
@@ -396,6 +435,11 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                           )}
                         </div>
                       )}
+                      {attempt.coldStartWarning ? (
+                        <p role="status" style={warningPanelStyle}>
+                          {attempt.coldStartWarning}
+                        </p>
+                      ) : null}
                     </div>
                   </article>
                 );
@@ -698,4 +742,11 @@ const messagePanelStyle: CSSProperties = {
   borderRadius: "8px",
   background: "#f8fafc",
   color: "#334155",
+};
+
+const warningPanelStyle: CSSProperties = {
+  ...messagePanelStyle,
+  color: "#7a4b00",
+  background: "#fff8eb",
+  border: "1px solid #f0d8a8",
 };

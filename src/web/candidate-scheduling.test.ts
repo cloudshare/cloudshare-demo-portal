@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  isPortalSessionExpiredError,
   loadCandidateDashboard,
   scheduleCandidateExam,
   shouldShowNoPublishedExams,
@@ -66,6 +67,23 @@ describe("candidate scheduling client", () => {
         }),
       ),
     ).rejects.toThrow(/loginUrl/);
+  });
+
+  it("maps unauthorized candidate dashboard responses to a session-expired error", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 401,
+      json: async () => ({
+        error: "Unauthorized",
+      }),
+    });
+
+    const error = await loadCandidateDashboard(fetchImpl).catch((cause: unknown) => cause);
+
+    expect(isPortalSessionExpiredError(error)).toBe(true);
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toContain("session has expired");
+    expect((error as Error).message).not.toContain("Unauthorized");
   });
 
   it("keeps published exams visible when a scheduling error is shown", () => {

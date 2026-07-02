@@ -998,7 +998,7 @@ describe("resumeExamAttemptRuntime", () => {
     );
   });
 
-  it("blocks resume after the authored open period closes without calling CloudShare", async () => {
+  it("blocks resume after the authored open period closes when CloudShare does not prove expiry", async () => {
     const attempts = createInMemoryExamAttemptRepository();
     await attempts.save({
       id: "ea-1",
@@ -1010,9 +1010,25 @@ describe("resumeExamAttemptRuntime", () => {
       createdAt: new Date("2026-06-15T08:55:00.000Z"),
     });
     const customerClient = makeCloudShareClient({
-      requestV3: vi.fn(),
+      requestV3: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+        if (spec.path === "/envs/ENVS2n38LTNdcC4sHsqnjRzg2") {
+          return spec.schema.parse({ envStatus: "Running" });
+        }
+        throw new Error(`unexpected v3 path ${spec.path}`);
+      }) as unknown as CloudShareClient["requestV3"],
       requestV3Text: vi.fn(),
-      requestV4: vi.fn(),
+      requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+        if (spec.path === "/trainings/EXtraining-1/students") {
+          return spec.schema.parse([
+            {
+              email: "candidate@helioscx.demo",
+              environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+              environmentStatus: "ready",
+            },
+          ]);
+        }
+        throw new Error(`unexpected v4 path ${spec.path}`);
+      }) as unknown as CloudShareClient["requestV4"],
     });
     const cloudshare = {
       forConnection: vi.fn().mockReturnValue(customerClient),
@@ -1037,10 +1053,23 @@ describe("resumeExamAttemptRuntime", () => {
       currentStatus: "suspended",
       openPeriodEndsAt: "2026-06-15T11:00:00.000Z",
     });
-    expect(cloudshare.forConnection).not.toHaveBeenCalled();
-    expect(customerClient.requestV4).not.toHaveBeenCalled();
-    expect(customerClient.requestV3).not.toHaveBeenCalled();
+    expect(cloudshare.forConnection).toHaveBeenCalled();
+    expect(customerClient.requestV4).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "GET",
+        path: "/trainings/EXtraining-1/students",
+      }),
+    );
+    expect(customerClient.requestV3).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "GET",
+        path: "/envs/ENVS2n38LTNdcC4sHsqnjRzg2",
+      }),
+    );
     expect(customerClient.requestV3Text).not.toHaveBeenCalled();
+    await expect(attempts.findById("ea-1")).resolves.toMatchObject({
+      status: "suspended",
+    });
     expect(diagnostics.record).toHaveBeenCalledWith(
       expect.objectContaining({
         operation: "exam_attempt.resume",
@@ -1118,6 +1147,174 @@ describe("resumeExamAttemptRuntime", () => {
       expectedStatus: "suspended",
       currentStatus: "ready",
     });
+  });
+
+  it("returns a portal-safe 409 when the correlated CloudShare environment has already expired", async () => {
+    const customerClient = makeCloudShareClient({
+      requestV3: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+        if (spec.path === "/envs/ENVS2n38LTNdcC4sHsqnjRzg2") {
+          throw new CloudShareRequestError("not found", 404, {
+            integrationSurface: "cloudshare.v3.env.get",
+            method: "GET",
+            path: "/v3/envs/ENVS2n38LTNdcC4sHsqnjRzg2",
+          });
+        }
+        throw new Error(`unexpected v3 path ${spec.path}`);
+      }) as unknown as CloudShareClient["requestV3"],
+      requestV3Text: vi.fn(),
+      requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+        if (spec.path === "/trainings/EXtraining-1/students") {
+          return spec.schema.parse([
+            {
+              email: "candidate@helioscx.demo",
+              environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+              environmentStatus: "ready",
+            },
+          ]);
+        }
+        throw new Error(`unexpected v4 path ${spec.path}`);
+      }) as unknown as CloudShareClient["requestV4"],
+    });
+    const diagnostics = { record: vi.fn().mockResolvedValue(undefined) };
+    const deps = await makeResumeDeps({
+      exams: undefined,
+      cloudshare: {
+        forConnection: vi.fn().mockReturnValue(customerClient),
+      },
+      diagnostics,
+      candidateEmail: "candidate@helioscx.demo",
+    });
+
+    const resp = await resumeExamAttemptRuntime(deps, { examAttemptId: "ea-1" });
+
+    expect(resp.status).toBe(409);
+    expect(resp.body).toEqual({
+      error: "Exam resume is not available because the CloudShare lab has expired.",
+      examAttemptId: "ea-1",
+      operation: "resume",
+      currentStatus: "expired",
+    });
+    expect(customerClient.requestV3Text).not.toHaveBeenCalled();
+    expect(diagnostics.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: "exam_attempt.resume",
+        outcome: "failure",
+        message: "Exam resume failed: CloudShare lab has expired",
+        details: expect.objectContaining({
+          failureMode: "external_lease_expired",
+          environmentStatus: "deleted",
+        }),
+      }),
+    );
+    await expect(deps.attempts.findById("ea-1")).resolves.toMatchObject({
+      status: "expired",
+    });
+    expect(diagnostics.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: "exam_attempt.expired",
+        outcome: "success",
+        examAttemptId: "ea-1",
+        request: expect.objectContaining({
+          method: "GET",
+          path: "/v3/envs/ENVS2n38LTNdcC4sHsqnjRzg2",
+        }),
+        response: expect.objectContaining({
+          status: 404,
+          body: null,
+        }),
+        details: expect.objectContaining({
+          attemptedOperation: "get_environment",
+          integrationSurface: "cloudshare.v3.env.get",
+          failureMode: "external_lease_expired",
+          reason: "not_found",
+          attemptStatus: "expired",
+        }),
+      }),
+    );
+  });
+
+  it("reconciles an expired CloudShare lease before blocking resume after the authored open period closes", async () => {
+    const customerClient = makeCloudShareClient({
+      requestV3: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+        if (spec.path === "/envs/ENVS2n38LTNdcC4sHsqnjRzg2") {
+          throw new CloudShareRequestError("not found", 404, {
+            integrationSurface: "cloudshare.v3.env.get",
+            method: "GET",
+            path: "/v3/envs/ENVS2n38LTNdcC4sHsqnjRzg2",
+          });
+        }
+        throw new Error(`unexpected v3 path ${spec.path}`);
+      }) as unknown as CloudShareClient["requestV3"],
+      requestV3Text: vi.fn(),
+      requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+        if (spec.path === "/trainings/EXtraining-1/students") {
+          return spec.schema.parse([
+            {
+              email: "candidate@helioscx.demo",
+              environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+              environmentStatus: "ready",
+            },
+          ]);
+        }
+        throw new Error(`unexpected v4 path ${spec.path}`);
+      }) as unknown as CloudShareClient["requestV4"],
+    });
+    const diagnostics = { record: vi.fn().mockResolvedValue(undefined) };
+    const deps = await makeResumeDeps({
+      cloudshare: {
+        forConnection: vi.fn().mockReturnValue(customerClient),
+      },
+      diagnostics,
+      candidateEmail: "candidate@helioscx.demo",
+      now: () => new Date("2026-06-15T18:01:00.000Z"),
+    });
+
+    const resp = await resumeExamAttemptRuntime(deps, { examAttemptId: "ea-1" });
+
+    expect(resp.status).toBe(409);
+    expect(resp.body).toEqual({
+      error: "Exam resume is not available because the CloudShare lab has expired.",
+      examAttemptId: "ea-1",
+      operation: "resume",
+      currentStatus: "expired",
+    });
+    expect(customerClient.requestV3Text).not.toHaveBeenCalled();
+    await expect(deps.attempts.findById("ea-1")).resolves.toMatchObject({
+      status: "expired",
+    });
+    expect(diagnostics.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: "exam_attempt.expired",
+        outcome: "success",
+        examAttemptId: "ea-1",
+        request: expect.objectContaining({
+          method: "GET",
+          path: "/v3/envs/ENVS2n38LTNdcC4sHsqnjRzg2",
+        }),
+        response: expect.objectContaining({
+          status: 404,
+          body: null,
+        }),
+        details: expect.objectContaining({
+          attemptedOperation: "get_environment",
+          integrationSurface: "cloudshare.v3.env.get",
+          failureMode: "external_lease_expired",
+          reason: "not_found",
+          attemptStatus: "expired",
+        }),
+      }),
+    );
+    expect(diagnostics.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: "exam_attempt.resume",
+        outcome: "failure",
+        message: "Exam resume failed: CloudShare lab has expired",
+        details: expect.objectContaining({
+          failureMode: "external_lease_expired",
+          currentStatus: "expired",
+        }),
+      }),
+    );
   });
 
   it("treats a repeated resume request after a successful resume as idempotent", async () => {

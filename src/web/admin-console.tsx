@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ADMIN_TABS,
@@ -37,6 +37,7 @@ import {
 import { EventLogTable } from "./event-log-table";
 import { SessionMonitoringPanel } from "./session-monitoring-panel";
 import type { AdminMonitoringView as MonitoringView } from "@/domain/admin-monitoring";
+import { startPortalSessionWatchdog } from "./session-expiry";
 
 interface AdminConsoleProps {
   readonly email: string;
@@ -263,7 +264,7 @@ export function AdminConsole({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
 
-  function handleAdminSessionExpired() {
+  const handleAdminSessionExpired = useCallback(() => {
     setSessionExpired(true);
     setError(ADMIN_SESSION_EXPIRED_MESSAGE);
     setConnectionCorrelationId(null);
@@ -272,7 +273,21 @@ export function AdminConsole({
     setExamDiagnostic(null);
     router.replace("/login");
     router.refresh();
-  }
+  }, [router]);
+
+  useEffect(() => {
+    if (sessionExpired) {
+      return;
+    }
+
+    const watchdog = startPortalSessionWatchdog({
+      fetchImpl: fetch,
+      onExpired: handleAdminSessionExpired,
+    });
+    void watchdog.checkNow();
+
+    return () => watchdog.stop();
+  }, [handleAdminSessionExpired, sessionExpired]);
 
   async function fetchAdmin(input: string, init?: RequestInit): Promise<Response> {
     const response = await fetch(input, init);

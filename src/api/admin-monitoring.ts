@@ -5,18 +5,41 @@ import {
   type AdminMonitoringAttemptRepository,
   type AdminMonitoringView,
 } from "@/domain/admin-monitoring";
+import type {
+  CloudShareClientFactory,
+  CloudShareConnectionRepository,
+} from "@/domain/cloudshare-connection";
+import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import { MAX_DIAGNOSTIC_QUERY_LIMIT, type DiagnosticLogRepository } from "@/domain/diagnostic-log";
+import type { ExamAttemptRepository } from "@/domain/exam-attempt";
+import type { LabLaunchRepository } from "@/domain/lab-launch";
 import type { Logger } from "@/observability/logger";
+import {
+  inspectExamAttemptExternalLease,
+  reconcileExpiredExamAttemptExternalLease,
+  recordExamAttemptExternalLeaseInspectionFailure,
+} from "./exam-attempt-external-lease";
 
 export interface AdminMonitoringHandlerDeps {
   readonly attempts: AdminMonitoringAttemptRepository;
   readonly diagnostics: DiagnosticLogRepository;
+  readonly launches?: LabLaunchRepository;
+  readonly connections?: CloudShareConnectionRepository;
+  readonly cloudshare?: CloudShareClientFactory;
+  readonly examAttempts?: ExamAttemptRepository;
+  readonly diagnosticRecorder?: DiagnosticRecorder;
   readonly logger: Logger;
+  readonly now?: () => Date;
 }
 
 export interface AdminMonitoringServices {
   readonly adminMonitoringAttempts: AdminMonitoringAttemptRepository;
   readonly diagnostics: DiagnosticLogRepository;
+  readonly labLaunches?: LabLaunchRepository;
+  readonly cloudshareConnections?: CloudShareConnectionRepository;
+  readonly cloudshareClientFactory?: CloudShareClientFactory;
+  readonly examAttempts?: ExamAttemptRepository;
+  readonly diagnosticRecorder?: DiagnosticRecorder;
   readonly logger: Logger;
 }
 
@@ -26,6 +49,11 @@ export function buildAdminMonitoringDeps(
   return {
     attempts: services.adminMonitoringAttempts,
     diagnostics: services.diagnostics,
+    ...(services.labLaunches ? { launches: services.labLaunches } : {}),
+    ...(services.cloudshareConnections ? { connections: services.cloudshareConnections } : {}),
+    ...(services.cloudshareClientFactory ? { cloudshare: services.cloudshareClientFactory } : {}),
+    ...(services.examAttempts ? { examAttempts: services.examAttempts } : {}),
+    ...(services.diagnosticRecorder ? { diagnosticRecorder: services.diagnosticRecorder } : {}),
     logger: services.logger,
   };
 }
@@ -69,6 +97,10 @@ export async function handleGetAdminMonitoring(
       ),
     )
   ).flat();
+  const externalLeaseOverrides = await deriveAdminMonitoringExternalLeaseOverrides(
+    deps,
+    [...currentAttempts, ...history.attempts],
+  );
 
   return {
     status: 200,
@@ -78,9 +110,105 @@ export async function handleGetAdminMonitoring(
         currentAttempts,
         history,
         diagnosticRecords,
+        externalStatusOverrides: externalLeaseOverrides,
       }),
     },
   };
+}
+
+async function deriveAdminMonitoringExternalLeaseOverrides(
+  deps: Pick<
+    AdminMonitoringHandlerDeps,
+    "launches" | "connections" | "cloudshare" | "examAttempts" | "diagnosticRecorder" | "now"
+  >,
+  attempts: readonly {
+    readonly id: string;
+    readonly customerId: string;
+    readonly candidateId: string;
+    readonly examId: string;
+    readonly examOpenPeriodMinutes: number;
+    readonly status: "scheduled" | "ready" | "in_progress" | "suspended" | "completed" | "expired";
+    readonly scheduledFor: Date | null;
+  }[],
+): Promise<Record<string, "expired">> {
+  const overrides: Record<string, "expired"> = {};
+  if (!deps.launches || !deps.connections || !deps.cloudshare) {
+    return overrides;
+  }
+
+  for (const attempt of attempts) {
+    if (
+      attempt.status !== "ready" &&
+      attempt.status !== "in_progress" &&
+      attempt.status !== "suspended"
+    ) {
+      continue;
+    }
+    if (!hasAuthoredOpenPeriodClosed(attempt.scheduledFor, attempt.examOpenPeriodMinutes, deps.now)) {
+      continue;
+    }
+
+    const lease = await inspectExamAttemptExternalLease(
+      {
+        launches: deps.launches,
+        connections: deps.connections,
+        cloudshare: deps.cloudshare,
+        attempts: deps.examAttempts,
+        diagnostics: deps.diagnosticRecorder,
+      },
+      {
+        examAttemptId: attempt.id,
+        customerId: attempt.customerId,
+      },
+    );
+    await recordExamAttemptExternalLeaseInspectionFailure(
+      { diagnostics: deps.diagnosticRecorder },
+      {
+        inspection: lease,
+        customerId: attempt.customerId,
+        examId: attempt.examId,
+        candidateId: null,
+        candidateEmail: null,
+        source: "admin_monitoring",
+        actorType: "admin",
+        message: "CloudShare external lease inspection failed during admin monitoring reconciliation",
+      },
+    );
+    if (lease.kind === "expired") {
+      await reconcileExpiredExamAttemptExternalLease(
+        {
+          attempts: deps.examAttempts,
+          diagnostics: deps.diagnosticRecorder,
+        },
+        {
+          inspection: lease,
+          customerId: attempt.customerId,
+          examId: attempt.examId,
+          candidateId: null,
+          candidateEmail: null,
+          source: "admin_monitoring",
+          actorType: "admin",
+          message: "ExamAttempt expired from authoritative CloudShare external lease reconciliation",
+        },
+      );
+      overrides[attempt.id] = "expired";
+    }
+  }
+
+  return overrides;
+}
+
+function hasAuthoredOpenPeriodClosed(
+  scheduledFor: Date | null,
+  openPeriodMinutes: number,
+  now: (() => Date) | undefined,
+): boolean {
+  if (!scheduledFor) {
+    return false;
+  }
+
+  const openPeriodEndsAt = scheduledFor.getTime() + openPeriodMinutes * 60_000;
+  return (now ?? (() => new Date()))().getTime() >= openPeriodEndsAt;
 }
 
 function boundMonitoringHistoryLimit(limit: string | undefined): number {

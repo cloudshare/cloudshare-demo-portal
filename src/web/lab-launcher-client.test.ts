@@ -338,6 +338,21 @@ describe("lab launcher client helpers", () => {
     ).rejects.toThrow("exam attempt not found");
   });
 
+  it("maps unauthorized lab status responses to candidate-facing session-expired copy", async () => {
+    await expect(
+      loadCandidateLabStatus(
+        vi.fn().mockResolvedValue({
+          ok: false,
+          status: 401,
+          json: async () => ({ error: "unauthorized" }),
+        }),
+        "attempt-1",
+      ),
+    ).rejects.toThrow(
+      "Your portal session has expired. Log in again to continue.",
+    );
+  });
+
   it("reads an authoritative suspended attempt status from heartbeat responses", () => {
     expect(readHeartbeatAttemptStatus({ attemptStatus: "suspended" })).toBe("suspended");
     expect(readHeartbeatAttemptStatus({ attemptStatus: "completed" })).toBe("completed");

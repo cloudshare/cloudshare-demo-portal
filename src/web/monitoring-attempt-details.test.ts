@@ -1,6 +1,6 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   buildMonitoringAttemptDetailFields,
   MonitoringAttemptDetails,
@@ -56,19 +56,22 @@ describe("buildMonitoringAttemptDetailFields", () => {
 });
 
 describe("MonitoringAttemptDetails", () => {
+  const originalTimezone = process.env.TZ;
+
+  afterEach(() => {
+    process.env.TZ = originalTimezone;
+  });
+
   it("renders the monitoring identifiers and the Support Diagnostics action label", () => {
     const html = renderToStaticMarkup(
       createElement(MonitoringAttemptDetails, {
         attempt: BASE_ATTEMPT,
-        scheduledForLabel: "2026-06-21T09:00:00.000Z",
         onOpenSupportDiagnostics: () => {},
       }),
     );
 
     expect(html).toContain("Candidate");
     expect(html).toContain("candidate@helioscx.demo");
-    expect(html).toContain("Scheduled (UTC)");
-    expect(html).toContain("2026-06-21T09:00:00.000Z");
     expect(html).toContain("ExamAttempt ID");
     expect(html).toContain("attempt-1");
     expect(html).toContain("Exam ID");
@@ -78,5 +81,47 @@ describe("MonitoringAttemptDetails", () => {
     expect(html).not.toContain("Training ID: exp-shared");
     expect(html).toContain("Open in Support Diagnostics");
     expect(html).not.toContain("Open support drilldown");
+    expect(html).not.toContain("Scheduled (UTC)");
+    expect(html).not.toContain("Open window (UTC)");
+  });
+
+  it("renders latest interaction as ancillary monitoring detail", () => {
+    process.env.TZ = "Europe/London";
+
+    const html = renderToStaticMarkup(
+      createElement(MonitoringAttemptDetails, {
+        attempt: {
+          ...BASE_ATTEMPT,
+          timeline: [
+            {
+              id: "diag-earlier",
+              kind: "diagnostic",
+              occurredAt: "2026-06-21T09:05:00.000Z",
+              level: "info",
+              source: "runtime",
+              operation: "exam_attempt.enter",
+              outcome: "success",
+              message: "Exam entered",
+            },
+            {
+              id: "diag-latest",
+              kind: "diagnostic",
+              occurredAt: "2026-06-21T09:11:30.000Z",
+              level: "info",
+              source: "runtime",
+              operation: "exam_attempt.heartbeat.receive",
+              outcome: "success",
+              message: "Heartbeat received",
+            },
+          ],
+        },
+        onOpenSupportDiagnostics: () => {},
+      }),
+    );
+
+    expect(html).toContain("Last interaction");
+    expect(html).toContain("2026-06-21 10:11:30");
+    expect(html).not.toContain("2026-06-21T09:11:30.000Z");
+    expect(html).not.toContain("2026-06-21 09:11:30");
   });
 });

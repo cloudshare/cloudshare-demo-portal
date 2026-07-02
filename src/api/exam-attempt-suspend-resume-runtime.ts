@@ -30,6 +30,11 @@ import type { ExamClock } from "@/domain/exam-clock";
 import type { ExamRepository } from "@/domain/exam-catalog";
 import { settleExamAttemptCompletion } from "./exam-attempt-completion-settlement";
 import type { EnvironmentCommandResult } from "@/domain/environment";
+import {
+  inspectExamAttemptExternalLease,
+  reconcileExpiredExamAttemptExternalLease,
+  recordExamAttemptExternalLeaseInspectionFailure,
+} from "./exam-attempt-external-lease";
 
 /**
  * Framework-agnostic runtime operations for candidate-initiated suspend,
@@ -275,31 +280,8 @@ export async function resumeExamAttemptRuntime(
     const reconciledAttempt = settlement.attempt;
     anchors = anchorsForAttempt(reconciledAttempt, deps.candidateEmail);
     const resumeOpenPeriodEnd = await getResumeOpenPeriodEnd(deps, reconciledAttempt);
-    if (resumeOpenPeriodEnd && (deps.now ?? (() => new Date()))().getTime() >= resumeOpenPeriodEnd.getTime()) {
-      await deps.diagnostics?.record({
-        ...anchors,
-        level: "warn",
-        operation: "exam_attempt.resume",
-        outcome: "failure",
-        message: "Exam resume failed: authored open period is closed",
-        details: {
-          failureMode: "open_period_closed",
-          currentStatus: reconciledAttempt.status,
-          scheduledFor: reconciledAttempt.scheduledFor?.toISOString() ?? null,
-          openPeriodEndsAt: resumeOpenPeriodEnd.toISOString(),
-        },
-      });
-      return {
-        status: 409,
-        body: {
-          error: "Exam resume is not available after the Exam open period has closed.",
-          examAttemptId,
-          operation: "resume",
-          currentStatus: reconciledAttempt.status,
-          openPeriodEndsAt: resumeOpenPeriodEnd.toISOString(),
-        },
-      };
-    }
+    const now = (deps.now ?? (() => new Date()))();
+    const authoredOpenPeriodClosed = !!resumeOpenPeriodEnd && now.getTime() >= resumeOpenPeriodEnd.getTime();
     if (reconciledAttempt.status === "in_progress") {
       const launch = await deps.launches.findByExamAttemptId(examAttemptId);
       return buildAlreadyActiveResumeResponse(deps, examAttemptId, anchors, launch, {
@@ -335,6 +317,111 @@ export async function resumeExamAttemptRuntime(
       examAttemptId,
       operation: "exam_resume",
     });
+    if (!resumeOpenPeriodEnd || authoredOpenPeriodClosed) {
+      const externalLease = await inspectExamAttemptExternalLease(deps, {
+        examAttemptId,
+        customerId: reconciledAttempt.customerId ?? null,
+        environmentExternalId: correlation.actionableEnvironmentId,
+      });
+      await recordExamAttemptExternalLeaseInspectionFailure(deps, {
+        inspection: externalLease,
+        customerId: reconciledAttempt.customerId ?? null,
+        examId: reconciledAttempt.examId,
+        candidateId: reconciledAttempt.candidateId,
+        candidateEmail: deps.candidateEmail ?? null,
+        source: "runtime",
+        actorType: "candidate",
+        message: "CloudShare external lease inspection failed during exam resume",
+      });
+      if (externalLease.kind === "expired") {
+        await reconcileExpiredExamAttemptExternalLease(deps, {
+          inspection: externalLease,
+          customerId: reconciledAttempt.customerId ?? null,
+          examId: reconciledAttempt.examId,
+          candidateId: reconciledAttempt.candidateId,
+          candidateEmail: deps.candidateEmail ?? null,
+          source: "runtime",
+          actorType: "candidate",
+          message: "ExamAttempt expired from authoritative CloudShare external lease reconciliation",
+        });
+        await deps.diagnostics?.record({
+          ...anchors,
+          level: "warn",
+          operation: "exam_attempt.resume",
+          outcome: "failure",
+          message: "Exam resume failed: CloudShare lab has expired",
+          externalIds: {
+            ...(externalLease.trainingId ? { trainingId: externalLease.trainingId } : {}),
+            ...(externalLease.environmentExternalId
+              ? { environmentExternalId: externalLease.environmentExternalId }
+              : {}),
+          },
+          request: externalLease.request
+            ? {
+                method: externalLease.request.method,
+                path: externalLease.request.path,
+                ...(externalLease.request.query ? { query: externalLease.request.query } : {}),
+                ...(externalLease.request.headers ? { headers: externalLease.request.headers } : {}),
+                ...(externalLease.request.body !== undefined
+                  ? { body: externalLease.request.body }
+                  : {}),
+              }
+            : null,
+          response: externalLease.response
+            ? {
+                status: externalLease.response.status,
+                ...(externalLease.response.headers
+                  ? { headers: externalLease.response.headers }
+                  : {}),
+                body: externalLease.response.body,
+                ...(externalLease.response.network
+                  ? { network: externalLease.response.network }
+                  : {}),
+                ...(externalLease.response.tls ? { tls: externalLease.response.tls } : {}),
+              }
+            : null,
+          details: {
+            failureMode: "external_lease_expired",
+            currentStatus: "expired",
+            environmentStatus: externalLease.environmentStatus,
+          },
+        });
+        return {
+          status: 409,
+          body: {
+            error: "Exam resume is not available because the CloudShare lab has expired.",
+            examAttemptId,
+            operation: "resume",
+            currentStatus: "expired",
+          },
+        };
+      }
+    }
+    if (authoredOpenPeriodClosed) {
+      await deps.diagnostics?.record({
+        ...anchors,
+        level: "warn",
+        operation: "exam_attempt.resume",
+        outcome: "failure",
+        message: "Exam resume failed: authored open period is closed",
+        details: {
+          failureMode: "open_period_closed",
+          currentStatus: reconciledAttempt.status,
+          scheduledFor: reconciledAttempt.scheduledFor?.toISOString() ?? null,
+          openPeriodEndsAt: resumeOpenPeriodEnd.toISOString(),
+        },
+      });
+      return {
+        status: 409,
+        body: {
+          error: "Exam resume is not available after the Exam open period has closed.",
+          examAttemptId,
+          operation: "resume",
+          currentStatus: reconciledAttempt.status,
+          openPeriodEndsAt: resumeOpenPeriodEnd.toISOString(),
+        },
+      };
+    }
     const result = await resumeExam(
       {
         ...deps,

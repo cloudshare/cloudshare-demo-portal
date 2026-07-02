@@ -28,9 +28,16 @@ export function CandidateLabShell({
 
   useEffect(() => {
     let cancelled = false;
+    let refreshInFlight = false;
 
-    async function loadStatus() {
-      setLoadingStatus(true);
+    async function loadStatus(showLoading = false) {
+      if (refreshInFlight) {
+        return;
+      }
+      refreshInFlight = true;
+      if (showLoading) {
+        setLoadingStatus(true);
+      }
       setStatusError(null);
       try {
         const status = await loadCandidateLabStatus(fetch, examAttemptId);
@@ -47,12 +54,28 @@ export function CandidateLabShell({
         if (!cancelled) {
           setLoadingStatus(false);
         }
+        refreshInFlight = false;
       }
     }
 
-    void loadStatus();
+    function refreshIfVisible() {
+      if (document.visibilityState === "visible") {
+        void loadStatus();
+      }
+    }
+
+    void loadStatus(true);
+    const interval = window.setInterval(() => {
+      void loadStatus();
+    }, 15_000);
+    window.addEventListener("focus", refreshIfVisible);
+    document.addEventListener("visibilitychange", refreshIfVisible);
+
     return () => {
       cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", refreshIfVisible);
+      document.removeEventListener("visibilitychange", refreshIfVisible);
     };
   }, [examAttemptId]);
 
@@ -186,7 +209,7 @@ export function CandidateLabShell({
       ) : null}
       {statusError ? (
         <p role="alert" style={{ marginTop: 0, marginBottom: "1rem", color: "#b00020" }}>
-          Unable to load the current exam state. Return to Candidate Home and try again. Details: {statusError}
+          Unable to load the current exam state. {statusError}
         </p>
       ) : null}
       {presentation?.notice ? (

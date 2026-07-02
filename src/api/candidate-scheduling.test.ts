@@ -324,6 +324,38 @@ describe("candidate scheduling handlers", () => {
     expect(connections.findByCustomerId).not.toHaveBeenCalled();
   });
 
+  it("returns candidate-facing copy when the requested schedule time is not in the future", async () => {
+    const response = await handleScheduleCandidateExam(
+      {
+        exams: await makeExamRepository(),
+        attempts: createInMemoryExamAttemptRepository(),
+        launches: createInMemoryLabLaunchRepository(),
+        audit: createInMemoryAuditRepository(),
+        eventLog: createInMemoryEventLogRepository(),
+        connections: makeConnectionRepository(),
+        cloudshare: makeCloudShareFactory(),
+        logger: makeLogger(),
+        now: () => new Date("2026-06-15T10:00:00.000Z"),
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        body: {
+          examId: "exam-1",
+          scheduledFor: "2026-06-15T09:59:00.000Z",
+        },
+      },
+    );
+
+    expect(response).toEqual({
+      status: 400,
+      body: { error: "Choose a future date and time before scheduling." },
+    });
+  });
+
   it("schedules an exam and never returns the sponsored loginUrl", async () => {
     const exams = await makeExamRepository();
     const attempts = createInMemoryExamAttemptRepository();
@@ -429,7 +461,7 @@ describe("candidate scheduling handlers", () => {
     expect(JSON.stringify(dashboard.body)).not.toContain("loginUrl");
   });
 
-  it("records admin-visible diagnostics when CloudShare provisioning fails", async () => {
+  it("records admin-visible diagnostics when CloudShare provisioning fails without leaving an upcoming attempt", async () => {
     const exams = await makeExamRepository();
     const attempts = createInMemoryExamAttemptRepository();
     const launches = createInMemoryLabLaunchRepository();
@@ -486,13 +518,7 @@ describe("candidate scheduling handlers", () => {
       error: "CloudShare provisioning failed for the scheduled exam.",
       correlationId: "corr-2",
     });
-    await expect(attempts.findById("attempt-1")).resolves.toMatchObject({
-      id: "attempt-1",
-      examId: "exam-1",
-      candidateId: "candidate-1",
-      status: "expired",
-      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
-    });
+    await expect(attempts.findById("attempt-1")).resolves.toBeNull();
     await expect(launches.findByExamAttemptId("attempt-1")).resolves.toBeNull();
     await expect(audit.listByExamAttemptId("attempt-1")).resolves.toEqual([
       expect.objectContaining({
@@ -552,6 +578,12 @@ describe("candidate scheduling handlers", () => {
         }),
       }),
     ]);
+
+    const dashboard = await handleGetCandidateDashboard(
+      { repository: exams, attempts, logger },
+      { customerId: "customer-helios", candidateId: "candidate-1" },
+    );
+    expect(dashboard.body).toMatchObject({ attempts: [] });
   });
 
   it("emits a successful team-read diagnostic before createTraining later fails", async () => {

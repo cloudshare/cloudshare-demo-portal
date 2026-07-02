@@ -775,6 +775,20 @@ name.
 page was reachable but did not expose the create-training operation model in static HTML during
 agent verification, so live tenant behavior is the evidence path for this field.
 
+**Update (2026-07-02, Issue #252 live expiry smoke):** the same live
+`GET /v4/trainings/EXVUAmxA5jgVfM29E2D4cTNA2` readback returned HTTP `200` with safe fields
+`status: "ended"`, `start: "2026-06-30T15:48:00"`, and `end: "2026-06-30T15:58:00"`. Two
+integration details are now confirmed for external-lease reconciliation:
+
+- CloudShare training/Experience readback can use timezone-less timestamp strings rather than RFC
+  3339 / `Z`-suffixed datetimes.
+- A terminal training window is expressed directly as `status: "ended"` on the
+  `/v4/trainings/{id}` resource, and the portal should reconcile that state to `ExamAttempt.expired`
+  even when no environment correlation exists.
+
+The external-lease adapter now tolerates this live response shape and keeps the full redacted
+request/response evidence in admin diagnostics when reconciliation runs.
+
 **Update (2026-07-01, Issue #251 QA clarification):** the Project Policy detail endpoint is
 undocumented but live-observed:
 `GET /api/v3/projects/PRCU02uuokHPBfjMedkmradg2/policies/POavMAu1wiaVydJdYUOAExJg2` returned

@@ -1,4 +1,5 @@
 import React from "react";
+import { formatLocalDateTimeMinute } from "./candidate-date-format";
 import { MonitoringAttemptDetails } from "./monitoring-attempt-details";
 import type {
   AdminMonitoringView,
@@ -28,20 +29,30 @@ const EMPTY_MONITORING_FILTERS: MonitoringFilters = {
   identifier: "",
 };
 
-function formatUtcTimestamp(value: string | null | undefined): string {
+function formatLocalMinuteTimestamp(value: string | null | undefined): string {
   if (!value) {
     return "-";
   }
 
-  const parsed = new Date(value);
-  return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
+  return formatLocalDateTimeMinute(value) ?? value;
 }
 
-function getLatestInteractionAt(attempt: Pick<MonitoringAttemptView, "timeline">): string | null {
-  return attempt.timeline
-    .map((entry) => entry.occurredAt)
-    .filter((occurredAt) => occurredAt.trim().length > 0)
-    .sort((left, right) => right.localeCompare(left))[0] ?? null;
+function getOpenWindowSummary(
+  attempt: Pick<MonitoringAttemptView, "scheduledFor" | "examOpenPeriodMinutes">,
+): { readonly startLabel: string; readonly endLabel: string; readonly durationLabel: string } {
+  const startLabel = formatLocalMinuteTimestamp(attempt.scheduledFor);
+  const parsedStart = attempt.scheduledFor ? new Date(attempt.scheduledFor) : null;
+  const endLabel =
+    parsedStart && !Number.isNaN(parsedStart.getTime()) && Number.isFinite(attempt.examOpenPeriodMinutes)
+      ? formatLocalMinuteTimestamp(
+          new Date(parsedStart.getTime() + attempt.examOpenPeriodMinutes * 60_000).toISOString(),
+        )
+      : "-";
+  const durationLabel = Number.isFinite(attempt.examOpenPeriodMinutes)
+    ? `${attempt.examOpenPeriodMinutes} min`
+    : "-";
+
+  return { startLabel, endLabel, durationLabel };
 }
 
 function formatAttemptStatus(status: MonitoringAttemptView["status"]): string {
@@ -135,7 +146,7 @@ const filterPanelStyle: React.CSSProperties = {
 const filterGridStyle: React.CSSProperties = {
   display: "grid",
   gap: "0.75rem",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))",
   alignItems: "end",
 };
 
@@ -144,10 +155,13 @@ const filterLabelStyle: React.CSSProperties = {
   gap: "0.35rem",
   color: "#111827",
   fontSize: "0.9rem",
+  minWidth: 0,
 };
 
 const filterInputStyle: React.CSSProperties = {
   width: "100%",
+  minWidth: 0,
+  boxSizing: "border-box",
   padding: "0.45rem 0.55rem",
   border: "1px solid #cbd5e1",
   borderRadius: "6px",
@@ -286,6 +300,7 @@ function renderAttemptCard(
   options: { readonly showStatusBadge?: boolean } = {},
 ) {
   const showStatusBadge = options.showStatusBadge ?? true;
+  const openWindow = getOpenWindowSummary(attempt);
 
   return (
     <details
@@ -311,9 +326,19 @@ function renderAttemptCard(
             {attempt.examTitle}
             {attempt.result ? ` · ${formatMonitoringResult(attempt.result)}` : ""}
           </span>
-          <span style={{ color: "#6b7280", fontSize: "0.78rem", fontWeight: 400 }}>
-            Scheduled: {formatUtcTimestamp(attempt.scheduledFor)} · Last interaction:{" "}
-            {formatUtcTimestamp(getLatestInteractionAt(attempt))}
+          <span
+            style={{
+              color: "#4b5563",
+              fontSize: "0.82rem",
+              fontWeight: 400,
+              display: "grid",
+              gap: "0.1rem",
+            }}
+          >
+            <span style={{ color: "#374151", fontWeight: 600 }}>Open window</span>
+            <span>Starts {openWindow.startLabel}</span>
+            <span>Closes {openWindow.endLabel}</span>
+            <span>Duration {openWindow.durationLabel}</span>
           </span>
         </span>
         {showStatusBadge ? (
@@ -336,7 +361,6 @@ function renderAttemptCard(
       <div style={{ display: "grid", gap: "0.5rem", marginTop: "0.75rem", fontSize: "0.9rem" }}>
         <MonitoringAttemptDetails
           attempt={attempt}
-          scheduledForLabel={formatUtcTimestamp(attempt.scheduledFor)}
           onOpenSupportDiagnostics={onOpenSupportDiagnostics}
         />
         <div style={{ color: "#555" }}>

@@ -249,6 +249,15 @@ export async function scheduleExam(
       details: { attemptedOperation: op, integrationSurface: PROVISIONING_SURFACE[op], ...describeProvisioningCause(cause) },
     });
   };
+  const recordProvisioningFailure = (op: ProvisioningOperation) =>
+    deps.diagnostics?.record({
+      ...anchors,
+      level: "error",
+      operation: "exam_attempt.provisioning_failed",
+      outcome: "failure",
+      message: `ExamAttempt provisioning failed during CloudShare ${op.replace(/_/g, " ")}`,
+      details: { failedDuring: op },
+    });
 
   await recordSuccess("exam_attempt.schedule", "ExamAttempt scheduled", {
     request: { scheduledFor: input.scheduledFor.toISOString() },
@@ -294,15 +303,8 @@ export async function scheduleExam(
     createTrainingResponse = training.response;
   } catch (cause) {
     await recordFailure("create_training", cause);
-    await deps.attempts.save({ ...attempt, status: "expired" });
-    await deps.diagnostics?.record({
-      ...anchors,
-      level: "error",
-      operation: "exam_attempt.expired",
-      outcome: "failure",
-      message: `ExamAttempt expired: CloudShare create training failed`,
-      details: { expiredDueTo: "create_training" },
-    });
+    await recordProvisioningFailure("create_training");
+    await deps.attempts.delete(attemptId);
     throw new CloudShareProvisioningError("CloudShare training creation failed.", {
       attemptId,
       attemptedOperation: "create_training",
@@ -346,15 +348,8 @@ export async function scheduleExam(
     });
   } catch (cause) {
     await recordFailure("add_participant", cause, { trainingId });
-    await deps.attempts.save({ ...attempt, status: "expired" });
-    await deps.diagnostics?.record({
-      ...anchors,
-      level: "error",
-      operation: "exam_attempt.expired",
-      outcome: "failure",
-      message: `ExamAttempt expired: CloudShare add participant failed`,
-      details: { expiredDueTo: "add_participant" },
-    });
+    await recordProvisioningFailure("add_participant");
+    await deps.attempts.delete(attemptId);
     throw new CloudShareProvisioningError("CloudShare participant registration failed.", {
       attemptId,
       attemptedOperation: "add_participant",
@@ -391,15 +386,8 @@ export async function scheduleExam(
     createSponsoredLinkResponse = sponsoredLink.response;
   } catch (cause) {
     await recordFailure("create_sponsored_link", cause, { trainingId });
-    await deps.attempts.save({ ...attempt, status: "expired" });
-    await deps.diagnostics?.record({
-      ...anchors,
-      level: "error",
-      operation: "exam_attempt.expired",
-      outcome: "failure",
-      message: `ExamAttempt expired: CloudShare create sponsored link failed`,
-      details: { expiredDueTo: "create_sponsored_link" },
-    });
+    await recordProvisioningFailure("create_sponsored_link");
+    await deps.attempts.delete(attemptId);
     throw new CloudShareProvisioningError("CloudShare sponsored-link creation failed.", {
       attemptId,
       attemptedOperation: "create_sponsored_link",

@@ -120,6 +120,7 @@ export function buildAdminMonitoringView(input: {
   readonly currentAttempts: readonly MonitoringAttemptRecord[];
   readonly history: MonitoringAttemptPage;
   readonly diagnosticRecords: readonly DiagnosticLogEntry[];
+  readonly externalStatusOverrides?: Readonly<Record<string, "expired">>;
   readonly now?: Date;
 }): AdminMonitoringView {
   const now = input.now ?? new Date();
@@ -135,7 +136,7 @@ export function buildAdminMonitoringView(input: {
     .sort(compareAttemptsNewestFirst)
     .map((attempt) => ({
       raw: attempt,
-      derived: deriveMonitoringAttemptStatus(attempt, now),
+      derived: deriveMonitoringAttemptStatus(attempt, now, input.externalStatusOverrides),
     }));
   const currentAttemptViews = currentAttemptsWithDerivedStatus
     .map((attempt) =>
@@ -148,7 +149,7 @@ export function buildAdminMonitoringView(input: {
     .sort(compareAttemptsNewestFirst)
     .map((attempt) =>
       toAttemptView(
-        deriveMonitoringAttemptStatus(attempt, now),
+        deriveMonitoringAttemptStatus(attempt, now, input.externalStatusOverrides),
         diagnosticsByAttemptId.get(attempt.id) ?? [],
       ),
     );
@@ -217,7 +218,12 @@ function toAttemptView(
 function deriveMonitoringAttemptStatus(
   attempt: MonitoringAttemptRecord,
   now: Date,
+  externalStatusOverrides?: Readonly<Record<string, "expired">>,
 ): MonitoringAttemptRecord {
+  if (externalStatusOverrides?.[attempt.id] === "expired") {
+    return { ...attempt, status: "expired" };
+  }
+
   if (!isOpenPeriodClosed(attempt, now)) {
     return attempt;
   }

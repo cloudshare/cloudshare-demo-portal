@@ -341,4 +341,34 @@ describe("ExamAttempt scheduling runtime", () => {
     });
     expect(cloudshare.forConnection).not.toHaveBeenCalled();
   });
+
+  it("returns candidate-facing copy when the requested schedule time is not in the future", async () => {
+    const response = await scheduleExamAttemptRuntime(
+      {
+        exams: await makeExamRepository(),
+        attempts: createInMemoryExamAttemptRepository(),
+        launches: createInMemoryLabLaunchRepository(),
+        audit: createInMemoryAuditRepository(),
+        eventLog: createInMemoryEventLogRepository(),
+        connections: makeConnectionRepository(),
+        cloudshare: makeCloudShareFactory(),
+        logger: makeLogger(),
+        now: () => new Date("2026-06-15T10:00:00.000Z"),
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        examId: "exam-1",
+        scheduledFor: "2026-06-15T09:59:00.000Z",
+      },
+    );
+
+    expect(response).toEqual({
+      status: 400,
+      body: { error: "Choose a future date and time before scheduling." },
+    });
+  });
 });

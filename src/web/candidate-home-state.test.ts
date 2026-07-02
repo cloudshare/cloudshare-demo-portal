@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  COLD_START_WARNING_MESSAGE,
   MAX_ENTERABILITY_WAKE_UP_DELAY_MS,
   buildCandidateExamDurationLabels,
   buildScheduledAttemptViews,
   canEnterAttempt,
+  getAttemptColdStartWarning,
   getAttemptWaitingMessage,
   getAttemptPrimaryAction,
   getCandidateAttemptDisplayStatus,
@@ -74,6 +76,85 @@ describe("candidate home attempt state", () => {
     });
   });
 
+  it("shows the CloudShare cold-start warning on upcoming and active attempts where it applies", () => {
+    const views = buildScheduledAttemptViews(
+      {
+        exams: dashboard.exams,
+        attempts: [
+          {
+            id: "attempt-soon",
+            examId: "exam-1",
+            scheduledFor: "2026-06-16T16:00:00.000Z",
+            status: "ready",
+          },
+          {
+            id: "attempt-active",
+            examId: "exam-1",
+            scheduledFor: "2026-06-16T15:00:00.000Z",
+            status: "in_progress",
+          },
+          {
+            id: "attempt-later",
+            examId: "exam-1",
+            scheduledFor: "2026-06-17T16:00:00.000Z",
+            status: "ready",
+          },
+        ],
+      },
+      new Date("2026-06-16T14:00:00.000Z").getTime(),
+    );
+
+    expect(views.find((view) => view.attemptId === "attempt-soon")?.coldStartWarning).toBe(
+      COLD_START_WARNING_MESSAGE,
+    );
+    expect(views.find((view) => view.attemptId === "attempt-active")?.coldStartWarning).toBe(
+      COLD_START_WARNING_MESSAGE,
+    );
+    expect(views.find((view) => view.attemptId === "attempt-later")?.coldStartWarning).toBeNull();
+  });
+
+  it("stops showing the CloudShare cold-start warning after the authored open period closes", () => {
+    const attempt = {
+      id: "attempt-closed",
+      examId: "exam-1",
+      scheduledFor: "2026-06-16T15:00:00.000Z",
+      status: "ready" as const,
+    };
+
+    expect(
+      getAttemptColdStartWarning(
+        attempt,
+        new Date("2026-06-16T17:01:00.000Z").getTime(),
+        dashboard.exams[0],
+      ),
+    ).toBeNull();
+  });
+
+  it("does not keep the CloudShare cold-start warning on long-running attempts more than five hours after start", () => {
+    const attempt = {
+      id: "attempt-long-open",
+      examId: "exam-long-open",
+      scheduledFor: "2026-06-16T10:00:00.000Z",
+      status: "in_progress" as const,
+    };
+    const exam = {
+      id: "exam-long-open",
+      title: "Long Open Window",
+      description: "",
+      timeLimitMinutes: 120,
+      openPeriodMinutes: 24 * 60,
+      scoreRetrievalEnabled: false,
+    };
+
+    expect(
+      getAttemptColdStartWarning(
+        attempt,
+        new Date("2026-06-16T16:01:00.000Z").getTime(),
+        exam,
+      ),
+    ).toBeNull();
+  });
+
   it("derives closed-window candidate display state without changing the raw attempt lifecycle", () => {
     const closedReadyAttempt = {
       id: "attempt-ready-closed",
@@ -101,6 +182,59 @@ describe("candidate home attempt state", () => {
       status: "ready",
       displayStatus: "expired",
     });
+  });
+
+  it("shows a future persisted ready attempt as scheduled until the scheduled start", () => {
+    const readyAttempt = {
+      id: "attempt-ready-future",
+      examId: "exam-1",
+      scheduledFor: "2026-06-16T16:00:00.000Z",
+      status: "ready" as const,
+    };
+
+    const beforeStartView = buildScheduledAttemptViews(
+      {
+        exams: dashboard.exams,
+        attempts: [readyAttempt],
+      },
+      new Date("2026-06-16T15:59:00.000Z").getTime(),
+    )[0];
+
+    expect(beforeStartView).toMatchObject({
+      status: "ready",
+      displayStatus: "scheduled",
+      canEnter: false,
+      waitingMessage: "Enter exam becomes available at 2026-06-16 17:00.",
+    });
+    expect(
+      getCandidateCurrentAttemptLabel(
+        readyAttempt,
+        new Date("2026-06-16T15:59:00.000Z").getTime(),
+        dashboard.exams[0],
+      ),
+    ).toBe("Scheduled for 2026-06-16 17:00");
+
+    const atStartView = buildScheduledAttemptViews(
+      {
+        exams: dashboard.exams,
+        attempts: [readyAttempt],
+      },
+      new Date("2026-06-16T16:00:00.000Z").getTime(),
+    )[0];
+
+    expect(atStartView).toMatchObject({
+      status: "ready",
+      displayStatus: "ready",
+      canEnter: true,
+      waitingMessage: null,
+    });
+    expect(
+      getCandidateCurrentAttemptLabel(
+        readyAttempt,
+        new Date("2026-06-16T16:00:00.000Z").getTime(),
+        dashboard.exams[0],
+      ),
+    ).toBe("Ready for 2026-06-16 17:00");
   });
 
   it("keeps score review available for completed Guided Journey attempts before the open window closes", () => {

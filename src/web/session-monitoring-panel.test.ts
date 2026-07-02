@@ -95,7 +95,10 @@ function makeMonitoringView(partial: Partial<AdminMonitoringView> = {}): AdminMo
 }
 
 describe("SessionMonitoringPanel", () => {
+  const originalTimezone = process.env.TZ;
+
   afterEach(() => {
+    process.env.TZ = originalTimezone;
     vi.restoreAllMocks();
   });
 
@@ -189,7 +192,7 @@ describe("SessionMonitoringPanel", () => {
     expect(html.match(/>suspended</g)?.length).toBe(1);
   });
 
-  it("leads attempt summaries with candidate identity, exam timing, and latest interaction context", () => {
+  it("leads attempt summaries with candidate identity, exam title, and one compact open-window display", () => {
     const html = renderToStaticMarkup(
       createElement(SessionMonitoringPanel, {
         monitoring: makeMonitoringView({
@@ -249,12 +252,75 @@ describe("SessionMonitoringPanel", () => {
 
     expect(html).toContain("Scheduled Candidate <strong style=\"color:#111827;font-weight:700\">scheduled.candidate@helioscx.demo</strong>");
     expect(html).toContain("<span style=\"color:#4b5563;font-weight:400\">Scheduled Exam");
-    expect(html).toContain("Scheduled: 2026-06-21T12:00:00.000Z");
-    expect(html).toContain("Last interaction: 2026-06-21T12:08:30.000Z");
+    expect(html).toContain("Open window");
+    expect(html).toContain("Starts 2026-06-21 12:00");
+    expect(html).toContain("Closes 2026-06-21 13:30");
+    expect(html).toContain("Duration 90 min");
+    expect(html).not.toContain("2026-06-21T12:00:00.000Z");
+    expect(html).not.toContain("2026-06-21T13:30:00.000Z");
     expect(html).toContain("History Candidate <strong style=\"color:#111827;font-weight:700\">history.candidate@helioscx.demo</strong>");
     expect(html).toContain("<span style=\"color:#4b5563;font-weight:400\">History Exam");
-    expect(html).toContain("Scheduled: -");
-    expect(html).toContain("Last interaction: -");
+    expect(html).toContain("Starts -");
+    expect(html).toContain("Closes -");
+    expect(html).not.toContain("Last interaction:");
+  });
+
+  it("shows the authored Exam open window only once per attempt summary", () => {
+    process.env.TZ = "Europe/London";
+
+    const html = renderToStaticMarkup(
+      createElement(SessionMonitoringPanel, {
+        monitoring: makeMonitoringView({
+          currentAttempts: {
+            scheduled: [],
+            ready: [],
+            inProgress: [],
+            suspended: [
+              makeAttempt({
+                candidateName: "Suspended Candidate",
+                candidateEmail: "suspended.candidate@helioscx.demo",
+                examTitle: "Suspended Exam",
+                status: "suspended",
+                scheduledFor: "2026-07-02T14:54:00.000Z",
+                examOpenPeriodMinutes: 30,
+              }),
+            ],
+          },
+          history: [],
+        }),
+        loading: false,
+        onRefresh: () => {},
+        onLoadMoreHistory: () => {},
+        onOpenSupportDiagnostics: () => {},
+      }),
+    );
+
+    expect(html.match(/Open window/g)?.length).toBe(1);
+    expect(html).toContain("Starts 2026-07-02 15:54");
+    expect(html).toContain("Closes 2026-07-02 16:24");
+    expect(html).toContain("Duration 30 min");
+    expect(html).not.toContain("2026-07-02T14:54:00.000Z");
+    expect(html).not.toContain("2026-07-02T15:24:00.000Z");
+    expect(html).not.toContain("Starts 2026-07-02 14:54");
+    expect(html).not.toContain("Closes 2026-07-02 15:24");
+    expect(html).not.toContain("Scheduled (UTC)");
+    expect(html).not.toContain("Open window (UTC)");
+  });
+
+  it("keeps investigation filter fields from overlapping at narrow monitoring widths", () => {
+    const html = renderToStaticMarkup(
+      createElement(SessionMonitoringPanel, {
+        monitoring: makeMonitoringView(),
+        loading: false,
+        onRefresh: () => {},
+        onLoadMoreHistory: () => {},
+        onOpenSupportDiagnostics: () => {},
+      }),
+    );
+
+    expect(html).toContain("grid-template-columns:repeat(auto-fit, minmax(min(100%, 260px), 1fr))");
+    expect(html).toContain("min-width:0");
+    expect(html).toContain("box-sizing:border-box");
   });
 
   it("filters the monitoring view by status, candidate email, and exam or ExamAttempt lookup without changing summary counts", () => {
