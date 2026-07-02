@@ -5,18 +5,30 @@ import {
   type AdminMonitoringAttemptRepository,
   type AdminMonitoringView,
 } from "@/domain/admin-monitoring";
+import type {
+  CloudShareClientFactory,
+  CloudShareConnectionRepository,
+} from "@/domain/cloudshare-connection";
 import { MAX_DIAGNOSTIC_QUERY_LIMIT, type DiagnosticLogRepository } from "@/domain/diagnostic-log";
+import type { LabLaunchRepository } from "@/domain/lab-launch";
 import type { Logger } from "@/observability/logger";
+import { inspectExamAttemptExternalLease } from "./exam-attempt-external-lease";
 
 export interface AdminMonitoringHandlerDeps {
   readonly attempts: AdminMonitoringAttemptRepository;
   readonly diagnostics: DiagnosticLogRepository;
+  readonly launches?: LabLaunchRepository;
+  readonly connections?: CloudShareConnectionRepository;
+  readonly cloudshare?: CloudShareClientFactory;
   readonly logger: Logger;
 }
 
 export interface AdminMonitoringServices {
   readonly adminMonitoringAttempts: AdminMonitoringAttemptRepository;
   readonly diagnostics: DiagnosticLogRepository;
+  readonly labLaunches?: LabLaunchRepository;
+  readonly cloudshareConnections?: CloudShareConnectionRepository;
+  readonly cloudshareClientFactory?: CloudShareClientFactory;
   readonly logger: Logger;
 }
 
@@ -26,6 +38,9 @@ export function buildAdminMonitoringDeps(
   return {
     attempts: services.adminMonitoringAttempts,
     diagnostics: services.diagnostics,
+    launches: services.labLaunches,
+    connections: services.cloudshareConnections,
+    cloudshare: services.cloudshareClientFactory,
     logger: services.logger,
   };
 }
@@ -69,6 +84,10 @@ export async function handleGetAdminMonitoring(
       ),
     )
   ).flat();
+  const externalLeaseOverrides = await deriveAdminMonitoringExternalLeaseOverrides(
+    deps,
+    [...currentAttempts, ...history.attempts],
+  );
 
   return {
     status: 200,
@@ -78,9 +97,51 @@ export async function handleGetAdminMonitoring(
         currentAttempts,
         history,
         diagnosticRecords,
+        externalStatusOverrides: externalLeaseOverrides,
       }),
     },
   };
+}
+
+async function deriveAdminMonitoringExternalLeaseOverrides(
+  deps: Pick<AdminMonitoringHandlerDeps, "launches" | "connections" | "cloudshare">,
+  attempts: readonly {
+    readonly id: string;
+    readonly customerId: string;
+    readonly status: "scheduled" | "ready" | "in_progress" | "suspended" | "completed" | "expired";
+  }[],
+): Promise<Record<string, "expired">> {
+  const overrides: Record<string, "expired"> = {};
+  if (!deps.launches || !deps.connections || !deps.cloudshare) {
+    return overrides;
+  }
+
+  for (const attempt of attempts) {
+    if (
+      attempt.status !== "ready" &&
+      attempt.status !== "in_progress" &&
+      attempt.status !== "suspended"
+    ) {
+      continue;
+    }
+
+    const lease = await inspectExamAttemptExternalLease(
+      {
+        launches: deps.launches,
+        connections: deps.connections,
+        cloudshare: deps.cloudshare,
+      },
+      {
+        examAttemptId: attempt.id,
+        customerId: attempt.customerId,
+      },
+    );
+    if (lease.kind === "expired") {
+      overrides[attempt.id] = "expired";
+    }
+  }
+
+  return overrides;
 }
 
 function boundMonitoringHistoryLimit(limit: string | undefined): number {

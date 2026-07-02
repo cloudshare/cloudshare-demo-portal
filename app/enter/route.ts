@@ -37,6 +37,8 @@ export async function GET(request: Request) {
       exams: services.exams,
       clocks: services.examClock,
       launches: services.labLaunches,
+      connections: services.cloudshareConnections,
+      cloudshare: services.cloudshareClientFactory,
       timer: services.examClock,
       logger: services.logger,
       diagnostics: services.diagnosticRecorder,

@@ -17,6 +17,7 @@ import {
 import { createCloudShareParticipantLister } from "@/integrations/cloudshare/participants";
 import type { Logger } from "@/observability/logger";
 import { recordExamAttemptCompletionDiagnostic } from "./exam-attempt-completion-diagnostics";
+import { inspectExamAttemptExternalLease } from "./exam-attempt-external-lease";
 
 export interface ExamAttemptDashboardRuntimeDeps {
   readonly repository: ExamRepository;
@@ -102,6 +103,10 @@ export async function getExamAttemptDashboardRuntime(
     request.customerId,
     reconciledAttempts.map((attempt) => attempt.id),
   );
+  const externalLeaseOverrides = await deriveExternalLeaseStatusOverrides(
+    deps,
+    reconciledAttempts,
+  );
   const examsById = new Map(exams.map((exam) => [exam.id, exam]));
 
   return {
@@ -120,11 +125,54 @@ export async function getExamAttemptDashboardRuntime(
           openPeriodMinutes: exam?.openPeriodMinutes ?? 0,
           scoreRetrievalEnabled: exam?.scoreRetrievalEnabled ?? false,
           scheduledFor: attempt.scheduledFor?.toISOString() ?? null,
-          status: attempt.status as CandidateDashboardAttemptItem["status"],
+          status:
+            externalLeaseOverrides.get(attempt.id) ??
+            (attempt.status as CandidateDashboardAttemptItem["status"]),
         };
       }),
     },
   };
+}
+
+async function deriveExternalLeaseStatusOverrides(
+  deps: ExamAttemptDashboardRuntimeDeps,
+  attempts: readonly {
+    readonly id: string;
+    readonly customerId?: string;
+    readonly status: string;
+  }[],
+): Promise<Map<string, CandidateDashboardAttemptItem["status"]>> {
+  const overrides = new Map<string, CandidateDashboardAttemptItem["status"]>();
+  if (!deps.launches || !deps.connections || !deps.cloudshare) {
+    return overrides;
+  }
+
+  for (const attempt of attempts) {
+    if (
+      attempt.status !== "ready" &&
+      attempt.status !== "in_progress" &&
+      attempt.status !== "suspended"
+    ) {
+      continue;
+    }
+
+    const lease = await inspectExamAttemptExternalLease(
+      {
+        launches: deps.launches,
+        connections: deps.connections,
+        cloudshare: deps.cloudshare,
+      },
+      {
+        examAttemptId: attempt.id,
+        customerId: attempt.customerId ?? null,
+      },
+    );
+    if (lease.kind === "expired") {
+      overrides.set(attempt.id, "expired");
+    }
+  }
+
+  return overrides;
 }
 
 function toCandidateDashboardExamItem(exam: Exam): CandidateDashboardExamItem {

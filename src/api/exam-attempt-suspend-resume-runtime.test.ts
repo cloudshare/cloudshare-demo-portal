@@ -1120,6 +1120,64 @@ describe("resumeExamAttemptRuntime", () => {
     });
   });
 
+  it("returns a portal-safe 409 when the correlated CloudShare environment has already expired", async () => {
+    const customerClient = makeCloudShareClient({
+      requestV3: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+        if (spec.path === "/envs/ENVS2n38LTNdcC4sHsqnjRzg2") {
+          throw new CloudShareRequestError("not found", 404, {
+            integrationSurface: "cloudshare.v3.env.get",
+            method: "GET",
+            path: "/v3/envs/ENVS2n38LTNdcC4sHsqnjRzg2",
+          });
+        }
+        throw new Error(`unexpected v3 path ${spec.path}`);
+      }) as unknown as CloudShareClient["requestV3"],
+      requestV3Text: vi.fn(),
+      requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+        if (spec.path === "/trainings/EXtraining-1/students") {
+          return spec.schema.parse([
+            {
+              email: "candidate@helioscx.demo",
+              environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+              environmentStatus: "ready",
+            },
+          ]);
+        }
+        throw new Error(`unexpected v4 path ${spec.path}`);
+      }) as unknown as CloudShareClient["requestV4"],
+    });
+    const diagnostics = { record: vi.fn().mockResolvedValue(undefined) };
+    const deps = await makeResumeDeps({
+      cloudshare: {
+        forConnection: vi.fn().mockReturnValue(customerClient),
+      },
+      diagnostics,
+      candidateEmail: "candidate@helioscx.demo",
+    });
+
+    const resp = await resumeExamAttemptRuntime(deps, { examAttemptId: "ea-1" });
+
+    expect(resp.status).toBe(409);
+    expect(resp.body).toEqual({
+      error: "Exam resume is not available because the CloudShare lab has expired.",
+      examAttemptId: "ea-1",
+      operation: "resume",
+      currentStatus: "expired",
+    });
+    expect(customerClient.requestV3Text).not.toHaveBeenCalled();
+    expect(diagnostics.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: "exam_attempt.resume",
+        outcome: "failure",
+        message: "Exam resume failed: CloudShare lab has expired",
+        details: expect.objectContaining({
+          failureMode: "external_lease_expired",
+          environmentStatus: "deleted",
+        }),
+      }),
+    );
+  });
+
   it("treats a repeated resume request after a successful resume as idempotent", async () => {
     const customerClient = makeCloudShareClient({
       requestV3: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {

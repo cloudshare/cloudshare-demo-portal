@@ -1,4 +1,8 @@
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
+import type {
+  CloudShareClientFactory,
+  CloudShareConnectionRepository,
+} from "@/domain/cloudshare-connection";
 import { reconcileExamAttemptCompletion } from "@/domain/exam-attempt-completion";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { ExamClock } from "@/domain/exam-clock";
@@ -7,6 +11,7 @@ import type { LabLaunchRepository } from "@/domain/lab-launch";
 import type { ExamTimer } from "@/domain/exam-attempt-runtime-lifecycle";
 import type { Logger } from "@/observability/logger";
 import { recordExamAttemptCompletionDiagnostic } from "./exam-attempt-completion-diagnostics";
+import { inspectExamAttemptExternalLease } from "./exam-attempt-external-lease";
 
 export interface ExamAttemptRuntimeDeps {
   readonly attempts: ExamAttemptRepository;
@@ -14,6 +19,8 @@ export interface ExamAttemptRuntimeDeps {
   readonly clocks?: ExamClock;
   readonly launches: LabLaunchRepository;
   readonly timer?: ExamTimer;
+  readonly connections?: CloudShareConnectionRepository;
+  readonly cloudshare?: CloudShareClientFactory;
   readonly logger: Logger;
   readonly now?: () => Date;
   readonly diagnostics?: DiagnosticRecorder;
@@ -164,6 +171,37 @@ export async function enterExamAttemptRuntime(
       message: "No CloudShare launch found for exam attempt",
     });
     return blocked(404, "Scheduled CloudShare launch not found.");
+  }
+
+  const externalLease = await inspectExamAttemptExternalLease(deps, {
+    examAttemptId: request.examAttemptId,
+    customerId: attempt.customerId ?? null,
+  });
+  if (externalLease.kind === "expired") {
+    await deps.diagnostics?.record({
+      ...anchors,
+      level: "warn",
+      operation: "exam_attempt.enter",
+      outcome: "failure",
+      message: "Exam entry failed: CloudShare lab has expired",
+      externalIds: {
+        ...(externalLease.trainingId ? { trainingId: externalLease.trainingId } : {}),
+        ...(externalLease.environmentExternalId
+          ? { environmentExternalId: externalLease.environmentExternalId }
+          : {}),
+      },
+      request: externalLease.request ?? null,
+      response: externalLease.response ?? null,
+      details: {
+        attemptStatus: "expired",
+        failureMode: "external_lease_expired",
+        environmentStatus: externalLease.environmentStatus,
+      },
+    });
+    return blocked(
+      409,
+      "Exam entry is no longer available because the CloudShare lab has expired.",
+    );
   }
 
   try {

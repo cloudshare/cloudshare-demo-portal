@@ -438,6 +438,69 @@ describe("getExamAttemptDashboardRuntime", () => {
     ]);
   });
 
+  it("shows expired when the correlated CloudShare environment no longer exists", async () => {
+    const exams = await makeExamRepository();
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const logger = makeLogger();
+
+    await attempts.save({
+      id: "attempt-suspended",
+      customerId: "customer-helios",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "suspended",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    await launches.save({
+      id: "launch-1",
+      examAttemptId: "attempt-suspended",
+      candidateId: "candidate-1",
+      participantEmail: "candidate@helioscx.demo",
+      trainingId: "EXtraining-1",
+      experienceId: "EXtraining-1",
+      environmentExternalId: "ENVS-expired-1",
+      environmentId: "ENVS-expired-1",
+      loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/demo",
+      status: "launched",
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+
+    const dashboard = await getExamAttemptDashboardRuntime(
+      {
+        repository: exams,
+        attempts,
+        launches,
+        connections: makeConnectionRepository(),
+        cloudshare: makeCloudShareFactory({
+          requestV3: vi.fn(async (spec: { path: string }) => {
+            if (spec.path === "/envs/ENVS-expired-1") {
+              throw new CloudShareRequestError("not found", 404, {
+                method: "GET",
+                path: "/v3/envs/ENVS-expired-1",
+                integrationSurface: "cloudshare.v3.env.get",
+              });
+            }
+            throw new Error(`unexpected path ${spec.path}`);
+          }) as never,
+        }),
+        logger,
+      },
+      { customerId: "customer-helios", candidateId: "candidate-1" },
+    );
+
+    expect(dashboard.status).toBe(200);
+    expect(dashboard.body).toMatchObject({
+      attempts: [
+        {
+          id: "attempt-suspended",
+          status: "expired",
+        },
+      ],
+    });
+  });
+
   it("preserves unexpected_response diagnostics when list-students schema parsing fails", async () => {
     const exams = await makeExamRepository();
     const attempts = createInMemoryExamAttemptRepository();

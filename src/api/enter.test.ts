@@ -7,6 +7,11 @@ import type { ExamTimer } from "@/domain/exam-attempt-runtime-lifecycle";
 import { createExamClock, createInMemoryExamClockRepository } from "@/domain/exam-clock";
 import { createInMemoryExamCatalogRepository } from "@/persistence/exam-catalog-repository";
 import { createDraftExam, publishExam } from "@/domain/exam-catalog";
+import type {
+  CloudShareClientFactory,
+  CloudShareConnectionRepository,
+} from "@/domain/cloudshare-connection";
+import { CloudShareRequestError } from "@/integrations/cloudshare";
 import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 
@@ -21,6 +26,36 @@ function makeTimer(): ExamTimer & { resumed: string[] } {
     pauseTimer: vi.fn().mockResolvedValue(undefined),
     resumeTimer: vi.fn(async (examAttemptId: string) => {
       resumed.push(examAttemptId);
+    }),
+  };
+}
+
+function makeConnections(): CloudShareConnectionRepository {
+  return {
+    save: vi.fn(),
+    findByCustomerId: vi.fn().mockResolvedValue({
+      customerId: "customer-1",
+      apiId: "api-id",
+      apiKey: "api-key",
+      webhookSecret: "whsec",
+      webhookPathToken: "whk-customer-1",
+      connectedAt: new Date("2026-06-15T08:00:00.000Z"),
+      verifiedAt: new Date("2026-06-15T08:05:00.000Z"),
+    }),
+    findByWebhookPathToken: vi.fn(),
+    markVerified: vi.fn(),
+  };
+}
+
+function makeCloudShareFactory(
+  requestV3: ReturnType<CloudShareClientFactory["forConnection"]>["requestV3"],
+): CloudShareClientFactory {
+  return {
+    forConnection: () => ({
+      requestV3,
+      requestV3Text: vi.fn(),
+      requestV4: vi.fn(),
+      requestV4Detailed: vi.fn(),
     }),
   };
 }
@@ -211,6 +246,64 @@ describe("handleEnterExam", () => {
 
     expect(response.status).toBe(403);
     expect(response.body).toBe("Exam entry is not available for this attempt.");
+  });
+
+  it("blocks entry with a portal-safe message when the correlated CloudShare environment has expired", async () => {
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+
+    await attempts.save({
+      id: "attempt-expired-env",
+      customerId: "customer-1",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "ready",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    await launches.save({
+      id: "launch-1",
+      examAttemptId: "attempt-expired-env",
+      candidateId: "candidate-1",
+      participantEmail: "candidate@helioscx.demo",
+      trainingId: "EXtraining-1",
+      experienceId: "EXtraining-1",
+      environmentExternalId: "ENVS-expired-1",
+      environmentId: "ENVS-expired-1",
+      loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret",
+      status: "launched",
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+
+    const response = await handleEnterExam(
+      {
+        attempts,
+        launches,
+        connections: makeConnections(),
+        cloudshare: makeCloudShareFactory(
+          vi.fn(async (spec: { path: string }) => {
+            if (spec.path === "/envs/ENVS-expired-1") {
+              throw new CloudShareRequestError("not found", 404, {
+                method: "GET",
+                path: "/v3/envs/ENVS-expired-1",
+                integrationSurface: "cloudshare.v3.env.get",
+              });
+            }
+            throw new Error(`unexpected path ${spec.path}`);
+          }) as never,
+        ),
+        logger: makeLogger(),
+        now: () => new Date("2026-06-15T16:00:00.000Z"),
+      },
+      { examAttemptId: "attempt-expired-env", candidateId: "candidate-1" },
+    );
+
+    expect(response.status).toBe(409);
+    expect(response.body).toBe(
+      "Exam entry is no longer available because the CloudShare lab has expired.",
+    );
+    expect(response.headers.location).toBeUndefined();
+    expect(JSON.stringify(response)).not.toContain("secret");
   });
 
   it("reconciles runtime exhaustion before redirect and completes the attempt instead of entering", async () => {

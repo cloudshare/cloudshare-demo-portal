@@ -30,6 +30,7 @@ import type { ExamClock } from "@/domain/exam-clock";
 import type { ExamRepository } from "@/domain/exam-catalog";
 import { settleExamAttemptCompletion } from "./exam-attempt-completion-settlement";
 import type { EnvironmentCommandResult } from "@/domain/environment";
+import { inspectExamAttemptExternalLease } from "./exam-attempt-external-lease";
 
 /**
  * Framework-agnostic runtime operations for candidate-initiated suspend,
@@ -335,6 +336,42 @@ export async function resumeExamAttemptRuntime(
       examAttemptId,
       operation: "exam_resume",
     });
+    const externalLease = await inspectExamAttemptExternalLease(deps, {
+      examAttemptId,
+      customerId: reconciledAttempt.customerId ?? null,
+      environmentExternalId: correlation.actionableEnvironmentId,
+    });
+    if (externalLease.kind === "expired") {
+      await deps.diagnostics?.record({
+        ...anchors,
+        level: "warn",
+        operation: "exam_attempt.resume",
+        outcome: "failure",
+        message: "Exam resume failed: CloudShare lab has expired",
+        externalIds: {
+          ...(externalLease.trainingId ? { trainingId: externalLease.trainingId } : {}),
+          ...(externalLease.environmentExternalId
+            ? { environmentExternalId: externalLease.environmentExternalId }
+            : {}),
+        },
+        request: externalLease.request ?? null,
+        response: externalLease.response ?? null,
+        details: {
+          failureMode: "external_lease_expired",
+          currentStatus: "expired",
+          environmentStatus: externalLease.environmentStatus,
+        },
+      });
+      return {
+        status: 409,
+        body: {
+          error: "Exam resume is not available because the CloudShare lab has expired.",
+          examAttemptId,
+          operation: "resume",
+          currentStatus: "expired",
+        },
+      };
+    }
     const result = await resumeExam(
       {
         ...deps,

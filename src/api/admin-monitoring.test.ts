@@ -11,7 +11,13 @@ import type {
   MonitoringAttemptPage,
   MonitoringAttemptRecord,
 } from "@/domain/admin-monitoring";
+import type {
+  CloudShareClientFactory,
+  CloudShareConnectionRecord,
+  CloudShareConnectionRepository,
+} from "@/domain/cloudshare-connection";
 import type { DiagnosticLogEntry, DiagnosticLogRepository } from "@/domain/diagnostic-log";
+import { CloudShareRequestError } from "@/integrations/cloudshare";
 import type { Logger } from "@/observability/logger";
 
 function makeLogger(): Logger {
@@ -110,6 +116,39 @@ function makeDiagnosticRepository(recordsByAttemptId: Record<string, DiagnosticL
         return [];
       }
       return recordsByAttemptId[query.examAttemptId] ?? [];
+    }),
+  };
+}
+
+function makeConnectionRepository(
+  connection: CloudShareConnectionRecord | null = {
+    customerId: "customer-1",
+    apiId: "api-id",
+    apiKey: "api-key",
+    webhookSecret: "whsec",
+    webhookPathToken: "whk-customer-1",
+    connectedAt: new Date("2026-06-18T08:00:00.000Z"),
+    verifiedAt: new Date("2026-06-18T08:05:00.000Z"),
+  },
+): CloudShareConnectionRepository {
+  return {
+    save: vi.fn(),
+    findByCustomerId: vi.fn().mockResolvedValue(connection),
+    findByWebhookPathToken: vi.fn().mockResolvedValue(connection),
+    markVerified: vi.fn(),
+  };
+}
+
+function makeCloudShareFactory(
+  overrides: Partial<ReturnType<CloudShareClientFactory["forConnection"]>> = {},
+): CloudShareClientFactory {
+  return {
+    forConnection: () => ({
+      requestV3: vi.fn(),
+      requestV3Text: vi.fn(),
+      requestV4: vi.fn(),
+      requestV4Detailed: vi.fn(),
+      ...overrides,
     }),
   };
 }
@@ -350,5 +389,78 @@ describe("handleGetAdminMonitoring", () => {
         ],
       }),
     ]);
+  });
+
+  it("shows an externally expired current attempt in history instead of leaving it suspended", async () => {
+    const launches = {
+      save: vi.fn(),
+      findById: vi.fn(),
+      findByExamAttemptId: vi.fn().mockResolvedValue({
+        id: "launch-1",
+        examAttemptId: "attempt-1",
+        candidateId: "candidate-1",
+        participantEmail: "candidate@helioscx.demo",
+        trainingId: "EXtraining-1",
+        experienceId: "EXtraining-1",
+        environmentExternalId: "ENVS-expired-1",
+        environmentId: "ENVS-expired-1",
+        loginUrl: "https://use.cloudshare.com/demo",
+        status: "launched",
+        createdAt: new Date("2026-06-18T08:55:00.000Z"),
+      }),
+      findByCustomerIdAndEnvironmentExternalId: vi.fn(),
+    };
+
+    const response = await handleGetAdminMonitoring(
+      {
+        attempts: makeAttemptRepository({
+          summary: makeSummary({ suspended: 1 }),
+          currentAttempts: [
+            makeAttempt({
+              status: "suspended",
+              trainingId: "EXtraining-1",
+              experienceId: "EXtraining-1",
+              environmentExternalId: "ENVS-expired-1",
+            }),
+          ],
+        }),
+        diagnostics: makeDiagnosticRepository(),
+        logger: makeLogger(),
+        launches,
+        connections: makeConnectionRepository(),
+        cloudshare: makeCloudShareFactory({
+          requestV3: vi.fn(async (spec: { path: string }) => {
+            if (spec.path === "/envs/ENVS-expired-1") {
+              throw new CloudShareRequestError("not found", 404, {
+                method: "GET",
+                path: "/v3/envs/ENVS-expired-1",
+                integrationSurface: "cloudshare.v3.env.get",
+              });
+            }
+            throw new Error(`unexpected path ${spec.path}`);
+          }) as never,
+        }),
+      },
+      { customerId: "customer-1" },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body.monitoring.summary).toEqual({
+      scheduled: 0,
+      ready: 0,
+      inProgress: 0,
+      suspended: 0,
+      completed: 0,
+      expired: 1,
+    });
+    expect(response.body.monitoring.currentAttempts.suspended).toEqual([]);
+    expect(response.body.monitoring.history).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "attempt-1",
+          status: "expired",
+        }),
+      ]),
+    );
   });
 });
