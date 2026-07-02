@@ -29,6 +29,7 @@ export interface AdminMonitoringHandlerDeps {
   readonly examAttempts?: ExamAttemptRepository;
   readonly diagnosticRecorder?: DiagnosticRecorder;
   readonly logger: Logger;
+  readonly now?: () => Date;
 }
 
 export interface AdminMonitoringServices {
@@ -118,14 +119,16 @@ export async function handleGetAdminMonitoring(
 async function deriveAdminMonitoringExternalLeaseOverrides(
   deps: Pick<
     AdminMonitoringHandlerDeps,
-    "launches" | "connections" | "cloudshare" | "examAttempts" | "diagnosticRecorder"
+    "launches" | "connections" | "cloudshare" | "examAttempts" | "diagnosticRecorder" | "now"
   >,
   attempts: readonly {
     readonly id: string;
     readonly customerId: string;
     readonly candidateId: string;
     readonly examId: string;
+    readonly examOpenPeriodMinutes: number;
     readonly status: "scheduled" | "ready" | "in_progress" | "suspended" | "completed" | "expired";
+    readonly scheduledFor: Date | null;
   }[],
 ): Promise<Record<string, "expired">> {
   const overrides: Record<string, "expired"> = {};
@@ -139,6 +142,9 @@ async function deriveAdminMonitoringExternalLeaseOverrides(
       attempt.status !== "in_progress" &&
       attempt.status !== "suspended"
     ) {
+      continue;
+    }
+    if (!hasAuthoredOpenPeriodClosed(attempt.scheduledFor, attempt.examOpenPeriodMinutes, deps.now)) {
       continue;
     }
 
@@ -190,6 +196,19 @@ async function deriveAdminMonitoringExternalLeaseOverrides(
   }
 
   return overrides;
+}
+
+function hasAuthoredOpenPeriodClosed(
+  scheduledFor: Date | null,
+  openPeriodMinutes: number,
+  now: (() => Date) | undefined,
+): boolean {
+  if (!scheduledFor) {
+    return false;
+  }
+
+  const openPeriodEndsAt = scheduledFor.getTime() + openPeriodMinutes * 60_000;
+  return (now ?? (() => new Date()))().getTime() >= openPeriodEndsAt;
 }
 
 function boundMonitoringHistoryLimit(limit: string | undefined): number {

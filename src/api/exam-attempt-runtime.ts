@@ -177,22 +177,12 @@ export async function enterExamAttemptRuntime(
     return blocked(404, "Scheduled CloudShare launch not found.");
   }
 
-  const externalLease = await inspectExamAttemptExternalLease(deps, {
-    examAttemptId: request.examAttemptId,
-    customerId: attempt.customerId ?? null,
-  });
-  await recordExamAttemptExternalLeaseInspectionFailure(deps, {
-    inspection: externalLease,
-    customerId: attempt.customerId ?? null,
-    examId: attempt.examId,
-    candidateId: request.candidateId,
-    candidateEmail: deps.candidateEmail ?? null,
-    source: "runtime",
-    actorType: "candidate",
-    message: "CloudShare external lease inspection failed during exam entry",
-  });
-  if (externalLease.kind === "expired") {
-    await reconcileExpiredExamAttemptExternalLease(deps, {
+  if (hasAuthoredOpenPeriodClosed(attempt.scheduledFor, exam, now)) {
+    const externalLease = await inspectExamAttemptExternalLease(deps, {
+      examAttemptId: request.examAttemptId,
+      customerId: attempt.customerId ?? null,
+    });
+    await recordExamAttemptExternalLeaseInspectionFailure(deps, {
       inspection: externalLease,
       customerId: attempt.customerId ?? null,
       examId: attempt.examId,
@@ -200,54 +190,66 @@ export async function enterExamAttemptRuntime(
       candidateEmail: deps.candidateEmail ?? null,
       source: "runtime",
       actorType: "candidate",
-      message: "ExamAttempt expired from authoritative CloudShare external lease reconciliation",
+      message: "CloudShare external lease inspection failed during exam entry",
     });
-    await deps.diagnostics?.record({
-      ...anchors,
-      level: "warn",
-      operation: "exam_attempt.enter",
-      outcome: "failure",
-      message: "Exam entry failed: CloudShare lab has expired",
-      externalIds: {
-        ...(externalLease.trainingId ? { trainingId: externalLease.trainingId } : {}),
-        ...(externalLease.environmentExternalId
-          ? { environmentExternalId: externalLease.environmentExternalId }
-          : {}),
-      },
-      request: externalLease.request
-        ? {
-            method: externalLease.request.method,
-            path: externalLease.request.path,
-            ...(externalLease.request.query ? { query: externalLease.request.query } : {}),
-            ...(externalLease.request.headers ? { headers: externalLease.request.headers } : {}),
-            ...(externalLease.request.body !== undefined
-              ? { body: externalLease.request.body }
-              : {}),
-          }
-        : null,
-      response: externalLease.response
-        ? {
-            status: externalLease.response.status,
-            ...(externalLease.response.headers
-              ? { headers: externalLease.response.headers }
-              : {}),
-            body: externalLease.response.body,
-            ...(externalLease.response.network
-              ? { network: externalLease.response.network }
-              : {}),
-            ...(externalLease.response.tls ? { tls: externalLease.response.tls } : {}),
-          }
-        : null,
-      details: {
-        attemptStatus: "expired",
-        failureMode: "external_lease_expired",
-        environmentStatus: externalLease.environmentStatus,
-      },
-    });
-    return blocked(
-      409,
-      "Exam entry is no longer available because the CloudShare lab has expired.",
-    );
+    if (externalLease.kind === "expired") {
+      await reconcileExpiredExamAttemptExternalLease(deps, {
+        inspection: externalLease,
+        customerId: attempt.customerId ?? null,
+        examId: attempt.examId,
+        candidateId: request.candidateId,
+        candidateEmail: deps.candidateEmail ?? null,
+        source: "runtime",
+        actorType: "candidate",
+        message: "ExamAttempt expired from authoritative CloudShare external lease reconciliation",
+      });
+      await deps.diagnostics?.record({
+        ...anchors,
+        level: "warn",
+        operation: "exam_attempt.enter",
+        outcome: "failure",
+        message: "Exam entry failed: CloudShare lab has expired",
+        externalIds: {
+          ...(externalLease.trainingId ? { trainingId: externalLease.trainingId } : {}),
+          ...(externalLease.environmentExternalId
+            ? { environmentExternalId: externalLease.environmentExternalId }
+            : {}),
+        },
+        request: externalLease.request
+          ? {
+              method: externalLease.request.method,
+              path: externalLease.request.path,
+              ...(externalLease.request.query ? { query: externalLease.request.query } : {}),
+              ...(externalLease.request.headers ? { headers: externalLease.request.headers } : {}),
+              ...(externalLease.request.body !== undefined
+                ? { body: externalLease.request.body }
+                : {}),
+            }
+          : null,
+        response: externalLease.response
+          ? {
+              status: externalLease.response.status,
+              ...(externalLease.response.headers
+                ? { headers: externalLease.response.headers }
+                : {}),
+              body: externalLease.response.body,
+              ...(externalLease.response.network
+                ? { network: externalLease.response.network }
+                : {}),
+              ...(externalLease.response.tls ? { tls: externalLease.response.tls } : {}),
+            }
+          : null,
+        details: {
+          attemptStatus: "expired",
+          failureMode: "external_lease_expired",
+          environmentStatus: externalLease.environmentStatus,
+        },
+      });
+      return blocked(
+        409,
+        "Exam entry is no longer available because the CloudShare lab has expired.",
+      );
+    }
   }
 
   try {
@@ -311,4 +313,16 @@ function emptyExamRepository(): ExamRepository {
     findById: async () => null,
     listByCustomerId: async () => [],
   };
+}
+
+function hasAuthoredOpenPeriodClosed(
+  scheduledFor: Date | null | undefined,
+  exam: { readonly openPeriodMinutes: number } | null,
+  now: Date,
+): boolean {
+  if (!scheduledFor || !exam) {
+    return false;
+  }
+
+  return now.getTime() >= scheduledFor.getTime() + exam.openPeriodMinutes * 60_000;
 }

@@ -532,6 +532,119 @@ describe("getExamAttemptDashboardRuntime", () => {
     );
   });
 
+  it("does not let CloudShare training readback expire future or currently open ready attempts", async () => {
+    const exams = await makeExamRepository();
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
+    const logger = makeLogger();
+    const requestV4 = vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+      if (
+        spec.path === "/trainings/EXtraining-future/students" ||
+        spec.path === "/trainings/EXtraining-open/students"
+      ) {
+        return spec.schema.parse({ count: 0, items: [] });
+      }
+      throw new Error(`unexpected path ${spec.path}`);
+    });
+    const requestV4Detailed = vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+      if (
+        spec.path === "/trainings/EXtraining-future" ||
+        spec.path === "/trainings/EXtraining-open"
+      ) {
+        return {
+          data: spec.schema.parse({
+            id: spec.path.endsWith("future") ? "EXtraining-future" : "EXtraining-open",
+            start: "2026-06-15T16:00:00",
+            end: "2026-06-15T16:05:00",
+            status: "ended",
+          }),
+          integrationSurface: "cloudshare.v4.training.get",
+          host: "api.accelerate.cloudshare.com",
+          request: { method: "GET" as const, path: `/v4${spec.path}` },
+          response: { status: 200, body: { status: "ended" } },
+        };
+      }
+      throw new Error(`unexpected path ${spec.path}`);
+    });
+
+    await attempts.save({
+      id: "attempt-future",
+      customerId: "customer-helios",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "ready",
+      scheduledFor: new Date("2026-06-15T16:13:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    await attempts.save({
+      id: "attempt-open",
+      customerId: "customer-helios",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "ready",
+      scheduledFor: new Date("2026-06-15T16:09:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    await launches.save({
+      id: "launch-future",
+      examAttemptId: "attempt-future",
+      candidateId: "candidate-1",
+      participantEmail: "candidate@helioscx.demo",
+      trainingId: "EXtraining-future",
+      experienceId: "EXtraining-future",
+      loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/future",
+      status: "launched",
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    await launches.save({
+      id: "launch-open",
+      examAttemptId: "attempt-open",
+      candidateId: "candidate-1",
+      participantEmail: "candidate@helioscx.demo",
+      trainingId: "EXtraining-open",
+      experienceId: "EXtraining-open",
+      loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/open",
+      status: "launched",
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+
+    const dashboard = await getExamAttemptDashboardRuntime(
+      {
+        repository: exams,
+        attempts,
+        launches,
+        connections: makeConnectionRepository(),
+        cloudshare: makeCloudShareFactory({
+          requestV4: requestV4 as never,
+          requestV4Detailed: requestV4Detailed as never,
+        }),
+        diagnostics,
+        logger,
+        now: () => new Date("2026-06-15T16:12:00.000Z"),
+      },
+      { customerId: "customer-helios", candidateId: "candidate-1" },
+    );
+
+    expect(dashboard.status).toBe(200);
+    expect(dashboard.body).toMatchObject({
+      attempts: [
+        { id: "attempt-future", status: "ready" },
+        { id: "attempt-open", status: "ready" },
+      ],
+    });
+    expect(requestV4Detailed).not.toHaveBeenCalled();
+    await expect(attempts.findById("attempt-future")).resolves.toMatchObject({
+      status: "ready",
+    });
+    await expect(attempts.findById("attempt-open")).resolves.toMatchObject({
+      status: "ready",
+    });
+    await expect(diagnosticsRepository.query({ examAttemptId: "attempt-future" })).resolves.toEqual([]);
+    await expect(diagnosticsRepository.query({ examAttemptId: "attempt-open" })).resolves.toEqual([]);
+  });
+
   it("records actionable diagnostics when external lease inspection fails without marking the attempt expired", async () => {
     const exams = await makeExamRepository();
     const attempts = createInMemoryExamAttemptRepository();

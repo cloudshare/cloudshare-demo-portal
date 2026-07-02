@@ -1148,6 +1148,7 @@ describe("resumeExamAttemptRuntime", () => {
     });
     const diagnostics = { record: vi.fn().mockResolvedValue(undefined) };
     const deps = await makeResumeDeps({
+      exams: undefined,
       cloudshare: {
         forConnection: vi.fn().mockReturnValue(customerClient),
       },

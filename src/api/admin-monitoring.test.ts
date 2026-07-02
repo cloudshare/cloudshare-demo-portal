@@ -418,6 +418,7 @@ describe("handleGetAdminMonitoring", () => {
           currentAttempts: [
             makeAttempt({
               status: "suspended",
+              scheduledFor: new Date("2026-06-18T08:00:00.000Z"),
               trainingId: "EXtraining-1",
               experienceId: "EXtraining-1",
               environmentExternalId: "ENVS-expired-1",
@@ -440,6 +441,7 @@ describe("handleGetAdminMonitoring", () => {
             throw new Error(`unexpected path ${spec.path}`);
           }) as never,
         }),
+        now: () => new Date("2026-06-18T10:00:00.000Z"),
       },
       { customerId: "customer-1" },
     );

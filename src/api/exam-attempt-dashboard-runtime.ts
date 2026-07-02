@@ -107,11 +107,12 @@ export async function getExamAttemptDashboardRuntime(
     request.customerId,
     reconciledAttempts.map((attempt) => attempt.id),
   );
+  const examsById = new Map(exams.map((exam) => [exam.id, exam]));
   const externalLeaseOverrides = await deriveExternalLeaseStatusOverrides(
     deps,
     reconciledAttempts,
+    examsById,
   );
-  const examsById = new Map(exams.map((exam) => [exam.id, exam]));
 
   return {
     status: 200,
@@ -146,7 +147,9 @@ async function deriveExternalLeaseStatusOverrides(
     readonly candidateId: string;
     readonly examId: string;
     readonly status: string;
+    readonly scheduledFor?: Date | null;
   }[],
+  examsById: ReadonlyMap<string, Exam>,
 ): Promise<Map<string, CandidateDashboardAttemptItem["status"]>> {
   const overrides = new Map<string, CandidateDashboardAttemptItem["status"]>();
   if (!deps.launches || !deps.connections || !deps.cloudshare) {
@@ -159,6 +162,10 @@ async function deriveExternalLeaseStatusOverrides(
       attempt.status !== "in_progress" &&
       attempt.status !== "suspended"
     ) {
+      continue;
+    }
+    const exam = examsById.get(attempt.examId);
+    if (!hasAuthoredOpenPeriodClosed(attempt.scheduledFor ?? null, exam, deps.now)) {
       continue;
     }
 
@@ -208,6 +215,19 @@ async function deriveExternalLeaseStatusOverrides(
   }
 
   return overrides;
+}
+
+function hasAuthoredOpenPeriodClosed(
+  scheduledFor: Date | null,
+  exam: Pick<Exam, "openPeriodMinutes"> | undefined,
+  now: (() => Date) | undefined,
+): boolean {
+  if (!scheduledFor || !exam) {
+    return false;
+  }
+
+  const openPeriodEndsAt = scheduledFor.getTime() + exam.openPeriodMinutes * 60_000;
+  return (now ?? (() => new Date()))().getTime() >= openPeriodEndsAt;
 }
 
 function toCandidateDashboardExamItem(exam: Exam): CandidateDashboardExamItem {
