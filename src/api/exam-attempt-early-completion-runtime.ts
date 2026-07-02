@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { ExamAttempt } from "@/domain/exam-attempt";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { SuspendHandlerDeps, SuspendResumeResponse } from "./exam-attempt-suspend-resume-runtime";
@@ -35,7 +36,13 @@ export async function completeExamAttemptEarlyRuntime(
       return { status: 404, body: { error: "exam attempt not found" } };
     }
 
-    await markAttemptCompleted(deps, suspendedAttempt, "in_progress");
+    const completion = await tryMarkAttemptCompleted(deps, suspendedAttempt, "in_progress");
+    if (!completion.ok) {
+      return buildPersistencePendingResponse(
+        request.examAttemptId,
+        completion.correlationId,
+      );
+    }
     return {
       status: 200,
       body: { status: "completed", examAttemptId: request.examAttemptId },
@@ -43,7 +50,13 @@ export async function completeExamAttemptEarlyRuntime(
   }
 
   if (attempt.status === "suspended") {
-    await markAttemptCompleted(deps, attempt, "suspended");
+    const completion = await tryMarkAttemptCompleted(deps, attempt, "suspended");
+    if (!completion.ok) {
+      return buildPersistencePendingResponse(
+        request.examAttemptId,
+        completion.correlationId,
+      );
+    }
     return {
       status: 200,
       body: { status: "completed", examAttemptId: request.examAttemptId },
@@ -62,6 +75,50 @@ export async function completeExamAttemptEarlyRuntime(
       examAttemptId: request.examAttemptId,
       operation: "complete",
       currentStatus: attempt.status,
+    },
+  };
+}
+
+async function tryMarkAttemptCompleted(
+  deps: Pick<
+    CompleteExamAttemptEarlyHandlerDeps,
+    "attempts" | "diagnostics" | "candidateEmail" | "newCorrelationId"
+  >,
+  attempt: ExamAttempt,
+  priorStatus: ExamAttempt["status"],
+): Promise<{ readonly ok: true } | { readonly ok: false; readonly correlationId: string }> {
+  try {
+    await markAttemptCompleted(deps, attempt, priorStatus);
+    return { ok: true };
+  } catch (error) {
+    const correlationId = deps.newCorrelationId?.() ?? randomUUID();
+    const currentAttempt = await deps.attempts.findById(attempt.id).catch(() => null);
+    await recordCandidateEarlyCompletionPersistenceFailureDiagnostic(
+      deps.diagnostics,
+      currentAttempt ?? attempt,
+      priorStatus,
+      currentAttempt?.status ?? attempt.status,
+      error,
+      correlationId,
+      deps.candidateEmail,
+    );
+    return { ok: false, correlationId };
+  }
+}
+
+function buildPersistencePendingResponse(
+  examAttemptId: string,
+  correlationId: string,
+): SuspendResumeResponse {
+  return {
+    status: 202,
+    body: {
+      status: "pending",
+      operation: "complete",
+      examAttemptId,
+      retryable: true,
+      correlationId,
+      message: "Your lab has been stopped, but completion is still being saved. Retry End exam.",
     },
   };
 }
@@ -200,6 +257,45 @@ async function recordCandidateEarlyCompletionFailureDiagnostic(
         typeof cleanup.body.operation === "string" ? cleanup.body.operation : "suspend",
       currentStatus: attempt.status,
       ...(correlationId ? { correlationId } : {}),
+    },
+  });
+}
+
+async function recordCandidateEarlyCompletionPersistenceFailureDiagnostic(
+  diagnostics: DiagnosticRecorder | undefined,
+  attempt: ExamAttempt,
+  priorStatus: ExamAttempt["status"],
+  currentStatus: ExamAttempt["status"],
+  error: unknown,
+  correlationId: string,
+  candidateEmail?: string | null,
+): Promise<void> {
+  await diagnostics?.record({
+    source: "runtime",
+    level: "warn",
+    operation: "exam_attempt.complete",
+    outcome: "failure",
+    message: "Exam early completion persistence failed after CloudShare cleanup",
+    customerId: attempt.customerId ?? null,
+    candidateEmail: candidateEmail ?? null,
+    examId: attempt.examId,
+    examAttemptId: attempt.id,
+    correlationId,
+    actor: {
+      type: "candidate",
+      id: attempt.candidateId,
+      email: candidateEmail ?? null,
+    },
+    subject: {
+      type: "exam_attempt",
+      id: attempt.id,
+    },
+    details: {
+      completedBy: "candidate_early_completion",
+      failureMode: "completion_persistence_failed",
+      priorStatus,
+      currentStatus,
+      error: error instanceof Error ? error.message : String(error),
     },
   });
 }

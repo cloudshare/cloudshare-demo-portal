@@ -308,6 +308,49 @@ describe("completeExamAttemptEarlyRuntime", () => {
     expect(JSON.stringify(response.body)).not.toContain("sponsored-link-secret");
   });
 
+  it("keeps the response retryable and records diagnostics when completion persistence fails after cleanup", async () => {
+    const deps = await makeDeps("in_progress");
+    const originalSave = deps.attempts.save.bind(deps.attempts);
+    deps.attempts.save = vi.fn(async (attempt) => {
+      if (attempt.status === "completed") {
+        throw new Error("database write failed");
+      }
+      await originalSave(attempt);
+    });
+
+    const response = await completeExamAttemptEarlyRuntime(deps, { examAttemptId: "ea-1" });
+
+    expect(response).toEqual({
+      status: 202,
+      body: {
+        status: "pending",
+        operation: "complete",
+        examAttemptId: "ea-1",
+        retryable: true,
+        correlationId: "corr-complete",
+        message: "Your lab has been stopped, but completion is still being saved. Retry End exam.",
+      },
+    });
+    await expect(deps.attempts.findById("ea-1")).resolves.toMatchObject({
+      status: "suspended",
+    });
+    expect(deps.diagnostics?.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: "exam_attempt.complete",
+        outcome: "failure",
+        correlationId: "corr-complete",
+        details: expect.objectContaining({
+          completedBy: "candidate_early_completion",
+          failureMode: "completion_persistence_failed",
+          priorStatus: "in_progress",
+          currentStatus: "suspended",
+          error: "database write failed",
+        }),
+      }),
+    );
+    expect(JSON.stringify(response.body)).not.toContain("sponsored-link-secret");
+  });
+
   it.each(["ready", "scheduled", "expired", "completed"] as const)(
     "rejects early completion for a %s ExamAttempt without touching CloudShare",
     async (status) => {

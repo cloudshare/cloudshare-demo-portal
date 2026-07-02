@@ -88,7 +88,7 @@ export async function handleCandidateCompleteExamRoute(
     { examAttemptId },
   );
 
-  await recordCompleteSideEffects(services, examAttemptId, response);
+  await recordCompleteSideEffects(services, examAttemptId, response, session?.email ?? null);
   return response;
 }
 
@@ -102,19 +102,49 @@ async function recordCompleteSideEffects(
   services: CandidateEarlyCompletionServices,
   examAttemptId: string,
   response: SuspendResumeResponse,
+  candidateEmail: string | null,
 ): Promise<void> {
   if (response.status !== 200) {
     return;
   }
 
-  services.heartbeatAutoSuspend.removeHeartbeat(examAttemptId);
-  await services.audit.write({
-    id: randomUUID(),
-    examAttemptId,
-    action: "exam_completed_early",
-    outcome: "success",
-    occurredAt: new Date(),
-  } satisfies AuditRecord);
+  try {
+    services.heartbeatAutoSuspend.removeHeartbeat(examAttemptId);
+    await services.audit.write({
+      id: randomUUID(),
+      examAttemptId,
+      action: "exam_completed_early",
+      outcome: "success",
+      occurredAt: new Date(),
+    } satisfies AuditRecord);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    services.logger.warn("exam completion side effect failed", {
+      examAttemptId,
+      error: message,
+    });
+    await services.diagnosticRecorder?.record({
+      source: "runtime",
+      level: "warn",
+      operation: "exam_attempt.complete.side_effect",
+      outcome: "failure",
+      message: "Exam completion side effect failed after candidate response was completed",
+      candidateEmail,
+      examAttemptId,
+      actor: {
+        type: "candidate",
+        email: candidateEmail,
+      },
+      subject: {
+        type: "exam_attempt",
+        id: examAttemptId,
+      },
+      details: {
+        sideEffect: "heartbeat_or_audit",
+        error: message,
+      },
+    });
+  }
 }
 
 function sleep(ms: number): Promise<void> {

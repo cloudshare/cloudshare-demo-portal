@@ -134,4 +134,45 @@ describe("candidate early completion route workflow", () => {
     expect(services.heartbeatAutoSuspend.removeHeartbeat).not.toHaveBeenCalled();
     expect(services.audit.write).not.toHaveBeenCalled();
   });
+
+  it("still returns completed when post-completion audit side effects fail", async () => {
+    const services = {
+      ...makeServices(),
+      audit: { write: vi.fn().mockRejectedValue(new Error("audit unavailable")) },
+    } as CandidateEarlyCompletionServices;
+    mockCompleteExamAttemptEarlyRuntime.mockResolvedValue({
+      status: 200,
+      body: { status: "completed", examAttemptId: "ea-1" },
+    });
+
+    const response = await handleCandidateCompleteExamRoute(services, {
+      sessionId: "portal-session-1",
+      body: { examAttemptId: "ea-1" },
+      getPortalSession: vi.fn().mockResolvedValue(candidateSession),
+    });
+
+    expect(response).toEqual({
+      status: 200,
+      body: { status: "completed", examAttemptId: "ea-1" },
+    });
+    expect(services.heartbeatAutoSuspend.removeHeartbeat).toHaveBeenCalledWith("ea-1");
+    expect(services.diagnosticRecorder?.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: "exam_attempt.complete.side_effect",
+        outcome: "failure",
+        examAttemptId: "ea-1",
+        details: expect.objectContaining({
+          sideEffect: "heartbeat_or_audit",
+          error: "audit unavailable",
+        }),
+      }),
+    );
+    expect(services.logger.warn).toHaveBeenCalledWith(
+      "exam completion side effect failed",
+      expect.objectContaining({
+        examAttemptId: "ea-1",
+        error: "audit unavailable",
+      }),
+    );
+  });
 });
