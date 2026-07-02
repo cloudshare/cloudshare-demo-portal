@@ -184,6 +184,59 @@ describe("candidate home attempt state", () => {
     });
   });
 
+  it("shows a future persisted ready attempt as scheduled until the scheduled start", () => {
+    const readyAttempt = {
+      id: "attempt-ready-future",
+      examId: "exam-1",
+      scheduledFor: "2026-06-16T16:00:00.000Z",
+      status: "ready" as const,
+    };
+
+    const beforeStartView = buildScheduledAttemptViews(
+      {
+        exams: dashboard.exams,
+        attempts: [readyAttempt],
+      },
+      new Date("2026-06-16T15:59:00.000Z").getTime(),
+    )[0];
+
+    expect(beforeStartView).toMatchObject({
+      status: "ready",
+      displayStatus: "scheduled",
+      canEnter: false,
+      waitingMessage: "Enter exam becomes available at 2026-06-16 17:00.",
+    });
+    expect(
+      getCandidateCurrentAttemptLabel(
+        readyAttempt,
+        new Date("2026-06-16T15:59:00.000Z").getTime(),
+        dashboard.exams[0],
+      ),
+    ).toBe("Scheduled for 2026-06-16 17:00");
+
+    const atStartView = buildScheduledAttemptViews(
+      {
+        exams: dashboard.exams,
+        attempts: [readyAttempt],
+      },
+      new Date("2026-06-16T16:00:00.000Z").getTime(),
+    )[0];
+
+    expect(atStartView).toMatchObject({
+      status: "ready",
+      displayStatus: "ready",
+      canEnter: true,
+      waitingMessage: null,
+    });
+    expect(
+      getCandidateCurrentAttemptLabel(
+        readyAttempt,
+        new Date("2026-06-16T16:00:00.000Z").getTime(),
+        dashboard.exams[0],
+      ),
+    ).toBe("Ready for 2026-06-16 17:00");
+  });
+
   it("keeps score review available for completed Guided Journey attempts before the open window closes", () => {
     const completedAttempt = {
       id: "attempt-completed",

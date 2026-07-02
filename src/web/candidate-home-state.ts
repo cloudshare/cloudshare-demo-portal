@@ -148,10 +148,36 @@ export function getCandidateAttemptDisplayStatus(
   nowMs?: number,
   exam?: CandidateDashboardData["exams"][number] | null,
 ): CandidateDashboardData["attempts"][number]["status"] {
-  if (nowMs === undefined || !isAttemptOpenPeriodClosed(attempt, nowMs, exam)) {
+  if (nowMs === undefined) {
     return attempt.status;
   }
 
+  if (isAttemptOpenPeriodClosed(attempt, nowMs, exam)) {
+    return getAttemptClosedDisplayStatus(attempt);
+  }
+
+  if (attempt.status === "ready" && isAttemptBeforeScheduledStart(attempt, nowMs)) {
+    return "scheduled";
+  }
+
+  return attempt.status;
+}
+
+function isAttemptBeforeScheduledStart(
+  attempt: CandidateDashboardData["attempts"][number],
+  nowMs: number,
+): boolean {
+  if (!attempt.scheduledFor) {
+    return false;
+  }
+
+  const scheduledForMs = new Date(attempt.scheduledFor).getTime();
+  return Number.isFinite(scheduledForMs) && scheduledForMs > nowMs;
+}
+
+function getAttemptClosedDisplayStatus(
+  attempt: CandidateDashboardData["attempts"][number],
+): CandidateDashboardData["attempts"][number]["status"] {
   if (attempt.status === "scheduled" || attempt.status === "ready") {
     return "expired";
   }
