@@ -5,9 +5,12 @@ import type {
 } from "@/domain/cloudshare-connection";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { LabLaunchRepository } from "@/domain/lab-launch";
+import type {
+  CloudShareRequestDiagnostics,
+  CloudShareResponseDiagnostics,
+} from "@/integrations/cloudshare/client";
 import {
   inspectCloudShareEnvironmentLease,
-  inspectCloudShareExperienceLease,
   inspectCloudShareTrainingLease,
   type ActiveCloudShareExternalLease,
   type ExpiredCloudShareExternalLease,
@@ -95,7 +98,7 @@ export async function inspectExamAttemptExternalLease(
           now: (deps.now ?? (() => new Date()))(),
         })
       : experienceId
-        ? await inspectCloudShareExperienceLease(client, experienceId, {
+        ? await inspectCloudShareTrainingLease(client, experienceId, {
             now: (deps.now ?? (() => new Date()))(),
           })
         : null;
@@ -158,8 +161,8 @@ export async function reconcileExpiredExamAttemptExternalLease(
     actor: makeActor(input.actorType, input.candidateId ?? attempt.candidateId, input.candidateEmail),
     subject: { type: "exam_attempt", id: input.inspection.examAttemptId },
     externalIds: toExternalIds(input.inspection),
-    request: input.inspection.request ?? null,
-    response: input.inspection.response ?? null,
+    request: toDiagnosticRequestRecord(input.inspection.request),
+    response: toDiagnosticResponseRecord(input.inspection.response),
     details: {
       attemptedOperation: input.inspection.attemptedOperation,
       integrationSurface: input.inspection.integrationSurface,
@@ -209,8 +212,8 @@ export async function recordExamAttemptExternalLeaseInspectionFailure(
     actor: makeActor(input.actorType, input.candidateId ?? null, input.candidateEmail),
     subject: { type: "exam_attempt", id: input.inspection.examAttemptId },
     externalIds: toExternalIds(input.inspection),
-    request: input.inspection.request ?? null,
-    response: input.inspection.response ?? null,
+    request: toDiagnosticRequestRecord(input.inspection.request),
+    response: toDiagnosticResponseRecord(input.inspection.response),
     details: {
       attemptedOperation: input.inspection.attemptedOperation,
       integrationSurface: input.inspection.integrationSurface,
@@ -238,22 +241,22 @@ function unknownInspection(input: {
         : "experience",
     attemptedOperation: input.environmentExternalId
       ? "get_environment"
-      : input.trainingId
+      : input.trainingId || input.experienceId
         ? "get_training"
-        : "get_experience",
+        : "get_training",
     integrationSurface: input.environmentExternalId
       ? "cloudshare.v3.env.get"
-      : input.trainingId
+      : input.trainingId || input.experienceId
         ? "cloudshare.v4.training.get"
-        : "cloudshare.v4.experience.get",
+        : "cloudshare.v4.training.get",
     method: "GET",
     path: input.environmentExternalId
       ? `/v3/envs/${input.environmentExternalId}`
       : input.trainingId
         ? `/v4/trainings/${input.trainingId}`
         : input.experienceId
-          ? `/v4/experiences/${input.experienceId}`
-          : "/v4/experiences/{experienceId}",
+          ? `/v4/trainings/${input.experienceId}`
+          : "/v4/trainings/{trainingId}",
     examAttemptId: input.examAttemptId,
     trainingId: input.trainingId,
     experienceId: input.experienceId,
@@ -281,5 +284,37 @@ function makeActor(
     type,
     id,
     email: email ?? null,
+  };
+}
+
+function toDiagnosticRequestRecord(
+  request: CloudShareRequestDiagnostics | null | undefined,
+): Record<string, unknown> | null {
+  if (!request) {
+    return null;
+  }
+
+  return {
+    method: request.method,
+    path: request.path,
+    ...(request.query ? { query: request.query } : {}),
+    ...(request.headers ? { headers: request.headers } : {}),
+    ...(request.body !== undefined ? { body: request.body } : {}),
+  };
+}
+
+function toDiagnosticResponseRecord(
+  response: CloudShareResponseDiagnostics | null | undefined,
+): Record<string, unknown> | null {
+  if (!response) {
+    return null;
+  }
+
+  return {
+    status: response.status,
+    ...(response.headers ? { headers: response.headers } : {}),
+    body: response.body,
+    ...(response.network ? { network: response.network } : {}),
+    ...(response.tls ? { tls: response.tls } : {}),
   };
 }

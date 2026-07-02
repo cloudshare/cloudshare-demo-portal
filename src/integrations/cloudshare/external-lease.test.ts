@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import type { CloudShareClient } from "./client";
+import type {
+  CloudShareClient,
+  CloudShareDetailedResult,
+  V4RequestSpec,
+} from "./client";
 import { CloudShareRequestError } from "./errors";
 import {
   inspectCloudShareEnvironmentLease,
@@ -15,7 +19,7 @@ function makeClient(overrides: Partial<CloudShareClient> = {}): CloudShareClient
     requestV4Detailed: vi.fn(),
     requestV3TextDetailed: vi.fn(),
     ...overrides,
-  };
+  } as unknown as CloudShareClient;
 }
 
 describe("external lease inspection", () => {
@@ -60,27 +64,29 @@ describe("external lease inspection", () => {
 
   it("treats a passed training End as an expired external lease when no environment id is correlated", async () => {
     const client = makeClient({
-      requestV4Detailed: vi.fn(async () => ({
-        data: {
-          id: "EXtraining-1",
-          end: "2026-06-15T15:59:00.000Z",
-          status: "active",
-        },
-        host: "api.accelerate.cloudshare.com",
-        integrationSurface: "cloudshare.v4.training.get",
-        request: {
-          method: "GET",
-          path: "/v4/trainings/EXtraining-1",
-        },
-        response: {
-          status: 200,
-          body: {
+      requestV4Detailed: vi.fn().mockImplementation(
+        async <T>(spec: V4RequestSpec<T>): Promise<CloudShareDetailedResult<T>> => ({
+          data: {
             id: "EXtraining-1",
             end: "2026-06-15T15:59:00.000Z",
             status: "active",
+          } as T,
+          host: "api.accelerate.cloudshare.com",
+          integrationSurface: "cloudshare.v4.training.get",
+          request: {
+            method: spec.method,
+            path: `/v4${spec.path}`,
           },
-        },
-      })),
+          response: {
+            status: 200,
+            body: {
+              id: "EXtraining-1",
+              end: "2026-06-15T15:59:00.000Z",
+              status: "active",
+            },
+          },
+        }),
+      ),
     });
 
     const lease = await inspectCloudShareTrainingLease(client, "EXtraining-1", {

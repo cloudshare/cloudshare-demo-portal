@@ -11,6 +11,10 @@ import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
+import type {
+  CloudShareDetailedResult,
+  V4RequestSpec,
+} from "@/integrations/cloudshare/client";
 import { CloudShareRequestError } from "@/integrations/cloudshare";
 import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
@@ -343,32 +347,34 @@ describe("handleEnterExam", () => {
             requestV3: vi.fn(),
             requestV3Text: vi.fn(),
             requestV4: vi.fn(),
-            requestV4Detailed: vi.fn(async (spec: { path: string }) => {
-              if (spec.path === "/trainings/EXtraining-1") {
-                return {
-                  data: {
-                    id: "EXtraining-1",
-                    end: "2026-06-15T15:59:00.000Z",
-                    status: "active",
-                  },
-                  host: "api.accelerate.cloudshare.com",
-                  integrationSurface: "cloudshare.v4.training.get",
-                  request: {
-                    method: "GET",
-                    path: "/v4/trainings/EXtraining-1",
-                  },
-                  response: {
-                    status: 200,
-                    body: {
+            requestV4Detailed: vi.fn().mockImplementation(
+              async <T>(spec: V4RequestSpec<T>): Promise<CloudShareDetailedResult<T>> => {
+                if (spec.path === "/trainings/EXtraining-1") {
+                  return {
+                    data: {
                       id: "EXtraining-1",
                       end: "2026-06-15T15:59:00.000Z",
                       status: "active",
+                    } as T,
+                    host: "api.accelerate.cloudshare.com",
+                    integrationSurface: "cloudshare.v4.training.get",
+                    request: {
+                      method: spec.method,
+                      path: `/v4${spec.path}`,
                     },
-                  },
-                };
-              }
-              throw new Error(`unexpected path ${spec.path}`);
-            }),
+                    response: {
+                      status: 200,
+                      body: {
+                        id: "EXtraining-1",
+                        end: "2026-06-15T15:59:00.000Z",
+                        status: "active",
+                      },
+                    },
+                  };
+                }
+                throw new Error(`unexpected path ${spec.path}`);
+              },
+            ),
           }),
         },
         diagnostics,
@@ -425,6 +431,90 @@ describe("handleEnterExam", () => {
         }),
       ]),
     );
+  });
+
+  it("treats an experience-only launch id as the CloudShare training resource when reconciling expiry", async () => {
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+
+    await attempts.save({
+      id: "attempt-expired-experience-only",
+      customerId: "customer-1",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "ready",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    await launches.save({
+      id: "launch-1",
+      examAttemptId: "attempt-expired-experience-only",
+      candidateId: "candidate-1",
+      participantEmail: "candidate@helioscx.demo",
+      experienceId: "EXtraining-1",
+      loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret",
+      status: "launched",
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+
+    const requestV4Detailed = vi.fn().mockImplementation(
+      async <T>(spec: V4RequestSpec<T>): Promise<CloudShareDetailedResult<T>> => {
+        if (spec.path === "/trainings/EXtraining-1") {
+          return {
+            data: {
+              id: "EXtraining-1",
+              end: "2026-06-15T15:59:00.000Z",
+              status: "active",
+            } as T,
+            host: "api.accelerate.cloudshare.com",
+            integrationSurface: "cloudshare.v4.training.get",
+            request: {
+              method: spec.method,
+              path: `/v4${spec.path}`,
+            },
+            response: {
+              status: 200,
+              body: {
+                id: "EXtraining-1",
+                end: "2026-06-15T15:59:00.000Z",
+                status: "active",
+              },
+            },
+          };
+        }
+        throw new Error(`unexpected path ${spec.path}`);
+      },
+    );
+
+    const response = await handleEnterExam(
+      {
+        attempts,
+        launches,
+        connections: makeConnections(),
+        cloudshare: {
+          forConnection: () => ({
+            requestV3: vi.fn(),
+            requestV3Text: vi.fn(),
+            requestV4: vi.fn(),
+            requestV4Detailed,
+          }),
+        },
+        logger: makeLogger(),
+        now: () => new Date("2026-06-15T16:00:00.000Z"),
+      },
+      { examAttemptId: "attempt-expired-experience-only", candidateId: "candidate-1" },
+    );
+
+    expect(response.status).toBe(409);
+    expect(requestV4Detailed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "GET",
+        path: "/trainings/EXtraining-1",
+      }),
+    );
+    await expect(attempts.findById("attempt-expired-experience-only")).resolves.toMatchObject({
+      status: "expired",
+    });
   });
 
   it("reconciles runtime exhaustion before redirect and completes the attempt instead of entering", async () => {

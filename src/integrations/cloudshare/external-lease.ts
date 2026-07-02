@@ -1,5 +1,9 @@
 import { z } from "zod";
-import type { CloudShareClient } from "./client";
+import type {
+  CloudShareClient,
+  CloudShareRequestDiagnostics,
+  CloudShareResponseDiagnostics,
+} from "./client";
 import {
   CloudShareRequestError,
   CloudShareResponseError,
@@ -24,20 +28,10 @@ const v4TrainingSchema = z.object({
   Status: z.string().min(1).optional(),
 });
 
-const v4ExperienceSchema = z.object({
-  id: z.string().min(1),
-  end: z.string().datetime().optional(),
-  End: z.string().datetime().optional(),
-  expiresAt: z.string().datetime().optional(),
-  ExpiresAt: z.string().datetime().optional(),
-  status: z.string().min(1).optional(),
-  Status: z.string().min(1).optional(),
-});
-
 type LeaseTarget = "environment" | "training" | "experience";
 type LeaseFailureMode = "http_status" | "transport" | "unexpected_response" | "unknown";
 type LeaseReason = "not_found" | "status_terminal" | "end_elapsed";
-type LeaseAttemptedOperation = "get_environment" | "get_training" | "get_experience";
+type LeaseAttemptedOperation = "get_environment" | "get_training";
 
 interface LeaseEvidenceBase {
   readonly target: LeaseTarget;
@@ -46,8 +40,8 @@ interface LeaseEvidenceBase {
   readonly method: string;
   readonly path: string;
   readonly host?: string | null;
-  readonly request?: Readonly<Record<string, unknown>> | null;
-  readonly response?: Readonly<Record<string, unknown>> | null;
+  readonly request?: CloudShareRequestDiagnostics | null;
+  readonly response?: CloudShareResponseDiagnostics | null;
   readonly environmentStatus?: string | null;
   readonly leaseEndsAt?: string | null;
   readonly responseStatus?: number | null;
@@ -177,59 +171,14 @@ export async function inspectCloudShareTrainingLease(
   }
 }
 
-export async function inspectCloudShareExperienceLease(
-  client: CloudShareClient,
-  experienceId: string,
-  input: { readonly now: Date },
-): Promise<CloudShareExternalLease> {
-  try {
-    const detailed = client.requestV4Detailed
-      ? await client.requestV4Detailed({
-          method: "GET",
-          path: `/experiences/${experienceId}`,
-          schema: v4ExperienceSchema,
-        })
-      : null;
-    const payload = detailed
-      ? detailed.data
-      : await client.requestV4({
-          method: "GET",
-          path: `/experiences/${experienceId}`,
-          schema: v4ExperienceSchema,
-        });
-    return mapTimedLeaseSuccess({
-      target: "experience",
-      attemptedOperation: "get_experience",
-      integrationSurface: detailed?.integrationSurface ?? "cloudshare.v4.experience.get",
-      fallbackPath: `/v4/experiences/${experienceId}`,
-      host: detailed?.host ?? null,
-      request: detailed?.request ?? null,
-      response: detailed?.response ?? null,
-      status: payload.status ?? payload.Status ?? null,
-      leaseEndsAt:
-        payload.end ?? payload.End ?? payload.expiresAt ?? payload.ExpiresAt ?? null,
-      now: input.now,
-    });
-  } catch (error) {
-    return mapLeaseFailure({
-      target: "experience",
-      attemptedOperation: "get_experience",
-      integrationSurface: "cloudshare.v4.experience.get",
-      fallbackPath: `/v4/experiences/${experienceId}`,
-      error,
-      notFoundStatus: "deleted",
-    });
-  }
-}
-
 function mapTimedLeaseSuccess(input: {
   readonly target: LeaseTarget;
   readonly attemptedOperation: LeaseAttemptedOperation;
   readonly integrationSurface: string;
   readonly fallbackPath: string;
   readonly host: string | null;
-  readonly request: Readonly<Record<string, unknown>> | null;
-  readonly response: Readonly<Record<string, unknown>> | null;
+  readonly request: CloudShareRequestDiagnostics | null;
+  readonly response: CloudShareResponseDiagnostics | null;
   readonly status: string | null;
   readonly leaseEndsAt: string | null;
   readonly now: Date;
@@ -376,7 +325,7 @@ function mapLeaseFailure(input: {
 function requestEvidenceFromContext(
   context: Record<string, unknown> | undefined,
   fallbackPath: string,
-): Readonly<Record<string, unknown>> | null {
+): CloudShareRequestDiagnostics | null {
   if (!context) {
     return {
       method: "GET",
@@ -384,10 +333,14 @@ function requestEvidenceFromContext(
     };
   }
   return {
-    method: asString(context.method) ?? "GET",
+    method: asMethod(context.method) ?? "GET",
     path: asString(context.path) ?? fallbackPath,
-    ...(isRecord(context.requestQuery) ? { query: context.requestQuery } : {}),
-    ...(isRecord(context.requestHeaders) ? { headers: context.requestHeaders } : {}),
+    ...(isRecord(context.requestQuery)
+      ? { query: context.requestQuery as Record<string, string> }
+      : {}),
+    ...(isRecord(context.requestHeaders)
+      ? { headers: context.requestHeaders as Record<string, string> }
+      : {}),
     ...(context.requestBody !== undefined ? { body: context.requestBody } : {}),
   };
 }
@@ -395,16 +348,22 @@ function requestEvidenceFromContext(
 function responseEvidenceFromContext(
   status: number | undefined,
   context: Record<string, unknown> | undefined,
-): Readonly<Record<string, unknown>> | null {
-  if (status === undefined && !context) {
+): CloudShareResponseDiagnostics | null {
+  if (status === undefined) {
     return null;
   }
   return {
-    ...(typeof status === "number" ? { status } : {}),
-    ...(isRecord(context?.responseHeaders) ? { headers: context?.responseHeaders } : {}),
-    ...(context?.responseBody !== undefined ? { body: context.responseBody } : {}),
-    ...(isRecord(context?.network) ? { network: context.network } : {}),
-    ...(isRecord(context?.tls) ? { tls: context.tls } : {}),
+    status,
+    ...(isRecord(context?.responseHeaders)
+      ? { headers: context.responseHeaders as Record<string, string | string[]> }
+      : {}),
+    body: context?.responseBody ?? null,
+    ...(isRecord(context?.network)
+      ? { network: context.network as CloudShareResponseDiagnostics["network"] }
+      : {}),
+    ...(isRecord(context?.tls)
+      ? { tls: context.tls as CloudShareResponseDiagnostics["tls"] }
+      : {}),
   };
 }
 
@@ -439,6 +398,12 @@ function asString(value: unknown): string | null {
 
 function asNumber(value: unknown): number | null {
   return typeof value === "number" ? value : null;
+}
+
+function asMethod(value: unknown): "GET" | "POST" | "PUT" | "DELETE" | null {
+  return value === "GET" || value === "POST" || value === "PUT" || value === "DELETE"
+    ? value
+    : null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

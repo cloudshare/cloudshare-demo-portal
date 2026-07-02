@@ -519,13 +519,14 @@ describe("getExamAttemptDashboardRuntime", () => {
             reason: "not_found",
             responseStatus: 404,
           }),
-          request: {
+          request: expect.objectContaining({
             method: "GET",
             path: "/v3/envs/ENVS-expired-1",
-          },
-          response: {
+          }),
+          response: expect.objectContaining({
             status: 404,
-          },
+            body: null,
+          }),
         }),
       ]),
     );

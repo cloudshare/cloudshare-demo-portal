@@ -1184,13 +1184,14 @@ describe("resumeExamAttemptRuntime", () => {
         operation: "exam_attempt.expired",
         outcome: "success",
         examAttemptId: "ea-1",
-        request: {
+        request: expect.objectContaining({
           method: "GET",
           path: "/v3/envs/ENVS2n38LTNdcC4sHsqnjRzg2",
-        },
-        response: {
+        }),
+        response: expect.objectContaining({
           status: 404,
-        },
+          body: null,
+        }),
         details: expect.objectContaining({
           attemptedOperation: "get_environment",
           integrationSurface: "cloudshare.v3.env.get",
