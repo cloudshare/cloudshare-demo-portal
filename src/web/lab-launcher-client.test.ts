@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   loadCandidateLabStatus,
+  endLabAttempt,
   preflightLabAction,
   readHeartbeatAttemptStatus,
   resumeLabAttempt,
@@ -322,6 +323,69 @@ describe("lab launcher client helpers", () => {
         scheduledFor: "2026-06-18T09:00:00.000Z",
       },
       message: "Examination complete.",
+    });
+  });
+
+  it("posts End exam to the completion API and returns completed when cleanup succeeds", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        status: "completed",
+        examAttemptId: "attempt-1",
+      }),
+    });
+
+    const result = await endLabAttempt(fetchImpl, "attempt-1");
+
+    expect(fetchImpl).toHaveBeenCalledWith("/api/exam/complete", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ examAttemptId: "attempt-1" }),
+    });
+    expect(result).toEqual({
+      kind: "completed",
+      message: "Examination complete.",
+    });
+  });
+
+  it("refreshes authoritative status when End exam cleanup is pending", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 202,
+        json: async () => ({
+          status: "pending",
+          operation: "complete",
+          retryable: true,
+          message: "CloudShare is still stopping your lab. Wait a few seconds, then retry End exam.",
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          examAttemptId: "attempt-1",
+          examTitle: "Helios Guided Journey",
+          timeLimitMinutes: 60,
+          status: "in_progress",
+          scheduledFor: "2026-06-18T09:00:00.000Z",
+        }),
+      });
+
+    const result = await endLabAttempt(fetchImpl, "attempt-1");
+
+    expect(result).toEqual({
+      kind: "pending",
+      labStatus: {
+        examAttemptId: "attempt-1",
+        examTitle: "Helios Guided Journey",
+        timeLimitMinutes: 60,
+        status: "in_progress",
+        scheduledFor: "2026-06-18T09:00:00.000Z",
+      },
+      message: "CloudShare is still stopping your lab. Wait a few seconds, then retry End exam.",
     });
   });
 

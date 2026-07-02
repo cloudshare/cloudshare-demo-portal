@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { POST as suspendPOST } from "../../app/api/exam/suspend/route";
 import { POST as resumePOST } from "../../app/api/exam/resume/route";
+import { POST as completePOST } from "../../app/api/exam/complete/route";
 import { POST as heartbeatPOST } from "../../app/api/heartbeat/route";
 
 const {
@@ -116,12 +117,15 @@ describe("candidate exam mutation routes", () => {
 
     const suspendResponse = await suspendPOST(makeRequest("http://localhost/api/exam/suspend"));
     const resumeResponse = await resumePOST(makeRequest("http://localhost/api/exam/resume"));
+    const completeResponse = await completePOST(makeRequest("http://localhost/api/exam/complete"));
     const heartbeatResponse = await heartbeatPOST(makeRequest("http://localhost/api/heartbeat"));
 
     expect(suspendResponse.status).toBe(401);
     expect(await suspendResponse.json()).toEqual({ error: "unauthorized" });
     expect(resumeResponse.status).toBe(401);
     expect(await resumeResponse.json()).toEqual({ error: "unauthorized" });
+    expect(completeResponse.status).toBe(401);
+    expect(await completeResponse.json()).toEqual({ error: "unauthorized" });
     expect(heartbeatResponse.status).toBe(401);
     expect(await heartbeatResponse.json()).toEqual({ error: "unauthorized" });
 
@@ -144,16 +148,19 @@ describe("candidate exam mutation routes", () => {
 
     const suspendResponse = await suspendPOST(makeRequest("http://localhost/api/exam/suspend"));
     const resumeResponse = await resumePOST(makeRequest("http://localhost/api/exam/resume"));
+    const completeResponse = await completePOST(makeRequest("http://localhost/api/exam/complete"));
     const heartbeatResponse = await heartbeatPOST(makeRequest("http://localhost/api/heartbeat"));
 
     expect(suspendResponse.status).toBe(403);
     expect(await suspendResponse.json()).toEqual({ error: "forbidden" });
     expect(resumeResponse.status).toBe(403);
     expect(await resumeResponse.json()).toEqual({ error: "forbidden" });
+    expect(completeResponse.status).toBe(403);
+    expect(await completeResponse.json()).toEqual({ error: "forbidden" });
     expect(heartbeatResponse.status).toBe(403);
     expect(await heartbeatResponse.json()).toEqual({ error: "forbidden" });
 
-    expect(services.examAttempts.findById).toHaveBeenCalledTimes(3);
+    expect(services.examAttempts.findById).toHaveBeenCalledTimes(4);
     expect(services.heartbeatAutoSuspend.recordHeartbeat).not.toHaveBeenCalled();
     expect(services.audit.write).not.toHaveBeenCalled();
   });

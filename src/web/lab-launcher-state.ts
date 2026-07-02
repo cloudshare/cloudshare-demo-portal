@@ -5,6 +5,7 @@ export type LaunchState =
   | "launching"
   | "open"
   | "suspending"
+  | "ending"
   | "suspended"
   | "completed"
   | "error";
@@ -144,6 +145,14 @@ export function getLauncherPresentation(input: {
         tone: "info",
         title: "Suspending lab",
         detail: "The portal is pausing your CloudShare lab and exam clock.",
+        primaryActionLabel: null,
+        supportMessage: null,
+      };
+    case "ending":
+      return {
+        tone: "info",
+        title: "Ending exam",
+        detail: "The portal is stopping your CloudShare lab before completing this ExamAttempt.",
         primaryActionLabel: null,
         supportMessage: null,
       };

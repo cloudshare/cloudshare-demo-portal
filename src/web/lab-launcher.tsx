@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { openEnterExamWindow } from "./enter-exam";
 import { isLabWindowOpen } from "./lab-window";
-import { preflightLabAction, readHeartbeatAttemptStatus, resumeLabAttempt, suspendLabAttempt, type CandidateLabStatus, type AttemptStatus } from "./lab-launcher-client";
+import { endLabAttempt, preflightLabAction, readHeartbeatAttemptStatus, resumeLabAttempt, suspendLabAttempt, type CandidateLabStatus, type AttemptStatus } from "./lab-launcher-client";
 import { describeAndReportLaunchFailure } from "./lab-launcher-runtime-diagnostics";
 import {
   getAttemptStatusAfterLaunchTransition,
@@ -328,6 +328,52 @@ export function LabLauncher({
     }
   }
 
+  async function endNow() {
+    if (actionInFlightRef.current) {
+      return;
+    }
+    actionInFlightRef.current = true;
+    if (currentAttemptStatusRef.current === "completed") {
+      setState("completed");
+      setMessage("Examination complete.");
+      actionInFlightRef.current = false;
+      return;
+    }
+    stopHeartbeat();
+    stopChildPoll();
+    setState("ending");
+    setMessage("");
+    try {
+      const result = await endLabAttempt(fetch, examAttemptId);
+      if (result.kind === "pending") {
+        if (result.labStatus) {
+          reportLabStatusLoaded(result.labStatus);
+          reportAttemptStatusChange(result.labStatus.status);
+        }
+        setState(result.labStatus?.status === "suspended" ? "suspended" : "open");
+        setMessage(result.message);
+        return;
+      }
+      if (result.kind === "blocked") {
+        if (result.labStatus) {
+          reportLabStatusLoaded(result.labStatus);
+          reportAttemptStatusChange(result.labStatus.status);
+        }
+        setState(result.labStatus?.status === "suspended" ? "suspended" : "error");
+        setMessage(result.message);
+        return;
+      }
+      setState("completed");
+      setMessage(result.message);
+      reportAttemptStatusChange("completed");
+    } catch (err) {
+      setState("error");
+      setMessage(err instanceof Error ? err.message : "end exam failed");
+    } finally {
+      actionInFlightRef.current = false;
+    }
+  }
+
   useEffect(() => {
     const target = getLauncherSyncTarget(currentAttemptStatus);
     if (target) {
@@ -376,6 +422,12 @@ export function LabLauncher({
   });
   const recoveryAction =
     state === "error" ? getLauncherRecoveryAction(launcherAttemptStatus, openPeriodClosed) : null;
+  const showEndExam =
+    (launcherAttemptStatus === "in_progress" || launcherAttemptStatus === "suspended") &&
+    state !== "completed" &&
+    state !== "launching" &&
+    state !== "suspending" &&
+    state !== "ending";
 
   return (
     <section
@@ -450,6 +502,11 @@ export function LabLauncher({
               Suspend lab
             </button>
           ) : null}
+          {showEndExam ? (
+            <button type="button" onClick={endNow} style={secondaryButtonStyle}>
+              End exam
+            </button>
+          ) : null}
         </div>
       </div>
     </section>
@@ -462,5 +519,14 @@ const primaryButtonStyle = {
   border: "1px solid #0b5d3b",
   backgroundColor: "#0b5d3b",
   color: "#ffffff",
+  fontWeight: 700,
+} as const;
+
+const secondaryButtonStyle = {
+  padding: "0.75rem 1rem",
+  borderRadius: "8px",
+  border: "1px solid #9aa5b1",
+  backgroundColor: "#ffffff",
+  color: "#14213d",
   fontWeight: 700,
 } as const;

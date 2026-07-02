@@ -16,6 +16,7 @@ export type AuditAction =
   | "lab_suspend_failed"
   | "lab_resumed"
   | "lab_resume_failed"
+  | "exam_completed_early"
   | "score_retrieved";
 
 export interface AuditRecord {
