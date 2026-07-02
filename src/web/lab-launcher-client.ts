@@ -30,6 +30,9 @@ export async function loadCandidateLabStatus(
   );
   const json = await response.json().catch(() => ({}));
   if (!response.ok) {
+    if (response.status === 401) {
+      throw new Error("Your portal session has expired. Log in again to continue.");
+    }
     throw new Error(readError(json, "Failed to load exam details."));
   }
   return json as CandidateLabStatus;

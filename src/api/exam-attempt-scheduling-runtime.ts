@@ -154,7 +154,10 @@ export async function scheduleExamAttemptRuntime(
     };
   } catch (error) {
     if (error instanceof ScheduleValidationError) {
-      return { status: 400, body: { error: error.message } };
+      return {
+        status: 400,
+        body: { error: toCandidateScheduleValidationMessage(error) },
+      };
     }
     if (error instanceof ScheduleExamNotFoundError) {
       return { status: 404, body: { error: "Published exam not found." } };
@@ -203,6 +206,16 @@ export async function scheduleExamAttemptRuntime(
     }
     throw error;
   }
+}
+
+function toCandidateScheduleValidationMessage(error: ScheduleValidationError): string {
+  if (error.message === "scheduledFor must be in the future.") {
+    return "Choose a future date and time before scheduling.";
+  }
+  if (error.message === "scheduledFor must be a valid datetime.") {
+    return "Choose a valid date and time before scheduling.";
+  }
+  return error.message;
 }
 
 function createTeamReadDiagnosticObserver(input: {

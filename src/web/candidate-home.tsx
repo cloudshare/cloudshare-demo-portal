@@ -12,6 +12,7 @@ import {
 import {
   buildCandidateExamDurationLabels,
   buildScheduledAttemptViews,
+  COLD_START_WARNING_MESSAGE,
   getAttemptWaitingMessage,
   getLatestAttemptForExam,
   getNextEnterabilityWakeUpDelayMs,
@@ -180,10 +181,9 @@ export function CandidateHome({ email }: CandidateHomeProps) {
       }));
       setNowMs(Date.now());
       if (result.coldStartLikely) {
-        const message = "Scheduled within five hours: CloudShare may cold-start the environment on login.";
         setScheduleFeedback((current) => ({
           ...current,
-          [examId]: { kind: "warning", message },
+          [examId]: { kind: "warning", message: COLD_START_WARNING_MESSAGE },
         }));
       }
     } catch (cause) {
@@ -396,6 +396,11 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                           )}
                         </div>
                       )}
+                      {attempt.coldStartWarning ? (
+                        <p role="status" style={warningPanelStyle}>
+                          {attempt.coldStartWarning}
+                        </p>
+                      ) : null}
                     </div>
                   </article>
                 );
@@ -698,4 +703,11 @@ const messagePanelStyle: CSSProperties = {
   borderRadius: "8px",
   background: "#f8fafc",
   color: "#334155",
+};
+
+const warningPanelStyle: CSSProperties = {
+  ...messagePanelStyle,
+  color: "#7a4b00",
+  background: "#fff8eb",
+  border: "1px solid #f0d8a8",
 };

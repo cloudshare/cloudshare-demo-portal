@@ -16,6 +16,7 @@ export interface CandidateScheduledAttemptView {
   readonly displayStatus: CandidateDashboardData["attempts"][number]["status"];
   readonly canEnter: boolean;
   readonly waitingMessage: string | null;
+  readonly coldStartWarning: string | null;
 }
 
 export interface CandidateAttemptPrimaryAction {
@@ -35,6 +36,9 @@ export function buildCandidateExamDurationLabels(
 
 const ENTERABILITY_TIMER_FUZZ_MS = 250;
 export const MAX_ENTERABILITY_WAKE_UP_DELAY_MS = 24 * 60 * 60 * 1000;
+export const COLD_START_WARNING_MESSAGE =
+  "Scheduled within five hours: CloudShare may cold-start the environment on login.";
+const COLD_START_WARNING_WINDOW_MS = 5 * 60 * 60 * 1000;
 
 export function getLatestAttemptForExam(
   attempts: CandidateDashboardData["attempts"],
@@ -183,8 +187,45 @@ export function buildScheduledAttemptViews(
         displayStatus: getCandidateAttemptDisplayStatus(attempt, nowMs, exam),
         canEnter: canEnterAttempt(attempt, nowMs, exam),
         waitingMessage: getAttemptWaitingMessage(attempt, nowMs, exam),
+        coldStartWarning: getAttemptColdStartWarning(attempt, nowMs, exam),
       };
     });
+}
+
+export function getAttemptColdStartWarning(
+  attempt: CandidateDashboardData["attempts"][number] | null,
+  nowMs: number,
+  exam?: CandidateDashboardData["exams"][number] | null,
+): string | null {
+  if (!attempt?.scheduledFor) {
+    return null;
+  }
+
+  if (isAttemptOpenPeriodClosed(attempt, nowMs, exam)) {
+    return null;
+  }
+
+  if (
+    attempt.status !== "scheduled" &&
+    attempt.status !== "ready" &&
+    attempt.status !== "in_progress" &&
+    attempt.status !== "suspended"
+  ) {
+    return null;
+  }
+
+  const scheduledForMs = new Date(attempt.scheduledFor).getTime();
+  if (!Number.isFinite(scheduledForMs)) {
+    return null;
+  }
+
+  const msUntilStart = scheduledForMs - nowMs;
+  const msSinceStart = nowMs - scheduledForMs;
+
+  return msUntilStart < COLD_START_WARNING_WINDOW_MS &&
+    msSinceStart <= COLD_START_WARNING_WINDOW_MS
+    ? COLD_START_WARNING_MESSAGE
+    : null;
 }
 
 function getAttemptOpenPeriodEnd(
