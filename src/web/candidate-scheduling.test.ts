@@ -110,4 +110,27 @@ describe("candidate scheduling client", () => {
       "CloudShare provisioning failed for the scheduled exam. Reference ID: corr-123.",
     );
   });
+
+  it("surfaces overlapping-attempt scheduling copy with the next available time", async () => {
+    await expect(
+      scheduleCandidateExam(
+        vi.fn().mockResolvedValue({
+          ok: false,
+          status: 409,
+          json: async () => ({
+            error:
+              "Another attempt for this Exam is still active or available. You can schedule this Exam again after 2026-06-15T17:30:00.000Z.",
+            code: "exam_attempt_overlap",
+            nextAvailableAt: "2026-06-15T17:30:00.000Z",
+          }),
+        }),
+        {
+          examId: "exam-1",
+          scheduledFor: "2026-06-15T17:00:00.000Z",
+        },
+      ),
+    ).rejects.toThrow(
+      "Another attempt for this Exam is still active or available. You can schedule this Exam again after 2026-06-15T17:30:00.000Z.",
+    );
+  });
 });

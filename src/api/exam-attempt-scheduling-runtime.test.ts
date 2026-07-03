@@ -371,4 +371,64 @@ describe("ExamAttempt scheduling runtime", () => {
       body: { error: "Choose a future date and time before scheduling." },
     });
   });
+
+  it("returns 409 with next available time for overlapping same-Exam attempts before CloudShare provisioning", async () => {
+    const attempts = createInMemoryExamAttemptRepository();
+    await attempts.save({
+      id: "attempt-existing",
+      customerId: "customer-helios",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "ready",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    const requestV3 = vi.fn();
+    const requestV4Detailed = vi.fn();
+
+    const response = await scheduleExamAttemptRuntime(
+      {
+        exams: await makeExamRepository(),
+        attempts,
+        launches: createInMemoryLabLaunchRepository(),
+        audit: createInMemoryAuditRepository(),
+        eventLog: createInMemoryEventLogRepository(),
+        connections: makeConnectionRepository(),
+        cloudshare: makeCloudShareFactory({
+          requestV3: requestV3 as unknown as ReturnType<
+            CloudShareClientFactory["forConnection"]
+          >["requestV3"],
+          requestV4Detailed: requestV4Detailed as unknown as ReturnType<
+            CloudShareClientFactory["forConnection"]
+          >["requestV4Detailed"],
+        }),
+        logger: makeLogger(),
+        now: () => new Date("2026-06-15T10:00:00.000Z"),
+        newId: vi.fn(),
+        newCorrelationId: () => "corr-overlap-1",
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        examId: "exam-1",
+        scheduledFor: "2026-06-15T17:00:00.000Z",
+      },
+    );
+
+    expect(response).toEqual({
+      status: 409,
+      body: {
+        error:
+          "Another attempt for this Exam is still active or available. You can schedule this Exam again after 2026-06-15T17:30:00.000Z.",
+        code: "exam_attempt_overlap",
+        nextAvailableAt: "2026-06-15T17:30:00.000Z",
+      },
+    });
+    expect(requestV3).not.toHaveBeenCalled();
+    expect(requestV4Detailed).not.toHaveBeenCalled();
+    await expect(attempts.listByCandidate("candidate-1")).resolves.toHaveLength(1);
+  });
 });

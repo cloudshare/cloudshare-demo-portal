@@ -195,6 +195,21 @@ async function setup(examOverrides: Partial<CreateDraftExamInput> = {}) {
   return { exams, attempts, launches };
 }
 
+async function addPublishedExam(
+  exams: ReturnType<typeof createInMemoryExamCatalogRepository>,
+  examId: string,
+  overrides: Partial<CreateDraftExamInput> = {},
+) {
+  await createDraftExam(
+    { repository: exams, now: () => new Date("2026-06-15T09:10:00.000Z"), newId: () => examId },
+    makeExamInput({ title: `Exam ${examId}`, ...overrides }),
+  );
+  await publishExam(
+    { repository: exams, now: () => new Date("2026-06-15T09:15:00.000Z") },
+    { customerId: "customer-helios", examId },
+  );
+}
+
 describe("scheduleExam", () => {
   it("creates a scheduled attempt, provisions training in order, and finalizes the attempt as ready", async () => {
     const { exams, attempts, launches } = await setup();
@@ -425,6 +440,244 @@ describe("scheduleExam", () => {
     );
 
     expect(result.coldStartLikely).toBe(true);
+  });
+
+  it("blocks a same-Exam schedule inside an existing non-terminal attempt availability window before provisioning", async () => {
+    const { exams, attempts, launches } = await setup({
+      storageLeaseMinutes: 240,
+      openPeriodMinutes: 90,
+    });
+    await attempts.save({
+      id: "attempt-existing",
+      customerId: "customer-helios",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "ready",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    const createTraining = vi.fn();
+
+    await expect(
+      scheduleExam(
+        {
+          exams,
+          attempts,
+          launches,
+          labs: {
+            ...makeLabs(),
+            createTraining,
+          },
+          newId: vi.fn(),
+          now: () => new Date("2026-06-15T10:00:00.000Z"),
+        },
+        {
+          customerId: "customer-helios",
+          candidateId: "candidate-1",
+          candidateEmail: "candidate@helioscx.demo",
+          candidateFirstName: "Asha",
+          candidateLastName: "Patel",
+          examId: "exam-1",
+          scheduledFor: new Date("2026-06-15T17:00:00.000Z"),
+        },
+      ),
+    ).rejects.toMatchObject({
+      name: "ScheduleOverlapError",
+      nextAvailableAt: new Date("2026-06-15T20:00:00.000Z"),
+    });
+
+    expect(createTraining).not.toHaveBeenCalled();
+    await expect(attempts.listByCandidate("candidate-1")).resolves.toHaveLength(1);
+    await expect(launches.findByExamAttemptId("attempt-existing")).resolves.toBeNull();
+  });
+
+  it("allows a same-Exam schedule at the end of the existing availability window", async () => {
+    const { exams, attempts, launches } = await setup({
+      storageLeaseMinutes: 240,
+      openPeriodMinutes: 90,
+    });
+    await attempts.save({
+      id: "attempt-existing",
+      customerId: "customer-helios",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "ready",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    const createTraining = vi.fn(makeLabs().createTraining);
+
+    const result = await scheduleExam(
+      {
+        exams,
+        attempts,
+        launches,
+        labs: {
+          ...makeLabs(),
+          createTraining,
+        },
+        newId: vi.fn().mockReturnValueOnce("attempt-2").mockReturnValueOnce("launch-2"),
+        now: () => new Date("2026-06-15T10:00:00.000Z"),
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        examId: "exam-1",
+        scheduledFor: new Date("2026-06-15T20:00:00.000Z"),
+      },
+    );
+
+    expect(result.attempt.id).toBe("attempt-2");
+    expect(createTraining).toHaveBeenCalledOnce();
+  });
+
+  it("allows a different Exam inside another Exam's availability window", async () => {
+    const { exams, attempts, launches } = await setup({
+      storageLeaseMinutes: 240,
+      openPeriodMinutes: 90,
+    });
+    await addPublishedExam(exams, "exam-2", {
+      storageLeaseMinutes: 240,
+      openPeriodMinutes: 90,
+    });
+    await attempts.save({
+      id: "attempt-existing",
+      customerId: "customer-helios",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "ready",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    const createTraining = vi.fn(makeLabs().createTraining);
+
+    const result = await scheduleExam(
+      {
+        exams,
+        attempts,
+        launches,
+        labs: {
+          ...makeLabs(),
+          createTraining,
+        },
+        newId: vi.fn().mockReturnValueOnce("attempt-2").mockReturnValueOnce("launch-2"),
+        now: () => new Date("2026-06-15T10:00:00.000Z"),
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        examId: "exam-2",
+        scheduledFor: new Date("2026-06-15T17:00:00.000Z"),
+      },
+    );
+
+    expect(result.attempt).toMatchObject({ id: "attempt-2", examId: "exam-2" });
+    expect(createTraining).toHaveBeenCalledOnce();
+  });
+
+  it("ignores terminal same-Exam attempts when checking overlap", async () => {
+    const { exams, attempts, launches } = await setup({
+      storageLeaseMinutes: 240,
+      openPeriodMinutes: 90,
+    });
+    await attempts.save({
+      id: "attempt-completed",
+      customerId: "customer-helios",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "completed",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    await attempts.save({
+      id: "attempt-expired",
+      customerId: "customer-helios",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "expired",
+      scheduledFor: new Date("2026-06-15T17:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:05:00.000Z"),
+    });
+    const createTraining = vi.fn(makeLabs().createTraining);
+
+    const result = await scheduleExam(
+      {
+        exams,
+        attempts,
+        launches,
+        labs: {
+          ...makeLabs(),
+          createTraining,
+        },
+        newId: vi.fn().mockReturnValueOnce("attempt-2").mockReturnValueOnce("launch-2"),
+        now: () => new Date("2026-06-15T10:00:00.000Z"),
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        examId: "exam-1",
+        scheduledFor: new Date("2026-06-15T17:30:00.000Z"),
+      },
+    );
+
+    expect(result.attempt.id).toBe("attempt-2");
+    expect(createTraining).toHaveBeenCalledOnce();
+  });
+
+  it("uses the Exam open period for overlap checks when storage lease evidence is unknown", async () => {
+    const { exams, attempts, launches } = await setup({
+      storageLeaseMinutes: null,
+      openPeriodMinutes: 90,
+    });
+    await attempts.save({
+      id: "attempt-existing",
+      customerId: "customer-helios",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "ready",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    const createTraining = vi.fn();
+
+    await expect(
+      scheduleExam(
+        {
+          exams,
+          attempts,
+          launches,
+          labs: {
+            ...makeLabs(),
+            createTraining,
+          },
+          newId: vi.fn(),
+          now: () => new Date("2026-06-15T10:00:00.000Z"),
+        },
+        {
+          customerId: "customer-helios",
+          candidateId: "candidate-1",
+          candidateEmail: "candidate@helioscx.demo",
+          candidateFirstName: "Asha",
+          candidateLastName: "Patel",
+          examId: "exam-1",
+          scheduledFor: new Date("2026-06-15T17:00:00.000Z"),
+        },
+      ),
+    ).rejects.toMatchObject({
+      name: "ScheduleOverlapError",
+      nextAvailableAt: new Date("2026-06-15T17:30:00.000Z"),
+    });
+
+    expect(createTraining).not.toHaveBeenCalled();
   });
 
   it("removes a failed provisioning attempt from the candidate lifecycle and does not create a lab launch", async () => {

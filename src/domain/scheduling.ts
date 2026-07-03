@@ -135,6 +135,23 @@ export class ScheduleExamNotFoundError extends Error {
   }
 }
 
+export class ScheduleOverlapError extends Error {
+  constructor(
+    readonly context: {
+      readonly examId: string;
+      readonly conflictingAttemptId: string;
+      readonly nextAvailableAt: Date;
+    },
+  ) {
+    super("Another attempt for this Exam is still active or available.");
+    this.name = "ScheduleOverlapError";
+  }
+
+  get nextAvailableAt(): Date {
+    return this.context.nextAvailableAt;
+  }
+}
+
 export class CloudShareProvisioningError extends Error {
   constructor(
     message: string,
@@ -196,6 +213,21 @@ export async function scheduleExam(
   const exam = await deps.exams.findById(input.examId);
   if (!exam || exam.customerId !== input.customerId || exam.status !== "published") {
     throw new ScheduleExamNotFoundError();
+  }
+
+  const overlap = await findSameExamAvailabilityOverlap({
+    attempts: deps.attempts,
+    candidateId: input.candidateId,
+    examId: exam.id,
+    scheduledFor: input.scheduledFor,
+    availabilityWindowMinutes: exam.storageLeaseMinutes ?? exam.openPeriodMinutes,
+  });
+  if (overlap) {
+    throw new ScheduleOverlapError({
+      examId: exam.id,
+      conflictingAttemptId: overlap.conflictingAttemptId,
+      nextAvailableAt: overlap.nextAvailableAt,
+    });
   }
 
   const attemptId = deps.newId();
@@ -517,4 +549,41 @@ function validateScheduledFor(scheduledFor: Date, now: Date): void {
   if (scheduledFor.getTime() <= now.getTime()) {
     throw new ScheduleValidationError("scheduledFor must be in the future.");
   }
+}
+
+async function findSameExamAvailabilityOverlap(input: {
+  readonly attempts: ExamAttemptRepository;
+  readonly candidateId: string;
+  readonly examId: string;
+  readonly scheduledFor: Date;
+  readonly availabilityWindowMinutes: number;
+}): Promise<{ readonly conflictingAttemptId: string; readonly nextAvailableAt: Date } | null> {
+  const requestedAtMs = input.scheduledFor.getTime();
+  const windowMs = input.availabilityWindowMinutes * 60 * 1000;
+  const existingAttempts = await input.attempts.listByCandidate(input.candidateId);
+
+  for (const attempt of existingAttempts) {
+    if (
+      attempt.examId !== input.examId ||
+      attempt.status === "completed" ||
+      attempt.status === "expired" ||
+      !attempt.scheduledFor
+    ) {
+      continue;
+    }
+
+    const windowStartMs = attempt.scheduledFor.getTime();
+    if (!Number.isFinite(windowStartMs)) {
+      continue;
+    }
+    const windowEndMs = windowStartMs + windowMs;
+    if (requestedAtMs >= windowStartMs && requestedAtMs < windowEndMs) {
+      return {
+        conflictingAttemptId: attempt.id,
+        nextAvailableAt: new Date(windowEndMs),
+      };
+    }
+  }
+
+  return null;
 }
