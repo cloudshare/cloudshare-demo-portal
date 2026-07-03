@@ -39,9 +39,10 @@ import { SessionMonitoringPanel } from "./session-monitoring-panel";
 import type { AdminMonitoringView as MonitoringView } from "@/domain/admin-monitoring";
 import { startPortalSessionWatchdog } from "./session-expiry";
 import { pageShellStyle } from "./page-shell";
-import { mutedPanelStyle, alertPanelStyle } from "./card-styles";
+import { cardStyle, mutedPanelStyle, alertPanelStyle } from "./card-styles";
 import { primaryButtonStyle, secondaryButtonStyle } from "./button-styles";
 import { colors, pageHeadingStyle } from "./design-tokens";
+import { statusBadgeStyle, getExamStatusTone } from "./status-badge";
 
 interface AdminConsoleProps {
   readonly email: string;
@@ -1765,101 +1766,103 @@ export function AdminConsole({
             </p>
           )}
 
-          <div style={{ overflowX: "auto" }}>
+          <div>
             <h2 style={{ marginBottom: "0.6rem" }}>Current Exam Catalog</h2>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
-              <thead>
-                <tr style={{ background: "#f5f5f5" }}>
-                  {["Title", "Status", "Project", "Blueprint / Snapshot", "Allowed Regions", "Policy", "Duration", "Score", "Action"].map((heading) => (
-                    <th key={heading} style={{ textAlign: "left", padding: "0.4rem", borderBottom: "1px solid #ddd" }}>
-                      {heading}
-                    </th>
+            <div style={{ ...cardStyle, padding: 0, overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
+                <thead>
+                  <tr style={{ background: colors.surfaceSubtle }}>
+                    {["Title", "Status", "Project", "Blueprint / Snapshot", "Allowed Regions", "Policy", "Duration", "Score", "Action"].map((heading) => (
+                      <th key={heading} style={{ textAlign: "left", padding: "0.4rem", borderBottom: `1px solid ${colors.border}` }}>
+                        {heading}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {examCatalog.length === 0 && (
+                    <tr>
+                      <td colSpan={9} style={{ padding: "0.5rem", color: colors.textSecondary }}>
+                        No exams yet.
+                      </td>
+                    </tr>
+                  )}
+                  {examCatalog.map((exam) => (
+                    <tr key={exam.id} style={{ borderBottom: `1px solid ${colors.border}`, verticalAlign: "top" }}>
+                      <td style={{ padding: "0.4rem" }}>
+                        <div style={{ fontWeight: 600 }}>{exam.title}</div>
+                        <div style={{ color: colors.textSecondary }}>{exam.description}</div>
+                      </td>
+                      <td style={{ padding: "0.4rem" }}>
+                        <span style={statusBadgeStyle(getExamStatusTone(exam.status))}>{exam.status}</span>
+                        {exam.publishedAt && (
+                          <div style={{ color: colors.textSecondary, fontSize: "0.75rem" }}>
+                            {formatUtcTimestamp(exam.publishedAt)}
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ padding: "0.4rem" }}>{exam.projectName}</td>
+                      <td style={{ padding: "0.4rem" }}>
+                        <div>{exam.blueprintName}</div>
+                        <div style={{ color: colors.textSecondary, fontSize: "0.75rem" }}>{exam.snapshotName}</div>
+                      </td>
+                      <td style={{ padding: "0.4rem" }}>
+                        {exam.allowedRegions.map((region) => region.name).join(", ")}
+                      </td>
+                      <td style={{ padding: "0.4rem" }}>{exam.policyName}</td>
+                      <td style={{ padding: "0.4rem" }}>
+                        <div>{exam.timeLimitMinutes} min runtime</div>
+                        <div style={{ color: colors.textSecondary, fontSize: "0.75rem" }}>
+                          {exam.openPeriodMinutes} min open
+                        </div>
+                        {exam.storageLeaseMinutes ? (
+                          <div style={{ color: colors.textSecondary, fontSize: "0.75rem" }}>
+                            {exam.storageLeaseMinutes} min storage
+                          </div>
+                        ) : null}
+                      </td>
+                      <td style={{ padding: "0.4rem" }}>{exam.scoreRetrievalEnabled ? "Enabled" : "Off"}</td>
+                      <td style={{ padding: "0.4rem" }}>
+                        {exam.status === "draft" ? (
+                          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                            {editingExamId === exam.id ? (
+                              <span style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>
+                                Editing - save or cancel before publishing.
+                              </span>
+                            ) : (
+                              <>
+                                <button
+                                  onClick={() => void beginEditingExam(exam)}
+                                  disabled={loading || editingExamId !== null}
+                                  style={{ padding: "0.45rem 0.75rem" }}
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  onClick={() => void publishCatalogExam(exam.id)}
+                                  disabled={loading || editingExamId !== null}
+                                  style={{ padding: "0.45rem 0.75rem" }}
+                                >
+                                  Publish
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => void unpublishCatalogExam(exam.id)}
+                            disabled={loading || editingExamId !== null}
+                            style={{ padding: "0.45rem 0.75rem" }}
+                          >
+                            Unpublish
+                          </button>
+                        )}
+                      </td>
+                    </tr>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {examCatalog.length === 0 && (
-                  <tr>
-                    <td colSpan={9} style={{ padding: "0.5rem", color: "#666" }}>
-                      No exams yet.
-                    </td>
-                  </tr>
-                )}
-                {examCatalog.map((exam) => (
-                  <tr key={exam.id} style={{ borderBottom: "1px solid #eee", verticalAlign: "top" }}>
-                    <td style={{ padding: "0.4rem" }}>
-                      <div style={{ fontWeight: 600 }}>{exam.title}</div>
-                      <div style={{ color: "#666" }}>{exam.description}</div>
-                    </td>
-                    <td style={{ padding: "0.4rem" }}>
-                      {exam.status}
-                      {exam.publishedAt && (
-                        <div style={{ color: "#666", fontSize: "0.75rem" }}>
-                          {formatUtcTimestamp(exam.publishedAt)}
-                        </div>
-                      )}
-                    </td>
-                    <td style={{ padding: "0.4rem" }}>{exam.projectName}</td>
-                    <td style={{ padding: "0.4rem" }}>
-                      <div>{exam.blueprintName}</div>
-                      <div style={{ color: "#666", fontSize: "0.75rem" }}>{exam.snapshotName}</div>
-                    </td>
-                    <td style={{ padding: "0.4rem" }}>
-                      {exam.allowedRegions.map((region) => region.name).join(", ")}
-                    </td>
-                    <td style={{ padding: "0.4rem" }}>{exam.policyName}</td>
-                    <td style={{ padding: "0.4rem" }}>
-                      <div>{exam.timeLimitMinutes} min runtime</div>
-                      <div style={{ color: "#666", fontSize: "0.75rem" }}>
-                        {exam.openPeriodMinutes} min open
-                      </div>
-                      {exam.storageLeaseMinutes ? (
-                        <div style={{ color: "#666", fontSize: "0.75rem" }}>
-                          {exam.storageLeaseMinutes} min storage
-                        </div>
-                      ) : null}
-                    </td>
-                    <td style={{ padding: "0.4rem" }}>{exam.scoreRetrievalEnabled ? "Enabled" : "Off"}</td>
-                    <td style={{ padding: "0.4rem" }}>
-                      {exam.status === "draft" ? (
-                        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                          {editingExamId === exam.id ? (
-                            <span style={{ color: "#555", fontSize: "0.85rem" }}>
-                              Editing - save or cancel before publishing.
-                            </span>
-                          ) : (
-                            <>
-                              <button
-                                onClick={() => void beginEditingExam(exam)}
-                                disabled={loading || editingExamId !== null}
-                                style={{ padding: "0.45rem 0.75rem" }}
-                              >
-                                Edit
-                              </button>
-                              <button
-                                onClick={() => void publishCatalogExam(exam.id)}
-                                disabled={loading || editingExamId !== null}
-                                style={{ padding: "0.45rem 0.75rem" }}
-                              >
-                                Publish
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => void unpublishCatalogExam(exam.id)}
-                          disabled={loading || editingExamId !== null}
-                          style={{ padding: "0.45rem 0.75rem" }}
-                        >
-                          Unpublish
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+            </div>
           </div>
         </section>
       )}
@@ -1878,41 +1881,43 @@ export function AdminConsole({
             </button>
           </div>
           {auditRecords && (
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
-              <thead>
-                <tr style={{ background: "#f5f5f5" }}>
-                  {["Time", "ExamAttempt", "Action", "Outcome", "Details / Error"].map((h) => (
-                    <th key={h} style={{ textAlign: "left", padding: "0.4rem", borderBottom: "1px solid #ddd" }}>
-                      {h}
-                    </th>
+            <div style={{ ...cardStyle, padding: 0, overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
+                <thead>
+                  <tr style={{ background: colors.surfaceSubtle }}>
+                    {["Time", "ExamAttempt", "Action", "Outcome", "Details / Error"].map((h) => (
+                      <th key={h} style={{ textAlign: "left", padding: "0.4rem", borderBottom: `1px solid ${colors.border}` }}>
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {auditRecords.length === 0 && (
+                    <tr>
+                      <td colSpan={5} style={{ padding: "0.5rem", color: colors.textSecondary }}>
+                        No records found
+                      </td>
+                    </tr>
+                  )}
+                  {auditRecords.map((r) => (
+                    <tr key={r.id} style={{ borderBottom: `1px solid ${colors.border}` }}>
+                      <td style={{ padding: "0.4rem", whiteSpace: "nowrap" }}>
+                        {formatUtcTimestamp(r.occurredAt)}
+                      </td>
+                      <td style={{ padding: "0.4rem" }}>{r.examAttemptId}</td>
+                      <td style={{ padding: "0.4rem" }}>{r.action}</td>
+                      <td style={{ padding: "0.4rem", color: r.outcome === "success" ? colors.success : colors.danger, fontWeight: "bold" }}>
+                        {r.outcome}
+                      </td>
+                      <td style={{ padding: "0.4rem", fontSize: "0.8rem", color: "#444" }}>
+                        {r.error ?? (r.details ? JSON.stringify(r.details) : "-")}
+                      </td>
+                    </tr>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {auditRecords.length === 0 && (
-                  <tr>
-                    <td colSpan={5} style={{ padding: "0.5rem", color: "#666" }}>
-                      No records found
-                    </td>
-                  </tr>
-                )}
-                {auditRecords.map((r) => (
-                  <tr key={r.id} style={{ borderBottom: "1px solid #eee" }}>
-                    <td style={{ padding: "0.4rem", whiteSpace: "nowrap" }}>
-                      {formatUtcTimestamp(r.occurredAt)}
-                    </td>
-                    <td style={{ padding: "0.4rem" }}>{r.examAttemptId}</td>
-                    <td style={{ padding: "0.4rem" }}>{r.action}</td>
-                    <td style={{ padding: "0.4rem", color: r.outcome === "success" ? "green" : "red", fontWeight: "bold" }}>
-                      {r.outcome}
-                    </td>
-                    <td style={{ padding: "0.4rem", fontSize: "0.8rem", color: "#444" }}>
-                      {r.error ?? (r.details ? JSON.stringify(r.details) : "-")}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                </tbody>
+              </table>
+            </div>
           )}
         </section>
       )}
@@ -1952,7 +1957,7 @@ export function AdminConsole({
 
       {tab === "diagnostics" && (
         <section>
-          <p style={{ color: "#555", marginTop: 0 }}>
+          <p style={{ color: colors.textSecondary, marginTop: 0 }}>
             The correlated diagnostic log: what the portal did, in what order, and how to trace it.
             Entries are append-only and scoped to your Customer. This is the primary support workflow.
             Session Monitoring remains the current-state queue view and should link into this tab for
@@ -1969,7 +1974,7 @@ export function AdminConsole({
           >
             <div style={{ marginBottom: "0.9rem" }}>
               <h2 style={{ margin: 0, fontSize: "1rem" }}>Investigative filters</h2>
-              <p style={{ color: "#555", margin: "0.35rem 0 0" }}>
+              <p style={{ color: colors.textSecondary, margin: "0.35rem 0 0" }}>
                 Follow an ExamAttempt, correlation thread, or CloudShare event without changing the
                 underlying diagnostic filtering rules.
               </p>
@@ -2144,7 +2149,7 @@ export function AdminConsole({
                 marginBottom: "0.75rem",
               }}
             >
-              <div style={{ color: "#555" }}>
+              <div style={{ color: colors.textSecondary }}>
                 Showing {diagnosticPage.returned} entries starting at row {diagnosticPage.offset + 1}.
               </div>
               <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
@@ -2210,7 +2215,7 @@ export function AdminConsole({
 
       {tab === "resources" && (
         <section>
-          <p style={{ color: "#555", marginTop: 0 }}>
+          <p style={{ color: colors.textSecondary, marginTop: 0 }}>
             Stopgap sync surface only. Slice 2 authoring should use the <strong>Exam Catalog</strong> tab above instead of treating every visible CloudShare resource as a global list.
           </p>
           <button onClick={syncResources} disabled={loading} style={{ padding: "0.4rem 1rem", marginBottom: "1rem" }}>
@@ -2224,28 +2229,30 @@ export function AdminConsole({
               {Object.entries(syncResult.byType).map(([type, items]) => (
                 <div key={type} style={{ marginBottom: "1rem" }}>
                   <h3 style={{ margin: "0 0 0.4rem" }}>{type}</h3>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
-                    <thead>
-                      <tr style={{ background: "#f5f5f5" }}>
-                        {["Name", "CloudShare ID", "Synced At"].map((h) => (
-                          <th key={h} style={{ textAlign: "left", padding: "0.4rem", borderBottom: "1px solid #ddd" }}>
-                            {h}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {items.map((item) => (
-                        <tr key={item.cloudshareId} style={{ borderBottom: "1px solid #eee" }}>
-                          <td style={{ padding: "0.4rem" }}>{item.name}</td>
-                          <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{item.cloudshareId}</td>
-                          <td style={{ padding: "0.4rem" }}>
-                            {formatUtcTimestamp(item.syncedAt)}
-                          </td>
+                  <div style={{ ...cardStyle, padding: 0, overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
+                      <thead>
+                        <tr style={{ background: colors.surfaceSubtle }}>
+                          {["Name", "CloudShare ID", "Synced At"].map((h) => (
+                            <th key={h} style={{ textAlign: "left", padding: "0.4rem", borderBottom: `1px solid ${colors.border}` }}>
+                              {h}
+                            </th>
+                          ))}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {items.map((item) => (
+                          <tr key={item.cloudshareId} style={{ borderBottom: `1px solid ${colors.border}` }}>
+                            <td style={{ padding: "0.4rem" }}>{item.name}</td>
+                            <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{item.cloudshareId}</td>
+                            <td style={{ padding: "0.4rem" }}>
+                              {formatUtcTimestamp(item.syncedAt)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               ))}
             </div>
