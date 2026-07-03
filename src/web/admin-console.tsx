@@ -40,9 +40,15 @@ import type { AdminMonitoringView as MonitoringView } from "@/domain/admin-monit
 import { startPortalSessionWatchdog } from "./session-expiry";
 import { pageShellStyle } from "./page-shell";
 import { cardStyle, mutedPanelStyle, alertPanelStyle } from "./card-styles";
-import { primaryButtonStyle, secondaryButtonStyle } from "./button-styles";
-import { colors, pageHeadingStyle } from "./design-tokens";
+import {
+  accountLogoutButtonStyle,
+  disabledButtonStyle,
+  primaryButtonStyle,
+  secondaryButtonStyle,
+} from "./button-styles";
+import { colors } from "./design-tokens";
 import { statusBadgeStyle, getExamStatusTone } from "./status-badge";
+import { PortalPageHeader } from "./portal-page-header";
 
 interface AdminConsoleProps {
   readonly email: string;
@@ -189,6 +195,30 @@ class AdminSessionExpiredError extends Error {
 
 const DIAGNOSTIC_PAGE_LIMIT = 50;
 const SUPPORT_WORKFLOW_TABS = new Set<AdminTab>(["monitoring", "diagnostics"]);
+
+const adminTabNavStyle: React.CSSProperties = {
+  display: "flex",
+  gap: "0.5rem",
+  marginBottom: "1rem",
+  flexWrap: "wrap",
+  borderBottom: `1px solid ${colors.border}`,
+  paddingBottom: "0.5rem",
+};
+
+const adminTabButtonStyle: React.CSSProperties = {
+  padding: "0.6rem 0.9rem",
+  border: "1px solid",
+  borderRadius: "8px",
+};
+
+function getLogoutButtonStyle(disabled: boolean): React.CSSProperties {
+  return disabled
+    ? {
+        ...accountLogoutButtonStyle,
+        ...disabledButtonStyle,
+      }
+    : accountLogoutButtonStyle;
+}
 
 function isAdminSessionExpiredError(error: unknown): error is AdminSessionExpiredError {
   return error instanceof AdminSessionExpiredError;
@@ -1163,16 +1193,20 @@ export function AdminConsole({
         scrollbarGutter: "stable",
       }}
     >
-      <h1 style={{ ...pageHeadingStyle, marginBottom: "0.35rem" }}>Certalis Admin Console</h1>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", marginBottom: "0.75rem", flexWrap: "wrap" }}>
-        <p style={{ margin: 0, color: "#555" }}>Signed in as {email}</p>
-        <button onClick={logout} disabled={loading} style={secondaryButtonStyle}>
-          Log out
-        </button>
-      </div>
+      <PortalPageHeader
+        eyebrow="Helios Admin Portal"
+        title="Certalis Admin Console"
+        description="Manage the Helios CX CloudShare Connection, Exam catalog, Candidate accounts, and active ExamAttempt support workflows."
+        email={email}
+        actions={
+          <button onClick={logout} disabled={loading} style={getLogoutButtonStyle(loading)}>
+            Log out
+          </button>
+        }
+      />
       <nav
         aria-label="Admin console sections"
-        style={{ display: "flex", gap: "0.75rem", marginBottom: "0.85rem", flexWrap: "wrap" }}
+        style={adminTabNavStyle}
       >
         {ADMIN_TABS.map((t) => {
           const isActive = tab === t;
@@ -1197,14 +1231,13 @@ export function AdminConsole({
                 setTab(t);
               }}
               style={{
-                padding: "0.55rem 0.95rem",
-                background: isActive ? colors.textPrimary : isSupportWorkflow ? colors.accentSoft : "#f3f4f6",
-                color: isActive ? "#fff" : "#111827",
-                border: isActive ? `2px solid ${colors.accent}` : "1px solid #d1d5db",
-                borderRadius: "6px",
+                ...adminTabButtonStyle,
+                background: isActive ? colors.textPrimary : isSupportWorkflow ? colors.accentSoft : "#ffffff",
+                color: isActive ? "#ffffff" : "#111827",
+                borderColor: isActive ? colors.textPrimary : isSupportWorkflow ? "#b9ded7" : "#d1d5db",
                 cursor: "pointer",
                 fontWeight: isActive ? 700 : 600,
-                boxShadow: isActive ? "0 0 0 3px rgba(37, 99, 235, 0.18)" : "none",
+                boxShadow: isActive ? "inset 0 -3px 0 #0f6d66" : "none",
               }}
             >
               {getAdminTabLabel(t)}

@@ -10,12 +10,18 @@ import { getCandidateScorePresentation } from "./candidate-score-state";
 import type { CandidateLogoutPresentation } from "./candidate-logout";
 import { useCandidateLogout } from "./candidate-logout";
 import { cardStyle, mutedPanelStyle } from "@/web/card-styles";
-import { primaryButtonStyle, secondaryButtonStyle } from "@/web/button-styles";
+import {
+  accountLogoutButtonStyle,
+  disabledButtonStyle,
+  secondaryButtonStyle,
+} from "@/web/button-styles";
 import { eyebrowLabelStyle } from "@/web/design-tokens";
 import { statusBadgeStyle } from "@/web/status-badge";
+import { PortalPageHeader } from "@/web/portal-page-header";
 
 interface ScoreDisplayProps {
-  examAttemptId: string;
+  readonly examAttemptId: string;
+  readonly email: string;
 }
 
 type FetchState = "loading" | "loaded" | "error";
@@ -53,7 +59,7 @@ interface ScorePanelActionProps {
  * Candidate and support viewers understand the scope of what is
  * and is not captured.
  */
-export function ScoreDisplay({ examAttemptId }: ScoreDisplayProps) {
+export function ScoreDisplay({ examAttemptId, email }: ScoreDisplayProps) {
   const router = useRouter();
   const [fetchState, setFetchState] = useState<FetchState>("loading");
   const [score, setScore] = useState<ScorePayload | null>(null);
@@ -94,18 +100,30 @@ export function ScoreDisplay({ examAttemptId }: ScoreDisplayProps) {
     };
   }, [examAttemptId]);
 
-  if (fetchState === "loading") {
-    return <p style={{ margin: 0 }}>Loading score…</p>;
-  }
+  const header = (
+    <ScorePageHeader
+      email={email}
+      logoutPresentation={logoutPresentation}
+      onBackToCandidateHome={() => router.push("/candidate")}
+      onLogout={() => void logout()}
+    />
+  );
 
   if (fetchState === "error") {
     return (
-      <ScoreErrorPanel
-        errorMessage={errorMessage}
-        logoutPresentation={logoutPresentation}
-        onBackToCandidateHome={() => router.push("/candidate")}
-        onLogout={() => void logout()}
-      />
+      <>
+        {header}
+        <ScoreErrorPanel errorMessage={errorMessage} />
+      </>
+    );
+  }
+
+  if (fetchState === "loading") {
+    return (
+      <>
+        {header}
+        <p style={{ margin: 0 }}>Loading score...</p>
+      </>
     );
   }
 
@@ -118,13 +136,13 @@ export function ScoreDisplay({ examAttemptId }: ScoreDisplayProps) {
   });
 
   return (
-    <ScoreLoadedPanel
-      score={score}
-      logoutPresentation={logoutPresentation}
-      onBackToCandidateHome={() => router.push("/candidate")}
-      onLogout={() => void logout()}
-      presentation={presentation}
-    />
+    <>
+      {header}
+      <ScoreLoadedPanel
+        score={score}
+        presentation={presentation}
+      />
+    </>
   );
 }
 
@@ -134,9 +152,6 @@ function formatRate(value: number): string {
 
 export function ScoreLoadedPanel({
   score,
-  logoutPresentation,
-  onBackToCandidateHome,
-  onLogout,
   presentation = getCandidateScorePresentation({
     examAttemptId: score.examAttemptId,
     examTitle: score.examTitle,
@@ -144,14 +159,11 @@ export function ScoreLoadedPanel({
   }),
 }: {
   readonly score: ScorePayload;
-  readonly logoutPresentation: CandidateLogoutPresentation;
-  readonly onBackToCandidateHome: () => void;
-  readonly onLogout: () => void | Promise<void>;
   readonly presentation?: ReturnType<typeof getCandidateScorePresentation>;
 }) {
   return (
-    <section style={cardStyle}>
-      <div style={headerLayoutStyle}>
+    <section style={scorePanelStackStyle}>
+      <section style={cardStyle}>
         <div style={{ display: "grid", gap: "0.5rem" }}>
           <p style={eyebrowLabelStyle}>Completion summary</p>
           <div style={{ display: "grid", gap: "0.35rem" }}>
@@ -165,31 +177,15 @@ export function ScoreLoadedPanel({
             Review the recorded CloudShare Guided Journey result for this completed ExamAttempt.
           </p>
         </div>
-        <ScorePanelActions
-          logoutPresentation={logoutPresentation}
-          onBackToCandidateHome={onBackToCandidateHome}
-          onLogout={onLogout}
-        />
-      </div>
-
-      {logoutPresentation.statusMessage ? (
-        <p role="status" style={supportTextStyle}>
-          {logoutPresentation.statusMessage}
-        </p>
-      ) : null}
-      {logoutPresentation.errorMessage ? (
-        <p role="alert" style={errorTextStyle}>
-          {logoutPresentation.errorMessage}
-        </p>
-      ) : null}
+      </section>
 
       {score.scoreAvailable ? (
         <>
-          <section style={mutedPanelStyle}>
+          <section style={resultSummaryStyle}>
             <div style={{ display: "grid", gap: "0.4rem" }}>
               <p style={eyebrowLabelStyle}>Result summary</p>
-              <h3 style={{ margin: 0, fontSize: "1.8rem", lineHeight: 1.1 }}>
-                {score.percentComplete}% complete
+              <h3 style={{ margin: 0, fontSize: "2rem", lineHeight: 1.1 }}>
+                {formatRate(score.passedRate)} pass rate
               </h3>
               <p style={{ margin: 0, color: "#1e293b" }}>
                 {score.stepsCompleted} of {score.stepsTotal} Guided Journey steps are marked explored or complete.
@@ -202,8 +198,8 @@ export function ScoreLoadedPanel({
                 gap: "0.75rem",
               }}
             >
-              <SummaryStat label="Steps completed" value={`${score.stepsCompleted} of ${score.stepsTotal}`} />
-              <SummaryStat label="Passed rate" value={formatRate(score.passedRate)} />
+              <SummaryStat label="Completion evidence" value={`${score.percentComplete}% complete`} />
+              <SummaryStat label="Steps marked explored or complete" value={`${score.stepsCompleted} of ${score.stepsTotal}`} />
               <SummaryStat label="Last retrieved" value={formatRetrievedAt(score.retrievedAt)} />
             </div>
           </section>
@@ -299,12 +295,7 @@ export function ScoreLoadedPanel({
   );
 }
 
-export function ScoreErrorPanel({
-  errorMessage,
-  logoutPresentation,
-  onBackToCandidateHome,
-  onLogout,
-}: ScorePanelActionProps & { readonly errorMessage: string }) {
+export function ScoreErrorPanel({ errorMessage }: { readonly errorMessage: string }) {
   return (
     <section style={cardStyle}>
       <div style={{ display: "grid", gap: "0.5rem" }}>
@@ -314,11 +305,51 @@ export function ScoreErrorPanel({
           Could not load score: {errorMessage}
         </p>
       </div>
-      <ScorePanelActions
-        logoutPresentation={logoutPresentation}
-        onBackToCandidateHome={onBackToCandidateHome}
-        onLogout={onLogout}
-      />
+    </section>
+  );
+}
+
+function ScorePageHeader({
+  email,
+  logoutPresentation,
+  onBackToCandidateHome,
+  onLogout,
+}: ScorePanelActionProps & { readonly email: string }) {
+  return (
+    <PortalPageHeader
+      eyebrow="Candidate score"
+      title="Session complete"
+      description="Review your final Guided Journey result and any CloudShare scoring limitations for this ExamAttempt."
+      email={email}
+      actions={
+        <ScorePanelActions
+          logoutPresentation={logoutPresentation}
+          onBackToCandidateHome={onBackToCandidateHome}
+          onLogout={onLogout}
+        />
+      }
+    />
+  );
+}
+
+function ScorePanelActions({
+  logoutPresentation,
+  onBackToCandidateHome,
+  onLogout,
+}: ScorePanelActionProps) {
+  return (
+    <div style={{ display: "grid", gap: "0.75rem" }}>
+      <button type="button" onClick={onBackToCandidateHome} style={secondaryButtonStyle}>
+        Back to Candidate Home
+      </button>
+      <button
+        type="button"
+        onClick={() => void onLogout()}
+        disabled={logoutPresentation.disabled}
+        style={getLogoutButtonStyle(logoutPresentation.disabled)}
+      >
+        {logoutPresentation.buttonLabel}
+      </button>
       {logoutPresentation.statusMessage ? (
         <p role="status" style={supportTextStyle}>
           {logoutPresentation.statusMessage}
@@ -329,30 +360,17 @@ export function ScoreErrorPanel({
           {logoutPresentation.errorMessage}
         </p>
       ) : null}
-    </section>
+    </div>
   );
 }
 
-function ScorePanelActions({
-  logoutPresentation,
-  onBackToCandidateHome,
-  onLogout,
-}: ScorePanelActionProps) {
-  return (
-    <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "flex-start" }}>
-      <button type="button" onClick={onBackToCandidateHome} style={secondaryButtonStyle}>
-        Back to Candidate Home
-      </button>
-      <button
-        type="button"
-        onClick={() => void onLogout()}
-        disabled={logoutPresentation.disabled}
-        style={primaryButtonStyle}
-      >
-        {logoutPresentation.buttonLabel}
-      </button>
-    </div>
-  );
+function getLogoutButtonStyle(disabled: boolean) {
+  return disabled
+    ? {
+        ...accountLogoutButtonStyle,
+        ...disabledButtonStyle,
+      }
+    : accountLogoutButtonStyle;
 }
 
 function SummaryStat({ label, value }: { readonly label: string; readonly value: string }) {
@@ -368,12 +386,15 @@ function formatRetrievedAt(retrievedAt: string): string {
   return formatCandidateScheduledDateTime(retrievedAt) ?? "Unavailable";
 }
 
-const headerLayoutStyle = {
-  display: "flex",
-  justifyContent: "space-between",
+const scorePanelStackStyle = {
+  display: "grid",
   gap: "1rem",
-  alignItems: "flex-start",
-  flexWrap: "wrap",
+} satisfies CSSProperties;
+
+const resultSummaryStyle = {
+  ...mutedPanelStyle,
+  display: "grid",
+  gap: "1rem",
 } satisfies CSSProperties;
 
 const supportTextStyle = {

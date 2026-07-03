@@ -47,7 +47,7 @@ describe("candidate home layout", () => {
       flexWrap: "wrap",
     });
     expect(publishedExamDescriptionStyle).toMatchObject({
-      maxWidth: "44rem",
+      maxWidth: "68rem",
     });
     expect(publishedExamDurationPillsStyle).toMatchObject({
       justifyContent: "flex-end",

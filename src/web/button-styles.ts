@@ -27,6 +27,13 @@ export const secondaryButtonStyle: CSSProperties = {
   color: colors.textPrimary,
 };
 
+export const accountLogoutButtonStyle: CSSProperties = {
+  ...baseButtonStyle,
+  border: `1px solid ${colors.borderStrong}`,
+  background: colors.surfaceSubtle,
+  color: colors.textPrimary,
+};
+
 export const dangerButtonStyle: CSSProperties = {
   ...baseButtonStyle,
   border: `1px solid ${colors.danger}`,

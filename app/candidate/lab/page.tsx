@@ -1,4 +1,9 @@
 import React from "react";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
+import { getServices } from "@/composition";
+import { getPortalSession } from "@/auth/portal-session";
 import { CandidateLabShell } from "@/web/candidate-lab-shell";
 
 /**
@@ -11,6 +16,16 @@ export default async function CandidateLabPage({
 }: {
   searchParams: Promise<{ examAttemptId?: string; attemptStatus?: string }>;
 }) {
+  const services = getServices();
+  const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
+  const session = await getPortalSession(services, sessionId);
+  if (!session) {
+    redirect("/login");
+  }
+  if (session.role !== "candidate") {
+    redirect("/admin");
+  }
+
   const { examAttemptId, attemptStatus } = await searchParams;
 
   if (!examAttemptId) {
@@ -32,6 +47,7 @@ export default async function CandidateLabPage({
 
   return (
     <CandidateLabShell
+      email={session.email}
       examAttemptId={examAttemptId}
       initialAttemptStatus={initialAttemptStatus}
     />

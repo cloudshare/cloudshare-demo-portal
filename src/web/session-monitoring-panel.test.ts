@@ -58,6 +58,7 @@ function makeAttempt(partial: Partial<MonitoringAttemptView> = {}): MonitoringAt
       status: "completed",
       scoreAvailable: true,
       percentComplete: 90,
+      passedRate: 0.7,
       stepsCompleted: 9,
       stepsTotal: 10,
     },
@@ -102,7 +103,7 @@ describe("SessionMonitoringPanel", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders the monitoring status strip, separated live and history sections, and the Support Diagnostics handoff", () => {
+  it("renders status metrics before an obvious refresh action and shows terminal history as a dense supportable table", () => {
     const html = renderToStaticMarkup(
       createElement(SessionMonitoringPanel, {
         monitoring: makeMonitoringView(),
@@ -114,6 +115,10 @@ describe("SessionMonitoringPanel", () => {
     );
 
     expect(html).toContain("Monitoring status");
+    expect(html.indexOf("Monitoring status")).toBeLessThan(html.indexOf("Refresh Monitoring"));
+    expect(html.indexOf("Refresh Monitoring")).toBeLessThan(html.indexOf("Investigation filters"));
+    expect(html).toContain("background:#0f6d66");
+    expect(html).toContain("padding:0.65rem 1.1rem");
     expect(html).toContain("Candidate email");
     expect(html).toContain("Exam ID or ExamAttempt ID");
     expect(html).toContain("Clear filters");
@@ -122,10 +127,15 @@ describe("SessionMonitoringPanel", () => {
     expect(html).toContain("Live queues");
     expect(html).toContain("Completed / expired history (showing 1 of 3)");
     expect(html).toContain("Load more history");
+    expect(html).toContain("<table");
+    expect(html).toContain("<th scope=\"col\"");
+    expect(html).toContain("Candidate");
+    expect(html).toContain("Exam");
+    expect(html).toContain("Result");
+    expect(html).toContain("70% pass rate");
+    expect(html).toContain("Support");
     expect(html).toContain("Open in Support Diagnostics");
-    expect(html).toContain("Investigation opens Support Diagnostics filtered to this ExamAttempt ID.");
     expect(html).not.toContain("No timeline entries recorded.");
-    expect(html).not.toContain("<table");
   });
 
   it("hardens the attempt summary identity text so long values can wrap without crowding the status badge", () => {

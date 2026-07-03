@@ -12,16 +12,18 @@ import {
 import { useCandidateLogout } from "./candidate-logout";
 import { pageShellStyle } from "./page-shell";
 import { cardStyle, mutedPanelStyle } from "./card-styles";
-import { secondaryButtonStyle } from "./button-styles";
+import { accountLogoutButtonStyle, disabledButtonStyle, secondaryButtonStyle } from "./button-styles";
 import { statusBadgeStyle, getExamAttemptStatusTone } from "./status-badge";
-import { eyebrowLabelStyle, pageHeadingStyle } from "./design-tokens";
+import { PortalPageHeader } from "./portal-page-header";
 
 type AttemptStatus = "ready" | "in_progress" | "suspended" | "completed";
 
 export function CandidateLabShell({
+  email,
   examAttemptId,
   initialAttemptStatus,
 }: {
+  readonly email: string;
   readonly examAttemptId: string;
   readonly initialAttemptStatus: AttemptStatus;
 }) {
@@ -96,57 +98,45 @@ export function CandidateLabShell({
 
   return (
     <main style={{ ...pageShellStyle, color: "#14213d" }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          gap: "1rem",
-          flexWrap: "wrap",
-          marginBottom: "1.5rem",
-        }}
-      >
-        <div>
-          <p style={eyebrowLabelStyle}>
-            Candidate lab
-          </p>
-          <h1 style={{ ...pageHeadingStyle, margin: "0.35rem 0 0.5rem", lineHeight: 1.1 }}>
-            {loadingStatus ? "Loading exam details..." : presentation?.heading ?? "Exam details unavailable"}
-          </h1>
-          <p style={{ margin: 0, color: "#52606d", maxWidth: "48rem" }}>
-            {presentation?.actionDetail ??
-              (labStatus
-                ? `Exam attempt: ${labStatus.examAttemptId}`
-                : `Requested attempt: ${examAttemptId}`)}
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-          <button
-            type="button"
-            onClick={() => router.push("/candidate")}
-            style={secondaryButtonStyle}
-          >
-            Back to Candidate Home
-          </button>
-          {presentation?.showScoreLink ? (
+      <PortalPageHeader
+        eyebrow="Candidate lab"
+        title={loadingStatus ? "Loading exam details..." : presentation?.heading ?? "Exam details unavailable"}
+        description={
+          presentation?.supportDetail ??
+          (labStatus
+            ? `Exam attempt: ${labStatus.examAttemptId}`
+            : `Requested attempt: ${examAttemptId}`)
+        }
+        email={email}
+        actions={
+          <div style={{ display: "grid", gap: "0.75rem" }}>
             <button
               type="button"
-              onClick={() => router.push(`/candidate/score?examAttemptId=${encodeURIComponent(examAttemptId)}`)}
+              onClick={() => router.push("/candidate")}
               style={secondaryButtonStyle}
             >
-              View score
+              Back to Candidate Home
             </button>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => void logout()}
-            disabled={logoutPresentation.disabled}
-            style={secondaryButtonStyle}
-          >
-            {logoutPresentation.buttonLabel}
-          </button>
-        </div>
-      </div>
+            {presentation?.showScoreLink ? (
+              <button
+                type="button"
+                onClick={() => router.push(`/candidate/score?examAttemptId=${encodeURIComponent(examAttemptId)}`)}
+                style={secondaryButtonStyle}
+              >
+                View score
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => void logout()}
+              disabled={logoutPresentation.disabled}
+              style={getLogoutButtonStyle(logoutPresentation.disabled)}
+            >
+              {logoutPresentation.buttonLabel}
+            </button>
+          </div>
+        }
+      />
       {presentation ? (
         <section
           aria-label="Exam attempt summary"
@@ -183,7 +173,7 @@ export function CandidateLabShell({
           ))}
         </section>
       ) : null}
-      {presentation ? (
+      {presentation && (labStatus?.status ?? initialAttemptStatus) !== "ready" ? (
         <section
           style={{
             ...mutedPanelStyle,
@@ -232,4 +222,13 @@ export function CandidateLabShell({
       ) : null}
     </main>
   );
+}
+
+function getLogoutButtonStyle(disabled: boolean) {
+  return disabled
+    ? {
+        ...accountLogoutButtonStyle,
+        ...disabledButtonStyle,
+      }
+    : accountLogoutButtonStyle;
 }

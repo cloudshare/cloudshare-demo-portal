@@ -1,38 +1,19 @@
 import type { CSSProperties } from "react";
 import { colors } from "./design-tokens";
+import {
+  portalHeaderAccountActionsStyle,
+  portalHeaderAccountPanelStyle,
+  portalHeaderIntroStyle,
+  portalHeaderLayoutStyle,
+} from "./portal-page-header";
 
-export const candidateHomeHeaderStyle: CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "flex-start",
-  gap: "1rem",
-  flexWrap: "wrap",
-};
+export const candidateHomeHeaderStyle: CSSProperties = portalHeaderLayoutStyle;
 
-export const candidateHomeHeaderIntroStyle: CSSProperties = {
-  flex: "1 1 28rem",
-  minWidth: 0,
-  maxWidth: "42rem",
-};
+export const candidateHomeHeaderIntroStyle: CSSProperties = portalHeaderIntroStyle;
 
-export const candidateHomeAccountActionsStyle: CSSProperties = {
-  display: "grid",
-  gap: "0.75rem",
-  justifyItems: "stretch",
-  flex: "0 1 18rem",
-  minWidth: 0,
-  maxWidth: "100%",
-};
+export const candidateHomeAccountActionsStyle: CSSProperties = portalHeaderAccountActionsStyle;
 
-export const candidateHomeAccountPanelStyle: CSSProperties = {
-  border: "1px solid #d9e1e8",
-  borderRadius: "8px",
-  background: "#ffffff",
-  padding: "0.9rem 1rem",
-  width: "100%",
-  minWidth: 0,
-  boxSizing: "border-box",
-};
+export const candidateHomeAccountPanelStyle: CSSProperties = portalHeaderAccountPanelStyle;
 
 export const publishedExamHeaderStyle: CSSProperties = {
   display: "grid",
@@ -56,7 +37,7 @@ export const publishedExamDescriptionStyle: CSSProperties = {
   margin: "0.5rem 0 0",
   color: colors.textSecondary,
   lineHeight: 1.5,
-  maxWidth: "44rem",
+  maxWidth: "68rem",
 };
 
 export const publishedExamDurationPillsStyle: CSSProperties = {

@@ -65,6 +65,7 @@ export interface MonitoringAttemptResult {
   readonly status: "completed" | "expired";
   readonly scoreAvailable: boolean;
   readonly percentComplete?: number;
+  readonly passedRate?: number;
   readonly stepsCompleted?: number;
   readonly stepsTotal?: number;
 }
@@ -384,6 +385,7 @@ function buildResult(
     status,
     scoreAvailable: true,
     percentComplete: asNumber(scoreResponse.percentComplete),
+    passedRate: asNumber(scoreResponse.passedRate),
     stepsCompleted: asNumber(scoreResponse.stepsCompleted),
     stepsTotal: asNumber(scoreResponse.stepsTotal),
   };

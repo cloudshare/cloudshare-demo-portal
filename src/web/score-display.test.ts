@@ -10,7 +10,7 @@ describe("ScoreLoadedPanel", () => {
     process.env.TZ = originalTimezone;
   });
 
-  it("renders a clear completion summary with metrics, steps, limitations, and candidate actions when a score is available", () => {
+  it("renders pass rate as the headline score with completion demoted to supporting evidence", () => {
     process.env.TZ = "Europe/London";
 
     const html = renderToStaticMarkup(
@@ -41,22 +41,15 @@ describe("ScoreLoadedPanel", () => {
             "Only the final state is assessed.",
           ],
         },
-        logoutPresentation: {
-          buttonLabel: "Log out",
-          disabled: false,
-          statusMessage: null,
-          errorMessage: null,
-        },
-        onBackToCandidateHome: () => {},
-        onLogout: () => Promise.resolve(),
       }),
     );
 
     expect(html).toContain("Completion summary");
     expect(html).toContain("Helios Guided Journey");
     expect(html).toContain("Exam attempt: attempt-1");
-    expect(html).toContain("82% complete");
+    expect(html).toContain("55% pass rate");
     expect(html).toContain("9 of 11");
+    expect(html.indexOf("55% pass rate")).toBeLessThan(html.indexOf("9 of 11"));
     expect(html).toContain("Passed rate");
     expect(html).toContain("Last retrieved");
     expect(html).toContain("2026-06-18 11:30");
@@ -64,11 +57,9 @@ describe("ScoreLoadedPanel", () => {
     expect(html).toContain("Step progress");
     expect(html).toContain("Create the queue");
     expect(html).toContain("Scoring limitations");
-    expect(html).toContain("Back to Candidate Home");
-    expect(html).toContain("Log out");
   });
 
-  it("keeps the completion shell, message, limitations, and actions when no Guided Journey score is available", () => {
+  it("keeps the completion shell, message, and limitations when no Guided Journey score is available", () => {
     const html = renderToStaticMarkup(
       createElement(ScoreLoadedPanel, {
         score: {
@@ -83,14 +74,6 @@ describe("ScoreLoadedPanel", () => {
           retrievedAt: "2026-06-18T10:30:00.000Z",
           limitations: ["Only the final state is assessed."],
         },
-        logoutPresentation: {
-          buttonLabel: "Log out",
-          disabled: false,
-          statusMessage: null,
-          errorMessage: null,
-        },
-        onBackToCandidateHome: () => {},
-        onLogout: () => Promise.resolve(),
       }),
     );
 
@@ -99,33 +82,20 @@ describe("ScoreLoadedPanel", () => {
     expect(html).toContain("No Guided Journey score is available for this Exam attempt.");
     expect(html).toContain("Exam attempt: attempt-2");
     expect(html).toContain("Scoring limitations");
-    expect(html).toContain("Back to Candidate Home");
-    expect(html).toContain("Log out");
     expect(html).not.toContain("Metric tiles");
     expect(html).not.toContain("Step progress");
   });
 });
 
 describe("ScoreErrorPanel", () => {
-  it("preserves the candidate recovery actions when score retrieval fails", () => {
+  it("preserves the supportable error message when score retrieval fails", () => {
     const html = renderToStaticMarkup(
       createElement(ScoreErrorPanel, {
         errorMessage: "request failed (502). Reference: corr-123",
-        logoutPresentation: {
-          buttonLabel: "Try log out again",
-          disabled: false,
-          statusMessage: null,
-          errorMessage: "Logout failed (502)",
-        },
-        onBackToCandidateHome: () => {},
-        onLogout: () => Promise.resolve(),
       }),
     );
 
     expect(html).toContain("Score unavailable");
     expect(html).toContain("Could not load score: request failed (502). Reference: corr-123");
-    expect(html).toContain("Back to Candidate Home");
-    expect(html).toContain("Try log out again");
-    expect(html).toContain("Logout failed (502)");
   });
 });

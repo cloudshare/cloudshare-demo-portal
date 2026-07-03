@@ -35,8 +35,8 @@ export const spacing = {
 
 export const radius = {
   sm: "6px",
-  md: "10px",
-  lg: "14px",
+  md: "8px",
+  lg: "10px",
   pill: "999px",
 } as const;
 
@@ -46,14 +46,14 @@ export const shadow = {
 } as const;
 
 export const fontFamily = {
-  display: "var(--font-display, Georgia, serif)",
+  display: "var(--font-display, system-ui, sans-serif)",
   body: "var(--font-body, system-ui, sans-serif)",
 } as const;
 
 export const pageHeadingStyle: CSSProperties = {
   fontFamily: fontFamily.display,
   fontWeight: 600,
-  letterSpacing: "-0.01em",
+  letterSpacing: 0,
   color: colors.textPrimary,
 };
 

@@ -2,7 +2,7 @@ import React from "react";
 import { formatLocalDateTimeMinute } from "./candidate-date-format";
 import { MonitoringAttemptDetails } from "./monitoring-attempt-details";
 import { cardStyle, mutedPanelStyle } from "./card-styles";
-import { compactButtonStyle } from "./button-styles";
+import { compactButtonStyle, primaryButtonStyle } from "./button-styles";
 import { statusBadgeStyle, getExamAttemptStatusTone, type StatusTone } from "./status-badge";
 import { colors } from "./design-tokens";
 import type {
@@ -70,7 +70,12 @@ function formatMonitoringResult(result: MonitoringAttemptResult | undefined): st
   if (!result.scoreAvailable) {
     return formatAttemptStatus(result.status);
   }
-  const percent = typeof result.percentComplete === "number" ? `${result.percentComplete}%` : "Score";
+  const percent =
+    typeof result.passedRate === "number"
+      ? `${Math.round(result.passedRate * 100)}% pass rate`
+      : typeof result.percentComplete === "number"
+        ? `${result.percentComplete}% complete`
+        : "Score";
   const steps =
     typeof result.stepsCompleted === "number" && typeof result.stepsTotal === "number"
       ? ` (${result.stepsCompleted}/${result.stepsTotal} steps)`
@@ -93,6 +98,12 @@ const statusStripStyle: React.CSSProperties = {
   flexWrap: "wrap",
   gap: "0.75rem",
   marginBottom: "0.5rem",
+};
+
+const refreshActionRowStyle: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "flex-start",
+  marginTop: "-0.2rem",
 };
 
 const statusMetricStyle: React.CSSProperties = {
@@ -238,6 +249,54 @@ const queueCountPillStyle: React.CSSProperties = {
   whiteSpace: "nowrap",
 };
 
+const historyTableScrollStyle: React.CSSProperties = {
+  overflowX: "auto",
+  border: "1px solid #e5e7eb",
+  borderRadius: "6px",
+  background: "#fff",
+};
+
+const historyTableStyle: React.CSSProperties = {
+  width: "100%",
+  borderCollapse: "collapse",
+  minWidth: "760px",
+  fontSize: "0.88rem",
+};
+
+const historyTableHeaderCellStyle: React.CSSProperties = {
+  padding: "0.55rem 0.65rem",
+  borderBottom: "1px solid #e5e7eb",
+  background: "#f8fafc",
+  color: "#374151",
+  fontSize: "0.76rem",
+  fontWeight: 700,
+  textAlign: "left",
+  textTransform: "uppercase",
+};
+
+const historyTableCellStyle: React.CSSProperties = {
+  padding: "0.58rem 0.65rem",
+  borderBottom: "1px solid #e5e7eb",
+  color: "#111827",
+  verticalAlign: "top",
+};
+
+const historyIdentityCellStyle: React.CSSProperties = {
+  ...historyTableCellStyle,
+  minWidth: "190px",
+  overflowWrap: "anywhere",
+};
+
+const historyStackStyle: React.CSSProperties = {
+  display: "grid",
+  gap: "0.12rem",
+};
+
+const historySubtleTextStyle: React.CSSProperties = {
+  color: "#4b5563",
+  fontSize: "0.8rem",
+};
+
 export function buildMonitoringHistoryAttemptKey(attempt: Pick<MonitoringAttemptView, "id">): string {
   return attempt.id;
 }
@@ -368,6 +427,89 @@ function renderAttemptCard(
   );
 }
 
+function renderHistoryTable(
+  attempts: readonly MonitoringAttemptView[],
+  onOpenSupportDiagnostics: (examAttemptId: string) => void,
+) {
+  return (
+    <div style={historyTableScrollStyle}>
+      <table style={historyTableStyle}>
+        <thead>
+          <tr>
+            <th scope="col" style={historyTableHeaderCellStyle}>
+              Candidate
+            </th>
+            <th scope="col" style={historyTableHeaderCellStyle}>
+              Exam
+            </th>
+            <th scope="col" style={historyTableHeaderCellStyle}>
+              Status
+            </th>
+            <th scope="col" style={historyTableHeaderCellStyle}>
+              Result
+            </th>
+            <th scope="col" style={historyTableHeaderCellStyle}>
+              Open window
+            </th>
+            <th scope="col" style={historyTableHeaderCellStyle}>
+              Support
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {attempts.map((attempt) => {
+            const openWindow = getOpenWindowSummary(attempt);
+
+            return (
+              <tr key={buildMonitoringHistoryAttemptKey(attempt)}>
+                <td style={historyIdentityCellStyle}>
+                  <span style={historyStackStyle}>
+                    <span style={{ color: "#111827", fontWeight: 500 }}>
+                      {attempt.candidateName}{" "}
+                      <strong style={{ color: "#111827", fontWeight: 700 }}>
+                        {attempt.candidateEmail}
+                      </strong>
+                    </span>
+                    <span style={historySubtleTextStyle}>{attempt.id}</span>
+                  </span>
+                </td>
+                <td style={historyTableCellStyle}>
+                  <span style={historyStackStyle}>
+                    <span style={{ color: "#4b5563", fontWeight: 400 }}>{attempt.examTitle}</span>
+                    <span style={historySubtleTextStyle}>{attempt.examId}</span>
+                  </span>
+                </td>
+                <td style={historyTableCellStyle}>
+                  <span style={statusBadgeStyle(getExamAttemptStatusTone(attempt.status))}>
+                    {formatAttemptStatus(attempt.status)}
+                  </span>
+                </td>
+                <td style={historyTableCellStyle}>{formatMonitoringResult(attempt.result)}</td>
+                <td style={historyTableCellStyle}>
+                  <span style={historyStackStyle}>
+                    <span>Starts {openWindow.startLabel}</span>
+                    <span>Closes {openWindow.endLabel}</span>
+                    <span>Duration {openWindow.durationLabel}</span>
+                  </span>
+                </td>
+                <td style={historyTableCellStyle}>
+                  <button
+                    type="button"
+                    onClick={() => onOpenSupportDiagnostics(attempt.id)}
+                    style={compactButtonStyle}
+                  >
+                    Open in Support Diagnostics
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function SessionMonitoringPanel({
   monitoring,
   loading,
@@ -436,9 +578,6 @@ export function SessionMonitoringPanel({
         Diagnostics for the forensic trace of what happened and in what order. Summary counts cover the
         full monitoring state, while completed and expired history stays bounded for scanning.
       </p>
-      <button onClick={onRefresh} disabled={loading} style={{ ...compactButtonStyle, marginBottom: "1rem" }}>
-        {loading ? "Loading..." : "Refresh Monitoring"}
-      </button>
       <div>
         <h2 style={sectionTitleStyle}>Monitoring status</h2>
         <p style={sectionBodyStyle}>Summary counts across live queues and terminal history.</p>
@@ -466,6 +605,11 @@ export function SessionMonitoringPanel({
             <div style={statusMetricValueStyle}>{value}</div>
           </button>
         ))}
+      </div>
+      <div style={refreshActionRowStyle}>
+        <button type="button" onClick={onRefresh} disabled={loading} style={primaryButtonStyle}>
+          {loading ? "Loading..." : "Refresh Monitoring"}
+        </button>
       </div>
       <section aria-label="Monitoring filters" style={filterPanelStyle}>
         <div>
@@ -568,11 +712,7 @@ export function SessionMonitoringPanel({
                   : "No completed or expired attempts yet."}
               </p>
             ) : (
-              <div style={queueListStyle}>
-                {filteredMonitoring.history.map((attempt) =>
-                  renderAttemptCard(attempt, onOpenSupportDiagnostics, { showStatusBadge: true }),
-                )}
-              </div>
+              renderHistoryTable(filteredMonitoring.history, onOpenSupportDiagnostics)
             )}
           </section>
         ) : null}

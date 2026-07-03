@@ -1,6 +1,6 @@
 :root {
-  --font-body: "Manrope", system-ui, sans-serif;
-  --font-display: "Fraunces", Georgia, serif;
+  --font-body: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-display: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --color-focus-ring: #0f6d66;
 }
 
@@ -24,7 +24,7 @@ body {
 h1, h2, h3 {
   font-family: var(--font-display);
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
 }
 
 button {

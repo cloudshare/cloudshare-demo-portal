@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  accountLogoutButtonStyle,
   compactButtonStyle,
   dangerButtonStyle,
   disabledButtonStyle,
@@ -18,6 +19,14 @@ describe("button styles", () => {
 
   it("marks danger actions distinctly from primary", () => {
     expect(dangerButtonStyle.background).not.toBe(primaryButtonStyle.background);
+  });
+
+  it("keeps account logout visually separate from navigation and primary actions", () => {
+    expect(accountLogoutButtonStyle.borderRadius).toBe(secondaryButtonStyle.borderRadius);
+    expect(accountLogoutButtonStyle.padding).toBe(secondaryButtonStyle.padding);
+    expect(accountLogoutButtonStyle.background).not.toBe(secondaryButtonStyle.background);
+    expect(accountLogoutButtonStyle.background).not.toBe(primaryButtonStyle.background);
+    expect(accountLogoutButtonStyle.color).toBe(secondaryButtonStyle.color);
   });
 
   it("keeps the compact button visibly smaller than the standard secondary button", () => {

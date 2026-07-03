@@ -23,10 +23,6 @@ import {
 import { formatCandidateAttemptStatus } from "./candidate-lab-state";
 import { formatCandidateScheduledDateTime } from "./candidate-date-format";
 import {
-  candidateHomeAccountActionsStyle,
-  candidateHomeAccountPanelStyle,
-  candidateHomeHeaderIntroStyle,
-  candidateHomeHeaderStyle,
   publishedExamDescriptionStyle,
   publishedExamDurationPillsStyle,
   publishedExamHeaderStyle,
@@ -41,12 +37,14 @@ import {
 } from "./session-expiry";
 import { cardStyle, mutedPanelStyle, alertPanelStyle } from "./card-styles";
 import {
+  accountLogoutButtonStyle,
   primaryButtonStyle,
   secondaryButtonStyle,
   disabledButtonStyle,
 } from "./button-styles";
 import { statusBadgeStyle, getExamAttemptStatusTone } from "./status-badge";
-import { eyebrowLabelStyle, pageHeadingStyle } from "./design-tokens";
+import { eyebrowLabelStyle } from "./design-tokens";
+import { PortalPageHeader } from "./portal-page-header";
 
 interface CandidateHomeProps {
   readonly email: string;
@@ -272,45 +270,21 @@ export function CandidateHome({ email }: CandidateHomeProps) {
 
   return (
     <main style={pageShellStyle}>
-      <section
-        style={{
-          border: "1px solid #d9e1e8",
-          borderRadius: "8px",
-          padding: "1.5rem",
-          background: "#f7fafc",
-          marginBottom: "1.25rem",
-        }}
-      >
-        <div style={candidateHomeHeaderStyle}>
-          <div style={candidateHomeHeaderIntroStyle}>
-            <p style={{ margin: 0, color: "#5f6b76", fontSize: "0.9rem", fontWeight: 600 }}>
-              Certalis Candidate Portal
-            </p>
-            <h1 style={{ ...pageHeadingStyle, margin: "0.35rem 0 0.5rem", fontSize: "2rem" }}>
-              Candidate Home
-            </h1>
-            <p style={{ margin: 0, color: "#334155", lineHeight: 1.5 }}>
-              Review your scheduled Exams, enter or resume active sessions, and schedule the next
-              published Helios CX Exam from one place.
-            </p>
-          </div>
-          <div style={candidateHomeAccountActionsStyle}>
-            <div style={candidateHomeAccountPanelStyle}>
-              <p style={{ margin: 0, color: "#5f6b76", fontSize: "0.85rem" }}>Signed in as</p>
-              <p style={{ margin: "0.3rem 0 0", color: "#0f172a", fontWeight: 600, overflowWrap: "anywhere" }}>
-                {email}
-              </p>
-            </div>
-            <button
-              onClick={() => void logout()}
-              disabled={logoutPresentation.disabled}
-              style={getButtonStyle(secondaryButtonStyle, logoutPresentation.disabled)}
-            >
-              {logoutPresentation.buttonLabel}
-            </button>
-          </div>
-        </div>
-      </section>
+      <PortalPageHeader
+        eyebrow="Certalis Candidate Portal"
+        title="Candidate Home"
+        description="Review your scheduled Exams, enter or resume active sessions, and schedule the next published Helios CX Exam from one place."
+        email={email}
+        actions={
+          <button
+            onClick={() => void logout()}
+            disabled={logoutPresentation.disabled}
+            style={getButtonStyle(accountLogoutButtonStyle, logoutPresentation.disabled)}
+          >
+            {logoutPresentation.buttonLabel}
+          </button>
+        }
+      />
       {logoutPresentation.statusMessage ? (
         <p role="status" style={{ marginTop: 0, marginBottom: "1rem", color: "#555" }}>
           {logoutPresentation.statusMessage}
@@ -341,7 +315,13 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                 or review a completed score.
               </p>
             </div>
-            <div style={{ display: "grid", gap: "0.75rem" }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 330px), 1fr))",
+                gap: "0.75rem",
+              }}
+            >
               {scheduledAttempts.map((attempt) => {
                 const exam = examsById.get(attempt.examId) ?? (
                   attempt.openPeriodMinutes && attempt.timeLimitMinutes
