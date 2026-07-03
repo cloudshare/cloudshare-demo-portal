@@ -254,11 +254,69 @@ export async function resumeLabAttempt(
   throw new Error(readError(detail, `resume failed (${response.status})`));
 }
 
+export async function endLabAttempt(
+  fetchImpl: FetchLike,
+  examAttemptId: string,
+): Promise<
+  | { kind: "completed"; message: string }
+  | { kind: "pending"; labStatus: CandidateLabStatus | null; message: string; environmentArchived: boolean }
+  | { kind: "blocked"; labStatus: CandidateLabStatus | null; message: string }
+> {
+  const response = await fetchImpl("/api/exam/complete", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ examAttemptId }),
+  });
+
+  const detail = await response.json().catch(() => ({}));
+
+  if (response.status === 202) {
+    const labStatus = await loadCandidateLabStatus(fetchImpl, examAttemptId).catch(() => null);
+    return {
+      kind: "pending",
+      labStatus,
+      environmentArchived: readBoolean(detail, "environmentArchived"),
+      message: readError(
+        detail,
+        "CloudShare is still archiving your lab. Wait a few seconds, then retry End exam.",
+      ),
+    };
+  }
+
+  if (response.ok) {
+    return {
+      kind: "completed",
+      message: "Examination complete.",
+    };
+  }
+
+  if (response.status === 409) {
+    const labStatus = await loadCandidateLabStatus(fetchImpl, examAttemptId).catch(() => null);
+    if (labStatus?.status === "completed") {
+      return {
+        kind: "completed",
+        message: "Examination complete.",
+      };
+    }
+    return {
+      kind: "blocked",
+      labStatus,
+      message: readError(detail, "Exam completion is not available for this attempt."),
+    };
+  }
+
+  throw new Error(readError(detail, `end exam failed (${response.status})`));
+}
+
 function readError(json: unknown, fallback: string): string {
   if (typeof json === "object" && json !== null && typeof (json as { error?: unknown }).error === "string") {
     return (json as { error: string }).error;
   }
   return fallback;
+}
+
+function readBoolean(json: unknown, key: string): boolean {
+  return typeof json === "object" && json !== null && (json as Record<string, unknown>)[key] === true;
 }
 
 function isReadyAttemptEnterable(

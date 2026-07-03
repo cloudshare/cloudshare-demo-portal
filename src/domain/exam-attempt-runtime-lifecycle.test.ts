@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   suspendExam,
   resumeExam,
+  archiveExam,
   SUSPENDED_PRESERVATION_LIMIT_MS,
   type ExamTimer,
   type EnvironmentController,
@@ -27,12 +28,14 @@ function makeTimer(): ExamTimer & { paused: string[]; resumed: string[] } {
   };
 }
 
-function makeController(): EnvironmentController & { suspended: string[]; resumed: string[] } {
+function makeController(): EnvironmentController & { suspended: string[]; resumed: string[]; archived: string[] } {
   const suspended: string[] = [];
   const resumed: string[] = [];
+  const archived: string[] = [];
   return {
     suspended,
     resumed,
+    archived,
     suspendEnvironment: (id) => {
       suspended.push(id);
       return Promise.resolve(makeCommandResult("suspend", id));
@@ -41,11 +44,15 @@ function makeController(): EnvironmentController & { suspended: string[]; resume
       resumed.push(id);
       return Promise.resolve(makeCommandResult("resume", id));
     },
+    archiveEnvironment: (id) => {
+      archived.push(id);
+      return Promise.resolve(makeCommandResult("archive", id));
+    },
   };
 }
 
 function makeCommandResult(
-  action: "suspend" | "resume",
+  action: "suspend" | "resume" | "archive",
   environmentId: string,
 ): EnvironmentCommandResult {
   return {
@@ -484,4 +491,61 @@ describe("resumeExam", () => {
       });
     },
   );
+});
+
+// --- archiveExam ---
+
+describe("archiveExam", () => {
+  it("issues archive, polls until archived, then pauses an in-progress timer without marking suspended", async () => {
+    const controller = makeController();
+    const timer = makeTimer();
+    const attempts = await makeAttempts("in_progress");
+
+    const result = await archiveExam(
+      {
+        controller,
+        source: eventualSource("running", "archived", 1),
+        timer,
+        attempts,
+        launches: makeLaunches(),
+        sleep: noSleep,
+      },
+      { examAttemptId: "ea-1" },
+    );
+
+    expect(controller.archived).toEqual(["ENVS-test-env-1"]);
+    expect(timer.paused).toEqual(["ea-1"]);
+    expect(result).toMatchObject({
+      environmentExternalId: "ENVS-test-env-1",
+      alreadyArchived: false,
+    });
+    await expect(attempts.findById("ea-1")).resolves.toMatchObject({ status: "in_progress" });
+  });
+
+  it("treats an already archived environment as idempotent and skips the archive command", async () => {
+    const controller = makeController();
+    const timer = makeTimer();
+    const attempts = await makeAttempts("suspended");
+
+    const result = await archiveExam(
+      {
+        controller,
+        source: fixedSource("archived"),
+        timer,
+        attempts,
+        launches: makeLaunches(),
+        sleep: noSleep,
+      },
+      { examAttemptId: "ea-1" },
+    );
+
+    expect(controller.archived).toHaveLength(0);
+    expect(timer.paused).toHaveLength(0);
+    expect(result).toEqual({
+      environmentExternalId: "ENVS-test-env-1",
+      commandResult: null,
+      alreadyArchived: true,
+    });
+    await expect(attempts.findById("ea-1")).resolves.toMatchObject({ status: "suspended" });
+  });
 });

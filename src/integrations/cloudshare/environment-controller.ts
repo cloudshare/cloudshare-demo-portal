@@ -3,9 +3,10 @@ import type { EnvironmentCommandResult, EnvironmentController } from "@/domain/e
 
 /**
  * CloudShare implementation of the {@link EnvironmentController} port — issues
- * suspend and resume commands to a CloudShare environment via the documented v3
+ * suspend, resume, and archive commands to a CloudShare environment via the v3
  * env-action endpoints, using the CloudShare `envId` discovered from the
- * training-students list.
+ * training-students list. Archive is intentionally kept behind this typed seam
+ * because CloudShare has not documented that action endpoint.
  */
 
 export function createCloudShareEnvironmentController(
@@ -13,7 +14,7 @@ export function createCloudShareEnvironmentController(
 ): EnvironmentController {
   async function runCommand(
     environmentExternalId: string,
-    action: "suspend" | "resume",
+    action: "suspend" | "resume" | "archive",
   ): Promise<EnvironmentCommandResult> {
     const path = `/envs/actions/${action}`;
     const attemptedOperation = `${action}_environment` as const;
@@ -63,6 +64,10 @@ export function createCloudShareEnvironmentController(
 
     async resumeEnvironment(environmentExternalId: string): Promise<EnvironmentCommandResult> {
       return runCommand(environmentExternalId, "resume");
+    },
+
+    async archiveEnvironment(environmentExternalId: string): Promise<EnvironmentCommandResult> {
+      return runCommand(environmentExternalId, "archive");
     },
   };
 }

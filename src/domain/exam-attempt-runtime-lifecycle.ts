@@ -191,6 +191,76 @@ export async function resumeExam(
   };
 }
 
+// --- archiveExam ---
+
+export interface ArchiveExamDeps {
+  readonly controller: EnvironmentController;
+  readonly source: EnvironmentStateSource;
+  readonly timer: ExamTimer;
+  readonly attempts: ExamAttemptRepository;
+  readonly launches: LabLaunchRepository;
+  readonly sleep: (ms: number) => Promise<void>;
+  readonly poll?: PollOptions;
+}
+
+export interface ArchiveExamInput {
+  readonly examAttemptId: string;
+  readonly verifiedEnvironmentExternalId?: string;
+}
+
+export interface ArchiveExamResult {
+  readonly environmentExternalId: string;
+  readonly commandResult: EnvironmentCommandResult | null;
+  readonly alreadyArchived: boolean;
+}
+
+export async function archiveExam(
+  deps: ArchiveExamDeps,
+  input: ArchiveExamInput,
+): Promise<ArchiveExamResult> {
+  const attempt = await requireAttempt(deps.attempts, input.examAttemptId);
+  if (attempt.status !== "in_progress" && attempt.status !== "suspended") {
+    throw new InvalidExamAttemptStatusError({
+      examAttemptId: input.examAttemptId,
+      operation: "archive",
+      expectedStatus: "in_progress_or_suspended",
+      currentStatus: attempt.status as ExamAttemptStatus,
+    });
+  }
+
+  const launch = await deps.launches.findByExamAttemptId(input.examAttemptId);
+  if (!launch) {
+    throw new LabLaunchNotFoundError({ examAttemptId: input.examAttemptId });
+  }
+  const environmentExternalId = requireEnvironmentExternalId(
+    launch,
+    input.examAttemptId,
+    input.verifiedEnvironmentExternalId,
+  );
+
+  const currentState = await deps.source.getEnvironmentState(environmentExternalId);
+  if (currentState?.status === "archived") {
+    if (attempt.status === "in_progress") {
+      await deps.timer.pauseTimer(input.examAttemptId);
+    }
+    return { environmentExternalId, commandResult: null, alreadyArchived: true };
+  }
+
+  const commandResult = await deps.controller.archiveEnvironment(environmentExternalId);
+  await pollUntilStatus(
+    deps.source,
+    deps.sleep,
+    environmentExternalId,
+    "archived",
+    deps.poll ?? DEFAULT_POLL,
+  );
+  if (attempt.status === "in_progress") {
+    await deps.timer.pauseTimer(input.examAttemptId);
+  }
+
+  return { environmentExternalId, commandResult, alreadyArchived: false };
+}
+
 function requireEnvironmentExternalId(
   launch: {
     readonly id: string;

@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { openEnterExamWindow } from "./enter-exam";
 import { isLabWindowOpen } from "./lab-window";
-import { preflightLabAction, readHeartbeatAttemptStatus, resumeLabAttempt, suspendLabAttempt, type CandidateLabStatus, type AttemptStatus } from "./lab-launcher-client";
+import { endLabAttempt, preflightLabAction, readHeartbeatAttemptStatus, resumeLabAttempt, suspendLabAttempt, type CandidateLabStatus, type AttemptStatus } from "./lab-launcher-client";
 import { describeAndReportLaunchFailure } from "./lab-launcher-runtime-diagnostics";
 import {
   getAttemptStatusAfterLaunchTransition,
@@ -15,6 +15,29 @@ import {
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const CHILD_POLL_INTERVAL_MS = 3_000;
+export const END_EXAM_CONFIRMATION_MESSAGE =
+  "Ending this exam will allow you to get your results immediately, but also archive your CloudShare lab. This means you will lose access to this exam attempt, which cannot be undone.";
+
+export function confirmCandidateEndExam(
+  confirmImpl?: (message: string) => boolean,
+): boolean {
+  const confirmFn =
+    confirmImpl ??
+    (typeof window !== "undefined" && typeof window.confirm === "function"
+      ? window.confirm.bind(window)
+      : null);
+  return confirmFn ? confirmFn(END_EXAM_CONFIRMATION_MESSAGE) : true;
+}
+
+export function getEndExamPendingLaunchState(input: {
+  readonly environmentArchived: boolean;
+  readonly labStatus: CandidateLabStatus | null;
+}): LaunchState {
+  if (input.environmentArchived) {
+    return "completion_pending";
+  }
+  return input.labStatus?.status === "suspended" ? "suspended" : "open";
+}
 
 /**
  * Candidate-facing control that launches the lab, then keeps a heartbeat alive
@@ -328,6 +351,54 @@ export function LabLauncher({
     }
   }
 
+  async function endNow() {
+    if (actionInFlightRef.current) {
+      return;
+    }
+    if (currentAttemptStatusRef.current === "completed") {
+      setState("completed");
+      setMessage("Examination complete.");
+      return;
+    }
+    if (!confirmCandidateEndExam()) {
+      return;
+    }
+    actionInFlightRef.current = true;
+    stopHeartbeat();
+    stopChildPoll();
+    setState("ending");
+    setMessage("");
+    try {
+      const result = await endLabAttempt(fetch, examAttemptId);
+      if (result.kind === "pending") {
+        if (result.labStatus) {
+          reportLabStatusLoaded(result.labStatus);
+          reportAttemptStatusChange(result.labStatus.status);
+        }
+        setState(getEndExamPendingLaunchState(result));
+        setMessage(result.message);
+        return;
+      }
+      if (result.kind === "blocked") {
+        if (result.labStatus) {
+          reportLabStatusLoaded(result.labStatus);
+          reportAttemptStatusChange(result.labStatus.status);
+        }
+        setState(result.labStatus?.status === "suspended" ? "suspended" : "error");
+        setMessage(result.message);
+        return;
+      }
+      setState("completed");
+      setMessage(result.message);
+      reportAttemptStatusChange("completed");
+    } catch (err) {
+      setState("error");
+      setMessage(err instanceof Error ? err.message : "end exam failed");
+    } finally {
+      actionInFlightRef.current = false;
+    }
+  }
+
   useEffect(() => {
     const target = getLauncherSyncTarget(currentAttemptStatus);
     if (target) {
@@ -376,6 +447,12 @@ export function LabLauncher({
   });
   const recoveryAction =
     state === "error" ? getLauncherRecoveryAction(launcherAttemptStatus, openPeriodClosed) : null;
+  const showEndExam =
+    (launcherAttemptStatus === "in_progress" || launcherAttemptStatus === "suspended") &&
+    state !== "completed" &&
+    state !== "launching" &&
+    state !== "suspending" &&
+    state !== "ending";
 
   return (
     <section
@@ -450,6 +527,11 @@ export function LabLauncher({
               Suspend lab
             </button>
           ) : null}
+          {showEndExam ? (
+            <button type="button" onClick={endNow} style={secondaryButtonStyle}>
+              End exam
+            </button>
+          ) : null}
         </div>
       </div>
     </section>
@@ -462,5 +544,14 @@ const primaryButtonStyle = {
   border: "1px solid #0b5d3b",
   backgroundColor: "#0b5d3b",
   color: "#ffffff",
+  fontWeight: 700,
+} as const;
+
+const secondaryButtonStyle = {
+  padding: "0.75rem 1rem",
+  borderRadius: "8px",
+  border: "1px solid #9aa5b1",
+  backgroundColor: "#ffffff",
+  color: "#14213d",
   fontWeight: 700,
 } as const;

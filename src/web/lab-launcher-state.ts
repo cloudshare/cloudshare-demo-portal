@@ -5,6 +5,8 @@ export type LaunchState =
   | "launching"
   | "open"
   | "suspending"
+  | "ending"
+  | "completion_pending"
   | "suspended"
   | "completed"
   | "error";
@@ -144,6 +146,22 @@ export function getLauncherPresentation(input: {
         tone: "info",
         title: "Suspending lab",
         detail: "The portal is pausing your CloudShare lab and exam clock.",
+        primaryActionLabel: null,
+        supportMessage: null,
+      };
+    case "ending":
+      return {
+        tone: "info",
+        title: "Ending exam",
+        detail: input.message || "The portal is archiving your CloudShare lab before completing this ExamAttempt.",
+        primaryActionLabel: null,
+        supportMessage: null,
+      };
+    case "completion_pending":
+      return {
+        tone: "info",
+        title: "Completion pending",
+        detail: input.message || "Your lab has been archived, but completion is still being saved. Retry End exam.",
         primaryActionLabel: null,
         supportMessage: null,
       };

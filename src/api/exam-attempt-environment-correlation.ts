@@ -38,6 +38,7 @@ export async function ensureExamAttemptEnvironmentCorrelation(
     readonly operation:
       | "exam_suspend"
       | "exam_resume"
+      | "exam_complete"
       | "heartbeat_auto_suspend";
   },
 ): Promise<ExamAttemptEnvironmentCorrelationResult> {
