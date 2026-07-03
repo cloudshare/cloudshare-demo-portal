@@ -1,5 +1,6 @@
 import React from "react";
 import { ScoreDisplay } from "@/web/score-display";
+import { pageShellStyle } from "@/web/page-shell";
 
 /**
  * Candidate score page. Shown after the lab session completes.
@@ -15,14 +16,7 @@ export default async function CandidateScorePage({
 
   if (!examAttemptId) {
     return (
-      <main
-        style={{
-          fontFamily: "system-ui, sans-serif",
-          padding: "2rem",
-          maxWidth: "720px",
-          margin: "0 auto",
-        }}
-      >
+      <main style={pageShellStyle}>
         <h1 style={{ marginBottom: "0.5rem" }}>Session complete</h1>
         <p style={{ color: "#555" }}>Missing examAttemptId.</p>
       </main>
@@ -30,14 +24,7 @@ export default async function CandidateScorePage({
   }
 
   return (
-    <main
-      style={{
-        fontFamily: "system-ui, sans-serif",
-        padding: "2rem",
-        maxWidth: "960px",
-        margin: "0 auto",
-      }}
-    >
+    <main style={pageShellStyle}>
       <h1 style={{ marginBottom: "0.35rem" }}>Session complete</h1>
       <p style={{ margin: "0 0 1rem", color: "#475569" }}>
         Review your final Guided Journey result and any CloudShare scoring limitations for this ExamAttempt.

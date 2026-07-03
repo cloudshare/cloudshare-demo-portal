@@ -38,6 +38,7 @@ import { EventLogTable } from "./event-log-table";
 import { SessionMonitoringPanel } from "./session-monitoring-panel";
 import type { AdminMonitoringView as MonitoringView } from "@/domain/admin-monitoring";
 import { startPortalSessionWatchdog } from "./session-expiry";
+import { pageShellStyle } from "./page-shell";
 
 interface AdminConsoleProps {
   readonly email: string;
@@ -1140,7 +1141,7 @@ export function AdminConsole({
 
   if (sessionExpired) {
     return (
-      <main style={{ fontFamily: "system-ui, sans-serif", padding: "2rem", maxWidth: "720px", margin: "0 auto" }}>
+      <main style={pageShellStyle}>
         <h1 style={{ marginBottom: "0.5rem" }}>Admin session expired</h1>
         <p style={{ color: "#555" }}>{ADMIN_SESSION_EXPIRED_MESSAGE}</p>
         <button onClick={() => router.replace("/login")} style={{ padding: "0.55rem 0.9rem" }}>
@@ -1153,10 +1154,7 @@ export function AdminConsole({
   return (
     <main
       style={{
-        fontFamily: "system-ui, sans-serif",
-        padding: "2rem",
-        maxWidth: "1000px",
-        margin: "0 auto",
+        ...pageShellStyle,
         minHeight: "100vh",
         scrollbarGutter: "stable",
       }}

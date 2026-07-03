@@ -34,6 +34,7 @@ import {
   publishedExamTitleRowStyle,
 } from "./candidate-home-layout";
 import { useCandidateLogout } from "./candidate-logout";
+import { pageShellStyle } from "./page-shell";
 import {
   isPortalSessionExpiredError,
   startPortalSessionWatchdog,
@@ -262,14 +263,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
   const examsById = new Map(dashboard.exams.map((exam) => [exam.id, exam]));
 
   return (
-    <main
-      style={{
-        fontFamily: "system-ui, sans-serif",
-        padding: "2rem 1rem 3rem",
-        maxWidth: "1120px",
-        margin: "0 auto",
-      }}
-    >
+    <main style={pageShellStyle}>
       <section
         style={{
           border: "1px solid #d9e1e8",

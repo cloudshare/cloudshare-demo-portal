@@ -10,6 +10,7 @@ import {
   updateCandidateLabStatusAttemptState,
 } from "./lab-launcher-state";
 import { useCandidateLogout } from "./candidate-logout";
+import { pageShellStyle } from "./page-shell";
 
 type AttemptStatus = "ready" | "in_progress" | "suspended" | "completed";
 
@@ -90,15 +91,7 @@ export function CandidateLabShell({
   }) : null;
 
   return (
-    <main
-      style={{
-        fontFamily: "system-ui, sans-serif",
-        padding: "2rem",
-        maxWidth: "880px",
-        margin: "0 auto",
-        color: "#14213d",
-      }}
-    >
+    <main style={{ ...pageShellStyle, color: "#14213d" }}>
       <div
         style={{
           display: "flex",
