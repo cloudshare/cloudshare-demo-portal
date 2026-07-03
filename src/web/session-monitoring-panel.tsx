@@ -28,10 +28,19 @@ export interface MonitoringFilters {
 }
 
 const EMPTY_MONITORING_FILTERS: MonitoringFilters = {
-  status: null,
+  status: "in_progress",
   candidateEmail: "",
   identifier: "",
 };
+
+const DEFAULT_MONITORING_STATUS_FILTER: MonitoringStatusFilter = "in_progress";
+const LIVE_MONITORING_STATUSES = new Set<MonitoringStatusFilter>([
+  "scheduled",
+  "ready",
+  "in_progress",
+  "suspended",
+]);
+const TERMINAL_MONITORING_STATUSES = new Set<MonitoringStatusFilter>(["completed", "expired"]);
 
 function formatLocalMinuteTimestamp(value: string | null | undefined): string {
   if (!value) {
@@ -249,54 +258,6 @@ const queueCountPillStyle: React.CSSProperties = {
   whiteSpace: "nowrap",
 };
 
-const historyTableScrollStyle: React.CSSProperties = {
-  overflowX: "auto",
-  border: "1px solid #e5e7eb",
-  borderRadius: "6px",
-  background: "#fff",
-};
-
-const historyTableStyle: React.CSSProperties = {
-  width: "100%",
-  borderCollapse: "collapse",
-  minWidth: "760px",
-  fontSize: "0.88rem",
-};
-
-const historyTableHeaderCellStyle: React.CSSProperties = {
-  padding: "0.55rem 0.65rem",
-  borderBottom: "1px solid #e5e7eb",
-  background: "#f8fafc",
-  color: "#374151",
-  fontSize: "0.76rem",
-  fontWeight: 700,
-  textAlign: "left",
-  textTransform: "uppercase",
-};
-
-const historyTableCellStyle: React.CSSProperties = {
-  padding: "0.58rem 0.65rem",
-  borderBottom: "1px solid #e5e7eb",
-  color: "#111827",
-  verticalAlign: "top",
-};
-
-const historyIdentityCellStyle: React.CSSProperties = {
-  ...historyTableCellStyle,
-  minWidth: "190px",
-  overflowWrap: "anywhere",
-};
-
-const historyStackStyle: React.CSSProperties = {
-  display: "grid",
-  gap: "0.12rem",
-};
-
-const historySubtleTextStyle: React.CSSProperties = {
-  color: "#4b5563",
-  fontSize: "0.8rem",
-};
-
 export function buildMonitoringHistoryAttemptKey(attempt: Pick<MonitoringAttemptView, "id">): string {
   return attempt.id;
 }
@@ -314,7 +275,11 @@ function matchesMonitoringFilters(
   }
 
   const candidateEmailFilter = normaliseMonitoringFilterText(filters.candidateEmail);
-  if (candidateEmailFilter && !attempt.candidateEmail.toLowerCase().includes(candidateEmailFilter)) {
+  if (
+    candidateEmailFilter &&
+    !attempt.candidateEmail.toLowerCase().includes(candidateEmailFilter) &&
+    !attempt.candidateName.toLowerCase().includes(candidateEmailFilter)
+  ) {
     return false;
   }
 
@@ -355,7 +320,7 @@ export function applyMonitoringFilters(
 
 function hasActiveMonitoringFilters(filters: MonitoringFilters): boolean {
   return (
-    filters.status !== null ||
+    (filters.status !== null && filters.status !== DEFAULT_MONITORING_STATUS_FILTER) ||
     filters.candidateEmail.trim().length > 0 ||
     filters.identifier.trim().length > 0
   );
@@ -391,7 +356,7 @@ function renderAttemptCard(
           </span>
           <span style={{ color: "#4b5563", fontWeight: 400 }}>
             {attempt.examTitle}
-            {attempt.result ? ` · ${formatMonitoringResult(attempt.result)}` : ""}
+            {attempt.result ? ` · Result: ${formatMonitoringResult(attempt.result)}` : ""}
           </span>
           <span
             style={{
@@ -427,85 +392,13 @@ function renderAttemptCard(
   );
 }
 
-function renderHistoryTable(
+function renderHistoryAttemptList(
   attempts: readonly MonitoringAttemptView[],
   onOpenSupportDiagnostics: (examAttemptId: string) => void,
 ) {
   return (
-    <div style={historyTableScrollStyle}>
-      <table style={historyTableStyle}>
-        <thead>
-          <tr>
-            <th scope="col" style={historyTableHeaderCellStyle}>
-              Candidate
-            </th>
-            <th scope="col" style={historyTableHeaderCellStyle}>
-              Exam
-            </th>
-            <th scope="col" style={historyTableHeaderCellStyle}>
-              Status
-            </th>
-            <th scope="col" style={historyTableHeaderCellStyle}>
-              Result
-            </th>
-            <th scope="col" style={historyTableHeaderCellStyle}>
-              Open window
-            </th>
-            <th scope="col" style={historyTableHeaderCellStyle}>
-              Support
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {attempts.map((attempt) => {
-            const openWindow = getOpenWindowSummary(attempt);
-
-            return (
-              <tr key={buildMonitoringHistoryAttemptKey(attempt)}>
-                <td style={historyIdentityCellStyle}>
-                  <span style={historyStackStyle}>
-                    <span style={{ color: "#111827", fontWeight: 500 }}>
-                      {attempt.candidateName}{" "}
-                      <strong style={{ color: "#111827", fontWeight: 700 }}>
-                        {attempt.candidateEmail}
-                      </strong>
-                    </span>
-                    <span style={historySubtleTextStyle}>{attempt.id}</span>
-                  </span>
-                </td>
-                <td style={historyTableCellStyle}>
-                  <span style={historyStackStyle}>
-                    <span style={{ color: "#4b5563", fontWeight: 400 }}>{attempt.examTitle}</span>
-                    <span style={historySubtleTextStyle}>{attempt.examId}</span>
-                  </span>
-                </td>
-                <td style={historyTableCellStyle}>
-                  <span style={statusBadgeStyle(getExamAttemptStatusTone(attempt.status))}>
-                    {formatAttemptStatus(attempt.status)}
-                  </span>
-                </td>
-                <td style={historyTableCellStyle}>{formatMonitoringResult(attempt.result)}</td>
-                <td style={historyTableCellStyle}>
-                  <span style={historyStackStyle}>
-                    <span>Starts {openWindow.startLabel}</span>
-                    <span>Closes {openWindow.endLabel}</span>
-                    <span>Duration {openWindow.durationLabel}</span>
-                  </span>
-                </td>
-                <td style={historyTableCellStyle}>
-                  <button
-                    type="button"
-                    onClick={() => onOpenSupportDiagnostics(attempt.id)}
-                    style={compactButtonStyle}
-                  >
-                    Open in Support Diagnostics
-                  </button>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+    <div style={queueListStyle}>
+      {attempts.map((attempt) => renderAttemptCard(attempt, onOpenSupportDiagnostics))}
     </div>
   );
 }
@@ -529,7 +422,7 @@ export function SessionMonitoringPanel({
 
   const filteredMonitoring = applyMonitoringFilters(monitoring, filters);
   const activeFilterCount =
-    (filters.status ? 1 : 0) +
+    (filters.status && filters.status !== DEFAULT_MONITORING_STATUS_FILTER ? 1 : 0) +
     (filters.candidateEmail.trim() ? 1 : 0) +
     (filters.identifier.trim() ? 1 : 0);
   const hasFilters = hasActiveMonitoringFilters(filters);
@@ -565,8 +458,12 @@ export function SessionMonitoringPanel({
     },
   ] as const;
 
-  const visibleLiveQueues = liveQueues.filter(({ status }) => !filters.status || filters.status === status);
-  const showHistorySection = !filters.status || filters.status === "completed" || filters.status === "expired";
+  const selectedStatus = filters.status;
+  const showLiveSection = !selectedStatus || LIVE_MONITORING_STATUSES.has(selectedStatus);
+  const visibleLiveQueues = showLiveSection
+    ? liveQueues.filter(({ status }) => !selectedStatus || selectedStatus === status)
+    : [];
+  const showHistorySection = !!selectedStatus && TERMINAL_MONITORING_STATUSES.has(selectedStatus);
   const hasVisibleLiveAttempts = visibleLiveQueues.some(({ attempts }) => attempts.length > 0);
   const hasVisibleHistoryAttempts = showHistorySection && filteredMonitoring.history.length > 0;
   const hasAnyVisibleAttempts = hasVisibleLiveAttempts || hasVisibleHistoryAttempts;
@@ -590,7 +487,7 @@ export function SessionMonitoringPanel({
             onClick={() =>
               setFilters((current) => ({
                 ...current,
-                status: current.status === status ? null : status,
+                status: current.status === status ? DEFAULT_MONITORING_STATUS_FILTER : status,
               }))
             }
             aria-pressed={filters.status === status}
@@ -615,12 +512,12 @@ export function SessionMonitoringPanel({
         <div>
           <h2 style={sectionTitleStyle}>Investigation filters</h2>
           <p style={sectionBodyStyle}>
-            Narrow the current monitoring view by status, candidate email, or Exam ID / ExamAttempt ID.
+            Narrow the current monitoring view by status, Candidate name or email, or Exam ID / ExamAttempt ID.
           </p>
         </div>
         <div style={filterGridStyle}>
           <label style={filterLabelStyle}>
-            <span>Candidate email</span>
+            <span>Candidate name or email</span>
             <input
               type="text"
               value={filters.candidateEmail}
@@ -657,36 +554,38 @@ export function SessionMonitoringPanel({
             </span>
           ) : (
             <span style={{ color: "#4b5563", fontSize: "0.9rem" }}>
-              No monitoring filters applied.
+              Default view: In-progress queue.
             </span>
           )}
         </div>
       </section>
 
       <div style={contentGridStyle}>
-        <section aria-labelledby="live-queues-heading" style={queueSectionStyle}>
-          <div>
-            <h2 id="live-queues-heading" style={sectionTitleStyle}>
-              Live queues
-            </h2>
-            <p style={sectionBodyStyle}>Current ExamAttempts by state, grouped for quick scanning.</p>
-          </div>
-          {visibleLiveQueues.map(({ label, attempts, style, badgeCount }) => (
-            <div key={label} style={style}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "center" }}>
-                <h3 style={queueHeadingStyle}>{label}</h3>
-                <span style={queueCountPillStyle}>{badgeCount}</span>
-              </div>
-              {attempts.length === 0 ? (
-                <p style={{ margin: 0, color: "#6b7280" }}>No attempts in this queue.</p>
-              ) : (
-                <div style={queueListStyle}>
-                  {attempts.map((attempt) => renderAttemptCard(attempt, onOpenSupportDiagnostics, { showStatusBadge: false }))}
-                </div>
-              )}
+        {showLiveSection ? (
+          <section aria-labelledby="live-queues-heading" style={queueSectionStyle}>
+            <div>
+              <h2 id="live-queues-heading" style={sectionTitleStyle}>
+                Live queues
+              </h2>
+              <p style={sectionBodyStyle}>Current ExamAttempts by state, grouped for quick scanning.</p>
             </div>
-          ))}
-        </section>
+            {visibleLiveQueues.map(({ label, attempts, style, badgeCount }) => (
+              <div key={label} style={style}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "center" }}>
+                  <h3 style={queueHeadingStyle}>{label}</h3>
+                  <span style={queueCountPillStyle}>{badgeCount}</span>
+                </div>
+                {attempts.length === 0 ? (
+                  <p style={{ margin: 0, color: "#6b7280" }}>No attempts in this queue.</p>
+                ) : (
+                  <div style={queueListStyle}>
+                    {attempts.map((attempt) => renderAttemptCard(attempt, onOpenSupportDiagnostics, { showStatusBadge: false }))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </section>
+        ) : null}
 
         {showHistorySection ? (
           <section aria-labelledby="history-heading" style={historySectionStyle}>
@@ -712,7 +611,7 @@ export function SessionMonitoringPanel({
                   : "No completed or expired attempts yet."}
               </p>
             ) : (
-              renderHistoryTable(filteredMonitoring.history, onOpenSupportDiagnostics)
+              renderHistoryAttemptList(filteredMonitoring.history, onOpenSupportDiagnostics)
             )}
           </section>
         ) : null}

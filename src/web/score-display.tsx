@@ -192,14 +192,11 @@ export function ScoreLoadedPanel({
               </p>
             </div>
             <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
-                gap: "0.75rem",
-              }}
+              aria-label="Score summary details"
+              style={compactSummaryGridStyle}
             >
               <SummaryStat label="Completion evidence" value={`${score.percentComplete}% complete`} />
-              <SummaryStat label="Steps marked explored or complete" value={`${score.stepsCompleted} of ${score.stepsTotal}`} />
+              <SummaryStat label="Steps explored/complete" value={`${score.stepsCompleted} of ${score.stepsTotal}`} />
               <SummaryStat label="Last retrieved" value={formatRetrievedAt(score.retrievedAt)} />
             </div>
           </section>
@@ -212,11 +209,8 @@ export function ScoreLoadedPanel({
               </p>
             </div>
             <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-                gap: "0.75rem",
-              }}
+              aria-label="Metric breakdown"
+              style={compactMetricGridStyle}
             >
               {[
                 { label: "Passed rate", value: score.passedRate },
@@ -240,22 +234,16 @@ export function ScoreLoadedPanel({
                 </p>
               </div>
               <ol
-                style={{
-                  display: "grid",
-                  gap: "0.75rem",
-                  margin: 0,
-                  paddingLeft: "1.25rem",
-                }}
+                aria-label="Step progress rows"
+                style={stepProgressListStyle}
               >
                 {score.steps.map((step) => (
-                  <li key={step.stepId} style={{ paddingLeft: "0.25rem" }}>
-                    <div style={cardStyle}>
-                      <div style={{ display: "grid", gap: "0.2rem" }}>
-                        <strong>{step.title}</strong>
-                        <span style={{ color: "#475569" }}>
-                          {step.completed ? "Completed" : "Not completed"}
-                        </span>
-                      </div>
+                  <li key={step.stepId} style={stepProgressItemStyle}>
+                    <div style={stepProgressRowStyle}>
+                      <strong style={stepTitleStyle}>{step.title}</strong>
+                      <span style={stepCompletionStyle}>
+                        {step.completed ? "Completed" : "Not completed"}
+                      </span>
                       {step.status ? (
                         <span style={statusBadgeStyle(step.completed ? "positive" : "neutral")}>
                           {step.status}
@@ -375,9 +363,9 @@ function getLogoutButtonStyle(disabled: boolean) {
 
 function SummaryStat({ label, value }: { readonly label: string; readonly value: string }) {
   return (
-    <div style={cardStyle}>
-      <span style={{ color: "#475569", fontSize: "0.9rem" }}>{label}</span>
-      <strong style={{ fontSize: "1.15rem", lineHeight: 1.2 }}>{value}</strong>
+    <div style={summaryStatRowStyle}>
+      <span style={summaryStatLabelStyle}>{label}</span>
+      <strong style={summaryStatValueStyle}>{value}</strong>
     </div>
   );
 }
@@ -394,7 +382,77 @@ const scorePanelStackStyle = {
 const resultSummaryStyle = {
   ...mutedPanelStyle,
   display: "grid",
-  gap: "1rem",
+  gap: "0.85rem",
+} satisfies CSSProperties;
+
+const compactSummaryGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+  gap: "0.5rem",
+} satisfies CSSProperties;
+
+const compactMetricGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+  gap: "0.5rem",
+} satisfies CSSProperties;
+
+const summaryStatRowStyle = {
+  display: "grid",
+  gridTemplateColumns: "minmax(0,1fr) auto",
+  alignItems: "center",
+  gap: "0.75rem",
+  border: "1px solid #e2e8f0",
+  borderRadius: "8px",
+  background: "#ffffff",
+  padding: "0.7rem 0.85rem",
+} satisfies CSSProperties;
+
+const summaryStatLabelStyle = {
+  color: "#475569",
+  fontSize: "0.9rem",
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
+} satisfies CSSProperties;
+
+const summaryStatValueStyle = {
+  color: "#0f172a",
+  fontSize: "1rem",
+  lineHeight: 1.2,
+  textAlign: "right",
+  whiteSpace: "nowrap",
+} satisfies CSSProperties;
+
+const stepProgressListStyle = {
+  display: "grid",
+  gap: "0.5rem",
+  margin: 0,
+  paddingLeft: "1.25rem",
+} satisfies CSSProperties;
+
+const stepProgressItemStyle = {
+  paddingLeft: "0.25rem",
+} satisfies CSSProperties;
+
+const stepProgressRowStyle = {
+  display: "grid",
+  gridTemplateColumns: "minmax(0,1fr) auto auto",
+  alignItems: "center",
+  gap: "0.75rem",
+  border: "1px solid #e2e8f0",
+  borderRadius: "8px",
+  background: "#ffffff",
+  padding: "0.7rem 0.85rem",
+} satisfies CSSProperties;
+
+const stepTitleStyle = {
+  minWidth: 0,
+} satisfies CSSProperties;
+
+const stepCompletionStyle = {
+  color: "#475569",
+  whiteSpace: "nowrap",
 } satisfies CSSProperties;
 
 const supportTextStyle = {

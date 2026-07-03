@@ -211,6 +211,54 @@ const adminTabButtonStyle: React.CSSProperties = {
   borderRadius: "8px",
 };
 
+const examCatalogBusyShellStyle: React.CSSProperties = {
+  position: "relative",
+  overflow: "hidden",
+};
+
+const examCatalogOverlayStyle: React.CSSProperties = {
+  position: "absolute",
+  inset: 0,
+  zIndex: 2,
+  display: "grid",
+  placeItems: "center",
+  minHeight: "18rem",
+  borderRadius: "8px",
+  background: "rgba(248, 250, 252, 0.82)",
+  backdropFilter: "blur(1px)",
+};
+
+const examCatalogOverlayPanelStyle: React.CSSProperties = {
+  ...cardStyle,
+  display: "flex",
+  alignItems: "center",
+  gap: "0.75rem",
+  flexWrap: "wrap",
+  maxWidth: "min(100%, 22rem)",
+  padding: "0.85rem 1rem",
+  color: colors.textPrimary,
+};
+
+const examCatalogSpinnerStyle: React.CSSProperties = {
+  width: "1.15rem",
+  height: "1.15rem",
+  borderRadius: "999px",
+  border: `3px solid ${colors.borderStrong}`,
+  borderTopColor: colors.accent,
+  animation: "portal-spin 800ms linear infinite",
+};
+
+export function ExamCatalogLoadingOverlay() {
+  return (
+    <div style={examCatalogOverlayStyle} aria-live="polite" aria-busy="true">
+      <div role="status" style={examCatalogOverlayPanelStyle}>
+        <span className="portal-spinner" aria-hidden="true" style={examCatalogSpinnerStyle} />
+        <span>Loading Exam Catalog resources</span>
+      </div>
+    </div>
+  );
+}
+
 function getLogoutButtonStyle(disabled: boolean): React.CSSProperties {
   return disabled
     ? {
@@ -254,6 +302,7 @@ export function AdminConsole({
   const [examCorrelationId, setExamCorrelationId] = useState<string | null>(null);
   const projectResourcesRequestIdRef = useRef(0);
   const blueprintDetailRequestIdRef = useRef(0);
+  const examCatalogLoadingCountRef = useRef(0);
   const [examAttemptFilter, setExamAttemptFilter] = useState("");
   const [auditRecords, setAuditRecords] = useState<AuditRecord[] | null>(null);
   const [eventRecords, setEventRecords] = useState<EventLogRecord[] | null>(null);
@@ -278,6 +327,7 @@ export function AdminConsole({
   const [candidatePassword, setCandidatePassword] = useState("");
   const [candidateMessage, setCandidateMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [examCatalogLoading, setExamCatalogLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
   useEffect(() => {
@@ -298,6 +348,16 @@ export function AdminConsole({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
+
+  function beginExamCatalogLoading() {
+    examCatalogLoadingCountRef.current += 1;
+    setExamCatalogLoading(true);
+  }
+
+  function endExamCatalogLoading() {
+    examCatalogLoadingCountRef.current = Math.max(0, examCatalogLoadingCountRef.current - 1);
+    setExamCatalogLoading(examCatalogLoadingCountRef.current > 0);
+  }
 
   const handleAdminSessionExpired = useCallback(() => {
     setSessionExpired(true);
@@ -693,6 +753,7 @@ export function AdminConsole({
 
   async function loadExamAuthoring(refresh = false) {
     setLoading(true);
+    beginExamCatalogLoading();
     setError(null);
     setExamDiagnostic(null);
     try {
@@ -724,7 +785,7 @@ export function AdminConsole({
       if (!selectedProjectId && nextProjectId) {
         const projectId = nextProjectId;
         setSelectedProjectId(projectId);
-        void loadProjectResources(projectId, true);
+        await loadProjectResources(projectId, true);
       }
     } catch (caughtError) {
       if (isAdminSessionExpiredError(caughtError)) {
@@ -733,6 +794,7 @@ export function AdminConsole({
       setError("Failed to load exam authoring resources");
     } finally {
       setLoading(false);
+      endExamCatalogLoading();
     }
   }
 
@@ -745,6 +807,7 @@ export function AdminConsole({
     const requestId = beginLatestOnlyRequest(projectResourcesRequestIdRef.current);
     projectResourcesRequestIdRef.current = requestId;
     setLoading(true);
+    beginExamCatalogLoading();
     setError(null);
     setExamDiagnostic(null);
     try {
@@ -785,7 +848,7 @@ export function AdminConsole({
       if (nextBlueprintId) {
         const blueprintId = nextBlueprintId;
         setSelectedBlueprintId(blueprintId);
-        void loadBlueprintDetail(projectId, blueprintId, refresh, nextPolicy);
+        await loadBlueprintDetail(projectId, blueprintId, refresh, nextPolicy);
       } else {
         setBlueprintDetail(null);
       }
@@ -799,6 +862,7 @@ export function AdminConsole({
       setError("Failed to load project resources");
     } finally {
       setLoading(false);
+      endExamCatalogLoading();
     }
   }
 
@@ -833,6 +897,7 @@ export function AdminConsole({
     const requestId = beginLatestOnlyRequest(blueprintDetailRequestIdRef.current);
     blueprintDetailRequestIdRef.current = requestId;
     setLoading(true);
+    beginExamCatalogLoading();
     setError(null);
     setExamDiagnostic(null);
     try {
@@ -879,10 +944,12 @@ export function AdminConsole({
       setError("Failed to load blueprint detail");
     } finally {
       setLoading(false);
+      endExamCatalogLoading();
     }
   }
 
   async function loadExamCatalog() {
+    beginExamCatalogLoading();
     try {
       const response = await fetchAdmin("/api/admin/exams");
       const data = (await response.json()) as { exams?: ExamRecord[]; error?: string };
@@ -896,6 +963,8 @@ export function AdminConsole({
         return;
       }
       setError("Failed to load exam catalog");
+    } finally {
+      endExamCatalogLoading();
     }
   }
 
@@ -1496,7 +1565,11 @@ export function AdminConsole({
       )}
 
       {tab === "exams" && (
-        <section style={{ display: "grid", gap: "1rem" }}>
+        <section
+          aria-busy={examCatalogLoading}
+          style={{ ...examCatalogBusyShellStyle, display: "grid", gap: "1rem" }}
+        >
+          {examCatalogLoading ? <ExamCatalogLoadingOverlay /> : null}
           <div style={{ padding: "1rem", background: "#f7f7f8", borderRadius: "6px", display: "grid", gap: "0.5rem" }}>
             <strong>Project-first Exam authoring</strong>
             <span style={{ color: "#555" }}>

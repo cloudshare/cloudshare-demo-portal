@@ -59,6 +59,43 @@ describe("ScoreLoadedPanel", () => {
     expect(html).toContain("Scoring limitations");
   });
 
+  it("renders score details and step progress as compact rows", () => {
+    const html = renderToStaticMarkup(
+      createElement(ScoreLoadedPanel, {
+        score: {
+          examAttemptId: "attempt-compact",
+          examTitle: "Helios Guided Journey",
+          scheduledFor: "2026-06-18T09:00:00.000Z",
+          experienceId: "exp-compact",
+          scoreRetrievalEnabled: true,
+          scoreAvailable: true,
+          percentComplete: 82,
+          stepsCompleted: 9,
+          stepsTotal: 11,
+          exploredRate: 0.82,
+          inProgressRate: 0.09,
+          notStartedRate: 0.09,
+          passedRate: 0.55,
+          failedRate: 0.18,
+          notInitiatedRate: 0.18,
+          retrievedAt: "2026-06-18T10:30:00.000Z",
+          steps: [
+            { stepId: "step-1", title: "Create the queue", completed: true, status: "passed" },
+            { stepId: "step-2", title: "Verify the workflow", completed: false, status: "in_progress" },
+          ],
+          limitations: ["Only the final state is assessed."],
+        },
+      }),
+    );
+
+    expect(html).toContain('aria-label="Score summary details"');
+    expect(html).toContain('aria-label="Metric breakdown"');
+    expect(html).toContain('aria-label="Step progress rows"');
+    expect(html).toContain("grid-template-columns:minmax(0,1fr) auto");
+    expect(html).toContain("white-space:nowrap");
+    expect(html).toContain("align-items:center");
+  });
+
   it("keeps the completion shell, message, and limitations when no Guided Journey score is available", () => {
     const html = renderToStaticMarkup(
       createElement(ScoreLoadedPanel, {

@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { AdminConsole } from "./admin-console";
+import { AdminConsole, ExamCatalogLoadingOverlay } from "./admin-console";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -95,6 +95,18 @@ describe("AdminConsole", () => {
     expect(html).toContain("defaults to the Policy runtime lease");
     expect(html).toContain("Time limit follows the selected CloudShare Policy runtime lease.");
     expect(html).not.toContain("defaults from Policy storage retention");
+  });
+
+  it("renders an Exam Catalog busy overlay that freezes the authoring surface while resources load", () => {
+    const html = renderToStaticMarkup(createElement(ExamCatalogLoadingOverlay));
+
+    expect(html).toContain('role="status"');
+    expect(html).toContain("Loading Exam Catalog resources");
+    expect(html).toContain("portal-spinner");
+    expect(html).toContain("position:absolute");
+    expect(html).toContain("inset:0");
+    expect(html).toContain("flex-wrap:wrap");
+    expect(html).toContain("max-width:min(100%, 22rem)");
   });
 
   it("renders Support Diagnostics without legacy workbench or support-log controls", () => {
