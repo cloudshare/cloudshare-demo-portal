@@ -32,8 +32,10 @@ describe("LabLauncher", () => {
 
     expect(confirmCandidateEndExam(confirm)).toBe(false);
     expect(confirm).toHaveBeenCalledWith(END_EXAM_CONFIRMATION_MESSAGE);
-    expect(END_EXAM_CONFIRMATION_MESSAGE).toContain("archive your CloudShare lab");
-    expect(END_EXAM_CONFIRMATION_MESSAGE).toContain("lose access");
+    expect(END_EXAM_CONFIRMATION_MESSAGE).toBe(
+      "Ending this exam will allow you to get your results immediately, but also archive your CloudShare lab. This means you will lose access to this exam attempt, which cannot be undone.",
+    );
+    expect(END_EXAM_CONFIRMATION_MESSAGE).not.toContain("ExamAttempt");
   });
 
   it("keeps a retryable completion-pending state when archive succeeded but completion is still pending", () => {

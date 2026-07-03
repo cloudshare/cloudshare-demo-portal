@@ -16,7 +16,7 @@ import {
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const CHILD_POLL_INTERVAL_MS = 3_000;
 export const END_EXAM_CONFIRMATION_MESSAGE =
-  "Ending this exam will archive your CloudShare lab and you will lose access to this ExamAttempt. This cannot be undone.";
+  "Ending this exam will allow you to get your results immediately, but also archive your CloudShare lab. This means you will lose access to this exam attempt, which cannot be undone.";
 
 export function confirmCandidateEndExam(
   confirmImpl?: (message: string) => boolean,
