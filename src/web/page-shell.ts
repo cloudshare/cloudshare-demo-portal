@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { fontFamily } from "./design-tokens";
 
 /**
  * Shared page-container width for authenticated app pages (Admin Console,
@@ -10,7 +11,7 @@ import type { CSSProperties } from "react";
 export const PAGE_SHELL_MAX_WIDTH = "1120px";
 
 export const pageShellStyle: CSSProperties = {
-  fontFamily: "system-ui, sans-serif",
+  fontFamily: fontFamily.body,
   padding: "2rem 1.25rem 3rem",
   maxWidth: PAGE_SHELL_MAX_WIDTH,
   margin: "0 auto",
