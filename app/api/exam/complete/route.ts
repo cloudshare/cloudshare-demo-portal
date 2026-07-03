@@ -7,7 +7,7 @@ import { getPortalSession } from "@/auth/portal-session";
 
 /**
  * Candidate-initiated early exam completion. For running labs, the framework
- * handler first confirms CloudShare cleanup through the existing suspend/poll
+ * handler first confirms CloudShare cleanup through the environment archive/poll
  * path before persisting the ExamAttempt as completed.
  */
 export async function POST(request: Request) {

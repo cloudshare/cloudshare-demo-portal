@@ -337,6 +337,7 @@ describe("completeExamAttemptEarlyRuntime", () => {
         examAttemptId: "ea-1",
         retryable: true,
         correlationId: "corr-complete",
+        environmentArchived: true,
         message: "Your lab has been archived, but completion is still being saved. Retry End exam.",
       },
     });
@@ -358,6 +359,49 @@ describe("completeExamAttemptEarlyRuntime", () => {
       }),
     );
     expect(JSON.stringify(response.body)).not.toContain("sponsored-link-secret");
+  });
+
+  it("returns a non-retryable archive failure when the Customer CloudShare connection is missing", async () => {
+    const deps = await makeDeps("in_progress");
+    deps.connections.findByCustomerId = vi.fn().mockResolvedValue(null);
+
+    const response = await completeExamAttemptEarlyRuntime(deps, { examAttemptId: "ea-1" });
+
+    expect(response).toEqual({
+      status: 502,
+      body: {
+        error: "Unable to archive your CloudShare lab before ending the exam.",
+        examAttemptId: "ea-1",
+        operation: "complete",
+        retryable: false,
+        correlationId: "corr-complete",
+      },
+    });
+    await expect(deps.attempts.findById("ea-1")).resolves.toMatchObject({
+      status: "in_progress",
+    });
+    expect(deps.diagnostics?.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: "cloudshare.environment.archive",
+        outcome: "failure",
+        correlationId: "corr-complete",
+        details: expect.objectContaining({
+          attemptedOperation: "archive_environment",
+          failureMode: "runtime_state",
+          error: "No stored CloudShare connection exists for the exam attempt customer.",
+        }),
+      }),
+    );
+    expect(deps.diagnostics?.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: "exam_attempt.complete",
+        outcome: "failure",
+        details: expect.objectContaining({
+          failureMode: "cleanup_not_confirmed",
+          cleanupStatus: 502,
+        }),
+      }),
+    );
   });
 
   it.each(["ready", "scheduled", "expired", "completed"] as const)(

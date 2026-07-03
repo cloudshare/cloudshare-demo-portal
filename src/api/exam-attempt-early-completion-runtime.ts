@@ -84,6 +84,7 @@ async function tryArchiveExamEnvironmentForCompletion(
   | { readonly ok: false; readonly response: SuspendResumeResponse }
 > {
   try {
+    const access = await resolveCustomerEnvironmentAccess(deps, attempt);
     const correlation = await ensureExamAttemptEnvironmentCorrelation(deps, {
       examAttemptId: request.examAttemptId,
       operation: "exam_complete",
@@ -93,7 +94,6 @@ async function tryArchiveExamEnvironmentForCompletion(
       request.examAttemptId,
       correlation.actionableEnvironmentId,
     );
-    const access = await resolveCustomerEnvironmentAccess(deps, attempt);
     const archive = await archiveExam(
       {
         ...deps,
@@ -221,6 +221,7 @@ function buildPersistencePendingResponse(
       examAttemptId,
       retryable: true,
       correlationId,
+      environmentArchived: true,
       message: "Your lab has been archived, but completion is still being saved. Retry End exam.",
     },
   };
@@ -231,7 +232,7 @@ function mapArchiveErrorToCompleteResponse(
   examAttemptId: string,
   correlationId: string,
 ): SuspendResumeResponse {
-  if (error instanceof ExamAttemptRuntimeError) {
+  if (isRetryableArchiveRuntimeError(error)) {
     return {
       status: 202,
       body: {
@@ -273,6 +274,13 @@ function mapArchiveErrorToCompleteResponse(
       correlationId,
     },
   };
+}
+
+function isRetryableArchiveRuntimeError(error: unknown): error is ExamAttemptRuntimeError {
+  if (!(error instanceof ExamAttemptRuntimeError)) {
+    return false;
+  }
+  return error.context?.failureMode === "not_correlated_yet" || error.context?.target === "archived";
 }
 
 async function markAttemptCompleted(

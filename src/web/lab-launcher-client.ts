@@ -259,7 +259,7 @@ export async function endLabAttempt(
   examAttemptId: string,
 ): Promise<
   | { kind: "completed"; message: string }
-  | { kind: "pending"; labStatus: CandidateLabStatus | null; message: string }
+  | { kind: "pending"; labStatus: CandidateLabStatus | null; message: string; environmentArchived: boolean }
   | { kind: "blocked"; labStatus: CandidateLabStatus | null; message: string }
 > {
   const response = await fetchImpl("/api/exam/complete", {
@@ -275,6 +275,7 @@ export async function endLabAttempt(
     return {
       kind: "pending",
       labStatus,
+      environmentArchived: readBoolean(detail, "environmentArchived"),
       message: readError(
         detail,
         "CloudShare is still archiving your lab. Wait a few seconds, then retry End exam.",
@@ -312,6 +313,10 @@ function readError(json: unknown, fallback: string): string {
     return (json as { error: string }).error;
   }
   return fallback;
+}
+
+function readBoolean(json: unknown, key: string): boolean {
+  return typeof json === "object" && json !== null && (json as Record<string, unknown>)[key] === true;
 }
 
 function isReadyAttemptEnterable(

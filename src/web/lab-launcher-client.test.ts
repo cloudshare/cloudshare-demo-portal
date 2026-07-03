@@ -359,6 +359,7 @@ describe("lab launcher client helpers", () => {
           status: "pending",
           operation: "complete",
           retryable: true,
+          environmentArchived: true,
           message: "CloudShare is still stopping your lab. Wait a few seconds, then retry End exam.",
         }),
       })
@@ -378,6 +379,7 @@ describe("lab launcher client helpers", () => {
 
     expect(result).toEqual({
       kind: "pending",
+      environmentArchived: true,
       labStatus: {
         examAttemptId: "attempt-1",
         examTitle: "Helios Guided Journey",

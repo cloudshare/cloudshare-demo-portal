@@ -29,6 +29,16 @@ export function confirmCandidateEndExam(
   return confirmFn ? confirmFn(END_EXAM_CONFIRMATION_MESSAGE) : true;
 }
 
+export function getEndExamPendingLaunchState(input: {
+  readonly environmentArchived: boolean;
+  readonly labStatus: CandidateLabStatus | null;
+}): LaunchState {
+  if (input.environmentArchived) {
+    return "ending";
+  }
+  return input.labStatus?.status === "suspended" ? "suspended" : "open";
+}
+
 /**
  * Candidate-facing control that launches the lab, then keeps a heartbeat alive
  * while the lab window is open. If the candidate closes the lab window the
@@ -365,7 +375,7 @@ export function LabLauncher({
           reportLabStatusLoaded(result.labStatus);
           reportAttemptStatusChange(result.labStatus.status);
         }
-        setState(result.labStatus?.status === "suspended" ? "suspended" : "open");
+        setState(getEndExamPendingLaunchState(result));
         setMessage(result.message);
         return;
       }

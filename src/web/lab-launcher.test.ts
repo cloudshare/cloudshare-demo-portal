@@ -1,7 +1,12 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { confirmCandidateEndExam, END_EXAM_CONFIRMATION_MESSAGE, LabLauncher } from "./lab-launcher";
+import {
+  confirmCandidateEndExam,
+  END_EXAM_CONFIRMATION_MESSAGE,
+  getEndExamPendingLaunchState,
+  LabLauncher,
+} from "./lab-launcher";
 
 describe("LabLauncher", () => {
   it("offers End exam for in-progress and suspended attempts", () => {
@@ -29,5 +34,20 @@ describe("LabLauncher", () => {
     expect(confirm).toHaveBeenCalledWith(END_EXAM_CONFIRMATION_MESSAGE);
     expect(END_EXAM_CONFIRMATION_MESSAGE).toContain("archive your CloudShare lab");
     expect(END_EXAM_CONFIRMATION_MESSAGE).toContain("lose access");
+  });
+
+  it("keeps the launcher in ending state when archive succeeded but completion is still pending", () => {
+    expect(
+      getEndExamPendingLaunchState({
+        environmentArchived: true,
+        labStatus: {
+          examAttemptId: "attempt-1",
+          examTitle: "Helios Guided Journey",
+          timeLimitMinutes: 60,
+          status: "in_progress",
+          scheduledFor: "2026-06-18T09:00:00.000Z",
+        },
+      }),
+    ).toBe("ending");
   });
 });
