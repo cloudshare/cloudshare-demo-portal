@@ -39,6 +39,9 @@ import { SessionMonitoringPanel } from "./session-monitoring-panel";
 import type { AdminMonitoringView as MonitoringView } from "@/domain/admin-monitoring";
 import { startPortalSessionWatchdog } from "./session-expiry";
 import { pageShellStyle } from "./page-shell";
+import { mutedPanelStyle, alertPanelStyle } from "./card-styles";
+import { primaryButtonStyle, secondaryButtonStyle } from "./button-styles";
+import { colors, pageHeadingStyle } from "./design-tokens";
 
 interface AdminConsoleProps {
   readonly email: string;
@@ -1159,10 +1162,10 @@ export function AdminConsole({
         scrollbarGutter: "stable",
       }}
     >
-      <h1 style={{ marginBottom: "0.35rem" }}>Certalis Admin Console</h1>
+      <h1 style={{ ...pageHeadingStyle, marginBottom: "0.35rem" }}>Certalis Admin Console</h1>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", marginBottom: "0.75rem", flexWrap: "wrap" }}>
         <p style={{ margin: 0, color: "#555" }}>Signed in as {email}</p>
-        <button onClick={logout} disabled={loading} style={{ padding: "0.55rem 0.9rem" }}>
+        <button onClick={logout} disabled={loading} style={secondaryButtonStyle}>
           Log out
         </button>
       </div>
@@ -1194,9 +1197,9 @@ export function AdminConsole({
               }}
               style={{
                 padding: "0.55rem 0.95rem",
-                background: isActive ? "#0f172a" : isSupportWorkflow ? "#eef4ff" : "#f3f4f6",
+                background: isActive ? colors.textPrimary : isSupportWorkflow ? colors.accentSoft : "#f3f4f6",
                 color: isActive ? "#fff" : "#111827",
-                border: isActive ? "2px solid #2563eb" : "1px solid #d1d5db",
+                border: isActive ? `2px solid ${colors.accent}` : "1px solid #d1d5db",
                 borderRadius: "6px",
                 cursor: "pointer",
                 fontWeight: isActive ? 700 : 600,
@@ -1210,7 +1213,7 @@ export function AdminConsole({
       </nav>
 
       {error && (
-        <div style={{ color: "#b00020", background: "#fff0f0", padding: "0.75rem", borderRadius: "6px", display: "grid", gap: "0.5rem" }}>
+        <div style={{ ...alertPanelStyle.danger, display: "grid", gap: "0.5rem" }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "flex-start" }}>
             <p style={{ margin: 0 }}>{error}</p>
             <button
@@ -1255,7 +1258,7 @@ export function AdminConsole({
 
       {shouldShowCandidateProvisioning(tab) && (
         <section style={{ display: "grid", gap: "1rem" }}>
-          <div style={{ padding: "1rem", background: "#f7f7f8", borderRadius: "6px", display: "grid", gap: "0.9rem" }}>
+          <div style={{ ...mutedPanelStyle, display: "grid", gap: "0.9rem" }}>
             <div>
               <h2 style={{ marginTop: 0, marginBottom: "0.35rem", fontSize: "1rem" }}>Provision Candidate</h2>
               <p style={{ margin: 0, color: "#555" }}>
@@ -1304,7 +1307,7 @@ export function AdminConsole({
               </label>
             </div>
             <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
-              <button onClick={() => void createCandidate()} disabled={loading}>
+              <button onClick={() => void createCandidate()} disabled={loading} style={primaryButtonStyle}>
                 Create Candidate
               </button>
               {candidateMessage && <span style={{ color: "#0a7a28" }}>{candidateMessage}</span>}
@@ -1315,7 +1318,7 @@ export function AdminConsole({
 
       {tab === "connection" && (
         <section style={{ display: "grid", gap: "1rem" }}>
-          <div style={{ padding: "1rem", background: "#f7f7f8", borderRadius: "6px" }}>
+          <div style={mutedPanelStyle}>
             <p style={{ margin: 0 }}>
               Status:{" "}
               <strong>{connectionStatusLabel}</strong>
@@ -1333,7 +1336,7 @@ export function AdminConsole({
             )}
           </div>
           {connectionWarning && (
-            <div style={{ color: "#7a4b00", background: "#fff7e6", padding: "0.75rem", borderRadius: "6px", display: "grid", gap: "0.4rem" }}>
+            <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.4rem" }}>
               <p style={{ margin: 0 }}>The CloudShare connection test failed. Support Diagnostics is the primary investigation view.</p>
               {connectionCorrelationId && (
                 <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", alignItems: "center" }}>
@@ -1397,7 +1400,7 @@ export function AdminConsole({
             )}
           </label>
           {hasSavedConnection && (
-            <div style={{ padding: "1rem", background: "#eef6ff", border: "1px solid #c7ddff", borderRadius: "6px", display: "grid", gap: "0.75rem" }}>
+            <div style={{ ...alertPanelStyle.info, display: "grid", gap: "0.75rem" }}>
               <div>
                 <strong>CloudShare webhook callback</strong>
                 <p style={{ margin: "0.35rem 0 0", color: "#45556c" }}>
@@ -1447,10 +1450,10 @@ export function AdminConsole({
             </div>
           )}
           <div style={{ display: "flex", gap: "0.75rem" }}>
-            <button onClick={saveConnection} disabled={loading} style={{ padding: "0.7rem 1rem" }}>
+            <button onClick={saveConnection} disabled={loading} style={primaryButtonStyle}>
               {loading ? "Saving..." : "Save CloudShare Connection"}
             </button>
-            <button onClick={testConnection} disabled={loading || !connection?.hasConnection} style={{ padding: "0.7rem 1rem" }}>
+            <button onClick={testConnection} disabled={loading || !connection?.hasConnection} style={secondaryButtonStyle}>
               {loading ? "Testing..." : "Test connection"}
             </button>
           </div>
