@@ -10,15 +10,17 @@ import {
   getAttemptPrimaryAction,
   getCandidateAttemptDisplayStatus,
   getCandidateCurrentAttemptLabel,
+  getCurrentAttemptForExam,
   getLatestAttemptForExam,
   getNextEnterabilityWakeUpDelayMs,
+  getNextScheduleAvailableLabelForExam,
 } from "./candidate-home-state";
 import type { CandidateDashboardData } from "./candidate-scheduling";
 
 const dashboard: CandidateDashboardData = {
   exams: [
-    { id: "exam-1", title: "Helios Fundamentals", description: "", timeLimitMinutes: 90, openPeriodMinutes: 120, scoreRetrievalEnabled: true },
-    { id: "exam-2", title: "Operations Lab", description: "", timeLimitMinutes: 60, openPeriodMinutes: 90, scoreRetrievalEnabled: false },
+    { id: "exam-1", title: "Helios Fundamentals", description: "", timeLimitMinutes: 90, storageLeaseMinutes: 2880, openPeriodMinutes: 120, scoreRetrievalEnabled: true },
+    { id: "exam-2", title: "Operations Lab", description: "", timeLimitMinutes: 60, storageLeaseMinutes: null, openPeriodMinutes: 90, scoreRetrievalEnabled: false },
   ],
   attempts: [
     {
@@ -57,6 +59,50 @@ describe("candidate home attempt state", () => {
     expect(getLatestAttemptForExam(dashboard.attempts, "exam-1")?.id).toBe("attempt-ready");
   });
 
+  it("picks the latest non-terminal attempt as the current scheduling context", () => {
+    expect(
+      getCurrentAttemptForExam(
+        [
+          {
+            id: "attempt-latest-completed",
+            examId: "exam-1",
+            scheduledFor: "2026-06-17T10:00:00.000Z",
+            status: "completed",
+          },
+          {
+            id: "attempt-suspended",
+            examId: "exam-1",
+            scheduledFor: "2026-06-16T09:00:00.000Z",
+            status: "suspended",
+          },
+        ],
+        "exam-1",
+      )?.id,
+    ).toBe("attempt-suspended");
+  });
+
+  it("falls back to the latest terminal attempt when no attempt is blocking scheduling", () => {
+    expect(
+      getCurrentAttemptForExam(
+        [
+          {
+            id: "attempt-older-completed",
+            examId: "exam-1",
+            scheduledFor: "2026-06-16T09:00:00.000Z",
+            status: "completed",
+          },
+          {
+            id: "attempt-latest-expired",
+            examId: "exam-1",
+            scheduledFor: "2026-06-17T10:00:00.000Z",
+            status: "expired",
+          },
+        ],
+        "exam-1",
+      )?.id,
+    ).toBe("attempt-latest-expired");
+  });
+
   it("builds a visible scheduled attempts list with exam titles", () => {
     const views = buildScheduledAttemptViews(dashboard, new Date("2026-06-16T16:00:00.000Z").getTime());
 
@@ -74,6 +120,56 @@ describe("candidate home attempt state", () => {
       scheduledEnd: "2026-06-16T18:00:00.000Z",
       scheduledWindowLabel: "Starts 2026-06-16 17:00 · Closes 2026-06-16 19:00 (120 min)",
     });
+  });
+
+  it("shows next schedule availability from storage lease when retention exceeds the access window", () => {
+    const views = buildScheduledAttemptViews(dashboard, new Date("2026-06-16T16:00:00.000Z").getTime());
+
+    expect(views.find((view) => view.attemptId === "attempt-ready")).toMatchObject({
+      nextScheduleAvailableAt: "2026-06-18T16:00:00.000Z",
+      nextScheduleAvailableLabel: "2026-06-18 17:00",
+    });
+  });
+
+  it("falls back to the authored open period for next schedule availability when storage lease is unknown", () => {
+    const views = buildScheduledAttemptViews(dashboard, new Date("2026-06-16T16:00:00.000Z").getTime());
+
+    expect(views.find((view) => view.attemptId === "attempt-scheduled")).toMatchObject({
+      nextScheduleAvailableAt: "2026-06-17T11:30:00.000Z",
+      nextScheduleAvailableLabel: "2026-06-17 12:30",
+    });
+  });
+
+  it("does not show next schedule availability for terminal attempts", () => {
+    const views = buildScheduledAttemptViews(dashboard, new Date("2026-06-16T16:00:00.000Z").getTime());
+
+    expect(views.find((view) => view.attemptId === "attempt-older")).toMatchObject({
+      nextScheduleAvailableAt: null,
+      nextScheduleAvailableLabel: null,
+    });
+  });
+
+  it("derives published Exam next scheduling availability from non-terminal attempts", () => {
+    expect(
+      getNextScheduleAvailableLabelForExam(
+        [
+          {
+            id: "attempt-latest-completed",
+            examId: "exam-1",
+            scheduledFor: "2026-06-17T10:00:00.000Z",
+            status: "completed",
+          },
+          {
+            id: "attempt-suspended",
+            examId: "exam-1",
+            scheduledFor: "2026-06-16T09:00:00.000Z",
+            status: "suspended",
+          },
+        ],
+        "exam-1",
+        dashboard.exams[0],
+      ),
+    ).toBe("2026-06-18 10:00");
   });
 
   it("shows the CloudShare cold-start warning on upcoming and active attempts where it applies", () => {
@@ -142,6 +238,7 @@ describe("candidate home attempt state", () => {
       title: "Long Open Window",
       description: "",
       timeLimitMinutes: 120,
+      storageLeaseMinutes: null,
       openPeriodMinutes: 24 * 60,
       scoreRetrievalEnabled: false,
     };

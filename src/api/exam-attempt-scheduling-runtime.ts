@@ -12,6 +12,7 @@ import type { LabLaunchRepository } from "@/domain/lab-launch";
 import {
   CloudShareProvisioningError,
   ScheduleExamNotFoundError,
+  ScheduleOverlapError,
   ScheduleValidationError,
   scheduleExam,
 } from "@/domain/scheduling";
@@ -162,6 +163,16 @@ export async function scheduleExamAttemptRuntime(
     if (error instanceof ScheduleExamNotFoundError) {
       return { status: 404, body: { error: "Published exam not found." } };
     }
+    if (error instanceof ScheduleOverlapError) {
+      return {
+        status: 409,
+        body: {
+          error: toCandidateScheduleOverlapMessage(error),
+          code: "exam_attempt_overlap",
+          nextAvailableAt: error.nextAvailableAt.toISOString(),
+        },
+      };
+    }
     if (error instanceof CloudShareProvisioningError) {
       const diagnostic: Record<string, unknown> = {
         correlationId,
@@ -216,6 +227,10 @@ function toCandidateScheduleValidationMessage(error: ScheduleValidationError): s
     return "Choose a valid date and time before scheduling.";
   }
   return error.message;
+}
+
+function toCandidateScheduleOverlapMessage(error: ScheduleOverlapError): string {
+  return `Another attempt for this Exam is still active or available. You can schedule this Exam again after ${error.nextAvailableAt.toISOString()}.`;
 }
 
 function createTeamReadDiagnosticObserver(input: {
