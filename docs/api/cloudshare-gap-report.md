@@ -893,16 +893,17 @@ portal server on `localhost:3025` and fails if any portal response or admin diag
 Observed live evidence from the checked-in smoke:
 
 - Exam: `Windows Boxes`
-- ExamAttempt: `13ff8bcf-5f8b-4e80-89e7-825ab68a9f33`
-- Training: `EXlJ44cJMatxjXxPU0bHbhNQ2`
-- Environment: `EN8ipie14GQc8-alqul1EyIw2`
-- Participant: `PTZUtfWieKGCaBOmEGr7Gc0g2`
-- Schedule correlation: `eea92d4e-6445-4f5f-90a0-af1bf3b1e1e9`
+- ExamAttempt: `81e8b3ae-281e-49d7-92b6-7f2eeb12f28c`
+- Training: `EXLUyEN03jFi5AFiVV3tWLYA2`
+- Environment: `EN-f4udsHNs1G1xf4x5qszmA2`
+- Participant: `PT9XNHg4WcNUVaxw4ueMmetQ2`
+- Schedule correlation: `90bd8321-f20c-4f50-a1c4-1c2f3f349e28`
 
 The smoke performed six rapid suspend/resume cycles, with an overlapping second resume request
 250 ms after the first on each cycle. All suspend and resume HTTP responses returned `200`, the
 admin drilldown recorded no failure rows, and no v3 `500` appeared in the captured diagnostic
-evidence.
+evidence. The smoke then performed a final best-effort suspend so the disposable environment was
+not left running.
 
 **Code reference:** `src/api/suspend-resume.ts`, `src/web/lab-launcher.tsx`
 
