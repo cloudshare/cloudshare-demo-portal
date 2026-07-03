@@ -12,6 +12,7 @@ import {
   getCandidateCurrentAttemptLabel,
   getLatestAttemptForExam,
   getNextEnterabilityWakeUpDelayMs,
+  getNextScheduleAvailableLabelForExam,
 } from "./candidate-home-state";
 import type { CandidateDashboardData } from "./candidate-scheduling";
 
@@ -92,6 +93,38 @@ describe("candidate home attempt state", () => {
       nextScheduleAvailableAt: "2026-06-17T11:30:00.000Z",
       nextScheduleAvailableLabel: "2026-06-17 12:30",
     });
+  });
+
+  it("does not show next schedule availability for terminal attempts", () => {
+    const views = buildScheduledAttemptViews(dashboard, new Date("2026-06-16T16:00:00.000Z").getTime());
+
+    expect(views.find((view) => view.attemptId === "attempt-older")).toMatchObject({
+      nextScheduleAvailableAt: null,
+      nextScheduleAvailableLabel: null,
+    });
+  });
+
+  it("derives published Exam next scheduling availability from non-terminal attempts", () => {
+    expect(
+      getNextScheduleAvailableLabelForExam(
+        [
+          {
+            id: "attempt-latest-completed",
+            examId: "exam-1",
+            scheduledFor: "2026-06-17T10:00:00.000Z",
+            status: "completed",
+          },
+          {
+            id: "attempt-suspended",
+            examId: "exam-1",
+            scheduledFor: "2026-06-16T09:00:00.000Z",
+            status: "suspended",
+          },
+        ],
+        "exam-1",
+        dashboard.exams[0],
+      ),
+    ).toBe("2026-06-18 10:00");
   });
 
   it("shows the CloudShare cold-start warning on upcoming and active attempts where it applies", () => {

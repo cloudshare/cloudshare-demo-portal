@@ -14,9 +14,9 @@ import {
   buildScheduledAttemptViews,
   COLD_START_WARNING_MESSAGE,
   getAttemptWaitingMessage,
-  getAttemptNextScheduleAvailableLabel,
   getLatestAttemptForExam,
   getNextEnterabilityWakeUpDelayMs,
+  getNextScheduleAvailableLabelForExam,
   getAttemptPrimaryAction,
   getCandidateCurrentAttemptLabel,
 } from "./candidate-home-state";
@@ -347,7 +347,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                         description: "",
                         timeLimitMinutes: attempt.timeLimitMinutes,
                         openPeriodMinutes: attempt.openPeriodMinutes,
-                        storageLeaseMinutes: null,
+                        storageLeaseMinutes: attempt.storageLeaseMinutes,
                         scoreRetrievalEnabled: attempt.scoreRetrievalEnabled,
                       }
                     : null
@@ -419,7 +419,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                                 {exam ? <span style={metaHintStyle}>{getScheduleAvailabilityNote(exam)}</span> : null}
                               </>
                             ) : (
-                              "TBD"
+                              getAttemptScheduleAvailabilityFallback(attempt.status)
                             )}
                           </span>
                         </div>
@@ -483,6 +483,11 @@ export function CandidateHome({ email }: CandidateHomeProps) {
             <div style={{ display: "grid", gap: "0.9rem" }}>
               {dashboard.exams.map((exam) => {
                 const attempt = attemptForExam(exam.id);
+                const nextScheduleAvailableLabel = getNextScheduleAvailableLabelForExam(
+                  dashboard.attempts,
+                  exam.id,
+                  exam,
+                );
                 const primaryAction = getAttemptPrimaryAction(attempt, nowMs, exam);
                 const durationLabels = buildCandidateExamDurationLabels(exam);
                 const feedback = scheduleFeedback[exam.id] ?? null;
@@ -518,9 +523,9 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                           <span style={metaLabelStyle}>Current attempt</span>
                           <span style={{ ...metaValueStyle, display: "grid", gap: "0.15rem" }}>
                             {getCandidateCurrentAttemptLabel(attempt, nowMs, exam)}
-                            {attempt ? (
+                            {nextScheduleAvailableLabel ? (
                               <span style={metaHintStyle}>
-                                Next schedule available {getAttemptNextScheduleAvailableLabel(attempt, exam) ?? "TBD"}
+                                Next schedule available {nextScheduleAvailableLabel}
                               </span>
                             ) : null}
                           </span>
@@ -691,6 +696,12 @@ function getScheduleAvailabilityNote(exam: CandidateDashboardData["exams"][numbe
   return exam.storageLeaseMinutes && exam.storageLeaseMinutes > exam.openPeriodMinutes
     ? "After environment retention"
     : "After access window";
+}
+
+function getAttemptScheduleAvailabilityFallback(
+  status: CandidateDashboardData["attempts"][number]["status"],
+): string {
+  return status === "completed" || status === "expired" ? "No scheduling hold" : "TBD";
 }
 
 const statusBadgeStyle: CSSProperties = {

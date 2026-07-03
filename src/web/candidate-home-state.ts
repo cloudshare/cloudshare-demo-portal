@@ -9,6 +9,7 @@ export interface CandidateScheduledAttemptView {
   readonly timeLimitMinutes: number | null;
   readonly openPeriodMinutes: number | null;
   readonly scoreRetrievalEnabled: boolean;
+  readonly storageLeaseMinutes: number | null;
   readonly scheduledFor: string | null;
   readonly scheduledEnd: string | null;
   readonly scheduledWindowLabel: string | null;
@@ -208,6 +209,7 @@ export function buildScheduledAttemptViews(
         timeLimitMinutes: exam?.timeLimitMinutes ?? attempt.timeLimitMinutes ?? null,
         openPeriodMinutes: exam?.openPeriodMinutes ?? attempt.openPeriodMinutes ?? null,
         scoreRetrievalEnabled: exam?.scoreRetrievalEnabled ?? attempt.scoreRetrievalEnabled === true,
+        storageLeaseMinutes: exam?.storageLeaseMinutes ?? attempt.storageLeaseMinutes ?? null,
         scheduledFor: attempt.scheduledFor,
         scheduledEnd: getAttemptOpenPeriodEnd(attempt, exam),
         scheduledWindowLabel: getAttemptOpenPeriodLabel(attempt, exam),
@@ -305,6 +307,10 @@ function getAttemptSchedulingAvailabilityEndMs(
   attempt: CandidateDashboardData["attempts"][number] | null,
   exam: CandidateDashboardData["exams"][number] | null | undefined,
 ): number | null {
+  if (!attempt || !isScheduleBlockingAttemptStatus(attempt.status)) {
+    return null;
+  }
+
   const retentionMinutes =
     exam?.storageLeaseMinutes ??
     attempt?.storageLeaseMinutes ??
@@ -335,6 +341,28 @@ export function getAttemptNextScheduleAvailableLabel(
   exam?: CandidateDashboardData["exams"][number] | null,
 ): string | null {
   return formatCandidateScheduledDateTime(getAttemptNextScheduleAvailableAt(attempt, exam));
+}
+
+export function getNextScheduleAvailableLabelForExam(
+  attempts: CandidateDashboardData["attempts"],
+  examId: string,
+  exam?: CandidateDashboardData["exams"][number] | null,
+): string | null {
+  const nextAvailableMs = attempts
+    .filter((attempt) => attempt.examId === examId)
+    .map((attempt) => getAttemptSchedulingAvailabilityEndMs(attempt, exam))
+    .filter((value): value is number => value !== null)
+    .sort((left, right) => right - left)[0];
+
+  return nextAvailableMs === undefined
+    ? null
+    : formatCandidateScheduledDateTime(new Date(nextAvailableMs).toISOString());
+}
+
+function isScheduleBlockingAttemptStatus(
+  status: CandidateDashboardData["attempts"][number]["status"],
+): boolean {
+  return status !== "completed" && status !== "expired";
 }
 
 function isAttemptOpenPeriodClosed(
