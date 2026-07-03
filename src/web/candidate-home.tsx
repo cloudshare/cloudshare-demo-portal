@@ -14,7 +14,7 @@ import {
   buildScheduledAttemptViews,
   COLD_START_WARNING_MESSAGE,
   getAttemptWaitingMessage,
-  getLatestAttemptForExam,
+  getCurrentAttemptForExam,
   getNextEnterabilityWakeUpDelayMs,
   getNextScheduleAvailableLabelForExam,
   getAttemptPrimaryAction,
@@ -240,7 +240,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
   }
 
   function attemptForExam(examId: string) {
-    return getLatestAttemptForExam(dashboard.attempts, examId);
+    return getCurrentAttemptForExam(dashboard.attempts, examId);
   }
 
   function openLabConsole(attemptId: string, attemptStatus: string) {

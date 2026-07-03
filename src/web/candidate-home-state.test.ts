@@ -10,6 +10,7 @@ import {
   getAttemptPrimaryAction,
   getCandidateAttemptDisplayStatus,
   getCandidateCurrentAttemptLabel,
+  getCurrentAttemptForExam,
   getLatestAttemptForExam,
   getNextEnterabilityWakeUpDelayMs,
   getNextScheduleAvailableLabelForExam,
@@ -56,6 +57,50 @@ describe("candidate home attempt state", () => {
 
   it("picks the latest attempt for an exam", () => {
     expect(getLatestAttemptForExam(dashboard.attempts, "exam-1")?.id).toBe("attempt-ready");
+  });
+
+  it("picks the latest non-terminal attempt as the current scheduling context", () => {
+    expect(
+      getCurrentAttemptForExam(
+        [
+          {
+            id: "attempt-latest-completed",
+            examId: "exam-1",
+            scheduledFor: "2026-06-17T10:00:00.000Z",
+            status: "completed",
+          },
+          {
+            id: "attempt-suspended",
+            examId: "exam-1",
+            scheduledFor: "2026-06-16T09:00:00.000Z",
+            status: "suspended",
+          },
+        ],
+        "exam-1",
+      )?.id,
+    ).toBe("attempt-suspended");
+  });
+
+  it("falls back to the latest terminal attempt when no attempt is blocking scheduling", () => {
+    expect(
+      getCurrentAttemptForExam(
+        [
+          {
+            id: "attempt-older-completed",
+            examId: "exam-1",
+            scheduledFor: "2026-06-16T09:00:00.000Z",
+            status: "completed",
+          },
+          {
+            id: "attempt-latest-expired",
+            examId: "exam-1",
+            scheduledFor: "2026-06-17T10:00:00.000Z",
+            status: "expired",
+          },
+        ],
+        "exam-1",
+      )?.id,
+    ).toBe("attempt-latest-expired");
   });
 
   it("builds a visible scheduled attempts list with exam titles", () => {

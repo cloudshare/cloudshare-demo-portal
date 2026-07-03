@@ -52,6 +52,19 @@ export function getLatestAttemptForExam(
     .sort((left, right) => (right.scheduledFor ?? "").localeCompare(left.scheduledFor ?? ""))[0] ?? null;
 }
 
+export function getCurrentAttemptForExam(
+  attempts: CandidateDashboardData["attempts"],
+  examId: string,
+) {
+  const sameExamAttempts = attempts
+    .filter((attempt) => attempt.examId === examId)
+    .sort((left, right) => (right.scheduledFor ?? "").localeCompare(left.scheduledFor ?? ""));
+
+  return sameExamAttempts.find((attempt) => isScheduleBlockingAttemptStatus(attempt.status)) ??
+    sameExamAttempts[0] ??
+    null;
+}
+
 export function canEnterAttempt(
   attempt: CandidateDashboardData["attempts"][number] | null,
   nowMs: number,
