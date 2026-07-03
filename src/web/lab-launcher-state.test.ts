@@ -124,6 +124,22 @@ describe("lab launcher state helpers", () => {
     });
   });
 
+  it("keeps archived completion persistence pending as a retryable state", () => {
+    expect(
+      getLauncherPresentation({
+        state: "completion_pending",
+        attemptStatus: "in_progress",
+        message: "Your CloudShare lab is archived, but completion is still being saved. Retry End exam.",
+      }),
+    ).toEqual({
+      tone: "info",
+      title: "Completion pending",
+      detail: "Your CloudShare lab is archived, but completion is still being saved. Retry End exam.",
+      primaryActionLabel: null,
+      supportMessage: null,
+    });
+  });
+
   it("suppresses launch and resume recovery once the authored open period has closed", () => {
     expect(getLauncherRecoveryAction("suspended", true)).toBeNull();
     expect(

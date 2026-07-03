@@ -36,7 +36,7 @@ describe("LabLauncher", () => {
     expect(END_EXAM_CONFIRMATION_MESSAGE).toContain("lose access");
   });
 
-  it("keeps the launcher in ending state when archive succeeded but completion is still pending", () => {
+  it("keeps a retryable completion-pending state when archive succeeded but completion is still pending", () => {
     expect(
       getEndExamPendingLaunchState({
         environmentArchived: true,
@@ -48,6 +48,6 @@ describe("LabLauncher", () => {
           scheduledFor: "2026-06-18T09:00:00.000Z",
         },
       }),
-    ).toBe("ending");
+    ).toBe("completion_pending");
   });
 });

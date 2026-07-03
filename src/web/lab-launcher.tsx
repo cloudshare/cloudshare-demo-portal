@@ -34,7 +34,7 @@ export function getEndExamPendingLaunchState(input: {
   readonly labStatus: CandidateLabStatus | null;
 }): LaunchState {
   if (input.environmentArchived) {
-    return "ending";
+    return "completion_pending";
   }
   return input.labStatus?.status === "suspended" ? "suspended" : "open";
 }
