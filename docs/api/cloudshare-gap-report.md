@@ -893,19 +893,20 @@ portal server on `localhost:3025` and fails if any portal response or admin diag
 Observed live evidence from the checked-in smoke:
 
 - Exam: `Windows Boxes`
-- ExamAttempt: `81e8b3ae-281e-49d7-92b6-7f2eeb12f28c`
-- Training: `EXLUyEN03jFi5AFiVV3tWLYA2`
-- Environment: `EN-f4udsHNs1G1xf4x5qszmA2`
-- Participant: `PT9XNHg4WcNUVaxw4ueMmetQ2`
-- Schedule correlation: `90bd8321-f20c-4f50-a1c4-1c2f3f349e28`
+- ExamAttempt: `5df3f2eb-ffb9-4867-b69a-b1966a5b200b`
+- Training: `EXw65Zrv-ToORkiv22ck7rKg2`
+- Environment: `ENGi3Jjm89Xpe6rjai-BsZIA2`
+- Participant: `PTfUzMEmlEKSYpew8x6xLcgg2`
+- Schedule correlation: `59de581a-b676-4f52-b1d8-e2038ddd3f5a`
 
 The smoke performed six rapid suspend/resume cycles, with an overlapping second resume request
 250 ms after the first on each cycle. All suspend and resume HTTP responses returned `200`, the
 admin drilldown recorded no failure rows, and no v3 `500` appeared in the captured diagnostic
-evidence. The smoke then performed a final best-effort suspend so the disposable environment was
-not left running.
+evidence. The smoke then performed a final cleanup suspend with HTTP `200` so the disposable
+environment was not left running.
 
-**Code reference:** `src/api/suspend-resume.ts`, `src/web/lab-launcher.tsx`
+**Code reference:** `src/api/suspend-resume.ts`, `src/web/lab-launcher.tsx`,
+`tests/live-cloudshare-rapid-suspend-resume.e2e.test.ts`
 
 ---
 

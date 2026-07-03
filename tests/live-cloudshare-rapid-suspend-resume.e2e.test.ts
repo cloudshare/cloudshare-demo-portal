@@ -72,15 +72,32 @@ function parseEnvFile(path: string): Record<string, string> {
 }
 
 function resolveSeedConfigPath(): string | null {
-  const env = parseEnvFile(resolve(process.cwd(), ".env"));
+  const processEnv = Object.fromEntries(
+    Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+  );
+  const env = {
+    ...parseEnvFile(resolve(process.cwd(), ".env")),
+    ...parseEnvFile(resolve(process.cwd(), ".env.e2e.local")),
+    ...processEnv,
+  };
   const configured = env.PORTAL_SEED_CONFIG_PATH;
-  if (!configured) {
-    return null;
+  const candidates = configured
+    ? [configured]
+    : [
+        "./config/portal-seed.local.json",
+        "D:/Code_projects/cloudshare-demo-portal/config/portal-seed.local.json",
+      ];
+
+  for (const candidate of candidates) {
+    const path = /^(?:[A-Za-z]:)?[\\/]/.test(candidate)
+      ? candidate
+      : resolve(process.cwd(), candidate);
+    if (existsSync(path)) {
+      return path;
+    }
   }
 
-  return /^(?:[A-Za-z]:)?[\\/]/.test(configured)
-    ? configured
-    : resolve(process.cwd(), configured);
+  return null;
 }
 
 function loadPortalSeedConfig(): PortalSeedConfig | null {
@@ -221,14 +238,33 @@ function summarizeTimelineEntry(entry: AdminDiagnosticTimelineEntry) {
 }
 
 describe("live rapid suspend/resume smoke", () => {
-  it.runIf(!!portalSeed)(
+  it(
     "drives schedule -> enter -> rapid suspend/resume through the live portal path without a transient v3 500",
     async () => {
+      expect(
+        portalSeed,
+        "Set PORTAL_SEED_CONFIG_PATH or create ./config/portal-seed.local.json for live portal smoke tests.",
+      ).not.toBeNull();
+      const seed = portalSeed!;
+      let candidateCookie: string | null = null;
+      let attemptId: string | null = null;
+      let drilldown: AdminDiagnosticDrilldown | null = null;
+      let finalSuspend: { readonly status: number; readonly body: Record<string, unknown> } | null = null;
+      const operations: Array<Record<string, unknown>> = [];
+
+      let adminCookie = "";
+      let exam: CandidateExamItem | null = null;
+      let scheduledFor = "";
+      let scheduleCorrelationId = "";
+      let coldStartLikely: boolean | null = null;
+
+      try {
       const admin = await login(
-        portalSeed!.heliosAdminEmail,
-        portalSeed!.heliosAdminPassword,
+        seed.heliosAdminEmail,
+        seed.heliosAdminPassword,
       );
       expect(admin.status).toBe(200);
+      adminCookie = admin.cookie;
 
       const candidateEmail = `issue104.${Date.now()}@helioscx.demo`;
       const candidatePassword = "correct-horse-battery-staple";
@@ -247,6 +283,7 @@ describe("live rapid suspend/resume smoke", () => {
 
       const candidate = await login(candidateEmail, candidatePassword);
       expect(candidate.status).toBe(200);
+      candidateCookie = candidate.cookie;
 
       const catalog = await authedJson<{ readonly exams: CandidateExamItem[] }>(
         candidate.cookie,
@@ -255,8 +292,8 @@ describe("live rapid suspend/resume smoke", () => {
       expect(catalog.status).toBe(200);
       expect(catalog.body.exams.length).toBeGreaterThan(0);
 
-      const exam = chooseLiveExam(catalog.body.exams);
-      const scheduledFor = new Date(Date.now() + 70_000).toISOString();
+      exam = chooseLiveExam(catalog.body.exams);
+      scheduledFor = new Date(Date.now() + 70_000).toISOString();
       const schedule = await authedJson<{
         readonly attempt: CandidateAttemptItem;
         readonly coldStartLikely: boolean;
@@ -267,8 +304,10 @@ describe("live rapid suspend/resume smoke", () => {
         body: JSON.stringify({ examId: exam.id, scheduledFor }),
       });
       expect(schedule.status).toBe(201);
+      scheduleCorrelationId = schedule.body.correlationId;
+      coldStartLikely = schedule.body.coldStartLikely;
 
-      const attemptId = schedule.body.attempt.id;
+      attemptId = schedule.body.attempt.id;
       const scheduledForMs = Date.parse(schedule.body.attempt.scheduledFor ?? scheduledFor);
       const waitForStartMs = Math.max(0, scheduledForMs - Date.now() + 5_000);
       await sleep(waitForStartMs);
@@ -283,7 +322,7 @@ describe("live rapid suspend/resume smoke", () => {
       expect(enterResponse.status).toBe(200);
       expect(new URL(enterResponse.url).origin).toBe("https://use.cloudshare.com");
 
-      const drilldown = await waitFor(
+      drilldown = await waitFor(
         "CloudShare environment correlation",
         async (): Promise<AdminDiagnosticDrilldown | null> => {
           const dashboard = await authedJson<{
@@ -297,7 +336,7 @@ describe("live rapid suspend/resume smoke", () => {
 
           const diagnostics = await authedJson<{
             readonly drilldown?: AdminDiagnosticDrilldown;
-          }>(admin.cookie, `/api/admin/diagnostics/attempts/${encodeURIComponent(attemptId)}`);
+          }>(admin.cookie, `/api/admin/diagnostics/attempts/${encodeURIComponent(attemptId!)}`);
           expect(diagnostics.status).toBe(200);
           const current = diagnostics.body.drilldown ?? null;
           return current?.cloudShare.environmentExternalId || current?.cloudShare.environmentId
@@ -306,8 +345,6 @@ describe("live rapid suspend/resume smoke", () => {
         },
         { timeoutMs: 180_000, intervalMs: 10_000 },
       );
-
-      const operations: Array<Record<string, unknown>> = [];
 
       for (let cycle = 1; cycle <= 6; cycle += 1) {
         const suspend = await authedJson<Record<string, unknown>>(
@@ -367,27 +404,44 @@ describe("live rapid suspend/resume smoke", () => {
         });
         await sleep(500);
       }
+      } finally {
+        if (candidateCookie && attemptId) {
+          try {
+            finalSuspend = await authedJson<Record<string, unknown>>(
+              candidateCookie,
+              "/api/exam/suspend",
+              {
+                method: "POST",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ examAttemptId: attemptId }),
+              },
+            );
+            operations.push({
+              cycle: "cleanup",
+              action: "suspend",
+              at: new Date().toISOString(),
+              status: finalSuspend.status,
+              body: finalSuspend.body,
+            });
+          } catch (error) {
+            operations.push({
+              cycle: "cleanup",
+              action: "suspend",
+              at: new Date().toISOString(),
+              status: "cleanup_error",
+              body: { error: error instanceof Error ? error.message : String(error) },
+            });
+          }
+        }
+      }
 
-      const finalSuspend = await authedJson<Record<string, unknown>>(
-        candidate.cookie,
-        "/api/exam/suspend",
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ examAttemptId: attemptId }),
-        },
-      );
-      operations.push({
-        cycle: "cleanup",
-        action: "suspend",
-        at: new Date().toISOString(),
-        status: finalSuspend.status,
-        body: finalSuspend.body,
-      });
+      expect(attemptId).not.toBeNull();
+      expect(drilldown).not.toBeNull();
+      expect(finalSuspend?.status).toBe(200);
 
       const finalDiagnostics = await authedJson<{
         readonly drilldown?: AdminDiagnosticDrilldown;
-      }>(admin.cookie, `/api/admin/diagnostics/attempts/${encodeURIComponent(attemptId)}`);
+      }>(adminCookie, `/api/admin/diagnostics/attempts/${encodeURIComponent(attemptId!)}`);
       expect(finalDiagnostics.status).toBe(200);
       const finalDrilldown = finalDiagnostics.body.drilldown;
       expect(finalDrilldown).toBeDefined();
@@ -414,20 +468,20 @@ describe("live rapid suspend/resume smoke", () => {
         JSON.stringify(
           {
             exam: {
-              id: exam.id,
-              title: exam.title,
+              id: exam?.id,
+              title: exam?.title,
             },
             schedule: {
               attemptId,
               scheduledFor,
-              coldStartLikely: schedule.body.coldStartLikely,
-              correlationId: schedule.body.correlationId,
+              coldStartLikely,
+              correlationId: scheduleCorrelationId,
             },
             cloudShare: {
-              trainingId: drilldown.cloudShare.trainingId,
+              trainingId: drilldown!.cloudShare.trainingId,
               environmentId:
-                drilldown.cloudShare.environmentExternalId ?? drilldown.cloudShare.environmentId,
-              participantId: drilldown.cloudShare.participantId,
+                drilldown!.cloudShare.environmentExternalId ?? drilldown!.cloudShare.environmentId,
+              participantId: drilldown!.cloudShare.participantId,
             },
             operations,
             failureRows: failureRows.map(summarizeTimelineEntry),
@@ -439,7 +493,6 @@ describe("live rapid suspend/resume smoke", () => {
 
       expect(operations.every((operation) => (operation.status as number) === 200)).toBe(true);
       expect(failureRows).toEqual([]);
-      expect(finalSuspend.status).toBe(200);
     },
     420_000,
   );

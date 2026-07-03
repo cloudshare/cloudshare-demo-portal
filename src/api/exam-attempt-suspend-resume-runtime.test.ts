@@ -1425,6 +1425,94 @@ describe("resumeExamAttemptRuntime", () => {
     expect(deps.eventLog.append).not.toHaveBeenCalled();
   });
 
+  it("keeps a rapid-transition CloudShare 500 recoverable and allows a later resume retry", async () => {
+    const requestV3Text = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        throw new CloudShareRequestError("CloudShare state still settling", 500, {
+          integrationSurface: "cloudshare.v3.env.action.resume",
+          method: "PUT",
+          path: "/api/v3/envs/actions/resume",
+          environmentExternalId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+          responseBody: "{\"error\":\"state settling\"}",
+        });
+      })
+      .mockResolvedValue("");
+    const customerClient = makeCloudShareClient({
+      requestV3Text: requestV3Text as unknown as CloudShareClient["requestV3Text"],
+      requestV3: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+        if (spec.path.startsWith("/envs/")) {
+          const status = requestV3Text.mock.calls.length > 1 ? "Running" : "Suspended";
+          return spec.schema.parse({ envStatus: status });
+        }
+        throw new Error(`unexpected v3 path ${spec.path}`);
+      }) as unknown as CloudShareClient["requestV3"],
+      requestV4: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+        if (spec.path === "/trainings/EXtraining-1/students") {
+          return spec.schema.parse([
+            {
+              email: "candidate@helioscx.demo",
+              environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+              environmentStatus: "ready",
+            },
+          ]);
+        }
+        throw new Error(`unexpected v4 path ${spec.path}`);
+      }) as unknown as CloudShareClient["requestV4"],
+    });
+    const timer = {
+      pauseTimer: vi.fn(),
+      resumeTimer: vi.fn().mockResolvedValue(undefined),
+    };
+    const deps = await makeResumeDeps({
+      timer,
+      cloudshare: {
+        forConnection: vi.fn().mockReturnValue(customerClient),
+      },
+    });
+
+    const first = await resumeExamAttemptRuntime(deps, { examAttemptId: "ea-1" });
+
+    expect(first.status).toBe(502);
+    expect(first.body).toEqual({ error: "exam resume failed", correlationId: "corr-resume" });
+    await expect(deps.attempts.findById("ea-1")).resolves.toMatchObject({
+      status: "suspended",
+    });
+    expect(timer.resumeTimer).not.toHaveBeenCalled();
+    expect(deps.eventLog.append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventId: "corr-resume",
+        type: "cloudshare.exam_resume.failed",
+        payload: expect.objectContaining({
+          correlationId: "corr-resume",
+          examAttemptId: "ea-1",
+          operation: "exam_resume",
+          attemptedOperation: "resume_environment",
+          integrationSurface: "cloudshare.v3.env.action.resume",
+          method: "PUT",
+          path: "/api/v3/envs/actions/resume",
+          failureMode: "http_status",
+          responseStatus: 500,
+          responseBody: "{\"error\":\"state settling\"}",
+        }),
+      }),
+    );
+
+    const second = await resumeExamAttemptRuntime(deps, { examAttemptId: "ea-1" });
+
+    expect(second.status).toBe(200);
+    expect(second.body).toMatchObject({
+      status: "resumed",
+      resumeDisposition: "resumed",
+      examAttemptId: "ea-1",
+      environmentExternalId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+    });
+    await expect(deps.attempts.findById("ea-1")).resolves.toMatchObject({
+      status: "in_progress",
+    });
+    expect(timer.resumeTimer).toHaveBeenCalledTimes(1);
+  });
+
   it("falls back to the normal CloudShare failure diagnostic when already-active recovery itself fails", async () => {
     const customerClient = makeCloudShareClient({
       requestV3Text: vi.fn(async () => {
