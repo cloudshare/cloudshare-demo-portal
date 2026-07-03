@@ -64,7 +64,7 @@ export function RegisterForm() {
               autoComplete="given-name"
               minLength={2}
               required
-              style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
+              style={{ padding: "0.7rem", border: `1px solid ${colors.borderStrong}`, borderRadius: "6px" }}
             />
           </label>
           <label style={{ display: "grid", gap: "0.35rem" }}>
@@ -76,7 +76,7 @@ export function RegisterForm() {
               autoComplete="family-name"
               minLength={2}
               required
-              style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
+              style={{ padding: "0.7rem", border: `1px solid ${colors.borderStrong}`, borderRadius: "6px" }}
             />
           </label>
           <label style={{ display: "grid", gap: "0.35rem" }}>
@@ -87,7 +87,7 @@ export function RegisterForm() {
               onChange={(event) => setEmail(event.target.value)}
               autoComplete="email"
               required
-              style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
+              style={{ padding: "0.7rem", border: `1px solid ${colors.borderStrong}`, borderRadius: "6px" }}
             />
           </label>
           <label style={{ display: "grid", gap: "0.35rem" }}>
@@ -99,15 +99,15 @@ export function RegisterForm() {
               onChange={(event) => setPassword(event.target.value)}
               autoComplete="new-password"
               required
-              style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
+              style={{ padding: "0.7rem", border: `1px solid ${colors.borderStrong}`, borderRadius: "6px" }}
             />
           </label>
           <button disabled={loading} type="submit" style={primaryButtonStyle}>
             {loading ? "Creating account..." : "Create account"}
           </button>
-          {error && <p style={{ color: "#b00020", margin: 0 }}>{error}</p>}
+          {error && <p style={{ color: colors.danger, margin: 0 }}>{error}</p>}
         </form>
-        <p style={{ color: "#555", marginTop: "1rem" }}>
+        <p style={{ color: colors.textSecondary, marginTop: "1rem" }}>
           Already registered? <a href="/login">Sign in</a>.
         </p>
       </div>
