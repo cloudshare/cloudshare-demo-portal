@@ -9,6 +9,10 @@ import { formatCandidateScheduledDateTime } from "./candidate-date-format";
 import { getCandidateScorePresentation } from "./candidate-score-state";
 import type { CandidateLogoutPresentation } from "./candidate-logout";
 import { useCandidateLogout } from "./candidate-logout";
+import { cardStyle, mutedPanelStyle } from "@/web/card-styles";
+import { primaryButtonStyle, secondaryButtonStyle } from "@/web/button-styles";
+import { eyebrowLabelStyle } from "@/web/design-tokens";
+import { statusBadgeStyle } from "@/web/status-badge";
 
 interface ScoreDisplayProps {
   examAttemptId: string;
@@ -146,10 +150,10 @@ export function ScoreLoadedPanel({
   readonly presentation?: ReturnType<typeof getCandidateScorePresentation>;
 }) {
   return (
-    <section style={panelStyle}>
+    <section style={cardStyle}>
       <div style={headerLayoutStyle}>
         <div style={{ display: "grid", gap: "0.5rem" }}>
-          <p style={eyebrowStyle}>Completion summary</p>
+          <p style={eyebrowLabelStyle}>Completion summary</p>
           <div style={{ display: "grid", gap: "0.35rem" }}>
             <h2 style={{ margin: 0 }}>{presentation.heading}</h2>
             <p style={supportTextStyle}>{presentation.supportDetail}</p>
@@ -181,9 +185,9 @@ export function ScoreLoadedPanel({
 
       {score.scoreAvailable ? (
         <>
-          <section style={summaryCardStyle}>
+          <section style={mutedPanelStyle}>
             <div style={{ display: "grid", gap: "0.4rem" }}>
-              <p style={eyebrowStyle}>Result summary</p>
+              <p style={eyebrowLabelStyle}>Result summary</p>
               <h3 style={{ margin: 0, fontSize: "1.8rem", lineHeight: 1.1 }}>
                 {score.percentComplete}% complete
               </h3>
@@ -249,14 +253,18 @@ export function ScoreLoadedPanel({
               >
                 {score.steps.map((step) => (
                   <li key={step.stepId} style={{ paddingLeft: "0.25rem" }}>
-                    <div style={stepCardStyle}>
+                    <div style={cardStyle}>
                       <div style={{ display: "grid", gap: "0.2rem" }}>
                         <strong>{step.title}</strong>
                         <span style={{ color: "#475569" }}>
                           {step.completed ? "Completed" : "Not completed"}
                         </span>
                       </div>
-                      {step.status ? <span style={stepStatusStyle}>{step.status}</span> : null}
+                      {step.status ? (
+                        <span style={statusBadgeStyle(step.completed ? "positive" : "neutral")}>
+                          {step.status}
+                        </span>
+                      ) : null}
                     </div>
                   </li>
                 ))}
@@ -265,16 +273,16 @@ export function ScoreLoadedPanel({
           ) : null}
         </>
       ) : (
-        <section style={summaryCardStyle}>
+        <section style={mutedPanelStyle}>
           <div style={{ display: "grid", gap: "0.4rem" }}>
-            <p style={eyebrowStyle}>Result summary</p>
+            <p style={eyebrowLabelStyle}>Result summary</p>
             <h3 style={{ margin: 0 }}>No score available</h3>
             <p style={{ margin: 0, color: "#1e293b" }}>{score.message}</p>
           </div>
         </section>
       )}
 
-      <section aria-label="Scoring limitations" style={limitationsCardStyle}>
+      <section aria-label="Scoring limitations" style={mutedPanelStyle}>
         <div style={{ display: "grid", gap: "0.35rem" }}>
           <h3 style={{ margin: 0 }}>Scoring limitations</h3>
           <p style={{ margin: 0, color: "#334155" }}>
@@ -298,9 +306,9 @@ export function ScoreErrorPanel({
   onLogout,
 }: ScorePanelActionProps & { readonly errorMessage: string }) {
   return (
-    <section style={panelStyle}>
+    <section style={cardStyle}>
       <div style={{ display: "grid", gap: "0.5rem" }}>
-        <p style={eyebrowStyle}>Completion summary</p>
+        <p style={eyebrowLabelStyle}>Completion summary</p>
         <h2 style={{ margin: 0 }}>Score unavailable</h2>
         <p role="alert" style={errorTextStyle}>
           Could not load score: {errorMessage}
@@ -349,7 +357,7 @@ function ScorePanelActions({
 
 function SummaryStat({ label, value }: { readonly label: string; readonly value: string }) {
   return (
-    <div style={statCardStyle}>
+    <div style={cardStyle}>
       <span style={{ color: "#475569", fontSize: "0.9rem" }}>{label}</span>
       <strong style={{ fontSize: "1.15rem", lineHeight: 1.2 }}>{value}</strong>
     </div>
@@ -360,86 +368,12 @@ function formatRetrievedAt(retrievedAt: string): string {
   return formatCandidateScheduledDateTime(retrievedAt) ?? "Unavailable";
 }
 
-const panelStyle = {
-  display: "grid",
-  gap: "1.25rem",
-  border: "1px solid #dbe2ea",
-  borderRadius: "10px",
-  padding: "1.25rem",
-  background: "#ffffff",
-  boxShadow: "0 1px 2px rgba(15, 23, 42, 0.06)",
-} satisfies CSSProperties;
-
 const headerLayoutStyle = {
   display: "flex",
   justifyContent: "space-between",
   gap: "1rem",
   alignItems: "flex-start",
   flexWrap: "wrap",
-} satisfies CSSProperties;
-
-const summaryCardStyle = {
-  display: "grid",
-  gap: "1rem",
-  padding: "1rem",
-  borderRadius: "8px",
-  background: "#eff6ff",
-  border: "1px solid #bfdbfe",
-} satisfies CSSProperties;
-
-const limitationsCardStyle = {
-  display: "grid",
-  gap: "0.75rem",
-  padding: "1rem",
-  borderRadius: "8px",
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
-} satisfies CSSProperties;
-
-const statCardStyle = {
-  display: "grid",
-  gap: "0.35rem",
-  border: "1px solid #e2e8f0",
-  borderRadius: "8px",
-  padding: "0.85rem",
-  background: "#ffffff",
-  minHeight: "5.5rem",
-} satisfies CSSProperties;
-
-const stepCardStyle = {
-  display: "flex",
-  justifyContent: "space-between",
-  gap: "0.75rem",
-  alignItems: "flex-start",
-  flexWrap: "wrap",
-  border: "1px solid #e2e8f0",
-  borderRadius: "8px",
-  padding: "0.85rem",
-  background: "#ffffff",
-} satisfies CSSProperties;
-
-const stepStatusStyle = {
-  color: "#0f172a",
-  background: "#e2e8f0",
-  borderRadius: "999px",
-  padding: "0.25rem 0.6rem",
-  fontSize: "0.9rem",
-} satisfies CSSProperties;
-
-const primaryButtonStyle = {
-  padding: "0.6rem 1rem",
-  borderRadius: "8px",
-  border: "1px solid #0f172a",
-  background: "#0f172a",
-  color: "#ffffff",
-} satisfies CSSProperties;
-
-const secondaryButtonStyle = {
-  padding: "0.6rem 1rem",
-  borderRadius: "8px",
-  border: "1px solid #cbd5e1",
-  background: "#ffffff",
-  color: "#0f172a",
 } satisfies CSSProperties;
 
 const supportTextStyle = {
@@ -450,13 +384,4 @@ const supportTextStyle = {
 const errorTextStyle = {
   margin: 0,
   color: "#b00020",
-} satisfies CSSProperties;
-
-const eyebrowStyle = {
-  margin: 0,
-  color: "#1d4ed8",
-  fontSize: "0.85rem",
-  fontWeight: 600,
-  textTransform: "uppercase",
-  letterSpacing: 0,
 } satisfies CSSProperties;
