@@ -884,7 +884,29 @@ even though the ExamAttempt remained recoverable once the environment finished t
 Backlog issue #104 tracks any deeper product/workflow mitigation beyond the current recoverable
 portal behavior and diagnostics coverage.
 
-**Code reference:** `src/api/suspend-resume.ts`, `src/web/lab-launcher.tsx`
+**Update (2026-07-03, issue #104 live smoke):** current tenant behavior did **not** reproduce the
+earlier transient-v3-500 symptom under the portal/runtime path. A new live E2E smoke loop now
+drives `schedule -> /enter -> correlated environment -> repeated suspend/resume` against the real
+portal server on `localhost:3025` and fails if any portal response or admin diagnostic shows a v3
+`500`.
+
+Observed live evidence from the checked-in smoke:
+
+- Exam: `Windows Boxes`
+- ExamAttempt: `5df3f2eb-ffb9-4867-b69a-b1966a5b200b`
+- Training: `EXw65Zrv-ToORkiv22ck7rKg2`
+- Environment: `ENGi3Jjm89Xpe6rjai-BsZIA2`
+- Participant: `PTfUzMEmlEKSYpew8x6xLcgg2`
+- Schedule correlation: `59de581a-b676-4f52-b1d8-e2038ddd3f5a`
+
+The smoke performed six rapid suspend/resume cycles, with an overlapping second resume request
+250 ms after the first on each cycle. All suspend and resume HTTP responses returned `200`, the
+admin drilldown recorded no failure rows, and no v3 `500` appeared in the captured diagnostic
+evidence. The smoke then performed a final cleanup suspend with HTTP `200` so the disposable
+environment was not left running.
+
+**Code reference:** `src/api/suspend-resume.ts`, `src/web/lab-launcher.tsx`,
+`tests/live-cloudshare-rapid-suspend-resume.e2e.test.ts`
 
 ---
 
