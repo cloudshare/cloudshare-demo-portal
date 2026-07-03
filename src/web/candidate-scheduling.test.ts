@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   isPortalSessionExpiredError,
   loadCandidateDashboard,
@@ -8,11 +8,30 @@ import {
 } from "./candidate-scheduling";
 
 describe("candidate scheduling client", () => {
+  const originalTimezone = process.env.TZ;
+
+  beforeAll(() => {
+    process.env.TZ = "Europe/London";
+  });
+
+  afterAll(() => {
+    process.env.TZ = originalTimezone;
+  });
+
   it("loads the candidate dashboard from the candidate exams API", async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        exams: [{ id: "exam-1", title: "Exam", description: "", timeLimitMinutes: 90, openPeriodMinutes: 120 }],
+        exams: [
+          {
+            id: "exam-1",
+            title: "Exam",
+            description: "",
+            timeLimitMinutes: 90,
+            storageLeaseMinutes: null,
+            openPeriodMinutes: 120,
+          },
+        ],
         attempts: [{ id: "attempt-1", examId: "exam-1", scheduledFor: "2026-06-15T16:00:00.000Z", status: "ready" }],
       }),
     });
@@ -130,7 +149,7 @@ describe("candidate scheduling client", () => {
         },
       ),
     ).rejects.toThrow(
-      "Another attempt for this Exam is still active or available. You can schedule this Exam again after 2026-06-15T17:30:00.000Z.",
+      "Another attempt for this Exam is still active or available. You can schedule this Exam again after 2026-06-15 18:30.",
     );
   });
 });

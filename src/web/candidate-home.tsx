@@ -14,6 +14,7 @@ import {
   buildScheduledAttemptViews,
   COLD_START_WARNING_MESSAGE,
   getAttemptWaitingMessage,
+  getAttemptNextScheduleAvailableLabel,
   getLatestAttemptForExam,
   getNextEnterabilityWakeUpDelayMs,
   getAttemptPrimaryAction,
@@ -346,6 +347,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                         description: "",
                         timeLimitMinutes: attempt.timeLimitMinutes,
                         openPeriodMinutes: attempt.openPeriodMinutes,
+                        storageLeaseMinutes: null,
                         scoreRetrievalEnabled: attempt.scoreRetrievalEnabled,
                       }
                     : null
@@ -391,13 +393,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                         }}
                       >
                         <div style={metaItemStyle}>
-                          <span style={metaLabelStyle}>Scheduled for</span>
-                          <span style={metaValueStyle}>
-                            {formatCandidateScheduledDateTime(attempt.scheduledFor) ?? "TBD"}
-                          </span>
-                        </div>
-                        <div style={metaItemStyle}>
-                          <span style={metaLabelStyle}>Open window</span>
+                          <span style={metaLabelStyle}>Access window</span>
                           <span style={{ ...metaValueStyle, display: "grid", gap: "0.15rem" }}>
                             {attempt.scheduledFor && attempt.scheduledEnd ? (
                               <>
@@ -408,6 +404,19 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                                   Closes {formatCandidateScheduledDateTime(attempt.scheduledEnd) ?? "TBD"}
                                   {exam ? ` (${exam.openPeriodMinutes} min)` : ""}
                                 </span>
+                              </>
+                            ) : (
+                              "TBD"
+                            )}
+                          </span>
+                        </div>
+                        <div style={metaItemStyle}>
+                          <span style={metaLabelStyle}>Next schedule available</span>
+                          <span style={{ ...metaValueStyle, display: "grid", gap: "0.15rem" }}>
+                            {attempt.nextScheduleAvailableLabel ? (
+                              <>
+                                <span>{attempt.nextScheduleAvailableLabel}</span>
+                                {exam ? <span style={metaHintStyle}>{getScheduleAvailabilityNote(exam)}</span> : null}
                               </>
                             ) : (
                               "TBD"
@@ -507,8 +516,13 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                         </div>
                         <div style={metaItemStyle}>
                           <span style={metaLabelStyle}>Current attempt</span>
-                          <span style={metaValueStyle}>
+                          <span style={{ ...metaValueStyle, display: "grid", gap: "0.15rem" }}>
                             {getCandidateCurrentAttemptLabel(attempt, nowMs, exam)}
+                            {attempt ? (
+                              <span style={metaHintStyle}>
+                                Next schedule available {getAttemptNextScheduleAvailableLabel(attempt, exam) ?? "TBD"}
+                              </span>
+                            ) : null}
                           </span>
                         </div>
                       </div>
@@ -666,6 +680,18 @@ const metaValueStyle: CSSProperties = {
   lineHeight: 1.4,
   overflowWrap: "anywhere",
 };
+
+const metaHintStyle: CSSProperties = {
+  color: "#64748b",
+  fontSize: "0.86rem",
+  lineHeight: 1.35,
+};
+
+function getScheduleAvailabilityNote(exam: CandidateDashboardData["exams"][number]): string {
+  return exam.storageLeaseMinutes && exam.storageLeaseMinutes > exam.openPeriodMinutes
+    ? "After environment retention"
+    : "After access window";
+}
 
 const statusBadgeStyle: CSSProperties = {
   display: "inline-flex",

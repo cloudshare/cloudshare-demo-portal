@@ -2,6 +2,7 @@ import {
   PortalSessionExpiredError,
   isPortalSessionExpiredStatus,
 } from "./session-expiry";
+import { formatCandidateScheduledDateTime } from "./candidate-date-format";
 
 export { isPortalSessionExpiredError } from "./session-expiry";
 
@@ -11,6 +12,7 @@ export interface CandidateDashboardData {
     readonly title: string;
     readonly description: string;
     readonly timeLimitMinutes: number;
+    readonly storageLeaseMinutes: number | null;
     readonly openPeriodMinutes: number;
     readonly scoreRetrievalEnabled: boolean;
   }>;
@@ -19,6 +21,7 @@ export interface CandidateDashboardData {
     readonly examId: string;
     readonly examTitle?: string;
     readonly timeLimitMinutes?: number;
+    readonly storageLeaseMinutes?: number | null;
     readonly openPeriodMinutes?: number;
     readonly scoreRetrievalEnabled?: boolean;
     readonly scheduledFor: string | null;
@@ -33,12 +36,12 @@ export interface CandidateDashboardData {
 }
 
 export interface ScheduleCandidateExamResult {
-    readonly attempt: {
-      readonly id: string;
-      readonly examId: string;
-      readonly scheduledFor: string;
-      readonly status: "scheduled" | "ready";
-    };
+  readonly attempt: {
+    readonly id: string;
+    readonly examId: string;
+    readonly scheduledFor: string;
+    readonly status: "scheduled" | "ready";
+  };
   readonly coldStartLikely: boolean;
   readonly correlationId: string;
 }
@@ -101,6 +104,14 @@ export async function scheduleCandidateExam(
 function readError(json: unknown, fallback: string): string {
   if (typeof json === "object" && json !== null && typeof (json as { error?: unknown }).error === "string") {
     const error = (json as { error: string }).error;
+    const code = (json as { code?: unknown }).code;
+    const nextAvailableAt = (json as { nextAvailableAt?: unknown }).nextAvailableAt;
+    if (code === "exam_attempt_overlap" && typeof nextAvailableAt === "string") {
+      const nextAvailableLabel = formatCandidateScheduledDateTime(nextAvailableAt);
+      if (nextAvailableLabel) {
+        return `Another attempt for this Exam is still active or available. You can schedule this Exam again after ${nextAvailableLabel}.`;
+      }
+    }
     const correlationId = (json as { correlationId?: unknown }).correlationId;
     return typeof correlationId === "string" && correlationId.length > 0
       ? `${error} Reference ID: ${correlationId}.`

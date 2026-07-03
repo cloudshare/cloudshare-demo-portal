@@ -12,6 +12,8 @@ export interface CandidateScheduledAttemptView {
   readonly scheduledFor: string | null;
   readonly scheduledEnd: string | null;
   readonly scheduledWindowLabel: string | null;
+  readonly nextScheduleAvailableAt: string | null;
+  readonly nextScheduleAvailableLabel: string | null;
   readonly status: CandidateDashboardData["attempts"][number]["status"];
   readonly displayStatus: CandidateDashboardData["attempts"][number]["status"];
   readonly canEnter: boolean;
@@ -209,6 +211,8 @@ export function buildScheduledAttemptViews(
         scheduledFor: attempt.scheduledFor,
         scheduledEnd: getAttemptOpenPeriodEnd(attempt, exam),
         scheduledWindowLabel: getAttemptOpenPeriodLabel(attempt, exam),
+        nextScheduleAvailableAt: getAttemptNextScheduleAvailableAt(attempt, exam),
+        nextScheduleAvailableLabel: getAttemptNextScheduleAvailableLabel(attempt, exam),
         status: attempt.status,
         displayStatus: getCandidateAttemptDisplayStatus(attempt, nowMs, exam),
         canEnter: canEnterAttempt(attempt, nowMs, exam),
@@ -297,6 +301,42 @@ function getAttemptOpenPeriodEndMs(
   return scheduledForMs + openPeriodMinutes * 60_000;
 }
 
+function getAttemptSchedulingAvailabilityEndMs(
+  attempt: CandidateDashboardData["attempts"][number] | null,
+  exam: CandidateDashboardData["exams"][number] | null | undefined,
+): number | null {
+  const retentionMinutes =
+    exam?.storageLeaseMinutes ??
+    attempt?.storageLeaseMinutes ??
+    exam?.openPeriodMinutes ??
+    attempt?.openPeriodMinutes;
+  if (!attempt?.scheduledFor || !retentionMinutes) {
+    return null;
+  }
+
+  const scheduledForMs = new Date(attempt.scheduledFor).getTime();
+  if (!Number.isFinite(scheduledForMs)) {
+    return null;
+  }
+
+  return scheduledForMs + retentionMinutes * 60_000;
+}
+
+export function getAttemptNextScheduleAvailableAt(
+  attempt: CandidateDashboardData["attempts"][number] | null,
+  exam?: CandidateDashboardData["exams"][number] | null,
+): string | null {
+  const endMs = getAttemptSchedulingAvailabilityEndMs(attempt, exam);
+  return endMs === null ? null : new Date(endMs).toISOString();
+}
+
+export function getAttemptNextScheduleAvailableLabel(
+  attempt: CandidateDashboardData["attempts"][number] | null,
+  exam?: CandidateDashboardData["exams"][number] | null,
+): string | null {
+  return formatCandidateScheduledDateTime(getAttemptNextScheduleAvailableAt(attempt, exam));
+}
+
 function isAttemptOpenPeriodClosed(
   attempt: CandidateDashboardData["attempts"][number] | null,
   nowMs: number,
@@ -329,6 +369,7 @@ function getAttemptExamContext(
     title: attempt.examTitle,
     description: "",
     timeLimitMinutes: attempt.timeLimitMinutes,
+    storageLeaseMinutes: attempt.storageLeaseMinutes ?? null,
     openPeriodMinutes: attempt.openPeriodMinutes,
     scoreRetrievalEnabled: attempt.scoreRetrievalEnabled === true,
   };

@@ -17,8 +17,8 @@ import type { CandidateDashboardData } from "./candidate-scheduling";
 
 const dashboard: CandidateDashboardData = {
   exams: [
-    { id: "exam-1", title: "Helios Fundamentals", description: "", timeLimitMinutes: 90, openPeriodMinutes: 120, scoreRetrievalEnabled: true },
-    { id: "exam-2", title: "Operations Lab", description: "", timeLimitMinutes: 60, openPeriodMinutes: 90, scoreRetrievalEnabled: false },
+    { id: "exam-1", title: "Helios Fundamentals", description: "", timeLimitMinutes: 90, storageLeaseMinutes: 2880, openPeriodMinutes: 120, scoreRetrievalEnabled: true },
+    { id: "exam-2", title: "Operations Lab", description: "", timeLimitMinutes: 60, storageLeaseMinutes: null, openPeriodMinutes: 90, scoreRetrievalEnabled: false },
   ],
   attempts: [
     {
@@ -73,6 +73,24 @@ describe("candidate home attempt state", () => {
     expect(views.find((view) => view.attemptId === "attempt-ready")).toMatchObject({
       scheduledEnd: "2026-06-16T18:00:00.000Z",
       scheduledWindowLabel: "Starts 2026-06-16 17:00 · Closes 2026-06-16 19:00 (120 min)",
+    });
+  });
+
+  it("shows next schedule availability from storage lease when retention exceeds the access window", () => {
+    const views = buildScheduledAttemptViews(dashboard, new Date("2026-06-16T16:00:00.000Z").getTime());
+
+    expect(views.find((view) => view.attemptId === "attempt-ready")).toMatchObject({
+      nextScheduleAvailableAt: "2026-06-18T16:00:00.000Z",
+      nextScheduleAvailableLabel: "2026-06-18 17:00",
+    });
+  });
+
+  it("falls back to the authored open period for next schedule availability when storage lease is unknown", () => {
+    const views = buildScheduledAttemptViews(dashboard, new Date("2026-06-16T16:00:00.000Z").getTime());
+
+    expect(views.find((view) => view.attemptId === "attempt-scheduled")).toMatchObject({
+      nextScheduleAvailableAt: "2026-06-17T11:30:00.000Z",
+      nextScheduleAvailableLabel: "2026-06-17 12:30",
     });
   });
 
@@ -142,6 +160,7 @@ describe("candidate home attempt state", () => {
       title: "Long Open Window",
       description: "",
       timeLimitMinutes: 120,
+      storageLeaseMinutes: null,
       openPeriodMinutes: 24 * 60,
       scoreRetrievalEnabled: false,
     };

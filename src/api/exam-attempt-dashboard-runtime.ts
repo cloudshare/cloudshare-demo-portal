@@ -52,6 +52,7 @@ export interface CandidateDashboardExamItem {
   readonly title: string;
   readonly description: string;
   readonly timeLimitMinutes: number;
+  readonly storageLeaseMinutes: number | null;
   readonly openPeriodMinutes: number;
   readonly scoreRetrievalEnabled: boolean;
 }
@@ -61,6 +62,7 @@ export interface CandidateDashboardAttemptItem {
   readonly examId: string;
   readonly examTitle: string;
   readonly timeLimitMinutes: number;
+  readonly storageLeaseMinutes: number | null;
   readonly openPeriodMinutes: number;
   readonly scoreRetrievalEnabled: boolean;
   readonly scheduledFor: string | null;
@@ -127,6 +129,7 @@ export async function getExamAttemptDashboardRuntime(
           examId: attempt.examId,
           examTitle: exam?.title ?? attempt.examId,
           timeLimitMinutes: exam?.timeLimitMinutes ?? 0,
+          storageLeaseMinutes: exam?.storageLeaseMinutes ?? null,
           openPeriodMinutes: exam?.openPeriodMinutes ?? 0,
           scoreRetrievalEnabled: exam?.scoreRetrievalEnabled ?? false,
           scheduledFor: attempt.scheduledFor?.toISOString() ?? null,
@@ -236,6 +239,7 @@ function toCandidateDashboardExamItem(exam: Exam): CandidateDashboardExamItem {
     title: exam.title,
     description: exam.description,
     timeLimitMinutes: exam.timeLimitMinutes,
+    storageLeaseMinutes: exam.storageLeaseMinutes ?? null,
     openPeriodMinutes: exam.openPeriodMinutes,
     scoreRetrievalEnabled: exam.scoreRetrievalEnabled,
   };
