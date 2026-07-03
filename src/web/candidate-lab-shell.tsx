@@ -11,6 +11,10 @@ import {
 } from "./lab-launcher-state";
 import { useCandidateLogout } from "./candidate-logout";
 import { pageShellStyle } from "./page-shell";
+import { cardStyle, mutedPanelStyle } from "./card-styles";
+import { secondaryButtonStyle } from "./button-styles";
+import { statusBadgeStyle, getExamAttemptStatusTone } from "./status-badge";
+import { eyebrowLabelStyle, pageHeadingStyle } from "./design-tokens";
 
 type AttemptStatus = "ready" | "in_progress" | "suspended" | "completed";
 
@@ -103,10 +107,10 @@ export function CandidateLabShell({
         }}
       >
         <div>
-          <p style={{ margin: 0, fontSize: "0.85rem", color: "#52606d", fontWeight: 600 }}>
+          <p style={eyebrowLabelStyle}>
             Candidate lab
           </p>
-          <h1 style={{ margin: "0.35rem 0 0.5rem", lineHeight: 1.1 }}>
+          <h1 style={{ ...pageHeadingStyle, margin: "0.35rem 0 0.5rem", lineHeight: 1.1 }}>
             {loadingStatus ? "Loading exam details..." : presentation?.heading ?? "Exam details unavailable"}
           </h1>
           <p style={{ margin: 0, color: "#52606d", maxWidth: "48rem" }}>
@@ -157,18 +161,24 @@ export function CandidateLabShell({
             <div
               key={item.label}
               style={{
-                border: "1px solid #d9e2ec",
-                borderRadius: "8px",
+                ...cardStyle,
                 padding: "0.85rem 0.95rem",
-                backgroundColor: item.label === "Status" ? "#f0fdf4" : "#f8fafc",
               }}
             >
               <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "#52606d" }}>
                 {item.label}
               </p>
-              <p style={{ margin: "0.35rem 0 0", fontSize: "0.98rem", fontWeight: 600, color: "#14213d" }}>
-                {item.value}
-              </p>
+              {item.label === "Status" ? (
+                <p style={{ margin: "0.35rem 0 0" }}>
+                  <span style={statusBadgeStyle(getExamAttemptStatusTone(labStatus?.status ?? initialAttemptStatus))}>
+                    {item.value}
+                  </span>
+                </p>
+              ) : (
+                <p style={{ margin: "0.35rem 0 0", fontSize: "0.98rem", fontWeight: 600, color: "#14213d" }}>
+                  {item.value}
+                </p>
+              )}
             </div>
           ))}
         </section>
@@ -176,9 +186,7 @@ export function CandidateLabShell({
       {presentation ? (
         <section
           style={{
-            border: "1px solid #d9e2ec",
-            borderRadius: "8px",
-            backgroundColor: "#f8fafc",
+            ...mutedPanelStyle,
             padding: "1rem 1.1rem",
             marginBottom: "1rem",
           }}
@@ -225,12 +233,3 @@ export function CandidateLabShell({
     </main>
   );
 }
-
-const secondaryButtonStyle = {
-  padding: "0.6rem 0.95rem",
-  borderRadius: "8px",
-  border: "1px solid #cbd2d9",
-  backgroundColor: "#ffffff",
-  color: "#14213d",
-  fontWeight: 600,
-} as const;
