@@ -92,6 +92,15 @@ describe("CloudShare environment simulator: EnvironmentController", () => {
     expect((await sim.getEnvironmentState("env-1"))?.status).toBe("running");
   });
 
+  it("archiveEnvironment sets the status to archived, confirmed by the next poll", async () => {
+    const sim = createCloudShareEnvironmentSimulator({ secret: SECRET });
+    sim.emit({ environmentExternalId: "env-1", event: "environment.resumed", at });
+
+    await sim.archiveEnvironment("env-1");
+
+    expect((await sim.getEnvironmentState("env-1"))?.status).toBe("archived");
+  });
+
   it("controller state and emit() state share the same in-memory source of truth", async () => {
     const sim = createCloudShareEnvironmentSimulator({ secret: SECRET });
     sim.emit({ environmentExternalId: "env-1", event: "environment.resumed", at });

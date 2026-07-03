@@ -277,7 +277,7 @@ export async function endLabAttempt(
       labStatus,
       message: readError(
         detail,
-        "CloudShare is still stopping your lab. Wait a few seconds, then retry End exam.",
+        "CloudShare is still archiving your lab. Wait a few seconds, then retry End exam.",
       ),
     };
   }

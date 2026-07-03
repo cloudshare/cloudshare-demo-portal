@@ -1,8 +1,18 @@
 import { randomUUID } from "node:crypto";
 import type { ExamAttempt } from "@/domain/exam-attempt";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
+import type { EnvironmentCommandResult } from "@/domain/environment";
+import { ExamAttemptRuntimeError } from "@/domain/errors";
+import { archiveExam, type ArchiveExamResult } from "@/domain/exam-attempt-runtime-lifecycle";
+import {
+  CloudShareRequestError,
+  CloudShareResponseError,
+  CloudShareTransportError,
+} from "@/integrations/cloudshare";
+import { createCloudShareEnvironmentController } from "@/integrations/cloudshare/environment-controller";
+import { createCloudShareEnvironmentSource } from "@/integrations/cloudshare/environment";
+import { ensureExamAttemptEnvironmentCorrelation } from "./exam-attempt-environment-correlation";
 import type { SuspendHandlerDeps, SuspendResumeResponse } from "./exam-attempt-suspend-resume-runtime";
-import { suspendExamAttemptRuntime } from "./exam-attempt-suspend-resume-runtime";
 
 export interface CompleteExamAttemptEarlyHandlerDeps extends SuspendHandlerDeps {}
 
@@ -19,38 +29,24 @@ export async function completeExamAttemptEarlyRuntime(
     return { status: 404, body: { error: "exam attempt not found" } };
   }
 
-  if (attempt.status === "in_progress") {
-    const cleanup = await suspendExamAttemptRuntime(deps, request);
-    if (cleanup.status !== 200) {
+  if (attempt.status === "in_progress" || attempt.status === "suspended") {
+    const cleanup = await tryArchiveExamEnvironmentForCompletion(deps, attempt, request);
+    if (!cleanup.ok) {
       await recordCandidateEarlyCompletionFailureDiagnostic(
         deps.diagnostics,
         attempt,
-        cleanup,
+        cleanup.response,
         deps.candidateEmail,
       );
-      return mapCleanupResponseToCompleteResponse(cleanup, request.examAttemptId);
+      return cleanup.response;
     }
 
-    const suspendedAttempt = await deps.attempts.findById(request.examAttemptId);
-    if (!suspendedAttempt) {
+    const currentAttempt = await deps.attempts.findById(request.examAttemptId);
+    if (!currentAttempt) {
       return { status: 404, body: { error: "exam attempt not found" } };
     }
 
-    const completion = await tryMarkAttemptCompleted(deps, suspendedAttempt, "in_progress");
-    if (!completion.ok) {
-      return buildPersistencePendingResponse(
-        request.examAttemptId,
-        completion.correlationId,
-      );
-    }
-    return {
-      status: 200,
-      body: { status: "completed", examAttemptId: request.examAttemptId },
-    };
-  }
-
-  if (attempt.status === "suspended") {
-    const completion = await tryMarkAttemptCompleted(deps, attempt, "suspended");
+    const completion = await tryMarkAttemptCompleted(deps, currentAttempt, attempt.status);
     if (!completion.ok) {
       return buildPersistencePendingResponse(
         request.examAttemptId,
@@ -77,6 +73,113 @@ export async function completeExamAttemptEarlyRuntime(
       currentStatus: attempt.status,
     },
   };
+}
+
+async function tryArchiveExamEnvironmentForCompletion(
+  deps: CompleteExamAttemptEarlyHandlerDeps,
+  attempt: ExamAttempt,
+  request: CompleteExamAttemptEarlyRequest,
+): Promise<
+  | { readonly ok: true }
+  | { readonly ok: false; readonly response: SuspendResumeResponse }
+> {
+  try {
+    const correlation = await ensureExamAttemptEnvironmentCorrelation(deps, {
+      examAttemptId: request.examAttemptId,
+      operation: "exam_complete",
+    });
+    const verifiedEnvironmentExternalId = await requireVerifiedEnvironmentExternalId(
+      deps,
+      request.examAttemptId,
+      correlation.actionableEnvironmentId,
+    );
+    const access = await resolveCustomerEnvironmentAccess(deps, attempt);
+    const archive = await archiveExam(
+      {
+        ...deps,
+        ...access,
+      },
+      {
+        examAttemptId: request.examAttemptId,
+        verifiedEnvironmentExternalId,
+      },
+    );
+    await recordArchiveSuccessDiagnostic(
+      deps.diagnostics,
+      attempt,
+      archive,
+      deps.candidateEmail,
+    );
+    return { ok: true };
+  } catch (error) {
+    const correlationId = deps.newCorrelationId?.() ?? randomUUID();
+    await recordArchiveFailureDiagnostic(
+      deps.diagnostics,
+      attempt,
+      error,
+      correlationId,
+      deps.candidateEmail,
+    );
+    return {
+      ok: false,
+      response: mapArchiveErrorToCompleteResponse(error, request.examAttemptId, correlationId),
+    };
+  }
+}
+
+async function resolveCustomerEnvironmentAccess(
+  deps: CompleteExamAttemptEarlyHandlerDeps,
+  attempt: ExamAttempt,
+) {
+  if (!attempt.customerId) {
+    throw new ExamAttemptRuntimeError(
+      "Exam attempt is missing a Customer CloudShare connection binding.",
+      { examAttemptId: attempt.id },
+    );
+  }
+
+  const connection = await deps.connections.findByCustomerId(attempt.customerId);
+  if (!connection) {
+    throw new ExamAttemptRuntimeError(
+      "No stored CloudShare connection exists for the exam attempt customer.",
+      { examAttemptId: attempt.id, customerId: attempt.customerId },
+    );
+  }
+
+  const client = deps.cloudshare.forConnection(connection);
+  return {
+    controller: createCloudShareEnvironmentController(client),
+    source: createCloudShareEnvironmentSource(client),
+  };
+}
+
+async function requireVerifiedEnvironmentExternalId(
+  deps: Pick<CompleteExamAttemptEarlyHandlerDeps, "launches">,
+  examAttemptId: string,
+  actionableEnvironmentId: string | null,
+): Promise<string | undefined> {
+  if (actionableEnvironmentId) {
+    return actionableEnvironmentId;
+  }
+
+  const launch = await deps.launches.findByExamAttemptId(examAttemptId);
+  if (!launch) {
+    return undefined;
+  }
+  throw new ExamAttemptRuntimeError("No CloudShare environment is correlated to this exam attempt yet.", {
+    examAttemptId,
+    labLaunchId: launch.id,
+    trainingId: launch.trainingId,
+    attemptedOperation: "resolve_environment_correlation",
+    integrationSurface: "cloudshare.v4.training.participant_list",
+    method: "GET",
+    path: launch.trainingId
+      ? `/v4/trainings/${launch.trainingId}/students`
+      : "/v4/trainings/{trainingId}/students",
+    failureMode: "not_correlated_yet",
+    currentEnvironmentExternalId:
+      launch.environmentExternalId ?? launch.environmentId ?? null,
+  });
 }
 
 async function tryMarkAttemptCompleted(
@@ -118,19 +221,17 @@ function buildPersistencePendingResponse(
       examAttemptId,
       retryable: true,
       correlationId,
-      message: "Your lab has been stopped, but completion is still being saved. Retry End exam.",
+      message: "Your lab has been archived, but completion is still being saved. Retry End exam.",
     },
   };
 }
 
-function mapCleanupResponseToCompleteResponse(
-  cleanup: SuspendResumeResponse,
+function mapArchiveErrorToCompleteResponse(
+  error: unknown,
   examAttemptId: string,
+  correlationId: string,
 ): SuspendResumeResponse {
-  const correlationId =
-    typeof cleanup.body.correlationId === "string" ? cleanup.body.correlationId : undefined;
-
-  if (cleanup.status === 202) {
+  if (error instanceof ExamAttemptRuntimeError) {
     return {
       status: 202,
       body: {
@@ -138,34 +239,38 @@ function mapCleanupResponseToCompleteResponse(
         operation: "complete",
         examAttemptId,
         retryable: true,
-        ...(correlationId ? { correlationId } : {}),
-        message: "CloudShare is still stopping your lab. Wait a few seconds, then retry End exam.",
+        correlationId,
+        message: "CloudShare is still archiving your lab. Wait a few seconds, then retry End exam.",
       },
     };
   }
 
-  if (cleanup.status === 409) {
+  const retryable =
+    error instanceof CloudShareTransportError ||
+    error instanceof CloudShareResponseError ||
+    (error instanceof CloudShareRequestError && error.status >= 500);
+
+  if (error instanceof CloudShareRequestError && error.status < 500) {
     return {
-      status: 409,
+      status: 502,
       body: {
-        error: "Exam completion is not available for this attempt.",
+        error: "Unable to archive your CloudShare lab before ending the exam.",
         examAttemptId,
         operation: "complete",
-        ...(typeof cleanup.body.currentStatus === "string"
-          ? { currentStatus: cleanup.body.currentStatus }
-          : {}),
+        retryable: false,
+        correlationId,
       },
     };
   }
 
   return {
-    status: cleanup.status,
+    status: 502,
     body: {
-      error: "Unable to end exam until CloudShare cleanup is confirmed.",
+      error: "Unable to archive your CloudShare lab before ending the exam.",
       examAttemptId,
       operation: "complete",
-      retryable: cleanup.status >= 500,
-      ...(correlationId ? { correlationId } : {}),
+      retryable,
+      correlationId,
     },
   };
 }
@@ -221,6 +326,145 @@ async function recordCandidateEarlyCompletionDiagnostic(
   });
 }
 
+async function recordArchiveSuccessDiagnostic(
+  diagnostics: DiagnosticRecorder | undefined,
+  attempt: ExamAttempt,
+  archive: ArchiveExamResult,
+  candidateEmail?: string | null,
+): Promise<void> {
+  const commandDiagnostic = archive.commandResult
+    ? commandResultToDiagnostic(archive.commandResult)
+    : {
+        externalIds: { environmentId: archive.environmentExternalId },
+        request: null,
+        response: null,
+        details: {
+          attemptedOperation: "archive_environment",
+          integrationSurface: "cloudshare.v3.env.action.archive",
+          alreadyArchived: true,
+          completedBy: "candidate_early_completion",
+        },
+      };
+
+  await diagnostics?.record({
+    source: "runtime",
+    level: "info",
+    operation: "cloudshare.environment.archive",
+    outcome: "success",
+    message: archive.alreadyArchived
+      ? "CloudShare environment was already archived before early completion"
+      : "CloudShare environment archived for early completion",
+    customerId: attempt.customerId ?? null,
+    candidateEmail: candidateEmail ?? null,
+    examId: attempt.examId,
+    examAttemptId: attempt.id,
+    actor: {
+      type: "candidate",
+      id: attempt.candidateId,
+      email: candidateEmail ?? null,
+    },
+    subject: {
+      type: "exam_attempt",
+      id: attempt.id,
+    },
+    ...commandDiagnostic,
+  });
+}
+
+async function recordArchiveFailureDiagnostic(
+  diagnostics: DiagnosticRecorder | undefined,
+  attempt: ExamAttempt,
+  error: unknown,
+  correlationId: string,
+  candidateEmail?: string | null,
+): Promise<void> {
+  await diagnostics?.record({
+    source: "runtime",
+    level: "warn",
+    operation: "cloudshare.environment.archive",
+    outcome: "failure",
+    message: "CloudShare environment archive failed for early completion",
+    customerId: attempt.customerId ?? null,
+    candidateEmail: candidateEmail ?? null,
+    examId: attempt.examId,
+    examAttemptId: attempt.id,
+    correlationId,
+    actor: {
+      type: "candidate",
+      id: attempt.candidateId,
+      email: candidateEmail ?? null,
+    },
+    subject: {
+      type: "exam_attempt",
+      id: attempt.id,
+    },
+    details: {
+      attemptedOperation: "archive_environment",
+      integrationSurface: "cloudshare.v3.env.action.archive",
+      method: "PUT",
+      path: "/api/v3/envs/actions/archive",
+      completedBy: "candidate_early_completion",
+      ...cloudShareFailureDetails(error),
+    },
+  });
+}
+
+function commandResultToDiagnostic(
+  commandResult: EnvironmentCommandResult,
+): {
+  readonly externalIds: { readonly environmentId: string };
+  readonly request?: Record<string, unknown> | null;
+  readonly response?: Record<string, unknown> | null;
+  readonly details: Record<string, unknown>;
+} {
+  return {
+    externalIds: commandResult.externalIds,
+    request: commandResult.request ?? null,
+    response: commandResult.response ?? null,
+    details: {
+      attemptedOperation: commandResult.attemptedOperation,
+      integrationSurface: commandResult.integrationSurface,
+      method: commandResult.method,
+      path: commandResult.path,
+      completedBy: "candidate_early_completion",
+      ...(commandResult.host ? { host: commandResult.host } : {}),
+    },
+  };
+}
+
+function cloudShareFailureDetails(error: unknown): Record<string, unknown> {
+  if (error instanceof CloudShareRequestError) {
+    return {
+      failureMode: "http_status",
+      responseStatus: error.status,
+      ...(error.context ?? {}),
+    };
+  }
+  if (error instanceof CloudShareTransportError) {
+    return {
+      failureMode: "transport",
+      ...(error.context ?? {}),
+    };
+  }
+  if (error instanceof CloudShareResponseError) {
+    return {
+      failureMode: "unexpected_response",
+      ...(error.context ?? {}),
+    };
+  }
+  if (error instanceof ExamAttemptRuntimeError) {
+    return {
+      failureMode: error.context?.failureMode ?? "runtime_state",
+      ...(error.context ?? {}),
+      error: error.message,
+    };
+  }
+  return {
+    failureMode: "unknown",
+    error: error instanceof Error ? error.message : String(error),
+  };
+}
+
 async function recordCandidateEarlyCompletionFailureDiagnostic(
   diagnostics: DiagnosticRecorder | undefined,
   attempt: ExamAttempt,
@@ -254,7 +498,7 @@ async function recordCandidateEarlyCompletionFailureDiagnostic(
       failureMode: "cleanup_not_confirmed",
       cleanupStatus: cleanup.status,
       cleanupOperation:
-        typeof cleanup.body.operation === "string" ? cleanup.body.operation : "suspend",
+        typeof cleanup.body.operation === "string" ? cleanup.body.operation : "archive",
       currentStatus: attempt.status,
       ...(correlationId ? { correlationId } : {}),
     },

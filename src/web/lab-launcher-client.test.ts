@@ -385,7 +385,7 @@ describe("lab launcher client helpers", () => {
         status: "in_progress",
         scheduledFor: "2026-06-18T09:00:00.000Z",
       },
-      message: "CloudShare is still stopping your lab. Wait a few seconds, then retry End exam.",
+      message: "CloudShare is still archiving your lab. Wait a few seconds, then retry End exam.",
     });
   });
 

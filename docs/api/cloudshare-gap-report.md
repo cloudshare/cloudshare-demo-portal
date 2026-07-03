@@ -888,6 +888,48 @@ portal behavior and diagnostics coverage.
 
 ---
 
+## GAP-19 — Environment archive action exists but is undocumented
+
+| Field | Detail |
+|---|---|
+| **Status** | Unverified — endpoint shape identified during issue #250 QA follow-up and isolated behind the CloudShare environment controller |
+| **Verified live** | No |
+
+**Observed behaviour**
+
+CloudShare appears to expose a v3 environment archive action at:
+
+- `PUT /api/v3/envs/actions/archive?envId={envId}`
+
+This endpoint is not present in the public CloudShare API material reviewed for the portal, but it is
+the runtime operation that best matches the Candidate `End exam` action. The portal now routes early
+ExamAttempt completion through the typed CloudShare environment controller's `archiveEnvironment`
+command and then polls the authoritative environment state until it normalizes to `archived`.
+
+**Impact on certification use**
+
+Suspending a lab when the Candidate ends an ExamAttempt leaves completed environments visually
+indistinguishable from intentionally paused/resumable environments in the CloudShare backend.
+Archiving makes the backend state line up with the portal outcome: either the Candidate ended the
+ExamAttempt early or the portal-owned runtime was exhausted. The portal deliberately does not delete
+the environment, because completion still needs support evidence and, when enabled, score retrieval.
+
+Because the endpoint is undocumented, support diagnostics must preserve the attempted operation,
+method, path, response status/body where available, correlation ID, ExamAttempt ID, and environment
+ID. Candidate responses must continue to hide sponsored-link URLs and credentials.
+
+**Action required (if applicable):**
+
+Live-verify the archive action against a disposable CloudShare environment before treating this as a
+documented product contract. Confirm whether the action is idempotent for already-archived
+environments and whether any CloudShare role/RBAC permissions differ from suspend/resume.
+
+**Code reference:** `src/integrations/cloudshare/environment-controller.ts`,
+`src/domain/exam-attempt-runtime-lifecycle.ts`,
+`src/api/exam-attempt-early-completion-runtime.ts`
+
+---
+
 ## Gap template
 
 Copy this section when appending a new gap discovered during implementation:
@@ -979,5 +1021,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-06-24 (recorded CloudShare webhook `CreatedAt` as webhook-definition time, `EnvironmentName` as the CloudShare environment/blueprint display name, and archive webhook delivery lag after portal completion; retained polling/reconcile as the source of truth).
+*Last updated: 2026-07-03 (recorded undocumented v3 archive action assumption for Candidate early completion; retained polling/reconcile as the source of truth).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*

@@ -123,11 +123,12 @@ function makeController(): EnvironmentController {
   return {
     suspendEnvironment: () => Promise.resolve(makeCommandResult("suspend", "ENVS-default-live-env-1")),
     resumeEnvironment: () => Promise.resolve(makeCommandResult("resume", "ENVS-default-live-env-1")),
+    archiveEnvironment: () => Promise.resolve(makeCommandResult("archive", "ENVS-default-live-env-1")),
   };
 }
 
 function makeCommandResult(
-  action: "suspend" | "resume",
+  action: "suspend" | "resume" | "archive",
   environmentId: string,
 ): EnvironmentCommandResult {
   return {
@@ -478,6 +479,7 @@ describe("suspendExamAttemptRuntime", () => {
     const globalController = {
       suspendEnvironment: vi.fn().mockResolvedValue(undefined),
       resumeEnvironment: vi.fn().mockResolvedValue(undefined),
+      archiveEnvironment: vi.fn().mockResolvedValue(undefined),
     };
     const globalSource = {
       getEnvironmentState: vi.fn().mockResolvedValue({ environmentExternalId: "portal-ext-1", status: "suspended" }),
@@ -815,6 +817,7 @@ describe("suspendExamAttemptRuntime", () => {
     const globalController = {
       suspendEnvironment: vi.fn().mockResolvedValue(undefined),
       resumeEnvironment: vi.fn().mockResolvedValue(undefined),
+      archiveEnvironment: vi.fn().mockResolvedValue(undefined),
     };
     const globalSource = {
       getEnvironmentState: vi.fn().mockResolvedValue({ environmentExternalId: "env-1", status: "suspended" }),
@@ -1556,6 +1559,7 @@ describe("resumeExamAttemptRuntime", () => {
     const globalController = {
       suspendEnvironment: vi.fn().mockResolvedValue(undefined),
       resumeEnvironment: vi.fn().mockResolvedValue(undefined),
+      archiveEnvironment: vi.fn().mockResolvedValue(undefined),
     };
     const globalSource = {
       getEnvironmentState: vi.fn().mockResolvedValue({ environmentExternalId: "env-1", status: "running" }),
@@ -1937,6 +1941,7 @@ describe("runHeartbeatAutoSuspendRuntime", () => {
     const globalController = {
       suspendEnvironment: vi.fn().mockResolvedValue(undefined),
       resumeEnvironment: vi.fn().mockResolvedValue(undefined),
+      archiveEnvironment: vi.fn().mockResolvedValue(undefined),
     };
     const globalSource = {
       getEnvironmentState: vi.fn().mockResolvedValue({ environmentExternalId: "env-1", status: "suspended" }),

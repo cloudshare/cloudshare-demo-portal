@@ -27,12 +27,14 @@ function makeTimer(): ExamTimer & { paused: string[]; resumed: string[] } {
   };
 }
 
-function makeController(): EnvironmentController & { suspended: string[]; resumed: string[] } {
+function makeController(): EnvironmentController & { suspended: string[]; resumed: string[]; archived: string[] } {
   const suspended: string[] = [];
   const resumed: string[] = [];
+  const archived: string[] = [];
   return {
     suspended,
     resumed,
+    archived,
     suspendEnvironment: (id) => {
       suspended.push(id);
       return Promise.resolve(makeCommandResult("suspend", id));
@@ -41,11 +43,15 @@ function makeController(): EnvironmentController & { suspended: string[]; resume
       resumed.push(id);
       return Promise.resolve(makeCommandResult("resume", id));
     },
+    archiveEnvironment: (id) => {
+      archived.push(id);
+      return Promise.resolve(makeCommandResult("archive", id));
+    },
   };
 }
 
 function makeCommandResult(
-  action: "suspend" | "resume",
+  action: "suspend" | "resume" | "archive",
   environmentId: string,
 ): EnvironmentCommandResult {
   return {

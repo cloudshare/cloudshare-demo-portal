@@ -107,6 +107,47 @@ describe("createCloudShareEnvironmentController", () => {
     );
   });
 
+  it("issues a PUT to the undocumented v3 archive action endpoint for the given CloudShare envId", async () => {
+    const requestV3TextDetailed = vi.fn().mockResolvedValue({
+      data: "",
+      host: "use.cloudshare.com",
+      integrationSurface: "cloudshare.v3",
+      request: {
+        method: "PUT",
+        path: "/api/v3/envs/actions/archive",
+      },
+      response: {
+        status: 200,
+        body: "",
+      },
+    });
+    const controller = createCloudShareEnvironmentController(mockClient({ requestV3TextDetailed }));
+
+    await expect(controller.archiveEnvironment("ENVS2n38LTNdcC4sHsqnjRzg2")).resolves.toMatchObject({
+      attemptedOperation: "archive_environment",
+      integrationSurface: "cloudshare.v3.env.action.archive",
+      request: {
+        method: "PUT",
+        path: "/api/v3/envs/actions/archive",
+      },
+      response: {
+        status: 200,
+        body: "",
+      },
+      externalIds: {
+        environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+      },
+    });
+
+    expect(requestV3TextDetailed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "PUT",
+        path: "/envs/actions/archive",
+        query: { envId: "ENVS2n38LTNdcC4sHsqnjRzg2" },
+      }),
+    );
+  });
+
   it("propagates CloudShare errors from suspendEnvironment", async () => {
     const err = new Error("CloudShare 502");
     const controller = createCloudShareEnvironmentController(

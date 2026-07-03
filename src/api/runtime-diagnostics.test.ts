@@ -66,6 +66,7 @@ function makeController(): EnvironmentController {
   return {
     suspendEnvironment: vi.fn().mockResolvedValue(undefined),
     resumeEnvironment: vi.fn().mockResolvedValue(undefined),
+    archiveEnvironment: vi.fn().mockResolvedValue(undefined),
   };
 }
 

@@ -15,6 +15,19 @@ import {
 
 const HEARTBEAT_INTERVAL_MS = 15_000;
 const CHILD_POLL_INTERVAL_MS = 3_000;
+export const END_EXAM_CONFIRMATION_MESSAGE =
+  "Ending this exam will archive your CloudShare lab and you will lose access to this ExamAttempt. This cannot be undone.";
+
+export function confirmCandidateEndExam(
+  confirmImpl?: (message: string) => boolean,
+): boolean {
+  const confirmFn =
+    confirmImpl ??
+    (typeof window !== "undefined" && typeof window.confirm === "function"
+      ? window.confirm.bind(window)
+      : null);
+  return confirmFn ? confirmFn(END_EXAM_CONFIRMATION_MESSAGE) : true;
+}
 
 /**
  * Candidate-facing control that launches the lab, then keeps a heartbeat alive
@@ -332,13 +345,15 @@ export function LabLauncher({
     if (actionInFlightRef.current) {
       return;
     }
-    actionInFlightRef.current = true;
     if (currentAttemptStatusRef.current === "completed") {
       setState("completed");
       setMessage("Examination complete.");
-      actionInFlightRef.current = false;
       return;
     }
+    if (!confirmCandidateEndExam()) {
+      return;
+    }
+    actionInFlightRef.current = true;
     stopHeartbeat();
     stopChildPoll();
     setState("ending");

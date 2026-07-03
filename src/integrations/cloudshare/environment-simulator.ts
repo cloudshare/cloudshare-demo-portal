@@ -33,7 +33,7 @@ export interface EmitEnvironmentEventInput {
 
 /**
  * The demo simulator implements both {@link EnvironmentStateSource} (for polling)
- * and {@link EnvironmentController} (for suspend/resume commands). When a command
+ * and {@link EnvironmentController} (for suspend/resume/archive commands). When a command
  * is issued, the simulator immediately transitions its in-memory state so that the
  * next poll sees the new status — exactly as the real CloudShare API would after
  * the async lifecycle action completes.
@@ -140,6 +140,25 @@ export function createCloudShareEnvironmentSimulator(opts: {
         request: {
           method: "PUT",
           path: "/api/v3/envs/actions/resume",
+        },
+        response: {
+          status: 200,
+          body: "",
+        },
+      };
+    },
+
+    async archiveEnvironment(environmentExternalId: string) {
+      statusByExternalId.set(environmentExternalId, "archived");
+      return {
+        attemptedOperation: "archive_environment" as const,
+        integrationSurface: "cloudshare.simulator.env.action.archive",
+        method: "PUT" as const,
+        path: "/api/v3/envs/actions/archive",
+        externalIds: { environmentId: environmentExternalId },
+        request: {
+          method: "PUT",
+          path: "/api/v3/envs/actions/archive",
         },
         response: {
           status: 200,

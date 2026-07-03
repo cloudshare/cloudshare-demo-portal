@@ -71,16 +71,18 @@ function makeConnections(): CloudShareConnectionRepository {
 }
 
 function makeCloudShareClient(): CloudShareClient {
+  let environmentPolls = 0;
   return {
     requestV3Text: vi.fn(async (spec: { path: string }) => {
-      if (spec.path === "/envs/actions/suspend") {
+      if (spec.path === "/envs/actions/archive") {
         return "";
       }
       throw new Error(`unexpected v3 text path ${spec.path}`);
     }) as CloudShareClient["requestV3Text"],
     requestV3: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
       if (spec.path === "/envs/ENV-live-1") {
-        return spec.schema.parse({ envStatus: "Suspended" });
+        environmentPolls += 1;
+        return spec.schema.parse({ envStatus: environmentPolls === 1 ? "Ready" : "Archived" });
       }
       throw new Error(`unexpected v3 path ${spec.path}`);
     }) as CloudShareClient["requestV3"],
@@ -143,6 +145,7 @@ async function makeDeps(
     controller: {
       suspendEnvironment: vi.fn(),
       resumeEnvironment: vi.fn(),
+      archiveEnvironment: vi.fn(),
     },
     source: {
       getEnvironmentState: vi.fn(),
@@ -175,7 +178,7 @@ async function makeDeps(
 }
 
 describe("completeExamAttemptEarlyRuntime", () => {
-  it("suspends an in-progress CloudShare lab before marking the ExamAttempt completed", async () => {
+  it("archives an in-progress CloudShare lab before marking the ExamAttempt completed", async () => {
     const deps = await makeDeps();
 
     const response = await completeExamAttemptEarlyRuntime(deps, { examAttemptId: "ea-1" });
@@ -191,13 +194,13 @@ describe("completeExamAttemptEarlyRuntime", () => {
     expect(client.requestV3Text).toHaveBeenCalledWith(
       expect.objectContaining({
         method: "PUT",
-        path: "/envs/actions/suspend",
+        path: "/envs/actions/archive",
         query: { envId: "ENV-live-1" },
       }),
     );
     expect(deps.diagnostics?.record).toHaveBeenCalledWith(
       expect.objectContaining({
-        operation: "exam_attempt.suspend",
+        operation: "cloudshare.environment.archive",
         outcome: "success",
         externalIds: { environmentId: "ENV-live-1" },
       }),
@@ -219,7 +222,7 @@ describe("completeExamAttemptEarlyRuntime", () => {
     expect(JSON.stringify(response.body)).not.toContain("sponsored-link-secret");
   });
 
-  it("marks a suspended ExamAttempt completed without issuing another CloudShare command", async () => {
+  it("archives a suspended CloudShare lab before marking the ExamAttempt completed", async () => {
     const deps = await makeDeps("suspended");
 
     const response = await completeExamAttemptEarlyRuntime(deps, { examAttemptId: "ea-1" });
@@ -231,8 +234,14 @@ describe("completeExamAttemptEarlyRuntime", () => {
     await expect(deps.attempts.findById("ea-1")).resolves.toMatchObject({
       status: "completed",
     });
-    expect(deps.cloudshare.forConnection).not.toHaveBeenCalled();
-    expect(deps.diagnostics?.record).toHaveBeenCalledTimes(1);
+    const client = vi.mocked(deps.cloudshare.forConnection).mock.results[0]?.value as CloudShareClient;
+    expect(client.requestV3Text).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "PUT",
+        path: "/envs/actions/archive",
+        query: { envId: "ENV-live-1" },
+      }),
+    );
     expect(deps.diagnostics?.record).toHaveBeenCalledWith(
       expect.objectContaining({
         operation: "exam_attempt.complete",
@@ -287,7 +296,7 @@ describe("completeExamAttemptEarlyRuntime", () => {
         examAttemptId: "ea-1",
         retryable: true,
         correlationId: "corr-complete",
-        message: "CloudShare is still stopping your lab. Wait a few seconds, then retry End exam.",
+        message: "CloudShare is still archiving your lab. Wait a few seconds, then retry End exam.",
       },
     });
     await expect(deps.attempts.findById("ea-1")).resolves.toMatchObject({
@@ -328,11 +337,11 @@ describe("completeExamAttemptEarlyRuntime", () => {
         examAttemptId: "ea-1",
         retryable: true,
         correlationId: "corr-complete",
-        message: "Your lab has been stopped, but completion is still being saved. Retry End exam.",
+        message: "Your lab has been archived, but completion is still being saved. Retry End exam.",
       },
     });
     await expect(deps.attempts.findById("ea-1")).resolves.toMatchObject({
-      status: "suspended",
+      status: "in_progress",
     });
     expect(deps.diagnostics?.record).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -343,7 +352,7 @@ describe("completeExamAttemptEarlyRuntime", () => {
           completedBy: "candidate_early_completion",
           failureMode: "completion_persistence_failed",
           priorStatus: "in_progress",
-          currentStatus: "suspended",
+          currentStatus: "in_progress",
           error: "database write failed",
         }),
       }),
