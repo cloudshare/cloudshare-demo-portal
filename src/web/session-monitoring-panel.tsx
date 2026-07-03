@@ -1,6 +1,10 @@
 import React from "react";
 import { formatLocalDateTimeMinute } from "./candidate-date-format";
 import { MonitoringAttemptDetails } from "./monitoring-attempt-details";
+import { cardStyle, mutedPanelStyle } from "./card-styles";
+import { compactButtonStyle } from "./button-styles";
+import { statusBadgeStyle, getExamAttemptStatusTone, type StatusTone } from "./status-badge";
+import { colors } from "./design-tokens";
 import type {
   AdminMonitoringView,
   MonitoringAttemptResult,
@@ -92,21 +96,21 @@ const statusStripStyle: React.CSSProperties = {
 };
 
 const statusMetricStyle: React.CSSProperties = {
+  ...cardStyle,
+  border: undefined,
+  borderWidth: "1px",
+  borderStyle: "solid",
+  borderColor: colors.border,
   display: "grid",
   gap: "0.25rem",
   minWidth: "120px",
   flex: "1 1 120px",
   padding: "0.75rem 0.85rem",
-  borderWidth: "1px",
-  borderStyle: "solid",
-  borderColor: "#d1d5db",
-  borderRadius: "6px",
-  background: "#fff",
 };
 
 const selectedStatusMetricStyle: React.CSSProperties = {
-  borderColor: "#1d4ed8",
-  background: "#eff6ff",
+  borderColor: colors.info,
+  background: colors.infoSoft,
   boxShadow: "inset 0 0 0 1px #bfdbfe",
 };
 
@@ -135,12 +139,10 @@ const sectionBodyStyle: React.CSSProperties = {
 };
 
 const filterPanelStyle: React.CSSProperties = {
+  ...mutedPanelStyle,
   display: "grid",
   gap: "0.75rem",
   padding: "0.9rem",
-  border: "1px solid #dbe4ff",
-  borderRadius: "6px",
-  background: "#f8fbff",
 };
 
 const filterGridStyle: React.CSSProperties = {
@@ -194,12 +196,30 @@ const queueListStyle: React.CSSProperties = {
 };
 
 const queueCardBaseStyle: React.CSSProperties = {
+  ...cardStyle,
   display: "grid",
   gap: "0.75rem",
   padding: "0.9rem",
-  borderRadius: "6px",
-  border: "1px solid #d1d5db",
 };
+
+// Queue tint reuses the same tone tokens as the ExamAttempt status badge
+// (see @/web/status-badge) so a queue card's background and the status
+// badges rendered inside it never disagree about what a status "means".
+const queueToneSoftBackground: Record<StatusTone, string> = {
+  neutral: colors.neutralSoft,
+  info: colors.infoSoft,
+  positive: colors.successSoft,
+  warning: colors.warningSoft,
+  negative: colors.dangerSoft,
+};
+
+function getQueueCardStyle(status: MonitoringAttemptView["status"]): React.CSSProperties {
+  const tone = getExamAttemptStatusTone(status);
+  return {
+    ...queueCardBaseStyle,
+    background: queueToneSoftBackground[tone],
+  };
+}
 
 const queueHeadingStyle: React.CSSProperties = {
   margin: 0,
@@ -216,18 +236,6 @@ const queueCountPillStyle: React.CSSProperties = {
   fontSize: "0.75rem",
   fontWeight: 600,
   whiteSpace: "nowrap",
-};
-
-const liveQueueStyles = {
-  scheduled: { background: "#f7fbff", borderColor: "#c7ddff" },
-  ready: { background: "#f7fff9", borderColor: "#c9ebd3" },
-  inProgress: { background: "#fffaf2", borderColor: "#f1d6a8" },
-  suspended: { background: "#fff7f7", borderColor: "#f0c4c4" },
-} satisfies Record<string, Pick<React.CSSProperties, "background" | "borderColor">>;
-
-const historyCardStyle: React.CSSProperties = {
-  background: "#f7f9ff",
-  border: "1px solid #d7def3",
 };
 
 export function buildMonitoringHistoryAttemptKey(attempt: Pick<MonitoringAttemptView, "id">): string {
@@ -342,18 +350,7 @@ function renderAttemptCard(
           </span>
         </span>
         {showStatusBadge ? (
-          <span
-            style={{
-              padding: "0.2rem 0.45rem",
-              borderRadius: "999px",
-              background: "#f8fafc",
-              border: "1px solid #d1d5db",
-              color: "#374151",
-              fontSize: "0.75rem",
-              fontWeight: 600,
-              whiteSpace: "nowrap",
-            }}
-          >
+          <span style={statusBadgeStyle(getExamAttemptStatusTone(attempt.status))}>
             {formatAttemptStatus(attempt.status)}
           </span>
         ) : null}
@@ -400,28 +397,28 @@ export function SessionMonitoringPanel({
       label: "Scheduled queue",
       status: "scheduled",
       attempts: filteredMonitoring.currentAttempts.scheduled,
-      style: liveQueueStyles.scheduled,
+      style: getQueueCardStyle("scheduled"),
       badgeCount: filteredMonitoring.currentAttempts.scheduled.length,
     },
     {
       label: "Ready queue",
       status: "ready",
       attempts: filteredMonitoring.currentAttempts.ready,
-      style: liveQueueStyles.ready,
+      style: getQueueCardStyle("ready"),
       badgeCount: filteredMonitoring.currentAttempts.ready.length,
     },
     {
       label: "In-progress queue",
       status: "in_progress",
       attempts: filteredMonitoring.currentAttempts.inProgress,
-      style: liveQueueStyles.inProgress,
+      style: getQueueCardStyle("in_progress"),
       badgeCount: filteredMonitoring.currentAttempts.inProgress.length,
     },
     {
       label: "Suspended queue",
       status: "suspended",
       attempts: filteredMonitoring.currentAttempts.suspended,
-      style: liveQueueStyles.suspended,
+      style: getQueueCardStyle("suspended"),
       badgeCount: filteredMonitoring.currentAttempts.suspended.length,
     },
   ] as const;
@@ -439,7 +436,7 @@ export function SessionMonitoringPanel({
         Diagnostics for the forensic trace of what happened and in what order. Summary counts cover the
         full monitoring state, while completed and expired history stays bounded for scanning.
       </p>
-      <button onClick={onRefresh} disabled={loading} style={{ padding: "0.4rem 1rem", marginBottom: "1rem" }}>
+      <button onClick={onRefresh} disabled={loading} style={{ ...compactButtonStyle, marginBottom: "1rem" }}>
         {loading ? "Loading..." : "Refresh Monitoring"}
       </button>
       <div>
@@ -506,7 +503,7 @@ export function SessionMonitoringPanel({
             type="button"
             onClick={() => setFilters(EMPTY_MONITORING_FILTERS)}
             disabled={!hasFilters}
-            style={{ padding: "0.45rem 0.9rem" }}
+            style={compactButtonStyle}
           >
             Clear filters
           </button>
@@ -531,7 +528,7 @@ export function SessionMonitoringPanel({
             <p style={sectionBodyStyle}>Current ExamAttempts by state, grouped for quick scanning.</p>
           </div>
           {visibleLiveQueues.map(({ label, attempts, style, badgeCount }) => (
-            <div key={label} style={{ ...queueCardBaseStyle, ...style }}>
+            <div key={label} style={style}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "center" }}>
                 <h3 style={queueHeadingStyle}>{label}</h3>
                 <span style={queueCountPillStyle}>{badgeCount}</span>
@@ -555,7 +552,7 @@ export function SessionMonitoringPanel({
                   Completed / expired history (showing {filteredMonitoring.history.length} of {monitoring.historyPage.total})
                 </h2>
                 {monitoring.historyPage.hasMore ? (
-                  <button onClick={onLoadMoreHistory} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
+                  <button onClick={onLoadMoreHistory} disabled={loading} style={compactButtonStyle}>
                     {loading ? "Loading..." : "Load more history"}
                   </button>
                 ) : null}
