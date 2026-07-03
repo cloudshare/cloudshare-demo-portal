@@ -372,7 +372,7 @@ describe("ExamAttempt scheduling runtime", () => {
     });
   });
 
-  it("returns 409 with next available time for overlapping same-Exam attempts before CloudShare provisioning", async () => {
+  it("returns 409 with next available time before CloudShare provisioning when the requested window overlaps an existing attempt", async () => {
     const attempts = createInMemoryExamAttemptRepository();
     await attempts.save({
       id: "attempt-existing",
@@ -414,7 +414,7 @@ describe("ExamAttempt scheduling runtime", () => {
         candidateFirstName: "Asha",
         candidateLastName: "Patel",
         examId: "exam-1",
-        scheduledFor: "2026-06-15T17:00:00.000Z",
+        scheduledFor: "2026-06-15T15:00:00.000Z",
       },
     );
 

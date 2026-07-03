@@ -560,6 +560,7 @@ async function findSameExamAvailabilityOverlap(input: {
 }): Promise<{ readonly conflictingAttemptId: string; readonly nextAvailableAt: Date } | null> {
   const requestedAtMs = input.scheduledFor.getTime();
   const windowMs = input.availabilityWindowMinutes * 60 * 1000;
+  const requestedEndMs = requestedAtMs + windowMs;
   const existingAttempts = await input.attempts.listByCandidate(input.candidateId);
 
   for (const attempt of existingAttempts) {
@@ -577,7 +578,7 @@ async function findSameExamAvailabilityOverlap(input: {
       continue;
     }
     const windowEndMs = windowStartMs + windowMs;
-    if (requestedAtMs >= windowStartMs && requestedAtMs < windowEndMs) {
+    if (requestedAtMs < windowEndMs && requestedEndMs > windowStartMs) {
       return {
         conflictingAttemptId: attempt.id,
         nextAvailableAt: new Date(windowEndMs),

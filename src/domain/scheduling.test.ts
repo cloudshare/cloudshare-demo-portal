@@ -491,6 +491,54 @@ describe("scheduleExam", () => {
     await expect(launches.findByExamAttemptId("attempt-existing")).resolves.toBeNull();
   });
 
+  it("blocks a same-Exam schedule whose requested availability window overlaps an existing attempt from before its start", async () => {
+    const { exams, attempts, launches } = await setup({
+      storageLeaseMinutes: 240,
+      openPeriodMinutes: 90,
+    });
+    await attempts.save({
+      id: "attempt-existing",
+      customerId: "customer-helios",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "ready",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    const createTraining = vi.fn();
+
+    await expect(
+      scheduleExam(
+        {
+          exams,
+          attempts,
+          launches,
+          labs: {
+            ...makeLabs(),
+            createTraining,
+          },
+          newId: vi.fn(),
+          now: () => new Date("2026-06-15T10:00:00.000Z"),
+        },
+        {
+          customerId: "customer-helios",
+          candidateId: "candidate-1",
+          candidateEmail: "candidate@helioscx.demo",
+          candidateFirstName: "Asha",
+          candidateLastName: "Patel",
+          examId: "exam-1",
+          scheduledFor: new Date("2026-06-15T15:00:00.000Z"),
+        },
+      ),
+    ).rejects.toMatchObject({
+      name: "ScheduleOverlapError",
+      nextAvailableAt: new Date("2026-06-15T20:00:00.000Z"),
+    });
+
+    expect(createTraining).not.toHaveBeenCalled();
+    await expect(attempts.listByCandidate("candidate-1")).resolves.toHaveLength(1);
+  });
+
   it("allows a same-Exam schedule at the end of the existing availability window", async () => {
     const { exams, attempts, launches } = await setup({
       storageLeaseMinutes: 240,
