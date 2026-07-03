@@ -39,6 +39,14 @@ import {
   isPortalSessionExpiredError,
   startPortalSessionWatchdog,
 } from "./session-expiry";
+import { cardStyle, mutedPanelStyle, alertPanelStyle } from "./card-styles";
+import {
+  primaryButtonStyle,
+  secondaryButtonStyle,
+  disabledButtonStyle,
+} from "./button-styles";
+import { statusBadgeStyle, getExamAttemptStatusTone } from "./status-badge";
+import { eyebrowLabelStyle, pageHeadingStyle } from "./design-tokens";
 
 interface CandidateHomeProps {
   readonly email: string;
@@ -67,8 +75,8 @@ export function PublishedExamCardHeader({
           <h3 style={{ margin: 0, fontSize: "1.1rem", color: "#0f172a" }}>{title}</h3>
         </div>
         <div style={publishedExamDurationPillsStyle}>
-          <span style={pillStyle}>{runtimeLimit}</span>
-          <span style={pillStyle}>{openWindow}</span>
+          <span style={statusBadgeStyle("info")}>{runtimeLimit}</span>
+          <span style={statusBadgeStyle("info")}>{openWindow}</span>
         </div>
       </div>
       <p style={publishedExamDescriptionStyle}>
@@ -278,7 +286,9 @@ export function CandidateHome({ email }: CandidateHomeProps) {
             <p style={{ margin: 0, color: "#5f6b76", fontSize: "0.9rem", fontWeight: 600 }}>
               Certalis Candidate Portal
             </p>
-            <h1 style={{ margin: "0.35rem 0 0.5rem", fontSize: "2rem" }}>Candidate Home</h1>
+            <h1 style={{ ...pageHeadingStyle, margin: "0.35rem 0 0.5rem", fontSize: "2rem" }}>
+              Candidate Home
+            </h1>
             <p style={{ margin: 0, color: "#334155", lineHeight: 1.5 }}>
               Review your scheduled Exams, enter or resume active sessions, and schedule the next
               published Helios CX Exam from one place.
@@ -313,17 +323,17 @@ export function CandidateHome({ email }: CandidateHomeProps) {
       ) : null}
 
       <section style={{ display: "grid", gap: "1rem" }}>
-        {loading && <p style={messagePanelStyle}>Loading candidate dashboard...</p>}
+        {loading && <p style={mutedPanelStyle}>Loading candidate dashboard...</p>}
         {error && (
-          <p style={{ ...messagePanelStyle, color: "#b00020", background: "#fff5f7", border: "1px solid #f1c7d0" }}>
+          <p style={{ ...alertPanelStyle.danger, margin: 0 }}>
             {error}
           </p>
         )}
         {scheduledAttempts.length > 0 && (
-          <section style={sectionPanelStyle}>
+          <section style={cardStyle}>
             <div style={sectionHeaderStyle}>
               <div>
-                <p style={eyebrowStyle}>Scheduled attempts</p>
+                <p style={eyebrowLabelStyle}>Scheduled attempts</p>
                 <h2 style={sectionTitleStyle}>Upcoming and active Exams</h2>
               </div>
               <p style={sectionCopyStyle}>
@@ -377,7 +387,9 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                             Attempt ID: {attempt.attemptId}
                           </p>
                         </div>
-                        <span style={statusBadgeStyle}>{formatCandidateAttemptStatus(attempt.displayStatus)}</span>
+                        <span style={statusBadgeStyle(getExamAttemptStatusTone(attempt.displayStatus))}>
+                          {formatCandidateAttemptStatus(attempt.displayStatus)}
+                        </span>
                       </div>
                       <div
                         style={{
@@ -439,7 +451,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                         </div>
                       )}
                       {attempt.coldStartWarning ? (
-                        <p role="status" style={warningPanelStyle}>
+                        <p role="status" style={{ ...alertPanelStyle.warning, margin: 0 }}>
                           {attempt.coldStartWarning}
                         </p>
                       ) : null}
@@ -451,10 +463,10 @@ export function CandidateHome({ email }: CandidateHomeProps) {
           </section>
         )}
         {!error && shouldShowNoPublishedExams({ loading, examCount: dashboard.exams.length }) && (
-          <section style={sectionPanelStyle}>
+          <section style={cardStyle}>
             <div style={sectionHeaderStyle}>
               <div>
-                <p style={eyebrowStyle}>Published Exams</p>
+                <p style={eyebrowLabelStyle}>Published Exams</p>
                 <h2 style={sectionTitleStyle}>Schedule your next session</h2>
               </div>
             </div>
@@ -463,10 +475,10 @@ export function CandidateHome({ email }: CandidateHomeProps) {
         )}
 
         {shouldShowPublishedExamList({ loading, examCount: dashboard.exams.length }) && (
-          <section style={sectionPanelStyle}>
+          <section style={cardStyle}>
             <div style={sectionHeaderStyle}>
               <div>
-                <p style={eyebrowStyle}>Published Exams</p>
+                <p style={eyebrowLabelStyle}>Published Exams</p>
                 <h2 style={sectionTitleStyle}>Browse and schedule</h2>
               </div>
               <p style={sectionCopyStyle}>
@@ -588,10 +600,8 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                         <p
                           role={feedback.kind === "error" ? "alert" : "status"}
                           style={{
-                            ...messagePanelStyle,
-                            color: feedback.kind === "error" ? "#b00020" : "#7a4b00",
-                            background: feedback.kind === "error" ? "#fff5f7" : "#fff8eb",
-                            border: feedback.kind === "error" ? "1px solid #f1c7d0" : "1px solid #f0d8a8",
+                            ...(feedback.kind === "error" ? alertPanelStyle.danger : alertPanelStyle.warning),
+                            margin: 0,
                           }}
                         >
                           {feedback.message}
@@ -613,13 +623,6 @@ export function CandidateHome({ email }: CandidateHomeProps) {
     </main>
   );
 }
-
-const sectionPanelStyle: CSSProperties = {
-  border: "1px solid #d9e1e8",
-  borderRadius: "8px",
-  padding: "1.25rem",
-  background: "#ffffff",
-};
 
 const sectionHeaderStyle: CSSProperties = {
   display: "flex",
@@ -643,29 +646,11 @@ const sectionCopyStyle: CSSProperties = {
   lineHeight: 1.5,
 };
 
-const eyebrowStyle: CSSProperties = {
-  margin: 0,
-  color: "#5f6b76",
-  fontSize: "0.8rem",
-  fontWeight: 700,
-  letterSpacing: 0,
-  textTransform: "uppercase",
-};
-
-const cardStyle: CSSProperties = {
-  border: "1px solid #e2e8f0",
-  borderRadius: "8px",
-  padding: "1rem",
-  background: "#fcfdff",
-};
-
 const metaItemStyle: CSSProperties = {
+  ...cardStyle,
   display: "grid",
   gap: "0.3rem",
   padding: "0.85rem 0.9rem",
-  border: "1px solid #e2e8f0",
-  borderRadius: "8px",
-  background: "#ffffff",
 };
 
 const metaLabelStyle: CSSProperties = {
@@ -698,54 +683,6 @@ function getAttemptScheduleAvailabilityFallback(
   return status === "completed" || status === "expired" ? "No scheduling hold" : "TBD";
 }
 
-const statusBadgeStyle: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  padding: "0.35rem 0.65rem",
-  borderRadius: "999px",
-  background: "#e8f1ff",
-  color: "#1d4f91",
-  fontWeight: 600,
-  whiteSpace: "nowrap",
-};
-
-const pillStyle: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  padding: "0.35rem 0.65rem",
-  borderRadius: "999px",
-  background: "#eff6ff",
-  color: "#1e40af",
-  fontWeight: 600,
-  whiteSpace: "nowrap",
-};
-
-const primaryButtonStyle: CSSProperties = {
-  padding: "0.7rem 1rem",
-  borderRadius: "8px",
-  border: "1px solid #0f3d91",
-  background: "#0f3d91",
-  color: "#ffffff",
-  fontWeight: 600,
-};
-
-const secondaryButtonStyle: CSSProperties = {
-  padding: "0.7rem 1rem",
-  borderRadius: "8px",
-  border: "1px solid #cbd5e1",
-  background: "#ffffff",
-  color: "#0f172a",
-  fontWeight: 600,
-};
-
-const disabledButtonStyle: CSSProperties = {
-  background: "#e2e8f0",
-  border: "1px solid #cbd5e1",
-  color: "#94a3b8",
-  cursor: "not-allowed",
-  boxShadow: "none",
-};
-
 function getButtonStyle(baseStyle: CSSProperties, disabled: boolean): CSSProperties {
   return disabled
     ? {
@@ -766,18 +703,3 @@ const inputStyle: CSSProperties = {
   boxSizing: "border-box",
 };
 
-const messagePanelStyle: CSSProperties = {
-  margin: 0,
-  padding: "0.95rem 1rem",
-  border: "1px solid #d9e1e8",
-  borderRadius: "8px",
-  background: "#f8fafc",
-  color: "#334155",
-};
-
-const warningPanelStyle: CSSProperties = {
-  ...messagePanelStyle,
-  color: "#7a4b00",
-  background: "#fff8eb",
-  border: "1px solid #f0d8a8",
-};

@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { colors } from "./design-tokens";
 
 export const candidateHomeHeaderStyle: CSSProperties = {
   display: "flex",
@@ -53,7 +54,7 @@ export const publishedExamTitleBlockStyle: CSSProperties = {
 
 export const publishedExamDescriptionStyle: CSSProperties = {
   margin: "0.5rem 0 0",
-  color: "#444",
+  color: colors.textSecondary,
   lineHeight: 1.5,
   maxWidth: "44rem",
 };
