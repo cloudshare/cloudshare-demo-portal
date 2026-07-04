@@ -1009,6 +1009,79 @@ and should be reserved for demo reset/operator cleanup, not normal certification
 
 ---
 
+## GAP-21 / FUTURE REQUEST — Reusable Guided Journey analytics across Experiences
+
+| Field | Detail |
+|---|---|
+| **Status** | Future request — product/API enhancement and portal delivery-model gap |
+| **Verified live** | No — requires CloudShare API/support confirmation |
+
+**Observed behaviour**
+
+CloudShare experience analytics are naturally scoped to a single multi-participant Experience.
+The portal's current one-participant-per-Experience launch model prevents useful
+Experience-level aggregate scoring: an aggregate over one participant is still just an individual
+score. This is not necessarily a CloudShare analytics defect; it is a mismatch between the portal's
+current individual on-demand delivery model and CloudShare's native cohort delivery model.
+
+The deeper future request is to decouple Guided Journeys from individual Experiences. In the desired
+model, a Guided Journey is a reusable scored learning/demo asset with a stable definition and
+version, and an Experience is the runtime composition that joins:
+
+- a Blueprint;
+- a Policy;
+- a Guided Journey;
+- participants;
+- lifecycle/timing.
+
+CloudShare is already partly aligned with this direction through GitHub synchronisation for Guided
+Journeys. The portal's originally scoped Guided Journey repository, later dropped from the MVP, would
+have extended the same idea by allowing Guided Journeys to be reused across many Experiences rather
+than treated as analytics permanently owned by one Experience.
+
+**Impact on certification and demo use**
+
+Cross-Experience Guided Journey analytics should group scores by Guided Journey definition/version
+rather than by Experience ID. That would preserve meaningful aggregate score reporting for the
+portal's individual on-demand model while also supporting CloudShare's native cohort model where many
+participants share a single Experience.
+
+The portal should therefore support both delivery modes in a future slice:
+
+- **Individual on-demand Experiences** for isolated Candidate launches, current exam delivery,
+  entitlement, suspend/resume, and per-attempt support diagnostics.
+- **Cohort or ongoing Experiences** for Helios Admin-scheduled multi-participant delivery, richer
+  CloudShare-native aggregate analytics, sales enablement sessions, demos, POCs, and reusable lab
+  delivery.
+
+This is broader than certification delivery. It reflects the general way CloudShare Experiences are
+built and consumed, and should feed into the next portal iteration for sales enablement and
+customer-owned demo/POC delivery.
+
+**Action required (if applicable):**
+
+Track this as both a portal future request and a CloudShare product/API gap. Confirm with CloudShare:
+
+1. Whether Guided Journey definitions have stable IDs and versions independent of an Experience.
+2. Whether GitHub-synchronised Guided Journeys expose enough identity/version metadata through the
+   API to group progress across Experiences.
+3. Whether Guided Journey progress endpoints can report aggregate results across multiple
+   Experiences that use the same Guided Journey definition/version.
+4. Whether Training/Sales Experiences with preconfigured participant environments can be created,
+   populated, prepared, suspended, and resumed through API calls without fake participant login.
+5. Whether CloudShare intends Experience analytics to remain the only aggregate boundary, or whether
+   reusable Guided Journey analytics are an intended product direction.
+
+Related external request: [BAC-24830](https://cloudshare.atlassian.net/browse/BAC-24830).
+
+**Cross-links:** [CONTEXT.md](../../CONTEXT.md) defines `Experience`, `Exam`, `Blueprint`, `Policy`,
+and `Guided Journey`; [PRD v2](../requirements/prd-cloudshare-demo-portal-v2.md) scopes current
+score retrieval as a per-Exam flag; see also [GAP-7](#gap-7--certification-scoring-is-weak-bitmap-checkpoints-end-state-only)
+for Guided Journey scoring limitations and [GAP-13](#gap-13--no-api-to-detect-whether-a-guided-journey-exists-for-an-experience)
+for the current detection gap.
+
+---
+
 ## Gap template
 
 Copy this section when appending a new gap discovered during implementation:
@@ -1100,5 +1173,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-07-04 (recorded delete-only Experience cleanup gap; desired state is Experience archive/hide while retaining history).
+*Last updated: 2026-07-04 (added GAP-21 / FUTURE REQUEST for reusable Guided Journey analytics and delivery modes).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*
