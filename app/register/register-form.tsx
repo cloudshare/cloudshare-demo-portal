@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { useState } from "react";
 
 export function RegisterForm() {
@@ -41,7 +42,12 @@ export function RegisterForm() {
       <p style={{ color: "#555", marginBottom: "1.5rem" }}>
         Create your Helios CX Candidate account to browse published Exams.
       </p>
-      <form onSubmit={onSubmit} style={{ display: "grid", gap: "1rem" }}>
+      <form
+        onSubmit={onSubmit}
+        action="/api/candidate/register"
+        method="post"
+        style={{ display: "grid", gap: "1rem" }}
+      >
         <label style={{ display: "grid", gap: "0.35rem" }}>
           <span>First name</span>
           <input
