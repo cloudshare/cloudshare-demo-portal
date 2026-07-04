@@ -37,6 +37,9 @@ export interface DiagnosticLogTableProps {
 export const MAX_RENDERED_DETAIL_CHARS = 12_000;
 
 const CELL_PADDING = "0.55rem 0.6rem";
+const DIAGNOSTIC_TABLE_MIN_WIDTH = "115rem";
+const OCCURRED_COLUMN_WIDTH = "16rem";
+const OCCURRED_TIMESTAMP_MIN_WIDTH = "12rem";
 const HEADER_CELL_STYLE = {
   padding: CELL_PADDING,
   textAlign: "left" as const,
@@ -255,7 +258,7 @@ export function DiagnosticLogTable({
       <table
         style={{
           width: "100%",
-          minWidth: "110rem",
+          minWidth: DIAGNOSTIC_TABLE_MIN_WIDTH,
           borderCollapse: "separate",
           borderSpacing: 0,
           tableLayout: "fixed",
@@ -263,7 +266,7 @@ export function DiagnosticLogTable({
         }}
       >
         <colgroup>
-          <col style={{ width: "11.5rem" }} />
+          <col style={{ width: OCCURRED_COLUMN_WIDTH }} />
           <col style={{ width: "5.25rem" }} />
           <col style={{ width: "7rem" }} />
           <col style={{ width: "12rem" }} />
@@ -364,7 +367,7 @@ export function DiagnosticLogTable({
                       >
                         {isExpanded ? "▼" : "▶"}
                       </button>
-                      <div style={{ minWidth: 0 }}>
+                      <div style={{ minWidth: OCCURRED_TIMESTAMP_MIN_WIDTH }}>
                         <div style={{ whiteSpace: "nowrap" }}>{entry.occurredAt}</div>
                         <div style={MUTED_TEXT_STYLE}>{isExpanded ? "Evidence expanded" : "Expand for evidence"}</div>
                       </div>
