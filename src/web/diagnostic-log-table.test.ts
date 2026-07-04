@@ -95,6 +95,38 @@ describe("DiagnosticLogTable", () => {
     expect(html).toContain('aria-label="Expand diagnostic entry diag-summary"');
   });
 
+  it("reserves enough width for the occurred timestamp beside the level pill", () => {
+    const html = renderToStaticMarkup(
+      createElement(DiagnosticLogTable, {
+        entries: [
+          {
+            id: "diag-timestamp-spacing",
+            occurredAt: "2026-07-04T11:36:46.250Z",
+            level: "info",
+            source: "runtime",
+            operation: "exam_attempt.score.retrieve",
+            outcome: "success",
+            customerId: "customer-helios",
+            actor: { type: "candidate", id: "candidate-1" },
+            subject: { type: "exam_attempt", id: "attempt-1" },
+            message: "Score retrieved successfully",
+            correlationId: "corr-123",
+            candidateEmail: "candidate@helioscx.demo",
+            examId: "exam-1",
+            examAttemptId: "attempt-1",
+          },
+        ],
+        expandedDiagnosticId: null,
+        onToggleExpanded: () => {},
+      }),
+    );
+
+    expect(html).toContain("min-width:115rem");
+    expect(html).toContain("width:16rem");
+    expect(html).toContain("min-width:12rem");
+    expect(html).toContain("2026-07-04T11:36:46.250Z");
+  });
+
   it("canonicalises duplicate experience identifiers in CloudShare ID displays without hiding distinct values", () => {
     const html = renderToStaticMarkup(
       createElement(DiagnosticLogTable, {
