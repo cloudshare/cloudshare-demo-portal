@@ -222,8 +222,8 @@ training / classes — only the Accelerate experience model applies.)
 A Project Member assigned to an Experience. For the demo, a seeded service-account member.
 
 **Participant**:
-An end user added to an Experience — i.e. the Candidate sitting the exam. An exam Experience has
-a single Participant.
+An end user added to an Experience — i.e. the Candidate sitting the exam. Individual exam delivery
+uses one Participant per Experience; cohort exam delivery uses many Participants in one Experience.
 
 **Standby**:
 A generic, pre-provisioned environment CloudShare prepares ahead of an `instructorLed`
@@ -253,9 +253,25 @@ override. `openPeriodMinutes` is manually editable and defines the CloudShare tr
 End (`scheduledFor + openPeriodMinutes`); it must be at least the runtime time limit and, when
 Policy `storageLeaseMinutes` is known, no longer than that storage retention. `storageLeaseMinutes`
 is retained as Policy evidence and validation/review context, not as the direct scheduling End.
+An Exam explicitly controls whether it is available for Individual Exam Delivery, Cohort Exam
+Sessions, or both.
 The Candidate is added as the single Participant at launch, not at definition time. What a Candidate
 selects and consumes; the unit this portal actually delivers.
 _Avoid_: test, assessment; do **not** call the catalog item a "Certification".
+
+**Individual Exam Delivery**:
+The current exam delivery mode where a Candidate chooses their own start time and the portal creates
+a dedicated one-Participant CloudShare Experience for that Candidate's ExamAttempt.
+_Avoid_: private exam, single-user experience.
+
+**Cohort Exam Session**:
+A Helios Admin-created exam session where many Candidates join the same long-running on-demand
+CloudShare Experience during an admin-defined availability window. Each Candidate keeps an
+independent ExamAttempt clock even though the CloudShare Experience is shared, and retiring the
+session preserves its history rather than deleting the consumed Experience. It inherits the Exam's
+CloudShare resource tuple rather than re-authoring Blueprint, Policy, allowed Region set,
+Instructor, or Guided Journey settings.
+_Avoid_: scheduled attempt, demo session.
 
 **Certification**:
 The whole path/journey a Candidate takes — training plus one or more exams, some potentially
@@ -264,6 +280,8 @@ demo models a single **Exam** within it.
 
 **ExamAttempt**:
 A Candidate's specific attempt at an Exam — the spine the launch, timer, and scoring hang off.
+Candidates may not hold overlapping active ExamAttempts for the same Exam, even across different
+delivery modes or Cohort Exam Sessions.
 When the Exam open period closes, an attempt is presented as **expired** if it never started
 Candidate runtime/scorable work, and as **completed** if it did start runtime/scorable work
 (`in_progress`, `suspended`, or an already completed attempt). This presentation distinction keeps

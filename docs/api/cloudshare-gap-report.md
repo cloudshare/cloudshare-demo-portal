@@ -1005,6 +1005,21 @@ Raise/track a CloudShare product/API gap for Experience-level archival. Until Cl
 that lifecycle, portal cleanup tooling should be explicit that Experience deletion is destructive
 and should be reserved for demo reset/operator cleanup, not normal certification completion.
 
+Verify whether an unended training/Experience can be retired non-destructively by updating its
+`End` value to the current or near-current time. If supported, this should become the normal
+Cohort Exam Session close/retire path: block new portal joins, let known active ExamAttempts finish
+where appropriate, and preserve the CloudShare Experience record for history rather than deleting
+it. Also verify whether `End` can be updated only while the current Experience end date is absent or
+still in the future.
+
+Before retiring a Cohort Exam Session, the portal should read
+`GET /trainings/{id}/students` and account for both `participationStatus` and `envStatus`.
+Participants with `participationStatus: inProgress` or non-terminal environments should be surfaced
+to the admin as potentially interruptible. Treat `Archived` and `Deleted` as terminal environment
+states; other observed values such as `Ready`, `Suspended`, `Publishing`, `Preparing`,
+`CreationFailed`, `InGrace`, `Stopping`, `EditingNetworks`, `FutureAllocationScheduled`, and
+`AllocationScheduledNoRun` require caution and support-visible diagnostics.
+
 **Code reference:** `src/integrations/cloudshare/labs.ts`
 
 ---
@@ -1046,6 +1061,20 @@ rather than by Experience ID. That would preserve meaningful aggregate score rep
 portal's individual on-demand model while also supporting CloudShare's native cohort model where many
 participants share a single Experience.
 
+CloudShare does expose an Experience-scoped aggregate Guided Journey progress endpoint:
+`GET /v4/guided-journey/progress/{experienceId}`. That endpoint returns aggregate rates for all
+participants in one Experience, including `avgExploredRate`, `avgInProgressRate`,
+`avgNotStartedRate`, `avgPassedRate`, `avgFailedRate`, `avgNotInitiatedRate`, and section-level
+`aggSectionStatuses[]` with per-section rates and timing fields. This should be treated as in-scope
+for the first Cohort Exam Session feature because cohort delivery intentionally puts many
+participants into one Experience. The first portal surface for this data should be the Cohort Exam
+Session admin detail page, not the catalog Exam page, because the aggregate belongs to one shared
+CloudShare Experience/session. It should be admin-only in the first version; Candidate score pages
+remain scoped to the Candidate's own ExamAttempt.
+
+That endpoint does **not** resolve the future request in this gap: it aggregates by Experience ID,
+not by reusable Guided Journey definition/version across multiple Experiences.
+
 The portal should therefore support both delivery modes in a future slice:
 
 - **Individual on-demand Experiences** for isolated Candidate launches, current exam delivery,
@@ -1079,6 +1108,69 @@ and `Guided Journey`; [PRD v2](../requirements/prd-cloudshare-demo-portal-v2.md)
 score retrieval as a per-Exam flag; see also [GAP-7](#gap-7--certification-scoring-is-weak-bitmap-checkpoints-end-state-only)
 for Guided Journey scoring limitations and [GAP-13](#gap-13--no-api-to-detect-whether-a-guided-journey-exists-for-an-experience)
 for the current detection gap.
+
+---
+
+## GAP-22 — No controlled nth-environment admission workflow inside an Experience
+
+| Field | Detail |
+|---|---|
+| **Status** | Suspected — product gap surfaced during Cohort Exam Session design |
+| **Verified live** | No — workflow exists as a Postman experiment; needs live/API confirmation |
+
+**Observed behaviour**
+
+CloudShare appears to support a setting that allows a participant to receive multiple environments
+inside the same Experience, but the control is broad: when enabled, the participant may be able to
+request one or more additional environments subject only to the Experience lifetime and Policy
+limits. There is no known API or product workflow that routes a second/nth environment request to an
+Instructor or administrator for per-request approval.
+
+The available workarounds are unsuitable for high-integrity exam delivery:
+
+- Delete and recreate the participant in the Experience, which risks losing history and support
+  evidence.
+- Temporarily enable multiple environments, force or simulate the participant login to allocate the
+  next environment, then disable the setting again. This is operationally fragile, affects the whole
+  Experience during the toggle window, and can require treating a sponsored-link login as an
+  orchestration primitive rather than a Candidate action.
+
+Referenced exploratory workflow:
+[CloudShare public Postman folder](https://www.postman.com/cloudshare-api/workspace/cloudshare-public-apis/folder/25333509-dffb29ed-5ead-454d-a071-2ff26c9fc26b?action=share&source=copy-link&creator=25333509).
+
+**Impact on certification use**
+
+Cohort Exam Sessions should not allow overlapping active attempts by the same Candidate for the same
+Exam, even when the shared CloudShare Experience technically permits multiple environments. A
+Candidate may need a consecutive retake or replacement environment after a terminal attempt, but
+that should be a deliberate portal/admin decision with audit and diagnostics, not an uncontrolled
+CloudShare setting.
+
+Until CloudShare exposes a controlled nth-environment admission flow, the portal should avoid
+turning on the broad multiple-environments option for cohort exams. Retakes should be represented as
+new terminal-to-new `ExamAttempt` transitions governed by explicit portal policy, likely in a later
+slice. Same-Experience retakes are the preferred long-term operating model because they keep the
+cohort's analytics and visibility in one CloudShare Experience, but CloudShare does not currently
+appear to support that cleanly without participant delete/recreate or the Experience-wide
+multiple-environments toggle workaround.
+
+The first Cohort Exam Session slice should therefore block same-session retakes unless a clean
+CloudShare-supported path is verified. A later stretch goal may let the portal own an explicit,
+admin-approved retake workflow for nth attempts in the same Experience, with clear audit,
+diagnostics, and guardrails around any CloudShare workaround.
+
+**Action required (if applicable):**
+
+Raise/track a CloudShare product/API enhancement for administrator-approved second/nth environment
+allocation within an Experience. Confirm:
+
+1. Whether the multiple-environments setting can be scoped per participant rather than per
+   Experience.
+2. Whether there is any API to request or approve a specific participant's additional environment
+   without deleting the participant or toggling an Experience-wide setting.
+3. Whether participant/environment history remains available after participant deletion and
+   recreation.
+4. Whether sponsored-link login can be avoided entirely when allocating a replacement environment.
 
 ---
 
@@ -1173,5 +1265,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-07-04 (added GAP-21 / FUTURE REQUEST for reusable Guided Journey analytics and delivery modes).
+*Last updated: 2026-07-04 (added GAP-22 for controlled nth-environment admission in cohort Experiences).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*
