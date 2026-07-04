@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { AdminConsole } from "./admin-console";
+import { AdminCandidateRosterPanel, AdminConsole } from "./admin-console";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -112,5 +112,81 @@ describe("AdminConsole", () => {
     expect(html).not.toContain("Load Full Support Log");
     expect(html).not.toContain("Support Log");
     expect(html).not.toContain("support-workbench");
+  });
+
+  it("renders candidate roster rows, score evidence, and selected candidate ExamAttempts", () => {
+    const candidate = {
+      id: "candidate-1",
+      email: "casey@helioscx.demo",
+      firstName: "Casey",
+      lastName: "Rivera",
+      name: "Casey Rivera",
+      createdAt: "2026-06-18T09:00:00.000Z",
+      attemptSummary: {
+        scheduled: 1,
+        ready: 0,
+        inProgress: 0,
+        suspended: 0,
+        completed: 1,
+        expired: 0,
+        total: 2,
+      },
+      latestAttempt: {
+        id: "attempt-2",
+        examId: "exam-1",
+        examTitle: "Helios Cloud Admin",
+        status: "scheduled" as const,
+        scheduledFor: "2026-06-20T10:00:00.000Z",
+        createdAt: "2026-06-18T10:00:00.000Z",
+        updatedAt: "2026-06-18T12:00:00.000Z",
+        completedAt: null,
+        scoreRetrievalEnabled: false,
+        score: null,
+      },
+      latestScore: {
+        scoreAvailable: true,
+        percentComplete: 82,
+        stepsCompleted: 9,
+        stepsTotal: 11,
+        retrievedAt: "2026-06-19T11:05:00.000Z",
+      },
+      attempts: [
+        {
+          id: "attempt-1",
+          examId: "exam-1",
+          examTitle: "Helios Cloud Admin",
+          status: "completed" as const,
+          scheduledFor: "2026-06-19T10:00:00.000Z",
+          createdAt: "2026-06-18T10:00:00.000Z",
+          updatedAt: "2026-06-19T11:00:00.000Z",
+          completedAt: "2026-06-19T11:00:00.000Z",
+          scoreRetrievalEnabled: true,
+          score: {
+            scoreAvailable: true,
+            percentComplete: 82,
+            stepsCompleted: 9,
+            stepsTotal: 11,
+            retrievedAt: "2026-06-19T11:05:00.000Z",
+          },
+        },
+      ],
+    };
+
+    const html = renderToStaticMarkup(
+      createElement(AdminCandidateRosterPanel, {
+        candidates: [candidate],
+        selectedCandidate: candidate,
+        loading: false,
+        onOpenCandidate: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("Candidate roster");
+    expect(html).toContain("Casey Rivera");
+    expect(html).toContain("casey@helioscx.demo");
+    expect(html).toContain("2 total | 1 scheduled | 1 completed");
+    expect(html).toContain("82% (9/11 steps)");
+    expect(html).toContain("Candidate exam history");
+    expect(html).toContain("attempt-1");
   });
 });

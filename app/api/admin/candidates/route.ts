@@ -7,6 +7,34 @@ import {
   buildCandidateRegistrationDeps,
   handleAdminCreateCandidate,
 } from "@/api/candidate-portal";
+import {
+  buildAdminCandidateDeps,
+  handleGetAdminCandidateRoster,
+} from "@/api/admin-candidates";
+
+export async function GET(request: Request) {
+  const services = getServices();
+  await services.ensurePortalSeeded();
+
+  const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
+  const session = await getPortalAdminSession(services, sessionId);
+  if (!session) {
+    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const response = await handleGetAdminCandidateRoster(
+    buildAdminCandidateDeps(services),
+    {
+      customerId: session.customerId,
+      query: {
+        search: searchParams.get("search") ?? undefined,
+      },
+    },
+  );
+
+  return NextResponse.json(response.body, { status: response.status });
+}
 
 export async function POST(request: Request) {
   const services = getServices();
