@@ -333,6 +333,67 @@ describe("getExamAttemptScoreRuntime", () => {
     );
   });
 
+  it("records stable score evidence while retaining raw CloudShare support evidence", async () => {
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
+    const diagnosticsAwareRetriever: DiagnosticScoreRetrievalProvider = {
+      getParticipantProgress: vi.fn(),
+      getParticipantProgressForDiagnostics: vi.fn().mockResolvedValue({
+        progress: SAMPLE_PROGRESS,
+        request: {
+          method: "GET",
+          path: "/guided-journey/progress/exp-1/student-1",
+        },
+        response: {
+          status: 200,
+          body: {
+            exploredRate: 0.25,
+            passedRate: 0.25,
+            failedRate: 0,
+          },
+        },
+      }),
+    };
+    const deps = {
+      ...makeDeps(),
+      diagnostics,
+    };
+    deps.createScoreRetriever.mockReturnValue(diagnosticsAwareRetriever);
+
+    const result = await getExamAttemptScoreRuntime(deps, makeRuntimeRequest());
+
+    expect(result.status).toBe(200);
+    const entries = await diagnosticsRepository.query({ examAttemptId: "attempt-1" });
+    const scoreEntry = entries.find(
+      (entry) =>
+        entry.operation === "exam_attempt.score.retrieve" &&
+        entry.outcome === "success",
+    );
+    expect(scoreEntry?.response).toEqual({
+      scoreAvailable: true,
+      percentComplete: 75,
+      stepsCompleted: 3,
+      stepsTotal: 4,
+      exploredRate: 0.25,
+      inProgressRate: 0.25,
+      notStartedRate: 0.25,
+      passedRate: 0.25,
+      failedRate: 0,
+      notInitiatedRate: 0.25,
+      retrievedAt: "2026-06-16T12:00:00.000Z",
+    });
+    expect(scoreEntry?.details).toEqual({
+      cloudShareResponse: {
+        status: 200,
+        body: {
+          exploredRate: 0.25,
+          passedRate: 0.25,
+          failedRate: 0,
+        },
+      },
+    });
+  });
+
   it("returns no score available when Guided Journey progress is absent", async () => {
     const deps = makeDeps({ progress: null });
 

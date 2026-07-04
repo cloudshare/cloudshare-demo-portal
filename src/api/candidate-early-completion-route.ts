@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { PortalSession } from "@/auth/portal-stores";
-import type { AuditRecord } from "@/domain/audit-trail";
+import type { AuditRecord, AuditRepository } from "@/domain/audit-trail";
 import { authorizeCandidateExamAttemptAccess } from "./candidate-exam-attempt-access";
+import { captureCompletedExamScoreEvidence } from "./completed-exam-score-capture";
 import {
   completeExamAttemptEarlyRuntime,
   type CompleteExamAttemptEarlyHandlerDeps,
@@ -19,9 +20,7 @@ export interface CandidateEarlyCompletionServices {
   readonly heartbeatAutoSuspend: {
     readonly removeHeartbeat: (examAttemptId: string) => void;
   };
-  readonly audit: {
-    readonly write: (record: AuditRecord) => Promise<void>;
-  };
+  readonly audit: AuditRepository;
   readonly eventLog: CompleteExamAttemptEarlyHandlerDeps["eventLog"];
   readonly cloudshareConnections: CompleteExamAttemptEarlyHandlerDeps["connections"];
   readonly cloudshareClientFactory: CompleteExamAttemptEarlyHandlerDeps["cloudshare"];
@@ -89,6 +88,23 @@ export async function handleCandidateCompleteExamRoute(
   );
 
   await recordCompleteSideEffects(services, examAttemptId, response, session?.email ?? null);
+  await captureCompletedExamScoreEvidence(
+    {
+      attempts: services.examAttempts,
+      exams: services.exams,
+      launches: services.labLaunches,
+      audit: services.audit,
+      connections: services.cloudshareConnections,
+      cloudshare: services.cloudshareClientFactory,
+      diagnostics: services.diagnosticRecorder,
+      logger: services.logger,
+    },
+    {
+      examAttemptId,
+      candidateEmail: session?.email ?? null,
+      completionReason: "candidate_early_completion",
+    },
+  );
   return response;
 }
 

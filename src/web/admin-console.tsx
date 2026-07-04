@@ -158,6 +158,55 @@ interface ExamRecord {
   instructorName: string;
 }
 
+interface AdminCandidateScoreEvidence {
+  scoreAvailable: boolean;
+  percentComplete?: number;
+  stepsCompleted?: number;
+  stepsTotal?: number;
+  passedRate?: number;
+  failedRate?: number;
+  retrievedAt: string;
+}
+
+interface AdminCandidateAttemptSummary {
+  scheduled: number;
+  ready: number;
+  inProgress: number;
+  suspended: number;
+  completed: number;
+  expired: number;
+  total: number;
+}
+
+interface AdminCandidateAttempt {
+  id: string;
+  examId: string;
+  examTitle: string;
+  status: "scheduled" | "ready" | "in_progress" | "suspended" | "completed" | "expired";
+  scheduledFor: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  scoreRetrievalEnabled: boolean;
+  score: AdminCandidateScoreEvidence | null;
+}
+
+interface AdminCandidateRosterItem {
+  id: string;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  name: string;
+  createdAt: string;
+  attemptSummary: AdminCandidateAttemptSummary;
+  latestAttempt: AdminCandidateAttempt | null;
+  latestScore: AdminCandidateScoreEvidence | null;
+}
+
+interface AdminCandidateDetail extends AdminCandidateRosterItem {
+  attempts: AdminCandidateAttempt[];
+}
+
 function formatUtcTimestamp(value: string | null | undefined): string {
   if (!value) {
     return "-";
@@ -184,6 +233,70 @@ function stripHtmlToText(value: string | null | undefined): string {
     .replace(/&quot;/gi, "\"")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function formatCandidateScore(score: AdminCandidateScoreEvidence | null): string {
+  if (!score) {
+    return "No score evidence";
+  }
+  if (!score.scoreAvailable) {
+    return "No score available";
+  }
+
+  if (typeof score.passedRate === "number" || typeof score.failedRate === "number") {
+    const rates = [
+      typeof score.passedRate === "number" ? `${Math.round(score.passedRate * 100)}% passed` : null,
+      typeof score.failedRate === "number" ? `${Math.round(score.failedRate * 100)}% failed` : null,
+    ].filter((value): value is string => value !== null);
+    const steps =
+      typeof score.stepsCompleted === "number" && typeof score.stepsTotal === "number"
+        ? ` (${score.stepsCompleted}/${score.stepsTotal} steps)`
+        : "";
+    return `${rates.join(", ")}${steps}`;
+  }
+
+  const percent =
+    typeof score.percentComplete === "number" ? `${score.percentComplete}%` : "Progress recorded";
+  const steps =
+    typeof score.stepsCompleted === "number" && typeof score.stepsTotal === "number"
+      ? ` (${score.stepsCompleted}/${score.stepsTotal} steps)`
+      : "";
+  return `${percent}${steps}`;
+}
+
+function formatCandidateAttemptStatus(status: AdminCandidateAttempt["status"]): string {
+  switch (status) {
+    case "scheduled":
+      return "Scheduled";
+    case "ready":
+      return "Ready";
+    case "in_progress":
+      return "In progress";
+    case "suspended":
+      return "Suspended";
+    case "completed":
+      return "Completed";
+    case "expired":
+      return "Expired";
+  }
+}
+
+function formatAttemptSummary(summary: AdminCandidateAttemptSummary): string {
+  if (summary.total === 0) {
+    return "No attempts";
+  }
+
+  return [
+    `${summary.total} total`,
+    summary.scheduled ? `${summary.scheduled} scheduled` : null,
+    summary.ready ? `${summary.ready} ready` : null,
+    summary.inProgress ? `${summary.inProgress} in progress` : null,
+    summary.suspended ? `${summary.suspended} suspended` : null,
+    summary.completed ? `${summary.completed} completed` : null,
+    summary.expired ? `${summary.expired} expired` : null,
+  ]
+    .filter((item): item is string => item !== null)
+    .join(" | ");
 }
 
 class AdminSessionExpiredError extends Error {
@@ -275,6 +388,168 @@ function isAdminSessionExpiredError(error: unknown): error is AdminSessionExpire
   return error instanceof AdminSessionExpiredError;
 }
 
+export function AdminCandidateRosterPanel({
+  candidates,
+  selectedCandidate,
+  loading,
+  onOpenCandidate,
+}: {
+  readonly candidates: readonly AdminCandidateRosterItem[] | null;
+  readonly selectedCandidate: AdminCandidateDetail | null;
+  readonly loading: boolean;
+  readonly onOpenCandidate: (candidateId: string) => void;
+}) {
+  return (
+    <div style={{ display: "grid", gap: "1rem" }}>
+      <div>
+        <h2 style={{ margin: "0 0 0.35rem" }}>Candidate roster</h2>
+      </div>
+
+      {candidates === null ? (
+        <p style={{ color: "#555" }}>
+          {loading ? "Loading candidates..." : "No roster loaded."}
+        </p>
+      ) : candidates.length === 0 ? (
+        <div style={{ padding: "0.85rem", border: "1px solid #e5e7eb", borderRadius: "6px" }}>
+          No candidates found.
+        </div>
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.88rem" }}>
+            <thead>
+              <tr style={{ background: "#f5f5f5" }}>
+                {["Candidate", "Attempts", "Latest attempt", "Latest score", "Action"].map((heading) => (
+                  <th
+                    key={heading}
+                    style={{ textAlign: "left", padding: "0.55rem", borderBottom: "1px solid #ddd" }}
+                  >
+                    {heading}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {candidates.map((candidate) => (
+                <tr key={candidate.id} style={{ borderBottom: "1px solid #eee" }}>
+                  <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
+                    <div style={{ fontWeight: 700 }}>{candidate.name}</div>
+                    <div style={{ color: "#555" }}>{candidate.email}</div>
+                    <div style={{ color: "#666", fontSize: "0.78rem" }}>
+                      Created {formatUtcTimestamp(candidate.createdAt)}
+                    </div>
+                  </td>
+                  <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
+                    {formatAttemptSummary(candidate.attemptSummary)}
+                  </td>
+                  <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
+                    {candidate.latestAttempt ? (
+                      <>
+                        <div>{candidate.latestAttempt.examTitle}</div>
+                        <div style={{ color: "#555" }}>
+                          {formatCandidateAttemptStatus(candidate.latestAttempt.status)}
+                        </div>
+                        <div style={{ color: "#666", fontSize: "0.78rem" }}>
+                          {formatUtcTimestamp(candidate.latestAttempt.scheduledFor)}
+                        </div>
+                      </>
+                    ) : (
+                      "No attempts"
+                    )}
+                  </td>
+                  <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
+                    <div>{formatCandidateScore(candidate.latestScore)}</div>
+                    {candidate.latestScore ? (
+                      <div style={{ color: "#666", fontSize: "0.78rem" }}>
+                        Retrieved {formatUtcTimestamp(candidate.latestScore.retrievedAt)}
+                      </div>
+                    ) : null}
+                  </td>
+                  <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
+                    <button
+                      type="button"
+                      onClick={() => onOpenCandidate(candidate.id)}
+                      disabled={loading}
+                      style={{ padding: "0.4rem 0.75rem" }}
+                    >
+                      View History
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {selectedCandidate ? (
+        <section
+          aria-label="Candidate exam history"
+          style={{
+            border: "1px solid #d9e2ef",
+            borderRadius: "6px",
+            padding: "1rem",
+            background: "#f8fafc",
+          }}
+        >
+          <div style={{ marginBottom: "0.75rem" }}>
+            <h3 style={{ margin: "0 0 0.25rem" }}>{selectedCandidate.name}</h3>
+            <div style={{ color: "#555" }}>{selectedCandidate.email}</div>
+          </div>
+          {selectedCandidate.attempts.length === 0 ? (
+            <p style={{ margin: 0, color: "#555" }}>This candidate has no ExamAttempts yet.</p>
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.86rem" }}>
+                <thead>
+                  <tr style={{ background: "#fff" }}>
+                    {["Exam", "Status", "Scheduled", "Completed", "Score"].map((heading) => (
+                      <th
+                        key={heading}
+                        style={{ textAlign: "left", padding: "0.5rem", borderBottom: "1px solid #d7dce4" }}
+                      >
+                        {heading}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedCandidate.attempts.map((attempt) => (
+                    <tr key={attempt.id} style={{ borderBottom: "1px solid #e5e7eb" }}>
+                      <td style={{ padding: "0.5rem", verticalAlign: "top" }}>
+                        <div>{attempt.examTitle}</div>
+                        <div style={{ color: "#666", fontSize: "0.78rem", fontFamily: "monospace" }}>
+                          {attempt.id}
+                        </div>
+                      </td>
+                      <td style={{ padding: "0.5rem", verticalAlign: "top" }}>
+                        {formatCandidateAttemptStatus(attempt.status)}
+                      </td>
+                      <td style={{ padding: "0.5rem", verticalAlign: "top" }}>
+                        {formatUtcTimestamp(attempt.scheduledFor)}
+                      </td>
+                      <td style={{ padding: "0.5rem", verticalAlign: "top" }}>
+                        {formatUtcTimestamp(attempt.completedAt)}
+                      </td>
+                      <td style={{ padding: "0.5rem", verticalAlign: "top" }}>
+                        <div>{formatCandidateScore(attempt.score)}</div>
+                        {attempt.scoreRetrievalEnabled && !attempt.score ? (
+                          <div style={{ color: "#666", fontSize: "0.78rem" }}>
+                            Score retrieval enabled, no persisted score yet.
+                          </div>
+                        ) : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
 export function AdminConsole({
   email,
   initialTab = "connection",
@@ -329,6 +604,9 @@ export function AdminConsole({
   const [candidateEmail, setCandidateEmail] = useState("");
   const [candidatePassword, setCandidatePassword] = useState("");
   const [candidateMessage, setCandidateMessage] = useState<string | null>(null);
+  const [candidateSearch, setCandidateSearch] = useState("");
+  const [candidateRoster, setCandidateRoster] = useState<AdminCandidateRosterItem[] | null>(null);
+  const [selectedCandidate, setSelectedCandidate] = useState<AdminCandidateDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [examCatalogLoading, setExamCatalogLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -345,6 +623,9 @@ export function AdminConsole({
     }
     if (tab === "monitoring") {
       void loadMonitoring();
+    }
+    if (tab === "candidates") {
+      void loadCandidates();
     }
     if (tab === "diagnostics") {
       void loadDiagnostics();
@@ -660,6 +941,62 @@ export function AdminConsole({
       if (!background) {
         setLoading(false);
       }
+    }
+  }
+
+  async function loadCandidates(search = candidateSearch) {
+    setLoading(true);
+    setError(null);
+    try {
+      const trimmedSearch = search.trim();
+      const query = trimmedSearch ? `?search=${encodeURIComponent(trimmedSearch)}` : "";
+      const res = await fetchAdmin(`/api/admin/candidates${query}`);
+      const data = (await res.json()) as {
+        candidates?: AdminCandidateRosterItem[];
+        error?: string;
+      };
+      if (!res.ok) {
+        setError(data.error ?? "Failed to load candidates");
+        return;
+      }
+      setCandidateRoster(data.candidates ?? []);
+      if (
+        selectedCandidate &&
+        !(data.candidates ?? []).some((candidate) => candidate.id === selectedCandidate.id)
+      ) {
+        setSelectedCandidate(null);
+      }
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
+      setError("Failed to load candidates");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadCandidateDetail(candidateId: string) {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetchAdmin(`/api/admin/candidates/${encodeURIComponent(candidateId)}`);
+      const data = (await res.json()) as {
+        candidate?: AdminCandidateDetail;
+        error?: string;
+      };
+      if (!res.ok) {
+        setError(data.error ?? "Failed to load candidate history");
+        return;
+      }
+      setSelectedCandidate(data.candidate ?? null);
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
+      setError("Failed to load candidate history");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -1183,6 +1520,7 @@ export function AdminConsole({
       setCandidateEmail("");
       setCandidatePassword("");
       setCandidateMessage("Candidate account created.");
+      await loadCandidates();
     } catch (caughtError) {
       if (isAdminSessionExpiredError(caughtError)) {
         return;
@@ -1236,7 +1574,6 @@ export function AdminConsole({
   const blueprintSummary = selectedBlueprint
     ? stripHtmlToText(selectedBlueprint.description || blueprintDetail?.description || "")
     : "";
-
   useEffect(() => {
     const nextSelectedRegionIds = reconcileAllowedRegionIds(selectedAllowedRegionIds, compatibleRegions);
     if (nextSelectedRegionIds.length === selectedAllowedRegionIds.length) {
@@ -1367,9 +1704,6 @@ export function AdminConsole({
           <div style={{ ...mutedPanelStyle, display: "grid", gap: "0.9rem" }}>
             <div>
               <h2 style={{ marginTop: 0, marginBottom: "0.35rem", fontSize: "1rem" }}>Provision Candidate</h2>
-              <p style={{ margin: 0, color: "#555" }}>
-                Create a Candidate account for Helios CX. Candidate list, edit, and reset-password management are intentionally deferred from this slice.
-              </p>
             </div>
             <div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
               <label style={{ display: "grid", gap: "0.35rem" }}>
@@ -1418,6 +1752,33 @@ export function AdminConsole({
               </button>
               {candidateMessage && <span style={{ color: "#0a7a28" }}>{candidateMessage}</span>}
             </div>
+          </div>
+          <div style={{ padding: "1rem", background: "#f7f7f8", borderRadius: "6px", display: "grid", gap: "0.9rem" }}>
+            <div style={{ display: "flex", gap: "0.75rem", alignItems: "end", flexWrap: "wrap" }}>
+              <label style={{ display: "grid", gap: "0.35rem", flex: "1 1 18rem" }}>
+                <span>Search candidates</span>
+                <input
+                  value={candidateSearch}
+                  onChange={(event) => setCandidateSearch(event.target.value)}
+                  placeholder="Name or email"
+                  style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => void loadCandidates()}
+                disabled={loading}
+                style={{ padding: "0.55rem 0.9rem" }}
+              >
+                Search Candidates
+              </button>
+            </div>
+            <AdminCandidateRosterPanel
+              candidates={candidateRoster}
+              selectedCandidate={selectedCandidate}
+              loading={loading}
+              onOpenCandidate={(candidateId) => void loadCandidateDetail(candidateId)}
+            />
           </div>
         </section>
       )}
@@ -2371,3 +2732,4 @@ export function AdminConsole({
     </main>
   );
 }
+

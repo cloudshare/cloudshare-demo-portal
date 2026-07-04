@@ -49,6 +49,7 @@ import { createPrismaExamCatalogRepository } from "@/persistence/prisma-exam-cat
 import { createPrismaExamAttemptRepository } from "@/persistence/prisma-exam-attempt-repository";
 import { createPrismaLabLaunchRepository } from "@/persistence/prisma-lab-launch-repository";
 import { createPrismaAdminMonitoringAttemptRepository } from "@/persistence/prisma-admin-monitoring-attempt-repository";
+import { createPrismaAdminCandidateRepository } from "@/persistence/prisma-admin-candidate-repository";
 import { createPrismaEnvironmentRepository } from "@/persistence/prisma-environment-repository";
 import { createPrismaExamClockRepository } from "@/persistence/prisma-exam-clock-repository";
 import {
@@ -71,6 +72,7 @@ import type {
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
 import type { AdminMonitoringAttemptRepository } from "@/domain/admin-monitoring";
+import type { AdminCandidateRepository } from "@/domain/admin-candidates";
 import type { AdminExamAttemptDiagnosticContextRepository } from "@/domain/admin-exam-attempt-diagnostics";
 import type { ExamRepository } from "@/domain/exam-catalog";
 import type { ExamAuthoringCacheRepository } from "@/persistence/exam-authoring-cache-repository";
@@ -143,6 +145,7 @@ export interface Services {
   /** Redaction-applying write seam every instrumented flow records through. */
   diagnosticRecorder: DiagnosticRecorder;
   adminMonitoringAttempts: AdminMonitoringAttemptRepository;
+  adminCandidates: AdminCandidateRepository;
   adminExamAttemptDiagnosticContexts: AdminExamAttemptDiagnosticContextRepository;
   exams: ExamRepository;
   examAuthoringCache: ExamAuthoringCacheRepository;
@@ -279,6 +282,7 @@ export function getServices(): Services {
   const resources = createInMemoryResourceRepository();
   const exams = createPrismaExamCatalogRepository(prisma);
   const adminMonitoringAttempts = createPrismaAdminMonitoringAttemptRepository(prisma);
+  const adminCandidates = createPrismaAdminCandidateRepository(prisma);
   const adminExamAttemptDiagnosticContexts =
     createPrismaAdminExamAttemptDiagnosticContextRepository(prisma);
   const examAuthoringCache = createInMemoryExamAuthoringCacheRepository();
@@ -433,6 +437,7 @@ export function getServices(): Services {
     diagnostics,
     diagnosticRecorder,
     adminMonitoringAttempts,
+    adminCandidates,
     adminExamAttemptDiagnosticContexts,
     exams,
     examAuthoringCache,
@@ -452,6 +457,7 @@ function isReusableServices(services: Services): boolean {
     typeof services.legacySimulatorDemo?.genesys?.listEligibleExams === "function" &&
     typeof services.legacyDemoRuntimeControls?.completedDemoSteps?.has === "function" &&
     typeof services.legacyDemoRuntimeControls?.markStepDone === "function" &&
-    typeof services.legacyDemoRuntimeControls?.resetDemo === "function"
+    typeof services.legacyDemoRuntimeControls?.resetDemo === "function" &&
+    typeof services.adminCandidates?.listByCustomerId === "function"
   );
 }
