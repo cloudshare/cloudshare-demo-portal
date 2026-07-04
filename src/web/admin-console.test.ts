@@ -99,6 +99,25 @@ describe("AdminConsole", () => {
     expect(html).toContain("Refresh Page");
   });
 
+  it("renders audit trail filters with apply, clear, and refresh actions", () => {
+    const html = renderToStaticMarkup(
+      createElement(AdminConsole, {
+        email: "admin@helioscx.demo",
+        initialTab: "audit",
+      }),
+    );
+
+    expect(html).toContain("ExamAttempt ID");
+    expect(html).toContain("Action");
+    expect(html).toContain("Actor email");
+    expect(html).toContain("Subject type");
+    expect(html).toContain("Subject ID");
+    expect(html).toContain("Exam ID");
+    expect(html).toContain("Apply Filters");
+    expect(html).toContain("Clear Filters");
+    expect(html).toContain("Refresh Page");
+  });
+
   it("renders the manually authored Exam open period field", () => {
     const html = renderToStaticMarkup(
       createElement(AdminConsole, {

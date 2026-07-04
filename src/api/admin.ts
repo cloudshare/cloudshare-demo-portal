@@ -1,6 +1,6 @@
 import type { Logger } from "@/observability/logger";
 import { syncResources, type CloudShareResourceLister, type ResourceRepository } from "@/domain/resource-sync";
-import type { AuditRepository } from "@/domain/audit-trail";
+import type { AuditQuery, AuditRecord, AuditRepository } from "@/domain/audit-trail";
 import type { EventLogRepository } from "@/domain/event-log";
 import type {
   DiagnosticLogEntry,
@@ -33,7 +33,7 @@ import {
  * in the responses enforce this.
  *
  * HTTP contracts:
- *  GET /api/admin/audit   — ?examAttemptId=<id> (optional) → 200 { records }
+ *  GET /api/admin/audit   — filterable, Customer-scoped audit records → 200 { records }
  *  GET /api/admin/events  — 200 { events }
  *  POST /api/admin/sync-resources — 200 { synced, byType } | 502
  */
@@ -70,14 +70,75 @@ export function buildAdminAuditDeps(services: AdminAuditServices): AuditHandlerD
 
 export async function handleGetAuditTrail(
   deps: AuditHandlerDeps,
-  request: AdminRequest,
+  request: AdminRequest & { customerId: string },
 ): Promise<AdminResponse> {
-  const examAttemptId = request.query.examAttemptId?.trim();
-  const records = examAttemptId
-    ? await deps.audit.listByExamAttemptId(examAttemptId)
-    : await deps.audit.listAll();
+  const records = await deps.audit.query(parseAuditQuery(request.customerId, request.query));
 
-  return { status: 200, body: { records } };
+  return { status: 200, body: { records: records.map(serialiseAuditRecord) } };
+}
+
+function parseAuditQuery(
+  customerId: string,
+  query: Record<string, string | undefined>,
+): AuditQuery {
+  const limitParam = query.limit;
+  const limit = limitParam ? parseInt(limitParam, 10) : undefined;
+  return {
+    customerId,
+    ...(normaliseQueryText(query.actorEmail)
+      ? { actorEmail: normaliseQueryText(query.actorEmail)?.toLowerCase() }
+      : {}),
+    ...(normaliseQueryText(query.action) ? { action: normaliseQueryText(query.action) } : {}),
+    ...(normaliseQueryText(query.subjectType)
+      ? { subjectType: normaliseQueryText(query.subjectType) }
+      : {}),
+    ...(normaliseQueryText(query.subjectId) ? { subjectId: normaliseQueryText(query.subjectId) } : {}),
+    ...(parseAuditOutcome(query.outcome) ? { outcome: parseAuditOutcome(query.outcome) } : {}),
+    ...(normaliseQueryText(query.candidateEmail)
+      ? { candidateEmail: normaliseQueryText(query.candidateEmail)?.toLowerCase() }
+      : {}),
+    ...(normaliseQueryText(query.examId) ? { examId: normaliseQueryText(query.examId) } : {}),
+    ...(normaliseQueryText(query.examAttemptId)
+      ? { examAttemptId: normaliseQueryText(query.examAttemptId) }
+      : {}),
+    ...(normaliseQueryText(query.correlationId)
+      ? { correlationId: normaliseQueryText(query.correlationId) }
+      : {}),
+    ...(limit !== undefined && !Number.isNaN(limit) && Number.isFinite(limit)
+      ? { limit: Math.min(Math.max(Math.floor(limit), 1), 200) }
+      : { limit: 100 }),
+  };
+}
+
+function normaliseQueryText(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function parseAuditOutcome(value: string | undefined): AuditRecord["outcome"] | undefined {
+  return value === "success" || value === "failure" || value === "denied" ? value : undefined;
+}
+
+function serialiseAuditRecord(record: AuditRecord): Record<string, unknown> {
+  return {
+    id: record.id,
+    occurredAt: record.occurredAt.toISOString(),
+    customerId: record.customerId,
+    actorType: record.actorType,
+    actorId: record.actorId,
+    actorEmail: record.actorEmail,
+    action: record.action,
+    subjectType: record.subjectType,
+    subjectId: record.subjectId,
+    outcome: record.outcome,
+    candidateId: record.candidateId,
+    candidateEmail: record.candidateEmail,
+    examId: record.examId,
+    examAttemptId: record.examAttemptId,
+    correlationId: record.correlationId,
+    details: record.details,
+    error: record.error,
+  };
 }
 
 // --- Sync resources ---

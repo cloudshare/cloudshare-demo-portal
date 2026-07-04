@@ -396,35 +396,43 @@ logic in `HeartbeatAutoSuspend` is fully unit-tested with fake timers.
 
 ## Admin audit trail & support console
 
-Every significant portal action is written to an in-memory `AuditRepository` and
-surfaced to support teams via the admin API and UI at `/admin`:
+Audit is an append-only, Prisma-backed platform record surfaced to admins at
+`/admin`. It answers who attempted to change what, when, and whether it was
+allowed. It is separate from Support Diagnostics: diagnostics carry support
+trace evidence and CloudShare request/response context, while audit rows stay
+concise and secret-safe.
 
 **Audit records** (`src/domain/audit-trail.ts`) are written on:
-- `lab_launched` / `lab_launch_failed` — reserved for the Slice 5 `/enter` flow
+- `cloudshare_connection.created` / `cloudshare_connection.updated` /
+  `cloudshare_connection.tested` — CloudShare Connection admin mutations and tests
+- `exam.created` / `exam.updated` / `exam.published` / `exam.unpublished` — Exam catalog mutations
+- `lab_launched` / `lab_launch_failed` — Candidate scheduling/provisioning
 - `lab_suspended` / `lab_suspend_failed` — from `POST /api/exam/suspend`
 - `lab_resumed` / `lab_resume_failed` — from `POST /api/exam/resume`
-- `score_retrieved` — reserved for the score endpoint (Slice 9+)
+- `exam_completed_early` — Candidate early completion
+- `score_retrieved` — Guided Journey score retrieval
 
-Each record carries: `id`, `examAttemptId`, `candidateId?`, `action`,
-`outcome` (`success`|`failure`), `details?`, `error?`, and `occurredAt`.
+Each record carries stable anchors where known: `customerId`, actor fields,
+subject fields, `candidateId`/`candidateEmail`, `examId`, `examAttemptId`,
+`correlationId`, `action`, `outcome` (`success`|`failure`|`denied`), redacted
+`details`, `error`, and `occurredAt`.
 
 **Admin API endpoints:**
-- `GET /api/admin/audit` — all records, newest-first; `?examAttemptId=<id>` filters to one attempt
-- `GET /api/admin/events` — integration event log (all published `IntegrationEvent`s); `?limit=<n>`
+- `GET /api/admin/audit` — Customer-scoped, newest-first audit records. Supported filters include
+  `examAttemptId`, `examId`, `actorEmail`, `action`, `outcome`, `subjectType`, `subjectId`,
+  `candidateEmail`, `correlationId`, and `limit`.
+- `GET /api/admin/diagnostics` — typed Support Diagnostics (`DiagnosticLogEntry`) for support traces
 - `POST /api/admin/sync-resources` — current stopgap sync surface for early integration evidence.
   Long-term Exam authoring should not globally sync every visible Project-scoped object; it should
   list Projects and global Regions, then fetch/cache Project-scoped Blueprints, Policies, later
   Project Members / Instructor choices, and Blueprint-detail Snapshots for the selected Project.
 
-**Admin UI** (`/admin`) — React client component with three tabs:
-- **Audit Trail** — per-attempt timeline with filter input; shows action, outcome, error/details
-- **Event Log** — most recent 100 integration events with type, eventId, and payload
-- **Resources** — stopgap sync tab for viewing early name↔ID mappings; not the intended long-term
-  Exam-authoring workflow.
+**Admin UI** (`/admin`) includes Audit Trail and Support Diagnostics tabs. Audit Trail shows actor,
+subject, ExamAttempt, action, outcome, and redacted details/error, with filters for both runtime and
+platform-level entries.
 
-**Persistence:** all three stores (`AuditRepository`, `ResourceRepository`, `EventLogRepository`)
-are in-memory for the demo. They implement the same typed repository interfaces as every other
-store — swappable for Prisma-backed adapters for deployments that must survive restarts.
+**Persistence:** `AuditRepository` uses the durable `AuditTrailEntry` Prisma model. Resource and
+legacy event stores retain their own repository implementations.
 
 **Architecture separation:** `src/api/admin.ts` contains the three framework-agnostic handlers
 (testable without Next.js); `app/api/admin/*/route.ts` are the thin Next.js wrappers.

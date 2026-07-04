@@ -76,6 +76,7 @@ describe("recordExamAttemptHeartbeatRuntime", () => {
       write: vi.fn().mockResolvedValue(undefined),
       listByExamAttemptId: vi.fn().mockResolvedValue([]),
       listByExamAttemptIds: vi.fn().mockResolvedValue([]),
+      query: vi.fn().mockResolvedValue([]),
       listAll: vi.fn().mockResolvedValue([]),
     };
     const cloudshareClient = {

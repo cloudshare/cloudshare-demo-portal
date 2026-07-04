@@ -87,7 +87,7 @@ export async function handleCandidateCompleteExamRoute(
     { examAttemptId },
   );
 
-  await recordCompleteSideEffects(services, examAttemptId, response, session?.email ?? null);
+  await recordCompleteSideEffects(services, access, response, session?.email ?? null);
   await captureCompletedExamScoreEvidence(
     {
       attempts: services.examAttempts,
@@ -116,7 +116,7 @@ function extractRouteExamAttemptId(body: unknown): string | null {
 
 async function recordCompleteSideEffects(
   services: CandidateEarlyCompletionServices,
-  examAttemptId: string,
+  access: Extract<Awaited<ReturnType<typeof authorizeCandidateExamAttemptAccess>>, { ok: true }>,
   response: SuspendResumeResponse,
   candidateEmail: string | null,
 ): Promise<void> {
@@ -124,11 +124,21 @@ async function recordCompleteSideEffects(
     return;
   }
 
+  const examAttemptId = access.attempt.id;
   try {
     services.heartbeatAutoSuspend.removeHeartbeat(examAttemptId);
     await services.audit.write({
       id: randomUUID(),
+      customerId: access.session.customerId,
+      actorType: "candidate",
+      actorId: access.session.userId,
+      actorEmail: candidateEmail,
+      subjectType: "exam_attempt",
+      subjectId: examAttemptId,
       examAttemptId,
+      candidateId: access.session.userId,
+      candidateEmail,
+      examId: access.attempt.examId,
       action: "exam_completed_early",
       outcome: "success",
       occurredAt: new Date(),

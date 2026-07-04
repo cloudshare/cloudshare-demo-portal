@@ -180,3 +180,35 @@ model DiagnosticLogEntry {
   @@index([candidateEmail])
   @@index([correlationId])
 }
+
+// Append-only administrative audit trail. Audit answers who attempted to change
+// portal state, what subject was affected, and whether the action succeeded,
+// failed, or was denied. It is intentionally separate from DiagnosticLogEntry.
+model AuditTrailEntry {
+  id             String   @id
+  occurredAt     DateTime
+  customerId     String?
+  actorType      String?
+  actorId        String?
+  actorEmail     String?
+  action         String
+  subjectType    String?
+  subjectId      String?
+  outcome        String
+  candidateId    String?
+  candidateEmail String?
+  examId         String?
+  examAttemptId  String?
+  correlationId  String?
+  detailsJson    String?
+  error          String?
+  createdAt      DateTime @default(now())
+
+  @@index([customerId, occurredAt])
+  @@index([examAttemptId])
+  @@index([examId])
+  @@index([candidateEmail])
+  @@index([actorEmail])
+  @@index([subjectType, subjectId])
+  @@index([correlationId])
+}

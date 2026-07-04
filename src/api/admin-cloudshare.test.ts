@@ -17,6 +17,7 @@ import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 
 const prisma = new PrismaClient();
 const createdCustomerIds = new Set<string>();
+const adminActor = { type: "admin", id: "admin-1", email: "admin@helioscx.demo" } as const;
 
 afterEach(async () => {
   await prisma.portalSession.deleteMany({
@@ -156,6 +157,49 @@ describe("admin CloudShare handlers", () => {
     expect(JSON.stringify(get.body)).not.toContain("api-key");
   });
 
+  it("records a redacted audit entry when a CloudShare Connection is saved", async () => {
+    const deps = await makeDeps();
+    const audit = { write: vi.fn().mockResolvedValue(undefined) };
+
+    const save = await handleSaveCloudShareConnection(
+      {
+        ...deps,
+        audit,
+        newAuditId: () => "audit-connection-1",
+      },
+      {
+        customerId: deps.customerId,
+        actor: adminActor,
+        body: {
+          apiId: "api-id",
+          apiKey: "api-key",
+          webhookSecret: "whsec",
+        },
+      },
+    );
+
+    expect(save.status).toBe(200);
+    expect(audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "audit-connection-1",
+        customerId: deps.customerId,
+        actorType: "admin",
+        actorId: "admin-1",
+        actorEmail: "admin@helioscx.demo",
+        action: "cloudshare_connection.created",
+        subjectType: "cloudshare_connection",
+        subjectId: deps.customerId,
+        outcome: "success",
+        details: {
+          changedFields: ["apiId", "apiKey", "webhookSecret"],
+          authoringCacheCleared: false,
+        },
+      }),
+    );
+    expect(JSON.stringify(audit.write.mock.calls)).not.toContain("api-key");
+    expect(JSON.stringify(audit.write.mock.calls)).not.toContain("whsec");
+  });
+
   it("tests the stored connection with a v3 ping and returns pong", async () => {
     const deps = await makeDeps();
     await handleSaveCloudShareConnection(deps, {
@@ -179,6 +223,45 @@ describe("admin CloudShare handlers", () => {
       correlationId: expect.any(String),
       occurredAt: "2026-06-13T18:10:00.000Z",
     });
+  });
+
+  it("records audit success and failure for CloudShare Connection tests", async () => {
+    const deps = await makeDeps();
+    await handleSaveCloudShareConnection(deps, {
+      customerId: deps.customerId,
+      body: {
+        apiId: "api-id",
+        apiKey: "api-key",
+        webhookSecret: "whsec",
+      },
+    });
+    const audit = { write: vi.fn().mockResolvedValue(undefined) };
+
+    const response = await handleTestCloudShareConnection(
+      {
+        ...deps,
+        audit,
+        newAuditId: () => "audit-test-1",
+        newCorrelationId: () => "corr-test-1",
+      },
+      { customerId: deps.customerId, actor: adminActor },
+    );
+
+    expect(response.status).toBe(200);
+    expect(audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "audit-test-1",
+        customerId: deps.customerId,
+        actorEmail: "admin@helioscx.demo",
+        action: "cloudshare_connection.tested",
+        outcome: "success",
+        correlationId: "corr-test-1",
+        details: {
+          integrationSurface: "cloudshare.v3.ping",
+          responseStatus: 200,
+        },
+      }),
+    );
   });
 
   it("allows partial updates for an existing CloudShare Connection", async () => {

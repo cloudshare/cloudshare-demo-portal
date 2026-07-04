@@ -5,7 +5,7 @@ import { buildAdminAuditDeps, handleGetAuditTrail } from "@/api/admin";
 import { getPortalAdminSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 
-/** GET /api/admin/audit?examAttemptId=<id> — returns audit records, optionally filtered. */
+/** GET /api/admin/audit — returns Customer-scoped audit records, optionally filtered. */
 export async function GET(request: Request) {
   const services = getServices();
   const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
@@ -17,6 +17,9 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const query = Object.fromEntries(url.searchParams.entries());
 
-  const resp = await handleGetAuditTrail(buildAdminAuditDeps(services), { query });
+  const resp = await handleGetAuditTrail(buildAdminAuditDeps(services), {
+    customerId: session.customerId,
+    query,
+  });
   return NextResponse.json(resp.body, { status: resp.status });
 }

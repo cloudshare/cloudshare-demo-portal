@@ -106,7 +106,7 @@ export async function handleCandidateSuspendExamRoute(
     { body: request.body },
   );
 
-  await recordSuspendSideEffects(services, examAttemptId, response);
+  await recordSuspendSideEffects(services, access, response, session?.email ?? null);
   return response;
 }
 
@@ -143,7 +143,7 @@ export async function handleCandidateResumeExamRoute(
     { body: request.body },
   );
 
-  await recordResumeSideEffects(services, examAttemptId, response);
+  await recordResumeSideEffects(services, access, response, session?.email ?? null);
   return response;
 }
 
@@ -155,14 +155,25 @@ function extractRouteExamAttemptId(body: unknown): string | null {
 
 async function recordSuspendSideEffects(
   services: CandidateSuspendResumeServices,
-  examAttemptId: string,
+  access: Extract<Awaited<ReturnType<typeof authorizeCandidateExamAttemptAccess>>, { ok: true }>,
   response: SuspendResumeResponse,
+  candidateEmail: string | null,
 ): Promise<void> {
+  const examAttemptId = access.attempt.id;
   if (response.status === 200) {
     services.heartbeatAutoSuspend.removeHeartbeat(examAttemptId);
     await services.audit.write({
       id: randomUUID(),
+      customerId: access.session.customerId,
+      actorType: "candidate",
+      actorId: access.session.userId,
+      actorEmail: candidateEmail,
+      subjectType: "exam_attempt",
+      subjectId: examAttemptId,
       examAttemptId,
+      candidateId: access.session.userId,
+      candidateEmail,
+      examId: access.attempt.examId,
       action: "lab_suspended",
       outcome: "success",
       occurredAt: new Date(),
@@ -173,7 +184,16 @@ async function recordSuspendSideEffects(
   if (response.status >= 500) {
     await services.audit.write({
       id: randomUUID(),
+      customerId: access.session.customerId,
+      actorType: "candidate",
+      actorId: access.session.userId,
+      actorEmail: candidateEmail,
+      subjectType: "exam_attempt",
+      subjectId: examAttemptId,
       examAttemptId,
+      candidateId: access.session.userId,
+      candidateEmail,
+      examId: access.attempt.examId,
       action: "lab_suspend_failed",
       outcome: "failure",
       error: typeof response.body.error === "string" ? response.body.error : "suspend failed",
@@ -184,9 +204,11 @@ async function recordSuspendSideEffects(
 
 async function recordResumeSideEffects(
   services: CandidateSuspendResumeServices,
-  examAttemptId: string,
+  access: Extract<Awaited<ReturnType<typeof authorizeCandidateExamAttemptAccess>>, { ok: true }>,
   response: SuspendResumeResponse,
+  candidateEmail: string | null,
 ): Promise<void> {
+  const examAttemptId = access.attempt.id;
   const resumeDisposition =
     typeof response.body.resumeDisposition === "string" ? response.body.resumeDisposition : null;
 
@@ -194,7 +216,16 @@ async function recordResumeSideEffects(
     services.heartbeatAutoSuspend.removeHeartbeat(examAttemptId);
     await services.audit.write({
       id: randomUUID(),
+      customerId: access.session.customerId,
+      actorType: "candidate",
+      actorId: access.session.userId,
+      actorEmail: candidateEmail,
+      subjectType: "exam_attempt",
+      subjectId: examAttemptId,
       examAttemptId,
+      candidateId: access.session.userId,
+      candidateEmail,
+      examId: access.attempt.examId,
       action: "lab_resumed",
       outcome: "success",
       occurredAt: new Date(),
@@ -205,7 +236,16 @@ async function recordResumeSideEffects(
   if (response.status >= 500) {
     await services.audit.write({
       id: randomUUID(),
+      customerId: access.session.customerId,
+      actorType: "candidate",
+      actorId: access.session.userId,
+      actorEmail: candidateEmail,
+      subjectType: "exam_attempt",
+      subjectId: examAttemptId,
       examAttemptId,
+      candidateId: access.session.userId,
+      candidateEmail,
+      examId: access.attempt.examId,
       action: "lab_resume_failed",
       outcome: "failure",
       error: typeof response.body.error === "string" ? response.body.error : "resume failed",

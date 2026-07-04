@@ -90,8 +90,16 @@ export async function suspendCandidateRunningLabsForLogout(
     deps.heartbeatAutoSuspend.removeHeartbeat(attempt.id);
     await deps.audit.write({
       id: deps.newId(),
+      customerId: attempt.customerId,
+      actorType: "candidate",
+      actorId: session.userId,
+      actorEmail: session.email,
+      subjectType: "exam_attempt",
+      subjectId: attempt.id,
       examAttemptId: attempt.id,
       candidateId: session.userId,
+      candidateEmail: session.email,
+      examId: attempt.examId,
       action: "lab_suspended",
       outcome: "success",
       details: { reason: "candidate_logout" },

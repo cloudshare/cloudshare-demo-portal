@@ -659,6 +659,7 @@ describe("admin exam catalog handlers", () => {
     const repository = createInMemoryExamCatalogRepository();
     const cache = createInMemoryExamAuthoringCacheRepository();
     const diagnostics = makeDiagnostics();
+    const audit = { write: vi.fn().mockResolvedValue(undefined) };
     await seedAuthoringCache(cache);
 
     const result = await handleCreateDraftExam(
@@ -667,9 +668,11 @@ describe("admin exam catalog handlers", () => {
         cache,
         instructor: configuredInstructor,
         diagnostics: diagnostics.recorder,
+        audit,
         logger: makeLogger(),
         now: () => new Date("2026-06-14T12:00:00.000Z"),
         newId: () => "exam-1",
+        newAuditId: () => "audit-exam-create-1",
       },
       {
         customerId: "customer-1",
@@ -731,6 +734,31 @@ describe("admin exam catalog handlers", () => {
         ],
       },
     });
+    expect(audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "audit-exam-create-1",
+        customerId: "customer-1",
+        actorType: "admin",
+        actorId: "admin-1",
+        actorEmail: "admin@helioscx.demo",
+        action: "exam.created",
+        subjectType: "exam",
+        subjectId: "exam-1",
+        outcome: "success",
+        examId: "exam-1",
+        details: {
+          changedFields: [
+            "title",
+            "description",
+            "scoreRetrievalEnabled",
+            "policyId",
+            "openPeriodMinutes",
+            "allowedRegions",
+            "status",
+          ],
+        },
+      }),
+    );
   });
 
   it("creates a draft exam when the description is blank", async () => {
@@ -1285,6 +1313,7 @@ describe("admin exam catalog handlers", () => {
     const repository = createInMemoryExamCatalogRepository();
     const cache = createInMemoryExamAuthoringCacheRepository();
     const diagnostics = makeDiagnostics();
+    const audit = { write: vi.fn().mockResolvedValue(undefined) };
     await seedAuthoringCache(cache);
     await cache.saveProjectResources("customer-1", "project-1", {
       blueprints: [
@@ -1337,8 +1366,10 @@ describe("admin exam catalog handlers", () => {
         repository,
         cache,
         diagnostics: diagnostics.recorder,
+        audit,
         logger: makeLogger(),
         now: () => new Date("2026-06-14T12:45:00.000Z"),
+        newAuditId: () => "audit-exam-update-1",
       },
       {
         customerId: "customer-1",
@@ -1397,12 +1428,40 @@ describe("admin exam catalog handlers", () => {
         ],
       },
     });
+    expect(audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "audit-exam-update-1",
+        customerId: "customer-1",
+        actorType: "admin",
+        actorId: "admin-1",
+        actorEmail: "admin@helioscx.demo",
+        action: "exam.updated",
+        subjectType: "exam",
+        subjectId: "exam-1",
+        outcome: "success",
+        examId: "exam-1",
+        details: {
+          changedFields: [
+            "title",
+            "description",
+            "scoreRetrievalEnabled",
+            "policyId",
+            "policyName",
+            "timeLimitMinutes",
+            "openPeriodMinutes",
+            "storageLeaseMinutes",
+            "allowedRegions",
+          ],
+        },
+      }),
+    );
   });
 
   it("unpublishes an existing published exam", async () => {
     const repository = createInMemoryExamCatalogRepository();
     const cache = createInMemoryExamAuthoringCacheRepository();
     const diagnostics = makeDiagnostics();
+    const audit = { write: vi.fn().mockResolvedValue(undefined) };
     await seedAuthoringCache(cache);
     await handleCreateDraftExam(
       {
@@ -1438,8 +1497,10 @@ describe("admin exam catalog handlers", () => {
         cloudshare: makeCloudShareFactory(makeAuthoringSource()),
         cache,
         diagnostics: diagnostics.recorder,
+        audit,
         logger: makeLogger(),
         now: () => new Date("2026-06-14T12:30:00.000Z"),
+        newAuditId: () => "audit-exam-publish-1",
       },
       { customerId: "customer-1", actor: adminActor, examId: "exam-1" },
     );
@@ -1448,8 +1509,10 @@ describe("admin exam catalog handlers", () => {
       {
         repository,
         diagnostics: diagnostics.recorder,
+        audit,
         logger: makeLogger(),
         now: () => new Date("2026-06-14T12:45:00.000Z"),
+        newAuditId: () => "audit-exam-unpublish-1",
       },
       { customerId: "customer-1", actor: adminActor, examId: "exam-1" },
     );
@@ -1562,5 +1625,35 @@ describe("admin exam catalog handlers", () => {
       operation: "exam.unpublish",
       outcome: "success",
     });
+    expect(audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "audit-exam-publish-1",
+        customerId: "customer-1",
+        actorType: "admin",
+        actorId: "admin-1",
+        actorEmail: "admin@helioscx.demo",
+        action: "exam.published",
+        subjectType: "exam",
+        subjectId: "exam-1",
+        outcome: "success",
+        examId: "exam-1",
+        details: { changedFields: ["status", "publishedAt"] },
+      }),
+    );
+    expect(audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "audit-exam-unpublish-1",
+        customerId: "customer-1",
+        actorType: "admin",
+        actorId: "admin-1",
+        actorEmail: "admin@helioscx.demo",
+        action: "exam.unpublished",
+        subjectType: "exam",
+        subjectId: "exam-1",
+        outcome: "success",
+        examId: "exam-1",
+        details: { changedFields: ["status", "publishedAt"] },
+      }),
+    );
   });
 });

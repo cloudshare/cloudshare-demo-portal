@@ -1,11 +1,7 @@
 /**
- * Audit trail domain types. The current AuditRecord model is intentionally
- * ExamAttempt-threaded: every record is keyed by `examAttemptId`, so this
- * surface answers "what happened to this candidate attempt?" for launch,
- * suspend, resume, score retrieval, and related external API failures.
- * Exam catalog lifecycle actions are not yet represented here because they are
- * not anchored to an ExamAttempt; those actions currently rely on typed
- * DiagnosticLogEntry records instead of synthetic attempt-scoped audit rows.
+ * Audit trail domain types. Audit answers "who changed what, when, and was it
+ * allowed?" It is deliberately separate from DiagnosticLogEntry, which carries
+ * support trace evidence and external request/response detail.
  */
 
 export type AuditAction =
@@ -17,23 +13,79 @@ export type AuditAction =
   | "lab_resumed"
   | "lab_resume_failed"
   | "exam_completed_early"
-  | "score_retrieved";
+  | "score_retrieved"
+  | string;
+
+export const REDACTED_AUDIT_VALUE = "[REDACTED]";
 
 export interface AuditRecord {
   readonly id: string;
-  readonly examAttemptId: string;
-  readonly candidateId?: string;
+  readonly customerId?: string | null;
+  readonly actorType?: string | null;
+  readonly actorId?: string | null;
+  readonly actorEmail?: string | null;
   readonly action: AuditAction;
-  readonly outcome: "success" | "failure";
-  readonly details?: Record<string, unknown>;
-  readonly error?: string;
+  readonly subjectType?: string | null;
+  readonly subjectId?: string | null;
+  readonly outcome: "success" | "failure" | "denied";
+  readonly candidateId?: string | null;
+  readonly candidateEmail?: string | null;
+  readonly examId?: string | null;
+  readonly examAttemptId?: string | null;
+  readonly correlationId?: string | null;
+  readonly details?: Record<string, unknown> | null;
+  readonly error?: string | null;
   readonly occurredAt: Date;
+}
+
+export interface AuditQuery {
+  readonly customerId?: string;
+  readonly actorEmail?: string;
+  readonly action?: string;
+  readonly subjectType?: string;
+  readonly subjectId?: string;
+  readonly outcome?: AuditRecord["outcome"];
+  readonly candidateEmail?: string;
+  readonly examId?: string;
+  readonly examAttemptId?: string;
+  readonly correlationId?: string;
+  readonly limit?: number;
+}
+
+const SECRET_KEY_PATTERN = /(api[-_]?key|api[-_]?id|secret|token|password|authorization|bearer|hmac|login[-_]?url|signature)/i;
+
+export function redactAuditDetails(
+  value: Record<string, unknown> | null | undefined,
+): Record<string, unknown> | null {
+  if (!value) {
+    return null;
+  }
+  return redactAuditValue(value) as Record<string, unknown>;
+}
+
+function redactAuditValue(value: unknown, key = ""): unknown {
+  if (SECRET_KEY_PATTERN.test(key)) {
+    return REDACTED_AUDIT_VALUE;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => redactAuditValue(item));
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([childKey, childValue]) => [
+        childKey,
+        redactAuditValue(childValue, childKey),
+      ]),
+    );
+  }
+  return value;
 }
 
 export interface AuditRepository {
   write(record: AuditRecord): Promise<void>;
   listByExamAttemptId(examAttemptId: string): Promise<AuditRecord[]>;
   listByExamAttemptIds(examAttemptIds: readonly string[]): Promise<AuditRecord[]>;
+  query(query: AuditQuery): Promise<AuditRecord[]>;
   /** Returns records newest-first. `limit` caps the result set (default: no limit). */
   listAll(limit?: number): Promise<AuditRecord[]>;
 }

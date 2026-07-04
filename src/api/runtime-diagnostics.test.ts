@@ -781,6 +781,7 @@ function makeScoreDeps(overrides: {
     write: vi.fn().mockResolvedValue(undefined),
     listByExamAttemptId: vi.fn().mockResolvedValue([]),
     listByExamAttemptIds: vi.fn().mockResolvedValue([]),
+    query: vi.fn().mockResolvedValue([]),
     listAll: vi.fn().mockResolvedValue([]),
   };
 
@@ -1114,6 +1115,7 @@ describe("score diagnostics", () => {
         write: vi.fn().mockResolvedValue(undefined),
         listByExamAttemptId: vi.fn().mockResolvedValue([]),
         listByExamAttemptIds: vi.fn().mockResolvedValue([]),
+        query: vi.fn().mockResolvedValue([]),
         listAll: vi.fn().mockResolvedValue([]),
       },
       connections: {
@@ -1197,6 +1199,7 @@ describe("score diagnostics", () => {
         write: vi.fn().mockResolvedValue(undefined),
         listByExamAttemptId: vi.fn().mockResolvedValue([]),
         listByExamAttemptIds: vi.fn().mockResolvedValue([]),
+        query: vi.fn().mockResolvedValue([]),
         listAll: vi.fn().mockResolvedValue([]),
       },
       connections: {
