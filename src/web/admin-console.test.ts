@@ -17,21 +17,51 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("AdminConsole", () => {
-  it("renders Support Diagnostics as the primary support navigation label", () => {
-    const html = renderToStaticMarkup(createElement(AdminConsole, { email: "admin@helioscx.demo" }));
-
-    expect(html).toContain("Support Diagnostics");
-    expect(html).not.toContain("Support Workbench");
-    expect(html).toContain("Session Monitoring");
-  });
-
-  it("does not render legacy Event Log or Resources as admin navigation tabs", () => {
+  it("renders Exams as the default admin work area and keeps CloudShare Connection out of the landing page", () => {
     const html = renderToStaticMarkup(createElement(AdminConsole, { email: "admin@helioscx.demo" }));
 
     expect(html).toContain("Exam Catalog");
-    expect(html).toContain("Support Diagnostics");
+    expect(html).toContain("Create Exam");
+    expect(html).not.toContain("Save CloudShare Connection");
+  });
+
+  it("groups primary admin navigation around Exams, Candidates, Support, and Configuration", () => {
+    const html = renderToStaticMarkup(createElement(AdminConsole, { email: "admin@helioscx.demo" }));
+
+    expect(html).toContain("Exams");
+    expect(html).toContain("Candidates");
+    expect(html).toContain("Support");
+    expect(html).toContain("Configuration");
     expect(html).not.toContain("Event Log");
     expect(html).not.toContain("Resources");
+  });
+
+  it("renders CloudShare Connection setup under Configuration", () => {
+    const html = renderToStaticMarkup(
+      createElement(AdminConsole, {
+        email: "admin@helioscx.demo",
+        initialTab: "configuration",
+      }),
+    );
+
+    expect(html).toContain("Save CloudShare Connection");
+    expect(html).toContain("Test connection");
+    expect(html).toContain("API ID");
+  });
+
+  it("groups support-oriented surfaces under Support", () => {
+    const html = renderToStaticMarkup(
+      createElement(AdminConsole, {
+        email: "admin@helioscx.demo",
+        initialTab: "support",
+        initialSupportView: "monitoring",
+      }),
+    );
+
+    expect(html).toContain("Support workflows");
+    expect(html).toContain("Session Monitoring");
+    expect(html).toContain("Support Diagnostics");
+    expect(html).toContain("Audit Trail");
   });
 
   it("renders the admin navigation as a balanced responsive tab grid", () => {
@@ -46,7 +76,8 @@ describe("AdminConsole", () => {
     const html = renderToStaticMarkup(
       createElement(AdminConsole, {
         email: "admin@helioscx.demo",
-        initialTab: "monitoring",
+        initialTab: "support",
+        initialSupportView: "monitoring",
       }),
     );
 
@@ -61,7 +92,8 @@ describe("AdminConsole", () => {
     const html = renderToStaticMarkup(
       createElement(AdminConsole, {
         email: "admin@helioscx.demo",
-        initialTab: "diagnostics",
+        initialTab: "support",
+        initialSupportView: "diagnostics",
         initialDiagnosticFilters: {
           examAttemptId: "attempt-42",
           correlationId: "corr-42",
@@ -78,7 +110,8 @@ describe("AdminConsole", () => {
     const html = renderToStaticMarkup(
       createElement(AdminConsole, {
         email: "admin@helioscx.demo",
-        initialTab: "diagnostics",
+        initialTab: "support",
+        initialSupportView: "diagnostics",
         initialDiagnosticFilters: {
           correlationId: "corr-42",
         },
@@ -94,7 +127,8 @@ describe("AdminConsole", () => {
     const html = renderToStaticMarkup(
       createElement(AdminConsole, {
         email: "admin@helioscx.demo",
-        initialTab: "diagnostics",
+        initialTab: "support",
+        initialSupportView: "diagnostics",
       }),
     );
 
@@ -109,7 +143,8 @@ describe("AdminConsole", () => {
     const html = renderToStaticMarkup(
       createElement(AdminConsole, {
         email: "admin@helioscx.demo",
-        initialTab: "audit",
+        initialTab: "support",
+        initialSupportView: "audit",
       }),
     );
 
@@ -124,11 +159,12 @@ describe("AdminConsole", () => {
     expect(html).toContain("Refresh Page");
   });
 
-  it("renders the manually authored Exam open period field", () => {
+  it("renders the manually authored Exam open period field on the focused Exam create surface", () => {
     const html = renderToStaticMarkup(
       createElement(AdminConsole, {
         email: "admin@helioscx.demo",
         initialTab: "exams",
+        initialExamView: "create",
       }),
     );
 
@@ -139,11 +175,12 @@ describe("AdminConsole", () => {
     expect(html).not.toContain("defaults from Policy storage retention");
   });
 
-  it("renders Exam delivery availability and draft Cohort Exam Session controls", () => {
+  it("renders Exam delivery availability on the focused Exam create surface", () => {
     const html = renderToStaticMarkup(
       createElement(AdminConsole, {
         email: "admin@helioscx.demo",
         initialTab: "exams",
+        initialExamView: "create",
       }),
     );
 
@@ -151,7 +188,21 @@ describe("AdminConsole", () => {
     expect(html).toContain("Individual Exam Delivery only");
     expect(html).toContain("Cohort Exam Sessions only");
     expect(html).toContain("Individual and Cohort delivery");
-    expect(html).toContain("Draft Cohort Exam Sessions");
+  });
+
+  it("keeps the Exam Catalog overview list-only without inline authoring or Cohort Session create controls", () => {
+    const html = renderToStaticMarkup(
+      createElement(AdminConsole, {
+        email: "admin@helioscx.demo",
+        initialTab: "exams",
+      }),
+    );
+
+    expect(html).toContain("Current Exam Catalog");
+    expect(html).toContain("Create Exam");
+    expect(html).not.toContain("Project-first Exam authoring");
+    expect(html).not.toContain("Session name");
+    expect(html).not.toContain("Create Draft Cohort Session");
   });
 
   it("does not render draft Cohort Exam Session form controls for individual-only Exams", () => {
@@ -217,7 +268,8 @@ describe("AdminConsole", () => {
     const html = renderToStaticMarkup(
       createElement(AdminConsole, {
         email: "admin@helioscx.demo",
-        initialTab: "diagnostics",
+        initialTab: "support",
+        initialSupportView: "diagnostics",
       }),
     );
 

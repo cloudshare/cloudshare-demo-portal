@@ -7,6 +7,8 @@ import {
   ADMIN_TABS,
   ADMIN_SESSION_EXPIRED_MESSAGE,
   type AdminTab,
+  type AdminExamView,
+  type AdminSupportView,
   beginLatestOnlyRequest,
   buildAdminConsoleHref,
   buildCorrelationDiagnosticsNavigation,
@@ -16,6 +18,7 @@ import {
   buildWebhookCallbackUrl,
   type DiagnosticLogFilters,
   getAdminTabLabel,
+  getAdminSupportViewLabel,
   getAllowedRegionValidationMessage,
   getCompatibleRegions,
   getDefaultOpenPeriodMinutes,
@@ -51,6 +54,10 @@ import { PortalPageHeader } from "./portal-page-header";
 interface AdminConsoleProps {
   readonly email: string;
   readonly initialTab?: AdminTab;
+  readonly initialExamView?: AdminExamView;
+  readonly initialExamId?: string;
+  readonly initialCohortSessionId?: string;
+  readonly initialSupportView?: AdminSupportView;
   readonly initialDiagnosticFilters?: DiagnosticLogFilters;
 }
 
@@ -351,7 +358,6 @@ class AdminSessionExpiredError extends Error {
 }
 
 const DIAGNOSTIC_PAGE_LIMIT = 50;
-const SUPPORT_WORKFLOW_TABS = new Set<AdminTab>(["monitoring", "diagnostics"]);
 
 const adminTabNavStyle: React.CSSProperties = {
   display: "grid",
@@ -722,11 +728,19 @@ export function AdminCandidateRosterPanel({
 
 export function AdminConsole({
   email,
-  initialTab = "connection",
+  initialTab = "exams",
+  initialExamView = "catalog",
+  initialExamId,
+  initialCohortSessionId,
+  initialSupportView = "monitoring",
   initialDiagnosticFilters = {},
 }: AdminConsoleProps) {
   const router = useRouter();
   const [tab, setTab] = useState<AdminTab>(initialTab);
+  const [examView, setExamView] = useState<AdminExamView>(initialExamView);
+  const [focusedExamId, setFocusedExamId] = useState<string | null>(initialExamId ?? null);
+  const [focusedCohortSessionId, setFocusedCohortSessionId] = useState<string | null>(initialCohortSessionId ?? null);
+  const [supportView, setSupportView] = useState<AdminSupportView>(initialSupportView);
   const [projects, setProjects] = useState<NamedResource[]>([]);
   const [regions, setRegions] = useState<NamedResource[]>([]);
   const [blueprints, setBlueprints] = useState<NamedResource[]>([]);
@@ -791,19 +805,43 @@ export function AdminConsole({
   useEffect(() => {
     if (tab === "exams") {
       void loadExamCatalog();
-      void loadExamAuthoring();
+      if (examView === "create" || examView === "edit") {
+        void loadExamAuthoring();
+      }
     }
-    if (tab === "monitoring") {
+    if (tab === "support" && supportView === "monitoring") {
       void loadMonitoring();
     }
     if (tab === "candidates") {
       void loadCandidates();
     }
-    if (tab === "diagnostics") {
+    if (tab === "support" && supportView === "diagnostics") {
       void loadDiagnostics();
     }
+    if (tab === "support" && supportView === "audit") {
+      void loadAudit();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab]);
+  }, [tab, examView, supportView]);
+
+  useEffect(() => {
+    if (tab !== "exams" || examView !== "edit" || !focusedExamId || editingExamId === focusedExamId) {
+      return;
+    }
+    const exam = examCatalog.find((item) => item.id === focusedExamId);
+    if (exam) {
+      void beginEditingExam(exam);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, examView, focusedExamId, examCatalog, editingExamId]);
+
+  useEffect(() => {
+    if (tab !== "exams" || (examView !== "sessions" && examView !== "session") || !focusedExamId) {
+      return;
+    }
+    void loadCohortExamSessions(focusedExamId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, examView, focusedExamId]);
 
   function beginExamCatalogLoading() {
     examCatalogLoadingCountRef.current += 1;
@@ -839,6 +877,53 @@ export function AdminConsole({
 
     return () => watchdog.stop();
   }, [handleAdminSessionExpired, sessionExpired]);
+
+  function navigateAdmin(next: {
+    tab: AdminTab;
+    examView?: AdminExamView;
+    examId?: string | null;
+    cohortSessionId?: string | null;
+    supportView?: AdminSupportView;
+    diagnosticFilters?: DiagnosticLogFilters;
+  }) {
+    const nextDiagnosticFilters = next.diagnosticFilters ?? diagnosticFilters;
+    const nextExamView = next.examView ?? "catalog";
+    const nextSupportView = next.supportView ?? "monitoring";
+    router.push(
+      buildAdminConsoleHref({
+        tab: next.tab,
+        examView: nextExamView,
+        examId: next.examId ?? undefined,
+        cohortSessionId: next.cohortSessionId ?? undefined,
+        supportView: nextSupportView,
+        diagnosticFilters: nextDiagnosticFilters,
+      }),
+    );
+    setTab(next.tab);
+    setExamView(nextExamView);
+    setFocusedExamId(next.examId ?? null);
+    setFocusedCohortSessionId(next.cohortSessionId ?? null);
+    setSupportView(nextSupportView);
+    setDiagnosticFilters(nextDiagnosticFilters);
+  }
+
+  function navigateToExamCatalog() {
+    setEditingExamId(null);
+    setSelectedCohortSession(null);
+    navigateAdmin({ tab: "exams", examView: "catalog" });
+  }
+
+  function navigateToExamCreate() {
+    resetExamForm();
+    navigateAdmin({ tab: "exams", examView: "create" });
+    void loadExamAuthoring();
+  }
+
+  function navigateToExamSessions(examId: string) {
+    setSelectedCohortSession(null);
+    navigateAdmin({ tab: "exams", examView: "sessions", examId });
+    void loadCohortExamSessions(examId);
+  }
 
   async function fetchAdmin(input: string, init?: RequestInit): Promise<Response> {
     const response = await fetch(input, init);
@@ -1037,22 +1122,26 @@ export function AdminConsole({
 
   function openExamAttemptSupportDiagnostics(examAttemptId: string) {
     const navigation = buildExamAttemptDiagnosticsNavigation(examAttemptId);
-    router.push(navigation.href);
-    setDiagnosticFilters(navigation.filters);
+    navigateAdmin({
+      tab: "support",
+      supportView: "diagnostics",
+      diagnosticFilters: navigation.filters,
+    });
     setExpandedDiagnosticId(null);
-    setTab(navigation.tab);
-    if (tab === "diagnostics") {
+    if (tab === "support" && supportView === "diagnostics") {
       void loadDiagnostics(false, navigation.pageOffset, navigation.filters);
     }
   }
 
   function openCorrelationSupportDiagnostics(correlationId: string) {
     const navigation = buildCorrelationDiagnosticsNavigation(correlationId);
-    router.push(navigation.href);
-    setDiagnosticFilters(navigation.filters);
+    navigateAdmin({
+      tab: "support",
+      supportView: "diagnostics",
+      diagnosticFilters: navigation.filters,
+    });
     setExpandedDiagnosticId(null);
-    setTab(navigation.tab);
-    if (tab === "diagnostics") {
+    if (tab === "support" && supportView === "diagnostics") {
       void loadDiagnostics(false, navigation.pageOffset, navigation.filters);
     }
   }
@@ -1185,24 +1274,13 @@ export function AdminConsole({
   }
 
   function applyDiagnosticFilters() {
-    router.push(
-      buildAdminConsoleHref({
-        tab: "diagnostics",
-        diagnosticFilters,
-      }),
-    );
+    navigateAdmin({ tab: "support", supportView: "diagnostics", diagnosticFilters });
     void loadDiagnostics(false, 0);
   }
 
   function clearDiagnosticFilters() {
     const clearedFilters: DiagnosticLogFilters = {};
-    router.push(
-      buildAdminConsoleHref({
-        tab: "diagnostics",
-        diagnosticFilters: clearedFilters,
-      }),
-    );
-    setDiagnosticFilters(clearedFilters);
+    navigateAdmin({ tab: "support", supportView: "diagnostics", diagnosticFilters: clearedFilters });
     setDiagnosticPage(null);
     setExpandedDiagnosticId(null);
     void loadDiagnostics(false, 0, clearedFilters);
@@ -1376,7 +1454,7 @@ export function AdminConsole({
     if (selectedPolicy?.runtimeLeaseMinutes) {
       setTimeLimitMinutes(String(selectedPolicy.runtimeLeaseMinutes));
     }
-    if (!editingExamId) {
+    if (!editingExamId && examView !== "edit") {
       setOpenPeriodMinutes(getDefaultOpenPeriodMinutes(selectedPolicy));
     }
     return selectedPolicy;
@@ -1423,7 +1501,7 @@ export function AdminConsole({
       setExamCorrelationId(null);
       setExamDiagnostic(null);
       setBlueprintDetail(detail);
-      if (!editingExamId && detail) {
+      if (!editingExamId && examView !== "edit" && detail) {
         setExamTitle(detail.name);
         setExamDescription(stripHtmlToText(detail.description));
         setOpenPeriodMinutes(getDefaultOpenPeriodMinutes(policyForDefault));
@@ -1543,6 +1621,12 @@ export function AdminConsole({
         [examId]: { name: "", admissionStartsAt: "", admissionEndsAt: "", capacity: "" },
       }));
       await loadCohortExamSessions(examId);
+      navigateAdmin({
+        tab: "exams",
+        examView: "session",
+        examId,
+        cohortSessionId: data.session.id,
+      });
     } catch (caughtError) {
       if (isAdminSessionExpiredError(caughtError)) {
         return;
@@ -1647,6 +1731,7 @@ export function AdminConsole({
       setExamMessage(editingExamId ? "Draft exam updated." : "Draft exam saved.");
       resetExamForm();
       await loadExamCatalog();
+      navigateToExamCatalog();
     } catch (caughtError) {
       if (isAdminSessionExpiredError(caughtError)) {
         return;
@@ -1712,19 +1797,20 @@ export function AdminConsole({
     setError(null);
     setExamMessage(null);
     try {
+      setEditingExamId(exam.id);
       setSelectedProjectId(exam.projectId);
       setSelectedAllowedRegionIds(exam.allowedRegions.map((region) => region.id));
       await loadProjectResources(exam.projectId, false, exam.blueprintId, exam.policyId);
       setSelectedBlueprintId(exam.blueprintId);
       setSelectedPolicyId(exam.policyId);
       await loadBlueprintDetail(exam.projectId, exam.blueprintId, false);
-      setEditingExamId(exam.id);
       setExamTitle(exam.title);
       setExamDescription(exam.description);
       setScoreRetrievalEnabled(exam.scoreRetrievalEnabled);
       setDeliveryAvailability(exam.deliveryAvailability ?? "individual");
       setTimeLimitMinutes(String(exam.timeLimitMinutes));
       setOpenPeriodMinutes(String(exam.openPeriodMinutes));
+      navigateAdmin({ tab: "exams", examView: "edit", examId: exam.id });
     } finally {
       setLoading(false);
     }
@@ -1821,6 +1907,14 @@ export function AdminConsole({
   const blueprintSummary = selectedBlueprint
     ? stripHtmlToText(selectedBlueprint.description || blueprintDetail?.description || "")
     : "";
+  const isExamAuthoringView = examView === "create" || examView === "edit";
+  const focusedExam = focusedExamId ? (examCatalog.find((exam) => exam.id === focusedExamId) ?? null) : null;
+  const focusedExamSessions = focusedExamId ? (cohortSessionsByExamId[focusedExamId] ?? []) : [];
+  const focusedCohortSession =
+    (focusedCohortSessionId
+      ? focusedExamSessions.find((session) => session.session.id === focusedCohortSessionId)
+      : null) ??
+    (selectedCohortSession?.session.id === focusedCohortSessionId ? selectedCohortSession : null);
   useEffect(() => {
     const nextSelectedRegionIds = reconcileAllowedRegionIds(selectedAllowedRegionIds, compatibleRegions);
     if (nextSelectedRegionIds.length === selectedAllowedRegionIds.length) {
@@ -1866,7 +1960,6 @@ export function AdminConsole({
       >
         {ADMIN_TABS.map((t) => {
           const isActive = tab === t;
-          const isSupportWorkflow = SUPPORT_WORKFLOW_TABS.has(t);
 
           return (
             <button
@@ -1878,19 +1971,17 @@ export function AdminConsole({
                   setError(null);
                   setCandidateMessage(null);
                 }
-                router.push(
-                  buildAdminConsoleHref({
-                    tab: t,
-                    diagnosticFilters,
-                  }),
-                );
-                setTab(t);
+                navigateAdmin({
+                  tab: t,
+                  examView: t === "exams" ? "catalog" : undefined,
+                  supportView: t === "support" ? supportView : undefined,
+                });
               }}
               style={{
                 ...adminTabButtonStyle,
-                background: isActive ? colors.textPrimary : isSupportWorkflow ? colors.accentSoft : "#ffffff",
+                background: isActive ? colors.textPrimary : t === "support" ? colors.accentSoft : "#ffffff",
                 color: isActive ? "#ffffff" : "#111827",
-                borderColor: isActive ? colors.textPrimary : isSupportWorkflow ? "#b9ded7" : "#d1d5db",
+                borderColor: isActive ? colors.textPrimary : t === "support" ? "#b9ded7" : "#d1d5db",
                 cursor: "pointer",
                 fontWeight: isActive ? 700 : 600,
                 boxShadow: isActive ? "inset 0 -3px 0 #0f6d66" : "none",
@@ -2030,7 +2121,7 @@ export function AdminConsole({
         </section>
       )}
 
-      {tab === "connection" && (
+      {tab === "configuration" && (
         <section style={{ display: "grid", gap: "1rem" }}>
           <div style={mutedPanelStyle}>
             <p style={{ margin: 0 }}>
@@ -2181,6 +2272,70 @@ export function AdminConsole({
           style={{ ...examCatalogBusyShellStyle, display: "grid", gap: "1rem" }}
         >
           {examCatalogLoading ? <ExamCatalogLoadingOverlay /> : null}
+          <div style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap", alignItems: "center" }}>
+              <div>
+                <h2 style={{ margin: 0 }}>Exam Catalog</h2>
+                <p style={{ margin: "0.25rem 0 0", color: colors.textSecondary }}>
+                  Overview of Exams and delivery options for Helios CX.
+                </p>
+              </div>
+              <button type="button" onClick={navigateToExamCreate} disabled={loading} style={primaryButtonStyle}>
+                Create Exam
+              </button>
+            </div>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                aria-current={examView === "catalog" ? "page" : undefined}
+                onClick={navigateToExamCatalog}
+                style={{
+                  padding: "0.5rem 0.8rem",
+                  border: `1px solid ${examView === "catalog" ? colors.textPrimary : colors.border}`,
+                  borderRadius: "8px",
+                  background: examView === "catalog" ? colors.textPrimary : "#ffffff",
+                  color: examView === "catalog" ? "#ffffff" : colors.textPrimary,
+                  fontWeight: 600,
+                }}
+              >
+                Catalog overview
+              </button>
+              {isExamAuthoringView ? (
+                <button
+                  type="button"
+                  aria-current="page"
+                  style={{
+                    padding: "0.5rem 0.8rem",
+                    border: `1px solid ${colors.textPrimary}`,
+                    borderRadius: "8px",
+                    background: colors.textPrimary,
+                    color: "#ffffff",
+                    fontWeight: 600,
+                  }}
+                >
+                  {examView === "edit" ? "Edit Exam" : "Create Exam"}
+                </button>
+              ) : null}
+              {(examView === "sessions" || examView === "session") && focusedExam ? (
+                <button
+                  type="button"
+                  aria-current="page"
+                  style={{
+                    padding: "0.5rem 0.8rem",
+                    border: `1px solid ${colors.textPrimary}`,
+                    borderRadius: "8px",
+                    background: colors.textPrimary,
+                    color: "#ffffff",
+                    fontWeight: 600,
+                  }}
+                >
+                  Cohort Sessions: {focusedExam.title}
+                </button>
+              ) : null}
+            </div>
+          </div>
+          {isExamAuthoringView && (
+            <>
           <div style={{ padding: "1rem", background: "#f7f7f8", borderRadius: "6px", display: "grid", gap: "0.5rem" }}>
             <strong>Project-first Exam authoring</strong>
             <span style={{ color: "#555" }}>
@@ -2474,7 +2629,7 @@ export function AdminConsole({
               {loading ? "Saving..." : editingExamId ? "Update Draft Exam" : "Save Draft Exam"}
             </button>
             {editingExamId && (
-              <button onClick={() => resetExamForm()} disabled={loading} style={{ padding: "0.7rem 1rem" }}>
+              <button onClick={navigateToExamCatalog} disabled={loading} style={{ padding: "0.7rem 1rem" }}>
                 Cancel Edit
               </button>
             )}
@@ -2496,11 +2651,14 @@ export function AdminConsole({
               {examFormFeedback}
             </p>
           )}
+            </>
+          )}
 
+          {examView === "catalog" && (
           <div>
             <h2 style={{ marginBottom: "0.6rem" }}>Current Exam Catalog</h2>
             <p style={{ marginTop: 0, color: colors.textSecondary }}>
-              Draft Cohort Exam Sessions are created, listed, and viewed under their parent Exam.
+              Open an Exam to manage its draft Cohort Exam Sessions. The catalog overview stays list-only.
             </p>
             <div style={{ ...cardStyle, padding: 0, overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
@@ -2594,16 +2752,22 @@ export function AdminConsole({
                             Unpublish
                           </button>
                         )}
-                        <CohortSessionAuthoringPanel
-                          examId={exam.id}
-                          deliveryAvailability={exam.deliveryAvailability}
-                          form={getCohortSessionForm(exam.id)}
-                          sessions={cohortSessionsByExamId[exam.id] ?? []}
-                          loading={loading}
-                          onChange={(patch) => updateCohortSessionForm(exam.id, patch)}
-                          onCreate={() => void createDraftCohortSession(exam.id)}
-                          onSelect={(session) => setSelectedCohortSession(session)}
-                        />
+                        <div style={{ display: "grid", gap: "0.45rem", marginTop: "0.5rem" }}>
+                          {isCohortSessionAuthoringAvailable(exam.deliveryAvailability) ? (
+                            <button
+                              type="button"
+                              onClick={() => navigateToExamSessions(exam.id)}
+                              disabled={loading}
+                              style={{ padding: "0.45rem 0.75rem" }}
+                            >
+                              Cohort Sessions
+                            </button>
+                          ) : (
+                            <span style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>
+                              Cohort Sessions unavailable
+                            </span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -2611,33 +2775,122 @@ export function AdminConsole({
               </table>
             </div>
           </div>
-          {selectedCohortSession && (
-            <div style={{ ...cardStyle, display: "grid", gap: "0.5rem" }}>
-              <h3 style={{ margin: 0 }}>Cohort Exam Session inherited context</h3>
-              <div style={{ fontWeight: 600 }}>{selectedCohortSession.session.name}</div>
-              <div>Status: {selectedCohortSession.session.status}</div>
-              <div>Project: {selectedCohortSession.inheritedContext.project.name}</div>
-              <div>
-                Blueprint/default Snapshot: {selectedCohortSession.inheritedContext.blueprint.name} /{" "}
-                {selectedCohortSession.inheritedContext.snapshot.name}
+          )}
+          {examView === "sessions" && focusedExam && (
+            <div style={{ ...cardStyle, display: "grid", gap: "1rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
+                <div>
+                  <h3 style={{ margin: 0 }}>Cohort Exam Sessions</h3>
+                  <p style={{ margin: "0.25rem 0 0", color: colors.textSecondary }}>
+                    {focusedExam.title} · {formatExamDeliveryAvailability(focusedExam.deliveryAvailability)}
+                  </p>
+                </div>
+                <button type="button" onClick={navigateToExamCatalog} style={secondaryButtonStyle}>
+                  Back to catalog
+                </button>
               </div>
-              <div>Policy: {selectedCohortSession.inheritedContext.policy.name}</div>
+              {isCohortSessionAuthoringAvailable(focusedExam.deliveryAvailability) ? (
+                <CohortSessionDraftControls
+                  examId={focusedExam.id}
+                  form={getCohortSessionForm(focusedExam.id)}
+                  sessions={focusedExamSessions}
+                  loading={loading}
+                  onChange={(patch) => updateCohortSessionForm(focusedExam.id, patch)}
+                  onCreate={() => void createDraftCohortSession(focusedExam.id)}
+                  onSelect={(session) => {
+                    setSelectedCohortSession(session);
+                    navigateAdmin({
+                      tab: "exams",
+                      examView: "session",
+                      examId: focusedExam.id,
+                      cohortSessionId: session.session.id,
+                    });
+                  }}
+                />
+              ) : (
+                <span style={{ color: colors.textSecondary }}>
+                  Cohort Exam Sessions are unavailable for individual-only Exams.
+                </span>
+              )}
+            </div>
+          )}
+
+          {examView === "session" && focusedExam && focusedCohortSession && (
+            <div style={{ ...cardStyle, display: "grid", gap: "0.75rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
+                <div>
+                  <h3 style={{ margin: 0 }}>Cohort Exam Session workspace</h3>
+                  <p style={{ margin: "0.25rem 0 0", color: colors.textSecondary }}>{focusedExam.title}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigateToExamSessions(focusedExam.id)}
+                  style={secondaryButtonStyle}
+                >
+                  Back to Cohort Sessions
+                </button>
+              </div>
+              <div style={{ fontWeight: 600 }}>{focusedCohortSession.session.name}</div>
+              <div>Status: {focusedCohortSession.session.status}</div>
+              <div>Project: {focusedCohortSession.inheritedContext.project.name}</div>
+              <div>
+                Blueprint/default Snapshot: {focusedCohortSession.inheritedContext.blueprint.name} /{" "}
+                {focusedCohortSession.inheritedContext.snapshot.name}
+              </div>
+              <div>Policy: {focusedCohortSession.inheritedContext.policy.name}</div>
               <div>
                 Allowed Regions:{" "}
-                {selectedCohortSession.inheritedContext.allowedRegions.map((region) => region.name).join(", ")}
+                {focusedCohortSession.inheritedContext.allowedRegions.map((region) => region.name).join(", ")}
               </div>
-              <div>Instructor: {selectedCohortSession.inheritedContext.instructor.name}</div>
+              <div>Instructor: {focusedCohortSession.inheritedContext.instructor.name}</div>
               <div>
                 Guided Journey score retrieval:{" "}
-                {selectedCohortSession.inheritedContext.scoreRetrievalEnabled ? "Enabled" : "Off"}
+                {focusedCohortSession.inheritedContext.scoreRetrievalEnabled ? "Enabled" : "Off"}
               </div>
-              <div>Time limit: {selectedCohortSession.inheritedContext.timeLimitMinutes} minutes</div>
+              <div>Time limit: {focusedCohortSession.inheritedContext.timeLimitMinutes} minutes</div>
+            </div>
+          )}
+
+          {examView === "session" && focusedExam && focusedCohortSessionId && !focusedCohortSession && (
+            <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.5rem" }}>
+              <p style={{ margin: 0 }}>Cohort Exam Session detail is not loaded yet.</p>
+              <button type="button" onClick={() => void loadCohortExamSessions(focusedExam.id)} style={secondaryButtonStyle}>
+                Refresh Cohort Sessions
+              </button>
             </div>
           )}
         </section>
       )}
 
-      {tab === "audit" && (
+      {tab === "support" && (
+        <section style={{ display: "grid", gap: "1rem" }}>
+          <div style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem" }}>
+            <strong>Support workflows</strong>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+              {(["monitoring", "diagnostics", "audit"] as const).map((view) => (
+                <button
+                  key={view}
+                  type="button"
+                  aria-current={supportView === view ? "page" : undefined}
+                  onClick={() => navigateAdmin({ tab: "support", supportView: view })}
+                  style={{
+                    padding: "0.5rem 0.8rem",
+                    border: `1px solid ${supportView === view ? colors.textPrimary : colors.border}`,
+                    borderRadius: "8px",
+                    background: supportView === view ? colors.textPrimary : "#ffffff",
+                    color: supportView === view ? "#ffffff" : colors.textPrimary,
+                    fontWeight: 600,
+                  }}
+                >
+                  {getAdminSupportViewLabel(view)}
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {tab === "support" && supportView === "audit" && (
         <section>
           <div
             style={{
@@ -2754,7 +3007,7 @@ export function AdminConsole({
         </section>
       )}
 
-      {tab === "monitoring" && (
+      {tab === "support" && supportView === "monitoring" && (
         monitoring ? (
           <SessionMonitoringPanel
             monitoring={monitoring}
@@ -2772,7 +3025,7 @@ export function AdminConsole({
         )
       )}
 
-      {tab === "diagnostics" && (
+      {tab === "support" && supportView === "diagnostics" && (
         <section>
           <p style={{ color: colors.textSecondary, marginTop: 0 }}>
             The correlated diagnostic log: what the portal did, in what order, and how to trace it.

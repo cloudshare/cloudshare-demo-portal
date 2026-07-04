@@ -40,12 +40,13 @@ describe("latest-only request coordination", () => {
 
   it("switches Session Monitoring drilldown actions to Support Diagnostics with the ExamAttempt filter applied", () => {
     expect(buildExamAttemptDiagnosticsNavigation("  attempt-a  ")).toEqual({
-      tab: "diagnostics",
+      tab: "support",
+      supportView: "diagnostics",
       filters: {
         examAttemptId: "attempt-a",
       },
       pageOffset: 0,
-      href: "/admin?tab=diagnostics&examAttemptId=attempt-a",
+      href: "/admin?tab=support&view=diagnostics&examAttemptId=attempt-a",
     });
   });
 
@@ -62,7 +63,9 @@ describe("latest-only request coordination", () => {
       source: "runtime",
       candidateEmail: "candidate@helioscx.demo",
     })).toEqual({
-      tab: "diagnostics",
+      tab: "support",
+      supportView: "diagnostics",
+      examView: "catalog",
       diagnosticFilters: {
         examAttemptId: "attempt-a",
         source: "runtime",
@@ -144,34 +147,80 @@ describe("getResetOpenPeriodMinutes", () => {
 });
 
 describe("admin tab model", () => {
-  it("treats Candidate provisioning as its own admin context", () => {
+  it("groups admin work areas around Exams, Candidates, Support, and Configuration", () => {
+    expect(ADMIN_TABS).toEqual(["exams", "candidates", "support", "configuration"]);
+    expect(getAdminTabLabel("exams")).toBe("Exams");
     expect(ADMIN_TABS).toContain("candidates");
-    expect(ADMIN_TABS).toContain("monitoring");
     expect(getAdminTabLabel("candidates")).toBe("Candidates");
-    expect(getAdminTabLabel("monitoring")).toBe("Session Monitoring");
-    expect(ADMIN_TABS).toContain("diagnostics");
-    expect(ADMIN_TABS).not.toContain("support");
+    expect(getAdminTabLabel("support")).toBe("Support");
+    expect(getAdminTabLabel("configuration")).toBe("Configuration");
+    expect(ADMIN_TABS).not.toContain("monitoring" as never);
+    expect(ADMIN_TABS).not.toContain("diagnostics" as never);
     expect(ADMIN_TABS).not.toContain("events");
     expect(ADMIN_TABS).not.toContain("resources");
-    expect(getAdminTabLabel("diagnostics")).toBe("Support Diagnostics");
-    expect(shouldShowCandidateProvisioning("diagnostics")).toBe(false);
     expect(shouldShowCandidateProvisioning("candidates")).toBe(true);
-    expect(shouldShowCandidateProvisioning("connection")).toBe(false);
     expect(shouldShowCandidateProvisioning("exams")).toBe(false);
-    expect(shouldShowCandidateProvisioning("monitoring")).toBe(false);
-    expect(shouldShowCandidateProvisioning("audit")).toBe(false);
     expect(shouldShowCandidateProvisioning("support")).toBe(false);
+    expect(shouldShowCandidateProvisioning("configuration")).toBe(false);
   });
 
-  it("falls back to the connection tab for legacy admin tab URLs", () => {
+  it("defaults admin URLs to Exams and maps legacy admin tab URLs to their new work areas", () => {
+    expect(parseAdminConsoleRouteState({})).toEqual({
+      tab: "exams",
+      examView: "catalog",
+      supportView: "monitoring",
+      diagnosticFilters: {},
+    });
+    expect(parseAdminConsoleRouteState({ tab: "connection" })).toEqual({
+      tab: "configuration",
+      examView: "catalog",
+      supportView: "monitoring",
+      diagnosticFilters: {},
+    });
     expect(parseAdminConsoleRouteState({ tab: "events" })).toEqual({
-      tab: "connection",
+      tab: "exams",
+      examView: "catalog",
+      supportView: "monitoring",
       diagnosticFilters: {},
     });
     expect(parseAdminConsoleRouteState({ tab: "resources" })).toEqual({
-      tab: "connection",
+      tab: "exams",
+      examView: "catalog",
+      supportView: "monitoring",
       diagnosticFilters: {},
     });
+    expect(parseAdminConsoleRouteState({ tab: "monitoring" })).toMatchObject({
+      tab: "support",
+      supportView: "monitoring",
+    });
+    expect(parseAdminConsoleRouteState({ tab: "diagnostics" })).toMatchObject({
+      tab: "support",
+      supportView: "diagnostics",
+    });
+    expect(parseAdminConsoleRouteState({ tab: "audit" })).toMatchObject({
+      tab: "support",
+      supportView: "audit",
+    });
+  });
+
+  it("builds route-state URLs for focused Exam authoring and Cohort Session child flows", () => {
+    expect(buildAdminConsoleHref({ tab: "exams", examView: "create" })).toBe(
+      "/admin?tab=exams&view=create",
+    );
+    expect(buildAdminConsoleHref({ tab: "exams", examView: "edit", examId: "exam-1" })).toBe(
+      "/admin?tab=exams&view=edit&examId=exam-1",
+    );
+    expect(buildAdminConsoleHref({ tab: "exams", examView: "sessions", examId: "exam-1" })).toBe(
+      "/admin?tab=exams&view=sessions&examId=exam-1",
+    );
+    expect(
+      buildAdminConsoleHref({
+        tab: "exams",
+        examView: "session",
+        examId: "exam-1",
+        cohortSessionId: "cohort-session-1",
+      }),
+    ).toBe("/admin?tab=exams&view=session&examId=exam-1&sessionId=cohort-session-1");
   });
 
   it("clears dismissible admin banners only when changing tabs", () => {
@@ -231,7 +280,8 @@ describe("diagnostic log filter state", () => {
   it("builds an admin diagnostics URL that makes the diagnostic log the primary investigation surface", () => {
     expect(
       buildAdminConsoleHref({
-        tab: "diagnostics",
+        tab: "support",
+        supportView: "diagnostics",
         diagnosticFilters: {
           examAttemptId: "attempt-1",
           candidateEmail: "Candidate@HeliosCX.demo",
@@ -239,13 +289,14 @@ describe("diagnostic log filter state", () => {
         },
       }),
     ).toBe(
-      "/admin?tab=diagnostics&examAttemptId=attempt-1&candidateEmail=candidate%40helioscx.demo&correlationId=corr-1",
+      "/admin?tab=support&view=diagnostics&examAttemptId=attempt-1&candidateEmail=candidate%40helioscx.demo&correlationId=corr-1",
     );
     expect(buildCorrelationDiagnosticsNavigation(" corr-9 ")).toEqual({
-      tab: "diagnostics",
+      tab: "support",
+      supportView: "diagnostics",
       filters: { correlationId: "corr-9" },
       pageOffset: 0,
-      href: "/admin?tab=diagnostics&correlationId=corr-9",
+      href: "/admin?tab=support&view=diagnostics&correlationId=corr-9",
     });
   });
 
@@ -259,7 +310,9 @@ describe("diagnostic log filter state", () => {
         outcome: "failure",
       }),
     ).toEqual({
-      tab: "diagnostics",
+      tab: "support",
+      examView: "catalog",
+      supportView: "diagnostics",
       diagnosticFilters: {
         examAttemptId: "attempt-9",
         candidateEmail: "candidate@helioscx.demo",
@@ -269,7 +322,9 @@ describe("diagnostic log filter state", () => {
     });
 
     expect(parseAdminConsoleRouteState({ tab: "monitoring", examAttemptId: "attempt-9" })).toEqual({
-      tab: "monitoring",
+      tab: "support",
+      examView: "catalog",
+      supportView: "monitoring",
       diagnosticFilters: {},
     });
   });
@@ -281,7 +336,9 @@ describe("diagnostic log filter state", () => {
         examAttemptId: "attempt-41",
       }),
     ).toEqual({
-      tab: "diagnostics",
+      tab: "support",
+      examView: "catalog",
+      supportView: "diagnostics",
       diagnosticFilters: { examAttemptId: "attempt-41" },
     });
 
@@ -291,7 +348,9 @@ describe("diagnostic log filter state", () => {
         correlationId: "corr-41",
       }),
     ).toEqual({
-      tab: "diagnostics",
+      tab: "support",
+      examView: "catalog",
+      supportView: "diagnostics",
       diagnosticFilters: { correlationId: "corr-41" },
     });
   });

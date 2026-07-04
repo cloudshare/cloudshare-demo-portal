@@ -27,14 +27,16 @@ export interface DiagnosticLogPage {
 }
 
 export interface ExamAttemptDiagnosticsNavigation {
-  readonly tab: "diagnostics";
+  readonly tab: "support";
+  readonly supportView: "diagnostics";
   readonly filters: DiagnosticLogFilters;
   readonly pageOffset: 0;
   readonly href: string;
 }
 
 export interface CorrelationDiagnosticsNavigation {
-  readonly tab: "diagnostics";
+  readonly tab: "support";
+  readonly supportView: "diagnostics";
   readonly filters: DiagnosticLogFilters;
   readonly pageOffset: 0;
   readonly href: string;
@@ -42,26 +44,28 @@ export interface CorrelationDiagnosticsNavigation {
 
 export interface AdminConsoleRouteState {
   readonly tab: AdminTab;
+  readonly examView: AdminExamView;
+  readonly examId?: string;
+  readonly cohortSessionId?: string;
+  readonly supportView: AdminSupportView;
   readonly diagnosticFilters: DiagnosticLogFilters;
 }
 
 export type AdminTab =
-  | "connection"
   | "exams"
   | "candidates"
-  | "monitoring"
-  | "audit"
-  | "diagnostics"
-  | "support";
+  | "support"
+  | "configuration";
 
 export const ADMIN_TABS: readonly AdminTab[] = [
-  "connection",
   "exams",
   "candidates",
-  "monitoring",
-  "audit",
-  "diagnostics",
+  "support",
+  "configuration",
 ];
+
+export type AdminExamView = "catalog" | "create" | "edit" | "sessions" | "session";
+export type AdminSupportView = "monitoring" | "diagnostics" | "audit";
 
 export const ADMIN_SESSION_EXPIRED_MESSAGE =
   "Your admin session has expired. Sign in again to continue.";
@@ -130,20 +134,25 @@ export function isLatestOnlyResponse(activeRequestId: number, responseRequestId:
 
 export function getAdminTabLabel(tab: AdminTab): string {
   switch (tab) {
-    case "connection":
-      return "Connect CloudShare";
     case "exams":
-      return "Exam Catalog";
+      return "Exams";
     case "candidates":
       return "Candidates";
+    case "support":
+      return "Support";
+    case "configuration":
+      return "Configuration";
+  }
+}
+
+export function getAdminSupportViewLabel(view: AdminSupportView): string {
+  switch (view) {
     case "monitoring":
       return "Session Monitoring";
-    case "audit":
-      return "Audit Trail";
     case "diagnostics":
       return "Support Diagnostics";
-    case "support":
-      return "Legacy Support Logs";
+    case "audit":
+      return "Audit Trail";
   }
 }
 
@@ -241,10 +250,11 @@ export function buildExamAttemptDiagnosticsNavigation(
   };
 
   return {
-    tab: "diagnostics",
+    tab: "support",
+    supportView: "diagnostics",
     filters: nextFilters,
     pageOffset: 0,
-    href: buildAdminConsoleHref({ tab: "diagnostics", diagnosticFilters: nextFilters }),
+    href: buildAdminConsoleHref({ tab: "support", supportView: "diagnostics", diagnosticFilters: nextFilters }),
   };
 }
 
@@ -254,22 +264,44 @@ export function buildCorrelationDiagnosticsNavigation(
   const nextFilters = { correlationId: correlationId.trim() };
 
   return {
-    tab: "diagnostics",
+    tab: "support",
+    supportView: "diagnostics",
     filters: nextFilters,
     pageOffset: 0,
     href: buildAdminConsoleHref({
-      tab: "diagnostics",
+      tab: "support",
+      supportView: "diagnostics",
       diagnosticFilters: nextFilters,
     }),
   };
 }
 
-export function buildAdminConsoleHref(route: AdminConsoleRouteState): string {
+export function buildAdminConsoleHref(route: Partial<AdminConsoleRouteState> & { readonly tab: AdminTab }): string {
   const params = new URLSearchParams();
   params.set("tab", route.tab);
 
-  if (route.tab === "diagnostics") {
-    const filters = normaliseDiagnosticLogFilters(route.diagnosticFilters);
+  if (route.tab === "exams") {
+    const examView = route.examView ?? "catalog";
+    if (examView !== "catalog") {
+      params.set("view", examView);
+    }
+    if (route.examId) {
+      params.set("examId", route.examId);
+    }
+    if (route.cohortSessionId) {
+      params.set("sessionId", route.cohortSessionId);
+    }
+  }
+
+  if (route.tab === "support") {
+    const supportView = route.supportView ?? "monitoring";
+    if (supportView !== "monitoring") {
+      params.set("view", supportView);
+    }
+  }
+
+  if (route.tab === "support" && (route.supportView ?? "monitoring") === "diagnostics") {
+    const filters = normaliseDiagnosticLogFilters(route.diagnosticFilters ?? {});
     for (const [key, value] of Object.entries(filters)) {
       if (value) {
         params.set(key, value);
@@ -283,8 +315,10 @@ export function buildAdminConsoleHref(route: AdminConsoleRouteState): string {
 
 export function parseAdminConsoleRouteState(input: {
   readonly tab?: string | readonly string[];
-  readonly examAttemptId?: string | readonly string[];
+  readonly view?: string | readonly string[];
   readonly examId?: string | readonly string[];
+  readonly sessionId?: string | readonly string[];
+  readonly examAttemptId?: string | readonly string[];
   readonly candidateEmail?: string | readonly string[];
   readonly operation?: string | readonly string[];
   readonly outcome?: string | readonly string[];
@@ -295,13 +329,27 @@ export function parseAdminConsoleRouteState(input: {
   readonly from?: string | readonly string[];
   readonly to?: string | readonly string[];
 }): AdminConsoleRouteState {
-  const tab = parseAdminTab(input.tab);
-  if (tab !== "diagnostics") {
-    return { tab, diagnosticFilters: {} };
+  const { tab, supportView } = parseAdminTabWithSupportView(input.tab, input.view);
+  const examView = tab === "exams" ? parseAdminExamView(input.view) : "catalog";
+  const examId = tab === "exams" ? readRouteValue(input.examId) : undefined;
+  const cohortSessionId = tab === "exams" ? readRouteValue(input.sessionId) : undefined;
+  if (tab !== "support" || supportView !== "diagnostics") {
+    return {
+      tab,
+      examView,
+      ...(examId ? { examId } : {}),
+      ...(cohortSessionId ? { cohortSessionId } : {}),
+      supportView,
+      diagnosticFilters: {},
+    };
   }
 
   return {
     tab,
+    examView,
+    ...(examId ? { examId } : {}),
+    ...(cohortSessionId ? { cohortSessionId } : {}),
+    supportView,
     diagnosticFilters: normaliseDiagnosticLogFilters({
       examAttemptId: readRouteValue(input.examAttemptId),
       examId: readRouteValue(input.examId),
@@ -322,9 +370,39 @@ function readRouteValue(value: string | readonly string[] | undefined): string |
   return typeof value === "string" ? value : value?.[0];
 }
 
-function parseAdminTab(value: string | readonly string[] | undefined): AdminTab {
+function parseAdminTabWithSupportView(
+  value: string | readonly string[] | undefined,
+  view: string | readonly string[] | undefined,
+): { tab: AdminTab; supportView: AdminSupportView } {
   const candidate = readRouteValue(value);
-  return ADMIN_TABS.includes(candidate as AdminTab) ? (candidate as AdminTab) : "connection";
+  if (candidate === "connection" || candidate === "configuration") {
+    return { tab: "configuration", supportView: "monitoring" };
+  }
+  if (candidate === "monitoring" || candidate === "audit" || candidate === "diagnostics") {
+    return { tab: "support", supportView: candidate };
+  }
+  if (candidate === "support") {
+    return { tab: "support", supportView: parseAdminSupportView(view) };
+  }
+  if (candidate === "candidates") {
+    return { tab: "candidates", supportView: "monitoring" };
+  }
+  return { tab: "exams", supportView: "monitoring" };
+}
+
+function parseAdminExamView(value: string | readonly string[] | undefined): AdminExamView {
+  const candidate = readRouteValue(value);
+  return candidate === "create" ||
+    candidate === "edit" ||
+    candidate === "sessions" ||
+    candidate === "session"
+    ? candidate
+    : "catalog";
+}
+
+function parseAdminSupportView(value: string | readonly string[] | undefined): AdminSupportView {
+  const candidate = readRouteValue(value);
+  return candidate === "diagnostics" || candidate === "audit" ? candidate : "monitoring";
 }
 
 function parseOutcome(
