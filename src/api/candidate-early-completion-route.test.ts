@@ -139,7 +139,7 @@ describe("candidate early completion route workflow", () => {
     const services = {
       ...makeServices(),
       audit: { write: vi.fn().mockRejectedValue(new Error("audit unavailable")) },
-    } as CandidateEarlyCompletionServices;
+    } as unknown as CandidateEarlyCompletionServices;
     mockCompleteExamAttemptEarlyRuntime.mockResolvedValue({
       status: 200,
       body: { status: "completed", examAttemptId: "ea-1" },

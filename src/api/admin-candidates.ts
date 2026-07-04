@@ -213,19 +213,141 @@ function findLatestScoreEvidence(
     latestScoreDiagnostic.response && typeof latestScoreDiagnostic.response === "object"
       ? latestScoreDiagnostic.response
       : null;
-  const scoreAvailable = scoreResponse?.scoreAvailable === true;
+  const normalizedScore = normalizeScoreEvidenceResponse(scoreResponse);
 
   return {
-    scoreAvailable,
-    ...(scoreAvailable
-      ? {
-          percentComplete: asNumber(scoreResponse?.percentComplete),
-          stepsCompleted: asNumber(scoreResponse?.stepsCompleted),
-          stepsTotal: asNumber(scoreResponse?.stepsTotal),
-        }
-      : {}),
+    ...normalizedScore,
     retrievedAt: latestScoreDiagnostic.occurredAt.toISOString(),
   };
+}
+
+function normalizeScoreEvidenceResponse(
+  response: Record<string, unknown> | null,
+): Omit<AdminCandidateScoreEvidence, "retrievedAt"> {
+  if (!response) {
+    return { scoreAvailable: false };
+  }
+
+  if (typeof response.scoreAvailable === "boolean") {
+    const scoreAvailable = response.scoreAvailable;
+    return {
+      scoreAvailable,
+      ...(scoreAvailable
+        ? {
+            percentComplete: asNumber(response.percentComplete),
+            stepsCompleted: asNumber(response.stepsCompleted),
+            stepsTotal: asNumber(response.stepsTotal),
+            passedRate: asNumber(response.passedRate),
+            failedRate: asNumber(response.failedRate),
+          }
+        : {}),
+    };
+  }
+
+  const cloudShareBody = isRecord(response.body) ? response.body : response;
+  const progress = normalizeCloudShareProgressEvidence(cloudShareBody);
+  if (!progress) {
+    return { scoreAvailable: false };
+  }
+
+  return {
+    scoreAvailable: true,
+    ...progress,
+  };
+}
+
+function normalizeCloudShareProgressEvidence(
+  payload: Record<string, unknown>,
+): Omit<AdminCandidateScoreEvidence, "scoreAvailable" | "retrievedAt"> | null {
+  const rows = readProgressRows(payload);
+  const hasRateEvidence = [
+    "exploredRate",
+    "inProgressRate",
+    "notStartedRate",
+    "passedRate",
+    "failedRate",
+    "notInitiatedRate",
+  ].some((key) => typeof payload[key] === "number");
+  if (rows.length === 0 && !hasRateEvidence) {
+    return null;
+  }
+
+  const stepsTotal =
+    asNumber(payload.totalSections) ??
+    asNumber(payload.totalSteps) ??
+    asNumber(payload.totalTasks) ??
+    rows.length;
+  const stepsCompleted =
+    asNumber(payload.completedSections) ??
+    asNumber(payload.completedSteps) ??
+    asNumber(payload.completedTasks) ??
+    rows.filter(isCompletedProgressRow).length;
+  const percentComplete =
+    normalizePercent(
+      asNumber(payload.percentComplete) ??
+      asNumber(payload.progressPercentage) ??
+      asNumber(payload.completionRate) ??
+      asNumber(payload.progressRate) ??
+      asNumber(payload.progress),
+    ) ?? (stepsTotal > 0 ? Math.round((stepsCompleted / stepsTotal) * 100) : undefined);
+
+  return {
+    percentComplete,
+    stepsCompleted,
+    stepsTotal,
+    passedRate: asNumber(payload.passedRate),
+    failedRate: asNumber(payload.failedRate),
+  };
+}
+
+function readProgressRows(payload: Record<string, unknown>): readonly Record<string, unknown>[] {
+  const rows =
+    payload.sectionStatuses ??
+    payload.sections ??
+    payload.steps ??
+    payload.tasks;
+  return Array.isArray(rows)
+    ? rows.filter((row): row is Record<string, unknown> => isRecord(row))
+    : [];
+}
+
+function isCompletedProgressRow(row: Record<string, unknown>): boolean {
+  const completed = row.completed ?? row.isCompleted;
+  if (typeof completed === "boolean") {
+    return completed;
+  }
+
+  const status = row.status ?? row.sectionStatus ?? row.stepStatus ?? row.taskStatus;
+  if (typeof status === "number") {
+    return status === 2 || status === 3;
+  }
+  if (typeof status !== "string") {
+    return false;
+  }
+
+  switch (status.trim().toLowerCase()) {
+    case "completed":
+    case "complete":
+    case "explored":
+    case "explore":
+    case "done":
+    case "passed":
+    case "success":
+    case "verified":
+      return true;
+    default:
+      return false;
+  }
+}
+
+function normalizePercent(value: number | undefined): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value >= 0 && value <= 1) {
+    return Math.round(value * 100);
+  }
+  return Math.round(value);
 }
 
 function findCompletionTime(
@@ -257,4 +379,8 @@ function compareAttemptRecordsNewestFirst(
 
 function asNumber(value: unknown): number | undefined {
   return typeof value === "number" ? value : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }

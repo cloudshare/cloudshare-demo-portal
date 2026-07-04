@@ -52,6 +52,8 @@ export interface AdminCandidateScoreEvidence {
   readonly percentComplete?: number;
   readonly stepsCompleted?: number;
   readonly stepsTotal?: number;
+  readonly passedRate?: number;
+  readonly failedRate?: number;
   readonly retrievedAt: string;
 }
 

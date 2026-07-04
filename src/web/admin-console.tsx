@@ -163,6 +163,8 @@ interface AdminCandidateScoreEvidence {
   percentComplete?: number;
   stepsCompleted?: number;
   stepsTotal?: number;
+  passedRate?: number;
+  failedRate?: number;
   retrievedAt: string;
 }
 
@@ -239,6 +241,18 @@ function formatCandidateScore(score: AdminCandidateScoreEvidence | null): string
   }
   if (!score.scoreAvailable) {
     return "No score available";
+  }
+
+  if (typeof score.passedRate === "number" || typeof score.failedRate === "number") {
+    const rates = [
+      typeof score.passedRate === "number" ? `${Math.round(score.passedRate * 100)}% passed` : null,
+      typeof score.failedRate === "number" ? `${Math.round(score.failedRate * 100)}% failed` : null,
+    ].filter((value): value is string => value !== null);
+    const steps =
+      typeof score.stepsCompleted === "number" && typeof score.stepsTotal === "number"
+        ? ` (${score.stepsCompleted}/${score.stepsTotal} steps)`
+        : "";
+    return `${rates.join(", ")}${steps}`;
   }
 
   const percent =

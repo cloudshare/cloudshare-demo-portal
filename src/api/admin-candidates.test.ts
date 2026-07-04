@@ -75,6 +75,28 @@ function makeScoreDiagnostic(
   };
 }
 
+function makeRawCloudShareScoreDiagnostic(): DiagnosticLogEntry {
+  return makeScoreDiagnostic({
+    response: {
+      status: 200,
+      body: {
+        exploredRate: 0.25,
+        inProgressRate: 0,
+        notStartedRate: 0.75,
+        passedRate: 0,
+        failedRate: 1,
+        notInitiatedRate: 0,
+        sectionStatuses: [
+          { number: 0, name: "Last section", status: "notStarted" },
+          { number: 0, name: "Check pfSense WAN Interface", status: "explored" },
+          { number: 1, name: "Check the LAN interface", status: "notStarted" },
+          { number: 2, name: "Section Name 3", status: "notStarted" },
+        ],
+      },
+    },
+  });
+}
+
 function makeDeps(input: {
   readonly candidates?: AdminCandidateRecord[];
   readonly detailCandidate?: AdminCandidateRecord | null;
@@ -209,6 +231,41 @@ describe("admin candidate handlers", () => {
               percentComplete: 82,
               stepsCompleted: 9,
               stepsTotal: 11,
+              retrievedAt: "2026-06-19T11:05:00.000Z",
+            },
+          }),
+        ],
+      }),
+    });
+  });
+
+  it("normalizes raw CloudShare Guided Journey diagnostics into score evidence", async () => {
+    const deps = makeDeps({
+      detailCandidate: makeCandidate(),
+      diagnosticsByAttemptId: {
+        "attempt-1": [makeRawCloudShareScoreDiagnostic()],
+      },
+    });
+
+    const response = await handleGetAdminCandidateDetail(deps, {
+      customerId: "customer-1",
+      candidateId: "candidate-1",
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({
+      candidate: expect.objectContaining({
+        attempts: [
+          expect.objectContaining({
+            id: "attempt-1",
+            status: "completed",
+            score: {
+              scoreAvailable: true,
+              percentComplete: 25,
+              stepsCompleted: 1,
+              stepsTotal: 4,
+              passedRate: 0,
+              failedRate: 1,
               retrievedAt: "2026-06-19T11:05:00.000Z",
             },
           }),

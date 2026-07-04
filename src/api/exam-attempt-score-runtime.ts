@@ -225,14 +225,20 @@ export async function getExamAttemptScoreRuntime(
         operation: "exam_attempt.score.retrieve",
         outcome: "success",
         message: "Score retrieved — no score available yet",
+        response: {
+          scoreAvailable: false,
+          reason: result.reason,
+          experienceId: result.experienceId,
+          retrievedAt: result.retrievedAt,
+        },
         ...(scoreRetrieval
           ? {
               request: { ...scoreRetrieval.request },
-              response: scoreRetrieval.response ? { ...scoreRetrieval.response } : null,
+              details: {
+                cloudShareResponse: scoreRetrieval.response ? { ...scoreRetrieval.response } : null,
+              },
             }
-          : {
-              response: { scoreAvailable: false, reason: result.reason },
-            }),
+          : {}),
       });
       return {
         status: 200,
@@ -272,19 +278,27 @@ export async function getExamAttemptScoreRuntime(
       operation: "exam_attempt.score.retrieve",
       outcome: "success",
       message: "Score retrieved successfully",
+      response: {
+        scoreAvailable: true,
+        percentComplete: result.percentComplete,
+        stepsCompleted: result.stepsCompleted,
+        stepsTotal: result.stepsTotal,
+        exploredRate: result.exploredRate,
+        inProgressRate: result.inProgressRate,
+        notStartedRate: result.notStartedRate,
+        passedRate: result.passedRate,
+        failedRate: result.failedRate,
+        notInitiatedRate: result.notInitiatedRate,
+        retrievedAt: result.retrievedAt,
+      },
       ...(scoreRetrieval
         ? {
             request: { ...scoreRetrieval.request },
-            response: scoreRetrieval.response ? { ...scoreRetrieval.response } : null,
-          }
-        : {
-            response: {
-              scoreAvailable: true,
-              percentComplete: result.percentComplete,
-              stepsCompleted: result.stepsCompleted,
-              stepsTotal: result.stepsTotal,
+            details: {
+              cloudShareResponse: scoreRetrieval.response ? { ...scoreRetrieval.response } : null,
             },
-          }),
+          }
+        : {}),
     });
 
     return {

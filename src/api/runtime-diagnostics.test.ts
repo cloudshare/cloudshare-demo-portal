@@ -860,7 +860,7 @@ describe("score diagnostics", () => {
     });
   });
 
-  it("emits exam_attempt.score.retrieve success with the raw CloudShare response in the diagnostic payload", async () => {
+  it("emits exam_attempt.score.retrieve success with stable score evidence and raw CloudShare support evidence", async () => {
     const rawProgressPayload = {
       exploredRate: 0.5,
       inProgressRate: 0.25,
@@ -953,9 +953,24 @@ describe("score diagnostics", () => {
       headers: { authorization: "[REDACTED]" },
     });
     expect((retrieve as { response?: Record<string, unknown> }).response).toEqual({
-      status: 200,
-      headers: { "content-type": "application/json" },
-      body: rawProgressPayload,
+      scoreAvailable: true,
+      percentComplete: 50,
+      stepsCompleted: 1,
+      stepsTotal: 2,
+      exploredRate: 0.5,
+      inProgressRate: 0.25,
+      notStartedRate: 0.25,
+      passedRate: 0.25,
+      failedRate: 0,
+      notInitiatedRate: 0.25,
+      retrievedAt: "2026-06-15T10:00:00.000Z",
+    });
+    expect((retrieve as { details?: Record<string, unknown> }).details).toEqual({
+      cloudShareResponse: {
+        status: 200,
+        headers: { "content-type": "application/json" },
+        body: rawProgressPayload,
+      },
     });
   });
 

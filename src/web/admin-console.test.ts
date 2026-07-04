@@ -203,4 +203,68 @@ describe("AdminConsole", () => {
     expect(html).toContain("Candidate exam history");
     expect(html).toContain("attempt-1");
   });
+
+  it("renders Guided Journey pass and fail rates in candidate history when available", () => {
+    const candidate = {
+      id: "candidate-1",
+      email: "casey@helioscx.demo",
+      firstName: "Casey",
+      lastName: "Rivera",
+      name: "Casey Rivera",
+      createdAt: "2026-06-18T09:00:00.000Z",
+      attemptSummary: {
+        scheduled: 0,
+        ready: 0,
+        inProgress: 0,
+        suspended: 0,
+        completed: 1,
+        expired: 0,
+        total: 1,
+      },
+      latestAttempt: null,
+      latestScore: {
+        scoreAvailable: true,
+        percentComplete: 25,
+        stepsCompleted: 1,
+        stepsTotal: 4,
+        passedRate: 0,
+        failedRate: 1,
+        retrievedAt: "2026-06-19T11:05:00.000Z",
+      },
+      attempts: [
+        {
+          id: "attempt-1",
+          examId: "exam-1",
+          examTitle: "Linux Environment with xRDP v2",
+          status: "completed" as const,
+          scheduledFor: "2026-06-19T10:00:00.000Z",
+          createdAt: "2026-06-18T10:00:00.000Z",
+          updatedAt: "2026-06-19T11:00:00.000Z",
+          completedAt: "2026-06-19T11:00:00.000Z",
+          scoreRetrievalEnabled: true,
+          score: {
+            scoreAvailable: true,
+            percentComplete: 25,
+            stepsCompleted: 1,
+            stepsTotal: 4,
+            passedRate: 0,
+            failedRate: 1,
+            retrievedAt: "2026-06-19T11:05:00.000Z",
+          },
+        },
+      ],
+    };
+
+    const html = renderToStaticMarkup(
+      createElement(AdminCandidateRosterPanel, {
+        candidates: [candidate],
+        selectedCandidate: candidate,
+        loading: false,
+        onOpenCandidate: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("Linux Environment with xRDP v2");
+    expect(html).toContain("0% passed, 100% failed (1/4 steps)");
+  });
 });

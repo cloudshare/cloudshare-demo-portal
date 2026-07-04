@@ -2,6 +2,7 @@ import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
+import type { AuditRepository } from "@/domain/audit-trail";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { EnvironmentStateSource } from "@/domain/environment";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
@@ -9,9 +10,10 @@ import { reconcileExamAttemptCompletion } from "@/domain/exam-attempt-completion
 import type { ExamClock } from "@/domain/exam-clock";
 import type { ExamRepository } from "@/domain/exam-catalog";
 import type { HeartbeatAutoSuspend } from "@/domain/heartbeat-auto-suspend";
-import type { LabLaunch } from "@/domain/lab-launch";
+import type { LabLaunch, LabLaunchRepository } from "@/domain/lab-launch";
 import { createCloudShareEnvironmentSource } from "@/integrations/cloudshare/environment";
 import type { Logger } from "@/observability/logger";
+import { captureCompletedExamScoreEvidence } from "./completed-exam-score-capture";
 import {
   recordExamAttemptCompletionDiagnostic,
   recordExamAttemptCompletionEnvironmentDiagnostic,
@@ -35,6 +37,8 @@ export interface CandidateLabStatusRuntimeRequest {
 export interface ManualHeartbeatRuntimeDeps extends ExamAttemptHeartbeatStatusDeps {
   readonly autoSuspend: HeartbeatAutoSuspend;
   readonly environmentSource?: EnvironmentStateSource;
+  readonly launches?: LabLaunchRepository;
+  readonly audit?: AuditRepository;
   readonly connections?: CloudShareConnectionRepository;
   readonly cloudshare?: CloudShareClientFactory;
 }
@@ -177,6 +181,11 @@ export async function recordExamAttemptHeartbeatRuntime(
           completionReason: "heartbeat_reconciliation",
         },
       );
+      await captureCompletedExamScoreEvidence(deps, {
+        examAttemptId: request.examAttemptId,
+        candidateEmail: deps.candidateEmail ?? null,
+        completionReason: "heartbeat_reconciliation",
+      });
     }
     return {
       status: 200,

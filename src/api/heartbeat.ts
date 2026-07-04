@@ -35,8 +35,10 @@ export interface ExamAttemptHeartbeatDepsOptions {
 export interface ExamAttemptHeartbeatServices {
   readonly examAttempts: ManualHeartbeatRuntimeDeps["attempts"];
   readonly exams: ManualHeartbeatRuntimeDeps["exams"];
+  readonly labLaunches: ManualHeartbeatRuntimeDeps["launches"];
   readonly examClock: ManualHeartbeatRuntimeDeps["clocks"];
   readonly heartbeatAutoSuspend: ManualHeartbeatRuntimeDeps["autoSuspend"];
+  readonly audit: ManualHeartbeatRuntimeDeps["audit"];
   readonly diagnosticRecorder: ManualHeartbeatRuntimeDeps["diagnostics"];
   readonly logger: ManualHeartbeatRuntimeDeps["logger"];
   readonly environmentSource: ManualHeartbeatRuntimeDeps["environmentSource"];
@@ -56,8 +58,10 @@ export function buildExamAttemptHeartbeatDeps(
   return {
     attempts: services.examAttempts,
     exams: services.exams,
+    launches: services.labLaunches,
     clocks: services.examClock,
     autoSuspend: services.heartbeatAutoSuspend,
+    audit: services.audit,
     diagnostics: services.diagnosticRecorder,
     logger: services.logger,
     candidateEmail: options.candidateEmail,
