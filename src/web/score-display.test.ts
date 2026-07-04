@@ -96,6 +96,40 @@ describe("ScoreLoadedPanel", () => {
     expect(html).toContain("align-items:center");
   });
 
+  it("does not repeat the Guided Journey step count in both prose and summary tiles", () => {
+    const html = renderToStaticMarkup(
+      createElement(ScoreLoadedPanel, {
+        score: {
+          examAttemptId: "attempt-redundant",
+          examTitle: "Helios Guided Journey",
+          scheduledFor: "2026-06-18T09:00:00.000Z",
+          experienceId: "exp-redundant",
+          scoreRetrievalEnabled: true,
+          scoreAvailable: true,
+          percentComplete: 75,
+          stepsCompleted: 3,
+          stepsTotal: 4,
+          exploredRate: 0.75,
+          inProgressRate: 0,
+          notStartedRate: 0.25,
+          passedRate: 1,
+          failedRate: 0,
+          notInitiatedRate: 0,
+          retrievedAt: "2026-07-04T00:13:00.000Z",
+          steps: [
+            { stepId: "step-1", title: "Create the queue", completed: true, status: "passed" },
+            { stepId: "step-2", title: "Verify the workflow", completed: false, status: "in_progress" },
+          ],
+          limitations: ["Only the final state is assessed."],
+        },
+      }),
+    );
+
+    expect(html).toContain("Steps explored/complete");
+    expect(html).toContain("3 of 4");
+    expect(html).not.toContain("Guided Journey steps are marked explored or complete");
+  });
+
   it("keeps the completion shell, message, and limitations when no Guided Journey score is available", () => {
     const html = renderToStaticMarkup(
       createElement(ScoreLoadedPanel, {

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { type CSSProperties, useCallback, useEffect, useState } from "react";
+import React, { type CSSProperties, type ReactNode, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   loadCandidateDashboard,
@@ -11,8 +11,10 @@ import {
 } from "./candidate-scheduling";
 import {
   buildCandidateExamDurationLabels,
-  buildScheduledAttemptViews,
+  buildCandidateAttemptQueueState,
   COLD_START_WARNING_MESSAGE,
+  type CandidateAttemptStatusFilter,
+  type CandidateAttemptStatusFilterView,
   getAttemptWaitingMessage,
   getCurrentAttemptForExam,
   getNextEnterabilityWakeUpDelayMs,
@@ -84,6 +86,71 @@ export function PublishedExamCardHeader({
   );
 }
 
+export function CandidateAttemptStatusFilterButtons({
+  filters,
+  activeFilter,
+  onFilterChange,
+}: {
+  readonly filters: CandidateAttemptStatusFilterView[];
+  readonly activeFilter: CandidateAttemptStatusFilter;
+  readonly onFilterChange: (filter: CandidateAttemptStatusFilter) => void;
+}) {
+  return (
+    <div aria-label="Exam attempt status filters" style={attemptFilterStripStyle}>
+      {filters.map((filter) => {
+        const selected = filter.filter === activeFilter;
+        return (
+          <button
+            key={filter.filter}
+            type="button"
+            aria-pressed={selected}
+            onClick={() => onFilterChange(filter.filter)}
+            style={{
+              ...attemptFilterButtonStyle,
+              ...(selected ? selectedAttemptFilterButtonStyle : null),
+            }}
+          >
+            <span style={attemptFilterLabelStyle}>{filter.label}</span>
+            <span style={attemptFilterCountStyle}>{filter.count}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function CandidatePublishedExamScheduleShell({
+  examCount,
+  children,
+}: {
+  readonly examCount: number;
+  readonly children?: ReactNode;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <details
+      open={isOpen}
+      onToggle={(event) => setIsOpen(event.currentTarget.open)}
+      style={cardStyle}
+    >
+      <summary style={scheduleSummaryStyle}>
+        <div>
+          <p style={eyebrowLabelStyle}>Published Exams</p>
+          <h2 style={sectionTitleStyle}>Browse and schedule</h2>
+          <p style={{ ...sectionCopyStyle, marginTop: "0.35rem" }}>
+            {examCount} published {examCount === 1 ? "Exam" : "Exams"}
+          </p>
+        </div>
+        <span style={scheduleSummaryActionStyle}>
+          {isOpen ? "Hide scheduling options" : "Browse scheduling options"}
+        </span>
+      </summary>
+      {isOpen ? <div style={scheduleDisclosureBodyStyle}>{children}</div> : null}
+    </details>
+  );
+}
+
 export function CandidateHome({ email }: CandidateHomeProps) {
   const router = useRouter();
   const [dashboard, setDashboard] = useState<CandidateDashboardData>({
@@ -97,6 +164,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
   const [scheduleFeedback, setScheduleFeedback] = useState<Record<string, ScheduleFeedback>>({});
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [selectedAttemptFilter, setSelectedAttemptFilter] = useState<CandidateAttemptStatusFilter>("live");
   const { presentation: logoutPresentation, logout } = useCandidateLogout(router);
 
   const handleCandidateSessionExpired = useCallback(() => {
@@ -265,7 +333,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
     router.push(`/candidate/score?${params.toString()}`);
   }
 
-  const scheduledAttempts = buildScheduledAttemptViews(dashboard, nowMs);
+  const attemptQueue = buildCandidateAttemptQueueState(dashboard, nowMs, selectedAttemptFilter);
   const examsById = new Map(dashboard.exams.map((exam) => [exam.id, exam]));
 
   return (
@@ -303,18 +371,23 @@ export function CandidateHome({ email }: CandidateHomeProps) {
             {error}
           </p>
         )}
-        {scheduledAttempts.length > 0 && (
+        {dashboard.attempts.length > 0 && (
           <section style={cardStyle}>
             <div style={sectionHeaderStyle}>
               <div>
-                <p style={eyebrowLabelStyle}>Scheduled attempts</p>
-                <h2 style={sectionTitleStyle}>Upcoming and active Exams</h2>
+                <p style={eyebrowLabelStyle}>Attempt queues</p>
+                <h2 style={sectionTitleStyle}>Exam attempts</h2>
               </div>
               <p style={sectionCopyStyle}>
-                Use these actions to enter when your launch window opens, resume a suspended session,
-                or review a completed score.
+                Live includes scheduled, ready, in-progress, and suspended attempts. Use Completed
+                or Expired to inspect history.
               </p>
             </div>
+            <CandidateAttemptStatusFilterButtons
+              filters={attemptQueue.filters}
+              activeFilter={attemptQueue.activeFilter}
+              onFilterChange={setSelectedAttemptFilter}
+            />
             <div
               style={{
                 display: "grid",
@@ -322,7 +395,10 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                 gap: "0.75rem",
               }}
             >
-              {scheduledAttempts.map((attempt) => {
+              {attemptQueue.attempts.length === 0 ? (
+                <p style={{ ...mutedPanelStyle, margin: 0 }}>{getCandidateAttemptQueueEmptyMessage(selectedAttemptFilter)}</p>
+              ) : null}
+              {attemptQueue.attempts.map((attempt) => {
                 const exam = examsById.get(attempt.examId) ?? (
                   attempt.openPeriodMinutes && attempt.timeLimitMinutes
                     ? {
@@ -455,17 +531,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
         )}
 
         {shouldShowPublishedExamList({ loading, examCount: dashboard.exams.length }) && (
-          <section style={cardStyle}>
-            <div style={sectionHeaderStyle}>
-              <div>
-                <p style={eyebrowLabelStyle}>Published Exams</p>
-                <h2 style={sectionTitleStyle}>Browse and schedule</h2>
-              </div>
-              <p style={sectionCopyStyle}>
-                Choose a time for an available Exam. Existing attempts remain visible so you can keep
-                your schedule and launch actions in view.
-              </p>
-            </div>
+          <CandidatePublishedExamScheduleShell examCount={dashboard.exams.length}>
             <div style={{ display: "grid", gap: "0.9rem" }}>
               {dashboard.exams.map((exam) => {
                 const attempt = attemptForExam(exam.id);
@@ -597,7 +663,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                 );
               })}
             </div>
-          </section>
+          </CandidatePublishedExamScheduleShell>
         )}
       </section>
     </main>
@@ -624,6 +690,70 @@ const sectionCopyStyle: CSSProperties = {
   color: "#475569",
   maxWidth: "40rem",
   lineHeight: 1.5,
+};
+
+const attemptFilterStripStyle: CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: "0.75rem",
+  marginBottom: "1rem",
+};
+
+const attemptFilterButtonStyle: CSSProperties = {
+  ...cardStyle,
+  border: "1px solid #cbd5e1",
+  display: "grid",
+  gap: "0.2rem",
+  minWidth: "118px",
+  flex: "1 1 118px",
+  padding: "0.7rem 0.8rem",
+  textAlign: "left",
+  cursor: "pointer",
+  background: "#ffffff",
+};
+
+const selectedAttemptFilterButtonStyle: CSSProperties = {
+  border: "1px solid #2563eb",
+  background: "#eff6ff",
+  boxShadow: "inset 0 0 0 1px #bfdbfe",
+};
+
+const attemptFilterLabelStyle: CSSProperties = {
+  color: "#475569",
+  fontSize: "0.8rem",
+  fontWeight: 600,
+};
+
+const attemptFilterCountStyle: CSSProperties = {
+  color: "#0f172a",
+  fontSize: "1.35rem",
+  fontWeight: 700,
+  lineHeight: 1.1,
+};
+
+const scheduleSummaryStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: "1rem",
+  flexWrap: "wrap",
+  alignItems: "center",
+  cursor: "pointer",
+  listStyle: "none",
+};
+
+const scheduleSummaryActionStyle: CSSProperties = {
+  ...secondaryButtonStyle,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+
+const scheduleDisclosureBodyStyle: CSSProperties = {
+  display: "grid",
+  gap: "0.9rem",
+  marginTop: "1rem",
+  paddingTop: "1rem",
+  borderTop: "1px solid #e2e8f0",
 };
 
 const metaItemStyle: CSSProperties = {
@@ -661,6 +791,13 @@ function getAttemptScheduleAvailabilityFallback(
   status: CandidateDashboardData["attempts"][number]["status"],
 ): string {
   return status === "completed" || status === "expired" ? "No scheduling hold" : "TBD";
+}
+
+function getCandidateAttemptQueueEmptyMessage(filter: CandidateAttemptStatusFilter): string {
+  if (filter === "live") {
+    return "No live attempts. Use Completed or Expired to inspect attempt history.";
+  }
+  return `No ${filter.replaceAll("_", " ")} attempts.`;
 }
 
 function getButtonStyle(baseStyle: CSSProperties, disabled: boolean): CSSProperties {

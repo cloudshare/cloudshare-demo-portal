@@ -187,9 +187,6 @@ export function ScoreLoadedPanel({
               <h3 style={{ margin: 0, fontSize: "2rem", lineHeight: 1.1 }}>
                 {formatRate(score.passedRate)} pass rate
               </h3>
-              <p style={{ margin: 0, color: "#1e293b" }}>
-                {score.stepsCompleted} of {score.stepsTotal} Guided Journey steps are marked explored or complete.
-              </p>
             </div>
             <div
               aria-label="Score summary details"

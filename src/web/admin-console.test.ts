@@ -105,6 +105,8 @@ describe("AdminConsole", () => {
     expect(html).toContain("portal-spinner");
     expect(html).toContain("position:absolute");
     expect(html).toContain("inset:0");
+    expect(html).toContain("align-items:flex-start");
+    expect(html).toContain("justify-items:center");
     expect(html).toContain("flex-wrap:wrap");
     expect(html).toContain("max-width:min(100%, 22rem)");
   });
