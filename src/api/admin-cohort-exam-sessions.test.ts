@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
-import { createDraftExam } from "@/domain/exam-catalog";
+import { createDraftExam, type CreateDraftExamInput } from "@/domain/exam-catalog";
 import { createInMemoryCohortExamSessionRepository } from "@/persistence/cohort-exam-session-repository";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import { createInMemoryExamCatalogRepository } from "@/persistence/exam-catalog-repository";
@@ -15,7 +15,10 @@ function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 }
 
-async function seedExam(exams: ReturnType<typeof createInMemoryExamCatalogRepository>) {
+async function seedExam(
+  exams: ReturnType<typeof createInMemoryExamCatalogRepository>,
+  overrides: Partial<CreateDraftExamInput> = {},
+) {
   await createDraftExam(
     {
       repository: exams,
@@ -45,6 +48,7 @@ async function seedExam(exams: ReturnType<typeof createInMemoryExamCatalogReposi
       policyName: "Standard Exam Policy",
       instructorId: "instructor-1",
       instructorName: "Helios Service Account",
+      ...overrides,
     },
   );
 }
@@ -130,6 +134,37 @@ describe("admin Cohort Exam Session runtime", () => {
         examId: "exam-1",
       }),
     );
+  });
+
+  it("rejects draft Cohort Exam Session creation under individual-only Exams", async () => {
+    const exams = createInMemoryExamCatalogRepository();
+    const sessions = createInMemoryCohortExamSessionRepository();
+    await seedExam(exams, { deliveryAvailability: "individual" });
+
+    const response = await handleCreateDraftCohortExamSession(
+      {
+        exams,
+        sessions,
+        logger: makeLogger(),
+        now: () => new Date("2026-07-04T11:00:00.000Z"),
+        newId: () => "cohort-session-1",
+      },
+      {
+        customerId: "customer-1",
+        actor,
+        examId: "exam-1",
+        body: {
+          name: "July Admin Cohort",
+          admissionStartsAt: "2026-07-05T09:00:00.000Z",
+        },
+      },
+    );
+
+    expect(response).toEqual({
+      status: 409,
+      body: { error: "Cohort Exam Sessions are not available for individual-only Exams." },
+    });
+    await expect(sessions.listByExamId("exam-1")).resolves.toEqual([]);
   });
 
   it("lists and views draft Cohort Exam Sessions under their parent Exam only", async () => {

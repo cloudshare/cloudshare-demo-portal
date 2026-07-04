@@ -7,7 +7,7 @@ import type {
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { EventLogRepository } from "@/domain/event-log";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
-import type { ExamRepository } from "@/domain/exam-catalog";
+import { isIndividualExamDeliveryAvailable, type ExamRepository } from "@/domain/exam-catalog";
 import type { LabLaunchRepository } from "@/domain/lab-launch";
 import {
   CloudShareProvisioningError,
@@ -62,6 +62,16 @@ export async function scheduleExamAttemptRuntime(
   request: ExamAttemptSchedulingRuntimeRequest,
 ): Promise<ExamAttemptSchedulingRuntimeResponse> {
   const correlationId = (deps.newCorrelationId ?? randomUUID)();
+  const exam = await deps.exams.findById(request.examId);
+  if (
+    !exam ||
+    exam.customerId !== request.customerId ||
+    exam.status !== "published" ||
+    !isIndividualExamDeliveryAvailable(exam)
+  ) {
+    return { status: 404, body: { error: "Published exam not found." } };
+  }
+
   const connection = await deps.connections.findByCustomerId(request.customerId);
   if (!connection) {
     return {

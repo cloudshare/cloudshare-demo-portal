@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { CloudShareClientFactory, CloudShareConnectionRepository } from "@/domain/cloudshare-connection";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { ExamClock } from "@/domain/exam-clock";
-import type { Exam, ExamRepository } from "@/domain/exam-catalog";
+import { isIndividualExamDeliveryAvailable, type Exam, type ExamRepository } from "@/domain/exam-catalog";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { EventLogRepository } from "@/domain/event-log";
 import { correlateEnvironmentForExamAttempt } from "@/domain/environment-correlation";
@@ -120,7 +120,7 @@ export async function getExamAttemptDashboardRuntime(
     status: 200,
     body: {
       exams: exams
-        .filter((exam) => exam.status === "published")
+        .filter((exam) => exam.status === "published" && isIndividualExamDeliveryAvailable(exam))
         .map(toCandidateDashboardExamItem),
       attempts: reconciledAttempts.map((attempt) => {
         const exam = examsById.get(attempt.examId);

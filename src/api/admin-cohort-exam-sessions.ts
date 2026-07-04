@@ -7,7 +7,11 @@ import {
   type CohortExamSessionRepository,
 } from "@/domain/cohort-exam-session";
 import type { DiagnosticActor, DiagnosticLogEntryInput, DiagnosticRecorder } from "@/domain/diagnostic-log";
-import { ExamNotFoundError, type ExamRepository } from "@/domain/exam-catalog";
+import {
+  ExamNotFoundError,
+  isCohortExamSessionDeliveryAvailable,
+  type ExamRepository,
+} from "@/domain/exam-catalog";
 import type { Logger } from "@/observability/logger";
 
 export interface AdminCohortExamSessionDeps {
@@ -104,6 +108,12 @@ export async function handleCreateDraftCohortExamSession(
 ) {
   try {
     const exam = await findOwnedExam(deps, request.customerId, request.examId);
+    if (!isCohortExamSessionDeliveryAvailable(exam)) {
+      return {
+        status: 409,
+        body: { error: "Cohort Exam Sessions are not available for individual-only Exams." },
+      };
+    }
     const input = parseCreateDraftCohortExamSessionInput(request.body);
     if (!input) {
       return {

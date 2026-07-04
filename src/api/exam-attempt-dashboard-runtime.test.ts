@@ -109,6 +109,47 @@ async function makeExamRepository() {
 }
 
 describe("getExamAttemptDashboardRuntime", () => {
+  it("hides cohort-only Exams from the candidate individual scheduling catalog", async () => {
+    const exams = createInMemoryExamCatalogRepository();
+    const attempts = createInMemoryExamAttemptRepository();
+
+    await createDraftExam(
+      { repository: exams, now: () => new Date("2026-06-15T09:00:00.000Z"), newId: () => "exam-individual" },
+      makeExamInput({ title: "Individual Exam", deliveryAvailability: "individual" }),
+    );
+    await publishExam(
+      { repository: exams, now: () => new Date("2026-06-15T09:05:00.000Z") },
+      { customerId: "customer-helios", examId: "exam-individual" },
+    );
+    await createDraftExam(
+      { repository: exams, now: () => new Date("2026-06-15T09:10:00.000Z"), newId: () => "exam-cohort" },
+      makeExamInput({ title: "Cohort Exam", deliveryAvailability: "cohort" }),
+    );
+    await publishExam(
+      { repository: exams, now: () => new Date("2026-06-15T09:15:00.000Z") },
+      { customerId: "customer-helios", examId: "exam-cohort" },
+    );
+    await createDraftExam(
+      { repository: exams, now: () => new Date("2026-06-15T09:20:00.000Z"), newId: () => "exam-both" },
+      makeExamInput({ title: "Both Delivery Exam", deliveryAvailability: "both" }),
+    );
+    await publishExam(
+      { repository: exams, now: () => new Date("2026-06-15T09:25:00.000Z") },
+      { customerId: "customer-helios", examId: "exam-both" },
+    );
+
+    const dashboard = await getExamAttemptDashboardRuntime(
+      { repository: exams, attempts, logger: makeLogger() },
+      { customerId: "customer-helios", candidateId: "candidate-1" },
+    );
+
+    expect(dashboard.status).toBe(200);
+    expect((dashboard.body.exams as Array<{ id: string }>).map((exam) => exam.id)).toEqual([
+      "exam-individual",
+      "exam-both",
+    ]);
+  });
+
   it("keeps later ExamAttempt states visible in a candidate-safe dashboard payload", async () => {
     const exams = await makeExamRepository();
     const attempts = createInMemoryExamAttemptRepository();

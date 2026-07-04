@@ -442,6 +442,20 @@ function formatExamDeliveryAvailability(value: ExamRecord["deliveryAvailability"
   return "Individual Exam Delivery only";
 }
 
+export function isCohortSessionAuthoringAvailable(
+  value: ExamRecord["deliveryAvailability"],
+): boolean {
+  return value === "cohort" || value === "both";
+}
+
+export function normalizeAdminLocalDateTime(value: string): string | null {
+  if (!value.trim()) {
+    return null;
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 function CohortSessionDraftControls(props: {
   examId: string;
   form: CohortExamSessionFormState;
@@ -508,6 +522,38 @@ function CohortSessionDraftControls(props: {
           ))
         )}
       </div>
+    </div>
+  );
+}
+
+export function CohortSessionAuthoringPanel(props: {
+  examId: string;
+  deliveryAvailability: ExamRecord["deliveryAvailability"];
+  form: CohortExamSessionFormState;
+  sessions: CohortExamSessionRecord[];
+  loading: boolean;
+  onChange: (patch: Partial<CohortExamSessionFormState>) => void;
+  onCreate: () => void;
+  onSelect: (session: CohortExamSessionRecord) => void;
+}) {
+  return (
+    <div style={{ marginTop: "0.8rem", display: "grid", gap: "0.5rem", minWidth: "16rem" }}>
+      <strong>Draft Cohort Exam Sessions</strong>
+      {isCohortSessionAuthoringAvailable(props.deliveryAvailability) ? (
+        <CohortSessionDraftControls
+          examId={props.examId}
+          form={props.form}
+          sessions={props.sessions}
+          loading={props.loading}
+          onChange={props.onChange}
+          onCreate={props.onCreate}
+          onSelect={props.onSelect}
+        />
+      ) : (
+        <span style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>
+          Cohort Exam Sessions are unavailable for individual-only Exams.
+        </span>
+      )}
     </div>
   );
 }
@@ -1459,17 +1505,29 @@ export function AdminConsole({
 
   async function createDraftCohortSession(examId: string) {
     const form = getCohortSessionForm(examId);
+    const admissionStartsAt = normalizeAdminLocalDateTime(form.admissionStartsAt);
+    const admissionEndsAt = normalizeAdminLocalDateTime(form.admissionEndsAt);
     setLoading(true);
     setError(null);
     setExamMessage(null);
+    if (!admissionStartsAt) {
+      setError("Choose a valid admission open date and time.");
+      setLoading(false);
+      return;
+    }
+    if (form.admissionEndsAt.trim() && !admissionEndsAt) {
+      setError("Choose a valid admission close date and time.");
+      setLoading(false);
+      return;
+    }
     try {
       const response = await fetchAdmin(`/api/admin/exams/${encodeURIComponent(examId)}/cohort-sessions`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           name: form.name,
-          admissionStartsAt: form.admissionStartsAt,
-          admissionEndsAt: form.admissionEndsAt || null,
+          admissionStartsAt,
+          admissionEndsAt,
           capacity: form.capacity ? Number(form.capacity) : null,
         }),
       });
@@ -2536,18 +2594,16 @@ export function AdminConsole({
                             Unpublish
                           </button>
                         )}
-                        <div style={{ marginTop: "0.8rem", display: "grid", gap: "0.5rem", minWidth: "16rem" }}>
-                          <strong>Draft Cohort Exam Sessions</strong>
-                          <CohortSessionDraftControls
-                            examId={exam.id}
-                            form={getCohortSessionForm(exam.id)}
-                            sessions={cohortSessionsByExamId[exam.id] ?? []}
-                            loading={loading}
-                            onChange={(patch) => updateCohortSessionForm(exam.id, patch)}
-                            onCreate={() => void createDraftCohortSession(exam.id)}
-                            onSelect={(session) => setSelectedCohortSession(session)}
-                          />
-                        </div>
+                        <CohortSessionAuthoringPanel
+                          examId={exam.id}
+                          deliveryAvailability={exam.deliveryAvailability}
+                          form={getCohortSessionForm(exam.id)}
+                          sessions={cohortSessionsByExamId[exam.id] ?? []}
+                          loading={loading}
+                          onChange={(patch) => updateCohortSessionForm(exam.id, patch)}
+                          onCreate={() => void createDraftCohortSession(exam.id)}
+                          onSelect={(session) => setSelectedCohortSession(session)}
+                        />
                       </td>
                     </tr>
                   ))}

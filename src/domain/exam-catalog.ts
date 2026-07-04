@@ -290,3 +290,15 @@ function validateDraftInput(input: CreateDraftExamInput): void {
 export function isExamDeliveryAvailability(value: unknown): value is ExamDeliveryAvailability {
   return value === "individual" || value === "cohort" || value === "both";
 }
+
+export function isIndividualExamDeliveryAvailable(
+  exam: Pick<Exam, "deliveryAvailability">,
+): boolean {
+  return (exam.deliveryAvailability ?? "individual") !== "cohort";
+}
+
+export function isCohortExamSessionDeliveryAvailable(
+  exam: Pick<Exam, "deliveryAvailability">,
+): boolean {
+  return exam.deliveryAvailability === "cohort" || exam.deliveryAvailability === "both";
+}

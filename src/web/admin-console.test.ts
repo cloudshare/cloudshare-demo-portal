@@ -1,7 +1,13 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { AdminCandidateRosterPanel, AdminConsole, ExamCatalogLoadingOverlay } from "./admin-console";
+import {
+  AdminCandidateRosterPanel,
+  AdminConsole,
+  CohortSessionAuthoringPanel,
+  ExamCatalogLoadingOverlay,
+  normalizeAdminLocalDateTime,
+} from "./admin-console";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -146,6 +152,51 @@ describe("AdminConsole", () => {
     expect(html).toContain("Cohort Exam Sessions only");
     expect(html).toContain("Individual and Cohort delivery");
     expect(html).toContain("Draft Cohort Exam Sessions");
+  });
+
+  it("does not render draft Cohort Exam Session form controls for individual-only Exams", () => {
+    const html = renderToStaticMarkup(
+      createElement(CohortSessionAuthoringPanel, {
+        examId: "exam-1",
+        deliveryAvailability: "individual",
+        form: { name: "", admissionStartsAt: "", admissionEndsAt: "", capacity: "" },
+        sessions: [],
+        loading: false,
+        onChange: vi.fn(),
+        onCreate: vi.fn(),
+        onSelect: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("Draft Cohort Exam Sessions");
+    expect(html).toContain("Cohort Exam Sessions are unavailable for individual-only Exams.");
+    expect(html).not.toContain("Create Draft Cohort Session");
+    expect(html).not.toContain("Admission opens");
+  });
+
+  it("renders draft Cohort Exam Session form controls for cohort-capable Exams", () => {
+    const html = renderToStaticMarkup(
+      createElement(CohortSessionAuthoringPanel, {
+        examId: "exam-1",
+        deliveryAvailability: "both",
+        form: { name: "", admissionStartsAt: "", admissionEndsAt: "", capacity: "" },
+        sessions: [],
+        loading: false,
+        onChange: vi.fn(),
+        onCreate: vi.fn(),
+        onSelect: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("Create Draft Cohort Session");
+    expect(html).toContain("Admission opens");
+  });
+
+  it("normalizes admin datetime-local values before draft Cohort Exam Session POST", () => {
+    expect(normalizeAdminLocalDateTime("2026-07-05T09:00")).toBe(
+      new Date("2026-07-05T09:00").toISOString(),
+    );
+    expect(normalizeAdminLocalDateTime("")).toBeNull();
   });
 
   it("renders an Exam Catalog busy overlay that freezes the authoring surface while resources load", () => {
