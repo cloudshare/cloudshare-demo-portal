@@ -971,6 +971,44 @@ environments and whether any CloudShare role/RBAC permissions differ from suspen
 
 ---
 
+## GAP-20 — Experience cleanup is delete-only; no archive/hide lifecycle
+
+| Field | Detail |
+|---|---|
+| **Status** | Confirmed — live cleanup on 2026-07-04 deleted training/Experience records because that is the available API behaviour today |
+| **Verified live** | Yes |
+
+**Observed behaviour**
+
+The practical cleanup path for CloudShare training Experiences is to delete the Experience. Deleting
+the Experience also deletes any environments inside it, so separate environment deletion is not
+required for operator cleanup.
+
+During the 2026-07-04 cleanup of PR #261 demo data, v4 `DELETE /trainings/{id}` returned `204` for
+all 31 recorded training/Experience IDs. That was the only reliable way to remove the demo
+Experience records from the tenant once the portal database had accumulated many test attempts.
+
+**Impact on certification use**
+
+Deletion is operationally convenient but poor for certification history. A completed or expired
+ExamAttempt may still need support evidence, scoring evidence, audit traceability, or customer
+review. Deleting the Experience removes or hides the CloudShare-side historical object instead of
+preserving it in a terminal, non-primary-list state.
+
+The desired CloudShare lifecycle is an Experience-level **archive** or **hide from main list** action:
+retain historical evidence and diagnostics, stop candidates from using the Experience, remove it
+from day-to-day operational queues, and keep it available for support/audit review.
+
+**Action required (if applicable):**
+
+Raise/track a CloudShare product/API gap for Experience-level archival. Until CloudShare exposes
+that lifecycle, portal cleanup tooling should be explicit that Experience deletion is destructive
+and should be reserved for demo reset/operator cleanup, not normal certification completion.
+
+**Code reference:** `src/integrations/cloudshare/labs.ts`
+
+---
+
 ## Gap template
 
 Copy this section when appending a new gap discovered during implementation:
@@ -1062,5 +1100,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-07-03 (recorded undocumented v3 archive action assumption for Candidate early completion; retained polling/reconcile as the source of truth).
+*Last updated: 2026-07-04 (recorded delete-only Experience cleanup gap; desired state is Experience archive/hide while retaining history).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*
