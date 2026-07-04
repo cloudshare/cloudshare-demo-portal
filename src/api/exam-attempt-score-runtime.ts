@@ -108,8 +108,14 @@ export async function getExamAttemptScoreRuntime(
     };
     await deps.audit.write({
       id: `${examAttemptId}:score_retrieved:${body.retrievedAt}`,
+      customerId: request.customerId,
+      actorType: "candidate",
+      actorId: attempt.candidateId,
+      subjectType: "exam_attempt",
+      subjectId: examAttemptId,
       examAttemptId,
       candidateId: attempt.candidateId,
+      examId: attempt.examId,
       action: "score_retrieved",
       outcome: "success",
       details: {
@@ -139,6 +145,8 @@ export async function getExamAttemptScoreRuntime(
     };
     await writeScoreFailureAudit(
       deps,
+      request.customerId,
+      attempt.examId,
       examAttemptId,
       attempt.candidateId,
       launch.experienceId,
@@ -161,6 +169,7 @@ export async function getExamAttemptScoreRuntime(
       deps,
       connection,
       request.customerId,
+      attempt.examId,
       attempt.candidateId,
       examAttemptId,
       launch,
@@ -208,8 +217,14 @@ export async function getExamAttemptScoreRuntime(
     if (!result.scoreAvailable) {
       await deps.audit.write({
         id: `${examAttemptId}:score_retrieved:${result.retrievedAt}`,
+        customerId: request.customerId,
+        actorType: "candidate",
+        actorId: attempt.candidateId,
+        subjectType: "exam_attempt",
+        subjectId: examAttemptId,
         examAttemptId,
         candidateId: attempt.candidateId,
+        examId: attempt.examId,
         action: "score_retrieved",
         outcome: "success",
         details: {
@@ -258,8 +273,14 @@ export async function getExamAttemptScoreRuntime(
 
     await deps.audit.write({
       id: `${examAttemptId}:score_retrieved:${result.retrievedAt}`,
+      customerId: request.customerId,
+      actorType: "candidate",
+      actorId: attempt.candidateId,
+      subjectType: "exam_attempt",
+      subjectId: examAttemptId,
       examAttemptId,
       candidateId: attempt.candidateId,
+      examId: attempt.examId,
       action: "score_retrieved",
       outcome: "success",
       details: {
@@ -339,8 +360,15 @@ export async function getExamAttemptScoreRuntime(
       );
       await deps.audit.write({
         id: `${examAttemptId}:score_retrieved_failed:${correlationId}`,
+        customerId: request.customerId,
+        actorType: "candidate",
+        actorId: attempt.candidateId,
+        subjectType: "exam_attempt",
+        subjectId: examAttemptId,
         examAttemptId,
         candidateId: attempt.candidateId,
+        examId: attempt.examId,
+        correlationId,
         action: "score_retrieved",
         outcome: "failure",
         details: {
@@ -413,6 +441,7 @@ async function resolveLaunchParticipantId(
   deps: ExamAttemptScoreRuntimeDeps,
   connection: CloudShareConnectionRecord,
   customerId: string,
+  examId: string,
   candidateId: string,
   examAttemptId: string,
   launch: NonNullable<Awaited<ReturnType<LabLaunchRepository["findByExamAttemptId"]>>>,
@@ -454,6 +483,8 @@ async function resolveLaunchParticipantId(
     });
     await writeScoreFailureAudit(
       deps,
+      customerId,
+      examId,
       examAttemptId,
       candidateId,
       launch.experienceId,
@@ -500,6 +531,8 @@ async function resolveLaunchParticipantId(
     });
     await writeScoreFailureAudit(
       deps,
+      customerId,
+      examId,
       examAttemptId,
       candidateId,
       launch.experienceId,
@@ -541,6 +574,8 @@ async function resolveLaunchParticipantId(
   });
   await writeScoreFailureAudit(
     deps,
+    customerId,
+    examId,
     examAttemptId,
     candidateId,
     launch.experienceId,
@@ -694,6 +729,8 @@ function toCloudShareDiagnostic(
 
 async function writeScoreFailureAudit(
   deps: Pick<ExamAttemptScoreRuntimeDeps, "audit" | "now">,
+  customerId: string,
+  examId: string,
   examAttemptId: string,
   candidateId: string,
   experienceId: string,
@@ -703,8 +740,15 @@ async function writeScoreFailureAudit(
 ): Promise<void> {
   await deps.audit.write({
     id: `${examAttemptId}:score_retrieved_failed:${correlationId}`,
+    customerId,
+    actorType: "candidate",
+    actorId: candidateId,
+    subjectType: "exam_attempt",
+    subjectId: examAttemptId,
     examAttemptId,
     candidateId,
+    examId,
+    correlationId,
     action: "score_retrieved",
     outcome: "failure",
     details: {

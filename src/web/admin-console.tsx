@@ -63,12 +63,21 @@ interface ConnectionState {
 
 interface AuditRecord {
   id: string;
-  examAttemptId: string;
-  candidateId?: string;
+  customerId?: string | null;
+  actorType?: string | null;
+  actorId?: string | null;
+  actorEmail?: string | null;
+  subjectType?: string | null;
+  subjectId?: string | null;
   action: string;
-  outcome: "success" | "failure";
-  details?: Record<string, unknown>;
-  error?: string;
+  outcome: "success" | "failure" | "denied";
+  candidateId?: string | null;
+  candidateEmail?: string | null;
+  examId?: string | null;
+  examAttemptId?: string | null;
+  correlationId?: string | null;
+  details?: Record<string, unknown> | null;
+  error?: string | null;
   occurredAt: string;
 }
 
@@ -572,6 +581,12 @@ export function AdminConsole({
   const blueprintDetailRequestIdRef = useRef(0);
   const examCatalogLoadingCountRef = useRef(0);
   const [examAttemptFilter, setExamAttemptFilter] = useState("");
+  const [auditActionFilter, setAuditActionFilter] = useState("");
+  const [auditOutcomeFilter, setAuditOutcomeFilter] = useState("");
+  const [auditActorEmailFilter, setAuditActorEmailFilter] = useState("");
+  const [auditSubjectTypeFilter, setAuditSubjectTypeFilter] = useState("");
+  const [auditSubjectIdFilter, setAuditSubjectIdFilter] = useState("");
+  const [auditExamIdFilter, setAuditExamIdFilter] = useState("");
   const [auditRecords, setAuditRecords] = useState<AuditRecord[] | null>(null);
   const [diagnosticEntries, setDiagnosticEntries] = useState<DiagnosticLogEntry[] | null>(null);
   const [diagnosticFilters, setDiagnosticFilters] = useState<DiagnosticLogFilters>(initialDiagnosticFilters);
@@ -785,9 +800,24 @@ export function AdminConsole({
     setLoading(true);
     setError(null);
     try {
-      const qs = examAttemptFilter.trim()
-        ? `?examAttemptId=${encodeURIComponent(examAttemptFilter.trim())}`
-        : "";
+      const params = new URLSearchParams();
+      const filters = {
+        examAttemptId: examAttemptFilter,
+        action: auditActionFilter,
+        outcome: auditOutcomeFilter,
+        actorEmail: auditActorEmailFilter,
+        subjectType: auditSubjectTypeFilter,
+        subjectId: auditSubjectIdFilter,
+        examId: auditExamIdFilter,
+      };
+      for (const [key, value] of Object.entries(filters)) {
+        const trimmed = value.trim();
+        if (trimmed) {
+          params.set(key, trimmed);
+        }
+      }
+      const query = params.toString();
+      const qs = query ? `?${query}` : "";
       const res = await fetchAdmin(`/api/admin/audit${qs}`);
       const data = await res.json() as { records?: AuditRecord[]; error?: string };
       if (!res.ok) {
@@ -2285,12 +2315,60 @@ export function AdminConsole({
 
       {tab === "audit" && (
         <section>
-          <div style={{ display: "flex", gap: "0.5rem", marginBottom: "1rem" }}>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
+              gap: "0.75rem",
+              marginBottom: "1rem",
+              alignItems: "end",
+            }}
+          >
             <input
-              placeholder="Filter by examAttemptId (optional)"
+              placeholder="ExamAttempt ID"
               value={examAttemptFilter}
               onChange={(e) => setExamAttemptFilter(e.target.value)}
-              style={{ flex: 1, padding: "0.4rem" }}
+              style={{ padding: "0.4rem" }}
+            />
+            <input
+              placeholder="Action"
+              value={auditActionFilter}
+              onChange={(e) => setAuditActionFilter(e.target.value)}
+              style={{ padding: "0.4rem" }}
+            />
+            <select
+              value={auditOutcomeFilter}
+              onChange={(e) => setAuditOutcomeFilter(e.target.value)}
+              style={{ padding: "0.4rem" }}
+            >
+              <option value="">Any outcome</option>
+              <option value="success">Success</option>
+              <option value="failure">Failure</option>
+              <option value="denied">Denied</option>
+            </select>
+            <input
+              placeholder="Actor email"
+              value={auditActorEmailFilter}
+              onChange={(e) => setAuditActorEmailFilter(e.target.value)}
+              style={{ padding: "0.4rem" }}
+            />
+            <input
+              placeholder="Subject type"
+              value={auditSubjectTypeFilter}
+              onChange={(e) => setAuditSubjectTypeFilter(e.target.value)}
+              style={{ padding: "0.4rem" }}
+            />
+            <input
+              placeholder="Subject ID"
+              value={auditSubjectIdFilter}
+              onChange={(e) => setAuditSubjectIdFilter(e.target.value)}
+              style={{ padding: "0.4rem" }}
+            />
+            <input
+              placeholder="Exam ID"
+              value={auditExamIdFilter}
+              onChange={(e) => setAuditExamIdFilter(e.target.value)}
+              style={{ padding: "0.4rem" }}
             />
             <button onClick={loadAudit} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
               {loading ? "Loading..." : "Load"}
@@ -2301,7 +2379,7 @@ export function AdminConsole({
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
                 <thead>
                   <tr style={{ background: colors.surfaceSubtle }}>
-                    {["Time", "ExamAttempt", "Action", "Outcome", "Details / Error"].map((h) => (
+                    {["Time", "Actor", "Subject", "ExamAttempt", "Action", "Outcome", "Details / Error"].map((h) => (
                       <th key={h} style={{ textAlign: "left", padding: "0.4rem", borderBottom: `1px solid ${colors.border}` }}>
                         {h}
                       </th>
@@ -2311,7 +2389,7 @@ export function AdminConsole({
                 <tbody>
                   {auditRecords.length === 0 && (
                     <tr>
-                      <td colSpan={5} style={{ padding: "0.5rem", color: colors.textSecondary }}>
+                      <td colSpan={7} style={{ padding: "0.5rem", color: colors.textSecondary }}>
                         No records found
                       </td>
                     </tr>
@@ -2321,7 +2399,15 @@ export function AdminConsole({
                       <td style={{ padding: "0.4rem", whiteSpace: "nowrap" }}>
                         {formatUtcTimestamp(r.occurredAt)}
                       </td>
-                      <td style={{ padding: "0.4rem" }}>{r.examAttemptId}</td>
+                      <td style={{ padding: "0.4rem" }}>
+                        {r.actorEmail ?? r.actorId ?? r.actorType ?? "-"}
+                      </td>
+                      <td style={{ padding: "0.4rem" }}>
+                        {r.subjectType || r.subjectId
+                          ? `${r.subjectType ?? "subject"}:${r.subjectId ?? "-"}`
+                          : r.examId ?? "-"}
+                      </td>
+                      <td style={{ padding: "0.4rem" }}>{r.examAttemptId ?? "-"}</td>
                       <td style={{ padding: "0.4rem" }}>{r.action}</td>
                       <td style={{ padding: "0.4rem", color: r.outcome === "success" ? colors.success : colors.danger, fontWeight: "bold" }}>
                         {r.outcome}

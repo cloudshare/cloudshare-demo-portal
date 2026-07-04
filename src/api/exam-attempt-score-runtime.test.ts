@@ -132,6 +132,7 @@ function makeDeps(input?: {
     write: vi.fn(),
     listByExamAttemptId: vi.fn(),
     listByExamAttemptIds: vi.fn().mockResolvedValue([]),
+    query: vi.fn().mockResolvedValue([]),
     listAll: vi.fn(),
   };
   const connections: CloudShareConnectionRepository = {

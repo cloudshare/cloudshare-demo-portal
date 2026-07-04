@@ -151,15 +151,25 @@ describe("suspendCandidateRunningLabsForLogout", () => {
       { body: { examAttemptId: "attempt-running" } },
     );
     expect(deps.heartbeatAutoSuspend.removeHeartbeat).toHaveBeenCalledWith("attempt-running");
-    expect(deps.audit.write).toHaveBeenCalledWith({
-      id: "audit-1",
-      examAttemptId: "attempt-running",
-      candidateId: "candidate-1",
-      action: "lab_suspended",
-      outcome: "success",
-      details: { reason: "candidate_logout" },
-      occurredAt: new Date("2026-06-27T10:00:00.000Z"),
-    });
+    expect(deps.audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "audit-1",
+        customerId: "customer-1",
+        actorType: "candidate",
+        actorId: "candidate-1",
+        actorEmail: "candidate@helioscx.demo",
+        subjectType: "exam_attempt",
+        subjectId: "attempt-running",
+        examAttemptId: "attempt-running",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        examId: "exam-1",
+        action: "lab_suspended",
+        outcome: "success",
+        details: { reason: "candidate_logout" },
+        occurredAt: new Date("2026-06-27T10:00:00.000Z"),
+      }),
+    );
   });
 
   it("leaves heartbeat tracking and audit untouched when auto-suspend fails", async () => {

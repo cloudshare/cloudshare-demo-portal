@@ -47,7 +47,11 @@ export async function PUT(request: Request) {
 
   const response = await handleSaveCloudShareConnection(
     buildAdminCloudShareConnectionDeps(services),
-    { customerId: session.customerId, body },
+    {
+      customerId: session.customerId,
+      actor: { type: "admin", id: session.userId, email: session.email },
+      body,
+    },
   );
   return NextResponse.json(response.body, { status: response.status });
 }

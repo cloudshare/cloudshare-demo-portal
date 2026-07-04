@@ -146,33 +146,87 @@ describe("handleGetAuditTrail", () => {
 
   it("returns 200 with records for a specific examAttemptId", async () => {
     const audit = createInMemoryAuditRepository();
-    await audit.write(makeRecord({ examAttemptId: "a-1", id: "r-1" }));
-    await audit.write(makeRecord({ examAttemptId: "a-2", id: "r-2" }));
+    await audit.write(makeRecord({ customerId: "customer-1", examAttemptId: "a-1", id: "r-1" }));
+    await audit.write(makeRecord({ customerId: "customer-1", examAttemptId: "a-2", id: "r-2" }));
 
     const result = await handleGetAuditTrail(
       { audit, logger: makeLogger() },
-      { query: { examAttemptId: "a-1" } },
+      { customerId: "customer-1", query: { examAttemptId: "a-1" } },
     );
 
     expect(result.status).toBe(200);
-    const body = result.body as { records: AuditRecord[] };
+    const body = result.body as { records: Array<{ id: string }> };
     expect(body.records).toHaveLength(1);
     expect(body.records[0].id).toBe("r-1");
   });
 
-  it("returns all records when examAttemptId is absent", async () => {
+  it("returns customer-scoped records when examAttemptId is absent", async () => {
     const audit = createInMemoryAuditRepository();
-    await audit.write(makeRecord({ id: "r-1" }));
-    await audit.write(makeRecord({ id: "r-2" }));
+    await audit.write(makeRecord({ id: "r-1", customerId: "customer-1" }));
+    await audit.write(makeRecord({ id: "r-2", customerId: "customer-2" }));
 
     const result = await handleGetAuditTrail(
       { audit, logger: makeLogger() },
-      { query: {} },
+      { customerId: "customer-1", query: {} },
     );
 
     expect(result.status).toBe(200);
-    const body = result.body as { records: AuditRecord[] };
-    expect(body.records).toHaveLength(2);
+    const body = result.body as { records: Array<{ id: string; occurredAt: string }> };
+    expect(body.records).toEqual([
+      expect.objectContaining({
+        id: "r-1",
+        occurredAt: expect.any(String),
+      }),
+    ]);
+  });
+
+  it("filters audit records by admin and subject metadata", async () => {
+    const audit = createInMemoryAuditRepository();
+    await audit.write(
+      makeRecord({
+        id: "r-1",
+        customerId: "customer-1",
+        actorEmail: "admin@helioscx.demo",
+        action: "exam.published",
+        subjectType: "exam",
+        subjectId: "exam-1",
+        examId: "exam-1",
+      }),
+    );
+    await audit.write(
+      makeRecord({
+        id: "r-2",
+        customerId: "customer-1",
+        actorEmail: "admin@helioscx.demo",
+        action: "exam.unpublished",
+        subjectType: "exam",
+        subjectId: "exam-1",
+        examId: "exam-1",
+      }),
+    );
+
+    const result = await handleGetAuditTrail(
+      { audit, logger: makeLogger() },
+      {
+        customerId: "customer-1",
+        query: {
+          actorEmail: " admin@helioscx.demo ",
+          action: "exam.published",
+          subjectType: "exam",
+          subjectId: "exam-1",
+          examId: "exam-1",
+        },
+      },
+    );
+
+    expect(result.status).toBe(200);
+    const body = result.body as { records: Array<{ id: string; action: string }> };
+    expect(body.records).toEqual([
+      expect.objectContaining({
+        id: "r-1",
+        action: "exam.published",
+      }),
+    ]);
   });
 });
 

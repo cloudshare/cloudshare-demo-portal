@@ -7,6 +7,7 @@ import type {
   DiagnosticActor,
   DiagnosticRecorder,
 } from "@/domain/diagnostic-log";
+import type { AuditRepository } from "@/domain/audit-trail";
 import type { ExamRepository } from "@/domain/exam-catalog";
 import type { ExamAuthoringCacheRepository } from "@/persistence/exam-authoring-cache-repository";
 import {
@@ -70,9 +71,11 @@ interface AdminExamCatalogDeps extends AdminExamDraftRuntimeDeps {
       }
     | null;
   readonly diagnostics?: DiagnosticRecorder;
+  readonly audit?: Pick<AuditRepository, "write">;
   readonly logger: Logger;
   readonly now?: () => Date;
   readonly newId?: () => string;
+  readonly newAuditId?: () => string;
 }
 
 type AdminExamPublishDeps = AdminExamPublishRuntimeDeps;
@@ -104,11 +107,13 @@ export interface AdminExamDraftServices extends AdminExamCatalogListServices {
     };
   };
   readonly diagnosticRecorder?: DiagnosticRecorder;
+  readonly audit?: Pick<AuditRepository, "write">;
 }
 
 export interface AdminExamDraftUpdateServices extends AdminExamCatalogListServices {
   readonly examAuthoringCache: ExamAuthoringCacheRepository;
   readonly diagnosticRecorder?: DiagnosticRecorder;
+  readonly audit?: Pick<AuditRepository, "write">;
 }
 
 export interface AdminExamPublishServices extends AdminExamDraftUpdateServices {
@@ -118,6 +123,7 @@ export interface AdminExamPublishServices extends AdminExamDraftUpdateServices {
 
 export interface AdminExamUnpublishServices extends AdminExamCatalogListServices {
   readonly diagnosticRecorder?: DiagnosticRecorder;
+  readonly audit?: Pick<AuditRepository, "write">;
 }
 
 export function buildAdminExamCatalogListDeps(
@@ -149,6 +155,7 @@ export function buildAdminDraftExamDeps(
     cache: services.examAuthoringCache,
     instructor: services.config.seed.heliosInstructor,
     diagnostics: services.diagnosticRecorder,
+    ...(services.audit ? { audit: services.audit } : {}),
     logger: services.logger,
   };
 }
@@ -160,6 +167,7 @@ export function buildAdminDraftExamUpdateDeps(
     repository: services.exams,
     cache: services.examAuthoringCache,
     diagnostics: services.diagnosticRecorder,
+    ...(services.audit ? { audit: services.audit } : {}),
     logger: services.logger,
   };
 }
@@ -173,6 +181,7 @@ export function buildAdminExamPublishDeps(
     cloudshare: services.cloudshareClientFactory,
     cache: services.examAuthoringCache,
     diagnostics: services.diagnosticRecorder,
+    ...(services.audit ? { audit: services.audit } : {}),
     logger: services.logger,
   };
 }
@@ -183,6 +192,7 @@ export function buildAdminExamUnpublishDeps(
   return {
     repository: services.exams,
     diagnostics: services.diagnosticRecorder,
+    ...(services.audit ? { audit: services.audit } : {}),
     logger: services.logger,
   };
 }
@@ -231,7 +241,7 @@ export async function handlePublishExam(
 }
 
 export async function handleUpdateDraftExam(
-  deps: Pick<AdminExamCatalogDeps, "repository" | "cache" | "diagnostics" | "logger" | "now">,
+  deps: Pick<AdminExamCatalogDeps, "repository" | "cache" | "diagnostics" | "audit" | "logger" | "now" | "newAuditId">,
   request: CustomerRequest & { readonly examId: string; readonly body?: unknown },
 ): Promise<AdminExamResponse> {
   return updateAdminDraftExamRuntime(deps, request);

@@ -18,6 +18,7 @@ export async function POST() {
 
   const response = await handleTestCloudShareConnection(buildAdminCloudShareTestDeps(services), {
     customerId: session.customerId,
+    actor: { type: "admin", id: session.userId, email: session.email },
   });
   return NextResponse.json(response.body, { status: response.status });
 }

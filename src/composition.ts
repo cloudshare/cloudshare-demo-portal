@@ -35,7 +35,7 @@ import { runHeartbeatAutoSuspend } from "@/api/suspend-resume";
 import { createExamClock, type ExamClock } from "@/domain/exam-clock";
 import { type DemoStep } from "@/domain/demo-control";
 import { createCloudShareGuidedJourneyProvider } from "@/integrations/cloudshare/guided-journey";
-import { createInMemoryAuditRepository } from "@/persistence/audit-repository";
+import { createPrismaAuditRepository } from "@/persistence/audit-repository";
 import { createInMemoryResourceRepository } from "@/persistence/resource-repository";
 import { createInMemoryEventLogRepository } from "@/persistence/event-log-repository";
 import { createPrismaDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
@@ -278,7 +278,7 @@ export function getServices(): Services {
 
   const scoreRetriever = createCloudShareGuidedJourneyProvider(cloudshare);
 
-  const audit = createInMemoryAuditRepository();
+  const audit = createPrismaAuditRepository(prisma);
   const resources = createInMemoryResourceRepository();
   const exams = createPrismaExamCatalogRepository(prisma);
   const adminMonitoringAttempts = createPrismaAdminMonitoringAttemptRepository(prisma);
@@ -392,7 +392,7 @@ export function getServices(): Services {
     await prisma.labLaunch.deleteMany();
     await prisma.examAttempt.deleteMany();
     await prisma.environmentRecord.deleteMany();
-    audit.reset();
+    await audit.reset();
     eventLog.reset();
     await diagnostics.reset();
     examAuthoringCache.reset();

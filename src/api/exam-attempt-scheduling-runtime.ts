@@ -134,8 +134,15 @@ export async function scheduleExamAttemptRuntime(
     });
     await deps.audit.write({
       id: `${result.attempt.id}:lab_launched:${correlationId}`,
+      customerId: request.customerId,
+      actorType: "candidate",
+      actorId: request.candidateId,
+      subjectType: "exam_attempt",
+      subjectId: result.attempt.id,
       examAttemptId: result.attempt.id,
       candidateId: request.candidateId,
+      examId: result.attempt.examId,
+      correlationId,
       action: "lab_launched",
       outcome: "success",
       details: {
@@ -190,8 +197,14 @@ export async function scheduleExamAttemptRuntime(
       });
       await deps.audit.write({
         id: `${error.context.attemptId}:lab_launch_failed:${correlationId}`,
+        customerId: request.customerId,
+        actorType: "candidate",
+        actorId: request.candidateId,
+        subjectType: "exam_attempt",
+        subjectId: error.context.attemptId,
         examAttemptId: error.context.attemptId,
         candidateId: request.candidateId,
+        correlationId,
         action: "lab_launch_failed",
         outcome: "failure",
         details: {
