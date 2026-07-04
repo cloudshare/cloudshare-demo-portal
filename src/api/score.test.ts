@@ -8,6 +8,7 @@ import type {
 } from "@/domain/cloudshare-connection";
 import type { ExamAttempt, ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { Exam, ExamRepository } from "@/domain/exam-catalog";
+import type { DiagnosticLogEntry, DiagnosticLogRepository } from "@/domain/diagnostic-log";
 import type { LabLaunch, LabLaunchRepository } from "@/domain/lab-launch";
 import type { Logger } from "@/observability/logger";
 import type { CandidateScoreServices } from "./score";
@@ -77,6 +78,7 @@ function makeLogger(): Logger {
 function makeDeps(input?: {
   readonly attempt?: ExamAttempt | null;
   readonly exam?: Exam | null;
+  readonly diagnostics?: DiagnosticLogEntry[];
 }) {
   const attempts: ExamAttemptRepository = {
     save: vi.fn(),
@@ -107,6 +109,10 @@ function makeDeps(input?: {
     findByCustomerId: vi.fn().mockResolvedValue(null as CloudShareConnectionRecord | null),
     findByWebhookPathToken: vi.fn(),
   };
+  const scoreEvidence: DiagnosticLogRepository = {
+    append: vi.fn(),
+    query: vi.fn().mockResolvedValue(input?.diagnostics ?? []),
+  };
 
   return {
     attempts,
@@ -114,6 +120,7 @@ function makeDeps(input?: {
     launches,
     audit,
     connections,
+    scoreEvidence,
     createScoreRetriever: vi.fn(),
     createParticipantLister: vi.fn(),
     logger: makeLogger(),
@@ -267,5 +274,83 @@ describe("handleGetCandidateScore", () => {
       scoreAvailable: false,
       reason: "score_retrieval_disabled",
     });
+  });
+
+  it("returns persisted score evidence for an owned ExamAttempt without calling CloudShare", async () => {
+    const deps = makeDeps({
+      exam: makeExam({ scoreRetrievalEnabled: true }),
+      diagnostics: [
+        {
+          id: "diag-score",
+          occurredAt: new Date("2026-06-16T12:05:00.000Z"),
+          level: "info",
+          source: "runtime",
+          operation: "exam_attempt.score.retrieve",
+          outcome: "success",
+          customerId: "customer-1",
+          actor: { type: "candidate", id: "candidate-1", email: "candidate@example.com" },
+          subject: { type: "exam_attempt", id: "attempt-1" },
+          message: "Score retrieved successfully",
+          correlationId: "corr-score",
+          candidateEmail: "candidate@example.com",
+          examId: "exam-1",
+          examAttemptId: "attempt-1",
+          externalIds: null,
+          request: null,
+          response: {
+            scoreAvailable: true,
+            percentComplete: 25,
+            stepsCompleted: 1,
+            stepsTotal: 4,
+            exploredRate: 0.25,
+            inProgressRate: 0,
+            notStartedRate: 0.75,
+            passedRate: 0,
+            failedRate: 1,
+            notInitiatedRate: 0,
+            retrievedAt: "2026-06-16T12:05:00.000Z",
+          },
+          details: null,
+        },
+      ],
+    });
+
+    const result = await handleGetCandidateScore(deps, {
+      query: { examAttemptId: "attempt-1" },
+      session: CANDIDATE_SESSION,
+    });
+
+    expect(result).toEqual({
+      status: 200,
+      body: {
+        examAttemptId: "attempt-1",
+        examTitle: "Helios Exam",
+        scheduledFor: "2026-06-16T09:00:00.000Z",
+        experienceId: "exp-1",
+        scoreRetrievalEnabled: true,
+        scoreAvailable: true,
+        percentComplete: 25,
+        stepsCompleted: 1,
+        stepsTotal: 4,
+        steps: [],
+        exploredRate: 0.25,
+        inProgressRate: 0,
+        notStartedRate: 0.75,
+        passedRate: 0,
+        failedRate: 1,
+        notInitiatedRate: 0,
+        retrievedAt: "2026-06-16T12:05:00.000Z",
+        limitations: ["Limitation A"],
+      },
+    });
+    expect(deps.scoreEvidence.query).toHaveBeenCalledWith({
+      customerId: "customer-1",
+      examAttemptId: "attempt-1",
+      operation: "exam_attempt.score.retrieve",
+      outcome: "success",
+      limit: 500,
+    });
+    expect(deps.connections.findByCustomerId).not.toHaveBeenCalled();
+    expect(deps.createScoreRetriever).not.toHaveBeenCalled();
   });
 });
