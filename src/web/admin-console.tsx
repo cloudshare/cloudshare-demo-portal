@@ -14,7 +14,6 @@ import {
   buildExamAttemptDiagnosticsNavigation,
   buildDiagnosticLogQueryString,
   buildWebhookCallbackUrl,
-  buildEventRecordRowKey,
   type DiagnosticLogFilters,
   getAdminTabLabel,
   getAllowedRegionValidationMessage,
@@ -34,7 +33,6 @@ import {
   DiagnosticLogTable,
   type DiagnosticLogTableEntry as DiagnosticLogEntry,
 } from "./diagnostic-log-table";
-import { EventLogTable } from "./event-log-table";
 import { SessionMonitoringPanel } from "./session-monitoring-panel";
 import type { AdminMonitoringView as MonitoringView } from "@/domain/admin-monitoring";
 import { startPortalSessionWatchdog } from "./session-expiry";
@@ -74,13 +72,6 @@ interface AuditRecord {
   occurredAt: string;
 }
 
-interface EventLogRecord {
-  eventId: string;
-  type: string;
-  occurredAt: string;
-  payload: Record<string, unknown>;
-}
-
 interface DiagnosticLogPageResponse {
   limit: number;
   offset: number;
@@ -105,11 +96,6 @@ interface ConnectionDiagnostic {
   cause?: string;
   network?: Record<string, unknown>;
   tls?: Record<string, unknown>;
-}
-
-interface SyncResult {
-  synced: number;
-  byType: Record<string, Array<{ name: string; cloudshareId: string; syncedAt: string }>>;
 }
 
 interface NamedResource {
@@ -310,18 +296,22 @@ const DIAGNOSTIC_PAGE_LIMIT = 50;
 const SUPPORT_WORKFLOW_TABS = new Set<AdminTab>(["monitoring", "diagnostics"]);
 
 const adminTabNavStyle: React.CSSProperties = {
-  display: "flex",
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(10.5rem, 1fr))",
   gap: "0.5rem",
   marginBottom: "1rem",
-  flexWrap: "wrap",
   borderBottom: `1px solid ${colors.border}`,
   paddingBottom: "0.5rem",
+  alignItems: "stretch",
 };
 
 const adminTabButtonStyle: React.CSSProperties = {
   padding: "0.6rem 0.9rem",
   border: "1px solid",
   borderRadius: "8px",
+  width: "100%",
+  minHeight: "2.75rem",
+  textAlign: "center",
 };
 
 const examCatalogBusyShellStyle: React.CSSProperties = {
@@ -583,12 +573,10 @@ export function AdminConsole({
   const examCatalogLoadingCountRef = useRef(0);
   const [examAttemptFilter, setExamAttemptFilter] = useState("");
   const [auditRecords, setAuditRecords] = useState<AuditRecord[] | null>(null);
-  const [eventRecords, setEventRecords] = useState<EventLogRecord[] | null>(null);
   const [diagnosticEntries, setDiagnosticEntries] = useState<DiagnosticLogEntry[] | null>(null);
   const [diagnosticFilters, setDiagnosticFilters] = useState<DiagnosticLogFilters>(initialDiagnosticFilters);
   const [diagnosticPage, setDiagnosticPage] = useState<DiagnosticLogPageResponse | null>(null);
   const [expandedDiagnosticId, setExpandedDiagnosticId] = useState<string | null>(null);
-  const [syncResult, setSyncResult] = useState<SyncResult | null>(null);
   const [connection, setConnection] = useState<ConnectionState | null>(null);
   const [apiId, setApiId] = useState("");
   const [apiKey, setApiKey] = useState("");
@@ -872,27 +860,6 @@ export function AdminConsole({
     void loadMonitoring(nextOffset);
   }
 
-  async function loadEvents() {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetchAdmin("/api/admin/events?limit=100");
-      const data = await res.json() as { events?: EventLogRecord[]; error?: string };
-      if (!res.ok) {
-        setError(data.error ?? "Failed to load event log");
-        return;
-      }
-      setEventRecords(data.events ?? []);
-    } catch (caughtError) {
-      if (isAdminSessionExpiredError(caughtError)) {
-        return;
-      }
-      setError("Failed to load event log");
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function loadDiagnostics(
     background = false,
     offset = 0,
@@ -1068,27 +1035,6 @@ export function AdminConsole({
         fallbackRuntimeLeaseMinutes: timeLimitMinutes,
       }),
     );
-  }
-
-  async function syncResources() {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetchAdmin("/api/admin/sync-resources", { method: "POST" });
-      const data = await res.json() as SyncResult | { error: string };
-      if ("error" in data) {
-        setError(data.error);
-      } else {
-        setSyncResult(data);
-      }
-    } catch (caughtError) {
-      if (isAdminSessionExpiredError(caughtError)) {
-        return;
-      }
-      setError("Sync request failed");
-    } finally {
-      setLoading(false);
-    }
   }
 
   async function loadExamAuthoring(refresh = false) {
@@ -2410,21 +2356,6 @@ export function AdminConsole({
         )
       )}
 
-      {tab === "events" && (
-        <section>
-          <button onClick={loadEvents} disabled={loading} style={{ padding: "0.4rem 1rem", marginBottom: "1rem" }}>
-            {loading ? "Loading..." : "Load Event Log"}
-          </button>
-          {eventRecords && (
-            <EventLogTable
-              records={eventRecords}
-              formatUtcTimestamp={formatUtcTimestamp}
-              buildRowKey={buildEventRecordRowKey}
-            />
-          )}
-        </section>
-      )}
-
       {tab === "diagnostics" && (
         <section>
           <p style={{ color: colors.textSecondary, marginTop: 0 }}>
@@ -2683,52 +2614,6 @@ export function AdminConsole({
         </section>
       )}
 
-      {tab === "resources" && (
-        <section>
-          <p style={{ color: colors.textSecondary, marginTop: 0 }}>
-            Stopgap sync surface only. Slice 2 authoring should use the <strong>Exam Catalog</strong> tab above instead of treating every visible CloudShare resource as a global list.
-          </p>
-          <button onClick={syncResources} disabled={loading} style={{ padding: "0.4rem 1rem", marginBottom: "1rem" }}>
-            {loading ? "Syncing..." : "Sync CloudShare Resources"}
-          </button>
-          {syncResult && (
-            <div>
-              <p>
-                Synced <strong>{syncResult.synced}</strong> resource(s)
-              </p>
-              {Object.entries(syncResult.byType).map(([type, items]) => (
-                <div key={type} style={{ marginBottom: "1rem" }}>
-                  <h3 style={{ margin: "0 0 0.4rem" }}>{type}</h3>
-                  <div style={{ ...cardStyle, padding: 0, overflowX: "auto" }}>
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
-                      <thead>
-                        <tr style={{ background: colors.surfaceSubtle }}>
-                          {["Name", "CloudShare ID", "Synced At"].map((h) => (
-                            <th key={h} style={{ textAlign: "left", padding: "0.4rem", borderBottom: `1px solid ${colors.border}` }}>
-                              {h}
-                            </th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {items.map((item) => (
-                          <tr key={item.cloudshareId} style={{ borderBottom: `1px solid ${colors.border}` }}>
-                            <td style={{ padding: "0.4rem" }}>{item.name}</td>
-                            <td style={{ padding: "0.4rem", fontFamily: "monospace" }}>{item.cloudshareId}</td>
-                            <td style={{ padding: "0.4rem" }}>
-                              {formatUtcTimestamp(item.syncedAt)}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
     </main>
   );
 }

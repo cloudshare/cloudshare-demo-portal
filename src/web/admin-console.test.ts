@@ -19,6 +19,23 @@ describe("AdminConsole", () => {
     expect(html).toContain("Session Monitoring");
   });
 
+  it("does not render legacy Event Log or Resources as admin navigation tabs", () => {
+    const html = renderToStaticMarkup(createElement(AdminConsole, { email: "admin@helioscx.demo" }));
+
+    expect(html).toContain("Exam Catalog");
+    expect(html).toContain("Support Diagnostics");
+    expect(html).not.toContain("Event Log");
+    expect(html).not.toContain("Resources");
+  });
+
+  it("renders the admin navigation as a balanced responsive tab grid", () => {
+    const html = renderToStaticMarkup(createElement(AdminConsole, { email: "admin@helioscx.demo" }));
+
+    expect(html).toContain("grid-template-columns:repeat(auto-fit, minmax(10.5rem, 1fr))");
+    expect(html).toContain("width:100%");
+    expect(html).toContain("text-align:center");
+  });
+
   it("renders an obvious active admin tab without the extra workflow context panel", () => {
     const html = renderToStaticMarkup(
       createElement(AdminConsole, {

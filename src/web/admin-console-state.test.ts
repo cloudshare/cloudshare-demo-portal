@@ -151,6 +151,8 @@ describe("admin tab model", () => {
     expect(getAdminTabLabel("monitoring")).toBe("Session Monitoring");
     expect(ADMIN_TABS).toContain("diagnostics");
     expect(ADMIN_TABS).not.toContain("support");
+    expect(ADMIN_TABS).not.toContain("events");
+    expect(ADMIN_TABS).not.toContain("resources");
     expect(getAdminTabLabel("diagnostics")).toBe("Support Diagnostics");
     expect(shouldShowCandidateProvisioning("diagnostics")).toBe(false);
     expect(shouldShowCandidateProvisioning("candidates")).toBe(true);
@@ -158,9 +160,18 @@ describe("admin tab model", () => {
     expect(shouldShowCandidateProvisioning("exams")).toBe(false);
     expect(shouldShowCandidateProvisioning("monitoring")).toBe(false);
     expect(shouldShowCandidateProvisioning("audit")).toBe(false);
-    expect(shouldShowCandidateProvisioning("events")).toBe(false);
     expect(shouldShowCandidateProvisioning("support")).toBe(false);
-    expect(shouldShowCandidateProvisioning("resources")).toBe(false);
+  });
+
+  it("falls back to the connection tab for legacy admin tab URLs", () => {
+    expect(parseAdminConsoleRouteState({ tab: "events" })).toEqual({
+      tab: "connection",
+      diagnosticFilters: {},
+    });
+    expect(parseAdminConsoleRouteState({ tab: "resources" })).toEqual({
+      tab: "connection",
+      diagnosticFilters: {},
+    });
   });
 
   it("clears dismissible admin banners only when changing tabs", () => {

@@ -51,10 +51,8 @@ export type AdminTab =
   | "candidates"
   | "monitoring"
   | "audit"
-  | "events"
   | "diagnostics"
-  | "support"
-  | "resources";
+  | "support";
 
 export const ADMIN_TABS: readonly AdminTab[] = [
   "connection",
@@ -62,9 +60,7 @@ export const ADMIN_TABS: readonly AdminTab[] = [
   "candidates",
   "monitoring",
   "audit",
-  "events",
   "diagnostics",
-  "resources",
 ];
 
 export const ADMIN_SESSION_EXPIRED_MESSAGE =
@@ -144,14 +140,10 @@ export function getAdminTabLabel(tab: AdminTab): string {
       return "Session Monitoring";
     case "audit":
       return "Audit Trail";
-    case "events":
-      return "Event Log";
     case "diagnostics":
       return "Support Diagnostics";
     case "support":
       return "Legacy Support Logs";
-    case "resources":
-      return "Resources";
   }
 }
 
@@ -352,13 +344,6 @@ export function buildWebhookCallbackUrl(
   }
 
   return `${trimmedBaseUrl}${webhookPath.startsWith("/") ? webhookPath : `/${webhookPath}`}`;
-}
-
-export function buildEventRecordRowKey(
-  event: { readonly eventId: string; readonly type: string; readonly occurredAt: string },
-  index: number,
-): string {
-  return `${event.eventId}-${event.type}-${event.occurredAt}-${index}`;
 }
 
 export function getExamAuthoringMode(editingExamId: string | null): ExamAuthoringMode {
