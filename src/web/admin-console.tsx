@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import {
   ADMIN_TABS,
@@ -450,6 +450,44 @@ export function AdminCandidateRosterPanel({
   );
 }
 
+export function AdminLoadingOverlay({
+  visible,
+  title = "Loading CloudShare resources...",
+  detail = "Fetching Projects, Regions, Blueprints, Policies, and Snapshot details.",
+}: {
+  readonly visible: boolean;
+  readonly title?: string;
+  readonly detail?: string;
+}) {
+  if (!visible) {
+    return null;
+  }
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      style={adminLoadingOverlayStyle}
+    >
+      <style>
+        {`
+          @keyframes admin-loading-spinner {
+            to { transform: rotate(360deg); }
+          }
+        `}
+      </style>
+      <div
+        aria-hidden="true"
+        style={adminLoadingSpinnerStyle}
+      />
+      <div style={{ display: "grid", gap: "0.25rem" }}>
+        <strong>{title}</strong>
+        <span style={{ color: "#475569", lineHeight: 1.4 }}>{detail}</span>
+      </div>
+    </div>
+  );
+}
+
 export function AdminConsole({
   email,
   initialTab = "connection",
@@ -507,6 +545,7 @@ export function AdminConsole({
   const [candidateRoster, setCandidateRoster] = useState<AdminCandidateRosterItem[] | null>(null);
   const [selectedCandidate, setSelectedCandidate] = useState<AdminCandidateDetail | null>(null);
   const [loading, setLoading] = useState(false);
+  const [examResourceLoadingCount, setExamResourceLoadingCount] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
   useEffect(() => {
@@ -563,6 +602,13 @@ export function AdminConsole({
       throw new AdminSessionExpiredError();
     }
     return response;
+  }
+
+  function beginExamResourceLoading() {
+    setExamResourceLoadingCount((current) => current + 1);
+    return () => {
+      setExamResourceLoadingCount((current) => Math.max(0, current - 1));
+    };
   }
 
   async function loadConnection() {
@@ -980,6 +1026,7 @@ export function AdminConsole({
   }
 
   async function loadExamAuthoring(refresh = false) {
+    const finishExamResourceLoading = beginExamResourceLoading();
     setLoading(true);
     setError(null);
     setExamDiagnostic(null);
@@ -1020,6 +1067,7 @@ export function AdminConsole({
       }
       setError("Failed to load exam authoring resources");
     } finally {
+      finishExamResourceLoading();
       setLoading(false);
     }
   }
@@ -1032,6 +1080,7 @@ export function AdminConsole({
   ) {
     const requestId = beginLatestOnlyRequest(projectResourcesRequestIdRef.current);
     projectResourcesRequestIdRef.current = requestId;
+    const finishExamResourceLoading = beginExamResourceLoading();
     setLoading(true);
     setError(null);
     setExamDiagnostic(null);
@@ -1086,6 +1135,7 @@ export function AdminConsole({
       }
       setError("Failed to load project resources");
     } finally {
+      finishExamResourceLoading();
       setLoading(false);
     }
   }
@@ -1120,6 +1170,7 @@ export function AdminConsole({
   ) {
     const requestId = beginLatestOnlyRequest(blueprintDetailRequestIdRef.current);
     blueprintDetailRequestIdRef.current = requestId;
+    const finishExamResourceLoading = beginExamResourceLoading();
     setLoading(true);
     setError(null);
     setExamDiagnostic(null);
@@ -1166,6 +1217,7 @@ export function AdminConsole({
       }
       setError("Failed to load blueprint detail");
     } finally {
+      finishExamResourceLoading();
       setLoading(false);
     }
   }
@@ -1453,6 +1505,20 @@ export function AdminConsole({
   const blueprintSummary = selectedBlueprint
     ? stripHtmlToText(selectedBlueprint.description || blueprintDetail?.description || "")
     : "";
+  const examResourceLoading = tab === "exams" && examResourceLoadingCount > 0;
+  const examTabContentStyle = examResourceLoading
+    ? {
+        display: "grid",
+        gap: "1rem",
+        opacity: 0.36,
+        filter: "grayscale(0.15)",
+        pointerEvents: "none" as const,
+        userSelect: "none" as const,
+      }
+    : {
+        display: "grid",
+        gap: "1rem",
+      };
 
   useEffect(() => {
     const nextSelectedRegionIds = reconcileAllowedRegionIds(selectedAllowedRegionIds, compatibleRegions);
@@ -1809,7 +1875,12 @@ export function AdminConsole({
       )}
 
       {tab === "exams" && (
-        <section style={{ display: "grid", gap: "1rem" }}>
+        <section style={{ position: "relative", minHeight: "24rem" }}>
+          <AdminLoadingOverlay visible={examResourceLoading} />
+          <div
+            aria-hidden={examResourceLoading ? true : undefined}
+            style={examTabContentStyle}
+          >
           <div style={{ padding: "1rem", background: "#f7f7f8", borderRadius: "6px", display: "grid", gap: "0.5rem" }}>
             <strong>Project-first Exam authoring</strong>
             <span style={{ color: "#555" }}>
@@ -2208,6 +2279,7 @@ export function AdminConsole({
               </tbody>
             </table>
           </div>
+          </div>
         </section>
       )}
 
@@ -2602,3 +2674,32 @@ export function AdminConsole({
     </main>
   );
 }
+
+const adminLoadingOverlayStyle: CSSProperties = {
+  position: "absolute",
+  zIndex: 20,
+  top: "1.5rem",
+  left: "50%",
+  transform: "translateX(-50%)",
+  width: "min(92%, 34rem)",
+  boxSizing: "border-box",
+  display: "flex",
+  alignItems: "center",
+  gap: "0.9rem",
+  padding: "1rem 1.1rem",
+  border: "1px solid #bfdbfe",
+  borderRadius: "8px",
+  background: "#ffffff",
+  color: "#0f172a",
+  boxShadow: "0 18px 45px rgba(15, 23, 42, 0.18)",
+};
+
+const adminLoadingSpinnerStyle: CSSProperties = {
+  width: "1.6rem",
+  height: "1.6rem",
+  flex: "0 0 auto",
+  borderRadius: "999px",
+  border: "3px solid #dbeafe",
+  borderTopColor: "#2563eb",
+  animation: "admin-loading-spinner 0.8s linear infinite",
+};

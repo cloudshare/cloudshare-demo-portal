@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { AdminCandidateRosterPanel, AdminConsole } from "./admin-console";
+import { AdminCandidateRosterPanel, AdminConsole, AdminLoadingOverlay } from "./admin-console";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -95,6 +95,29 @@ describe("AdminConsole", () => {
     expect(html).toContain("defaults to the Policy runtime lease");
     expect(html).toContain("Time limit follows the selected CloudShare Policy runtime lease.");
     expect(html).not.toContain("defaults from Policy storage retention");
+  });
+
+  it("renders a blocking CloudShare resource loading notice", () => {
+    const html = renderToStaticMarkup(
+      createElement(AdminLoadingOverlay, {
+        visible: true,
+      }),
+    );
+
+    expect(html).toContain('role="status"');
+    expect(html).toContain("Loading CloudShare resources...");
+    expect(html).toContain("Fetching Projects, Regions, Blueprints, Policies, and Snapshot details.");
+    expect(html).toContain("admin-loading-spinner");
+  });
+
+  it("does not render the resource loading notice when it is hidden", () => {
+    const html = renderToStaticMarkup(
+      createElement(AdminLoadingOverlay, {
+        visible: false,
+      }),
+    );
+
+    expect(html).toBe("");
   });
 
   it("renders Support Diagnostics without legacy workbench or support-log controls", () => {
