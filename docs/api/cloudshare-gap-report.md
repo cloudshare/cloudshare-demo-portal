@@ -276,6 +276,23 @@ score. In particular, live QA suggests `passedRate` and `failedRate` may **not**
 because CloudShare divides AI checks by sections and some sections may have no checks at all.
 Treat these as Guided Journey progress signals, not a definitive certification pass/fail result.
 
+**Update (2026-07-04, Candidate score review):** the participant Guided Journey
+progress response still does not expose the scoring evidence a certification workflow
+would need for per-question review. The portal can show aggregate pass/fail/progress
+rates and the final state for listed Guided Journey sections, but the observed API
+response does **not** indicate:
+
+- which individual questions/checkpoints belong to a section;
+- whether a checkpoint was enabled for scoring;
+- whether each checkpoint passed, failed, or errored;
+- enough chapter/section identity to disambiguate otherwise similar response entries.
+
+Related CloudShare bug: [BAC-24813](https://cloudshare.atlassian.net/browse/BAC-24813)
+tracks the v4 Guided Journey issue where both endpoints provide no chapter indication
+in the response body and appear to return identical information across multiple
+sections. Until CloudShare exposes checkpoint-level scoring evidence, the portal must
+avoid presenting section rows as question-level pass/fail diagnostics.
+
 **Impact on certification use**
 
 - Score retrieval must be keyed by the correlated CloudShare participant id, so missing or stale
@@ -283,6 +300,8 @@ Treat these as Guided Journey progress signals, not a definitive certification p
 - The portal now maps the participant-progress payload to the candidate score UI by
   showing raw Guided Journey rates plus section progress, while avoiding any fake composite
   certification score.
+- Candidate-facing score rows are not question-level diagnostics; they cannot prove which
+  checkpoint passed, failed, errored, or was enabled.
 - Final certification pass/fail weighting is determined outside this portal's Guided Journey view.
 - These limitations must be disclosed to the exam author when configuring checkpoints.
 
