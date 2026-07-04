@@ -9,9 +9,19 @@ import { formatCandidateScheduledDateTime } from "./candidate-date-format";
 import { getCandidateScorePresentation } from "./candidate-score-state";
 import type { CandidateLogoutPresentation } from "./candidate-logout";
 import { useCandidateLogout } from "./candidate-logout";
+import { cardStyle, mutedPanelStyle } from "@/web/card-styles";
+import {
+  accountLogoutButtonStyle,
+  disabledButtonStyle,
+  secondaryButtonStyle,
+} from "@/web/button-styles";
+import { eyebrowLabelStyle } from "@/web/design-tokens";
+import { statusBadgeStyle } from "@/web/status-badge";
+import { PortalPageHeader } from "@/web/portal-page-header";
 
 interface ScoreDisplayProps {
-  examAttemptId: string;
+  readonly examAttemptId: string;
+  readonly email: string;
 }
 
 type FetchState = "loading" | "loaded" | "error";
@@ -49,7 +59,7 @@ interface ScorePanelActionProps {
  * Candidate and support viewers understand the scope of what is
  * and is not captured.
  */
-export function ScoreDisplay({ examAttemptId }: ScoreDisplayProps) {
+export function ScoreDisplay({ examAttemptId, email }: ScoreDisplayProps) {
   const router = useRouter();
   const [fetchState, setFetchState] = useState<FetchState>("loading");
   const [score, setScore] = useState<ScorePayload | null>(null);
@@ -90,18 +100,30 @@ export function ScoreDisplay({ examAttemptId }: ScoreDisplayProps) {
     };
   }, [examAttemptId]);
 
-  if (fetchState === "loading") {
-    return <p style={{ margin: 0 }}>Loading score…</p>;
-  }
+  const header = (
+    <ScorePageHeader
+      email={email}
+      logoutPresentation={logoutPresentation}
+      onBackToCandidateHome={() => router.push("/candidate")}
+      onLogout={() => void logout()}
+    />
+  );
 
   if (fetchState === "error") {
     return (
-      <ScoreErrorPanel
-        errorMessage={errorMessage}
-        logoutPresentation={logoutPresentation}
-        onBackToCandidateHome={() => router.push("/candidate")}
-        onLogout={() => void logout()}
-      />
+      <>
+        {header}
+        <ScoreErrorPanel errorMessage={errorMessage} />
+      </>
+    );
+  }
+
+  if (fetchState === "loading") {
+    return (
+      <>
+        {header}
+        <p style={{ margin: 0 }}>Loading score...</p>
+      </>
     );
   }
 
@@ -114,13 +136,13 @@ export function ScoreDisplay({ examAttemptId }: ScoreDisplayProps) {
   });
 
   return (
-    <ScoreLoadedPanel
-      score={score}
-      logoutPresentation={logoutPresentation}
-      onBackToCandidateHome={() => router.push("/candidate")}
-      onLogout={() => void logout()}
-      presentation={presentation}
-    />
+    <>
+      {header}
+      <ScoreLoadedPanel
+        score={score}
+        presentation={presentation}
+      />
+    </>
   );
 }
 
@@ -130,9 +152,6 @@ function formatRate(value: number): string {
 
 export function ScoreLoadedPanel({
   score,
-  logoutPresentation,
-  onBackToCandidateHome,
-  onLogout,
   presentation = getCandidateScorePresentation({
     examAttemptId: score.examAttemptId,
     examTitle: score.examTitle,
@@ -140,16 +159,13 @@ export function ScoreLoadedPanel({
   }),
 }: {
   readonly score: ScorePayload;
-  readonly logoutPresentation: CandidateLogoutPresentation;
-  readonly onBackToCandidateHome: () => void;
-  readonly onLogout: () => void | Promise<void>;
   readonly presentation?: ReturnType<typeof getCandidateScorePresentation>;
 }) {
   return (
-    <section style={panelStyle}>
-      <div style={headerLayoutStyle}>
+    <section style={scorePanelStackStyle}>
+      <section style={cardStyle}>
         <div style={{ display: "grid", gap: "0.5rem" }}>
-          <p style={eyebrowStyle}>Completion summary</p>
+          <p style={eyebrowLabelStyle}>Completion summary</p>
           <div style={{ display: "grid", gap: "0.35rem" }}>
             <h2 style={{ margin: 0 }}>{presentation.heading}</h2>
             <p style={supportTextStyle}>{presentation.supportDetail}</p>
@@ -161,45 +177,23 @@ export function ScoreLoadedPanel({
             Review the recorded CloudShare Guided Journey result for this completed ExamAttempt.
           </p>
         </div>
-        <ScorePanelActions
-          logoutPresentation={logoutPresentation}
-          onBackToCandidateHome={onBackToCandidateHome}
-          onLogout={onLogout}
-        />
-      </div>
-
-      {logoutPresentation.statusMessage ? (
-        <p role="status" style={supportTextStyle}>
-          {logoutPresentation.statusMessage}
-        </p>
-      ) : null}
-      {logoutPresentation.errorMessage ? (
-        <p role="alert" style={errorTextStyle}>
-          {logoutPresentation.errorMessage}
-        </p>
-      ) : null}
+      </section>
 
       {score.scoreAvailable ? (
         <>
-          <section style={summaryCardStyle}>
+          <section style={resultSummaryStyle}>
             <div style={{ display: "grid", gap: "0.4rem" }}>
-              <p style={eyebrowStyle}>Result summary</p>
-              <h3 style={{ margin: 0, fontSize: "1.8rem", lineHeight: 1.1 }}>
-                {score.percentComplete}% complete
+              <p style={eyebrowLabelStyle}>Result summary</p>
+              <h3 style={{ margin: 0, fontSize: "2rem", lineHeight: 1.1 }}>
+                {formatRate(score.passedRate)} pass rate
               </h3>
-              <p style={{ margin: 0, color: "#1e293b" }}>
-                {score.stepsCompleted} of {score.stepsTotal} Guided Journey steps are marked explored or complete.
-              </p>
             </div>
             <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
-                gap: "0.75rem",
-              }}
+              aria-label="Score summary details"
+              style={compactSummaryGridStyle}
             >
-              <SummaryStat label="Steps completed" value={`${score.stepsCompleted} of ${score.stepsTotal}`} />
-              <SummaryStat label="Passed rate" value={formatRate(score.passedRate)} />
+              <SummaryStat label="Completion evidence" value={`${score.percentComplete}% complete`} />
+              <SummaryStat label="Steps explored/complete" value={`${score.stepsCompleted} of ${score.stepsTotal}`} />
               <SummaryStat label="Last retrieved" value={formatRetrievedAt(score.retrievedAt)} />
             </div>
           </section>
@@ -212,11 +206,8 @@ export function ScoreLoadedPanel({
               </p>
             </div>
             <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-                gap: "0.75rem",
-              }}
+              aria-label="Metric breakdown"
+              style={compactMetricGridStyle}
             >
               {[
                 { label: "Passed rate", value: score.passedRate },
@@ -240,23 +231,21 @@ export function ScoreLoadedPanel({
                 </p>
               </div>
               <ol
-                style={{
-                  display: "grid",
-                  gap: "0.75rem",
-                  margin: 0,
-                  paddingLeft: "1.25rem",
-                }}
+                aria-label="Step progress rows"
+                style={stepProgressListStyle}
               >
                 {score.steps.map((step) => (
-                  <li key={step.stepId} style={{ paddingLeft: "0.25rem" }}>
-                    <div style={stepCardStyle}>
-                      <div style={{ display: "grid", gap: "0.2rem" }}>
-                        <strong>{step.title}</strong>
-                        <span style={{ color: "#475569" }}>
-                          {step.completed ? "Completed" : "Not completed"}
+                  <li key={step.stepId} style={stepProgressItemStyle}>
+                    <div style={stepProgressRowStyle}>
+                      <strong style={stepTitleStyle}>{step.title}</strong>
+                      <span style={stepCompletionStyle}>
+                        {step.completed ? "Completed" : "Not completed"}
+                      </span>
+                      {step.status ? (
+                        <span style={statusBadgeStyle(step.completed ? "positive" : "neutral")}>
+                          {step.status}
                         </span>
-                      </div>
-                      {step.status ? <span style={stepStatusStyle}>{step.status}</span> : null}
+                      ) : null}
                     </div>
                   </li>
                 ))}
@@ -265,16 +254,16 @@ export function ScoreLoadedPanel({
           ) : null}
         </>
       ) : (
-        <section style={summaryCardStyle}>
+        <section style={mutedPanelStyle}>
           <div style={{ display: "grid", gap: "0.4rem" }}>
-            <p style={eyebrowStyle}>Result summary</p>
+            <p style={eyebrowLabelStyle}>Result summary</p>
             <h3 style={{ margin: 0 }}>No score available</h3>
             <p style={{ margin: 0, color: "#1e293b" }}>{score.message}</p>
           </div>
         </section>
       )}
 
-      <section aria-label="Scoring limitations" style={limitationsCardStyle}>
+      <section aria-label="Scoring limitations" style={mutedPanelStyle}>
         <div style={{ display: "grid", gap: "0.35rem" }}>
           <h3 style={{ margin: 0 }}>Scoring limitations</h3>
           <p style={{ margin: 0, color: "#334155" }}>
@@ -291,26 +280,61 @@ export function ScoreLoadedPanel({
   );
 }
 
-export function ScoreErrorPanel({
-  errorMessage,
-  logoutPresentation,
-  onBackToCandidateHome,
-  onLogout,
-}: ScorePanelActionProps & { readonly errorMessage: string }) {
+export function ScoreErrorPanel({ errorMessage }: { readonly errorMessage: string }) {
   return (
-    <section style={panelStyle}>
+    <section style={cardStyle}>
       <div style={{ display: "grid", gap: "0.5rem" }}>
-        <p style={eyebrowStyle}>Completion summary</p>
+        <p style={eyebrowLabelStyle}>Completion summary</p>
         <h2 style={{ margin: 0 }}>Score unavailable</h2>
         <p role="alert" style={errorTextStyle}>
           Could not load score: {errorMessage}
         </p>
       </div>
-      <ScorePanelActions
-        logoutPresentation={logoutPresentation}
-        onBackToCandidateHome={onBackToCandidateHome}
-        onLogout={onLogout}
-      />
+    </section>
+  );
+}
+
+function ScorePageHeader({
+  email,
+  logoutPresentation,
+  onBackToCandidateHome,
+  onLogout,
+}: ScorePanelActionProps & { readonly email: string }) {
+  return (
+    <PortalPageHeader
+      eyebrow="Candidate score"
+      title="Session complete"
+      description="Review your final Guided Journey result and any CloudShare scoring limitations for this ExamAttempt."
+      email={email}
+      actions={
+        <ScorePanelActions
+          logoutPresentation={logoutPresentation}
+          onBackToCandidateHome={onBackToCandidateHome}
+          onLogout={onLogout}
+        />
+      }
+    />
+  );
+}
+
+function ScorePanelActions({
+  logoutPresentation,
+  onBackToCandidateHome,
+  onLogout,
+}: ScorePanelActionProps) {
+  return (
+    <div style={{ display: "grid", gap: "0.75rem" }}>
+      <button type="button" onClick={onBackToCandidateHome} style={secondaryButtonStyle}>
+        Back to Candidate Home
+      </button>
+      <button
+        type="button"
+        onClick={() => void onLogout()}
+        disabled={logoutPresentation.disabled}
+        style={getLogoutButtonStyle(logoutPresentation.disabled)}
+      >
+        {logoutPresentation.buttonLabel}
+      </button>
       {logoutPresentation.statusMessage ? (
         <p role="status" style={supportTextStyle}>
           {logoutPresentation.statusMessage}
@@ -321,37 +345,24 @@ export function ScoreErrorPanel({
           {logoutPresentation.errorMessage}
         </p>
       ) : null}
-    </section>
-  );
-}
-
-function ScorePanelActions({
-  logoutPresentation,
-  onBackToCandidateHome,
-  onLogout,
-}: ScorePanelActionProps) {
-  return (
-    <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "flex-start" }}>
-      <button type="button" onClick={onBackToCandidateHome} style={secondaryButtonStyle}>
-        Back to Candidate Home
-      </button>
-      <button
-        type="button"
-        onClick={() => void onLogout()}
-        disabled={logoutPresentation.disabled}
-        style={primaryButtonStyle}
-      >
-        {logoutPresentation.buttonLabel}
-      </button>
     </div>
   );
 }
 
+function getLogoutButtonStyle(disabled: boolean) {
+  return disabled
+    ? {
+        ...accountLogoutButtonStyle,
+        ...disabledButtonStyle,
+      }
+    : accountLogoutButtonStyle;
+}
+
 function SummaryStat({ label, value }: { readonly label: string; readonly value: string }) {
   return (
-    <div style={statCardStyle}>
-      <span style={{ color: "#475569", fontSize: "0.9rem" }}>{label}</span>
-      <strong style={{ fontSize: "1.15rem", lineHeight: 1.2 }}>{value}</strong>
+    <div style={summaryStatRowStyle}>
+      <span style={summaryStatLabelStyle}>{label}</span>
+      <strong style={summaryStatValueStyle}>{value}</strong>
     </div>
   );
 }
@@ -360,86 +371,85 @@ function formatRetrievedAt(retrievedAt: string): string {
   return formatCandidateScheduledDateTime(retrievedAt) ?? "Unavailable";
 }
 
-const panelStyle = {
-  display: "grid",
-  gap: "1.25rem",
-  border: "1px solid #dbe2ea",
-  borderRadius: "10px",
-  padding: "1.25rem",
-  background: "#ffffff",
-  boxShadow: "0 1px 2px rgba(15, 23, 42, 0.06)",
-} satisfies CSSProperties;
-
-const headerLayoutStyle = {
-  display: "flex",
-  justifyContent: "space-between",
-  gap: "1rem",
-  alignItems: "flex-start",
-  flexWrap: "wrap",
-} satisfies CSSProperties;
-
-const summaryCardStyle = {
+const scorePanelStackStyle = {
   display: "grid",
   gap: "1rem",
-  padding: "1rem",
-  borderRadius: "8px",
-  background: "#eff6ff",
-  border: "1px solid #bfdbfe",
 } satisfies CSSProperties;
 
-const limitationsCardStyle = {
+const resultSummaryStyle = {
+  ...mutedPanelStyle,
   display: "grid",
-  gap: "0.75rem",
-  padding: "1rem",
-  borderRadius: "8px",
-  background: "#f8fafc",
-  border: "1px solid #e2e8f0",
+  gap: "0.85rem",
 } satisfies CSSProperties;
 
-const statCardStyle = {
+const compactSummaryGridStyle = {
   display: "grid",
-  gap: "0.35rem",
-  border: "1px solid #e2e8f0",
-  borderRadius: "8px",
-  padding: "0.85rem",
-  background: "#ffffff",
-  minHeight: "5.5rem",
+  gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+  gap: "0.5rem",
 } satisfies CSSProperties;
 
-const stepCardStyle = {
-  display: "flex",
-  justifyContent: "space-between",
+const compactMetricGridStyle = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))",
+  gap: "0.5rem",
+} satisfies CSSProperties;
+
+const summaryStatRowStyle = {
+  display: "grid",
+  gridTemplateColumns: "minmax(0,1fr) auto",
+  alignItems: "center",
   gap: "0.75rem",
-  alignItems: "flex-start",
-  flexWrap: "wrap",
   border: "1px solid #e2e8f0",
   borderRadius: "8px",
-  padding: "0.85rem",
   background: "#ffffff",
+  padding: "0.7rem 0.85rem",
 } satisfies CSSProperties;
 
-const stepStatusStyle = {
-  color: "#0f172a",
-  background: "#e2e8f0",
-  borderRadius: "999px",
-  padding: "0.25rem 0.6rem",
+const summaryStatLabelStyle = {
+  color: "#475569",
   fontSize: "0.9rem",
+  whiteSpace: "nowrap",
+  overflow: "hidden",
+  textOverflow: "ellipsis",
 } satisfies CSSProperties;
 
-const primaryButtonStyle = {
-  padding: "0.6rem 1rem",
-  borderRadius: "8px",
-  border: "1px solid #0f172a",
-  background: "#0f172a",
-  color: "#ffffff",
-} satisfies CSSProperties;
-
-const secondaryButtonStyle = {
-  padding: "0.6rem 1rem",
-  borderRadius: "8px",
-  border: "1px solid #cbd5e1",
-  background: "#ffffff",
+const summaryStatValueStyle = {
   color: "#0f172a",
+  fontSize: "1rem",
+  lineHeight: 1.2,
+  textAlign: "right",
+  whiteSpace: "nowrap",
+} satisfies CSSProperties;
+
+const stepProgressListStyle = {
+  display: "grid",
+  gap: "0.5rem",
+  margin: 0,
+  paddingLeft: "1.25rem",
+} satisfies CSSProperties;
+
+const stepProgressItemStyle = {
+  paddingLeft: "0.25rem",
+} satisfies CSSProperties;
+
+const stepProgressRowStyle = {
+  display: "grid",
+  gridTemplateColumns: "minmax(0,1fr) auto auto",
+  alignItems: "center",
+  gap: "0.75rem",
+  border: "1px solid #e2e8f0",
+  borderRadius: "8px",
+  background: "#ffffff",
+  padding: "0.7rem 0.85rem",
+} satisfies CSSProperties;
+
+const stepTitleStyle = {
+  minWidth: 0,
+} satisfies CSSProperties;
+
+const stepCompletionStyle = {
+  color: "#475569",
+  whiteSpace: "nowrap",
 } satisfies CSSProperties;
 
 const supportTextStyle = {
@@ -450,13 +460,4 @@ const supportTextStyle = {
 const errorTextStyle = {
   margin: 0,
   color: "#b00020",
-} satisfies CSSProperties;
-
-const eyebrowStyle = {
-  margin: 0,
-  color: "#1d4ed8",
-  fontSize: "0.85rem",
-  fontWeight: 600,
-  textTransform: "uppercase",
-  letterSpacing: 0,
 } satisfies CSSProperties;

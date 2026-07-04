@@ -58,6 +58,7 @@ function makeAttempt(partial: Partial<MonitoringAttemptView> = {}): MonitoringAt
       status: "completed",
       scoreAvailable: true,
       percentComplete: 90,
+      passedRate: 0.7,
       stepsCompleted: 9,
       stepsTotal: 10,
     },
@@ -102,7 +103,62 @@ describe("SessionMonitoringPanel", () => {
     vi.restoreAllMocks();
   });
 
-  it("renders the monitoring status strip, separated live and history sections, and the Support Diagnostics handoff", () => {
+  it("defaults to the in-progress queue so terminal history does not dominate the page", () => {
+    const html = renderToStaticMarkup(
+      createElement(SessionMonitoringPanel, {
+        monitoring: makeMonitoringView({
+          currentAttempts: {
+            scheduled: [
+              makeAttempt({
+                id: "attempt-scheduled",
+                status: "scheduled",
+                examTitle: "Scheduled Exam",
+              }),
+            ],
+            ready: [],
+            inProgress: [
+              makeAttempt({
+                id: "attempt-active",
+                status: "in_progress",
+                examTitle: "Active Exam",
+              }),
+            ],
+            suspended: [],
+          },
+          history: [
+            makeAttempt({
+              id: "attempt-completed",
+              status: "completed",
+              examTitle: "Completed Exam",
+            }),
+          ],
+        }),
+        loading: false,
+        onRefresh: () => {},
+        onLoadMoreHistory: () => {},
+        onOpenSupportDiagnostics: () => {},
+      }),
+    );
+
+    expect(html).toContain("aria-pressed=\"true\"");
+    expect(html).toContain("Default view: In-progress queue.");
+    expect(html).toContain("In-progress queue");
+    expect(html).toContain("Active Exam");
+    expect(html).not.toContain("Scheduled queue");
+    expect(html).not.toContain("Completed / expired history");
+    expect(html).not.toContain("Completed Exam");
+  });
+
+  it("renders status metrics before an obvious refresh action and shows selected terminal history as supportable details", () => {
+    vi.spyOn(React, "useState").mockReturnValueOnce([
+      {
+        status: "completed",
+        candidateEmail: "",
+        identifier: "",
+      },
+      () => undefined,
+    ]);
+
     const html = renderToStaticMarkup(
       createElement(SessionMonitoringPanel, {
         monitoring: makeMonitoringView(),
@@ -114,21 +170,38 @@ describe("SessionMonitoringPanel", () => {
     );
 
     expect(html).toContain("Monitoring status");
-    expect(html).toContain("Candidate email");
+    expect(html.indexOf("Monitoring status")).toBeLessThan(html.indexOf("Refresh Monitoring"));
+    expect(html.indexOf("Refresh Monitoring")).toBeLessThan(html.indexOf("Investigation filters"));
+    expect(html).toContain("background:#0f6d66");
+    expect(html).toContain("padding:0.65rem 1.1rem");
+    expect(html).toContain("Candidate name or email");
     expect(html).toContain("Exam ID or ExamAttempt ID");
     expect(html).toContain("Clear filters");
     expect(html).toContain("Session Monitoring is the current-state operations surface for active ExamAttempts.");
     expect(html).toContain("Use Support Diagnostics for the forensic trace of what happened and in what order.");
-    expect(html).toContain("Live queues");
+    expect(html).not.toContain("Live queues");
     expect(html).toContain("Completed / expired history (showing 1 of 3)");
     expect(html).toContain("Load more history");
-    expect(html).toContain("Open in Support Diagnostics");
-    expect(html).toContain("Investigation opens Support Diagnostics filtered to this ExamAttempt ID.");
-    expect(html).not.toContain("No timeline entries recorded.");
     expect(html).not.toContain("<table");
+    expect(html).toContain("<details");
+    expect(html).toContain("ExamAttempt ID");
+    expect(html).toContain("Experience ID");
+    expect(html).toContain("Result");
+    expect(html).toContain("70% pass rate");
+    expect(html).toContain("Open in Support Diagnostics");
+    expect(html).not.toContain("No timeline entries recorded.");
   });
 
   it("hardens the attempt summary identity text so long values can wrap without crowding the status badge", () => {
+    vi.spyOn(React, "useState").mockReturnValueOnce([
+      {
+        status: "completed",
+        candidateEmail: "",
+        identifier: "",
+      },
+      () => undefined,
+    ]);
+
     const html = renderToStaticMarkup(
       createElement(SessionMonitoringPanel, {
         monitoring: makeMonitoringView({
@@ -153,6 +226,15 @@ describe("SessionMonitoringPanel", () => {
   });
 
   it("keeps status badges off current queue cards while retaining them in bounded history", () => {
+    vi.spyOn(React, "useState").mockReturnValueOnce([
+      {
+        status: "suspended",
+        candidateEmail: "",
+        identifier: "",
+      },
+      () => undefined,
+    ]);
+
     const html = renderToStaticMarkup(
       createElement(SessionMonitoringPanel, {
         monitoring: makeMonitoringView({
@@ -174,13 +256,7 @@ describe("SessionMonitoringPanel", () => {
               }),
             ],
           },
-          history: [
-            makeAttempt({
-              status: "suspended",
-              candidateName: "History Candidate",
-              examTitle: "History Exam",
-            }),
-          ],
+          history: [],
         }),
         loading: false,
         onRefresh: () => {},
@@ -189,10 +265,20 @@ describe("SessionMonitoringPanel", () => {
       }),
     );
 
-    expect(html.match(/>suspended</g)?.length).toBe(1);
+    expect(html).toContain("Suspended Candidate");
+    expect(html.match(/>suspended</g)?.length).toBeUndefined();
   });
 
   it("leads attempt summaries with candidate identity, exam title, and one compact open-window display", () => {
+    vi.spyOn(React, "useState").mockReturnValueOnce([
+      {
+        status: "scheduled",
+        candidateEmail: "",
+        identifier: "",
+      },
+      () => undefined,
+    ]);
+
     const html = renderToStaticMarkup(
       createElement(SessionMonitoringPanel, {
         monitoring: makeMonitoringView({
@@ -258,15 +344,20 @@ describe("SessionMonitoringPanel", () => {
     expect(html).toContain("Duration 90 min");
     expect(html).not.toContain("2026-06-21T12:00:00.000Z");
     expect(html).not.toContain("2026-06-21T13:30:00.000Z");
-    expect(html).toContain("History Candidate <strong style=\"color:#111827;font-weight:700\">history.candidate@helioscx.demo</strong>");
-    expect(html).toContain("<span style=\"color:#4b5563;font-weight:400\">History Exam");
-    expect(html).toContain("Starts -");
-    expect(html).toContain("Closes -");
+    expect(html).not.toContain("History Candidate");
     expect(html).not.toContain("Last interaction:");
   });
 
   it("shows the authored Exam open window only once per attempt summary", () => {
     process.env.TZ = "Europe/London";
+    vi.spyOn(React, "useState").mockReturnValueOnce([
+      {
+        status: "suspended",
+        candidateEmail: "",
+        identifier: "",
+      },
+      () => undefined,
+    ]);
 
     const html = renderToStaticMarkup(
       createElement(SessionMonitoringPanel, {
@@ -371,7 +462,7 @@ describe("SessionMonitoringPanel", () => {
       }),
       {
         status: "completed",
-        candidateEmail: " ALEX@helioscx.demo ",
+        candidateEmail: " alex ",
         identifier: " exam-alpha ",
       },
     );
@@ -395,6 +486,52 @@ describe("SessionMonitoringPanel", () => {
     });
 
     expect(byAttemptId.history.map((attempt) => attempt.id)).toEqual(["attempt-completed"]);
+  });
+
+  it("shows only terminal history, not a blank live-queues column, when completed or expired is selected", () => {
+    vi.spyOn(React, "useState").mockReturnValueOnce([
+      {
+        status: "expired",
+        candidateEmail: "",
+        identifier: "",
+      },
+      () => undefined,
+    ]);
+
+    const html = renderToStaticMarkup(
+      createElement(SessionMonitoringPanel, {
+        monitoring: makeMonitoringView({
+          currentAttempts: {
+            scheduled: [
+              makeAttempt({
+                status: "scheduled",
+                examTitle: "Scheduled Exam",
+              }),
+            ],
+            ready: [],
+            inProgress: [],
+            suspended: [],
+          },
+          history: [
+            makeAttempt({
+              id: "attempt-expired",
+              status: "expired",
+              examTitle: "Expired Exam",
+            }),
+          ],
+        }),
+        loading: false,
+        onRefresh: () => {},
+        onLoadMoreHistory: () => {},
+        onOpenSupportDiagnostics: () => {},
+      }),
+    );
+
+    expect(html).toContain("Expired Exam");
+    expect(html).toContain("Completed / expired history");
+    expect(html).not.toContain("Live queues");
+    expect(html).not.toContain("Scheduled queue");
+    expect(html).not.toContain("Scheduled Exam");
   });
 
   it("shows the selected monitoring status filter and explains when no attempts match it", () => {
@@ -489,8 +626,8 @@ describe("SessionMonitoringPanel", () => {
     );
 
     expect(html).toContain("Windows Boxes");
-    expect(html).toContain("No completed or expired attempts match the current monitoring filters.");
     expect(html).not.toContain("No attempts match the current monitoring filters.");
+    expect(html).not.toContain("Completed / expired history");
   });
 });
 

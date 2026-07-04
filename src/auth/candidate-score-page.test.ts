@@ -1,15 +1,81 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import CandidateScorePage from "../../app/candidate/score/page";
 
+const { mockCookies, mockRedirect, mockGetServices, mockGetPortalSession } = vi.hoisted(() => ({
+  mockCookies: vi.fn(),
+  mockRedirect: vi.fn((path: string) => {
+    throw new Error(`redirect:${path}`);
+  }),
+  mockGetServices: vi.fn(),
+  mockGetPortalSession: vi.fn(),
+}));
+
+vi.mock("next/headers", () => ({
+  cookies: mockCookies,
+}));
+
+vi.mock("next/navigation", () => ({
+  redirect: mockRedirect,
+}));
+
+vi.mock("@/composition", () => ({
+  getServices: mockGetServices,
+}));
+
+vi.mock("@/auth/portal-session", () => ({
+  getPortalSession: mockGetPortalSession,
+}));
+
 vi.mock("@/web/score-display", () => ({
-  ScoreDisplay: ({ examAttemptId }: { examAttemptId: string }) => ({
+  ScoreDisplay: ({ examAttemptId, email }: { examAttemptId: string; email: string }) => ({
     type: "ScoreDisplay",
-    props: { examAttemptId },
+    props: { examAttemptId, email },
   }),
 }));
 
 describe("candidate score page", () => {
-  it("renders the completion shell without duplicating top-level attempt metadata", async () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCookies.mockResolvedValue({
+      get: () => ({ value: "portal-session-1" }),
+    });
+    mockGetServices.mockReturnValue({});
+    mockGetPortalSession.mockResolvedValue({
+      sessionId: "portal-session-1",
+      customerId: "customer-helios",
+      email: "candidate@helioscx.demo",
+      role: "candidate",
+    });
+  });
+
+  it("redirects anonymous users to /login", async () => {
+    mockGetPortalSession.mockResolvedValue(null);
+
+    await expect(CandidateScorePage({
+      searchParams: Promise.resolve({
+        examAttemptId: "ea-1",
+      }),
+    })).rejects.toThrow("redirect:/login");
+    expect(mockRedirect).toHaveBeenCalledWith("/login");
+  });
+
+  it("redirects admins away from candidate score screens", async () => {
+    mockGetPortalSession.mockResolvedValue({
+      sessionId: "portal-session-1",
+      customerId: "customer-helios",
+      email: "admin@helioscx.demo",
+      role: "admin",
+    });
+
+    await expect(CandidateScorePage({
+      searchParams: Promise.resolve({
+        examAttemptId: "ea-1",
+      }),
+    })).rejects.toThrow("redirect:/admin");
+    expect(mockRedirect).toHaveBeenCalledWith("/admin");
+  });
+
+  it("renders the score display for the signed-in Candidate", async () => {
     const page = await CandidateScorePage({
       searchParams: Promise.resolve({
         examAttemptId: "ea-1",
@@ -17,29 +83,13 @@ describe("candidate score page", () => {
     });
 
     expect(page).toMatchObject({ type: "main" });
-    expect(page.props.children).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: "h1",
-          props: expect.objectContaining({
-            children: "Session complete",
-          }),
-        }),
-        expect.objectContaining({
-          type: "p",
-          props: expect.objectContaining({
-            children:
-              "Review your final Guided Journey result and any CloudShare scoring limitations for this ExamAttempt.",
-          }),
-        }),
-        expect.objectContaining({
-          type: expect.any(Function),
-          props: {
-            examAttemptId: "ea-1",
-          },
-        }),
-      ]),
-    );
+    expect(page.props.children).toMatchObject({
+      type: expect.any(Function),
+      props: {
+        examAttemptId: "ea-1",
+        email: "candidate@helioscx.demo",
+      },
+    });
   });
 
   it("renders the missing-attempt message when no exam attempt id is present", async () => {
@@ -52,9 +102,10 @@ describe("candidate score page", () => {
       props: {
         children: [
           expect.objectContaining({
-            type: "h1",
+            type: expect.any(Function),
             props: expect.objectContaining({
-              children: "Session complete",
+              title: "Session complete",
+              email: "candidate@helioscx.demo",
             }),
           }),
           expect.objectContaining({
