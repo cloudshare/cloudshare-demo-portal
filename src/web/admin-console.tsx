@@ -296,18 +296,22 @@ const DIAGNOSTIC_PAGE_LIMIT = 50;
 const SUPPORT_WORKFLOW_TABS = new Set<AdminTab>(["monitoring", "diagnostics"]);
 
 const adminTabNavStyle: React.CSSProperties = {
-  display: "flex",
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(10.5rem, 1fr))",
   gap: "0.5rem",
   marginBottom: "1rem",
-  flexWrap: "wrap",
   borderBottom: `1px solid ${colors.border}`,
   paddingBottom: "0.5rem",
+  alignItems: "stretch",
 };
 
 const adminTabButtonStyle: React.CSSProperties = {
   padding: "0.6rem 0.9rem",
   border: "1px solid",
   borderRadius: "8px",
+  width: "100%",
+  minHeight: "2.75rem",
+  textAlign: "center",
 };
 
 const examCatalogBusyShellStyle: React.CSSProperties = {
