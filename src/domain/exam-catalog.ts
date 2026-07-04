@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 export type ExamStatus = "draft" | "published";
+export type ExamDeliveryAvailability = "individual" | "cohort" | "both";
 
 export interface Exam {
   readonly id: string;
@@ -11,6 +12,7 @@ export interface Exam {
   readonly storageLeaseMinutes?: number | null;
   readonly openPeriodMinutes: number;
   readonly scoreRetrievalEnabled: boolean;
+  readonly deliveryAvailability?: ExamDeliveryAvailability;
   readonly status: ExamStatus;
   readonly publishedAt: Date | null;
   readonly createdAt: Date;
@@ -41,6 +43,7 @@ export interface CreateDraftExamInput {
   readonly storageLeaseMinutes?: number | null;
   readonly openPeriodMinutes: number;
   readonly scoreRetrievalEnabled: boolean;
+  readonly deliveryAvailability?: ExamDeliveryAvailability;
   readonly projectId: string;
   readonly projectName: string;
   readonly blueprintId: string;
@@ -87,6 +90,7 @@ export interface UpdateDraftExamInput {
   readonly title: string;
   readonly description: string;
   readonly scoreRetrievalEnabled: boolean;
+  readonly deliveryAvailability?: ExamDeliveryAvailability;
   readonly timeLimitMinutes: number;
   readonly storageLeaseMinutes?: number | null;
   readonly openPeriodMinutes: number;
@@ -115,6 +119,7 @@ export async function createDraftExam(
     storageLeaseMinutes: input.storageLeaseMinutes ?? null,
     openPeriodMinutes: input.openPeriodMinutes,
     scoreRetrievalEnabled: input.scoreRetrievalEnabled,
+    deliveryAvailability: input.deliveryAvailability ?? "individual",
     status: "draft",
     publishedAt: null,
     createdAt: now,
@@ -185,6 +190,7 @@ export async function updateDraftExam(
     title: input.title.trim(),
     description: input.description.trim(),
     scoreRetrievalEnabled: input.scoreRetrievalEnabled,
+    deliveryAvailability: input.deliveryAvailability ?? existing.deliveryAvailability,
     timeLimitMinutes: input.timeLimitMinutes,
     storageLeaseMinutes: input.storageLeaseMinutes ?? null,
     openPeriodMinutes: input.openPeriodMinutes,
@@ -276,4 +282,11 @@ function validateDraftInput(input: CreateDraftExamInput): void {
   ) {
     throw new DraftExamValidationError("openPeriodMinutes must be less than or equal to storageLeaseMinutes.");
   }
+  if (!isExamDeliveryAvailability(input.deliveryAvailability ?? "individual")) {
+    throw new DraftExamValidationError("deliveryAvailability must be individual, cohort, or both.");
+  }
+}
+
+export function isExamDeliveryAvailability(value: unknown): value is ExamDeliveryAvailability {
+  return value === "individual" || value === "cohort" || value === "both";
 }

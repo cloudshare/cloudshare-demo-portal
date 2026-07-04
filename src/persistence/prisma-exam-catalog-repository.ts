@@ -49,6 +49,7 @@ function serialize(exam: Exam) {
     policyName: exam.policyName,
     instructorId: exam.instructorId,
     instructorName: exam.instructorName,
+    deliveryAvailability: exam.deliveryAvailability ?? "individual",
   };
 }
 
@@ -76,6 +77,7 @@ function hydrate(row: {
   policyName: string;
   instructorId: string;
   instructorName: string;
+  deliveryAvailability?: string | null;
 }): Exam {
   return {
     id: row.id,
@@ -101,5 +103,6 @@ function hydrate(row: {
     policyName: row.policyName,
     instructorId: row.instructorId,
     instructorName: row.instructorName,
+    deliveryAvailability: (row.deliveryAvailability ?? "individual") as Exam["deliveryAvailability"],
   };
 }

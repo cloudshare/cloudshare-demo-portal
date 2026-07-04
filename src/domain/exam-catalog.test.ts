@@ -53,6 +53,7 @@ describe("createDraftExam", () => {
       storageLeaseMinutes: 2880,
       openPeriodMinutes: 720,
       scoreRetrievalEnabled: true,
+      deliveryAvailability: "individual",
       status: "draft",
       publishedAt: null,
       createdAt: now,

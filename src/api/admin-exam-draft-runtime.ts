@@ -6,6 +6,7 @@ import {
   DraftExamValidationError,
   ExamNotFoundError,
   ExamStateError,
+  isExamDeliveryAvailability,
   updateDraftExam,
   type CreateDraftExamInput,
   type Exam,
@@ -103,6 +104,7 @@ export async function createAdminDraftExamRuntime(
           "title",
           "description",
           "scoreRetrievalEnabled",
+          "deliveryAvailability",
           "policyId",
           "openPeriodMinutes",
           "allowedRegions",
@@ -121,6 +123,7 @@ export async function createAdminDraftExamRuntime(
           "title",
           "description",
           "scoreRetrievalEnabled",
+          "deliveryAvailability",
           "policyId",
           "openPeriodMinutes",
           "allowedRegions",
@@ -229,6 +232,9 @@ function summariseExamChanges(before: Exam, after: Exam): string[] {
   if (before.scoreRetrievalEnabled !== after.scoreRetrievalEnabled) {
     changedFields.push("scoreRetrievalEnabled");
   }
+  if (before.deliveryAvailability !== after.deliveryAvailability) {
+    changedFields.push("deliveryAvailability");
+  }
   if (before.policyId !== after.policyId) changedFields.push("policyId");
   if (before.policyName !== after.policyName) changedFields.push("policyName");
   if (before.timeLimitMinutes !== after.timeLimitMinutes) changedFields.push("timeLimitMinutes");
@@ -326,6 +332,7 @@ async function parseMutableDraftExamInput(
     typeof candidate.title !== "string" ||
     typeof candidate.description !== "string" ||
     typeof candidate.scoreRetrievalEnabled !== "boolean" ||
+    (candidate.deliveryAvailability !== undefined && !isExamDeliveryAvailability(candidate.deliveryAvailability)) ||
     typeof candidate.policyId !== "string" ||
     typeof candidate.openPeriodMinutes !== "number" ||
     !Array.isArray(candidate.allowedRegionIds) ||
@@ -395,6 +402,7 @@ async function parseMutableDraftExamInput(
     title: candidate.title,
     description: candidate.description,
     scoreRetrievalEnabled: candidate.scoreRetrievalEnabled,
+    deliveryAvailability: candidate.deliveryAvailability ?? existing.deliveryAvailability,
     timeLimitMinutes: policy.runtimeLeaseMinutes,
     storageLeaseMinutes: policy.storageLeaseMinutes,
     openPeriodMinutes: candidate.openPeriodMinutes,
@@ -422,6 +430,7 @@ async function parseCreateDraftExamInput(
     typeof candidate.title !== "string" ||
     typeof candidate.description !== "string" ||
     typeof candidate.scoreRetrievalEnabled !== "boolean" ||
+    (candidate.deliveryAvailability !== undefined && !isExamDeliveryAvailability(candidate.deliveryAvailability)) ||
     typeof candidate.projectId !== "string" ||
     typeof candidate.blueprintId !== "string" ||
     typeof candidate.snapshotId !== "string" ||
@@ -496,6 +505,7 @@ async function parseCreateDraftExamInput(
     storageLeaseMinutes: policy.storageLeaseMinutes,
     openPeriodMinutes: candidate.openPeriodMinutes,
     scoreRetrievalEnabled: candidate.scoreRetrievalEnabled,
+    deliveryAvailability: candidate.deliveryAvailability ?? "individual",
     projectId: candidate.projectId,
     projectName: project.name,
     blueprintId: candidate.blueprintId,

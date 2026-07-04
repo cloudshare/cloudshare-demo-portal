@@ -159,6 +159,7 @@ interface ExamRecord {
   storageLeaseMinutes?: number | null;
   openPeriodMinutes: number;
   scoreRetrievalEnabled: boolean;
+  deliveryAvailability?: "individual" | "cohort" | "both";
   status: "draft" | "published";
   publishedAt: string | null;
   projectId: string;
@@ -171,6 +172,34 @@ interface ExamRecord {
   policyId: string;
   policyName: string;
   instructorName: string;
+}
+
+interface CohortExamSessionRecord {
+  session: {
+    id: string;
+    name: string;
+    admissionStartsAt: string;
+    admissionEndsAt: string | null;
+    capacity: number | null;
+    status: "draft";
+  };
+  inheritedContext: {
+    project: { id: string; name: string };
+    blueprint: { id: string; name: string };
+    snapshot: { id: string; name: string };
+    policy: { id: string; name: string };
+    allowedRegions: Array<{ id: string; name: string }>;
+    instructor: { id: string; name: string };
+    scoreRetrievalEnabled: boolean;
+    timeLimitMinutes: number;
+  };
+}
+
+interface CohortExamSessionFormState {
+  name: string;
+  admissionStartsAt: string;
+  admissionEndsAt: string;
+  capacity: string;
 }
 
 interface AdminCandidateScoreEvidence {
@@ -407,6 +436,82 @@ function isAdminSessionExpiredError(error: unknown): error is AdminSessionExpire
   return error instanceof AdminSessionExpiredError;
 }
 
+function formatExamDeliveryAvailability(value: ExamRecord["deliveryAvailability"]): string {
+  if (value === "cohort") return "Cohort Exam Sessions only";
+  if (value === "both") return "Individual and Cohort delivery";
+  return "Individual Exam Delivery only";
+}
+
+function CohortSessionDraftControls(props: {
+  examId: string;
+  form: CohortExamSessionFormState;
+  sessions: CohortExamSessionRecord[];
+  loading: boolean;
+  onChange: (patch: Partial<CohortExamSessionFormState>) => void;
+  onCreate: () => void;
+  onSelect: (session: CohortExamSessionRecord) => void;
+}) {
+  const fieldStyle = { padding: "0.45rem", border: "1px solid #ccc", borderRadius: "6px" };
+  return (
+    <div style={{ display: "grid", gap: "0.45rem" }}>
+      <label style={{ display: "grid", gap: "0.25rem" }}>
+        <span>Session name</span>
+        <input
+          value={props.form.name}
+          onChange={(event) => props.onChange({ name: event.target.value })}
+          style={fieldStyle}
+        />
+      </label>
+      <label style={{ display: "grid", gap: "0.25rem" }}>
+        <span>Admission opens</span>
+        <input
+          type="datetime-local"
+          value={props.form.admissionStartsAt}
+          onChange={(event) => props.onChange({ admissionStartsAt: event.target.value })}
+          style={fieldStyle}
+        />
+      </label>
+      <label style={{ display: "grid", gap: "0.25rem" }}>
+        <span>Optional admission closes</span>
+        <input
+          type="datetime-local"
+          value={props.form.admissionEndsAt}
+          onChange={(event) => props.onChange({ admissionEndsAt: event.target.value })}
+          style={fieldStyle}
+        />
+      </label>
+      <label style={{ display: "grid", gap: "0.25rem" }}>
+        <span>Optional capacity</span>
+        <input
+          type="number"
+          min={1}
+          value={props.form.capacity}
+          onChange={(event) => props.onChange({ capacity: event.target.value })}
+          style={fieldStyle}
+        />
+      </label>
+      <button onClick={props.onCreate} disabled={props.loading} style={{ padding: "0.45rem 0.75rem" }}>
+        Create Draft Cohort Session
+      </button>
+      <div style={{ display: "grid", gap: "0.35rem" }}>
+        {props.sessions.length === 0 ? (
+          <span style={{ color: "#666" }}>No draft Cohort Exam Sessions yet.</span>
+        ) : (
+          props.sessions.map((session) => (
+            <button
+              key={`${props.examId}-${session.session.id}`}
+              onClick={() => props.onSelect(session)}
+              style={{ padding: "0.45rem 0.75rem", textAlign: "left" }}
+            >
+              {session.session.name} · {session.session.status}
+            </button>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function AdminCandidateRosterPanel({
   candidates,
   selectedCandidate,
@@ -590,8 +695,12 @@ export function AdminConsole({
   const [timeLimitMinutes, setTimeLimitMinutes] = useState("90");
   const [openPeriodMinutes, setOpenPeriodMinutes] = useState("90");
   const [scoreRetrievalEnabled, setScoreRetrievalEnabled] = useState(false);
+  const [deliveryAvailability, setDeliveryAvailability] = useState<"individual" | "cohort" | "both">("individual");
   const [editingExamId, setEditingExamId] = useState<string | null>(null);
   const [examCatalog, setExamCatalog] = useState<ExamRecord[]>([]);
+  const [cohortSessionsByExamId, setCohortSessionsByExamId] = useState<Record<string, CohortExamSessionRecord[]>>({});
+  const [cohortSessionFormsByExamId, setCohortSessionFormsByExamId] = useState<Record<string, CohortExamSessionFormState>>({});
+  const [selectedCohortSession, setSelectedCohortSession] = useState<CohortExamSessionRecord | null>(null);
   const [monitoring, setMonitoring] = useState<MonitoringView | null>(null);
   const [examMessage, setExamMessage] = useState<string | null>(null);
   const [examFormFeedback, setExamFormFeedback] = useState<string | null>(null);
@@ -1069,6 +1178,7 @@ export function AdminConsole({
     title?: string;
     description?: string;
     scoreRetrievalEnabled?: boolean;
+    deliveryAvailability?: "individual" | "cohort" | "both";
     timeLimitMinutes?: string;
     openPeriodMinutes?: string;
   }) {
@@ -1078,6 +1188,7 @@ export function AdminConsole({
     setExamTitle(next?.title ?? blueprintDetail?.name ?? "");
     setExamDescription(next?.description ?? stripHtmlToText(blueprintDetail?.description) ?? "");
     setScoreRetrievalEnabled(next?.scoreRetrievalEnabled ?? false);
+    setDeliveryAvailability(next?.deliveryAvailability ?? "individual");
     setTimeLimitMinutes(next?.timeLimitMinutes ?? "");
     setOpenPeriodMinutes(
       getResetOpenPeriodMinutes({
@@ -1294,7 +1405,9 @@ export function AdminConsole({
         setError(data.error ?? "Failed to load exam catalog");
         return;
       }
-      setExamCatalog(data.exams ?? []);
+      const nextExams = data.exams ?? [];
+      setExamCatalog(nextExams);
+      await Promise.all(nextExams.map((exam) => loadCohortExamSessions(exam.id)));
     } catch (caughtError) {
       if (isAdminSessionExpiredError(caughtError)) {
         return;
@@ -1302,6 +1415,83 @@ export function AdminConsole({
       setError("Failed to load exam catalog");
     } finally {
       endExamCatalogLoading();
+    }
+  }
+
+  async function loadCohortExamSessions(examId: string) {
+    try {
+      const response = await fetchAdmin(`/api/admin/exams/${encodeURIComponent(examId)}/cohort-sessions`);
+      const data = (await response.json()) as { sessions?: CohortExamSessionRecord[]; error?: string };
+      if (!response.ok) {
+        setError(data.error ?? "Failed to load Cohort Exam Sessions");
+        return;
+      }
+      setCohortSessionsByExamId((current) => ({
+        ...current,
+        [examId]: data.sessions ?? [],
+      }));
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
+      setError("Failed to load Cohort Exam Sessions");
+    }
+  }
+
+  function getCohortSessionForm(examId: string): CohortExamSessionFormState {
+    return cohortSessionFormsByExamId[examId] ?? {
+      name: "",
+      admissionStartsAt: "",
+      admissionEndsAt: "",
+      capacity: "",
+    };
+  }
+
+  function updateCohortSessionForm(examId: string, patch: Partial<CohortExamSessionFormState>) {
+    setCohortSessionFormsByExamId((current) => ({
+      ...current,
+      [examId]: {
+        ...(current[examId] ?? { name: "", admissionStartsAt: "", admissionEndsAt: "", capacity: "" }),
+        ...patch,
+      },
+    }));
+  }
+
+  async function createDraftCohortSession(examId: string) {
+    const form = getCohortSessionForm(examId);
+    setLoading(true);
+    setError(null);
+    setExamMessage(null);
+    try {
+      const response = await fetchAdmin(`/api/admin/exams/${encodeURIComponent(examId)}/cohort-sessions`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: form.name,
+          admissionStartsAt: form.admissionStartsAt,
+          admissionEndsAt: form.admissionEndsAt || null,
+          capacity: form.capacity ? Number(form.capacity) : null,
+        }),
+      });
+      const data = (await response.json()) as CohortExamSessionRecord & { error?: string };
+      if (!response.ok) {
+        setError(data.error ?? "Failed to create draft Cohort Exam Session");
+        return;
+      }
+      setSelectedCohortSession(data);
+      setExamMessage("Draft Cohort Exam Session created.");
+      setCohortSessionFormsByExamId((current) => ({
+        ...current,
+        [examId]: { name: "", admissionStartsAt: "", admissionEndsAt: "", capacity: "" },
+      }));
+      await loadCohortExamSessions(examId);
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
+      setError("Failed to create draft Cohort Exam Session");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -1370,6 +1560,7 @@ export function AdminConsole({
             title: examTitle,
             description: examDescription,
             scoreRetrievalEnabled,
+            deliveryAvailability,
             allowedRegionIds: selectedAllowedRegionIds,
             policyId: policy.id,
             openPeriodMinutes: parsedOpenPeriodMinutes,
@@ -1473,6 +1664,7 @@ export function AdminConsole({
       setExamTitle(exam.title);
       setExamDescription(exam.description);
       setScoreRetrievalEnabled(exam.scoreRetrievalEnabled);
+      setDeliveryAvailability(exam.deliveryAvailability ?? "individual");
       setTimeLimitMinutes(String(exam.timeLimitMinutes));
       setOpenPeriodMinutes(String(exam.openPeriodMinutes));
     } finally {
@@ -2199,6 +2391,20 @@ export function AdminConsole({
               />
               <span>Retrieve Guided Journey score for this Exam</span>
             </label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              <span>Delivery availability</span>
+              <select
+                value={deliveryAvailability}
+                onChange={(event) =>
+                  setDeliveryAvailability(event.target.value as "individual" | "cohort" | "both")
+                }
+                style={compactFieldStyle}
+              >
+                <option value="individual">Individual Exam Delivery only</option>
+                <option value="cohort">Cohort Exam Sessions only</option>
+                <option value="both">Individual and Cohort delivery</option>
+              </select>
+            </label>
           </div>
 
           <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
@@ -2235,6 +2441,9 @@ export function AdminConsole({
 
           <div>
             <h2 style={{ marginBottom: "0.6rem" }}>Current Exam Catalog</h2>
+            <p style={{ marginTop: 0, color: colors.textSecondary }}>
+              Draft Cohort Exam Sessions are created, listed, and viewed under their parent Exam.
+            </p>
             <div style={{ ...cardStyle, padding: 0, overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
                 <thead>
@@ -2290,6 +2499,9 @@ export function AdminConsole({
                       </td>
                       <td style={{ padding: "0.4rem" }}>{exam.scoreRetrievalEnabled ? "Enabled" : "Off"}</td>
                       <td style={{ padding: "0.4rem" }}>
+                        <div style={{ marginBottom: "0.65rem", color: colors.textSecondary, fontSize: "0.8rem" }}>
+                          Delivery: {formatExamDeliveryAvailability(exam.deliveryAvailability)}
+                        </div>
                         {exam.status === "draft" ? (
                           <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                             {editingExamId === exam.id ? (
@@ -2324,6 +2536,18 @@ export function AdminConsole({
                             Unpublish
                           </button>
                         )}
+                        <div style={{ marginTop: "0.8rem", display: "grid", gap: "0.5rem", minWidth: "16rem" }}>
+                          <strong>Draft Cohort Exam Sessions</strong>
+                          <CohortSessionDraftControls
+                            examId={exam.id}
+                            form={getCohortSessionForm(exam.id)}
+                            sessions={cohortSessionsByExamId[exam.id] ?? []}
+                            loading={loading}
+                            onChange={(patch) => updateCohortSessionForm(exam.id, patch)}
+                            onCreate={() => void createDraftCohortSession(exam.id)}
+                            onSelect={(session) => setSelectedCohortSession(session)}
+                          />
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -2331,6 +2555,29 @@ export function AdminConsole({
               </table>
             </div>
           </div>
+          {selectedCohortSession && (
+            <div style={{ ...cardStyle, display: "grid", gap: "0.5rem" }}>
+              <h3 style={{ margin: 0 }}>Cohort Exam Session inherited context</h3>
+              <div style={{ fontWeight: 600 }}>{selectedCohortSession.session.name}</div>
+              <div>Status: {selectedCohortSession.session.status}</div>
+              <div>Project: {selectedCohortSession.inheritedContext.project.name}</div>
+              <div>
+                Blueprint/default Snapshot: {selectedCohortSession.inheritedContext.blueprint.name} /{" "}
+                {selectedCohortSession.inheritedContext.snapshot.name}
+              </div>
+              <div>Policy: {selectedCohortSession.inheritedContext.policy.name}</div>
+              <div>
+                Allowed Regions:{" "}
+                {selectedCohortSession.inheritedContext.allowedRegions.map((region) => region.name).join(", ")}
+              </div>
+              <div>Instructor: {selectedCohortSession.inheritedContext.instructor.name}</div>
+              <div>
+                Guided Journey score retrieval:{" "}
+                {selectedCohortSession.inheritedContext.scoreRetrievalEnabled ? "Enabled" : "Off"}
+              </div>
+              <div>Time limit: {selectedCohortSession.inheritedContext.timeLimitMinutes} minutes</div>
+            </div>
+          )}
         </section>
       )}
 

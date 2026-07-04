@@ -133,6 +133,21 @@ describe("AdminConsole", () => {
     expect(html).not.toContain("defaults from Policy storage retention");
   });
 
+  it("renders Exam delivery availability and draft Cohort Exam Session controls", () => {
+    const html = renderToStaticMarkup(
+      createElement(AdminConsole, {
+        email: "admin@helioscx.demo",
+        initialTab: "exams",
+      }),
+    );
+
+    expect(html).toContain("Delivery availability");
+    expect(html).toContain("Individual Exam Delivery only");
+    expect(html).toContain("Cohort Exam Sessions only");
+    expect(html).toContain("Individual and Cohort delivery");
+    expect(html).toContain("Draft Cohort Exam Sessions");
+  });
+
   it("renders an Exam Catalog busy overlay that freezes the authoring surface while resources load", () => {
     const html = renderToStaticMarkup(createElement(ExamCatalogLoadingOverlay));
 

@@ -88,8 +88,27 @@ model Exam {
   instructorName        String
   customer              Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   attempts              ExamAttempt[]
+  deliveryAvailability  String   @default("individual")
+  cohortSessions        CohortExamSession[]
 
   @@index([customerId, status])
+}
+
+model CohortExamSession {
+  id                 String   @id
+  customerId         String
+  examId             String
+  name               String
+  admissionStartsAt  DateTime
+  admissionEndsAt    DateTime?
+  capacity           Int?
+  status             String
+  createdAt          DateTime
+  updatedAt          DateTime
+  exam               Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, examId, status])
+  @@index([examId, createdAt])
 }
 
 model ExamAttempt {
