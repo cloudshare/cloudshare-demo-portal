@@ -81,6 +81,26 @@ interface AuditRecord {
   occurredAt: string;
 }
 
+interface AuditTrailFilters {
+  readonly examAttemptId: string;
+  readonly action: string;
+  readonly outcome: string;
+  readonly actorEmail: string;
+  readonly subjectType: string;
+  readonly subjectId: string;
+  readonly examId: string;
+}
+
+const EMPTY_AUDIT_FILTERS: AuditTrailFilters = {
+  examAttemptId: "",
+  action: "",
+  outcome: "",
+  actorEmail: "",
+  subjectType: "",
+  subjectId: "",
+  examId: "",
+};
+
 interface DiagnosticLogPageResponse {
   limit: number;
   offset: number;
@@ -580,13 +600,7 @@ export function AdminConsole({
   const projectResourcesRequestIdRef = useRef(0);
   const blueprintDetailRequestIdRef = useRef(0);
   const examCatalogLoadingCountRef = useRef(0);
-  const [examAttemptFilter, setExamAttemptFilter] = useState("");
-  const [auditActionFilter, setAuditActionFilter] = useState("");
-  const [auditOutcomeFilter, setAuditOutcomeFilter] = useState("");
-  const [auditActorEmailFilter, setAuditActorEmailFilter] = useState("");
-  const [auditSubjectTypeFilter, setAuditSubjectTypeFilter] = useState("");
-  const [auditSubjectIdFilter, setAuditSubjectIdFilter] = useState("");
-  const [auditExamIdFilter, setAuditExamIdFilter] = useState("");
+  const [auditFilters, setAuditFilters] = useState<AuditTrailFilters>(EMPTY_AUDIT_FILTERS);
   const [auditRecords, setAuditRecords] = useState<AuditRecord[] | null>(null);
   const [diagnosticEntries, setDiagnosticEntries] = useState<DiagnosticLogEntry[] | null>(null);
   const [diagnosticFilters, setDiagnosticFilters] = useState<DiagnosticLogFilters>(initialDiagnosticFilters);
@@ -796,20 +810,11 @@ export function AdminConsole({
     }
   }
 
-  async function loadAudit() {
+  async function loadAudit(filters: AuditTrailFilters = auditFilters) {
     setLoading(true);
     setError(null);
     try {
       const params = new URLSearchParams();
-      const filters = {
-        examAttemptId: examAttemptFilter,
-        action: auditActionFilter,
-        outcome: auditOutcomeFilter,
-        actorEmail: auditActorEmailFilter,
-        subjectType: auditSubjectTypeFilter,
-        subjectId: auditSubjectIdFilter,
-        examId: auditExamIdFilter,
-      };
       for (const [key, value] of Object.entries(filters)) {
         const trimmed = value.trim();
         if (trimmed) {
@@ -833,6 +838,22 @@ export function AdminConsole({
     } finally {
       setLoading(false);
     }
+  }
+
+  function setAuditFilter<K extends keyof AuditTrailFilters>(
+    key: K,
+    value: AuditTrailFilters[K],
+  ) {
+    setAuditFilters((current) => ({ ...current, [key]: value }));
+  }
+
+  function applyAuditFilters() {
+    void loadAudit();
+  }
+
+  function clearAuditFilters() {
+    setAuditFilters(EMPTY_AUDIT_FILTERS);
+    void loadAudit(EMPTY_AUDIT_FILTERS);
   }
 
   async function loadMonitoring(historyOffset = 0) {
@@ -2326,19 +2347,19 @@ export function AdminConsole({
           >
             <input
               placeholder="ExamAttempt ID"
-              value={examAttemptFilter}
-              onChange={(e) => setExamAttemptFilter(e.target.value)}
+              value={auditFilters.examAttemptId}
+              onChange={(e) => setAuditFilter("examAttemptId", e.target.value)}
               style={{ padding: "0.4rem" }}
             />
             <input
               placeholder="Action"
-              value={auditActionFilter}
-              onChange={(e) => setAuditActionFilter(e.target.value)}
+              value={auditFilters.action}
+              onChange={(e) => setAuditFilter("action", e.target.value)}
               style={{ padding: "0.4rem" }}
             />
             <select
-              value={auditOutcomeFilter}
-              onChange={(e) => setAuditOutcomeFilter(e.target.value)}
+              value={auditFilters.outcome}
+              onChange={(e) => setAuditFilter("outcome", e.target.value)}
               style={{ padding: "0.4rem" }}
             >
               <option value="">Any outcome</option>
@@ -2348,30 +2369,36 @@ export function AdminConsole({
             </select>
             <input
               placeholder="Actor email"
-              value={auditActorEmailFilter}
-              onChange={(e) => setAuditActorEmailFilter(e.target.value)}
+              value={auditFilters.actorEmail}
+              onChange={(e) => setAuditFilter("actorEmail", e.target.value)}
               style={{ padding: "0.4rem" }}
             />
             <input
               placeholder="Subject type"
-              value={auditSubjectTypeFilter}
-              onChange={(e) => setAuditSubjectTypeFilter(e.target.value)}
+              value={auditFilters.subjectType}
+              onChange={(e) => setAuditFilter("subjectType", e.target.value)}
               style={{ padding: "0.4rem" }}
             />
             <input
               placeholder="Subject ID"
-              value={auditSubjectIdFilter}
-              onChange={(e) => setAuditSubjectIdFilter(e.target.value)}
+              value={auditFilters.subjectId}
+              onChange={(e) => setAuditFilter("subjectId", e.target.value)}
               style={{ padding: "0.4rem" }}
             />
             <input
               placeholder="Exam ID"
-              value={auditExamIdFilter}
-              onChange={(e) => setAuditExamIdFilter(e.target.value)}
+              value={auditFilters.examId}
+              onChange={(e) => setAuditFilter("examId", e.target.value)}
               style={{ padding: "0.4rem" }}
             />
-            <button onClick={loadAudit} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
-              {loading ? "Loading..." : "Load"}
+            <button onClick={applyAuditFilters} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
+              {loading ? "Loading..." : "Apply Filters"}
+            </button>
+            <button onClick={clearAuditFilters} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
+              Clear Filters
+            </button>
+            <button onClick={() => void loadAudit()} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
+              Refresh Page
             </button>
           </div>
           {auditRecords && (
