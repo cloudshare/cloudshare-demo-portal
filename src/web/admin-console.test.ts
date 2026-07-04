@@ -1,7 +1,7 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import { AdminCandidateRosterPanel, AdminConsole, AdminLoadingOverlay } from "./admin-console";
+import { AdminCandidateRosterPanel, AdminConsole, ExamCatalogLoadingOverlay } from "./admin-console";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -97,27 +97,18 @@ describe("AdminConsole", () => {
     expect(html).not.toContain("defaults from Policy storage retention");
   });
 
-  it("renders a blocking CloudShare resource loading notice", () => {
-    const html = renderToStaticMarkup(
-      createElement(AdminLoadingOverlay, {
-        visible: true,
-      }),
-    );
+  it("renders an Exam Catalog busy overlay that freezes the authoring surface while resources load", () => {
+    const html = renderToStaticMarkup(createElement(ExamCatalogLoadingOverlay));
 
     expect(html).toContain('role="status"');
-    expect(html).toContain("Loading CloudShare resources...");
-    expect(html).toContain("Fetching Projects, Regions, Blueprints, Policies, and Snapshot details.");
-    expect(html).toContain("admin-loading-spinner");
-  });
-
-  it("does not render the resource loading notice when it is hidden", () => {
-    const html = renderToStaticMarkup(
-      createElement(AdminLoadingOverlay, {
-        visible: false,
-      }),
-    );
-
-    expect(html).toBe("");
+    expect(html).toContain("Loading Exam Catalog resources");
+    expect(html).toContain("portal-spinner");
+    expect(html).toContain("position:absolute");
+    expect(html).toContain("inset:0");
+    expect(html).toContain("align-items:flex-start");
+    expect(html).toContain("justify-items:center");
+    expect(html).toContain("flex-wrap:wrap");
+    expect(html).toContain("max-width:min(100%, 22rem)");
   });
 
   it("renders Support Diagnostics without legacy workbench or support-log controls", () => {

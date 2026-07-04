@@ -10,13 +10,20 @@ import {
   updateCandidateLabStatusAttemptState,
 } from "./lab-launcher-state";
 import { useCandidateLogout } from "./candidate-logout";
+import { pageShellStyle } from "./page-shell";
+import { cardStyle, mutedPanelStyle } from "./card-styles";
+import { accountLogoutButtonStyle, disabledButtonStyle, secondaryButtonStyle } from "./button-styles";
+import { statusBadgeStyle, getExamAttemptStatusTone } from "./status-badge";
+import { PortalPageHeader } from "./portal-page-header";
 
 type AttemptStatus = "ready" | "in_progress" | "suspended" | "completed";
 
 export function CandidateLabShell({
+  email,
   examAttemptId,
   initialAttemptStatus,
 }: {
+  readonly email: string;
   readonly examAttemptId: string;
   readonly initialAttemptStatus: AttemptStatus;
 }) {
@@ -90,66 +97,46 @@ export function CandidateLabShell({
   }) : null;
 
   return (
-    <main
-      style={{
-        fontFamily: "system-ui, sans-serif",
-        padding: "2rem",
-        maxWidth: "880px",
-        margin: "0 auto",
-        color: "#14213d",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          gap: "1rem",
-          flexWrap: "wrap",
-          marginBottom: "1.5rem",
-        }}
-      >
-        <div>
-          <p style={{ margin: 0, fontSize: "0.85rem", color: "#52606d", fontWeight: 600 }}>
-            Candidate lab
-          </p>
-          <h1 style={{ margin: "0.35rem 0 0.5rem", lineHeight: 1.1 }}>
-            {loadingStatus ? "Loading exam details..." : presentation?.heading ?? "Exam details unavailable"}
-          </h1>
-          <p style={{ margin: 0, color: "#52606d", maxWidth: "48rem" }}>
-            {presentation?.actionDetail ??
-              (labStatus
-                ? `Exam attempt: ${labStatus.examAttemptId}`
-                : `Requested attempt: ${examAttemptId}`)}
-          </p>
-        </div>
-        <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-          <button
-            type="button"
-            onClick={() => router.push("/candidate")}
-            style={secondaryButtonStyle}
-          >
-            Back to Candidate Home
-          </button>
-          {presentation?.showScoreLink ? (
+    <main style={{ ...pageShellStyle, color: "#14213d" }}>
+      <PortalPageHeader
+        eyebrow="Candidate lab"
+        title={loadingStatus ? "Loading exam details..." : presentation?.heading ?? "Exam details unavailable"}
+        description={
+          presentation?.supportDetail ??
+          (labStatus
+            ? `Exam attempt: ${labStatus.examAttemptId}`
+            : `Requested attempt: ${examAttemptId}`)
+        }
+        email={email}
+        actions={
+          <div style={{ display: "grid", gap: "0.75rem" }}>
             <button
               type="button"
-              onClick={() => router.push(`/candidate/score?examAttemptId=${encodeURIComponent(examAttemptId)}`)}
+              onClick={() => router.push("/candidate")}
               style={secondaryButtonStyle}
             >
-              View score
+              Back to Candidate Home
             </button>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => void logout()}
-            disabled={logoutPresentation.disabled}
-            style={secondaryButtonStyle}
-          >
-            {logoutPresentation.buttonLabel}
-          </button>
-        </div>
-      </div>
+            {presentation?.showScoreLink ? (
+              <button
+                type="button"
+                onClick={() => router.push(`/candidate/score?examAttemptId=${encodeURIComponent(examAttemptId)}`)}
+                style={secondaryButtonStyle}
+              >
+                View score
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => void logout()}
+              disabled={logoutPresentation.disabled}
+              style={getLogoutButtonStyle(logoutPresentation.disabled)}
+            >
+              {logoutPresentation.buttonLabel}
+            </button>
+          </div>
+        }
+      />
       {presentation ? (
         <section
           aria-label="Exam attempt summary"
@@ -164,28 +151,32 @@ export function CandidateLabShell({
             <div
               key={item.label}
               style={{
-                border: "1px solid #d9e2ec",
-                borderRadius: "8px",
+                ...cardStyle,
                 padding: "0.85rem 0.95rem",
-                backgroundColor: item.label === "Status" ? "#f0fdf4" : "#f8fafc",
               }}
             >
               <p style={{ margin: 0, fontSize: "0.8rem", fontWeight: 600, color: "#52606d" }}>
                 {item.label}
               </p>
-              <p style={{ margin: "0.35rem 0 0", fontSize: "0.98rem", fontWeight: 600, color: "#14213d" }}>
-                {item.value}
-              </p>
+              {item.label === "Status" ? (
+                <p style={{ margin: "0.35rem 0 0" }}>
+                  <span style={statusBadgeStyle(getExamAttemptStatusTone(labStatus?.status ?? initialAttemptStatus))}>
+                    {item.value}
+                  </span>
+                </p>
+              ) : (
+                <p style={{ margin: "0.35rem 0 0", fontSize: "0.98rem", fontWeight: 600, color: "#14213d" }}>
+                  {item.value}
+                </p>
+              )}
             </div>
           ))}
         </section>
       ) : null}
-      {presentation ? (
+      {presentation && (labStatus?.status ?? initialAttemptStatus) !== "ready" ? (
         <section
           style={{
-            border: "1px solid #d9e2ec",
-            borderRadius: "8px",
-            backgroundColor: "#f8fafc",
+            ...mutedPanelStyle,
             padding: "1rem 1.1rem",
             marginBottom: "1rem",
           }}
@@ -233,11 +224,11 @@ export function CandidateLabShell({
   );
 }
 
-const secondaryButtonStyle = {
-  padding: "0.6rem 0.95rem",
-  borderRadius: "8px",
-  border: "1px solid #cbd2d9",
-  backgroundColor: "#ffffff",
-  color: "#14213d",
-  fontWeight: 600,
-} as const;
+function getLogoutButtonStyle(disabled: boolean) {
+  return disabled
+    ? {
+        ...accountLogoutButtonStyle,
+        ...disabledButtonStyle,
+      }
+    : accountLogoutButtonStyle;
+}

@@ -3,6 +3,7 @@ import {
   COLD_START_WARNING_MESSAGE,
   MAX_ENTERABILITY_WAKE_UP_DELAY_MS,
   buildCandidateExamDurationLabels,
+  buildCandidateAttemptQueueState,
   buildScheduledAttemptViews,
   canEnterAttempt,
   getAttemptColdStartWarning,
@@ -111,6 +112,119 @@ describe("candidate home attempt state", () => {
       ["attempt-ready", "Helios Fundamentals"],
       ["attempt-older", "Helios Fundamentals"],
     ]);
+  });
+
+  it("defaults the candidate attempt queue to live attempts and excludes completed and expired history", () => {
+    const queue = buildCandidateAttemptQueueState(
+      {
+        exams: dashboard.exams,
+        attempts: [
+          {
+            id: "attempt-completed",
+            examId: "exam-1",
+            scheduledFor: "2026-06-16T10:00:00.000Z",
+            status: "completed",
+          },
+          {
+            id: "attempt-expired",
+            examId: "exam-1",
+            scheduledFor: "2026-06-16T11:00:00.000Z",
+            status: "expired",
+          },
+          {
+            id: "attempt-scheduled",
+            examId: "exam-1",
+            scheduledFor: "2026-06-17T10:00:00.000Z",
+            status: "scheduled",
+          },
+          {
+            id: "attempt-progress",
+            examId: "exam-2",
+            scheduledFor: "2026-06-16T13:00:00.000Z",
+            status: "in_progress",
+          },
+          {
+            id: "attempt-suspended",
+            examId: "exam-2",
+            scheduledFor: "2026-06-16T14:00:00.000Z",
+            status: "suspended",
+          },
+        ],
+      },
+      new Date("2026-06-16T14:00:00.000Z").getTime(),
+    );
+
+    expect(queue.activeFilter).toBe("live");
+    expect(queue.attempts.map((attempt) => attempt.attemptId)).toEqual([
+      "attempt-scheduled",
+      "attempt-suspended",
+      "attempt-progress",
+    ]);
+    expect(queue.filters.map((filter) => [filter.filter, filter.count])).toEqual([
+      ["live", 3],
+      ["scheduled", 1],
+      ["in_progress", 1],
+      ["suspended", 1],
+      ["completed", 1],
+      ["expired", 1],
+    ]);
+  });
+
+  it("groups ready attempts with scheduled for candidate queue counts and filters history on demand", () => {
+    const attempts: CandidateDashboardData["attempts"] = [
+      {
+        id: "attempt-ready-open",
+        examId: "exam-1",
+        scheduledFor: "2026-06-16T16:00:00.000Z",
+        status: "ready",
+      },
+      {
+        id: "attempt-scheduled",
+        examId: "exam-1",
+        scheduledFor: "2026-06-17T10:00:00.000Z",
+        status: "scheduled",
+      },
+      {
+        id: "attempt-completed",
+        examId: "exam-1",
+        scheduledFor: "2026-06-15T10:00:00.000Z",
+        status: "completed",
+      },
+      {
+        id: "attempt-expired",
+        examId: "exam-2",
+        scheduledFor: "2026-06-15T11:00:00.000Z",
+        status: "expired",
+      },
+    ];
+    const nowMs = new Date("2026-06-16T16:30:00.000Z").getTime();
+
+    const scheduledQueue = buildCandidateAttemptQueueState(
+      { exams: dashboard.exams, attempts },
+      nowMs,
+      "scheduled",
+    );
+    const completedQueue = buildCandidateAttemptQueueState(
+      { exams: dashboard.exams, attempts },
+      nowMs,
+      "completed",
+    );
+    const expiredQueue = buildCandidateAttemptQueueState(
+      { exams: dashboard.exams, attempts },
+      nowMs,
+      "expired",
+    );
+
+    expect(scheduledQueue.filters.find((filter) => filter.filter === "scheduled")).toMatchObject({
+      label: "Scheduled / ready",
+      count: 2,
+    });
+    expect(scheduledQueue.attempts.map((attempt) => attempt.attemptId)).toEqual([
+      "attempt-scheduled",
+      "attempt-ready-open",
+    ]);
+    expect(completedQueue.attempts.map((attempt) => attempt.attemptId)).toEqual(["attempt-completed"]);
+    expect(expiredQueue.attempts.map((attempt) => attempt.attemptId)).toEqual(["attempt-expired"]);
   });
 
   it("shows scheduled open-window end details from the authored Exam open period", () => {

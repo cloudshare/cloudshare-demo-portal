@@ -3,6 +3,8 @@ import {
   deriveDiagnosticQuickFacts,
   deriveDiagnosticSupportHints,
 } from "./diagnostic-support-hints";
+import { colors } from "./design-tokens";
+import { statusBadgeStyle, getDiagnosticLevelTone, getOutcomeTone } from "./status-badge";
 
 export interface DiagnosticLogTableEntry {
   id: string;
@@ -43,11 +45,11 @@ const HEADER_CELL_STYLE = {
 const BODY_CELL_STYLE = {
   padding: CELL_PADDING,
   verticalAlign: "top" as const,
-  borderBottom: "1px solid #e5e7eb",
+  borderBottom: `1px solid ${colors.border}`,
   lineHeight: 1.45,
 };
 const MUTED_TEXT_STYLE = {
-  color: "#5f6368",
+  color: colors.textSecondary,
   fontSize: "0.74rem",
   lineHeight: 1.35,
 };
@@ -172,7 +174,7 @@ function StructuredDetailBlock(props: {
         {formatted.text}
       </pre>
       {formatted.truncated && (
-        <div style={{ marginTop: "-0.5rem", marginBottom: "0.75rem", color: "#666" }}>
+        <div style={{ marginTop: "-0.5rem", marginBottom: "0.75rem", color: colors.textSecondary }}>
           Detail output truncated in the table view ({formatted.omittedCharacters.toLocaleString()} more characters omitted).
         </div>
       )}
@@ -196,7 +198,7 @@ function QuickFactsBlock(props: {
       >
         {props.facts.map((fact) => (
           <Fragment key={`${fact.label}:${fact.value}`}>
-            <span style={{ color: "#555" }}>{fact.label}</span>
+            <span style={{ color: colors.textSecondary }}>{fact.label}</span>
             <span>{fact.value}</span>
           </Fragment>
         ))}
@@ -310,7 +312,7 @@ export function DiagnosticLogTable({
         <tbody>
           {entries.length === 0 && (
             <tr>
-              <td colSpan={15} style={{ padding: "0.85rem", color: "#666" }}>
+              <td colSpan={15} style={{ padding: "0.85rem", color: colors.textSecondary }}>
                 No diagnostic entries yet.
               </td>
             </tr>
@@ -371,13 +373,7 @@ export function DiagnosticLogTable({
                   <td style={BODY_CELL_STYLE}>
                     <span
                       style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        padding: "0.12rem 0.45rem",
-                        borderRadius: "999px",
-                        background: entry.level === "error" ? "#fde8e8" : entry.level === "warn" ? "#fff4db" : "#edf4ff",
-                        color: entry.level === "error" ? "#9b1c1c" : entry.level === "warn" ? "#8a5a00" : "#1d4ed8",
-                        fontWeight: 600,
+                        ...statusBadgeStyle(getDiagnosticLevelTone(entry.level)),
                         textTransform: "uppercase",
                         fontSize: "0.72rem",
                       }}
@@ -395,17 +391,7 @@ export function DiagnosticLogTable({
                     ) : null}
                   </td>
                   <td style={BODY_CELL_STYLE}>
-                    <span
-                      style={{
-                        display: "inline-flex",
-                        alignItems: "center",
-                        padding: "0.12rem 0.45rem",
-                        borderRadius: "999px",
-                        background: entry.outcome === "failure" ? "#fde8e8" : "#e7f7ef",
-                        color: entry.outcome === "failure" ? "#b00020" : "#0f766e",
-                        fontWeight: 600,
-                      }}
-                    >
+                    <span style={statusBadgeStyle(getOutcomeTone(entry.outcome))}>
                       {entry.outcome}
                     </span>
                   </td>
@@ -456,7 +442,7 @@ export function DiagnosticLogTable({
                       colSpan={15}
                       style={{
                         padding: "0.7rem 1rem 0.8rem",
-                        background: "#f7f9fc",
+                        background: colors.surfaceMuted,
                         fontFamily: "monospace",
                         fontSize: "0.78rem",
                         borderBottom: "1px solid #dfe3eb",

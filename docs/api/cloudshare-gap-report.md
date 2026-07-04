@@ -276,6 +276,23 @@ score. In particular, live QA suggests `passedRate` and `failedRate` may **not**
 because CloudShare divides AI checks by sections and some sections may have no checks at all.
 Treat these as Guided Journey progress signals, not a definitive certification pass/fail result.
 
+**Update (2026-07-04, Candidate score review):** the participant Guided Journey
+progress response still does not expose the scoring evidence a certification workflow
+would need for per-question review. The portal can show aggregate pass/fail/progress
+rates and the final state for listed Guided Journey sections, but the observed API
+response does **not** indicate:
+
+- which individual questions/checkpoints belong to a section;
+- whether a checkpoint was enabled for scoring;
+- whether each checkpoint passed, failed, or errored;
+- enough chapter/section identity to disambiguate otherwise similar response entries.
+
+Related CloudShare bug: [BAC-24813](https://cloudshare.atlassian.net/browse/BAC-24813)
+tracks the v4 Guided Journey issue where both endpoints provide no chapter indication
+in the response body and appear to return identical information across multiple
+sections. Until CloudShare exposes checkpoint-level scoring evidence, the portal must
+avoid presenting section rows as question-level pass/fail diagnostics.
+
 **Impact on certification use**
 
 - Score retrieval must be keyed by the correlated CloudShare participant id, so missing or stale
@@ -283,6 +300,8 @@ Treat these as Guided Journey progress signals, not a definitive certification p
 - The portal now maps the participant-progress payload to the candidate score UI by
   showing raw Guided Journey rates plus section progress, while avoiding any fake composite
   certification score.
+- Candidate-facing score rows are not question-level diagnostics; they cannot prove which
+  checkpoint passed, failed, errored, or was enabled.
 - Final certification pass/fail weighting is determined outside this portal's Guided Journey view.
 - These limitations must be disclosed to the exam author when configuring checkpoints.
 
@@ -952,6 +971,44 @@ environments and whether any CloudShare role/RBAC permissions differ from suspen
 
 ---
 
+## GAP-20 — Experience cleanup is delete-only; no archive/hide lifecycle
+
+| Field | Detail |
+|---|---|
+| **Status** | Confirmed — live cleanup on 2026-07-04 deleted training/Experience records because that is the available API behaviour today |
+| **Verified live** | Yes |
+
+**Observed behaviour**
+
+The practical cleanup path for CloudShare training Experiences is to delete the Experience. Deleting
+the Experience also deletes any environments inside it, so separate environment deletion is not
+required for operator cleanup.
+
+During the 2026-07-04 cleanup of PR #261 demo data, v4 `DELETE /trainings/{id}` returned `204` for
+all 31 recorded training/Experience IDs. That was the only reliable way to remove the demo
+Experience records from the tenant once the portal database had accumulated many test attempts.
+
+**Impact on certification use**
+
+Deletion is operationally convenient but poor for certification history. A completed or expired
+ExamAttempt may still need support evidence, scoring evidence, audit traceability, or customer
+review. Deleting the Experience removes or hides the CloudShare-side historical object instead of
+preserving it in a terminal, non-primary-list state.
+
+The desired CloudShare lifecycle is an Experience-level **archive** or **hide from main list** action:
+retain historical evidence and diagnostics, stop candidates from using the Experience, remove it
+from day-to-day operational queues, and keep it available for support/audit review.
+
+**Action required (if applicable):**
+
+Raise/track a CloudShare product/API gap for Experience-level archival. Until CloudShare exposes
+that lifecycle, portal cleanup tooling should be explicit that Experience deletion is destructive
+and should be reserved for demo reset/operator cleanup, not normal certification completion.
+
+**Code reference:** `src/integrations/cloudshare/labs.ts`
+
+---
+
 ## Gap template
 
 Copy this section when appending a new gap discovered during implementation:
@@ -1043,5 +1100,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-07-03 (recorded undocumented v3 archive action assumption for Candidate early completion; retained polling/reconcile as the source of truth).
+*Last updated: 2026-07-04 (recorded delete-only Experience cleanup gap; desired state is Experience archive/hide while retaining history).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*

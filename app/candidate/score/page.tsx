@@ -1,5 +1,12 @@
 import React from "react";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
+import { getServices } from "@/composition";
+import { getPortalSession } from "@/auth/portal-session";
 import { ScoreDisplay } from "@/web/score-display";
+import { pageShellStyle } from "@/web/page-shell";
+import { PortalPageHeader } from "@/web/portal-page-header";
 
 /**
  * Candidate score page. Shown after the lab session completes.
@@ -11,38 +18,35 @@ export default async function CandidateScorePage({
 }: {
   searchParams: Promise<{ examAttemptId?: string }>;
 }) {
+  const services = getServices();
+  const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
+  const session = await getPortalSession(services, sessionId);
+  if (!session) {
+    redirect("/login");
+  }
+  if (session.role !== "candidate") {
+    redirect("/admin");
+  }
+
   const { examAttemptId } = await searchParams;
 
   if (!examAttemptId) {
     return (
-      <main
-        style={{
-          fontFamily: "system-ui, sans-serif",
-          padding: "2rem",
-          maxWidth: "720px",
-          margin: "0 auto",
-        }}
-      >
-        <h1 style={{ marginBottom: "0.5rem" }}>Session complete</h1>
+      <main style={pageShellStyle}>
+        <PortalPageHeader
+          eyebrow="Candidate score"
+          title="Session complete"
+          description="Review your final Guided Journey result and any CloudShare scoring limitations for this ExamAttempt."
+          email={session.email}
+        />
         <p style={{ color: "#555" }}>Missing examAttemptId.</p>
       </main>
     );
   }
 
   return (
-    <main
-      style={{
-        fontFamily: "system-ui, sans-serif",
-        padding: "2rem",
-        maxWidth: "960px",
-        margin: "0 auto",
-      }}
-    >
-      <h1 style={{ marginBottom: "0.35rem" }}>Session complete</h1>
-      <p style={{ margin: "0 0 1rem", color: "#475569" }}>
-        Review your final Guided Journey result and any CloudShare scoring limitations for this ExamAttempt.
-      </p>
-      <ScoreDisplay examAttemptId={examAttemptId} />
+    <main style={pageShellStyle}>
+      <ScoreDisplay examAttemptId={examAttemptId} email={session.email} />
     </main>
   );
 }

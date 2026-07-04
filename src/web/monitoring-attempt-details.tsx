@@ -1,6 +1,7 @@
 import React from "react";
 import type { MonitoringAttemptView } from "@/domain/admin-monitoring";
 import { formatLocalDateTimeSecond } from "./candidate-date-format";
+import { mutedPanelStyle } from "./card-styles";
 
 export interface MonitoringAttemptDetailField {
   readonly label: string;
@@ -67,12 +68,10 @@ const detailPairGridStyle: React.CSSProperties = {
 };
 
 const detailPairStyle: React.CSSProperties = {
+  ...mutedPanelStyle,
   display: "grid",
   gap: "0.2rem",
   padding: "0.65rem 0.75rem",
-  border: "1px solid #e5e7eb",
-  borderRadius: "6px",
-  background: "#fafafa",
 };
 
 const detailLabelStyle: React.CSSProperties = {

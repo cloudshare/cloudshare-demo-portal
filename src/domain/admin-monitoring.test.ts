@@ -241,6 +241,7 @@ describe("buildAdminMonitoringView", () => {
           message: "Score retrieved successfully",
           response: {
             percentComplete: 75,
+            passedRate: 0.6,
             stepsCompleted: 3,
             stepsTotal: 4,
             scoreAvailable: true,
@@ -286,6 +287,7 @@ describe("buildAdminMonitoringView", () => {
         status: "completed",
         scoreAvailable: true,
         percentComplete: 75,
+        passedRate: 0.6,
         stepsCompleted: 3,
         stepsTotal: 4,
       },

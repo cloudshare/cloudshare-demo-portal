@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { PublishedExamCardHeader } from "./candidate-home";
+import {
+  CandidateAttemptStatusFilterButtons,
+  CandidatePublishedExamScheduleShell,
+  PublishedExamCardHeader,
+} from "./candidate-home";
 import {
   candidateHomeAccountActionsStyle,
   candidateHomeAccountPanelStyle,
@@ -47,7 +51,7 @@ describe("candidate home layout", () => {
       flexWrap: "wrap",
     });
     expect(publishedExamDescriptionStyle).toMatchObject({
-      maxWidth: "44rem",
+      maxWidth: "68rem",
     });
     expect(publishedExamDurationPillsStyle).toMatchObject({
       justifyContent: "flex-end",
@@ -71,5 +75,46 @@ describe("candidate home layout", () => {
     expect(html.indexOf("20160 minute open window")).toBeLessThan(
       html.indexOf("This deliberately long description"),
     );
+  });
+
+  it("renders candidate attempt status filters with live and history counts", () => {
+    const html = renderToStaticMarkup(
+      createElement(CandidateAttemptStatusFilterButtons, {
+        filters: [
+          { filter: "live", label: "Live", count: 2 },
+          { filter: "scheduled", label: "Scheduled / ready", count: 1 },
+          { filter: "in_progress", label: "In progress", count: 1 },
+          { filter: "suspended", label: "Suspended", count: 0 },
+          { filter: "completed", label: "Completed", count: 3 },
+          { filter: "expired", label: "Expired", count: 1 },
+        ],
+        activeFilter: "live",
+        onFilterChange: () => undefined,
+      }),
+    );
+
+    expect(html).toContain("aria-pressed=\"true\"");
+    expect(html).toContain("Live");
+    expect(html).toContain("Scheduled / ready");
+    expect(html).toContain("Completed");
+    expect(html).toContain("Expired");
+    expect(html).toContain(">3<");
+  });
+
+  it("keeps published Exam scheduling collapsed by default without mounting scheduling fields", () => {
+    const html = renderToStaticMarkup(
+      createElement(
+        CandidatePublishedExamScheduleShell,
+        { examCount: 2 },
+        createElement("p", null, "Schedule date and time"),
+      ),
+    );
+
+    expect(html).toContain("<details");
+    expect(html).not.toContain("<details open=\"\"");
+    expect(html).toContain("Browse and schedule");
+    expect(html).toContain("2 published Exams");
+    expect(html).toContain("Browse scheduling options");
+    expect(html).not.toContain("Schedule date and time");
   });
 });

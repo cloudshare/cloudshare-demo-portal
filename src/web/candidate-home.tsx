@@ -1,6 +1,6 @@
 "use client";
 
-import React, { type CSSProperties, useCallback, useEffect, useState } from "react";
+import React, { type CSSProperties, type ReactNode, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   loadCandidateDashboard,
@@ -11,8 +11,10 @@ import {
 } from "./candidate-scheduling";
 import {
   buildCandidateExamDurationLabels,
-  buildScheduledAttemptViews,
+  buildCandidateAttemptQueueState,
   COLD_START_WARNING_MESSAGE,
+  type CandidateAttemptStatusFilter,
+  type CandidateAttemptStatusFilterView,
   getAttemptWaitingMessage,
   getCurrentAttemptForExam,
   getNextEnterabilityWakeUpDelayMs,
@@ -23,10 +25,6 @@ import {
 import { formatCandidateAttemptStatus } from "./candidate-lab-state";
 import { formatCandidateScheduledDateTime } from "./candidate-date-format";
 import {
-  candidateHomeAccountActionsStyle,
-  candidateHomeAccountPanelStyle,
-  candidateHomeHeaderIntroStyle,
-  candidateHomeHeaderStyle,
   publishedExamDescriptionStyle,
   publishedExamDurationPillsStyle,
   publishedExamHeaderStyle,
@@ -34,10 +32,21 @@ import {
   publishedExamTitleRowStyle,
 } from "./candidate-home-layout";
 import { useCandidateLogout } from "./candidate-logout";
+import { pageShellStyle } from "./page-shell";
 import {
   isPortalSessionExpiredError,
   startPortalSessionWatchdog,
 } from "./session-expiry";
+import { cardStyle, mutedPanelStyle, alertPanelStyle } from "./card-styles";
+import {
+  accountLogoutButtonStyle,
+  primaryButtonStyle,
+  secondaryButtonStyle,
+  disabledButtonStyle,
+} from "./button-styles";
+import { statusBadgeStyle, getExamAttemptStatusTone } from "./status-badge";
+import { eyebrowLabelStyle } from "./design-tokens";
+import { PortalPageHeader } from "./portal-page-header";
 
 interface CandidateHomeProps {
   readonly email: string;
@@ -66,14 +75,79 @@ export function PublishedExamCardHeader({
           <h3 style={{ margin: 0, fontSize: "1.1rem", color: "#0f172a" }}>{title}</h3>
         </div>
         <div style={publishedExamDurationPillsStyle}>
-          <span style={pillStyle}>{runtimeLimit}</span>
-          <span style={pillStyle}>{openWindow}</span>
+          <span style={statusBadgeStyle("info")}>{runtimeLimit}</span>
+          <span style={statusBadgeStyle("info")}>{openWindow}</span>
         </div>
       </div>
       <p style={publishedExamDescriptionStyle}>
         {description || "No description provided."}
       </p>
     </div>
+  );
+}
+
+export function CandidateAttemptStatusFilterButtons({
+  filters,
+  activeFilter,
+  onFilterChange,
+}: {
+  readonly filters: CandidateAttemptStatusFilterView[];
+  readonly activeFilter: CandidateAttemptStatusFilter;
+  readonly onFilterChange: (filter: CandidateAttemptStatusFilter) => void;
+}) {
+  return (
+    <div aria-label="Exam attempt status filters" style={attemptFilterStripStyle}>
+      {filters.map((filter) => {
+        const selected = filter.filter === activeFilter;
+        return (
+          <button
+            key={filter.filter}
+            type="button"
+            aria-pressed={selected}
+            onClick={() => onFilterChange(filter.filter)}
+            style={{
+              ...attemptFilterButtonStyle,
+              ...(selected ? selectedAttemptFilterButtonStyle : null),
+            }}
+          >
+            <span style={attemptFilterLabelStyle}>{filter.label}</span>
+            <span style={attemptFilterCountStyle}>{filter.count}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function CandidatePublishedExamScheduleShell({
+  examCount,
+  children,
+}: {
+  readonly examCount: number;
+  readonly children?: ReactNode;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <details
+      open={isOpen}
+      onToggle={(event) => setIsOpen(event.currentTarget.open)}
+      style={cardStyle}
+    >
+      <summary style={scheduleSummaryStyle}>
+        <div>
+          <p style={eyebrowLabelStyle}>Published Exams</p>
+          <h2 style={sectionTitleStyle}>Browse and schedule</h2>
+          <p style={{ ...sectionCopyStyle, marginTop: "0.35rem" }}>
+            {examCount} published {examCount === 1 ? "Exam" : "Exams"}
+          </p>
+        </div>
+        <span style={scheduleSummaryActionStyle}>
+          {isOpen ? "Hide scheduling options" : "Browse scheduling options"}
+        </span>
+      </summary>
+      {isOpen ? <div style={scheduleDisclosureBodyStyle}>{children}</div> : null}
+    </details>
   );
 }
 
@@ -90,6 +164,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
   const [scheduleFeedback, setScheduleFeedback] = useState<Record<string, ScheduleFeedback>>({});
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [selectedAttemptFilter, setSelectedAttemptFilter] = useState<CandidateAttemptStatusFilter>("live");
   const { presentation: logoutPresentation, logout } = useCandidateLogout(router);
 
   const handleCandidateSessionExpired = useCallback(() => {
@@ -258,55 +333,26 @@ export function CandidateHome({ email }: CandidateHomeProps) {
     router.push(`/candidate/score?${params.toString()}`);
   }
 
-  const scheduledAttempts = buildScheduledAttemptViews(dashboard, nowMs);
+  const attemptQueue = buildCandidateAttemptQueueState(dashboard, nowMs, selectedAttemptFilter);
   const examsById = new Map(dashboard.exams.map((exam) => [exam.id, exam]));
 
   return (
-    <main
-      style={{
-        fontFamily: "system-ui, sans-serif",
-        padding: "2rem 1rem 3rem",
-        maxWidth: "1120px",
-        margin: "0 auto",
-      }}
-    >
-      <section
-        style={{
-          border: "1px solid #d9e1e8",
-          borderRadius: "8px",
-          padding: "1.5rem",
-          background: "#f7fafc",
-          marginBottom: "1.25rem",
-        }}
-      >
-        <div style={candidateHomeHeaderStyle}>
-          <div style={candidateHomeHeaderIntroStyle}>
-            <p style={{ margin: 0, color: "#5f6b76", fontSize: "0.9rem", fontWeight: 600 }}>
-              Certalis Candidate Portal
-            </p>
-            <h1 style={{ margin: "0.35rem 0 0.5rem", fontSize: "2rem" }}>Candidate Home</h1>
-            <p style={{ margin: 0, color: "#334155", lineHeight: 1.5 }}>
-              Review your scheduled Exams, enter or resume active sessions, and schedule the next
-              published Helios CX Exam from one place.
-            </p>
-          </div>
-          <div style={candidateHomeAccountActionsStyle}>
-            <div style={candidateHomeAccountPanelStyle}>
-              <p style={{ margin: 0, color: "#5f6b76", fontSize: "0.85rem" }}>Signed in as</p>
-              <p style={{ margin: "0.3rem 0 0", color: "#0f172a", fontWeight: 600, overflowWrap: "anywhere" }}>
-                {email}
-              </p>
-            </div>
-            <button
-              onClick={() => void logout()}
-              disabled={logoutPresentation.disabled}
-              style={getButtonStyle(secondaryButtonStyle, logoutPresentation.disabled)}
-            >
-              {logoutPresentation.buttonLabel}
-            </button>
-          </div>
-        </div>
-      </section>
+    <main style={pageShellStyle}>
+      <PortalPageHeader
+        eyebrow="Certalis Candidate Portal"
+        title="Candidate Home"
+        description="Review your scheduled Exams, enter or resume active sessions, and schedule the next published Helios CX Exam from one place."
+        email={email}
+        actions={
+          <button
+            onClick={() => void logout()}
+            disabled={logoutPresentation.disabled}
+            style={getButtonStyle(accountLogoutButtonStyle, logoutPresentation.disabled)}
+          >
+            {logoutPresentation.buttonLabel}
+          </button>
+        }
+      />
       {logoutPresentation.statusMessage ? (
         <p role="status" style={{ marginTop: 0, marginBottom: "1rem", color: "#555" }}>
           {logoutPresentation.statusMessage}
@@ -319,26 +365,40 @@ export function CandidateHome({ email }: CandidateHomeProps) {
       ) : null}
 
       <section style={{ display: "grid", gap: "1rem" }}>
-        {loading && <p style={messagePanelStyle}>Loading candidate dashboard...</p>}
+        {loading && <p style={mutedPanelStyle}>Loading candidate dashboard...</p>}
         {error && (
-          <p style={{ ...messagePanelStyle, color: "#b00020", background: "#fff5f7", border: "1px solid #f1c7d0" }}>
+          <p style={{ ...alertPanelStyle.danger, margin: 0 }}>
             {error}
           </p>
         )}
-        {scheduledAttempts.length > 0 && (
-          <section style={sectionPanelStyle}>
+        {dashboard.attempts.length > 0 && (
+          <section style={cardStyle}>
             <div style={sectionHeaderStyle}>
               <div>
-                <p style={eyebrowStyle}>Scheduled attempts</p>
-                <h2 style={sectionTitleStyle}>Upcoming and active Exams</h2>
+                <p style={eyebrowLabelStyle}>Attempt queues</p>
+                <h2 style={sectionTitleStyle}>Exam attempts</h2>
               </div>
               <p style={sectionCopyStyle}>
-                Use these actions to enter when your launch window opens, resume a suspended session,
-                or review a completed score.
+                Live includes scheduled, ready, in-progress, and suspended attempts. Use Completed
+                or Expired to inspect history.
               </p>
             </div>
-            <div style={{ display: "grid", gap: "0.75rem" }}>
-              {scheduledAttempts.map((attempt) => {
+            <CandidateAttemptStatusFilterButtons
+              filters={attemptQueue.filters}
+              activeFilter={attemptQueue.activeFilter}
+              onFilterChange={setSelectedAttemptFilter}
+            />
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 330px), 1fr))",
+                gap: "0.75rem",
+              }}
+            >
+              {attemptQueue.attempts.length === 0 ? (
+                <p style={{ ...mutedPanelStyle, margin: 0 }}>{getCandidateAttemptQueueEmptyMessage(selectedAttemptFilter)}</p>
+              ) : null}
+              {attemptQueue.attempts.map((attempt) => {
                 const exam = examsById.get(attempt.examId) ?? (
                   attempt.openPeriodMinutes && attempt.timeLimitMinutes
                     ? {
@@ -383,7 +443,9 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                             Attempt ID: {attempt.attemptId}
                           </p>
                         </div>
-                        <span style={statusBadgeStyle}>{formatCandidateAttemptStatus(attempt.displayStatus)}</span>
+                        <span style={statusBadgeStyle(getExamAttemptStatusTone(attempt.displayStatus))}>
+                          {formatCandidateAttemptStatus(attempt.displayStatus)}
+                        </span>
                       </div>
                       <div
                         style={{
@@ -445,7 +507,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                         </div>
                       )}
                       {attempt.coldStartWarning ? (
-                        <p role="status" style={warningPanelStyle}>
+                        <p role="status" style={{ ...alertPanelStyle.warning, margin: 0 }}>
                           {attempt.coldStartWarning}
                         </p>
                       ) : null}
@@ -457,10 +519,10 @@ export function CandidateHome({ email }: CandidateHomeProps) {
           </section>
         )}
         {!error && shouldShowNoPublishedExams({ loading, examCount: dashboard.exams.length }) && (
-          <section style={sectionPanelStyle}>
+          <section style={cardStyle}>
             <div style={sectionHeaderStyle}>
               <div>
-                <p style={eyebrowStyle}>Published Exams</p>
+                <p style={eyebrowLabelStyle}>Published Exams</p>
                 <h2 style={sectionTitleStyle}>Schedule your next session</h2>
               </div>
             </div>
@@ -469,17 +531,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
         )}
 
         {shouldShowPublishedExamList({ loading, examCount: dashboard.exams.length }) && (
-          <section style={sectionPanelStyle}>
-            <div style={sectionHeaderStyle}>
-              <div>
-                <p style={eyebrowStyle}>Published Exams</p>
-                <h2 style={sectionTitleStyle}>Browse and schedule</h2>
-              </div>
-              <p style={sectionCopyStyle}>
-                Choose a time for an available Exam. Existing attempts remain visible so you can keep
-                your schedule and launch actions in view.
-              </p>
-            </div>
+          <CandidatePublishedExamScheduleShell examCount={dashboard.exams.length}>
             <div style={{ display: "grid", gap: "0.9rem" }}>
               {dashboard.exams.map((exam) => {
                 const attempt = attemptForExam(exam.id);
@@ -594,10 +646,8 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                         <p
                           role={feedback.kind === "error" ? "alert" : "status"}
                           style={{
-                            ...messagePanelStyle,
-                            color: feedback.kind === "error" ? "#b00020" : "#7a4b00",
-                            background: feedback.kind === "error" ? "#fff5f7" : "#fff8eb",
-                            border: feedback.kind === "error" ? "1px solid #f1c7d0" : "1px solid #f0d8a8",
+                            ...(feedback.kind === "error" ? alertPanelStyle.danger : alertPanelStyle.warning),
+                            margin: 0,
                           }}
                         >
                           {feedback.message}
@@ -613,19 +663,12 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                 );
               })}
             </div>
-          </section>
+          </CandidatePublishedExamScheduleShell>
         )}
       </section>
     </main>
   );
 }
-
-const sectionPanelStyle: CSSProperties = {
-  border: "1px solid #d9e1e8",
-  borderRadius: "8px",
-  padding: "1.25rem",
-  background: "#ffffff",
-};
 
 const sectionHeaderStyle: CSSProperties = {
   display: "flex",
@@ -649,29 +692,75 @@ const sectionCopyStyle: CSSProperties = {
   lineHeight: 1.5,
 };
 
-const eyebrowStyle: CSSProperties = {
-  margin: 0,
-  color: "#5f6b76",
-  fontSize: "0.8rem",
-  fontWeight: 700,
-  letterSpacing: 0,
-  textTransform: "uppercase",
+const attemptFilterStripStyle: CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: "0.75rem",
+  marginBottom: "1rem",
 };
 
-const cardStyle: CSSProperties = {
-  border: "1px solid #e2e8f0",
-  borderRadius: "8px",
-  padding: "1rem",
-  background: "#fcfdff",
+const attemptFilterButtonStyle: CSSProperties = {
+  ...cardStyle,
+  border: "1px solid #cbd5e1",
+  display: "grid",
+  gap: "0.2rem",
+  minWidth: "118px",
+  flex: "1 1 118px",
+  padding: "0.7rem 0.8rem",
+  textAlign: "left",
+  cursor: "pointer",
+  background: "#ffffff",
+};
+
+const selectedAttemptFilterButtonStyle: CSSProperties = {
+  border: "1px solid #2563eb",
+  background: "#eff6ff",
+  boxShadow: "inset 0 0 0 1px #bfdbfe",
+};
+
+const attemptFilterLabelStyle: CSSProperties = {
+  color: "#475569",
+  fontSize: "0.8rem",
+  fontWeight: 600,
+};
+
+const attemptFilterCountStyle: CSSProperties = {
+  color: "#0f172a",
+  fontSize: "1.35rem",
+  fontWeight: 700,
+  lineHeight: 1.1,
+};
+
+const scheduleSummaryStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: "1rem",
+  flexWrap: "wrap",
+  alignItems: "center",
+  cursor: "pointer",
+  listStyle: "none",
+};
+
+const scheduleSummaryActionStyle: CSSProperties = {
+  ...secondaryButtonStyle,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+
+const scheduleDisclosureBodyStyle: CSSProperties = {
+  display: "grid",
+  gap: "0.9rem",
+  marginTop: "1rem",
+  paddingTop: "1rem",
+  borderTop: "1px solid #e2e8f0",
 };
 
 const metaItemStyle: CSSProperties = {
+  ...cardStyle,
   display: "grid",
   gap: "0.3rem",
   padding: "0.85rem 0.9rem",
-  border: "1px solid #e2e8f0",
-  borderRadius: "8px",
-  background: "#ffffff",
 };
 
 const metaLabelStyle: CSSProperties = {
@@ -704,53 +793,12 @@ function getAttemptScheduleAvailabilityFallback(
   return status === "completed" || status === "expired" ? "No scheduling hold" : "TBD";
 }
 
-const statusBadgeStyle: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  padding: "0.35rem 0.65rem",
-  borderRadius: "999px",
-  background: "#e8f1ff",
-  color: "#1d4f91",
-  fontWeight: 600,
-  whiteSpace: "nowrap",
-};
-
-const pillStyle: CSSProperties = {
-  display: "inline-flex",
-  alignItems: "center",
-  padding: "0.35rem 0.65rem",
-  borderRadius: "999px",
-  background: "#eff6ff",
-  color: "#1e40af",
-  fontWeight: 600,
-  whiteSpace: "nowrap",
-};
-
-const primaryButtonStyle: CSSProperties = {
-  padding: "0.7rem 1rem",
-  borderRadius: "8px",
-  border: "1px solid #0f3d91",
-  background: "#0f3d91",
-  color: "#ffffff",
-  fontWeight: 600,
-};
-
-const secondaryButtonStyle: CSSProperties = {
-  padding: "0.7rem 1rem",
-  borderRadius: "8px",
-  border: "1px solid #cbd5e1",
-  background: "#ffffff",
-  color: "#0f172a",
-  fontWeight: 600,
-};
-
-const disabledButtonStyle: CSSProperties = {
-  background: "#e2e8f0",
-  border: "1px solid #cbd5e1",
-  color: "#94a3b8",
-  cursor: "not-allowed",
-  boxShadow: "none",
-};
+function getCandidateAttemptQueueEmptyMessage(filter: CandidateAttemptStatusFilter): string {
+  if (filter === "live") {
+    return "No live attempts. Use Completed or Expired to inspect attempt history.";
+  }
+  return `No ${filter.replaceAll("_", " ")} attempts.`;
+}
 
 function getButtonStyle(baseStyle: CSSProperties, disabled: boolean): CSSProperties {
   return disabled
@@ -772,18 +820,3 @@ const inputStyle: CSSProperties = {
   boxSizing: "border-box",
 };
 
-const messagePanelStyle: CSSProperties = {
-  margin: 0,
-  padding: "0.95rem 1rem",
-  border: "1px solid #d9e1e8",
-  borderRadius: "8px",
-  background: "#f8fafc",
-  color: "#334155",
-};
-
-const warningPanelStyle: CSSProperties = {
-  ...messagePanelStyle,
-  color: "#7a4b00",
-  background: "#fff8eb",
-  border: "1px solid #f0d8a8",
-};
