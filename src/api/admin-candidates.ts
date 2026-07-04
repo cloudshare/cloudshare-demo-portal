@@ -136,6 +136,7 @@ function toRosterItem(
   diagnosticsByAttemptId: ReadonlyMap<string, readonly DiagnosticLogEntry[]>,
 ): AdminCandidateRosterItem {
   const attempts = toAttemptViews(candidate.attempts, diagnosticsByAttemptId);
+  const latestAttempt = attempts[0] ?? null;
 
   return {
     id: candidate.id,
@@ -145,8 +146,8 @@ function toRosterItem(
     name: formatAdminCandidateName(candidate),
     createdAt: candidate.createdAt.toISOString(),
     attemptSummary: buildAdminCandidateAttemptSummary(candidate.attempts),
-    latestAttempt: attempts[0] ?? null,
-    latestScore: findLatestScore(attempts),
+    latestAttempt,
+    latestScore: latestAttempt?.score ?? null,
   };
 }
 
@@ -183,15 +184,6 @@ function toAttemptViews(
         score: findLatestScoreEvidence(diagnostics),
       };
     });
-}
-
-function findLatestScore(
-  attempts: readonly AdminCandidateAttemptView[],
-): AdminCandidateScoreEvidence | null {
-  return attempts
-    .map((attempt) => attempt.score)
-    .filter((score): score is AdminCandidateScoreEvidence => score !== null)
-    .sort((left, right) => right.retrievedAt.localeCompare(left.retrievedAt))[0] ?? null;
 }
 
 function findLatestScoreEvidence(

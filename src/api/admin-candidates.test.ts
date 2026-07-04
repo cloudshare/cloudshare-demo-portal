@@ -187,13 +187,7 @@ describe("admin candidate handlers", () => {
             id: "attempt-2",
             status: "scheduled",
           }),
-          latestScore: {
-            scoreAvailable: true,
-            percentComplete: 82,
-            stepsCompleted: 9,
-            stepsTotal: 11,
-            retrievedAt: "2026-06-19T11:05:00.000Z",
-          },
+          latestScore: null,
         }),
       ],
     });
