@@ -116,7 +116,12 @@ async function mapAttemptRows(
   }>,
 ): Promise<MonitoringAttemptRecord[]> {
   const candidateIds = [...new Set(rows.map((row) => row.candidateId))];
-  const users = candidateIds.length
+  const users: Array<{
+    id: string;
+    email: string;
+    firstName: string | null;
+    lastName: string | null;
+  }> = candidateIds.length
     ? await prisma.user.findMany({
         where: {
           customerId,

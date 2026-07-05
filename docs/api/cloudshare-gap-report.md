@@ -642,6 +642,18 @@ first non-empty `envId` and never rechecking causes v3 suspend/resume to hit
 `PUT /api/v3/envs/actions/{suspend|resume}?envId=...` with a placeholder id that returns `404
 {"message":"Environment not found","code":"0x40402"}`.
 
+**Update (2026-07-06, Issue #275 admin monitoring live verification):** a real admin read of
+`GET /v4/trainings/EX0ZsJVCxxf6iEjZVt-YpC1Q2/students` for published Cohort Exam Session
+`4b119722-3d0d-40a6-b031-b16e98b8c61c` confirmed the current live tenant returns a wrapped body with
+`count` plus `items[]`, not a top-level bare array. The live row included
+`id`, `firstName`, `lastName`, `email`, `participationStatus`, `firstJoined`, `envStatus`, and
+`envId`. The portal's participant-read adapter and admin monitoring path therefore normalize both
+participant identity and runtime status from that wrapped `items[]` shape while still tolerating the
+ broader envelope variants observed in earlier failures. This confirms `firstJoined`,
+`participationStatus`, `envStatus`, and `envId` are present together on the current tenant for
+monitoring, while preserving the earlier rule that `envId` is only actionable when accompanied by a
+real lifecycle signal such as non-empty `envStatus`.
+
 ---
 
 ## GAP-15 — Per-project webhook registration via the v3 API is unverified

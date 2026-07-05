@@ -1,4 +1,4 @@
-import type { LabLaunch as PrismaLabLaunch, PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 import type { LabLaunch, LabLaunchRepository } from "@/domain/lab-launch";
 
 export function createPrismaLabLaunchRepository(prisma: PrismaClient): LabLaunchRepository {
@@ -89,7 +89,20 @@ export function createPrismaLabLaunchRepository(prisma: PrismaClient): LabLaunch
   };
 }
 
-function toDomain(row: PrismaLabLaunch): LabLaunch {
+function toDomain(row: {
+  id: string;
+  examAttemptId: string;
+  candidateId: string;
+  participantEmail: string | null;
+  participantId: string | null;
+  trainingId: string | null;
+  experienceId: string;
+  environmentExternalId: string | null;
+  environmentId: string | null;
+  loginUrl: string;
+  status: string;
+  createdAt: Date;
+}): LabLaunch {
   return {
     id: row.id,
     examAttemptId: row.examAttemptId,

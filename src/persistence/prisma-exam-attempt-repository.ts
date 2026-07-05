@@ -1,4 +1,4 @@
-import { Prisma, type PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 import {
   DuplicateCohortExamAttemptError,
   SameExamAttemptAvailabilityConflictError,
@@ -169,7 +169,12 @@ async function findSameExamAvailabilityOverlap(
 }
 
 function isUniqueConstraintError(error: unknown): boolean {
-  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002";
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "P2002"
+  );
 }
 
 function delay(ms: number): Promise<void> {

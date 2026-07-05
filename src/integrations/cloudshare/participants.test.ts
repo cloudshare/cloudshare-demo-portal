@@ -42,6 +42,10 @@ describe("createCloudShareParticipantLister", () => {
         environmentId: "env-1",
         environmentStatus: null,
         participationStatus: null,
+        firstJoinedAt: null,
+        firstName: null,
+        lastName: null,
+        displayName: null,
         studentId: "student-1",
       },
     ]);
@@ -59,6 +63,10 @@ describe("createCloudShareParticipantLister", () => {
         environmentId: null,
         environmentStatus: null,
         participationStatus: null,
+        firstJoinedAt: null,
+        firstName: null,
+        lastName: null,
+        displayName: null,
         studentId: null,
       },
     ]);
@@ -95,20 +103,29 @@ describe("createCloudShareParticipantLister", () => {
         environmentId: "env-1",
         environmentStatus: null,
         participationStatus: null,
+        firstJoinedAt: null,
+        firstName: null,
+        lastName: null,
+        displayName: null,
         studentId: "user-1",
       },
     ]);
   });
 
-  it("accepts the live wrapped response shape with envId", () => {
+  it("accepts the live wrapped response shape with envId and monitoring identity fields", () => {
     expect(
       normalizeTrainingParticipants({
         count: 1,
         items: [
           {
             email: "candidate@helioscx.demo",
+            firstName: "Casey",
+            lastName: "Rivera",
+            name: "Casey Rivera",
             envStatus: "ready",
+            participationStatus: "inProgress",
             envId: "ENVS2n38LTNdcC4sHsqnjRzg2",
+            firstJoined: "2026-07-06T10:15:00.000Z",
           },
         ],
       }),
@@ -117,7 +134,11 @@ describe("createCloudShareParticipantLister", () => {
         email: "candidate@helioscx.demo",
         environmentId: "ENVS2n38LTNdcC4sHsqnjRzg2",
         environmentStatus: "ready",
-        participationStatus: null,
+        participationStatus: "inProgress",
+        firstJoinedAt: "2026-07-06T10:15:00.000Z",
+        firstName: "Casey",
+        lastName: "Rivera",
+        displayName: "Casey Rivera",
         studentId: null,
       },
     ]);
@@ -137,6 +158,46 @@ describe("createCloudShareParticipantLister", () => {
         environmentId: null,
         environmentStatus: null,
         participationStatus: null,
+        firstJoinedAt: null,
+        firstName: null,
+        lastName: null,
+        displayName: null,
+        studentId: "student-1",
+      },
+    ]);
+  });
+
+  it("normalizes alternate casing for participant identity and firstJoined fields", () => {
+    expect(
+      normalizeTrainingParticipants({
+        Students: [
+          {
+            User: {
+              Email: "candidate@helioscx.demo",
+              FirstName: "Jordan",
+              LastName: "Lee",
+              Name: "Jordan Lee",
+              Id: "student-1",
+            },
+            Environment: {
+              Id: "env-1",
+              Status: "Suspended",
+            },
+            ParticipationStatus: "completed",
+            FirstJoined: "2026-07-06T09:00:00.000Z",
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        email: "candidate@helioscx.demo",
+        environmentId: "env-1",
+        environmentStatus: "Suspended",
+        participationStatus: "completed",
+        firstJoinedAt: "2026-07-06T09:00:00.000Z",
+        firstName: "Jordan",
+        lastName: "Lee",
+        displayName: "Jordan Lee",
         studentId: "student-1",
       },
     ]);

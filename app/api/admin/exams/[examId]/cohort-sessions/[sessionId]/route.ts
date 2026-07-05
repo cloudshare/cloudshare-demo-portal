@@ -3,10 +3,8 @@ import { cookies } from "next/headers";
 import { getPortalAdminSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { getServices } from "@/composition";
-import {
-  buildAdminCohortExamSessionDeps,
-  handleGetCohortExamSession,
-} from "@/api/admin-cohort-exam-sessions";
+import { handleGetAdminCohortExamSessionDetail } from "@/api/admin-cohort-exam-session-detail";
+import { createPrismaAdminCohortExamSessionAttemptRepository } from "@/persistence/prisma-admin-cohort-exam-session-attempt-repository";
 
 export async function GET(
   _request: Request,
@@ -20,9 +18,21 @@ export async function GET(
   }
 
   const { examId, sessionId } = await context.params;
-  const response = await handleGetCohortExamSession(
-    buildAdminCohortExamSessionDeps(services),
-    { customerId: session.customerId, examId, sessionId },
+  const response = await handleGetAdminCohortExamSessionDetail(
+    {
+      exams: services.exams,
+      sessions: services.cohortExamSessions,
+      attempts: createPrismaAdminCohortExamSessionAttemptRepository(services.prisma),
+      diagnostics: services.diagnosticRecorder,
+      connections: services.cloudshareConnections,
+      cloudshare: services.cloudshareClientFactory,
+      logger: services.logger,
+    },
+    {
+      customerId: session.customerId,
+      examId,
+      sessionId,
+    },
   );
   return NextResponse.json(response.body, { status: response.status });
 }

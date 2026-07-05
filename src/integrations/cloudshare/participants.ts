@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { ParticipantLister, TrainingParticipant } from "@/domain/environment-correlation";
-import type { CloudShareClient } from "./client";
+import type { CloudShareClient, CloudShareDetailedResult } from "./client";
 
 const trainingExperienceIdPattern = /^EX[A-Za-z0-9_-]+$/;
 
@@ -10,6 +10,10 @@ const normalizedParticipantsSchema = z.array(
     environmentId: z.string().min(1).nullable(),
     environmentStatus: z.string().min(1).nullable(),
     participationStatus: z.string().min(1).nullable(),
+    firstJoinedAt: z.string().min(1).nullable(),
+    firstName: z.string().min(1).nullable(),
+    lastName: z.string().min(1).nullable(),
+    displayName: z.string().min(1).nullable(),
     studentId: z.string().min(1).nullable(),
   }),
 );
@@ -142,7 +146,75 @@ export function normalizeTrainingParticipants(payload: unknown): TrainingPartici
         ["User", "Id"],
       ]) ?? null;
 
-    return [{ email, environmentId, environmentStatus, participationStatus, studentId }];
+    const firstJoinedAt =
+      readStringCandidate(row, [
+        ["firstJoined"],
+        ["FirstJoined"],
+        ["firstJoinedAt"],
+        ["FirstJoinedAt"],
+        ["user", "firstJoined"],
+        ["user", "FirstJoined"],
+        ["User", "firstJoined"],
+        ["User", "FirstJoined"],
+      ]) ?? null;
+
+    const firstName =
+      readStringCandidate(row, [
+        ["firstName"],
+        ["FirstName"],
+        ["user", "firstName"],
+        ["user", "FirstName"],
+        ["User", "firstName"],
+        ["User", "FirstName"],
+        ["student", "firstName"],
+        ["student", "FirstName"],
+        ["Student", "firstName"],
+        ["Student", "FirstName"],
+      ]) ?? null;
+
+    const lastName =
+      readStringCandidate(row, [
+        ["lastName"],
+        ["LastName"],
+        ["user", "lastName"],
+        ["user", "LastName"],
+        ["User", "lastName"],
+        ["User", "LastName"],
+        ["student", "lastName"],
+        ["student", "LastName"],
+        ["Student", "lastName"],
+        ["Student", "LastName"],
+      ]) ?? null;
+
+    const displayName =
+      readStringCandidate(row, [
+        ["name"],
+        ["Name"],
+        ["displayName"],
+        ["DisplayName"],
+        ["user", "name"],
+        ["user", "Name"],
+        ["User", "name"],
+        ["User", "Name"],
+        ["student", "name"],
+        ["student", "Name"],
+        ["Student", "name"],
+        ["Student", "Name"],
+      ]) ?? null;
+
+    return [
+      {
+        email,
+        environmentId,
+        environmentStatus,
+        participationStatus,
+        firstJoinedAt,
+        firstName,
+        lastName,
+        displayName,
+        studentId,
+      },
+    ];
   });
 
   return normalizedParticipantsSchema.parse(participants);
@@ -169,6 +241,84 @@ export function createCloudShareParticipantLister(
         path: `/trainings/${trainingId}/students`,
         schema: trainingParticipantsSchema,
       })) as readonly TrainingParticipant[];
+    },
+  };
+}
+
+export interface TrainingParticipantReadResult {
+  readonly participants: readonly TrainingParticipant[];
+  readonly integrationSurface: string;
+  readonly request: {
+    readonly method: string;
+    readonly path: string;
+    readonly query?: Record<string, string>;
+    readonly headers?: Record<string, string>;
+    readonly body?: unknown;
+  };
+  readonly response: {
+    readonly status: number;
+    readonly headers?: Record<string, string | string[]>;
+    readonly body: unknown;
+  };
+}
+
+export interface TrainingParticipantReader {
+  readParticipants(trainingId: string): Promise<TrainingParticipantReadResult>;
+}
+
+export function createCloudShareTrainingParticipantReader(
+  client: CloudShareClient,
+): TrainingParticipantReader {
+  return {
+    async readParticipants(trainingId: string): Promise<TrainingParticipantReadResult> {
+      if (!isCloudShareTrainingExperienceId(trainingId)) {
+        return {
+          participants: [],
+          integrationSurface: "cloudshare.v4.training.participant",
+          request: {
+            method: "GET",
+            path: "/v4/trainings/{trainingId}/students",
+          },
+          response: {
+            status: 200,
+            body: [],
+          },
+        };
+      }
+
+      if (typeof client.requestV4Detailed === "function") {
+        const result = (await client.requestV4Detailed({
+          method: "GET",
+          path: `/trainings/${trainingId}/students`,
+          schema: trainingParticipantsSchema,
+        })) as CloudShareDetailedResult<readonly TrainingParticipant[]>;
+
+        return {
+          participants: result.data,
+          integrationSurface: result.integrationSurface,
+          request: result.request,
+          response: result.response,
+        };
+      }
+
+      const participants = (await client.requestV4({
+        method: "GET",
+        path: `/trainings/${trainingId}/students`,
+        schema: trainingParticipantsSchema,
+      })) as readonly TrainingParticipant[];
+
+      return {
+        participants,
+        integrationSurface: "cloudshare.v4.training.participant",
+        request: {
+          method: "GET",
+          path: `/v4/trainings/${trainingId}/students`,
+        },
+        response: {
+          status: 200,
+          body: participants,
+        },
+      };
     },
   };
 }
