@@ -481,17 +481,22 @@ function inferPublishFailureMode(error: unknown): string {
 }
 
 function classifyCloudSharePublishFailure(error: unknown): "recoverable" | "reconciliation_required" {
-  if (error instanceof CloudShareRequestError || (error as { name?: unknown }).name === "CloudShareRequestError") {
-    return "recoverable";
-  }
   if (isAmbiguousCloudShareTrainingCreateFailure(error)) {
     return "reconciliation_required";
+  }
+  if (error instanceof CloudShareRequestError || (error as { name?: unknown }).name === "CloudShareRequestError") {
+    return "recoverable";
   }
   return "recoverable";
 }
 
 function isAmbiguousCloudShareTrainingCreateFailure(error: unknown): boolean {
   const name = (error as { name?: unknown }).name;
+  if (error instanceof CloudShareRequestError || name === "CloudShareRequestError") {
+    const context = (error as { context?: Record<string, unknown>; status?: unknown }).context ?? {};
+    const status = typeof (error as { status?: unknown }).status === "number" ? (error as { status: number }).status : null;
+    return status !== null && status >= 500 && isCloudShareTrainingCreateRequestContext(context);
+  }
   if (
     !(
       error instanceof CloudShareTransportError ||
@@ -503,6 +508,10 @@ function isAmbiguousCloudShareTrainingCreateFailure(error: unknown): boolean {
     return false;
   }
   const context = (error as { context?: Record<string, unknown> }).context ?? {};
+  return isCloudShareTrainingCreateRequestContext(context);
+}
+
+function isCloudShareTrainingCreateRequestContext(context: Record<string, unknown>): boolean {
   return context.method === "POST" && (context.path === "/trainings" || context.path === "/v4/trainings");
 }
 

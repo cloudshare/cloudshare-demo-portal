@@ -755,6 +755,82 @@ describe("admin Cohort Exam Session runtime", () => {
     });
     expect(requestV4Detailed).toHaveBeenCalledTimes(1);
   });
+
+  it("blocks publish retry after an ambiguous CloudShare create 5xx response", async () => {
+    const { diagnosticsRepository, sessions, deps, requestV4Detailed } = await makePublishFailureDeps(
+      new CloudShareRequestError("Bad Gateway", 502, {
+        method: "POST",
+        path: "/v4/trainings",
+        integrationSurface: "cloudshare.v4.training",
+        requestHeaders: { authorization: "Bearer secret-api-key" },
+        requestBody: { Name: "July Admin Cohort", apiKey: "secret-api-key" },
+        responseHeaders: { "content-type": "application/json" },
+        responseBody: { message: "upstream error", apiKeyEcho: "secret-api-key" },
+      }),
+    );
+
+    const response = await handlePublishCohortExamSession(deps, {
+      customerId: "customer-1",
+      actor,
+      examId: "exam-1",
+      sessionId: "cohort-session-1",
+    });
+
+    expect(response.status).toBe(502);
+    expect(response.body).toEqual({
+      error:
+        "CloudShare publish outcome is unknown. Reconcile it before retrying this Cohort Exam Session. Check the diagnostic log for the correlation ID.",
+      correlationId: "corr-cohort-publish-failure",
+    });
+    await expect(sessions.findById("cohort-session-1")).resolves.toMatchObject({
+      status: "publish_reconciliation_required",
+      lastPublishCorrelationId: "corr-cohort-publish-failure",
+      lastPublishError:
+        "CloudShare publish outcome is unknown. Reconcile this Cohort Exam Session before retrying.",
+    });
+    expect(requestV4Detailed).toHaveBeenCalledTimes(1);
+
+    const [entry] = await diagnosticsRepository.query({
+      customerId: "customer-1",
+      examId: "exam-1",
+      operation: "cohort_exam_session.publish",
+      outcome: "failure",
+    });
+    expect(entry).toMatchObject({
+      correlationId: "corr-cohort-publish-failure",
+      request: {
+        method: "POST",
+        path: "/v4/trainings",
+        headers: { authorization: "[REDACTED]" },
+        body: { Name: "July Admin Cohort", apiKey: "[REDACTED]" },
+      },
+      response: {
+        status: 502,
+        body: { message: "upstream error", apiKeyEcho: "[REDACTED]" },
+      },
+      details: {
+        integrationSurface: "cloudshare.v4.training",
+        failureMode: "http_status",
+      },
+    });
+    expect(JSON.stringify(entry)).not.toContain("secret-api-key");
+
+    const retry = await handlePublishCohortExamSession(deps, {
+      customerId: "customer-1",
+      actor,
+      examId: "exam-1",
+      sessionId: "cohort-session-1",
+    });
+    expect(retry).toEqual({
+      status: 409,
+      body: {
+        error:
+          "The previous CloudShare publish attempt has an unknown outcome. Reconcile it before retrying this Cohort Exam Session.",
+        correlationId: "corr-cohort-publish-failure",
+      },
+    });
+    expect(requestV4Detailed).toHaveBeenCalledTimes(1);
+  });
 });
 
 async function makePublishFailureDeps(error: Error) {
