@@ -21,6 +21,25 @@ export function createPrismaCohortExamSessionRepository(prisma: PrismaClient): C
       });
       return rows.map(hydrate);
     },
+    async claimDraftForPublishing(input): Promise<CohortExamSession | null> {
+      const claimed = await prisma.cohortExamSession.updateMany({
+        where: {
+          id: input.id,
+          customerId: input.customerId,
+          examId: input.examId,
+          status: "draft",
+        },
+        data: {
+          status: "publishing",
+          updatedAt: input.claimedAt,
+        },
+      });
+      if (claimed.count !== 1) {
+        return null;
+      }
+      const row = await prisma.cohortExamSession.findUnique({ where: { id: input.id } });
+      return row ? hydrate(row) : null;
+    },
   };
 }
 

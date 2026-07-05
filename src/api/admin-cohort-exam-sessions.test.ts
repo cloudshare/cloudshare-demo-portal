@@ -430,6 +430,228 @@ describe("admin Cohort Exam Session runtime", () => {
     expect(JSON.stringify(entry)).not.toContain("secret-api-key");
   });
 
+  it("keeps a session recoverable and records diagnostics when CloudShare cannot resolve a Project Team", async () => {
+    const exams = createInMemoryExamCatalogRepository();
+    const sessions = createInMemoryCohortExamSessionRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({
+      repository: diagnosticsRepository,
+      secrets: ["secret-api-key"],
+    });
+    await seedExam(exams);
+    await handleCreateDraftCohortExamSession(
+      {
+        exams,
+        sessions,
+        logger: makeLogger(),
+        now: () => new Date("2026-07-04T11:00:00.000Z"),
+        newId: () => "cohort-session-1",
+      },
+      {
+        customerId: "customer-1",
+        examId: "exam-1",
+        body: {
+          name: "July Admin Cohort",
+          admissionStartsAt: "2026-07-05T09:00:00.000Z",
+        },
+      },
+    );
+    const requestV3 = vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) =>
+      spec.schema.parse({ rows: [] }),
+    );
+    const requestV4Detailed = vi.fn();
+    const cloudshare: CloudShareClientFactory = {
+      forConnection: () =>
+        ({
+          requestV3,
+          requestV4Detailed,
+        }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>,
+    };
+
+    const response = await handlePublishCohortExamSession(
+      {
+        exams,
+        sessions,
+        connections: {
+          findByCustomerId: vi.fn(async () => ({
+            customerId: "customer-1",
+            apiId: "api-id",
+            apiKey: "secret-api-key",
+            webhookSecret: "webhook-secret",
+            webhookPathToken: "webhook-token",
+            connectedAt: new Date("2026-07-01T00:00:00.000Z"),
+            verifiedAt: new Date("2026-07-01T00:05:00.000Z"),
+          })),
+          save: vi.fn(),
+          findByWebhookPathToken: vi.fn(),
+          markVerified: vi.fn(),
+        },
+        cloudshare,
+        diagnostics,
+        logger: makeLogger(),
+        now: () => new Date("2026-07-04T12:00:00.000Z"),
+        newCorrelationId: () => "corr-cohort-team-failure",
+      },
+      {
+        customerId: "customer-1",
+        actor,
+        examId: "exam-1",
+        sessionId: "cohort-session-1",
+      },
+    );
+
+    expect(response.status).toBe(502);
+    expect(response.body).toEqual({
+      error: "CloudShare could not publish this Cohort Exam Session. Check the diagnostic log for the correlation ID.",
+      correlationId: "corr-cohort-team-failure",
+    });
+    expect(requestV4Detailed).not.toHaveBeenCalled();
+    await expect(sessions.findById("cohort-session-1")).resolves.toMatchObject({
+      status: "draft",
+      cloudShareTrainingId: null,
+      lastPublishCorrelationId: "corr-cohort-team-failure",
+      lastPublishError: "CloudShare could not publish this Cohort Exam Session.",
+    });
+
+    const [entry] = await diagnosticsRepository.query({
+      customerId: "customer-1",
+      examId: "exam-1",
+      operation: "cohort_exam_session.publish",
+      outcome: "failure",
+    });
+    expect(entry).toMatchObject({
+      subject: { type: "cohort_exam_session", id: "cohort-session-1" },
+      correlationId: "corr-cohort-team-failure",
+      request: {
+        method: "GET",
+        path: "/teams",
+        query: expect.objectContaining({ projectId: "project-1" }),
+      },
+      response: {
+        body: { teamCount: 0 },
+      },
+      details: {
+        integrationSurface: "cloudshare.v3.teams",
+        failureMode: "unexpected_response",
+        issues: ["No CloudShare Team was returned for Project project-1."],
+      },
+    });
+    expect(JSON.stringify(entry)).not.toContain("secret-api-key");
+  });
+
+  it("allows only one concurrent publish call to create the CloudShare on-demand Experience", async () => {
+    const exams = createInMemoryExamCatalogRepository();
+    const sessions = createInMemoryCohortExamSessionRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
+    await seedExam(exams);
+    await handleCreateDraftCohortExamSession(
+      {
+        exams,
+        sessions,
+        logger: makeLogger(),
+        now: () => new Date("2026-07-04T11:00:00.000Z"),
+        newId: () => "cohort-session-1",
+      },
+      {
+        customerId: "customer-1",
+        examId: "exam-1",
+        body: {
+          name: "July Admin Cohort",
+          admissionStartsAt: "2026-07-05T09:00:00.000Z",
+        },
+      },
+    );
+    const requestV3 = vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) =>
+      spec.schema.parse({ rows: [{ id: "TM-team-1", name: "Helios Team" }] }),
+    );
+    const trainingPost = deferred<{
+      data: unknown;
+      host: string;
+      integrationSurface: string;
+      request: Record<string, unknown>;
+      response: Record<string, unknown>;
+    }>();
+    const requestV4Detailed = vi.fn(
+      async (spec: { method: string; path: string; body: Record<string, unknown>; schema: { parse(value: unknown): unknown } }) => {
+        await trainingPost.promise;
+        return {
+          data: spec.schema.parse({ id: "EXcohort-1" }),
+          host: "api.accelerate.cloudshare.com",
+          integrationSurface: "cloudshare.v4.training",
+          request: { method: spec.method, path: spec.path, body: spec.body },
+          response: { status: 201, body: { id: "EXcohort-1" } },
+        };
+      },
+    );
+    const cloudshare: CloudShareClientFactory = {
+      forConnection: () =>
+        ({
+          requestV3,
+          requestV4Detailed,
+        }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>,
+    };
+    const deps = {
+      exams,
+      sessions,
+      connections: {
+        findByCustomerId: vi.fn(async () => ({
+          customerId: "customer-1",
+          apiId: "api-id",
+          apiKey: "secret-api-key",
+          webhookSecret: "webhook-secret",
+          webhookPathToken: "webhook-token",
+          connectedAt: new Date("2026-07-01T00:00:00.000Z"),
+          verifiedAt: new Date("2026-07-01T00:05:00.000Z"),
+        })),
+        save: vi.fn(),
+        findByWebhookPathToken: vi.fn(),
+        markVerified: vi.fn(),
+      },
+      cloudshare,
+      diagnostics,
+      logger: makeLogger(),
+      now: () => new Date("2026-07-04T12:00:00.000Z"),
+      newCorrelationId: vi.fn().mockReturnValueOnce("corr-concurrent-1").mockReturnValueOnce("corr-concurrent-2"),
+    };
+
+    const first = handlePublishCohortExamSession(deps, {
+      customerId: "customer-1",
+      actor,
+      examId: "exam-1",
+      sessionId: "cohort-session-1",
+    });
+    const second = handlePublishCohortExamSession(deps, {
+      customerId: "customer-1",
+      actor,
+      examId: "exam-1",
+      sessionId: "cohort-session-1",
+    });
+    await vi.waitFor(() => expect(requestV4Detailed).toHaveBeenCalledTimes(1));
+    trainingPost.resolve({
+      data: { id: "unused" },
+      host: "api.accelerate.cloudshare.com",
+      integrationSurface: "cloudshare.v4.training",
+      request: {},
+      response: {},
+    });
+    const responses = await Promise.all([first, second]);
+
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
+    expect(requestV4Detailed).toHaveBeenCalledTimes(1);
+    await expect(sessions.findById("cohort-session-1")).resolves.toMatchObject({
+      status: "published",
+      cloudShareTrainingId: "EXcohort-1",
+    });
+    const entries = await diagnosticsRepository.query({
+      customerId: "customer-1",
+      examId: "exam-1",
+      operation: "cohort_exam_session.publish",
+    });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ outcome: "success", correlationId: "corr-concurrent-1" });
+  });
+
   it("records transport failure diagnostics without leaking secrets", async () => {
     const { diagnosticsRepository, deps } = await makePublishFailureDeps(
       new CloudShareTransportError("CloudShare was unreachable", {
@@ -535,4 +757,14 @@ async function makePublishFailureDeps(error: Error) {
       newCorrelationId: () => "corr-cohort-publish-failure",
     },
   };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
 }

@@ -15,6 +15,24 @@ export function createInMemoryCohortExamSessionRepository(): CohortExamSessionRe
         .filter((session) => session.examId === examId)
         .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     },
+    async claimDraftForPublishing(input): Promise<CohortExamSession | null> {
+      const session = byId.get(input.id);
+      if (
+        !session ||
+        session.customerId !== input.customerId ||
+        session.examId !== input.examId ||
+        session.status !== "draft"
+      ) {
+        return null;
+      }
+      const claimed: CohortExamSession = {
+        ...session,
+        status: "publishing",
+        updatedAt: input.claimedAt,
+      };
+      byId.set(claimed.id, claimed);
+      return claimed;
+    },
     reset(): void {
       byId.clear();
     },

@@ -223,24 +223,36 @@ export async function handlePublishCohortExamSession(
         body: { error: "CloudShare is not connected for this customer." },
       };
     }
+    const claimedSession = await deps.sessions.claimDraftForPublishing({
+      id: session.id,
+      customerId: request.customerId,
+      examId: exam.id,
+      claimedAt: (deps.now ?? (() => new Date()))(),
+    });
+    if (!claimedSession) {
+      return {
+        status: 409,
+        body: { error: "Cohort Exam Session publish is already in progress or has already completed." },
+      };
+    }
 
     const creator = createCloudShareOnDemandExperienceCreator(deps.cloudshare.forConnection(connection));
     const created = await creator.createOnDemandExperience({
-      name: buildCohortExperienceName(exam.title, session.name),
-      startsAt: session.admissionStartsAt,
-      endsAt: session.admissionEndsAt,
+      name: buildCohortExperienceName(exam.title, claimedSession.name),
+      startsAt: claimedSession.admissionStartsAt,
+      endsAt: claimedSession.admissionEndsAt,
       projectId: exam.projectId,
       blueprintId: exam.blueprintId,
       policyId: exam.policyId,
       regionIds: exam.allowedRegions.map((region) => region.id),
       instructorId: exam.instructorId,
       timeZoneId: "UTC",
-      passphrase: `certalis-${session.id}`,
+      passphrase: `certalis-${claimedSession.id}`,
     });
     const published = await markCohortExamSessionPublished(
       { repository: deps.sessions, now: deps.now },
       {
-        session,
+        session: claimedSession,
         trainingId: created.trainingId,
         experienceId: created.experienceId,
         teamId: created.teamId,
@@ -250,7 +262,7 @@ export async function handlePublishCohortExamSession(
       source: "admin-exams",
       customerId: request.customerId,
       actor: request.actor ?? null,
-      subject: { type: "cohort_exam_session", id: session.id },
+      subject: { type: "cohort_exam_session", id: claimedSession.id },
       examId: exam.id,
       level: "info",
       operation: "cohort_exam_session.publish",

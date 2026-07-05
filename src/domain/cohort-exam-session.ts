@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Exam } from "./exam-catalog";
 
-export type CohortExamSessionStatus = "draft" | "published";
+export type CohortExamSessionStatus = "draft" | "publishing" | "published";
 
 export interface CohortExamSession {
   readonly id: string;
@@ -42,6 +42,12 @@ export interface CohortExamSessionRepository {
   save(session: CohortExamSession): Promise<void>;
   findById(id: string): Promise<CohortExamSession | null>;
   listByExamId(examId: string): Promise<CohortExamSession[]>;
+  claimDraftForPublishing(input: {
+    readonly id: string;
+    readonly customerId: string;
+    readonly examId: string;
+    readonly claimedAt: Date;
+  }): Promise<CohortExamSession | null>;
 }
 
 export class CohortExamSessionValidationError extends Error {
@@ -102,8 +108,8 @@ export async function markCohortExamSessionPublished(
     readonly teamId?: string | null;
   },
 ): Promise<CohortExamSession> {
-  if (input.session.status !== "draft") {
-    throw new CohortExamSessionValidationError("Only draft Cohort Exam Sessions can be published.");
+  if (input.session.status !== "publishing") {
+    throw new CohortExamSessionValidationError("Only claimed Cohort Exam Sessions can be published.");
   }
   if (!input.trainingId.trim() || !input.experienceId.trim()) {
     throw new CohortExamSessionValidationError("CloudShare training and Experience identifiers are required.");
@@ -138,6 +144,7 @@ export async function recordCohortExamSessionPublishFailure(
   const now = (deps.now ?? (() => new Date()))();
   const recoverable: CohortExamSession = {
     ...input.session,
+    status: "draft",
     lastPublishError: input.error,
     lastPublishCorrelationId: input.correlationId,
     updatedAt: now,

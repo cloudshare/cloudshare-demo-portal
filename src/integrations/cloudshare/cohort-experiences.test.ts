@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createCloudShareOnDemandExperienceCreator } from "./cohort-experiences";
 import type { CloudShareClient } from "./client";
+import { CloudShareResponseError } from "./errors";
 
 describe("cloudShareOnDemandExperienceCreator", () => {
   it("creates a self-paced training with inherited Exam resource tuple", async () => {
@@ -111,5 +112,42 @@ describe("cloudShareOnDemandExperienceCreator", () => {
     });
 
     expect(requestV4Detailed.mock.calls[0][0].body).not.toHaveProperty("End");
+  });
+
+  it("raises a typed response error when no Project Team can be resolved", async () => {
+    const requestV3 = vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) =>
+      spec.schema.parse({ rows: [] }),
+    );
+    const requestV4Detailed = vi.fn();
+    const creator = createCloudShareOnDemandExperienceCreator({
+      requestV3,
+      requestV4Detailed,
+    } as unknown as CloudShareClient);
+
+    const create = creator.createOnDemandExperience({
+      name: "Open Cohort",
+      startsAt: new Date("2026-07-05T09:00:00.000Z"),
+      endsAt: null,
+      projectId: "project-1",
+      blueprintId: "bp-1",
+      policyId: "policy-1",
+      regionIds: ["region-1"],
+      instructorId: "instructor-1",
+      timeZoneId: "UTC",
+      passphrase: "certalis-cohort-session-1",
+    });
+
+    await expect(create).rejects.toMatchObject({
+      name: "CloudShareResponseError",
+      context: {
+        method: "GET",
+        path: "/teams",
+        integrationSurface: "cloudshare.v3.teams",
+        requestQuery: { projectId: "project-1" },
+        responseBody: { teamCount: 0 },
+      },
+    });
+    await expect(create).rejects.toBeInstanceOf(CloudShareResponseError);
+    expect(requestV4Detailed).not.toHaveBeenCalled();
   });
 });

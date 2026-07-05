@@ -5,6 +5,7 @@ import type {
   CloudShareRequestDiagnostics,
   CloudShareResponseDiagnostics,
 } from "./client";
+import { CloudShareResponseError } from "./errors";
 
 const experienceSchema = z.object({ id: z.string().min(1) });
 type ProjectTeam = { id: string; name: string };
@@ -96,7 +97,21 @@ export function createCloudShareOnDemandExperienceCreator(
       })) as ProjectTeam[];
       const teamId = teams[0]?.id;
       if (!teamId) {
-        throw new Error(`No CloudShare Team was returned for Project ${input.projectId}.`);
+        throw new CloudShareResponseError(`No CloudShare Team was returned for Project ${input.projectId}.`, {
+          method: "GET",
+          path: "/teams",
+          integrationSurface: "cloudshare.v3.teams",
+          requestQuery: {
+            getRows: "true",
+            projectId: input.projectId,
+            sortBy: "name",
+            sortAscending: "true",
+            skip: "0",
+            take: "20",
+          },
+          responseBody: { teamCount: teams.length },
+          issues: [`No CloudShare Team was returned for Project ${input.projectId}.`],
+        });
       }
 
       const body = {
