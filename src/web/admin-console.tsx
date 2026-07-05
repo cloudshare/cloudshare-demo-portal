@@ -458,10 +458,10 @@ function formatExamDeliveryAvailability(value: ExamRecord["deliveryAvailability"
 }
 
 export function getDeliveryAvailabilityAuthoringOptions(value: ExamRecord["deliveryAvailability"]) {
+  void value;
   return [
     { value: "individual", label: "Individual Exam", disabled: false },
     { value: "cohort", label: "Cohort Exam", disabled: false },
-    { value: "both", label: "Individual + Cohort Exam", disabled: false },
   ];
 }
 
