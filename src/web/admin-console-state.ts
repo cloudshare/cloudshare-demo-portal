@@ -460,6 +460,10 @@ export function reconcileAllowedRegionIds(
   return selectedRegionIds.filter((regionId) => compatibleRegionIds.has(regionId));
 }
 
+export function shouldReconcileAllowedRegionIds(defaultSnapshot: BlueprintSnapshot | null): boolean {
+  return defaultSnapshot !== null;
+}
+
 export function getAllowedRegionValidationMessage(
   selectedRegionIds: readonly string[],
   compatibleRegions: readonly NamedResource[],

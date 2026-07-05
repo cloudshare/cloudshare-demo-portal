@@ -31,6 +31,7 @@ import {
   reconcileAllowedRegionIds,
   shouldClearAdminBannerOnTabChange,
   shouldShowCandidateProvisioning,
+  shouldReconcileAllowedRegionIds,
 } from "./admin-console-state";
 import {
   DiagnosticLogTable,
@@ -2043,12 +2044,15 @@ export function AdminConsole({
       : null) ??
     (selectedCohortSession?.session.id === focusedCohortSessionId ? selectedCohortSession : null);
   useEffect(() => {
+    if (!shouldReconcileAllowedRegionIds(defaultSnapshot)) {
+      return;
+    }
     const nextSelectedRegionIds = reconcileAllowedRegionIds(selectedAllowedRegionIds, compatibleRegions);
     if (nextSelectedRegionIds.length === selectedAllowedRegionIds.length) {
       return;
     }
     setSelectedAllowedRegionIds(nextSelectedRegionIds);
-  }, [compatibleRegions, selectedAllowedRegionIds]);
+  }, [compatibleRegions, defaultSnapshot, selectedAllowedRegionIds]);
 
   if (sessionExpired) {
     return (

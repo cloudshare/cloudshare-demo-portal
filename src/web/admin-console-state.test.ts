@@ -24,6 +24,7 @@ import {
   reconcileAllowedRegionIds,
   shouldShowCandidateProvisioning,
   shouldClearAdminBannerOnTabChange,
+  shouldReconcileAllowedRegionIds,
 } from "./admin-console-state";
 import type { AdminMonitoringView } from "@/domain/admin-monitoring";
 
@@ -554,6 +555,18 @@ describe("allowed Region selection state", () => {
     expect(reconcileAllowedRegionIds(["region-1", "region-2"], compatibleRegions)).toEqual([
       "region-2",
     ]);
+  });
+
+  it("waits for the Blueprint default Snapshot before reconciling an edited Exam's saved Regions", () => {
+    expect(shouldReconcileAllowedRegionIds(null)).toBe(false);
+    expect(
+      shouldReconcileAllowedRegionIds({
+        id: "snap-1",
+        name: "Default Snapshot",
+        isDefault: true,
+        regionIds: ["region-1"],
+      }),
+    ).toBe(true);
   });
 
   it("requires at least one compatible Region before an exam can be saved", () => {
