@@ -635,7 +635,16 @@ export function ExamCatalogRowActions(props: {
       <div style={{ color: colors.textSecondary, fontSize: "0.8rem" }}>
         Delivery: {formatExamDeliveryAvailability(props.exam.deliveryAvailability)}
       </div>
-      {props.exam.status === "draft" ? (
+      {isCohortSessionAuthoringAvailable(props.exam.deliveryAvailability) ? (
+        <button
+          type="button"
+          onClick={props.onManageCohortSessions}
+          disabled={props.loading}
+          style={{ padding: "0.45rem 0.75rem" }}
+        >
+          Manage Cohort Sessions
+        </button>
+      ) : props.exam.status === "draft" ? (
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
           {props.editingExamId === props.exam.id ? (
             <span style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>
@@ -668,20 +677,6 @@ export function ExamCatalogRowActions(props: {
         >
           Unpublish Exam
         </button>
-      )}
-      {isCohortSessionAuthoringAvailable(props.exam.deliveryAvailability) ? (
-        <button
-          type="button"
-          onClick={props.onManageCohortSessions}
-          disabled={props.loading}
-          style={{ padding: "0.45rem 0.75rem" }}
-        >
-          Manage Cohort Sessions
-        </button>
-      ) : (
-        <span style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>
-          Cohort Sessions unavailable
-        </span>
       )}
     </div>
   );
