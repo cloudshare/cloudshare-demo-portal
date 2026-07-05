@@ -449,6 +449,14 @@ function formatExamDeliveryAvailability(value: ExamRecord["deliveryAvailability"
   return "Individual Exam";
 }
 
+export function getDeliveryAvailabilityAuthoringOptions(value: ExamRecord["deliveryAvailability"]) {
+  return [
+    ...(value === "both" ? [{ value: "both", label: "Mixed delivery (legacy)", disabled: true }] : []),
+    { value: "individual", label: "Individual Exam", disabled: false },
+    { value: "cohort", label: "Cohort Exam", disabled: false },
+  ];
+}
+
 export const COHORT_SESSION_DRAFT_ONLY_COPY =
   "Draft only - publishing and candidate admission are delivered in a later slice.";
 
@@ -2757,8 +2765,11 @@ export function AdminConsole({
                 }
                 style={compactFieldStyle}
               >
-                <option value="individual">Individual Exam</option>
-                <option value="cohort">Cohort Exam</option>
+                {getDeliveryAvailabilityAuthoringOptions(deliveryAvailability).map((option) => (
+                  <option key={option.value} value={option.value} disabled={option.disabled}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
             </label>
           </div>

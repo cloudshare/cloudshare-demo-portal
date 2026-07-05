@@ -8,6 +8,7 @@ import {
   CohortSessionAuthoringPanel,
   ExamCatalogRowActions,
   ExamCatalogLoadingOverlay,
+  getDeliveryAvailabilityAuthoringOptions,
   getDuplicateExamResourceTupleWarning,
   normalizeAdminLocalDateTime,
 } from "./admin-console";
@@ -191,6 +192,19 @@ describe("AdminConsole", () => {
     expect(html).toContain("Individual Exam");
     expect(html).toContain("Cohort Exam");
     expect(html).not.toContain("Individual and Cohort delivery");
+  });
+
+  it("shows existing mixed-delivery Exams as a disabled legacy authoring option", () => {
+    expect(getDeliveryAvailabilityAuthoringOptions("individual")).toEqual([
+      { value: "individual", label: "Individual Exam", disabled: false },
+      { value: "cohort", label: "Cohort Exam", disabled: false },
+    ]);
+
+    expect(getDeliveryAvailabilityAuthoringOptions("both")).toEqual([
+      { value: "both", label: "Mixed delivery (legacy)", disabled: true },
+      { value: "individual", label: "Individual Exam", disabled: false },
+      { value: "cohort", label: "Cohort Exam", disabled: false },
+    ]);
   });
 
   it("marks the current Exam catalog subnav control as disabled and non-actionable", () => {
