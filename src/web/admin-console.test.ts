@@ -6,6 +6,7 @@ import {
   AdminConsole,
   CohortSessionDraftOnlyNotice,
   CohortSessionAuthoringPanel,
+  CohortSessionWorkspacePanel,
   ExamAuthoringSelectionSummary,
   ExamCatalogRowActions,
   ExamCatalogLoadingOverlay,
@@ -487,13 +488,16 @@ describe("AdminConsole", () => {
     expect(html).toContain("September Admin Cohort");
     expect(html).not.toContain("September Admin Cohort · Published");
     expect(html).not.toContain("Status: Published");
+    expect(html).toContain("grid-template-columns:repeat(auto-fit, minmax(16rem, 1fr))");
     expect(html).toContain("Published");
     expect(html).toContain("Admission opens");
     expect(html).toContain("2026-09-01T09:00Z");
     expect(html).toContain("Admission closes");
     expect(html).toContain("2026-09-30T17:00Z");
-    expect(html).toContain("Capacity: 25");
-    expect(html).toContain("CloudShare Experience ID: EX123");
+    expect(html).toContain("Capacity");
+    expect(html).toContain(">25<");
+    expect(html).toContain("CloudShare Experience ID");
+    expect(html).toContain("EX123");
     expect(html).toContain("Open Session");
   });
 
@@ -541,6 +545,68 @@ describe("AdminConsole", () => {
 
     expect(html).toContain("Publish reconciliation required");
     expect(html).not.toContain("July Admin Cohort · Publish reconciliation required");
+  });
+
+  it("renders the focused Cohort Exam Session workspace as a themed summary card with compact details", () => {
+    const html = renderToStaticMarkup(
+      createElement(CohortSessionWorkspacePanel, {
+        examTitle: "Helios CX Admin Foundations",
+        session: {
+          session: {
+            id: "cohort-session-1",
+            name: "September Admin Cohort",
+            admissionStartsAt: "2026-09-01T09:00:00.000Z",
+            admissionEndsAt: "2026-09-30T17:00:00.000Z",
+            capacity: 25,
+            status: "draft",
+            cloudShareTrainingId: "TRN-123",
+            cloudShareExperienceId: "EXP-123",
+            cloudShareTeamId: "TEAM-123",
+            publishedAt: "2026-08-30T12:30:00.000Z",
+          },
+          inheritedContext: {
+            project: { id: "project-1", name: "Project Atlas" },
+            blueprint: { id: "blueprint-1", name: "Blueprint Aurora" },
+            snapshot: { id: "snapshot-1", name: "Snapshot Echo" },
+            policy: { id: "policy-1", name: "Policy Orbit" },
+            allowedRegions: [
+              { id: "region-1", name: "useast" },
+              { id: "region-2", name: "euwest" },
+            ],
+            instructor: { id: "instructor-1", name: "Jordan Lee" },
+            scoreRetrievalEnabled: true,
+            timeLimitMinutes: 90,
+          },
+        },
+        loading: false,
+        onBack: vi.fn(),
+        onPublish: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("Cohort Exam Session workspace");
+    expect(html).toContain("September Admin Cohort");
+    expect(html).not.toContain("Status: Draft");
+    expect(html).toContain("Draft");
+    expect(html).toContain("Admission opens");
+    expect(html).toContain("2026-09-01T09:00Z");
+    expect(html).toContain("Admission closes");
+    expect(html).toContain("2026-09-30T17:00Z");
+    expect(html).toContain("Capacity");
+    expect(html).toContain("25");
+    expect(html).toContain("CloudShare training ID");
+    expect(html).toContain("TRN-123");
+    expect(html).toContain("CloudShare Experience ID");
+    expect(html).toContain("EXP-123");
+    expect(html).toContain("Published at");
+    expect(html).toContain("2026-08-30T12:30Z");
+    expect(html).toContain("Project");
+    expect(html).toContain("Project Atlas");
+    expect(html).toContain("Allowed Regions");
+    expect(html).toContain("useast, euwest");
+    expect(html).toContain("Guided Journey score retrieval");
+    expect(html).toContain("Enabled");
+    expect(html).toContain("Publish Cohort Session");
   });
 
   it("formats Cohort Exam Session timestamps in ISO-style UTC minutes", () => {
