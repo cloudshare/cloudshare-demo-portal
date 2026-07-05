@@ -512,7 +512,8 @@ export function formatCohortSessionDateTime(value: string | null): string {
 const cohortSessionTileGridStyle: React.CSSProperties = {
   display: "grid",
   gap: "0.75rem",
-  gridTemplateColumns: "repeat(auto-fit, minmax(16rem, 1fr))",
+  gridTemplateColumns: "repeat(auto-fill, minmax(16rem, 20rem))",
+  justifyContent: "start",
   alignItems: "start",
 };
 

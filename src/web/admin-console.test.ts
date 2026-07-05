@@ -488,7 +488,8 @@ describe("AdminConsole", () => {
     expect(html).toContain("September Admin Cohort");
     expect(html).not.toContain("September Admin Cohort · Published");
     expect(html).not.toContain("Status: Published");
-    expect(html).toContain("grid-template-columns:repeat(auto-fit, minmax(16rem, 1fr))");
+    expect(html).toContain("grid-template-columns:repeat(auto-fill, minmax(16rem, 20rem))");
+    expect(html).toContain("justify-content:start");
     expect(html).toContain("Published");
     expect(html).toContain("Admission opens");
     expect(html).toContain("2026-09-01T09:00Z");
