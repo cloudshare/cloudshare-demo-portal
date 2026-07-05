@@ -15,6 +15,7 @@ export interface ExamAttempt {
   readonly customerId?: string;
   readonly candidateId: string;
   readonly examId: string;
+  readonly cohortSessionId?: string;
   readonly status: ExamAttemptStatus;
   readonly scheduledFor?: Date;
   readonly createdAt: Date;

@@ -10,6 +10,7 @@ export function createPrismaExamAttemptRepository(prisma: PrismaClient): ExamAtt
           customerId: attempt.customerId ?? "",
           candidateId: attempt.candidateId,
           examId: attempt.examId,
+          cohortSessionId: attempt.cohortSessionId ?? null,
           status: attempt.status,
           scheduledFor: attempt.scheduledFor ?? null,
           createdAt: attempt.createdAt,
@@ -19,6 +20,7 @@ export function createPrismaExamAttemptRepository(prisma: PrismaClient): ExamAtt
           customerId: attempt.customerId ?? "",
           candidateId: attempt.candidateId,
           examId: attempt.examId,
+          cohortSessionId: attempt.cohortSessionId ?? null,
           status: attempt.status,
           scheduledFor: attempt.scheduledFor ?? null,
           createdAt: attempt.createdAt,
@@ -50,6 +52,7 @@ function toDomain(row: {
   customerId: string;
   candidateId: string;
   examId: string;
+  cohortSessionId: string | null;
   status: string;
   scheduledFor: Date | null;
   createdAt: Date;
@@ -59,6 +62,7 @@ function toDomain(row: {
     customerId: row.customerId,
     candidateId: row.candidateId,
     examId: row.examId,
+    cohortSessionId: row.cohortSessionId ?? undefined,
     status: row.status as ExamAttempt["status"],
     scheduledFor: row.scheduledFor ?? undefined,
     createdAt: row.createdAt,

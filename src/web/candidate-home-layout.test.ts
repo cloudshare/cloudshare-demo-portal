@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
+  CandidateCohortSessionOptions,
   CandidateAttemptStatusFilterButtons,
   CandidatePublishedExamScheduleShell,
   PublishedExamCardHeader,
@@ -116,5 +117,36 @@ describe("candidate home layout", () => {
     expect(html).toContain("2 published Exams");
     expect(html).toContain("Browse scheduling options");
     expect(html).not.toContain("Schedule date and time");
+  });
+
+  it("renders available Cohort Exam Sessions as options on the parent Exam card", () => {
+    const html = renderToStaticMarkup(
+      createElement(CandidateCohortSessionOptions, {
+        sessions: [
+          {
+            id: "cohort-session-1",
+            name: "Morning Cohort",
+            admissionStartsAt: "2026-07-05T08:30:00.000Z",
+            admissionEndsAt: "2026-07-05T12:00:00.000Z",
+          },
+          {
+            id: "cohort-session-2",
+            name: "Afternoon Cohort",
+            admissionStartsAt: "2026-07-05T13:00:00.000Z",
+            admissionEndsAt: null,
+          },
+        ],
+        attemptedSessionIds: new Set<string>(),
+        currentAttemptStatus: null,
+        submittingSessionId: null,
+        onStart: () => undefined,
+      }),
+    );
+
+    expect(html).toContain("Start a shared cohort session");
+    expect(html).toContain("Morning Cohort");
+    expect(html).toContain("Afternoon Cohort");
+    expect(html).toContain("Closes 2026-07-05 13:00");
+    expect((html.match(/Start exam/g) ?? []).length).toBe(2);
   });
 });

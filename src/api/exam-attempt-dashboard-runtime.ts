@@ -2,9 +2,15 @@ import { randomUUID } from "node:crypto";
 import type { CloudShareClientFactory, CloudShareConnectionRepository } from "@/domain/cloudshare-connection";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { ExamClock } from "@/domain/exam-clock";
-import { isIndividualExamDeliveryAvailable, type Exam, type ExamRepository } from "@/domain/exam-catalog";
+import {
+  isCohortExamSessionDeliveryAvailable,
+  isIndividualExamDeliveryAvailable,
+  type Exam,
+  type ExamRepository,
+} from "@/domain/exam-catalog";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { EventLogRepository } from "@/domain/event-log";
+import type { CohortExamSessionRepository } from "@/domain/cohort-exam-session";
 import { correlateEnvironmentForExamAttempt } from "@/domain/environment-correlation";
 import { reconcileExamAttemptCompletion } from "@/domain/exam-attempt-completion";
 import type { LabLaunchRepository } from "@/domain/lab-launch";
@@ -27,6 +33,7 @@ export interface ExamAttemptDashboardRuntimeDeps {
   readonly repository: ExamRepository;
   readonly attempts: ExamAttemptRepository;
   readonly logger: Logger;
+  readonly cohortSessions?: CohortExamSessionRepository;
   readonly clocks?: ExamClock;
   readonly launches?: LabLaunchRepository;
   readonly connections?: CloudShareConnectionRepository;
@@ -55,11 +62,21 @@ export interface CandidateDashboardExamItem {
   readonly storageLeaseMinutes: number | null;
   readonly openPeriodMinutes: number;
   readonly scoreRetrievalEnabled: boolean;
+  readonly individualSchedulingEnabled: boolean;
+  readonly availableCohortSessions: readonly CandidateDashboardCohortSessionItem[];
+}
+
+export interface CandidateDashboardCohortSessionItem {
+  readonly id: string;
+  readonly name: string;
+  readonly admissionStartsAt: string;
+  readonly admissionEndsAt: string | null;
 }
 
 export interface CandidateDashboardAttemptItem {
   readonly id: string;
   readonly examId: string;
+  readonly cohortSessionId: string | null;
   readonly examTitle: string;
   readonly timeLimitMinutes: number;
   readonly storageLeaseMinutes: number | null;
@@ -81,6 +98,10 @@ export async function getExamAttemptDashboardRuntime(
 ): Promise<ExamAttemptDashboardRuntimeResponse> {
   const exams = await deps.repository.listByCustomerId(request.customerId);
   const attempts = await deps.attempts.listByCandidate(request.candidateId);
+  const availableCohortSessionsByExamId = await listAvailableCohortSessionsByExamId(
+    deps,
+    request.customerId,
+  );
 
   for (const attempt of attempts) {
     const completion = await reconcileExamAttemptCompletion(
@@ -120,13 +141,21 @@ export async function getExamAttemptDashboardRuntime(
     status: 200,
     body: {
       exams: exams
-        .filter((exam) => exam.status === "published" && isIndividualExamDeliveryAvailable(exam))
-        .map(toCandidateDashboardExamItem),
+        .filter((exam) =>
+          exam.status === "published" &&
+          (isIndividualExamDeliveryAvailable(exam) ||
+            (isCohortExamSessionDeliveryAvailable(exam) &&
+              (availableCohortSessionsByExamId.get(exam.id)?.length ?? 0) > 0)),
+        )
+        .map((exam) =>
+          toCandidateDashboardExamItem(exam, availableCohortSessionsByExamId.get(exam.id) ?? []),
+        ),
       attempts: reconciledAttempts.map((attempt) => {
         const exam = examsById.get(attempt.examId);
         return {
           id: attempt.id,
           examId: attempt.examId,
+          cohortSessionId: attempt.cohortSessionId ?? null,
           examTitle: exam?.title ?? attempt.examId,
           timeLimitMinutes: exam?.timeLimitMinutes ?? 0,
           storageLeaseMinutes: exam?.storageLeaseMinutes ?? null,
@@ -233,7 +262,10 @@ function hasAuthoredOpenPeriodClosed(
   return (now ?? (() => new Date()))().getTime() >= openPeriodEndsAt;
 }
 
-function toCandidateDashboardExamItem(exam: Exam): CandidateDashboardExamItem {
+function toCandidateDashboardExamItem(
+  exam: Exam,
+  availableCohortSessions: readonly CandidateDashboardCohortSessionItem[],
+): CandidateDashboardExamItem {
   return {
     id: exam.id,
     title: exam.title,
@@ -242,7 +274,48 @@ function toCandidateDashboardExamItem(exam: Exam): CandidateDashboardExamItem {
     storageLeaseMinutes: exam.storageLeaseMinutes ?? null,
     openPeriodMinutes: exam.openPeriodMinutes,
     scoreRetrievalEnabled: exam.scoreRetrievalEnabled,
+    individualSchedulingEnabled: isIndividualExamDeliveryAvailable(exam),
+    availableCohortSessions,
   };
+}
+
+async function listAvailableCohortSessionsByExamId(
+  deps: Pick<ExamAttemptDashboardRuntimeDeps, "cohortSessions" | "repository" | "now">,
+  customerId: string,
+): Promise<Map<string, CandidateDashboardCohortSessionItem[]>> {
+  const byExamId = new Map<string, CandidateDashboardCohortSessionItem[]>();
+  if (!deps.cohortSessions) {
+    return byExamId;
+  }
+
+  const now = (deps.now ?? (() => new Date()))();
+  const exams = await deps.repository.listByCustomerId(customerId);
+  for (const exam of exams) {
+    const sessions = await deps.cohortSessions.listByExamId(exam.id);
+    if (!isCohortExamSessionDeliveryAvailable(exam)) {
+      continue;
+    }
+    const available = sessions
+      .filter(
+        (session) =>
+          session.customerId === customerId &&
+          session.status === "published" &&
+          session.admissionStartsAt.getTime() <= now.getTime() &&
+          (!session.admissionEndsAt || session.admissionEndsAt.getTime() > now.getTime()),
+      )
+      .sort((left, right) => left.admissionStartsAt.getTime() - right.admissionStartsAt.getTime())
+      .map((session) => ({
+        id: session.id,
+        name: session.name,
+        admissionStartsAt: session.admissionStartsAt.toISOString(),
+        admissionEndsAt: session.admissionEndsAt?.toISOString() ?? null,
+      }));
+    if (available.length > 0) {
+      byExamId.set(exam.id, available);
+    }
+  }
+
+  return byExamId;
 }
 
 async function correlateCandidateAttemptEnvironments(

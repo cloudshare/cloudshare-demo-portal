@@ -123,6 +123,7 @@ model ExamAttempt {
   customerId  String
   candidateId String
   examId      String
+  cohortSessionId String?
   status      String
   scheduledFor DateTime?
   createdAt   DateTime
@@ -135,6 +136,7 @@ model ExamAttempt {
   @@index([candidateId, createdAt])
   @@index([examId, createdAt])
   @@index([customerId, candidateId])
+  @@index([cohortSessionId, createdAt])
 }
 
 model LabLaunch {

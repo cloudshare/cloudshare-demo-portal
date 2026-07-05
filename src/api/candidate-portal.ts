@@ -18,6 +18,7 @@ import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { EventLogRepository } from "@/domain/event-log";
 import type { ExamClock } from "@/domain/exam-clock";
 import type { LabLaunchRepository } from "@/domain/lab-launch";
+import type { CohortExamSessionRepository } from "@/domain/cohort-exam-session";
 import {
   getExamAttemptDashboardRuntime,
   type CandidateDashboardAttemptItem,
@@ -27,6 +28,10 @@ import {
   scheduleExamAttemptRuntime,
   type ExamAttemptSchedulingRuntimeDeps,
 } from "./exam-attempt-scheduling-runtime";
+import {
+  joinCohortExamSessionRuntime,
+  type CohortExamSessionJoinRuntimeDeps,
+} from "./cohort-exam-session-join-runtime";
 
 export const SELF_REGISTER_CUSTOMER_SLUG = "helios-cx";
 
@@ -72,6 +77,7 @@ export function buildCandidateDashboardDeps(
   return {
     repository: services.exams,
     attempts: services.examAttempts,
+    cohortSessions: services.cohortExamSessions,
     clocks: services.examClock,
     launches: services.labLaunches,
     connections: services.cloudshareConnections,
@@ -98,6 +104,23 @@ export function buildCandidateSchedulingDeps(
   };
 }
 
+export function buildCandidateCohortJoinDeps(
+  services: CandidateCohortJoinServices,
+): CandidateCohortJoinDeps {
+  return {
+    exams: services.exams,
+    sessions: services.cohortExamSessions,
+    attempts: services.examAttempts,
+    launches: services.labLaunches,
+    audit: services.audit,
+    eventLog: services.eventLog,
+    connections: services.cloudshareConnections,
+    cloudshare: services.cloudshareClientFactory,
+    logger: services.logger,
+    diagnostics: services.diagnosticRecorder,
+  };
+}
+
 interface CandidateExamCatalogDeps {
   readonly repository: ExamRepository;
   readonly logger: Logger;
@@ -107,8 +130,11 @@ type CandidateDashboardDeps = ExamAttemptDashboardRuntimeDeps;
 
 type CandidateSchedulingDeps = ExamAttemptSchedulingRuntimeDeps;
 
+type CandidateCohortJoinDeps = CohortExamSessionJoinRuntimeDeps;
+
 export interface CandidateDashboardServices {
   readonly exams: ExamRepository;
+  readonly cohortExamSessions?: CohortExamSessionRepository;
   readonly examAttempts: ExamAttemptRepository;
   readonly examClock: ExamClock;
   readonly labLaunches: LabLaunchRepository;
@@ -121,6 +147,19 @@ export interface CandidateDashboardServices {
 
 export interface CandidateSchedulingServices {
   readonly exams: ExamRepository;
+  readonly examAttempts: ExamAttemptRepository;
+  readonly labLaunches: LabLaunchRepository;
+  readonly audit: AuditRepository;
+  readonly eventLog: EventLogRepository;
+  readonly cloudshareConnections: CloudShareConnectionRepository;
+  readonly cloudshareClientFactory: CloudShareClientFactory;
+  readonly diagnosticRecorder: DiagnosticRecorder;
+  readonly logger: Logger;
+}
+
+export interface CandidateCohortJoinServices {
+  readonly exams: ExamRepository;
+  readonly cohortExamSessions: CohortExamSessionRepository;
   readonly examAttempts: ExamAttemptRepository;
   readonly labLaunches: LabLaunchRepository;
   readonly audit: AuditRepository;
@@ -213,6 +252,39 @@ export async function handleScheduleCandidateExam(
     candidateLastName: request.candidateLastName,
     examId,
     scheduledFor: (body as { scheduledFor: string }).scheduledFor,
+  });
+}
+
+export async function handleJoinCandidateCohortExamSession(
+  deps: CandidateCohortJoinDeps,
+  request: CustomerRequest & {
+    candidateId: string;
+    candidateEmail: string;
+    candidateFirstName?: string | null;
+    candidateLastName?: string | null;
+  } & BodyRequest,
+): Promise<CandidatePortalResponse> {
+  const body = request.body;
+  if (
+    typeof body !== "object" ||
+    body === null ||
+    typeof (body as { examId?: unknown }).examId !== "string" ||
+    typeof (body as { cohortSessionId?: unknown }).cohortSessionId !== "string"
+  ) {
+    return {
+      status: 400,
+      body: { error: "examId and cohortSessionId are required" },
+    };
+  }
+
+  return joinCohortExamSessionRuntime(deps, {
+    customerId: request.customerId,
+    candidateId: request.candidateId,
+    candidateEmail: request.candidateEmail,
+    candidateFirstName: request.candidateFirstName,
+    candidateLastName: request.candidateLastName,
+    examId: (body as { examId: string }).examId.trim(),
+    cohortSessionId: (body as { cohortSessionId: string }).cohortSessionId.trim(),
   });
 }
 

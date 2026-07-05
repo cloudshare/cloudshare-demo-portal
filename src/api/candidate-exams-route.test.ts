@@ -129,12 +129,15 @@ describe("candidate exams route", () => {
           storageLeaseMinutes: null,
           openPeriodMinutes: 120,
           scoreRetrievalEnabled: true,
+          individualSchedulingEnabled: true,
+          availableCohortSessions: [],
         },
       ],
       attempts: [
         {
           id: "attempt-1",
           examId: "exam-1",
+          cohortSessionId: null,
           examTitle: "Helios Guided Journey",
           timeLimitMinutes: 60,
           storageLeaseMinutes: null,

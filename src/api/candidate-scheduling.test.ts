@@ -12,11 +12,15 @@ import type { Logger } from "@/observability/logger";
 import type { CloudShareClientFactory, CloudShareConnectionRepository, CloudShareConnectionRecord } from "@/domain/cloudshare-connection";
 import { CloudShareRequestError, CloudShareResponseError } from "@/integrations/cloudshare";
 import {
+  buildCandidateCohortJoinDeps,
   buildCandidateDashboardDeps,
   buildCandidateSchedulingDeps,
   handleGetCandidateDashboard,
+  handleJoinCandidateCohortExamSession,
   handleScheduleCandidateExam,
 } from "./candidate-portal";
+import { createInMemoryCohortExamSessionRepository } from "@/persistence/cohort-exam-session-repository";
+import { createDraftCohortExamSession, markCohortExamSessionPublished } from "@/domain/cohort-exam-session";
 
 function makeLogger(): Logger {
   return {
@@ -85,7 +89,7 @@ function makeCloudShareFactory(overrides: Partial<ReturnType<CloudShareClientFac
       if (spec.path === "/trainings") {
         return { id: "EXtraining-1" };
       }
-      if (spec.path === "/trainings/EXtraining-1/students") {
+      if (spec.path === "/trainings/EXtraining-1/students" || spec.path === "/trainings/EXcohort-1/students") {
         return [
           {
             email: "candidate@helioscx.demo",
@@ -94,7 +98,10 @@ function makeCloudShareFactory(overrides: Partial<ReturnType<CloudShareClientFac
           },
         ];
       }
-      if (spec.path === "/trainings/EXtraining-1/sponsored-link") {
+      if (
+        spec.path === "/trainings/EXtraining-1/sponsored-link" ||
+        spec.path === "/trainings/EXcohort-1/sponsored-link"
+      ) {
         return {
           loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/demo",
         };
@@ -140,17 +147,45 @@ function makeCloudShareFactory(overrides: Partial<ReturnType<CloudShareClientFac
   };
 }
 
-async function makeExamRepository() {
+async function makeExamRepository(overrides: Partial<CreateDraftExamInput> = {}) {
   const exams = createInMemoryExamCatalogRepository();
   await createDraftExam(
     { repository: exams, now: () => new Date("2026-06-15T09:00:00.000Z"), newId: () => "exam-1" },
-    makeExamInput(),
+    makeExamInput(overrides),
   );
   await publishExam(
     { repository: exams, now: () => new Date("2026-06-15T09:05:00.000Z") },
     { customerId: "customer-helios", examId: "exam-1" },
   );
   return exams;
+}
+
+async function makePublishedCohortSessionRepository() {
+  const sessions = createInMemoryCohortExamSessionRepository();
+  const draft = await createDraftCohortExamSession(
+    {
+      repository: sessions,
+      now: () => new Date("2026-07-05T09:10:00.000Z"),
+      newId: () => "cohort-session-1",
+    },
+    {
+      customerId: "customer-helios",
+      examId: "exam-1",
+      name: "Morning Cohort",
+      admissionStartsAt: new Date("2026-07-05T08:30:00.000Z"),
+      admissionEndsAt: new Date("2026-07-05T12:00:00.000Z"),
+    },
+  );
+  await markCohortExamSessionPublished(
+    { repository: sessions, now: () => new Date("2026-07-05T09:15:00.000Z") },
+    {
+      session: { ...draft, status: "publishing", updatedAt: new Date("2026-07-05T09:14:00.000Z") },
+      trainingId: "EXcohort-1",
+      experienceId: "EXcohort-1",
+      teamId: "TM-team-1",
+    },
+  );
+  return sessions;
 }
 
 describe("candidate scheduling handlers", () => {
@@ -324,6 +359,94 @@ describe("candidate scheduling handlers", () => {
     expect(connections.findByCustomerId).not.toHaveBeenCalled();
   });
 
+  it("keeps malformed cohort join validation in the candidate portal adapter", async () => {
+    const response = await handleJoinCandidateCohortExamSession(
+      {
+        exams: await makeExamRepository(),
+        sessions: await makePublishedCohortSessionRepository(),
+        attempts: createInMemoryExamAttemptRepository(),
+        launches: createInMemoryLabLaunchRepository(),
+        audit: createInMemoryAuditRepository(),
+        eventLog: createInMemoryEventLogRepository(),
+        connections: makeConnectionRepository(),
+        cloudshare: makeCloudShareFactory(),
+        logger: makeLogger(),
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        body: { examId: "exam-1" },
+      },
+    );
+
+    expect(response).toEqual({
+      status: 400,
+      body: { error: "examId and cohortSessionId are required" },
+    });
+  });
+
+  it("builds candidate cohort join dependencies from composed services and preserves the shared-session join behavior", async () => {
+    const exams = await makeExamRepository({ deliveryAvailability: "both" });
+    const sessions = await makePublishedCohortSessionRepository();
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const audit = createInMemoryAuditRepository();
+    const logger = makeLogger();
+
+    const deps = buildCandidateCohortJoinDeps({
+      exams,
+      cohortExamSessions: sessions,
+      examAttempts: attempts,
+      labLaunches: launches,
+      audit,
+      eventLog: createInMemoryEventLogRepository(),
+      cloudshareConnections: makeConnectionRepository(),
+      cloudshareClientFactory: makeCloudShareFactory(),
+      diagnosticRecorder: createDiagnosticRecorder({
+        repository: createInMemoryDiagnosticLogRepository(),
+      }),
+      logger,
+    });
+
+    const response = await handleJoinCandidateCohortExamSession(
+      {
+        ...deps,
+        now: () => new Date("2026-07-05T10:00:00.000Z"),
+        newId: vi.fn().mockReturnValueOnce("attempt-1").mockReturnValueOnce("launch-1"),
+        newCorrelationId: () => "corr-cohort-handler-1",
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        body: {
+          examId: "exam-1",
+          cohortSessionId: "cohort-session-1",
+        },
+      },
+    );
+
+    expect(response).toEqual({
+      status: 201,
+      body: {
+        attempt: {
+          id: "attempt-1",
+          examId: "exam-1",
+          cohortSessionId: "cohort-session-1",
+          scheduledFor: "2026-07-05T10:00:00.000Z",
+          status: "ready",
+        },
+        correlationId: "corr-cohort-handler-1",
+      },
+    });
+    expect(JSON.stringify(response.body)).not.toContain("loginUrl");
+  });
+
   it("returns candidate-facing copy when the requested schedule time is not in the future", async () => {
     const response = await handleScheduleCandidateExam(
       {
@@ -444,12 +567,15 @@ describe("candidate scheduling handlers", () => {
           storageLeaseMinutes: null,
           openPeriodMinutes: 120,
           scoreRetrievalEnabled: false,
+          individualSchedulingEnabled: true,
+          availableCohortSessions: [],
         },
       ],
       attempts: [
         {
           id: "attempt-1",
           examId: "exam-1",
+          cohortSessionId: null,
           examTitle: "Helios CloudShare Fundamentals",
           timeLimitMinutes: 90,
           storageLeaseMinutes: null,
@@ -756,12 +882,15 @@ describe("candidate scheduling handlers", () => {
           storageLeaseMinutes: null,
           openPeriodMinutes: 120,
           scoreRetrievalEnabled: false,
+          individualSchedulingEnabled: true,
+          availableCohortSessions: [],
         },
       ],
       attempts: [
         {
           id: "attempt-in-progress",
           examId: "exam-1",
+          cohortSessionId: null,
           examTitle: "Helios CloudShare Fundamentals",
           timeLimitMinutes: 90,
           storageLeaseMinutes: null,
@@ -773,6 +902,7 @@ describe("candidate scheduling handlers", () => {
         {
           id: "attempt-completed",
           examId: "exam-1",
+          cohortSessionId: null,
           examTitle: "Helios CloudShare Fundamentals",
           timeLimitMinutes: 90,
           storageLeaseMinutes: null,
@@ -833,12 +963,15 @@ describe("candidate scheduling handlers", () => {
           storageLeaseMinutes: null,
           openPeriodMinutes: 120,
           scoreRetrievalEnabled: false,
+          individualSchedulingEnabled: true,
+          availableCohortSessions: [],
         },
       ],
       attempts: [
         {
           id: "attempt-in-progress",
           examId: "exam-1",
+          cohortSessionId: null,
           examTitle: "Helios CloudShare Fundamentals",
           timeLimitMinutes: 90,
           storageLeaseMinutes: null,
