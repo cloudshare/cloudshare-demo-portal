@@ -641,6 +641,8 @@ describe("AdminConsole", () => {
     expect(html).toContain("TRN-123");
     expect(html).toContain("CloudShare Experience ID");
     expect(html).toContain("EXP-123");
+    expect(html).not.toContain("CloudShare Team ID");
+    expect(html).not.toContain("TEAM-123");
     expect(html).toContain("Published at");
     expect(html).toContain("2026-08-30T12:30Z");
     expect(html).toContain("Project");

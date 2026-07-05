@@ -838,9 +838,6 @@ export function CohortSessionWorkspacePanel(props: {
           {getCloudShareIdentifierFields(session.session).map((field) => (
             <CohortSessionDetailItem key={field.label} label={field.label} value={field.value} />
           ))}
-          {session.session.cloudShareTeamId ? (
-            <CohortSessionDetailItem label="CloudShare Team ID" value={session.session.cloudShareTeamId} />
-          ) : null}
           {session.session.publishedAt ? (
             <CohortSessionDetailItem
               label="Published at"
