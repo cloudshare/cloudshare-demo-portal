@@ -447,6 +447,11 @@ describe("joinCohortExamSessionRuntime", () => {
         correlationId: "corr-cohort-link-fail",
       },
     });
+    await expect(attempts.findById("attempt-1")).resolves.toMatchObject({
+      cohortSessionId: "cohort-session-1",
+      scheduledFor: new Date("2026-07-05T10:00:00.000Z"),
+      status: "scheduled",
+    });
     await expect(launches.findByExamAttemptId("attempt-1")).resolves.toBeNull();
     await expect(
       diagnosticsRepository.query({ examAttemptId: "attempt-1", correlationId: "corr-cohort-link-fail" }),
@@ -482,6 +487,7 @@ describe("joinCohortExamSessionRuntime", () => {
       createdAt: new Date("2026-07-05T09:45:00.000Z"),
     });
     const cloudshare = makeCloudShareFactory();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
 
     const response = await joinCohortExamSessionRuntime(
       {
@@ -493,7 +499,7 @@ describe("joinCohortExamSessionRuntime", () => {
         eventLog: createInMemoryEventLogRepository(),
         connections: makeConnectionRepository(),
         cloudshare,
-        diagnostics: createDiagnosticRecorder({ repository: createInMemoryDiagnosticLogRepository() }),
+        diagnostics: createDiagnosticRecorder({ repository: diagnosticsRepository }),
         logger: makeLogger(),
         now: () => new Date("2026-07-05T10:00:00.000Z"),
         newCorrelationId: () => "corr-overlap-1",
@@ -519,5 +525,79 @@ describe("joinCohortExamSessionRuntime", () => {
       },
     });
     expect(cloudshare.forConnection).not.toHaveBeenCalled();
+    await expect(
+      diagnosticsRepository.query({ correlationId: "corr-overlap-1" }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        operation: "cohort_exam_session.join",
+        outcome: "failure",
+        examId: "exam-1",
+        examAttemptId: null,
+        externalIds: expect.objectContaining({
+          cohortSessionId: "cohort-session-1",
+          trainingId: "EXcohort-1",
+        }),
+        details: expect.objectContaining({
+          reason: "exam_attempt_overlap",
+          conflictingAttemptId: "attempt-existing",
+        }),
+      }),
+    ]);
+  });
+
+  it("records a diagnostic when CloudShare is not connected before touching CloudShare", async () => {
+    const exams = await makeExamRepository();
+    const sessions = await makePublishedSession();
+    const cloudshare = makeCloudShareFactory();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+
+    const response = await joinCohortExamSessionRuntime(
+      {
+        exams,
+        sessions,
+        attempts: createInMemoryExamAttemptRepository(),
+        launches: createInMemoryLabLaunchRepository(),
+        audit: createInMemoryAuditRepository(),
+        eventLog: createInMemoryEventLogRepository(),
+        connections: makeConnectionRepository(null),
+        cloudshare,
+        diagnostics: createDiagnosticRecorder({ repository: diagnosticsRepository }),
+        logger: makeLogger(),
+        now: () => new Date("2026-07-05T10:00:00.000Z"),
+        newCorrelationId: () => "corr-missing-connection",
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        examId: "exam-1",
+        cohortSessionId: "cohort-session-1",
+      },
+    );
+
+    expect(response).toEqual({
+      status: 409,
+      body: { error: "CloudShare is not connected for this customer." },
+    });
+    expect(cloudshare.forConnection).not.toHaveBeenCalled();
+    await expect(
+      diagnosticsRepository.query({ correlationId: "corr-missing-connection" }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        operation: "cohort_exam_session.join",
+        outcome: "failure",
+        candidateEmail: "candidate@helioscx.demo",
+        externalIds: expect.objectContaining({
+          cohortSessionId: "cohort-session-1",
+          trainingId: "EXcohort-1",
+          experienceId: "EXcohort-1",
+        }),
+        details: expect.objectContaining({
+          reason: "cloudshare_connection_missing",
+        }),
+      }),
+    ]);
   });
 });

@@ -7,6 +7,7 @@ import {
   getEndExamPendingLaunchState,
   LabLauncher,
 } from "./lab-launcher";
+import { clearLabWindows, openLabWindow } from "./lab-window";
 
 describe("LabLauncher", () => {
   it("offers End exam for in-progress and suspended attempts", () => {
@@ -26,6 +27,26 @@ describe("LabLauncher", () => {
     expect(inProgressHtml).toContain("End exam");
     expect(suspendedHtml).toContain("End exam");
   });
+
+  it("treats an in-progress attempt with a retained child window as open", () => {
+    clearLabWindows();
+    openLabWindow("attempt-joined", "/enter?examAttemptId=attempt-joined", () => ({
+      closed: false,
+      close: vi.fn(),
+    }));
+
+    const html = renderToStaticMarkup(
+      createElement(LabLauncher, {
+        examAttemptId: "attempt-joined",
+        currentAttemptStatus: "in_progress",
+      }),
+    );
+
+    expect(html).toContain("Exam window open");
+    expect(html).toContain("Suspend lab");
+    clearLabWindows();
+  });
+
 
   it("warns Candidates that ending an exam archives the lab and removes access", () => {
     const confirm = vi.fn().mockReturnValue(false);

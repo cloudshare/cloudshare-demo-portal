@@ -78,6 +78,20 @@ export async function joinCohortExamSessionRuntime(
     !session.cloudShareTrainingId ||
     !session.cloudShareExperienceId
   ) {
+    await recordJoinRejection(deps, {
+      request,
+      correlationId,
+      reason: "available_session_not_found",
+      status: 404,
+      message: "Available Cohort Exam Session not found.",
+      examId: exam?.id ?? request.examId,
+      cohortSessionId: session?.id ?? request.cohortSessionId,
+      externalIds: {
+        ...(session?.cloudShareTrainingId ? { trainingId: session.cloudShareTrainingId } : {}),
+        ...(session?.cloudShareExperienceId ? { experienceId: session.cloudShareExperienceId } : {}),
+      },
+      now,
+    });
     return { status: 404, body: { error: "Available Cohort Exam Session not found." } };
   }
 
@@ -87,6 +101,21 @@ export async function joinCohortExamSessionRuntime(
     request.candidateFirstName.trim().length < 2 ||
     request.candidateLastName.trim().length < 2
   ) {
+    await recordJoinRejection(deps, {
+      request,
+      correlationId,
+      reason: "candidate_identity_incomplete",
+      status: 409,
+      message: "Candidate first name and last name are required before starting an Exam.",
+      examId: exam.id,
+      cohortSessionId: session.id,
+      externalIds: {
+        cohortSessionId: session.id,
+        trainingId: session.cloudShareTrainingId,
+        experienceId: session.cloudShareExperienceId,
+      },
+      now,
+    });
     return {
       status: 409,
       body: {
@@ -102,6 +131,21 @@ export async function joinCohortExamSessionRuntime(
         attempt.examId === exam.id && attempt.cohortSessionId === session.id,
     )
   ) {
+    await recordJoinRejection(deps, {
+      request,
+      correlationId,
+      reason: "cohort_session_retake_blocked",
+      status: 409,
+      message: "This Cohort Exam Session does not allow another attempt for your account.",
+      examId: exam.id,
+      cohortSessionId: session.id,
+      externalIds: {
+        cohortSessionId: session.id,
+        trainingId: session.cloudShareTrainingId,
+        experienceId: session.cloudShareExperienceId,
+      },
+      now,
+    });
     return {
       status: 409,
       body: {
@@ -118,6 +162,25 @@ export async function joinCohortExamSessionRuntime(
     availabilityWindowMinutes: exam.storageLeaseMinutes ?? exam.openPeriodMinutes,
   });
   if (overlap) {
+    await recordJoinRejection(deps, {
+      request,
+      correlationId,
+      reason: "exam_attempt_overlap",
+      status: 409,
+      message: "Another attempt for this Exam is still active or available.",
+      examId: exam.id,
+      cohortSessionId: session.id,
+      externalIds: {
+        cohortSessionId: session.id,
+        trainingId: session.cloudShareTrainingId,
+        experienceId: session.cloudShareExperienceId,
+      },
+      details: {
+        conflictingAttemptId: overlap.conflictingAttemptId,
+        nextAvailableAt: overlap.nextAvailableAt.toISOString(),
+      },
+      now,
+    });
     return {
       status: 409,
       body: {
@@ -132,6 +195,21 @@ export async function joinCohortExamSessionRuntime(
 
   const connection = await deps.connections.findByCustomerId(request.customerId);
   if (!connection) {
+    await recordJoinRejection(deps, {
+      request,
+      correlationId,
+      reason: "cloudshare_connection_missing",
+      status: 409,
+      message: "CloudShare is not connected for this customer.",
+      examId: exam.id,
+      cohortSessionId: session.id,
+      externalIds: {
+        cohortSessionId: session.id,
+        trainingId: session.cloudShareTrainingId,
+        experienceId: session.cloudShareExperienceId,
+      },
+      now,
+    });
     return {
       status: 409,
       body: { error: "CloudShare is not connected for this customer." },
@@ -256,7 +334,6 @@ export async function joinCohortExamSessionRuntime(
       attemptedOperation: "create_sponsored_link",
       cause,
     });
-    await deps.attempts.delete(attemptId);
     return {
       status: 502,
       body: {
@@ -398,6 +475,55 @@ function findSameExamAvailabilityOverlap(input: {
   }
 
   return null;
+}
+
+async function recordJoinRejection(
+  deps: CohortExamSessionJoinRuntimeDeps,
+  input: {
+    readonly request: CohortExamSessionJoinRuntimeRequest;
+    readonly correlationId: string;
+    readonly reason: string;
+    readonly status: number;
+    readonly message: string;
+    readonly examId: string;
+    readonly cohortSessionId: string;
+    readonly externalIds?: Record<string, string>;
+    readonly details?: Record<string, unknown>;
+    readonly now: Date;
+  },
+): Promise<void> {
+  const externalIds = {
+    cohortSessionId: input.cohortSessionId,
+    ...(input.externalIds ?? {}),
+  };
+  await deps.diagnostics?.record({
+    source: "candidate-portal",
+    customerId: input.request.customerId,
+    candidateEmail: input.request.candidateEmail,
+    examId: input.examId,
+    correlationId: input.correlationId,
+    actor: {
+      type: "candidate",
+      id: input.request.candidateId,
+      email: input.request.candidateEmail,
+    },
+    subject: { type: "cohort_exam_session", id: input.cohortSessionId },
+    level: "warn",
+    operation: "cohort_exam_session.join",
+    outcome: "failure",
+    message: input.message,
+    externalIds,
+    request: {
+      examId: input.request.examId,
+      cohortSessionId: input.request.cohortSessionId,
+      attemptedAt: input.now.toISOString(),
+    },
+    response: { status: input.status },
+    details: {
+      reason: input.reason,
+      ...(input.details ?? {}),
+    },
+  });
 }
 
 async function recordProvisioningFailure(

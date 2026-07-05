@@ -33,6 +33,7 @@ import {
   publishedExamTitleRowStyle,
 } from "./candidate-home-layout";
 import { useCandidateLogout } from "./candidate-logout";
+import { openEnterExamWindow } from "./enter-exam";
 import { pageShellStyle } from "./page-shell";
 import {
   isPortalSessionExpiredError,
@@ -406,6 +407,8 @@ export function CandidateHome({ email }: CandidateHomeProps) {
         ].flat(),
       }));
       setNowMs(Date.now());
+      openEnterExamWindow(result.attempt.id);
+      openLabConsole(result.attempt.id, result.attempt.status);
     } catch (cause) {
       if (isPortalSessionExpiredError(cause)) {
         handleCandidateSessionExpired();

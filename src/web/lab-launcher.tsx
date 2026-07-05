@@ -64,6 +64,8 @@ export function LabLauncher({
       ? "completed"
       : currentAttemptStatus === "suspended"
         ? "suspended"
+        : currentAttemptStatus === "in_progress" && isLabWindowOpen(examAttemptId)
+          ? "open"
         : "idle",
   );
   const [message, setMessage] = useState<string>("");
