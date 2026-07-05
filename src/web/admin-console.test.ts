@@ -11,6 +11,7 @@ import {
   ExamCatalogLoadingOverlay,
   getDeliveryAvailabilityAuthoringOptions,
   getDuplicateExamResourceTupleWarning,
+  formatCohortSessionDateTime,
   normalizeAdminLocalDateTime,
 } from "./admin-console";
 
@@ -244,7 +245,7 @@ describe("AdminConsole", () => {
     expect(html).not.toContain("Long Blueprint description");
   });
 
-  it("marks the current Exam catalog subnav control as disabled and non-actionable", () => {
+  it("renders the exam workspace navigation as breadcrumb-style context instead of a primary action", () => {
     const html = renderToStaticMarkup(
       createElement(AdminConsole, {
         email: "admin@helioscx.demo",
@@ -252,10 +253,12 @@ describe("AdminConsole", () => {
       }),
     );
 
+    expect(html).toContain('aria-label="Exam workspace"');
+    expect(html).toContain("<nav");
+    expect(html).toContain("<ol");
     expect(html).toContain("Catalog overview");
     expect(html).toContain('aria-current="page"');
-    expect(html).toContain("disabled=\"\"");
-    expect(html).toContain("cursor:default");
+    expect(html).not.toContain("disabled=\"\"");
   });
 
   it("keeps the Exam Catalog overview list-only without inline authoring or Cohort Session create controls", () => {
@@ -482,11 +485,15 @@ describe("AdminConsole", () => {
     expect(html).toContain("Create Draft Cohort Session");
     expect(html).toContain("Existing Cohort Sessions");
     expect(html).toContain("September Admin Cohort");
-    expect(html).toContain("Status: Published");
-    expect(html).toContain("Admission opens:");
-    expect(html).toContain("Admission closes:");
+    expect(html).not.toContain("September Admin Cohort · Published");
+    expect(html).not.toContain("Status: Published");
+    expect(html).toContain("Published");
+    expect(html).toContain("Admission opens");
+    expect(html).toContain("2026-09-01T09:00Z");
+    expect(html).toContain("Admission closes");
+    expect(html).toContain("2026-09-30T17:00Z");
     expect(html).toContain("Capacity: 25");
-    expect(html).toContain("CloudShare Experience: EX123");
+    expect(html).toContain("CloudShare Experience ID: EX123");
     expect(html).toContain("Open Session");
   });
 
@@ -494,6 +501,7 @@ describe("AdminConsole", () => {
     const html = renderToStaticMarkup(createElement(CohortSessionDraftOnlyNotice));
 
     expect(html).toContain("Candidate admission remains disabled in this slice.");
+    expect(html).toContain("Published Cohort Exam Sessions stay admin-only until a later slice enables candidate joins.");
   });
 
   it("renders admin-visible publish reconciliation wording for Cohort Exam Sessions", () => {
@@ -531,7 +539,14 @@ describe("AdminConsole", () => {
       }),
     );
 
-    expect(html).toContain("July Admin Cohort · Publish reconciliation required");
+    expect(html).toContain("Publish reconciliation required");
+    expect(html).not.toContain("July Admin Cohort · Publish reconciliation required");
+  });
+
+  it("formats Cohort Exam Session timestamps in ISO-style UTC minutes", () => {
+    expect(formatCohortSessionDateTime("2026-07-05T09:00:00.000Z")).toBe("2026-07-05T09:00Z");
+    expect(formatCohortSessionDateTime(null)).toBe("-");
+    expect(formatCohortSessionDateTime("not-a-date")).toBe("not-a-date");
   });
 
   it("normalizes admin datetime-local values before draft Cohort Exam Session POST", () => {
