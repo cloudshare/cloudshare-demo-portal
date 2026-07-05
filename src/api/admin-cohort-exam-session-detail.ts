@@ -203,6 +203,27 @@ async function readCloudShareParticipants(
 
   const connection = await deps.connections.findByCustomerId(input.customerId);
   if (!connection) {
+    await deps.diagnostics?.record({
+      source: "admin-exams",
+      level: "warn",
+      operation: "cohort_exam_session.monitor.read_participants",
+      outcome: "failure",
+      customerId: input.customerId,
+      examId: input.examId,
+      correlationId: input.correlationId,
+      subject: { type: "cohort_exam_session", id: input.session.session.id },
+      message: "CloudShare participant read could not start because no CloudShare Connection is saved",
+      externalIds: {
+        trainingId,
+        ...(experienceId ? { experienceId } : {}),
+      },
+      details: {
+        integrationSurface: "cloudshare.connection",
+        failureMode: "missing_connection",
+        trainingId,
+        ...(experienceId ? { experienceId } : {}),
+      },
+    });
     return {
       status: "unavailable",
       participants: [],
@@ -423,6 +444,9 @@ function isCloudActive(participant: CohortExamSessionParticipantView | undefined
   if (!participant) {
     return false;
   }
+  if (isCloudProblemParticipant(participant)) {
+    return false;
+  }
   if (isCloudInProgress(participant)) {
     return true;
   }
@@ -434,12 +458,15 @@ function isCloudInProgress(participant: CohortExamSessionParticipantView | undef
   if (!participant) {
     return false;
   }
+  if (isCloudProblemParticipant(participant)) {
+    return false;
+  }
   const participationStatus = participant.participationStatus?.trim().toLowerCase();
   if (participationStatus === "inprogress") {
     return true;
   }
   const environmentStatus = participant.environmentStatus?.trim().toLowerCase();
-  return Boolean(environmentStatus && !isTerminalEnvironmentStatus(environmentStatus));
+  return Boolean(environmentStatus && isNormalActiveEnvironmentStatus(environmentStatus));
 }
 
 function isCloudCompleted(participant: CohortExamSessionParticipantView | undefined): boolean {
@@ -453,6 +480,41 @@ function isCloudCompleted(participant: CohortExamSessionParticipantView | undefi
 
 function isTerminalEnvironmentStatus(status: string): boolean {
   return status === "archived" || status === "deleted";
+}
+
+function isNormalActiveEnvironmentStatus(status: string): boolean {
+  return (
+    status === "ready" ||
+    status === "running" ||
+    status === "suspended" ||
+    status === "starting" ||
+    status === "provisioning" ||
+    status === "resuming" ||
+    status === "stopping"
+  );
+}
+
+function isCloudProblemParticipant(participant: CohortExamSessionParticipantView | undefined): boolean {
+  if (!participant) {
+    return false;
+  }
+  const participationStatus = participant.participationStatus?.trim().toLowerCase();
+  if (
+    participationStatus === "failed" ||
+    participationStatus === "error" ||
+    participationStatus === "aborted" ||
+    participationStatus === "denied"
+  ) {
+    return true;
+  }
+  const environmentStatus = participant.environmentStatus?.trim().toLowerCase();
+  if (!environmentStatus) {
+    return false;
+  }
+  if (isTerminalEnvironmentStatus(environmentStatus) || isNormalActiveEnvironmentStatus(environmentStatus)) {
+    return false;
+  }
+  return true;
 }
 
 function isProblemRow(
@@ -469,6 +531,9 @@ function isProblemRow(
     return false;
   }
 
+  if (isCloudProblemParticipant(cloud)) {
+    return true;
+  }
   if (isPortalActive(portal.status) && isCloudCompleted(cloud)) {
     return true;
   }

@@ -176,7 +176,7 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
               lastName: "Ng",
               name: "Taylor Ng",
               envId: "env-3",
-              envStatus: "Running",
+              envStatus: "ProvisioningFailed",
               participationStatus: "inProgress",
               firstJoined: "2026-07-06T11:00:00.000Z",
               id: "student-3",
@@ -248,8 +248,8 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
       throw new Error("Expected monitoring payload");
     }
     expect(response.body.monitoring.summary).toEqual({
-      activeCount: 2,
-      inProgressCount: 2,
+      activeCount: 1,
+      inProgressCount: 1,
       completedCount: 1,
       problemCount: 1,
       portalAttemptCount: 2,
@@ -332,6 +332,95 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
         integrationSurface: "cloudshare.v4.training.participant",
         participantCount: 3,
       },
+    });
+  });
+
+  it("counts abnormal CloudShare environment states as problems instead of in-progress", async () => {
+    const exams = createInMemoryExamCatalogRepository();
+    const sessions = createInMemoryCohortExamSessionRepository();
+    await seedPublishedExam(exams);
+    await seedPublishedSession(sessions);
+
+    const attempts: AdminCohortExamSessionAttemptRepository = {
+      listBySessionId: vi.fn().mockResolvedValue([]),
+    };
+
+    const cloudshare: CloudShareClientFactory = {
+      forConnection: () =>
+        ({
+          requestV4Detailed: vi.fn(
+            async (spec: { schema: { parse(value: unknown): unknown } }) => ({
+              data: spec.schema.parse({
+                items: [
+                  {
+                    email: "taylor@helioscx.demo",
+                    firstName: "Taylor",
+                    lastName: "Ng",
+                    envId: "env-3",
+                    envStatus: "ProvisioningFailed",
+                    participationStatus: "inProgress",
+                    id: "student-3",
+                  },
+                ],
+              }),
+              host: "api.accelerate.cloudshare.com",
+              integrationSurface: "cloudshare.v4.training.participant",
+              request: {
+                method: "GET",
+                path: "/v4/trainings/EXcohort-1/students",
+                headers: { authorization: "Bearer secret-api-key" },
+              },
+              response: {
+                status: 200,
+                headers: { "content-type": "application/json" },
+                body: { items: [{ email: "taylor@helioscx.demo", envStatus: "ProvisioningFailed" }] },
+              },
+            }),
+          ),
+        }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>,
+    };
+
+    const response = await handleGetAdminCohortExamSessionDetail(
+      {
+        exams,
+        sessions,
+        attempts,
+        connections: {
+          findByCustomerId: vi.fn(async () => ({
+            customerId: "customer-1",
+            apiId: "api-id",
+            apiKey: "secret-api-key",
+            webhookSecret: "webhook-secret",
+            webhookPathToken: "webhook-token",
+            connectedAt: new Date("2026-07-01T00:00:00.000Z"),
+            verifiedAt: new Date("2026-07-01T00:05:00.000Z"),
+          })),
+          save: vi.fn(),
+          findByWebhookPathToken: vi.fn(),
+          markVerified: vi.fn(),
+        },
+        cloudshare,
+        logger: makeLogger(),
+      },
+      {
+        customerId: "customer-1",
+        examId: "exam-1",
+        sessionId: "cohort-session-1",
+      },
+    );
+
+    expect(response.status).toBe(200);
+    if (!("monitoring" in response.body)) {
+      throw new Error("Expected monitoring payload");
+    }
+    expect(response.body.monitoring.summary).toEqual({
+      activeCount: 0,
+      inProgressCount: 0,
+      completedCount: 0,
+      problemCount: 1,
+      portalAttemptCount: 0,
+      cloudShareParticipantCount: 1,
+      derivedFrom: "portal_and_cloudshare",
     });
   });
 
@@ -445,6 +534,81 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
         integrationSurface: "cloudshare.v4.training.participant",
         failureMode: "transport",
         cause: "ECONNRESET",
+      },
+    });
+  });
+
+  it("records a diagnostic when no CloudShare Connection is saved for a published session", async () => {
+    const exams = createInMemoryExamCatalogRepository();
+    const sessions = createInMemoryCohortExamSessionRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({
+      repository: diagnosticsRepository,
+      secrets: ["secret-api-key"],
+    });
+    await seedPublishedExam(exams);
+    await seedPublishedSession(sessions);
+
+    const attempts: AdminCohortExamSessionAttemptRepository = {
+      listBySessionId: vi.fn().mockResolvedValue([]),
+    };
+
+    const response = await handleGetAdminCohortExamSessionDetail(
+      {
+        exams,
+        sessions,
+        attempts,
+        diagnostics,
+        connections: {
+          findByCustomerId: vi.fn(async () => null),
+          save: vi.fn(),
+          findByWebhookPathToken: vi.fn(),
+          markVerified: vi.fn(),
+        },
+        cloudshare: {
+          forConnection: vi.fn(),
+        },
+        logger: makeLogger(),
+        newCorrelationId: () => "corr-session-detail-missing-connection",
+      },
+      {
+        customerId: "customer-1",
+        examId: "exam-1",
+        sessionId: "cohort-session-1",
+      },
+    );
+
+    expect(response.status).toBe(200);
+    if (!("monitoring" in response.body)) {
+      throw new Error("Expected monitoring payload");
+    }
+    expect(response.body.monitoring.cloudShareParticipants).toMatchObject({
+      status: "unavailable",
+      participants: [],
+      readError: "CloudShare participant read failed for this Cohort Exam Session.",
+      correlationId: "corr-session-detail-missing-connection",
+    });
+
+    const [entry] = await diagnosticsRepository.query({
+      customerId: "customer-1",
+      examId: "exam-1",
+      operation: "cohort_exam_session.monitor.read_participants",
+      outcome: "failure",
+    });
+    expect(entry).toMatchObject({
+      correlationId: "corr-session-detail-missing-connection",
+      message: "CloudShare participant read could not start because no CloudShare Connection is saved",
+      externalIds: {
+        trainingId: "EXcohort-1",
+        experienceId: "EXcohort-1",
+      },
+      request: null,
+      response: null,
+      details: {
+        integrationSurface: "cloudshare.connection",
+        failureMode: "missing_connection",
+        trainingId: "EXcohort-1",
+        experienceId: "EXcohort-1",
       },
     });
   });
