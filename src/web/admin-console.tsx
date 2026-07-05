@@ -560,9 +560,33 @@ function CohortSessionDetailItem(props: {
   return (
     <div style={cohortSessionDetailItemStyle}>
       <div style={cohortSessionDetailLabelStyle}>{props.label}</div>
-      <div>{props.value}</div>
+      <div style={{ overflowWrap: "anywhere" }}>{props.value}</div>
     </div>
   );
+}
+
+function getCloudShareIdentifierFields(session: {
+  cloudShareTrainingId?: string | null;
+  cloudShareExperienceId?: string | null;
+}): Array<{ label: string; value: string }> {
+  const trainingId = session.cloudShareTrainingId?.trim() ?? "";
+  const experienceId = session.cloudShareExperienceId?.trim() ?? "";
+
+  if (trainingId && experienceId && trainingId === experienceId) {
+    return [{ label: "CloudShare Experience ID", value: experienceId }];
+  }
+
+  const fields: Array<{ label: string; value: string }> = [];
+
+  if (trainingId) {
+    fields.push({ label: "CloudShare training ID", value: trainingId });
+  }
+
+  if (experienceId) {
+    fields.push({ label: "CloudShare Experience ID", value: experienceId });
+  }
+
+  return fields;
 }
 
 export function formatShortExamId(id: string): string {
@@ -694,17 +718,9 @@ function CohortSessionDraftControls(props: {
                     label="Capacity"
                     value={session.session.capacity === null ? "Unlimited" : session.session.capacity}
                   />
-                  {session.session.cloudShareExperienceId ? (
-                    <CohortSessionDetailItem
-                      label="CloudShare Experience ID"
-                      value={session.session.cloudShareExperienceId}
-                    />
-                  ) : session.session.cloudShareTrainingId ? (
-                    <CohortSessionDetailItem
-                      label="CloudShare training ID"
-                      value={session.session.cloudShareTrainingId}
-                    />
-                  ) : null}
+                  {getCloudShareIdentifierFields(session.session).map((field) => (
+                    <CohortSessionDetailItem key={field.label} label={field.label} value={field.value} />
+                  ))}
                 </div>
                 <div style={{ display: "flex", justifyContent: "flex-end" }}>
                   <button type="button" onClick={() => props.onSelect(session)} style={compactButtonStyle}>
@@ -819,18 +835,9 @@ export function CohortSessionWorkspacePanel(props: {
             label="Capacity"
             value={session.session.capacity === null ? "Unlimited" : session.session.capacity}
           />
-          {session.session.cloudShareTrainingId ? (
-            <CohortSessionDetailItem
-              label="CloudShare training ID"
-              value={session.session.cloudShareTrainingId}
-            />
-          ) : null}
-          {session.session.cloudShareExperienceId ? (
-            <CohortSessionDetailItem
-              label="CloudShare Experience ID"
-              value={session.session.cloudShareExperienceId}
-            />
-          ) : null}
+          {getCloudShareIdentifierFields(session.session).map((field) => (
+            <CohortSessionDetailItem key={field.label} label={field.label} value={field.value} />
+          ))}
           {session.session.cloudShareTeamId ? (
             <CohortSessionDetailItem label="CloudShare Team ID" value={session.session.cloudShareTeamId} />
           ) : null}
@@ -1062,10 +1069,12 @@ const examWorkspaceBreadcrumbCurrentStyle: React.CSSProperties = {
   fontWeight: 600,
 };
 
-function ExamWorkspaceBreadcrumbs(props: {
+export function ExamWorkspaceBreadcrumbs(props: {
   readonly examView: AdminExamView;
   readonly focusedExamTitle: string | null;
+  readonly focusedSessionName?: string | null;
   readonly onNavigateToCatalog: () => void;
+  readonly onNavigateToSessions?: () => void;
 }) {
   const items: Array<{ key: string; label: string; current: boolean; onClick?: () => void }> = [
     {
@@ -1088,6 +1097,15 @@ function ExamWorkspaceBreadcrumbs(props: {
     items.push({
       key: "sessions",
       label: `Cohort Sessions: ${props.focusedExamTitle}`,
+      current: props.examView === "sessions",
+      onClick: props.examView === "session" ? props.onNavigateToSessions : undefined,
+    });
+  }
+
+  if (props.examView === "session" && props.focusedSessionName) {
+    items.push({
+      key: "session",
+      label: props.focusedSessionName,
       current: true,
     });
   }
@@ -2502,6 +2520,7 @@ export function AdminConsole({
     minHeight: "46px",
   } as const;
   const isExamAuthoringView = examView === "create" || examView === "edit";
+  const showCreateExamButton = examView !== "sessions" && examView !== "session";
   const focusedExam = focusedExamId ? (examCatalog.find((exam) => exam.id === focusedExamId) ?? null) : null;
   const focusedExamSessions = focusedExamId ? (cohortSessionsByExamId[focusedExamId] ?? []) : [];
   const focusedCohortSession =
@@ -2877,14 +2896,18 @@ export function AdminConsole({
                   Overview of Exams and delivery options for Helios CX.
                 </p>
               </div>
-              <button type="button" onClick={navigateToExamCreate} disabled={loading} style={primaryButtonStyle}>
-                Create Exam
-              </button>
+              {showCreateExamButton ? (
+                <button type="button" onClick={navigateToExamCreate} disabled={loading} style={primaryButtonStyle}>
+                  Create Exam
+                </button>
+              ) : null}
             </div>
             <ExamWorkspaceBreadcrumbs
               examView={examView}
               focusedExamTitle={focusedExam?.title ?? null}
+              focusedSessionName={focusedCohortSession?.session.name ?? null}
               onNavigateToCatalog={navigateToExamCatalog}
+              onNavigateToSessions={focusedExam ? () => navigateToExamSessions(focusedExam.id) : undefined}
             />
           </div>
           {isExamAuthoringView && (
