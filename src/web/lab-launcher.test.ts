@@ -5,6 +5,7 @@ import {
   confirmCandidateEndExam,
   END_EXAM_CONFIRMATION_MESSAGE,
   getEndExamPendingLaunchState,
+  getRetainedWindowLaunchState,
   LabLauncher,
 } from "./lab-launcher";
 import { clearLabWindows, openLabWindow } from "./lab-window";
@@ -44,6 +45,23 @@ describe("LabLauncher", () => {
 
     expect(html).toContain("Exam window open");
     expect(html).toContain("Suspend lab");
+    clearLabWindows();
+  });
+
+  it("opens monitoring when a ready attempt receives in-progress status with a retained child window", () => {
+    clearLabWindows();
+    openLabWindow("attempt-transition", "/enter?examAttemptId=attempt-transition", () => ({
+      closed: false,
+      close: vi.fn(),
+    }));
+
+    expect(
+      getRetainedWindowLaunchState({
+        examAttemptId: "attempt-transition",
+        currentAttemptStatus: "in_progress",
+        currentLaunchState: "idle",
+      }),
+    ).toBe("open");
     clearLabWindows();
   });
 
