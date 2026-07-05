@@ -89,6 +89,7 @@ showing real CloudShare behaviour, CloudShare wins.
 - For any slice touching CloudShare or another live integration, follow
   `docs/architecture/integration-slice-protocol.md` before coding, during implementation, and before review.
 - Prefer boring, explicit code over clever abstractions.
+- Displayed portal dates/times must use deterministic ISO 8601-style formats rather than locale-dependent rendering. Use a `YYYY-MM-DD...` shape, and make the timezone explicit whenever the view is showing UTC or another non-local reference time.
 - Build API-first. Any capability that changes or exposes portal state needs a typed HTTP API route
   and framework-agnostic `src/api/*` handler before or alongside the UI. React screens call those
   APIs; they do not bypass them.
@@ -180,12 +181,21 @@ accumulate as local-only commits.
 
 - The orchestration agent owns coordination: issue selection, agent handoff, PR/review loop, and merge
   readiness.
+- The orchestration agent must explicitly set the requested model/effort when spawning implementation
+  and review agents. Do not rely on inherited defaults. If the active tool cannot select the required
+  model, record that limitation on the PR and use the closest available model.
 - The implementation agent should usually use `gpt-5.4`, `gpt-5.4-mini`, `Sonnet 4.6`, or `Haiku 4.5`.
   The orchestration agent chooses low or medium reasoning based on slice complexity. Its job is to
   follow the issue, PRD, ADRs, and this file; it should not redesign the slice unless blocked.
 - The review agent should use `gpt-5.5` or `Opus 4.8`. The orchestration agent chooses medium or high
-  reasoning based on PR complexity and risk. Its job is to review the pull request against the issue,
-  PRD, architecture rules, tests, supportability, and security requirements.
+  reasoning based on PR complexity and risk. Live-integration slices or prior P1/P0 review failures
+  require high reasoning. Its job is to review the pull request against the issue, PRD, architecture
+  rules, tests, supportability, and security requirements.
+- While any implementation or review agent is active, the orchestration agent must poll at least every
+  two minutes and also check the PR head/comments directly on GitHub each cycle. Do not send a final
+  response, merge, or start the next slice while an expected implementation or review result is still
+  pending. If a reviewer exits before implementation is pushed, spawn a fresh reviewer after the PR
+  head changes.
 - The implementation agent fixes review findings on the same PR branch. Re-review until the review
   agent reports no blocking findings.
 - Human QA is required before merge for user-visible or integration behaviour, especially CloudShare

@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createDraftExam, type CreateDraftExamInput } from "@/domain/exam-catalog";
+import type { CloudShareClientFactory } from "@/domain/cloudshare-connection";
+import { CloudShareRequestError, CloudShareResponseError, CloudShareTransportError } from "@/integrations/cloudshare";
 import { createInMemoryCohortExamSessionRepository } from "@/persistence/cohort-exam-session-repository";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import { createInMemoryExamCatalogRepository } from "@/persistence/exam-catalog-repository";
@@ -9,6 +11,7 @@ import {
   handleCreateDraftCohortExamSession,
   handleGetCohortExamSession,
   handleListCohortExamSessions,
+  handlePublishCohortExamSession,
 } from "./admin-cohort-exam-sessions";
 
 function makeLogger(): Logger {
@@ -218,4 +221,694 @@ describe("admin Cohort Exam Session runtime", () => {
     });
     expect(foreignCustomer.status).toBe(404);
   });
+
+  it("publishes a draft Cohort Exam Session to one shared CloudShare on-demand Experience", async () => {
+    const exams = createInMemoryExamCatalogRepository();
+    const sessions = createInMemoryCohortExamSessionRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({
+      repository: diagnosticsRepository,
+      secrets: ["secret-api-key"],
+    });
+    const requestV3 = vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) =>
+      spec.schema.parse({
+        rows: [{ id: "TM-team-1", name: "Helios Team" }],
+      }),
+    );
+    const requestV4Detailed = vi.fn(
+      async (spec: { method: string; path: string; body: Record<string, unknown>; schema: { parse(value: unknown): unknown } }) => ({
+        data: spec.schema.parse({ id: "EXcohort-1" }),
+        host: "api.accelerate.cloudshare.com",
+        integrationSurface: "cloudshare.v4.training",
+        request: {
+          method: spec.method,
+          path: "/v4" + spec.path,
+          headers: { authorization: "Bearer secret-api-key" },
+          body: spec.body,
+        },
+        response: {
+          status: 201,
+          headers: { "content-type": "application/json" },
+          body: { id: "EXcohort-1", apiKeyEcho: "secret-api-key" },
+        },
+      }),
+    );
+    const cloudshare: CloudShareClientFactory = {
+      forConnection: () =>
+        ({
+          requestV3,
+          requestV4Detailed,
+        }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>,
+    };
+    await seedExam(exams);
+    await handleCreateDraftCohortExamSession(
+      {
+        exams,
+        sessions,
+        logger: makeLogger(),
+        now: () => new Date("2026-07-04T11:00:00.000Z"),
+        newId: () => "cohort-session-1",
+      },
+      {
+        customerId: "customer-1",
+        actor,
+        examId: "exam-1",
+        body: {
+          name: "July Admin Cohort",
+          admissionStartsAt: "2026-07-05T09:00:00.000Z",
+          admissionEndsAt: "2026-07-31T17:00:00.000Z",
+          capacity: 25,
+        },
+      },
+    );
+
+    const response = await handlePublishCohortExamSession(
+      {
+        exams,
+        sessions,
+        connections: {
+          findByCustomerId: vi.fn(async () => ({
+            customerId: "customer-1",
+            apiId: "api-id",
+            apiKey: "secret-api-key",
+            webhookSecret: "webhook-secret",
+            webhookPathToken: "webhook-token",
+            connectedAt: new Date("2026-07-01T00:00:00.000Z"),
+            verifiedAt: new Date("2026-07-01T00:05:00.000Z"),
+          })),
+          save: vi.fn(),
+          findByWebhookPathToken: vi.fn(),
+          markVerified: vi.fn(),
+        },
+        cloudshare,
+        diagnostics,
+        logger: makeLogger(),
+        now: () => new Date("2026-07-04T12:00:00.000Z"),
+        newCorrelationId: () => "corr-cohort-publish-1",
+      },
+      {
+        customerId: "customer-1",
+        actor,
+        examId: "exam-1",
+        sessionId: "cohort-session-1",
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      session: {
+        id: "cohort-session-1",
+        status: "published",
+        cloudShareTrainingId: "EXcohort-1",
+        cloudShareExperienceId: "EXcohort-1",
+        cloudShareTeamId: "TM-team-1",
+        publishedAt: new Date("2026-07-04T12:00:00.000Z"),
+      },
+    });
+    expect(requestV4Detailed).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "POST",
+        path: "/trainings",
+        body: expect.objectContaining({
+          Name: "Helios CloudShare Fundamentals - July Admin Cohort",
+          Start: "2026-07-05T09:00:00.000Z",
+          End: "2026-07-31T17:00:00.000Z",
+          Type: "selfPaced",
+          ProjectId: "project-1",
+          TeamId: "TM-team-1",
+          BlueprintIds: ["bp-1"],
+          PolicyId: "policy-1",
+          CloudshareRegionIds: ["region-1", "region-2"],
+          MainInstructor: { Email: "instructor-1" },
+          TimeZone: "UTC",
+          Passphrase: "certalis-cohort-session-1",
+          RegistrationType: "registeredStudentsOnly",
+          UsersEarlyAccess: { GrantEarlyAccess: 2 },
+        }),
+      }),
+    );
+
+    const [entry] = await diagnosticsRepository.query({
+      customerId: "customer-1",
+      examId: "exam-1",
+      operation: "cohort_exam_session.publish",
+    });
+    expect(entry).toMatchObject({
+      actor,
+      subject: { type: "cohort_exam_session", id: "cohort-session-1" },
+      outcome: "success",
+      correlationId: "corr-cohort-publish-1",
+      externalIds: {
+        trainingId: "EXcohort-1",
+        experienceId: "EXcohort-1",
+        teamId: "TM-team-1",
+      },
+      details: {
+        integrationSurface: "cloudshare.v4.training",
+      },
+    });
+    expect(JSON.stringify(entry)).not.toContain("secret-api-key");
+  });
+
+  it("keeps a session recoverable and records diagnostics when CloudShare rejects publish", async () => {
+    const { exams, sessions, diagnosticsRepository, deps, requestV4Detailed } = await makePublishFailureDeps(
+      new CloudShareRequestError("CloudShare rejected the training", 400, {
+        method: "POST",
+        path: "/v4/trainings",
+        integrationSurface: "cloudshare.v4.training",
+        requestHeaders: { authorization: "Bearer secret-api-key" },
+        requestBody: { Name: "July Admin Cohort", apiKey: "secret-api-key" },
+        responseHeaders: { "content-type": "application/json" },
+        responseBody: { Name: ["Experience name must be unique"], apiKeyEcho: "secret-api-key" },
+      }),
+    );
+
+    const response = await handlePublishCohortExamSession(deps, {
+      customerId: "customer-1",
+      actor,
+      examId: "exam-1",
+      sessionId: "cohort-session-1",
+    });
+
+    expect(response.status).toBe(502);
+    expect(response.body).toEqual({
+      error: "CloudShare could not publish this Cohort Exam Session. Check the diagnostic log for the correlation ID.",
+      correlationId: "corr-cohort-publish-failure",
+    });
+    await expect(sessions.findById("cohort-session-1")).resolves.toMatchObject({
+      status: "draft",
+      cloudShareTrainingId: null,
+      lastPublishCorrelationId: "corr-cohort-publish-failure",
+      lastPublishError: "CloudShare could not publish this Cohort Exam Session.",
+    });
+    expect(requestV4Detailed).toHaveBeenCalledTimes(1);
+    await expect(exams.findById("exam-1")).resolves.toMatchObject({ id: "exam-1" });
+
+    const [entry] = await diagnosticsRepository.query({
+      customerId: "customer-1",
+      examId: "exam-1",
+      operation: "cohort_exam_session.publish",
+      outcome: "failure",
+    });
+    expect(entry).toMatchObject({
+      subject: { type: "cohort_exam_session", id: "cohort-session-1" },
+      correlationId: "corr-cohort-publish-failure",
+      request: {
+        method: "POST",
+        path: "/v4/trainings",
+        headers: { authorization: "[REDACTED]" },
+        body: { Name: "July Admin Cohort", apiKey: "[REDACTED]" },
+      },
+      response: {
+        status: 400,
+        body: { Name: ["Experience name must be unique"], apiKeyEcho: "[REDACTED]" },
+      },
+      details: {
+        integrationSurface: "cloudshare.v4.training",
+        failureMode: "http_status",
+      },
+    });
+    expect(JSON.stringify(entry)).not.toContain("secret-api-key");
+
+    const retry = await handlePublishCohortExamSession(deps, {
+      customerId: "customer-1",
+      actor,
+      examId: "exam-1",
+      sessionId: "cohort-session-1",
+    });
+    expect(retry.status).toBe(502);
+    expect(requestV4Detailed).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a session recoverable and records diagnostics when CloudShare cannot resolve a Project Team", async () => {
+    const exams = createInMemoryExamCatalogRepository();
+    const sessions = createInMemoryCohortExamSessionRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({
+      repository: diagnosticsRepository,
+      secrets: ["secret-api-key"],
+    });
+    await seedExam(exams);
+    await handleCreateDraftCohortExamSession(
+      {
+        exams,
+        sessions,
+        logger: makeLogger(),
+        now: () => new Date("2026-07-04T11:00:00.000Z"),
+        newId: () => "cohort-session-1",
+      },
+      {
+        customerId: "customer-1",
+        examId: "exam-1",
+        body: {
+          name: "July Admin Cohort",
+          admissionStartsAt: "2026-07-05T09:00:00.000Z",
+        },
+      },
+    );
+    const requestV3 = vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) =>
+      spec.schema.parse({ rows: [] }),
+    );
+    const requestV4Detailed = vi.fn();
+    const cloudshare: CloudShareClientFactory = {
+      forConnection: () =>
+        ({
+          requestV3,
+          requestV4Detailed,
+        }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>,
+    };
+
+    const response = await handlePublishCohortExamSession(
+      {
+        exams,
+        sessions,
+        connections: {
+          findByCustomerId: vi.fn(async () => ({
+            customerId: "customer-1",
+            apiId: "api-id",
+            apiKey: "secret-api-key",
+            webhookSecret: "webhook-secret",
+            webhookPathToken: "webhook-token",
+            connectedAt: new Date("2026-07-01T00:00:00.000Z"),
+            verifiedAt: new Date("2026-07-01T00:05:00.000Z"),
+          })),
+          save: vi.fn(),
+          findByWebhookPathToken: vi.fn(),
+          markVerified: vi.fn(),
+        },
+        cloudshare,
+        diagnostics,
+        logger: makeLogger(),
+        now: () => new Date("2026-07-04T12:00:00.000Z"),
+        newCorrelationId: () => "corr-cohort-team-failure",
+      },
+      {
+        customerId: "customer-1",
+        actor,
+        examId: "exam-1",
+        sessionId: "cohort-session-1",
+      },
+    );
+
+    expect(response.status).toBe(502);
+    expect(response.body).toEqual({
+      error: "CloudShare could not publish this Cohort Exam Session. Check the diagnostic log for the correlation ID.",
+      correlationId: "corr-cohort-team-failure",
+    });
+    expect(requestV4Detailed).not.toHaveBeenCalled();
+    await expect(sessions.findById("cohort-session-1")).resolves.toMatchObject({
+      status: "draft",
+      cloudShareTrainingId: null,
+      lastPublishCorrelationId: "corr-cohort-team-failure",
+      lastPublishError: "CloudShare could not publish this Cohort Exam Session.",
+    });
+
+    const [entry] = await diagnosticsRepository.query({
+      customerId: "customer-1",
+      examId: "exam-1",
+      operation: "cohort_exam_session.publish",
+      outcome: "failure",
+    });
+    expect(entry).toMatchObject({
+      subject: { type: "cohort_exam_session", id: "cohort-session-1" },
+      correlationId: "corr-cohort-team-failure",
+      request: {
+        method: "GET",
+        path: "/teams",
+        query: expect.objectContaining({ projectId: "project-1" }),
+      },
+      response: {
+        body: { teamCount: 0 },
+      },
+      details: {
+        integrationSurface: "cloudshare.v3.teams",
+        failureMode: "unexpected_response",
+        issues: ["No CloudShare Team was returned for Project project-1."],
+      },
+    });
+    expect(JSON.stringify(entry)).not.toContain("secret-api-key");
+  });
+
+  it("allows only one concurrent publish call to create the CloudShare on-demand Experience", async () => {
+    const exams = createInMemoryExamCatalogRepository();
+    const sessions = createInMemoryCohortExamSessionRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
+    await seedExam(exams);
+    await handleCreateDraftCohortExamSession(
+      {
+        exams,
+        sessions,
+        logger: makeLogger(),
+        now: () => new Date("2026-07-04T11:00:00.000Z"),
+        newId: () => "cohort-session-1",
+      },
+      {
+        customerId: "customer-1",
+        examId: "exam-1",
+        body: {
+          name: "July Admin Cohort",
+          admissionStartsAt: "2026-07-05T09:00:00.000Z",
+        },
+      },
+    );
+    const requestV3 = vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) =>
+      spec.schema.parse({ rows: [{ id: "TM-team-1", name: "Helios Team" }] }),
+    );
+    const trainingPost = deferred<{
+      data: unknown;
+      host: string;
+      integrationSurface: string;
+      request: Record<string, unknown>;
+      response: Record<string, unknown>;
+    }>();
+    const requestV4Detailed = vi.fn(
+      async (spec: { method: string; path: string; body: Record<string, unknown>; schema: { parse(value: unknown): unknown } }) => {
+        await trainingPost.promise;
+        return {
+          data: spec.schema.parse({ id: "EXcohort-1" }),
+          host: "api.accelerate.cloudshare.com",
+          integrationSurface: "cloudshare.v4.training",
+          request: { method: spec.method, path: spec.path, body: spec.body },
+          response: { status: 201, body: { id: "EXcohort-1" } },
+        };
+      },
+    );
+    const cloudshare: CloudShareClientFactory = {
+      forConnection: () =>
+        ({
+          requestV3,
+          requestV4Detailed,
+        }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>,
+    };
+    const deps = {
+      exams,
+      sessions,
+      connections: {
+        findByCustomerId: vi.fn(async () => ({
+          customerId: "customer-1",
+          apiId: "api-id",
+          apiKey: "secret-api-key",
+          webhookSecret: "webhook-secret",
+          webhookPathToken: "webhook-token",
+          connectedAt: new Date("2026-07-01T00:00:00.000Z"),
+          verifiedAt: new Date("2026-07-01T00:05:00.000Z"),
+        })),
+        save: vi.fn(),
+        findByWebhookPathToken: vi.fn(),
+        markVerified: vi.fn(),
+      },
+      cloudshare,
+      diagnostics,
+      logger: makeLogger(),
+      now: () => new Date("2026-07-04T12:00:00.000Z"),
+      newCorrelationId: vi.fn().mockReturnValueOnce("corr-concurrent-1").mockReturnValueOnce("corr-concurrent-2"),
+    };
+
+    const first = handlePublishCohortExamSession(deps, {
+      customerId: "customer-1",
+      actor,
+      examId: "exam-1",
+      sessionId: "cohort-session-1",
+    });
+    const second = handlePublishCohortExamSession(deps, {
+      customerId: "customer-1",
+      actor,
+      examId: "exam-1",
+      sessionId: "cohort-session-1",
+    });
+    await vi.waitFor(() => expect(requestV4Detailed).toHaveBeenCalledTimes(1));
+    trainingPost.resolve({
+      data: { id: "unused" },
+      host: "api.accelerate.cloudshare.com",
+      integrationSurface: "cloudshare.v4.training",
+      request: {},
+      response: {},
+    });
+    const responses = await Promise.all([first, second]);
+
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
+    expect(requestV4Detailed).toHaveBeenCalledTimes(1);
+    await expect(sessions.findById("cohort-session-1")).resolves.toMatchObject({
+      status: "published",
+      cloudShareTrainingId: "EXcohort-1",
+    });
+    const entries = await diagnosticsRepository.query({
+      customerId: "customer-1",
+      examId: "exam-1",
+      operation: "cohort_exam_session.publish",
+    });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ outcome: "success", correlationId: "corr-concurrent-1" });
+  });
+
+  it("blocks publish retry after an ambiguous CloudShare transport failure", async () => {
+    const { diagnosticsRepository, sessions, deps, requestV4Detailed } = await makePublishFailureDeps(
+      new CloudShareTransportError("CloudShare was unreachable", {
+        method: "POST",
+        path: "/v4/trainings",
+        integrationSurface: "cloudshare.v4.training",
+        requestHeaders: { authorization: "Bearer secret-api-key" },
+        requestBody: { Name: "July Admin Cohort", apiKey: "secret-api-key" },
+        cause: "ECONNRESET",
+      }),
+    );
+
+    const response = await handlePublishCohortExamSession(deps, {
+      customerId: "customer-1",
+      actor,
+      examId: "exam-1",
+      sessionId: "cohort-session-1",
+    });
+
+    expect(response.status).toBe(502);
+    expect(response.body).toEqual({
+      error:
+        "CloudShare publish outcome is unknown. Reconcile it before retrying this Cohort Exam Session. Check the diagnostic log for the correlation ID.",
+      correlationId: "corr-cohort-publish-failure",
+    });
+    await expect(sessions.findById("cohort-session-1")).resolves.toMatchObject({
+      status: "publish_reconciliation_required",
+      lastPublishCorrelationId: "corr-cohort-publish-failure",
+      lastPublishError:
+        "CloudShare publish outcome is unknown. Reconcile this Cohort Exam Session before retrying.",
+    });
+    expect(requestV4Detailed).toHaveBeenCalledTimes(1);
+    const [entry] = await diagnosticsRepository.query({
+      customerId: "customer-1",
+      examId: "exam-1",
+      operation: "cohort_exam_session.publish",
+      outcome: "failure",
+    });
+    expect(entry).toMatchObject({
+      details: {
+        integrationSurface: "cloudshare.v4.training",
+        failureMode: "transport",
+        cause: "ECONNRESET",
+      },
+      response: null,
+    });
+    expect(JSON.stringify(entry)).not.toContain("secret-api-key");
+
+    const retry = await handlePublishCohortExamSession(deps, {
+      customerId: "customer-1",
+      actor,
+      examId: "exam-1",
+      sessionId: "cohort-session-1",
+    });
+    expect(retry).toEqual({
+      status: 409,
+      body: {
+        error:
+          "The previous CloudShare publish attempt has an unknown outcome. Reconcile it before retrying this Cohort Exam Session.",
+        correlationId: "corr-cohort-publish-failure",
+      },
+    });
+    expect(requestV4Detailed).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocks publish retry after an ambiguous CloudShare create response mismatch", async () => {
+    const { sessions, deps, requestV4Detailed } = await makePublishFailureDeps(
+      new CloudShareResponseError("CloudShare response did not match the expected schema", {
+        method: "POST",
+        path: "/v4/trainings",
+        integrationSurface: "cloudshare.v4.training",
+        requestHeaders: { authorization: "Bearer secret-api-key" },
+        requestBody: { Name: "July Admin Cohort" },
+        responseHeaders: { "content-type": "application/json" },
+        responseBody: { trainingName: "July Admin Cohort" },
+        issues: ["Required"],
+      }),
+    );
+
+    const response = await handlePublishCohortExamSession(deps, {
+      customerId: "customer-1",
+      actor,
+      examId: "exam-1",
+      sessionId: "cohort-session-1",
+    });
+
+    expect(response.status).toBe(502);
+    await expect(sessions.findById("cohort-session-1")).resolves.toMatchObject({
+      status: "publish_reconciliation_required",
+      lastPublishCorrelationId: "corr-cohort-publish-failure",
+    });
+    expect(requestV4Detailed).toHaveBeenCalledTimes(1);
+  });
+
+  it("blocks publish retry after an ambiguous CloudShare create 5xx response", async () => {
+    const { diagnosticsRepository, sessions, deps, requestV4Detailed } = await makePublishFailureDeps(
+      new CloudShareRequestError("Bad Gateway", 502, {
+        method: "POST",
+        path: "/v4/trainings",
+        integrationSurface: "cloudshare.v4.training",
+        requestHeaders: { authorization: "Bearer secret-api-key" },
+        requestBody: { Name: "July Admin Cohort", apiKey: "secret-api-key" },
+        responseHeaders: { "content-type": "application/json" },
+        responseBody: { message: "upstream error", apiKeyEcho: "secret-api-key" },
+      }),
+    );
+
+    const response = await handlePublishCohortExamSession(deps, {
+      customerId: "customer-1",
+      actor,
+      examId: "exam-1",
+      sessionId: "cohort-session-1",
+    });
+
+    expect(response.status).toBe(502);
+    expect(response.body).toEqual({
+      error:
+        "CloudShare publish outcome is unknown. Reconcile it before retrying this Cohort Exam Session. Check the diagnostic log for the correlation ID.",
+      correlationId: "corr-cohort-publish-failure",
+    });
+    await expect(sessions.findById("cohort-session-1")).resolves.toMatchObject({
+      status: "publish_reconciliation_required",
+      lastPublishCorrelationId: "corr-cohort-publish-failure",
+      lastPublishError:
+        "CloudShare publish outcome is unknown. Reconcile this Cohort Exam Session before retrying.",
+    });
+    expect(requestV4Detailed).toHaveBeenCalledTimes(1);
+
+    const [entry] = await diagnosticsRepository.query({
+      customerId: "customer-1",
+      examId: "exam-1",
+      operation: "cohort_exam_session.publish",
+      outcome: "failure",
+    });
+    expect(entry).toMatchObject({
+      correlationId: "corr-cohort-publish-failure",
+      request: {
+        method: "POST",
+        path: "/v4/trainings",
+        headers: { authorization: "[REDACTED]" },
+        body: { Name: "July Admin Cohort", apiKey: "[REDACTED]" },
+      },
+      response: {
+        status: 502,
+        body: { message: "upstream error", apiKeyEcho: "[REDACTED]" },
+      },
+      details: {
+        integrationSurface: "cloudshare.v4.training",
+        failureMode: "http_status",
+      },
+    });
+    expect(JSON.stringify(entry)).not.toContain("secret-api-key");
+
+    const retry = await handlePublishCohortExamSession(deps, {
+      customerId: "customer-1",
+      actor,
+      examId: "exam-1",
+      sessionId: "cohort-session-1",
+    });
+    expect(retry).toEqual({
+      status: 409,
+      body: {
+        error:
+          "The previous CloudShare publish attempt has an unknown outcome. Reconcile it before retrying this Cohort Exam Session.",
+        correlationId: "corr-cohort-publish-failure",
+      },
+    });
+    expect(requestV4Detailed).toHaveBeenCalledTimes(1);
+  });
 });
+
+async function makePublishFailureDeps(error: Error) {
+  const exams = createInMemoryExamCatalogRepository();
+  const sessions = createInMemoryCohortExamSessionRepository();
+  const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+  const diagnostics = createDiagnosticRecorder({
+    repository: diagnosticsRepository,
+    secrets: ["secret-api-key"],
+  });
+  await seedExam(exams);
+  await handleCreateDraftCohortExamSession(
+    {
+      exams,
+      sessions,
+      logger: makeLogger(),
+      now: () => new Date("2026-07-04T11:00:00.000Z"),
+      newId: () => "cohort-session-1",
+    },
+    {
+      customerId: "customer-1",
+      examId: "exam-1",
+      body: {
+        name: "July Admin Cohort",
+        admissionStartsAt: "2026-07-05T09:00:00.000Z",
+      },
+    },
+  );
+  const requestV3 = vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) =>
+    spec.schema.parse({ rows: [{ id: "TM-team-1", name: "Helios Team" }] }),
+  );
+  const requestV4Detailed = vi.fn(async () => {
+    throw error;
+  });
+  const cloudshare: CloudShareClientFactory = {
+    forConnection: () =>
+      ({
+        requestV3,
+        requestV4Detailed,
+      }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>,
+  };
+  return {
+    exams,
+    sessions,
+    diagnosticsRepository,
+    requestV4Detailed,
+    deps: {
+      exams,
+      sessions,
+      connections: {
+        findByCustomerId: vi.fn(async () => ({
+          customerId: "customer-1",
+          apiId: "api-id",
+          apiKey: "secret-api-key",
+          webhookSecret: "webhook-secret",
+          webhookPathToken: "webhook-token",
+          connectedAt: new Date("2026-07-01T00:00:00.000Z"),
+          verifiedAt: new Date("2026-07-01T00:05:00.000Z"),
+        })),
+        save: vi.fn(),
+        findByWebhookPathToken: vi.fn(),
+        markVerified: vi.fn(),
+      },
+      cloudshare,
+      diagnostics,
+      logger: makeLogger(),
+      now: () => new Date("2026-07-04T12:00:00.000Z"),
+      newCorrelationId: () => "corr-cohort-publish-failure",
+    },
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
+}

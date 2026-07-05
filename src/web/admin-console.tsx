@@ -44,12 +44,13 @@ import { pageShellStyle } from "./page-shell";
 import { cardStyle, mutedPanelStyle, alertPanelStyle } from "./card-styles";
 import {
   accountLogoutButtonStyle,
+  compactButtonStyle,
   disabledButtonStyle,
   primaryButtonStyle,
   secondaryButtonStyle,
 } from "./button-styles";
 import { colors } from "./design-tokens";
-import { statusBadgeStyle, getExamStatusTone } from "./status-badge";
+import { statusBadgeStyle, getExamStatusTone, type StatusTone } from "./status-badge";
 import { PortalPageHeader } from "./portal-page-header";
 
 interface AdminConsoleProps {
@@ -190,7 +191,13 @@ interface CohortExamSessionRecord {
     admissionStartsAt: string;
     admissionEndsAt: string | null;
     capacity: number | null;
-    status: "draft";
+    status: "draft" | "publishing" | "published" | "publish_reconciliation_required";
+    cloudShareTrainingId?: string | null;
+    cloudShareExperienceId?: string | null;
+    cloudShareTeamId?: string | null;
+    publishedAt?: string | null;
+    lastPublishError?: string | null;
+    lastPublishCorrelationId?: string | null;
   };
   inheritedContext: {
     project: { id: string; name: string };
@@ -459,7 +466,128 @@ export function getDeliveryAvailabilityAuthoringOptions(value: ExamRecord["deliv
 }
 
 export const COHORT_SESSION_DRAFT_ONLY_COPY =
-  "Draft only - publishing and candidate admission are delivered in a later slice.";
+  "Candidate admission remains disabled in this slice. Published Cohort Exam Sessions stay admin-only until a later slice enables candidate joins.";
+
+function formatCohortSessionStatus(status: CohortExamSessionRecord["session"]["status"]): string {
+  switch (status) {
+    case "publish_reconciliation_required":
+      return "Publish reconciliation required";
+    case "publishing":
+      return "Publishing";
+    case "published":
+      return "Published";
+    case "draft":
+    default:
+      return "Draft";
+  }
+}
+
+function getCohortSessionStatusTone(
+  status: CohortExamSessionRecord["session"]["status"],
+): StatusTone {
+  switch (status) {
+    case "published":
+      return "positive";
+    case "publishing":
+      return "info";
+    case "publish_reconciliation_required":
+      return "warning";
+    case "draft":
+    default:
+      return "neutral";
+  }
+}
+
+export function formatCohortSessionDateTime(value: string | null): string {
+  if (!value) {
+    return "-";
+  }
+
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime())
+    ? value
+    : parsed.toISOString().replace(/:\d{2}\.\d{3}Z$/, "Z");
+}
+
+const cohortSessionTileGridStyle: React.CSSProperties = {
+  display: "grid",
+  gap: "0.75rem",
+  gridTemplateColumns: "repeat(auto-fill, minmax(16rem, 20rem))",
+  justifyContent: "start",
+  alignItems: "start",
+};
+
+const cohortSessionTileStyle: React.CSSProperties = {
+  ...cardStyle,
+  display: "grid",
+  gap: "0.75rem",
+  padding: "0.9rem",
+};
+
+const cohortSessionMetaGridStyle: React.CSSProperties = {
+  display: "grid",
+  gap: "0.6rem",
+  gridTemplateColumns: "repeat(auto-fit, minmax(11rem, 1fr))",
+  alignItems: "start",
+};
+
+const cohortSessionDetailGridStyle: React.CSSProperties = {
+  display: "grid",
+  gap: "0.75rem",
+  gridTemplateColumns: "repeat(auto-fit, minmax(12rem, 1fr))",
+  alignItems: "start",
+};
+
+const cohortSessionDetailItemStyle: React.CSSProperties = {
+  display: "grid",
+  gap: "0.2rem",
+  padding: "0.7rem 0.8rem",
+  borderRadius: "6px",
+  background: colors.surfaceSubtle,
+  minWidth: 0,
+};
+
+const cohortSessionDetailLabelStyle: React.CSSProperties = {
+  fontSize: "0.75rem",
+  fontWeight: 600,
+  color: colors.textSecondary,
+};
+
+function CohortSessionDetailItem(props: {
+  label: string;
+  value: React.ReactNode;
+}) {
+  return (
+    <div style={cohortSessionDetailItemStyle}>
+      <div style={cohortSessionDetailLabelStyle}>{props.label}</div>
+      <div style={{ overflowWrap: "anywhere" }}>{props.value}</div>
+    </div>
+  );
+}
+
+function getCloudShareIdentifierFields(session: {
+  cloudShareTrainingId?: string | null;
+  cloudShareExperienceId?: string | null;
+}): Array<{ label: string; value: string }> {
+  const trainingId = session.cloudShareTrainingId?.trim() ?? "";
+  const experienceId = session.cloudShareExperienceId?.trim() ?? "";
+
+  if (trainingId && experienceId && trainingId === experienceId) {
+    return [{ label: "CloudShare Experience ID", value: experienceId }];
+  }
+
+  const fields: Array<{ label: string; value: string }> = [];
+
+  if (trainingId) {
+    fields.push({ label: "CloudShare training ID", value: trainingId });
+  }
+
+  if (experienceId) {
+    fields.push({ label: "CloudShare Experience ID", value: experienceId });
+  }
+
+  return fields;
+}
 
 export function formatShortExamId(id: string): string {
   return id.length <= 8 ? id : id.slice(0, 8);
@@ -560,22 +688,48 @@ function CohortSessionDraftControls(props: {
           style={fieldStyle}
         />
       </label>
-      <button onClick={props.onCreate} disabled={props.loading} style={{ padding: "0.45rem 0.75rem" }}>
+      <button onClick={props.onCreate} disabled={props.loading} style={primaryButtonStyle}>
         Create Draft Cohort Session
       </button>
-      <div style={{ display: "grid", gap: "0.35rem" }}>
+      <div style={{ display: "grid", gap: "0.5rem" }}>
+        <strong>Existing Cohort Sessions</strong>
         {props.sessions.length === 0 ? (
           <span style={{ color: "#666" }}>No draft Cohort Exam Sessions yet.</span>
         ) : (
-          props.sessions.map((session) => (
-            <button
-              key={`${props.examId}-${session.session.id}`}
-              onClick={() => props.onSelect(session)}
-              style={{ padding: "0.45rem 0.75rem", textAlign: "left" }}
-            >
-              {session.session.name} · {session.session.status}
-            </button>
-          ))
+          <div style={cohortSessionTileGridStyle}>
+            {props.sessions.map((session) => (
+              <div key={`${props.examId}-${session.session.id}`} style={cohortSessionTileStyle}>
+                <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+                  <div style={{ fontWeight: 600 }}>{session.session.name}</div>
+                  <span style={statusBadgeStyle(getCohortSessionStatusTone(session.session.status))}>
+                    {formatCohortSessionStatus(session.session.status)}
+                  </span>
+                </div>
+                <div style={cohortSessionMetaGridStyle}>
+                  <CohortSessionDetailItem
+                    label="Admission opens"
+                    value={formatCohortSessionDateTime(session.session.admissionStartsAt)}
+                  />
+                  <CohortSessionDetailItem
+                    label="Admission closes"
+                    value={formatCohortSessionDateTime(session.session.admissionEndsAt)}
+                  />
+                  <CohortSessionDetailItem
+                    label="Capacity"
+                    value={session.session.capacity === null ? "Unlimited" : session.session.capacity}
+                  />
+                  {getCloudShareIdentifierFields(session.session).map((field) => (
+                    <CohortSessionDetailItem key={field.label} label={field.label} value={field.value} />
+                  ))}
+                </div>
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <button type="button" onClick={() => props.onSelect(session)} style={compactButtonStyle}>
+                    Open Session
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
     </div>
@@ -619,6 +773,116 @@ export function CohortSessionDraftOnlyNotice() {
     <p style={{ margin: 0, color: colors.textSecondary, fontSize: "0.9rem" }}>
       {COHORT_SESSION_DRAFT_ONLY_COPY}
     </p>
+  );
+}
+
+export function CohortSessionWorkspacePanel(props: {
+  examTitle: string;
+  session: CohortExamSessionRecord;
+  loading: boolean;
+  onBack: () => void;
+  onPublish: () => void;
+}) {
+  const { session } = props;
+
+  return (
+    <div style={{ ...cardStyle, display: "grid", gap: "1rem" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
+        <div style={{ display: "grid", gap: "0.35rem" }}>
+          <h3 style={{ margin: 0 }}>Cohort Exam Session workspace</h3>
+          <p style={{ margin: 0, color: colors.textSecondary }}>{props.examTitle}</p>
+          <CohortSessionDraftOnlyNotice />
+        </div>
+        <button type="button" onClick={props.onBack} style={secondaryButtonStyle}>
+          Back to Cohort Sessions
+        </button>
+      </div>
+
+      <div style={{ display: "grid", gap: "0.9rem" }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            gap: "0.75rem",
+            flexWrap: "wrap",
+            alignItems: "center",
+          }}
+        >
+          <div style={{ fontWeight: 700, fontSize: "1rem" }}>{session.session.name}</div>
+          <span style={statusBadgeStyle(getCohortSessionStatusTone(session.session.status))}>
+            {formatCohortSessionStatus(session.session.status)}
+          </span>
+        </div>
+
+        {session.session.status === "draft" ? (
+          <div style={{ display: "flex", justifyContent: "flex-start" }}>
+            <button type="button" onClick={props.onPublish} disabled={props.loading} style={primaryButtonStyle}>
+              Publish Cohort Session
+            </button>
+          </div>
+        ) : null}
+
+        <div style={cohortSessionDetailGridStyle}>
+          <CohortSessionDetailItem
+            label="Admission opens"
+            value={formatCohortSessionDateTime(session.session.admissionStartsAt)}
+          />
+          <CohortSessionDetailItem
+            label="Admission closes"
+            value={formatCohortSessionDateTime(session.session.admissionEndsAt)}
+          />
+          <CohortSessionDetailItem
+            label="Capacity"
+            value={session.session.capacity === null ? "Unlimited" : session.session.capacity}
+          />
+          {getCloudShareIdentifierFields(session.session).map((field) => (
+            <CohortSessionDetailItem key={field.label} label={field.label} value={field.value} />
+          ))}
+          {session.session.publishedAt ? (
+            <CohortSessionDetailItem
+              label="Published at"
+              value={formatCohortSessionDateTime(session.session.publishedAt)}
+            />
+          ) : null}
+        </div>
+
+        {session.session.lastPublishError ? (
+          <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.25rem" }}>
+            <strong>
+              {session.session.status === "publish_reconciliation_required"
+                ? "Publish reconciliation required"
+                : "Last publish attempt failed"}
+            </strong>
+            <span>{session.session.lastPublishError}</span>
+            {session.session.lastPublishCorrelationId ? (
+              <span>Correlation ID: {session.session.lastPublishCorrelationId}</span>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div style={cohortSessionDetailGridStyle}>
+          <CohortSessionDetailItem label="Project" value={session.inheritedContext.project.name} />
+          <CohortSessionDetailItem
+            label="Blueprint/default Snapshot"
+            value={`${session.inheritedContext.blueprint.name} / ${session.inheritedContext.snapshot.name}`}
+          />
+          <CohortSessionDetailItem label="Policy" value={session.inheritedContext.policy.name} />
+          <CohortSessionDetailItem
+            label="Allowed Regions"
+            value={session.inheritedContext.allowedRegions.map((region) => region.name).join(", ")}
+          />
+          <CohortSessionDetailItem label="Instructor" value={session.inheritedContext.instructor.name} />
+          <CohortSessionDetailItem
+            label="Guided Journey score retrieval"
+            value={session.inheritedContext.scoreRetrievalEnabled ? "Enabled" : "Off"}
+          />
+          <CohortSessionDetailItem
+            label="Time limit"
+            value={`${session.inheritedContext.timeLimitMinutes} minutes`}
+          />
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -711,12 +975,15 @@ export function ExamCatalogRowActions(props: {
   readonly onUnpublish: () => void;
   readonly onManageCohortSessions: () => void;
 }) {
+  const supportsCohortSessions = isCohortSessionAuthoringAvailable(props.exam.deliveryAvailability);
+  const isCohortOnly = props.exam.deliveryAvailability === "cohort";
+
   return (
     <div style={{ display: "grid", gap: "0.5rem" }}>
       <div style={{ color: colors.textSecondary, fontSize: "0.8rem" }}>
         Delivery: {formatExamDeliveryAvailability(props.exam.deliveryAvailability)}
       </div>
-      {isCohortSessionAuthoringAvailable(props.exam.deliveryAvailability) ? (
+      {supportsCohortSessions ? (
         <button
           type="button"
           onClick={props.onManageCohortSessions}
@@ -726,7 +993,12 @@ export function ExamCatalogRowActions(props: {
           Manage Cohort Sessions
         </button>
       ) : null}
-      {props.exam.status === "draft" ? (
+      {isCohortOnly ? (
+        <div style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>
+          <div>Exam setup is {props.exam.status}</div>
+          <div>Publish the individual Cohort Sessions after opening this Exam.</div>
+        </div>
+      ) : props.exam.status === "draft" ? (
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
           {props.editingExamId === props.exam.id ? (
             <span style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>
@@ -761,6 +1033,105 @@ export function ExamCatalogRowActions(props: {
         </button>
       )}
     </div>
+  );
+}
+
+const examWorkspaceBreadcrumbNavStyle: React.CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: "0.45rem",
+  margin: 0,
+  padding: 0,
+  listStyle: "none",
+  alignItems: "center",
+};
+
+const examWorkspaceBreadcrumbButtonStyle: React.CSSProperties = {
+  ...secondaryButtonStyle,
+  padding: "0.4rem 0.7rem",
+  fontSize: "0.85rem",
+  background: colors.surfaceSubtle,
+  borderColor: colors.border,
+};
+
+const examWorkspaceBreadcrumbCurrentStyle: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  padding: "0.4rem 0.7rem",
+  borderRadius: "999px",
+  border: `1px solid ${colors.border}`,
+  background: colors.surface,
+  color: colors.textPrimary,
+  fontSize: "0.85rem",
+  fontWeight: 600,
+};
+
+export function ExamWorkspaceBreadcrumbs(props: {
+  readonly examView: AdminExamView;
+  readonly focusedExamTitle: string | null;
+  readonly focusedSessionName?: string | null;
+  readonly onNavigateToCatalog: () => void;
+  readonly onNavigateToSessions?: () => void;
+}) {
+  const items: Array<{ key: string; label: string; current: boolean; onClick?: () => void }> = [
+    {
+      key: "catalog",
+      label: "Catalog overview",
+      current: props.examView === "catalog",
+      onClick: props.examView === "catalog" ? undefined : props.onNavigateToCatalog,
+    },
+  ];
+
+  if (props.examView === "edit" || props.examView === "create") {
+    items.push({
+      key: props.examView,
+      label: props.examView === "edit" ? "Edit Exam" : "Create Exam",
+      current: true,
+    });
+  }
+
+  if ((props.examView === "sessions" || props.examView === "session") && props.focusedExamTitle) {
+    items.push({
+      key: "sessions",
+      label: `Cohort Sessions: ${props.focusedExamTitle}`,
+      current: props.examView === "sessions",
+      onClick: props.examView === "session" ? props.onNavigateToSessions : undefined,
+    });
+  }
+
+  if (props.examView === "session" && props.focusedSessionName) {
+    items.push({
+      key: "session",
+      label: props.focusedSessionName,
+      current: true,
+    });
+  }
+
+  return (
+    <nav aria-label="Exam workspace">
+      <ol style={examWorkspaceBreadcrumbNavStyle}>
+        {items.map((item, index) => (
+          <React.Fragment key={item.key}>
+            {index > 0 ? (
+              <li aria-hidden="true" style={{ color: colors.textMuted }}>
+                /
+              </li>
+            ) : null}
+            <li>
+              {item.current ? (
+                <span aria-current="page" style={examWorkspaceBreadcrumbCurrentStyle}>
+                  {item.label}
+                </span>
+              ) : (
+                <button type="button" onClick={item.onClick} style={examWorkspaceBreadcrumbButtonStyle}>
+                  {item.label}
+                </button>
+              )}
+            </li>
+          </React.Fragment>
+        ))}
+      </ol>
+    </nav>
   );
 }
 
@@ -1837,6 +2208,38 @@ export function AdminConsole({
     }
   }
 
+  async function publishCohortSession(examId: string, sessionId: string) {
+    setLoading(true);
+    setError(null);
+    setExamMessage(null);
+    try {
+      const response = await fetchAdmin(
+        `/api/admin/exams/${encodeURIComponent(examId)}/cohort-sessions/${encodeURIComponent(sessionId)}/publish`,
+        { method: "POST" },
+      );
+      const data = (await response.json()) as CohortExamSessionRecord & { error?: string; correlationId?: string };
+      if (!response.ok) {
+        setError(
+          data.correlationId
+            ? `${data.error ?? "Failed to publish Cohort Exam Session"} Correlation ID: ${data.correlationId}`
+            : data.error ?? "Failed to publish Cohort Exam Session",
+        );
+        await loadCohortExamSessions(examId);
+        return;
+      }
+      setSelectedCohortSession(data);
+      setExamMessage("Cohort Exam Session published to CloudShare.");
+      await loadCohortExamSessions(examId);
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
+      setError("Failed to publish Cohort Exam Session");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function saveDraftExam() {
     setLoading(true);
     setError(null);
@@ -2114,6 +2517,7 @@ export function AdminConsole({
     minHeight: "46px",
   } as const;
   const isExamAuthoringView = examView === "create" || examView === "edit";
+  const showCreateExamButton = examView !== "sessions" && examView !== "session";
   const focusedExam = focusedExamId ? (examCatalog.find((exam) => exam.id === focusedExamId) ?? null) : null;
   const focusedExamSessions = focusedExamId ? (cohortSessionsByExamId[focusedExamId] ?? []) : [];
   const focusedCohortSession =
@@ -2489,62 +2893,19 @@ export function AdminConsole({
                   Overview of Exams and delivery options for Helios CX.
                 </p>
               </div>
-              <button type="button" onClick={navigateToExamCreate} disabled={loading} style={primaryButtonStyle}>
-                Create Exam
-              </button>
-            </div>
-            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-              <button
-                type="button"
-                aria-current={examView === "catalog" ? "page" : undefined}
-                onClick={navigateToExamCatalog}
-                disabled={examView === "catalog"}
-                style={{
-                  padding: "0.5rem 0.8rem",
-                  border: `1px solid ${examView === "catalog" ? colors.textPrimary : colors.border}`,
-                  borderRadius: "8px",
-                  background: examView === "catalog" ? colors.textPrimary : "#ffffff",
-                  color: examView === "catalog" ? "#ffffff" : colors.textPrimary,
-                  cursor: examView === "catalog" ? "default" : "pointer",
-                  opacity: examView === "catalog" ? 0.85 : 1,
-                  fontWeight: 600,
-                }}
-              >
-                Catalog overview
-              </button>
-              {isExamAuthoringView ? (
-                <button
-                  type="button"
-                  aria-current="page"
-                  style={{
-                    padding: "0.5rem 0.8rem",
-                    border: `1px solid ${colors.textPrimary}`,
-                    borderRadius: "8px",
-                    background: colors.textPrimary,
-                    color: "#ffffff",
-                    fontWeight: 600,
-                  }}
-                >
-                  {examView === "edit" ? "Edit Exam" : "Create Exam"}
-                </button>
-              ) : null}
-              {(examView === "sessions" || examView === "session") && focusedExam ? (
-                <button
-                  type="button"
-                  aria-current="page"
-                  style={{
-                    padding: "0.5rem 0.8rem",
-                    border: `1px solid ${colors.textPrimary}`,
-                    borderRadius: "8px",
-                    background: colors.textPrimary,
-                    color: "#ffffff",
-                    fontWeight: 600,
-                  }}
-                >
-                  Cohort Sessions: {focusedExam.title}
+              {showCreateExamButton ? (
+                <button type="button" onClick={navigateToExamCreate} disabled={loading} style={primaryButtonStyle}>
+                  Create Exam
                 </button>
               ) : null}
             </div>
+            <ExamWorkspaceBreadcrumbs
+              examView={examView}
+              focusedExamTitle={focusedExam?.title ?? null}
+              focusedSessionName={focusedCohortSession?.session.name ?? null}
+              onNavigateToCatalog={navigateToExamCatalog}
+              onNavigateToSessions={focusedExam ? () => navigateToExamSessions(focusedExam.id) : undefined}
+            />
           </div>
           {isExamAuthoringView && (
             <>
@@ -2963,40 +3324,13 @@ export function AdminConsole({
           )}
 
           {examView === "session" && focusedExam && focusedCohortSession && (
-            <div style={{ ...cardStyle, display: "grid", gap: "0.75rem" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
-                <div>
-                  <h3 style={{ margin: 0 }}>Cohort Exam Session workspace</h3>
-                  <p style={{ margin: "0.25rem 0 0", color: colors.textSecondary }}>{focusedExam.title}</p>
-                  <CohortSessionDraftOnlyNotice />
-                </div>
-                <button
-                  type="button"
-                  onClick={() => navigateToExamSessions(focusedExam.id)}
-                  style={secondaryButtonStyle}
-                >
-                  Back to Cohort Sessions
-                </button>
-              </div>
-              <div style={{ fontWeight: 600 }}>{focusedCohortSession.session.name}</div>
-              <div>Status: {focusedCohortSession.session.status}</div>
-              <div>Project: {focusedCohortSession.inheritedContext.project.name}</div>
-              <div>
-                Blueprint/default Snapshot: {focusedCohortSession.inheritedContext.blueprint.name} /{" "}
-                {focusedCohortSession.inheritedContext.snapshot.name}
-              </div>
-              <div>Policy: {focusedCohortSession.inheritedContext.policy.name}</div>
-              <div>
-                Allowed Regions:{" "}
-                {focusedCohortSession.inheritedContext.allowedRegions.map((region) => region.name).join(", ")}
-              </div>
-              <div>Instructor: {focusedCohortSession.inheritedContext.instructor.name}</div>
-              <div>
-                Guided Journey score retrieval:{" "}
-                {focusedCohortSession.inheritedContext.scoreRetrievalEnabled ? "Enabled" : "Off"}
-              </div>
-              <div>Time limit: {focusedCohortSession.inheritedContext.timeLimitMinutes} minutes</div>
-            </div>
+            <CohortSessionWorkspacePanel
+              examTitle={focusedExam.title}
+              session={focusedCohortSession}
+              loading={loading}
+              onBack={() => navigateToExamSessions(focusedExam.id)}
+              onPublish={() => void publishCohortSession(focusedExam.id, focusedCohortSession.session.id)}
+            />
           )}
 
           {examView === "session" && focusedExam && focusedCohortSessionId && !focusedCohortSession && (

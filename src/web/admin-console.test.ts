@@ -6,11 +6,14 @@ import {
   AdminConsole,
   CohortSessionDraftOnlyNotice,
   CohortSessionAuthoringPanel,
+  CohortSessionWorkspacePanel,
+  ExamWorkspaceBreadcrumbs,
   ExamAuthoringSelectionSummary,
   ExamCatalogRowActions,
   ExamCatalogLoadingOverlay,
   getDeliveryAvailabilityAuthoringOptions,
   getDuplicateExamResourceTupleWarning,
+  formatCohortSessionDateTime,
   normalizeAdminLocalDateTime,
 } from "./admin-console";
 
@@ -244,7 +247,7 @@ describe("AdminConsole", () => {
     expect(html).not.toContain("Long Blueprint description");
   });
 
-  it("marks the current Exam catalog subnav control as disabled and non-actionable", () => {
+  it("renders the exam workspace navigation as breadcrumb-style context instead of a primary action", () => {
     const html = renderToStaticMarkup(
       createElement(AdminConsole, {
         email: "admin@helioscx.demo",
@@ -252,10 +255,12 @@ describe("AdminConsole", () => {
       }),
     );
 
+    expect(html).toContain('aria-label="Exam workspace"');
+    expect(html).toContain("<nav");
+    expect(html).toContain("<ol");
     expect(html).toContain("Catalog overview");
     expect(html).toContain('aria-current="page"');
-    expect(html).toContain("disabled=\"\"");
-    expect(html).toContain("cursor:default");
+    expect(html).not.toContain("disabled=\"\"");
   });
 
   it("keeps the Exam Catalog overview list-only without inline authoring or Cohort Session create controls", () => {
@@ -271,6 +276,47 @@ describe("AdminConsole", () => {
     expect(html).not.toContain("Project-first Exam authoring");
     expect(html).not.toContain("Session name");
     expect(html).not.toContain("Create Draft Cohort Session");
+  });
+
+  it("hides the global Create Exam action while managing Cohort Sessions for a focused Exam", () => {
+    const html = renderToStaticMarkup(
+      createElement(AdminConsole, {
+        email: "admin@helioscx.demo",
+        initialTab: "exams",
+        initialExamView: "sessions",
+      }),
+    );
+
+    expect(html).not.toContain(">Create Exam<");
+  });
+
+  it("hides the global Create Exam action while viewing a focused Cohort Session workspace", () => {
+    const html = renderToStaticMarkup(
+      createElement(AdminConsole, {
+        email: "admin@helioscx.demo",
+        initialTab: "exams",
+        initialExamView: "session",
+      }),
+    );
+
+    expect(html).not.toContain(">Create Exam<");
+  });
+
+  it("shows the focused session name in exam workspace breadcrumbs", () => {
+    const html = renderToStaticMarkup(
+      createElement(ExamWorkspaceBreadcrumbs, {
+        examView: "session",
+        focusedExamTitle: "Windows Boxes",
+        focusedSessionName: "July Cohort Session",
+        onNavigateToCatalog: vi.fn(),
+        onNavigateToSessions: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("Catalog overview");
+    expect(html).toContain("Cohort Sessions: Windows Boxes");
+    expect(html).toContain("July Cohort Session");
+    expect(html).toContain('aria-current="page"');
   });
 
   it("renders only individual Exam actions for individual Exam catalog rows", () => {
@@ -308,7 +354,7 @@ describe("AdminConsole", () => {
     expect(publishedIndividualHtml).not.toContain("Cohort Sessions unavailable");
   });
 
-  it("keeps Exam lifecycle actions and Cohort Session management for cohort-capable catalog rows", () => {
+  it("keeps cohort-only catalog rows focused on Cohort Session management", () => {
     const cohortHtml = renderToStaticMarkup(
       createElement(ExamCatalogRowActions, {
         exam: { id: "exam-cohort", status: "draft", deliveryAvailability: "cohort" },
@@ -322,10 +368,30 @@ describe("AdminConsole", () => {
     );
 
     expect(cohortHtml).toContain("Manage Cohort Sessions");
-    expect(cohortHtml).toContain("Edit Exam");
-    expect(cohortHtml).toContain("Publish Exam");
+    expect(cohortHtml).toContain("Exam setup is draft");
+    expect(cohortHtml).toContain("Publish the individual Cohort Sessions after opening this Exam.");
+    expect(cohortHtml).not.toContain("Edit Exam");
+    expect(cohortHtml).not.toContain("Publish Exam");
     expect(cohortHtml).not.toContain("Unpublish Exam");
     expect(cohortHtml).not.toContain("Cohort Sessions unavailable");
+  });
+
+  it("keeps individual Exam lifecycle actions for mixed-delivery catalog rows", () => {
+    const draftBothHtml = renderToStaticMarkup(
+      createElement(ExamCatalogRowActions, {
+        exam: { id: "exam-both-draft", status: "draft", deliveryAvailability: "both" },
+        loading: false,
+        editingExamId: null,
+        onEdit: vi.fn(),
+        onPublish: vi.fn(),
+        onUnpublish: vi.fn(),
+        onManageCohortSessions: vi.fn(),
+      }),
+    );
+
+    expect(draftBothHtml).toContain("Manage Cohort Sessions");
+    expect(draftBothHtml).toContain("Edit Exam");
+    expect(draftBothHtml).toContain("Publish Exam");
 
     const bothHtml = renderToStaticMarkup(
       createElement(ExamCatalogRowActions, {
@@ -422,10 +488,289 @@ describe("AdminConsole", () => {
     expect(html).toContain("Admission opens");
   });
 
-  it("states that Cohort Exam Sessions are draft-only in this slice", () => {
+  it("renders Cohort Exam Sessions as detailed entries distinct from the create action", () => {
+    const html = renderToStaticMarkup(
+      createElement(CohortSessionAuthoringPanel, {
+        examId: "exam-1",
+        deliveryAvailability: "cohort",
+        form: { name: "", admissionStartsAt: "", admissionEndsAt: "", capacity: "" },
+        sessions: [
+          {
+            session: {
+              id: "session-1",
+              name: "September Admin Cohort",
+              admissionStartsAt: "2026-09-01T09:00:00.000Z",
+              admissionEndsAt: "2026-09-30T17:00:00.000Z",
+              capacity: 25,
+              status: "published",
+              cloudShareTrainingId: "EX123",
+              cloudShareExperienceId: "EX123",
+            },
+            inheritedContext: {
+              project: { id: "project-1", name: "Project" },
+              blueprint: { id: "blueprint-1", name: "Blueprint" },
+              snapshot: { id: "snapshot-1", name: "Snapshot" },
+              policy: { id: "policy-1", name: "Policy" },
+              allowedRegions: [],
+              instructor: { id: "instructor-1", name: "Instructor" },
+              scoreRetrievalEnabled: false,
+              timeLimitMinutes: 60,
+            },
+          },
+        ],
+        loading: false,
+        onChange: vi.fn(),
+        onCreate: vi.fn(),
+        onSelect: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("Create Draft Cohort Session");
+    expect(html).toContain("Existing Cohort Sessions");
+    expect(html).toContain("September Admin Cohort");
+    expect(html).not.toContain("September Admin Cohort · Published");
+    expect(html).not.toContain("Status: Published");
+    expect(html).toContain("grid-template-columns:repeat(auto-fill, minmax(16rem, 20rem))");
+    expect(html).toContain("justify-content:start");
+    expect(html).toContain("Published");
+    expect(html).toContain("Admission opens");
+    expect(html).toContain("2026-09-01T09:00Z");
+    expect(html).toContain("Admission closes");
+    expect(html).toContain("2026-09-30T17:00Z");
+    expect(html).toContain("Capacity");
+    expect(html).toContain(">25<");
+    expect(html).toContain("CloudShare Experience ID");
+    expect(html).toContain("EX123");
+    expect(html).toContain("Open Session");
+  });
+
+  it("states that candidate admission remains disabled for Cohort Exam Sessions", () => {
     const html = renderToStaticMarkup(createElement(CohortSessionDraftOnlyNotice));
 
-    expect(html).toContain("Draft only - publishing and candidate admission are delivered in a later slice.");
+    expect(html).toContain("Candidate admission remains disabled in this slice.");
+    expect(html).toContain("Published Cohort Exam Sessions stay admin-only until a later slice enables candidate joins.");
+  });
+
+  it("renders admin-visible publish reconciliation wording for Cohort Exam Sessions", () => {
+    const html = renderToStaticMarkup(
+      createElement(CohortSessionAuthoringPanel, {
+        examId: "exam-1",
+        deliveryAvailability: "both",
+        form: { name: "", admissionStartsAt: "", admissionEndsAt: "", capacity: "" },
+        sessions: [
+          {
+            session: {
+              id: "cohort-session-1",
+              name: "July Admin Cohort",
+              admissionStartsAt: "2026-07-05T09:00:00.000Z",
+              admissionEndsAt: null,
+              capacity: null,
+              status: "publish_reconciliation_required",
+            },
+            inheritedContext: {
+              project: { id: "project-1", name: "Project" },
+              blueprint: { id: "blueprint-1", name: "Blueprint" },
+              snapshot: { id: "snapshot-1", name: "Snapshot" },
+              policy: { id: "policy-1", name: "Policy" },
+              allowedRegions: [],
+              instructor: { id: "instructor-1", name: "Instructor" },
+              scoreRetrievalEnabled: false,
+              timeLimitMinutes: 60,
+            },
+          },
+        ],
+        loading: false,
+        onChange: vi.fn(),
+        onCreate: vi.fn(),
+        onSelect: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("Publish reconciliation required");
+    expect(html).not.toContain("July Admin Cohort · Publish reconciliation required");
+  });
+
+  it("renders the focused Cohort Exam Session workspace as a themed summary card with compact details", () => {
+    const html = renderToStaticMarkup(
+      createElement(CohortSessionWorkspacePanel, {
+        examTitle: "Helios CX Admin Foundations",
+        session: {
+          session: {
+            id: "cohort-session-1",
+            name: "September Admin Cohort",
+            admissionStartsAt: "2026-09-01T09:00:00.000Z",
+            admissionEndsAt: "2026-09-30T17:00:00.000Z",
+            capacity: 25,
+            status: "draft",
+            cloudShareTrainingId: "TRN-123",
+            cloudShareExperienceId: "EXP-123",
+            cloudShareTeamId: "TEAM-123",
+            publishedAt: "2026-08-30T12:30:00.000Z",
+          },
+          inheritedContext: {
+            project: { id: "project-1", name: "Project Atlas" },
+            blueprint: { id: "blueprint-1", name: "Blueprint Aurora" },
+            snapshot: { id: "snapshot-1", name: "Snapshot Echo" },
+            policy: { id: "policy-1", name: "Policy Orbit" },
+            allowedRegions: [
+              { id: "region-1", name: "useast" },
+              { id: "region-2", name: "euwest" },
+            ],
+            instructor: { id: "instructor-1", name: "Jordan Lee" },
+            scoreRetrievalEnabled: true,
+            timeLimitMinutes: 90,
+          },
+        },
+        loading: false,
+        onBack: vi.fn(),
+        onPublish: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("Cohort Exam Session workspace");
+    expect(html).toContain("September Admin Cohort");
+    expect(html).not.toContain("Status: Draft");
+    expect(html).toContain("Draft");
+    expect(html).toContain("Admission opens");
+    expect(html).toContain("2026-09-01T09:00Z");
+    expect(html).toContain("Admission closes");
+    expect(html).toContain("2026-09-30T17:00Z");
+    expect(html).toContain("Capacity");
+    expect(html).toContain("25");
+    expect(html).toContain("CloudShare training ID");
+    expect(html).toContain("TRN-123");
+    expect(html).toContain("CloudShare Experience ID");
+    expect(html).toContain("EXP-123");
+    expect(html).not.toContain("CloudShare Team ID");
+    expect(html).not.toContain("TEAM-123");
+    expect(html).toContain("Published at");
+    expect(html).toContain("2026-08-30T12:30Z");
+    expect(html).toContain("Project");
+    expect(html).toContain("Project Atlas");
+    expect(html).toContain("Allowed Regions");
+    expect(html).toContain("useast, euwest");
+    expect(html).toContain("Guided Journey score retrieval");
+    expect(html).toContain("Enabled");
+    expect(html).toContain("Publish Cohort Session");
+  });
+
+  it("collapses duplicate CloudShare IDs in Cohort Session summaries and workspace details", () => {
+    const listHtml = renderToStaticMarkup(
+      createElement(CohortSessionAuthoringPanel, {
+        examId: "exam-1",
+        deliveryAvailability: "cohort",
+        form: { name: "", admissionStartsAt: "", admissionEndsAt: "", capacity: "" },
+        sessions: [
+          {
+            session: {
+              id: "session-1",
+              name: "September Admin Cohort",
+              admissionStartsAt: "2026-09-01T09:00:00.000Z",
+              admissionEndsAt: "2026-09-30T17:00:00.000Z",
+              capacity: 25,
+              status: "published",
+              cloudShareTrainingId: "EX123",
+              cloudShareExperienceId: "EX123",
+            },
+            inheritedContext: {
+              project: { id: "project-1", name: "Project" },
+              blueprint: { id: "blueprint-1", name: "Blueprint" },
+              snapshot: { id: "snapshot-1", name: "Snapshot" },
+              policy: { id: "policy-1", name: "Policy" },
+              allowedRegions: [],
+              instructor: { id: "instructor-1", name: "Instructor" },
+              scoreRetrievalEnabled: false,
+              timeLimitMinutes: 60,
+            },
+          },
+        ],
+        loading: false,
+        onChange: vi.fn(),
+        onCreate: vi.fn(),
+        onSelect: vi.fn(),
+      }),
+    );
+
+    const workspaceHtml = renderToStaticMarkup(
+      createElement(CohortSessionWorkspacePanel, {
+        examTitle: "Helios CX Admin Foundations",
+        session: {
+          session: {
+            id: "cohort-session-1",
+            name: "September Admin Cohort",
+            admissionStartsAt: "2026-09-01T09:00:00.000Z",
+            admissionEndsAt: "2026-09-30T17:00:00.000Z",
+            capacity: 25,
+            status: "draft",
+            cloudShareTrainingId: "EX123",
+            cloudShareExperienceId: "EX123",
+          },
+          inheritedContext: {
+            project: { id: "project-1", name: "Project Atlas" },
+            blueprint: { id: "blueprint-1", name: "Blueprint Aurora" },
+            snapshot: { id: "snapshot-1", name: "Snapshot Echo" },
+            policy: { id: "policy-1", name: "Policy Orbit" },
+            allowedRegions: [{ id: "region-1", name: "useast" }],
+            instructor: { id: "instructor-1", name: "Jordan Lee" },
+            scoreRetrievalEnabled: true,
+            timeLimitMinutes: 90,
+          },
+        },
+        loading: false,
+        onBack: vi.fn(),
+        onPublish: vi.fn(),
+      }),
+    );
+
+    expect(listHtml).toContain("CloudShare Experience ID");
+    expect(listHtml).not.toContain("CloudShare training ID");
+    expect(workspaceHtml).toContain("CloudShare Experience ID");
+    expect(workspaceHtml).not.toContain("CloudShare training ID");
+  });
+
+  it("keeps distinct CloudShare training and Experience IDs visible and wraps long values in detail cells", () => {
+    const html = renderToStaticMarkup(
+      createElement(CohortSessionWorkspacePanel, {
+        examTitle: "Helios CX Admin Foundations",
+        session: {
+          session: {
+            id: "cohort-session-1",
+            name: "September Admin Cohort",
+            admissionStartsAt: "2026-09-01T09:00:00.000Z",
+            admissionEndsAt: "2026-09-30T17:00:00.000Z",
+            capacity: 25,
+            status: "draft",
+            cloudShareTrainingId: "TRN-1234567890-ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+            cloudShareExperienceId: "EXP-1234567890-ABCDEFGHIJKLMNOPQRSTUVWXYZ",
+          },
+          inheritedContext: {
+            project: { id: "project-1", name: "Project Atlas" },
+            blueprint: { id: "blueprint-1", name: "Blueprint Aurora" },
+            snapshot: { id: "snapshot-1", name: "Snapshot Echo" },
+            policy: { id: "policy-1", name: "Policy Orbit" },
+            allowedRegions: [{ id: "region-1", name: "useast" }],
+            instructor: { id: "instructor-1", name: "Jordan Lee" },
+            scoreRetrievalEnabled: true,
+            timeLimitMinutes: 90,
+          },
+        },
+        loading: false,
+        onBack: vi.fn(),
+        onPublish: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("CloudShare training ID");
+    expect(html).toContain("TRN-1234567890-ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+    expect(html).toContain("CloudShare Experience ID");
+    expect(html).toContain("EXP-1234567890-ABCDEFGHIJKLMNOPQRSTUVWXYZ");
+    expect(html).toContain("overflow-wrap:anywhere");
+  });
+
+  it("formats Cohort Exam Session timestamps in ISO-style UTC minutes", () => {
+    expect(formatCohortSessionDateTime("2026-07-05T09:00:00.000Z")).toBe("2026-07-05T09:00Z");
+    expect(formatCohortSessionDateTime(null)).toBe("-");
+    expect(formatCohortSessionDateTime("not-a-date")).toBe("not-a-date");
   });
 
   it("normalizes admin datetime-local values before draft Cohort Exam Session POST", () => {

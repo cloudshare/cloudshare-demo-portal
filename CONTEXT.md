@@ -114,6 +114,12 @@ Customer plus operation/resource identifiers, and webhook entries start from Cus
 CloudShare environment ID/event data before later correlation ties them to Candidate, ExamAttempt,
 and Exam where possible.
 
+**Displayed date/time convention**:
+Portal-facing dates/times use deterministic ISO 8601-style formatting rather than locale-specific
+month/day/year rendering. Keep the `YYYY-MM-DD...` ordering everywhere. When a view is showing UTC
+or another non-local reference time, label that timezone/context explicitly. Candidate-facing local
+scheduling views may still show local time, but they keep the same ISO-style ordering.
+
 **Session Monitoring**:
 The admin surface for current ExamAttempt state: scheduled, ready, in progress, suspended, completed,
 and expired views. It answers "what is happening now?" and may summarise active operational state,
