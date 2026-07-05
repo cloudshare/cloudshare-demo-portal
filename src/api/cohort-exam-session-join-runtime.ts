@@ -12,7 +12,10 @@ import {
   isCohortExamSessionDeliveryAvailable,
   type ExamRepository,
 } from "@/domain/exam-catalog";
-import type { ExamAttempt } from "@/domain/exam-attempt";
+import {
+  isDuplicateCohortExamAttemptError,
+  type ExamAttempt,
+} from "@/domain/exam-attempt";
 import type { LabLaunch, LabLaunchRepository } from "@/domain/lab-launch";
 import {
   CloudShareRequestError,
@@ -216,13 +219,6 @@ export async function joinCohortExamSessionRuntime(
     };
   }
 
-  const cloudshare = deps.cloudshare.forConnection(connection);
-  const labs = createCloudShareLabProvisioner(cloudshare);
-  const participantAdder = labs.addParticipant;
-  if (!participantAdder) {
-    throw new Error("LabProvisioner does not support cohort participant registration.");
-  }
-
   const attemptId = (deps.newId ?? randomUUID)();
   const createdAt = now;
   const attempt: ExamAttempt = {
@@ -235,7 +231,42 @@ export async function joinCohortExamSessionRuntime(
     scheduledFor: now,
     createdAt,
   };
-  await deps.attempts.save(attempt);
+  try {
+    await deps.attempts.save(attempt);
+  } catch (error) {
+    if (isDuplicateCohortExamAttemptError(error)) {
+      await recordJoinRejection(deps, {
+        request,
+        correlationId,
+        reason: "cohort_session_retake_blocked",
+        status: 409,
+        message: "This Cohort Exam Session does not allow another attempt for your account.",
+        examId: exam.id,
+        cohortSessionId: session.id,
+        externalIds: {
+          cohortSessionId: session.id,
+          trainingId: session.cloudShareTrainingId,
+          experienceId: session.cloudShareExperienceId,
+        },
+        now,
+      });
+      return {
+        status: 409,
+        body: {
+          error: "This Cohort Exam Session does not allow another attempt for your account.",
+          code: "cohort_session_retake_blocked",
+        },
+      };
+    }
+    throw error;
+  }
+
+  const cloudshare = deps.cloudshare.forConnection(connection);
+  const labs = createCloudShareLabProvisioner(cloudshare);
+  const participantAdder = labs.addParticipant;
+  if (!participantAdder) {
+    throw new Error("LabProvisioner does not support cohort participant registration.");
+  }
 
   const anchors = {
     source: "candidate-portal",

@@ -13,6 +13,10 @@ import type {
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
 import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
+import {
+  DuplicateCohortExamAttemptError,
+  type ExamAttemptRepository,
+} from "@/domain/exam-attempt";
 import { createDraftExam, publishExam, type CreateDraftExamInput } from "@/domain/exam-catalog";
 import { CloudShareRequestError } from "@/integrations/cloudshare";
 import type { Logger } from "@/observability/logger";
@@ -290,6 +294,77 @@ describe("joinCohortExamSessionRuntime", () => {
         code: "cohort_session_retake_blocked",
       },
     });
+  });
+
+  it("blocks concurrent same-session joins when persistence detects the duplicate", async () => {
+    const exams = await makeExamRepository();
+    const sessions = await makePublishedSession();
+    const attempts: ExamAttemptRepository = {
+      save: vi.fn(async (attempt) => {
+        throw new DuplicateCohortExamAttemptError(
+          attempt.candidateId,
+          attempt.cohortSessionId ?? "missing",
+        );
+      }),
+      findById: vi.fn(),
+      listByCandidate: vi.fn().mockResolvedValue([]),
+      delete: vi.fn(),
+    };
+    const cloudshare = makeCloudShareFactory();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+
+    const response = await joinCohortExamSessionRuntime(
+      {
+        exams,
+        sessions,
+        attempts,
+        launches: createInMemoryLabLaunchRepository(),
+        audit: createInMemoryAuditRepository(),
+        eventLog: createInMemoryEventLogRepository(),
+        connections: makeConnectionRepository(),
+        cloudshare,
+        diagnostics: createDiagnosticRecorder({ repository: diagnosticsRepository }),
+        logger: makeLogger(),
+        now: () => new Date("2026-07-05T10:00:00.000Z"),
+        newId: () => "attempt-race-loser",
+        newCorrelationId: () => "corr-cohort-race",
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        examId: "exam-1",
+        cohortSessionId: "cohort-session-1",
+      },
+    );
+
+    expect(response).toEqual({
+      status: 409,
+      body: {
+        error: "This Cohort Exam Session does not allow another attempt for your account.",
+        code: "cohort_session_retake_blocked",
+      },
+    });
+    expect(cloudshare.forConnection).not.toHaveBeenCalled();
+    await expect(
+      diagnosticsRepository.query({ correlationId: "corr-cohort-race" }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        operation: "cohort_exam_session.join",
+        outcome: "failure",
+        examId: "exam-1",
+        examAttemptId: null,
+        externalIds: expect.objectContaining({
+          cohortSessionId: "cohort-session-1",
+          trainingId: "EXcohort-1",
+        }),
+        details: expect.objectContaining({
+          reason: "cohort_session_retake_blocked",
+        }),
+      }),
+    ]);
   });
 
   it("records supportable diagnostics when participant add fails and does not create a new ExamAttempt", async () => {

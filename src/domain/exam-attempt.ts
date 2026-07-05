@@ -21,6 +21,22 @@ export interface ExamAttempt {
   readonly createdAt: Date;
 }
 
+export class DuplicateCohortExamAttemptError extends Error {
+  constructor(
+    readonly candidateId: string,
+    readonly cohortSessionId: string,
+  ) {
+    super(`Candidate ${candidateId} already has an ExamAttempt for Cohort Exam Session ${cohortSessionId}`);
+    this.name = "DuplicateCohortExamAttemptError";
+  }
+}
+
+export function isDuplicateCohortExamAttemptError(
+  value: unknown,
+): value is DuplicateCohortExamAttemptError {
+  return value instanceof DuplicateCohortExamAttemptError;
+}
+
 /** Persistence port for ExamAttempts. Implemented in the persistence layer. */
 export interface ExamAttemptRepository {
   save(attempt: ExamAttempt): Promise<void>;

@@ -1,31 +1,49 @@
-import type { PrismaClient } from "@prisma/client";
-import type { ExamAttempt, ExamAttemptRepository } from "@/domain/exam-attempt";
+import { Prisma, type PrismaClient } from "@prisma/client";
+import {
+  DuplicateCohortExamAttemptError,
+  type ExamAttempt,
+  type ExamAttemptRepository,
+} from "@/domain/exam-attempt";
 
 export function createPrismaExamAttemptRepository(prisma: PrismaClient): ExamAttemptRepository {
   return {
     async save(attempt: ExamAttempt): Promise<void> {
-      await prisma.examAttempt.upsert({
-        where: { id: attempt.id },
-        update: {
-          customerId: attempt.customerId ?? "",
-          candidateId: attempt.candidateId,
-          examId: attempt.examId,
-          cohortSessionId: attempt.cohortSessionId ?? null,
-          status: attempt.status,
-          scheduledFor: attempt.scheduledFor ?? null,
-          createdAt: attempt.createdAt,
-        },
-        create: {
-          id: attempt.id,
-          customerId: attempt.customerId ?? "",
-          candidateId: attempt.candidateId,
-          examId: attempt.examId,
-          cohortSessionId: attempt.cohortSessionId ?? null,
-          status: attempt.status,
-          scheduledFor: attempt.scheduledFor ?? null,
-          createdAt: attempt.createdAt,
-        },
-      });
+      try {
+        await prisma.examAttempt.upsert({
+          where: { id: attempt.id },
+          update: {
+            customerId: attempt.customerId ?? "",
+            candidateId: attempt.candidateId,
+            examId: attempt.examId,
+            cohortSessionId: attempt.cohortSessionId ?? null,
+            status: attempt.status,
+            scheduledFor: attempt.scheduledFor ?? null,
+            createdAt: attempt.createdAt,
+          },
+          create: {
+            id: attempt.id,
+            customerId: attempt.customerId ?? "",
+            candidateId: attempt.candidateId,
+            examId: attempt.examId,
+            cohortSessionId: attempt.cohortSessionId ?? null,
+            status: attempt.status,
+            scheduledFor: attempt.scheduledFor ?? null,
+            createdAt: attempt.createdAt,
+          },
+        });
+      } catch (error) {
+        if (
+          attempt.cohortSessionId &&
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === "P2002"
+        ) {
+          throw new DuplicateCohortExamAttemptError(
+            attempt.candidateId,
+            attempt.cohortSessionId,
+          );
+        }
+        throw error;
+      }
     },
 
     async findById(id: string): Promise<ExamAttempt | null> {

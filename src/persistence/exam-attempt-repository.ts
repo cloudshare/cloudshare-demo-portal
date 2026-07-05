@@ -1,4 +1,8 @@
-import type { ExamAttempt, ExamAttemptRepository } from "@/domain/exam-attempt";
+import {
+  DuplicateCohortExamAttemptError,
+  type ExamAttempt,
+  type ExamAttemptRepository,
+} from "@/domain/exam-attempt";
 
 /**
  * In-memory {@link ExamAttemptRepository} for the demo. It persists for the life
@@ -12,6 +16,20 @@ export function createInMemoryExamAttemptRepository(): ExamAttemptRepository & {
 
   return {
     async save(attempt: ExamAttempt): Promise<void> {
+      if (
+        attempt.cohortSessionId &&
+        [...byId.values()].some(
+          (existing) =>
+            existing.id !== attempt.id &&
+            existing.candidateId === attempt.candidateId &&
+            existing.cohortSessionId === attempt.cohortSessionId,
+        )
+      ) {
+        throw new DuplicateCohortExamAttemptError(
+          attempt.candidateId,
+          attempt.cohortSessionId,
+        );
+      }
       byId.set(attempt.id, attempt);
     },
     async findById(id: string): Promise<ExamAttempt | null> {

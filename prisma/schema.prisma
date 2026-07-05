@@ -137,6 +137,7 @@ model ExamAttempt {
   @@index([examId, createdAt])
   @@index([customerId, candidateId])
   @@index([cohortSessionId, createdAt])
+  @@unique([candidateId, cohortSessionId])
 }
 
 model LabLaunch {
