@@ -229,6 +229,38 @@ describe("cloudShareLabProvisioner — request shape", () => {
     });
   });
 
+  it("treats timezone-less CloudShare training start readback as UTC", async () => {
+    const requestV4Detailed = vi.fn(
+      async (spec: { method: string; path: string; schema: { parse(value: unknown): unknown } }) => {
+        const raw = {
+          id: "EXtraining-1",
+          status: "notStarted",
+          start: "2026-07-12T11:38:00",
+        };
+        return {
+          data: spec.schema.parse(raw),
+          host: "api.accelerate.cloudshare.com",
+          integrationSurface: "cloudshare.v4.training.get",
+          request: { method: spec.method, path: spec.path },
+          response: { status: 200, body: raw },
+        };
+      },
+    );
+    const labs = createCloudShareLabProvisioner({
+      requestV4Detailed,
+      requestV4: vi.fn(),
+      requestV3: vi.fn(),
+    } as unknown as CloudShareClient);
+
+    await expect(
+      labs.getTrainingStartState!({ trainingId: "EXtraining-1" }),
+    ).resolves.toMatchObject({
+      trainingId: "EXtraining-1",
+      rawStartsAt: "2026-07-12T11:38:00",
+      startsAt: new Date("2026-07-12T11:38:00.000Z"),
+    });
+  });
+
   it("returns top-level response diagnostics for addParticipant", async () => {
     const requestV4Detailed = vi.fn(
       async (spec: { path: string; body?: unknown; schema: { parse(value: unknown): unknown } }) => ({

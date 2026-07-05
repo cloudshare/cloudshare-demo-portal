@@ -311,7 +311,7 @@ export function createCloudShareLabProvisioner(
 
 function parseCloudShareTrainingDate(value: string, timeZone?: string): Date | undefined {
   const normalized =
-    !/[zZ]$/.test(value) && !/[+-]\d{2}:\d{2}$/.test(value) && timeZone === "UTC"
+    !/[zZ]$/.test(value) && !/[+-]\d{2}:\d{2}$/.test(value)
       ? `${value}Z`
       : value;
   const parsed = new Date(normalized);

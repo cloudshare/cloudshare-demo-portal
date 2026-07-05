@@ -355,6 +355,48 @@ export async function joinCohortExamSessionRuntime(
     };
   }
 
+  await deps.diagnostics?.record({
+    ...anchors,
+    level: "info",
+    operation: "cloudshare.read_training",
+    outcome: "success",
+    message: "CloudShare training start state read for shared Cohort Exam Session",
+    externalIds,
+    ...(trainingStartState.request
+      ? {
+          request: {
+            method: trainingStartState.request.method,
+            path: trainingStartState.request.path,
+            ...(trainingStartState.request.headers
+              ? { headers: trainingStartState.request.headers }
+              : {}),
+            ...(trainingStartState.request.body !== undefined
+              ? { body: trainingStartState.request.body }
+              : {}),
+          },
+        }
+      : {}),
+    ...(trainingStartState.response
+      ? {
+          response: {
+            status: trainingStartState.response.status,
+            ...(trainingStartState.response.headers
+              ? { headers: trainingStartState.response.headers }
+              : {}),
+            body: trainingStartState.response.body,
+          },
+        }
+      : {}),
+    details: {
+      integrationSurface:
+        trainingStartState.integrationSurface ?? "cloudshare.v4.training.get",
+      cloudShareStatus: trainingStartState.status,
+      cloudShareStartsAt: trainingStartState.startsAt?.toISOString(),
+      cloudShareRawStartsAt: trainingStartState.rawStartsAt,
+      cloudShareTimeZone: trainingStartState.timeZone,
+    },
+  });
+
   if (trainingStartState.startsAt && trainingStartState.startsAt.getTime() > now.getTime()) {
     await recordJoinRejection(deps, {
       request,

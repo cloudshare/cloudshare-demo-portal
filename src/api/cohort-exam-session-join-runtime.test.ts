@@ -324,7 +324,6 @@ describe("joinCohortExamSessionRuntime", () => {
             id: "EXcohort-1",
             status: "notStarted",
             start: "2026-07-12T11:38:00",
-            timeZone: "UTC",
           };
           return {
             data: spec.schema.parse(raw),
@@ -379,25 +378,48 @@ describe("joinCohortExamSessionRuntime", () => {
     await expect(launches.findByExamAttemptId("attempt-not-started")).resolves.toBeNull();
     await expect(
       diagnosticsRepository.query({ correlationId: "corr-cloudshare-not-started" }),
-    ).resolves.toEqual([
-      expect.objectContaining({
-        operation: "cohort_exam_session.join",
-        outcome: "failure",
-        examId: "exam-1",
-        externalIds: expect.objectContaining({
-          cohortSessionId: "cohort-session-1",
-          trainingId: "EXcohort-1",
-          experienceId: "EXcohort-1",
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation: "cloudshare.read_training",
+          outcome: "success",
+          examId: "exam-1",
+          request: expect.objectContaining({
+            method: "GET",
+            path: "/trainings/EXcohort-1",
+          }),
+          response: expect.objectContaining({
+            status: 200,
+            body: expect.objectContaining({
+              id: "EXcohort-1",
+              start: "2026-07-12T11:38:00",
+            }),
+          }),
+          details: expect.objectContaining({
+            integrationSurface: "cloudshare.v4.training.get",
+            cloudShareStartsAt: "2026-07-12T11:38:00.000Z",
+            cloudShareRawStartsAt: "2026-07-12T11:38:00",
+          }),
         }),
-        details: expect.objectContaining({
-          reason: "cloudshare_training_not_started",
-          cloudShareStatus: "notStarted",
-          cloudShareStartsAt: "2026-07-12T11:38:00.000Z",
-          cloudShareRawStartsAt: "2026-07-12T11:38:00",
-          localAdmissionStartsAt: "2026-07-05T08:30:00.000Z",
+        expect.objectContaining({
+          operation: "cohort_exam_session.join",
+          outcome: "failure",
+          examId: "exam-1",
+          externalIds: expect.objectContaining({
+            cohortSessionId: "cohort-session-1",
+            trainingId: "EXcohort-1",
+            experienceId: "EXcohort-1",
+          }),
+          details: expect.objectContaining({
+            reason: "cloudshare_training_not_started",
+            cloudShareStatus: "notStarted",
+            cloudShareStartsAt: "2026-07-12T11:38:00.000Z",
+            cloudShareRawStartsAt: "2026-07-12T11:38:00",
+            localAdmissionStartsAt: "2026-07-05T08:30:00.000Z",
+          }),
         }),
-      }),
-    ]);
+      ]),
+    );
   });
 
   it("blocks concurrent same-session joins when persistence detects the duplicate", async () => {
