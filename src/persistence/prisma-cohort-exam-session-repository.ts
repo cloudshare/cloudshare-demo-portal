@@ -34,6 +34,12 @@ function serialize(session: CohortExamSession) {
     admissionEndsAt: session.admissionEndsAt,
     capacity: session.capacity,
     status: session.status,
+    cloudShareTrainingId: session.cloudShareTrainingId ?? null,
+    cloudShareExperienceId: session.cloudShareExperienceId ?? null,
+    cloudShareTeamId: session.cloudShareTeamId ?? null,
+    publishedAt: session.publishedAt ?? null,
+    lastPublishError: session.lastPublishError ?? null,
+    lastPublishCorrelationId: session.lastPublishCorrelationId ?? null,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
   };
@@ -48,6 +54,12 @@ function hydrate(row: {
   admissionEndsAt: Date | null;
   capacity: number | null;
   status: string;
+  cloudShareTrainingId?: string | null;
+  cloudShareExperienceId?: string | null;
+  cloudShareTeamId?: string | null;
+  publishedAt?: Date | null;
+  lastPublishError?: string | null;
+  lastPublishCorrelationId?: string | null;
   createdAt: Date;
   updatedAt: Date;
 }): CohortExamSession {
@@ -60,6 +72,12 @@ function hydrate(row: {
     admissionEndsAt: row.admissionEndsAt,
     capacity: row.capacity,
     status: row.status as CohortExamSession["status"],
+    cloudShareTrainingId: row.cloudShareTrainingId ?? null,
+    cloudShareExperienceId: row.cloudShareExperienceId ?? null,
+    cloudShareTeamId: row.cloudShareTeamId ?? null,
+    publishedAt: row.publishedAt ?? null,
+    lastPublishError: row.lastPublishError ?? null,
+    lastPublishCorrelationId: row.lastPublishCorrelationId ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };

@@ -103,12 +103,19 @@ model CohortExamSession {
   admissionEndsAt    DateTime?
   capacity           Int?
   status             String
+  cloudShareTrainingId  String?
+  cloudShareExperienceId String?
+  cloudShareTeamId      String?
+  publishedAt        DateTime?
+  lastPublishError   String?
+  lastPublishCorrelationId String?
   createdAt          DateTime
   updatedAt          DateTime
   exam               Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
 
   @@index([customerId, examId, status])
   @@index([examId, createdAt])
+  @@index([cloudShareTrainingId])
 }
 
 model ExamAttempt {

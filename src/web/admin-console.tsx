@@ -190,7 +190,13 @@ interface CohortExamSessionRecord {
     admissionStartsAt: string;
     admissionEndsAt: string | null;
     capacity: number | null;
-    status: "draft";
+    status: "draft" | "published";
+    cloudShareTrainingId?: string | null;
+    cloudShareExperienceId?: string | null;
+    cloudShareTeamId?: string | null;
+    publishedAt?: string | null;
+    lastPublishError?: string | null;
+    lastPublishCorrelationId?: string | null;
   };
   inheritedContext: {
     project: { id: string; name: string };
@@ -459,7 +465,7 @@ export function getDeliveryAvailabilityAuthoringOptions(value: ExamRecord["deliv
 }
 
 export const COHORT_SESSION_DRAFT_ONLY_COPY =
-  "Draft only - publishing and candidate admission are delivered in a later slice.";
+  "Candidate admission remains disabled in this slice.";
 
 export function formatShortExamId(id: string): string {
   return id.length <= 8 ? id : id.slice(0, 8);
@@ -1837,6 +1843,38 @@ export function AdminConsole({
     }
   }
 
+  async function publishCohortSession(examId: string, sessionId: string) {
+    setLoading(true);
+    setError(null);
+    setExamMessage(null);
+    try {
+      const response = await fetchAdmin(
+        `/api/admin/exams/${encodeURIComponent(examId)}/cohort-sessions/${encodeURIComponent(sessionId)}/publish`,
+        { method: "POST" },
+      );
+      const data = (await response.json()) as CohortExamSessionRecord & { error?: string; correlationId?: string };
+      if (!response.ok) {
+        setError(
+          data.correlationId
+            ? `${data.error ?? "Failed to publish Cohort Exam Session"} Correlation ID: ${data.correlationId}`
+            : data.error ?? "Failed to publish Cohort Exam Session",
+        );
+        await loadCohortExamSessions(examId);
+        return;
+      }
+      setSelectedCohortSession(data);
+      setExamMessage("Cohort Exam Session published to CloudShare.");
+      await loadCohortExamSessions(examId);
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
+      setError("Failed to publish Cohort Exam Session");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function saveDraftExam() {
     setLoading(true);
     setError(null);
@@ -2980,6 +3018,37 @@ export function AdminConsole({
               </div>
               <div style={{ fontWeight: 600 }}>{focusedCohortSession.session.name}</div>
               <div>Status: {focusedCohortSession.session.status}</div>
+              {focusedCohortSession.session.status === "draft" ? (
+                <button
+                  type="button"
+                  onClick={() => void publishCohortSession(focusedExam.id, focusedCohortSession.session.id)}
+                  disabled={loading}
+                  style={primaryButtonStyle}
+                >
+                  Publish Cohort Session
+                </button>
+              ) : null}
+              {focusedCohortSession.session.cloudShareTrainingId ? (
+                <div>CloudShare training ID: {focusedCohortSession.session.cloudShareTrainingId}</div>
+              ) : null}
+              {focusedCohortSession.session.cloudShareExperienceId ? (
+                <div>CloudShare Experience ID: {focusedCohortSession.session.cloudShareExperienceId}</div>
+              ) : null}
+              {focusedCohortSession.session.cloudShareTeamId ? (
+                <div>CloudShare Team ID: {focusedCohortSession.session.cloudShareTeamId}</div>
+              ) : null}
+              {focusedCohortSession.session.publishedAt ? (
+                <div>Published at: {new Date(focusedCohortSession.session.publishedAt).toLocaleString()}</div>
+              ) : null}
+              {focusedCohortSession.session.lastPublishError ? (
+                <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.25rem" }}>
+                  <strong>Last publish attempt failed</strong>
+                  <span>{focusedCohortSession.session.lastPublishError}</span>
+                  {focusedCohortSession.session.lastPublishCorrelationId ? (
+                    <span>Correlation ID: {focusedCohortSession.session.lastPublishCorrelationId}</span>
+                  ) : null}
+                </div>
+              ) : null}
               <div>Project: {focusedCohortSession.inheritedContext.project.name}</div>
               <div>
                 Blueprint/default Snapshot: {focusedCohortSession.inheritedContext.blueprint.name} /{" "}

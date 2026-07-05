@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Exam } from "./exam-catalog";
 
-export type CohortExamSessionStatus = "draft";
+export type CohortExamSessionStatus = "draft" | "published";
 
 export interface CohortExamSession {
   readonly id: string;
@@ -12,6 +12,12 @@ export interface CohortExamSession {
   readonly admissionEndsAt: Date | null;
   readonly capacity: number | null;
   readonly status: CohortExamSessionStatus;
+  readonly cloudShareTrainingId?: string | null;
+  readonly cloudShareExperienceId?: string | null;
+  readonly cloudShareTeamId?: string | null;
+  readonly publishedAt?: Date | null;
+  readonly lastPublishError?: string | null;
+  readonly lastPublishCorrelationId?: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -71,11 +77,73 @@ export async function createDraftCohortExamSession(
     admissionEndsAt: input.admissionEndsAt ?? null,
     capacity: input.capacity ?? null,
     status: "draft",
+    cloudShareTrainingId: null,
+    cloudShareExperienceId: null,
+    cloudShareTeamId: null,
+    publishedAt: null,
+    lastPublishError: null,
+    lastPublishCorrelationId: null,
     createdAt: now,
     updatedAt: now,
   };
   await deps.repository.save(session);
   return session;
+}
+
+export async function markCohortExamSessionPublished(
+  deps: {
+    readonly repository: CohortExamSessionRepository;
+    readonly now?: () => Date;
+  },
+  input: {
+    readonly session: CohortExamSession;
+    readonly trainingId: string;
+    readonly experienceId: string;
+    readonly teamId?: string | null;
+  },
+): Promise<CohortExamSession> {
+  if (input.session.status !== "draft") {
+    throw new CohortExamSessionValidationError("Only draft Cohort Exam Sessions can be published.");
+  }
+  if (!input.trainingId.trim() || !input.experienceId.trim()) {
+    throw new CohortExamSessionValidationError("CloudShare training and Experience identifiers are required.");
+  }
+  const now = (deps.now ?? (() => new Date()))();
+  const published: CohortExamSession = {
+    ...input.session,
+    status: "published",
+    cloudShareTrainingId: input.trainingId.trim(),
+    cloudShareExperienceId: input.experienceId.trim(),
+    cloudShareTeamId: input.teamId?.trim() || null,
+    publishedAt: now,
+    lastPublishError: null,
+    lastPublishCorrelationId: null,
+    updatedAt: now,
+  };
+  await deps.repository.save(published);
+  return published;
+}
+
+export async function recordCohortExamSessionPublishFailure(
+  deps: {
+    readonly repository: CohortExamSessionRepository;
+    readonly now?: () => Date;
+  },
+  input: {
+    readonly session: CohortExamSession;
+    readonly error: string;
+    readonly correlationId: string;
+  },
+): Promise<CohortExamSession> {
+  const now = (deps.now ?? (() => new Date()))();
+  const recoverable: CohortExamSession = {
+    ...input.session,
+    lastPublishError: input.error,
+    lastPublishCorrelationId: input.correlationId,
+    updatedAt: now,
+  };
+  await deps.repository.save(recoverable);
+  return recoverable;
 }
 
 export function attachCohortExamSessionInheritedContext(

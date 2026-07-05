@@ -422,10 +422,10 @@ describe("AdminConsole", () => {
     expect(html).toContain("Admission opens");
   });
 
-  it("states that Cohort Exam Sessions are draft-only in this slice", () => {
+  it("states that candidate admission remains disabled for Cohort Exam Sessions", () => {
     const html = renderToStaticMarkup(createElement(CohortSessionDraftOnlyNotice));
 
-    expect(html).toContain("Draft only - publishing and candidate admission are delivered in a later slice.");
+    expect(html).toContain("Candidate admission remains disabled in this slice.");
   });
 
   it("normalizes admin datetime-local values before draft Cohort Exam Session POST", () => {

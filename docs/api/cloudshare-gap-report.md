@@ -808,6 +808,24 @@ integration details are now confirmed for external-lease reconciliation:
 The external-lease adapter now tolerates this live response shape and keeps the full redacted
 request/response evidence in admin diagnostics when reconciliation runs.
 
+**Update (2026-07-05, Issue #273 Cohort Exam Session publish):** the first live UI publish of a
+draft Cohort Exam Session attempted `POST /v4/trainings` with `Type: "selfPaced"` and no `End`
+because the session's admission close was optional. CloudShare accepted the on-demand/self-paced
+type binding far enough to validate the rest of the PascalCase model, but returned HTTP `400` with
+`{"UsersEarlyAccess":["'Users Early Access' must not be empty."]}`. The on-demand creation adapter
+therefore sends the same `UsersEarlyAccess: { GrantEarlyAccess: 2 }` field used by
+instructor-led Exam scheduling. The admin UI kept the session in `draft`, displayed the correlation
+ID, and recorded redacted request/response evidence in `DiagnosticLogEntry`.
+
+**Follow-up (2026-07-05, same slice):** a second live UI publish with
+`RegistrationType: "registeredStudentsOnly"` and `UsersEarlyAccess: { GrantEarlyAccess: 2 }`
+created self-paced training `EXAmDkfU42vEJJaRWWH0Tg3g2` with HTTP `201`. The CloudShare response
+confirmed `type: "selfPaced"`, `registrationType: "registeredStudentsOnly"`, `end: null` for the
+optional admission close case, and the expected Project, Team, Blueprint, Policy, Region, and
+Instructor identifiers. The admin UI displayed the persisted CloudShare training/Experience ID and
+Team ID, and the success diagnostic retained redacted request/response evidence with correlation
+ID `8c260d9e-33cb-4062-8254-29ae3098ad57`.
+
 **Update (2026-07-01, Issue #251 QA clarification):** the Project Policy detail endpoint is
 undocumented but live-observed:
 `GET /api/v3/projects/PRCU02uuokHPBfjMedkmradg2/policies/POavMAu1wiaVydJdYUOAExJg2` returned
