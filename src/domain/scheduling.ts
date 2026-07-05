@@ -1,4 +1,4 @@
-import type { ExamRepository } from "./exam-catalog";
+import { isIndividualExamDeliveryAvailable, type ExamRepository } from "./exam-catalog";
 import type { ExamAttempt, ExamAttemptRepository } from "./exam-attempt";
 import type {
   LabLaunch,
@@ -211,7 +211,12 @@ export async function scheduleExam(
   validateScheduledFor(input.scheduledFor, deps.now());
 
   const exam = await deps.exams.findById(input.examId);
-  if (!exam || exam.customerId !== input.customerId || exam.status !== "published") {
+  if (
+    !exam ||
+    exam.customerId !== input.customerId ||
+    exam.status !== "published" ||
+    !isIndividualExamDeliveryAvailable(exam)
+  ) {
     throw new ScheduleExamNotFoundError();
   }
 

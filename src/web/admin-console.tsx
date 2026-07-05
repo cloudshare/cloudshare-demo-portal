@@ -7,6 +7,8 @@ import {
   ADMIN_TABS,
   ADMIN_SESSION_EXPIRED_MESSAGE,
   type AdminTab,
+  type AdminExamView,
+  type AdminSupportView,
   beginLatestOnlyRequest,
   buildAdminConsoleHref,
   buildCorrelationDiagnosticsNavigation,
@@ -16,6 +18,7 @@ import {
   buildWebhookCallbackUrl,
   type DiagnosticLogFilters,
   getAdminTabLabel,
+  getAdminSupportViewLabel,
   getAllowedRegionValidationMessage,
   getCompatibleRegions,
   getDefaultOpenPeriodMinutes,
@@ -28,6 +31,7 @@ import {
   reconcileAllowedRegionIds,
   shouldClearAdminBannerOnTabChange,
   shouldShowCandidateProvisioning,
+  shouldReconcileAllowedRegionIds,
 } from "./admin-console-state";
 import {
   DiagnosticLogTable,
@@ -51,6 +55,10 @@ import { PortalPageHeader } from "./portal-page-header";
 interface AdminConsoleProps {
   readonly email: string;
   readonly initialTab?: AdminTab;
+  readonly initialExamView?: AdminExamView;
+  readonly initialExamId?: string;
+  readonly initialCohortSessionId?: string;
+  readonly initialSupportView?: AdminSupportView;
   readonly initialDiagnosticFilters?: DiagnosticLogFilters;
 }
 
@@ -159,8 +167,10 @@ interface ExamRecord {
   storageLeaseMinutes?: number | null;
   openPeriodMinutes: number;
   scoreRetrievalEnabled: boolean;
+  deliveryAvailability?: "individual" | "cohort" | "both";
   status: "draft" | "published";
   publishedAt: string | null;
+  createdAt?: string;
   projectId: string;
   projectName: string;
   blueprintId: string;
@@ -171,6 +181,34 @@ interface ExamRecord {
   policyId: string;
   policyName: string;
   instructorName: string;
+}
+
+interface CohortExamSessionRecord {
+  session: {
+    id: string;
+    name: string;
+    admissionStartsAt: string;
+    admissionEndsAt: string | null;
+    capacity: number | null;
+    status: "draft";
+  };
+  inheritedContext: {
+    project: { id: string; name: string };
+    blueprint: { id: string; name: string };
+    snapshot: { id: string; name: string };
+    policy: { id: string; name: string };
+    allowedRegions: Array<{ id: string; name: string }>;
+    instructor: { id: string; name: string };
+    scoreRetrievalEnabled: boolean;
+    timeLimitMinutes: number;
+  };
+}
+
+interface CohortExamSessionFormState {
+  name: string;
+  admissionStartsAt: string;
+  admissionEndsAt: string;
+  capacity: string;
 }
 
 interface AdminCandidateScoreEvidence {
@@ -322,7 +360,6 @@ class AdminSessionExpiredError extends Error {
 }
 
 const DIAGNOSTIC_PAGE_LIMIT = 50;
-const SUPPORT_WORKFLOW_TABS = new Set<AdminTab>(["monitoring", "diagnostics"]);
 
 const adminTabNavStyle: React.CSSProperties = {
   display: "grid",
@@ -405,6 +442,326 @@ function getLogoutButtonStyle(disabled: boolean): React.CSSProperties {
 
 function isAdminSessionExpiredError(error: unknown): error is AdminSessionExpiredError {
   return error instanceof AdminSessionExpiredError;
+}
+
+function formatExamDeliveryAvailability(value: ExamRecord["deliveryAvailability"]): string {
+  if (value === "cohort") return "Cohort Exam";
+  if (value === "both") return "Individual + Cohort Exam";
+  return "Individual Exam";
+}
+
+export function getDeliveryAvailabilityAuthoringOptions(value: ExamRecord["deliveryAvailability"]) {
+  return [
+    { value: "individual", label: "Individual Exam", disabled: false },
+    { value: "cohort", label: "Cohort Exam", disabled: false },
+    { value: "both", label: "Individual + Cohort Exam", disabled: false },
+  ];
+}
+
+export const COHORT_SESSION_DRAFT_ONLY_COPY =
+  "Draft only - publishing and candidate admission are delivered in a later slice.";
+
+export function formatShortExamId(id: string): string {
+  return id.length <= 8 ? id : id.slice(0, 8);
+}
+
+export function getDuplicateExamResourceTupleWarning(input: {
+  readonly exams: readonly ExamRecord[];
+  readonly currentExamId?: string | null;
+  readonly projectId: string;
+  readonly blueprintId: string;
+  readonly snapshotId: string | null;
+  readonly policyId: string;
+  readonly deliveryAvailability: ExamRecord["deliveryAvailability"];
+}): string | null {
+  const snapshotId = input.snapshotId ?? "";
+  if (!input.projectId || !input.blueprintId || !snapshotId || !input.policyId) {
+    return null;
+  }
+
+  const duplicate = input.exams.find(
+    (exam) =>
+      exam.id !== input.currentExamId &&
+      exam.projectId === input.projectId &&
+      exam.blueprintId === input.blueprintId &&
+      exam.snapshotId === snapshotId &&
+      exam.policyId === input.policyId &&
+      (exam.deliveryAvailability ?? "individual") === input.deliveryAvailability,
+  );
+
+  if (!duplicate) {
+    return null;
+  }
+
+  return `Another Exam already uses this Project, Blueprint, default Snapshot, Policy, and delivery mode: ${duplicate.title} (${formatShortExamId(
+    duplicate.id,
+  )}). Confirm the Exam title and delivery scope before saving.`;
+}
+
+export function isCohortSessionAuthoringAvailable(
+  value: ExamRecord["deliveryAvailability"],
+): boolean {
+  return value === "cohort" || value === "both";
+}
+
+export function normalizeAdminLocalDateTime(value: string): string | null {
+  if (!value.trim()) {
+    return null;
+  }
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function CohortSessionDraftControls(props: {
+  examId: string;
+  form: CohortExamSessionFormState;
+  sessions: CohortExamSessionRecord[];
+  loading: boolean;
+  onChange: (patch: Partial<CohortExamSessionFormState>) => void;
+  onCreate: () => void;
+  onSelect: (session: CohortExamSessionRecord) => void;
+}) {
+  const fieldStyle = { padding: "0.45rem", border: "1px solid #ccc", borderRadius: "6px" };
+  return (
+    <div style={{ display: "grid", gap: "0.45rem" }}>
+      <label style={{ display: "grid", gap: "0.25rem" }}>
+        <span>Session name</span>
+        <input
+          value={props.form.name}
+          onChange={(event) => props.onChange({ name: event.target.value })}
+          style={fieldStyle}
+        />
+      </label>
+      <label style={{ display: "grid", gap: "0.25rem" }}>
+        <span>Admission opens</span>
+        <input
+          type="datetime-local"
+          value={props.form.admissionStartsAt}
+          onChange={(event) => props.onChange({ admissionStartsAt: event.target.value })}
+          style={fieldStyle}
+        />
+      </label>
+      <label style={{ display: "grid", gap: "0.25rem" }}>
+        <span>Optional admission closes</span>
+        <input
+          type="datetime-local"
+          value={props.form.admissionEndsAt}
+          onChange={(event) => props.onChange({ admissionEndsAt: event.target.value })}
+          style={fieldStyle}
+        />
+      </label>
+      <label style={{ display: "grid", gap: "0.25rem" }}>
+        <span>Optional capacity</span>
+        <input
+          type="number"
+          min={1}
+          value={props.form.capacity}
+          onChange={(event) => props.onChange({ capacity: event.target.value })}
+          style={fieldStyle}
+        />
+      </label>
+      <button onClick={props.onCreate} disabled={props.loading} style={{ padding: "0.45rem 0.75rem" }}>
+        Create Draft Cohort Session
+      </button>
+      <div style={{ display: "grid", gap: "0.35rem" }}>
+        {props.sessions.length === 0 ? (
+          <span style={{ color: "#666" }}>No draft Cohort Exam Sessions yet.</span>
+        ) : (
+          props.sessions.map((session) => (
+            <button
+              key={`${props.examId}-${session.session.id}`}
+              onClick={() => props.onSelect(session)}
+              style={{ padding: "0.45rem 0.75rem", textAlign: "left" }}
+            >
+              {session.session.name} · {session.session.status}
+            </button>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function CohortSessionAuthoringPanel(props: {
+  examId: string;
+  deliveryAvailability: ExamRecord["deliveryAvailability"];
+  form: CohortExamSessionFormState;
+  sessions: CohortExamSessionRecord[];
+  loading: boolean;
+  onChange: (patch: Partial<CohortExamSessionFormState>) => void;
+  onCreate: () => void;
+  onSelect: (session: CohortExamSessionRecord) => void;
+}) {
+  return (
+    <div style={{ marginTop: "0.8rem", display: "grid", gap: "0.5rem", minWidth: "16rem" }}>
+      <strong>Draft Cohort Exam Sessions</strong>
+      {isCohortSessionAuthoringAvailable(props.deliveryAvailability) ? (
+        <CohortSessionDraftControls
+          examId={props.examId}
+          form={props.form}
+          sessions={props.sessions}
+          loading={props.loading}
+          onChange={props.onChange}
+          onCreate={props.onCreate}
+          onSelect={props.onSelect}
+        />
+      ) : (
+        <span style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>
+          Cohort Exam Sessions are unavailable for individual-only Exams.
+        </span>
+      )}
+    </div>
+  );
+}
+
+export function CohortSessionDraftOnlyNotice() {
+  return (
+    <p style={{ margin: 0, color: colors.textSecondary, fontSize: "0.9rem" }}>
+      {COHORT_SESSION_DRAFT_ONLY_COPY}
+    </p>
+  );
+}
+
+function SelectionSummaryRow(props: { readonly label: string; readonly value: string }) {
+  return (
+    <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
+      {props.label}: {props.value}
+    </div>
+  );
+}
+
+export function ExamAuthoringSelectionSummary(props: {
+  readonly selectedProject: NamedResource | null;
+  readonly selectedBlueprint: NamedResource | null;
+  readonly defaultSnapshot: BlueprintSnapshot | null;
+  readonly selectedAllowedRegions: readonly NamedResource[];
+  readonly selectedPolicy: NamedResource | null;
+  readonly deliveryAvailability: ExamRecord["deliveryAvailability"];
+  readonly duplicateExamResourceTupleWarning?: string | null;
+}) {
+  const policySummary = [
+    props.selectedPolicy?.name ?? "-",
+    props.selectedPolicy?.runtimeLeaseMinutes
+      ? `${props.selectedPolicy.runtimeLeaseMinutes} minute runtime lease`
+      : null,
+    props.selectedPolicy?.storageLeaseMinutes
+      ? `${props.selectedPolicy.storageLeaseMinutes} minute storage retention`
+      : null,
+  ].filter(Boolean).join(" · ");
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gap: "0.5rem",
+        padding: "0.85rem 1rem",
+        border: "1px solid #e5e7eb",
+        borderRadius: "6px",
+        background: "#fafafa",
+      }}
+    >
+      <strong>Selection summary</strong>
+      <SelectionSummaryRow label="Project" value={props.selectedProject?.name ?? "-"} />
+      <SelectionSummaryRow label="Blueprint" value={props.selectedBlueprint?.name ?? "-"} />
+      <SelectionSummaryRow
+        label="Snapshot"
+        value={
+          props.defaultSnapshot
+            ? `${props.defaultSnapshot.name} (default only for Experience launches)`
+            : "-"
+        }
+      />
+      <SelectionSummaryRow
+        label="Allowed Regions"
+        value={
+          props.selectedAllowedRegions.length > 0
+            ? props.selectedAllowedRegions.map((region) => region.friendlyName ?? region.name).join(", ")
+            : "-"
+        }
+      />
+      <SelectionSummaryRow label="Policy" value={policySummary} />
+      <SelectionSummaryRow
+        label="Delivery"
+        value={formatExamDeliveryAvailability(props.deliveryAvailability)}
+      />
+      {props.duplicateExamResourceTupleWarning && (
+        <div
+          role="status"
+          style={{
+            color: "#7a4b00",
+            background: "#fff7e6",
+            border: "1px solid #f0d38a",
+            borderRadius: "6px",
+            padding: "0.7rem 0.85rem",
+          }}
+        >
+          {props.duplicateExamResourceTupleWarning}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function ExamCatalogRowActions(props: {
+  readonly exam: Pick<ExamRecord, "id" | "status" | "deliveryAvailability">;
+  readonly loading: boolean;
+  readonly editingExamId: string | null;
+  readonly onEdit: () => void;
+  readonly onPublish: () => void;
+  readonly onUnpublish: () => void;
+  readonly onManageCohortSessions: () => void;
+}) {
+  return (
+    <div style={{ display: "grid", gap: "0.5rem" }}>
+      <div style={{ color: colors.textSecondary, fontSize: "0.8rem" }}>
+        Delivery: {formatExamDeliveryAvailability(props.exam.deliveryAvailability)}
+      </div>
+      {isCohortSessionAuthoringAvailable(props.exam.deliveryAvailability) ? (
+        <button
+          type="button"
+          onClick={props.onManageCohortSessions}
+          disabled={props.loading}
+          style={{ padding: "0.45rem 0.75rem" }}
+        >
+          Manage Cohort Sessions
+        </button>
+      ) : null}
+      {props.exam.status === "draft" ? (
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+          {props.editingExamId === props.exam.id ? (
+            <span style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>
+              Editing - save or cancel before publishing.
+            </span>
+          ) : (
+            <>
+              <button
+                onClick={props.onEdit}
+                disabled={props.loading || props.editingExamId !== null}
+                style={{ padding: "0.45rem 0.75rem" }}
+              >
+                Edit Exam
+              </button>
+              <button
+                onClick={props.onPublish}
+                disabled={props.loading || props.editingExamId !== null}
+                style={{ padding: "0.45rem 0.75rem" }}
+              >
+                Publish Exam
+              </button>
+            </>
+          )}
+        </div>
+      ) : (
+        <button
+          onClick={props.onUnpublish}
+          disabled={props.loading || props.editingExamId !== null}
+          style={{ padding: "0.45rem 0.75rem" }}
+        >
+          Unpublish Exam
+        </button>
+      )}
+    </div>
+  );
 }
 
 export function AdminCandidateRosterPanel({
@@ -571,11 +928,19 @@ export function AdminCandidateRosterPanel({
 
 export function AdminConsole({
   email,
-  initialTab = "connection",
+  initialTab = "exams",
+  initialExamView = "catalog",
+  initialExamId,
+  initialCohortSessionId,
+  initialSupportView = "monitoring",
   initialDiagnosticFilters = {},
 }: AdminConsoleProps) {
   const router = useRouter();
   const [tab, setTab] = useState<AdminTab>(initialTab);
+  const [examView, setExamView] = useState<AdminExamView>(initialExamView);
+  const [focusedExamId, setFocusedExamId] = useState<string | null>(initialExamId ?? null);
+  const [focusedCohortSessionId, setFocusedCohortSessionId] = useState<string | null>(initialCohortSessionId ?? null);
+  const [supportView, setSupportView] = useState<AdminSupportView>(initialSupportView);
   const [projects, setProjects] = useState<NamedResource[]>([]);
   const [regions, setRegions] = useState<NamedResource[]>([]);
   const [blueprints, setBlueprints] = useState<NamedResource[]>([]);
@@ -590,8 +955,12 @@ export function AdminConsole({
   const [timeLimitMinutes, setTimeLimitMinutes] = useState("90");
   const [openPeriodMinutes, setOpenPeriodMinutes] = useState("90");
   const [scoreRetrievalEnabled, setScoreRetrievalEnabled] = useState(false);
+  const [deliveryAvailability, setDeliveryAvailability] = useState<"individual" | "cohort" | "both">("individual");
   const [editingExamId, setEditingExamId] = useState<string | null>(null);
   const [examCatalog, setExamCatalog] = useState<ExamRecord[]>([]);
+  const [cohortSessionsByExamId, setCohortSessionsByExamId] = useState<Record<string, CohortExamSessionRecord[]>>({});
+  const [cohortSessionFormsByExamId, setCohortSessionFormsByExamId] = useState<Record<string, CohortExamSessionFormState>>({});
+  const [selectedCohortSession, setSelectedCohortSession] = useState<CohortExamSessionRecord | null>(null);
   const [monitoring, setMonitoring] = useState<MonitoringView | null>(null);
   const [examMessage, setExamMessage] = useState<string | null>(null);
   const [examFormFeedback, setExamFormFeedback] = useState<string | null>(null);
@@ -636,19 +1005,43 @@ export function AdminConsole({
   useEffect(() => {
     if (tab === "exams") {
       void loadExamCatalog();
-      void loadExamAuthoring();
+      if (examView === "create" || examView === "edit") {
+        void loadExamAuthoring();
+      }
     }
-    if (tab === "monitoring") {
+    if (tab === "support" && supportView === "monitoring") {
       void loadMonitoring();
     }
     if (tab === "candidates") {
       void loadCandidates();
     }
-    if (tab === "diagnostics") {
+    if (tab === "support" && supportView === "diagnostics") {
       void loadDiagnostics();
     }
+    if (tab === "support" && supportView === "audit") {
+      void loadAudit();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab]);
+  }, [tab, examView, supportView]);
+
+  useEffect(() => {
+    if (tab !== "exams" || examView !== "edit" || !focusedExamId || editingExamId === focusedExamId) {
+      return;
+    }
+    const exam = examCatalog.find((item) => item.id === focusedExamId);
+    if (exam) {
+      void beginEditingExam(exam);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, examView, focusedExamId, examCatalog, editingExamId]);
+
+  useEffect(() => {
+    if (tab !== "exams" || (examView !== "sessions" && examView !== "session") || !focusedExamId) {
+      return;
+    }
+    void loadCohortExamSessions(focusedExamId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, examView, focusedExamId]);
 
   function beginExamCatalogLoading() {
     examCatalogLoadingCountRef.current += 1;
@@ -684,6 +1077,53 @@ export function AdminConsole({
 
     return () => watchdog.stop();
   }, [handleAdminSessionExpired, sessionExpired]);
+
+  function navigateAdmin(next: {
+    tab: AdminTab;
+    examView?: AdminExamView;
+    examId?: string | null;
+    cohortSessionId?: string | null;
+    supportView?: AdminSupportView;
+    diagnosticFilters?: DiagnosticLogFilters;
+  }) {
+    const nextDiagnosticFilters = next.diagnosticFilters ?? diagnosticFilters;
+    const nextExamView = next.examView ?? "catalog";
+    const nextSupportView = next.supportView ?? "monitoring";
+    router.push(
+      buildAdminConsoleHref({
+        tab: next.tab,
+        examView: nextExamView,
+        examId: next.examId ?? undefined,
+        cohortSessionId: next.cohortSessionId ?? undefined,
+        supportView: nextSupportView,
+        diagnosticFilters: nextDiagnosticFilters,
+      }),
+    );
+    setTab(next.tab);
+    setExamView(nextExamView);
+    setFocusedExamId(next.examId ?? null);
+    setFocusedCohortSessionId(next.cohortSessionId ?? null);
+    setSupportView(nextSupportView);
+    setDiagnosticFilters(nextDiagnosticFilters);
+  }
+
+  function navigateToExamCatalog() {
+    setEditingExamId(null);
+    setSelectedCohortSession(null);
+    navigateAdmin({ tab: "exams", examView: "catalog" });
+  }
+
+  function navigateToExamCreate() {
+    resetExamForm();
+    navigateAdmin({ tab: "exams", examView: "create" });
+    void loadExamAuthoring();
+  }
+
+  function navigateToExamSessions(examId: string) {
+    setSelectedCohortSession(null);
+    navigateAdmin({ tab: "exams", examView: "sessions", examId });
+    void loadCohortExamSessions(examId);
+  }
 
   async function fetchAdmin(input: string, init?: RequestInit): Promise<Response> {
     const response = await fetch(input, init);
@@ -882,22 +1322,26 @@ export function AdminConsole({
 
   function openExamAttemptSupportDiagnostics(examAttemptId: string) {
     const navigation = buildExamAttemptDiagnosticsNavigation(examAttemptId);
-    router.push(navigation.href);
-    setDiagnosticFilters(navigation.filters);
+    navigateAdmin({
+      tab: "support",
+      supportView: "diagnostics",
+      diagnosticFilters: navigation.filters,
+    });
     setExpandedDiagnosticId(null);
-    setTab(navigation.tab);
-    if (tab === "diagnostics") {
+    if (tab === "support" && supportView === "diagnostics") {
       void loadDiagnostics(false, navigation.pageOffset, navigation.filters);
     }
   }
 
   function openCorrelationSupportDiagnostics(correlationId: string) {
     const navigation = buildCorrelationDiagnosticsNavigation(correlationId);
-    router.push(navigation.href);
-    setDiagnosticFilters(navigation.filters);
+    navigateAdmin({
+      tab: "support",
+      supportView: "diagnostics",
+      diagnosticFilters: navigation.filters,
+    });
     setExpandedDiagnosticId(null);
-    setTab(navigation.tab);
-    if (tab === "diagnostics") {
+    if (tab === "support" && supportView === "diagnostics") {
       void loadDiagnostics(false, navigation.pageOffset, navigation.filters);
     }
   }
@@ -1030,24 +1474,13 @@ export function AdminConsole({
   }
 
   function applyDiagnosticFilters() {
-    router.push(
-      buildAdminConsoleHref({
-        tab: "diagnostics",
-        diagnosticFilters,
-      }),
-    );
+    navigateAdmin({ tab: "support", supportView: "diagnostics", diagnosticFilters });
     void loadDiagnostics(false, 0);
   }
 
   function clearDiagnosticFilters() {
     const clearedFilters: DiagnosticLogFilters = {};
-    router.push(
-      buildAdminConsoleHref({
-        tab: "diagnostics",
-        diagnosticFilters: clearedFilters,
-      }),
-    );
-    setDiagnosticFilters(clearedFilters);
+    navigateAdmin({ tab: "support", supportView: "diagnostics", diagnosticFilters: clearedFilters });
     setDiagnosticPage(null);
     setExpandedDiagnosticId(null);
     void loadDiagnostics(false, 0, clearedFilters);
@@ -1069,6 +1502,7 @@ export function AdminConsole({
     title?: string;
     description?: string;
     scoreRetrievalEnabled?: boolean;
+    deliveryAvailability?: "individual" | "cohort" | "both";
     timeLimitMinutes?: string;
     openPeriodMinutes?: string;
   }) {
@@ -1078,6 +1512,7 @@ export function AdminConsole({
     setExamTitle(next?.title ?? blueprintDetail?.name ?? "");
     setExamDescription(next?.description ?? stripHtmlToText(blueprintDetail?.description) ?? "");
     setScoreRetrievalEnabled(next?.scoreRetrievalEnabled ?? false);
+    setDeliveryAvailability(next?.deliveryAvailability ?? "individual");
     setTimeLimitMinutes(next?.timeLimitMinutes ?? "");
     setOpenPeriodMinutes(
       getResetOpenPeriodMinutes({
@@ -1219,7 +1654,7 @@ export function AdminConsole({
     if (selectedPolicy?.runtimeLeaseMinutes) {
       setTimeLimitMinutes(String(selectedPolicy.runtimeLeaseMinutes));
     }
-    if (!editingExamId) {
+    if (!editingExamId && examView !== "edit") {
       setOpenPeriodMinutes(getDefaultOpenPeriodMinutes(selectedPolicy));
     }
     return selectedPolicy;
@@ -1266,7 +1701,7 @@ export function AdminConsole({
       setExamCorrelationId(null);
       setExamDiagnostic(null);
       setBlueprintDetail(detail);
-      if (!editingExamId && detail) {
+      if (!editingExamId && examView !== "edit" && detail) {
         setExamTitle(detail.name);
         setExamDescription(stripHtmlToText(detail.description));
         setOpenPeriodMinutes(getDefaultOpenPeriodMinutes(policyForDefault));
@@ -1294,7 +1729,9 @@ export function AdminConsole({
         setError(data.error ?? "Failed to load exam catalog");
         return;
       }
-      setExamCatalog(data.exams ?? []);
+      const nextExams = data.exams ?? [];
+      setExamCatalog(nextExams);
+      await Promise.all(nextExams.map((exam) => loadCohortExamSessions(exam.id)));
     } catch (caughtError) {
       if (isAdminSessionExpiredError(caughtError)) {
         return;
@@ -1302,6 +1739,101 @@ export function AdminConsole({
       setError("Failed to load exam catalog");
     } finally {
       endExamCatalogLoading();
+    }
+  }
+
+  async function loadCohortExamSessions(examId: string) {
+    try {
+      const response = await fetchAdmin(`/api/admin/exams/${encodeURIComponent(examId)}/cohort-sessions`);
+      const data = (await response.json()) as { sessions?: CohortExamSessionRecord[]; error?: string };
+      if (!response.ok) {
+        setError(data.error ?? "Failed to load Cohort Exam Sessions");
+        return;
+      }
+      setCohortSessionsByExamId((current) => ({
+        ...current,
+        [examId]: data.sessions ?? [],
+      }));
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
+      setError("Failed to load Cohort Exam Sessions");
+    }
+  }
+
+  function getCohortSessionForm(examId: string): CohortExamSessionFormState {
+    return cohortSessionFormsByExamId[examId] ?? {
+      name: "",
+      admissionStartsAt: "",
+      admissionEndsAt: "",
+      capacity: "",
+    };
+  }
+
+  function updateCohortSessionForm(examId: string, patch: Partial<CohortExamSessionFormState>) {
+    setCohortSessionFormsByExamId((current) => ({
+      ...current,
+      [examId]: {
+        ...(current[examId] ?? { name: "", admissionStartsAt: "", admissionEndsAt: "", capacity: "" }),
+        ...patch,
+      },
+    }));
+  }
+
+  async function createDraftCohortSession(examId: string) {
+    const form = getCohortSessionForm(examId);
+    const admissionStartsAt = normalizeAdminLocalDateTime(form.admissionStartsAt);
+    const admissionEndsAt = normalizeAdminLocalDateTime(form.admissionEndsAt);
+    setLoading(true);
+    setError(null);
+    setExamMessage(null);
+    if (!admissionStartsAt) {
+      setError("Choose a valid admission open date and time.");
+      setLoading(false);
+      return;
+    }
+    if (form.admissionEndsAt.trim() && !admissionEndsAt) {
+      setError("Choose a valid admission close date and time.");
+      setLoading(false);
+      return;
+    }
+    try {
+      const response = await fetchAdmin(`/api/admin/exams/${encodeURIComponent(examId)}/cohort-sessions`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: form.name,
+          admissionStartsAt,
+          admissionEndsAt,
+          capacity: form.capacity ? Number(form.capacity) : null,
+        }),
+      });
+      const data = (await response.json()) as CohortExamSessionRecord & { error?: string };
+      if (!response.ok) {
+        setError(data.error ?? "Failed to create draft Cohort Exam Session");
+        return;
+      }
+      setSelectedCohortSession(data);
+      setExamMessage("Draft Cohort Exam Session created.");
+      setCohortSessionFormsByExamId((current) => ({
+        ...current,
+        [examId]: { name: "", admissionStartsAt: "", admissionEndsAt: "", capacity: "" },
+      }));
+      await loadCohortExamSessions(examId);
+      navigateAdmin({
+        tab: "exams",
+        examView: "session",
+        examId,
+        cohortSessionId: data.session.id,
+      });
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
+      setError("Failed to create draft Cohort Exam Session");
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -1370,6 +1902,7 @@ export function AdminConsole({
             title: examTitle,
             description: examDescription,
             scoreRetrievalEnabled,
+            deliveryAvailability,
             allowedRegionIds: selectedAllowedRegionIds,
             policyId: policy.id,
             openPeriodMinutes: parsedOpenPeriodMinutes,
@@ -1398,6 +1931,7 @@ export function AdminConsole({
       setExamMessage(editingExamId ? "Draft exam updated." : "Draft exam saved.");
       resetExamForm();
       await loadExamCatalog();
+      navigateToExamCatalog();
     } catch (caughtError) {
       if (isAdminSessionExpiredError(caughtError)) {
         return;
@@ -1463,18 +1997,20 @@ export function AdminConsole({
     setError(null);
     setExamMessage(null);
     try {
+      setEditingExamId(exam.id);
       setSelectedProjectId(exam.projectId);
       setSelectedAllowedRegionIds(exam.allowedRegions.map((region) => region.id));
       await loadProjectResources(exam.projectId, false, exam.blueprintId, exam.policyId);
       setSelectedBlueprintId(exam.blueprintId);
       setSelectedPolicyId(exam.policyId);
       await loadBlueprintDetail(exam.projectId, exam.blueprintId, false);
-      setEditingExamId(exam.id);
       setExamTitle(exam.title);
       setExamDescription(exam.description);
       setScoreRetrievalEnabled(exam.scoreRetrievalEnabled);
+      setDeliveryAvailability(exam.deliveryAvailability ?? "individual");
       setTimeLimitMinutes(String(exam.timeLimitMinutes));
       setOpenPeriodMinutes(String(exam.openPeriodMinutes));
+      navigateAdmin({ tab: "exams", examView: "edit", examId: exam.id });
     } finally {
       setLoading(false);
     }
@@ -1546,6 +2082,15 @@ export function AdminConsole({
   const authoringMode = getExamAuthoringMode(editingExamId);
   const defaultSnapshot =
     blueprintDetail?.snapshots.find((item) => item.id === blueprintDetail.defaultSnapshotId) ?? null;
+  const duplicateExamResourceTupleWarning = getDuplicateExamResourceTupleWarning({
+    exams: examCatalog,
+    currentExamId: editingExamId,
+    projectId: selectedProjectId,
+    blueprintId: selectedBlueprintId,
+    snapshotId: defaultSnapshot?.id ?? null,
+    policyId: selectedPolicyId,
+    deliveryAvailability,
+  });
   const compatibleRegions = getCompatibleRegions(regions, defaultSnapshot);
   const selectedAllowedRegions = compatibleRegions.filter((region) =>
     selectedAllowedRegionIds.includes(region.id),
@@ -1568,16 +2113,24 @@ export function AdminConsole({
     minWidth: 0,
     minHeight: "46px",
   } as const;
-  const blueprintSummary = selectedBlueprint
-    ? stripHtmlToText(selectedBlueprint.description || blueprintDetail?.description || "")
-    : "";
+  const isExamAuthoringView = examView === "create" || examView === "edit";
+  const focusedExam = focusedExamId ? (examCatalog.find((exam) => exam.id === focusedExamId) ?? null) : null;
+  const focusedExamSessions = focusedExamId ? (cohortSessionsByExamId[focusedExamId] ?? []) : [];
+  const focusedCohortSession =
+    (focusedCohortSessionId
+      ? focusedExamSessions.find((session) => session.session.id === focusedCohortSessionId)
+      : null) ??
+    (selectedCohortSession?.session.id === focusedCohortSessionId ? selectedCohortSession : null);
   useEffect(() => {
+    if (!shouldReconcileAllowedRegionIds(defaultSnapshot)) {
+      return;
+    }
     const nextSelectedRegionIds = reconcileAllowedRegionIds(selectedAllowedRegionIds, compatibleRegions);
     if (nextSelectedRegionIds.length === selectedAllowedRegionIds.length) {
       return;
     }
     setSelectedAllowedRegionIds(nextSelectedRegionIds);
-  }, [compatibleRegions, selectedAllowedRegionIds]);
+  }, [compatibleRegions, defaultSnapshot, selectedAllowedRegionIds]);
 
   if (sessionExpired) {
     return (
@@ -1616,7 +2169,6 @@ export function AdminConsole({
       >
         {ADMIN_TABS.map((t) => {
           const isActive = tab === t;
-          const isSupportWorkflow = SUPPORT_WORKFLOW_TABS.has(t);
 
           return (
             <button
@@ -1628,19 +2180,17 @@ export function AdminConsole({
                   setError(null);
                   setCandidateMessage(null);
                 }
-                router.push(
-                  buildAdminConsoleHref({
-                    tab: t,
-                    diagnosticFilters,
-                  }),
-                );
-                setTab(t);
+                navigateAdmin({
+                  tab: t,
+                  examView: t === "exams" ? "catalog" : undefined,
+                  supportView: t === "support" ? supportView : undefined,
+                });
               }}
               style={{
                 ...adminTabButtonStyle,
-                background: isActive ? colors.textPrimary : isSupportWorkflow ? colors.accentSoft : "#ffffff",
+                background: isActive ? colors.textPrimary : t === "support" ? colors.accentSoft : "#ffffff",
                 color: isActive ? "#ffffff" : "#111827",
-                borderColor: isActive ? colors.textPrimary : isSupportWorkflow ? "#b9ded7" : "#d1d5db",
+                borderColor: isActive ? colors.textPrimary : t === "support" ? "#b9ded7" : "#d1d5db",
                 cursor: "pointer",
                 fontWeight: isActive ? 700 : 600,
                 boxShadow: isActive ? "inset 0 -3px 0 #0f6d66" : "none",
@@ -1780,7 +2330,7 @@ export function AdminConsole({
         </section>
       )}
 
-      {tab === "connection" && (
+      {tab === "configuration" && (
         <section style={{ display: "grid", gap: "1rem" }}>
           <div style={mutedPanelStyle}>
             <p style={{ margin: 0 }}>
@@ -1931,6 +2481,73 @@ export function AdminConsole({
           style={{ ...examCatalogBusyShellStyle, display: "grid", gap: "1rem" }}
         >
           {examCatalogLoading ? <ExamCatalogLoadingOverlay /> : null}
+          <div style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap", alignItems: "center" }}>
+              <div>
+                <h2 style={{ margin: 0 }}>Exam Catalog</h2>
+                <p style={{ margin: "0.25rem 0 0", color: colors.textSecondary }}>
+                  Overview of Exams and delivery options for Helios CX.
+                </p>
+              </div>
+              <button type="button" onClick={navigateToExamCreate} disabled={loading} style={primaryButtonStyle}>
+                Create Exam
+              </button>
+            </div>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                aria-current={examView === "catalog" ? "page" : undefined}
+                onClick={navigateToExamCatalog}
+                disabled={examView === "catalog"}
+                style={{
+                  padding: "0.5rem 0.8rem",
+                  border: `1px solid ${examView === "catalog" ? colors.textPrimary : colors.border}`,
+                  borderRadius: "8px",
+                  background: examView === "catalog" ? colors.textPrimary : "#ffffff",
+                  color: examView === "catalog" ? "#ffffff" : colors.textPrimary,
+                  cursor: examView === "catalog" ? "default" : "pointer",
+                  opacity: examView === "catalog" ? 0.85 : 1,
+                  fontWeight: 600,
+                }}
+              >
+                Catalog overview
+              </button>
+              {isExamAuthoringView ? (
+                <button
+                  type="button"
+                  aria-current="page"
+                  style={{
+                    padding: "0.5rem 0.8rem",
+                    border: `1px solid ${colors.textPrimary}`,
+                    borderRadius: "8px",
+                    background: colors.textPrimary,
+                    color: "#ffffff",
+                    fontWeight: 600,
+                  }}
+                >
+                  {examView === "edit" ? "Edit Exam" : "Create Exam"}
+                </button>
+              ) : null}
+              {(examView === "sessions" || examView === "session") && focusedExam ? (
+                <button
+                  type="button"
+                  aria-current="page"
+                  style={{
+                    padding: "0.5rem 0.8rem",
+                    border: `1px solid ${colors.textPrimary}`,
+                    borderRadius: "8px",
+                    background: colors.textPrimary,
+                    color: "#ffffff",
+                    fontWeight: 600,
+                  }}
+                >
+                  Cohort Sessions: {focusedExam.title}
+                </button>
+              ) : null}
+            </div>
+          </div>
+          {isExamAuthoringView && (
+            <>
           <div style={{ padding: "1rem", background: "#f7f7f8", borderRadius: "6px", display: "grid", gap: "0.5rem" }}>
             <strong>Project-first Exam authoring</strong>
             <span style={{ color: "#555" }}>
@@ -2103,44 +2720,15 @@ export function AdminConsole({
             </label>
           </div>
 
-          <div
-            style={{
-              display: "grid",
-              gap: "0.5rem",
-              padding: "0.85rem 1rem",
-              border: "1px solid #e5e7eb",
-              borderRadius: "6px",
-              background: "#fafafa",
-            }}
-          >
-            <strong>Selection summary</strong>
-            <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
-              Project: {selectedProject?.name ?? "-"}
-            </div>
-            <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
-              Policy: {selectedPolicy?.name ?? "-"}
-              {selectedPolicy?.runtimeLeaseMinutes
-                ? ` · ${selectedPolicy.runtimeLeaseMinutes} minute runtime lease`
-                : ""}
-              {selectedPolicy?.storageLeaseMinutes
-                ? ` · ${selectedPolicy.storageLeaseMinutes} minute storage retention`
-                : ""}
-            </div>
-            <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
-              Allowed Regions:{" "}
-              {selectedAllowedRegions.length > 0
-                ? selectedAllowedRegions.map((region) => region.friendlyName ?? region.name).join(", ")
-                : "-"}
-            </div>
-            <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
-              Snapshot: {defaultSnapshot ? `${defaultSnapshot.name} (default only for Experience launches)` : "-"}
-            </div>
-            {blueprintSummary && (
-              <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
-                Blueprint: {blueprintSummary}
-              </div>
-            )}
-          </div>
+          <ExamAuthoringSelectionSummary
+            selectedProject={selectedProject}
+            selectedBlueprint={selectedBlueprint}
+            defaultSnapshot={defaultSnapshot}
+            selectedAllowedRegions={selectedAllowedRegions}
+            selectedPolicy={selectedPolicy}
+            deliveryAvailability={deliveryAvailability}
+            duplicateExamResourceTupleWarning={duplicateExamResourceTupleWarning}
+          />
 
           <div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", alignItems: "start" }}>
             <label style={{ display: "grid", gap: "0.35rem", gridColumn: "1 / -1" }}>
@@ -2199,6 +2787,22 @@ export function AdminConsole({
               />
               <span>Retrieve Guided Journey score for this Exam</span>
             </label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              <span>Delivery availability</span>
+              <select
+                value={deliveryAvailability}
+                onChange={(event) =>
+                  setDeliveryAvailability(event.target.value as "individual" | "cohort" | "both")
+                }
+                style={compactFieldStyle}
+              >
+                {getDeliveryAvailabilityAuthoringOptions(deliveryAvailability).map((option) => (
+                  <option key={option.value} value={option.value} disabled={option.disabled}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
 
           <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
@@ -2210,7 +2814,7 @@ export function AdminConsole({
               {loading ? "Saving..." : editingExamId ? "Update Draft Exam" : "Save Draft Exam"}
             </button>
             {editingExamId && (
-              <button onClick={() => resetExamForm()} disabled={loading} style={{ padding: "0.7rem 1rem" }}>
+              <button onClick={navigateToExamCatalog} disabled={loading} style={{ padding: "0.7rem 1rem" }}>
                 Cancel Edit
               </button>
             )}
@@ -2232,9 +2836,15 @@ export function AdminConsole({
               {examFormFeedback}
             </p>
           )}
+            </>
+          )}
 
+          {examView === "catalog" && (
           <div>
             <h2 style={{ marginBottom: "0.6rem" }}>Current Exam Catalog</h2>
+            <p style={{ marginTop: 0, color: colors.textSecondary }}>
+              Open an Exam to manage its draft Cohort Exam Sessions. The catalog overview stays list-only.
+            </p>
             <div style={{ ...cardStyle, padding: 0, overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
                 <thead>
@@ -2259,6 +2869,11 @@ export function AdminConsole({
                       <td style={{ padding: "0.4rem" }}>
                         <div style={{ fontWeight: 600 }}>{exam.title}</div>
                         <div style={{ color: colors.textSecondary }}>{exam.description}</div>
+                        <div style={{ color: colors.textSecondary, fontSize: "0.75rem", marginTop: "0.25rem" }}>
+                          Exam ID: {formatShortExamId(exam.id)}
+                          {exam.createdAt ? ` · Created ${formatUtcTimestamp(exam.createdAt)}` : ""} · Delivery:{" "}
+                          {formatExamDeliveryAvailability(exam.deliveryAvailability)}
+                        </div>
                       </td>
                       <td style={{ padding: "0.4rem" }}>
                         <span style={statusBadgeStyle(getExamStatusTone(exam.status))}>{exam.status}</span>
@@ -2290,40 +2905,15 @@ export function AdminConsole({
                       </td>
                       <td style={{ padding: "0.4rem" }}>{exam.scoreRetrievalEnabled ? "Enabled" : "Off"}</td>
                       <td style={{ padding: "0.4rem" }}>
-                        {exam.status === "draft" ? (
-                          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                            {editingExamId === exam.id ? (
-                              <span style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>
-                                Editing - save or cancel before publishing.
-                              </span>
-                            ) : (
-                              <>
-                                <button
-                                  onClick={() => void beginEditingExam(exam)}
-                                  disabled={loading || editingExamId !== null}
-                                  style={{ padding: "0.45rem 0.75rem" }}
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={() => void publishCatalogExam(exam.id)}
-                                  disabled={loading || editingExamId !== null}
-                                  style={{ padding: "0.45rem 0.75rem" }}
-                                >
-                                  Publish
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => void unpublishCatalogExam(exam.id)}
-                            disabled={loading || editingExamId !== null}
-                            style={{ padding: "0.45rem 0.75rem" }}
-                          >
-                            Unpublish
-                          </button>
-                        )}
+                        <ExamCatalogRowActions
+                          exam={exam}
+                          loading={loading}
+                          editingExamId={editingExamId}
+                          onEdit={() => void beginEditingExam(exam)}
+                          onPublish={() => void publishCatalogExam(exam.id)}
+                          onUnpublish={() => void unpublishCatalogExam(exam.id)}
+                          onManageCohortSessions={() => navigateToExamSessions(exam.id)}
+                        />
                       </td>
                     </tr>
                   ))}
@@ -2331,10 +2921,124 @@ export function AdminConsole({
               </table>
             </div>
           </div>
+          )}
+          {examView === "sessions" && focusedExam && (
+            <div style={{ ...cardStyle, display: "grid", gap: "1rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
+                <div>
+                  <h3 style={{ margin: 0 }}>Cohort Exam Sessions</h3>
+                  <p style={{ margin: "0.25rem 0 0", color: colors.textSecondary }}>
+                    {focusedExam.title} · {formatExamDeliveryAvailability(focusedExam.deliveryAvailability)}
+                  </p>
+                  <CohortSessionDraftOnlyNotice />
+                </div>
+                <button type="button" onClick={navigateToExamCatalog} style={secondaryButtonStyle}>
+                  Back to catalog
+                </button>
+              </div>
+              {isCohortSessionAuthoringAvailable(focusedExam.deliveryAvailability) ? (
+                <CohortSessionDraftControls
+                  examId={focusedExam.id}
+                  form={getCohortSessionForm(focusedExam.id)}
+                  sessions={focusedExamSessions}
+                  loading={loading}
+                  onChange={(patch) => updateCohortSessionForm(focusedExam.id, patch)}
+                  onCreate={() => void createDraftCohortSession(focusedExam.id)}
+                  onSelect={(session) => {
+                    setSelectedCohortSession(session);
+                    navigateAdmin({
+                      tab: "exams",
+                      examView: "session",
+                      examId: focusedExam.id,
+                      cohortSessionId: session.session.id,
+                    });
+                  }}
+                />
+              ) : (
+                <span style={{ color: colors.textSecondary }}>
+                  Cohort Exam Sessions are unavailable for individual-only Exams.
+                </span>
+              )}
+            </div>
+          )}
+
+          {examView === "session" && focusedExam && focusedCohortSession && (
+            <div style={{ ...cardStyle, display: "grid", gap: "0.75rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
+                <div>
+                  <h3 style={{ margin: 0 }}>Cohort Exam Session workspace</h3>
+                  <p style={{ margin: "0.25rem 0 0", color: colors.textSecondary }}>{focusedExam.title}</p>
+                  <CohortSessionDraftOnlyNotice />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => navigateToExamSessions(focusedExam.id)}
+                  style={secondaryButtonStyle}
+                >
+                  Back to Cohort Sessions
+                </button>
+              </div>
+              <div style={{ fontWeight: 600 }}>{focusedCohortSession.session.name}</div>
+              <div>Status: {focusedCohortSession.session.status}</div>
+              <div>Project: {focusedCohortSession.inheritedContext.project.name}</div>
+              <div>
+                Blueprint/default Snapshot: {focusedCohortSession.inheritedContext.blueprint.name} /{" "}
+                {focusedCohortSession.inheritedContext.snapshot.name}
+              </div>
+              <div>Policy: {focusedCohortSession.inheritedContext.policy.name}</div>
+              <div>
+                Allowed Regions:{" "}
+                {focusedCohortSession.inheritedContext.allowedRegions.map((region) => region.name).join(", ")}
+              </div>
+              <div>Instructor: {focusedCohortSession.inheritedContext.instructor.name}</div>
+              <div>
+                Guided Journey score retrieval:{" "}
+                {focusedCohortSession.inheritedContext.scoreRetrievalEnabled ? "Enabled" : "Off"}
+              </div>
+              <div>Time limit: {focusedCohortSession.inheritedContext.timeLimitMinutes} minutes</div>
+            </div>
+          )}
+
+          {examView === "session" && focusedExam && focusedCohortSessionId && !focusedCohortSession && (
+            <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.5rem" }}>
+              <p style={{ margin: 0 }}>Cohort Exam Session detail is not loaded yet.</p>
+              <button type="button" onClick={() => void loadCohortExamSessions(focusedExam.id)} style={secondaryButtonStyle}>
+                Refresh Cohort Sessions
+              </button>
+            </div>
+          )}
         </section>
       )}
 
-      {tab === "audit" && (
+      {tab === "support" && (
+        <section style={{ display: "grid", gap: "1rem" }}>
+          <div style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem" }}>
+            <strong>Support workflows</strong>
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+              {(["monitoring", "diagnostics", "audit"] as const).map((view) => (
+                <button
+                  key={view}
+                  type="button"
+                  aria-current={supportView === view ? "page" : undefined}
+                  onClick={() => navigateAdmin({ tab: "support", supportView: view })}
+                  style={{
+                    padding: "0.5rem 0.8rem",
+                    border: `1px solid ${supportView === view ? colors.textPrimary : colors.border}`,
+                    borderRadius: "8px",
+                    background: supportView === view ? colors.textPrimary : "#ffffff",
+                    color: supportView === view ? "#ffffff" : colors.textPrimary,
+                    fontWeight: 600,
+                  }}
+                >
+                  {getAdminSupportViewLabel(view)}
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {tab === "support" && supportView === "audit" && (
         <section>
           <div
             style={{
@@ -2451,7 +3155,7 @@ export function AdminConsole({
         </section>
       )}
 
-      {tab === "monitoring" && (
+      {tab === "support" && supportView === "monitoring" && (
         monitoring ? (
           <SessionMonitoringPanel
             monitoring={monitoring}
@@ -2469,7 +3173,7 @@ export function AdminConsole({
         )
       )}
 
-      {tab === "diagnostics" && (
+      {tab === "support" && supportView === "diagnostics" && (
         <section>
           <p style={{ color: colors.textSecondary, marginTop: 0 }}>
             The correlated diagnostic log: what the portal did, in what order, and how to trace it.

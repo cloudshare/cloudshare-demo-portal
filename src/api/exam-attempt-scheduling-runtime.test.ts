@@ -342,6 +342,42 @@ describe("ExamAttempt scheduling runtime", () => {
     expect(cloudshare.forConnection).not.toHaveBeenCalled();
   });
 
+  it("rejects cohort-only Exams before individual CloudShare provisioning", async () => {
+    const attempts = createInMemoryExamAttemptRepository();
+    const connections = makeConnectionRepository();
+    const cloudshare = makeCloudShareFactory();
+
+    const response = await scheduleExamAttemptRuntime(
+      {
+        exams: await makeExamRepository({ deliveryAvailability: "cohort" }),
+        attempts,
+        launches: createInMemoryLabLaunchRepository(),
+        audit: createInMemoryAuditRepository(),
+        eventLog: createInMemoryEventLogRepository(),
+        connections,
+        cloudshare,
+        logger: makeLogger(),
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        examId: "exam-1",
+        scheduledFor: "2026-06-15T16:00:00.000Z",
+      },
+    );
+
+    expect(response).toEqual({
+      status: 404,
+      body: { error: "Published exam not found." },
+    });
+    expect(connections.findByCustomerId).not.toHaveBeenCalled();
+    expect(cloudshare.forConnection).not.toHaveBeenCalled();
+    await expect(attempts.listByCandidate("candidate-1")).resolves.toEqual([]);
+  });
+
   it("returns candidate-facing copy when the requested schedule time is not in the future", async () => {
     const response = await scheduleExamAttemptRuntime(
       {

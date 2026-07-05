@@ -46,6 +46,7 @@ import {
 } from "@/domain/diagnostic-log";
 import { createInMemoryExamAuthoringCacheRepository } from "@/persistence/exam-authoring-cache-repository";
 import { createPrismaExamCatalogRepository } from "@/persistence/prisma-exam-catalog-repository";
+import { createPrismaCohortExamSessionRepository } from "@/persistence/prisma-cohort-exam-session-repository";
 import { createPrismaExamAttemptRepository } from "@/persistence/prisma-exam-attempt-repository";
 import { createPrismaLabLaunchRepository } from "@/persistence/prisma-lab-launch-repository";
 import { createPrismaAdminMonitoringAttemptRepository } from "@/persistence/prisma-admin-monitoring-attempt-repository";
@@ -75,6 +76,7 @@ import type { AdminMonitoringAttemptRepository } from "@/domain/admin-monitoring
 import type { AdminCandidateRepository } from "@/domain/admin-candidates";
 import type { AdminExamAttemptDiagnosticContextRepository } from "@/domain/admin-exam-attempt-diagnostics";
 import type { ExamRepository } from "@/domain/exam-catalog";
+import type { CohortExamSessionRepository } from "@/domain/cohort-exam-session";
 import type { ExamAuthoringCacheRepository } from "@/persistence/exam-authoring-cache-repository";
 import { createSecretBox } from "@/security/secret-box";
 import { createPrismaAdminExamAttemptDiagnosticContextRepository } from "@/persistence/prisma-admin-exam-attempt-diagnostic-context-repository";
@@ -148,6 +150,7 @@ export interface Services {
   adminCandidates: AdminCandidateRepository;
   adminExamAttemptDiagnosticContexts: AdminExamAttemptDiagnosticContextRepository;
   exams: ExamRepository;
+  cohortExamSessions: CohortExamSessionRepository;
   examAuthoringCache: ExamAuthoringCacheRepository;
   cloudshareConnections: CloudShareConnectionRepository;
   cloudshareClientFactory: CloudShareClientFactory;
@@ -281,6 +284,7 @@ export function getServices(): Services {
   const audit = createPrismaAuditRepository(prisma);
   const resources = createInMemoryResourceRepository();
   const exams = createPrismaExamCatalogRepository(prisma);
+  const cohortExamSessions = createPrismaCohortExamSessionRepository(prisma);
   const adminMonitoringAttempts = createPrismaAdminMonitoringAttemptRepository(prisma);
   const adminCandidates = createPrismaAdminCandidateRepository(prisma);
   const adminExamAttemptDiagnosticContexts =
@@ -440,6 +444,7 @@ export function getServices(): Services {
     adminCandidates,
     adminExamAttemptDiagnosticContexts,
     exams,
+    cohortExamSessions,
     examAuthoringCache,
     cloudshareConnections,
     cloudshareClientFactory,

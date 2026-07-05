@@ -5,7 +5,7 @@ export function createInMemoryExamCatalogRepository(): ExamRepository & { reset(
 
   return {
     async save(exam: Exam): Promise<void> {
-      byId.set(exam.id, exam);
+      byId.set(exam.id, { ...exam, deliveryAvailability: exam.deliveryAvailability ?? "individual" });
     },
     async findById(id: string): Promise<Exam | null> {
       return byId.get(id) ?? null;

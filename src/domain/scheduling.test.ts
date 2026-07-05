@@ -4,7 +4,12 @@ import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-
 import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repository";
 import type { CreateDraftExamInput } from "./exam-catalog";
 import { createDraftExam, publishExam } from "./exam-catalog";
-import { CloudShareProvisioningError, ScheduleValidationError, scheduleExam } from "./scheduling";
+import {
+  CloudShareProvisioningError,
+  ScheduleExamNotFoundError,
+  ScheduleValidationError,
+  scheduleExam,
+} from "./scheduling";
 import type { CreateTrainingInput, LabProvisioner } from "./lab-launch";
 import { createDiagnosticRecorder } from "./diagnostic-log";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
@@ -211,6 +216,40 @@ async function addPublishedExam(
 }
 
 describe("scheduleExam", () => {
+  it("rejects cohort-only Exams before creating an individual ExamAttempt or lab", async () => {
+    const { exams, attempts, launches } = await setup({ deliveryAvailability: "cohort" });
+    const createTraining = vi.fn();
+
+    await expect(
+      scheduleExam(
+        {
+          exams,
+          attempts,
+          launches,
+          labs: {
+            ...makeLabs(),
+            createTraining,
+          },
+          newId: vi.fn(),
+          now: () => new Date("2026-06-15T10:00:00.000Z"),
+        },
+        {
+          customerId: "customer-helios",
+          candidateId: "candidate-1",
+          candidateEmail: "candidate@helioscx.demo",
+          candidateFirstName: "Asha",
+          candidateLastName: "Patel",
+          examId: "exam-1",
+          scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+        },
+      ),
+    ).rejects.toBeInstanceOf(ScheduleExamNotFoundError);
+
+    expect(createTraining).not.toHaveBeenCalled();
+    await expect(attempts.listByCandidate("candidate-1")).resolves.toEqual([]);
+    await expect(launches.findByExamAttemptId("attempt-1")).resolves.toBeNull();
+  });
+
   it("creates a scheduled attempt, provisions training in order, and finalizes the attempt as ready", async () => {
     const { exams, attempts, launches } = await setup();
     const order: string[] = [];

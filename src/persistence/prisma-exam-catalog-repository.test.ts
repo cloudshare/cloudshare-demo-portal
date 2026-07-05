@@ -56,6 +56,7 @@ describe("Prisma exam catalog repository", () => {
       storageLeaseMinutes: 2880,
       openPeriodMinutes: 720,
       scoreRetrievalEnabled: true,
+      deliveryAvailability: "individual" as const,
       status: "draft" as const,
       publishedAt: null,
       createdAt: new Date("2026-06-14T12:00:00.000Z"),
