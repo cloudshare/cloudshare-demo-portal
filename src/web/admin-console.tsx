@@ -169,6 +169,7 @@ interface ExamRecord {
   deliveryAvailability?: "individual" | "cohort" | "both";
   status: "draft" | "published";
   publishedAt: string | null;
+  createdAt?: string;
   projectId: string;
   projectName: string;
   blueprintId: string;
@@ -443,9 +444,49 @@ function isAdminSessionExpiredError(error: unknown): error is AdminSessionExpire
 }
 
 function formatExamDeliveryAvailability(value: ExamRecord["deliveryAvailability"]): string {
-  if (value === "cohort") return "Cohort Exam Sessions only";
-  if (value === "both") return "Individual and Cohort delivery";
-  return "Individual Exam Delivery only";
+  if (value === "cohort") return "Cohort Exam";
+  if (value === "both") return "Mixed delivery";
+  return "Individual Exam";
+}
+
+export const COHORT_SESSION_DRAFT_ONLY_COPY =
+  "Draft only - publishing and candidate admission are delivered in a later slice.";
+
+export function formatShortExamId(id: string): string {
+  return id.length <= 8 ? id : id.slice(0, 8);
+}
+
+export function getDuplicateExamResourceTupleWarning(input: {
+  readonly exams: readonly ExamRecord[];
+  readonly currentExamId?: string | null;
+  readonly projectId: string;
+  readonly blueprintId: string;
+  readonly snapshotId: string | null;
+  readonly policyId: string;
+  readonly deliveryAvailability: ExamRecord["deliveryAvailability"];
+}): string | null {
+  const snapshotId = input.snapshotId ?? "";
+  if (!input.projectId || !input.blueprintId || !snapshotId || !input.policyId) {
+    return null;
+  }
+
+  const duplicate = input.exams.find(
+    (exam) =>
+      exam.id !== input.currentExamId &&
+      exam.projectId === input.projectId &&
+      exam.blueprintId === input.blueprintId &&
+      exam.snapshotId === snapshotId &&
+      exam.policyId === input.policyId &&
+      (exam.deliveryAvailability ?? "individual") === input.deliveryAvailability,
+  );
+
+  if (!duplicate) {
+    return null;
+  }
+
+  return `Another Exam already uses this Project, Blueprint, default Snapshot, Policy, and delivery mode: ${duplicate.title} (${formatShortExamId(
+    duplicate.id,
+  )}). Confirm the Exam title and delivery scope before saving.`;
 }
 
 export function isCohortSessionAuthoringAvailable(
@@ -558,6 +599,80 @@ export function CohortSessionAuthoringPanel(props: {
       ) : (
         <span style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>
           Cohort Exam Sessions are unavailable for individual-only Exams.
+        </span>
+      )}
+    </div>
+  );
+}
+
+export function CohortSessionDraftOnlyNotice() {
+  return (
+    <p style={{ margin: 0, color: colors.textSecondary, fontSize: "0.9rem" }}>
+      {COHORT_SESSION_DRAFT_ONLY_COPY}
+    </p>
+  );
+}
+
+export function ExamCatalogRowActions(props: {
+  readonly exam: Pick<ExamRecord, "id" | "status" | "deliveryAvailability">;
+  readonly loading: boolean;
+  readonly editingExamId: string | null;
+  readonly onEdit: () => void;
+  readonly onPublish: () => void;
+  readonly onUnpublish: () => void;
+  readonly onManageCohortSessions: () => void;
+}) {
+  return (
+    <div style={{ display: "grid", gap: "0.5rem" }}>
+      <div style={{ color: colors.textSecondary, fontSize: "0.8rem" }}>
+        Delivery: {formatExamDeliveryAvailability(props.exam.deliveryAvailability)}
+      </div>
+      {props.exam.status === "draft" ? (
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+          {props.editingExamId === props.exam.id ? (
+            <span style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>
+              Editing - save or cancel before publishing.
+            </span>
+          ) : (
+            <>
+              <button
+                onClick={props.onEdit}
+                disabled={props.loading || props.editingExamId !== null}
+                style={{ padding: "0.45rem 0.75rem" }}
+              >
+                Edit Exam
+              </button>
+              <button
+                onClick={props.onPublish}
+                disabled={props.loading || props.editingExamId !== null}
+                style={{ padding: "0.45rem 0.75rem" }}
+              >
+                Publish Exam
+              </button>
+            </>
+          )}
+        </div>
+      ) : (
+        <button
+          onClick={props.onUnpublish}
+          disabled={props.loading || props.editingExamId !== null}
+          style={{ padding: "0.45rem 0.75rem" }}
+        >
+          Unpublish Exam
+        </button>
+      )}
+      {isCohortSessionAuthoringAvailable(props.exam.deliveryAvailability) ? (
+        <button
+          type="button"
+          onClick={props.onManageCohortSessions}
+          disabled={props.loading}
+          style={{ padding: "0.45rem 0.75rem" }}
+        >
+          Manage Cohort Sessions
+        </button>
+      ) : (
+        <span style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>
+          Cohort Sessions unavailable
         </span>
       )}
     </div>
@@ -1882,6 +1997,15 @@ export function AdminConsole({
   const authoringMode = getExamAuthoringMode(editingExamId);
   const defaultSnapshot =
     blueprintDetail?.snapshots.find((item) => item.id === blueprintDetail.defaultSnapshotId) ?? null;
+  const duplicateExamResourceTupleWarning = getDuplicateExamResourceTupleWarning({
+    exams: examCatalog,
+    currentExamId: editingExamId,
+    projectId: selectedProjectId,
+    blueprintId: selectedBlueprintId,
+    snapshotId: defaultSnapshot?.id ?? null,
+    policyId: selectedPolicyId,
+    deliveryAvailability,
+  });
   const compatibleRegions = getCompatibleRegions(regions, defaultSnapshot);
   const selectedAllowedRegions = compatibleRegions.filter((region) =>
     selectedAllowedRegionIds.includes(region.id),
@@ -2289,12 +2413,15 @@ export function AdminConsole({
                 type="button"
                 aria-current={examView === "catalog" ? "page" : undefined}
                 onClick={navigateToExamCatalog}
+                disabled={examView === "catalog"}
                 style={{
                   padding: "0.5rem 0.8rem",
                   border: `1px solid ${examView === "catalog" ? colors.textPrimary : colors.border}`,
                   borderRadius: "8px",
                   background: examView === "catalog" ? colors.textPrimary : "#ffffff",
                   color: examView === "catalog" ? "#ffffff" : colors.textPrimary,
+                  cursor: examView === "catalog" ? "default" : "pointer",
+                  opacity: examView === "catalog" ? 0.85 : 1,
                   fontWeight: 600,
                 }}
               >
@@ -2540,9 +2667,26 @@ export function AdminConsole({
             <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
               Snapshot: {defaultSnapshot ? `${defaultSnapshot.name} (default only for Experience launches)` : "-"}
             </div>
+            <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
+              Delivery: {formatExamDeliveryAvailability(deliveryAvailability)}
+            </div>
             {blueprintSummary && (
               <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
                 Blueprint: {blueprintSummary}
+              </div>
+            )}
+            {duplicateExamResourceTupleWarning && (
+              <div
+                role="status"
+                style={{
+                  color: "#7a4b00",
+                  background: "#fff7e6",
+                  border: "1px solid #f0d38a",
+                  borderRadius: "6px",
+                  padding: "0.7rem 0.85rem",
+                }}
+              >
+                {duplicateExamResourceTupleWarning}
               </div>
             )}
           </div>
@@ -2613,9 +2757,8 @@ export function AdminConsole({
                 }
                 style={compactFieldStyle}
               >
-                <option value="individual">Individual Exam Delivery only</option>
-                <option value="cohort">Cohort Exam Sessions only</option>
-                <option value="both">Individual and Cohort delivery</option>
+                <option value="individual">Individual Exam</option>
+                <option value="cohort">Cohort Exam</option>
               </select>
             </label>
           </div>
@@ -2684,6 +2827,11 @@ export function AdminConsole({
                       <td style={{ padding: "0.4rem" }}>
                         <div style={{ fontWeight: 600 }}>{exam.title}</div>
                         <div style={{ color: colors.textSecondary }}>{exam.description}</div>
+                        <div style={{ color: colors.textSecondary, fontSize: "0.75rem", marginTop: "0.25rem" }}>
+                          Exam ID: {formatShortExamId(exam.id)}
+                          {exam.createdAt ? ` · Created ${formatUtcTimestamp(exam.createdAt)}` : ""} · Delivery:{" "}
+                          {formatExamDeliveryAvailability(exam.deliveryAvailability)}
+                        </div>
                       </td>
                       <td style={{ padding: "0.4rem" }}>
                         <span style={statusBadgeStyle(getExamStatusTone(exam.status))}>{exam.status}</span>
@@ -2715,59 +2863,15 @@ export function AdminConsole({
                       </td>
                       <td style={{ padding: "0.4rem" }}>{exam.scoreRetrievalEnabled ? "Enabled" : "Off"}</td>
                       <td style={{ padding: "0.4rem" }}>
-                        <div style={{ marginBottom: "0.65rem", color: colors.textSecondary, fontSize: "0.8rem" }}>
-                          Delivery: {formatExamDeliveryAvailability(exam.deliveryAvailability)}
-                        </div>
-                        {exam.status === "draft" ? (
-                          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-                            {editingExamId === exam.id ? (
-                              <span style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>
-                                Editing - save or cancel before publishing.
-                              </span>
-                            ) : (
-                              <>
-                                <button
-                                  onClick={() => void beginEditingExam(exam)}
-                                  disabled={loading || editingExamId !== null}
-                                  style={{ padding: "0.45rem 0.75rem" }}
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  onClick={() => void publishCatalogExam(exam.id)}
-                                  disabled={loading || editingExamId !== null}
-                                  style={{ padding: "0.45rem 0.75rem" }}
-                                >
-                                  Publish
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        ) : (
-                          <button
-                            onClick={() => void unpublishCatalogExam(exam.id)}
-                            disabled={loading || editingExamId !== null}
-                            style={{ padding: "0.45rem 0.75rem" }}
-                          >
-                            Unpublish
-                          </button>
-                        )}
-                        <div style={{ display: "grid", gap: "0.45rem", marginTop: "0.5rem" }}>
-                          {isCohortSessionAuthoringAvailable(exam.deliveryAvailability) ? (
-                            <button
-                              type="button"
-                              onClick={() => navigateToExamSessions(exam.id)}
-                              disabled={loading}
-                              style={{ padding: "0.45rem 0.75rem" }}
-                            >
-                              Cohort Sessions
-                            </button>
-                          ) : (
-                            <span style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>
-                              Cohort Sessions unavailable
-                            </span>
-                          )}
-                        </div>
+                        <ExamCatalogRowActions
+                          exam={exam}
+                          loading={loading}
+                          editingExamId={editingExamId}
+                          onEdit={() => void beginEditingExam(exam)}
+                          onPublish={() => void publishCatalogExam(exam.id)}
+                          onUnpublish={() => void unpublishCatalogExam(exam.id)}
+                          onManageCohortSessions={() => navigateToExamSessions(exam.id)}
+                        />
                       </td>
                     </tr>
                   ))}
@@ -2784,6 +2888,7 @@ export function AdminConsole({
                   <p style={{ margin: "0.25rem 0 0", color: colors.textSecondary }}>
                     {focusedExam.title} · {formatExamDeliveryAvailability(focusedExam.deliveryAvailability)}
                   </p>
+                  <CohortSessionDraftOnlyNotice />
                 </div>
                 <button type="button" onClick={navigateToExamCatalog} style={secondaryButtonStyle}>
                   Back to catalog
@@ -2821,6 +2926,7 @@ export function AdminConsole({
                 <div>
                   <h3 style={{ margin: 0 }}>Cohort Exam Session workspace</h3>
                   <p style={{ margin: "0.25rem 0 0", color: colors.textSecondary }}>{focusedExam.title}</p>
+                  <CohortSessionDraftOnlyNotice />
                 </div>
                 <button
                   type="button"

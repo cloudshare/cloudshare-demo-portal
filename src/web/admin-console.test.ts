@@ -4,8 +4,11 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AdminCandidateRosterPanel,
   AdminConsole,
+  CohortSessionDraftOnlyNotice,
   CohortSessionAuthoringPanel,
+  ExamCatalogRowActions,
   ExamCatalogLoadingOverlay,
+  getDuplicateExamResourceTupleWarning,
   normalizeAdminLocalDateTime,
 } from "./admin-console";
 
@@ -185,9 +188,23 @@ describe("AdminConsole", () => {
     );
 
     expect(html).toContain("Delivery availability");
-    expect(html).toContain("Individual Exam Delivery only");
-    expect(html).toContain("Cohort Exam Sessions only");
-    expect(html).toContain("Individual and Cohort delivery");
+    expect(html).toContain("Individual Exam");
+    expect(html).toContain("Cohort Exam");
+    expect(html).not.toContain("Individual and Cohort delivery");
+  });
+
+  it("marks the current Exam catalog subnav control as disabled and non-actionable", () => {
+    const html = renderToStaticMarkup(
+      createElement(AdminConsole, {
+        email: "admin@helioscx.demo",
+        initialTab: "exams",
+      }),
+    );
+
+    expect(html).toContain("Catalog overview");
+    expect(html).toContain('aria-current="page"');
+    expect(html).toContain("disabled=\"\"");
+    expect(html).toContain("cursor:default");
   });
 
   it("keeps the Exam Catalog overview list-only without inline authoring or Cohort Session create controls", () => {
@@ -203,6 +220,79 @@ describe("AdminConsole", () => {
     expect(html).not.toContain("Project-first Exam authoring");
     expect(html).not.toContain("Session name");
     expect(html).not.toContain("Create Draft Cohort Session");
+  });
+
+  it("renders object-specific Exam Catalog row action labels", () => {
+    const draftHtml = renderToStaticMarkup(
+      createElement(ExamCatalogRowActions, {
+        exam: { id: "exam-draft", status: "draft", deliveryAvailability: "cohort" },
+        loading: false,
+        editingExamId: null,
+        onEdit: vi.fn(),
+        onPublish: vi.fn(),
+        onUnpublish: vi.fn(),
+        onManageCohortSessions: vi.fn(),
+      }),
+    );
+
+    expect(draftHtml).toContain("Edit Exam");
+    expect(draftHtml).toContain("Publish Exam");
+    expect(draftHtml).toContain("Manage Cohort Sessions");
+    expect(draftHtml).not.toContain(">Edit<");
+    expect(draftHtml).not.toContain(">Publish<");
+    expect(draftHtml).not.toContain(">Cohort Sessions<");
+
+    const publishedHtml = renderToStaticMarkup(
+      createElement(ExamCatalogRowActions, {
+        exam: { id: "exam-published", status: "published", deliveryAvailability: "cohort" },
+        loading: false,
+        editingExamId: null,
+        onEdit: vi.fn(),
+        onPublish: vi.fn(),
+        onUnpublish: vi.fn(),
+        onManageCohortSessions: vi.fn(),
+      }),
+    );
+
+    expect(publishedHtml).toContain("Unpublish Exam");
+  });
+
+  it("warns when an Exam authoring tuple duplicates another Exam", () => {
+    const warning = getDuplicateExamResourceTupleWarning({
+      exams: [
+        {
+          id: "exam-duplicate-resource-tuple",
+          title: "Helios CX Admin Foundations",
+          description: "",
+          timeLimitMinutes: 60,
+          openPeriodMinutes: 60,
+          scoreRetrievalEnabled: false,
+          deliveryAvailability: "individual",
+          status: "draft",
+          publishedAt: null,
+          projectId: "project-1",
+          projectName: "Project",
+          blueprintId: "blueprint-1",
+          blueprintName: "Blueprint",
+          snapshotId: "snapshot-1",
+          snapshotName: "Snapshot",
+          allowedRegions: [],
+          policyId: "policy-1",
+          policyName: "Policy",
+          instructorName: "Instructor",
+        },
+      ],
+      currentExamId: null,
+      projectId: "project-1",
+      blueprintId: "blueprint-1",
+      snapshotId: "snapshot-1",
+      policyId: "policy-1",
+      deliveryAvailability: "individual",
+    });
+
+    expect(warning).toContain("Another Exam already uses this Project");
+    expect(warning).toContain("Helios CX Admin Foundations");
+    expect(warning).toContain("exam-dup");
   });
 
   it("does not render draft Cohort Exam Session form controls for individual-only Exams", () => {
@@ -241,6 +331,12 @@ describe("AdminConsole", () => {
 
     expect(html).toContain("Create Draft Cohort Session");
     expect(html).toContain("Admission opens");
+  });
+
+  it("states that Cohort Exam Sessions are draft-only in this slice", () => {
+    const html = renderToStaticMarkup(createElement(CohortSessionDraftOnlyNotice));
+
+    expect(html).toContain("Draft only - publishing and candidate admission are delivered in a later slice.");
   });
 
   it("normalizes admin datetime-local values before draft Cohort Exam Session POST", () => {
