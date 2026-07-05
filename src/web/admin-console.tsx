@@ -481,6 +481,14 @@ function formatCohortSessionStatus(status: CohortExamSessionRecord["session"]["s
   }
 }
 
+function formatCohortSessionDateTime(value: string | null): string {
+  if (!value) {
+    return "-";
+  }
+
+  return new Date(value).toLocaleString();
+}
+
 export function formatShortExamId(id: string): string {
   return id.length <= 8 ? id : id.slice(0, 8);
 }
@@ -583,18 +591,48 @@ function CohortSessionDraftControls(props: {
       <button onClick={props.onCreate} disabled={props.loading} style={{ padding: "0.45rem 0.75rem" }}>
         Create Draft Cohort Session
       </button>
-      <div style={{ display: "grid", gap: "0.35rem" }}>
+      <div style={{ display: "grid", gap: "0.5rem" }}>
+        <strong>Existing Cohort Sessions</strong>
         {props.sessions.length === 0 ? (
           <span style={{ color: "#666" }}>No draft Cohort Exam Sessions yet.</span>
         ) : (
           props.sessions.map((session) => (
-            <button
+            <div
               key={`${props.examId}-${session.session.id}`}
-              onClick={() => props.onSelect(session)}
-              style={{ padding: "0.45rem 0.75rem", textAlign: "left" }}
+              style={{
+                display: "grid",
+                gap: "0.35rem",
+                padding: "0.75rem",
+                border: `1px solid ${colors.border}`,
+                borderRadius: "6px",
+                background: "#ffffff",
+              }}
             >
-              {session.session.name} · {formatCohortSessionStatus(session.session.status)}
-            </button>
+              <div style={{ fontWeight: 600 }}>{session.session.name}</div>
+              <div style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>
+                {session.session.name} · {formatCohortSessionStatus(session.session.status)}
+              </div>
+              <div>Status: {formatCohortSessionStatus(session.session.status)}</div>
+              <div>Admission opens: {formatCohortSessionDateTime(session.session.admissionStartsAt)}</div>
+              <div>Admission closes: {formatCohortSessionDateTime(session.session.admissionEndsAt)}</div>
+              <div>
+                Capacity: {session.session.capacity === null ? "Unlimited" : session.session.capacity}
+              </div>
+              {session.session.cloudShareExperienceId ? (
+                <div>CloudShare Experience: {session.session.cloudShareExperienceId}</div>
+              ) : session.session.cloudShareTrainingId ? (
+                <div>CloudShare training: {session.session.cloudShareTrainingId}</div>
+              ) : null}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => props.onSelect(session)}
+                  style={{ padding: "0.45rem 0.75rem" }}
+                >
+                  Open Session
+                </button>
+              </div>
+            </div>
           ))
         )}
       </div>
@@ -731,12 +769,15 @@ export function ExamCatalogRowActions(props: {
   readonly onUnpublish: () => void;
   readonly onManageCohortSessions: () => void;
 }) {
+  const supportsCohortSessions = isCohortSessionAuthoringAvailable(props.exam.deliveryAvailability);
+  const isCohortOnly = props.exam.deliveryAvailability === "cohort";
+
   return (
     <div style={{ display: "grid", gap: "0.5rem" }}>
       <div style={{ color: colors.textSecondary, fontSize: "0.8rem" }}>
         Delivery: {formatExamDeliveryAvailability(props.exam.deliveryAvailability)}
       </div>
-      {isCohortSessionAuthoringAvailable(props.exam.deliveryAvailability) ? (
+      {supportsCohortSessions ? (
         <button
           type="button"
           onClick={props.onManageCohortSessions}
@@ -746,7 +787,12 @@ export function ExamCatalogRowActions(props: {
           Manage Cohort Sessions
         </button>
       ) : null}
-      {props.exam.status === "draft" ? (
+      {isCohortOnly ? (
+        <div style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>
+          <div>Exam setup is {props.exam.status}</div>
+          <div>Publish the individual Cohort Sessions after opening this Exam.</div>
+        </div>
+      ) : props.exam.status === "draft" ? (
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
           {props.editingExamId === props.exam.id ? (
             <span style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>

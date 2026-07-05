@@ -308,7 +308,7 @@ describe("AdminConsole", () => {
     expect(publishedIndividualHtml).not.toContain("Cohort Sessions unavailable");
   });
 
-  it("keeps Exam lifecycle actions and Cohort Session management for cohort-capable catalog rows", () => {
+  it("keeps cohort-only catalog rows focused on Cohort Session management", () => {
     const cohortHtml = renderToStaticMarkup(
       createElement(ExamCatalogRowActions, {
         exam: { id: "exam-cohort", status: "draft", deliveryAvailability: "cohort" },
@@ -322,10 +322,30 @@ describe("AdminConsole", () => {
     );
 
     expect(cohortHtml).toContain("Manage Cohort Sessions");
-    expect(cohortHtml).toContain("Edit Exam");
-    expect(cohortHtml).toContain("Publish Exam");
+    expect(cohortHtml).toContain("Exam setup is draft");
+    expect(cohortHtml).toContain("Publish the individual Cohort Sessions after opening this Exam.");
+    expect(cohortHtml).not.toContain("Edit Exam");
+    expect(cohortHtml).not.toContain("Publish Exam");
     expect(cohortHtml).not.toContain("Unpublish Exam");
     expect(cohortHtml).not.toContain("Cohort Sessions unavailable");
+  });
+
+  it("keeps individual Exam lifecycle actions for mixed-delivery catalog rows", () => {
+    const draftBothHtml = renderToStaticMarkup(
+      createElement(ExamCatalogRowActions, {
+        exam: { id: "exam-both-draft", status: "draft", deliveryAvailability: "both" },
+        loading: false,
+        editingExamId: null,
+        onEdit: vi.fn(),
+        onPublish: vi.fn(),
+        onUnpublish: vi.fn(),
+        onManageCohortSessions: vi.fn(),
+      }),
+    );
+
+    expect(draftBothHtml).toContain("Manage Cohort Sessions");
+    expect(draftBothHtml).toContain("Edit Exam");
+    expect(draftBothHtml).toContain("Publish Exam");
 
     const bothHtml = renderToStaticMarkup(
       createElement(ExamCatalogRowActions, {
@@ -420,6 +440,54 @@ describe("AdminConsole", () => {
 
     expect(html).toContain("Create Draft Cohort Session");
     expect(html).toContain("Admission opens");
+  });
+
+  it("renders Cohort Exam Sessions as detailed entries distinct from the create action", () => {
+    const html = renderToStaticMarkup(
+      createElement(CohortSessionAuthoringPanel, {
+        examId: "exam-1",
+        deliveryAvailability: "cohort",
+        form: { name: "", admissionStartsAt: "", admissionEndsAt: "", capacity: "" },
+        sessions: [
+          {
+            session: {
+              id: "session-1",
+              name: "September Admin Cohort",
+              admissionStartsAt: "2026-09-01T09:00:00.000Z",
+              admissionEndsAt: "2026-09-30T17:00:00.000Z",
+              capacity: 25,
+              status: "published",
+              cloudShareTrainingId: "EX123",
+              cloudShareExperienceId: "EX123",
+            },
+            inheritedContext: {
+              project: { id: "project-1", name: "Project" },
+              blueprint: { id: "blueprint-1", name: "Blueprint" },
+              snapshot: { id: "snapshot-1", name: "Snapshot" },
+              policy: { id: "policy-1", name: "Policy" },
+              allowedRegions: [],
+              instructor: { id: "instructor-1", name: "Instructor" },
+              scoreRetrievalEnabled: false,
+              timeLimitMinutes: 60,
+            },
+          },
+        ],
+        loading: false,
+        onChange: vi.fn(),
+        onCreate: vi.fn(),
+        onSelect: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("Create Draft Cohort Session");
+    expect(html).toContain("Existing Cohort Sessions");
+    expect(html).toContain("September Admin Cohort");
+    expect(html).toContain("Status: Published");
+    expect(html).toContain("Admission opens:");
+    expect(html).toContain("Admission closes:");
+    expect(html).toContain("Capacity: 25");
+    expect(html).toContain("CloudShare Experience: EX123");
+    expect(html).toContain("Open Session");
   });
 
   it("states that candidate admission remains disabled for Cohort Exam Sessions", () => {
