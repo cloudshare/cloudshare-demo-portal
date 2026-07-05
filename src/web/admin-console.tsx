@@ -622,6 +622,86 @@ export function CohortSessionDraftOnlyNotice() {
   );
 }
 
+function SelectionSummaryRow(props: { readonly label: string; readonly value: string }) {
+  return (
+    <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
+      {props.label}: {props.value}
+    </div>
+  );
+}
+
+export function ExamAuthoringSelectionSummary(props: {
+  readonly selectedProject: NamedResource | null;
+  readonly selectedBlueprint: NamedResource | null;
+  readonly defaultSnapshot: BlueprintSnapshot | null;
+  readonly selectedAllowedRegions: readonly NamedResource[];
+  readonly selectedPolicy: NamedResource | null;
+  readonly deliveryAvailability: ExamRecord["deliveryAvailability"];
+  readonly duplicateExamResourceTupleWarning?: string | null;
+}) {
+  const policySummary = [
+    props.selectedPolicy?.name ?? "-",
+    props.selectedPolicy?.runtimeLeaseMinutes
+      ? `${props.selectedPolicy.runtimeLeaseMinutes} minute runtime lease`
+      : null,
+    props.selectedPolicy?.storageLeaseMinutes
+      ? `${props.selectedPolicy.storageLeaseMinutes} minute storage retention`
+      : null,
+  ].filter(Boolean).join(" · ");
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gap: "0.5rem",
+        padding: "0.85rem 1rem",
+        border: "1px solid #e5e7eb",
+        borderRadius: "6px",
+        background: "#fafafa",
+      }}
+    >
+      <strong>Selection summary</strong>
+      <SelectionSummaryRow label="Project" value={props.selectedProject?.name ?? "-"} />
+      <SelectionSummaryRow label="Blueprint" value={props.selectedBlueprint?.name ?? "-"} />
+      <SelectionSummaryRow
+        label="Snapshot"
+        value={
+          props.defaultSnapshot
+            ? `${props.defaultSnapshot.name} (default only for Experience launches)`
+            : "-"
+        }
+      />
+      <SelectionSummaryRow
+        label="Allowed Regions"
+        value={
+          props.selectedAllowedRegions.length > 0
+            ? props.selectedAllowedRegions.map((region) => region.friendlyName ?? region.name).join(", ")
+            : "-"
+        }
+      />
+      <SelectionSummaryRow label="Policy" value={policySummary} />
+      <SelectionSummaryRow
+        label="Delivery"
+        value={formatExamDeliveryAvailability(props.deliveryAvailability)}
+      />
+      {props.duplicateExamResourceTupleWarning && (
+        <div
+          role="status"
+          style={{
+            color: "#7a4b00",
+            background: "#fff7e6",
+            border: "1px solid #f0d38a",
+            borderRadius: "6px",
+            padding: "0.7rem 0.85rem",
+          }}
+        >
+          {props.duplicateExamResourceTupleWarning}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ExamCatalogRowActions(props: {
   readonly exam: Pick<ExamRecord, "id" | "status" | "deliveryAvailability">;
   readonly loading: boolean;
@@ -2032,9 +2112,6 @@ export function AdminConsole({
     minWidth: 0,
     minHeight: "46px",
   } as const;
-  const blueprintSummary = selectedBlueprint
-    ? stripHtmlToText(selectedBlueprint.description || blueprintDetail?.description || "")
-    : "";
   const isExamAuthoringView = examView === "create" || examView === "edit";
   const focusedExam = focusedExamId ? (examCatalog.find((exam) => exam.id === focusedExamId) ?? null) : null;
   const focusedExamSessions = focusedExamId ? (cohortSessionsByExamId[focusedExamId] ?? []) : [];
@@ -2642,61 +2719,15 @@ export function AdminConsole({
             </label>
           </div>
 
-          <div
-            style={{
-              display: "grid",
-              gap: "0.5rem",
-              padding: "0.85rem 1rem",
-              border: "1px solid #e5e7eb",
-              borderRadius: "6px",
-              background: "#fafafa",
-            }}
-          >
-            <strong>Selection summary</strong>
-            <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
-              Project: {selectedProject?.name ?? "-"}
-            </div>
-            <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
-              Policy: {selectedPolicy?.name ?? "-"}
-              {selectedPolicy?.runtimeLeaseMinutes
-                ? ` · ${selectedPolicy.runtimeLeaseMinutes} minute runtime lease`
-                : ""}
-              {selectedPolicy?.storageLeaseMinutes
-                ? ` · ${selectedPolicy.storageLeaseMinutes} minute storage retention`
-                : ""}
-            </div>
-            <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
-              Allowed Regions:{" "}
-              {selectedAllowedRegions.length > 0
-                ? selectedAllowedRegions.map((region) => region.friendlyName ?? region.name).join(", ")
-                : "-"}
-            </div>
-            <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
-              Snapshot: {defaultSnapshot ? `${defaultSnapshot.name} (default only for Experience launches)` : "-"}
-            </div>
-            <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
-              Delivery: {formatExamDeliveryAvailability(deliveryAvailability)}
-            </div>
-            {blueprintSummary && (
-              <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
-                Blueprint: {blueprintSummary}
-              </div>
-            )}
-            {duplicateExamResourceTupleWarning && (
-              <div
-                role="status"
-                style={{
-                  color: "#7a4b00",
-                  background: "#fff7e6",
-                  border: "1px solid #f0d38a",
-                  borderRadius: "6px",
-                  padding: "0.7rem 0.85rem",
-                }}
-              >
-                {duplicateExamResourceTupleWarning}
-              </div>
-            )}
-          </div>
+          <ExamAuthoringSelectionSummary
+            selectedProject={selectedProject}
+            selectedBlueprint={selectedBlueprint}
+            defaultSnapshot={defaultSnapshot}
+            selectedAllowedRegions={selectedAllowedRegions}
+            selectedPolicy={selectedPolicy}
+            deliveryAvailability={deliveryAvailability}
+            duplicateExamResourceTupleWarning={duplicateExamResourceTupleWarning}
+          />
 
           <div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", alignItems: "start" }}>
             <label style={{ display: "grid", gap: "0.35rem", gridColumn: "1 / -1" }}>

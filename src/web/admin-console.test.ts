@@ -6,6 +6,7 @@ import {
   AdminConsole,
   CohortSessionDraftOnlyNotice,
   CohortSessionAuthoringPanel,
+  ExamAuthoringSelectionSummary,
   ExamCatalogRowActions,
   ExamCatalogLoadingOverlay,
   getDeliveryAvailabilityAuthoringOptions,
@@ -205,6 +206,41 @@ describe("AdminConsole", () => {
       { value: "individual", label: "Individual Exam", disabled: false },
       { value: "cohort", label: "Cohort Exam", disabled: false },
     ]);
+  });
+
+  it("summarises selected authoring resources by object name, not Blueprint description", () => {
+    const html = renderToStaticMarkup(
+      createElement(ExamAuthoringSelectionSummary, {
+        selectedProject: { id: "project-1", name: "Helios Exams 1" },
+        selectedBlueprint: {
+          id: "blueprint-1",
+          name: "Linux Environment with xRDP v2",
+          description: "Long Blueprint description should stay out of the summary.",
+        },
+        defaultSnapshot: {
+          id: "snapshot-1",
+          name: "Update guided journey",
+          isDefault: true,
+          regionIds: ["region-1"],
+        },
+        selectedAllowedRegions: [{ id: "region-1", name: "useast", friendlyName: "US East (Miami)" }],
+        selectedPolicy: {
+          id: "policy-1",
+          name: "10 mins run time - 2 days storage - Always on",
+          runtimeLeaseMinutes: 10,
+          storageLeaseMinutes: 2880,
+        },
+        deliveryAvailability: "individual",
+      }),
+    );
+
+    expect(html).toContain("Project: Helios Exams 1");
+    expect(html).toContain("Blueprint: Linux Environment with xRDP v2");
+    expect(html).toContain("Snapshot: Update guided journey");
+    expect(html).toContain("Allowed Regions: US East (Miami)");
+    expect(html).toContain("Policy: 10 mins run time - 2 days storage - Always on");
+    expect(html).toContain("Delivery: Individual Exam");
+    expect(html).not.toContain("Long Blueprint description");
   });
 
   it("marks the current Exam catalog subnav control as disabled and non-actionable", () => {
