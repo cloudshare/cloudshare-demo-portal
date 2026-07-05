@@ -123,6 +123,7 @@ model ExamAttempt {
   customerId  String
   candidateId String
   examId      String
+  cohortSessionId String?
   status      String
   scheduledFor DateTime?
   createdAt   DateTime
@@ -135,6 +136,17 @@ model ExamAttempt {
   @@index([candidateId, createdAt])
   @@index([examId, createdAt])
   @@index([customerId, candidateId])
+  @@index([cohortSessionId, createdAt])
+  @@unique([candidateId, cohortSessionId])
+}
+
+model ExamAttemptAdmissionLock {
+  id          String   @id @default(cuid())
+  candidateId String
+  examId      String
+  acquiredAt  DateTime @default(now())
+
+  @@unique([candidateId, examId])
 }
 
 model LabLaunch {

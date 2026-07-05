@@ -3,6 +3,7 @@
 import React, { type CSSProperties, type ReactNode, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  joinCandidateCohortSession,
   loadCandidateDashboard,
   scheduleCandidateExam,
   shouldShowNoPublishedExams,
@@ -26,12 +27,16 @@ import { formatCandidateAttemptStatus } from "./candidate-lab-state";
 import { formatCandidateScheduledDateTime } from "./candidate-date-format";
 import {
   publishedExamDescriptionStyle,
+  publishedExamActionGroupStyle,
+  publishedExamActionRowStyle,
   publishedExamDurationPillsStyle,
   publishedExamHeaderStyle,
+  publishedExamScheduleFieldStyle,
   publishedExamTitleBlockStyle,
   publishedExamTitleRowStyle,
 } from "./candidate-home-layout";
 import { useCandidateLogout } from "./candidate-logout";
+import { openEnterExamWindow } from "./enter-exam";
 import { pageShellStyle } from "./page-shell";
 import {
   isPortalSessionExpiredError,
@@ -151,6 +156,93 @@ export function CandidatePublishedExamScheduleShell({
   );
 }
 
+export function CandidateCohortSessionOptions({
+  sessions,
+  attemptedSessionIds,
+  currentAttemptStatus,
+  submittingSessionId,
+  onStart,
+}: {
+  readonly sessions: ReadonlyArray<{
+    readonly id: string;
+    readonly name: string;
+    readonly admissionStartsAt: string;
+    readonly admissionEndsAt: string | null;
+  }>;
+  readonly attemptedSessionIds: ReadonlySet<string>;
+  readonly currentAttemptStatus: CandidateDashboardData["attempts"][number]["status"] | null;
+  readonly submittingSessionId: string | null;
+  readonly onStart: (sessionId: string) => void;
+}) {
+  if (sessions.length === 0) {
+    return null;
+  }
+
+  return (
+    <div style={{ display: "grid", gap: "0.75rem" }}>
+      <span style={{ color: "#475569", fontSize: "0.9rem", fontWeight: 600 }}>
+        Start a shared cohort session
+      </span>
+      <div style={{ display: "grid", gap: "0.6rem" }}>
+        {sessions.map((session) => {
+          const attemptedThisSession = attemptedSessionIds.has(session.id);
+          const joinDisabled =
+            submittingSessionId === session.id ||
+            (currentAttemptStatus !== null &&
+              currentAttemptStatus !== "completed" &&
+              currentAttemptStatus !== "expired") ||
+            attemptedThisSession;
+          return (
+            <div
+              key={session.id}
+              style={{
+                ...metaItemStyle,
+                gridTemplateColumns: "minmax(0, 1fr) auto",
+                alignItems: "center",
+              }}
+            >
+              <div style={{ display: "grid", gap: "0.2rem", minWidth: 0 }}>
+                <strong style={{ color: "#0f172a" }}>{session.name}</strong>
+                <span style={metaHintStyle}>
+                  Opened {formatCandidateScheduledDateTime(session.admissionStartsAt) ?? "Now"}
+                  {session.admissionEndsAt
+                    ? ` · Closes ${formatCandidateScheduledDateTime(session.admissionEndsAt) ?? "TBD"}`
+                    : ""}
+                </span>
+              </div>
+              <button
+                onClick={() => onStart(session.id)}
+                disabled={joinDisabled}
+                style={getButtonStyle(primaryButtonStyle, joinDisabled)}
+              >
+                {submittingSessionId === session.id ? "Starting..." : "Start exam"}
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export function getAvailableSessionsSummary({
+  availableCohortSessionCount,
+  individualSchedulingEnabled,
+}: {
+  readonly availableCohortSessionCount: number;
+  readonly individualSchedulingEnabled: boolean;
+}): string {
+  if (availableCohortSessionCount > 0) {
+    return `${availableCohortSessionCount} ready to start`;
+  }
+
+  if (individualSchedulingEnabled) {
+    return "Individual scheduling available";
+  }
+
+  return "No sessions available right now";
+}
+
 export function CandidateHome({ email }: CandidateHomeProps) {
   const router = useRouter();
   const [dashboard, setDashboard] = useState<CandidateDashboardData>({
@@ -160,6 +252,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [submittingExamId, setSubmittingExamId] = useState<string | null>(null);
+  const [submittingSessionId, setSubmittingSessionId] = useState<string | null>(null);
   const [scheduleDrafts, setScheduleDrafts] = useState<Record<string, string>>({});
   const [scheduleFeedback, setScheduleFeedback] = useState<Record<string, ScheduleFeedback>>({});
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -311,6 +404,47 @@ export function CandidateHome({ email }: CandidateHomeProps) {
       }));
     } finally {
       setSubmittingExamId(null);
+    }
+  }
+
+  async function joinCohortSession(examId: string, cohortSessionId: string) {
+    setSubmittingSessionId(cohortSessionId);
+    setError(null);
+    setScheduleFeedback((current) => {
+      const next = { ...current };
+      delete next[examId];
+      return next;
+    });
+    try {
+      const result = await joinCandidateCohortSession(fetch, {
+        examId,
+        cohortSessionId,
+      });
+      setDashboard((current) => ({
+        ...current,
+        attempts: [
+          current.attempts.filter((attempt) => attempt.id !== result.attempt.id),
+          result.attempt,
+        ].flat(),
+      }));
+      setNowMs(Date.now());
+      openEnterExamWindow(result.attempt.id);
+      openLabConsole(result.attempt.id, result.attempt.status);
+    } catch (cause) {
+      if (isPortalSessionExpiredError(cause)) {
+        handleCandidateSessionExpired();
+        return;
+      }
+      setScheduleFeedback((current) => ({
+        ...current,
+        [examId]: {
+          kind: "error",
+          message:
+            cause instanceof Error ? cause.message : "Failed to start cohort Exam Session",
+        },
+      }));
+    } finally {
+      setSubmittingSessionId(null);
     }
   }
 
@@ -535,6 +669,12 @@ export function CandidateHome({ email }: CandidateHomeProps) {
             <div style={{ display: "grid", gap: "0.9rem" }}>
               {dashboard.exams.map((exam) => {
                 const attempt = attemptForExam(exam.id);
+                const availableCohortSessions = exam.availableCohortSessions ?? [];
+                const attemptedSessionIds = new Set(
+                  dashboard.attempts
+                    .map((candidateAttempt) => candidateAttempt.cohortSessionId)
+                    .filter((value): value is string => typeof value === "string" && value.length > 0),
+                );
                 const nextScheduleAvailableLabel = getNextScheduleAvailableLabelForExam(
                   dashboard.attempts,
                   exam.id,
@@ -543,6 +683,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                 const primaryAction = getAttemptPrimaryAction(attempt, nowMs, exam);
                 const durationLabels = buildCandidateExamDurationLabels(exam);
                 const feedback = scheduleFeedback[exam.id] ?? null;
+                const individualSchedulingEnabled = exam.individualSchedulingEnabled !== false;
                 return (
                   <article key={exam.id} style={cardStyle}>
                     <div style={{ display: "grid", gap: "1rem" }}>
@@ -582,66 +723,77 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                             ) : null}
                           </span>
                         </div>
-                      </div>
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                          gap: "0.9rem",
-                          alignItems: "end",
-                        }}
-                      >
-                        <label style={{ display: "grid", gap: "0.35rem" }}>
-                          <span style={{ color: "#475569", fontSize: "0.9rem", fontWeight: 600 }}>
-                            Schedule date and time
+                        <div style={metaItemStyle}>
+                          <span style={metaLabelStyle}>Available sessions</span>
+                          <span style={metaValueStyle}>
+                            {getAvailableSessionsSummary({
+                              availableCohortSessionCount: availableCohortSessions.length,
+                              individualSchedulingEnabled,
+                            })}
                           </span>
-                          <input
-                            type="datetime-local"
-                            value={scheduleDrafts[exam.id] ?? ""}
-                            onChange={(event) => {
-                              setScheduleDrafts((current) => ({
-                                ...current,
-                                [exam.id]: event.target.value,
-                              }));
-                              setScheduleFeedback((current) => {
-                                const next = { ...current };
-                                delete next[exam.id];
-                                return next;
-                              });
-                            }}
-                            style={inputStyle}
-                          />
-                        </label>
-                        <div
-                          style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}
-                        >
-                          <button
-                            onClick={() => void submitSchedule(exam.id)}
-                            disabled={submittingExamId === exam.id}
-                            style={getButtonStyle(primaryButtonStyle, submittingExamId === exam.id)}
-                          >
-                            {submittingExamId === exam.id ? "Scheduling..." : "Schedule exam"}
-                          </button>
-                          {primaryAction.label && (
-                            <button
-                              onClick={() => {
-                                if (!attempt) {
-                                  return;
-                                }
-                                if (primaryAction.label === "View score") {
-                                  openScorePage(attempt.id);
-                                  return;
-                                }
-                                openLabConsole(attempt.id, attempt.status);
-                              }}
-                              disabled={primaryAction.disabled}
-                              style={getButtonStyle(secondaryButtonStyle, primaryAction.disabled)}
-                            >
-                              {primaryAction.label}
-                            </button>
-                          )}
                         </div>
                       </div>
+                      {individualSchedulingEnabled ? (
+                        <div style={publishedExamActionRowStyle}>
+                          <label style={publishedExamScheduleFieldStyle}>
+                            <span style={{ color: "#475569", fontSize: "0.9rem", fontWeight: 600 }}>
+                              Schedule date and time
+                            </span>
+                            <input
+                              type="datetime-local"
+                              value={scheduleDrafts[exam.id] ?? ""}
+                              onChange={(event) => {
+                                setScheduleDrafts((current) => ({
+                                  ...current,
+                                  [exam.id]: event.target.value,
+                                }));
+                                setScheduleFeedback((current) => {
+                                  const next = { ...current };
+                                  delete next[exam.id];
+                                  return next;
+                                });
+                              }}
+                              style={inputStyle}
+                            />
+                          </label>
+                          <div style={publishedExamActionGroupStyle}>
+                            <button
+                              onClick={() => void submitSchedule(exam.id)}
+                              disabled={submittingExamId === exam.id}
+                              style={getButtonStyle(primaryButtonStyle, submittingExamId === exam.id)}
+                            >
+                              {submittingExamId === exam.id ? "Scheduling..." : "Schedule exam"}
+                            </button>
+                            {primaryAction.label && (
+                              <button
+                                onClick={() => {
+                                  if (!attempt) {
+                                    return;
+                                  }
+                                  if (primaryAction.label === "View score") {
+                                    openScorePage(attempt.id);
+                                    return;
+                                  }
+                                  openLabConsole(attempt.id, attempt.status);
+                                }}
+                                disabled={primaryAction.disabled}
+                                style={getButtonStyle(secondaryButtonStyle, primaryAction.disabled)}
+                              >
+                                {primaryAction.label}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      ) : null}
+                      <CandidateCohortSessionOptions
+                        sessions={availableCohortSessions}
+                        attemptedSessionIds={attemptedSessionIds}
+                        currentAttemptStatus={attempt?.status ?? null}
+                        submittingSessionId={submittingSessionId}
+                        onStart={(sessionId) => {
+                          void joinCohortSession(exam.id, sessionId);
+                        }}
+                      />
                       {feedback && (
                         <p
                           role={feedback.kind === "error" ? "alert" : "status"}

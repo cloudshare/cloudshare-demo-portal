@@ -10,7 +10,9 @@ import { createInMemoryEventLogRepository } from "@/persistence/event-log-reposi
 import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-repository";
 import { createInMemoryExamCatalogRepository } from "@/persistence/exam-catalog-repository";
 import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repository";
+import { createInMemoryCohortExamSessionRepository } from "@/persistence/cohort-exam-session-repository";
 import { getExamAttemptDashboardRuntime } from "./exam-attempt-dashboard-runtime";
+import { createDraftCohortExamSession, markCohortExamSessionPublished } from "@/domain/cohort-exam-session";
 
 function makeLogger(): Logger {
   return {
@@ -109,6 +111,97 @@ async function makeExamRepository() {
 }
 
 describe("getExamAttemptDashboardRuntime", () => {
+  it("returns published available Cohort Exam Sessions on the parent Exam card without exposing them as separate catalog items", async () => {
+    const exams = createInMemoryExamCatalogRepository();
+    const attempts = createInMemoryExamAttemptRepository();
+    const sessions = createInMemoryCohortExamSessionRepository();
+
+    await createDraftExam(
+      { repository: exams, now: () => new Date("2026-07-05T09:00:00.000Z"), newId: () => "exam-cohort" },
+      makeExamInput({ title: "Shared Cohort Exam", deliveryAvailability: "cohort" }),
+    );
+    await publishExam(
+      { repository: exams, now: () => new Date("2026-07-05T09:05:00.000Z") },
+      { customerId: "customer-helios", examId: "exam-cohort" },
+    );
+
+    const availableDraft = await createDraftCohortExamSession(
+      {
+        repository: sessions,
+        now: () => new Date("2026-07-05T09:10:00.000Z"),
+        newId: () => "cohort-session-available",
+      },
+      {
+        customerId: "customer-helios",
+        examId: "exam-cohort",
+        name: "Morning Cohort",
+        admissionStartsAt: new Date("2026-07-05T08:30:00.000Z"),
+        admissionEndsAt: new Date("2026-07-05T12:00:00.000Z"),
+      },
+    );
+    await markCohortExamSessionPublished(
+      { repository: sessions, now: () => new Date("2026-07-05T09:15:00.000Z") },
+      {
+        session: { ...availableDraft, status: "publishing", updatedAt: new Date("2026-07-05T09:14:00.000Z") },
+        trainingId: "EXcohort-1",
+        experienceId: "EXcohort-1",
+        teamId: "TM-team-1",
+      },
+    );
+
+    const closedDraft = await createDraftCohortExamSession(
+      {
+        repository: sessions,
+        now: () => new Date("2026-07-05T09:20:00.000Z"),
+        newId: () => "cohort-session-closed",
+      },
+      {
+        customerId: "customer-helios",
+        examId: "exam-cohort",
+        name: "Closed Cohort",
+        admissionStartsAt: new Date("2026-07-05T06:00:00.000Z"),
+        admissionEndsAt: new Date("2026-07-05T08:00:00.000Z"),
+      },
+    );
+    await markCohortExamSessionPublished(
+      { repository: sessions, now: () => new Date("2026-07-05T09:25:00.000Z") },
+      {
+        session: { ...closedDraft, status: "publishing", updatedAt: new Date("2026-07-05T09:24:00.000Z") },
+        trainingId: "EXcohort-2",
+        experienceId: "EXcohort-2",
+        teamId: "TM-team-1",
+      },
+    );
+
+    const dashboard = await getExamAttemptDashboardRuntime(
+      {
+        repository: exams,
+        attempts,
+        cohortSessions: sessions,
+        logger: makeLogger(),
+        now: () => new Date("2026-07-05T10:00:00.000Z"),
+      },
+      { customerId: "customer-helios", candidateId: "candidate-1" },
+    );
+
+    expect(dashboard.status).toBe(200);
+    expect(dashboard.body.exams).toEqual([
+      expect.objectContaining({
+        id: "exam-cohort",
+        title: "Shared Cohort Exam",
+        availableCohortSessions: [
+          {
+            id: "cohort-session-available",
+            name: "Morning Cohort",
+            admissionStartsAt: "2026-07-05T08:30:00.000Z",
+            admissionEndsAt: "2026-07-05T12:00:00.000Z",
+          },
+        ],
+      }),
+    ]);
+    expect(JSON.stringify(dashboard.body)).not.toContain("cohort-session-closed");
+  });
+
   it("hides cohort-only Exams from the candidate individual scheduling catalog", async () => {
     const exams = createInMemoryExamCatalogRepository();
     const attempts = createInMemoryExamAttemptRepository();
@@ -187,12 +280,15 @@ describe("getExamAttemptDashboardRuntime", () => {
           storageLeaseMinutes: null,
           openPeriodMinutes: 120,
           scoreRetrievalEnabled: false,
+          individualSchedulingEnabled: true,
+          availableCohortSessions: [],
         },
       ],
       attempts: [
         {
           id: "attempt-in-progress",
           examId: "exam-1",
+          cohortSessionId: null,
           examTitle: "Helios CloudShare Fundamentals",
           timeLimitMinutes: 90,
           storageLeaseMinutes: null,
@@ -204,6 +300,7 @@ describe("getExamAttemptDashboardRuntime", () => {
         {
           id: "attempt-completed",
           examId: "exam-1",
+          cohortSessionId: null,
           examTitle: "Helios CloudShare Fundamentals",
           timeLimitMinutes: 90,
           storageLeaseMinutes: null,

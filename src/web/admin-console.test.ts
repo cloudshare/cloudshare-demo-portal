@@ -195,20 +195,18 @@ describe("AdminConsole", () => {
     expect(html).toContain("Delivery availability");
     expect(html).toContain("Individual Exam");
     expect(html).toContain("Cohort Exam");
-    expect(html).toContain("Individual + Cohort Exam");
+    expect(html).not.toContain("Individual + Cohort Exam");
   });
 
-  it("allows authoring every documented Exam delivery availability", () => {
+  it("does not offer the legacy combined delivery mode while authoring Exams", () => {
     expect(getDeliveryAvailabilityAuthoringOptions("individual")).toEqual([
       { value: "individual", label: "Individual Exam", disabled: false },
       { value: "cohort", label: "Cohort Exam", disabled: false },
-      { value: "both", label: "Individual + Cohort Exam", disabled: false },
     ]);
 
     expect(getDeliveryAvailabilityAuthoringOptions("both")).toEqual([
       { value: "individual", label: "Individual Exam", disabled: false },
       { value: "cohort", label: "Cohort Exam", disabled: false },
-      { value: "both", label: "Individual + Cohort Exam", disabled: false },
     ]);
   });
 

@@ -39,6 +39,21 @@ export function getEndExamPendingLaunchState(input: {
   return input.labStatus?.status === "suspended" ? "suspended" : "open";
 }
 
+export function getRetainedWindowLaunchState(input: {
+  readonly examAttemptId: string;
+  readonly currentAttemptStatus: AttemptStatus;
+  readonly currentLaunchState: LaunchState;
+}): LaunchState | null {
+  if (
+    input.currentAttemptStatus === "in_progress" &&
+    input.currentLaunchState !== "open" &&
+    isLabWindowOpen(input.examAttemptId)
+  ) {
+    return "open";
+  }
+  return null;
+}
+
 /**
  * Candidate-facing control that launches the lab, then keeps a heartbeat alive
  * while the lab window is open. If the candidate closes the lab window the
@@ -64,6 +79,8 @@ export function LabLauncher({
       ? "completed"
       : currentAttemptStatus === "suspended"
         ? "suspended"
+        : currentAttemptStatus === "in_progress" && isLabWindowOpen(examAttemptId)
+          ? "open"
         : "idle",
   );
   const [message, setMessage] = useState<string>("");
@@ -400,11 +417,20 @@ export function LabLauncher({
   }
 
   useEffect(() => {
+    setState((current) => {
+      const retainedWindowState = getRetainedWindowLaunchState({
+        examAttemptId,
+        currentAttemptStatus,
+        currentLaunchState: current,
+      });
+      return retainedWindowState ?? current;
+    });
+
     const target = getLauncherSyncTarget(currentAttemptStatus);
     if (target) {
       syncToAuthoritativeAttemptStatus(currentAttemptStatus);
     }
-  }, [currentAttemptStatus, syncToAuthoritativeAttemptStatus]);
+  }, [currentAttemptStatus, examAttemptId, syncToAuthoritativeAttemptStatus]);
 
   useEffect(() => {
     if (state !== "open") return;

@@ -49,3 +49,27 @@ export const publishedExamDurationPillsStyle: CSSProperties = {
   minWidth: 0,
   maxWidth: "100%",
 };
+
+export const publishedExamActionRowStyle: CSSProperties = {
+  display: "flex",
+  gap: "0.9rem",
+  alignItems: "end",
+  justifyContent: "space-between",
+  flexWrap: "wrap",
+};
+
+export const publishedExamScheduleFieldStyle: CSSProperties = {
+  display: "grid",
+  gap: "0.35rem",
+  flex: "1 1 22rem",
+  maxWidth: "44rem",
+};
+
+export const publishedExamActionGroupStyle: CSSProperties = {
+  display: "flex",
+  gap: "0.75rem",
+  flexWrap: "wrap",
+  alignItems: "center",
+  justifyContent: "flex-end",
+  marginLeft: "auto",
+};

@@ -15,10 +15,18 @@ export interface CandidateDashboardData {
     readonly storageLeaseMinutes: number | null;
     readonly openPeriodMinutes: number;
     readonly scoreRetrievalEnabled: boolean;
+    readonly individualSchedulingEnabled?: boolean;
+    readonly availableCohortSessions?: Array<{
+      readonly id: string;
+      readonly name: string;
+      readonly admissionStartsAt: string;
+      readonly admissionEndsAt: string | null;
+    }>;
   }>;
   readonly attempts: Array<{
     readonly id: string;
     readonly examId: string;
+    readonly cohortSessionId?: string | null;
     readonly examTitle?: string;
     readonly timeLimitMinutes?: number;
     readonly storageLeaseMinutes?: number | null;
@@ -39,10 +47,22 @@ export interface ScheduleCandidateExamResult {
   readonly attempt: {
     readonly id: string;
     readonly examId: string;
+    readonly cohortSessionId?: string | null;
     readonly scheduledFor: string;
     readonly status: "scheduled" | "ready";
   };
   readonly coldStartLikely: boolean;
+  readonly correlationId: string;
+}
+
+export interface JoinCandidateCohortSessionResult {
+  readonly attempt: {
+    readonly id: string;
+    readonly examId: string;
+    readonly cohortSessionId: string;
+    readonly scheduledFor: string;
+    readonly status: "ready";
+  };
   readonly correlationId: string;
 }
 
@@ -99,6 +119,26 @@ export async function scheduleCandidateExam(
     throw new Error(readError(json, "Failed to schedule exam"));
   }
   return json as ScheduleCandidateExamResult;
+}
+
+export async function joinCandidateCohortSession(
+  fetchImpl: FetchLike,
+  input: { examId: string; cohortSessionId: string },
+): Promise<JoinCandidateCohortSessionResult> {
+  const response = await fetchImpl("/api/candidate/exams/cohort-sessions/join", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (isPortalSessionExpiredStatus(response.status ?? 0)) {
+    throw new PortalSessionExpiredError();
+  }
+  const json = await response.json();
+  assertNoLoginUrl(json);
+  if (!response.ok) {
+    throw new Error(readError(json, "Failed to start cohort Exam Session"));
+  }
+  return json as JoinCandidateCohortSessionResult;
 }
 
 function readError(json: unknown, fallback: string): string {

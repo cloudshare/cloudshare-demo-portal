@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   isPortalSessionExpiredError,
+  joinCandidateCohortSession,
   loadCandidateDashboard,
   scheduleCandidateExam,
   shouldShowNoPublishedExams,
@@ -73,6 +74,37 @@ describe("candidate scheduling client", () => {
     expect(result.correlationId).toBe("corr-1");
   });
 
+  it("posts cohort-session join requests through the candidate cohort join API", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        attempt: {
+          id: "attempt-1",
+          examId: "exam-1",
+          cohortSessionId: "cohort-session-1",
+          scheduledFor: "2026-07-05T10:00:00.000Z",
+          status: "ready",
+        },
+        correlationId: "corr-cohort-1",
+      }),
+    });
+
+    const result = await joinCandidateCohortSession(fetchImpl, {
+      examId: "exam-1",
+      cohortSessionId: "cohort-session-1",
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith("/api/candidate/exams/cohort-sessions/join", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        examId: "exam-1",
+        cohortSessionId: "cohort-session-1",
+      }),
+    });
+    expect(result.correlationId).toBe("corr-cohort-1");
+  });
+
   it("fails fast if a candidate-facing response leaks loginUrl", async () => {
     await expect(
       loadCandidateDashboard(
@@ -84,6 +116,30 @@ describe("candidate scheduling client", () => {
             loginUrl: "https://use.cloudshare.com/secret",
           }),
         }),
+      ),
+    ).rejects.toThrow(/loginUrl/);
+  });
+
+  it("fails fast if a cohort join response leaks loginUrl", async () => {
+    await expect(
+      joinCandidateCohortSession(
+        vi.fn().mockResolvedValue({
+          ok: true,
+          json: async () => ({
+            attempt: {
+              id: "attempt-1",
+              examId: "exam-1",
+              cohortSessionId: "cohort-session-1",
+              scheduledFor: "2026-07-05T10:00:00.000Z",
+              status: "ready",
+            },
+            loginUrl: "https://use.cloudshare.com/secret",
+          }),
+        }),
+        {
+          examId: "exam-1",
+          cohortSessionId: "cohort-session-1",
+        },
       ),
     ).rejects.toThrow(/loginUrl/);
   });
