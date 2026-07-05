@@ -4,6 +4,7 @@ import {
   attachCohortExamSessionInheritedContext,
   CohortExamSessionValidationError,
   createDraftCohortExamSession,
+  markCohortExamSessionPublishReconciliationRequired,
   markCohortExamSessionPublished,
   recordCohortExamSessionPublishFailure,
   type CohortExamSessionRepository,
@@ -210,6 +211,16 @@ export async function handlePublishCohortExamSession(
       };
     }
     const session = await findOwnedSession(deps, request.customerId, exam.id, request.sessionId);
+    if (session.status === "publish_reconciliation_required") {
+      return {
+        status: 409,
+        body: {
+          error:
+            "The previous CloudShare publish attempt has an unknown outcome. Reconcile it before retrying this Cohort Exam Session.",
+          correlationId: session.lastPublishCorrelationId ?? undefined,
+        },
+      };
+    }
     if (session.status !== "draft") {
       return {
         status: 409,
@@ -303,14 +314,30 @@ export async function handlePublishCohortExamSession(
       const exam = await deps.exams.findById(request.examId);
       const session = await deps.sessions.findById(request.sessionId);
       if (exam && session && exam.customerId === request.customerId && session.customerId === request.customerId) {
-        await recordCohortExamSessionPublishFailure(
-          { repository: deps.sessions, now: deps.now },
-          {
-            session,
-            correlationId,
-            error: "CloudShare could not publish this Cohort Exam Session.",
-          },
-        );
+        const disposition = classifyCloudSharePublishFailure(error);
+        const publishError =
+          disposition === "reconciliation_required"
+            ? "CloudShare publish outcome is unknown. Reconcile this Cohort Exam Session before retrying."
+            : "CloudShare could not publish this Cohort Exam Session.";
+        if (disposition === "reconciliation_required") {
+          await markCohortExamSessionPublishReconciliationRequired(
+            { repository: deps.sessions, now: deps.now },
+            {
+              session,
+              correlationId,
+              error: publishError,
+            },
+          );
+        } else {
+          await recordCohortExamSessionPublishFailure(
+            { repository: deps.sessions, now: deps.now },
+            {
+              session,
+              correlationId,
+              error: publishError,
+            },
+          );
+        }
         await safeRecordDiagnostic(deps, {
           source: "admin-exams",
           customerId: request.customerId,
@@ -336,7 +363,10 @@ export async function handlePublishCohortExamSession(
       return {
         status: 502,
         body: {
-          error: "CloudShare could not publish this Cohort Exam Session. Check the diagnostic log for the correlation ID.",
+          error:
+            classifyCloudSharePublishFailure(error) === "reconciliation_required"
+              ? "CloudShare publish outcome is unknown. Reconcile it before retrying this Cohort Exam Session. Check the diagnostic log for the correlation ID."
+              : "CloudShare could not publish this Cohort Exam Session. Check the diagnostic log for the correlation ID.",
           correlationId,
         },
       };
@@ -448,6 +478,32 @@ function inferPublishFailureMode(error: unknown): string {
     return "unexpected_response";
   }
   return "cloudshare_error";
+}
+
+function classifyCloudSharePublishFailure(error: unknown): "recoverable" | "reconciliation_required" {
+  if (error instanceof CloudShareRequestError || (error as { name?: unknown }).name === "CloudShareRequestError") {
+    return "recoverable";
+  }
+  if (isAmbiguousCloudShareTrainingCreateFailure(error)) {
+    return "reconciliation_required";
+  }
+  return "recoverable";
+}
+
+function isAmbiguousCloudShareTrainingCreateFailure(error: unknown): boolean {
+  const name = (error as { name?: unknown }).name;
+  if (
+    !(
+      error instanceof CloudShareTransportError ||
+      error instanceof CloudShareResponseError ||
+      name === "CloudShareTransportError" ||
+      name === "CloudShareResponseError"
+    )
+  ) {
+    return false;
+  }
+  const context = (error as { context?: Record<string, unknown> }).context ?? {};
+  return context.method === "POST" && (context.path === "/trainings" || context.path === "/v4/trainings");
 }
 
 function parseCreateDraftCohortExamSessionInput(body: unknown) {

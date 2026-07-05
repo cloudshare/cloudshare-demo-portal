@@ -428,6 +428,44 @@ describe("AdminConsole", () => {
     expect(html).toContain("Candidate admission remains disabled in this slice.");
   });
 
+  it("renders admin-visible publish reconciliation wording for Cohort Exam Sessions", () => {
+    const html = renderToStaticMarkup(
+      createElement(CohortSessionAuthoringPanel, {
+        examId: "exam-1",
+        deliveryAvailability: "both",
+        form: { name: "", admissionStartsAt: "", admissionEndsAt: "", capacity: "" },
+        sessions: [
+          {
+            session: {
+              id: "cohort-session-1",
+              name: "July Admin Cohort",
+              admissionStartsAt: "2026-07-05T09:00:00.000Z",
+              admissionEndsAt: null,
+              capacity: null,
+              status: "publish_reconciliation_required",
+            },
+            inheritedContext: {
+              project: { id: "project-1", name: "Project" },
+              blueprint: { id: "blueprint-1", name: "Blueprint" },
+              snapshot: { id: "snapshot-1", name: "Snapshot" },
+              policy: { id: "policy-1", name: "Policy" },
+              allowedRegions: [],
+              instructor: { id: "instructor-1", name: "Instructor" },
+              scoreRetrievalEnabled: false,
+              timeLimitMinutes: 60,
+            },
+          },
+        ],
+        loading: false,
+        onChange: vi.fn(),
+        onCreate: vi.fn(),
+        onSelect: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("July Admin Cohort · Publish reconciliation required");
+  });
+
   it("normalizes admin datetime-local values before draft Cohort Exam Session POST", () => {
     expect(normalizeAdminLocalDateTime("2026-07-05T09:00")).toBe(
       new Date("2026-07-05T09:00").toISOString(),

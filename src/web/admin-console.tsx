@@ -190,7 +190,7 @@ interface CohortExamSessionRecord {
     admissionStartsAt: string;
     admissionEndsAt: string | null;
     capacity: number | null;
-    status: "draft" | "published";
+    status: "draft" | "publishing" | "published" | "publish_reconciliation_required";
     cloudShareTrainingId?: string | null;
     cloudShareExperienceId?: string | null;
     cloudShareTeamId?: string | null;
@@ -467,6 +467,20 @@ export function getDeliveryAvailabilityAuthoringOptions(value: ExamRecord["deliv
 export const COHORT_SESSION_DRAFT_ONLY_COPY =
   "Candidate admission remains disabled in this slice.";
 
+function formatCohortSessionStatus(status: CohortExamSessionRecord["session"]["status"]): string {
+  switch (status) {
+    case "publish_reconciliation_required":
+      return "Publish reconciliation required";
+    case "publishing":
+      return "Publishing";
+    case "published":
+      return "Published";
+    case "draft":
+    default:
+      return "Draft";
+  }
+}
+
 export function formatShortExamId(id: string): string {
   return id.length <= 8 ? id : id.slice(0, 8);
 }
@@ -579,7 +593,7 @@ function CohortSessionDraftControls(props: {
               onClick={() => props.onSelect(session)}
               style={{ padding: "0.45rem 0.75rem", textAlign: "left" }}
             >
-              {session.session.name} · {session.session.status}
+              {session.session.name} · {formatCohortSessionStatus(session.session.status)}
             </button>
           ))
         )}
@@ -3017,7 +3031,7 @@ export function AdminConsole({
                 </button>
               </div>
               <div style={{ fontWeight: 600 }}>{focusedCohortSession.session.name}</div>
-              <div>Status: {focusedCohortSession.session.status}</div>
+              <div>Status: {formatCohortSessionStatus(focusedCohortSession.session.status)}</div>
               {focusedCohortSession.session.status === "draft" ? (
                 <button
                   type="button"
@@ -3042,7 +3056,11 @@ export function AdminConsole({
               ) : null}
               {focusedCohortSession.session.lastPublishError ? (
                 <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.25rem" }}>
-                  <strong>Last publish attempt failed</strong>
+                  <strong>
+                    {focusedCohortSession.session.status === "publish_reconciliation_required"
+                      ? "Publish reconciliation required"
+                      : "Last publish attempt failed"}
+                  </strong>
                   <span>{focusedCohortSession.session.lastPublishError}</span>
                   {focusedCohortSession.session.lastPublishCorrelationId ? (
                     <span>Correlation ID: {focusedCohortSession.session.lastPublishCorrelationId}</span>

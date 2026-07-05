@@ -1,7 +1,11 @@
 import { randomUUID } from "node:crypto";
 import type { Exam } from "./exam-catalog";
 
-export type CohortExamSessionStatus = "draft" | "publishing" | "published";
+export type CohortExamSessionStatus =
+  | "draft"
+  | "publishing"
+  | "published"
+  | "publish_reconciliation_required";
 
 export interface CohortExamSession {
   readonly id: string;
@@ -151,6 +155,29 @@ export async function recordCohortExamSessionPublishFailure(
   };
   await deps.repository.save(recoverable);
   return recoverable;
+}
+
+export async function markCohortExamSessionPublishReconciliationRequired(
+  deps: {
+    readonly repository: CohortExamSessionRepository;
+    readonly now?: () => Date;
+  },
+  input: {
+    readonly session: CohortExamSession;
+    readonly error: string;
+    readonly correlationId: string;
+  },
+): Promise<CohortExamSession> {
+  const now = (deps.now ?? (() => new Date()))();
+  const blocked: CohortExamSession = {
+    ...input.session,
+    status: "publish_reconciliation_required",
+    lastPublishError: input.error,
+    lastPublishCorrelationId: input.correlationId,
+    updatedAt: now,
+  };
+  await deps.repository.save(blocked);
+  return blocked;
 }
 
 export function attachCohortExamSessionInheritedContext(
