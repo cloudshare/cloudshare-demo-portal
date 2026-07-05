@@ -90,7 +90,14 @@ function makeCloudShareFactory(
         schema: { parse(value: unknown): unknown };
       }) => {
         const raw =
-          spec.path === "/trainings/EXcohort-1/students"
+          spec.path === "/trainings/EXcohort-1"
+            ? {
+                id: "EXcohort-1",
+                status: "notStarted",
+                start: "2026-07-05T08:30:00",
+                timeZone: "UTC",
+              }
+            : spec.path === "/trainings/EXcohort-1/students"
             ? [{}]
             : spec.path === "/trainings/EXcohort-1/sponsored-link"
               ? {
@@ -105,7 +112,9 @@ function makeCloudShareFactory(
           host: "api.accelerate.cloudshare.com",
           integrationSurface: spec.path.endsWith("/students")
             ? "cloudshare.v4.training.participant"
-            : "cloudshare.v4.training.sponsored_link",
+            : spec.path.endsWith("/sponsored-link")
+              ? "cloudshare.v4.training.sponsored_link"
+              : "cloudshare.v4.training.get",
           request: {
             method: spec.method,
             path: spec.path,
@@ -297,6 +306,100 @@ describe("joinCohortExamSessionRuntime", () => {
     });
   });
 
+  it("blocks join when CloudShare reports the shared training starts in the future", async () => {
+    const exams = await makeExamRepository();
+    const sessions = await makePublishedSession();
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const requestV4Detailed = vi.fn(
+      async (spec: {
+        method: string;
+        path: string;
+        body?: unknown;
+        schema: { parse(value: unknown): unknown };
+      }) => {
+        if (spec.path === "/trainings/EXcohort-1") {
+          const raw = {
+            id: "EXcohort-1",
+            status: "notStarted",
+            start: "2026-07-12T11:38:00",
+            timeZone: "UTC",
+          };
+          return {
+            data: spec.schema.parse(raw),
+            host: "api.accelerate.cloudshare.com",
+            integrationSurface: "cloudshare.v4.training.get",
+            request: { method: spec.method, path: spec.path },
+            response: { status: 200, body: raw },
+          };
+        }
+        throw new Error(`unexpected path ${spec.path}`);
+      },
+    );
+
+    const response = await joinCohortExamSessionRuntime(
+      {
+        exams,
+        sessions,
+        attempts,
+        launches,
+        audit: createInMemoryAuditRepository(),
+        eventLog: createInMemoryEventLogRepository(),
+        connections: makeConnectionRepository(),
+        cloudshare: makeCloudShareFactory({ requestV4Detailed: requestV4Detailed as never }),
+        diagnostics: createDiagnosticRecorder({ repository: diagnosticsRepository }),
+        logger: makeLogger(),
+        now: () => new Date("2026-07-05T10:00:00.000Z"),
+        newId: vi.fn().mockReturnValueOnce("attempt-not-started").mockReturnValueOnce("launch-ignored"),
+        newCorrelationId: () => "corr-cloudshare-not-started",
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        examId: "exam-1",
+        cohortSessionId: "cohort-session-1",
+      },
+    );
+
+    expect(response).toEqual({
+      status: 409,
+      body: {
+        error: "This Cohort Exam Session is not open in CloudShare yet.",
+        code: "cloudshare_training_not_started",
+        cloudShareStartsAt: "2026-07-12T11:38:00.000Z",
+        correlationId: "corr-cloudshare-not-started",
+      },
+    });
+    expect(requestV4Detailed).toHaveBeenCalledTimes(1);
+    await expect(attempts.findById("attempt-not-started")).resolves.toBeNull();
+    await expect(launches.findByExamAttemptId("attempt-not-started")).resolves.toBeNull();
+    await expect(
+      diagnosticsRepository.query({ correlationId: "corr-cloudshare-not-started" }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        operation: "cohort_exam_session.join",
+        outcome: "failure",
+        examId: "exam-1",
+        externalIds: expect.objectContaining({
+          cohortSessionId: "cohort-session-1",
+          trainingId: "EXcohort-1",
+          experienceId: "EXcohort-1",
+        }),
+        details: expect.objectContaining({
+          reason: "cloudshare_training_not_started",
+          cloudShareStatus: "notStarted",
+          cloudShareStartsAt: "2026-07-12T11:38:00.000Z",
+          cloudShareRawStartsAt: "2026-07-12T11:38:00",
+          localAdmissionStartsAt: "2026-07-05T08:30:00.000Z",
+        }),
+      }),
+    ]);
+  });
+
   it("blocks concurrent same-session joins when persistence detects the duplicate", async () => {
     const exams = await makeExamRepository();
     const sessions = await makePublishedSession();
@@ -461,6 +564,28 @@ describe("joinCohortExamSessionRuntime", () => {
         connections: makeConnectionRepository(),
         cloudshare: makeCloudShareFactory({
           requestV4Detailed: vi.fn(async (spec: { path: string }) => {
+            if (spec.path === "/trainings/EXcohort-1") {
+              return {
+                data: {
+                  id: "EXcohort-1",
+                  status: "notStarted",
+                  start: "2026-07-05T08:30:00",
+                  timeZone: "UTC",
+                },
+                host: "api.accelerate.cloudshare.com",
+                integrationSurface: "cloudshare.v4.training.get",
+                request: { method: "GET", path: spec.path },
+                response: {
+                  status: 200,
+                  body: {
+                    id: "EXcohort-1",
+                    status: "notStarted",
+                    start: "2026-07-05T08:30:00",
+                    timeZone: "UTC",
+                  },
+                },
+              };
+            }
             if (spec.path === "/trainings/EXcohort-1/students") {
               throw new CloudShareRequestError("forbidden", 403, {
                 method: "POST",
@@ -553,6 +678,21 @@ describe("joinCohortExamSessionRuntime", () => {
         connections: makeConnectionRepository(),
         cloudshare: makeCloudShareFactory({
           requestV4Detailed: vi.fn(async (spec: { method: string; path: string; schema: { parse(value: unknown): unknown } }) => {
+            if (spec.path === "/trainings/EXcohort-1") {
+              const raw = {
+                id: "EXcohort-1",
+                status: "notStarted",
+                start: "2026-07-05T08:30:00",
+                timeZone: "UTC",
+              };
+              return {
+                data: spec.schema.parse(raw),
+                host: "api.accelerate.cloudshare.com",
+                integrationSurface: "cloudshare.v4.training.get",
+                request: { method: spec.method, path: spec.path },
+                response: { status: 200, body: raw },
+              };
+            }
             if (spec.path === "/trainings/EXcohort-1/students") {
               return {
                 data: spec.schema.parse([{}]),

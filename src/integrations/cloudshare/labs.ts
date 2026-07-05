@@ -10,6 +10,8 @@ import type {
   CreateTrainingResult,
   CreateSponsoredLinkInput,
   CreateSponsoredLinkResult,
+  GetTrainingStartStateInput,
+  GetTrainingStartStateResult,
   LabProvisioner,
 } from "@/domain/lab-launch";
 
@@ -28,6 +30,17 @@ const experienceSchema = z.object({ id: z.string().min(1) });
 const addTrainingStudentsSchema = z.array(z.object({}).passthrough());
 const addExperienceStudentSchema = z.object({}).passthrough();
 const sponsoredLinkSchema = z.object({ loginUrl: z.string().url() });
+const trainingStartStateSchema = z
+  .object({
+    id: z.string().min(1),
+    start: z.string().min(1).optional(),
+    Start: z.string().min(1).optional(),
+    status: z.string().min(1).optional(),
+    Status: z.string().min(1).optional(),
+    timeZone: z.string().min(1).optional(),
+    TimeZone: z.string().min(1).optional(),
+  })
+  .passthrough();
 type ProjectTeam = { id: string; name: string };
 const projectTeamsSchema = z.preprocess(
   (payload) => {
@@ -182,6 +195,35 @@ export function createCloudShareLabProvisioner(
       };
     },
 
+    async getTrainingStartState(
+      input: GetTrainingStartStateInput,
+    ): Promise<GetTrainingStartStateResult> {
+      const detailed = await requestV4WithDiagnostics({
+        method: "GET",
+        path: `/trainings/${input.trainingId}`,
+        schema: trainingStartStateSchema,
+      });
+      const rawStartsAt = detailed.data.start ?? detailed.data.Start;
+      const timeZone = detailed.data.timeZone ?? detailed.data.TimeZone;
+      const startsAt = rawStartsAt
+        ? parseCloudShareTrainingDate(rawStartsAt, timeZone)
+        : undefined;
+      return {
+        trainingId: detailed.data.id,
+        status: detailed.data.status ?? detailed.data.Status,
+        ...(rawStartsAt ? { rawStartsAt } : {}),
+        ...(startsAt ? { startsAt } : {}),
+        ...(timeZone ? { timeZone } : {}),
+        integrationSurface: detailed.integrationSurface,
+        request: detailed.request,
+        response: {
+          status: detailed.response.status,
+          ...(detailed.response.headers ? { headers: detailed.response.headers } : {}),
+          body: detailed.response.body,
+        },
+      };
+    },
+
     async addParticipant(input: AddParticipantInput): Promise<AddParticipantResult> {
       const detailed = await requestV4WithDiagnostics({
         method: "POST",
@@ -265,4 +307,13 @@ export function createCloudShareLabProvisioner(
       };
     },
   };
+}
+
+function parseCloudShareTrainingDate(value: string, timeZone?: string): Date | undefined {
+  const normalized =
+    !/[zZ]$/.test(value) && !/[+-]\d{2}:\d{2}$/.test(value) && timeZone === "UTC"
+      ? `${value}Z`
+      : value;
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 }

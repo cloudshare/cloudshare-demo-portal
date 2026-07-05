@@ -111,9 +111,25 @@ export interface CreateSponsoredLinkResult {
   readonly request?: ProvisioningRequestEvidence;
   readonly response?: ProvisioningResponseEvidence;
 }
+export interface GetTrainingStartStateInput {
+  readonly trainingId: string;
+}
+export interface GetTrainingStartStateResult {
+  readonly trainingId: string;
+  readonly status?: string;
+  readonly startsAt?: Date;
+  readonly rawStartsAt?: string;
+  readonly timeZone?: string;
+  readonly integrationSurface?: string;
+  readonly request?: ProvisioningRequestEvidence;
+  readonly response?: ProvisioningResponseEvidence;
+}
 
 export interface LabProvisioner {
   createTraining?(input: CreateTrainingInput): Promise<CreateTrainingResult>;
+  getTrainingStartState?(
+    input: GetTrainingStartStateInput,
+  ): Promise<GetTrainingStartStateResult>;
   addParticipant?(input: AddParticipantInput): Promise<AddParticipantResult>;
   createExperience(input: CreateExperienceInput): Promise<CreateExperienceResult>;
   /** Register the candidate. Throws on failure — never resolves on a skipped registration. */

@@ -57,7 +57,10 @@ export interface CohortExamSessionJoinRuntimeResponse {
   readonly body: Record<string, unknown>;
 }
 
-type JoinProvisioningOperation = "add_participant" | "create_sponsored_link";
+type JoinProvisioningOperation =
+  | "read_training"
+  | "add_participant"
+  | "create_sponsored_link";
 
 export async function joinCohortExamSessionRuntime(
   deps: CohortExamSessionJoinRuntimeDeps,
@@ -299,13 +302,11 @@ export async function joinCohortExamSessionRuntime(
     throw error;
   }
 
-  const cloudshare = deps.cloudshare.forConnection(connection);
-  const labs = createCloudShareLabProvisioner(cloudshare);
-  const participantAdder = labs.addParticipant;
-  if (!participantAdder) {
-    throw new Error("LabProvisioner does not support cohort participant registration.");
-  }
-
+  const externalIds = {
+    cohortSessionId: session.id,
+    trainingId: session.cloudShareTrainingId,
+    experienceId: session.cloudShareExperienceId,
+  };
   const anchors = {
     source: "candidate-portal",
     customerId: request.customerId,
@@ -316,11 +317,75 @@ export async function joinCohortExamSessionRuntime(
     actor: { type: "candidate", id: request.candidateId, email: request.candidateEmail },
     subject: { type: "exam_attempt", id: attemptId },
   } as const;
-  const externalIds = {
-    cohortSessionId: session.id,
-    trainingId: session.cloudShareTrainingId,
-    experienceId: session.cloudShareExperienceId,
-  };
+
+  const cloudshare = deps.cloudshare.forConnection(connection);
+  const labs = createCloudShareLabProvisioner(cloudshare);
+  const trainingStartStateReader = labs.getTrainingStartState;
+  const participantAdder = labs.addParticipant;
+  if (!trainingStartStateReader) {
+    throw new Error("LabProvisioner does not support cohort training start-state reads.");
+  }
+  if (!participantAdder) {
+    throw new Error("LabProvisioner does not support cohort participant registration.");
+  }
+
+  let trainingStartState;
+  try {
+    trainingStartState = await trainingStartStateReader({
+      trainingId: session.cloudShareTrainingId,
+    });
+  } catch (cause) {
+    await recordProvisioningFailure(deps, {
+      anchors,
+      attemptId,
+      correlationId,
+      examId: exam.id,
+      candidateId: request.candidateId,
+      externalIds,
+      attemptedOperation: "read_training",
+      cause,
+    });
+    await deps.attempts.delete(attemptId);
+    return {
+      status: 502,
+      body: {
+        error: "CloudShare could not confirm this Cohort Exam Session is open yet.",
+        correlationId,
+      },
+    };
+  }
+
+  if (trainingStartState.startsAt && trainingStartState.startsAt.getTime() > now.getTime()) {
+    await recordJoinRejection(deps, {
+      request,
+      correlationId,
+      reason: "cloudshare_training_not_started",
+      status: 409,
+      message: "This Cohort Exam Session is not open in CloudShare yet.",
+      examId: exam.id,
+      cohortSessionId: session.id,
+      externalIds,
+      details: {
+        cloudShareStatus: trainingStartState.status,
+        cloudShareStartsAt: trainingStartState.startsAt.toISOString(),
+        cloudShareRawStartsAt: trainingStartState.rawStartsAt,
+        cloudShareTimeZone: trainingStartState.timeZone,
+        localAdmissionStartsAt: session.admissionStartsAt.toISOString(),
+        localAdmissionEndsAt: session.admissionEndsAt?.toISOString() ?? null,
+      },
+      now,
+    });
+    await deps.attempts.delete(attemptId);
+    return {
+      status: 409,
+      body: {
+        error: "This Cohort Exam Session is not open in CloudShare yet.",
+        code: "cloudshare_training_not_started",
+        cloudShareStartsAt: trainingStartState.startsAt.toISOString(),
+        correlationId,
+      },
+    };
+  }
 
   let addParticipantResult;
   try {
@@ -693,12 +758,8 @@ function toProvisioningDiagnostic(
   const request =
     context.method || context.path || context.requestHeaders || context.requestBody
       ? {
-          method: context.method ?? "POST",
-          path:
-            context.path ??
-            (attemptedOperation === "add_participant"
-              ? "/v4/trainings/{trainingId}/students"
-              : "/v4/trainings/{trainingId}/sponsored-link"),
+          method: context.method ?? (attemptedOperation === "read_training" ? "GET" : "POST"),
+          path: context.path ?? fallbackProvisioningPath(attemptedOperation),
           ...(context.requestHeaders ? { headers: context.requestHeaders } : {}),
           ...(context.requestBody !== undefined ? { body: context.requestBody } : {}),
         }
@@ -718,16 +779,33 @@ function toProvisioningDiagnostic(
     details: {
       attemptedOperation,
       integrationSurface:
-        context.integrationSurface ??
-        (attemptedOperation === "add_participant"
-          ? "cloudshare.v4.training.participant"
-          : "cloudshare.v4.training.sponsored_link"),
+        context.integrationSurface ?? fallbackIntegrationSurface(attemptedOperation),
       failureMode: inferFailureMode(cause),
       ...(status !== undefined ? { responseStatus: status } : {}),
       ...(context.issues ? { issues: context.issues } : {}),
       ...(context.cause ? { cause: context.cause } : {}),
     },
   };
+}
+
+function fallbackProvisioningPath(attemptedOperation: JoinProvisioningOperation): string {
+  if (attemptedOperation === "read_training") {
+    return "/v4/trainings/{trainingId}";
+  }
+  if (attemptedOperation === "add_participant") {
+    return "/v4/trainings/{trainingId}/students";
+  }
+  return "/v4/trainings/{trainingId}/sponsored-link";
+}
+
+function fallbackIntegrationSurface(attemptedOperation: JoinProvisioningOperation): string {
+  if (attemptedOperation === "read_training") {
+    return "cloudshare.v4.training.get";
+  }
+  if (attemptedOperation === "add_participant") {
+    return "cloudshare.v4.training.participant";
+  }
+  return "cloudshare.v4.training.sponsored_link";
 }
 
 function toProvisioningLogFields(diagnostic: {

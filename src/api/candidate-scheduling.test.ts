@@ -89,6 +89,14 @@ function makeCloudShareFactory(overrides: Partial<ReturnType<CloudShareClientFac
       if (spec.path === "/trainings") {
         return { id: "EXtraining-1" };
       }
+      if (spec.path === "/trainings/EXcohort-1") {
+        return {
+          id: "EXcohort-1",
+          status: "notStarted",
+          start: "2026-07-05T08:30:00",
+          timeZone: "UTC",
+        };
+      }
       if (spec.path === "/trainings/EXtraining-1/students" || spec.path === "/trainings/EXcohort-1/students") {
         return [
           {
@@ -119,6 +127,8 @@ function makeCloudShareFactory(overrides: Partial<ReturnType<CloudShareClientFac
         host: "api.accelerate.cloudshare.com",
         integrationSurface: spec.path === "/trainings"
           ? "cloudshare.v4.training"
+          : spec.path === "/trainings/EXcohort-1"
+            ? "cloudshare.v4.training.get"
           : spec.path.endsWith("/students")
             ? "cloudshare.v4.training.participant"
             : spec.path.endsWith("/sponsored-link")
