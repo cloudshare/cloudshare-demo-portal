@@ -7,6 +7,7 @@ import {
   markCohortExamSessionPublishReconciliationRequired,
   markCohortExamSessionPublished,
   recordCohortExamSessionPublishFailure,
+  type CohortExamSession,
   type CohortExamSessionRepository,
 } from "@/domain/cohort-exam-session";
 import type {
@@ -17,6 +18,7 @@ import type { DiagnosticActor, DiagnosticLogEntryInput, DiagnosticRecorder } fro
 import {
   ExamNotFoundError,
   isCohortExamSessionDeliveryAvailable,
+  publishExam,
   type ExamRepository,
 } from "@/domain/exam-catalog";
 import {
@@ -260,15 +262,109 @@ export async function handlePublishCohortExamSession(
       timeZoneId: "UTC",
       passphrase: `certalis-${claimedSession.id}`,
     });
-    const published = await markCohortExamSessionPublished(
-      { repository: deps.sessions, now: deps.now },
-      {
-        session: claimedSession,
-        trainingId: created.trainingId,
-        experienceId: created.experienceId,
-        teamId: created.teamId,
-      },
-    );
+    let parentExam = exam;
+    let parentExamStatusChanged = false;
+    let localPersistenceStage: "parent_exam_publish" | "cohort_session_publish" =
+      exam.status === "published" ? "cohort_session_publish" : "parent_exam_publish";
+    let published: CohortExamSession;
+    try {
+      if (exam.status !== "published") {
+        parentExam = await publishExam(
+          { repository: deps.exams, now: deps.now },
+          { customerId: request.customerId, examId: exam.id },
+        );
+        parentExamStatusChanged = exam.status !== parentExam.status;
+      }
+      localPersistenceStage = "cohort_session_publish";
+      published = await markCohortExamSessionPublished(
+        { repository: deps.sessions, now: deps.now },
+        {
+          session: claimedSession,
+          trainingId: created.trainingId,
+          experienceId: created.experienceId,
+          teamId: created.teamId,
+        },
+      );
+    } catch (error) {
+      try {
+        await markCohortExamSessionPublishReconciliationRequired(
+          { repository: deps.sessions, now: deps.now },
+          {
+            session: claimedSession,
+            correlationId,
+            error:
+              "CloudShare Experience was created, but portal local publish state could not be fully persisted. Reconcile this Cohort Exam Session before retrying.",
+            trainingId: created.trainingId,
+            experienceId: created.experienceId,
+            teamId: created.teamId,
+          },
+        );
+      } catch (reconciliationError) {
+        deps.logger.error("cohort session publish reconciliation marker failed", {
+          customerId: request.customerId,
+          examId: exam.id,
+          sessionId: claimedSession.id,
+          correlationId,
+          error: reconciliationError instanceof Error ? reconciliationError.message : String(reconciliationError),
+        });
+      }
+      await safeRecordDiagnostic(deps, {
+        source: "admin-exams",
+        customerId: request.customerId,
+        actor: request.actor ?? null,
+        subject: { type: "cohort_exam_session", id: claimedSession.id },
+        examId: exam.id,
+        level: "error",
+        operation: "cohort_exam_session.publish",
+        outcome: "failure",
+        correlationId,
+        message: "Cohort Exam Session publish local state update failed after CloudShare Experience creation",
+        externalIds: {
+          trainingId: created.trainingId,
+          experienceId: created.experienceId,
+          teamId: created.teamId,
+        },
+        request: created.request as unknown as Record<string, unknown>,
+        response: created.response as unknown as Record<string, unknown>,
+        details: {
+          integrationSurface: created.integrationSurface,
+          failureMode: "local_persistence",
+          failedStage: localPersistenceStage,
+          parentExamStatusChanged,
+          error: error instanceof Error ? error.message : String(error),
+        },
+      });
+      deps.logger.error("cohort session publish local persistence failed after CloudShare create", {
+        customerId: request.customerId,
+        examId: exam.id,
+        sessionId: claimedSession.id,
+        correlationId,
+        localPersistenceStage,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return {
+        status: 500,
+        body: {
+          error:
+            "Cohort Exam Session was created in CloudShare, but the portal could not persist the published state. Check the diagnostic log for the correlation ID.",
+          correlationId,
+        },
+      };
+    }
+    if (parentExamStatusChanged) {
+      await safeRecordAudit(deps, {
+        request,
+        action: "exam.published",
+        subjectType: "exam",
+        subjectId: parentExam.id,
+        examId: parentExam.id,
+        details: {
+          changedFields: ["status", "publishedAt"],
+          reason: "cohort_exam_session.publish",
+          cohortExamSessionId: published.id,
+        },
+      });
+    }
     await safeRecordDiagnostic(deps, {
       source: "admin-exams",
       customerId: request.customerId,
@@ -295,13 +391,15 @@ export async function handlePublishCohortExamSession(
           "cloudShareExperienceId",
           "cloudShareTeamId",
           "publishedAt",
+          ...(parentExamStatusChanged ? ["parentExam.status", "parentExam.publishedAt"] : []),
         ],
+        parentExamStatusChanged,
         scoreRetrievalEnabled: exam.scoreRetrievalEnabled,
       },
     });
     return {
       status: 200,
-      body: attachCohortExamSessionInheritedContext(exam, published),
+      body: attachCohortExamSessionInheritedContext(parentExam, published),
     };
   } catch (error) {
     if (error instanceof ExamNotFoundError) {
@@ -560,6 +658,7 @@ async function safeRecordAudit(
   input: {
     readonly request: AdminCohortExamSessionRequest;
     readonly action: string;
+    readonly subjectType?: string;
     readonly subjectId: string;
     readonly examId: string;
     readonly details?: Record<string, unknown>;
@@ -574,7 +673,7 @@ async function safeRecordAudit(
       actorId: input.request.actor?.id ?? null,
       actorEmail: input.request.actor?.email ?? null,
       action: input.action,
-      subjectType: "cohort_exam_session",
+      subjectType: input.subjectType ?? "cohort_exam_session",
       subjectId: input.subjectId,
       outcome: "success",
       examId: input.examId,

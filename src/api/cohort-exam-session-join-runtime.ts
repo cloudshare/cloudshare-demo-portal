@@ -510,6 +510,7 @@ export async function joinCohortExamSessionRuntime(
       attemptedOperation: "create_sponsored_link",
       cause,
     });
+    await deps.attempts.delete(attemptId);
     return {
       status: 502,
       body: {

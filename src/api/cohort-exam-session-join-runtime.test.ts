@@ -759,11 +759,7 @@ describe("joinCohortExamSessionRuntime", () => {
         correlationId: "corr-cohort-link-fail",
       },
     });
-    await expect(attempts.findById("attempt-1")).resolves.toMatchObject({
-      cohortSessionId: "cohort-session-1",
-      scheduledFor: new Date("2026-07-05T10:00:00.000Z"),
-      status: "scheduled",
-    });
+    await expect(attempts.findById("attempt-1")).resolves.toBeNull();
     await expect(launches.findByExamAttemptId("attempt-1")).resolves.toBeNull();
     await expect(
       diagnosticsRepository.query({ examAttemptId: "attempt-1", correlationId: "corr-cohort-link-fail" }),
@@ -783,6 +779,46 @@ describe("joinCohortExamSessionRuntime", () => {
         }),
       ]),
     );
+
+    const retry = await joinCohortExamSessionRuntime(
+      {
+        exams,
+        sessions,
+        attempts,
+        launches,
+        audit: createInMemoryAuditRepository(),
+        eventLog: createInMemoryEventLogRepository(),
+        connections: makeConnectionRepository(),
+        cloudshare: makeCloudShareFactory(),
+        diagnostics: createDiagnosticRecorder({ repository: createInMemoryDiagnosticLogRepository() }),
+        logger: makeLogger(),
+        now: () => new Date("2026-07-05T10:01:00.000Z"),
+        newId: vi.fn().mockReturnValueOnce("attempt-retry").mockReturnValueOnce("launch-retry"),
+        newCorrelationId: () => "corr-cohort-link-retry",
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        examId: "exam-1",
+        cohortSessionId: "cohort-session-1",
+      },
+    );
+    expect(retry).toMatchObject({
+      status: 201,
+      body: {
+        attempt: {
+          id: "attempt-retry",
+          cohortSessionId: "cohort-session-1",
+          status: "ready",
+        },
+      },
+    });
+    await expect(launches.findByExamAttemptId("attempt-retry")).resolves.toMatchObject({
+      loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/cohort",
+    });
   });
 
   it("blocks overlapping active attempts for the same Exam before touching CloudShare", async () => {

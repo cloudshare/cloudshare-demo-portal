@@ -5,6 +5,7 @@ import {
   CandidateCohortSessionOptions,
   CandidateAttemptStatusFilterButtons,
   CandidatePublishedExamScheduleShell,
+  getAvailableSessionsSummary,
   PublishedExamCardHeader,
 } from "./candidate-home";
 import {
@@ -12,9 +13,12 @@ import {
   candidateHomeAccountPanelStyle,
   candidateHomeHeaderIntroStyle,
   candidateHomeHeaderStyle,
+  publishedExamActionGroupStyle,
+  publishedExamActionRowStyle,
   publishedExamDescriptionStyle,
   publishedExamDurationPillsStyle,
   publishedExamHeaderStyle,
+  publishedExamScheduleFieldStyle,
   publishedExamTitleRowStyle,
 } from "./candidate-home-layout";
 
@@ -117,6 +121,46 @@ describe("candidate home layout", () => {
     expect(html).toContain("2 published Exams");
     expect(html).toContain("Browse scheduling options");
     expect(html).not.toContain("Schedule date and time");
+  });
+
+  it("keeps published Exam scheduling actions aligned to the right edge", () => {
+    expect(publishedExamActionRowStyle).toMatchObject({
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "end",
+      flexWrap: "wrap",
+    });
+    expect(publishedExamScheduleFieldStyle).toMatchObject({
+      display: "grid",
+      flex: "1 1 22rem",
+      maxWidth: "44rem",
+    });
+    expect(publishedExamActionGroupStyle).toMatchObject({
+      display: "flex",
+      justifyContent: "flex-end",
+      marginLeft: "auto",
+    });
+  });
+
+  it("summarizes available sessions without exposing delivery-mode implementation details", () => {
+    expect(
+      getAvailableSessionsSummary({
+        availableCohortSessionCount: 2,
+        individualSchedulingEnabled: true,
+      }),
+    ).toBe("2 ready to start");
+    expect(
+      getAvailableSessionsSummary({
+        availableCohortSessionCount: 0,
+        individualSchedulingEnabled: true,
+      }),
+    ).toBe("Individual scheduling available");
+    expect(
+      getAvailableSessionsSummary({
+        availableCohortSessionCount: 0,
+        individualSchedulingEnabled: false,
+      }),
+    ).toBe("No sessions available right now");
   });
 
   it("renders available Cohort Exam Sessions as options on the parent Exam card", () => {

@@ -27,8 +27,11 @@ import { formatCandidateAttemptStatus } from "./candidate-lab-state";
 import { formatCandidateScheduledDateTime } from "./candidate-date-format";
 import {
   publishedExamDescriptionStyle,
+  publishedExamActionGroupStyle,
+  publishedExamActionRowStyle,
   publishedExamDurationPillsStyle,
   publishedExamHeaderStyle,
+  publishedExamScheduleFieldStyle,
   publishedExamTitleBlockStyle,
   publishedExamTitleRowStyle,
 } from "./candidate-home-layout";
@@ -220,6 +223,24 @@ export function CandidateCohortSessionOptions({
       </div>
     </div>
   );
+}
+
+export function getAvailableSessionsSummary({
+  availableCohortSessionCount,
+  individualSchedulingEnabled,
+}: {
+  readonly availableCohortSessionCount: number;
+  readonly individualSchedulingEnabled: boolean;
+}): string {
+  if (availableCohortSessionCount > 0) {
+    return `${availableCohortSessionCount} ready to start`;
+  }
+
+  if (individualSchedulingEnabled) {
+    return "Individual scheduling available";
+  }
+
+  return "No sessions available right now";
 }
 
 export function CandidateHome({ email }: CandidateHomeProps) {
@@ -662,6 +683,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                 const primaryAction = getAttemptPrimaryAction(attempt, nowMs, exam);
                 const durationLabels = buildCandidateExamDurationLabels(exam);
                 const feedback = scheduleFeedback[exam.id] ?? null;
+                const individualSchedulingEnabled = exam.individualSchedulingEnabled !== false;
                 return (
                   <article key={exam.id} style={cardStyle}>
                     <div style={{ display: "grid", gap: "1rem" }}>
@@ -702,24 +724,18 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                           </span>
                         </div>
                         <div style={metaItemStyle}>
-                          <span style={metaLabelStyle}>Available cohort sessions</span>
+                          <span style={metaLabelStyle}>Available sessions</span>
                           <span style={metaValueStyle}>
-                            {availableCohortSessions.length === 0
-                              ? "No shared sessions available right now"
-                              : `${availableCohortSessions.length} ready to start`}
+                            {getAvailableSessionsSummary({
+                              availableCohortSessionCount: availableCohortSessions.length,
+                              individualSchedulingEnabled,
+                            })}
                           </span>
                         </div>
                       </div>
-                      {exam.individualSchedulingEnabled !== false ? (
-                        <div
-                          style={{
-                            display: "grid",
-                            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                            gap: "0.9rem",
-                            alignItems: "end",
-                          }}
-                        >
-                          <label style={{ display: "grid", gap: "0.35rem" }}>
+                      {individualSchedulingEnabled ? (
+                        <div style={publishedExamActionRowStyle}>
+                          <label style={publishedExamScheduleFieldStyle}>
                             <span style={{ color: "#475569", fontSize: "0.9rem", fontWeight: 600 }}>
                               Schedule date and time
                             </span>
@@ -740,9 +756,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                               style={inputStyle}
                             />
                           </label>
-                          <div
-                            style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}
-                          >
+                          <div style={publishedExamActionGroupStyle}>
                             <button
                               onClick={() => void submitSchedule(exam.id)}
                               disabled={submittingExamId === exam.id}

@@ -166,12 +166,18 @@ export async function markCohortExamSessionPublishReconciliationRequired(
     readonly session: CohortExamSession;
     readonly error: string;
     readonly correlationId: string;
+    readonly trainingId?: string | null;
+    readonly experienceId?: string | null;
+    readonly teamId?: string | null;
   },
 ): Promise<CohortExamSession> {
   const now = (deps.now ?? (() => new Date()))();
   const blocked: CohortExamSession = {
     ...input.session,
     status: "publish_reconciliation_required",
+    cloudShareTrainingId: input.trainingId?.trim() || input.session.cloudShareTrainingId || null,
+    cloudShareExperienceId: input.experienceId?.trim() || input.session.cloudShareExperienceId || null,
+    cloudShareTeamId: input.teamId?.trim() || input.session.cloudShareTeamId || null,
     lastPublishError: input.error,
     lastPublishCorrelationId: input.correlationId,
     updatedAt: now,
