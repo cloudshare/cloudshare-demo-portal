@@ -2,6 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { createInMemoryExamCatalogRepository } from "@/persistence/exam-catalog-repository";
 import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-repository";
 import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repository";
+import {
+  SameExamAttemptAvailabilityConflictError,
+  type ExamAttemptRepository,
+} from "./exam-attempt";
 import type { CreateDraftExamInput } from "./exam-catalog";
 import { createDraftExam, publishExam } from "./exam-catalog";
 import {
@@ -619,6 +623,61 @@ describe("scheduleExam", () => {
 
     expect(result.attempt.id).toBe("attempt-2");
     expect(createTraining).toHaveBeenCalledOnce();
+  });
+
+  it("maps a save-time same-Exam availability conflict to ScheduleOverlapError before provisioning", async () => {
+    const { exams, launches } = await setup({
+      storageLeaseMinutes: 120,
+      openPeriodMinutes: 90,
+    });
+    const attempts: ExamAttemptRepository = {
+      save: vi.fn(),
+      saveWithSameExamAvailabilityGuard: vi.fn(async (attempt) => {
+        throw new SameExamAttemptAvailabilityConflictError(
+          attempt.candidateId,
+          attempt.examId,
+          "attempt-racing",
+          new Date("2026-06-15T18:00:00.000Z"),
+        );
+      }),
+      findById: vi.fn(),
+      listByCandidate: vi.fn().mockResolvedValue([]),
+      delete: vi.fn(),
+    };
+    const createTraining = vi.fn();
+
+    await expect(
+      scheduleExam(
+        {
+          exams,
+          attempts,
+          launches,
+          labs: {
+            ...makeLabs(),
+            createTraining,
+          },
+          newId: vi.fn().mockReturnValueOnce("attempt-2").mockReturnValueOnce("launch-2"),
+          now: () => new Date("2026-06-15T10:00:00.000Z"),
+        },
+        {
+          customerId: "customer-helios",
+          candidateId: "candidate-1",
+          candidateEmail: "candidate@helioscx.demo",
+          candidateFirstName: "Asha",
+          candidateLastName: "Patel",
+          examId: "exam-1",
+          scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+        },
+      ),
+    ).rejects.toMatchObject({
+      name: "ScheduleOverlapError",
+      context: {
+        conflictingAttemptId: "attempt-racing",
+        nextAvailableAt: new Date("2026-06-15T18:00:00.000Z"),
+      },
+    });
+
+    expect(createTraining).not.toHaveBeenCalled();
   });
 
   it("allows a different Exam inside another Exam's availability window", async () => {

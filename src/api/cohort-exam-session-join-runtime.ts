@@ -14,6 +14,7 @@ import {
 } from "@/domain/exam-catalog";
 import {
   isDuplicateCohortExamAttemptError,
+  isSameExamAttemptAvailabilityConflictError,
   type ExamAttempt,
 } from "@/domain/exam-attempt";
 import type { LabLaunch, LabLaunchRepository } from "@/domain/lab-launch";
@@ -232,7 +233,13 @@ export async function joinCohortExamSessionRuntime(
     createdAt,
   };
   try {
-    await deps.attempts.save(attempt);
+    if (deps.attempts.saveWithSameExamAvailabilityGuard) {
+      await deps.attempts.saveWithSameExamAvailabilityGuard(attempt, {
+        availabilityWindowMinutes: exam.storageLeaseMinutes ?? exam.openPeriodMinutes,
+      });
+    } else {
+      await deps.attempts.save(attempt);
+    }
   } catch (error) {
     if (isDuplicateCohortExamAttemptError(error)) {
       await recordJoinRejection(deps, {
@@ -255,6 +262,37 @@ export async function joinCohortExamSessionRuntime(
         body: {
           error: "This Cohort Exam Session does not allow another attempt for your account.",
           code: "cohort_session_retake_blocked",
+        },
+      };
+    }
+    if (isSameExamAttemptAvailabilityConflictError(error)) {
+      await recordJoinRejection(deps, {
+        request,
+        correlationId,
+        reason: "exam_attempt_overlap",
+        status: 409,
+        message: "Another attempt for this Exam is still active or available.",
+        examId: exam.id,
+        cohortSessionId: session.id,
+        externalIds: {
+          cohortSessionId: session.id,
+          trainingId: session.cloudShareTrainingId,
+          experienceId: session.cloudShareExperienceId,
+        },
+        details: {
+          conflictingAttemptId: error.conflictingAttemptId,
+          nextAvailableAt: error.nextAvailableAt.toISOString(),
+        },
+        now,
+      });
+      return {
+        status: 409,
+        body: {
+          error:
+            `Another attempt for this Exam is still active or available. ` +
+            `You can schedule this Exam again after ${error.nextAvailableAt.toISOString()}.`,
+          code: "exam_attempt_overlap",
+          nextAvailableAt: error.nextAvailableAt.toISOString(),
         },
       };
     }

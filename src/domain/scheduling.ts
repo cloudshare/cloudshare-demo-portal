@@ -1,5 +1,9 @@
 import { isIndividualExamDeliveryAvailable, type ExamRepository } from "./exam-catalog";
-import type { ExamAttempt, ExamAttemptRepository } from "./exam-attempt";
+import {
+  isSameExamAttemptAvailabilityConflictError,
+  type ExamAttempt,
+  type ExamAttemptRepository,
+} from "./exam-attempt";
 import type {
   LabLaunch,
   LabLaunchRepository,
@@ -246,7 +250,24 @@ export async function scheduleExam(
     scheduledFor: input.scheduledFor,
     createdAt,
   };
-  await deps.attempts.save(attempt);
+  try {
+    if (deps.attempts.saveWithSameExamAvailabilityGuard) {
+      await deps.attempts.saveWithSameExamAvailabilityGuard(attempt, {
+        availabilityWindowMinutes: exam.storageLeaseMinutes ?? exam.openPeriodMinutes,
+      });
+    } else {
+      await deps.attempts.save(attempt);
+    }
+  } catch (error) {
+    if (isSameExamAttemptAvailabilityConflictError(error)) {
+      throw new ScheduleOverlapError({
+        examId: exam.id,
+        conflictingAttemptId: error.conflictingAttemptId,
+        nextAvailableAt: error.nextAvailableAt,
+      });
+    }
+    throw error;
+  }
 
   // Shared anchors for every diagnostic in this provisioning thread so support
   // can trace the ExamAttempt end to end (and filter by it).

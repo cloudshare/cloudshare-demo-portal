@@ -140,6 +140,15 @@ model ExamAttempt {
   @@unique([candidateId, cohortSessionId])
 }
 
+model ExamAttemptAdmissionLock {
+  id          String   @id @default(cuid())
+  candidateId String
+  examId      String
+  acquiredAt  DateTime @default(now())
+
+  @@unique([candidateId, examId])
+}
+
 model LabLaunch {
   id                    String      @id
   examAttemptId         String      @unique

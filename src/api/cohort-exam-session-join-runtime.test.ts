@@ -15,6 +15,7 @@ import type {
 import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import {
   DuplicateCohortExamAttemptError,
+  SameExamAttemptAvailabilityConflictError,
   type ExamAttemptRepository,
 } from "@/domain/exam-attempt";
 import { createDraftExam, publishExam, type CreateDraftExamInput } from "@/domain/exam-catalog";
@@ -362,6 +363,80 @@ describe("joinCohortExamSessionRuntime", () => {
         }),
         details: expect.objectContaining({
           reason: "cohort_session_retake_blocked",
+        }),
+      }),
+    ]);
+  });
+
+  it("blocks concurrent same-Exam overlaps when persistence detects another active attempt", async () => {
+    const exams = await makeExamRepository();
+    const sessions = await makePublishedSession();
+    const attempts: ExamAttemptRepository = {
+      save: vi.fn(),
+      saveWithSameExamAvailabilityGuard: vi.fn(async (attempt) => {
+        throw new SameExamAttemptAvailabilityConflictError(
+          attempt.candidateId,
+          attempt.examId,
+          "attempt-other-mode",
+          new Date("2026-07-05T12:00:00.000Z"),
+        );
+      }),
+      findById: vi.fn(),
+      listByCandidate: vi.fn().mockResolvedValue([]),
+      delete: vi.fn(),
+    };
+    const cloudshare = makeCloudShareFactory();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+
+    const response = await joinCohortExamSessionRuntime(
+      {
+        exams,
+        sessions,
+        attempts,
+        launches: createInMemoryLabLaunchRepository(),
+        audit: createInMemoryAuditRepository(),
+        eventLog: createInMemoryEventLogRepository(),
+        connections: makeConnectionRepository(),
+        cloudshare,
+        diagnostics: createDiagnosticRecorder({ repository: diagnosticsRepository }),
+        logger: makeLogger(),
+        now: () => new Date("2026-07-05T10:00:00.000Z"),
+        newId: () => "attempt-race-overlap",
+        newCorrelationId: () => "corr-cohort-overlap-race",
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        examId: "exam-1",
+        cohortSessionId: "cohort-session-1",
+      },
+    );
+
+    expect(response).toEqual({
+      status: 409,
+      body: {
+        error:
+          "Another attempt for this Exam is still active or available. You can schedule this Exam again after 2026-07-05T12:00:00.000Z.",
+        code: "exam_attempt_overlap",
+        nextAvailableAt: "2026-07-05T12:00:00.000Z",
+      },
+    });
+    expect(cloudshare.forConnection).not.toHaveBeenCalled();
+    await expect(
+      diagnosticsRepository.query({ correlationId: "corr-cohort-overlap-race" }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        operation: "cohort_exam_session.join",
+        outcome: "failure",
+        examId: "exam-1",
+        examAttemptId: null,
+        details: expect.objectContaining({
+          reason: "exam_attempt_overlap",
+          conflictingAttemptId: "attempt-other-mode",
+          nextAvailableAt: "2026-07-05T12:00:00.000Z",
         }),
       }),
     ]);
