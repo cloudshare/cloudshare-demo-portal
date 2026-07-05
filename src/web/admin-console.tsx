@@ -446,15 +446,15 @@ function isAdminSessionExpiredError(error: unknown): error is AdminSessionExpire
 
 function formatExamDeliveryAvailability(value: ExamRecord["deliveryAvailability"]): string {
   if (value === "cohort") return "Cohort Exam";
-  if (value === "both") return "Mixed delivery";
+  if (value === "both") return "Individual + Cohort Exam";
   return "Individual Exam";
 }
 
 export function getDeliveryAvailabilityAuthoringOptions(value: ExamRecord["deliveryAvailability"]) {
   return [
-    ...(value === "both" ? [{ value: "both", label: "Mixed delivery (legacy)", disabled: true }] : []),
     { value: "individual", label: "Individual Exam", disabled: false },
     { value: "cohort", label: "Cohort Exam", disabled: false },
+    { value: "both", label: "Individual + Cohort Exam", disabled: false },
   ];
 }
 
@@ -725,7 +725,8 @@ export function ExamCatalogRowActions(props: {
         >
           Manage Cohort Sessions
         </button>
-      ) : props.exam.status === "draft" ? (
+      ) : null}
+      {props.exam.status === "draft" ? (
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
           {props.editingExamId === props.exam.id ? (
             <span style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>

@@ -192,19 +192,20 @@ describe("AdminConsole", () => {
     expect(html).toContain("Delivery availability");
     expect(html).toContain("Individual Exam");
     expect(html).toContain("Cohort Exam");
-    expect(html).not.toContain("Individual and Cohort delivery");
+    expect(html).toContain("Individual + Cohort Exam");
   });
 
-  it("shows existing mixed-delivery Exams as a disabled legacy authoring option", () => {
+  it("allows authoring every documented Exam delivery availability", () => {
     expect(getDeliveryAvailabilityAuthoringOptions("individual")).toEqual([
       { value: "individual", label: "Individual Exam", disabled: false },
       { value: "cohort", label: "Cohort Exam", disabled: false },
+      { value: "both", label: "Individual + Cohort Exam", disabled: false },
     ]);
 
     expect(getDeliveryAvailabilityAuthoringOptions("both")).toEqual([
-      { value: "both", label: "Mixed delivery (legacy)", disabled: true },
       { value: "individual", label: "Individual Exam", disabled: false },
       { value: "cohort", label: "Cohort Exam", disabled: false },
+      { value: "both", label: "Individual + Cohort Exam", disabled: false },
     ]);
   });
 
@@ -307,7 +308,7 @@ describe("AdminConsole", () => {
     expect(publishedIndividualHtml).not.toContain("Cohort Sessions unavailable");
   });
 
-  it("renders only Cohort Session management for cohort-capable catalog rows", () => {
+  it("keeps Exam lifecycle actions and Cohort Session management for cohort-capable catalog rows", () => {
     const cohortHtml = renderToStaticMarkup(
       createElement(ExamCatalogRowActions, {
         exam: { id: "exam-cohort", status: "draft", deliveryAvailability: "cohort" },
@@ -321,10 +322,28 @@ describe("AdminConsole", () => {
     );
 
     expect(cohortHtml).toContain("Manage Cohort Sessions");
-    expect(cohortHtml).not.toContain("Edit Exam");
-    expect(cohortHtml).not.toContain("Publish Exam");
+    expect(cohortHtml).toContain("Edit Exam");
+    expect(cohortHtml).toContain("Publish Exam");
     expect(cohortHtml).not.toContain("Unpublish Exam");
     expect(cohortHtml).not.toContain("Cohort Sessions unavailable");
+
+    const bothHtml = renderToStaticMarkup(
+      createElement(ExamCatalogRowActions, {
+        exam: { id: "exam-both", status: "published", deliveryAvailability: "both" },
+        loading: false,
+        editingExamId: null,
+        onEdit: vi.fn(),
+        onPublish: vi.fn(),
+        onUnpublish: vi.fn(),
+        onManageCohortSessions: vi.fn(),
+      }),
+    );
+
+    expect(bothHtml).toContain("Delivery: Individual + Cohort Exam");
+    expect(bothHtml).toContain("Manage Cohort Sessions");
+    expect(bothHtml).toContain("Unpublish Exam");
+    expect(bothHtml).not.toContain("Publish Exam");
+    expect(bothHtml).not.toContain("Cohort Sessions unavailable");
   });
 
   it("warns when an Exam authoring tuple duplicates another Exam", () => {
