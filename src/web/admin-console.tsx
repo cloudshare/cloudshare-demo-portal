@@ -1332,6 +1332,7 @@ export function ExamCatalogRowActions(props: {
   readonly exam: Pick<ExamRecord, "id" | "status" | "deliveryAvailability">;
   readonly loading: boolean;
   readonly editingExamId: string | null;
+  readonly hasActiveCohortSessions?: boolean;
   readonly onEdit: () => void;
   readonly onPublish: () => void;
   readonly onUnpublish: () => void;
@@ -1340,6 +1341,7 @@ export function ExamCatalogRowActions(props: {
 }) {
   const supportsCohortSessions = isCohortSessionAuthoringAvailable(props.exam.deliveryAvailability);
   const isCohortOnly = props.exam.deliveryAvailability === "cohort";
+  const cohortArchiveDisabled = Boolean(props.hasActiveCohortSessions);
 
   return (
     <div style={{ display: "grid", gap: "0.5rem" }}>
@@ -1360,11 +1362,17 @@ export function ExamCatalogRowActions(props: {
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
           <button
             onClick={props.onArchive}
-            disabled={props.loading || props.editingExamId !== null}
+            disabled={props.loading || props.editingExamId !== null || cohortArchiveDisabled}
+            title={cohortArchiveDisabled ? "Retire all Cohort Exam Sessions before archiving this Exam." : undefined}
             style={{ padding: "0.45rem 0.75rem" }}
           >
             Archive Exam
           </button>
+          {cohortArchiveDisabled ? (
+            <span style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>
+              Retire all Cohort Exam Sessions first.
+            </span>
+          ) : null}
         </div>
       ) : isCohortOnly ? (
         <div style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>
@@ -3825,6 +3833,9 @@ export function AdminConsole({
                           exam={exam}
                           loading={loading}
                           editingExamId={editingExamId}
+                          hasActiveCohortSessions={(cohortSessionsByExamId[exam.id] ?? []).some(
+                            (session) => session.session.status !== "retired",
+                          )}
                           onEdit={() => void beginEditingExam(exam)}
                           onPublish={() => void publishCatalogExam(exam.id)}
                           onUnpublish={() => void unpublishCatalogExam(exam.id)}

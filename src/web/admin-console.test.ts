@@ -428,6 +428,23 @@ describe("AdminConsole", () => {
     expect(publishedCohortHtml).toContain("Archive Exam");
     expect(publishedCohortHtml).not.toContain("Unpublish Exam");
     expect(publishedCohortHtml).not.toContain("Publish Exam");
+
+    const blockedCohortHtml = renderToStaticMarkup(
+      createElement(ExamCatalogRowActions, {
+        exam: { id: "exam-cohort-active", status: "published", deliveryAvailability: "cohort" },
+        loading: false,
+        editingExamId: null,
+        hasActiveCohortSessions: true,
+        onEdit: vi.fn(),
+        onPublish: vi.fn(),
+        onUnpublish: vi.fn(),
+        onArchive: vi.fn(),
+        onManageCohortSessions: vi.fn(),
+      }),
+    );
+
+    expect(blockedCohortHtml).toContain("disabled");
+    expect(blockedCohortHtml).toContain("Retire all Cohort Exam Sessions first.");
   });
 
   it("keeps individual Exam lifecycle actions for mixed-delivery catalog rows", () => {
