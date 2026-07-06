@@ -186,7 +186,7 @@ export function normalizeTrainingParticipants(payload: unknown): TrainingPartici
         ["Student", "LastName"],
       ]) ?? null;
 
-    const displayName =
+    const explicitDisplayName =
       readStringCandidate(row, [
         ["name"],
         ["Name"],
@@ -201,6 +201,8 @@ export function normalizeTrainingParticipants(payload: unknown): TrainingPartici
         ["Student", "name"],
         ["Student", "Name"],
       ]) ?? null;
+    const composedDisplayName = `${firstName ?? ""} ${lastName ?? ""}`.trim() || null;
+    const displayName = explicitDisplayName ?? composedDisplayName;
 
     return [
       {

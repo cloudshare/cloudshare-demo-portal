@@ -144,6 +144,38 @@ describe("createCloudShareParticipantLister", () => {
     ]);
   });
 
+  it("builds a display name from first and last name when CloudShare omits a displayName field", () => {
+    expect(
+      normalizeTrainingParticipants({
+        count: 1,
+        items: [
+          {
+            id: "PTBT8g4MyXfT_CrSzne_tVjw2",
+            firstName: "Test1",
+            lastName: "Candidate1",
+            email: "candidate@myplace.demo",
+            participationStatus: "inProgress",
+            firstJoined: "2026-07-05T21:50:54Z",
+            envStatus: "suspended",
+            envId: "ENyz2R03V6j2PUJUnxn62U6A2",
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        email: "candidate@myplace.demo",
+        environmentId: "ENyz2R03V6j2PUJUnxn62U6A2",
+        environmentStatus: "suspended",
+        participationStatus: "inProgress",
+        firstJoinedAt: "2026-07-05T21:50:54Z",
+        firstName: "Test1",
+        lastName: "Candidate1",
+        displayName: "Test1 Candidate1",
+        studentId: "PTBT8g4MyXfT_CrSzne_tVjw2",
+      },
+    ]);
+  });
+
   it("skips irrelevant rows that have no usable email instead of failing the whole response", () => {
     expect(
       normalizeTrainingParticipants({
