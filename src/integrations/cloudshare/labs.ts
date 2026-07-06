@@ -233,11 +233,13 @@ export function createCloudShareLabProvisioner(
             email: input.email,
             firstName: input.firstName,
             lastName: input.lastName,
+            customProperties: buildParticipantCustomProperties(input),
           },
         ],
         schema: addTrainingStudentsSchema,
       });
       return {
+        participantId: readParticipantId(detailed.data),
         integrationSurface: detailed.integrationSurface,
         request: detailed.request,
         response: {
@@ -316,4 +318,37 @@ function parseCloudShareTrainingDate(value: string, timeZone?: string): Date | u
       : value;
   const parsed = new Date(normalized);
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+function buildParticipantCustomProperties(input: AddParticipantInput): Record<string, string> | undefined {
+  const entries = Object.entries({
+    certalisExamAttemptId: input.certalisExamAttemptId,
+    certalisCohortSessionId: input.certalisCohortSessionId,
+    certalisCandidateId: input.certalisCandidateId,
+  }).flatMap(([key, value]) =>
+    typeof value === "string" && value.trim().length > 0
+      ? [[key, value.trim()] as const]
+      : [],
+  );
+
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+function readParticipantId(rows: unknown): string | undefined {
+  if (!Array.isArray(rows)) {
+    return undefined;
+  }
+
+  for (const row of rows) {
+    if (!row || typeof row !== "object") {
+      continue;
+    }
+    const record = row as Record<string, unknown>;
+    const candidate = record.id ?? record.Id ?? record.studentId ?? record.StudentId;
+    if (typeof candidate === "string" && candidate.trim().length > 0) {
+      return candidate.trim();
+    }
+  }
+
+  return undefined;
 }

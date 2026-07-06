@@ -436,6 +436,9 @@ export async function joinCohortExamSessionRuntime(
       email: request.candidateEmail,
       firstName: request.candidateFirstName.trim(),
       lastName: request.candidateLastName.trim(),
+      certalisExamAttemptId: attemptId,
+      certalisCohortSessionId: session.id,
+      certalisCandidateId: request.candidateId,
     });
   } catch (cause) {
     await recordProvisioningFailure(deps, {
@@ -458,13 +461,17 @@ export async function joinCohortExamSessionRuntime(
     };
   }
 
+  const participantExternalIds = addParticipantResult.participantId
+    ? { ...externalIds, participantId: addParticipantResult.participantId }
+    : externalIds;
+
   await deps.diagnostics?.record({
     ...anchors,
     level: "info",
     operation: "cloudshare.add_participant",
     outcome: "success",
     message: "CloudShare participant added to shared Cohort Exam Session",
-    externalIds,
+    externalIds: participantExternalIds,
     ...(addParticipantResult.request
       ? {
           request: {
@@ -526,7 +533,7 @@ export async function joinCohortExamSessionRuntime(
     operation: "cloudshare.create_sponsored_link",
     outcome: "success",
     message: "CloudShare sponsored link created for shared Cohort Exam Session",
-    externalIds,
+    externalIds: participantExternalIds,
     ...(sponsoredLink.request
       ? {
           request: {
@@ -557,6 +564,9 @@ export async function joinCohortExamSessionRuntime(
     examAttemptId: attempt.id,
     candidateId: request.candidateId,
     participantEmail: request.candidateEmail,
+    ...(addParticipantResult.participantId
+      ? { participantId: addParticipantResult.participantId }
+      : {}),
     trainingId: session.cloudShareTrainingId,
     experienceId: session.cloudShareExperienceId,
     loginUrl: sponsoredLink.loginUrl,
@@ -588,7 +598,7 @@ export async function joinCohortExamSessionRuntime(
     operation: "cohort_exam_session.join",
     outcome: "success",
     message: "Candidate joined Cohort Exam Session",
-    externalIds,
+    externalIds: participantExternalIds,
     request: { scheduledFor: now.toISOString() },
     response: { attemptStatus: "ready" },
   });

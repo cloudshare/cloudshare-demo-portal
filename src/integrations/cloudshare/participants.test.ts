@@ -47,6 +47,9 @@ describe("createCloudShareParticipantLister", () => {
         lastName: null,
         displayName: null,
         studentId: "student-1",
+        certalisExamAttemptId: null,
+        certalisCohortSessionId: null,
+        certalisCandidateId: null,
       },
     ]);
   });
@@ -68,6 +71,9 @@ describe("createCloudShareParticipantLister", () => {
         lastName: null,
         displayName: null,
         studentId: null,
+        certalisExamAttemptId: null,
+        certalisCohortSessionId: null,
+        certalisCandidateId: null,
       },
     ]);
   });
@@ -108,6 +114,9 @@ describe("createCloudShareParticipantLister", () => {
         lastName: null,
         displayName: null,
         studentId: "user-1",
+        certalisExamAttemptId: null,
+        certalisCohortSessionId: null,
+        certalisCandidateId: null,
       },
     ]);
   });
@@ -140,6 +149,9 @@ describe("createCloudShareParticipantLister", () => {
         lastName: "Rivera",
         displayName: "Casey Rivera",
         studentId: null,
+        certalisExamAttemptId: null,
+        certalisCohortSessionId: null,
+        certalisCandidateId: null,
       },
     ]);
   });
@@ -172,6 +184,9 @@ describe("createCloudShareParticipantLister", () => {
         lastName: "Candidate1",
         displayName: "Test1 Candidate1",
         studentId: "PTBT8g4MyXfT_CrSzne_tVjw2",
+        certalisExamAttemptId: null,
+        certalisCohortSessionId: null,
+        certalisCandidateId: null,
       },
     ]);
   });
@@ -195,6 +210,9 @@ describe("createCloudShareParticipantLister", () => {
         lastName: null,
         displayName: null,
         studentId: "student-1",
+        certalisExamAttemptId: null,
+        certalisCohortSessionId: null,
+        certalisCandidateId: null,
       },
     ]);
   });
@@ -231,6 +249,67 @@ describe("createCloudShareParticipantLister", () => {
         lastName: "Lee",
         displayName: "Jordan Lee",
         studentId: "student-1",
+        certalisExamAttemptId: null,
+        certalisCohortSessionId: null,
+        certalisCandidateId: null,
+      },
+    ]);
+  });
+
+  it("normalizes Certalis correlation values from CloudShare custom property bags", () => {
+    expect(
+      normalizeTrainingParticipants({
+        items: [
+          {
+            email: "candidate@helioscx.demo",
+            id: "student-1",
+            envId: "env-1",
+            customProperties: {
+              certalisExamAttemptId: "attempt-1",
+              certalisCohortSessionId: "cohort-session-1",
+              certalisCandidateId: "candidate-1",
+            },
+          },
+          {
+            email: "candidate2@helioscx.demo",
+            id: "student-2",
+            envId: "env-2",
+            userCustomProperties: [
+              { key: "certalisExamAttemptId", value: "attempt-2" },
+              { key: "certalisCohortSessionId", value: "cohort-session-1" },
+              { key: "certalisCandidateId", value: "candidate-2" },
+            ],
+          },
+        ],
+      }),
+    ).toEqual([
+      {
+        email: "candidate@helioscx.demo",
+        environmentId: "env-1",
+        environmentStatus: null,
+        participationStatus: null,
+        firstJoinedAt: null,
+        firstName: null,
+        lastName: null,
+        displayName: null,
+        studentId: "student-1",
+        certalisExamAttemptId: "attempt-1",
+        certalisCohortSessionId: "cohort-session-1",
+        certalisCandidateId: "candidate-1",
+      },
+      {
+        email: "candidate2@helioscx.demo",
+        environmentId: "env-2",
+        environmentStatus: null,
+        participationStatus: null,
+        firstJoinedAt: null,
+        firstName: null,
+        lastName: null,
+        displayName: null,
+        studentId: "student-2",
+        certalisExamAttemptId: "attempt-2",
+        certalisCohortSessionId: "cohort-session-1",
+        certalisCandidateId: "candidate-2",
       },
     ]);
   });

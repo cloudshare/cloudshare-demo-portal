@@ -257,6 +257,144 @@ describe("joinCohortExamSessionRuntime", () => {
     );
   });
 
+  it("writes explicit Certalis participant correlation to CloudShare, persists the returned participant ID, and records it in diagnostics", async () => {
+    const exams = await makeExamRepository();
+    const sessions = await makePublishedSession();
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const requestV4Detailed = vi.fn(
+      async (spec: {
+        method: string;
+        path: string;
+        body?: unknown;
+        schema: { parse(value: unknown): unknown };
+      }) => {
+        if (spec.path === "/trainings/EXcohort-1") {
+          const raw = {
+            id: "EXcohort-1",
+            status: "notStarted",
+            start: "2026-07-05T08:30:00",
+            timeZone: "UTC",
+          };
+          return {
+            data: spec.schema.parse(raw),
+            host: "api.accelerate.cloudshare.com",
+            integrationSurface: "cloudshare.v4.training.get",
+            request: { method: spec.method, path: spec.path },
+            response: { status: 200, body: raw },
+          };
+        }
+        if (spec.path === "/trainings/EXcohort-1/students") {
+          return {
+            data: spec.schema.parse([
+              {
+                id: "student-1",
+                email: "candidate@helioscx.demo",
+              },
+            ]),
+            host: "api.accelerate.cloudshare.com",
+            integrationSurface: "cloudshare.v4.training.participant",
+            request: {
+              method: spec.method,
+              path: spec.path,
+              body: spec.body,
+            },
+            response: {
+              status: 200,
+              body: [
+                {
+                  id: "student-1",
+                  email: "candidate@helioscx.demo",
+                },
+              ],
+            },
+          };
+        }
+        if (spec.path === "/trainings/EXcohort-1/sponsored-link") {
+          const raw = {
+            loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/cohort",
+          };
+          return {
+            data: spec.schema.parse(raw),
+            host: "api.accelerate.cloudshare.com",
+            integrationSurface: "cloudshare.v4.training.sponsored_link",
+            request: {
+              method: spec.method,
+              path: spec.path,
+              body: spec.body,
+            },
+            response: { status: 200, body: raw },
+          };
+        }
+        throw new Error(`unexpected path ${spec.path}`);
+      },
+    );
+
+    const response = await joinCohortExamSessionRuntime(
+      {
+        exams,
+        sessions,
+        attempts,
+        launches,
+        audit: createInMemoryAuditRepository(),
+        eventLog: createInMemoryEventLogRepository(),
+        connections: makeConnectionRepository(),
+        cloudshare: makeCloudShareFactory({ requestV4Detailed: requestV4Detailed as never }),
+        diagnostics: createDiagnosticRecorder({ repository: diagnosticsRepository }),
+        logger: makeLogger(),
+        now: () => new Date("2026-07-05T10:00:00.000Z"),
+        newId: vi.fn().mockReturnValueOnce("attempt-1").mockReturnValueOnce("launch-1"),
+        newCorrelationId: () => "corr-cohort-join-1",
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        examId: "exam-1",
+        cohortSessionId: "cohort-session-1",
+      },
+    );
+
+    expect(response.status).toBe(201);
+    expect(requestV4Detailed.mock.calls[1]?.[0]?.body).toEqual([
+      {
+        email: "candidate@helioscx.demo",
+        firstName: "Asha",
+        lastName: "Patel",
+        customProperties: {
+          certalisExamAttemptId: "attempt-1",
+          certalisCohortSessionId: "cohort-session-1",
+          certalisCandidateId: "candidate-1",
+        },
+      },
+    ]);
+    await expect(launches.findByExamAttemptId("attempt-1")).resolves.toMatchObject({
+      trainingId: "EXcohort-1",
+      experienceId: "EXcohort-1",
+      participantEmail: "candidate@helioscx.demo",
+      participantId: "student-1",
+    });
+    await expect(
+      diagnosticsRepository.query({
+        examAttemptId: "attempt-1",
+        correlationId: "corr-cohort-join-1",
+        operation: "cloudshare.add_participant",
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        externalIds: expect.objectContaining({
+          cohortSessionId: "cohort-session-1",
+          trainingId: "EXcohort-1",
+          experienceId: "EXcohort-1",
+          participantId: "student-1",
+        }),
+      }),
+    ]);
+  });
+
   it("blocks candidate join when the Cohort Exam Session admission has been closed", async () => {
     const exams = await makeExamRepository();
     const sessions = await makePublishedSession();

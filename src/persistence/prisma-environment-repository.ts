@@ -1,4 +1,3 @@
-import { Prisma } from "@prisma/client";
 import type { PrismaClient } from "@prisma/client";
 import type { EnvironmentRecord, EnvironmentRepository } from "@/domain/environment";
 
@@ -18,16 +17,14 @@ export function createPrismaEnvironmentRepository(prisma: PrismaClient): Environ
     },
 
     async save(record: EnvironmentRecord): Promise<void> {
-      await prisma.$executeRaw(
-        Prisma.sql`
-          INSERT INTO "EnvironmentRecord" ("environmentExternalId", "status", "observedAt")
-          VALUES (${record.environmentExternalId}, ${record.status}, ${record.observedAt})
-          ON CONFLICT("environmentExternalId") DO UPDATE SET
-            "status" = excluded."status",
-            "observedAt" = excluded."observedAt"
-          WHERE "EnvironmentRecord"."observedAt" < excluded."observedAt"
-        `,
-      );
+      await prisma.$executeRaw`
+        INSERT INTO "EnvironmentRecord" ("environmentExternalId", "status", "observedAt")
+        VALUES (${record.environmentExternalId}, ${record.status}, ${record.observedAt})
+        ON CONFLICT("environmentExternalId") DO UPDATE SET
+          "status" = excluded."status",
+          "observedAt" = excluded."observedAt"
+        WHERE "EnvironmentRecord"."observedAt" < excluded."observedAt"
+      `;
     },
   };
 }

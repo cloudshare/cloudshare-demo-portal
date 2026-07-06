@@ -649,10 +649,67 @@ first non-empty `envId` and never rechecking causes v3 suspend/resume to hit
 `id`, `firstName`, `lastName`, `email`, `participationStatus`, `firstJoined`, `envStatus`, and
 `envId`. The portal's participant-read adapter and admin monitoring path therefore normalize both
 participant identity and runtime status from that wrapped `items[]` shape while still tolerating the
- broader envelope variants observed in earlier failures. This confirms `firstJoined`,
+broader envelope variants observed in earlier failures. This confirms `firstJoined`,
 `participationStatus`, `envStatus`, and `envId` are present together on the current tenant for
 monitoring, while preserving the earlier rule that `envId` is only actionable when accompanied by a
 real lifecycle signal such as non-empty `envStatus`.
+
+**Update (2026-07-06, issue #286 participant-correlation live probe):** direct live reads of
+`GET /v4/trainings/EXto3q_Sf0jqPHm42GD2XLiw2/students` and
+`GET /v4/trainings/EXkUygpfa1T3y5GtjqtUcLxQ2/students` confirmed the current tenant still returns the
+wrapped `count` + `items[]` envelope and that each participant row includes a `customProperties`
+field in the response shape, even when no custom keys are populated yet. On the observed tenant,
+`customProperties` came back as an array-shaped value rather than a plain object, so the portal
+adapter now normalizes both object and key/value-array bags. The observed row keys on this tenant
+included: `id`, `email`, `firstName`, `lastName`, `participationStatus`, `firstJoined`,
+`envStatus`, `envId`, `role`, `invitationStatus`, `markedAsComplete`, and `customProperties`.
+Both verified training IDs were `selfPaced`; an `instructorLed` read was not available to confirm on
+2026-07-06. This means Cohort Exam Session monitoring can safely read explicit Certalis
+participant-correlation values back from `customProperties` on this endpoint when later joins write
+them.
+
+---
+
+## GAP-24 — No verified CloudShare API to resolve participant IDs by email across Experiences
+
+| Field | Detail |
+|---|---|
+| **Status** | Confirmed for current slice scope — training-scoped read exists; cross-Experience email lookup remains unverified/absent |
+| **Verified live** | Partial — training-scoped participant read verified live on 2026-07-06; no broader lookup endpoint verified |
+
+**Observed behaviour**
+
+The CloudShare API surface verified during this slice exposes participant reads at the **training
+/ Experience scope**:
+
+- `GET /v4/trainings/{trainingId}/students`
+
+That endpoint returns participant IDs, runtime status, and a `customProperties` object for one
+specific training / Experience. This slice did **not** verify any CloudShare API that answers the
+broader question "given an email address, which participant IDs exist across all Experiences?" No
+current portal adapter, live probe, or documented endpoint evidence in this repo establishes such a
+cross-Experience lookup.
+
+**Impact on certification use**
+
+- CloudShare participant IDs must be treated as **scoped to one training / Experience**, not as a
+  reusable global identity anchored only by email.
+- Cohort Exam Session monitoring must prefer explicit Certalis IDs read from participant
+  `customProperties` inside the shared Experience, then fall back to email only when those explicit
+  properties are absent.
+- Diagnostics should always carry **training / Experience ID + participant ID + Certalis
+  ExamAttempt ID** together where known, because participant ID alone is not enough to disambiguate
+  across Experiences.
+
+**Action required (if applicable):**
+
+Confirm with CloudShare whether any supported participant-search or reporting endpoint can resolve
+participant IDs by email across Experiences. Until such an endpoint is verified, keep Certalis
+correlation anchored to the specific training / Experience.
+
+**Code reference:** `src/integrations/cloudshare/participants.ts`,
+`src/api/admin-cohort-exam-session-detail.ts`,
+`src/api/cohort-exam-session-join-runtime.ts`
 
 ---
 

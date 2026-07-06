@@ -493,8 +493,12 @@ function buildMonitoringView(
   aggregateProgressCorrelationId: string,
 ): CohortExamSessionMonitoringView {
   const attemptsByEmail = new Map<string, AdminCohortExamSessionAttemptRecord>();
+  const attemptsById = new Map<string, AdminCohortExamSessionAttemptRecord>();
+  const attemptsByCandidateId = new Map<string, AdminCohortExamSessionAttemptRecord>();
   for (const attempt of attempts) {
     attemptsByEmail.set(attempt.candidateEmail.trim().toLowerCase(), attempt);
+    attemptsById.set(attempt.id, attempt);
+    attemptsByCandidateId.set(attempt.candidateId, attempt);
   }
 
   const portalAttempts = attempts.map((attempt) => ({
@@ -514,7 +518,14 @@ function buildMonitoringView(
   }));
 
   const cloudShareParticipants = cloudShareRead.participants.map((participant) => {
-    const matchedAttempt = attemptsByEmail.get(participant.email.trim().toLowerCase()) ?? null;
+    const matchedAttempt =
+      resolveMatchedAttempt(
+        participant,
+        session.session.id,
+        attemptsById,
+        attemptsByCandidateId,
+        attemptsByEmail,
+      ) ?? null;
     return {
       email: participant.email,
       firstName: participant.firstName ?? null,
@@ -569,6 +580,37 @@ function buildMonitoringView(
         : {}),
     },
   };
+}
+
+function resolveMatchedAttempt(
+  participant: TrainingParticipant,
+  cohortSessionId: string,
+  attemptsById: ReadonlyMap<string, AdminCohortExamSessionAttemptRecord>,
+  attemptsByCandidateId: ReadonlyMap<string, AdminCohortExamSessionAttemptRecord>,
+  attemptsByEmail: ReadonlyMap<string, AdminCohortExamSessionAttemptRecord>,
+): AdminCohortExamSessionAttemptRecord | null {
+  const explicitAttemptId = participant.certalisExamAttemptId?.trim();
+  if (explicitAttemptId) {
+    const matchedByAttemptId = attemptsById.get(explicitAttemptId);
+    if (matchedByAttemptId) {
+      return matchedByAttemptId;
+    }
+  }
+
+  const explicitCandidateId = participant.certalisCandidateId?.trim();
+  const explicitCohortSessionId = participant.certalisCohortSessionId?.trim();
+  if (
+    explicitCandidateId &&
+    explicitCohortSessionId &&
+    explicitCohortSessionId === cohortSessionId
+  ) {
+    const matchedByCandidateId = attemptsByCandidateId.get(explicitCandidateId);
+    if (matchedByCandidateId) {
+      return matchedByCandidateId;
+    }
+  }
+
+  return attemptsByEmail.get(participant.email.trim().toLowerCase()) ?? null;
 }
 
 function deriveSummary(

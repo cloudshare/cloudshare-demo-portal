@@ -177,6 +177,77 @@ describe("cloudShareLabProvisioner — request shape", () => {
     expect(link.loginUrl).toContain("classic.cloudshare.com");
   });
 
+  it("writes explicit Certalis participant correlation properties and returns the CloudShare participant ID when available", async () => {
+    const requestV4Detailed = vi.fn(async (spec: { method: string; path: string; body?: unknown; schema: { parse(value: unknown): unknown } }) =>
+      spec.path.endsWith("/students")
+        ? {
+            data: spec.schema.parse([
+              {
+                id: "student-1",
+                email: "candidate@helioscx.demo",
+              },
+            ]),
+            host: "api.accelerate.cloudshare.com",
+            integrationSurface: "cloudshare.v4.training.participant",
+            request: { method: spec.method, path: spec.path, body: spec.body },
+            response: {
+              status: 200,
+              body: [
+                {
+                  id: "student-1",
+                  email: "candidate@helioscx.demo",
+                },
+              ],
+            },
+          }
+        : {
+            data: spec.schema.parse({ loginUrl: "https://classic.cloudshare.com/login?t=x" }),
+            host: "api.accelerate.cloudshare.com",
+            integrationSurface: "cloudshare.v4.training.sponsored_link",
+            request: { method: spec.method, path: spec.path, body: spec.body },
+            response: {
+              status: 200,
+              body: { loginUrl: "https://classic.cloudshare.com/login?t=x" },
+            },
+          },
+    );
+    const client = {
+      requestV4Detailed,
+      requestV4: vi.fn(),
+      requestV3: vi.fn(),
+    } as unknown as CloudShareClient;
+    const labs = createCloudShareLabProvisioner(client);
+
+    const result = await labs.addParticipant!({
+      trainingId: "training-1",
+      email: "candidate@helioscx.demo",
+      firstName: "Candidate",
+      lastName: "Demo",
+      certalisExamAttemptId: "attempt-1",
+      certalisCohortSessionId: "cohort-session-1",
+      certalisCandidateId: "candidate-1",
+    });
+
+    expect(requestV4Detailed.mock.calls[0][0].body).toEqual([
+      {
+        email: "candidate@helioscx.demo",
+        firstName: "Candidate",
+        lastName: "Demo",
+        customProperties: {
+          certalisExamAttemptId: "attempt-1",
+          certalisCohortSessionId: "cohort-session-1",
+          certalisCandidateId: "candidate-1",
+        },
+      },
+    ]);
+    expect(result).toMatchObject({
+      participantId: "student-1",
+      response: {
+        status: 200,
+      },
+    });
+  });
+
   it("reads training start state with diagnostics before cohort joins", async () => {
     const requestV4Detailed = vi.fn(
       async (spec: { method: string; path: string; schema: { parse(value: unknown): unknown } }) => {
