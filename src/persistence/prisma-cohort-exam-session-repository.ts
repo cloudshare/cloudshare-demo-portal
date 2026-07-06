@@ -57,6 +57,8 @@ function serialize(session: CohortExamSession) {
     cloudShareExperienceId: session.cloudShareExperienceId ?? null,
     cloudShareTeamId: session.cloudShareTeamId ?? null,
     publishedAt: session.publishedAt ?? null,
+    admissionClosedAt: session.admissionClosedAt ?? null,
+    retiredAt: session.retiredAt ?? null,
     lastPublishError: session.lastPublishError ?? null,
     lastPublishCorrelationId: session.lastPublishCorrelationId ?? null,
     createdAt: session.createdAt,
@@ -77,6 +79,8 @@ function hydrate(row: {
   cloudShareExperienceId?: string | null;
   cloudShareTeamId?: string | null;
   publishedAt?: Date | null;
+  admissionClosedAt?: Date | null;
+  retiredAt?: Date | null;
   lastPublishError?: string | null;
   lastPublishCorrelationId?: string | null;
   createdAt: Date;
@@ -95,6 +99,8 @@ function hydrate(row: {
     cloudShareExperienceId: row.cloudShareExperienceId ?? null,
     cloudShareTeamId: row.cloudShareTeamId ?? null,
     publishedAt: row.publishedAt ?? null,
+    admissionClosedAt: row.admissionClosedAt ?? null,
+    retiredAt: row.retiredAt ?? null,
     lastPublishError: row.lastPublishError ?? null,
     lastPublishCorrelationId: row.lastPublishCorrelationId ?? null,
     createdAt: row.createdAt,

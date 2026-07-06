@@ -25,6 +25,10 @@ import {
   type AdminExamPublishRuntimeDeps,
 } from "./admin-exam-publish-runtime";
 import {
+  archiveAdminExamRuntime,
+  type AdminExamArchiveAttemptRepository,
+} from "./admin-exam-archive-runtime";
+import {
   unpublishAdminExamRuntime,
   type AdminExamUnpublishRuntimeDeps,
 } from "./admin-exam-unpublish-runtime";
@@ -80,6 +84,9 @@ interface AdminExamCatalogDeps extends AdminExamDraftRuntimeDeps {
 
 type AdminExamPublishDeps = AdminExamPublishRuntimeDeps;
 type AdminExamUnpublishDeps = AdminExamUnpublishRuntimeDeps;
+type AdminExamArchiveDeps = AdminExamUnpublishRuntimeDeps & {
+  readonly attempts: AdminExamArchiveAttemptRepository;
+};
 
 export interface AdminExamCatalogListServices {
   readonly exams: ExamRepository;
@@ -124,6 +131,10 @@ export interface AdminExamPublishServices extends AdminExamDraftUpdateServices {
 export interface AdminExamUnpublishServices extends AdminExamCatalogListServices {
   readonly diagnosticRecorder?: DiagnosticRecorder;
   readonly audit?: Pick<AuditRepository, "write">;
+}
+
+export interface AdminExamArchiveServices extends AdminExamUnpublishServices {
+  readonly adminExamArchiveAttempts: AdminExamArchiveAttemptRepository;
 }
 
 export function buildAdminExamCatalogListDeps(
@@ -197,6 +208,18 @@ export function buildAdminExamUnpublishDeps(
   };
 }
 
+export function buildAdminExamArchiveDeps(
+  services: AdminExamArchiveServices,
+): AdminExamArchiveDeps {
+  return {
+    repository: services.exams,
+    attempts: services.adminExamArchiveAttempts,
+    diagnostics: services.diagnosticRecorder,
+    ...(services.audit ? { audit: services.audit } : {}),
+    logger: services.logger,
+  };
+}
+
 export async function handleGetExamAuthoringBootstrap(
   deps: AdminExamAuthoringDeps,
   request: ResourceRequest,
@@ -252,4 +275,11 @@ export async function handleUnpublishExam(
   request: CustomerRequest & { readonly examId: string },
 ): Promise<AdminExamResponse> {
   return unpublishAdminExamRuntime(deps, request);
+}
+
+export async function handleArchiveExam(
+  deps: AdminExamArchiveDeps,
+  request: CustomerRequest & { readonly examId: string; readonly body?: unknown },
+): Promise<AdminExamResponse> {
+  return archiveAdminExamRuntime(deps, request);
 }

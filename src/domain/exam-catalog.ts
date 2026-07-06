@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-export type ExamStatus = "draft" | "published";
+export type ExamStatus = "draft" | "published" | "archived";
 export type ExamDeliveryAvailability = "individual" | "cohort" | "both";
 
 export interface Exam {
@@ -15,6 +15,7 @@ export interface Exam {
   readonly deliveryAvailability?: ExamDeliveryAvailability;
   readonly status: ExamStatus;
   readonly publishedAt: Date | null;
+  readonly archivedAt?: Date | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
   readonly projectId: string;
@@ -122,6 +123,7 @@ export async function createDraftExam(
     deliveryAvailability: input.deliveryAvailability ?? "individual",
     status: "draft",
     publishedAt: null,
+    archivedAt: null,
     createdAt: now,
     updatedAt: now,
     projectId: input.projectId.trim(),
@@ -161,6 +163,7 @@ export async function publishExam(
     ...existing,
     status: "published",
     publishedAt: now,
+    archivedAt: null,
     updatedAt: now,
   };
 
@@ -223,6 +226,7 @@ export async function unpublishExam(
     ...existing,
     status: "draft",
     publishedAt: null,
+    archivedAt: null,
     updatedAt: (deps.now ?? (() => new Date()))(),
   };
 
@@ -289,6 +293,30 @@ function validateDraftInput(input: CreateDraftExamInput): void {
 
 export function isExamDeliveryAvailability(value: unknown): value is ExamDeliveryAvailability {
   return value === "individual" || value === "cohort" || value === "both";
+}
+
+export async function archiveExam(
+  deps: {
+    readonly repository: ExamRepository;
+    readonly now?: () => Date;
+  },
+  input: { readonly customerId: string; readonly examId: string },
+): Promise<Exam> {
+  const existing = await deps.repository.findById(input.examId);
+  if (!existing || existing.customerId !== input.customerId) {
+    throw new ExamNotFoundError(input.customerId, input.examId);
+  }
+
+  const now = (deps.now ?? (() => new Date()))();
+  const updated: Exam = {
+    ...existing,
+    status: "archived",
+    archivedAt: now,
+    updatedAt: now,
+  };
+
+  await deps.repository.save(updated);
+  return updated;
 }
 
 export function isIndividualExamDeliveryAvailable(

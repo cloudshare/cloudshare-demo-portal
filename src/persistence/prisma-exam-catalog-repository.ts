@@ -36,6 +36,7 @@ function serialize(exam: Exam) {
     scoreRetrievalEnabled: exam.scoreRetrievalEnabled,
     status: exam.status,
     publishedAt: exam.publishedAt,
+    archivedAt: exam.archivedAt ?? null,
     createdAt: exam.createdAt,
     updatedAt: exam.updatedAt,
     projectId: exam.projectId,
@@ -64,6 +65,7 @@ function hydrate(row: {
   scoreRetrievalEnabled: boolean;
   status: string;
   publishedAt: Date | null;
+  archivedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
   projectId: string;
@@ -90,6 +92,7 @@ function hydrate(row: {
     scoreRetrievalEnabled: row.scoreRetrievalEnabled,
     status: row.status as Exam["status"],
     publishedAt: row.publishedAt,
+    archivedAt: row.archivedAt ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     projectId: row.projectId,

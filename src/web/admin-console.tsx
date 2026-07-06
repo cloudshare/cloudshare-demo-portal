@@ -173,8 +173,9 @@ interface ExamRecord {
   openPeriodMinutes: number;
   scoreRetrievalEnabled: boolean;
   deliveryAvailability?: "individual" | "cohort" | "both";
-  status: "draft" | "published";
+  status: "draft" | "published" | "archived";
   publishedAt: string | null;
+  archivedAt?: string | null;
   createdAt?: string;
   projectId: string;
   projectName: string;
@@ -195,11 +196,13 @@ interface CohortExamSessionRecord {
     admissionStartsAt: string;
     admissionEndsAt: string | null;
     capacity: number | null;
-    status: "draft" | "publishing" | "published" | "publish_reconciliation_required";
+    status: "draft" | "publishing" | "published" | "closed" | "retired" | "publish_reconciliation_required";
     cloudShareTrainingId?: string | null;
     cloudShareExperienceId?: string | null;
     cloudShareTeamId?: string | null;
     publishedAt?: string | null;
+    admissionClosedAt?: string | null;
+    retiredAt?: string | null;
     lastPublishError?: string | null;
     lastPublishCorrelationId?: string | null;
   };
@@ -479,16 +482,20 @@ export function getDeliveryAvailabilityAuthoringOptions(value: ExamRecord["deliv
 }
 
 export const COHORT_SESSION_DRAFT_ONLY_COPY =
-  "Candidate admission remains disabled in this slice. Published Cohort Exam Sessions stay admin-only until a later slice enables candidate joins.";
+  "Published Cohort Exam Sessions admit Candidates until admission closes or the session is retired.";
 
 function formatCohortSessionStatus(status: CohortExamSessionRecord["session"]["status"]): string {
   switch (status) {
+    case "closed":
+      return "Admission closed";
     case "publish_reconciliation_required":
       return "Publish reconciliation required";
     case "publishing":
       return "Publishing";
     case "published":
       return "Published";
+    case "retired":
+      return "Retired";
     case "draft":
     default:
       return "Draft";
@@ -501,8 +508,12 @@ function getCohortSessionStatusTone(
   switch (status) {
     case "published":
       return "positive";
+    case "closed":
+      return "warning";
     case "publishing":
       return "info";
+    case "retired":
+      return "neutral";
     case "publish_reconciliation_required":
       return "warning";
     case "draft":
@@ -663,6 +674,8 @@ function CohortSessionDraftControls(props: {
   onSelect: (session: CohortExamSessionRecord) => void;
 }) {
   const fieldStyle = { padding: "0.45rem", border: "1px solid #ccc", borderRadius: "6px" };
+  const activeSessions = props.sessions.filter((session) => session.session.status !== "retired");
+  const retiredSessions = props.sessions.filter((session) => session.session.status === "retired");
   return (
     <div style={{ display: "grid", gap: "0.45rem" }}>
       <label style={{ display: "grid", gap: "0.25rem" }}>
@@ -706,11 +719,11 @@ function CohortSessionDraftControls(props: {
       </button>
       <div style={{ display: "grid", gap: "0.5rem" }}>
         <strong>Existing Cohort Sessions</strong>
-        {props.sessions.length === 0 ? (
+        {activeSessions.length === 0 ? (
           <span style={{ color: "#666" }}>No draft Cohort Exam Sessions yet.</span>
         ) : (
           <div style={cohortSessionTileGridStyle}>
-            {props.sessions.map((session) => (
+            {activeSessions.map((session) => (
               <div key={`${props.examId}-${session.session.id}`} style={cohortSessionTileStyle}>
                 <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
                   <div style={{ fontWeight: 600 }}>{session.session.name}</div>
@@ -745,6 +758,28 @@ function CohortSessionDraftControls(props: {
           </div>
         )}
       </div>
+      {retiredSessions.length > 0 ? (
+        <div style={{ display: "grid", gap: "0.5rem" }}>
+          <strong>Retired session history</strong>
+          <div style={cohortSessionTileGridStyle}>
+            {retiredSessions.map((session) => (
+              <div key={`${props.examId}-${session.session.id}`} style={cohortSessionTileStyle}>
+                <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+                  <div style={{ fontWeight: 600 }}>{session.session.name}</div>
+                  <span style={statusBadgeStyle(getCohortSessionStatusTone(session.session.status))}>
+                    {formatCohortSessionStatus(session.session.status)}
+                  </span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <button type="button" onClick={() => props.onSelect(session)} style={compactButtonStyle}>
+                    Open history
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -796,6 +831,8 @@ export function CohortSessionWorkspacePanel(props: {
   loading: boolean;
   onBack: () => void;
   onPublish: () => void;
+  onCloseAdmission?: () => void;
+  onRetire?: () => void;
 }) {
   const { session } = props;
 
@@ -835,6 +872,23 @@ export function CohortSessionWorkspacePanel(props: {
             </button>
           </div>
         ) : null}
+        {(session.session.status === "published" || session.session.status === "closed") ? (
+          <div style={{ display: "flex", justifyContent: "flex-start", gap: "0.5rem", flexWrap: "wrap" }}>
+            {session.session.status === "published" ? (
+              <button
+                type="button"
+                onClick={props.onCloseAdmission}
+                disabled={props.loading}
+                style={secondaryButtonStyle}
+              >
+                Close admission
+              </button>
+            ) : null}
+            <button type="button" onClick={props.onRetire} disabled={props.loading} style={secondaryButtonStyle}>
+              Retire session
+            </button>
+          </div>
+        ) : null}
 
         <div style={cohortSessionDetailGridStyle}>
           <CohortSessionDetailItem
@@ -856,6 +910,18 @@ export function CohortSessionWorkspacePanel(props: {
             <CohortSessionDetailItem
               label="Published at"
               value={formatCohortSessionDateTime(session.session.publishedAt)}
+            />
+          ) : null}
+          {session.session.admissionClosedAt ? (
+            <CohortSessionDetailItem
+              label="Admission closed at"
+              value={formatCohortSessionDateTime(session.session.admissionClosedAt)}
+            />
+          ) : null}
+          {session.session.retiredAt ? (
+            <CohortSessionDetailItem
+              label="Retired at"
+              value={formatCohortSessionDateTime(session.session.retiredAt)}
             />
           ) : null}
         </div>
@@ -1269,6 +1335,7 @@ export function ExamCatalogRowActions(props: {
   readonly onEdit: () => void;
   readonly onPublish: () => void;
   readonly onUnpublish: () => void;
+  readonly onArchive?: () => void;
   readonly onManageCohortSessions: () => void;
 }) {
   const supportsCohortSessions = isCohortSessionAuthoringAvailable(props.exam.deliveryAvailability);
@@ -1319,14 +1386,27 @@ export function ExamCatalogRowActions(props: {
             </>
           )}
         </div>
+      ) : props.exam.status === "published" ? (
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+          <button
+            onClick={props.onUnpublish}
+            disabled={props.loading || props.editingExamId !== null}
+            style={{ padding: "0.45rem 0.75rem" }}
+          >
+            Unpublish Exam
+          </button>
+          <button
+            onClick={props.onArchive}
+            disabled={props.loading || props.editingExamId !== null}
+            style={{ padding: "0.45rem 0.75rem" }}
+          >
+            Archive Exam
+          </button>
+        </div>
       ) : (
-        <button
-          onClick={props.onUnpublish}
-          disabled={props.loading || props.editingExamId !== null}
-          style={{ padding: "0.45rem 0.75rem" }}
-        >
-          Unpublish Exam
-        </button>
+        <span style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>
+          Archived for history and support review.
+        </span>
       )}
     </div>
   );
@@ -2569,6 +2649,87 @@ export function AdminConsole({
     }
   }
 
+  async function closeCohortSessionAdmission(examId: string, sessionId: string) {
+    setLoading(true);
+    setError(null);
+    setExamMessage(null);
+    try {
+      const response = await fetchAdmin(
+        `/api/admin/exams/${encodeURIComponent(examId)}/cohort-sessions/${encodeURIComponent(sessionId)}/close-admission`,
+        { method: "POST" },
+      );
+      const data = (await response.json()) as { session?: CohortExamSessionRecord["session"]; error?: string };
+      if (!response.ok) {
+        setError(data.error ?? "Failed to close Cohort Exam Session admission");
+        return;
+      }
+      setExamMessage("Cohort Exam Session admission closed.");
+      await loadCohortExamSessions(examId);
+      await loadCohortSessionDetail(examId, sessionId);
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
+      setError("Failed to close Cohort Exam Session admission");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function retireCohortSession(examId: string, sessionId: string, confirmInterrupt = false) {
+    setLoading(true);
+    setError(null);
+    setExamMessage(null);
+    try {
+      const response = await fetchAdmin(
+        `/api/admin/exams/${encodeURIComponent(examId)}/cohort-sessions/${encodeURIComponent(sessionId)}/retire`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(confirmInterrupt ? { confirmInterrupt: true } : {}),
+        },
+      );
+      const data = (await response.json()) as {
+        error?: string;
+        code?: string;
+        correlationId?: string;
+        warning?: {
+          activeParticipantCount?: number;
+          nonTerminalEnvironmentCount?: number;
+        };
+      };
+      if (response.status === 409 && data.code === "confirmation_required" && !confirmInterrupt) {
+        const proceed = window.confirm(
+          `Retire this Cohort Exam Session? ` +
+            `${data.warning?.activeParticipantCount ?? 0} active participant(s) and ` +
+            `${data.warning?.nonTerminalEnvironmentCount ?? 0} non-terminal environment(s) may be interrupted.`,
+        );
+        if (proceed) {
+          await retireCohortSession(examId, sessionId, true);
+        }
+        return;
+      }
+      if (!response.ok) {
+        setError(
+          data.correlationId
+            ? `${data.error ?? "Failed to retire Cohort Exam Session"} Correlation ID: ${data.correlationId}`
+            : data.error ?? "Failed to retire Cohort Exam Session",
+        );
+        return;
+      }
+      setExamMessage("Cohort Exam Session retired.");
+      await loadCohortExamSessions(examId);
+      await loadCohortSessionDetail(examId, sessionId);
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
+      setError("Failed to retire Cohort Exam Session");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function saveDraftExam() {
     setLoading(true);
     setError(null);
@@ -2719,6 +2880,50 @@ export function AdminConsole({
         return;
       }
       setError("Failed to unpublish exam");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function archiveCatalogExam(examId: string, confirmArchive = false) {
+    setLoading(true);
+    setError(null);
+    setExamMessage(null);
+    try {
+      const response = await fetchAdmin(`/api/admin/exams/${encodeURIComponent(examId)}/archive`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(confirmArchive ? { confirmArchive: true } : {}),
+      });
+      const data = (await response.json()) as {
+        error?: string;
+        code?: string;
+        warning?: {
+          scheduledAttemptCount?: number;
+          activeAttemptCount?: number;
+        };
+      };
+      if (response.status === 409 && data.code === "confirmation_required" && !confirmArchive) {
+        const proceed = window.confirm(
+          `Archive this Exam? ${data.warning?.scheduledAttemptCount ?? 0} scheduled attempt(s) and ` +
+            `${data.warning?.activeAttemptCount ?? 0} active attempt(s) still rely on it.`,
+        );
+        if (proceed) {
+          await archiveCatalogExam(examId, true);
+        }
+        return;
+      }
+      if (!response.ok) {
+        setError(data.error ?? "Failed to archive exam");
+        return;
+      }
+      setExamMessage("Exam archived.");
+      await loadExamCatalog();
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
+      setError("Failed to archive exam");
     } finally {
       setLoading(false);
     }
@@ -3604,6 +3809,7 @@ export function AdminConsole({
                           onEdit={() => void beginEditingExam(exam)}
                           onPublish={() => void publishCatalogExam(exam.id)}
                           onUnpublish={() => void unpublishCatalogExam(exam.id)}
+                          onArchive={() => void archiveCatalogExam(exam.id)}
                           onManageCohortSessions={() => navigateToExamSessions(exam.id)}
                         />
                       </td>
@@ -3662,6 +3868,10 @@ export function AdminConsole({
               loading={loading}
               onBack={() => navigateToExamSessions(focusedExam.id)}
               onPublish={() => void publishCohortSession(focusedExam.id, focusedCohortSession.session.id)}
+              onCloseAdmission={() =>
+                void closeCohortSessionAdmission(focusedExam.id, focusedCohortSession.session.id)
+              }
+              onRetire={() => void retireCohortSession(focusedExam.id, focusedCohortSession.session.id)}
             />
           )}
 

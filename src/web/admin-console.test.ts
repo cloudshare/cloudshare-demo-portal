@@ -361,6 +361,7 @@ describe("AdminConsole", () => {
     );
 
     expect(publishedIndividualHtml).toContain("Unpublish Exam");
+    expect(publishedIndividualHtml).toContain("Archive Exam");
     expect(publishedIndividualHtml).not.toContain("Manage Cohort Sessions");
     expect(publishedIndividualHtml).not.toContain("Cohort Sessions unavailable");
   });
@@ -419,6 +420,7 @@ describe("AdminConsole", () => {
     expect(bothHtml).toContain("Delivery: Individual + Cohort Exam");
     expect(bothHtml).toContain("Manage Cohort Sessions");
     expect(bothHtml).toContain("Unpublish Exam");
+    expect(bothHtml).toContain("Archive Exam");
     expect(bothHtml).not.toContain("Publish Exam");
     expect(bothHtml).not.toContain("Cohort Sessions unavailable");
   });
@@ -558,8 +560,7 @@ describe("AdminConsole", () => {
   it("states that candidate admission remains disabled for Cohort Exam Sessions", () => {
     const html = renderToStaticMarkup(createElement(CohortSessionDraftOnlyNotice));
 
-    expect(html).toContain("Candidate admission remains disabled in this slice.");
-    expect(html).toContain("Published Cohort Exam Sessions stay admin-only until a later slice enables candidate joins.");
+    expect(html).toContain("Published Cohort Exam Sessions admit Candidates");
   });
 
   it("renders admin-visible publish reconciliation wording for Cohort Exam Sessions", () => {

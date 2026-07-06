@@ -73,6 +73,7 @@ model Exam {
   scoreRetrievalEnabled Boolean
   status                String
   publishedAt           DateTime?
+  archivedAt            DateTime?
   createdAt             DateTime
   updatedAt             DateTime
   projectId             String
@@ -107,6 +108,8 @@ model CohortExamSession {
   cloudShareExperienceId String?
   cloudShareTeamId      String?
   publishedAt        DateTime?
+  admissionClosedAt  DateTime?
+  retiredAt          DateTime?
   lastPublishError   String?
   lastPublishCorrelationId String?
   createdAt          DateTime

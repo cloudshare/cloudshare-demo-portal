@@ -246,6 +246,95 @@ describe("getExamAttemptDashboardRuntime", () => {
     ]);
   });
 
+  it("hides archived Individual Exams and closed or retired Cohort Exam Sessions from candidate start options while keeping existing attempts visible", async () => {
+    const exams = createInMemoryExamCatalogRepository();
+    const attempts = createInMemoryExamAttemptRepository();
+    const sessions = createInMemoryCohortExamSessionRepository();
+
+    await createDraftExam(
+      { repository: exams, now: () => new Date("2026-07-05T09:00:00.000Z"), newId: () => "exam-archived" },
+      makeExamInput({ title: "Archived Exam", deliveryAvailability: "individual" }),
+    );
+    await publishExam(
+      { repository: exams, now: () => new Date("2026-07-05T09:05:00.000Z") },
+      { customerId: "customer-helios", examId: "exam-archived" },
+    );
+    await exams.save({
+      ...(await exams.findById("exam-archived"))!,
+      status: "archived",
+      updatedAt: new Date("2026-07-05T09:06:00.000Z"),
+    });
+
+    await createDraftExam(
+      { repository: exams, now: () => new Date("2026-07-05T09:10:00.000Z"), newId: () => "exam-cohort" },
+      makeExamInput({ title: "Shared Cohort Exam", deliveryAvailability: "cohort" }),
+    );
+    await publishExam(
+      { repository: exams, now: () => new Date("2026-07-05T09:15:00.000Z") },
+      { customerId: "customer-helios", examId: "exam-cohort" },
+    );
+
+    const draft = await createDraftCohortExamSession(
+      {
+        repository: sessions,
+        now: () => new Date("2026-07-05T09:20:00.000Z"),
+        newId: () => "cohort-session-closed",
+      },
+      {
+        customerId: "customer-helios",
+        examId: "exam-cohort",
+        name: "Closed Cohort",
+        admissionStartsAt: new Date("2026-07-05T08:30:00.000Z"),
+        admissionEndsAt: new Date("2026-07-05T12:00:00.000Z"),
+      },
+    );
+    await sessions.save({
+      ...(await markCohortExamSessionPublished(
+        { repository: sessions, now: () => new Date("2026-07-05T09:25:00.000Z") },
+        {
+          session: { ...draft, status: "publishing", updatedAt: new Date("2026-07-05T09:24:00.000Z") },
+          trainingId: "EXcohort-closed",
+          experienceId: "EXcohort-closed",
+          teamId: "TM-team-1",
+        },
+      )),
+      status: "closed",
+      updatedAt: new Date("2026-07-05T09:30:00.000Z"),
+    });
+
+    await attempts.save({
+      id: "attempt-archived",
+      candidateId: "candidate-1",
+      examId: "exam-archived",
+      status: "completed",
+      scheduledFor: new Date("2026-07-05T07:00:00.000Z"),
+      createdAt: new Date("2026-07-05T07:00:00.000Z"),
+    });
+
+    const dashboard = await getExamAttemptDashboardRuntime(
+      {
+        repository: exams,
+        attempts,
+        cohortSessions: sessions,
+        logger: makeLogger(),
+        now: () => new Date("2026-07-05T10:00:00.000Z"),
+      },
+      { customerId: "customer-helios", candidateId: "candidate-1" },
+    );
+
+    expect(dashboard.status).toBe(200);
+    expect(dashboard.body.exams).toEqual([]);
+    expect(dashboard.body.attempts).toEqual([
+      expect.objectContaining({
+        id: "attempt-archived",
+        examId: "exam-archived",
+        examTitle: "Archived Exam",
+        status: "completed",
+      }),
+    ]);
+    expect(JSON.stringify(dashboard.body)).not.toContain("cohort-session-closed");
+  });
+
   it("keeps later ExamAttempt states visible in a candidate-safe dashboard payload", async () => {
     const exams = await makeExamRepository();
     const attempts = createInMemoryExamAttemptRepository();

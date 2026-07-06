@@ -5,6 +5,8 @@ export type CohortExamSessionStatus =
   | "draft"
   | "publishing"
   | "published"
+  | "closed"
+  | "retired"
   | "publish_reconciliation_required";
 
 export interface CohortExamSession {
@@ -20,6 +22,8 @@ export interface CohortExamSession {
   readonly cloudShareExperienceId?: string | null;
   readonly cloudShareTeamId?: string | null;
   readonly publishedAt?: Date | null;
+  readonly admissionClosedAt?: Date | null;
+  readonly retiredAt?: Date | null;
   readonly lastPublishError?: string | null;
   readonly lastPublishCorrelationId?: string | null;
   readonly createdAt: Date;
@@ -91,6 +95,8 @@ export async function createDraftCohortExamSession(
     cloudShareExperienceId: null,
     cloudShareTeamId: null,
     publishedAt: null,
+    admissionClosedAt: null,
+    retiredAt: null,
     lastPublishError: null,
     lastPublishCorrelationId: null,
     createdAt: now,
@@ -126,6 +132,8 @@ export async function markCohortExamSessionPublished(
     cloudShareExperienceId: input.experienceId.trim(),
     cloudShareTeamId: input.teamId?.trim() || null,
     publishedAt: now,
+    admissionClosedAt: null,
+    retiredAt: null,
     lastPublishError: null,
     lastPublishCorrelationId: null,
     updatedAt: now,
@@ -149,6 +157,8 @@ export async function recordCohortExamSessionPublishFailure(
   const recoverable: CohortExamSession = {
     ...input.session,
     status: "draft",
+    admissionClosedAt: null,
+    retiredAt: null,
     lastPublishError: input.error,
     lastPublishCorrelationId: input.correlationId,
     updatedAt: now,
@@ -178,6 +188,8 @@ export async function markCohortExamSessionPublishReconciliationRequired(
     cloudShareTrainingId: input.trainingId?.trim() || input.session.cloudShareTrainingId || null,
     cloudShareExperienceId: input.experienceId?.trim() || input.session.cloudShareExperienceId || null,
     cloudShareTeamId: input.teamId?.trim() || input.session.cloudShareTeamId || null,
+    admissionClosedAt: input.session.admissionClosedAt ?? null,
+    retiredAt: input.session.retiredAt ?? null,
     lastPublishError: input.error,
     lastPublishCorrelationId: input.correlationId,
     updatedAt: now,
@@ -203,6 +215,53 @@ export function attachCohortExamSessionInheritedContext(
       timeLimitMinutes: exam.timeLimitMinutes,
     },
   };
+}
+
+export async function closeCohortExamSessionAdmission(
+  deps: {
+    readonly repository: CohortExamSessionRepository;
+    readonly now?: () => Date;
+  },
+  input: {
+    readonly session: CohortExamSession;
+  },
+): Promise<CohortExamSession> {
+  if (input.session.status !== "published") {
+    throw new CohortExamSessionValidationError("Only published Cohort Exam Sessions can close admission.");
+  }
+  const now = (deps.now ?? (() => new Date()))();
+  const closed: CohortExamSession = {
+    ...input.session,
+    status: "closed",
+    admissionClosedAt: now,
+    updatedAt: now,
+  };
+  await deps.repository.save(closed);
+  return closed;
+}
+
+export async function retireCohortExamSession(
+  deps: {
+    readonly repository: CohortExamSessionRepository;
+    readonly now?: () => Date;
+  },
+  input: {
+    readonly session: CohortExamSession;
+  },
+): Promise<CohortExamSession> {
+  if (input.session.status !== "published" && input.session.status !== "closed") {
+    throw new CohortExamSessionValidationError("Only published or closed Cohort Exam Sessions can be retired.");
+  }
+  const now = (deps.now ?? (() => new Date()))();
+  const retired: CohortExamSession = {
+    ...input.session,
+    status: "retired",
+    admissionClosedAt: input.session.admissionClosedAt ?? now,
+    retiredAt: now,
+    updatedAt: now,
+  };
+  await deps.repository.save(retired);
+  return retired;
 }
 
 function validateDraftSessionInput(input: {

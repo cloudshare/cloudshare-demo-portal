@@ -257,6 +257,64 @@ describe("joinCohortExamSessionRuntime", () => {
     );
   });
 
+  it("blocks candidate join when the Cohort Exam Session admission has been closed", async () => {
+    const exams = await makeExamRepository();
+    const sessions = await makePublishedSession();
+    await sessions.save({
+      ...(await sessions.findById("cohort-session-1"))!,
+      status: "closed",
+      updatedAt: new Date("2026-07-05T09:30:00.000Z"),
+    });
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+
+    const response = await joinCohortExamSessionRuntime(
+      {
+        exams,
+        sessions,
+        attempts,
+        launches,
+        audit: createInMemoryAuditRepository(),
+        eventLog: createInMemoryEventLogRepository(),
+        connections: makeConnectionRepository(),
+        cloudshare: makeCloudShareFactory(),
+        diagnostics: createDiagnosticRecorder({ repository: diagnosticsRepository }),
+        logger: makeLogger(),
+        now: () => new Date("2026-07-05T10:00:00.000Z"),
+        newCorrelationId: () => "corr-cohort-join-closed",
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        examId: "exam-1",
+        cohortSessionId: "cohort-session-1",
+      },
+    );
+
+    expect(response).toEqual({
+      status: 404,
+      body: { error: "Available Cohort Exam Session not found." },
+    });
+    await expect(attempts.listByCandidate("candidate-1")).resolves.toEqual([]);
+    await expect(
+      diagnosticsRepository.query({
+        customerId: "customer-helios",
+        operation: "cohort_exam_session.join",
+        correlationId: "corr-cohort-join-closed",
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        outcome: "failure",
+        message: "Available Cohort Exam Session not found.",
+        details: expect.objectContaining({ reason: "available_session_not_found" }),
+      }),
+    ]);
+  });
+
   it("blocks same-session retakes even after a prior attempt completed", async () => {
     const exams = await makeExamRepository();
     const sessions = await makePublishedSession();

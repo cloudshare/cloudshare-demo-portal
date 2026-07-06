@@ -41,7 +41,13 @@ export function getExamAttemptStatusTone(status: string): StatusTone {
 }
 
 export function getExamStatusTone(status: string): StatusTone {
-  return status === "published" ? "positive" : "neutral";
+  if (status === "published") {
+    return "positive";
+  }
+  if (status === "archived") {
+    return "warning";
+  }
+  return "neutral";
 }
 
 export function getDiagnosticLevelTone(level: string): StatusTone {
