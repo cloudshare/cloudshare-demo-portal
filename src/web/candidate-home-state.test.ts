@@ -340,6 +340,24 @@ describe("candidate home attempt state", () => {
     ).toBeNull();
   });
 
+  it("does not show the individual exam cold-start warning for Cohort Exam Session attempts", () => {
+    const attempt = {
+      id: "attempt-cohort",
+      examId: "exam-1",
+      cohortSessionId: "cohort-session-1",
+      scheduledFor: "2026-06-16T15:00:00.000Z",
+      status: "in_progress" as const,
+    };
+
+    expect(
+      getAttemptColdStartWarning(
+        attempt,
+        new Date("2026-06-16T14:30:00.000Z").getTime(),
+        dashboard.exams[0],
+      ),
+    ).toBeNull();
+  });
+
   it("does not keep the CloudShare cold-start warning on long-running attempts more than five hours after start", () => {
     const attempt = {
       id: "attempt-long-open",
