@@ -67,6 +67,11 @@ interface AdminConsoleProps {
   readonly initialDiagnosticFilters?: DiagnosticLogFilters;
 }
 
+interface AdminErrorState {
+  readonly message: string;
+  readonly correlationId?: string | null;
+}
+
 interface ConnectionState {
   hasConnection: boolean;
   connectedAt: string | null;
@@ -373,6 +378,28 @@ function formatAttemptSummary(summary: AdminCandidateAttemptSummary): string {
   ]
     .filter((item): item is string => item !== null)
     .join(" | ");
+}
+
+function CorrelationDiagnosticsLink(props: {
+  readonly correlationId: string;
+  readonly onOpen?: (correlationId: string) => void;
+  readonly children?: React.ReactNode;
+}) {
+  const navigation = buildCorrelationDiagnosticsNavigation(props.correlationId);
+
+  return (
+    <a
+      href={navigation.href}
+      onClick={(event) => {
+        if (!props.onOpen) return;
+        event.preventDefault();
+        props.onOpen(props.correlationId);
+      }}
+      style={{ color: colors.info, fontFamily: "monospace", fontWeight: 700, overflowWrap: "anywhere" }}
+    >
+      {props.children ?? props.correlationId}
+    </a>
+  );
 }
 
 class AdminSessionExpiredError extends Error {
@@ -833,6 +860,7 @@ export function CohortSessionWorkspacePanel(props: {
   onPublish: () => void;
   onCloseAdmission?: () => void;
   onRetire?: () => void;
+  onOpenCorrelationDiagnostics?: (correlationId: string) => void;
 }) {
   const { session } = props;
 
@@ -935,7 +963,13 @@ export function CohortSessionWorkspacePanel(props: {
             </strong>
             <span>{session.session.lastPublishError}</span>
             {session.session.lastPublishCorrelationId ? (
-              <span>Correlation ID: {session.session.lastPublishCorrelationId}</span>
+              <span>
+                Correlation ID:{" "}
+                <CorrelationDiagnosticsLink
+                  correlationId={session.session.lastPublishCorrelationId}
+                  onOpen={props.onOpenCorrelationDiagnostics}
+                />
+              </span>
             ) : null}
           </div>
         ) : null}
@@ -1069,7 +1103,10 @@ export function CohortSessionWorkspacePanel(props: {
               <div style={{ color: colors.textSecondary, fontSize: "0.9rem" }}>
                 This Cohort Exam Session / CloudShare Experience aggregate is admin-only and does not represent cross-Experience analytics.
               </div>
-              <GuidedJourneyAggregatePanel detail={props.detail.guidedJourneyAggregate} />
+              <GuidedJourneyAggregatePanel
+                detail={props.detail.guidedJourneyAggregate}
+                onOpenCorrelationDiagnostics={props.onOpenCorrelationDiagnostics}
+              />
             </div>
 
             <div style={{ display: "grid", gap: "0.75rem" }}>
@@ -1093,7 +1130,13 @@ export function CohortSessionWorkspacePanel(props: {
                   <strong>CloudShare participant read unavailable</strong>
                   <span>{props.detail.cloudShareParticipants.readError}</span>
                   {props.detail.cloudShareParticipants.correlationId ? (
-                    <span>Correlation ID: {props.detail.cloudShareParticipants.correlationId}</span>
+                    <span>
+                      Correlation ID:{" "}
+                      <CorrelationDiagnosticsLink
+                        correlationId={props.detail.cloudShareParticipants.correlationId}
+                        onOpen={props.onOpenCorrelationDiagnostics}
+                      />
+                    </span>
                   ) : null}
                 </div>
               ) : null}
@@ -1173,6 +1216,7 @@ function SelectionSummaryRow(props: { readonly label: string; readonly value: st
 
 function GuidedJourneyAggregatePanel(props: {
   readonly detail: CohortExamSessionGuidedJourneyAggregateView;
+  readonly onOpenCorrelationDiagnostics?: (correlationId: string) => void;
 }) {
   const detail = props.detail;
 
@@ -1197,7 +1241,15 @@ function GuidedJourneyAggregatePanel(props: {
       <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.35rem" }}>
         <strong>Aggregate Guided Journey progress unavailable</strong>
         <span>{detail.readError ?? "Aggregate Guided Journey progress is unavailable."}</span>
-        {detail.correlationId ? <span>Correlation ID: {detail.correlationId}</span> : null}
+        {detail.correlationId ? (
+          <span>
+            Correlation ID:{" "}
+            <CorrelationDiagnosticsLink
+              correlationId={detail.correlationId}
+              onOpen={props.onOpenCorrelationDiagnostics}
+            />
+          </span>
+        ) : null}
       </div>
     );
   }
@@ -1762,9 +1814,18 @@ export function AdminConsole({
   const [selectedCandidate, setSelectedCandidate] = useState<AdminCandidateDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [examCatalogLoading, setExamCatalogLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [errorState, setErrorState] = useState<AdminErrorState | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const error = errorState?.message ?? null;
   const allExamCatalog = [...examCatalog, ...archivedExamCatalog];
+
+  function setError(message: string | null) {
+    setErrorState(message === null ? null : { message, correlationId: null });
+  }
+
+  function setErrorWithCorrelation(message: string, correlationId?: string | null) {
+    setErrorState({ message, correlationId: correlationId ?? null });
+  }
 
   useEffect(() => {
     void loadConnection();
@@ -2654,11 +2715,7 @@ export function AdminConsole({
       );
       const data = (await response.json()) as CohortExamSessionRecord & { error?: string; correlationId?: string };
       if (!response.ok) {
-        setError(
-          data.correlationId
-            ? `${data.error ?? "Failed to publish Cohort Exam Session"} Correlation ID: ${data.correlationId}`
-            : data.error ?? "Failed to publish Cohort Exam Session",
-        );
+        setErrorWithCorrelation(data.error ?? "Failed to publish Cohort Exam Session", data.correlationId);
         await loadCohortExamSessions(examId);
         return;
       }
@@ -2737,11 +2794,7 @@ export function AdminConsole({
         return;
       }
       if (!response.ok) {
-        setError(
-          data.correlationId
-            ? `${data.error ?? "Failed to retire Cohort Exam Session"} Correlation ID: ${data.correlationId}`
-            : data.error ?? "Failed to retire Cohort Exam Session",
-        );
+        setErrorWithCorrelation(data.error ?? "Failed to retire Cohort Exam Session", data.correlationId);
         return;
       }
       setExamMessage("Cohort Exam Session retired.");
@@ -3181,33 +3234,38 @@ export function AdminConsole({
               Dismiss
             </button>
           </div>
-          {tab === "exams" && examCorrelationId ? (
+          {errorState?.correlationId ? (
             <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", alignItems: "center" }}>
               <p style={{ margin: 0, fontSize: "0.85rem" }}>
                 Open <strong>Support Diagnostics</strong> filtered by correlation ID{" "}
-                <span style={{ fontFamily: "monospace" }}>{examCorrelationId}</span>.
+                <CorrelationDiagnosticsLink
+                  correlationId={errorState.correlationId}
+                  onOpen={openCorrelationSupportDiagnostics}
+                />
+                .
               </p>
-              <button
-                type="button"
-                onClick={() => openCorrelationSupportDiagnostics(examCorrelationId)}
-                style={{ padding: "0.3rem 0.65rem" }}
-              >
-                Open Support Diagnostics
-              </button>
+            </div>
+          ) : tab === "exams" && examCorrelationId ? (
+            <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", alignItems: "center" }}>
+              <p style={{ margin: 0, fontSize: "0.85rem" }}>
+                Open <strong>Support Diagnostics</strong> filtered by correlation ID{" "}
+                <CorrelationDiagnosticsLink
+                  correlationId={examCorrelationId}
+                  onOpen={openCorrelationSupportDiagnostics}
+                />
+                .
+              </p>
             </div>
           ) : connectionCorrelationId ? (
             <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", alignItems: "center" }}>
               <p style={{ margin: 0, fontSize: "0.85rem" }}>
                 Open <strong>Support Diagnostics</strong> filtered by correlation ID{" "}
-                <span style={{ fontFamily: "monospace" }}>{connectionCorrelationId}</span>.
+                <CorrelationDiagnosticsLink
+                  correlationId={connectionCorrelationId}
+                  onOpen={openCorrelationSupportDiagnostics}
+                />
+                .
               </p>
-              <button
-                type="button"
-                onClick={() => openCorrelationSupportDiagnostics(connectionCorrelationId)}
-                style={{ padding: "0.3rem 0.65rem" }}
-              >
-                Open Support Diagnostics
-              </button>
             </div>
           ) : null}
         </div>
@@ -3320,18 +3378,13 @@ export function AdminConsole({
             <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.4rem" }}>
               <p style={{ margin: 0 }}>The CloudShare connection test failed. Support Diagnostics is the primary investigation view.</p>
               {connectionCorrelationId && (
-                <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", alignItems: "center" }}>
-                  <p style={{ margin: 0, fontSize: "0.85rem" }}>
-                    Correlation ID: <span style={{ fontFamily: "monospace" }}>{connectionCorrelationId}</span>
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => openCorrelationSupportDiagnostics(connectionCorrelationId)}
-                    style={{ padding: "0.3rem 0.65rem" }}
-                  >
-                    Open Support Diagnostics
-                  </button>
-                </div>
+                <p style={{ margin: 0, fontSize: "0.85rem" }}>
+                  Correlation ID:{" "}
+                  <CorrelationDiagnosticsLink
+                    correlationId={connectionCorrelationId}
+                    onOpen={openCorrelationSupportDiagnostics}
+                  />
+                </p>
               )}
             </div>
           )}
@@ -3982,6 +4035,7 @@ export function AdminConsole({
                 void closeCohortSessionAdmission(focusedExam.id, focusedCohortSession.session.id)
               }
               onRetire={() => void retireCohortSession(focusedExam.id, focusedCohortSession.session.id)}
+              onOpenCorrelationDiagnostics={openCorrelationSupportDiagnostics}
             />
           )}
 

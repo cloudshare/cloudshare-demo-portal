@@ -1068,9 +1068,12 @@ describe("AdminConsole", () => {
 
     expect(html).toContain("CloudShare participant read unavailable");
     expect(html).toContain("CloudShare participant read failed for this Cohort Exam Session.");
-    expect(html).toContain("Correlation ID: corr-1");
+    expect(html).toContain("Correlation ID:");
+    expect(html).toContain("corr-1");
+    expect(html).toContain("/admin?tab=support&amp;view=diagnostics&amp;correlationId=corr-1");
     expect(html).toContain("Aggregate Guided Journey progress unavailable");
     expect(html).toContain("corr-aggregate-1");
+    expect(html).toContain("/admin?tab=support&amp;view=diagnostics&amp;correlationId=corr-aggregate-1");
   });
 
   it("renders the aggregate section as disabled when the parent Exam does not retrieve Guided Journey scores", () => {
