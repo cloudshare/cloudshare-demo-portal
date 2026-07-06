@@ -1121,7 +1121,7 @@ export function CohortSessionWorkspacePanel(props: {
                     })}
                     style={secondaryButtonStyle}
                   >
-                    Participant read diagnostics
+                    CloudShare read diagnostics
                   </a>
                 ) : null}
               </div>
@@ -1189,7 +1189,7 @@ export function CohortSessionWorkspacePanel(props: {
                               })}
                               style={secondaryButtonStyle}
                             >
-                              Participant diagnostics
+                              Attempt diagnostics
                             </a>
                           </td>
                         </tr>

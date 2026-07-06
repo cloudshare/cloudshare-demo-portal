@@ -991,7 +991,8 @@ describe("AdminConsole", () => {
     expect(html).toContain("Aggregate progress diagnostics");
     expect(html).toContain("Counts are derived from portal ExamAttempts and the CloudShare participant read");
     expect(html).toContain("Casey Rivera");
-    expect(html).toContain("Participant diagnostics");
+    expect(html).toContain("CloudShare read diagnostics");
+    expect(html).toContain("Attempt diagnostics");
     expect(html).toContain("No portal ExamAttempt");
     expect(html).toContain("/admin?tab=support&amp;view=diagnostics&amp;examId=exam-1&amp;externalId=EX123");
     expect(html).toContain("/admin?tab=support&amp;view=diagnostics&amp;examAttemptId=attempt-1");
