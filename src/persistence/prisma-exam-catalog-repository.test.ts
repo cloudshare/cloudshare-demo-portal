@@ -59,6 +59,7 @@ describe("Prisma exam catalog repository", () => {
       deliveryAvailability: "individual" as const,
       status: "draft" as const,
       publishedAt: null,
+      archivedAt: null,
       createdAt: new Date("2026-06-14T12:00:00.000Z"),
       updatedAt: new Date("2026-06-14T12:00:00.000Z"),
       projectId: "project-1",

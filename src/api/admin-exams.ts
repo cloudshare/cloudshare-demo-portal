@@ -9,6 +9,7 @@ import type {
 } from "@/domain/diagnostic-log";
 import type { AuditRepository } from "@/domain/audit-trail";
 import type { ExamRepository } from "@/domain/exam-catalog";
+import type { CohortExamSessionRepository } from "@/domain/cohort-exam-session";
 import type { ExamAuthoringCacheRepository } from "@/persistence/exam-authoring-cache-repository";
 import {
   getBlueprintDetailRuntime,
@@ -24,6 +25,10 @@ import {
   publishAdminExamRuntime,
   type AdminExamPublishRuntimeDeps,
 } from "./admin-exam-publish-runtime";
+import {
+  archiveAdminExamRuntime,
+  type AdminExamArchiveAttemptRepository,
+} from "./admin-exam-archive-runtime";
 import {
   unpublishAdminExamRuntime,
   type AdminExamUnpublishRuntimeDeps,
@@ -80,6 +85,9 @@ interface AdminExamCatalogDeps extends AdminExamDraftRuntimeDeps {
 
 type AdminExamPublishDeps = AdminExamPublishRuntimeDeps;
 type AdminExamUnpublishDeps = AdminExamUnpublishRuntimeDeps;
+type AdminExamArchiveDeps = AdminExamUnpublishRuntimeDeps & {
+  readonly attempts: AdminExamArchiveAttemptRepository;
+};
 
 export interface AdminExamCatalogListServices {
   readonly exams: ExamRepository;
@@ -124,6 +132,11 @@ export interface AdminExamPublishServices extends AdminExamDraftUpdateServices {
 export interface AdminExamUnpublishServices extends AdminExamCatalogListServices {
   readonly diagnosticRecorder?: DiagnosticRecorder;
   readonly audit?: Pick<AuditRepository, "write">;
+}
+
+export interface AdminExamArchiveServices extends AdminExamUnpublishServices {
+  readonly adminExamArchiveAttempts: AdminExamArchiveAttemptRepository;
+  readonly cohortExamSessions?: CohortExamSessionRepository;
 }
 
 export function buildAdminExamCatalogListDeps(
@@ -197,6 +210,19 @@ export function buildAdminExamUnpublishDeps(
   };
 }
 
+export function buildAdminExamArchiveDeps(
+  services: AdminExamArchiveServices,
+): AdminExamArchiveDeps {
+  return {
+    repository: services.exams,
+    attempts: services.adminExamArchiveAttempts,
+    ...(services.cohortExamSessions ? { cohortSessions: services.cohortExamSessions } : {}),
+    diagnostics: services.diagnosticRecorder,
+    ...(services.audit ? { audit: services.audit } : {}),
+    logger: services.logger,
+  };
+}
+
 export async function handleGetExamAuthoringBootstrap(
   deps: AdminExamAuthoringDeps,
   request: ResourceRequest,
@@ -223,7 +249,13 @@ export async function handleGetExamCatalog(
   request: CustomerRequest,
 ): Promise<AdminExamResponse> {
   const exams = await deps.repository.listByCustomerId(request.customerId);
-  return { status: 200, body: { exams } };
+  return {
+    status: 200,
+    body: {
+      activeExams: exams.filter((exam) => exam.status !== "archived"),
+      archivedExams: exams.filter((exam) => exam.status === "archived"),
+    },
+  };
 }
 
 export async function handleCreateDraftExam(
@@ -252,4 +284,11 @@ export async function handleUnpublishExam(
   request: CustomerRequest & { readonly examId: string },
 ): Promise<AdminExamResponse> {
   return unpublishAdminExamRuntime(deps, request);
+}
+
+export async function handleArchiveExam(
+  deps: AdminExamArchiveDeps,
+  request: CustomerRequest & { readonly examId: string; readonly body?: unknown },
+): Promise<AdminExamResponse> {
+  return archiveAdminExamRuntime(deps, request);
 }

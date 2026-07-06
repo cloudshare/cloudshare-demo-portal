@@ -67,6 +67,11 @@ interface AdminConsoleProps {
   readonly initialDiagnosticFilters?: DiagnosticLogFilters;
 }
 
+interface AdminErrorState {
+  readonly message: string;
+  readonly correlationId?: string | null;
+}
+
 interface ConnectionState {
   hasConnection: boolean;
   connectedAt: string | null;
@@ -173,8 +178,9 @@ interface ExamRecord {
   openPeriodMinutes: number;
   scoreRetrievalEnabled: boolean;
   deliveryAvailability?: "individual" | "cohort" | "both";
-  status: "draft" | "published";
+  status: "draft" | "published" | "archived";
   publishedAt: string | null;
+  archivedAt?: string | null;
   createdAt?: string;
   projectId: string;
   projectName: string;
@@ -195,11 +201,13 @@ interface CohortExamSessionRecord {
     admissionStartsAt: string;
     admissionEndsAt: string | null;
     capacity: number | null;
-    status: "draft" | "publishing" | "published" | "publish_reconciliation_required";
+    status: "draft" | "publishing" | "published" | "closed" | "retired" | "publish_reconciliation_required";
     cloudShareTrainingId?: string | null;
     cloudShareExperienceId?: string | null;
     cloudShareTeamId?: string | null;
     publishedAt?: string | null;
+    admissionClosedAt?: string | null;
+    retiredAt?: string | null;
     lastPublishError?: string | null;
     lastPublishCorrelationId?: string | null;
   };
@@ -372,6 +380,28 @@ function formatAttemptSummary(summary: AdminCandidateAttemptSummary): string {
     .join(" | ");
 }
 
+function CorrelationDiagnosticsLink(props: {
+  readonly correlationId: string;
+  readonly onOpen?: (correlationId: string) => void;
+  readonly children?: React.ReactNode;
+}) {
+  const navigation = buildCorrelationDiagnosticsNavigation(props.correlationId);
+
+  return (
+    <a
+      href={navigation.href}
+      onClick={(event) => {
+        if (!props.onOpen) return;
+        event.preventDefault();
+        props.onOpen(props.correlationId);
+      }}
+      style={{ color: colors.info, fontFamily: "monospace", fontWeight: 700, overflowWrap: "anywhere" }}
+    >
+      {props.children ?? props.correlationId}
+    </a>
+  );
+}
+
 class AdminSessionExpiredError extends Error {
   constructor() {
     super(ADMIN_SESSION_EXPIRED_MESSAGE);
@@ -479,16 +509,20 @@ export function getDeliveryAvailabilityAuthoringOptions(value: ExamRecord["deliv
 }
 
 export const COHORT_SESSION_DRAFT_ONLY_COPY =
-  "Candidate admission remains disabled in this slice. Published Cohort Exam Sessions stay admin-only until a later slice enables candidate joins.";
+  "Published Cohort Exam Sessions admit Candidates until admission closes or the session is retired.";
 
 function formatCohortSessionStatus(status: CohortExamSessionRecord["session"]["status"]): string {
   switch (status) {
+    case "closed":
+      return "Admission closed";
     case "publish_reconciliation_required":
       return "Publish reconciliation required";
     case "publishing":
       return "Publishing";
     case "published":
       return "Published";
+    case "retired":
+      return "Retired";
     case "draft":
     default:
       return "Draft";
@@ -501,8 +535,12 @@ function getCohortSessionStatusTone(
   switch (status) {
     case "published":
       return "positive";
+    case "closed":
+      return "warning";
     case "publishing":
       return "info";
+    case "retired":
+      return "neutral";
     case "publish_reconciliation_required":
       return "warning";
     case "draft":
@@ -663,6 +701,8 @@ function CohortSessionDraftControls(props: {
   onSelect: (session: CohortExamSessionRecord) => void;
 }) {
   const fieldStyle = { padding: "0.45rem", border: "1px solid #ccc", borderRadius: "6px" };
+  const activeSessions = props.sessions.filter((session) => session.session.status !== "retired");
+  const retiredSessions = props.sessions.filter((session) => session.session.status === "retired");
   return (
     <div style={{ display: "grid", gap: "0.45rem" }}>
       <label style={{ display: "grid", gap: "0.25rem" }}>
@@ -706,11 +746,11 @@ function CohortSessionDraftControls(props: {
       </button>
       <div style={{ display: "grid", gap: "0.5rem" }}>
         <strong>Existing Cohort Sessions</strong>
-        {props.sessions.length === 0 ? (
+        {activeSessions.length === 0 ? (
           <span style={{ color: "#666" }}>No draft Cohort Exam Sessions yet.</span>
         ) : (
           <div style={cohortSessionTileGridStyle}>
-            {props.sessions.map((session) => (
+            {activeSessions.map((session) => (
               <div key={`${props.examId}-${session.session.id}`} style={cohortSessionTileStyle}>
                 <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
                   <div style={{ fontWeight: 600 }}>{session.session.name}</div>
@@ -737,7 +777,7 @@ function CohortSessionDraftControls(props: {
                 </div>
                 <div style={{ display: "flex", justifyContent: "flex-end" }}>
                   <button type="button" onClick={() => props.onSelect(session)} style={compactButtonStyle}>
-                    Open Session
+                    View session details
                   </button>
                 </div>
               </div>
@@ -745,6 +785,28 @@ function CohortSessionDraftControls(props: {
           </div>
         )}
       </div>
+      {retiredSessions.length > 0 ? (
+        <div style={{ display: "grid", gap: "0.5rem" }}>
+          <strong>Retired session history</strong>
+          <div style={cohortSessionTileGridStyle}>
+            {retiredSessions.map((session) => (
+              <div key={`${props.examId}-${session.session.id}`} style={cohortSessionTileStyle}>
+                <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+                  <div style={{ fontWeight: 600 }}>{session.session.name}</div>
+                  <span style={statusBadgeStyle(getCohortSessionStatusTone(session.session.status))}>
+                    {formatCohortSessionStatus(session.session.status)}
+                  </span>
+                </div>
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <button type="button" onClick={() => props.onSelect(session)} style={compactButtonStyle}>
+                    Open history
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -796,6 +858,9 @@ export function CohortSessionWorkspacePanel(props: {
   loading: boolean;
   onBack: () => void;
   onPublish: () => void;
+  onCloseAdmission?: () => void;
+  onRetire?: () => void;
+  onOpenCorrelationDiagnostics?: (correlationId: string) => void;
 }) {
   const { session } = props;
 
@@ -835,6 +900,23 @@ export function CohortSessionWorkspacePanel(props: {
             </button>
           </div>
         ) : null}
+        {(session.session.status === "published" || session.session.status === "closed") ? (
+          <div style={{ display: "flex", justifyContent: "flex-start", gap: "0.5rem", flexWrap: "wrap" }}>
+            {session.session.status === "published" ? (
+              <button
+                type="button"
+                onClick={props.onCloseAdmission}
+                disabled={props.loading}
+                style={secondaryButtonStyle}
+              >
+                Close admission
+              </button>
+            ) : null}
+            <button type="button" onClick={props.onRetire} disabled={props.loading} style={secondaryButtonStyle}>
+              Retire session
+            </button>
+          </div>
+        ) : null}
 
         <div style={cohortSessionDetailGridStyle}>
           <CohortSessionDetailItem
@@ -858,6 +940,18 @@ export function CohortSessionWorkspacePanel(props: {
               value={formatCohortSessionDateTime(session.session.publishedAt)}
             />
           ) : null}
+          {session.session.admissionClosedAt ? (
+            <CohortSessionDetailItem
+              label="Admission closed at"
+              value={formatCohortSessionDateTime(session.session.admissionClosedAt)}
+            />
+          ) : null}
+          {session.session.retiredAt ? (
+            <CohortSessionDetailItem
+              label="Retired at"
+              value={formatCohortSessionDateTime(session.session.retiredAt)}
+            />
+          ) : null}
         </div>
 
         {session.session.lastPublishError ? (
@@ -869,7 +963,13 @@ export function CohortSessionWorkspacePanel(props: {
             </strong>
             <span>{session.session.lastPublishError}</span>
             {session.session.lastPublishCorrelationId ? (
-              <span>Correlation ID: {session.session.lastPublishCorrelationId}</span>
+              <span>
+                Correlation ID:{" "}
+                <CorrelationDiagnosticsLink
+                  correlationId={session.session.lastPublishCorrelationId}
+                  onOpen={props.onOpenCorrelationDiagnostics}
+                />
+              </span>
             ) : null}
           </div>
         ) : null}
@@ -1003,7 +1103,10 @@ export function CohortSessionWorkspacePanel(props: {
               <div style={{ color: colors.textSecondary, fontSize: "0.9rem" }}>
                 This Cohort Exam Session / CloudShare Experience aggregate is admin-only and does not represent cross-Experience analytics.
               </div>
-              <GuidedJourneyAggregatePanel detail={props.detail.guidedJourneyAggregate} />
+              <GuidedJourneyAggregatePanel
+                detail={props.detail.guidedJourneyAggregate}
+                onOpenCorrelationDiagnostics={props.onOpenCorrelationDiagnostics}
+              />
             </div>
 
             <div style={{ display: "grid", gap: "0.75rem" }}>
@@ -1027,7 +1130,13 @@ export function CohortSessionWorkspacePanel(props: {
                   <strong>CloudShare participant read unavailable</strong>
                   <span>{props.detail.cloudShareParticipants.readError}</span>
                   {props.detail.cloudShareParticipants.correlationId ? (
-                    <span>Correlation ID: {props.detail.cloudShareParticipants.correlationId}</span>
+                    <span>
+                      Correlation ID:{" "}
+                      <CorrelationDiagnosticsLink
+                        correlationId={props.detail.cloudShareParticipants.correlationId}
+                        onOpen={props.onOpenCorrelationDiagnostics}
+                      />
+                    </span>
                   ) : null}
                 </div>
               ) : null}
@@ -1107,6 +1216,7 @@ function SelectionSummaryRow(props: { readonly label: string; readonly value: st
 
 function GuidedJourneyAggregatePanel(props: {
   readonly detail: CohortExamSessionGuidedJourneyAggregateView;
+  readonly onOpenCorrelationDiagnostics?: (correlationId: string) => void;
 }) {
   const detail = props.detail;
 
@@ -1131,7 +1241,15 @@ function GuidedJourneyAggregatePanel(props: {
       <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.35rem" }}>
         <strong>Aggregate Guided Journey progress unavailable</strong>
         <span>{detail.readError ?? "Aggregate Guided Journey progress is unavailable."}</span>
-        {detail.correlationId ? <span>Correlation ID: {detail.correlationId}</span> : null}
+        {detail.correlationId ? (
+          <span>
+            Correlation ID:{" "}
+            <CorrelationDiagnosticsLink
+              correlationId={detail.correlationId}
+              onOpen={props.onOpenCorrelationDiagnostics}
+            />
+          </span>
+        ) : null}
       </div>
     );
   }
@@ -1266,13 +1384,16 @@ export function ExamCatalogRowActions(props: {
   readonly exam: Pick<ExamRecord, "id" | "status" | "deliveryAvailability">;
   readonly loading: boolean;
   readonly editingExamId: string | null;
+  readonly hasActiveCohortSessions?: boolean;
   readonly onEdit: () => void;
   readonly onPublish: () => void;
   readonly onUnpublish: () => void;
+  readonly onArchive?: () => void;
   readonly onManageCohortSessions: () => void;
 }) {
   const supportsCohortSessions = isCohortSessionAuthoringAvailable(props.exam.deliveryAvailability);
   const isCohortOnly = props.exam.deliveryAvailability === "cohort";
+  const cohortArchiveDisabled = Boolean(props.hasActiveCohortSessions);
 
   return (
     <div style={{ display: "grid", gap: "0.5rem" }}>
@@ -1289,7 +1410,23 @@ export function ExamCatalogRowActions(props: {
           Manage Cohort Sessions
         </button>
       ) : null}
-      {isCohortOnly ? (
+      {isCohortOnly && props.exam.status === "published" ? (
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+          <button
+            onClick={props.onArchive}
+            disabled={props.loading || props.editingExamId !== null || cohortArchiveDisabled}
+            title={cohortArchiveDisabled ? "Retire all Cohort Exam Sessions before archiving this Exam." : undefined}
+            style={{ padding: "0.45rem 0.75rem" }}
+          >
+            Archive Exam
+          </button>
+          {cohortArchiveDisabled ? (
+            <span style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>
+              Retire all Cohort Exam Sessions first.
+            </span>
+          ) : null}
+        </div>
+      ) : isCohortOnly ? (
         <div style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>
           <div>Exam setup is {props.exam.status}</div>
           <div>Publish the individual Cohort Sessions after opening this Exam.</div>
@@ -1319,14 +1456,27 @@ export function ExamCatalogRowActions(props: {
             </>
           )}
         </div>
+      ) : props.exam.status === "published" ? (
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+          <button
+            onClick={props.onUnpublish}
+            disabled={props.loading || props.editingExamId !== null}
+            style={{ padding: "0.45rem 0.75rem" }}
+          >
+            Unpublish Exam
+          </button>
+          <button
+            onClick={props.onArchive}
+            disabled={props.loading || props.editingExamId !== null}
+            style={{ padding: "0.45rem 0.75rem" }}
+          >
+            Archive Exam
+          </button>
+        </div>
       ) : (
-        <button
-          onClick={props.onUnpublish}
-          disabled={props.loading || props.editingExamId !== null}
-          style={{ padding: "0.45rem 0.75rem" }}
-        >
-          Unpublish Exam
-        </button>
+        <span style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>
+          Archived for history and support review.
+        </span>
       )}
     </div>
   );
@@ -1625,6 +1775,7 @@ export function AdminConsole({
   const [deliveryAvailability, setDeliveryAvailability] = useState<"individual" | "cohort" | "both">("individual");
   const [editingExamId, setEditingExamId] = useState<string | null>(null);
   const [examCatalog, setExamCatalog] = useState<ExamRecord[]>([]);
+  const [archivedExamCatalog, setArchivedExamCatalog] = useState<ExamRecord[]>([]);
   const [cohortSessionsByExamId, setCohortSessionsByExamId] = useState<Record<string, CohortExamSessionRecord[]>>({});
   const [cohortSessionDetailsById, setCohortSessionDetailsById] = useState<Record<string, CohortExamSessionDetailRecord>>({});
   const [cohortSessionFormsByExamId, setCohortSessionFormsByExamId] = useState<Record<string, CohortExamSessionFormState>>({});
@@ -1663,8 +1814,19 @@ export function AdminConsole({
   const [selectedCandidate, setSelectedCandidate] = useState<AdminCandidateDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [examCatalogLoading, setExamCatalogLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [errorState, setErrorState] = useState<AdminErrorState | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const error = errorState?.message ?? null;
+  const allExamCatalog = [...examCatalog, ...archivedExamCatalog];
+
+  function setError(message: string | null) {
+    setErrorState(message === null ? null : { message, correlationId: null });
+  }
+
+  function setErrorWithCorrelation(message: string, correlationId?: string | null) {
+    setErrorState({ message, correlationId: correlationId ?? null });
+  }
+
   useEffect(() => {
     void loadConnection();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1696,12 +1858,12 @@ export function AdminConsole({
     if (tab !== "exams" || examView !== "edit" || !focusedExamId || editingExamId === focusedExamId) {
       return;
     }
-    const exam = examCatalog.find((item) => item.id === focusedExamId);
+    const exam = allExamCatalog.find((item) => item.id === focusedExamId);
     if (exam) {
       void beginEditingExam(exam);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, examView, focusedExamId, examCatalog, editingExamId]);
+  }, [tab, examView, focusedExamId, allExamCatalog, editingExamId]);
 
   useEffect(() => {
     if (tab !== "exams" || (examView !== "sessions" && examView !== "session") || !focusedExamId) {
@@ -2400,13 +2562,19 @@ export function AdminConsole({
     beginExamCatalogLoading();
     try {
       const response = await fetchAdmin("/api/admin/exams");
-      const data = (await response.json()) as { exams?: ExamRecord[]; error?: string };
+      const data = (await response.json()) as {
+        activeExams?: ExamRecord[];
+        archivedExams?: ExamRecord[];
+        error?: string;
+      };
       if (!response.ok) {
         setError(data.error ?? "Failed to load exam catalog");
         return;
       }
-      const nextExams = data.exams ?? [];
+      const nextExams = data.activeExams ?? [];
+      const nextArchivedExams = data.archivedExams ?? [];
       setExamCatalog(nextExams);
+      setArchivedExamCatalog(nextArchivedExams);
       await Promise.all(nextExams.map((exam) => loadCohortExamSessions(exam.id)));
     } catch (caughtError) {
       if (isAdminSessionExpiredError(caughtError)) {
@@ -2547,11 +2715,7 @@ export function AdminConsole({
       );
       const data = (await response.json()) as CohortExamSessionRecord & { error?: string; correlationId?: string };
       if (!response.ok) {
-        setError(
-          data.correlationId
-            ? `${data.error ?? "Failed to publish Cohort Exam Session"} Correlation ID: ${data.correlationId}`
-            : data.error ?? "Failed to publish Cohort Exam Session",
-        );
+        setErrorWithCorrelation(data.error ?? "Failed to publish Cohort Exam Session", data.correlationId);
         await loadCohortExamSessions(examId);
         return;
       }
@@ -2564,6 +2728,83 @@ export function AdminConsole({
         return;
       }
       setError("Failed to publish Cohort Exam Session");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function closeCohortSessionAdmission(examId: string, sessionId: string) {
+    setLoading(true);
+    setError(null);
+    setExamMessage(null);
+    try {
+      const response = await fetchAdmin(
+        `/api/admin/exams/${encodeURIComponent(examId)}/cohort-sessions/${encodeURIComponent(sessionId)}/close-admission`,
+        { method: "POST" },
+      );
+      const data = (await response.json()) as { session?: CohortExamSessionRecord["session"]; error?: string };
+      if (!response.ok) {
+        setError(data.error ?? "Failed to close Cohort Exam Session admission");
+        return;
+      }
+      setExamMessage("Cohort Exam Session admission closed.");
+      await loadCohortExamSessions(examId);
+      await loadCohortSessionDetail(examId, sessionId);
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
+      setError("Failed to close Cohort Exam Session admission");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function retireCohortSession(examId: string, sessionId: string, confirmInterrupt = false) {
+    setLoading(true);
+    setError(null);
+    setExamMessage(null);
+    try {
+      const response = await fetchAdmin(
+        `/api/admin/exams/${encodeURIComponent(examId)}/cohort-sessions/${encodeURIComponent(sessionId)}/retire`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(confirmInterrupt ? { confirmInterrupt: true } : {}),
+        },
+      );
+      const data = (await response.json()) as {
+        error?: string;
+        code?: string;
+        correlationId?: string;
+        warning?: {
+          activeParticipantCount?: number;
+          nonTerminalEnvironmentCount?: number;
+        };
+      };
+      if (response.status === 409 && data.code === "confirmation_required" && !confirmInterrupt) {
+        const proceed = window.confirm(
+          `Retire this Cohort Exam Session? ` +
+            `${data.warning?.activeParticipantCount ?? 0} active participant(s) and ` +
+            `${data.warning?.nonTerminalEnvironmentCount ?? 0} non-terminal environment(s) may be interrupted.`,
+        );
+        if (proceed) {
+          await retireCohortSession(examId, sessionId, true);
+        }
+        return;
+      }
+      if (!response.ok) {
+        setErrorWithCorrelation(data.error ?? "Failed to retire Cohort Exam Session", data.correlationId);
+        return;
+      }
+      setExamMessage("Cohort Exam Session retired.");
+      await loadCohortExamSessions(examId);
+      await loadCohortSessionDetail(examId, sessionId);
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
+      setError("Failed to retire Cohort Exam Session");
     } finally {
       setLoading(false);
     }
@@ -2724,6 +2965,50 @@ export function AdminConsole({
     }
   }
 
+  async function archiveCatalogExam(examId: string, confirmArchive = false) {
+    setLoading(true);
+    setError(null);
+    setExamMessage(null);
+    try {
+      const response = await fetchAdmin(`/api/admin/exams/${encodeURIComponent(examId)}/archive`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(confirmArchive ? { confirmArchive: true } : {}),
+      });
+      const data = (await response.json()) as {
+        error?: string;
+        code?: string;
+        warning?: {
+          scheduledAttemptCount?: number;
+          activeAttemptCount?: number;
+        };
+      };
+      if (response.status === 409 && data.code === "confirmation_required" && !confirmArchive) {
+        const proceed = window.confirm(
+          `Archive this Exam? ${data.warning?.scheduledAttemptCount ?? 0} scheduled attempt(s) and ` +
+            `${data.warning?.activeAttemptCount ?? 0} active attempt(s) still rely on it.`,
+        );
+        if (proceed) {
+          await archiveCatalogExam(examId, true);
+        }
+        return;
+      }
+      if (!response.ok) {
+        setError(data.error ?? "Failed to archive exam");
+        return;
+      }
+      setExamMessage("Exam archived.");
+      await loadExamCatalog();
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
+      setError("Failed to archive exam");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function beginEditingExam(exam: ExamRecord) {
     setLoading(true);
     setError(null);
@@ -2815,7 +3100,7 @@ export function AdminConsole({
   const defaultSnapshot =
     blueprintDetail?.snapshots.find((item) => item.id === blueprintDetail.defaultSnapshotId) ?? null;
   const duplicateExamResourceTupleWarning = getDuplicateExamResourceTupleWarning({
-    exams: examCatalog,
+    exams: allExamCatalog,
     currentExamId: editingExamId,
     projectId: selectedProjectId,
     blueprintId: selectedBlueprintId,
@@ -2847,7 +3132,7 @@ export function AdminConsole({
   } as const;
   const isExamAuthoringView = examView === "create" || examView === "edit";
   const showCreateExamButton = examView !== "sessions" && examView !== "session";
-  const focusedExam = focusedExamId ? (examCatalog.find((exam) => exam.id === focusedExamId) ?? null) : null;
+  const focusedExam = focusedExamId ? (allExamCatalog.find((exam) => exam.id === focusedExamId) ?? null) : null;
   const focusedExamSessions = focusedExamId ? (cohortSessionsByExamId[focusedExamId] ?? []) : [];
   const focusedCohortSession =
     (focusedCohortSessionId
@@ -2949,33 +3234,38 @@ export function AdminConsole({
               Dismiss
             </button>
           </div>
-          {tab === "exams" && examCorrelationId ? (
+          {errorState?.correlationId ? (
             <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", alignItems: "center" }}>
               <p style={{ margin: 0, fontSize: "0.85rem" }}>
                 Open <strong>Support Diagnostics</strong> filtered by correlation ID{" "}
-                <span style={{ fontFamily: "monospace" }}>{examCorrelationId}</span>.
+                <CorrelationDiagnosticsLink
+                  correlationId={errorState.correlationId}
+                  onOpen={openCorrelationSupportDiagnostics}
+                />
+                .
               </p>
-              <button
-                type="button"
-                onClick={() => openCorrelationSupportDiagnostics(examCorrelationId)}
-                style={{ padding: "0.3rem 0.65rem" }}
-              >
-                Open Support Diagnostics
-              </button>
+            </div>
+          ) : tab === "exams" && examCorrelationId ? (
+            <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", alignItems: "center" }}>
+              <p style={{ margin: 0, fontSize: "0.85rem" }}>
+                Open <strong>Support Diagnostics</strong> filtered by correlation ID{" "}
+                <CorrelationDiagnosticsLink
+                  correlationId={examCorrelationId}
+                  onOpen={openCorrelationSupportDiagnostics}
+                />
+                .
+              </p>
             </div>
           ) : connectionCorrelationId ? (
             <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", alignItems: "center" }}>
               <p style={{ margin: 0, fontSize: "0.85rem" }}>
                 Open <strong>Support Diagnostics</strong> filtered by correlation ID{" "}
-                <span style={{ fontFamily: "monospace" }}>{connectionCorrelationId}</span>.
+                <CorrelationDiagnosticsLink
+                  correlationId={connectionCorrelationId}
+                  onOpen={openCorrelationSupportDiagnostics}
+                />
+                .
               </p>
-              <button
-                type="button"
-                onClick={() => openCorrelationSupportDiagnostics(connectionCorrelationId)}
-                style={{ padding: "0.3rem 0.65rem" }}
-              >
-                Open Support Diagnostics
-              </button>
             </div>
           ) : null}
         </div>
@@ -3088,18 +3378,13 @@ export function AdminConsole({
             <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.4rem" }}>
               <p style={{ margin: 0 }}>The CloudShare connection test failed. Support Diagnostics is the primary investigation view.</p>
               {connectionCorrelationId && (
-                <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", alignItems: "center" }}>
-                  <p style={{ margin: 0, fontSize: "0.85rem" }}>
-                    Correlation ID: <span style={{ fontFamily: "monospace" }}>{connectionCorrelationId}</span>
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => openCorrelationSupportDiagnostics(connectionCorrelationId)}
-                    style={{ padding: "0.3rem 0.65rem" }}
-                  >
-                    Open Support Diagnostics
-                  </button>
-                </div>
+                <p style={{ margin: 0, fontSize: "0.85rem" }}>
+                  Correlation ID:{" "}
+                  <CorrelationDiagnosticsLink
+                    correlationId={connectionCorrelationId}
+                    onOpen={openCorrelationSupportDiagnostics}
+                  />
+                </p>
               )}
             </div>
           )}
@@ -3601,9 +3886,93 @@ export function AdminConsole({
                           exam={exam}
                           loading={loading}
                           editingExamId={editingExamId}
+                          hasActiveCohortSessions={(cohortSessionsByExamId[exam.id] ?? []).some(
+                            (session) => session.session.status !== "retired",
+                          )}
                           onEdit={() => void beginEditingExam(exam)}
                           onPublish={() => void publishCatalogExam(exam.id)}
                           onUnpublish={() => void unpublishCatalogExam(exam.id)}
+                          onArchive={() => void archiveCatalogExam(exam.id)}
+                          onManageCohortSessions={() => navigateToExamSessions(exam.id)}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <h2 style={{ margin: "1.5rem 0 0.6rem" }}>Archived Exams</h2>
+            <p style={{ marginTop: 0, color: colors.textSecondary }}>
+              Archived Individual Exams stay available for history, diagnostics, and support review.
+            </p>
+            <div style={{ ...cardStyle, padding: 0, overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
+                <thead>
+                  <tr style={{ background: colors.surfaceSubtle }}>
+                    {["Title", "Status", "Project", "Blueprint / Snapshot", "Allowed Regions", "Policy", "Duration", "Score", "Action"].map((heading) => (
+                      <th key={heading} style={{ textAlign: "left", padding: "0.4rem", borderBottom: `1px solid ${colors.border}` }}>
+                        {heading}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {archivedExamCatalog.length === 0 && (
+                    <tr>
+                      <td colSpan={9} style={{ padding: "0.5rem", color: colors.textSecondary }}>
+                        No archived exams.
+                      </td>
+                    </tr>
+                  )}
+                  {archivedExamCatalog.map((exam) => (
+                    <tr key={exam.id} style={{ borderBottom: `1px solid ${colors.border}`, verticalAlign: "top" }}>
+                      <td style={{ padding: "0.4rem" }}>
+                        <div style={{ fontWeight: 600 }}>{exam.title}</div>
+                        <div style={{ color: colors.textSecondary }}>{exam.description}</div>
+                        <div style={{ color: colors.textSecondary, fontSize: "0.75rem", marginTop: "0.25rem" }}>
+                          Exam ID: {formatShortExamId(exam.id)}
+                          {exam.createdAt ? ` · Created ${formatUtcTimestamp(exam.createdAt)}` : ""} · Delivery:{" "}
+                          {formatExamDeliveryAvailability(exam.deliveryAvailability)}
+                        </div>
+                      </td>
+                      <td style={{ padding: "0.4rem" }}>
+                        <span style={statusBadgeStyle(getExamStatusTone(exam.status))}>{exam.status}</span>
+                        {exam.archivedAt && (
+                          <div style={{ color: colors.textSecondary, fontSize: "0.75rem" }}>
+                            Archived {formatUtcTimestamp(exam.archivedAt)}
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ padding: "0.4rem" }}>{exam.projectName}</td>
+                      <td style={{ padding: "0.4rem" }}>
+                        <div>{exam.blueprintName}</div>
+                        <div style={{ color: colors.textSecondary, fontSize: "0.75rem" }}>{exam.snapshotName}</div>
+                      </td>
+                      <td style={{ padding: "0.4rem" }}>
+                        {exam.allowedRegions.map((region) => region.name).join(", ")}
+                      </td>
+                      <td style={{ padding: "0.4rem" }}>{exam.policyName}</td>
+                      <td style={{ padding: "0.4rem" }}>
+                        <div>{exam.timeLimitMinutes} min runtime</div>
+                        <div style={{ color: colors.textSecondary, fontSize: "0.75rem" }}>
+                          {exam.openPeriodMinutes} min open
+                        </div>
+                        {exam.storageLeaseMinutes ? (
+                          <div style={{ color: colors.textSecondary, fontSize: "0.75rem" }}>
+                            {exam.storageLeaseMinutes} min storage
+                          </div>
+                        ) : null}
+                      </td>
+                      <td style={{ padding: "0.4rem" }}>{exam.scoreRetrievalEnabled ? "Enabled" : "Off"}</td>
+                      <td style={{ padding: "0.4rem" }}>
+                        <ExamCatalogRowActions
+                          exam={exam}
+                          loading={loading}
+                          editingExamId={editingExamId}
+                          onEdit={() => void beginEditingExam(exam)}
+                          onPublish={() => void publishCatalogExam(exam.id)}
+                          onUnpublish={() => void unpublishCatalogExam(exam.id)}
+                          onArchive={() => void archiveCatalogExam(exam.id)}
                           onManageCohortSessions={() => navigateToExamSessions(exam.id)}
                         />
                       </td>
@@ -3662,6 +4031,11 @@ export function AdminConsole({
               loading={loading}
               onBack={() => navigateToExamSessions(focusedExam.id)}
               onPublish={() => void publishCohortSession(focusedExam.id, focusedCohortSession.session.id)}
+              onCloseAdmission={() =>
+                void closeCohortSessionAdmission(focusedExam.id, focusedCohortSession.session.id)
+              }
+              onRetire={() => void retireCohortSession(focusedExam.id, focusedCohortSession.session.id)}
+              onOpenCorrelationDiagnostics={openCorrelationSupportDiagnostics}
             />
           )}
 

@@ -270,10 +270,33 @@ describe("AdminConsole", () => {
     );
 
     expect(html).toContain("Current Exam Catalog");
+    expect(html).toContain("Archived Exams");
     expect(html).toContain("Create Exam");
     expect(html).not.toContain("Project-first Exam authoring");
     expect(html).not.toContain("Session name");
     expect(html).not.toContain("Create Draft Cohort Session");
+  });
+
+  it("labels archived Individual Exams as history and support records instead of active catalog entries", () => {
+    const html = renderToStaticMarkup(
+      createElement(ExamCatalogRowActions, {
+        exam: {
+          id: "exam-archived",
+          status: "archived",
+          deliveryAvailability: "individual",
+        },
+        loading: false,
+        editingExamId: null,
+        onEdit: vi.fn(),
+        onPublish: vi.fn(),
+        onUnpublish: vi.fn(),
+        onArchive: vi.fn(),
+        onManageCohortSessions: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("Archived for history and support review.");
+    expect(html).not.toContain("Archive Exam");
   });
 
   it("hides the global Create Exam action while managing Cohort Sessions for a focused Exam", () => {
@@ -361,6 +384,7 @@ describe("AdminConsole", () => {
     );
 
     expect(publishedIndividualHtml).toContain("Unpublish Exam");
+    expect(publishedIndividualHtml).toContain("Archive Exam");
     expect(publishedIndividualHtml).not.toContain("Manage Cohort Sessions");
     expect(publishedIndividualHtml).not.toContain("Cohort Sessions unavailable");
   });
@@ -384,7 +408,43 @@ describe("AdminConsole", () => {
     expect(cohortHtml).not.toContain("Edit Exam");
     expect(cohortHtml).not.toContain("Publish Exam");
     expect(cohortHtml).not.toContain("Unpublish Exam");
+    expect(cohortHtml).not.toContain("Archive Exam");
     expect(cohortHtml).not.toContain("Cohort Sessions unavailable");
+
+    const publishedCohortHtml = renderToStaticMarkup(
+      createElement(ExamCatalogRowActions, {
+        exam: { id: "exam-cohort-published", status: "published", deliveryAvailability: "cohort" },
+        loading: false,
+        editingExamId: null,
+        onEdit: vi.fn(),
+        onPublish: vi.fn(),
+        onUnpublish: vi.fn(),
+        onArchive: vi.fn(),
+        onManageCohortSessions: vi.fn(),
+      }),
+    );
+
+    expect(publishedCohortHtml).toContain("Manage Cohort Sessions");
+    expect(publishedCohortHtml).toContain("Archive Exam");
+    expect(publishedCohortHtml).not.toContain("Unpublish Exam");
+    expect(publishedCohortHtml).not.toContain("Publish Exam");
+
+    const blockedCohortHtml = renderToStaticMarkup(
+      createElement(ExamCatalogRowActions, {
+        exam: { id: "exam-cohort-active", status: "published", deliveryAvailability: "cohort" },
+        loading: false,
+        editingExamId: null,
+        hasActiveCohortSessions: true,
+        onEdit: vi.fn(),
+        onPublish: vi.fn(),
+        onUnpublish: vi.fn(),
+        onArchive: vi.fn(),
+        onManageCohortSessions: vi.fn(),
+      }),
+    );
+
+    expect(blockedCohortHtml).toContain("disabled");
+    expect(blockedCohortHtml).toContain("Retire all Cohort Exam Sessions first.");
   });
 
   it("keeps individual Exam lifecycle actions for mixed-delivery catalog rows", () => {
@@ -419,6 +479,7 @@ describe("AdminConsole", () => {
     expect(bothHtml).toContain("Delivery: Individual + Cohort Exam");
     expect(bothHtml).toContain("Manage Cohort Sessions");
     expect(bothHtml).toContain("Unpublish Exam");
+    expect(bothHtml).toContain("Archive Exam");
     expect(bothHtml).not.toContain("Publish Exam");
     expect(bothHtml).not.toContain("Cohort Sessions unavailable");
   });
@@ -552,14 +613,13 @@ describe("AdminConsole", () => {
     expect(html).toContain(">25<");
     expect(html).toContain("CloudShare Experience ID");
     expect(html).toContain("EX123");
-    expect(html).toContain("Open Session");
+    expect(html).toContain("View session details");
   });
 
   it("states that candidate admission remains disabled for Cohort Exam Sessions", () => {
     const html = renderToStaticMarkup(createElement(CohortSessionDraftOnlyNotice));
 
-    expect(html).toContain("Candidate admission remains disabled in this slice.");
-    expect(html).toContain("Published Cohort Exam Sessions stay admin-only until a later slice enables candidate joins.");
+    expect(html).toContain("Published Cohort Exam Sessions admit Candidates");
   });
 
   it("renders admin-visible publish reconciliation wording for Cohort Exam Sessions", () => {
@@ -1008,9 +1068,12 @@ describe("AdminConsole", () => {
 
     expect(html).toContain("CloudShare participant read unavailable");
     expect(html).toContain("CloudShare participant read failed for this Cohort Exam Session.");
-    expect(html).toContain("Correlation ID: corr-1");
+    expect(html).toContain("Correlation ID:");
+    expect(html).toContain("corr-1");
+    expect(html).toContain("/admin?tab=support&amp;view=diagnostics&amp;correlationId=corr-1");
     expect(html).toContain("Aggregate Guided Journey progress unavailable");
     expect(html).toContain("corr-aggregate-1");
+    expect(html).toContain("/admin?tab=support&amp;view=diagnostics&amp;correlationId=corr-aggregate-1");
   });
 
   it("renders the aggregate section as disabled when the parent Exam does not retrieve Guided Journey scores", () => {

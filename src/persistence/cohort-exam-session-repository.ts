@@ -28,6 +28,8 @@ export function createInMemoryCohortExamSessionRepository(): CohortExamSessionRe
       const claimed: CohortExamSession = {
         ...session,
         status: "publishing",
+        admissionClosedAt: session.admissionClosedAt ?? null,
+        retiredAt: session.retiredAt ?? null,
         updatedAt: input.claimedAt,
       };
       byId.set(claimed.id, claimed);

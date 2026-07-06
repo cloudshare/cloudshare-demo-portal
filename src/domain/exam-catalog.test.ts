@@ -56,6 +56,7 @@ describe("createDraftExam", () => {
       deliveryAvailability: "individual",
       status: "draft",
       publishedAt: null,
+      archivedAt: null,
       createdAt: now,
       updatedAt: now,
       projectId: "project-1",

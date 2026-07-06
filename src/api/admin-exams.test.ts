@@ -6,6 +6,7 @@ import {
   buildAdminExamCatalogListDeps,
   buildAdminExamPublishDeps,
   buildAdminExamUnpublishDeps,
+  handleArchiveExam,
   handleCreateDraftExam,
   handleGetBlueprintDetail,
   handleGetExamAuthoringBootstrap,
@@ -1095,11 +1096,140 @@ describe("admin exam catalog handlers", () => {
 
     expect(catalog.status).toBe(200);
     expect(catalog.body).toEqual({
-      exams: [
+      activeExams: [
         expect.objectContaining({
           id: "exam-1",
           status: "published",
           scoreRetrievalEnabled: false,
+        }),
+      ],
+      archivedExams: [],
+    });
+  });
+
+  it("keeps archived Individual Exams out of the active catalog while returning them for history views", async () => {
+    const repository = createInMemoryExamCatalogRepository();
+    const cache = createInMemoryExamAuthoringCacheRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
+    await seedAuthoringCache(cache);
+
+    await handleCreateDraftExam(
+      {
+        repository,
+        cache,
+        instructor: configuredInstructor,
+        logger: makeLogger(),
+        now: () => new Date("2026-06-14T12:00:00.000Z"),
+        newId: () => "exam-1",
+      },
+      {
+        customerId: "customer-1",
+        body: {
+          title: "Active Exam",
+          description: "Current catalog entry.",
+          timeLimitMinutes: 90,
+          scoreRetrievalEnabled: false,
+          projectId: "project-1",
+          blueprintId: "bp-1",
+          snapshotId: "snap-1",
+          allowedRegionIds: ["region-1", "region-2"],
+          policyId: "policy-1",
+          openPeriodMinutes: 720,
+          deliveryAvailability: "individual",
+        },
+      },
+    );
+    await handlePublishExam(
+      {
+        repository,
+        connections: makeConnections(),
+        cloudshare: makeCloudShareFactory(makeAuthoringSource()),
+        cache,
+        logger: makeLogger(),
+        now: () => new Date("2026-06-14T12:30:00.000Z"),
+      },
+      { customerId: "customer-1", examId: "exam-1" },
+    );
+
+    await handleCreateDraftExam(
+      {
+        repository,
+        cache,
+        instructor: configuredInstructor,
+        logger: makeLogger(),
+        now: () => new Date("2026-06-14T13:00:00.000Z"),
+        newId: () => "exam-2",
+      },
+      {
+        customerId: "customer-1",
+        body: {
+          title: "Archived Exam",
+          description: "Support-only entry.",
+          timeLimitMinutes: 90,
+          scoreRetrievalEnabled: false,
+          projectId: "project-1",
+          blueprintId: "bp-1",
+          snapshotId: "snap-1",
+          allowedRegionIds: ["region-1", "region-2"],
+          policyId: "policy-1",
+          openPeriodMinutes: 720,
+          deliveryAvailability: "individual",
+        },
+      },
+    );
+    await handlePublishExam(
+      {
+        repository,
+        connections: makeConnections(),
+        cloudshare: makeCloudShareFactory(makeAuthoringSource()),
+        cache,
+        logger: makeLogger(),
+        now: () => new Date("2026-06-14T13:30:00.000Z"),
+      },
+      { customerId: "customer-1", examId: "exam-2" },
+    );
+    await handleArchiveExam(
+      {
+        repository,
+        diagnostics,
+        attempts: {
+          listByExamId: vi.fn().mockResolvedValue([]),
+        },
+        audit: { write: vi.fn().mockResolvedValue(undefined) },
+        logger: makeLogger(),
+        now: () => new Date("2026-06-14T14:00:00.000Z"),
+        newAuditId: () => "audit-archive-2",
+      },
+      {
+        customerId: "customer-1",
+        actor: {
+          type: "admin",
+          id: "admin-1",
+          email: "admin@helioscx.demo",
+        },
+        examId: "exam-2",
+        body: { confirmArchive: true },
+      },
+    );
+
+    const catalog = await handleGetExamCatalog(
+      { repository, logger: makeLogger() },
+      { customerId: "customer-1" },
+    );
+
+    expect(catalog.status).toBe(200);
+    expect(catalog.body).toEqual({
+      activeExams: [
+        expect.objectContaining({
+          id: "exam-1",
+          status: "published",
+        }),
+      ],
+      archivedExams: [
+        expect.objectContaining({
+          id: "exam-2",
+          status: "archived",
         }),
       ],
     });
