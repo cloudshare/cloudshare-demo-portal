@@ -347,6 +347,141 @@ describe("createCloudShareTrainingRetirementWriter", () => {
       }),
     );
   });
+
+  it("accepts live self-paced training readback with null end before sending the retire PUT", async () => {
+    const requestV4Detailed = vi
+      .fn()
+      .mockImplementationOnce(async (spec) => ({
+        data: spec.schema.parse({
+          id: "EXkUygpfa1T3y5GtjqtUcLxQ2",
+          name: "Linux Environment with xRDP v2 - Now ish",
+          status: "inProgress",
+          type: "selfPaced",
+          accessLink: "https://use.cloudshare.com/Class/taalw",
+          passphrase: "certalis-1588aa74-05ad-406c-b188-aa328c589610",
+          sso: null,
+          createdBy: "service@helioscx.demo",
+          createdDate: "2026-07-06T02:39:04.6072425Z",
+          lastUpdatedBy: "service@helioscx.demo",
+          lastUpdatedDate: "2026-07-06T02:39:05.2507623Z",
+          projectId: "PRCU02uuokHPBfjMedkmradg2",
+          teamId: "TMDJe1pa2ozJ-3RlJr9K4N7A2",
+          blueprintIds: ["BPxssLIWyy1g34xD9fcBYxsA2"],
+          mainInstructor: {
+            email: "service@helioscx.demo",
+            teamId: null,
+          },
+          additionalInstructors: [],
+          start: "2026-07-06T02:37:00",
+          end: null,
+          timeZone: "UTC",
+          cloudshareRegionIds: ["REKolD1-ab84YIxODeMGob9A2"],
+          awsCloudRegion: null,
+          azureCloudRegion: null,
+          googleCloudProviderRegion: null,
+          googleCloudProviderZone: null,
+          policyId: "POavMAu1wiaVydJdYUOAExJg2",
+          maxStudents: 100,
+          maxConcurrentStudents: null,
+          registrationType: "registeredStudentsOnly",
+          accessType: "passphrase",
+          usersEarlyAccess: {
+            grantEarlyAccess: "forEveryone",
+            earlyAccessTime: 30,
+          },
+          description: null,
+          labels: [],
+          externalId: null,
+          allowMultipleEnvironmentActivations: false,
+          sendInvitations: "instructorsAndStudents",
+          emailDomainBlocklist: null,
+          blockFreeEmailDomains: false,
+          customFields: [],
+          allowParticipantsSwitchSteps: false,
+          useCustomInvitationEmail: false,
+          preConfigureParticipantEnvironments: null,
+          allowAudioVideo: false,
+        }),
+        host: "api.accelerate.cloudshare.com",
+        integrationSurface: "cloudshare.v4.training.detail",
+        request: { method: spec.method, path: `/v4${spec.path}` },
+        response: {
+          status: 200,
+          body: {
+            id: "EXkUygpfa1T3y5GtjqtUcLxQ2",
+            end: null,
+          },
+        },
+      }))
+      .mockImplementationOnce(async (spec) => ({
+        data: spec.schema.parse({
+          id: "EXkUygpfa1T3y5GtjqtUcLxQ2",
+          end: "2026-07-06T15:27:37",
+        }),
+        host: "api.accelerate.cloudshare.com",
+        integrationSurface: "cloudshare.v4.training.update",
+        request: { method: spec.method, path: `/v4${spec.path}`, body: spec.body },
+        response: {
+          status: 200,
+          body: {
+            id: "EXkUygpfa1T3y5GtjqtUcLxQ2",
+            end: "2026-07-06T15:27:37",
+          },
+        },
+      }));
+    const writer = createCloudShareTrainingRetirementWriter({
+      requestV4Detailed,
+    } as never);
+
+    const result = await writer.retireTrainingToEnd({
+      trainingId: "EXkUygpfa1T3y5GtjqtUcLxQ2",
+      end: new Date("2026-07-06T15:27:37.000Z"),
+    });
+
+    expect(result.end).toBe("2026-07-06T15:27:37");
+    expect(requestV4Detailed).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        method: "PUT",
+        path: "/trainings/EXkUygpfa1T3y5GtjqtUcLxQ2",
+        body: expect.objectContaining({
+          Name: "Linux Environment with xRDP v2 - Now ish",
+          Type: "selfPaced",
+          Start: "2026-07-06T02:37:00",
+          End: "2026-07-06T15:27:37.000Z",
+          TeamId: "TMDJe1pa2ozJ-3RlJr9K4N7A2",
+          PolicyId: "POavMAu1wiaVydJdYUOAExJg2",
+          TimeZone: "UTC",
+          ProjectId: "PRCU02uuokHPBfjMedkmradg2",
+          Passphrase: "certalis-1588aa74-05ad-406c-b188-aa328c589610",
+          MaxStudents: 100,
+          MaxConcurrentStudents: null,
+          BlueprintIds: ["BPxssLIWyy1g34xD9fcBYxsA2"],
+          MainInstructor: { Email: "service@helioscx.demo" },
+          AdditionalInstructors: [],
+          UsersEarlyAccess: {
+            GrantEarlyAccess: "forEveryone",
+            EarlyAccessTime: 30,
+          },
+          CloudshareRegionIds: ["REKolD1-ab84YIxODeMGob9A2"],
+          RegistrationType: "registeredStudentsOnly",
+          AccessType: "passphrase",
+          Description: null,
+          Labels: [],
+          ExternalId: null,
+          AllowMultipleEnvironmentActivations: false,
+          SendInvitations: "instructorsAndStudents",
+          EmailDomainBlocklist: null,
+          BlockFreeEmailDomains: false,
+          CustomFields: [],
+          AllowParticipantsSwitchSteps: false,
+          UseCustomInvitationEmail: false,
+          PreConfigureParticipantEnvironments: null,
+          AllowAudioVideo: false,
+        }),
+      }),
+    );
+  });
 });
 
 async function trainingReadback(spec: {

@@ -5,16 +5,16 @@ import { CloudShareResponseError } from "./errors";
 const updatedTrainingSchema = z
   .object({
     id: z.string().min(1),
-    end: z.string().min(1).optional(),
-    End: z.string().min(1).optional(),
+    end: z.string().min(1).nullable().optional(),
+    End: z.string().min(1).nullable().optional(),
   })
   .passthrough();
 
 const trainingDetailSchema = z
   .object({
     id: z.string().min(1),
-    end: z.string().min(1).optional(),
-    End: z.string().min(1).optional(),
+    end: z.string().min(1).nullable().optional(),
+    End: z.string().min(1).nullable().optional(),
   })
   .passthrough();
 
@@ -34,6 +34,21 @@ const TRAINING_UPDATE_FIELD_ALIASES = [
   ["UsersEarlyAccess", "usersEarlyAccess"],
   ["CloudshareRegionIds", "cloudshareRegionIds"],
   ["RegistrationType", "registrationType"],
+  ["AdditionalInstructors", "additionalInstructors"],
+  ["MaxConcurrentStudents", "maxConcurrentStudents"],
+  ["AccessType", "accessType"],
+  ["Description", "description"],
+  ["Labels", "labels"],
+  ["ExternalId", "externalId"],
+  ["AllowMultipleEnvironmentActivations", "allowMultipleEnvironmentActivations"],
+  ["SendInvitations", "sendInvitations"],
+  ["EmailDomainBlocklist", "emailDomainBlocklist"],
+  ["BlockFreeEmailDomains", "blockFreeEmailDomains"],
+  ["CustomFields", "customFields"],
+  ["AllowParticipantsSwitchSteps", "allowParticipantsSwitchSteps"],
+  ["UseCustomInvitationEmail", "useCustomInvitationEmail"],
+  ["PreConfigureParticipantEnvironments", "preConfigureParticipantEnvironments"],
+  ["AllowAudioVideo", "allowAudioVideo"],
 ] as const;
 
 export interface RetireCloudShareTrainingResult {
@@ -169,6 +184,9 @@ function normalizeTrainingUpdateField(key: string, value: unknown): unknown {
     const earlyAccess = value as Record<string, unknown>;
     return {
       GrantEarlyAccess: earlyAccess.GrantEarlyAccess ?? earlyAccess.grantEarlyAccess,
+      ...(earlyAccess.EarlyAccessTime !== undefined || earlyAccess.earlyAccessTime !== undefined
+        ? { EarlyAccessTime: earlyAccess.EarlyAccessTime ?? earlyAccess.earlyAccessTime }
+        : {}),
     };
   }
 
