@@ -351,6 +351,15 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
         matchedExamAttemptId: "attempt-1",
       },
     ]);
+    expect(response.body.monitoring.summary).toEqual({
+      activeCount: 1,
+      inProgressCount: 1,
+      completedCount: 0,
+      problemCount: 0,
+      portalAttemptCount: 1,
+      cloudShareParticipantCount: 1,
+      derivedFrom: "portal_and_cloudshare",
+    });
   });
 
   it("returns portal attempts, CloudShare participants, derived counts, and diagnostic filters", async () => {

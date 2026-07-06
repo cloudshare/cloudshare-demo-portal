@@ -618,6 +618,7 @@ function deriveSummary(
   participants: readonly CohortExamSessionParticipantView[],
   cloudShareStatus: "available" | "unavailable" | "not_published",
 ): CohortExamSessionMonitoringView["summary"] {
+  const attemptKeyByEmail = new Map<string, string>();
   const rowsByKey = new Map<
     string,
     {
@@ -628,10 +629,11 @@ function deriveSummary(
 
   for (const attempt of portalAttempts) {
     const key = toPortalSummaryRowKey(attempt);
+    attemptKeyByEmail.set(attempt.candidateEmail.trim().toLowerCase(), key);
     rowsByKey.set(key, { ...(rowsByKey.get(key) ?? {}), portal: attempt });
   }
   for (const participant of participants) {
-    const key = toCloudShareSummaryRowKey(participant);
+    const key = toCloudShareSummaryRowKey(participant, attemptKeyByEmail);
     rowsByKey.set(key, { ...(rowsByKey.get(key) ?? {}), cloud: participant });
   }
 
@@ -669,11 +671,15 @@ function toPortalSummaryRowKey(attempt: CohortExamSessionAttemptView): string {
   return `attempt:${attempt.id}`;
 }
 
-function toCloudShareSummaryRowKey(participant: CohortExamSessionParticipantView): string {
+function toCloudShareSummaryRowKey(
+  participant: CohortExamSessionParticipantView,
+  attemptKeyByEmail: ReadonlyMap<string, string>,
+): string {
   if (participant.matchedExamAttemptId) {
     return `attempt:${participant.matchedExamAttemptId}`;
   }
-  return `email:${participant.email.trim().toLowerCase()}`;
+  const normalizedEmail = participant.email.trim().toLowerCase();
+  return attemptKeyByEmail.get(normalizedEmail) ?? `email:${normalizedEmail}`;
 }
 
 function isPortalActive(status: CohortExamSessionAttemptView["status"] | undefined): boolean {
