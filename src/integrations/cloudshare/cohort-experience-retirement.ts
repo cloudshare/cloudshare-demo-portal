@@ -18,6 +18,8 @@ const trainingDetailSchema = z
   })
   .passthrough();
 
+const CLOUD_SHARE_END_CONFIRMATION_TOLERANCE_MS = 1_000;
+
 export interface RetireCloudShareTrainingResult {
   readonly trainingId: string;
   readonly end: string | null;
@@ -53,6 +55,7 @@ export function createCloudShareTrainingRetirementWriter(
   return {
     async retireTrainingToEnd(input): Promise<RetireCloudShareTrainingResult> {
       const expectedEnd = input.end.toISOString();
+      const expectedEndTime = input.end.getTime();
       const result = (await client.requestV4Detailed!({
         method: "PUT",
         path: `/trainings/${input.trainingId}`,
@@ -63,7 +66,7 @@ export function createCloudShareTrainingRetirementWriter(
       })) as CloudShareDetailedResult<z.infer<typeof updatedTrainingSchema>>;
       const updateEnd = result.data.end ?? result.data.End ?? null;
 
-      if (updateEnd !== expectedEnd) {
+      if (!matchesCloudShareTrainingInstant(updateEnd, expectedEndTime)) {
         const readback = (await client.requestV4Detailed!({
           method: "GET",
           path: `/trainings/${input.trainingId}`,
@@ -71,7 +74,7 @@ export function createCloudShareTrainingRetirementWriter(
         })) as CloudShareDetailedResult<z.infer<typeof trainingDetailSchema>>;
         const confirmedEnd = readback.data.end ?? readback.data.End ?? null;
 
-        if (confirmedEnd !== expectedEnd) {
+        if (!matchesCloudShareTrainingInstant(confirmedEnd, expectedEndTime)) {
           throw new CloudShareResponseError(
             "CloudShare did not confirm the Cohort Exam Session retirement end time.",
             {
@@ -108,4 +111,24 @@ export function createCloudShareTrainingRetirementWriter(
       };
     },
   };
+}
+
+function matchesCloudShareTrainingInstant(value: string | null, expectedTime: number): boolean {
+  if (!value) {
+    return false;
+  }
+  const parsed = parseCloudShareTrainingDate(value);
+  if (!parsed) {
+    return false;
+  }
+  return Math.abs(parsed.getTime() - expectedTime) <= CLOUD_SHARE_END_CONFIRMATION_TOLERANCE_MS;
+}
+
+function parseCloudShareTrainingDate(value: string): Date | undefined {
+  const normalized =
+    !/[zZ]$/.test(value) && !/[+-]\d{2}:\d{2}$/.test(value)
+      ? `${value}Z`
+      : value;
+  const parsed = new Date(normalized);
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 }
