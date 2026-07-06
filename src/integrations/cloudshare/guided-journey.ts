@@ -2,12 +2,51 @@ import { z } from "zod";
 import type { CloudShareClient, CloudShareDetailedResult } from "./client";
 import { redactCloudShareAdminSupportValue } from "./diagnostic-redaction";
 import type {
+  ParticipantProgressDiagnosticRequest,
+  ParticipantProgressDiagnosticResponse,
   DiagnosticScoreRetrievalProvider,
   ParticipantProgress,
   ParticipantProgressDiagnostics,
   ScoreRetrievalProvider,
 } from "@/domain/score-result";
 import { CloudShareRequestError, CloudShareResponseError } from "./errors";
+
+export interface AggregateGuidedJourneySectionStatus {
+  readonly sectionNumber: number;
+  readonly title: string;
+  readonly status: string | null;
+  readonly avgExploredRate: number;
+  readonly avgInProgressRate: number;
+  readonly avgNotStartedRate: number;
+  readonly avgPassedRate: number;
+  readonly avgFailedRate: number;
+  readonly avgNotInitiatedRate: number;
+  readonly avgTimeSpentSeconds: number | null;
+}
+
+export interface AggregateGuidedJourneyProgress {
+  readonly avgExploredRate: number;
+  readonly avgInProgressRate: number;
+  readonly avgNotStartedRate: number;
+  readonly avgPassedRate: number;
+  readonly avgFailedRate: number;
+  readonly avgNotInitiatedRate: number;
+  readonly aggSectionStatuses: readonly AggregateGuidedJourneySectionStatus[];
+}
+
+export interface AggregateGuidedJourneyProvider {
+  getAggregateProgress(experienceId: string): Promise<AggregateGuidedJourneyProgress | null>;
+}
+
+export interface AggregateGuidedJourneyDiagnostics {
+  readonly progress: AggregateGuidedJourneyProgress | null;
+  readonly request: ParticipantProgressDiagnosticRequest;
+  readonly response: ParticipantProgressDiagnosticResponse | null;
+}
+
+export interface DiagnosticAggregateGuidedJourneyProvider extends AggregateGuidedJourneyProvider {
+  getAggregateProgressForDiagnostics(experienceId: string): Promise<AggregateGuidedJourneyDiagnostics>;
+}
 
 /**
  * CloudShare implementation of the {@link ScoreRetrievalProvider} port.
@@ -87,6 +126,53 @@ const guidedJourneyProgressSchema = z.unknown().transform<ParticipantProgress | 
   return parsed.data;
 });
 
+const aggregateGuidedJourneyProgressSchema = z.unknown().transform<AggregateGuidedJourneyProgress | null>((payload, ctx) => {
+  const normalized = normalizeAggregateGuidedJourneyProgress(payload);
+  if (normalized === undefined) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Unsupported aggregate Guided Journey progress payload",
+    });
+    return z.NEVER;
+  }
+
+  if (normalized === null) {
+    return null;
+  }
+
+  const parsed = z.object({
+    avgExploredRate: z.number().min(0).max(1),
+    avgInProgressRate: z.number().min(0).max(1),
+    avgNotStartedRate: z.number().min(0).max(1),
+    avgPassedRate: z.number().min(0).max(1),
+    avgFailedRate: z.number().min(0).max(1),
+    avgNotInitiatedRate: z.number().min(0).max(1),
+    aggSectionStatuses: z.array(
+      z.object({
+        sectionNumber: z.number().int().nonnegative(),
+        title: z.string().min(1),
+        status: z.string().min(1).nullable(),
+        avgExploredRate: z.number().min(0).max(1),
+        avgInProgressRate: z.number().min(0).max(1),
+        avgNotStartedRate: z.number().min(0).max(1),
+        avgPassedRate: z.number().min(0).max(1),
+        avgFailedRate: z.number().min(0).max(1),
+        avgNotInitiatedRate: z.number().min(0).max(1),
+        avgTimeSpentSeconds: z.number().nonnegative().nullable(),
+      }),
+    ),
+  }).safeParse(normalized);
+
+  if (!parsed.success) {
+    for (const issue of parsed.error.issues) {
+      ctx.addIssue(issue);
+    }
+    return z.NEVER;
+  }
+
+  return parsed.data;
+});
+
 export function createCloudShareGuidedJourneyProvider(
   client: CloudShareClient,
 ): ScoreRetrievalProvider & DiagnosticScoreRetrievalProvider {
@@ -103,6 +189,96 @@ export function createCloudShareGuidedJourneyProvider(
       participantId: string,
     ): Promise<ParticipantProgressDiagnostics> {
       return fetchParticipantProgressForDiagnostics(client, experienceId, participantId);
+    },
+  };
+}
+
+export function createCloudShareAggregateGuidedJourneyProvider(
+  client: CloudShareClient,
+): AggregateGuidedJourneyProvider & DiagnosticAggregateGuidedJourneyProvider {
+  return {
+    async getAggregateProgress(experienceId: string): Promise<AggregateGuidedJourneyProgress | null> {
+      const result = await fetchAggregateProgressForDiagnostics(client, experienceId);
+      return result.progress;
+    },
+    async getAggregateProgressForDiagnostics(experienceId: string): Promise<AggregateGuidedJourneyDiagnostics> {
+      return fetchAggregateProgressForDiagnostics(client, experienceId);
+    },
+  };
+}
+
+async function fetchAggregateProgressForDiagnostics(
+  client: CloudShareClient,
+  experienceId: string,
+): Promise<AggregateGuidedJourneyDiagnostics> {
+  const path = `/guided-journey/progress/${experienceId}`;
+  const request = { method: "GET", path } as const;
+
+  let responseBody: unknown;
+  let detailedResponse: CloudShareDetailedResult<unknown> | null = null;
+  try {
+    if (typeof client.requestV4Detailed === "function") {
+      detailedResponse = await client.requestV4Detailed<unknown>({
+        method: request.method,
+        path: request.path,
+        schema: z.unknown(),
+      });
+      responseBody = detailedResponse.data;
+    } else {
+      responseBody = await client.requestV4<unknown>({
+        method: request.method,
+        path: request.path,
+        schema: z.unknown(),
+      });
+    }
+  } catch (error) {
+    if (error instanceof CloudShareRequestError && error.status === 404) {
+      return {
+        progress: null,
+        request: {
+          ...request,
+          ...(error.context?.requestHeaders
+            ? { headers: error.context.requestHeaders as Record<string, string> }
+            : {}),
+          ...(error.context?.requestBody !== undefined
+            ? { body: error.context.requestBody }
+            : {}),
+        },
+        response: {
+          status: 404,
+          body: null,
+          ...(error.context?.responseHeaders
+            ? { headers: error.context.responseHeaders as Record<string, string | string[]> }
+            : {}),
+        },
+      };
+    }
+    throw error;
+  }
+
+  const parsed = aggregateGuidedJourneyProgressSchema.safeParse(responseBody);
+  if (!parsed.success) {
+    throw new CloudShareResponseError(
+      "CloudShare aggregate Guided Journey progress payload was unsupported",
+      {
+        method: request.method,
+        path: request.path,
+        integrationSurface: "cloudshare.v4.guided_journey.progress.aggregate",
+        responseBody: serializeGuidedJourneyResponseBody(responseBody),
+        issues: parsed.error.issues.map((issue) => issue.message),
+      },
+    );
+  }
+
+  return {
+    progress: parsed.data,
+    request: detailedResponse?.request ?? request,
+    response: {
+      status: detailedResponse?.response.status ?? 200,
+      ...(detailedResponse?.response.headers
+        ? { headers: detailedResponse.response.headers }
+        : {}),
+      body: detailedResponse?.response.body ?? responseBody,
     },
   };
 }
@@ -260,6 +436,75 @@ function normalizeGuidedJourneyProgress(payload: unknown): ParticipantProgress |
     passedRate,
     failedRate,
     notInitiatedRate,
+  };
+}
+
+function normalizeAggregateGuidedJourneyProgress(
+  payload: unknown,
+): AggregateGuidedJourneyProgress | null | undefined {
+  if (!isRecord(payload)) {
+    return undefined;
+  }
+
+  const avgExploredRate = readNumberCandidate(payload, ["avgExploredRate"]);
+  const avgInProgressRate = readNumberCandidate(payload, ["avgInProgressRate"]);
+  const avgNotStartedRate = readNumberCandidate(payload, ["avgNotStartedRate"]);
+  const avgPassedRate = readNumberCandidate(payload, ["avgPassedRate"]);
+  const avgFailedRate = readNumberCandidate(payload, ["avgFailedRate"]);
+  const avgNotInitiatedRate = readNumberCandidate(payload, ["avgNotInitiatedRate"]);
+  const rawSections = payload.aggSectionStatuses;
+
+  if (
+    avgExploredRate === null &&
+    avgInProgressRate === null &&
+    avgNotStartedRate === null &&
+    avgPassedRate === null &&
+    avgFailedRate === null &&
+    avgNotInitiatedRate === null &&
+    rawSections === undefined
+  ) {
+    return null;
+  }
+
+  if (!Array.isArray(rawSections)) {
+    return undefined;
+  }
+
+  const aggSectionStatuses: AggregateGuidedJourneySectionStatus[] = [];
+  for (const row of rawSections) {
+    if (!isRecord(row)) {
+      return undefined;
+    }
+
+    const sectionNumber = readNumberCandidate(row, ["number", "sectionNumber", "index"]);
+    const title = readStringCandidate(row, ["name", "title", "sectionName"]);
+
+    if (sectionNumber === null || title === null) {
+      return undefined;
+    }
+
+    aggSectionStatuses.push({
+      sectionNumber,
+      title,
+      status: normalizeStatusLabel(readStringCandidate(row, ["status", "sectionStatus"])),
+      avgExploredRate: readNumberCandidate(row, ["avgExploredRate"]) ?? 0,
+      avgInProgressRate: readNumberCandidate(row, ["avgInProgressRate"]) ?? 0,
+      avgNotStartedRate: readNumberCandidate(row, ["avgNotStartedRate"]) ?? 0,
+      avgPassedRate: readNumberCandidate(row, ["avgPassedRate"]) ?? 0,
+      avgFailedRate: readNumberCandidate(row, ["avgFailedRate"]) ?? 0,
+      avgNotInitiatedRate: readNumberCandidate(row, ["avgNotInitiatedRate"]) ?? 0,
+      avgTimeSpentSeconds: readNumberCandidate(row, ["avgTimeSpent", "avgTimeSpentSeconds"]),
+    });
+  }
+
+  return {
+    avgExploredRate: avgExploredRate ?? 0,
+    avgInProgressRate: avgInProgressRate ?? 0,
+    avgNotStartedRate: avgNotStartedRate ?? 0,
+    avgPassedRate: avgPassedRate ?? 0,
+    avgFailedRate: avgFailedRate ?? 0,
+    avgNotInitiatedRate: avgNotInitiatedRate ?? 0,
+    aggSectionStatuses,
   };
 }
 

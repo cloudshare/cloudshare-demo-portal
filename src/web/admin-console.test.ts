@@ -300,6 +300,19 @@ describe("AdminConsole", () => {
     expect(html).not.toContain(">Create Exam<");
   });
 
+  it("keeps Guided Journey aggregate progress out of the regular Exam workspace", () => {
+    const html = renderToStaticMarkup(
+      createElement(AdminConsole, {
+        email: "admin@helioscx.demo",
+        initialTab: "exams",
+        initialExamView: "edit",
+      }),
+    );
+
+    expect(html).not.toContain("Guided Journey aggregate progress");
+    expect(html).not.toContain("This Cohort Exam Session / CloudShare Experience");
+  });
+
   it("shows the focused session name in exam workspace breadcrumbs", () => {
     const html = renderToStaticMarkup(
       createElement(ExamWorkspaceBreadcrumbs, {
@@ -859,11 +872,43 @@ describe("AdminConsole", () => {
               },
             ],
           },
+          guidedJourneyAggregate: {
+            status: "available",
+            experienceId: "EX123",
+            readError: null,
+            correlationId: "corr-aggregate-1",
+            progress: {
+              avgExploredRate: 0.45,
+              avgInProgressRate: 0.2,
+              avgNotStartedRate: 0.1,
+              avgPassedRate: 0.2,
+              avgFailedRate: 0.05,
+              avgNotInitiatedRate: 0,
+              aggSectionStatuses: [
+                {
+                  sectionNumber: 0,
+                  title: "Check pfSense WAN Interface",
+                  status: "explored",
+                  avgExploredRate: 0.6,
+                  avgInProgressRate: 0.1,
+                  avgNotStartedRate: 0.3,
+                  avgPassedRate: 0.4,
+                  avgFailedRate: 0,
+                  avgNotInitiatedRate: 0,
+                  avgTimeSpentSeconds: 338.24936349999996,
+                },
+              ],
+            },
+          },
           diagnostics: {
             session: { examId: "exam-1", externalId: "EX123" },
             cloudShareRead: {
               correlationId: "corr-1",
               operation: "cohort_exam_session.monitor.read_participants",
+            },
+            guidedJourneyAggregateRead: {
+              correlationId: "corr-aggregate-1",
+              operation: "cohort_exam_session.guided_journey_aggregate.read",
             },
           },
         },
@@ -877,6 +922,13 @@ describe("AdminConsole", () => {
     expect(html).toContain("Session diagnostics");
     expect(html).toContain("Portal ExamAttempts");
     expect(html).toContain("CloudShare participants");
+    expect(html).toContain("Guided Journey aggregate progress");
+    expect(html).toContain("This Cohort Exam Session / CloudShare Experience");
+    expect(html).toContain("Explored");
+    expect(html).toContain("45%");
+    expect(html).toContain("Passed");
+    expect(html).toContain("20%");
+    expect(html).toContain("Aggregate progress diagnostics");
     expect(html).toContain("Counts are derived from portal ExamAttempts and the CloudShare participant read");
     expect(html).toContain("Casey Rivera");
     expect(html).toContain("Participant diagnostics");
@@ -929,11 +981,22 @@ describe("AdminConsole", () => {
             correlationId: "corr-1",
             participants: [],
           },
+          guidedJourneyAggregate: {
+            status: "unavailable",
+            experienceId: "EX123",
+            readError: "Aggregate Guided Journey progress is unavailable for this Cohort Exam Session / CloudShare Experience.",
+            correlationId: "corr-aggregate-1",
+            progress: null,
+          },
           diagnostics: {
             session: { examId: "exam-1", externalId: "EX123" },
             cloudShareRead: {
               correlationId: "corr-1",
               operation: "cohort_exam_session.monitor.read_participants",
+            },
+            guidedJourneyAggregateRead: {
+              correlationId: "corr-aggregate-1",
+              operation: "cohort_exam_session.guided_journey_aggregate.read",
             },
           },
         },
@@ -946,6 +1009,74 @@ describe("AdminConsole", () => {
     expect(html).toContain("CloudShare participant read unavailable");
     expect(html).toContain("CloudShare participant read failed for this Cohort Exam Session.");
     expect(html).toContain("Correlation ID: corr-1");
+    expect(html).toContain("Aggregate Guided Journey progress unavailable");
+    expect(html).toContain("corr-aggregate-1");
+  });
+
+  it("renders the aggregate section as disabled when the parent Exam does not retrieve Guided Journey scores", () => {
+    const html = renderToStaticMarkup(
+      createElement(CohortSessionWorkspacePanel, {
+        examTitle: "Helios CX Admin Foundations",
+        session: {
+          session: {
+            id: "cohort-session-1",
+            name: "September Admin Cohort",
+            admissionStartsAt: "2026-09-01T09:00:00.000Z",
+            admissionEndsAt: "2026-09-30T17:00:00.000Z",
+            capacity: 25,
+            status: "published",
+            cloudShareTrainingId: "EX123",
+            cloudShareExperienceId: "EX123",
+          },
+          inheritedContext: {
+            project: { id: "project-1", name: "Project Atlas" },
+            blueprint: { id: "blueprint-1", name: "Blueprint Aurora" },
+            snapshot: { id: "snapshot-1", name: "Snapshot Echo" },
+            policy: { id: "policy-1", name: "Policy Orbit" },
+            allowedRegions: [{ id: "region-1", name: "useast" }],
+            instructor: { id: "instructor-1", name: "Jordan Lee" },
+            scoreRetrievalEnabled: false,
+            timeLimitMinutes: 90,
+          },
+        },
+        detail: {
+          summary: {
+            activeCount: 0,
+            inProgressCount: 0,
+            completedCount: 0,
+            problemCount: 0,
+            portalAttemptCount: 0,
+            cloudShareParticipantCount: 0,
+            derivedFrom: "portal_and_cloudshare",
+          },
+          portalAttempts: [],
+          cloudShareParticipants: {
+            status: "available",
+            trainingId: "EX123",
+            readError: null,
+            correlationId: null,
+            participants: [],
+          },
+          guidedJourneyAggregate: {
+            status: "disabled",
+            experienceId: "EX123",
+            readError: null,
+            correlationId: null,
+            progress: null,
+          },
+          diagnostics: {
+            session: { examId: "exam-1", externalId: "EX123" },
+          },
+        },
+        loading: false,
+        onBack: vi.fn(),
+        onPublish: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("Guided Journey aggregate progress");
+    expect(html).toContain("Enable Guided Journey score retrieval on the parent Exam to view shared Experience aggregate progress.");
+    expect(html).not.toContain("Aggregate progress diagnostics");
   });
 
   it("formats Cohort Exam Session timestamps in ISO-style UTC minutes", () => {

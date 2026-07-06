@@ -39,7 +39,10 @@ import {
 } from "./diagnostic-log-table";
 import { SessionMonitoringPanel } from "./session-monitoring-panel";
 import type { AdminMonitoringView as MonitoringView } from "@/domain/admin-monitoring";
-import type { CohortExamSessionMonitoringView } from "@/api/admin-cohort-exam-session-detail";
+import type {
+  CohortExamSessionGuidedJourneyAggregateView,
+  CohortExamSessionMonitoringView,
+} from "@/api/admin-cohort-exam-session-detail";
 import { startPortalSessionWatchdog } from "./session-expiry";
 import { pageShellStyle } from "./page-shell";
 import { cardStyle, mutedPanelStyle, alertPanelStyle } from "./card-styles";
@@ -280,6 +283,10 @@ function formatUtcTimestamp(value: string | null | undefined): string {
 
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
+}
+
+function formatRateSummary(value: number): string {
+  return `${Math.round(value * 100)}%`;
 }
 
 function stripHtmlToText(value: string | null | undefined): string {
@@ -979,6 +986,28 @@ export function CohortSessionWorkspacePanel(props: {
 
             <div style={{ display: "grid", gap: "0.75rem" }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
+                <strong>Guided Journey aggregate progress</strong>
+                {props.detail.diagnostics.guidedJourneyAggregateRead ? (
+                  <a
+                    href={buildAdminConsoleHref({
+                      tab: "support",
+                      supportView: "diagnostics",
+                      diagnosticFilters: props.detail.diagnostics.guidedJourneyAggregateRead,
+                    })}
+                    style={secondaryButtonStyle}
+                  >
+                    Aggregate progress diagnostics
+                  </a>
+                ) : null}
+              </div>
+              <div style={{ color: colors.textSecondary, fontSize: "0.9rem" }}>
+                This Cohort Exam Session / CloudShare Experience aggregate is admin-only and does not represent cross-Experience analytics.
+              </div>
+              <GuidedJourneyAggregatePanel detail={props.detail.guidedJourneyAggregate} />
+            </div>
+
+            <div style={{ display: "grid", gap: "0.75rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
                 <strong>CloudShare participants</strong>
                 {props.detail.diagnostics.cloudShareRead ? (
                   <a
@@ -1072,6 +1101,91 @@ function SelectionSummaryRow(props: { readonly label: string; readonly value: st
   return (
     <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
       {props.label}: {props.value}
+    </div>
+  );
+}
+
+function GuidedJourneyAggregatePanel(props: {
+  readonly detail: CohortExamSessionGuidedJourneyAggregateView;
+}) {
+  const detail = props.detail;
+
+  if (detail.status === "disabled") {
+    return (
+      <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
+        Enable Guided Journey score retrieval on the parent Exam to view shared Experience aggregate progress.
+      </div>
+    );
+  }
+
+  if (detail.status === "not_published") {
+    return (
+      <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
+        Publish this Cohort Exam Session to CloudShare before shared Experience aggregate progress becomes available.
+      </div>
+    );
+  }
+
+  if (detail.status === "unavailable" || !detail.progress) {
+    return (
+      <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.35rem" }}>
+        <strong>Aggregate Guided Journey progress unavailable</strong>
+        <span>{detail.readError ?? "Aggregate Guided Journey progress is unavailable."}</span>
+        {detail.correlationId ? <span>Correlation ID: {detail.correlationId}</span> : null}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "grid", gap: "0.75rem" }}>
+      <div style={cohortSessionDetailGridStyle}>
+        <CohortSessionDetailItem label="Experience ID" value={detail.experienceId ?? "-"} />
+        <CohortSessionDetailItem label="Explored" value={formatRateSummary(detail.progress.avgExploredRate)} />
+        <CohortSessionDetailItem label="In progress" value={formatRateSummary(detail.progress.avgInProgressRate)} />
+        <CohortSessionDetailItem label="Not started" value={formatRateSummary(detail.progress.avgNotStartedRate)} />
+        <CohortSessionDetailItem label="Passed" value={formatRateSummary(detail.progress.avgPassedRate)} />
+        <CohortSessionDetailItem label="Failed" value={formatRateSummary(detail.progress.avgFailedRate)} />
+        <CohortSessionDetailItem label="Not initiated" value={formatRateSummary(detail.progress.avgNotInitiatedRate)} />
+      </div>
+
+      {detail.progress.aggSectionStatuses.length === 0 ? (
+        <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
+          No section-level aggregate Guided Journey progress is currently visible for this shared Experience.
+        </div>
+      ) : (
+        <div style={{ ...cardStyle, padding: 0, overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
+            <thead>
+              <tr style={{ background: colors.surfaceSubtle }}>
+                {["Section", "Aggregate status", "Rates", "Avg time"].map((heading) => (
+                  <th key={heading} style={{ textAlign: "left", padding: "0.55rem", borderBottom: `1px solid ${colors.border}` }}>
+                    {heading}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {detail.progress.aggSectionStatuses.map((section) => (
+                <tr key={`${section.sectionNumber}:${section.title}`} style={{ borderBottom: `1px solid ${colors.border}` }}>
+                  <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
+                    <div style={{ fontWeight: 600 }}>{section.title}</div>
+                    <div style={{ color: colors.textSecondary }}>Section {section.sectionNumber + 1}</div>
+                  </td>
+                  <td style={{ padding: "0.55rem", verticalAlign: "top" }}>{section.status ?? "-"}</td>
+                  <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
+                    <div>{formatRateSummary(section.avgExploredRate)} explored</div>
+                    <div>{formatRateSummary(section.avgPassedRate)} passed</div>
+                    <div>{formatRateSummary(section.avgFailedRate)} failed</div>
+                  </td>
+                  <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
+                    {section.avgTimeSpentSeconds === null ? "-" : `${Math.round(section.avgTimeSpentSeconds)}s`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
