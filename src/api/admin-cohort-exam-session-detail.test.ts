@@ -3,7 +3,7 @@ import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createDraftCohortExamSession, markCohortExamSessionPublished } from "@/domain/cohort-exam-session";
 import { createDraftExam, publishExam, type CreateDraftExamInput } from "@/domain/exam-catalog";
 import type { CloudShareClientFactory } from "@/domain/cloudshare-connection";
-import { CloudShareTransportError } from "@/integrations/cloudshare";
+import { CloudShareRequestError, CloudShareTransportError } from "@/integrations/cloudshare";
 import { createInMemoryCohortExamSessionRepository } from "@/persistence/cohort-exam-session-repository";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import { createInMemoryExamCatalogRepository } from "@/persistence/exam-catalog-repository";
@@ -145,65 +145,120 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
     };
 
     const requestV4Detailed = vi.fn(
-      async (spec: { method: string; path: string; schema: { parse(value: unknown): unknown } }) => ({
-        data: spec.schema.parse({
-          items: [
-            {
-              email: "casey@helioscx.demo",
-              firstName: "Casey",
-              lastName: "Rivera",
-              name: "Casey Rivera",
-              envId: "env-1",
-              envStatus: "Ready",
-              participationStatus: "inProgress",
-              firstJoined: "2026-07-06T10:15:00.000Z",
-              id: "student-1",
+      async (spec: { method: string; path: string; schema: { parse(value: unknown): unknown } }) => {
+        if (spec.path === "/guided-journey/progress/EXcohort-1") {
+          return {
+            data: spec.schema.parse({
+              avgExploredRate: 0.45,
+              avgInProgressRate: 0.2,
+              avgNotStartedRate: 0.1,
+              avgPassedRate: 0.2,
+              avgFailedRate: 0.05,
+              avgNotInitiatedRate: 0,
+              aggSectionStatuses: [
+                {
+                  number: 0,
+                  name: "Check pfSense WAN Interface",
+                  status: "explored",
+                  avgExploredRate: 0.6,
+                  avgInProgressRate: 0.1,
+                  avgNotStartedRate: 0.3,
+                  avgPassedRate: 0.4,
+                  avgFailedRate: 0,
+                  avgNotInitiatedRate: 0,
+                  avgTimeSpent: 338.24936349999996,
+                },
+              ],
+            }),
+            host: "api.accelerate.cloudshare.com",
+            integrationSurface: "cloudshare.v4.guided_journey.progress.aggregate",
+            request: {
+              method: spec.method,
+              path: spec.path,
+              headers: { authorization: "Bearer secret-api-key" },
             },
-            {
-              email: "jordan@helioscx.demo",
-              firstName: "Jordan",
-              lastName: "Lee",
-              name: "Jordan Lee",
-              envId: "env-2",
-              envStatus: "Archived",
-              participationStatus: "completed",
-              firstJoined: "2026-07-06T08:10:00.000Z",
-              id: "student-2",
+            response: {
+              status: 200,
+              headers: { "content-type": "application/json" },
+              body: {
+                avgExploredRate: 0.45,
+                avgInProgressRate: 0.2,
+                avgNotStartedRate: 0.1,
+                avgPassedRate: 0.2,
+                avgFailedRate: 0.05,
+                avgNotInitiatedRate: 0,
+                aggSectionStatuses: [
+                  {
+                    number: 0,
+                    name: "Check pfSense WAN Interface",
+                    status: "explored",
+                  },
+                ],
+              },
             },
-            {
-              email: "taylor@helioscx.demo",
-              firstName: "Taylor",
-              lastName: "Ng",
-              name: "Taylor Ng",
-              envId: "env-3",
-              envStatus: "ProvisioningFailed",
-              participationStatus: "inProgress",
-              firstJoined: "2026-07-06T11:00:00.000Z",
-              id: "student-3",
-            },
-          ],
-        }),
-        host: "api.accelerate.cloudshare.com",
-        integrationSurface: "cloudshare.v4.training.participant",
-        request: {
-          method: spec.method,
-          path: "/v4" + spec.path,
-          headers: { authorization: "Bearer secret-api-key" },
-        },
-        response: {
-          status: 200,
-          headers: { "content-type": "application/json" },
-          body: {
+          };
+        }
+
+        return {
+          data: spec.schema.parse({
             items: [
               {
                 email: "casey@helioscx.demo",
+                firstName: "Casey",
+                lastName: "Rivera",
+                name: "Casey Rivera",
                 envId: "env-1",
                 envStatus: "Ready",
+                participationStatus: "inProgress",
+                firstJoined: "2026-07-06T10:15:00.000Z",
+                id: "student-1",
+              },
+              {
+                email: "jordan@helioscx.demo",
+                firstName: "Jordan",
+                lastName: "Lee",
+                name: "Jordan Lee",
+                envId: "env-2",
+                envStatus: "Archived",
+                participationStatus: "completed",
+                firstJoined: "2026-07-06T08:10:00.000Z",
+                id: "student-2",
+              },
+              {
+                email: "taylor@helioscx.demo",
+                firstName: "Taylor",
+                lastName: "Ng",
+                name: "Taylor Ng",
+                envId: "env-3",
+                envStatus: "ProvisioningFailed",
+                participationStatus: "inProgress",
+                firstJoined: "2026-07-06T11:00:00.000Z",
+                id: "student-3",
               },
             ],
+          }),
+          host: "api.accelerate.cloudshare.com",
+          integrationSurface: "cloudshare.v4.training.participant",
+          request: {
+            method: spec.method,
+            path: "/v4" + spec.path,
+            headers: { authorization: "Bearer secret-api-key" },
           },
-        },
-      }),
+          response: {
+            status: 200,
+            headers: { "content-type": "application/json" },
+            body: {
+              items: [
+                {
+                  email: "casey@helioscx.demo",
+                  envId: "env-1",
+                  envStatus: "Ready",
+                },
+              ],
+            },
+          },
+        };
+      },
     );
     const cloudshare: CloudShareClientFactory = {
       forConnection: () =>
@@ -297,6 +352,34 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
         },
       ],
     });
+    expect(response.body.monitoring.guidedJourneyAggregate).toEqual({
+      status: "available",
+      experienceId: "EXcohort-1",
+      readError: null,
+      correlationId: "corr-session-detail-1",
+      progress: {
+        avgExploredRate: 0.45,
+        avgInProgressRate: 0.2,
+        avgNotStartedRate: 0.1,
+        avgPassedRate: 0.2,
+        avgFailedRate: 0.05,
+        avgNotInitiatedRate: 0,
+        aggSectionStatuses: [
+          {
+            sectionNumber: 0,
+            title: "Check pfSense WAN Interface",
+            status: "explored",
+            avgExploredRate: 0.6,
+            avgInProgressRate: 0.1,
+            avgNotStartedRate: 0.3,
+            avgPassedRate: 0.4,
+            avgFailedRate: 0,
+            avgNotInitiatedRate: 0,
+            avgTimeSpentSeconds: 338.24936349999996,
+          },
+        ],
+      },
+    });
     expect(response.body.monitoring.diagnostics).toEqual({
       session: {
         examId: "exam-1",
@@ -305,6 +388,10 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
       cloudShareRead: {
         correlationId: "corr-session-detail-1",
         operation: "cohort_exam_session.monitor.read_participants",
+      },
+      guidedJourneyAggregateRead: {
+        correlationId: "corr-session-detail-1",
+        operation: "cohort_exam_session.guided_journey_aggregate.read",
       },
     });
 
@@ -331,6 +418,27 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
       details: {
         integrationSurface: "cloudshare.v4.training.participant",
         participantCount: 3,
+      },
+    });
+
+    const [aggregateEntry] = await diagnosticsRepository.query({
+      customerId: "customer-1",
+      examId: "exam-1",
+      operation: "cohort_exam_session.guided_journey_aggregate.read",
+    });
+    expect(aggregateEntry).toMatchObject({
+      outcome: "success",
+      correlationId: "corr-session-detail-1",
+      externalIds: {
+        experienceId: "EXcohort-1",
+      },
+      request: {
+        method: "GET",
+        path: "/guided-journey/progress/EXcohort-1",
+      },
+      details: {
+        integrationSurface: "cloudshare.v4.guided_journey.progress.aggregate",
+        sectionCount: 1,
       },
     });
   });
@@ -422,6 +530,75 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
       cloudShareParticipantCount: 1,
       derivedFrom: "portal_and_cloudshare",
     });
+  });
+
+  it("does not request aggregate Guided Journey progress when score retrieval is disabled on the parent Exam", async () => {
+    const exams = createInMemoryExamCatalogRepository();
+    const sessions = createInMemoryCohortExamSessionRepository();
+    await seedPublishedExam(exams, { scoreRetrievalEnabled: false });
+    await seedPublishedSession(sessions);
+
+    const attempts: AdminCohortExamSessionAttemptRepository = {
+      listBySessionId: vi.fn().mockResolvedValue([]),
+    };
+
+    const requestV4 = vi.fn();
+    const cloudshare: CloudShareClientFactory = {
+      forConnection: () =>
+        ({
+          requestV4Detailed: vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) => ({
+            data: spec.schema.parse({ items: [] }),
+            host: "api.accelerate.cloudshare.com",
+            integrationSurface: "cloudshare.v4.training.participant",
+            request: { method: "GET", path: "/v4/trainings/EXcohort-1/students" },
+            response: { status: 200, body: { items: [] } },
+          })),
+          requestV4,
+        }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>,
+    };
+
+    const response = await handleGetAdminCohortExamSessionDetail(
+      {
+        exams,
+        sessions,
+        attempts,
+        connections: {
+          findByCustomerId: vi.fn(async () => ({
+            customerId: "customer-1",
+            apiId: "api-id",
+            apiKey: "secret-api-key",
+            webhookSecret: "webhook-secret",
+            webhookPathToken: "webhook-token",
+            connectedAt: new Date("2026-07-01T00:00:00.000Z"),
+            verifiedAt: new Date("2026-07-01T00:05:00.000Z"),
+          })),
+          save: vi.fn(),
+          findByWebhookPathToken: vi.fn(),
+          markVerified: vi.fn(),
+        },
+        cloudshare,
+        logger: makeLogger(),
+      },
+      {
+        customerId: "customer-1",
+        examId: "exam-1",
+        sessionId: "cohort-session-1",
+      },
+    );
+
+    expect(response.status).toBe(200);
+    if (!("monitoring" in response.body)) {
+      throw new Error("Expected monitoring payload");
+    }
+    expect(response.body.monitoring.guidedJourneyAggregate).toEqual({
+      status: "disabled",
+      experienceId: "EXcohort-1",
+      readError: null,
+      correlationId: null,
+      progress: null,
+    });
+    expect(response.body.monitoring.diagnostics.guidedJourneyAggregateRead).toBeUndefined();
+    expect(requestV4).not.toHaveBeenCalled();
   });
 
   it("returns degraded monitoring state and records diagnostics when the CloudShare participant read fails", async () => {
@@ -534,6 +711,216 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
         integrationSurface: "cloudshare.v4.training.participant",
         failureMode: "transport",
         cause: "ECONNRESET",
+      },
+    });
+  });
+
+  it("returns an unavailable aggregate Guided Journey state and records a supportable diagnostic when no aggregate data is available", async () => {
+    const exams = createInMemoryExamCatalogRepository();
+    const sessions = createInMemoryCohortExamSessionRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({
+      repository: diagnosticsRepository,
+      secrets: ["secret-api-key"],
+    });
+    await seedPublishedExam(exams);
+    await seedPublishedSession(sessions);
+
+    const attempts: AdminCohortExamSessionAttemptRepository = {
+      listBySessionId: vi.fn().mockResolvedValue([]),
+    };
+
+    const cloudshare: CloudShareClientFactory = {
+      forConnection: () =>
+        ({
+          requestV4Detailed: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+            if (spec.path === "/guided-journey/progress/EXcohort-1") {
+              throw new CloudShareRequestError("not found", 404, {
+                method: "GET",
+                path: "/guided-journey/progress/EXcohort-1",
+                requestHeaders: { authorization: "Bearer secret-api-key" },
+                responseHeaders: { "content-type": "application/json" },
+              });
+            }
+
+            return {
+              data: spec.schema.parse({ items: [] }),
+              host: "api.accelerate.cloudshare.com",
+              integrationSurface: "cloudshare.v4.training.participant",
+              request: {
+                method: "GET",
+                path: "/v4/trainings/EXcohort-1/students",
+                headers: { authorization: "Bearer secret-api-key" },
+              },
+              response: { status: 200, body: { items: [] } },
+            };
+          }),
+        }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>,
+    };
+
+    const response = await handleGetAdminCohortExamSessionDetail(
+      {
+        exams,
+        sessions,
+        attempts,
+        diagnostics,
+        connections: {
+          findByCustomerId: vi.fn(async () => ({
+            customerId: "customer-1",
+            apiId: "api-id",
+            apiKey: "secret-api-key",
+            webhookSecret: "webhook-secret",
+            webhookPathToken: "webhook-token",
+            connectedAt: new Date("2026-07-01T00:00:00.000Z"),
+            verifiedAt: new Date("2026-07-01T00:05:00.000Z"),
+          })),
+          save: vi.fn(),
+          findByWebhookPathToken: vi.fn(),
+          markVerified: vi.fn(),
+        },
+        cloudshare,
+        logger: makeLogger(),
+        newCorrelationId: () => "corr-session-detail-aggregate-unavailable",
+      },
+      {
+        customerId: "customer-1",
+        examId: "exam-1",
+        sessionId: "cohort-session-1",
+      },
+    );
+
+    expect(response.status).toBe(200);
+    if (!("monitoring" in response.body)) {
+      throw new Error("Expected monitoring payload");
+    }
+    expect(response.body.monitoring.guidedJourneyAggregate).toEqual({
+      status: "unavailable",
+      experienceId: "EXcohort-1",
+      readError: "Aggregate Guided Journey progress is unavailable for this Cohort Exam Session / CloudShare Experience.",
+      correlationId: "corr-session-detail-aggregate-unavailable",
+      progress: null,
+    });
+
+    const [entry] = await diagnosticsRepository.query({
+      customerId: "customer-1",
+      examId: "exam-1",
+      operation: "cohort_exam_session.guided_journey_aggregate.read",
+      outcome: "failure",
+    });
+    expect(entry).toMatchObject({
+      correlationId: "corr-session-detail-aggregate-unavailable",
+      request: {
+        method: "GET",
+        path: "/guided-journey/progress/EXcohort-1",
+        headers: { authorization: "[REDACTED]" },
+      },
+      response: {
+        status: 404,
+        body: null,
+      },
+      details: {
+        integrationSurface: "cloudshare.v4.guided_journey.progress.aggregate",
+        failureMode: "not_available",
+      },
+    });
+  });
+
+  it("returns an unavailable aggregate Guided Journey state and logs CloudShare failures with redacted evidence", async () => {
+    const exams = createInMemoryExamCatalogRepository();
+    const sessions = createInMemoryCohortExamSessionRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({
+      repository: diagnosticsRepository,
+      secrets: ["secret-api-key"],
+    });
+    await seedPublishedExam(exams);
+    await seedPublishedSession(sessions);
+
+    const attempts: AdminCohortExamSessionAttemptRepository = {
+      listBySessionId: vi.fn().mockResolvedValue([]),
+    };
+
+    const cloudshare: CloudShareClientFactory = {
+      forConnection: () =>
+        ({
+          requestV4Detailed: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+            if (spec.path === "/guided-journey/progress/EXcohort-1") {
+              throw new CloudShareTransportError("CloudShare was unreachable", {
+                method: "GET",
+                path: "/guided-journey/progress/EXcohort-1",
+                integrationSurface: "cloudshare.v4.guided_journey.progress.aggregate",
+                requestHeaders: { authorization: "Bearer secret-api-key" },
+                cause: "ECONNRESET",
+              });
+            }
+
+            return {
+              data: spec.schema.parse({ items: [] }),
+              host: "api.accelerate.cloudshare.com",
+              integrationSurface: "cloudshare.v4.training.participant",
+              request: { method: "GET", path: "/v4/trainings/EXcohort-1/students" },
+              response: { status: 200, body: { items: [] } },
+            };
+          }),
+        }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>,
+    };
+
+    const response = await handleGetAdminCohortExamSessionDetail(
+      {
+        exams,
+        sessions,
+        attempts,
+        diagnostics,
+        connections: {
+          findByCustomerId: vi.fn(async () => ({
+            customerId: "customer-1",
+            apiId: "api-id",
+            apiKey: "secret-api-key",
+            webhookSecret: "webhook-secret",
+            webhookPathToken: "webhook-token",
+            connectedAt: new Date("2026-07-01T00:00:00.000Z"),
+            verifiedAt: new Date("2026-07-01T00:05:00.000Z"),
+          })),
+          save: vi.fn(),
+          findByWebhookPathToken: vi.fn(),
+          markVerified: vi.fn(),
+        },
+        cloudshare,
+        logger: makeLogger(),
+        newCorrelationId: () => "corr-session-detail-aggregate-failure",
+      },
+      {
+        customerId: "customer-1",
+        examId: "exam-1",
+        sessionId: "cohort-session-1",
+      },
+    );
+
+    expect(response.status).toBe(200);
+    if (!("monitoring" in response.body)) {
+      throw new Error("Expected monitoring payload");
+    }
+    expect(response.body.monitoring.guidedJourneyAggregate.status).toBe("unavailable");
+
+    const [entry] = await diagnosticsRepository.query({
+      customerId: "customer-1",
+      examId: "exam-1",
+      operation: "cohort_exam_session.guided_journey_aggregate.read",
+      outcome: "failure",
+    });
+    expect(entry).toMatchObject({
+      correlationId: "corr-session-detail-aggregate-failure",
+      request: {
+        method: "GET",
+        path: "/guided-journey/progress/EXcohort-1",
+        headers: { authorization: "[REDACTED]" },
+      },
+      response: null,
+      details: {
+        integrationSurface: "cloudshare.v4.guided_journey.progress.aggregate",
+        failureMode: "transport",
+        cause: "ECONNRESET",
+        experienceId: "EXcohort-1",
       },
     });
   });

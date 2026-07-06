@@ -15,6 +15,11 @@ import {
   CloudShareResponseError,
   CloudShareTransportError,
 } from "@/integrations/cloudshare";
+import {
+  createCloudShareAggregateGuidedJourneyProvider,
+  type AggregateGuidedJourneyProgress,
+  type DiagnosticAggregateGuidedJourneyProvider,
+} from "@/integrations/cloudshare/guided-journey";
 import { createCloudShareTrainingParticipantReader } from "@/integrations/cloudshare/participants";
 import type { Logger } from "@/observability/logger";
 import { attachCohortExamSessionInheritedContext } from "@/domain/cohort-exam-session";
@@ -82,10 +87,20 @@ export interface CohortExamSessionMonitoringView {
     readonly correlationId: string | null;
     readonly participants: readonly CohortExamSessionParticipantView[];
   };
+  readonly guidedJourneyAggregate: CohortExamSessionGuidedJourneyAggregateView;
   readonly diagnostics: {
     readonly session: DiagnosticFilterSeed;
     readonly cloudShareRead?: DiagnosticFilterSeed;
+    readonly guidedJourneyAggregateRead?: DiagnosticFilterSeed;
   };
+}
+
+export interface CohortExamSessionGuidedJourneyAggregateView {
+  readonly status: "available" | "unavailable" | "disabled" | "not_published";
+  readonly experienceId: string | null;
+  readonly readError: string | null;
+  readonly correlationId: string | null;
+  readonly progress: AggregateGuidedJourneyProgress | null;
 }
 
 export interface CohortExamSessionAttemptView {
@@ -153,19 +168,33 @@ export async function handleGetAdminCohortExamSessionDetail(
 
     const sessionView = attachCohortExamSessionInheritedContext(exam, session);
     const attempts = await deps.attempts.listBySessionId(request.customerId, session.id);
-    const correlationId = (deps.newCorrelationId ?? randomUUID)();
+    const participantReadCorrelationId = (deps.newCorrelationId ?? randomUUID)();
+    const aggregateProgressCorrelationId = (deps.newCorrelationId ?? randomUUID)();
     const cloudShareRead = await readCloudShareParticipants(deps, {
       customerId: request.customerId,
       examId: exam.id,
       session: sessionView,
-      correlationId,
+      correlationId: participantReadCorrelationId,
+    });
+    const aggregateProgress = await readCloudShareAggregateProgress(deps, {
+      customerId: request.customerId,
+      examId: exam.id,
+      session: sessionView,
+      correlationId: aggregateProgressCorrelationId,
     });
 
     return {
       status: 200,
       body: {
         session: sessionView,
-        monitoring: buildMonitoringView(sessionView, attempts, cloudShareRead, correlationId),
+        monitoring: buildMonitoringView(
+          sessionView,
+          attempts,
+          cloudShareRead,
+          aggregateProgress,
+          participantReadCorrelationId,
+          aggregateProgressCorrelationId,
+        ),
       },
     };
   } catch (error) {
@@ -173,6 +202,157 @@ export async function handleGetAdminCohortExamSessionDetail(
       return { status: 404, body: { error: error.message } };
     }
     throw error;
+  }
+}
+
+async function readCloudShareAggregateProgress(
+  deps: AdminCohortExamSessionDetailDeps,
+  input: {
+    readonly customerId: string;
+    readonly examId: string;
+    readonly session: CohortExamSessionWithInheritedContext;
+    readonly correlationId: string;
+  },
+): Promise<CohortExamSessionGuidedJourneyAggregateView> {
+  if (!input.session.inheritedContext.scoreRetrievalEnabled) {
+    return {
+      status: "disabled",
+      experienceId: input.session.session.cloudShareExperienceId ?? null,
+      readError: null,
+      correlationId: null,
+      progress: null,
+    };
+  }
+
+  const experienceId = input.session.session.cloudShareExperienceId?.trim() ?? "";
+  if (!experienceId || !deps.connections || !deps.cloudshare) {
+    return {
+      status: "not_published",
+      experienceId: input.session.session.cloudShareExperienceId ?? null,
+      readError: null,
+      correlationId: null,
+      progress: null,
+    };
+  }
+
+  const connection = await deps.connections.findByCustomerId(input.customerId);
+  if (!connection) {
+    await deps.diagnostics?.record({
+      source: "admin-exams",
+      level: "warn",
+      operation: "cohort_exam_session.guided_journey_aggregate.read",
+      outcome: "failure",
+      customerId: input.customerId,
+      examId: input.examId,
+      correlationId: input.correlationId,
+      subject: { type: "cohort_exam_session", id: input.session.session.id },
+      message: "CloudShare aggregate Guided Journey read could not start because no CloudShare Connection is saved",
+      externalIds: { experienceId },
+      details: {
+        integrationSurface: "cloudshare.connection",
+        failureMode: "missing_connection",
+        experienceId,
+      },
+    });
+    return {
+      status: "unavailable",
+      experienceId,
+      readError: "Aggregate Guided Journey progress is unavailable for this Cohort Exam Session / CloudShare Experience.",
+      correlationId: input.correlationId,
+      progress: null,
+    };
+  }
+
+  const provider = createCloudShareAggregateGuidedJourneyProvider(
+    deps.cloudshare.forConnection(connection),
+  ) as DiagnosticAggregateGuidedJourneyProvider;
+
+  try {
+    const result = await provider.getAggregateProgressForDiagnostics(experienceId);
+    if (!result.progress) {
+      await deps.diagnostics?.record({
+        source: "admin-exams",
+        level: "warn",
+        operation: "cohort_exam_session.guided_journey_aggregate.read",
+        outcome: "failure",
+        customerId: input.customerId,
+        examId: input.examId,
+        correlationId: input.correlationId,
+        subject: { type: "cohort_exam_session", id: input.session.session.id },
+        message: "CloudShare aggregate Guided Journey progress is unavailable for this Cohort Exam Session / CloudShare Experience",
+        externalIds: { experienceId },
+        request: result.request as unknown as Record<string, unknown>,
+        ...(result.response ? { response: result.response as unknown as Record<string, unknown> } : {}),
+        details: {
+          integrationSurface: "cloudshare.v4.guided_journey.progress.aggregate",
+          failureMode: "not_available",
+        },
+      });
+      return {
+        status: "unavailable",
+        experienceId,
+        readError: "Aggregate Guided Journey progress is unavailable for this Cohort Exam Session / CloudShare Experience.",
+        correlationId: input.correlationId,
+        progress: null,
+      };
+    }
+
+    await deps.diagnostics?.record({
+      source: "admin-exams",
+      level: "info",
+      operation: "cohort_exam_session.guided_journey_aggregate.read",
+      outcome: "success",
+      customerId: input.customerId,
+      examId: input.examId,
+      correlationId: input.correlationId,
+      subject: { type: "cohort_exam_session", id: input.session.session.id },
+      message: "CloudShare aggregate Guided Journey progress read for Cohort Exam Session detail",
+      externalIds: { experienceId },
+      request: result.request as unknown as Record<string, unknown>,
+      ...(result.response ? { response: result.response as unknown as Record<string, unknown> } : {}),
+      details: {
+        integrationSurface: "cloudshare.v4.guided_journey.progress.aggregate",
+        sectionCount: result.progress.aggSectionStatuses.length,
+      },
+    });
+    return {
+      status: "available",
+      experienceId,
+      readError: null,
+      correlationId: input.correlationId,
+      progress: result.progress,
+    };
+  } catch (error) {
+    const diagnostic = toCloudShareAggregateReadFailureDiagnostic(error, experienceId);
+    await deps.diagnostics?.record({
+      source: "admin-exams",
+      level: "warn",
+      operation: "cohort_exam_session.guided_journey_aggregate.read",
+      outcome: "failure",
+      customerId: input.customerId,
+      examId: input.examId,
+      correlationId: input.correlationId,
+      subject: { type: "cohort_exam_session", id: input.session.session.id },
+      message: "CloudShare aggregate Guided Journey progress read failed for Cohort Exam Session detail",
+      externalIds: { experienceId },
+      ...(diagnostic.request ? { request: diagnostic.request } : {}),
+      ...(diagnostic.response ? { response: diagnostic.response } : {}),
+      details: diagnostic.details,
+    });
+    deps.logger.warn("cohort session aggregate Guided Journey read failed", {
+      customerId: input.customerId,
+      examId: input.examId,
+      sessionId: input.session.session.id,
+      correlationId: input.correlationId,
+      ...diagnostic.details,
+    });
+    return {
+      status: "unavailable",
+      experienceId,
+      readError: "Aggregate Guided Journey progress is unavailable for this Cohort Exam Session / CloudShare Experience.",
+      correlationId: input.correlationId,
+      progress: null,
+    };
   }
 }
 
@@ -308,7 +488,9 @@ function buildMonitoringView(
     readonly readError: string | null;
     readonly correlationId: string | null;
   },
-  correlationId: string,
+  aggregateProgress: CohortExamSessionGuidedJourneyAggregateView,
+  participantReadCorrelationId: string,
+  aggregateProgressCorrelationId: string,
 ): CohortExamSessionMonitoringView {
   const attemptsByEmail = new Map<string, AdminCohortExamSessionAttemptRecord>();
   for (const attempt of attempts) {
@@ -363,6 +545,7 @@ function buildMonitoringView(
       correlationId: cloudShareRead.correlationId,
       participants: cloudShareParticipants,
     },
+    guidedJourneyAggregate: aggregateProgress,
     diagnostics: {
       session: {
         examId: session.session.examId,
@@ -371,8 +554,16 @@ function buildMonitoringView(
       ...(cloudShareRead.status !== "not_published"
         ? {
             cloudShareRead: {
-              correlationId,
+              correlationId: participantReadCorrelationId,
               operation: "cohort_exam_session.monitor.read_participants",
+            },
+          }
+        : {}),
+      ...(aggregateProgress.status !== "disabled" && aggregateProgress.status !== "not_published"
+        ? {
+            guidedJourneyAggregateRead: {
+              correlationId: aggregateProgressCorrelationId,
+              operation: "cohort_exam_session.guided_journey_aggregate.read",
             },
           }
         : {}),
@@ -611,4 +802,50 @@ function inferFailureMode(error: unknown): string {
     return "unexpected_response";
   }
   return "unknown";
+}
+
+function toCloudShareAggregateReadFailureDiagnostic(
+  error: unknown,
+  experienceId: string,
+): {
+  readonly request?: Record<string, unknown>;
+  readonly response?: Record<string, unknown>;
+  readonly details: Record<string, unknown>;
+} {
+  const context = (error as { context?: Record<string, unknown> }).context ?? {};
+  const status =
+    typeof (error as { status?: unknown }).status === "number"
+      ? ((error as { status: number }).status)
+      : undefined;
+
+  return {
+    request:
+      context.method || context.path || context.requestHeaders || context.requestBody
+        ? {
+            method: context.method ?? "GET",
+            path: context.path ?? `/v4/guided-journey/progress/${experienceId}`,
+            ...(context.requestHeaders ? { headers: context.requestHeaders } : {}),
+            ...(context.requestBody !== undefined ? { body: context.requestBody } : {}),
+          }
+        : {
+            method: "GET",
+            path: `/v4/guided-journey/progress/${experienceId}`,
+          },
+    response:
+      status !== undefined || context.responseHeaders || context.responseBody
+        ? {
+            ...(status !== undefined ? { status } : {}),
+            ...(context.responseHeaders ? { headers: context.responseHeaders } : {}),
+            ...(context.responseBody !== undefined ? { body: context.responseBody } : {}),
+          }
+        : undefined,
+    details: {
+      integrationSurface: context.integrationSurface ?? "cloudshare.v4.guided_journey.progress.aggregate",
+      failureMode: inferFailureMode(error),
+      ...(status !== undefined ? { responseStatus: status } : {}),
+      ...(context.cause ? { cause: context.cause } : {}),
+      ...(context.issues ? { issues: context.issues } : {}),
+      experienceId,
+    },
+  };
 }

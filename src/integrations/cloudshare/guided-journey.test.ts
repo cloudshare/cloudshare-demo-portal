@@ -1,5 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
-import { createCloudShareGuidedJourneyProvider } from "./guided-journey";
+import {
+  createCloudShareAggregateGuidedJourneyProvider,
+  createCloudShareGuidedJourneyProvider,
+} from "./guided-journey";
 import type { CloudShareClient } from "./client";
 import { CloudShareRequestError, CloudShareResponseError } from "./errors";
 
@@ -364,6 +367,125 @@ describe("createCloudShareGuidedJourneyProvider", () => {
       context: expect.objectContaining({
         responseBody: JSON.stringify(payload),
         issues: expect.arrayContaining(["stepsCompleted must not exceed stepsTotal"]),
+      }),
+    });
+  });
+});
+
+describe("createCloudShareAggregateGuidedJourneyProvider", () => {
+  it("maps aggregate Guided Journey progress for a shared Experience", async () => {
+    const client = makeClient({
+      avgExploredRate: 0.3,
+      avgInProgressRate: 0.2,
+      avgNotStartedRate: 0.1,
+      avgPassedRate: 0.25,
+      avgFailedRate: 0.05,
+      avgNotInitiatedRate: 0.1,
+      aggSectionStatuses: [
+        {
+          number: 0,
+          name: "Check pfSense WAN Interface",
+          status: "explored",
+          avgExploredRate: 0.5,
+          avgInProgressRate: 0.3,
+          avgNotStartedRate: 0.2,
+          avgPassedRate: 0.4,
+          avgFailedRate: 0.1,
+          avgNotInitiatedRate: 0,
+          avgTimeSpent: 338.24936349999996,
+        },
+        {
+          number: 1,
+          name: "Check the LAN interface",
+          status: "inProgress",
+          avgExploredRate: 0.2,
+          avgInProgressRate: 0.4,
+          avgNotStartedRate: 0.4,
+          avgPassedRate: 0.1,
+          avgFailedRate: 0.2,
+          avgNotInitiatedRate: 0.3,
+          avgTimeSpent: 51.3734852,
+        },
+      ],
+    });
+
+    const provider = createCloudShareAggregateGuidedJourneyProvider(client);
+
+    const result = await provider.getAggregateProgress("EXcohort-1");
+
+    expect(result).toEqual({
+      avgExploredRate: 0.3,
+      avgInProgressRate: 0.2,
+      avgNotStartedRate: 0.1,
+      avgPassedRate: 0.25,
+      avgFailedRate: 0.05,
+      avgNotInitiatedRate: 0.1,
+      aggSectionStatuses: [
+        {
+          sectionNumber: 0,
+          title: "Check pfSense WAN Interface",
+          status: "explored",
+          avgExploredRate: 0.5,
+          avgInProgressRate: 0.3,
+          avgNotStartedRate: 0.2,
+          avgPassedRate: 0.4,
+          avgFailedRate: 0.1,
+          avgNotInitiatedRate: 0,
+          avgTimeSpentSeconds: 338.24936349999996,
+        },
+        {
+          sectionNumber: 1,
+          title: "Check the LAN interface",
+          status: "in Progress",
+          avgExploredRate: 0.2,
+          avgInProgressRate: 0.4,
+          avgNotStartedRate: 0.4,
+          avgPassedRate: 0.1,
+          avgFailedRate: 0.2,
+          avgNotInitiatedRate: 0.3,
+          avgTimeSpentSeconds: 51.3734852,
+        },
+      ],
+    });
+    expect(client.requestV4).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "GET",
+        path: "/guided-journey/progress/EXcohort-1",
+      }),
+    );
+  });
+
+  it("returns null when CloudShare reports no aggregate Guided Journey progress for the Experience", async () => {
+    const client: CloudShareClient = {
+      requestV4: vi
+        .fn()
+        .mockRejectedValue(
+          new CloudShareRequestError("not found", 404, {
+            method: "GET",
+            path: "/guided-journey/progress/EXcohort-1",
+          }),
+        ),
+      requestV3: vi.fn(),
+    } as unknown as CloudShareClient;
+
+    const provider = createCloudShareAggregateGuidedJourneyProvider(client);
+
+    await expect(provider.getAggregateProgress("EXcohort-1")).resolves.toBeNull();
+  });
+
+  it("raises CloudShareResponseError when the aggregate payload is unsupported", async () => {
+    const client = makeClient({
+      avgExploredRate: 0.3,
+      aggSectionStatuses: "not-an-array",
+    });
+
+    const provider = createCloudShareAggregateGuidedJourneyProvider(client);
+
+    await expect(provider.getAggregateProgress("EXcohort-1")).rejects.toMatchObject({
+      name: "CloudShareResponseError",
+      context: expect.objectContaining({
+        path: "/guided-journey/progress/EXcohort-1",
+        integrationSurface: "cloudshare.v4.guided_journey.progress.aggregate",
       }),
     });
   });

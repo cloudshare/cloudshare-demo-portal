@@ -57,6 +57,8 @@ describe("ScoreLoadedPanel", () => {
     expect(html).toContain("Step progress");
     expect(html).toContain("Create the queue");
     expect(html).toContain("Scoring limitations");
+    expect(html).not.toContain("This Cohort Exam Session / CloudShare Experience");
+    expect(html).not.toContain("Guided Journey aggregate progress");
   });
 
   it("renders score details and step progress as compact rows", () => {
