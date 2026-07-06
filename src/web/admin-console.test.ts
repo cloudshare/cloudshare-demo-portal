@@ -577,7 +577,7 @@ describe("AdminConsole", () => {
     expect(html).toContain(">25<");
     expect(html).toContain("CloudShare Experience ID");
     expect(html).toContain("EX123");
-    expect(html).toContain("Open Session");
+    expect(html).toContain("View session details");
   });
 
   it("states that candidate admission remains disabled for Cohort Exam Sessions", () => {

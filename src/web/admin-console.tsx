@@ -750,7 +750,7 @@ function CohortSessionDraftControls(props: {
                 </div>
                 <div style={{ display: "flex", justifyContent: "flex-end" }}>
                   <button type="button" onClick={() => props.onSelect(session)} style={compactButtonStyle}>
-                    Open Session
+                    View session details
                   </button>
                 </div>
               </div>
