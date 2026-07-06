@@ -618,7 +618,7 @@ function deriveSummary(
   participants: readonly CohortExamSessionParticipantView[],
   cloudShareStatus: "available" | "unavailable" | "not_published",
 ): CohortExamSessionMonitoringView["summary"] {
-  const rowsByEmail = new Map<
+  const rowsByKey = new Map<
     string,
     {
       portal?: CohortExamSessionAttemptView;
@@ -627,12 +627,12 @@ function deriveSummary(
   >();
 
   for (const attempt of portalAttempts) {
-    const key = attempt.candidateEmail.trim().toLowerCase();
-    rowsByEmail.set(key, { ...(rowsByEmail.get(key) ?? {}), portal: attempt });
+    const key = toPortalSummaryRowKey(attempt);
+    rowsByKey.set(key, { ...(rowsByKey.get(key) ?? {}), portal: attempt });
   }
   for (const participant of participants) {
-    const key = participant.email.trim().toLowerCase();
-    rowsByEmail.set(key, { ...(rowsByEmail.get(key) ?? {}), cloud: participant });
+    const key = toCloudShareSummaryRowKey(participant);
+    rowsByKey.set(key, { ...(rowsByKey.get(key) ?? {}), cloud: participant });
   }
 
   let activeCount = 0;
@@ -640,7 +640,7 @@ function deriveSummary(
   let completedCount = 0;
   let problemCount = cloudShareStatus === "unavailable" ? 1 : 0;
 
-  for (const row of rowsByEmail.values()) {
+  for (const row of rowsByKey.values()) {
     const portalActive = isPortalActive(row.portal?.status);
     const cloudActive = isCloudActive(row.cloud);
     const portalCompleted = isPortalCompleted(row.portal?.status);
@@ -663,6 +663,17 @@ function deriveSummary(
     cloudShareParticipantCount: participants.length,
     derivedFrom: "portal_and_cloudshare",
   };
+}
+
+function toPortalSummaryRowKey(attempt: CohortExamSessionAttemptView): string {
+  return `attempt:${attempt.id}`;
+}
+
+function toCloudShareSummaryRowKey(participant: CohortExamSessionParticipantView): string {
+  if (participant.matchedExamAttemptId) {
+    return `attempt:${participant.matchedExamAttemptId}`;
+  }
+  return `email:${participant.email.trim().toLowerCase()}`;
 }
 
 function isPortalActive(status: CohortExamSessionAttemptView["status"] | undefined): boolean {

@@ -241,6 +241,15 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
         },
       },
     ]);
+    expect(response.body.monitoring.summary).toEqual({
+      activeCount: 2,
+      inProgressCount: 2,
+      completedCount: 0,
+      problemCount: 0,
+      portalAttemptCount: 2,
+      cloudShareParticipantCount: 2,
+      derivedFrom: "portal_and_cloudshare",
+    });
   });
 
   it("falls back to email matching when explicit Certalis participant correlation is absent", async () => {
