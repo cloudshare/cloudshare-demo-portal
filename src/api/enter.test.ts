@@ -16,6 +16,7 @@ import type {
   V4RequestSpec,
 } from "@/integrations/cloudshare/client";
 import { CloudShareRequestError } from "@/integrations/cloudshare";
+import type { CloudShareExamAuthoringSource } from "@/integrations/cloudshare/resources";
 import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 
@@ -54,13 +55,41 @@ function makeConnections(): CloudShareConnectionRepository {
 function makeCloudShareFactory(
   requestV3: ReturnType<CloudShareClientFactory["forConnection"]>["requestV3"],
 ): CloudShareClientFactory {
+  const source = makeAuthoringSource();
   return {
     forConnection: () => ({
+      ...source,
       requestV3,
       requestV3Text: vi.fn(),
       requestV4: vi.fn(),
       requestV4Detailed: vi.fn(),
     }),
+  };
+}
+
+function makeAuthoringSource(
+  overrides: Partial<CloudShareExamAuthoringSource> = {},
+): CloudShareExamAuthoringSource {
+  return {
+    listProjects: vi.fn().mockResolvedValue([]),
+    listRegions: vi.fn().mockResolvedValue([]),
+    listProjectBlueprints: vi.fn().mockResolvedValue([]),
+    listProjectPolicies: vi.fn().mockResolvedValue([]),
+    getBlueprintDetail: vi.fn().mockResolvedValue({
+      id: "bp-1",
+      name: "Helios Guided Journey",
+      description: "",
+      defaultSnapshotId: "snap-1",
+      snapshots: [
+        {
+          id: "snap-1",
+          name: "Default Snapshot",
+          isDefault: true,
+          regionIds: ["region-1"],
+        },
+      ],
+    }),
+    ...overrides,
   };
 }
 
@@ -325,6 +354,7 @@ describe("handleEnterExam", () => {
     const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
     const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
     const timer = makeTimer();
+    const source = makeAuthoringSource();
     const requestV4Detailed = vi.fn().mockImplementation(
       async <T>(spec: V4RequestSpec<T>): Promise<CloudShareDetailedResult<T>> => {
         if (spec.path === "/trainings/EXtraining-1") {
@@ -384,6 +414,7 @@ describe("handleEnterExam", () => {
         connections: makeConnections(),
         cloudshare: {
           forConnection: () => ({
+            ...source,
             requestV3: vi.fn(),
             requestV3Text: vi.fn(),
             requestV4: vi.fn(),
@@ -444,6 +475,7 @@ describe("handleEnterExam", () => {
       createdAt: new Date("2026-06-15T10:00:00.000Z"),
     });
 
+    const source = makeAuthoringSource();
     const requestV4Detailed = vi.fn().mockImplementation(
       async <T>(spec: V4RequestSpec<T>): Promise<CloudShareDetailedResult<T>> => {
         if (spec.path === "/trainings/EXtraining-1") {
@@ -481,6 +513,7 @@ describe("handleEnterExam", () => {
         connections: makeConnections(),
         cloudshare: {
           forConnection: () => ({
+            ...source,
             requestV3: vi.fn(),
             requestV3Text: vi.fn(),
             requestV4: vi.fn(),

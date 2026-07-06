@@ -16,6 +16,8 @@ import type {
 import { enterExamAttemptRuntime } from "./exam-attempt-runtime";
 import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
+import type { CloudShareExamAuthoringSource } from "@/integrations/cloudshare/resources";
+import { CloudShareTransportError } from "@/integrations/cloudshare";
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -62,6 +64,32 @@ function makeCloudShareFactory(
       requestV4Detailed: vi.fn(),
       ...overrides,
     }),
+  };
+}
+
+function makeAuthoringSource(
+  overrides: Partial<CloudShareExamAuthoringSource> = {},
+): CloudShareExamAuthoringSource {
+  return {
+    listProjects: vi.fn().mockResolvedValue([]),
+    listRegions: vi.fn().mockResolvedValue([]),
+    listProjectBlueprints: vi.fn().mockResolvedValue([]),
+    listProjectPolicies: vi.fn().mockResolvedValue([]),
+    getBlueprintDetail: vi.fn().mockResolvedValue({
+      id: "blueprint-1",
+      name: "Blueprint 1",
+      description: "",
+      defaultSnapshotId: "snapshot-1",
+      snapshots: [
+        {
+          id: "snapshot-1",
+          name: "Snapshot 1",
+          isDefault: true,
+          regionIds: ["region-1"],
+        },
+      ],
+    }),
+    ...overrides,
   };
 }
 
@@ -279,6 +307,329 @@ describe("enterExamAttemptRuntime", () => {
     });
   });
 
+  it("allows entry when the saved Exam snapshot still matches the current CloudShare Blueprint default Snapshot", async () => {
+    const attempts = createInMemoryExamAttemptRepository();
+    const exams = createInMemoryExamCatalogRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const timer = makeTimer();
+    const source = makeAuthoringSource();
+
+    await exams.save({
+      id: "exam-1",
+      customerId: "customer-1",
+      title: "Helios Fundamentals",
+      description: "",
+      timeLimitMinutes: 60,
+      storageLeaseMinutes: 1440,
+      openPeriodMinutes: 120,
+      scoreRetrievalEnabled: true,
+      status: "published",
+      publishedAt: new Date("2026-06-15T10:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-15T10:00:00.000Z"),
+      projectId: "project-1",
+      projectName: "Project 1",
+      blueprintId: "blueprint-1",
+      blueprintName: "Blueprint 1",
+      snapshotId: "snapshot-1",
+      snapshotName: "Snapshot 1",
+      allowedRegions: [{ id: "region-1", name: "Region 1" }],
+      policyId: "policy-1",
+      policyName: "Policy 1",
+      instructorId: "instructor-1",
+      instructorName: "Instructor 1",
+    });
+    await attempts.save({
+      id: "attempt-1",
+      customerId: "customer-1",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "ready",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    await launches.save({
+      id: "launch-1",
+      examAttemptId: "attempt-1",
+      candidateId: "candidate-1",
+      participantEmail: "candidate@helioscx.demo",
+      trainingId: "training-1",
+      experienceId: "training-1",
+      loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret",
+      status: "launched",
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+
+    const result = await enterExamAttemptRuntime(
+      {
+        attempts,
+        exams,
+        launches,
+        timer,
+        connections: makeConnectionRepository(),
+        cloudshare: {
+          forConnection: vi.fn(() => ({
+            ...source,
+            requestV3: vi.fn(),
+            requestV3Text: vi.fn(),
+            requestV4: vi.fn(),
+            requestV4Detailed: vi.fn(),
+          })),
+        },
+        logger: makeLogger(),
+        now: () => new Date("2026-06-15T16:00:00.000Z"),
+      },
+      { examAttemptId: "attempt-1", candidateId: "candidate-1" },
+    );
+
+    expect(result).toMatchObject({
+      kind: "redirect",
+      location: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret",
+    });
+    expect(source.getBlueprintDetail).toHaveBeenCalledWith("project-1", "blueprint-1");
+    expect(timer.resumed).toEqual(["attempt-1"]);
+  });
+
+  it("blocks entry when the CloudShare Blueprint default Snapshot has drifted from the saved Exam snapshot", async () => {
+    const attempts = createInMemoryExamAttemptRepository();
+    const exams = createInMemoryExamCatalogRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
+    const timer = makeTimer();
+    const source = makeAuthoringSource({
+      getBlueprintDetail: vi.fn().mockResolvedValue({
+        id: "blueprint-1",
+        name: "Blueprint 1",
+        description: "",
+        defaultSnapshotId: "snapshot-2",
+        snapshots: [
+          { id: "snapshot-1", name: "Snapshot 1", isDefault: false, regionIds: ["region-1"] },
+          { id: "snapshot-2", name: "Snapshot 2", isDefault: true, regionIds: ["region-1"] },
+        ],
+      }),
+    });
+
+    await exams.save({
+      id: "exam-1",
+      customerId: "customer-1",
+      title: "Helios Fundamentals",
+      description: "",
+      timeLimitMinutes: 60,
+      storageLeaseMinutes: 1440,
+      openPeriodMinutes: 120,
+      scoreRetrievalEnabled: true,
+      status: "published",
+      publishedAt: new Date("2026-06-15T10:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-15T10:00:00.000Z"),
+      projectId: "project-1",
+      projectName: "Project 1",
+      blueprintId: "blueprint-1",
+      blueprintName: "Blueprint 1",
+      snapshotId: "snapshot-1",
+      snapshotName: "Snapshot 1",
+      allowedRegions: [{ id: "region-1", name: "Region 1" }],
+      policyId: "policy-1",
+      policyName: "Policy 1",
+      instructorId: "instructor-1",
+      instructorName: "Instructor 1",
+    });
+    await attempts.save({
+      id: "attempt-1",
+      customerId: "customer-1",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "ready",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    await launches.save({
+      id: "launch-1",
+      examAttemptId: "attempt-1",
+      candidateId: "candidate-1",
+      participantEmail: "candidate@helioscx.demo",
+      trainingId: "training-1",
+      experienceId: "training-1",
+      loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret",
+      status: "launched",
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+
+    const result = await enterExamAttemptRuntime(
+      {
+        attempts,
+        exams,
+        launches,
+        timer,
+        connections: makeConnectionRepository(),
+        cloudshare: {
+          forConnection: vi.fn(() => ({
+            ...source,
+            requestV3: vi.fn(),
+            requestV3Text: vi.fn(),
+            requestV4: vi.fn(),
+            requestV4Detailed: vi.fn(),
+          })),
+        },
+        diagnostics,
+        candidateEmail: "candidate@helioscx.demo",
+        logger: makeLogger(),
+        now: () => new Date("2026-06-15T16:00:00.000Z"),
+      },
+      { examAttemptId: "attempt-1", candidateId: "candidate-1" },
+    );
+
+    expect(result).toEqual({
+      kind: "blocked",
+      status: 423,
+      body: {
+        message:
+          "Exam entry is temporarily unavailable because the lab configuration changed. Contact your administrator.",
+      },
+    });
+    expect(timer.resumed).toEqual([]);
+    await expect(diagnosticsRepository.query({ examAttemptId: "attempt-1" })).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation: "exam_attempt.enter",
+          outcome: "failure",
+          customerId: "customer-1",
+          candidateEmail: "candidate@helioscx.demo",
+          examId: "exam-1",
+          examAttemptId: "attempt-1",
+          details: expect.objectContaining({
+            failureMode: "snapshot_drift",
+            integrationSurface: "cloudshare.v3.projects.blueprint_detail",
+            projectId: "project-1",
+            blueprintId: "blueprint-1",
+            savedSnapshotId: "snapshot-1",
+            currentDefaultSnapshotId: "snapshot-2",
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("blocks entry with candidate-safe unavailable copy and diagnostics when the CloudShare default Snapshot lookup fails", async () => {
+    const attempts = createInMemoryExamAttemptRepository();
+    const exams = createInMemoryExamCatalogRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
+    const timer = makeTimer();
+    const source = makeAuthoringSource({
+      getBlueprintDetail: vi.fn().mockRejectedValue(
+        new CloudShareTransportError("CloudShare was unreachable", {
+          method: "GET",
+          path: "/api/v3/projects/project-1/blueprints/blueprint-1",
+          integrationSurface: "cloudshare.v3.projects.blueprint_detail",
+        }),
+      ),
+    });
+
+    await exams.save({
+      id: "exam-1",
+      customerId: "customer-1",
+      title: "Helios Fundamentals",
+      description: "",
+      timeLimitMinutes: 60,
+      storageLeaseMinutes: 1440,
+      openPeriodMinutes: 120,
+      scoreRetrievalEnabled: true,
+      status: "published",
+      publishedAt: new Date("2026-06-15T10:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-15T10:00:00.000Z"),
+      projectId: "project-1",
+      projectName: "Project 1",
+      blueprintId: "blueprint-1",
+      blueprintName: "Blueprint 1",
+      snapshotId: "snapshot-1",
+      snapshotName: "Snapshot 1",
+      allowedRegions: [{ id: "region-1", name: "Region 1" }],
+      policyId: "policy-1",
+      policyName: "Policy 1",
+      instructorId: "instructor-1",
+      instructorName: "Instructor 1",
+    });
+    await attempts.save({
+      id: "attempt-1",
+      customerId: "customer-1",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "ready",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    await launches.save({
+      id: "launch-1",
+      examAttemptId: "attempt-1",
+      candidateId: "candidate-1",
+      participantEmail: "candidate@helioscx.demo",
+      trainingId: "training-1",
+      experienceId: "training-1",
+      loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret",
+      status: "launched",
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+
+    const result = await enterExamAttemptRuntime(
+      {
+        attempts,
+        exams,
+        launches,
+        timer,
+        connections: makeConnectionRepository(),
+        cloudshare: {
+          forConnection: vi.fn(() => ({
+            ...source,
+            requestV3: vi.fn(),
+            requestV3Text: vi.fn(),
+            requestV4: vi.fn(),
+            requestV4Detailed: vi.fn(),
+          })),
+        },
+        diagnostics,
+        candidateEmail: "candidate@helioscx.demo",
+        logger: makeLogger(),
+        now: () => new Date("2026-06-15T16:00:00.000Z"),
+      },
+      { examAttemptId: "attempt-1", candidateId: "candidate-1" },
+    );
+
+    expect(result).toEqual({
+      kind: "blocked",
+      status: 423,
+      body: {
+        message:
+          "Exam entry is temporarily unavailable because the lab configuration changed. Contact your administrator.",
+      },
+    });
+    expect(timer.resumed).toEqual([]);
+    await expect(diagnosticsRepository.query({ examAttemptId: "attempt-1" })).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation: "exam_attempt.enter",
+          outcome: "failure",
+          request: expect.objectContaining({
+            method: "GET",
+            path: "/api/v3/projects/project-1/blueprints/blueprint-1",
+          }),
+          details: expect.objectContaining({
+            failureMode: "snapshot_lookup_failed",
+            integrationSurface: "cloudshare.v3.projects.blueprint_detail",
+            projectId: "project-1",
+            blueprintId: "blueprint-1",
+            savedSnapshotId: "snapshot-1",
+            currentDefaultSnapshotId: null,
+            transport: "CloudShare was unreachable",
+          }),
+        }),
+      ]),
+    );
+  });
+
   it("allows entry during the authored open period even when CloudShare training readback says ended", async () => {
     const attempts = createInMemoryExamAttemptRepository();
     const exams = createInMemoryExamCatalogRepository();
@@ -286,6 +637,7 @@ describe("enterExamAttemptRuntime", () => {
     const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
     const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
     const timer = makeTimer();
+    const source = makeAuthoringSource();
     const requestV4Detailed = vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
       if (spec.path === "/trainings/training-1") {
         return {
@@ -357,7 +709,15 @@ describe("enterExamAttemptRuntime", () => {
         launches,
         timer,
         connections: makeConnectionRepository(),
-        cloudshare: makeCloudShareFactory({ requestV4Detailed: requestV4Detailed as never }),
+        cloudshare: {
+          forConnection: vi.fn(() => ({
+            ...source,
+            requestV3: vi.fn(),
+            requestV3Text: vi.fn(),
+            requestV4: vi.fn(),
+            requestV4Detailed: requestV4Detailed as never,
+          })),
+        },
         diagnostics,
         logger: makeLogger(),
         now: () => new Date("2026-06-15T16:12:00.000Z"),
@@ -390,6 +750,7 @@ describe("enterExamAttemptRuntime", () => {
     const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
     const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
     const timer = makeTimer();
+    const source = makeAuthoringSource();
     const requestV4Detailed = vi.fn().mockImplementation(
       async <T>(spec: V4RequestSpec<T>): Promise<CloudShareDetailedResult<T>> => {
         if (spec.path === "/trainings/training-1") {
@@ -463,7 +824,15 @@ describe("enterExamAttemptRuntime", () => {
         launches,
         timer,
         connections: makeConnectionRepository(),
-        cloudshare: makeCloudShareFactory({ requestV4Detailed }),
+        cloudshare: {
+          forConnection: vi.fn(() => ({
+            ...source,
+            requestV3: vi.fn(),
+            requestV3Text: vi.fn(),
+            requestV4: vi.fn(),
+            requestV4Detailed,
+          })),
+        },
         diagnostics,
         logger: makeLogger(),
         now: () => new Date("2026-06-15T16:31:00.000Z"),

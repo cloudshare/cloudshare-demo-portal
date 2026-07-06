@@ -485,6 +485,18 @@ This confirms the Project-first authoring model and corrects the earlier placeho
 the adapter should derive portal Snapshot choices from Blueprint detail `createFromVersions[]`, not
 from an invented top-level `snapshots[]` field.
 
+**Update (2026-07-06, live v3 probe plus v4 diagnostics):** the current Helios seed tenant returned
+one stable default Snapshot on two consecutive reads of
+`GET /api/v3/projects/PRCU02uuokHPBfjMedkmradg2/blueprints/BPxssLIWyy1g34xD9fcBYxsA2`:
+`SS0v3Q_3u5_DNPY536jXMKdg2`. Local v4 diagnostics for `POST /trainings` and
+`GET /trainings/{id}` exposed `BlueprintIds` / `blueprintIds` only and did **not** expose any
+Snapshot/version identifier. That means the public/API-observable contract gives Certalis no
+Snapshot pin to trust at Candidate allocation time. The portal must therefore re-read the current
+Blueprint default Snapshot at Candidate enter / Cohort join time and block if it differs from the
+saved Exam Snapshot or if the lookup fails unsafely. A hidden server-side pin remains an open
+caveat until CloudShare documents or disproves it, but the portal cannot assume one from current
+evidence.
+
 **Update (2026-06-14, live v3 probe for Project Members):** the following candidate Project-member
 read endpoints all returned `404` against the current tenant:
 `GET /api/v3/projects/{projectId}/members`,

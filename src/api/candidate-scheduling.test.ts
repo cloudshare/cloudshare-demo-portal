@@ -11,6 +11,7 @@ import { createDraftExam, publishExam, type CreateDraftExamInput } from "@/domai
 import type { Logger } from "@/observability/logger";
 import type { CloudShareClientFactory, CloudShareConnectionRepository, CloudShareConnectionRecord } from "@/domain/cloudshare-connection";
 import { CloudShareRequestError, CloudShareResponseError } from "@/integrations/cloudshare";
+import type { CloudShareExamAuthoringSource } from "@/integrations/cloudshare/resources";
 import {
   buildCandidateCohortJoinDeps,
   buildCandidateDashboardDeps,
@@ -74,6 +75,7 @@ function makeConnectionRepository(
 }
 
 function makeCloudShareFactory(overrides: Partial<ReturnType<CloudShareClientFactory["forConnection"]>> = {}): CloudShareClientFactory {
+  const source = makeAuthoringSource();
   const requestV3 =
     (overrides.requestV3 as ReturnType<CloudShareClientFactory["forConnection"]>["requestV3"] | undefined) ??
     (vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
@@ -148,12 +150,39 @@ function makeCloudShareFactory(overrides: Partial<ReturnType<CloudShareClientFac
 
   return {
     forConnection: () => ({
+      ...source,
       requestV3,
       requestV3Text: vi.fn(),
       requestV4,
       requestV4Detailed,
       ...overrides,
     }),
+  };
+}
+
+function makeAuthoringSource(
+  overrides: Partial<CloudShareExamAuthoringSource> = {},
+): CloudShareExamAuthoringSource {
+  return {
+    listProjects: vi.fn().mockResolvedValue([]),
+    listRegions: vi.fn().mockResolvedValue([]),
+    listProjectBlueprints: vi.fn().mockResolvedValue([]),
+    listProjectPolicies: vi.fn().mockResolvedValue([]),
+    getBlueprintDetail: vi.fn().mockResolvedValue({
+      id: "bp-1",
+      name: "Helios Exam Blueprint",
+      description: "",
+      defaultSnapshotId: "snap-1",
+      snapshots: [
+        {
+          id: "snap-1",
+          name: "Default Snapshot",
+          isDefault: true,
+          regionIds: ["region-1"],
+        },
+      ],
+    }),
+    ...overrides,
   };
 }
 

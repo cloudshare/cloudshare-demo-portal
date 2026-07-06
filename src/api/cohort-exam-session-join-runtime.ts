@@ -25,6 +25,7 @@ import {
 } from "@/integrations/cloudshare";
 import { createCloudShareLabProvisioner } from "@/integrations/cloudshare/labs";
 import type { Logger } from "@/observability/logger";
+import { guardRuntimeBlueprintSnapshot } from "./runtime-blueprint-snapshot-guard";
 
 export interface CohortExamSessionJoinRuntimeDeps {
   readonly exams: ExamRepository;
@@ -317,6 +318,29 @@ export async function joinCohortExamSessionRuntime(
     actor: { type: "candidate", id: request.candidateId, email: request.candidateEmail },
     subject: { type: "exam_attempt", id: attemptId },
   } as const;
+
+  const snapshotGuardFailure = await guardRuntimeBlueprintSnapshot(deps, {
+    source: "candidate-portal",
+    operation: "cohort_exam_session.join",
+    correlationId,
+    customerId: request.customerId,
+    examId: exam.id,
+    examAttemptId: attemptId,
+    cohortSessionId: session.id,
+    candidateId: request.candidateId,
+    candidateEmail: request.candidateEmail,
+    subject: { type: "exam_attempt", id: attemptId },
+    projectId: exam.projectId,
+    blueprintId: exam.blueprintId,
+    savedSnapshotId: exam.snapshotId,
+  });
+  if (snapshotGuardFailure) {
+    await deps.attempts.delete(attemptId);
+    return {
+      status: snapshotGuardFailure.status,
+      body: { error: snapshotGuardFailure.message },
+    };
+  }
 
   const cloudshare = deps.cloudshare.forConnection(connection);
   const labs = createCloudShareLabProvisioner(cloudshare);

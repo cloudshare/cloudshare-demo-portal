@@ -16,6 +16,7 @@ import {
   reconcileExpiredExamAttemptExternalLease,
   recordExamAttemptExternalLeaseInspectionFailure,
 } from "./exam-attempt-external-lease";
+import { guardRuntimeBlueprintSnapshot } from "./runtime-blueprint-snapshot-guard";
 
 export interface ExamAttemptRuntimeDeps {
   readonly attempts: ExamAttemptRepository;
@@ -254,6 +255,25 @@ export async function enterExamAttemptRuntime(
       },
     });
     return blocked(403, "Exam entry is not available after the Exam open period has closed.");
+  }
+
+  if (exam && attempt.customerId) {
+    const snapshotGuardFailure = await guardRuntimeBlueprintSnapshot(deps, {
+      source: "runtime",
+      operation: "exam_attempt.enter",
+      customerId: attempt.customerId,
+      examId: attempt.examId,
+      examAttemptId: request.examAttemptId,
+      candidateId: request.candidateId,
+      candidateEmail: deps.candidateEmail ?? null,
+      subject: { type: "exam_attempt", id: request.examAttemptId },
+      projectId: exam.projectId,
+      blueprintId: exam.blueprintId,
+      savedSnapshotId: exam.snapshotId,
+    });
+    if (snapshotGuardFailure) {
+      return blocked(snapshotGuardFailure.status, snapshotGuardFailure.message);
+    }
   }
 
   try {
