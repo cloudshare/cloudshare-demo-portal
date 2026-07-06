@@ -5,6 +5,10 @@ export interface TrainingParticipant {
   readonly environmentId: string | null;
   readonly environmentStatus?: string | null;
   readonly participationStatus?: string | null;
+  readonly firstJoinedAt?: string | null;
+  readonly firstName?: string | null;
+  readonly lastName?: string | null;
+  readonly displayName?: string | null;
   readonly studentId?: string | null;
 }
 

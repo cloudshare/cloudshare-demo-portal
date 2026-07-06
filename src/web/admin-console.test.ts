@@ -765,6 +765,189 @@ describe("AdminConsole", () => {
     expect(html).toContain("overflow-wrap:anywhere");
   });
 
+  it("renders session monitoring counts, portal attempts, CloudShare participants, and diagnostics links on the focused workspace", () => {
+    const html = renderToStaticMarkup(
+      createElement(CohortSessionWorkspacePanel, {
+        examTitle: "Helios CX Admin Foundations",
+        session: {
+          session: {
+            id: "cohort-session-1",
+            name: "September Admin Cohort",
+            admissionStartsAt: "2026-09-01T09:00:00.000Z",
+            admissionEndsAt: "2026-09-30T17:00:00.000Z",
+            capacity: 25,
+            status: "published",
+            cloudShareTrainingId: "EX123",
+            cloudShareExperienceId: "EX123",
+          },
+          inheritedContext: {
+            project: { id: "project-1", name: "Project Atlas" },
+            blueprint: { id: "blueprint-1", name: "Blueprint Aurora" },
+            snapshot: { id: "snapshot-1", name: "Snapshot Echo" },
+            policy: { id: "policy-1", name: "Policy Orbit" },
+            allowedRegions: [{ id: "region-1", name: "useast" }],
+            instructor: { id: "instructor-1", name: "Jordan Lee" },
+            scoreRetrievalEnabled: true,
+            timeLimitMinutes: 90,
+          },
+        },
+        detail: {
+          summary: {
+            activeCount: 2,
+            inProgressCount: 2,
+            completedCount: 1,
+            problemCount: 1,
+            portalAttemptCount: 2,
+            cloudShareParticipantCount: 3,
+            derivedFrom: "portal_and_cloudshare",
+          },
+          portalAttempts: [
+            {
+              id: "attempt-1",
+              candidateId: "candidate-1",
+              candidateName: "Casey Rivera",
+              candidateEmail: "casey@helioscx.demo",
+              status: "in_progress",
+              scheduledFor: "2026-09-01T09:00:00.000Z",
+              createdAt: "2026-09-01T09:00:00.000Z",
+              trainingId: "EX123",
+              experienceId: "EX123",
+              environmentExternalId: "env-1",
+              environmentId: "env-1",
+              participantId: "student-1",
+              diagnosticFilters: { examAttemptId: "attempt-1" },
+            },
+          ],
+          cloudShareParticipants: {
+            status: "available",
+            trainingId: "EX123",
+            readError: null,
+            correlationId: "corr-1",
+            participants: [
+              {
+                email: "casey@helioscx.demo",
+                firstName: "Casey",
+                lastName: "Rivera",
+                displayName: "Casey Rivera",
+                studentId: "student-1",
+                environmentId: "env-1",
+                environmentStatus: "Ready",
+                participationStatus: "inProgress",
+                firstJoinedAt: "2026-09-01T09:10:00.000Z",
+                matchedExamAttemptId: "attempt-1",
+                diagnosticFilters: {
+                  examAttemptId: "attempt-1",
+                  candidateEmail: "casey@helioscx.demo",
+                  externalId: "env-1",
+                },
+              },
+              {
+                email: "taylor@helioscx.demo",
+                firstName: "Taylor",
+                lastName: "Ng",
+                displayName: "Taylor Ng",
+                studentId: "student-2",
+                environmentId: "env-2",
+                environmentStatus: "Running",
+                participationStatus: "inProgress",
+                firstJoinedAt: "2026-09-01T09:12:00.000Z",
+                matchedExamAttemptId: null,
+                diagnosticFilters: {
+                  candidateEmail: "taylor@helioscx.demo",
+                  externalId: "env-2",
+                },
+              },
+            ],
+          },
+          diagnostics: {
+            session: { examId: "exam-1", externalId: "EX123" },
+            cloudShareRead: {
+              correlationId: "corr-1",
+              operation: "cohort_exam_session.monitor.read_participants",
+            },
+          },
+        },
+        loading: false,
+        onBack: vi.fn(),
+        onPublish: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("Session monitoring");
+    expect(html).toContain("Session diagnostics");
+    expect(html).toContain("Portal ExamAttempts");
+    expect(html).toContain("CloudShare participants");
+    expect(html).toContain("Counts are derived from portal ExamAttempts and the CloudShare participant read");
+    expect(html).toContain("Casey Rivera");
+    expect(html).toContain("Participant diagnostics");
+    expect(html).toContain("No portal ExamAttempt");
+    expect(html).toContain("/admin?tab=support&amp;view=diagnostics&amp;examId=exam-1&amp;externalId=EX123");
+    expect(html).toContain("/admin?tab=support&amp;view=diagnostics&amp;examAttemptId=attempt-1");
+  });
+
+  it("renders a degraded CloudShare participant read state without hiding the session workspace", () => {
+    const html = renderToStaticMarkup(
+      createElement(CohortSessionWorkspacePanel, {
+        examTitle: "Helios CX Admin Foundations",
+        session: {
+          session: {
+            id: "cohort-session-1",
+            name: "September Admin Cohort",
+            admissionStartsAt: "2026-09-01T09:00:00.000Z",
+            admissionEndsAt: "2026-09-30T17:00:00.000Z",
+            capacity: 25,
+            status: "published",
+            cloudShareTrainingId: "EX123",
+            cloudShareExperienceId: "EX123",
+          },
+          inheritedContext: {
+            project: { id: "project-1", name: "Project Atlas" },
+            blueprint: { id: "blueprint-1", name: "Blueprint Aurora" },
+            snapshot: { id: "snapshot-1", name: "Snapshot Echo" },
+            policy: { id: "policy-1", name: "Policy Orbit" },
+            allowedRegions: [{ id: "region-1", name: "useast" }],
+            instructor: { id: "instructor-1", name: "Jordan Lee" },
+            scoreRetrievalEnabled: true,
+            timeLimitMinutes: 90,
+          },
+        },
+        detail: {
+          summary: {
+            activeCount: 1,
+            inProgressCount: 0,
+            completedCount: 0,
+            problemCount: 2,
+            portalAttemptCount: 1,
+            cloudShareParticipantCount: 0,
+            derivedFrom: "portal_and_cloudshare",
+          },
+          portalAttempts: [],
+          cloudShareParticipants: {
+            status: "unavailable",
+            trainingId: "EX123",
+            readError: "CloudShare participant read failed for this Cohort Exam Session.",
+            correlationId: "corr-1",
+            participants: [],
+          },
+          diagnostics: {
+            session: { examId: "exam-1", externalId: "EX123" },
+            cloudShareRead: {
+              correlationId: "corr-1",
+              operation: "cohort_exam_session.monitor.read_participants",
+            },
+          },
+        },
+        loading: false,
+        onBack: vi.fn(),
+        onPublish: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("CloudShare participant read unavailable");
+    expect(html).toContain("CloudShare participant read failed for this Cohort Exam Session.");
+    expect(html).toContain("Correlation ID: corr-1");
+  });
+
   it("formats Cohort Exam Session timestamps in ISO-style UTC minutes", () => {
     expect(formatCohortSessionDateTime("2026-07-05T09:00:00.000Z")).toBe("2026-07-05T09:00Z");
     expect(formatCohortSessionDateTime(null)).toBe("-");

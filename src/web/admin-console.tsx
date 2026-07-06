@@ -39,6 +39,7 @@ import {
 } from "./diagnostic-log-table";
 import { SessionMonitoringPanel } from "./session-monitoring-panel";
 import type { AdminMonitoringView as MonitoringView } from "@/domain/admin-monitoring";
+import type { CohortExamSessionMonitoringView } from "@/api/admin-cohort-exam-session-detail";
 import { startPortalSessionWatchdog } from "./session-expiry";
 import { pageShellStyle } from "./page-shell";
 import { cardStyle, mutedPanelStyle, alertPanelStyle } from "./card-styles";
@@ -209,6 +210,11 @@ interface CohortExamSessionRecord {
     scoreRetrievalEnabled: boolean;
     timeLimitMinutes: number;
   };
+}
+
+interface CohortExamSessionDetailRecord {
+  session: CohortExamSessionRecord;
+  monitoring: CohortExamSessionMonitoringView;
 }
 
 interface CohortExamSessionFormState {
@@ -779,6 +785,7 @@ export function CohortSessionDraftOnlyNotice() {
 export function CohortSessionWorkspacePanel(props: {
   examTitle: string;
   session: CohortExamSessionRecord;
+  detail?: CohortExamSessionMonitoringView | null;
   loading: boolean;
   onBack: () => void;
   onPublish: () => void;
@@ -881,6 +888,181 @@ export function CohortSessionWorkspacePanel(props: {
             value={`${session.inheritedContext.timeLimitMinutes} minutes`}
           />
         </div>
+
+        {props.detail ? (
+          <div style={{ display: "grid", gap: "0.9rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
+              <strong>Session monitoring</strong>
+              <a
+                href={buildAdminConsoleHref({
+                  tab: "support",
+                  supportView: "diagnostics",
+                  diagnosticFilters: props.detail.diagnostics.session,
+                })}
+                style={secondaryButtonStyle}
+              >
+                Session diagnostics
+              </a>
+            </div>
+
+            <div style={cohortSessionDetailGridStyle}>
+              <CohortSessionDetailItem label="Active" value={props.detail.summary.activeCount} />
+              <CohortSessionDetailItem label="In progress" value={props.detail.summary.inProgressCount} />
+              <CohortSessionDetailItem label="Completed" value={props.detail.summary.completedCount} />
+              <CohortSessionDetailItem label="Problems" value={props.detail.summary.problemCount} />
+              <CohortSessionDetailItem label="Portal attempts" value={props.detail.summary.portalAttemptCount} />
+              <CohortSessionDetailItem
+                label="CloudShare participants"
+                value={props.detail.summary.cloudShareParticipantCount}
+              />
+            </div>
+
+            <div style={{ color: colors.textSecondary, fontSize: "0.9rem" }}>
+              Counts are derived from portal ExamAttempts and the CloudShare participant read for this shared Experience.
+            </div>
+
+            <div style={{ display: "grid", gap: "0.75rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
+                <strong>Portal ExamAttempts</strong>
+              </div>
+              {props.detail.portalAttempts.length === 0 ? (
+                <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
+                  No portal ExamAttempts have joined this Cohort Exam Session yet.
+                </div>
+              ) : (
+                <div style={{ ...cardStyle, padding: 0, overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
+                    <thead>
+                      <tr style={{ background: colors.surfaceSubtle }}>
+                        {["Candidate", "Attempt state", "CloudShare IDs", "Diagnostics"].map((heading) => (
+                          <th key={heading} style={{ textAlign: "left", padding: "0.55rem", borderBottom: `1px solid ${colors.border}` }}>
+                            {heading}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {props.detail.portalAttempts.map((attempt) => (
+                        <tr key={attempt.id} style={{ borderBottom: `1px solid ${colors.border}` }}>
+                          <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
+                            <div style={{ fontWeight: 600 }}>{attempt.candidateName}</div>
+                            <div style={{ color: colors.textSecondary }}>{attempt.candidateEmail}</div>
+                          </td>
+                          <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
+                            <div>{formatCandidateAttemptStatus(attempt.status)}</div>
+                            <div style={{ color: colors.textSecondary }}>{formatUtcTimestamp(attempt.scheduledFor)}</div>
+                          </td>
+                          <td style={{ padding: "0.55rem", verticalAlign: "top", overflowWrap: "anywhere" }}>
+                            <div>Attempt ID: {attempt.id}</div>
+                            <div>Participant ID: {attempt.participantId ?? "-"}</div>
+                            <div>Environment ID: {attempt.environmentId ?? attempt.environmentExternalId ?? "-"}</div>
+                          </td>
+                          <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
+                            <a
+                              href={buildAdminConsoleHref({
+                                tab: "support",
+                                supportView: "diagnostics",
+                                diagnosticFilters: attempt.diagnosticFilters,
+                              })}
+                              style={secondaryButtonStyle}
+                            >
+                              Attempt diagnostics
+                            </a>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: "grid", gap: "0.75rem" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
+                <strong>CloudShare participants</strong>
+                {props.detail.diagnostics.cloudShareRead ? (
+                  <a
+                    href={buildAdminConsoleHref({
+                      tab: "support",
+                      supportView: "diagnostics",
+                      diagnosticFilters: props.detail.diagnostics.cloudShareRead,
+                    })}
+                    style={secondaryButtonStyle}
+                  >
+                    Participant read diagnostics
+                  </a>
+                ) : null}
+              </div>
+              {props.detail.cloudShareParticipants.status === "unavailable" ? (
+                <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.35rem" }}>
+                  <strong>CloudShare participant read unavailable</strong>
+                  <span>{props.detail.cloudShareParticipants.readError}</span>
+                  {props.detail.cloudShareParticipants.correlationId ? (
+                    <span>Correlation ID: {props.detail.cloudShareParticipants.correlationId}</span>
+                  ) : null}
+                </div>
+              ) : null}
+              {props.detail.cloudShareParticipants.status === "not_published" ? (
+                <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
+                  Publish this Cohort Exam Session to CloudShare before participant monitoring becomes available.
+                </div>
+              ) : null}
+              {props.detail.cloudShareParticipants.status !== "not_published" &&
+              props.detail.cloudShareParticipants.participants.length === 0 ? (
+                <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
+                  No CloudShare participants are currently visible for this shared Experience.
+                </div>
+              ) : null}
+              {props.detail.cloudShareParticipants.participants.length > 0 ? (
+                <div style={{ ...cardStyle, padding: 0, overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
+                    <thead>
+                      <tr style={{ background: colors.surfaceSubtle }}>
+                        {["Participant", "CloudShare state", "Portal match", "Diagnostics"].map((heading) => (
+                          <th key={heading} style={{ textAlign: "left", padding: "0.55rem", borderBottom: `1px solid ${colors.border}` }}>
+                            {heading}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {props.detail.cloudShareParticipants.participants.map((participant) => (
+                        <tr key={`${participant.email}:${participant.studentId ?? participant.environmentId ?? "none"}`} style={{ borderBottom: `1px solid ${colors.border}` }}>
+                          <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
+                            <div style={{ fontWeight: 600 }}>{participant.displayName ?? participant.email}</div>
+                            <div style={{ color: colors.textSecondary }}>{participant.email}</div>
+                            <div style={{ color: colors.textSecondary }}>First joined: {formatUtcTimestamp(participant.firstJoinedAt)}</div>
+                          </td>
+                          <td style={{ padding: "0.55rem", verticalAlign: "top", overflowWrap: "anywhere" }}>
+                            <div>Participation: {participant.participationStatus ?? "-"}</div>
+                            <div>Environment: {participant.environmentStatus ?? "-"}</div>
+                            <div>Environment ID: {participant.environmentId ?? "-"}</div>
+                            <div>Participant ID: {participant.studentId ?? "-"}</div>
+                          </td>
+                          <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
+                            {participant.matchedExamAttemptId ? participant.matchedExamAttemptId : "No portal ExamAttempt"}
+                          </td>
+                          <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
+                            <a
+                              href={buildAdminConsoleHref({
+                                tab: "support",
+                                supportView: "diagnostics",
+                                diagnosticFilters: participant.diagnosticFilters,
+                              })}
+                              style={secondaryButtonStyle}
+                            >
+                              Participant diagnostics
+                            </a>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -1330,6 +1512,7 @@ export function AdminConsole({
   const [editingExamId, setEditingExamId] = useState<string | null>(null);
   const [examCatalog, setExamCatalog] = useState<ExamRecord[]>([]);
   const [cohortSessionsByExamId, setCohortSessionsByExamId] = useState<Record<string, CohortExamSessionRecord[]>>({});
+  const [cohortSessionDetailsById, setCohortSessionDetailsById] = useState<Record<string, CohortExamSessionDetailRecord>>({});
   const [cohortSessionFormsByExamId, setCohortSessionFormsByExamId] = useState<Record<string, CohortExamSessionFormState>>({});
   const [selectedCohortSession, setSelectedCohortSession] = useState<CohortExamSessionRecord | null>(null);
   const [monitoring, setMonitoring] = useState<MonitoringView | null>(null);
@@ -1413,6 +1596,14 @@ export function AdminConsole({
     void loadCohortExamSessions(focusedExamId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, examView, focusedExamId]);
+
+  useEffect(() => {
+    if (tab !== "exams" || examView !== "session" || !focusedExamId || !focusedCohortSessionId) {
+      return;
+    }
+    void loadCohortSessionDetail(focusedExamId, focusedCohortSessionId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, examView, focusedExamId, focusedCohortSessionId]);
 
   function beginExamCatalogLoading() {
     examCatalogLoadingCountRef.current += 1;
@@ -2133,6 +2324,28 @@ export function AdminConsole({
     }
   }
 
+  async function loadCohortSessionDetail(examId: string, sessionId: string) {
+    try {
+      const response = await fetchAdmin(
+        `/api/admin/exams/${encodeURIComponent(examId)}/cohort-sessions/${encodeURIComponent(sessionId)}`,
+      );
+      const data = (await response.json()) as CohortExamSessionDetailRecord & { error?: string };
+      if (!response.ok) {
+        setError(data.error ?? "Failed to load Cohort Exam Session detail");
+        return;
+      }
+      setCohortSessionDetailsById((current) => ({
+        ...current,
+        [sessionId]: data,
+      }));
+    } catch (caughtError) {
+      if (isAdminSessionExpiredError(caughtError)) {
+        return;
+      }
+      setError("Failed to load Cohort Exam Session detail");
+    }
+  }
+
   function getCohortSessionForm(examId: string): CohortExamSessionFormState {
     return cohortSessionFormsByExamId[examId] ?? {
       name: "",
@@ -2192,6 +2405,7 @@ export function AdminConsole({
         [examId]: { name: "", admissionStartsAt: "", admissionEndsAt: "", capacity: "" },
       }));
       await loadCohortExamSessions(examId);
+      await loadCohortSessionDetail(examId, data.session.id);
       navigateAdmin({
         tab: "exams",
         examView: "session",
@@ -2230,6 +2444,7 @@ export function AdminConsole({
       setSelectedCohortSession(data);
       setExamMessage("Cohort Exam Session published to CloudShare.");
       await loadCohortExamSessions(examId);
+      await loadCohortSessionDetail(examId, data.session.id);
     } catch (caughtError) {
       if (isAdminSessionExpiredError(caughtError)) {
         return;
@@ -2525,6 +2740,8 @@ export function AdminConsole({
       ? focusedExamSessions.find((session) => session.session.id === focusedCohortSessionId)
       : null) ??
     (selectedCohortSession?.session.id === focusedCohortSessionId ? selectedCohortSession : null);
+  const focusedCohortSessionDetail =
+    focusedCohortSessionId ? (cohortSessionDetailsById[focusedCohortSessionId] ?? null) : null;
   useEffect(() => {
     if (!shouldReconcileAllowedRegionIds(defaultSnapshot)) {
       return;
@@ -3327,6 +3544,7 @@ export function AdminConsole({
             <CohortSessionWorkspacePanel
               examTitle={focusedExam.title}
               session={focusedCohortSession}
+              detail={focusedCohortSessionDetail?.monitoring ?? null}
               loading={loading}
               onBack={() => navigateToExamSessions(focusedExam.id)}
               onPublish={() => void publishCohortSession(focusedExam.id, focusedCohortSession.session.id)}
