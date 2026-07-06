@@ -15,6 +15,9 @@ const normalizedParticipantsSchema = z.array(
     lastName: z.string().min(1).nullable(),
     displayName: z.string().min(1).nullable(),
     studentId: z.string().min(1).nullable(),
+    certalisExamAttemptId: z.string().min(1).nullable(),
+    certalisCohortSessionId: z.string().min(1).nullable(),
+    certalisCandidateId: z.string().min(1).nullable(),
   }),
 );
 
@@ -66,6 +69,62 @@ function unwrapParticipantRows(payload: unknown): unknown[] {
     payload.Data;
 
   return Array.isArray(wrapped) ? wrapped : [];
+}
+
+function normalizeCustomPropertyBag(value: unknown): Record<string, string> {
+  if (Array.isArray(value)) {
+    const pairs = value.flatMap((entry) => {
+      if (!isRecord(entry)) {
+        return [];
+      }
+      const key = readStringCandidate(entry, [
+        ["key"],
+        ["Key"],
+        ["name"],
+        ["Name"],
+      ]);
+      const propertyValue = readStringCandidate(entry, [
+        ["value"],
+        ["Value"],
+      ]);
+      if (!key || !propertyValue) {
+        return [];
+      }
+      return [[key, propertyValue] as const];
+    });
+    return Object.fromEntries(pairs);
+  }
+
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([key, propertyValue]) =>
+      typeof propertyValue === "string" && propertyValue.trim().length > 0
+        ? [[key, propertyValue.trim()] as const]
+        : [],
+    ),
+  );
+}
+
+function readCustomProperties(record: Record<string, unknown>): Record<string, string> {
+  const bags = [
+    record.customProperties,
+    record.CustomProperties,
+    record.userCustomProperties,
+    record.UserCustomProperties,
+    readNested(record, ["user", "customProperties"]),
+    readNested(record, ["user", "CustomProperties"]),
+    readNested(record, ["User", "customProperties"]),
+    readNested(record, ["User", "CustomProperties"]),
+    readNested(record, ["student", "customProperties"]),
+    readNested(record, ["student", "CustomProperties"]),
+    readNested(record, ["Student", "customProperties"]),
+    readNested(record, ["Student", "CustomProperties"]),
+  ];
+
+  return Object.assign({}, ...bags.map(normalizeCustomPropertyBag));
 }
 
 export function normalizeTrainingParticipants(payload: unknown): TrainingParticipant[] {
@@ -203,6 +262,7 @@ export function normalizeTrainingParticipants(payload: unknown): TrainingPartici
       ]) ?? null;
     const composedDisplayName = `${firstName ?? ""} ${lastName ?? ""}`.trim() || null;
     const displayName = explicitDisplayName ?? composedDisplayName;
+    const customProperties = readCustomProperties(row);
 
     return [
       {
@@ -215,6 +275,9 @@ export function normalizeTrainingParticipants(payload: unknown): TrainingPartici
         lastName,
         displayName,
         studentId,
+        certalisExamAttemptId: customProperties.certalisExamAttemptId ?? null,
+        certalisCohortSessionId: customProperties.certalisCohortSessionId ?? null,
+        certalisCandidateId: customProperties.certalisCandidateId ?? null,
       },
     ];
   });

@@ -493,8 +493,12 @@ function buildMonitoringView(
   aggregateProgressCorrelationId: string,
 ): CohortExamSessionMonitoringView {
   const attemptsByEmail = new Map<string, AdminCohortExamSessionAttemptRecord>();
+  const attemptsById = new Map<string, AdminCohortExamSessionAttemptRecord>();
+  const attemptsByCandidateId = new Map<string, AdminCohortExamSessionAttemptRecord>();
   for (const attempt of attempts) {
     attemptsByEmail.set(attempt.candidateEmail.trim().toLowerCase(), attempt);
+    attemptsById.set(attempt.id, attempt);
+    attemptsByCandidateId.set(attempt.candidateId, attempt);
   }
 
   const portalAttempts = attempts.map((attempt) => ({
@@ -514,7 +518,14 @@ function buildMonitoringView(
   }));
 
   const cloudShareParticipants = cloudShareRead.participants.map((participant) => {
-    const matchedAttempt = attemptsByEmail.get(participant.email.trim().toLowerCase()) ?? null;
+    const matchedAttempt =
+      resolveMatchedAttempt(
+        participant,
+        session.session.id,
+        attemptsById,
+        attemptsByCandidateId,
+        attemptsByEmail,
+      ) ?? null;
     return {
       email: participant.email,
       firstName: participant.firstName ?? null,
@@ -571,12 +582,44 @@ function buildMonitoringView(
   };
 }
 
+function resolveMatchedAttempt(
+  participant: TrainingParticipant,
+  cohortSessionId: string,
+  attemptsById: ReadonlyMap<string, AdminCohortExamSessionAttemptRecord>,
+  attemptsByCandidateId: ReadonlyMap<string, AdminCohortExamSessionAttemptRecord>,
+  attemptsByEmail: ReadonlyMap<string, AdminCohortExamSessionAttemptRecord>,
+): AdminCohortExamSessionAttemptRecord | null {
+  const explicitAttemptId = participant.certalisExamAttemptId?.trim();
+  if (explicitAttemptId) {
+    const matchedByAttemptId = attemptsById.get(explicitAttemptId);
+    if (matchedByAttemptId) {
+      return matchedByAttemptId;
+    }
+  }
+
+  const explicitCandidateId = participant.certalisCandidateId?.trim();
+  const explicitCohortSessionId = participant.certalisCohortSessionId?.trim();
+  if (
+    explicitCandidateId &&
+    explicitCohortSessionId &&
+    explicitCohortSessionId === cohortSessionId
+  ) {
+    const matchedByCandidateId = attemptsByCandidateId.get(explicitCandidateId);
+    if (matchedByCandidateId) {
+      return matchedByCandidateId;
+    }
+  }
+
+  return attemptsByEmail.get(participant.email.trim().toLowerCase()) ?? null;
+}
+
 function deriveSummary(
   portalAttempts: readonly CohortExamSessionAttemptView[],
   participants: readonly CohortExamSessionParticipantView[],
   cloudShareStatus: "available" | "unavailable" | "not_published",
 ): CohortExamSessionMonitoringView["summary"] {
-  const rowsByEmail = new Map<
+  const attemptKeyByEmail = new Map<string, string>();
+  const rowsByKey = new Map<
     string,
     {
       portal?: CohortExamSessionAttemptView;
@@ -585,12 +628,13 @@ function deriveSummary(
   >();
 
   for (const attempt of portalAttempts) {
-    const key = attempt.candidateEmail.trim().toLowerCase();
-    rowsByEmail.set(key, { ...(rowsByEmail.get(key) ?? {}), portal: attempt });
+    const key = toPortalSummaryRowKey(attempt);
+    attemptKeyByEmail.set(attempt.candidateEmail.trim().toLowerCase(), key);
+    rowsByKey.set(key, { ...(rowsByKey.get(key) ?? {}), portal: attempt });
   }
   for (const participant of participants) {
-    const key = participant.email.trim().toLowerCase();
-    rowsByEmail.set(key, { ...(rowsByEmail.get(key) ?? {}), cloud: participant });
+    const key = toCloudShareSummaryRowKey(participant, attemptKeyByEmail);
+    rowsByKey.set(key, { ...(rowsByKey.get(key) ?? {}), cloud: participant });
   }
 
   let activeCount = 0;
@@ -598,7 +642,7 @@ function deriveSummary(
   let completedCount = 0;
   let problemCount = cloudShareStatus === "unavailable" ? 1 : 0;
 
-  for (const row of rowsByEmail.values()) {
+  for (const row of rowsByKey.values()) {
     const portalActive = isPortalActive(row.portal?.status);
     const cloudActive = isCloudActive(row.cloud);
     const portalCompleted = isPortalCompleted(row.portal?.status);
@@ -621,6 +665,21 @@ function deriveSummary(
     cloudShareParticipantCount: participants.length,
     derivedFrom: "portal_and_cloudshare",
   };
+}
+
+function toPortalSummaryRowKey(attempt: CohortExamSessionAttemptView): string {
+  return `attempt:${attempt.id}`;
+}
+
+function toCloudShareSummaryRowKey(
+  participant: CohortExamSessionParticipantView,
+  attemptKeyByEmail: ReadonlyMap<string, string>,
+): string {
+  if (participant.matchedExamAttemptId) {
+    return `attempt:${participant.matchedExamAttemptId}`;
+  }
+  const normalizedEmail = participant.email.trim().toLowerCase();
+  return attemptKeyByEmail.get(normalizedEmail) ?? `email:${normalizedEmail}`;
 }
 
 function isPortalActive(status: CohortExamSessionAttemptView["status"] | undefined): boolean {

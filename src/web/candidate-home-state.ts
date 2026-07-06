@@ -326,6 +326,10 @@ export function getAttemptColdStartWarning(
     return null;
   }
 
+  if (attempt.cohortSessionId) {
+    return null;
+  }
+
   if (isAttemptOpenPeriodClosed(attempt, nowMs, exam)) {
     return null;
   }

@@ -10,6 +10,9 @@ export interface TrainingParticipant {
   readonly lastName?: string | null;
   readonly displayName?: string | null;
   readonly studentId?: string | null;
+  readonly certalisExamAttemptId?: string | null;
+  readonly certalisCohortSessionId?: string | null;
+  readonly certalisCandidateId?: string | null;
 }
 
 export interface ParticipantLister {

@@ -88,8 +88,12 @@ export interface AddParticipantInput {
   readonly email: string;
   readonly firstName: string;
   readonly lastName: string;
+  readonly certalisExamAttemptId?: string;
+  readonly certalisCohortSessionId?: string;
+  readonly certalisCandidateId?: string;
 }
 export interface AddParticipantResult {
+  readonly participantId?: string;
   readonly integrationSurface?: string;
   readonly request?: ProvisioningRequestEvidence;
   readonly response: {
