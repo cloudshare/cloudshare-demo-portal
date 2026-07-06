@@ -93,10 +93,10 @@ describe("AdminConsole", () => {
     expect(html).toContain("Session Monitoring");
     expect(html).toContain("Support Diagnostics");
     expect(html).not.toContain("Active workflow");
-    expect(html).not.toContain("Monitor current ExamAttempt state, then open Support Diagnostics for the forensic trace.");
+    expect(html).not.toContain("Monitor current exam attempt state, then open Support Diagnostics for the forensic trace.");
   });
 
-  it("reopens on the Diagnostic Log tab when route state links to an ExamAttempt investigation", () => {
+  it("reopens on the Diagnostic Log tab when route state links to an exam attempt investigation", () => {
     const html = renderToStaticMarkup(
       createElement(AdminConsole, {
         email: "admin@helioscx.demo",
@@ -110,7 +110,7 @@ describe("AdminConsole", () => {
     );
 
     expect(html).toContain("This is the primary support workflow.");
-    expect(html).toContain("Filtered to ExamAttempt ID");
+    expect(html).toContain("Filtered to exam attempt ID");
     expect(html).toContain("attempt-42");
   });
 
@@ -156,7 +156,7 @@ describe("AdminConsole", () => {
       }),
     );
 
-    expect(html).toContain("ExamAttempt ID");
+    expect(html).toContain("Exam attempt ID");
     expect(html).toContain("Action");
     expect(html).toContain("Actor email");
     expect(html).toContain("Subject type");
@@ -980,7 +980,8 @@ describe("AdminConsole", () => {
 
     expect(html).toContain("Session monitoring");
     expect(html).toContain("Session diagnostics");
-    expect(html).toContain("Portal ExamAttempts");
+    expect(html).toContain("Session exam attempts");
+    expect(html).not.toContain("Portal ExamAttempts");
     expect(html).toContain("CloudShare participants");
     expect(html).toContain("Guided Journey aggregate progress");
     expect(html).toContain("This Cohort Exam Session / CloudShare Experience");
@@ -989,11 +990,12 @@ describe("AdminConsole", () => {
     expect(html).toContain("Passed");
     expect(html).toContain("20%");
     expect(html).toContain("Aggregate progress diagnostics");
-    expect(html).toContain("Counts are derived from portal ExamAttempts and the CloudShare participant read");
+    expect(html).toContain("Counts are derived from session exam attempts and the CloudShare participant read");
     expect(html).toContain("Casey Rivera");
     expect(html).toContain("CloudShare read diagnostics");
     expect(html).toContain("Attempt diagnostics");
-    expect(html).toContain("No portal ExamAttempt");
+    expect(html).toContain("No session exam attempt");
+    expect(html).not.toContain("No portal ExamAttempt");
     expect(html).toContain("/admin?tab=support&amp;view=diagnostics&amp;examId=exam-1&amp;externalId=EX123");
     expect(html).toContain("/admin?tab=support&amp;view=diagnostics&amp;examAttemptId=attempt-1");
   });

@@ -57,6 +57,10 @@ import { colors } from "./design-tokens";
 import { statusBadgeStyle, getExamStatusTone, type StatusTone } from "./status-badge";
 import { PortalPageHeader } from "./portal-page-header";
 
+const extensionHydrationProps = {
+  suppressHydrationWarning: true,
+} as const;
+
 interface AdminConsoleProps {
   readonly email: string;
   readonly initialTab?: AdminTab;
@@ -1017,7 +1021,7 @@ export function CohortSessionWorkspacePanel(props: {
               <CohortSessionDetailItem label="In progress" value={props.detail.summary.inProgressCount} />
               <CohortSessionDetailItem label="Completed" value={props.detail.summary.completedCount} />
               <CohortSessionDetailItem label="Problems" value={props.detail.summary.problemCount} />
-              <CohortSessionDetailItem label="Portal attempts" value={props.detail.summary.portalAttemptCount} />
+              <CohortSessionDetailItem label="Session exam attempts" value={props.detail.summary.portalAttemptCount} />
               <CohortSessionDetailItem
                 label="CloudShare participants"
                 value={props.detail.summary.cloudShareParticipantCount}
@@ -1025,16 +1029,16 @@ export function CohortSessionWorkspacePanel(props: {
             </div>
 
             <div style={{ color: colors.textSecondary, fontSize: "0.9rem" }}>
-              Counts are derived from portal ExamAttempts and the CloudShare participant read for this shared Experience.
+              Counts are derived from session exam attempts and the CloudShare participant read for this shared Experience.
             </div>
 
             <div style={{ display: "grid", gap: "0.75rem" }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
-                <strong>Portal ExamAttempts</strong>
+                <strong>Session exam attempts</strong>
               </div>
               {props.detail.portalAttempts.length === 0 ? (
                 <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
-                  No portal ExamAttempts have joined this Cohort Exam Session yet.
+                  No session exam attempts have joined this Cohort Exam Session yet.
                 </div>
               ) : (
                 <div style={{ ...cardStyle, padding: 0, overflowX: "auto" }}>
@@ -1178,7 +1182,7 @@ export function CohortSessionWorkspacePanel(props: {
                             <div>Participant ID: {participant.studentId ?? "-"}</div>
                           </td>
                           <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
-                            {participant.matchedExamAttemptId ? participant.matchedExamAttemptId : "No portal ExamAttempt"}
+                            {participant.matchedExamAttemptId ? participant.matchedExamAttemptId : "No session exam attempt"}
                           </td>
                           <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
                             <a
@@ -1689,7 +1693,7 @@ export function AdminCandidateRosterPanel({
             <div style={{ color: "#555" }}>{selectedCandidate.email}</div>
           </div>
           {selectedCandidate.attempts.length === 0 ? (
-            <p style={{ margin: 0, color: "#555" }}>This candidate has no ExamAttempts yet.</p>
+            <p style={{ margin: 0, color: "#555" }}>This candidate has no exam attempts yet.</p>
           ) : (
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.86rem" }}>
@@ -3175,10 +3179,10 @@ export function AdminConsole({
       <PortalPageHeader
         eyebrow="Helios Admin Portal"
         title="Certalis Admin Console"
-        description="Manage the Helios CX CloudShare Connection, Exam catalog, Candidate accounts, and active ExamAttempt support workflows."
+        description="Manage the Helios CX CloudShare Connection, Exam catalog, Candidate accounts, and active exam attempt support workflows."
         email={email}
         actions={
-          <button onClick={logout} disabled={loading} style={getLogoutButtonStyle(loading)}>
+          <button {...extensionHydrationProps} onClick={logout} disabled={loading} style={getLogoutButtonStyle(loading)}>
             Log out
           </button>
         }
@@ -3192,6 +3196,7 @@ export function AdminConsole({
 
           return (
             <button
+              {...extensionHydrationProps}
               key={t}
               type="button"
               aria-current={isActive ? "page" : undefined}
@@ -4057,6 +4062,7 @@ export function AdminConsole({
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
               {(["monitoring", "diagnostics", "audit"] as const).map((view) => (
                 <button
+                  {...extensionHydrationProps}
                   key={view}
                   type="button"
                   aria-current={supportView === view ? "page" : undefined}
@@ -4090,7 +4096,7 @@ export function AdminConsole({
             }}
           >
             <input
-              placeholder="ExamAttempt ID"
+              placeholder="Exam attempt ID"
               value={auditFilters.examAttemptId}
               onChange={(e) => setAuditFilter("examAttemptId", e.target.value)}
               style={{ padding: "0.4rem" }}
@@ -4150,7 +4156,7 @@ export function AdminConsole({
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
                 <thead>
                   <tr style={{ background: colors.surfaceSubtle }}>
-                    {["Time", "Actor", "Subject", "ExamAttempt", "Action", "Outcome", "Details / Error"].map((h) => (
+                    {["Time", "Actor", "Subject", "Exam attempt", "Action", "Outcome", "Details / Error"].map((h) => (
                       <th key={h} style={{ textAlign: "left", padding: "0.4rem", borderBottom: `1px solid ${colors.border}` }}>
                         {h}
                       </th>
@@ -4233,7 +4239,7 @@ export function AdminConsole({
             <div style={{ marginBottom: "0.9rem" }}>
               <h2 style={{ margin: 0, fontSize: "1rem" }}>Investigative filters</h2>
               <p style={{ color: colors.textSecondary, margin: "0.35rem 0 0" }}>
-                Follow an ExamAttempt, correlation thread, or CloudShare event without changing the
+                Follow an exam attempt, correlation thread, or CloudShare event without changing the
                 underlying diagnostic filtering rules.
               </p>
             </div>
@@ -4258,8 +4264,9 @@ export function AdminConsole({
                   }}
                 >
                   <label style={{ display: "grid", gap: "0.35rem" }}>
-                    <span>ExamAttempt ID</span>
+                    <span>Exam attempt ID</span>
                     <input
+                      {...extensionHydrationProps}
                       value={diagnosticFilters.examAttemptId ?? ""}
                       onChange={(event) => setDiagnosticFilter("examAttemptId", event.target.value)}
                       placeholder="attempt-123"
@@ -4268,6 +4275,7 @@ export function AdminConsole({
                   <label style={{ display: "grid", gap: "0.35rem" }}>
                     <span>Correlation ID</span>
                     <input
+                      {...extensionHydrationProps}
                       value={diagnosticFilters.correlationId ?? ""}
                       onChange={(event) => setDiagnosticFilter("correlationId", event.target.value)}
                       placeholder="corr-123"
@@ -4276,6 +4284,7 @@ export function AdminConsole({
                   <label style={{ display: "grid", gap: "0.35rem" }}>
                     <span>Candidate email</span>
                     <input
+                      {...extensionHydrationProps}
                       value={diagnosticFilters.candidateEmail ?? ""}
                       onChange={(event) => setDiagnosticFilter("candidateEmail", event.target.value)}
                       placeholder="candidate@helioscx.demo"
@@ -4284,6 +4293,7 @@ export function AdminConsole({
                   <label style={{ display: "grid", gap: "0.35rem" }}>
                     <span>Exam ID</span>
                     <input
+                      {...extensionHydrationProps}
                       value={diagnosticFilters.examId ?? ""}
                       onChange={(event) => setDiagnosticFilter("examId", event.target.value)}
                       placeholder="exam-123"
@@ -4292,6 +4302,7 @@ export function AdminConsole({
                   <label style={{ display: "grid", gap: "0.35rem" }}>
                     <span>CloudShare / external ID</span>
                     <input
+                      {...extensionHydrationProps}
                       value={diagnosticFilters.externalId ?? ""}
                       onChange={(event) => setDiagnosticFilter("externalId", event.target.value)}
                       placeholder="env-123"
@@ -4321,6 +4332,7 @@ export function AdminConsole({
                   <label style={{ display: "grid", gap: "0.35rem" }}>
                     <span>Operation</span>
                     <input
+                      {...extensionHydrationProps}
                       value={diagnosticFilters.operation ?? ""}
                       onChange={(event) => setDiagnosticFilter("operation", event.target.value)}
                       placeholder="exam_attempt.resume"
@@ -4329,6 +4341,7 @@ export function AdminConsole({
                   <label style={{ display: "grid", gap: "0.35rem" }}>
                     <span>Outcome</span>
                     <select
+                      {...extensionHydrationProps}
                       value={diagnosticFilters.outcome ?? ""}
                       onChange={(event) =>
                         setDiagnosticFilter(
@@ -4345,6 +4358,7 @@ export function AdminConsole({
                   <label style={{ display: "grid", gap: "0.35rem" }}>
                     <span>Source</span>
                     <input
+                      {...extensionHydrationProps}
                       value={diagnosticFilters.source ?? ""}
                       onChange={(event) => setDiagnosticFilter("source", event.target.value)}
                       placeholder="runtime"
@@ -4353,6 +4367,7 @@ export function AdminConsole({
                   <label style={{ display: "grid", gap: "0.35rem" }}>
                     <span>Integration surface</span>
                     <input
+                      {...extensionHydrationProps}
                       value={diagnosticFilters.integrationSurface ?? ""}
                       onChange={(event) => setDiagnosticFilter("integrationSurface", event.target.value)}
                       placeholder="cloudshare.v4.environment"
@@ -4361,6 +4376,7 @@ export function AdminConsole({
                   <label style={{ display: "grid", gap: "0.35rem" }}>
                     <span>From (UTC ISO)</span>
                     <input
+                      {...extensionHydrationProps}
                       value={diagnosticFilters.from ?? ""}
                       onChange={(event) => setDiagnosticFilter("from", event.target.value)}
                       placeholder="2026-06-21T10:00:00.000Z"
@@ -4369,6 +4385,7 @@ export function AdminConsole({
                   <label style={{ display: "grid", gap: "0.35rem" }}>
                     <span>To (UTC ISO)</span>
                     <input
+                      {...extensionHydrationProps}
                       value={diagnosticFilters.to ?? ""}
                       onChange={(event) => setDiagnosticFilter("to", event.target.value)}
                       placeholder="2026-06-21T11:00:00.000Z"
@@ -4385,13 +4402,13 @@ export function AdminConsole({
                 marginTop: "0.9rem",
               }}
             >
-              <button onClick={applyDiagnosticFilters} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
+              <button {...extensionHydrationProps} onClick={applyDiagnosticFilters} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
                 {loading ? "Loading..." : "Apply Filters"}
               </button>
-              <button onClick={clearDiagnosticFilters} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
+              <button {...extensionHydrationProps} onClick={clearDiagnosticFilters} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
                 Clear Filters
               </button>
-              <button onClick={onLoadDiagnostics} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
+              <button {...extensionHydrationProps} onClick={onLoadDiagnostics} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
                 Refresh Page
               </button>
             </div>
@@ -4412,6 +4429,7 @@ export function AdminConsole({
               </div>
               <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
                 <button
+                  {...extensionHydrationProps}
                   onClick={loadPreviousDiagnosticPage}
                   disabled={loading || (diagnosticPage.offset ?? 0) === 0}
                   style={{ padding: "0.4rem 1rem" }}
@@ -4419,6 +4437,7 @@ export function AdminConsole({
                   Previous
                 </button>
                 <button
+                  {...extensionHydrationProps}
                   onClick={loadNextDiagnosticPage}
                   disabled={loading || !diagnosticPage.hasMore}
                   style={{ padding: "0.4rem 1rem" }}
@@ -4439,7 +4458,7 @@ export function AdminConsole({
                 color: "#123",
               }}
             >
-              Filtered to ExamAttempt ID{" "}
+              Filtered to exam attempt ID{" "}
               <span style={{ fontFamily: "monospace" }}>{diagnosticFilters.examAttemptId}</span>.
             </div>
           ) : null}
