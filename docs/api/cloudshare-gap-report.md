@@ -1204,6 +1204,78 @@ allocation within an Experience. Confirm:
 
 ---
 
+## GAP-23 — Sponsored-link authentication exposes CloudShare's environment landing page after suspend
+
+| Field | Detail |
+|---|---|
+| **Status** | Confirmed — observed after a sponsored-link authenticated Candidate suspended an environment; CloudShare-side controls still unverified |
+| **Verified live** | Partial — landing-page exposure observed live on 2026-07-06; exact bypass outcomes and product mitigations require CloudShare/R&D confirmation |
+
+**Observed behaviour**
+
+After a Candidate enters a lab through a CloudShare sponsored link, CloudShare authenticates that
+browser session on `use.cloudshare.com`. When the Candidate's current environment is suspended,
+CloudShare redirects the browser to:
+
+- `https://use.cloudshare.com/Authenticated/Landing.aspx`
+
+The landing page lists the CloudShare user's active environments and pending environments. In the
+observed session it displayed multiple active environments, including the environment that had just
+been suspended, and a pending environment that could potentially be launched outside the Certalis
+portal flow.
+
+Evidence screenshot:
+[cloudshare-authenticated-landing-bypass-2026-07-06.png](assets/cloudshare-authenticated-landing-bypass-2026-07-06.png)
+
+**Impact on certification use**
+
+This weakens the portal-owned entitlement and timing model. Even if Certalis records an
+`ExamAttempt` as suspended, the Candidate may still have an authenticated CloudShare browser session
+that exposes direct links to CloudShare environments. If those links can resume a suspended
+environment or launch a pending environment, a Candidate could work around:
+
+- the portal's resume endpoint and persisted Exam clock;
+- server-side entitlement checks;
+- time-gated launch windows;
+- admin-visible suspend/resume diagnostics;
+- pending-environment admission rules for scheduled attempts or cohort sessions.
+
+Because the redirect happens after the browser is already on CloudShare's origin, Certalis cannot
+reliably intercept or inspect that navigation with ordinary portal JavaScript due to browser
+same-origin restrictions. The current separate-window launcher can detect coarse window lifecycle
+events, but it cannot safely read or block `use.cloudshare.com/Authenticated/Landing.aspx` once the
+CloudShare page has control.
+
+This does not change the sponsored-link design requirement that the `loginUrl` remains server-only
+and is reached via a 302. It does mean sponsored-link login may create a broader authenticated
+CloudShare session than the portal can constrain by itself.
+
+**Action required (if applicable):**
+
+Confirm with CloudShare/R&D whether there is a supported way to prevent or constrain this landing
+page for sponsored-link users:
+
+1. Disable or hide `Authenticated/Landing.aspx` for sponsored-link sessions.
+2. Scope a sponsored-link login to a single training/Experience/environment so other active and
+   pending environments are not listed.
+3. Configure a post-suspend or post-environment-exit redirect back to the Certalis portal instead of
+   the CloudShare landing page.
+4. Force logout or session invalidation after suspend without invalidating the Candidate's ability to
+   resume through the portal later.
+5. Prevent pending environments from being launched directly from the CloudShare landing page when
+   the intended admission path is the portal.
+
+If CloudShare has no product-side control, treat direct CloudShare landing-page access as a known
+certification integrity limitation. The portal should continue to reconcile state from CloudShare and
+surface admin diagnostics when CloudShare runtime state changes outside the expected portal action
+thread, but reconciliation is detection/mitigation rather than prevention.
+
+**Code reference:** `docs/decisions/ADR-002-server-side-sponsored-link-redirect.md`,
+`src/web/lab-launcher.tsx`, `src/api/suspend-resume.ts`,
+`src/domain/exam-attempt-runtime-lifecycle.ts`
+
+---
+
 ## Gap template
 
 Copy this section when appending a new gap discovered during implementation:
@@ -1295,5 +1367,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-07-04 (added GAP-22 for controlled nth-environment admission in cohort Experiences).
+*Last updated: 2026-07-06 (added GAP-23 for CloudShare authenticated landing-page exposure after sponsored-link suspend).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*
