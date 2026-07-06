@@ -1356,7 +1356,17 @@ export function ExamCatalogRowActions(props: {
           Manage Cohort Sessions
         </button>
       ) : null}
-      {isCohortOnly ? (
+      {isCohortOnly && props.exam.status === "published" ? (
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+          <button
+            onClick={props.onArchive}
+            disabled={props.loading || props.editingExamId !== null}
+            style={{ padding: "0.45rem 0.75rem" }}
+          >
+            Archive Exam
+          </button>
+        </div>
+      ) : isCohortOnly ? (
         <div style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>
           <div>Exam setup is {props.exam.status}</div>
           <div>Publish the individual Cohort Sessions after opening this Exam.</div>

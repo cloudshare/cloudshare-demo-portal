@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createDraftExam, publishExam, type CreateDraftExamInput } from "@/domain/exam-catalog";
 import type { Logger } from "@/observability/logger";
+import { createInMemoryCohortExamSessionRepository } from "@/persistence/cohort-exam-session-repository";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import { createInMemoryExamCatalogRepository } from "@/persistence/exam-catalog-repository";
 import {
@@ -38,7 +39,7 @@ function makeExamInput(overrides: Partial<CreateDraftExamInput> = {}): CreateDra
   };
 }
 
-async function seedPublishedExam() {
+async function seedPublishedExam(overrides: Partial<CreateDraftExamInput> = {}) {
   const repository = createInMemoryExamCatalogRepository();
   await createDraftExam(
     {
@@ -46,7 +47,7 @@ async function seedPublishedExam() {
       now: () => new Date("2026-07-04T10:00:00.000Z"),
       newId: () => "exam-1",
     },
-    makeExamInput(),
+    makeExamInput(overrides),
   );
   await publishExam(
     { repository, now: () => new Date("2026-07-04T10:05:00.000Z") },
@@ -185,6 +186,144 @@ describe("archiveAdminExamRuntime", () => {
         scheduledAttemptCount: 0,
         activeAttemptCount: 0,
         totalAttemptCount: 2,
+      },
+    });
+  });
+
+  it("blocks archiving a Cohort Exam catalogue item while any Cohort Exam Session is not retired", async () => {
+    const repository = await seedPublishedExam({ deliveryAvailability: "cohort" });
+    const cohortSessions = createInMemoryCohortExamSessionRepository();
+    await cohortSessions.save({
+      id: "session-published",
+      customerId: "customer-1",
+      examId: "exam-1",
+      name: "Morning Cohort",
+      admissionStartsAt: new Date("2026-07-05T09:00:00.000Z"),
+      admissionEndsAt: null,
+      capacity: 20,
+      status: "published",
+      cloudShareTrainingId: "EXcohort-1",
+      cloudShareExperienceId: "EXcohort-1",
+      cloudShareTeamId: "team-1",
+      publishedAt: new Date("2026-07-05T09:00:00.000Z"),
+      admissionClosedAt: null,
+      retiredAt: null,
+      lastPublishError: null,
+      lastPublishCorrelationId: null,
+      createdAt: new Date("2026-07-05T08:00:00.000Z"),
+      updatedAt: new Date("2026-07-05T09:00:00.000Z"),
+    });
+    await cohortSessions.save({
+      id: "session-retired",
+      customerId: "customer-1",
+      examId: "exam-1",
+      name: "Earlier Cohort",
+      admissionStartsAt: new Date("2026-07-04T09:00:00.000Z"),
+      admissionEndsAt: null,
+      capacity: 20,
+      status: "retired",
+      cloudShareTrainingId: "EXcohort-2",
+      cloudShareExperienceId: "EXcohort-2",
+      cloudShareTeamId: "team-1",
+      publishedAt: new Date("2026-07-04T09:00:00.000Z"),
+      admissionClosedAt: new Date("2026-07-04T10:00:00.000Z"),
+      retiredAt: new Date("2026-07-04T10:00:00.000Z"),
+      lastPublishError: null,
+      lastPublishCorrelationId: null,
+      createdAt: new Date("2026-07-04T08:00:00.000Z"),
+      updatedAt: new Date("2026-07-04T10:00:00.000Z"),
+    });
+    const attempts: AdminExamArchiveAttemptRepository = {
+      listByExamId: vi.fn().mockResolvedValue([]),
+    };
+
+    const response = await archiveAdminExamRuntime(
+      {
+        repository,
+        attempts,
+        cohortSessions,
+        logger: makeLogger(),
+        now: () => new Date("2026-07-05T10:00:00.000Z"),
+      },
+      {
+        customerId: "customer-1",
+        actor,
+        examId: "exam-1",
+        body: {},
+      },
+    );
+
+    expect(response.status).toBe(409);
+    expect(response.body).toMatchObject({
+      error: "Retire all Cohort Exam Sessions before archiving this Cohort Exam catalogue item.",
+      code: "active_cohort_sessions",
+      warning: {
+        totalCohortSessionCount: 2,
+        activeCohortSessionCount: 1,
+        activeCohortSessionStatuses: ["published"],
+      },
+    });
+    expect(attempts.listByExamId).not.toHaveBeenCalled();
+    await expect(repository.findById("exam-1")).resolves.toMatchObject({
+      status: "published",
+    });
+  });
+
+  it("archives a Cohort Exam catalogue item when all Cohort Exam Sessions are retired", async () => {
+    const repository = await seedPublishedExam({ deliveryAvailability: "cohort" });
+    const cohortSessions = createInMemoryCohortExamSessionRepository();
+    await cohortSessions.save({
+      id: "session-retired",
+      customerId: "customer-1",
+      examId: "exam-1",
+      name: "Earlier Cohort",
+      admissionStartsAt: new Date("2026-07-04T09:00:00.000Z"),
+      admissionEndsAt: null,
+      capacity: 20,
+      status: "retired",
+      cloudShareTrainingId: "EXcohort-2",
+      cloudShareExperienceId: "EXcohort-2",
+      cloudShareTeamId: "team-1",
+      publishedAt: new Date("2026-07-04T09:00:00.000Z"),
+      admissionClosedAt: new Date("2026-07-04T10:00:00.000Z"),
+      retiredAt: new Date("2026-07-04T10:00:00.000Z"),
+      lastPublishError: null,
+      lastPublishCorrelationId: null,
+      createdAt: new Date("2026-07-04T08:00:00.000Z"),
+      updatedAt: new Date("2026-07-04T10:00:00.000Z"),
+    });
+
+    const response = await archiveAdminExamRuntime(
+      {
+        repository,
+        attempts: {
+          listByExamId: vi.fn().mockResolvedValue([]),
+        },
+        cohortSessions,
+        logger: makeLogger(),
+        now: () => new Date("2026-07-05T10:00:00.000Z"),
+      },
+      {
+        customerId: "customer-1",
+        actor,
+        examId: "exam-1",
+        body: {},
+      },
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      exam: {
+        id: "exam-1",
+        status: "archived",
+      },
+      warning: {
+        scheduledAttemptCount: 0,
+        activeAttemptCount: 0,
+        totalAttemptCount: 0,
+        totalCohortSessionCount: 1,
+        activeCohortSessionCount: 0,
+        activeCohortSessionStatuses: [],
       },
     });
   });

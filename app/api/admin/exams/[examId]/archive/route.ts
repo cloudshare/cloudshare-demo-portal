@@ -29,6 +29,7 @@ export async function POST(
     buildAdminExamArchiveDeps({
       exams: services.exams,
       adminExamArchiveAttempts: createPrismaAdminExamArchiveAttemptRepository(services.prisma),
+      cohortExamSessions: services.cohortExamSessions,
       diagnosticRecorder: services.diagnosticRecorder,
       audit: services.audit,
       logger: services.logger,

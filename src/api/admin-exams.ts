@@ -9,6 +9,7 @@ import type {
 } from "@/domain/diagnostic-log";
 import type { AuditRepository } from "@/domain/audit-trail";
 import type { ExamRepository } from "@/domain/exam-catalog";
+import type { CohortExamSessionRepository } from "@/domain/cohort-exam-session";
 import type { ExamAuthoringCacheRepository } from "@/persistence/exam-authoring-cache-repository";
 import {
   getBlueprintDetailRuntime,
@@ -135,6 +136,7 @@ export interface AdminExamUnpublishServices extends AdminExamCatalogListServices
 
 export interface AdminExamArchiveServices extends AdminExamUnpublishServices {
   readonly adminExamArchiveAttempts: AdminExamArchiveAttemptRepository;
+  readonly cohortExamSessions?: CohortExamSessionRepository;
 }
 
 export function buildAdminExamCatalogListDeps(
@@ -214,6 +216,7 @@ export function buildAdminExamArchiveDeps(
   return {
     repository: services.exams,
     attempts: services.adminExamArchiveAttempts,
+    ...(services.cohortExamSessions ? { cohortSessions: services.cohortExamSessions } : {}),
     diagnostics: services.diagnosticRecorder,
     ...(services.audit ? { audit: services.audit } : {}),
     logger: services.logger,

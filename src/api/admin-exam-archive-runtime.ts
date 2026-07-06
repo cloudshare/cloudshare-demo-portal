@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { AuditRepository } from "@/domain/audit-trail";
+import type { CohortExamSessionRepository } from "@/domain/cohort-exam-session";
 import {
   archiveExam,
   ExamNotFoundError,
@@ -24,6 +25,7 @@ export interface AdminExamArchiveAttemptRepository {
 export interface AdminExamArchiveRuntimeDeps {
   readonly repository: ExamRepository;
   readonly attempts: AdminExamArchiveAttemptRepository;
+  readonly cohortSessions?: CohortExamSessionRepository;
   readonly diagnostics?: DiagnosticRecorder;
   readonly audit?: Pick<AuditRepository, "write">;
   readonly logger: Logger;
@@ -43,6 +45,29 @@ export async function archiveAdminExamRuntime(
   request: AdminExamArchiveRuntimeRequest,
 ) {
   try {
+    const existing = await deps.repository.findById(request.examId);
+    if (!existing || existing.customerId !== request.customerId) {
+      throw new ExamNotFoundError(request.customerId, request.examId);
+    }
+
+    const cohortSessionWarning = deps.cohortSessions
+      ? buildCohortSessionArchiveWarning(await deps.cohortSessions.listByExamId(request.examId))
+      : {
+          totalCohortSessionCount: 0,
+          activeCohortSessionCount: 0,
+          activeCohortSessionStatuses: [] as string[],
+        };
+    if (cohortSessionWarning.activeCohortSessionCount > 0) {
+      return {
+        status: 409,
+        body: {
+          error: "Retire all Cohort Exam Sessions before archiving this Cohort Exam catalogue item.",
+          code: "active_cohort_sessions",
+          warning: cohortSessionWarning,
+        },
+      };
+    }
+
     const attempts = await deps.attempts.listByExamId(request.customerId, request.examId);
     const warning = buildArchiveWarning(attempts);
     const confirmationRequested = parseBooleanFlag(request.body, "confirmArchive");
@@ -73,6 +98,7 @@ export async function archiveAdminExamRuntime(
       message: "Exam archived",
       details: {
         ...warning,
+        ...cohortSessionWarning,
         changedFields: ["status"],
       },
     });
@@ -83,6 +109,7 @@ export async function archiveAdminExamRuntime(
       examId: exam.id,
       details: {
         ...warning,
+        ...cohortSessionWarning,
         changedFields: ["status"],
       },
     });
@@ -90,7 +117,10 @@ export async function archiveAdminExamRuntime(
       status: 200,
       body: {
         exam,
-        warning,
+        warning: {
+          ...warning,
+          ...cohortSessionWarning,
+        },
       },
     };
   } catch (error) {
@@ -99,6 +129,19 @@ export async function archiveAdminExamRuntime(
     }
     throw error;
   }
+}
+
+function buildCohortSessionArchiveWarning(
+  sessions: Awaited<ReturnType<CohortExamSessionRepository["listByExamId"]>>,
+) {
+  const activeStatuses = sessions
+    .map((session) => session.status)
+    .filter((status) => status !== "retired");
+  return {
+    totalCohortSessionCount: sessions.length,
+    activeCohortSessionCount: activeStatuses.length,
+    activeCohortSessionStatuses: [...new Set(activeStatuses)].sort(),
+  };
 }
 
 function buildArchiveWarning(
