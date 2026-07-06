@@ -470,19 +470,20 @@ function normalizeAggregateGuidedJourneyProgress(
     return undefined;
   }
 
-  const aggSectionStatuses = rawSections.flatMap((row) => {
+  const aggSectionStatuses: AggregateGuidedJourneySectionStatus[] = [];
+  for (const row of rawSections) {
     if (!isRecord(row)) {
-      return [];
+      return undefined;
     }
 
     const sectionNumber = readNumberCandidate(row, ["number", "sectionNumber", "index"]);
     const title = readStringCandidate(row, ["name", "title", "sectionName"]);
 
     if (sectionNumber === null || title === null) {
-      return [];
+      return undefined;
     }
 
-    return [{
+    aggSectionStatuses.push({
       sectionNumber,
       title,
       status: normalizeStatusLabel(readStringCandidate(row, ["status", "sectionStatus"])),
@@ -493,8 +494,8 @@ function normalizeAggregateGuidedJourneyProgress(
       avgFailedRate: readNumberCandidate(row, ["avgFailedRate"]) ?? 0,
       avgNotInitiatedRate: readNumberCandidate(row, ["avgNotInitiatedRate"]) ?? 0,
       avgTimeSpentSeconds: readNumberCandidate(row, ["avgTimeSpent", "avgTimeSpentSeconds"]),
-    }];
-  });
+    });
+  }
 
   return {
     avgExploredRate: avgExploredRate ?? 0,

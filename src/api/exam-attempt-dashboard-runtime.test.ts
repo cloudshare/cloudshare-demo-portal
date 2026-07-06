@@ -200,6 +200,9 @@ describe("getExamAttemptDashboardRuntime", () => {
       }),
     ]);
     expect(JSON.stringify(dashboard.body)).not.toContain("cohort-session-closed");
+    expect(JSON.stringify(dashboard.body)).not.toContain("guidedJourneyAggregate");
+    expect(JSON.stringify(dashboard.body)).not.toContain("avgExploredRate");
+    expect(JSON.stringify(dashboard.body)).not.toContain("aggSectionStatuses");
   });
 
   it("hides cohort-only Exams from the candidate individual scheduling catalog", async () => {

@@ -489,4 +489,38 @@ describe("createCloudShareAggregateGuidedJourneyProvider", () => {
       }),
     });
   });
+
+  it("raises CloudShareResponseError when an aggregate section row is malformed", async () => {
+    const client = makeClient({
+      avgExploredRate: 0.3,
+      avgInProgressRate: 0.2,
+      avgNotStartedRate: 0.1,
+      avgPassedRate: 0.25,
+      avgFailedRate: 0.05,
+      avgNotInitiatedRate: 0.1,
+      aggSectionStatuses: [
+        {
+          number: 0,
+          status: "explored",
+          avgExploredRate: 0.5,
+          avgInProgressRate: 0.3,
+          avgNotStartedRate: 0.2,
+          avgPassedRate: 0.4,
+          avgFailedRate: 0.1,
+          avgNotInitiatedRate: 0,
+        },
+      ],
+    });
+
+    const provider = createCloudShareAggregateGuidedJourneyProvider(client);
+
+    await expect(provider.getAggregateProgress("EXcohort-1")).rejects.toMatchObject({
+      name: "CloudShareResponseError",
+      context: expect.objectContaining({
+        path: "/guided-journey/progress/EXcohort-1",
+        integrationSurface: "cloudshare.v4.guided_journey.progress.aggregate",
+        issues: ["Unsupported aggregate Guided Journey progress payload"],
+      }),
+    });
+  });
 });

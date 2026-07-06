@@ -192,5 +192,8 @@ describe("candidate home layout", () => {
     expect(html).toContain("Afternoon Cohort");
     expect(html).toContain("Closes 2026-07-05 13:00");
     expect((html.match(/Start exam/g) ?? []).length).toBe(2);
+    expect(html).not.toContain("Guided Journey aggregate progress");
+    expect(html).not.toContain("This Cohort Exam Session / CloudShare Experience");
+    expect(html).not.toContain("avgExploredRate");
   });
 });
