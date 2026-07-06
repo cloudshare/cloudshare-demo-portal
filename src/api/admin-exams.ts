@@ -246,7 +246,13 @@ export async function handleGetExamCatalog(
   request: CustomerRequest,
 ): Promise<AdminExamResponse> {
   const exams = await deps.repository.listByCustomerId(request.customerId);
-  return { status: 200, body: { exams } };
+  return {
+    status: 200,
+    body: {
+      activeExams: exams.filter((exam) => exam.status !== "archived"),
+      archivedExams: exams.filter((exam) => exam.status === "archived"),
+    },
+  };
 }
 
 export async function handleCreateDraftExam(

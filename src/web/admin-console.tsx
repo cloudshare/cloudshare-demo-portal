@@ -1705,6 +1705,7 @@ export function AdminConsole({
   const [deliveryAvailability, setDeliveryAvailability] = useState<"individual" | "cohort" | "both">("individual");
   const [editingExamId, setEditingExamId] = useState<string | null>(null);
   const [examCatalog, setExamCatalog] = useState<ExamRecord[]>([]);
+  const [archivedExamCatalog, setArchivedExamCatalog] = useState<ExamRecord[]>([]);
   const [cohortSessionsByExamId, setCohortSessionsByExamId] = useState<Record<string, CohortExamSessionRecord[]>>({});
   const [cohortSessionDetailsById, setCohortSessionDetailsById] = useState<Record<string, CohortExamSessionDetailRecord>>({});
   const [cohortSessionFormsByExamId, setCohortSessionFormsByExamId] = useState<Record<string, CohortExamSessionFormState>>({});
@@ -1745,6 +1746,8 @@ export function AdminConsole({
   const [examCatalogLoading, setExamCatalogLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const allExamCatalog = [...examCatalog, ...archivedExamCatalog];
+
   useEffect(() => {
     void loadConnection();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1776,12 +1779,12 @@ export function AdminConsole({
     if (tab !== "exams" || examView !== "edit" || !focusedExamId || editingExamId === focusedExamId) {
       return;
     }
-    const exam = examCatalog.find((item) => item.id === focusedExamId);
+    const exam = allExamCatalog.find((item) => item.id === focusedExamId);
     if (exam) {
       void beginEditingExam(exam);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, examView, focusedExamId, examCatalog, editingExamId]);
+  }, [tab, examView, focusedExamId, allExamCatalog, editingExamId]);
 
   useEffect(() => {
     if (tab !== "exams" || (examView !== "sessions" && examView !== "session") || !focusedExamId) {
@@ -2480,13 +2483,19 @@ export function AdminConsole({
     beginExamCatalogLoading();
     try {
       const response = await fetchAdmin("/api/admin/exams");
-      const data = (await response.json()) as { exams?: ExamRecord[]; error?: string };
+      const data = (await response.json()) as {
+        activeExams?: ExamRecord[];
+        archivedExams?: ExamRecord[];
+        error?: string;
+      };
       if (!response.ok) {
         setError(data.error ?? "Failed to load exam catalog");
         return;
       }
-      const nextExams = data.exams ?? [];
+      const nextExams = data.activeExams ?? [];
+      const nextArchivedExams = data.archivedExams ?? [];
       setExamCatalog(nextExams);
+      setArchivedExamCatalog(nextArchivedExams);
       await Promise.all(nextExams.map((exam) => loadCohortExamSessions(exam.id)));
     } catch (caughtError) {
       if (isAdminSessionExpiredError(caughtError)) {
@@ -3020,7 +3029,7 @@ export function AdminConsole({
   const defaultSnapshot =
     blueprintDetail?.snapshots.find((item) => item.id === blueprintDetail.defaultSnapshotId) ?? null;
   const duplicateExamResourceTupleWarning = getDuplicateExamResourceTupleWarning({
-    exams: examCatalog,
+    exams: allExamCatalog,
     currentExamId: editingExamId,
     projectId: selectedProjectId,
     blueprintId: selectedBlueprintId,
@@ -3052,7 +3061,7 @@ export function AdminConsole({
   } as const;
   const isExamAuthoringView = examView === "create" || examView === "edit";
   const showCreateExamButton = examView !== "sessions" && examView !== "session";
-  const focusedExam = focusedExamId ? (examCatalog.find((exam) => exam.id === focusedExamId) ?? null) : null;
+  const focusedExam = focusedExamId ? (allExamCatalog.find((exam) => exam.id === focusedExamId) ?? null) : null;
   const focusedExamSessions = focusedExamId ? (cohortSessionsByExamId[focusedExamId] ?? []) : [];
   const focusedCohortSession =
     (focusedCohortSessionId
@@ -3777,6 +3786,86 @@ export function AdminConsole({
                         {exam.publishedAt && (
                           <div style={{ color: colors.textSecondary, fontSize: "0.75rem" }}>
                             {formatUtcTimestamp(exam.publishedAt)}
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ padding: "0.4rem" }}>{exam.projectName}</td>
+                      <td style={{ padding: "0.4rem" }}>
+                        <div>{exam.blueprintName}</div>
+                        <div style={{ color: colors.textSecondary, fontSize: "0.75rem" }}>{exam.snapshotName}</div>
+                      </td>
+                      <td style={{ padding: "0.4rem" }}>
+                        {exam.allowedRegions.map((region) => region.name).join(", ")}
+                      </td>
+                      <td style={{ padding: "0.4rem" }}>{exam.policyName}</td>
+                      <td style={{ padding: "0.4rem" }}>
+                        <div>{exam.timeLimitMinutes} min runtime</div>
+                        <div style={{ color: colors.textSecondary, fontSize: "0.75rem" }}>
+                          {exam.openPeriodMinutes} min open
+                        </div>
+                        {exam.storageLeaseMinutes ? (
+                          <div style={{ color: colors.textSecondary, fontSize: "0.75rem" }}>
+                            {exam.storageLeaseMinutes} min storage
+                          </div>
+                        ) : null}
+                      </td>
+                      <td style={{ padding: "0.4rem" }}>{exam.scoreRetrievalEnabled ? "Enabled" : "Off"}</td>
+                      <td style={{ padding: "0.4rem" }}>
+                        <ExamCatalogRowActions
+                          exam={exam}
+                          loading={loading}
+                          editingExamId={editingExamId}
+                          onEdit={() => void beginEditingExam(exam)}
+                          onPublish={() => void publishCatalogExam(exam.id)}
+                          onUnpublish={() => void unpublishCatalogExam(exam.id)}
+                          onArchive={() => void archiveCatalogExam(exam.id)}
+                          onManageCohortSessions={() => navigateToExamSessions(exam.id)}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <h2 style={{ margin: "1.5rem 0 0.6rem" }}>Archived Exams</h2>
+            <p style={{ marginTop: 0, color: colors.textSecondary }}>
+              Archived Individual Exams stay available for history, diagnostics, and support review.
+            </p>
+            <div style={{ ...cardStyle, padding: 0, overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
+                <thead>
+                  <tr style={{ background: colors.surfaceSubtle }}>
+                    {["Title", "Status", "Project", "Blueprint / Snapshot", "Allowed Regions", "Policy", "Duration", "Score", "Action"].map((heading) => (
+                      <th key={heading} style={{ textAlign: "left", padding: "0.4rem", borderBottom: `1px solid ${colors.border}` }}>
+                        {heading}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {archivedExamCatalog.length === 0 && (
+                    <tr>
+                      <td colSpan={9} style={{ padding: "0.5rem", color: colors.textSecondary }}>
+                        No archived exams.
+                      </td>
+                    </tr>
+                  )}
+                  {archivedExamCatalog.map((exam) => (
+                    <tr key={exam.id} style={{ borderBottom: `1px solid ${colors.border}`, verticalAlign: "top" }}>
+                      <td style={{ padding: "0.4rem" }}>
+                        <div style={{ fontWeight: 600 }}>{exam.title}</div>
+                        <div style={{ color: colors.textSecondary }}>{exam.description}</div>
+                        <div style={{ color: colors.textSecondary, fontSize: "0.75rem", marginTop: "0.25rem" }}>
+                          Exam ID: {formatShortExamId(exam.id)}
+                          {exam.createdAt ? ` · Created ${formatUtcTimestamp(exam.createdAt)}` : ""} · Delivery:{" "}
+                          {formatExamDeliveryAvailability(exam.deliveryAvailability)}
+                        </div>
+                      </td>
+                      <td style={{ padding: "0.4rem" }}>
+                        <span style={statusBadgeStyle(getExamStatusTone(exam.status))}>{exam.status}</span>
+                        {exam.archivedAt && (
+                          <div style={{ color: colors.textSecondary, fontSize: "0.75rem" }}>
+                            Archived {formatUtcTimestamp(exam.archivedAt)}
                           </div>
                         )}
                       </td>

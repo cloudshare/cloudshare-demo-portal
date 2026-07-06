@@ -270,10 +270,33 @@ describe("AdminConsole", () => {
     );
 
     expect(html).toContain("Current Exam Catalog");
+    expect(html).toContain("Archived Exams");
     expect(html).toContain("Create Exam");
     expect(html).not.toContain("Project-first Exam authoring");
     expect(html).not.toContain("Session name");
     expect(html).not.toContain("Create Draft Cohort Session");
+  });
+
+  it("labels archived Individual Exams as history and support records instead of active catalog entries", () => {
+    const html = renderToStaticMarkup(
+      createElement(ExamCatalogRowActions, {
+        exam: {
+          id: "exam-archived",
+          status: "archived",
+          deliveryAvailability: "individual",
+        },
+        loading: false,
+        editingExamId: null,
+        onEdit: vi.fn(),
+        onPublish: vi.fn(),
+        onUnpublish: vi.fn(),
+        onArchive: vi.fn(),
+        onManageCohortSessions: vi.fn(),
+      }),
+    );
+
+    expect(html).toContain("Archived for history and support review.");
+    expect(html).not.toContain("Archive Exam");
   });
 
   it("hides the global Create Exam action while managing Cohort Sessions for a focused Exam", () => {

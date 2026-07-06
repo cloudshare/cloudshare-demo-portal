@@ -3,7 +3,7 @@ import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createDraftExam, publishExam, type CreateDraftExamInput } from "@/domain/exam-catalog";
 import { createDraftCohortExamSession, markCohortExamSessionPublished } from "@/domain/cohort-exam-session";
 import type { CloudShareClientFactory } from "@/domain/cloudshare-connection";
-import { CloudShareRequestError } from "@/integrations/cloudshare";
+import { CloudShareRequestError, CloudShareResponseError } from "@/integrations/cloudshare";
 import type { Logger } from "@/observability/logger";
 import { createInMemoryCohortExamSessionRepository } from "@/persistence/cohort-exam-session-repository";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
@@ -459,6 +459,113 @@ describe("admin cohort exam session lifecycle runtime", () => {
       response: {
         status: 403,
         body: { message: "Forbidden" },
+      },
+    });
+  });
+
+  it("does not retire the portal session when CloudShare never confirms the new end time", async () => {
+    const { exams, sessions } = await seedPublishedSession();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
+    const attempts: AdminCohortExamSessionAttemptRepository = {
+      listBySessionId: vi.fn().mockResolvedValue([]),
+    };
+    const requestV4Detailed = vi
+      .fn()
+      .mockImplementationOnce(async (spec: { schema: { parse(value: unknown): unknown } }) => ({
+        data: spec.schema.parse([]),
+        host: "api.accelerate.cloudshare.com",
+        integrationSurface: "cloudshare.v4.training.participant",
+        request: { method: "GET", path: "/v4/trainings/EXcohort-1/students" },
+        response: { status: 200, body: [] },
+      }))
+      .mockRejectedValueOnce(
+        new CloudShareResponseError("CloudShare did not confirm the Cohort Exam Session retirement end time.", {
+          method: "PUT",
+          path: "/v4/trainings/EXcohort-1",
+          integrationSurface: "cloudshare.v4.training.update",
+          requestBody: { End: "2026-07-05T10:00:00.000Z" },
+          responseBody: {
+            update: { id: "EXcohort-1" },
+            readback: { id: "EXcohort-1", End: "2026-07-06T10:15:00.000Z" },
+          },
+          cause: "retire_training_end_unconfirmed",
+        }),
+      );
+    const cloudshare: CloudShareClientFactory = {
+      forConnection: () =>
+        ({
+          requestV4Detailed,
+        }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>,
+    };
+
+    const response = await handleRetireCohortExamSession(
+      {
+        exams,
+        sessions,
+        attempts,
+        connections: {
+          findByCustomerId: vi.fn(async () => ({
+            customerId: "customer-1",
+            apiId: "api-id",
+            apiKey: "api-key",
+            webhookSecret: "whsec",
+            webhookPathToken: "webhook-token",
+            connectedAt: new Date("2026-07-01T00:00:00.000Z"),
+            verifiedAt: new Date("2026-07-01T00:05:00.000Z"),
+          })),
+          save: vi.fn(),
+          findByWebhookPathToken: vi.fn(),
+          markVerified: vi.fn(),
+        },
+        cloudshare,
+        diagnostics,
+        logger: makeLogger(),
+        now: () => new Date("2026-07-05T10:00:00.000Z"),
+        newCorrelationId: () => "corr-retire-failure-2",
+      },
+      {
+        customerId: "customer-1",
+        actor,
+        examId: "exam-1",
+        sessionId: "cohort-session-1",
+        body: { confirmInterrupt: true },
+      },
+    );
+
+    expect(response).toEqual({
+      status: 502,
+      body: {
+        error: "CloudShare could not retire this Cohort Exam Session. Check the diagnostic log for the correlation ID.",
+        correlationId: "corr-retire-failure-2",
+      },
+    });
+    await expect(sessions.findById("cohort-session-1")).resolves.toMatchObject({
+      status: "published",
+    });
+    const [entry] = await diagnosticsRepository.query({
+      customerId: "customer-1",
+      examId: "exam-1",
+      operation: "cohort_exam_session.retire",
+      outcome: "failure",
+    });
+    expect(entry).toMatchObject({
+      correlationId: "corr-retire-failure-2",
+      request: {
+        method: "PUT",
+        path: "/v4/trainings/EXcohort-1",
+        body: { End: "2026-07-05T10:00:00.000Z" },
+      },
+      response: {
+        body: {
+          update: { id: "EXcohort-1" },
+          readback: { id: "EXcohort-1", End: "2026-07-06T10:15:00.000Z" },
+        },
+      },
+      details: {
+        integrationSurface: "cloudshare.v4.training.update",
+        failureMode: "unexpected_response",
+        cause: "retire_training_end_unconfirmed",
       },
     });
   });
