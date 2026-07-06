@@ -19,6 +19,22 @@ const trainingDetailSchema = z
   .passthrough();
 
 const CLOUD_SHARE_END_CONFIRMATION_TOLERANCE_MS = 1_000;
+const TRAINING_UPDATE_FIELD_ALIASES = [
+  ["Name", "name"],
+  ["Start", "start"],
+  ["Type", "type"],
+  ["TeamId", "teamId"],
+  ["PolicyId", "policyId"],
+  ["TimeZone", "timeZone"],
+  ["ProjectId", "projectId"],
+  ["Passphrase", "passphrase"],
+  ["MaxStudents", "maxStudents"],
+  ["BlueprintIds", "blueprintIds"],
+  ["MainInstructor", "mainInstructor"],
+  ["UsersEarlyAccess", "usersEarlyAccess"],
+  ["CloudshareRegionIds", "cloudshareRegionIds"],
+  ["RegistrationType", "registrationType"],
+] as const;
 
 export interface RetireCloudShareTrainingResult {
   readonly trainingId: string;
@@ -56,12 +72,16 @@ export function createCloudShareTrainingRetirementWriter(
     async retireTrainingToEnd(input): Promise<RetireCloudShareTrainingResult> {
       const expectedEnd = input.end.toISOString();
       const expectedEndTime = input.end.getTime();
+      const current = (await client.requestV4Detailed!({
+        method: "GET",
+        path: `/trainings/${input.trainingId}`,
+        schema: trainingDetailSchema,
+      })) as CloudShareDetailedResult<z.infer<typeof trainingDetailSchema>>;
+      const updateBody = buildRetireTrainingUpdateBody(current.data, expectedEnd);
       const result = (await client.requestV4Detailed!({
         method: "PUT",
         path: `/trainings/${input.trainingId}`,
-        body: {
-          End: expectedEnd,
-        },
+        body: updateBody,
         schema: updatedTrainingSchema,
       })) as CloudShareDetailedResult<z.infer<typeof updatedTrainingSchema>>;
       const updateEnd = result.data.end ?? result.data.End ?? null;
@@ -111,6 +131,48 @@ export function createCloudShareTrainingRetirementWriter(
       };
     },
   };
+}
+
+function buildRetireTrainingUpdateBody(
+  training: z.infer<typeof trainingDetailSchema>,
+  expectedEnd: string,
+): Record<string, unknown> {
+  const source = training as Record<string, unknown>;
+  const body: Record<string, unknown> = {};
+
+  for (const [key, value] of Object.entries(source)) {
+    if (/^[A-Z]/.test(key)) {
+      body[key] = value;
+    }
+  }
+
+  for (const [pascalKey, camelKey] of TRAINING_UPDATE_FIELD_ALIASES) {
+    const value = source[pascalKey] ?? source[camelKey];
+    if (value !== undefined) {
+      body[pascalKey] = normalizeTrainingUpdateField(pascalKey, value);
+    }
+  }
+
+  body.End = expectedEnd;
+  return body;
+}
+
+function normalizeTrainingUpdateField(key: string, value: unknown): unknown {
+  if (key === "MainInstructor" && value && typeof value === "object") {
+    const instructor = value as Record<string, unknown>;
+    return {
+      Email: instructor.Email ?? instructor.email,
+    };
+  }
+
+  if (key === "UsersEarlyAccess" && value && typeof value === "object") {
+    const earlyAccess = value as Record<string, unknown>;
+    return {
+      GrantEarlyAccess: earlyAccess.GrantEarlyAccess ?? earlyAccess.grantEarlyAccess,
+    };
+  }
+
+  return value;
 }
 
 function matchesCloudShareTrainingInstant(value: string | null, expectedTime: number): boolean {

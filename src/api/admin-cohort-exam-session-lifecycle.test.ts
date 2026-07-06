@@ -217,6 +217,30 @@ describe("admin cohort exam session lifecycle runtime", () => {
         request: { method: "GET", path: "/v4/trainings/EXcohort-1/students" },
         response: { status: 200, body: [] },
       }))
+      .mockImplementationOnce(async (spec: { method: string; path: string; schema: { parse(value: unknown): unknown } }) => ({
+        data: spec.schema.parse({
+          id: "EXcohort-1",
+          Name: "Retirement Smoke Cohort",
+          Start: "2026-07-05T09:00:00",
+          End: "2026-07-05T11:00:00",
+          Type: "selfPaced",
+          TeamId: "team-1",
+          PolicyId: "policy-1",
+          TimeZone: "UTC",
+          ProjectId: "project-1",
+          Passphrase: "certalis-cohort",
+          MaxStudents: 20,
+          BlueprintIds: ["blueprint-1"],
+          MainInstructor: { Email: "instructor@example.com" },
+          UsersEarlyAccess: { GrantEarlyAccess: 2 },
+          CloudshareRegionIds: ["region-1"],
+          RegistrationType: "registeredStudentsOnly",
+        }),
+        host: "api.accelerate.cloudshare.com",
+        integrationSurface: "cloudshare.v4.training.detail",
+        request: { method: spec.method, path: "/v4" + spec.path },
+        response: { status: 200, body: { id: "EXcohort-1" } },
+      }))
       .mockImplementationOnce(async (spec: {
         method: string;
         path: string;
