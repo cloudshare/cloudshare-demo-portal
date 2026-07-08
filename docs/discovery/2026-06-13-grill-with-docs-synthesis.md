@@ -1,8 +1,9 @@
 # Grill-with-Docs Synthesis — CloudShare Demo Portal (re-scope)
 
 **Date:** 2026-06-13
-**Status:** Agreed in session. Input to `/to-prd`. **Supersedes** the 2026-06-07 grill-me
-decisions and the existing PRD wherever they conflict.
+**Status:** Agreed historical discovery. Originally input to legacy `/to-prd`; under Matt Pocock
+skills v1.1, the current equivalent is `/to-spec`. **Supersedes** the 2026-06-07 grill-me decisions
+and the existing PRD wherever they conflict.
 **See also:** glossary in `CONTEXT.md`; `docs/decisions/ADR-001` (per-Customer credentials),
 `ADR-002` (server-side sponsored-link redirect).
 

@@ -125,6 +125,24 @@ the dev portal database.
 Repo-local agent helpers such as `.agents/`, `create-issues.sh`, and `update-issue-rules.sh` are
 treated as personal workflow artifacts and are intentionally kept out of the tracked toolchain.
 
+### Agent workflow
+
+This repo follows Matt Pocock skills v1.1 for planning and implementation:
+
+```text
+Grilling/Wayfinder -> Spec -> Tickets -> Implement -> Code Review
+```
+
+- Use `/grilling` for ordinary ambiguous scope and `/wayfinder` for work that is too large for one
+  agent session or needs substantial research/prototyping before the destination is clear.
+- Use `/to-spec` for new specs. Older files may still be named `prd-*` for continuity, but "spec" is
+  the current workflow term.
+- Use `/to-tickets` to break a spec, plan, or conversation into vertical tracer-bullet tickets with
+  blocking edges. This replaces the old `/to-plan` and `/to-issues` split.
+- Use `/implement` for one ticket at a time, with `/tdd` at pre-agreed seams and `/code-review`
+  before completion.
+- Use `/diagnosing-bugs` for bugs or unclear runtime behavior.
+
 ### Live E2E credentials
 
 Live CloudShare E2E tests read credentials from `.env.e2e.local`, which is ignored
@@ -166,12 +184,12 @@ the gap report as soon as live behavior confirms or contradicts an assumption.
 
 ## Project structure and architecture
 
-Working repository for the CloudShare demo portal discovery, requirements, architecture notes and implementation artefacts.
+Working repository for the CloudShare demo portal discovery, specs/requirements, architecture notes and implementation artefacts.
 
 ## Project structure
 
 - docs/discovery/ - meeting transcripts, follow-up emails and source discovery material
-- docs/requirements/ - functional and non-functional requirements
+- docs/requirements/ - functional and non-functional specs/requirements
 - docs/architecture/ - system design and integration notes
 - docs/decisions/ - architecture decision records
 - docs/api/ - API notes, payloads and integration contracts

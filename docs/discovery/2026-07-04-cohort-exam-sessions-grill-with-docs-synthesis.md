@@ -2,6 +2,10 @@
 
 Date: 2026-07-04
 
+Status: Historical discovery from a pre-v1.1 `grill-with-docs` session. For new comparable planning
+work, use `/wayfinder` when the effort is larger than one agent session; otherwise use `/grilling`,
+then `/to-spec` and `/to-tickets`.
+
 ## Purpose
 
 This note captures the agreed scope for adding **Cohort Exam Sessions** to Certalis. The feature is
