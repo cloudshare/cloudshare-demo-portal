@@ -1,10 +1,12 @@
 # CloudShare Demo Portal — Claude Code Instructions
 
 > **Source of truth for scope, domain & decisions:** `CONTEXT.md` (glossary),
-> `docs/decisions/ADR-001..ADR-003`, and `docs/requirements/prd-cloudshare-demo-portal-v2.md`.
+> `docs/decisions/ADR-001..ADR-005`, and `docs/requirements/prd-cloudshare-demo-portal-v2.md`.
 > This file is a quick orientation; where it differs from those documents, **they win.**
 > The earlier Genesys/Kryterion "proctoring" framing is **retired** (see the 2026-06-13
-> grill-with-docs re-scope, `docs/discovery/2026-06-13-grill-with-docs-synthesis.md`).
+> `grill-with-docs` re-scope, `docs/discovery/2026-06-13-grill-with-docs-synthesis.md`).
+> The Matt Pocock skills v1.1 are available here too — use the current flow:
+> Grilling/Wayfinder -> `/to-spec` -> `/to-tickets` -> `/implement` -> `/code-review`.
 
 ## Project purpose
 
@@ -26,14 +28,20 @@ showing real CloudShare behaviour, CloudShare wins.
 ## Working rules
 
 1. Do not code before clarifying the requirement.
-2. Before any meaningful implementation, run `/grill-me` (no codebase) or `/grill-with-docs` (existing
-   codebase). **Done** for the current scope — captured in `CONTEXT.md` + ADRs + PRD v2.
-3. Convert agreed scope into a PRD using `/to-prd`. **Done** — PRD v2.
-4. Break the PRD into vertical slices using `/to-issues`. **Done** — GitHub issues #39–#47.
-5. Use `/tdd` for every feature or behavioural change.
-6. Use `/diagnose` for bugs, broken tests, unclear runtime behaviour, or integration failures.
-7. Use `/zoom-out` before changing architecture or module boundaries.
-8. Use `/improve-codebase-architecture` regularly, especially after several features have landed.
+2. For unclear or meaningful new scope, start with `/grilling`; use `/wayfinder` instead when the
+   work is too large for one agent session, has substantial unknowns, or needs front-end/prototype
+   exploration before a spec. Do not enact the plan until the user confirms shared understanding.
+   **Done** for the current MVP scope — captured in `CONTEXT.md` + ADRs + PRD v2.
+3. Convert agreed scope into a spec using `/to-spec` (replaces `/to-prd`). The existing canonical
+   v2 spec is still stored as `docs/requirements/prd-cloudshare-demo-portal-v2.md` for continuity.
+4. Break the spec into vertical tracer-bullet tickets using `/to-tickets` (replaces `/to-plan` and
+   `/to-issues`). **Done** for the current MVP scope — GitHub issues #39–#47.
+5. Use `/implement` for each ticket; inside implementation use `/tdd` for every feature or
+   behavioural change, at pre-agreed seams.
+6. Use `/diagnosing-bugs` for bugs, broken tests, unclear runtime behaviour, or integration failures.
+7. Use `/code-review` before completing implementation work.
+8. Use `/codebase-design` before changing architecture or module boundaries, and
+   `/improve-codebase-architecture` regularly, especially after several features have landed.
 
 ## Engineering discipline
 

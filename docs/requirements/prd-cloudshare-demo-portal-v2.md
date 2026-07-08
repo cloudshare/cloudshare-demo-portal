@@ -1,7 +1,9 @@
 # PRD: CloudShare Demo Portal — Certification Exam Delivery (v2)
 
 **Date:** 2026-06-13
-**Status:** Ready for agent (pending publish to issue tracker)
+**Status:** Ready for agent; ticketed as GitHub issues #39-#47.
+**Workflow note:** This file predates the Matt Pocock skills v1.1 rename from `/to-prd` to
+`/to-spec`. It remains the canonical v2 spec/PRD artifact for continuity.
 **Supersedes:** `prd-proctoring-demo-portal-mvp.md` (the 2026-06-07 self-service/simulator design).
 **Sources:** `docs/discovery/2026-06-13-grill-with-docs-synthesis.md`, `CONTEXT.md`,
 `docs/decisions/ADR-001` (per-Customer credentials), `ADR-002` (server-side sponsored-link

@@ -3,7 +3,9 @@
 **Date:** 2026-06-07
 **Session:** Alignment ("grill-me") between Chris Swinney and Claude, prior to PRD.
 **Source material:** `discovery/2026-06-07-follow-up-email.txt`, `discovery/2026-06-07-genesys-kryterion-discovery.docx`, plus a live v4 sponsored-link capture and a `use.cloudshare.com` HAR.
-**Status:** Agreed. Intended as the input to `/to-prd`. Individual decisions can be distilled into ADRs under `docs/decisions/`.
+**Status:** Agreed historical discovery. Originally intended as input to legacy `/to-prd`; under
+Matt Pocock skills v1.1, the current equivalent is `/to-spec`. Individual decisions can be distilled
+into ADRs under `docs/decisions/`.
 
 > Note: secrets (API client_secret, tokens) used during the session are deliberately omitted here. The v4 client_secret exposed during testing should be rotated.
 
@@ -21,7 +23,9 @@ This is a **demo, but based in reality** — not throwaway, not a full productio
 
 **Out of scope now (design for portability, don't build):** other provisioning modalities, cloud deployment (Azure/AWS), multi-customer, and any eventual production hardening.
 
-**Workflow (per repo `CLAUDE.md`):** grill-me (done) → `/to-prd` → `/to-issues` → `/tdd`.
+**Historical workflow (now superseded by skills v1.1):** grill-me (done) -> legacy `/to-prd` ->
+legacy `/to-issues` -> `/tdd`. Current workflow is `/grilling` or `/wayfinder` -> `/to-spec` ->
+`/to-tickets` -> `/implement` with `/tdd` -> `/code-review`.
 
 ---
 

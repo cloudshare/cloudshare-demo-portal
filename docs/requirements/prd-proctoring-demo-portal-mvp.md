@@ -1,8 +1,9 @@
 # PRD: Genesys/Kryterion/CloudShare Proctoring Demo Portal — MVP
 
 **Date:** 2026-06-07
-**Status:** Ready for implementation
-**Source:** grill-me session (`docs/discovery/2026-06-07-grill-me-decisions.md`)
+**Status:** Superseded by `docs/requirements/prd-cloudshare-demo-portal-v2.md`; retained as
+historical discovery context only.
+**Source:** pre-v1.1 grill-me session (`docs/discovery/2026-06-07-grill-me-decisions.md`)
 
 ---
 

@@ -1,7 +1,9 @@
 # PRD: Cohort Exam Sessions
 
 **Date:** 2026-07-04
-**Status:** Drafted from `grill-with-docs` session
+**Status:** Drafted from a pre-v1.1 `grill-with-docs` session. For new comparable scope, use
+`/wayfinder` when the planning work exceeds one agent session, otherwise `/grilling`, then
+`/to-spec` and `/to-tickets`.
 **Sources:** `CONTEXT.md`, `docs/discovery/2026-07-04-cohort-exam-sessions-grill-with-docs-synthesis.md`, `docs/api/cloudshare-gap-report.md`, PRD v2, ADR-001 through ADR-005.
 
 ## Problem Statement
