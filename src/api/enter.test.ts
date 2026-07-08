@@ -19,6 +19,7 @@ import { CloudShareRequestError } from "@/integrations/cloudshare";
 import type { CloudShareExamAuthoringSource } from "@/integrations/cloudshare/resources";
 import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
+import { buildEnterExamBlockedPage } from "./enter";
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -279,6 +280,37 @@ describe("handleEnterExam", () => {
 
     expect(response.status).toBe(403);
     expect(response.body).toBe("Exam entry is not available for this attempt.");
+  });
+
+  it("builds a styled blocked-entry page that notifies and closes the child window", () => {
+    const html = buildEnterExamBlockedPage({
+      examAttemptId: "attempt-1",
+      status: 423,
+      message:
+        "Exam entry is temporarily unavailable because the lab configuration changed. Contact your administrator.",
+    });
+
+    expect(html).toContain("Exam entry unavailable");
+    expect(html).toContain("certalis:exam-entry-blocked");
+    expect(html).toContain("window.opener.postMessage");
+    expect(html).toContain("window.close()");
+    expect(html).toContain("/candidate/lab?examAttemptId=attempt-1");
+    expect(html).toContain(
+      "Exam entry is temporarily unavailable because the lab configuration changed. Contact your administrator.",
+    );
+  });
+
+  it("escapes blocked-entry page content before rendering fallback HTML", () => {
+    const html = buildEnterExamBlockedPage({
+      examAttemptId: "attempt-<1>",
+      status: 423,
+      message: "Blocked <script>alert('x')</script>",
+    });
+
+    expect(html).toContain("Blocked &lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;");
+    expect(html).not.toContain("Blocked <script>");
+    expect(html).toContain("attempt-%3C1%3E");
+    expect(html).toContain("\\u003c1>");
   });
 
   it("redirects during the authored open window even when CloudShare environment readback would report expired", async () => {

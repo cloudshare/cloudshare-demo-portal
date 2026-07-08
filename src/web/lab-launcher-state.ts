@@ -9,6 +9,7 @@ export type LaunchState =
   | "completion_pending"
   | "suspended"
   | "completed"
+  | "blocked"
   | "error";
 
 export type AttemptStatus = "ready" | "in_progress" | "suspended" | "completed";
@@ -180,6 +181,15 @@ export function getLauncherPresentation(input: {
         detail: input.message || "Examination complete.",
         primaryActionLabel: null,
         supportMessage: null,
+      };
+    case "blocked":
+      return {
+        tone: "error",
+        title: "Exam entry unavailable",
+        detail: input.message || "This exam cannot be entered right now.",
+        primaryActionLabel: null,
+        supportMessage:
+          "Your exam attempt has not started. Contact your administrator before trying again.",
       };
     case "error": {
       const recoveryAction = getLauncherRecoveryAction(input.attemptStatus, input.openPeriodClosed);

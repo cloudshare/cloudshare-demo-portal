@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { openLabWindow, getLabWindow, isLabWindowOpen, clearLabWindows } from "./lab-window";
+import {
+  clearLabWindows,
+  closeLabWindow,
+  getLabWindow,
+  isLabWindowOpen,
+  openLabWindow,
+} from "./lab-window";
 
 function fakeWindow() {
   return { closed: false, close: vi.fn(), focus: vi.fn() };
@@ -50,5 +56,16 @@ describe("openLabWindow", () => {
     expect(() => openLabWindow("ea-blocked-1", "https://classic/login", () => null)).toThrow(
       /blocked/i,
     );
+  });
+
+  it("closes and forgets a retained child window", () => {
+    const handle = fakeWindow();
+    openLabWindow("ea-close-1", "/enter?examAttemptId=ea-close-1", () => handle);
+
+    closeLabWindow("ea-close-1");
+
+    expect(handle.close).toHaveBeenCalledTimes(1);
+    expect(getLabWindow("ea-close-1")).toBeUndefined();
+    expect(isLabWindowOpen("ea-close-1")).toBe(false);
   });
 });

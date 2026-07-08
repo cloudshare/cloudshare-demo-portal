@@ -49,6 +49,15 @@ export function isLabWindowOpen(examAttemptId: string): boolean {
   return handle !== undefined && !handle.closed;
 }
 
+/** Close and forget a retained lab window handle when the portal knows entry failed. */
+export function closeLabWindow(examAttemptId: string): void {
+  const handle = handles.get(examAttemptId);
+  handles.delete(examAttemptId);
+  if (handle && !handle.closed) {
+    handle.close();
+  }
+}
+
 /** Remove all retained handles. Intended for test isolation only. */
 export function clearLabWindows(): void {
   handles.clear();

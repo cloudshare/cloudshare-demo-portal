@@ -7,6 +7,7 @@ import {
   getEndExamPendingLaunchState,
   getRetainedWindowLaunchState,
   LabLauncher,
+  readEnterBlockedMessage,
 } from "./lab-launcher";
 import { clearLabWindows, openLabWindow } from "./lab-window";
 
@@ -90,5 +91,58 @@ describe("LabLauncher", () => {
         },
       }),
     ).toBe("completion_pending");
+  });
+
+  it("accepts same-origin blocked entry handoff messages for the current attempt", () => {
+    expect(
+      readEnterBlockedMessage(
+        {
+          origin: "http://localhost:3000",
+          data: {
+            type: "certalis:exam-entry-blocked",
+            examAttemptId: "attempt-1",
+            status: 423,
+            message:
+              "Exam entry is temporarily unavailable because the lab configuration changed. Contact your administrator.",
+          },
+        } as MessageEvent,
+        {
+          expectedOrigin: "http://localhost:3000",
+          examAttemptId: "attempt-1",
+        },
+      ),
+    ).toEqual({
+      status: 423,
+      message:
+        "Exam entry is temporarily unavailable because the lab configuration changed. Contact your administrator.",
+    });
+  });
+
+  it("ignores blocked entry handoff messages from another origin or attempt", () => {
+    const payload = {
+      type: "certalis:exam-entry-blocked",
+      examAttemptId: "attempt-1",
+      status: 423,
+      message: "Blocked.",
+    };
+
+    expect(
+      readEnterBlockedMessage(
+        { origin: "https://evil.example", data: payload } as MessageEvent,
+        {
+          expectedOrigin: "http://localhost:3000",
+          examAttemptId: "attempt-1",
+        },
+      ),
+    ).toBeNull();
+    expect(
+      readEnterBlockedMessage(
+        { origin: "http://localhost:3000", data: payload } as MessageEvent,
+        {
+          expectedOrigin: "http://localhost:3000",
+          examAttemptId: "attempt-2",
+        },
+      ),
+    ).toBeNull();
   });
 });
