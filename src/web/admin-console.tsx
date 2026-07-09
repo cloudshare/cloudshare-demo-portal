@@ -608,6 +608,12 @@ const cohortSessionDetailLabelStyle: React.CSSProperties = {
   color: colors.textSecondary,
 };
 
+const problemReasonListStyle: React.CSSProperties = {
+  margin: "0.45rem 0 0",
+  paddingLeft: "1rem",
+  color: colors.textPrimary,
+};
+
 function CohortSessionDetailItem(props: {
   label: string;
   value: React.ReactNode;
@@ -617,6 +623,20 @@ function CohortSessionDetailItem(props: {
       <div style={cohortSessionDetailLabelStyle}>{props.label}</div>
       <div style={{ overflowWrap: "anywhere" }}>{props.value}</div>
     </div>
+  );
+}
+
+function ProblemReasonList(props: { readonly reasons: readonly string[] }) {
+  if (props.reasons.length === 0) {
+    return null;
+  }
+
+  return (
+    <ul style={problemReasonListStyle}>
+      {props.reasons.map((reason) => (
+        <li key={reason}>{reason}</li>
+      ))}
+    </ul>
   );
 }
 
@@ -1031,6 +1051,10 @@ export function CohortSessionWorkspacePanel(props: {
             <div style={{ color: colors.textSecondary, fontSize: "0.9rem" }}>
               Counts are derived from session exam attempts and the CloudShare participant read for this shared Experience.
             </div>
+            <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
+              <strong style={{ color: colors.textPrimary }}>Problems</strong> counts reconciliation warnings between portal attempt state and CloudShare participant state.
+              It is not a count of diagnostic errors.
+            </div>
 
             <div style={{ display: "grid", gap: "0.75rem" }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
@@ -1045,7 +1069,7 @@ export function CohortSessionWorkspacePanel(props: {
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
                     <thead>
                       <tr style={{ background: colors.surfaceSubtle }}>
-                        {["Candidate", "Attempt state", "CloudShare IDs", "Diagnostics"].map((heading) => (
+                        {["Candidate", "Attempt state", "CloudShare IDs", "Reconciliation", "Diagnostics"].map((heading) => (
                           <th key={heading} style={{ textAlign: "left", padding: "0.55rem", borderBottom: `1px solid ${colors.border}` }}>
                             {heading}
                           </th>
@@ -1067,6 +1091,13 @@ export function CohortSessionWorkspacePanel(props: {
                             <div>Attempt ID: {attempt.id}</div>
                             <div>Participant ID: {attempt.participantId ?? "-"}</div>
                             <div>Environment ID: {attempt.environmentId ?? attempt.environmentExternalId ?? "-"}</div>
+                          </td>
+                          <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
+                            {attempt.problemReasons.length > 0 ? (
+                              <ProblemReasonList reasons={attempt.problemReasons} />
+                            ) : (
+                              <span style={{ color: colors.textSecondary }}>No reconciliation warnings</span>
+                            )}
                           </td>
                           <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
                             <a
@@ -1160,7 +1191,7 @@ export function CohortSessionWorkspacePanel(props: {
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
                     <thead>
                       <tr style={{ background: colors.surfaceSubtle }}>
-                        {["Participant", "CloudShare state", "Portal match", "Diagnostics"].map((heading) => (
+                        {["Participant", "CloudShare state", "Portal match", "Reconciliation", "Diagnostics"].map((heading) => (
                           <th key={heading} style={{ textAlign: "left", padding: "0.55rem", borderBottom: `1px solid ${colors.border}` }}>
                             {heading}
                           </th>
@@ -1183,6 +1214,13 @@ export function CohortSessionWorkspacePanel(props: {
                           </td>
                           <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
                             {participant.matchedExamAttemptId ? participant.matchedExamAttemptId : "No session exam attempt"}
+                          </td>
+                          <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
+                            {participant.problemReasons.length > 0 ? (
+                              <ProblemReasonList reasons={participant.problemReasons} />
+                            ) : (
+                              <span style={{ color: colors.textSecondary }}>No reconciliation warnings</span>
+                            )}
                           </td>
                           <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
                             <a
