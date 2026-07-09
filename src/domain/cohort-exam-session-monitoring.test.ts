@@ -5,6 +5,35 @@ import {
 } from "./cohort-exam-session-monitoring";
 
 describe("cohort exam session monitoring reconciliation", () => {
+  it("describes the QA mismatch when the portal is suspended but CloudShare participation is still inProgress", () => {
+    const rows = deriveCohortExamSessionReconciliationRows(
+      [
+        {
+          id: "attempt-1",
+          candidateEmail: "casey@helioscx.demo",
+          status: "suspended",
+        },
+      ],
+      [
+        {
+          email: "casey@helioscx.demo",
+          matchedExamAttemptId: "attempt-1",
+          studentId: "student-1",
+          environmentId: "env-1",
+          participationStatus: "inProgress",
+          environmentStatus: "Suspended",
+        },
+      ],
+    );
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        problemReasons: ["Portal suspended; CloudShare participation still inProgress."],
+      }),
+    ]);
+    expect(deriveCohortExamSessionMonitoringSummary(rows, "available").problemCount).toBe(1);
+  });
+
   it("describes a portal and CloudShare runtime mismatch with the CloudShare suspended state", () => {
     const rows = deriveCohortExamSessionReconciliationRows(
       [

@@ -116,7 +116,7 @@ function deriveProblemReasons(
   }
 
   if (isPortalCloudRuntimeMismatch(portal, cloud)) {
-    reasons.push(`Portal ${formatPortalProblemState(portal.status)}; ${describeCloudRuntimeMismatch(cloud)}.`);
+    reasons.push(`Portal ${formatPortalProblemState(portal.status)}; ${describeCloudRuntimeMismatch(portal, cloud)}.`);
   }
   if (isPortalActive(portal.status) && isCloudCompleted(cloud)) {
     reasons.push(`Portal ${formatPortalProblemState(portal.status)}; ${describeCloudCompletedState(cloud)}.`);
@@ -212,7 +212,7 @@ function isPortalCloudRuntimeMismatch(
   cloud: CohortExamSessionCloudParticipantSnapshot,
 ): boolean {
   if (portal.status === "suspended") {
-    return !isCloudSuspended(cloud) && isCloudInProgress(cloud);
+    return isCloudInProgress(cloud);
   }
   if (portal.status === "in_progress") {
     return isCloudSuspended(cloud);
@@ -241,7 +241,16 @@ function describeCloudOngoingState(cloud: CohortExamSessionCloudParticipantSnaps
   return "CloudShare participant is still active";
 }
 
-function describeCloudRuntimeMismatch(cloud: CohortExamSessionCloudParticipantSnapshot): string {
+function describeCloudRuntimeMismatch(
+  portal: CohortExamSessionPortalAttemptSnapshot,
+  cloud: CohortExamSessionCloudParticipantSnapshot,
+): string {
+  if (portal.status === "suspended") {
+    const participationStatus = cloud.participationStatus?.trim();
+    if (participationStatus) {
+      return `CloudShare participation still ${participationStatus}`;
+    }
+  }
   if (isCloudSuspended(cloud)) {
     const environmentStatus = cloud.environmentStatus?.trim();
     if (environmentStatus) {
