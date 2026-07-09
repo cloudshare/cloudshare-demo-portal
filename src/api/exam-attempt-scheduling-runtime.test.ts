@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryAuditRepository } from "@/persistence/audit-repository";
+import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createInMemoryEventLogRepository } from "@/persistence/event-log-repository";
+import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-repository";
 import { createInMemoryExamCatalogRepository } from "@/persistence/exam-catalog-repository";
 import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repository";
@@ -66,7 +68,10 @@ function makeConnectionRepository(
 }
 
 function makeCloudShareFactory(
-  overrides: Partial<ReturnType<CloudShareClientFactory["forConnection"]>> = {},
+  overrides: Partial<ReturnType<CloudShareClientFactory["forConnection"]>> & {
+    listProjects?: () => Promise<unknown>;
+    getBlueprintDetail?: (projectId: string, blueprintId: string) => Promise<unknown>;
+  } = {},
 ): CloudShareClientFactory {
   const requestV3 =
     (overrides.requestV3 as
@@ -75,6 +80,20 @@ function makeCloudShareFactory(
     (vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
       if (spec.path === "/teams") {
         return spec.schema.parse({ rows: [{ id: "TM-team-1", name: "Helios Team" }] });
+      }
+      if (spec.path === "/projects/project-1/blueprints/bp-1") {
+        return spec.schema.parse({
+          id: "bp-1",
+          name: "Helios Exam Blueprint",
+          snapshots: [
+            {
+              id: "snap-1",
+              name: "Default Snapshot",
+              isDefault: true,
+              regions: [{ id: "region-1", name: "EU West" }],
+            },
+          ],
+        });
       }
       throw new Error(`unexpected v3 path ${spec.path}`);
     }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>["requestV3"]);
@@ -145,6 +164,16 @@ function makeCloudShareFactory(
 
   return {
     forConnection: vi.fn(() => ({
+      listProjects: vi.fn(async () => []),
+      getBlueprintDetail: vi.fn(async () => ({
+        id: "bp-1",
+        name: "Helios Exam Blueprint",
+        description: "",
+        defaultSnapshotId: "snap-1",
+        snapshots: [
+          { id: "snap-1", name: "Default Snapshot", isDefault: true, regionIds: ["region-1"] },
+        ],
+      })),
       requestV3,
       requestV3Text: vi.fn(),
       requestV4,
@@ -466,5 +495,83 @@ describe("ExamAttempt scheduling runtime", () => {
     expect(requestV3).not.toHaveBeenCalled();
     expect(requestV4Detailed).not.toHaveBeenCalled();
     await expect(attempts.listByCandidate("candidate-1")).resolves.toHaveLength(1);
+  });
+
+  it("blocks scheduling before creating an individual Experience when the Blueprint default Snapshot drifted", async () => {
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
+    const getBlueprintDetail = vi.fn(async () => ({
+      id: "bp-1",
+      name: "Helios Exam Blueprint",
+      description: "",
+      defaultSnapshotId: "snap-2",
+      snapshots: [
+        { id: "snap-1", name: "Default Snapshot", isDefault: false, regionIds: ["region-1"] },
+        { id: "snap-2", name: "Changed Default Snapshot", isDefault: true, regionIds: ["region-1"] },
+      ],
+    }));
+    const requestV4Detailed = vi.fn();
+
+    const response = await scheduleExamAttemptRuntime(
+      {
+        exams: await makeExamRepository(),
+        attempts,
+        launches,
+        audit: createInMemoryAuditRepository(),
+        eventLog: createInMemoryEventLogRepository(),
+        connections: makeConnectionRepository(),
+        cloudshare: makeCloudShareFactory({
+          getBlueprintDetail,
+          requestV4Detailed: requestV4Detailed as unknown as ReturnType<
+            CloudShareClientFactory["forConnection"]
+          >["requestV4Detailed"],
+        }),
+        diagnostics,
+        logger: makeLogger(),
+        now: () => new Date("2026-06-15T10:00:00.000Z"),
+        newId: vi.fn(),
+        newCorrelationId: () => "corr-snapshot-drift-schedule",
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        examId: "exam-1",
+        scheduledFor: "2026-06-15T16:00:00.000Z",
+      },
+    );
+
+    expect(response).toEqual({
+      status: 423,
+      body: {
+        error:
+          "Exam scheduling is temporarily unavailable because the lab configuration changed. Contact your instructor.",
+        correlationId: "corr-snapshot-drift-schedule",
+      },
+    });
+    expect(requestV4Detailed).not.toHaveBeenCalled();
+    await expect(attempts.listByCandidate("candidate-1")).resolves.toEqual([]);
+    await expect(launches.findByExamAttemptId("attempt-1")).resolves.toBeNull();
+
+    const [entry] = await diagnosticsRepository.query({
+      customerId: "customer-helios",
+      examId: "exam-1",
+      operation: "exam_attempt.schedule",
+      outcome: "failure",
+    });
+    expect(entry).toMatchObject({
+      candidateEmail: "candidate@helioscx.demo",
+      correlationId: "corr-snapshot-drift-schedule",
+      subject: { type: "exam", id: "exam-1" },
+      details: {
+        failureMode: "snapshot_drift",
+        savedSnapshotId: "snap-1",
+        currentDefaultSnapshotId: "snap-2",
+      },
+    });
   });
 });

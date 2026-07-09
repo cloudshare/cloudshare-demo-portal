@@ -26,6 +26,7 @@ import {
   type CloudShareLabProvisionerObserver,
 } from "@/integrations/cloudshare/labs";
 import type { Logger } from "@/observability/logger";
+import { guardRuntimeBlueprintSnapshot } from "./runtime-blueprint-snapshot-guard";
 
 export interface ExamAttemptSchedulingRuntimeDeps {
   readonly exams: ExamRepository;
@@ -95,7 +96,70 @@ export async function scheduleExamAttemptRuntime(
     };
   }
 
+  const scheduledFor = new Date(request.scheduledFor);
+  if (Number.isNaN(scheduledFor.getTime())) {
+    return {
+      status: 400,
+      body: { error: "Choose a valid date and time before scheduling." },
+    };
+  }
+  if (scheduledFor.getTime() <= (deps.now ?? (() => new Date()))().getTime()) {
+    return {
+      status: 400,
+      body: { error: "Choose a future date and time before scheduling." },
+    };
+  }
+
+  const overlap = await findSameExamAvailabilityOverlap({
+    attempts: deps.attempts,
+    candidateId: request.candidateId,
+    examId: exam.id,
+    scheduledFor,
+    availabilityWindowMinutes: exam.storageLeaseMinutes ?? exam.openPeriodMinutes,
+  });
+  if (overlap) {
+    return {
+      status: 409,
+      body: {
+        error:
+          `Another attempt for this Exam is still active or available. ` +
+          `You can schedule this Exam again after ${overlap.nextAvailableAt.toISOString()}.`,
+        code: "exam_attempt_overlap",
+        nextAvailableAt: overlap.nextAvailableAt.toISOString(),
+      },
+    };
+  }
+
   const cloudshare = deps.cloudshare.forConnection(connection);
+  const snapshotGuardFailure = await guardRuntimeBlueprintSnapshot(deps, {
+    source: "candidate-portal",
+    operation: "exam_attempt.schedule",
+    correlationId,
+    customerId: request.customerId,
+    examId: exam.id,
+    candidateId: request.candidateId,
+    candidateEmail: request.candidateEmail,
+    actor: {
+      type: "candidate",
+      id: request.candidateId,
+      email: request.candidateEmail,
+    },
+    subject: { type: "exam", id: exam.id },
+    projectId: exam.projectId,
+    blueprintId: exam.blueprintId,
+    savedSnapshotId: exam.snapshotId,
+  });
+  if (snapshotGuardFailure) {
+    return {
+      status: snapshotGuardFailure.status,
+      body: {
+        error:
+          "Exam scheduling is temporarily unavailable because the lab configuration changed. Contact your instructor.",
+        correlationId,
+      },
+    };
+  }
+
   const labs = createCloudShareLabProvisioner(
     cloudshare,
     createTeamReadDiagnosticObserver({
@@ -126,7 +190,7 @@ export async function scheduleExamAttemptRuntime(
         candidateFirstName: request.candidateFirstName.trim(),
         candidateLastName: request.candidateLastName.trim(),
         examId: request.examId,
-        scheduledFor: new Date(request.scheduledFor),
+        scheduledFor,
         correlationId,
       },
     );
@@ -254,6 +318,44 @@ function toCandidateScheduleValidationMessage(error: ScheduleValidationError): s
 
 function toCandidateScheduleOverlapMessage(error: ScheduleOverlapError): string {
   return `Another attempt for this Exam is still active or available. You can schedule this Exam again after ${error.nextAvailableAt.toISOString()}.`;
+}
+
+async function findSameExamAvailabilityOverlap(input: {
+  readonly attempts: ExamAttemptRepository;
+  readonly candidateId: string;
+  readonly examId: string;
+  readonly scheduledFor: Date;
+  readonly availabilityWindowMinutes: number;
+}): Promise<{ readonly conflictingAttemptId: string; readonly nextAvailableAt: Date } | null> {
+  const requestedAtMs = input.scheduledFor.getTime();
+  const windowMs = input.availabilityWindowMinutes * 60_000;
+  const requestedEndMs = requestedAtMs + windowMs;
+  const existingAttempts = await input.attempts.listByCandidate(input.candidateId);
+
+  for (const attempt of existingAttempts) {
+    if (
+      attempt.examId !== input.examId ||
+      attempt.status === "completed" ||
+      attempt.status === "expired" ||
+      !attempt.scheduledFor
+    ) {
+      continue;
+    }
+
+    const windowStartMs = attempt.scheduledFor.getTime();
+    if (!Number.isFinite(windowStartMs)) {
+      continue;
+    }
+    const windowEndMs = windowStartMs + windowMs;
+    if (requestedAtMs < windowEndMs && requestedEndMs > windowStartMs) {
+      return {
+        conflictingAttemptId: attempt.id,
+        nextAvailableAt: new Date(windowEndMs),
+      };
+    }
+  }
+
+  return null;
 }
 
 function createTeamReadDiagnosticObserver(input: {
