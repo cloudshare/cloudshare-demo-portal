@@ -654,10 +654,11 @@ function CohortSessionProblemBridge(props: {
   readonly problemCount: number;
   readonly portalProblemRows: number;
   readonly cloudShareProblemRows: number;
+  readonly cloudShareReadUnavailable: boolean;
 }) {
   const totalProblemRows = props.portalProblemRows + props.cloudShareProblemRows;
 
-  if (props.problemCount === 0 && totalProblemRows === 0) {
+  if (props.problemCount === 0 && totalProblemRows === 0 && !props.cloudShareReadUnavailable) {
     return (
       <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
         No reconciliation warnings are currently contributing to the Problems tile.
@@ -678,6 +679,9 @@ function CohortSessionProblemBridge(props: {
         These warning-highlighted rows explain the Problems tile. Matched portal/CloudShare disagreements can appear in
         both tables so you can inspect either side.
       </span>
+      {props.cloudShareReadUnavailable ? (
+        <span>The CloudShare participant read unavailable panel below also contributes to Problems.</span>
+      ) : null}
     </div>
   );
 }
@@ -1103,7 +1107,7 @@ export function CohortSessionWorkspacePanel(props: {
               <CohortSessionDetailItem
                 label="Problems"
                 value={props.detail.summary.problemCount}
-                help="State mismatch or missing-match warnings found while comparing portal attempts with CloudShare participants."
+                help="State mismatch warnings, missing-match warnings, or CloudShare participant-check failures."
               />
               <CohortSessionDetailItem
                 label="Session exam attempts"
@@ -1121,13 +1125,14 @@ export function CohortSessionWorkspacePanel(props: {
               Counts are derived from session exam attempts and the CloudShare participant read for this shared Experience.
             </div>
             <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
-              Problem count shows reconciliation warnings between portal attempt state and CloudShare participant state.
+              Problem count includes reconciliation warnings and CloudShare participant-check failures.
               It is not a count of diagnostic errors.
             </div>
             <CohortSessionProblemBridge
               problemCount={props.detail.summary.problemCount}
               portalProblemRows={portalProblemRows}
               cloudShareProblemRows={cloudShareProblemRows}
+              cloudShareReadUnavailable={props.detail.cloudShareParticipants.status === "unavailable"}
             />
 
             <div style={{ display: "grid", gap: "0.75rem" }}>

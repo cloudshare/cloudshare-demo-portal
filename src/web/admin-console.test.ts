@@ -995,10 +995,10 @@ describe("AdminConsole", () => {
     expect(html).toContain("Aggregate progress diagnostics");
     expect(html).toContain("Counts are derived from session exam attempts and the CloudShare participant read");
     expect(html).toContain("Problems");
-    expect(html).toContain("Problem count shows reconciliation warnings between portal attempt state and CloudShare participant state");
+    expect(html).toContain("Problem count includes reconciliation warnings and CloudShare participant-check failures.");
     expect(html).toContain("It is not a count of diagnostic errors.");
     expect(html).toContain(
-      'title="State mismatch or missing-match warnings found while comparing portal attempts with CloudShare participants."',
+      'title="State mismatch warnings, missing-match warnings, or CloudShare participant-check failures."',
     );
     expect(html).toContain(
       'title="Rows from Certalis portal state: Candidates who have an ExamAttempt for this Cohort Exam Session."',
@@ -1095,6 +1095,8 @@ describe("AdminConsole", () => {
 
     expect(html).toContain("CloudShare participant read unavailable");
     expect(html).toContain("CloudShare participant read failed for this Cohort Exam Session.");
+    expect(html).toContain("Problem count includes reconciliation warnings and CloudShare participant-check failures.");
+    expect(html).toContain("The CloudShare participant read unavailable panel below also contributes to Problems.");
     expect(html).toContain("Correlation ID:");
     expect(html).toContain("corr-1");
     expect(html).toContain("/admin?tab=support&amp;view=diagnostics&amp;correlationId=corr-1");
