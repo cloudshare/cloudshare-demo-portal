@@ -92,7 +92,7 @@ export async function testCloudShareConnection(
   } catch (error) {
     if (isCloudShareRateLimitError(error)) {
       throw new CloudShareConnectionTestError(
-        "CloudShare temporarily rate limited the v3 ping. Wait a moment, then try Test connection again.",
+        "CloudShare rate limiting or abuse protection blocked the v3 ping. Check whether this public IP needs CloudShare allow-list or abuse-list review before retrying.",
         error.message,
         {
           operation: "test_connection",

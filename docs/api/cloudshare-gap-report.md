@@ -1350,7 +1350,7 @@ thread, but reconciliation is detection/mitigation rather than prevention.
 | Field | Detail |
 |---|---|
 | **Status** | Confirmed in portal handling; live CloudShare 429/abuse thresholds still partly unverified |
-| **Verified live** | Partial — response-shape/header handling implemented from observed/support evidence, but this slice did not safely force a live 429 in the tenant |
+| **Verified live** | Partial — live `429` response shape observed during QA; intentionally forcing or sustaining abuse-list behaviour is unsafe |
 
 **Observed behaviour**
 
@@ -1364,6 +1364,14 @@ behaviour treated the failure as a generic `CloudShareRequestError`, which cause
    `snapshot_drift`;
 3. repeated follow-up requests from the same Customer could hammer CloudShare immediately after a
    `Retry-After` response.
+
+During 2026-07-09 QA, a live CloudShare v3 `ping` from the portal returned HTTP `429` with response
+body code `0x42901` and no usable `Retry-After` header. Operator context from CloudShare indicates
+that this can be caused by the request public IP landing on an abuse list. Once that happens, retrying
+alone may not clear the condition; a CloudShare/admin action may be needed to remove the IP from the
+abuse list or whitelist/allow-list the public IP. This is especially likely when the caller's public
+IP changes, such as after moving location. A whitelisted public IP should not normally appear on the
+abuse list.
 
 The portal now treats these as a first-class integration condition:
 
@@ -1384,6 +1392,8 @@ The portal now treats these as a first-class integration condition:
   `snapshot_guard_unavailable` caused by throttling.
 - Support diagnostics retain the redacted upstream headers needed to reason about retry timing
   without exposing credentials or bearer artifacts.
+- For admin connection tests, the user-facing message now explicitly mentions rate limiting or abuse
+  protection and directs support to check public-IP allow-list / abuse-list status before retrying.
 - The current cooldown store is intentionally minimal: it is **in-memory and per-process**, keyed by
   Customer. That protects the main server instance from immediate repeated calls, but it is not yet
   shared across multiple app instances or persisted across process restarts.
@@ -1396,8 +1406,10 @@ Confirm with CloudShare support/R&D:
    `403` abuse-list/protection wording;
 2. whether `Retry-After` is always present and whether other rate-limit headers have a documented
    contract;
-3. whether whitelisting/customer allow-list options exist for demo traffic or portal server IPs;
-4. whether the portal should eventually persist/shared-cache the per-Customer cooldown across
+3. the operational process for removing a public IP from the abuse list;
+4. the exact whitelisting/customer allow-list process for demo traffic or portal server IPs, and how
+   to detect when the caller's public IP has changed;
+5. whether the portal should eventually persist/shared-cache the per-Customer cooldown across
    instances instead of relying on per-process memory.
 
 **Code reference:** `src/integrations/cloudshare/errors.ts`,
@@ -1499,5 +1511,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-07-09 (added GAP-24 for CloudShare rate-limit and abuse-protection handling).
+*Last updated: 2026-07-09 (updated GAP-24 with live `0x42901` evidence and CloudShare public-IP allow-list / abuse-list operator context).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*

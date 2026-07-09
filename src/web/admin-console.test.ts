@@ -61,12 +61,14 @@ describe("AdminConsole", () => {
   it("renders CloudShare test failures as a connection-action warning with diagnostics link", () => {
     const html = renderToStaticMarkup(
       createElement(CloudShareConnectionTestWarning, {
-        warning: "CloudShare temporarily rate limited the v3 ping. Wait a moment, then try Test connection again.",
+        warning:
+          "CloudShare rate limiting or abuse protection blocked the v3 ping. Check whether this public IP needs CloudShare allow-list or abuse-list review before retrying.",
         correlationId: "corr-rate-limit",
       }),
     );
 
-    expect(html).toContain("CloudShare temporarily rate limited the v3 ping");
+    expect(html).toContain("CloudShare rate limiting or abuse protection blocked the v3 ping");
+    expect(html).toContain("public IP");
     expect(html).toContain("Support Diagnostics");
     expect(html).toContain("/admin?tab=support&amp;view=diagnostics&amp;correlationId=corr-rate-limit");
   });

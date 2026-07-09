@@ -438,7 +438,8 @@ describe("admin CloudShare handlers", () => {
 
     expect(response.status).toBe(429);
     expect(response.body).toMatchObject({
-      error: "CloudShare temporarily rate limited the v3 ping. Wait a moment, then try Test connection again.",
+      error:
+        "CloudShare rate limiting or abuse protection blocked the v3 ping. Check whether this public IP needs CloudShare allow-list or abuse-list review before retrying.",
       correlationId: "corr-rate-limit",
       diagnostic: {
         failureMode: "rate_limit",
