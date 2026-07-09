@@ -37,8 +37,9 @@ import { CandidateExamCard } from "./candidate-exam-card";
 export {
   CandidateCohortSessionOptions,
   CandidateExamCard,
-  getAvailableSessionsSummary,
+  getCandidateExamCardTakeExamAutoOpenReason,
   getDefaultCandidateExamCardPanelState,
+  getTakeExamAvailabilitySummary,
   PublishedExamCardHeader,
 } from "./candidate-exam-card";
 
@@ -507,7 +508,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
         )}
 
         {shouldShowPublishedExamList({ loading, examCount: dashboard.exams.length }) && (
-          <section style={cardStyle}>
+          <section style={publishedExamSectionStyle}>
             <div style={sectionHeaderStyle}>
               <div>
                 <p style={eyebrowLabelStyle}>Published Exams</p>
@@ -633,6 +634,11 @@ const attemptFilterCountStyle: CSSProperties = {
   fontSize: "1.35rem",
   fontWeight: 700,
   lineHeight: 1.1,
+};
+
+const publishedExamSectionStyle: CSSProperties = {
+  display: "grid",
+  gap: "1rem",
 };
 
 const metaItemStyle: CSSProperties = {

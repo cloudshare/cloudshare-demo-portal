@@ -5,8 +5,9 @@ import {
   CandidateExamCard,
   CandidateCohortSessionOptions,
   CandidateAttemptStatusFilterButtons,
-  getAvailableSessionsSummary,
+  getCandidateExamCardTakeExamAutoOpenReason,
   getDefaultCandidateExamCardPanelState,
+  getTakeExamAvailabilitySummary,
   PublishedExamCardHeader,
 } from "./candidate-home";
 import {
@@ -151,8 +152,9 @@ describe("candidate home layout", () => {
     );
 
     expect((html.match(/<summary/g) ?? []).length).toBe(2);
-    expect(html).toContain(">Browse<");
-    expect(html).toContain(">Take exam<");
+    expect(html).toContain("Browse");
+    expect(html).toContain("Take exam");
+    expect(html).toContain("aria-hidden=\"true\"");
     expect(html).toContain("Guided Journey scoring");
     expect(html).toContain("Schedule an individual start time");
     expect(html).not.toContain("Schedule date and time");
@@ -214,6 +216,41 @@ describe("candidate home layout", () => {
     });
   });
 
+  it("returns a new auto-open reason when a ready attempt becomes enterable", () => {
+    const exam = {
+      id: "exam-2",
+      title: "Ready exam",
+      description: "",
+      timeLimitMinutes: 90,
+      storageLeaseMinutes: null,
+      openPeriodMinutes: 120,
+      scoreRetrievalEnabled: false,
+      individualSchedulingEnabled: true,
+      availableCohortSessions: [],
+    };
+    const attempt = {
+      id: "attempt-1",
+      examId: "exam-2",
+      scheduledFor: "2026-07-09T10:00:00.000Z",
+      status: "ready" as const,
+    };
+
+    expect(
+      getCandidateExamCardTakeExamAutoOpenReason({
+        exam,
+        attempt,
+        nowMs: Date.parse("2026-07-09T09:59:00.000Z"),
+      }),
+    ).toBeNull();
+    expect(
+      getCandidateExamCardTakeExamAutoOpenReason({
+        exam,
+        attempt,
+        nowMs: Date.parse("2026-07-09T10:00:00.000Z"),
+      }),
+    ).toBe("attempt:attempt-1:Enter exam");
+  });
+
   it("keeps Browse open by default when there is no immediately startable or resumable action", () => {
     expect(
       getDefaultCandidateExamCardPanelState({
@@ -263,23 +300,40 @@ describe("candidate home layout", () => {
 
   it("summarizes available sessions without exposing delivery-mode implementation details", () => {
     expect(
-      getAvailableSessionsSummary({
+      getTakeExamAvailabilitySummary({
         availableCohortSessionCount: 2,
         individualSchedulingEnabled: true,
+        primaryActionLabel: null,
+        primaryActionDisabled: false,
       }),
-    ).toBe("2 ready to start");
+    ).toBe("2 sessions ready to start");
     expect(
-      getAvailableSessionsSummary({
+      getTakeExamAvailabilitySummary({
         availableCohortSessionCount: 0,
         individualSchedulingEnabled: true,
+        primaryActionLabel: null,
+        primaryActionDisabled: false,
       }),
-    ).toBe("Individual scheduling available");
+    ).toBe("Schedule an individual start time");
     expect(
-      getAvailableSessionsSummary({
+      getTakeExamAvailabilitySummary({
         availableCohortSessionCount: 0,
         individualSchedulingEnabled: false,
+        primaryActionLabel: null,
+        primaryActionDisabled: false,
       }),
-    ).toBe("No sessions available right now");
+    ).toBe("No ways to take this Exam right now.");
+  });
+
+  it("summarizes completed scored attempts as an available current-attempt action", () => {
+    expect(
+      getTakeExamAvailabilitySummary({
+        availableCohortSessionCount: 0,
+        individualSchedulingEnabled: false,
+        primaryActionLabel: "View score",
+        primaryActionDisabled: false,
+      }),
+    ).toBe("Score available to view");
   });
 
   it("renders available Cohort Exam Sessions as options on the parent Exam card", () => {

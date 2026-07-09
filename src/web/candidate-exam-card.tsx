@@ -1,6 +1,6 @@
 "use client";
 
-import React, { type CSSProperties, useState } from "react";
+import React, { type CSSProperties, useEffect, useRef, useState } from "react";
 import type { CandidateDashboardData } from "./candidate-scheduling";
 import {
   buildCandidateExamDurationLabels,
@@ -152,24 +152,6 @@ export function CandidateCohortSessionOptions({
   );
 }
 
-export function getAvailableSessionsSummary({
-  availableCohortSessionCount,
-  individualSchedulingEnabled,
-}: {
-  readonly availableCohortSessionCount: number;
-  readonly individualSchedulingEnabled: boolean;
-}): string {
-  if (availableCohortSessionCount > 0) {
-    return `${availableCohortSessionCount} ready to start`;
-  }
-
-  if (individualSchedulingEnabled) {
-    return "Individual scheduling available";
-  }
-
-  return "No sessions available right now";
-}
-
 export function getDefaultCandidateExamCardPanelState({
   exam,
   attempt,
@@ -179,17 +161,37 @@ export function getDefaultCandidateExamCardPanelState({
   readonly attempt: CandidateDashboardData["attempts"][number] | null;
   readonly nowMs: number;
 }): { readonly browseOpen: boolean; readonly takeExamOpen: boolean } {
-  const primaryAction = getAttemptPrimaryAction(attempt, nowMs, exam);
-  const hasImmediateAttemptAction =
-    primaryAction.label !== null &&
-    primaryAction.label !== "View score" &&
-    primaryAction.disabled === false;
-  const hasAvailableCohortSession = (exam.availableCohortSessions?.length ?? 0) > 0;
-  const takeExamOpen = hasImmediateAttemptAction || hasAvailableCohortSession;
+  const takeExamOpen =
+    getCandidateExamCardTakeExamAutoOpenReason({ exam, attempt, nowMs }) !== null;
   return {
     browseOpen: !takeExamOpen,
     takeExamOpen,
   };
+}
+
+export function getCandidateExamCardTakeExamAutoOpenReason({
+  exam,
+  attempt,
+  nowMs,
+}: {
+  readonly exam: CandidateDashboardData["exams"][number];
+  readonly attempt: CandidateDashboardData["attempts"][number] | null;
+  readonly nowMs: number;
+}): string | null {
+  const primaryAction = getAttemptPrimaryAction(attempt, nowMs, exam);
+  if (
+    primaryAction.label !== null &&
+    primaryAction.label !== "View score" &&
+    primaryAction.disabled === false
+  ) {
+    return `attempt:${attempt?.id ?? exam.id}:${primaryAction.label}`;
+  }
+
+  if ((exam.availableCohortSessions?.length ?? 0) > 0) {
+    return `cohort:${exam.id}:${exam.availableCohortSessions?.map((session) => session.id).join(",")}`;
+  }
+
+  return null;
 }
 
 export function CandidateExamCard({
@@ -208,6 +210,8 @@ export function CandidateExamCard({
   onStartCohortSession,
 }: CandidateExamCardProps) {
   const panelState = getDefaultCandidateExamCardPanelState({ exam, attempt, nowMs });
+  const autoOpenReason = getCandidateExamCardTakeExamAutoOpenReason({ exam, attempt, nowMs });
+  const lastAppliedAutoOpenReason = useRef<string | null>(autoOpenReason);
   const [browseOpen, setBrowseOpen] = useState(panelState.browseOpen);
   const [takeExamOpen, setTakeExamOpen] = useState(panelState.takeExamOpen);
   const availableCohortSessions = exam.availableCohortSessions ?? [];
@@ -216,6 +220,16 @@ export function CandidateExamCard({
   const primaryAction = getAttemptPrimaryAction(attempt, nowMs, exam);
   const waitingMessage = getAttemptWaitingMessage(attempt, nowMs, exam);
   const nextScheduleAvailableLabel = getNextScheduleAvailableLabelForExam(allAttempts, exam.id, exam);
+
+  useEffect(() => {
+    if (autoOpenReason === null || lastAppliedAutoOpenReason.current === autoOpenReason) {
+      return;
+    }
+
+    lastAppliedAutoOpenReason.current = autoOpenReason;
+    setBrowseOpen(false);
+    setTakeExamOpen(true);
+  }, [autoOpenReason]);
 
   return (
     <article style={cardStyle}>
@@ -233,7 +247,12 @@ export function CandidateExamCard({
           style={detailsStyle}
         >
           <summary style={publishedExamDisclosureSummaryStyle}>
-            <span style={disclosureTitleStyle}>Browse</span>
+            <span style={disclosureTitleStyle}>
+              <span aria-hidden="true" style={disclosureMarkerStyle}>
+                {browseOpen ? "-" : "+"}
+              </span>
+              Browse
+            </span>
             <span style={disclosureHintStyle}>
               Review exam details before choosing how to take it.
             </span>
@@ -283,7 +302,12 @@ export function CandidateExamCard({
           style={detailsStyle}
         >
           <summary style={publishedExamDisclosureSummaryStyle}>
-            <span style={disclosureTitleStyle}>Take exam</span>
+            <span style={disclosureTitleStyle}>
+              <span aria-hidden="true" style={disclosureMarkerStyle}>
+                {takeExamOpen ? "-" : "+"}
+              </span>
+              Take exam
+            </span>
             <span style={disclosureHintStyle}>
               {getTakeExamAvailabilitySummary({
                 availableCohortSessionCount: availableCohortSessions.length,
@@ -384,7 +408,7 @@ export function CandidateExamCard({
   );
 }
 
-function getTakeExamAvailabilitySummary(input: {
+export function getTakeExamAvailabilitySummary(input: {
   readonly availableCohortSessionCount: number;
   readonly individualSchedulingEnabled: boolean;
   readonly primaryActionLabel: "Enter exam" | "Return to exam" | "Resume exam" | "View score" | null;
@@ -399,6 +423,9 @@ function getTakeExamAvailabilitySummary(input: {
     }
     if (input.primaryActionLabel === "Return to exam") {
       return "Current attempt in progress";
+    }
+    if (input.primaryActionLabel === "View score") {
+      return "Score available to view";
     }
   }
 
@@ -433,6 +460,22 @@ const disclosureTitleStyle: CSSProperties = {
   color: "#0f172a",
   fontSize: "1rem",
   fontWeight: 700,
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "0.45rem",
+};
+
+const disclosureMarkerStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  width: "1.25rem",
+  height: "1.25rem",
+  border: "1px solid #cbd5e1",
+  borderRadius: "999px",
+  color: "#475569",
+  fontWeight: 700,
+  lineHeight: 1,
 };
 
 const disclosureHintStyle: CSSProperties = {
@@ -442,10 +485,12 @@ const disclosureHintStyle: CSSProperties = {
 };
 
 const metaItemStyle: CSSProperties = {
-  ...cardStyle,
   display: "grid",
   gap: "0.3rem",
   padding: "0.85rem 0.9rem",
+  border: "1px solid #e2e8f0",
+  borderRadius: "6px",
+  background: "#f8fafc",
 };
 
 const metaLabelStyle: CSSProperties = {
