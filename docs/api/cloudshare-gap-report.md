@@ -1392,10 +1392,13 @@ The portal now treats these as a first-class integration condition:
   `snapshot_guard_unavailable` caused by throttling.
 - Support diagnostics retain the redacted upstream headers needed to reason about retry timing
   without exposing credentials or bearer artifacts.
-- Existing candidate/admin 429 paths now share the same user-facing support guidance: CloudShare is
-  returning a 429 that says to contact `support@cloudshare.com`; support should treat this as likely
-  rate limiting or abuse protection and check whether the public IP needs CloudShare allow-list or
-  abuse-list review before retrying.
+- Admin/support-facing 429 paths now share the same guidance: CloudShare is returning a 429 for the
+  current request; support should treat this as likely rate limiting or abuse protection and check
+  whether the public IP needs CloudShare allow-list or abuse-list review before retrying by contacting
+  `support@cloudshare.com`.
+- Candidate-facing 429 paths intentionally do **not** mention CloudShare support, allow-lists, abuse
+  lists, or internal CloudShare details. Candidates are told that something is not working right now
+  and to contact their instructor before trying again.
 - The current cooldown store is intentionally minimal: it is **in-memory and per-process**, keyed by
   Customer. That protects the main server instance from immediate repeated calls, but it is not yet
   shared across multiple app instances or persisted across process restarts.

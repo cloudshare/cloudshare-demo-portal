@@ -62,7 +62,7 @@ describe("AdminConsole", () => {
     const html = renderToStaticMarkup(
       createElement(CloudShareConnectionTestWarning, {
         warning:
-          "CloudShare is returning a 429 error stating that you need to contact support@cloudshare.com. This is likely CloudShare rate limiting or abuse protection blocking the request. Check whether this public IP needs CloudShare allow-list or abuse-list review before retrying.",
+          "CloudShare is returning a 429 error for the current request. This is likely CloudShare rate limiting or abuse protection blocking the request. Check whether this public IP needs CloudShare allow-list or abuse-list review before retrying by contacting support@cloudshare.com.",
         correlationId: "corr-rate-limit",
       }),
     );

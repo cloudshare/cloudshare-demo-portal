@@ -5,7 +5,7 @@ import type {
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
 import type { DiagnosticActor, DiagnosticLogEntryInput, DiagnosticRecorder } from "@/domain/diagnostic-log";
-import { CLOUDSHARE_429_SUPPORT_GUIDANCE } from "@/domain/cloudshare-rate-limit-message";
+import { CLOUDSHARE_429_ADMIN_SUPPORT_GUIDANCE } from "@/domain/cloudshare-rate-limit-message";
 import {
   ExamNotFoundError,
   publishExam,
@@ -392,7 +392,7 @@ async function handleCloudShareFailure(
       status: isCloudShareRateLimitError(spec.error) ? 429 : 502,
       body: {
         error: isCloudShareRateLimitError(spec.error)
-          ? CLOUDSHARE_429_SUPPORT_GUIDANCE
+          ? CLOUDSHARE_429_ADMIN_SUPPORT_GUIDANCE
           : "CloudShare resource request failed.",
         correlationId,
         occurredAt,

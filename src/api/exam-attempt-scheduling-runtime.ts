@@ -4,7 +4,7 @@ import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
-import { CLOUDSHARE_429_SUPPORT_GUIDANCE } from "@/domain/cloudshare-rate-limit-message";
+import { CLOUDSHARE_429_CANDIDATE_MESSAGE } from "@/domain/cloudshare-rate-limit-message";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { EventLogRepository } from "@/domain/event-log";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
@@ -157,7 +157,7 @@ export async function scheduleExamAttemptRuntime(
       body: {
           error:
             snapshotGuardFailure.status === 429
-              ? CLOUDSHARE_429_SUPPORT_GUIDANCE
+              ? CLOUDSHARE_429_CANDIDATE_MESSAGE
               : "Exam scheduling is temporarily unavailable because the lab configuration changed. Contact your instructor.",
         correlationId,
       },
@@ -302,7 +302,7 @@ export async function scheduleExamAttemptRuntime(
         status: isCloudShareRateLimitError(error.context.cause) ? 429 : 502,
         body: {
           error: isCloudShareRateLimitError(error.context.cause)
-            ? CLOUDSHARE_429_SUPPORT_GUIDANCE
+            ? CLOUDSHARE_429_CANDIDATE_MESSAGE
             : "CloudShare provisioning failed for the scheduled exam.",
           correlationId,
         },

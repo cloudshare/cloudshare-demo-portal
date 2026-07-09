@@ -11,7 +11,7 @@ import {
   type CohortExamSessionRepository,
 } from "@/domain/cohort-exam-session";
 import type { DiagnosticActor, DiagnosticLogEntryInput, DiagnosticRecorder } from "@/domain/diagnostic-log";
-import { CLOUDSHARE_429_SUPPORT_GUIDANCE } from "@/domain/cloudshare-rate-limit-message";
+import { CLOUDSHARE_429_ADMIN_SUPPORT_GUIDANCE } from "@/domain/cloudshare-rate-limit-message";
 import { ExamNotFoundError, type ExamRepository } from "@/domain/exam-catalog";
 import type { TrainingParticipant } from "@/domain/environment-correlation";
 import {
@@ -216,7 +216,7 @@ export async function handleRetireCohortExamSession(
         status: isCloudShareRateLimitError(error) ? 429 : 502,
         body: {
           error: isCloudShareRateLimitError(error)
-            ? CLOUDSHARE_429_SUPPORT_GUIDANCE
+            ? CLOUDSHARE_429_ADMIN_SUPPORT_GUIDANCE
             : "CloudShare could not retire this Cohort Exam Session. Check the diagnostic log for the correlation ID.",
           correlationId,
         },

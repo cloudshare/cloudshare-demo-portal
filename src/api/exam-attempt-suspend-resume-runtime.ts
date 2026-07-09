@@ -6,7 +6,7 @@ import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
-import { CLOUDSHARE_429_SUPPORT_GUIDANCE } from "@/domain/cloudshare-rate-limit-message";
+import { CLOUDSHARE_429_CANDIDATE_MESSAGE } from "@/domain/cloudshare-rate-limit-message";
 import {
   suspendExam,
   resumeExam,
@@ -881,7 +881,7 @@ async function reportFailureDiagnostic(
       return {
         status: 429,
         body: {
-          error: CLOUDSHARE_429_SUPPORT_GUIDANCE,
+          error: CLOUDSHARE_429_CANDIDATE_MESSAGE,
           correlationId,
         },
       };
@@ -915,7 +915,7 @@ async function reportFailureDiagnostic(
       status: isCloudShareRateLimitError(err) ? 429 : 502,
       body: {
         error: isCloudShareRateLimitError(err)
-          ? CLOUDSHARE_429_SUPPORT_GUIDANCE
+          ? CLOUDSHARE_429_CANDIDATE_MESSAGE
           : `exam ${spec.action} failed`,
         correlationId,
       },

@@ -1,5 +1,5 @@
 import type { CloudShareClient } from "@/integrations/cloudshare";
-import { CLOUDSHARE_429_SUPPORT_GUIDANCE } from "./cloudshare-rate-limit-message";
+import { CLOUDSHARE_429_ADMIN_SUPPORT_GUIDANCE } from "./cloudshare-rate-limit-message";
 import {
   CloudShareError,
   CloudShareRequestError,
@@ -93,7 +93,7 @@ export async function testCloudShareConnection(
   } catch (error) {
     if (isCloudShareRateLimitError(error)) {
       throw new CloudShareConnectionTestError(
-        CLOUDSHARE_429_SUPPORT_GUIDANCE,
+        CLOUDSHARE_429_ADMIN_SUPPORT_GUIDANCE,
         error.message,
         {
           operation: "test_connection",

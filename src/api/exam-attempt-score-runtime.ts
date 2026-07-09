@@ -9,7 +9,7 @@ import type { ExamAttempt } from "@/domain/exam-attempt";
 import type { ExamRepository } from "@/domain/exam-catalog";
 import type { AuditRepository } from "@/domain/audit-trail";
 import type { CloudShareConnectionRecord, CloudShareConnectionRepository } from "@/domain/cloudshare-connection";
-import { CLOUDSHARE_429_SUPPORT_GUIDANCE } from "@/domain/cloudshare-rate-limit-message";
+import { CLOUDSHARE_429_CANDIDATE_MESSAGE } from "@/domain/cloudshare-rate-limit-message";
 import type { ParticipantLister } from "@/domain/environment-correlation";
 import { correlateEnvironmentForExamAttempt } from "@/domain/environment-correlation";
 import { LabLaunchNotFoundError, ScoreRetrievalError } from "@/domain/errors";
@@ -410,7 +410,7 @@ export async function getExamAttemptScoreRuntime(
         status: rateLimited ? 429 : 502,
         body: {
           error: rateLimited
-            ? CLOUDSHARE_429_SUPPORT_GUIDANCE
+            ? CLOUDSHARE_429_CANDIDATE_MESSAGE
             : "score retrieval failed",
           correlationId,
         },

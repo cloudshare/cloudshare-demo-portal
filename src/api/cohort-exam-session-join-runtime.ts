@@ -4,7 +4,7 @@ import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
-import { CLOUDSHARE_429_SUPPORT_GUIDANCE } from "@/domain/cloudshare-rate-limit-message";
+import { CLOUDSHARE_429_CANDIDATE_MESSAGE } from "@/domain/cloudshare-rate-limit-message";
 import type { CohortExamSessionRepository } from "@/domain/cohort-exam-session";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { EventLogRepository } from "@/domain/event-log";
@@ -343,7 +343,7 @@ export async function joinCohortExamSessionRuntime(
       body: {
         error:
           snapshotGuardFailure.status === 429
-            ? CLOUDSHARE_429_SUPPORT_GUIDANCE
+            ? CLOUDSHARE_429_CANDIDATE_MESSAGE
             : snapshotGuardFailure.message,
       },
     };
@@ -381,7 +381,7 @@ export async function joinCohortExamSessionRuntime(
       status: isCloudShareRateLimitError(cause) ? 429 : 502,
       body: {
         error: isCloudShareRateLimitError(cause)
-          ? CLOUDSHARE_429_SUPPORT_GUIDANCE
+          ? CLOUDSHARE_429_CANDIDATE_MESSAGE
           : "CloudShare could not confirm this Cohort Exam Session is open yet.",
         correlationId,
       },
@@ -489,7 +489,7 @@ export async function joinCohortExamSessionRuntime(
       status: isCloudShareRateLimitError(cause) ? 429 : 502,
       body: {
         error: isCloudShareRateLimitError(cause)
-          ? CLOUDSHARE_429_SUPPORT_GUIDANCE
+          ? CLOUDSHARE_429_CANDIDATE_MESSAGE
           : "CloudShare provisioning failed for the shared cohort Exam Session.",
         correlationId,
       },
@@ -557,7 +557,7 @@ export async function joinCohortExamSessionRuntime(
       status: isCloudShareRateLimitError(cause) ? 429 : 502,
       body: {
         error: isCloudShareRateLimitError(cause)
-          ? CLOUDSHARE_429_SUPPORT_GUIDANCE
+          ? CLOUDSHARE_429_CANDIDATE_MESSAGE
           : "CloudShare provisioning failed for the shared cohort Exam Session.",
         correlationId,
       },
