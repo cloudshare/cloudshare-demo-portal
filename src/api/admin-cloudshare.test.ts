@@ -11,7 +11,7 @@ import { createSecretBox } from "@/security/secret-box";
 import { createCloudShareConnectionRepository } from "@/persistence/cloudshare-connection-repository";
 import { PrismaClient } from "@prisma/client";
 import type { CloudShareClientFactory } from "@/domain/cloudshare-connection";
-import { CloudShareRequestError } from "@/integrations/cloudshare";
+import { CloudShareRateLimitError, CloudShareRequestError } from "@/integrations/cloudshare";
 import { createInMemoryExamAuthoringCacheRepository } from "@/persistence/exam-authoring-cache-repository";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 
@@ -370,6 +370,53 @@ describe("admin CloudShare handlers", () => {
         requestUrl: "https://use.cloudshare.com/api/v3/ping",
         failureMode: "http_status",
         responseStatus: 401,
+      },
+    });
+  });
+
+  it("returns 429 when CloudShare rate limits the connection test", async () => {
+    const deps = await makeDeps();
+    await handleSaveCloudShareConnection(deps, {
+      customerId: deps.customerId,
+      body: {
+        apiId: "api-id",
+        apiKey: "api-key",
+        webhookSecret: "whsec",
+      },
+    });
+
+    const failingDeps = {
+      ...deps,
+      cloudshare: {
+        forConnection: () => ({
+          requestV3Text: async () => {
+            throw new CloudShareRateLimitError("too many requests", 429, "rate_limit", {
+              responseHeaders: { "retry-after": "30" },
+              retryAfterSeconds: 30,
+            });
+          },
+          requestV3: async () => {
+            throw new Error("not used");
+          },
+          requestV4: async () => {
+            throw new Error("not used");
+          },
+        }),
+      } satisfies CloudShareClientFactory,
+      newCorrelationId: () => "corr-rate-limit",
+    };
+
+    const response = await handleTestCloudShareConnection(failingDeps, {
+      customerId: deps.customerId,
+    });
+
+    expect(response.status).toBe(429);
+    expect(response.body).toMatchObject({
+      error: "CloudShare temporarily rate limited the v3 ping. Wait a moment, then try Test connection again.",
+      correlationId: "corr-rate-limit",
+      diagnostic: {
+        failureMode: "rate_limit",
+        responseStatus: 429,
       },
     });
   });

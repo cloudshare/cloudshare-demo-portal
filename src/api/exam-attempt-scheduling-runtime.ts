@@ -21,6 +21,7 @@ import {
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
+  isCloudShareRateLimitError,
 } from "@/integrations/cloudshare";
 import {
   createCloudShareLabProvisioner,
@@ -298,9 +299,9 @@ export async function scheduleExamAttemptRuntime(
       });
       deps.logger.warn("candidate exam scheduling failed", diagnostic);
       return {
-        status: isRateLimitCause(error.context.cause) ? 429 : 502,
+        status: isCloudShareRateLimitError(error.context.cause) ? 429 : 502,
         body: {
-          error: isRateLimitCause(error.context.cause)
+          error: isCloudShareRateLimitError(error.context.cause)
             ? "Exam scheduling is temporarily unavailable because CloudShare is rate limiting requests. Wait a moment, then try again."
             : "CloudShare provisioning failed for the scheduled exam.",
           correlationId,
@@ -509,13 +510,4 @@ function toProvisioningDiagnostic(
     failureMode: "unknown",
     error: cause instanceof Error ? cause.message : String(cause),
   };
-}
-
-function isRateLimitCause(cause: unknown): cause is CloudShareRateLimitError {
-  return (
-    cause instanceof CloudShareRateLimitError ||
-    (typeof cause === "object" &&
-      cause !== null &&
-      (cause as { name?: unknown }).name === "CloudShareRateLimitError")
-  );
 }

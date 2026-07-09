@@ -1367,8 +1367,8 @@ behaviour treated the failure as a generic `CloudShareRequestError`, which cause
 
 The portal now treats these as a first-class integration condition:
 
-- `CloudShareRateLimitError` is raised at the CloudShare boundary for `429` and abuse-protection
-  responses;
+- `CloudShareRateLimitError` is raised at the CloudShare boundary for `429` responses, including
+  v4 OAuth token throttling, and for explicit `403` abuse-list/protection responses;
 - redacted diagnostics retain `Retry-After` and related rate-limit headers;
 - safe idempotent reads (`GET`) may perform one bounded retry using `Retry-After` or a short jittered
   delay;
@@ -1392,7 +1392,8 @@ The portal now treats these as a first-class integration condition:
 
 Confirm with CloudShare support/R&D:
 
-1. which non-429 statuses/bodies are the authoritative abuse-protection signals;
+1. which non-429 statuses/bodies are the authoritative abuse-protection signals beyond explicit
+   `403` abuse-list/protection wording;
 2. whether `Retry-After` is always present and whether other rate-limit headers have a documented
    contract;
 3. whether whitelisting/customer allow-list options exist for demo traffic or portal server IPs;

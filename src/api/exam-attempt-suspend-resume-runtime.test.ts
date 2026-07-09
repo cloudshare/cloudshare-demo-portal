@@ -20,6 +20,7 @@ import type {
 import { createInMemoryExamAttemptRepository } from "@/persistence/exam-attempt-repository";
 import { createInMemoryLabLaunchRepository } from "@/persistence/lab-launch-repository";
 import {
+  CloudShareRateLimitError,
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
@@ -889,6 +890,46 @@ describe("suspendExamAttemptRuntime", () => {
           failureMode: "http_status",
           responseStatus: 403,
           responseBody: "{\"error\":\"forbidden\"}",
+        }),
+      }),
+    );
+  });
+
+  it("returns 429 with rate-limit diagnostics when CloudShare suspend is throttled", async () => {
+    const customerClient = makeCloudShareClient({
+      requestV3Text: vi.fn(async () => {
+        throw new CloudShareRateLimitError("too many requests", 429, "rate_limit", {
+          integrationSurface: "cloudshare.v3.env.action.suspend",
+          method: "PUT",
+          path: "/api/v3/envs/actions/suspend",
+          responseHeaders: { "retry-after": "30" },
+        });
+      }) as unknown as CloudShareClient["requestV3Text"],
+    });
+    const deps = await makeSuspendDeps({
+      cloudshare: {
+        forConnection: vi.fn().mockReturnValue(customerClient),
+      },
+    });
+    const resp = await suspendExamAttemptRuntime(
+      deps,
+      { examAttemptId: "ea-1" },
+    );
+    expect(resp.status).toBe(429);
+    expect(resp.body).toEqual({
+      error: "CloudShare is rate limiting exam suspend. Wait a moment, then try again.",
+      correlationId: "corr-suspend",
+    });
+    expect(deps.eventLog.append).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventId: "corr-suspend",
+        payload: expect.objectContaining({
+          correlationId: "corr-suspend",
+          attemptedOperation: "suspend_environment",
+          integrationSurface: "cloudshare.v3.env.action.suspend",
+          failureMode: "rate_limit",
+          responseStatus: 429,
+          responseHeaders: { "retry-after": "30" },
         }),
       }),
     );

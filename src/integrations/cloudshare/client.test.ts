@@ -679,6 +679,23 @@ describe("createCloudShareClient — error mapping", () => {
     });
   });
 
+  it("does not classify unrelated blocked error text as abuse protection", async () => {
+    const { http } = capturingHttp({
+      status: 500,
+      body: JSON.stringify({
+        error: "Environment operation blocked by a backend dependency",
+      }),
+    });
+    const client = clientWith(http);
+
+    await expect(
+      client.requestV4({ method: "GET", path: "/projects", schema: projectsSchema }),
+    ).rejects.toMatchObject({
+      name: "CloudShareRequestError",
+      status: 500,
+    });
+  });
+
   it("retries a safe GET once rate-limited using Retry-After before succeeding", async () => {
     const sleep = vi.fn(async () => {});
     const { http, calls } = sequentialHttp(
@@ -746,6 +763,41 @@ describe("createCloudShareClient — error mapping", () => {
     });
 
     expect(calls()).toBe(1);
+  });
+
+  it("activates customer cooldown when v4 token acquisition is rate-limited", async () => {
+    const send = vi.fn(async () => ok([{ id: "p1", name: "Proj" }]));
+    const cooldownStore = createCooldownStore();
+    const client = createCloudShareClient({
+      http: { send },
+      endpoints,
+      tokenProvider: {
+        getToken: async () => {
+          throw new CloudShareRateLimitError("token throttled", 429, "rate_limit", {
+            responseHeaders: { "retry-after": "20" },
+            rateLimitHeaders: { "retry-after": "20" },
+            retryAfterSeconds: 20,
+          });
+        },
+      },
+      customerId: "customer-helios",
+      cooldownStore,
+      v3: { apiId: "api-id", apiKey: "api-key" },
+      now: () => 1_700_000_000_000,
+      newToken: () => "tokfixed01",
+    });
+
+    await expect(
+      client.requestV4({ method: "GET", path: "/projects", schema: projectsSchema }),
+    ).rejects.toBeInstanceOf(CloudShareRateLimitError);
+
+    await expect(
+      client.requestV3({ method: "GET", path: "/projects", schema: projectsSchema }),
+    ).rejects.toMatchObject({
+      name: "CloudShareRateLimitError",
+      context: expect.objectContaining({ cooldownActive: true }),
+    });
+    expect(send).not.toHaveBeenCalled();
   });
 });
 

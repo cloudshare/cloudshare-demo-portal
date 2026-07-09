@@ -22,10 +22,10 @@ import {
   type ExamRepository,
 } from "@/domain/exam-catalog";
 import {
-  CloudShareRateLimitError,
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
+  isCloudShareRateLimitError,
 } from "@/integrations/cloudshare";
 import { createCloudShareOnDemandExperienceCreator } from "@/integrations/cloudshare/cohort-experiences";
 import type { Logger } from "@/observability/logger";
@@ -487,10 +487,10 @@ export async function handlePublishCohortExamSession(
         ...toPublishFailureLogFields(error),
       });
       return {
-        status: isRateLimitError(error) ? 429 : 502,
+        status: isCloudShareRateLimitError(error) ? 429 : 502,
         body: {
           error:
-            isRateLimitError(error)
+            isCloudShareRateLimitError(error)
               ? "Cohort Exam Session publish is temporarily unavailable because CloudShare is rate limiting requests. Wait a moment, then try again."
               : classifyCloudSharePublishFailure(error) === "reconciliation_required"
               ? "CloudShare publish outcome is unknown. Reconcile it before retrying this Cohort Exam Session. Check the diagnostic log for the correlation ID."
@@ -596,7 +596,7 @@ function toPublishFailureLogFields(error: unknown): Record<string, unknown> {
 }
 
 function inferPublishFailureMode(error: unknown): string {
-  if (isRateLimitError(error)) {
+  if (isCloudShareRateLimitError(error)) {
     return "rate_limit";
   }
   if (error instanceof CloudShareRequestError || (error as { name?: unknown }).name === "CloudShareRequestError") {
@@ -609,15 +609,6 @@ function inferPublishFailureMode(error: unknown): string {
     return "unexpected_response";
   }
   return "cloudshare_error";
-}
-
-function isRateLimitError(error: unknown): error is CloudShareRateLimitError {
-  return (
-    error instanceof CloudShareRateLimitError ||
-    (typeof error === "object" &&
-      error !== null &&
-      (error as { name?: unknown }).name === "CloudShareRateLimitError")
-  );
 }
 
 function classifyCloudSharePublishFailure(error: unknown): "recoverable" | "reconciliation_required" {

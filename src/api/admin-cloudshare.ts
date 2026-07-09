@@ -238,7 +238,7 @@ export async function handleTestCloudShareConnection(
         },
       });
       return {
-        status: 502,
+        status: error.diagnostic?.failureMode === "rate_limit" ? 429 : 502,
         body: {
           error: error.message,
           correlationId,

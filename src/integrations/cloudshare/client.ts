@@ -352,7 +352,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
     const classification =
       status === 429
         ? "rate_limit"
-        : /abuse(?:\s|-)?(?:list|protect|block)?/.test(normalizedBody)
+        : status === 403 && /\babuse(?:\s|-)?(?:list|protection)\b/.test(normalizedBody)
           ? "abuse_protection"
           : null;
 
@@ -618,7 +618,15 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
   async function performV4Detailed<T>(
     spec: V4RequestSpec<T>,
   ): Promise<CloudShareDetailedResult<T>> {
-    const token = await opts.tokenProvider.getToken();
+    let token: string;
+    try {
+      token = await opts.tokenProvider.getToken();
+    } catch (error) {
+      if (error instanceof CloudShareRateLimitError || (error as { name?: unknown })?.name === "CloudShareRateLimitError") {
+        updateCooldownFromRateLimit(error as CloudShareRateLimitError);
+      }
+      throw error;
+    }
     const headers: Record<string, string> = { authorization: `Bearer ${token}` };
     let body: string | undefined;
     if (spec.body !== undefined) {

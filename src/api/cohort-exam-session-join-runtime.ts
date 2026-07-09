@@ -23,6 +23,7 @@ import {
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
+  isCloudShareRateLimitError,
 } from "@/integrations/cloudshare";
 import { createCloudShareLabProvisioner } from "@/integrations/cloudshare/labs";
 import type { Logger } from "@/observability/logger";
@@ -377,9 +378,9 @@ export async function joinCohortExamSessionRuntime(
     });
     await deps.attempts.delete(attemptId);
     return {
-      status: isRateLimitCause(cause) ? 429 : 502,
+      status: isCloudShareRateLimitError(cause) ? 429 : 502,
       body: {
-        error: isRateLimitCause(cause)
+        error: isCloudShareRateLimitError(cause)
           ? "This Cohort Exam Session is temporarily unavailable because CloudShare is rate limiting requests. Wait a moment, then try again."
           : "CloudShare could not confirm this Cohort Exam Session is open yet.",
         correlationId,
@@ -485,9 +486,9 @@ export async function joinCohortExamSessionRuntime(
     });
     await deps.attempts.delete(attemptId);
     return {
-      status: isRateLimitCause(cause) ? 429 : 502,
+      status: isCloudShareRateLimitError(cause) ? 429 : 502,
       body: {
-        error: isRateLimitCause(cause)
+        error: isCloudShareRateLimitError(cause)
           ? "This Cohort Exam Session is temporarily unavailable because CloudShare is rate limiting requests. Wait a moment, then try again."
           : "CloudShare provisioning failed for the shared cohort Exam Session.",
         correlationId,
@@ -553,9 +554,9 @@ export async function joinCohortExamSessionRuntime(
     });
     await deps.attempts.delete(attemptId);
     return {
-      status: isRateLimitCause(cause) ? 429 : 502,
+      status: isCloudShareRateLimitError(cause) ? 429 : 502,
       body: {
-        error: isRateLimitCause(cause)
+        error: isCloudShareRateLimitError(cause)
           ? "This Cohort Exam Session is temporarily unavailable because CloudShare is rate limiting requests. Wait a moment, then try again."
           : "CloudShare provisioning failed for the shared cohort Exam Session.",
         correlationId,
@@ -927,13 +928,4 @@ function inferFailureMode(cause: unknown): string {
     return "unexpected_response";
   }
   return "unknown";
-}
-
-function isRateLimitCause(cause: unknown): cause is CloudShareRateLimitError {
-  return (
-    cause instanceof CloudShareRateLimitError ||
-    (typeof cause === "object" &&
-      cause !== null &&
-      (cause as { name?: unknown }).name === "CloudShareRateLimitError")
-  );
 }
