@@ -1,40 +1,21 @@
 "use client";
 
-import React, { type CSSProperties, type ReactNode, useCallback, useEffect, useState } from "react";
+import React, { type CSSProperties, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  joinCandidateCohortSession,
-  loadCandidateDashboard,
-  scheduleCandidateExam,
-  shouldShowNoPublishedExams,
-  shouldShowPublishedExamList,
-  type CandidateDashboardData,
+  joinCandidateCohortSession, loadCandidateDashboard, scheduleCandidateExam, shouldShowNoPublishedExams, shouldShowPublishedExamList, type CandidateDashboardData,
 } from "./candidate-scheduling";
 import {
-  buildCandidateExamDurationLabels,
   buildCandidateAttemptQueueState,
   COLD_START_WARNING_MESSAGE,
   type CandidateAttemptStatusFilter,
   type CandidateAttemptStatusFilterView,
-  getAttemptWaitingMessage,
   getCurrentAttemptForExam,
   getNextEnterabilityWakeUpDelayMs,
-  getNextScheduleAvailableLabelForExam,
   getAttemptPrimaryAction,
-  getCandidateCurrentAttemptLabel,
 } from "./candidate-home-state";
 import { formatCandidateAttemptStatus } from "./candidate-lab-state";
 import { formatCandidateScheduledDateTime } from "./candidate-date-format";
-import {
-  publishedExamDescriptionStyle,
-  publishedExamActionGroupStyle,
-  publishedExamActionRowStyle,
-  publishedExamDurationPillsStyle,
-  publishedExamHeaderStyle,
-  publishedExamScheduleFieldStyle,
-  publishedExamTitleBlockStyle,
-  publishedExamTitleRowStyle,
-} from "./candidate-home-layout";
 import { useCandidateLogout } from "./candidate-logout";
 import { openEnterExamWindow } from "./enter-exam";
 import { pageShellStyle } from "./page-shell";
@@ -46,12 +27,20 @@ import { cardStyle, mutedPanelStyle, alertPanelStyle } from "./card-styles";
 import {
   accountLogoutButtonStyle,
   primaryButtonStyle,
-  secondaryButtonStyle,
   disabledButtonStyle,
 } from "./button-styles";
 import { statusBadgeStyle, getExamAttemptStatusTone } from "./status-badge";
 import { eyebrowLabelStyle } from "./design-tokens";
 import { PortalPageHeader } from "./portal-page-header";
+import { CandidateExamCard } from "./candidate-exam-card";
+
+export {
+  CandidateCohortSessionOptions,
+  CandidateExamCard,
+  getAvailableSessionsSummary,
+  getDefaultCandidateExamCardPanelState,
+  PublishedExamCardHeader,
+} from "./candidate-exam-card";
 
 interface CandidateHomeProps {
   readonly email: string;
@@ -61,35 +50,6 @@ type ScheduleFeedback = {
   readonly kind: "error" | "warning";
   readonly message: string;
 };
-
-export function PublishedExamCardHeader({
-  title,
-  description,
-  runtimeLimit,
-  openWindow,
-}: {
-  readonly title: string;
-  readonly description: string;
-  readonly runtimeLimit: string;
-  readonly openWindow: string;
-}) {
-  return (
-    <div style={publishedExamHeaderStyle}>
-      <div style={publishedExamTitleRowStyle}>
-        <div style={publishedExamTitleBlockStyle}>
-          <h3 style={{ margin: 0, fontSize: "1.1rem", color: "#0f172a" }}>{title}</h3>
-        </div>
-        <div style={publishedExamDurationPillsStyle}>
-          <span style={statusBadgeStyle("info")}>{runtimeLimit}</span>
-          <span style={statusBadgeStyle("info")}>{openWindow}</span>
-        </div>
-      </div>
-      <p style={publishedExamDescriptionStyle}>
-        {description || "No description provided."}
-      </p>
-    </div>
-  );
-}
 
 export function CandidateAttemptStatusFilterButtons({
   filters,
@@ -124,124 +84,6 @@ export function CandidateAttemptStatusFilterButtons({
   );
 }
 
-export function CandidatePublishedExamScheduleShell({
-  examCount,
-  children,
-}: {
-  readonly examCount: number;
-  readonly children?: ReactNode;
-}) {
-  const [isOpen, setIsOpen] = useState(false);
-
-  return (
-    <details
-      open={isOpen}
-      onToggle={(event) => setIsOpen(event.currentTarget.open)}
-      style={cardStyle}
-    >
-      <summary style={scheduleSummaryStyle}>
-        <div>
-          <p style={eyebrowLabelStyle}>Published Exams</p>
-          <h2 style={sectionTitleStyle}>Browse and schedule</h2>
-          <p style={{ ...sectionCopyStyle, marginTop: "0.35rem" }}>
-            {examCount} published {examCount === 1 ? "Exam" : "Exams"}
-          </p>
-        </div>
-        <span style={scheduleSummaryActionStyle}>
-          {isOpen ? "Hide scheduling options" : "Browse scheduling options"}
-        </span>
-      </summary>
-      {isOpen ? <div style={scheduleDisclosureBodyStyle}>{children}</div> : null}
-    </details>
-  );
-}
-
-export function CandidateCohortSessionOptions({
-  sessions,
-  attemptedSessionIds,
-  currentAttemptStatus,
-  submittingSessionId,
-  onStart,
-}: {
-  readonly sessions: ReadonlyArray<{
-    readonly id: string;
-    readonly name: string;
-    readonly admissionStartsAt: string;
-    readonly admissionEndsAt: string | null;
-  }>;
-  readonly attemptedSessionIds: ReadonlySet<string>;
-  readonly currentAttemptStatus: CandidateDashboardData["attempts"][number]["status"] | null;
-  readonly submittingSessionId: string | null;
-  readonly onStart: (sessionId: string) => void;
-}) {
-  if (sessions.length === 0) {
-    return null;
-  }
-
-  return (
-    <div style={{ display: "grid", gap: "0.75rem" }}>
-      <span style={{ color: "#475569", fontSize: "0.9rem", fontWeight: 600 }}>
-        Start a shared cohort session
-      </span>
-      <div style={{ display: "grid", gap: "0.6rem" }}>
-        {sessions.map((session) => {
-          const attemptedThisSession = attemptedSessionIds.has(session.id);
-          const joinDisabled =
-            submittingSessionId === session.id ||
-            (currentAttemptStatus !== null &&
-              currentAttemptStatus !== "completed" &&
-              currentAttemptStatus !== "expired") ||
-            attemptedThisSession;
-          return (
-            <div
-              key={session.id}
-              style={{
-                ...metaItemStyle,
-                gridTemplateColumns: "minmax(0, 1fr) auto",
-                alignItems: "center",
-              }}
-            >
-              <div style={{ display: "grid", gap: "0.2rem", minWidth: 0 }}>
-                <strong style={{ color: "#0f172a" }}>{session.name}</strong>
-                <span style={metaHintStyle}>
-                  Opened {formatCandidateScheduledDateTime(session.admissionStartsAt) ?? "Now"}
-                  {session.admissionEndsAt
-                    ? ` · Closes ${formatCandidateScheduledDateTime(session.admissionEndsAt) ?? "TBD"}`
-                    : ""}
-                </span>
-              </div>
-              <button
-                onClick={() => onStart(session.id)}
-                disabled={joinDisabled}
-                style={getButtonStyle(primaryButtonStyle, joinDisabled)}
-              >
-                {submittingSessionId === session.id ? "Starting..." : "Start exam"}
-              </button>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-export function getAvailableSessionsSummary({
-  availableCohortSessionCount,
-  individualSchedulingEnabled,
-}: {
-  readonly availableCohortSessionCount: number;
-  readonly individualSchedulingEnabled: boolean;
-}): string {
-  if (availableCohortSessionCount > 0) {
-    return `${availableCohortSessionCount} ready to start`;
-  }
-
-  if (individualSchedulingEnabled) {
-    return "Individual scheduling available";
-  }
-
-  return "No sessions available right now";
-}
 
 export function CandidateHome({ email }: CandidateHomeProps) {
   const router = useRouter();
@@ -665,157 +507,67 @@ export function CandidateHome({ email }: CandidateHomeProps) {
         )}
 
         {shouldShowPublishedExamList({ loading, examCount: dashboard.exams.length }) && (
-          <CandidatePublishedExamScheduleShell examCount={dashboard.exams.length}>
+          <section style={cardStyle}>
+            <div style={sectionHeaderStyle}>
+              <div>
+                <p style={eyebrowLabelStyle}>Published Exams</p>
+                <h2 style={sectionTitleStyle}>Browse and take an exam</h2>
+              </div>
+              <p style={sectionCopyStyle}>
+                {dashboard.exams.length} published {dashboard.exams.length === 1 ? "Exam" : "Exams"}
+              </p>
+            </div>
             <div style={{ display: "grid", gap: "0.9rem" }}>
               {dashboard.exams.map((exam) => {
                 const attempt = attemptForExam(exam.id);
-                const availableCohortSessions = exam.availableCohortSessions ?? [];
                 const attemptedSessionIds = new Set(
                   dashboard.attempts
                     .map((candidateAttempt) => candidateAttempt.cohortSessionId)
                     .filter((value): value is string => typeof value === "string" && value.length > 0),
                 );
-                const nextScheduleAvailableLabel = getNextScheduleAvailableLabelForExam(
-                  dashboard.attempts,
-                  exam.id,
-                  exam,
-                );
-                const primaryAction = getAttemptPrimaryAction(attempt, nowMs, exam);
-                const durationLabels = buildCandidateExamDurationLabels(exam);
                 const feedback = scheduleFeedback[exam.id] ?? null;
-                const individualSchedulingEnabled = exam.individualSchedulingEnabled !== false;
+
                 return (
-                  <article key={exam.id} style={cardStyle}>
-                    <div style={{ display: "grid", gap: "1rem" }}>
-                      <PublishedExamCardHeader
-                        title={exam.title}
-                        description={exam.description}
-                        runtimeLimit={durationLabels.runtimeLimit}
-                        openWindow={durationLabels.openWindow}
-                      />
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
-                          gap: "0.75rem",
-                        }}
-                      >
-                        <div style={metaItemStyle}>
-                          <span style={metaLabelStyle}>Open period</span>
-                          <span style={metaValueStyle}>
-                            {durationLabels.openPeriodDetail}
-                          </span>
-                        </div>
-                        <div style={metaItemStyle}>
-                          <span style={metaLabelStyle}>Guided Journey scoring</span>
-                          <span style={metaValueStyle}>
-                            {exam.scoreRetrievalEnabled ? "Enabled" : "Not enabled for this Exam"}
-                          </span>
-                        </div>
-                        <div style={metaItemStyle}>
-                          <span style={metaLabelStyle}>Current attempt</span>
-                          <span style={{ ...metaValueStyle, display: "grid", gap: "0.15rem" }}>
-                            {getCandidateCurrentAttemptLabel(attempt, nowMs, exam)}
-                            {nextScheduleAvailableLabel ? (
-                              <span style={metaHintStyle}>
-                                Next schedule available {nextScheduleAvailableLabel}
-                              </span>
-                            ) : null}
-                          </span>
-                        </div>
-                        <div style={metaItemStyle}>
-                          <span style={metaLabelStyle}>Available sessions</span>
-                          <span style={metaValueStyle}>
-                            {getAvailableSessionsSummary({
-                              availableCohortSessionCount: availableCohortSessions.length,
-                              individualSchedulingEnabled,
-                            })}
-                          </span>
-                        </div>
-                      </div>
-                      {individualSchedulingEnabled ? (
-                        <div style={publishedExamActionRowStyle}>
-                          <label style={publishedExamScheduleFieldStyle}>
-                            <span style={{ color: "#475569", fontSize: "0.9rem", fontWeight: 600 }}>
-                              Schedule date and time
-                            </span>
-                            <input
-                              type="datetime-local"
-                              value={scheduleDrafts[exam.id] ?? ""}
-                              onChange={(event) => {
-                                setScheduleDrafts((current) => ({
-                                  ...current,
-                                  [exam.id]: event.target.value,
-                                }));
-                                setScheduleFeedback((current) => {
-                                  const next = { ...current };
-                                  delete next[exam.id];
-                                  return next;
-                                });
-                              }}
-                              style={inputStyle}
-                            />
-                          </label>
-                          <div style={publishedExamActionGroupStyle}>
-                            <button
-                              onClick={() => void submitSchedule(exam.id)}
-                              disabled={submittingExamId === exam.id}
-                              style={getButtonStyle(primaryButtonStyle, submittingExamId === exam.id)}
-                            >
-                              {submittingExamId === exam.id ? "Scheduling..." : "Schedule exam"}
-                            </button>
-                            {primaryAction.label && (
-                              <button
-                                onClick={() => {
-                                  if (!attempt) {
-                                    return;
-                                  }
-                                  if (primaryAction.label === "View score") {
-                                    openScorePage(attempt.id);
-                                    return;
-                                  }
-                                  openLabConsole(attempt.id, attempt.status);
-                                }}
-                                disabled={primaryAction.disabled}
-                                style={getButtonStyle(secondaryButtonStyle, primaryAction.disabled)}
-                              >
-                                {primaryAction.label}
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      ) : null}
-                      <CandidateCohortSessionOptions
-                        sessions={availableCohortSessions}
-                        attemptedSessionIds={attemptedSessionIds}
-                        currentAttemptStatus={attempt?.status ?? null}
-                        submittingSessionId={submittingSessionId}
-                        onStart={(sessionId) => {
-                          void joinCohortSession(exam.id, sessionId);
-                        }}
-                      />
-                      {feedback && (
-                        <p
-                          role={feedback.kind === "error" ? "alert" : "status"}
-                          style={{
-                            ...(feedback.kind === "error" ? alertPanelStyle.danger : alertPanelStyle.warning),
-                            margin: 0,
-                          }}
-                        >
-                          {feedback.message}
-                        </p>
-                      )}
-                      {attempt?.status === "ready" && getAttemptWaitingMessage(attempt, nowMs, exam) && (
-                        <p style={{ margin: 0, color: "#555", lineHeight: 1.4 }}>
-                          {getAttemptWaitingMessage(attempt, nowMs, exam)}
-                        </p>
-                      )}
-                    </div>
-                  </article>
+                  <CandidateExamCard
+                    key={exam.id}
+                    exam={exam}
+                    attempt={attempt}
+                    attemptedSessionIds={attemptedSessionIds}
+                    nowMs={nowMs}
+                    allAttempts={dashboard.attempts}
+                    scheduleDraft={scheduleDrafts[exam.id] ?? ""}
+                    scheduleFeedback={feedback}
+                    submittingExamId={submittingExamId}
+                    submittingSessionId={submittingSessionId}
+                    onScheduleDraftChange={(value) => {
+                      setScheduleDrafts((current) => ({
+                        ...current,
+                        [exam.id]: value,
+                      }));
+                      setScheduleFeedback((current) => {
+                        const next = { ...current };
+                        delete next[exam.id];
+                        return next;
+                      });
+                    }}
+                    onSchedule={() => {
+                      void submitSchedule(exam.id);
+                    }}
+                    onCurrentAttemptAction={(currentAttempt, action) => {
+                      if (action === "View score") {
+                        openScorePage(currentAttempt.id);
+                        return;
+                      }
+                      openLabConsole(currentAttempt.id, currentAttempt.status);
+                    }}
+                    onStartCohortSession={(sessionId) => {
+                      void joinCohortSession(exam.id, sessionId);
+                    }}
+                  />
                 );
               })}
             </div>
-          </CandidatePublishedExamScheduleShell>
+          </section>
         )}
       </section>
     </main>
@@ -883,31 +635,6 @@ const attemptFilterCountStyle: CSSProperties = {
   lineHeight: 1.1,
 };
 
-const scheduleSummaryStyle: CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  gap: "1rem",
-  flexWrap: "wrap",
-  alignItems: "center",
-  cursor: "pointer",
-  listStyle: "none",
-};
-
-const scheduleSummaryActionStyle: CSSProperties = {
-  ...secondaryButtonStyle,
-  display: "inline-flex",
-  alignItems: "center",
-  justifyContent: "center",
-};
-
-const scheduleDisclosureBodyStyle: CSSProperties = {
-  display: "grid",
-  gap: "0.9rem",
-  marginTop: "1rem",
-  paddingTop: "1rem",
-  borderTop: "1px solid #e2e8f0",
-};
-
 const metaItemStyle: CSSProperties = {
   ...cardStyle,
   display: "grid",
@@ -960,15 +687,4 @@ function getButtonStyle(baseStyle: CSSProperties, disabled: boolean): CSSPropert
       }
     : baseStyle;
 }
-
-const inputStyle: CSSProperties = {
-  width: "100%",
-  minWidth: 0,
-  padding: "0.7rem 0.75rem",
-  borderRadius: "8px",
-  border: "1px solid #cbd5e1",
-  background: "#ffffff",
-  color: "#0f172a",
-  boxSizing: "border-box",
-};
 

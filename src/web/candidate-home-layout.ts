@@ -73,3 +73,21 @@ export const publishedExamActionGroupStyle: CSSProperties = {
   justifyContent: "flex-end",
   marginLeft: "auto",
 };
+
+export const publishedExamDisclosureSummaryStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: "1rem",
+  flexWrap: "wrap",
+  alignItems: "center",
+  cursor: "pointer",
+  listStyle: "none",
+};
+
+export const publishedExamDisclosureBodyStyle: CSSProperties = {
+  display: "grid",
+  gap: "0.9rem",
+  marginTop: "1rem",
+  paddingTop: "1rem",
+  borderTop: "1px solid #e2e8f0",
+};
