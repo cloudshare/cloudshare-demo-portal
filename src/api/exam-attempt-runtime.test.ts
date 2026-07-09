@@ -17,7 +17,7 @@ import { enterExamAttemptRuntime } from "./exam-attempt-runtime";
 import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import type { CloudShareExamAuthoringSource } from "@/integrations/cloudshare/resources";
-import { CloudShareTransportError } from "@/integrations/cloudshare";
+import { CloudShareRateLimitError, CloudShareTransportError } from "@/integrations/cloudshare";
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -624,6 +624,126 @@ describe("enterExamAttemptRuntime", () => {
             savedSnapshotId: "snapshot-1",
             currentDefaultSnapshotId: null,
             transport: "CloudShare was unreachable",
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("blocks entry with a rate-limit response when the CloudShare default Snapshot lookup is throttled", async () => {
+    const attempts = createInMemoryExamAttemptRepository();
+    const exams = createInMemoryExamCatalogRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
+    const timer = makeTimer();
+    const source = makeAuthoringSource({
+      getBlueprintDetail: vi.fn().mockRejectedValue(
+        new CloudShareRateLimitError(
+          "CloudShare rate limited blueprint detail",
+          429,
+          "rate_limit",
+          {
+            method: "GET",
+            path: "/api/v3/projects/project-1/blueprints/blueprint-1",
+            integrationSurface: "cloudshare.v3.projects.blueprint_detail",
+            responseHeaders: { "retry-after": "9" },
+          },
+        ),
+      ),
+    });
+
+    await exams.save({
+      id: "exam-1",
+      customerId: "customer-1",
+      title: "Helios Fundamentals",
+      description: "",
+      timeLimitMinutes: 60,
+      storageLeaseMinutes: 1440,
+      openPeriodMinutes: 120,
+      scoreRetrievalEnabled: true,
+      status: "published",
+      publishedAt: new Date("2026-06-15T10:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-15T10:00:00.000Z"),
+      projectId: "project-1",
+      projectName: "Project 1",
+      blueprintId: "blueprint-1",
+      blueprintName: "Blueprint 1",
+      snapshotId: "snapshot-1",
+      snapshotName: "Snapshot 1",
+      allowedRegions: [{ id: "region-1", name: "Region 1" }],
+      policyId: "policy-1",
+      policyName: "Policy 1",
+      instructorId: "instructor-1",
+      instructorName: "Instructor 1",
+    });
+    await attempts.save({
+      id: "attempt-1",
+      customerId: "customer-1",
+      candidateId: "candidate-1",
+      examId: "exam-1",
+      status: "ready",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+    await launches.save({
+      id: "launch-1",
+      examAttemptId: "attempt-1",
+      candidateId: "candidate-1",
+      participantEmail: "candidate@helioscx.demo",
+      trainingId: "training-1",
+      experienceId: "training-1",
+      loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret",
+      status: "launched",
+      createdAt: new Date("2026-06-15T10:00:00.000Z"),
+    });
+
+    const result = await enterExamAttemptRuntime(
+      {
+        attempts,
+        exams,
+        launches,
+        timer,
+        connections: makeConnectionRepository(),
+        cloudshare: {
+          forConnection: vi.fn(() => ({
+            ...source,
+            requestV3: vi.fn(),
+            requestV3Text: vi.fn(),
+            requestV4: vi.fn(),
+            requestV4Detailed: vi.fn(),
+          })),
+        },
+        diagnostics,
+        candidateEmail: "candidate@helioscx.demo",
+        logger: makeLogger(),
+        now: () => new Date("2026-06-15T16:00:00.000Z"),
+      },
+      { examAttemptId: "attempt-1", candidateId: "candidate-1" },
+    );
+
+    expect(result).toEqual({
+      kind: "blocked",
+      status: 429,
+      body: {
+        message:
+          "Exam entry is temporarily unavailable because CloudShare is rate limiting requests. Wait a moment, then try again.",
+      },
+    });
+    expect(timer.resumed).toEqual([]);
+    await expect(diagnosticsRepository.query({ examAttemptId: "attempt-1" })).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation: "exam_attempt.enter",
+          outcome: "failure",
+          response: expect.objectContaining({
+            status: 429,
+            headers: { "retry-after": "9" },
+          }),
+          details: expect.objectContaining({
+            failureMode: "snapshot_guard_unavailable",
+            integrationFailureMode: "rate_limit",
           }),
         }),
       ]),

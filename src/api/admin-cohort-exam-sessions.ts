@@ -22,6 +22,7 @@ import {
   type ExamRepository,
 } from "@/domain/exam-catalog";
 import {
+  CloudShareRateLimitError,
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
@@ -255,7 +256,9 @@ export async function handlePublishCohortExamSession(
         status: snapshotGuardFailure.status,
         body: {
           error:
-            "Cohort Exam Session publish is temporarily unavailable because the lab configuration changed. Refresh CloudShare resources and check the Exam Blueprint/default Snapshot.",
+            snapshotGuardFailure.status === 429
+              ? "Cohort Exam Session publish is temporarily unavailable because CloudShare is rate limiting requests. Wait a moment, then try again."
+              : "Cohort Exam Session publish is temporarily unavailable because the lab configuration changed. Refresh CloudShare resources and check the Exam Blueprint/default Snapshot.",
           correlationId,
         },
       };
@@ -484,10 +487,12 @@ export async function handlePublishCohortExamSession(
         ...toPublishFailureLogFields(error),
       });
       return {
-        status: 502,
+        status: isRateLimitError(error) ? 429 : 502,
         body: {
           error:
-            classifyCloudSharePublishFailure(error) === "reconciliation_required"
+            isRateLimitError(error)
+              ? "Cohort Exam Session publish is temporarily unavailable because CloudShare is rate limiting requests. Wait a moment, then try again."
+              : classifyCloudSharePublishFailure(error) === "reconciliation_required"
               ? "CloudShare publish outcome is unknown. Reconcile it before retrying this Cohort Exam Session. Check the diagnostic log for the correlation ID."
               : "CloudShare could not publish this Cohort Exam Session. Check the diagnostic log for the correlation ID.",
           correlationId,
@@ -591,6 +596,9 @@ function toPublishFailureLogFields(error: unknown): Record<string, unknown> {
 }
 
 function inferPublishFailureMode(error: unknown): string {
+  if (isRateLimitError(error)) {
+    return "rate_limit";
+  }
   if (error instanceof CloudShareRequestError || (error as { name?: unknown }).name === "CloudShareRequestError") {
     return "http_status";
   }
@@ -601,6 +609,15 @@ function inferPublishFailureMode(error: unknown): string {
     return "unexpected_response";
   }
   return "cloudshare_error";
+}
+
+function isRateLimitError(error: unknown): error is CloudShareRateLimitError {
+  return (
+    error instanceof CloudShareRateLimitError ||
+    (typeof error === "object" &&
+      error !== null &&
+      (error as { name?: unknown }).name === "CloudShareRateLimitError")
+  );
 }
 
 function classifyCloudSharePublishFailure(error: unknown): "recoverable" | "reconciliation_required" {

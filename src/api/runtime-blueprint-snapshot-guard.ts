@@ -9,6 +9,7 @@ import type {
 } from "@/domain/diagnostic-log";
 import {
   CloudShareError,
+  CloudShareRateLimitError,
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
@@ -22,6 +23,8 @@ import type { Logger } from "@/observability/logger";
 
 const SNAPSHOT_DRIFT_MESSAGE =
   "Exam entry is temporarily unavailable because the lab configuration changed. Contact your administrator.";
+const SNAPSHOT_GUARD_RATE_LIMIT_MESSAGE =
+  "Exam entry is temporarily unavailable because CloudShare is rate limiting requests. Wait a moment, then try again.";
 const BLUEPRINT_DETAIL_INTEGRATION_SURFACE = "cloudshare.v3.projects.blueprint_detail";
 
 export interface RuntimeBlueprintSnapshotGuardDeps {
@@ -49,7 +52,7 @@ export interface RuntimeBlueprintSnapshotGuardRequest {
 }
 
 export interface RuntimeBlueprintSnapshotGuardFailure {
-  readonly status: 423;
+  readonly status: 423 | 429;
   readonly message: string;
 }
 
@@ -110,6 +113,7 @@ export async function guardRuntimeBlueprintSnapshot(
     }
   } catch (error) {
     const cloudShareError = asCloudShareErrorLike(error);
+    const rateLimited = isRateLimitErrorLike(error);
     const response =
       cloudShareError?.context?.status !== undefined ||
       cloudShareError?.context?.responseHeaders ||
@@ -129,7 +133,7 @@ export async function guardRuntimeBlueprintSnapshot(
     await recordFailure(deps, request, {
       path: (cloudShareError?.context?.path as string | undefined) ?? path,
       response,
-      failureMode: "snapshot_lookup_failed",
+      failureMode: rateLimited ? "snapshot_guard_unavailable" : "snapshot_lookup_failed",
       reason: "blueprint_detail_lookup_failed",
       currentDefaultSnapshotId: null,
       transport: error instanceof Error ? error.message : String(error),
@@ -137,7 +141,10 @@ export async function guardRuntimeBlueprintSnapshot(
       requestHeaders: cloudShareError?.context?.requestHeaders as Record<string, unknown> | undefined,
       requestBody: normalizeDiagnosticPayload(cloudShareError?.context?.requestBody),
     });
-    return { status: 423, message: SNAPSHOT_DRIFT_MESSAGE };
+    return {
+      status: rateLimited ? 429 : 423,
+      message: rateLimited ? SNAPSHOT_GUARD_RATE_LIMIT_MESSAGE : SNAPSHOT_DRIFT_MESSAGE,
+    };
   }
 
   return null;
@@ -162,6 +169,7 @@ function resolveAuthoringSource(
 
 function asCloudShareErrorLike(error: unknown): CloudShareError | null {
   if (
+    error instanceof CloudShareRateLimitError ||
     error instanceof CloudShareRequestError ||
     error instanceof CloudShareTransportError ||
     error instanceof CloudShareResponseError ||
@@ -174,7 +182,8 @@ function asCloudShareErrorLike(error: unknown): CloudShareError | null {
     typeof error === "object" &&
     error !== null &&
     typeof (error as { name?: unknown }).name === "string" &&
-    ((error as { name: string }).name === "CloudShareRequestError" ||
+    ((error as { name: string }).name === "CloudShareRateLimitError" ||
+      (error as { name: string }).name === "CloudShareRequestError" ||
       (error as { name: string }).name === "CloudShareTransportError" ||
       (error as { name: string }).name === "CloudShareResponseError" ||
       (error as { name: string }).name === "CloudShareError")
@@ -186,6 +195,9 @@ function asCloudShareErrorLike(error: unknown): CloudShareError | null {
 }
 
 function inferIntegrationFailureMode(error: unknown): string {
+  if (error instanceof CloudShareRateLimitError || (error as { name?: unknown })?.name === "CloudShareRateLimitError") {
+    return "rate_limit";
+  }
   if (error instanceof CloudShareRequestError || (error as { name?: unknown })?.name === "CloudShareRequestError") {
     return "http_status";
   }
@@ -204,7 +216,7 @@ async function recordFailure(
   failure: {
     readonly path: string;
     readonly response: Record<string, unknown> | null;
-    readonly failureMode: "snapshot_drift" | "snapshot_lookup_failed";
+    readonly failureMode: "snapshot_drift" | "snapshot_lookup_failed" | "snapshot_guard_unavailable";
     readonly reason: string;
     readonly currentDefaultSnapshotId: string | null;
     readonly transport?: string;
@@ -292,4 +304,13 @@ function normalizeDiagnosticPayload(value: unknown): unknown {
   } catch {
     return value;
   }
+}
+
+function isRateLimitErrorLike(error: unknown): boolean {
+  return (
+    error instanceof CloudShareRateLimitError ||
+    (typeof error === "object" &&
+      error !== null &&
+      (error as { name?: unknown }).name === "CloudShareRateLimitError")
+  );
 }

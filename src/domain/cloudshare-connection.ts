@@ -1,6 +1,7 @@
 import type { CloudShareClient } from "@/integrations/cloudshare";
 import {
   CloudShareError,
+  CloudShareRateLimitError,
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
@@ -89,6 +90,27 @@ export async function testCloudShareConnection(
     await deps.connections.markVerified(customerId, verifiedAt);
     return { status: "connected", message: pong, verifiedAt };
   } catch (error) {
+    if (error instanceof CloudShareRateLimitError || isNamedCloudShareError(error, "CloudShareRateLimitError")) {
+      throw new CloudShareConnectionTestError(
+        "CloudShare temporarily rate limited the v3 ping. Wait a moment, then try Test connection again.",
+        error.message,
+        {
+          operation: "test_connection",
+          integrationSurface: "cloudshare.v3.ping",
+          integrationLabel: CLOUDSHARE_V3_PING_LABEL,
+          method: "GET",
+          path: "/ping",
+          requestUrl: CLOUDSHARE_V3_PING_URL,
+          failureMode: "rate_limit",
+          responseStatus: error.status,
+          requestHeaders: error.context?.requestHeaders,
+          responseHeaders: error.context?.responseHeaders,
+          responseBody: error.context?.responseBody,
+          network: error.context?.network,
+          tls: error.context?.tls,
+        },
+      );
+    }
     if (error instanceof CloudShareRequestError || isNamedCloudShareError(error, "CloudShareRequestError")) {
       throw new CloudShareConnectionTestError(
         `CloudShare returned ${error.status} to the v3 ping. Check API ID and API key.`,

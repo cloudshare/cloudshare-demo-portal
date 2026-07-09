@@ -1,10 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { createCloudShareClient } from "./client";
+import { createCloudShareClient, type CloudShareRateLimitCooldownStore } from "./client";
 import { createFixtureHttpClient, loadFixturesFromDir } from "./fixtures";
 import { pingCloudShareV3 } from "./ping";
 import {
+  CloudShareRateLimitError,
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
@@ -48,6 +49,40 @@ function clientWith(http: HttpClient) {
     newToken: () => "tokfixed01",
     now: () => 1_700_000_000_000,
   });
+}
+
+function createCooldownStore(): CloudShareRateLimitCooldownStore {
+  const byCustomerId = new Map<string, {
+    untilEpochMs: number;
+    classification: "rate_limit" | "abuse_protection";
+    retryAfterSeconds?: number;
+    rateLimitHeaders?: Record<string, string | string[]>;
+  }>();
+  return {
+    get(customerId) {
+      return byCustomerId.get(customerId) ?? null;
+    },
+    set(customerId, cooldown) {
+      byCustomerId.set(customerId, cooldown);
+    },
+    clear(customerId) {
+      byCustomerId.delete(customerId);
+    },
+  };
+}
+
+function sequentialHttp(...responses: HttpResponse[]): { http: HttpClient; calls: () => number } {
+  let count = 0;
+  return {
+    http: {
+      async send() {
+        const response = responses[Math.min(count, responses.length - 1)];
+        count += 1;
+        return response;
+      },
+    },
+    calls: () => count,
+  };
 }
 
 describe("createCloudShareClient — v4", () => {
@@ -582,6 +617,135 @@ describe("createCloudShareClient — error mapping", () => {
         responseBody: "gateway unavailable",
       }),
     });
+  });
+
+  it("classifies 429 responses as CloudShareRateLimitError and preserves retry headers in diagnostics", async () => {
+    const { http } = capturingHttp({
+      status: 429,
+      headers: {
+        "retry-after": "17",
+        "x-ratelimit-limit": "120",
+        "x-ratelimit-remaining": "0",
+      },
+      body: JSON.stringify({ error: "Too many requests" }),
+    });
+    const client = createCloudShareClient({
+      http,
+      endpoints,
+      tokenProvider: stubTokenProvider,
+      customerId: "customer-helios",
+      cooldownStore: createCooldownStore(),
+      v3: { apiId: "api-id", apiKey: "api-key" },
+      now: () => 1_700_000_000_000,
+      newToken: () => "tokfixed01",
+    });
+
+    await expect(
+      client.requestV4({ method: "GET", path: "/projects", schema: projectsSchema }),
+    ).rejects.toMatchObject({
+      name: "CloudShareRateLimitError",
+      status: 429,
+      retryAfterSeconds: 17,
+      classification: "rate_limit",
+      context: expect.objectContaining({
+        responseHeaders: expect.objectContaining({
+          "retry-after": "17",
+          "x-ratelimit-limit": "120",
+          "x-ratelimit-remaining": "0",
+        }),
+      }),
+    });
+  });
+
+  it("classifies abuse-list responses as CloudShareRateLimitError at the integration boundary", async () => {
+    const { http } = capturingHttp({
+      status: 403,
+      headers: {
+        "retry-after": "60",
+      },
+      body: JSON.stringify({
+        error: "Request blocked by abuse protection list",
+      }),
+    });
+    const client = clientWith(http);
+
+    await expect(
+      client.requestV4({ method: "GET", path: "/projects", schema: projectsSchema }),
+    ).rejects.toMatchObject({
+      name: "CloudShareRateLimitError",
+      status: 403,
+      retryAfterSeconds: 60,
+      classification: "abuse_protection",
+    });
+  });
+
+  it("retries a safe GET once rate-limited using Retry-After before succeeding", async () => {
+    const sleep = vi.fn(async () => {});
+    const { http, calls } = sequentialHttp(
+      {
+        status: 429,
+        headers: { "retry-after": "1" },
+        body: JSON.stringify({ error: "Too many requests" }),
+      },
+      ok([{ id: "p1", name: "Proj" }]),
+    );
+    const client = createCloudShareClient({
+      http,
+      endpoints,
+      tokenProvider: stubTokenProvider,
+      customerId: "customer-helios",
+      cooldownStore: createCooldownStore(),
+      v3: { apiId: "api-id", apiKey: "api-key" },
+      now: () => 1_700_000_000_000,
+      newToken: () => "tokfixed01",
+      sleep,
+    });
+
+    await expect(
+      client.requestV4({ method: "GET", path: "/projects", schema: projectsSchema }),
+    ).resolves.toEqual([{ id: "p1", name: "Proj" }]);
+    expect(sleep).toHaveBeenCalledWith(1_000);
+    expect(calls()).toBe(2);
+  });
+
+  it("does not retry a POST after rate limiting and blocks later customer calls during cooldown", async () => {
+    const { http, calls } = sequentialHttp({
+      status: 429,
+      headers: { "retry-after": "30" },
+      body: JSON.stringify({ error: "Too many requests" }),
+    });
+    const client = createCloudShareClient({
+      http,
+      endpoints,
+      tokenProvider: stubTokenProvider,
+      customerId: "customer-helios",
+      cooldownStore: createCooldownStore(),
+      v3: { apiId: "api-id", apiKey: "api-key" },
+      now: () => 1_700_000_000_000,
+      newToken: () => "tokfixed01",
+    });
+
+    await expect(
+      client.requestV4({
+        method: "POST",
+        path: "/trainings",
+        body: { Name: "Exam" },
+        schema: z.object({ id: z.string() }),
+      }),
+    ).rejects.toBeInstanceOf(CloudShareRateLimitError);
+
+    await expect(
+      client.requestV4({ method: "GET", path: "/projects", schema: projectsSchema }),
+    ).rejects.toMatchObject({
+      name: "CloudShareRateLimitError",
+      status: 429,
+      classification: "rate_limit",
+      context: expect.objectContaining({
+        cooldownActive: true,
+      }),
+    });
+
+    expect(calls()).toBe(1);
   });
 });
 

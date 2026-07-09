@@ -19,6 +19,7 @@ import {
 } from "@/domain/exam-attempt";
 import type { LabLaunch, LabLaunchRepository } from "@/domain/lab-launch";
 import {
+  CloudShareRateLimitError,
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
@@ -338,7 +339,12 @@ export async function joinCohortExamSessionRuntime(
     await deps.attempts.delete(attemptId);
     return {
       status: snapshotGuardFailure.status,
-      body: { error: snapshotGuardFailure.message },
+      body: {
+        error:
+          snapshotGuardFailure.status === 429
+            ? "This Cohort Exam Session is temporarily unavailable because CloudShare is rate limiting requests. Wait a moment, then try again."
+            : snapshotGuardFailure.message,
+      },
     };
   }
 
@@ -371,9 +377,11 @@ export async function joinCohortExamSessionRuntime(
     });
     await deps.attempts.delete(attemptId);
     return {
-      status: 502,
+      status: isRateLimitCause(cause) ? 429 : 502,
       body: {
-        error: "CloudShare could not confirm this Cohort Exam Session is open yet.",
+        error: isRateLimitCause(cause)
+          ? "This Cohort Exam Session is temporarily unavailable because CloudShare is rate limiting requests. Wait a moment, then try again."
+          : "CloudShare could not confirm this Cohort Exam Session is open yet.",
         correlationId,
       },
     };
@@ -477,9 +485,11 @@ export async function joinCohortExamSessionRuntime(
     });
     await deps.attempts.delete(attemptId);
     return {
-      status: 502,
+      status: isRateLimitCause(cause) ? 429 : 502,
       body: {
-        error: "CloudShare provisioning failed for the shared cohort Exam Session.",
+        error: isRateLimitCause(cause)
+          ? "This Cohort Exam Session is temporarily unavailable because CloudShare is rate limiting requests. Wait a moment, then try again."
+          : "CloudShare provisioning failed for the shared cohort Exam Session.",
         correlationId,
       },
     };
@@ -543,9 +553,11 @@ export async function joinCohortExamSessionRuntime(
     });
     await deps.attempts.delete(attemptId);
     return {
-      status: 502,
+      status: isRateLimitCause(cause) ? 429 : 502,
       body: {
-        error: "CloudShare provisioning failed for the shared cohort Exam Session.",
+        error: isRateLimitCause(cause)
+          ? "This Cohort Exam Session is temporarily unavailable because CloudShare is rate limiting requests. Wait a moment, then try again."
+          : "CloudShare provisioning failed for the shared cohort Exam Session.",
         correlationId,
       },
     };
@@ -853,14 +865,14 @@ function toProvisioningDiagnostic(
   return {
     request,
     response,
-    details: {
-      attemptedOperation,
-      integrationSurface:
-        context.integrationSurface ?? fallbackIntegrationSurface(attemptedOperation),
-      failureMode: inferFailureMode(cause),
-      ...(status !== undefined ? { responseStatus: status } : {}),
-      ...(context.issues ? { issues: context.issues } : {}),
-      ...(context.cause ? { cause: context.cause } : {}),
+      details: {
+        attemptedOperation,
+        integrationSurface:
+          context.integrationSurface ?? fallbackIntegrationSurface(attemptedOperation),
+        failureMode: inferFailureMode(cause),
+        ...(status !== undefined ? { responseStatus: status } : {}),
+        ...(context.issues ? { issues: context.issues } : {}),
+        ...(context.cause ? { cause: context.cause } : {}),
     },
   };
 }
@@ -902,6 +914,9 @@ function toProvisioningLogFields(diagnostic: {
 }
 
 function inferFailureMode(cause: unknown): string {
+  if (cause instanceof CloudShareRateLimitError) {
+    return "rate_limit";
+  }
   if (cause instanceof CloudShareRequestError) {
     return "http_status";
   }
@@ -912,4 +927,13 @@ function inferFailureMode(cause: unknown): string {
     return "unexpected_response";
   }
   return "unknown";
+}
+
+function isRateLimitCause(cause: unknown): cause is CloudShareRateLimitError {
+  return (
+    cause instanceof CloudShareRateLimitError ||
+    (typeof cause === "object" &&
+      cause !== null &&
+      (cause as { name?: unknown }).name === "CloudShareRateLimitError")
+  );
 }

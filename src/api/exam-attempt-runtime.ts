@@ -49,7 +49,7 @@ export type EnterExamAttemptRuntimeResult =
     }
   | {
       readonly kind: "blocked";
-      readonly status: 400 | 403 | 404 | 409 | 423;
+      readonly status: 400 | 403 | 404 | 409 | 423 | 429;
       readonly body: CandidateSafeBlockedEnterBody;
     };
 
@@ -321,7 +321,7 @@ export async function enterExamAttemptRuntime(
 }
 
 function blocked(
-  status: 400 | 403 | 404 | 409 | 423,
+  status: 400 | 403 | 404 | 409 | 423 | 429,
   message: string,
 ): EnterExamAttemptRuntimeResult {
   return {

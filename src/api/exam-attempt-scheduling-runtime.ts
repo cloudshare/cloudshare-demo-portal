@@ -17,6 +17,7 @@ import {
   scheduleExam,
 } from "@/domain/scheduling";
 import {
+  CloudShareRateLimitError,
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
@@ -154,7 +155,9 @@ export async function scheduleExamAttemptRuntime(
       status: snapshotGuardFailure.status,
       body: {
         error:
-          "Exam scheduling is temporarily unavailable because the lab configuration changed. Contact your instructor.",
+          snapshotGuardFailure.status === 429
+            ? "Exam scheduling is temporarily unavailable because CloudShare is rate limiting requests. Wait a moment, then try again."
+            : "Exam scheduling is temporarily unavailable because the lab configuration changed. Contact your instructor.",
         correlationId,
       },
     };
@@ -295,9 +298,11 @@ export async function scheduleExamAttemptRuntime(
       });
       deps.logger.warn("candidate exam scheduling failed", diagnostic);
       return {
-        status: 502,
+        status: isRateLimitCause(error.context.cause) ? 429 : 502,
         body: {
-          error: "CloudShare provisioning failed for the scheduled exam.",
+          error: isRateLimitCause(error.context.cause)
+            ? "Exam scheduling is temporarily unavailable because CloudShare is rate limiting requests. Wait a moment, then try again."
+            : "CloudShare provisioning failed for the scheduled exam.",
           correlationId,
         },
       };
@@ -458,7 +463,8 @@ function toProvisioningDiagnostic(
       path: cause.context?.path ?? base.path,
       host: cause.context?.host,
       integrationSurface: cause.context?.integrationSurface ?? base.integrationSurface,
-      failureMode: "http_status",
+      failureMode:
+        cause instanceof CloudShareRateLimitError ? "rate_limit" : "http_status",
       responseStatus: cause.status,
       requestHeaders: cause.context?.requestHeaders,
       requestBody: cause.context?.requestBody,
@@ -503,4 +509,13 @@ function toProvisioningDiagnostic(
     failureMode: "unknown",
     error: cause instanceof Error ? cause.message : String(cause),
   };
+}
+
+function isRateLimitCause(cause: unknown): cause is CloudShareRateLimitError {
+  return (
+    cause instanceof CloudShareRateLimitError ||
+    (typeof cause === "object" &&
+      cause !== null &&
+      (cause as { name?: unknown }).name === "CloudShareRateLimitError")
+  );
 }

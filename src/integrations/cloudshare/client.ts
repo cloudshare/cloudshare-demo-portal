@@ -1,5 +1,6 @@
 import type { ZodType } from "zod";
 import {
+  CloudShareRateLimitError,
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
@@ -109,7 +110,46 @@ export interface CloudShareClientOptions {
   readonly now?: () => number;
   /** Injectable token generator for v3 signing. Defaults to a random UUID. */
   readonly newToken?: () => string;
+  /** Injectable sleeper for bounded read retries. Defaults to `setTimeout`. */
+  readonly sleep?: (ms: number) => Promise<void>;
+  /** Injectable randomness for jittered backoff. Defaults to `Math.random`. */
+  readonly random?: () => number;
+  /** Shared per-process/customer cooldown store. */
+  readonly cooldownStore?: CloudShareRateLimitCooldownStore;
 }
+
+interface CloudShareRateLimitCooldown {
+  readonly untilEpochMs: number;
+  readonly classification: "rate_limit" | "abuse_protection";
+  readonly retryAfterSeconds?: number;
+  readonly rateLimitHeaders?: Record<string, string | string[]>;
+}
+
+export interface CloudShareRateLimitCooldownStore {
+  get(customerId: string): CloudShareRateLimitCooldown | null;
+  set(customerId: string, cooldown: CloudShareRateLimitCooldown): void;
+  clear(customerId: string): void;
+}
+
+function createInMemoryCooldownStore(): CloudShareRateLimitCooldownStore {
+  const byCustomerId = new Map<string, CloudShareRateLimitCooldown>();
+  return {
+    get(customerId) {
+      return byCustomerId.get(customerId) ?? null;
+    },
+    set(customerId, cooldown) {
+      byCustomerId.set(customerId, cooldown);
+    },
+    clear(customerId) {
+      byCustomerId.delete(customerId);
+    },
+  };
+}
+
+const globalCooldownStore = createInMemoryCooldownStore();
+const MAX_READ_RETRY_ATTEMPTS = 1;
+const MAX_READ_RETRY_DELAY_MS = 5_000;
+const DEFAULT_COOLDOWN_MS = 30_000;
 
 function buildUrl(base: string, path: string, query?: Record<string, string>): string {
   const url = new URL(base + path);
@@ -228,6 +268,10 @@ function describeRequest(urlText: string): {
 }
 
 export function createCloudShareClient(opts: CloudShareClientOptions): CloudShareClient {
+  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const random = opts.random ?? Math.random;
+  const cooldownStore = opts.cooldownStore ?? globalCooldownStore;
+
   function trace(
     level: "info" | "warn",
     message: string,
@@ -255,49 +299,205 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
     });
   }
 
+  function getNowMs(): number {
+    return (opts.now ?? Date.now)();
+  }
+
+  function parseRetryAfterSeconds(
+    headers: Record<string, string | string[]> | undefined,
+  ): number | undefined {
+    const raw = headers?.["retry-after"] ?? headers?.["Retry-After"];
+    const first = Array.isArray(raw) ? raw[0] : raw;
+    if (!first) {
+      return undefined;
+    }
+
+    const numeric = Number(first);
+    if (Number.isFinite(numeric) && numeric >= 0) {
+      return numeric;
+    }
+
+    const retryAt = Date.parse(first);
+    if (!Number.isNaN(retryAt)) {
+      const seconds = Math.ceil((retryAt - getNowMs()) / 1_000);
+      return seconds > 0 ? seconds : 0;
+    }
+
+    return undefined;
+  }
+
+  function extractRateLimitHeaders(
+    headers: Record<string, string | string[]> | undefined,
+  ): Record<string, string | string[]> | undefined {
+    if (!headers) {
+      return undefined;
+    }
+
+    const result = Object.fromEntries(
+      Object.entries(headers).filter(([key]) => /retry-after|rate.?limit|throttle/i.test(key)),
+    );
+    return Object.keys(result).length > 0 ? result : undefined;
+  }
+
+  function classifyRateLimit(
+    status: number,
+    headers: Record<string, string | string[]> | undefined,
+    body: string,
+  ): {
+    readonly classification: "rate_limit" | "abuse_protection";
+    readonly retryAfterSeconds?: number;
+    readonly rateLimitHeaders?: Record<string, string | string[]>;
+  } | null {
+    const normalizedBody = body.toLowerCase();
+    const classification =
+      status === 429
+        ? "rate_limit"
+        : /abuse(?:\s|-)?(?:list|protect|block)?/.test(normalizedBody)
+          ? "abuse_protection"
+          : null;
+
+    if (!classification) {
+      return null;
+    }
+
+    return {
+      classification,
+      retryAfterSeconds: parseRetryAfterSeconds(headers),
+      rateLimitHeaders: extractRateLimitHeaders(sanitizeResponseHeaders(headers)),
+    };
+  }
+
+  function updateCooldownFromRateLimit(error: CloudShareRateLimitError): void {
+    if (!opts.customerId) {
+      return;
+    }
+
+    const retryAfterSeconds = error.retryAfterSeconds;
+    const cooldownMs =
+      retryAfterSeconds !== undefined
+        ? Math.max(0, retryAfterSeconds * 1_000)
+        : DEFAULT_COOLDOWN_MS;
+
+    cooldownStore.set(opts.customerId, {
+      untilEpochMs: getNowMs() + cooldownMs,
+      classification: error.classification,
+      ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
+      ...(error.rateLimitHeaders ? { rateLimitHeaders: error.rateLimitHeaders } : {}),
+    });
+  }
+
+  function getActiveCooldown(): CloudShareRateLimitCooldown | null {
+    if (!opts.customerId) {
+      return null;
+    }
+
+    const cooldown = cooldownStore.get(opts.customerId);
+    if (!cooldown) {
+      return null;
+    }
+
+    if (cooldown.untilEpochMs <= getNowMs()) {
+      cooldownStore.clear(opts.customerId);
+      return null;
+    }
+
+    return cooldown;
+  }
+
+  function clearCooldown(): void {
+    if (opts.customerId) {
+      cooldownStore.clear(opts.customerId);
+    }
+  }
+
+  function throwIfCooldownActive(
+    request: HttpRequest,
+    requestInfo: ReturnType<typeof describeRequest>,
+  ): void {
+    const cooldown = getActiveCooldown();
+    if (!cooldown) {
+      return;
+    }
+
+    throw new CloudShareRateLimitError(
+      `CloudShare requests for customer ${opts.customerId} are temporarily cooling down after rate limiting`,
+      429,
+      cooldown.classification,
+      {
+        method: request.method,
+        host: requestInfo.host,
+        path: requestInfo.path,
+        integrationSurface: requestInfo.integrationSurface,
+        requestQuery: sanitizeQuery(extractQuery(request.url)),
+        requestHeaders: sanitizeHeaders(request.headers),
+        cooldownActive: true,
+        ...(cooldown.retryAfterSeconds !== undefined
+          ? { retryAfterSeconds: cooldown.retryAfterSeconds }
+          : {}),
+        ...(cooldown.rateLimitHeaders ? { rateLimitHeaders: cooldown.rateLimitHeaders } : {}),
+        ...(cooldown.rateLimitHeaders ? { responseHeaders: cooldown.rateLimitHeaders } : {}),
+      },
+    );
+  }
+
+  function computeReadRetryDelayMs(error: CloudShareRateLimitError): number | null {
+    if (error.retryAfterSeconds !== undefined) {
+      const delayMs = error.retryAfterSeconds * 1_000;
+      return delayMs <= MAX_READ_RETRY_DELAY_MS ? delayMs : null;
+    }
+
+    return 250 + Math.floor(random() * 500);
+  }
+
+  function isSafeRead(method: Method): boolean {
+    return method === "GET";
+  }
+
   async function executeDetailed<T>(
     request: HttpRequest,
     schema: ZodType<T, ZodType["_def"], unknown>,
   ): Promise<CloudShareDetailedResult<T>> {
     const requestInfo = describeRequest(request.url);
-    trace("info", "cloudshare request sent", request);
+    for (let attempt = 0; ; attempt += 1) {
+      if (attempt === 0) {
+        throwIfCooldownActive(request, requestInfo);
+      }
 
-    let response;
-    try {
-      response = await opts.http.send(request);
-    } catch (cause) {
-      trace("warn", "cloudshare transport failure", request, {
-        failureMode: "transport",
-        error: cause instanceof Error ? cause.message : String(cause),
+      trace("info", "cloudshare request sent", request);
+
+      let response;
+      try {
+        response = await opts.http.send(request);
+      } catch (cause) {
+        trace("warn", "cloudshare transport failure", request, {
+          failureMode: "transport",
+          error: cause instanceof Error ? cause.message : String(cause),
+        });
+        throw new CloudShareTransportError(
+          `CloudShare request to ${request.url} failed to reach the server`,
+          {
+            method: request.method,
+            host: requestInfo.host,
+            path: requestInfo.path,
+            integrationSurface: requestInfo.integrationSurface,
+            requestQuery: sanitizeQuery(extractQuery(request.url)),
+            requestHeaders: sanitizeHeaders(request.headers),
+            requestBody: sanitizeBody(request.body),
+            cause: cause instanceof Error ? cause.message : String(cause),
+          },
+        );
+      }
+
+      trace("info", "cloudshare response received", request, {
+        responseStatus: response.status,
+        responseHeaders: sanitizeResponseHeaders(response.headers),
+        responseBody: sanitizeResponseBody(response.body, requestInfo.path),
+        network: response.network,
+        tls: response.tls,
       });
-      throw new CloudShareTransportError(
-        `CloudShare request to ${request.url} failed to reach the server`,
-        {
-          method: request.method,
-          host: requestInfo.host,
-          path: requestInfo.path,
-          integrationSurface: requestInfo.integrationSurface,
-          requestQuery: sanitizeQuery(extractQuery(request.url)),
-          requestHeaders: sanitizeHeaders(request.headers),
-          requestBody: sanitizeBody(request.body),
-          cause: cause instanceof Error ? cause.message : String(cause),
-        },
-      );
-    }
 
-    trace("info", "cloudshare response received", request, {
-      responseStatus: response.status,
-      responseHeaders: sanitizeResponseHeaders(response.headers),
-      responseBody: sanitizeResponseBody(response.body, requestInfo.path),
-      network: response.network,
-      tls: response.tls,
-    });
-
-    if (response.status < 200 || response.status >= 300) {
-      throw new CloudShareRequestError(
-        `CloudShare request to ${request.url} returned ${response.status}`,
-        response.status,
-        {
+      if (response.status < 200 || response.status >= 300) {
+        const context = {
           method: request.method,
           host: requestInfo.host,
           path: requestInfo.path,
@@ -309,79 +509,110 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           responseBody: sanitizeResponseBodyValue(response.body, requestInfo.path),
           network: response.network,
           tls: response.tls,
-        },
-      );
-    }
+        };
+        const rateLimit = classifyRateLimit(response.status, response.headers, response.body);
+        if (rateLimit) {
+          const rateLimitError = new CloudShareRateLimitError(
+            `CloudShare request to ${request.url} returned ${response.status}`,
+            response.status,
+            rateLimit.classification,
+            {
+              ...context,
+              ...(rateLimit.retryAfterSeconds !== undefined
+                ? { retryAfterSeconds: rateLimit.retryAfterSeconds }
+                : {}),
+              ...(rateLimit.rateLimitHeaders ? { rateLimitHeaders: rateLimit.rateLimitHeaders } : {}),
+            },
+          );
+          updateCooldownFromRateLimit(rateLimitError);
+          if (isSafeRead(request.method) && attempt < MAX_READ_RETRY_ATTEMPTS) {
+            const delayMs = computeReadRetryDelayMs(rateLimitError);
+            if (delayMs !== null) {
+              await sleep(delayMs);
+              continue;
+            }
+          }
+          throw rateLimitError;
+        }
 
-    let json: unknown;
-    try {
-      json = JSON.parse(response.body);
-    } catch {
-      throw new CloudShareResponseError(
-        `CloudShare response from ${request.url} was not valid JSON`,
-        {
+        throw new CloudShareRequestError(
+          `CloudShare request to ${request.url} returned ${response.status}`,
+          response.status,
+          context,
+        );
+      }
+
+      let json: unknown;
+      try {
+        json = JSON.parse(response.body);
+      } catch {
+        throw new CloudShareResponseError(
+          `CloudShare response from ${request.url} was not valid JSON`,
+          {
+            method: request.method,
+            status: response.status,
+            host: requestInfo.host,
+            path: requestInfo.path,
+            integrationSurface: requestInfo.integrationSurface,
+            requestQuery: sanitizeQuery(extractQuery(request.url)),
+            requestHeaders: sanitizeHeaders(request.headers),
+            requestBody: sanitizeBody(request.body),
+            responseHeaders: sanitizeResponseHeaders(response.headers),
+            responseBody: sanitizeResponseBodyValue(response.body, requestInfo.path),
+            network: response.network,
+            tls: response.tls,
+          },
+        );
+      }
+
+      const parsed = schema.safeParse(json);
+      if (!parsed.success) {
+        throw new CloudShareResponseError(
+          `CloudShare response from ${request.url} did not match the expected schema`,
+          {
+            method: request.method,
+            status: response.status,
+            host: requestInfo.host,
+            path: requestInfo.path,
+            integrationSurface: requestInfo.integrationSurface,
+            requestHeaders: sanitizeHeaders(request.headers),
+            requestBody: sanitizeBody(request.body),
+            responseHeaders: sanitizeResponseHeaders(response.headers),
+            responseBody: sanitizeResponseBodyValue(response.body, requestInfo.path),
+            network: response.network,
+            tls: response.tls,
+            issues: parsed.error.issues.map((i) => i.message),
+          },
+        );
+      }
+      clearCooldown();
+      const requestQuery = sanitizeQuery(extractQuery(request.url));
+      return {
+        data: parsed.data,
+        host: requestInfo.host,
+        integrationSurface: requestInfo.integrationSurface,
+        request: {
           method: request.method,
+          path: requestInfo.path,
+          ...(requestQuery ? { query: requestQuery } : {}),
+          ...(sanitizeHeaders(request.headers)
+            ? { headers: sanitizeHeaders(request.headers)! }
+            : {}),
+          ...(sanitizeBody(request.body) !== undefined
+            ? { body: sanitizeBody(request.body) }
+            : {}),
+        },
+        response: {
           status: response.status,
-          host: requestInfo.host,
-          path: requestInfo.path,
-          integrationSurface: requestInfo.integrationSurface,
-          requestQuery: sanitizeQuery(extractQuery(request.url)),
-          requestHeaders: sanitizeHeaders(request.headers),
-          requestBody: sanitizeBody(request.body),
-          responseHeaders: sanitizeResponseHeaders(response.headers),
-          responseBody: sanitizeResponseBodyValue(response.body, requestInfo.path),
-          network: response.network,
-          tls: response.tls,
+          ...(sanitizeResponseHeaders(response.headers)
+            ? { headers: sanitizeResponseHeaders(response.headers)! }
+            : {}),
+          body: sanitizeResponseBodyValue(response.body, requestInfo.path),
+          ...(response.network ? { network: response.network } : {}),
+          ...(response.tls ? { tls: response.tls } : {}),
         },
-      );
+      };
     }
-
-    const parsed = schema.safeParse(json);
-    if (!parsed.success) {
-      throw new CloudShareResponseError(
-        `CloudShare response from ${request.url} did not match the expected schema`,
-        {
-          method: request.method,
-          status: response.status,
-          host: requestInfo.host,
-          path: requestInfo.path,
-          integrationSurface: requestInfo.integrationSurface,
-          requestHeaders: sanitizeHeaders(request.headers),
-          requestBody: sanitizeBody(request.body),
-          responseHeaders: sanitizeResponseHeaders(response.headers),
-          responseBody: sanitizeResponseBodyValue(response.body, requestInfo.path),
-          network: response.network,
-          tls: response.tls,
-          issues: parsed.error.issues.map((i) => i.message),
-        },
-      );
-    }
-    const requestQuery = sanitizeQuery(extractQuery(request.url));
-    return {
-      data: parsed.data,
-      host: requestInfo.host,
-      integrationSurface: requestInfo.integrationSurface,
-      request: {
-        method: request.method,
-        path: requestInfo.path,
-        ...(requestQuery ? { query: requestQuery } : {}),
-        ...(sanitizeHeaders(request.headers)
-          ? { headers: sanitizeHeaders(request.headers)! }
-          : {}),
-        ...(sanitizeBody(request.body) !== undefined
-          ? { body: sanitizeBody(request.body) }
-          : {}),
-      },
-      response: {
-        status: response.status,
-        ...(sanitizeResponseHeaders(response.headers)
-          ? { headers: sanitizeResponseHeaders(response.headers)! }
-          : {}),
-        body: sanitizeResponseBodyValue(response.body, requestInfo.path),
-        ...(response.network ? { network: response.network } : {}),
-        ...(response.tls ? { tls: response.tls } : {}),
-      },
-    };
   }
 
   async function performV4Detailed<T>(
@@ -447,45 +678,47 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
       },
     };
 
-    trace("info", "cloudshare request sent", request);
     const requestInfo = describeRequest(request.url);
+    for (let attempt = 0; ; attempt += 1) {
+      if (attempt === 0) {
+        throwIfCooldownActive(request, requestInfo);
+      }
 
-    let response;
-    try {
-      response = await opts.http.send(request);
-    } catch (cause) {
-      trace("warn", "cloudshare transport failure", request, {
-        failureMode: "transport",
-        error: cause instanceof Error ? cause.message : String(cause),
+      trace("info", "cloudshare request sent", request);
+
+      let response;
+      try {
+        response = await opts.http.send(request);
+      } catch (cause) {
+        trace("warn", "cloudshare transport failure", request, {
+          failureMode: "transport",
+          error: cause instanceof Error ? cause.message : String(cause),
+        });
+        throw new CloudShareTransportError(
+          `CloudShare request to ${unsignedUrl} failed to reach the server`,
+          {
+            method: spec.method,
+            host: requestInfo.host,
+            path: requestInfo.path,
+            integrationSurface: requestInfo.integrationSurface,
+            requestQuery: sanitizeQuery(extractQuery(request.url)),
+            requestHeaders: sanitizeHeaders(request.headers),
+            requestBody: sanitizeBody(request.body),
+            cause: cause instanceof Error ? cause.message : String(cause),
+          },
+        );
+      }
+
+      trace("info", "cloudshare response received", request, {
+        responseStatus: response.status,
+        responseHeaders: sanitizeResponseHeaders(response.headers),
+        responseBody: sanitizeResponseBody(response.body, requestInfo.path),
+        network: response.network,
+        tls: response.tls,
       });
-      throw new CloudShareTransportError(
-        `CloudShare request to ${unsignedUrl} failed to reach the server`,
-        {
-          method: spec.method,
-          host: requestInfo.host,
-          path: requestInfo.path,
-          integrationSurface: requestInfo.integrationSurface,
-          requestQuery: sanitizeQuery(extractQuery(request.url)),
-          requestHeaders: sanitizeHeaders(request.headers),
-          requestBody: sanitizeBody(request.body),
-          cause: cause instanceof Error ? cause.message : String(cause),
-        },
-      );
-    }
 
-    trace("info", "cloudshare response received", request, {
-      responseStatus: response.status,
-      responseHeaders: sanitizeResponseHeaders(response.headers),
-      responseBody: sanitizeResponseBody(response.body, requestInfo.path),
-      network: response.network,
-      tls: response.tls,
-    });
-
-    if (response.status < 200 || response.status >= 300) {
-      throw new CloudShareRequestError(
-        `CloudShare request to ${unsignedUrl} returned ${response.status}`,
-        response.status,
-        {
+      if (response.status < 200 || response.status >= 300) {
+        const context = {
           method: spec.method,
           host: requestInfo.host,
           path: requestInfo.path,
@@ -497,33 +730,64 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           responseBody: sanitizeResponseBodyValue(response.body, requestInfo.path),
           network: response.network,
           tls: response.tls,
-        },
-      );
-    }
+        };
+        const rateLimit = classifyRateLimit(response.status, response.headers, response.body);
+        if (rateLimit) {
+          const rateLimitError = new CloudShareRateLimitError(
+            `CloudShare request to ${unsignedUrl} returned ${response.status}`,
+            response.status,
+            rateLimit.classification,
+            {
+              ...context,
+              ...(rateLimit.retryAfterSeconds !== undefined
+                ? { retryAfterSeconds: rateLimit.retryAfterSeconds }
+                : {}),
+              ...(rateLimit.rateLimitHeaders ? { rateLimitHeaders: rateLimit.rateLimitHeaders } : {}),
+            },
+          );
+          updateCooldownFromRateLimit(rateLimitError);
+          if (isSafeRead(request.method) && attempt < MAX_READ_RETRY_ATTEMPTS) {
+            const delayMs = computeReadRetryDelayMs(rateLimitError);
+            if (delayMs !== null) {
+              await sleep(delayMs);
+              continue;
+            }
+          }
+          throw rateLimitError;
+        }
 
-    const requestQuery = sanitizeQuery(extractQuery(request.url));
-    return {
-      data: response.body,
-      host: requestInfo.host,
-      integrationSurface: requestInfo.integrationSurface,
-      request: {
-        method: request.method,
-        path: requestInfo.path,
-        ...(requestQuery ? { query: requestQuery } : {}),
-        ...(sanitizeHeaders(request.headers)
-          ? { headers: sanitizeHeaders(request.headers)! }
-          : {}),
-      },
-      response: {
-        status: response.status,
-        ...(sanitizeResponseHeaders(response.headers)
-          ? { headers: sanitizeResponseHeaders(response.headers)! }
-          : {}),
-        body: sanitizeResponseBodyValue(response.body, requestInfo.path),
-        ...(response.network ? { network: response.network } : {}),
-        ...(response.tls ? { tls: response.tls } : {}),
-      },
-    };
+        throw new CloudShareRequestError(
+          `CloudShare request to ${unsignedUrl} returned ${response.status}`,
+          response.status,
+          context,
+        );
+      }
+
+      clearCooldown();
+      const requestQuery = sanitizeQuery(extractQuery(request.url));
+      return {
+        data: response.body,
+        host: requestInfo.host,
+        integrationSurface: requestInfo.integrationSurface,
+        request: {
+          method: request.method,
+          path: requestInfo.path,
+          ...(requestQuery ? { query: requestQuery } : {}),
+          ...(sanitizeHeaders(request.headers)
+            ? { headers: sanitizeHeaders(request.headers)! }
+            : {}),
+        },
+        response: {
+          status: response.status,
+          ...(sanitizeResponseHeaders(response.headers)
+            ? { headers: sanitizeResponseHeaders(response.headers)! }
+            : {}),
+          body: sanitizeResponseBodyValue(response.body, requestInfo.path),
+          ...(response.network ? { network: response.network } : {}),
+          ...(response.tls ? { tls: response.tls } : {}),
+        },
+      };
+    }
   }
 
   return {
