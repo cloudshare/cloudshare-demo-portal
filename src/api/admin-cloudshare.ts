@@ -9,7 +9,7 @@ import {
 import type { Logger } from "@/observability/logger";
 import type { ExamAuthoringCacheRepository } from "@/persistence/exam-authoring-cache-repository";
 import type { AuditRepository } from "@/domain/audit-trail";
-import type { DiagnosticActor } from "@/domain/diagnostic-log";
+import type { DiagnosticActor, DiagnosticRecorder } from "@/domain/diagnostic-log";
 import { randomUUID } from "node:crypto";
 
 export interface AdminCloudShareRequest {
@@ -28,6 +28,7 @@ export interface AdminCloudShareDeps {
   readonly cloudshare: CloudShareClientFactory;
   readonly examAuthoringCache?: ExamAuthoringCacheRepository;
   readonly audit?: Pick<AuditRepository, "write">;
+  readonly diagnostics?: DiagnosticRecorder;
   readonly logger: Logger;
   readonly now?: () => Date;
   readonly newCorrelationId?: () => string;
@@ -46,6 +47,7 @@ export interface AdminCloudShareTestServices {
   readonly cloudshareConnections: CloudShareConnectionRepository;
   readonly cloudshareClientFactory: CloudShareClientFactory;
   readonly audit?: Pick<AuditRepository, "write">;
+  readonly diagnosticRecorder?: DiagnosticRecorder;
   readonly logger: Logger;
 }
 
@@ -63,11 +65,12 @@ export function buildAdminCloudShareConnectionDeps(
 
 export function buildAdminCloudShareTestDeps(
   services: AdminCloudShareTestServices,
-): Pick<AdminCloudShareDeps, "connections" | "cloudshare" | "audit" | "logger"> {
+): Pick<AdminCloudShareDeps, "connections" | "cloudshare" | "audit" | "diagnostics" | "logger"> {
   return {
     connections: services.cloudshareConnections,
     cloudshare: services.cloudshareClientFactory,
     ...(services.audit ? { audit: services.audit } : {}),
+    ...(services.diagnosticRecorder ? { diagnostics: services.diagnosticRecorder } : {}),
     logger: services.logger,
   };
 }
@@ -225,6 +228,14 @@ export async function handleTestCloudShareConnection(
         ...error.diagnostic,
         error: error.causeMessage,
       });
+      await safeRecordDiagnostic(deps, {
+        request,
+        correlationId,
+        outcome: "failure",
+        message: error.message,
+        diagnostic: error.diagnostic ?? null,
+        error: error.causeMessage,
+      });
       await safeRecordAudit(deps, {
         request,
         action: "cloudshare_connection.tested",
@@ -267,6 +278,82 @@ function summariseConnectionChanges(input: {
     changedFields.push("webhookSecret");
   }
   return changedFields;
+}
+
+async function safeRecordDiagnostic(
+  deps: Pick<AdminCloudShareDeps, "diagnostics" | "logger">,
+  input: {
+    readonly request: AdminCloudShareRequest;
+    readonly correlationId: string;
+    readonly outcome: "success" | "failure";
+    readonly message: string;
+    readonly diagnostic: Record<string, unknown> | null;
+    readonly error?: string;
+  },
+): Promise<void> {
+  if (!deps.diagnostics) {
+    return;
+  }
+
+  const diagnostic = input.diagnostic ?? {};
+  try {
+    await deps.diagnostics.record({
+      source: "admin",
+      level: input.outcome === "failure" ? "warn" : "info",
+      operation: "cloudshare_connection.test",
+      outcome: input.outcome,
+      message: input.message,
+      customerId: input.request.customerId,
+      actor: input.request.actor ?? null,
+      subject: { type: "cloudshare_connection", id: input.request.customerId },
+      correlationId: input.correlationId,
+      request: buildCloudShareConnectionTestRequest(diagnostic),
+      response: buildCloudShareConnectionTestResponse(diagnostic),
+      details: {
+        ...(typeof diagnostic.integrationSurface === "string"
+          ? { integrationSurface: diagnostic.integrationSurface }
+          : {}),
+        ...(typeof diagnostic.integrationLabel === "string"
+          ? { integrationLabel: diagnostic.integrationLabel }
+          : {}),
+        ...(typeof diagnostic.failureMode === "string" ? { failureMode: diagnostic.failureMode } : {}),
+        ...(typeof diagnostic.cause === "string" ? { cause: diagnostic.cause } : {}),
+        ...(input.error ? { error: input.error } : {}),
+      },
+    });
+  } catch (error) {
+    deps.logger.warn("admin cloudshare diagnostic recording failed", {
+      correlationId: input.correlationId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+
+function buildCloudShareConnectionTestRequest(
+  diagnostic: Record<string, unknown>,
+): Record<string, unknown> | null {
+  const request: Record<string, unknown> = {};
+  for (const key of ["method", "path", "requestUrl", "requestHeaders", "requestBody"] as const) {
+    if (diagnostic[key] !== undefined) {
+      request[key] = diagnostic[key];
+    }
+  }
+  return Object.keys(request).length > 0 ? request : null;
+}
+
+function buildCloudShareConnectionTestResponse(
+  diagnostic: Record<string, unknown>,
+): Record<string, unknown> | null {
+  const response: Record<string, unknown> = {};
+  if (diagnostic.responseStatus !== undefined) {
+    response.status = diagnostic.responseStatus;
+  }
+  for (const key of ["responseHeaders", "responseBody"] as const) {
+    if (diagnostic[key] !== undefined) {
+      response[key] = diagnostic[key];
+    }
+  }
+  return Object.keys(response).length > 0 ? response : null;
 }
 
 async function safeRecordAudit(

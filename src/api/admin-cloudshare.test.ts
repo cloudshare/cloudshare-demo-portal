@@ -124,6 +124,7 @@ describe("admin CloudShare handlers", () => {
     expect(buildAdminCloudShareTestDeps(services)).toEqual({
       connections: deps.connections,
       cloudshare: deps.cloudshare,
+      diagnostics,
       logger: deps.logger,
     });
   });
@@ -349,6 +350,7 @@ describe("admin CloudShare handlers", () => {
           },
         }),
       } satisfies CloudShareClientFactory,
+      diagnostics: { record: vi.fn().mockResolvedValue(undefined) } as DiagnosticRecorder,
       newCorrelationId: () => "corr-123",
     };
 
@@ -372,6 +374,29 @@ describe("admin CloudShare handlers", () => {
         responseStatus: 401,
       },
     });
+    expect(failingDeps.diagnostics.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "admin",
+        operation: "cloudshare_connection.test",
+        outcome: "failure",
+        customerId: deps.customerId,
+        correlationId: "corr-123",
+        subject: { type: "cloudshare_connection", id: deps.customerId },
+        request: expect.objectContaining({
+          method: "GET",
+          path: "/ping",
+          requestUrl: "https://use.cloudshare.com/api/v3/ping",
+        }),
+        response: expect.objectContaining({
+          status: 401,
+        }),
+        details: expect.objectContaining({
+          integrationSurface: "cloudshare.v3.ping",
+          failureMode: "http_status",
+          error: "401 unauthorized",
+        }),
+      }),
+    );
   });
 
   it("returns 429 when CloudShare rate limits the connection test", async () => {
@@ -403,6 +428,7 @@ describe("admin CloudShare handlers", () => {
           },
         }),
       } satisfies CloudShareClientFactory,
+      diagnostics: { record: vi.fn().mockResolvedValue(undefined) } as DiagnosticRecorder,
       newCorrelationId: () => "corr-rate-limit",
     };
 
@@ -419,5 +445,23 @@ describe("admin CloudShare handlers", () => {
         responseStatus: 429,
       },
     });
+    expect(failingDeps.diagnostics.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "admin",
+        operation: "cloudshare_connection.test",
+        outcome: "failure",
+        customerId: deps.customerId,
+        correlationId: "corr-rate-limit",
+        response: expect.objectContaining({
+          status: 429,
+          responseHeaders: { "retry-after": "30" },
+        }),
+        details: expect.objectContaining({
+          integrationSurface: "cloudshare.v3.ping",
+          failureMode: "rate_limit",
+          error: "too many requests",
+        }),
+      }),
+    );
   });
 });

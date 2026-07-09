@@ -406,6 +406,28 @@ function CorrelationDiagnosticsLink(props: {
   );
 }
 
+export function CloudShareConnectionTestWarning(props: {
+  readonly warning: string;
+  readonly correlationId?: string | null;
+  readonly onOpenCorrelationDiagnostics?: (correlationId: string) => void;
+}) {
+  return (
+    <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.4rem" }}>
+      <p style={{ margin: 0 }}>{props.warning}</p>
+      {props.correlationId ? (
+        <p style={{ margin: 0, fontSize: "0.85rem" }}>
+          Open <strong>Support Diagnostics</strong> filtered by correlation ID{" "}
+          <CorrelationDiagnosticsLink
+            correlationId={props.correlationId}
+            onOpen={props.onOpenCorrelationDiagnostics}
+          />
+          .
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 class AdminSessionExpiredError extends Error {
   constructor() {
     super(ADMIN_SESSION_EXPIRED_MESSAGE);
@@ -2070,8 +2092,7 @@ export function AdminConsole({
         diagnostic?: ConnectionDiagnostic | null;
       };
       if (!response.ok) {
-        setError(data.error ?? "CloudShare connection test failed");
-        setConnectionWarning("CloudShare connection test failed. Open Support Diagnostics with the correlation ID for the primary investigation view.");
+        setConnectionWarning(data.error ?? "CloudShare connection test failed. Open Support Diagnostics with the correlation ID for the primary investigation view.");
         setConnectionDiagnostic(data.diagnostic ?? null);
         setConnectionCorrelationId(data.correlationId ?? null);
         setConnectionOccurredAt(data.occurredAt ?? null);
@@ -2085,7 +2106,6 @@ export function AdminConsole({
       if (isAdminSessionExpiredError(caughtError)) {
         return;
       }
-      setError("CloudShare connection test failed");
       setConnectionWarning("CloudShare connection test failed. Open Support Diagnostics for more detail.");
     } finally {
       setLoading(false);
@@ -3379,21 +3399,6 @@ export function AdminConsole({
               </p>
             )}
           </div>
-          {connectionWarning && (
-            <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.4rem" }}>
-              <p style={{ margin: 0 }}>The CloudShare connection test failed. Support Diagnostics is the primary investigation view.</p>
-              {connectionCorrelationId && (
-                <p style={{ margin: 0, fontSize: "0.85rem" }}>
-                  Correlation ID:{" "}
-                  <CorrelationDiagnosticsLink
-                    correlationId={connectionCorrelationId}
-                    onOpen={openCorrelationSupportDiagnostics}
-                  />
-                </p>
-              )}
-            </div>
-          )}
-
           <label style={{ display: "grid", gap: "0.35rem" }}>
             <span>API ID</span>
             <input
@@ -3496,6 +3501,13 @@ export function AdminConsole({
               {loading ? "Testing..." : "Test connection"}
             </button>
           </div>
+          {connectionWarning && (
+            <CloudShareConnectionTestWarning
+              warning={connectionWarning}
+              correlationId={connectionCorrelationId}
+              onOpenCorrelationDiagnostics={openCorrelationSupportDiagnostics}
+            />
+          )}
           {connectionMessage && <p style={{ color: "#0a7a28", margin: 0 }}>{connectionMessage}</p>}
         </section>
       )}
