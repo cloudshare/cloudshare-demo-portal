@@ -8,6 +8,7 @@ import {
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
+  isCloudShareRateLimitError,
 } from "@/integrations/cloudshare";
 import { createCloudShareEnvironmentController } from "@/integrations/cloudshare/environment-controller";
 import { createCloudShareEnvironmentSource } from "@/integrations/cloudshare/environment";
@@ -251,6 +252,19 @@ function mapArchiveErrorToCompleteResponse(
     error instanceof CloudShareResponseError ||
     (error instanceof CloudShareRequestError && error.status >= 500);
 
+  if (isCloudShareRateLimitError(error)) {
+    return {
+      status: 429,
+      body: {
+        error: "CloudShare is rate limiting lab archive requests. Wait a moment, then retry End exam.",
+        examAttemptId,
+        operation: "complete",
+        retryable: true,
+        correlationId,
+      },
+    };
+  }
+
   if (error instanceof CloudShareRequestError && error.status < 500) {
     return {
       status: 502,
@@ -441,6 +455,13 @@ function commandResultToDiagnostic(
 }
 
 function cloudShareFailureDetails(error: unknown): Record<string, unknown> {
+  if (isCloudShareRateLimitError(error)) {
+    return {
+      failureMode: "rate_limit",
+      responseStatus: error.status,
+      ...(error.context ?? {}),
+    };
+  }
   if (error instanceof CloudShareRequestError) {
     return {
       failureMode: "http_status",

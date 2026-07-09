@@ -5,6 +5,7 @@ import { createDraftExam, publishExam } from "@/domain/exam-catalog";
 import { createInMemoryExamCatalogRepository } from "@/persistence/exam-catalog-repository";
 import { createExamClock, createInMemoryExamClockRepository } from "@/domain/exam-clock";
 import type { CloudShareClient } from "@/integrations/cloudshare";
+import { CloudShareRateLimitError } from "@/integrations/cloudshare";
 import type { CloudShareClientFactory, CloudShareConnectionRepository } from "@/domain/cloudshare-connection";
 import type { CompleteExamAttemptEarlyHandlerDeps } from "./exam-attempt-early-completion-runtime";
 import { completeExamAttemptEarlyRuntime } from "./exam-attempt-early-completion-runtime";
@@ -402,6 +403,64 @@ describe("completeExamAttemptEarlyRuntime", () => {
         }),
       }),
     );
+  });
+
+  it("returns a retryable 429 and rate-limit diagnostics when CloudShare throttles archive", async () => {
+    const throttledClient = {
+      ...makeCloudShareClient(),
+      requestV3Text: vi.fn(async () => {
+        throw new CloudShareRateLimitError("CloudShare rate limit exceeded", 429, "rate_limit", {
+          retryAfterSeconds: 45,
+          retryAfter: "45",
+          rateLimitHeaders: { "retry-after": "45", "x-ratelimit-limit": "10" },
+          responseHeaders: { "retry-after": "45", "x-ratelimit-limit": "10" },
+          responseBody: { error: "too many requests" },
+        });
+      }) as CloudShareClient["requestV3Text"],
+    } as CloudShareClient;
+    const deps = await makeDeps("in_progress", throttledClient);
+
+    const response = await completeExamAttemptEarlyRuntime(deps, { examAttemptId: "ea-1" });
+
+    expect(response).toEqual({
+      status: 429,
+      body: {
+        error: "CloudShare is rate limiting lab archive requests. Wait a moment, then retry End exam.",
+        examAttemptId: "ea-1",
+        operation: "complete",
+        retryable: true,
+        correlationId: "corr-complete",
+      },
+    });
+    await expect(deps.attempts.findById("ea-1")).resolves.toMatchObject({
+      status: "in_progress",
+    });
+    expect(deps.diagnostics?.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: "cloudshare.environment.archive",
+        outcome: "failure",
+        correlationId: "corr-complete",
+        details: expect.objectContaining({
+          attemptedOperation: "archive_environment",
+          integrationSurface: "cloudshare.v3.env.action.archive",
+          failureMode: "rate_limit",
+          responseStatus: 429,
+          retryAfterSeconds: 45,
+          responseHeaders: { "retry-after": "45", "x-ratelimit-limit": "10" },
+        }),
+      }),
+    );
+    expect(deps.diagnostics?.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: "exam_attempt.complete",
+        outcome: "failure",
+        details: expect.objectContaining({
+          failureMode: "cleanup_not_confirmed",
+          cleanupStatus: 429,
+        }),
+      }),
+    );
+    expect(JSON.stringify(response.body)).not.toContain("sponsored-link-secret");
   });
 
   it.each(["ready", "scheduled", "expired", "completed"] as const)(
