@@ -645,6 +645,7 @@ describe("joinCohortExamSessionRuntime", () => {
       body: {
         error:
           "Exam entry is temporarily unavailable because the lab configuration changed. Contact your administrator.",
+        correlationId: "corr-cohort-snapshot-drift",
       },
     });
     expect(requestV4Detailed).not.toHaveBeenCalled();
@@ -730,6 +731,7 @@ describe("joinCohortExamSessionRuntime", () => {
       body: {
         error:
           "Exam entry is temporarily unavailable because the lab configuration changed. Contact your administrator.",
+        correlationId: "corr-cohort-snapshot-lookup-fail",
       },
     });
     expect(requestV4Detailed).not.toHaveBeenCalled();
@@ -1392,6 +1394,7 @@ describe("joinCohortExamSessionRuntime", () => {
       status: 429,
       body: {
         error: "Something is not working right now. Contact your instructor before trying again.",
+        correlationId: "corr-cohort-snapshot-rate-limit",
       },
     });
     expect(JSON.stringify(response.body)).not.toContain("support@cloudshare.com");

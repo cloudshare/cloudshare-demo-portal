@@ -345,6 +345,7 @@ export async function joinCohortExamSessionRuntime(
           snapshotGuardFailure.status === 429
             ? CLOUDSHARE_429_CANDIDATE_MESSAGE
             : snapshotGuardFailure.message,
+        correlationId: snapshotGuardFailure.correlationId,
       },
     };
   }

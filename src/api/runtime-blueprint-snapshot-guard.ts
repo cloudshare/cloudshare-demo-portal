@@ -54,6 +54,7 @@ export interface RuntimeBlueprintSnapshotGuardRequest {
 export interface RuntimeBlueprintSnapshotGuardFailure {
   readonly status: 423 | 429;
   readonly message: string;
+  readonly correlationId?: string;
 }
 
 export async function guardRuntimeBlueprintSnapshot(
@@ -71,7 +72,7 @@ export async function guardRuntimeBlueprintSnapshot(
       currentDefaultSnapshotId: null,
       transport: "Runtime snapshot guard dependencies were not configured.",
     });
-    return { status: 423, message: SNAPSHOT_DRIFT_MESSAGE };
+    return { status: 423, message: SNAPSHOT_DRIFT_MESSAGE, correlationId: request.correlationId ?? undefined };
   }
 
   const connection = await deps.connections.findByCustomerId(request.customerId);
@@ -84,7 +85,7 @@ export async function guardRuntimeBlueprintSnapshot(
       currentDefaultSnapshotId: null,
       transport: "CloudShare connection not found for customer.",
     });
-    return { status: 423, message: SNAPSHOT_DRIFT_MESSAGE };
+    return { status: 423, message: SNAPSHOT_DRIFT_MESSAGE, correlationId: request.correlationId ?? undefined };
   }
 
   const source = resolveAuthoringSource(deps.cloudshare, connection);
@@ -109,7 +110,7 @@ export async function guardRuntimeBlueprintSnapshot(
         reason: "default_snapshot_changed",
         currentDefaultSnapshotId: blueprint.defaultSnapshotId,
       });
-      return { status: 423, message: SNAPSHOT_DRIFT_MESSAGE };
+      return { status: 423, message: SNAPSHOT_DRIFT_MESSAGE, correlationId: request.correlationId ?? undefined };
     }
   } catch (error) {
     const cloudShareError = asCloudShareErrorLike(error);
@@ -144,6 +145,7 @@ export async function guardRuntimeBlueprintSnapshot(
     return {
       status: rateLimited ? 429 : 423,
       message: rateLimited ? SNAPSHOT_GUARD_RATE_LIMIT_MESSAGE : SNAPSHOT_DRIFT_MESSAGE,
+      correlationId: request.correlationId ?? undefined,
     };
   }
 

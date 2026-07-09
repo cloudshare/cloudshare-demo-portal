@@ -486,6 +486,7 @@ describe("enterExamAttemptRuntime", () => {
       body: {
         message:
           "Exam entry is temporarily unavailable because the lab configuration changed. Contact your administrator.",
+        correlationId: expect.any(String),
       },
     });
     expect(timer.resumed).toEqual([]);
@@ -604,6 +605,7 @@ describe("enterExamAttemptRuntime", () => {
       body: {
         message:
           "Exam entry is temporarily unavailable because the lab configuration changed. Contact your administrator.",
+        correlationId: expect.any(String),
       },
     });
     expect(timer.resumed).toEqual([]);
@@ -719,6 +721,7 @@ describe("enterExamAttemptRuntime", () => {
         candidateEmail: "candidate@helioscx.demo",
         logger: makeLogger(),
         now: () => new Date("2026-06-15T16:00:00.000Z"),
+        newCorrelationId: () => "corr-snapshot-rate-limit-enter",
       },
       { examAttemptId: "attempt-1", candidateId: "candidate-1" },
     );
@@ -729,8 +732,10 @@ describe("enterExamAttemptRuntime", () => {
       body: {
         message:
           "Something is not working right now. Contact your instructor before trying again.",
+        correlationId: "corr-snapshot-rate-limit-enter",
       },
     });
+    expect(JSON.stringify(result.body)).not.toContain("support@cloudshare.com");
     expect(timer.resumed).toEqual([]);
     await expect(diagnosticsRepository.query({ examAttemptId: "attempt-1" })).resolves.toEqual(
       expect.arrayContaining([
