@@ -1052,7 +1052,7 @@ export function CohortSessionWorkspacePanel(props: {
               Counts are derived from session exam attempts and the CloudShare participant read for this shared Experience.
             </div>
             <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
-              <strong style={{ color: colors.textPrimary }}>Problems</strong> counts reconciliation warnings between portal attempt state and CloudShare participant state.
+              Problem count shows reconciliation warnings between portal attempt state and CloudShare participant state.
               It is not a count of diagnostic errors.
             </div>
 

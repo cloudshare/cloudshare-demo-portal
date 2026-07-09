@@ -23,6 +23,10 @@ import {
 import { createCloudShareTrainingParticipantReader } from "@/integrations/cloudshare/participants";
 import type { Logger } from "@/observability/logger";
 import { attachCohortExamSessionInheritedContext } from "@/domain/cohort-exam-session";
+import {
+  deriveCohortExamSessionMonitoringSummary,
+  deriveCohortExamSessionReconciliationRows,
+} from "@/domain/cohort-exam-session-monitoring";
 
 export interface AdminCohortExamSessionAttemptRecord {
   readonly id: string;
@@ -547,7 +551,7 @@ function buildMonitoringView(
     };
   });
 
-  const reconciliationRows = buildReconciliationRows(
+  const reconciliationRows = deriveCohortExamSessionReconciliationRows(
     portalAttemptsWithoutProblems,
     cloudShareParticipantsWithoutProblems,
   );
@@ -572,7 +576,7 @@ function buildMonitoringView(
     problemReasons: cloudProblemsByParticipantKey.get(getCloudParticipantKey(participant)) ?? [],
   }));
 
-  const summary = deriveSummary(reconciliationRows, cloudShareRead.status);
+  const summary = deriveCohortExamSessionMonitoringSummary(reconciliationRows, cloudShareRead.status);
   return {
     summary,
     portalAttempts,
@@ -640,288 +644,13 @@ function resolveMatchedAttempt(
   return attemptsByEmail.get(participant.email.trim().toLowerCase()) ?? null;
 }
 
-function deriveSummary(
-  rows: readonly ReconciliationRow[],
-  cloudShareStatus: "available" | "unavailable" | "not_published",
-): CohortExamSessionMonitoringView["summary"] {
-  let activeCount = 0;
-  let inProgressCount = 0;
-  let completedCount = 0;
-  let problemCount = cloudShareStatus === "unavailable" ? 1 : 0;
-
-  for (const row of rows) {
-    const portalActive = isPortalActive(row.portal?.status);
-    const cloudActive = isCloudActive(row.cloud);
-    const portalCompleted = isPortalCompleted(row.portal?.status);
-    const cloudCompleted = isCloudCompleted(row.cloud);
-    const portalInProgress = row.portal?.status === "in_progress";
-    const cloudInProgress = isCloudInProgress(row.cloud);
-
-    if (portalActive || cloudActive) activeCount += 1;
-    if (portalInProgress || cloudInProgress) inProgressCount += 1;
-    if (portalCompleted || cloudCompleted) completedCount += 1;
-    if (row.problemReasons.length > 0) problemCount += 1;
-  }
-
-  return {
-    activeCount,
-    inProgressCount,
-    completedCount,
-    problemCount,
-    portalAttemptCount: rows.filter((row) => row.portal).length,
-    cloudShareParticipantCount: rows.filter((row) => row.cloud).length,
-    derivedFrom: "portal_and_cloudshare",
-  };
-}
-
-interface ReconciliationRow {
-  readonly portal?: Omit<CohortExamSessionAttemptView, "problemReasons">;
-  readonly cloud?: Omit<CohortExamSessionParticipantView, "problemReasons">;
-  readonly problemReasons: readonly string[];
-}
-
-type ReconciliationPortalAttempt = Omit<CohortExamSessionAttemptView, "problemReasons">;
-type ReconciliationCloudParticipant = Omit<CohortExamSessionParticipantView, "problemReasons">;
-
-function buildReconciliationRows(
-  portalAttempts: readonly ReconciliationPortalAttempt[],
-  participants: readonly ReconciliationCloudParticipant[],
-): readonly ReconciliationRow[] {
-  const attemptKeyByEmail = new Map<string, string>();
-  const rowsByKey = new Map<
-    string,
-    {
-      portal?: ReconciliationPortalAttempt;
-      cloud?: ReconciliationCloudParticipant;
-    }
-  >();
-
-  for (const attempt of portalAttempts) {
-    const key = toPortalSummaryRowKey(attempt);
-    attemptKeyByEmail.set(attempt.candidateEmail.trim().toLowerCase(), key);
-    rowsByKey.set(key, { ...(rowsByKey.get(key) ?? {}), portal: attempt });
-  }
-  for (const participant of participants) {
-    const key = toCloudShareSummaryRowKey(participant, attemptKeyByEmail);
-    rowsByKey.set(key, { ...(rowsByKey.get(key) ?? {}), cloud: participant });
-  }
-
-  return Array.from(rowsByKey.values(), (row) => ({
-    ...row,
-    problemReasons: deriveProblemReasons(row.portal, row.cloud),
-  }));
-}
-
-function toPortalSummaryRowKey(attempt: Pick<CohortExamSessionAttemptView, "id">): string {
-  return `attempt:${attempt.id}`;
-}
-
-function toCloudShareSummaryRowKey(
-  participant: Pick<CohortExamSessionParticipantView, "matchedExamAttemptId" | "email">,
-  attemptKeyByEmail: ReadonlyMap<string, string>,
-): string {
-  if (participant.matchedExamAttemptId) {
-    return `attempt:${participant.matchedExamAttemptId}`;
-  }
-  const normalizedEmail = participant.email.trim().toLowerCase();
-  return attemptKeyByEmail.get(normalizedEmail) ?? `email:${normalizedEmail}`;
-}
-
-function isPortalActive(status: CohortExamSessionAttemptView["status"] | undefined): boolean {
-  return status === "scheduled" || status === "ready" || status === "in_progress" || status === "suspended";
-}
-
-function isPortalCompleted(status: CohortExamSessionAttemptView["status"] | undefined): boolean {
-  return status === "completed" || status === "expired";
-}
-
-function isCloudActive(participant: Pick<CohortExamSessionParticipantView, "participationStatus" | "environmentStatus"> | undefined): boolean {
-  if (!participant) {
-    return false;
-  }
-  if (isCloudProblemParticipant(participant)) {
-    return false;
-  }
-  if (isCloudInProgress(participant)) {
-    return true;
-  }
-  const status = participant.participationStatus?.trim().toLowerCase();
-  return status === "pending" || status === "registered" || status === "assigned";
-}
-
-function isCloudInProgress(participant: Pick<CohortExamSessionParticipantView, "participationStatus" | "environmentStatus"> | undefined): boolean {
-  if (!participant) {
-    return false;
-  }
-  if (isCloudProblemParticipant(participant)) {
-    return false;
-  }
-  const participationStatus = participant.participationStatus?.trim().toLowerCase();
-  if (participationStatus === "inprogress") {
-    return true;
-  }
-  const environmentStatus = participant.environmentStatus?.trim().toLowerCase();
-  return Boolean(environmentStatus && isNormalActiveEnvironmentStatus(environmentStatus));
-}
-
-function isCloudCompleted(participant: Pick<CohortExamSessionParticipantView, "participationStatus" | "environmentStatus"> | undefined): boolean {
-  if (!participant) {
-    return false;
-  }
-  const participationStatus = participant.participationStatus?.trim().toLowerCase();
-  const environmentStatus = participant.environmentStatus?.trim().toLowerCase();
-  return participationStatus === "completed" || Boolean(environmentStatus && isTerminalEnvironmentStatus(environmentStatus));
-}
-
-function isTerminalEnvironmentStatus(status: string): boolean {
-  return status === "archived" || status === "deleted";
-}
-
-function isNormalActiveEnvironmentStatus(status: string): boolean {
-  return (
-    status === "ready" ||
-    status === "running" ||
-    status === "suspended" ||
-    status === "starting" ||
-    status === "provisioning" ||
-    status === "resuming" ||
-    status === "stopping"
-  );
-}
-
-function isCloudProblemParticipant(participant: Pick<CohortExamSessionParticipantView, "participationStatus" | "environmentStatus"> | undefined): boolean {
-  if (!participant) {
-    return false;
-  }
-  const participationStatus = participant.participationStatus?.trim().toLowerCase();
-  if (
-    participationStatus === "failed" ||
-    participationStatus === "error" ||
-    participationStatus === "aborted" ||
-    participationStatus === "denied"
-  ) {
-    return true;
-  }
-  const environmentStatus = participant.environmentStatus?.trim().toLowerCase();
-  if (!environmentStatus) {
-    return false;
-  }
-  if (isTerminalEnvironmentStatus(environmentStatus) || isNormalActiveEnvironmentStatus(environmentStatus)) {
-    return false;
-  }
-  return true;
-}
-
-function deriveProblemReasons(
-  portal: Omit<CohortExamSessionAttemptView, "problemReasons"> | undefined,
-  cloud: Omit<CohortExamSessionParticipantView, "problemReasons"> | undefined,
-): readonly string[] {
-  const reasons: string[] = [];
-  if (portal && !cloud && isPortalActive(portal.status)) {
-    reasons.push("Portal has an attempt but no matching CloudShare participant.");
-  }
-  if (cloud && !portal) {
-    reasons.push("CloudShare participant has no matching portal attempt.");
-  }
-
-  if (isCloudProblemParticipant(cloud)) {
-    reasons.push("CloudShare environment is in a non-terminal problem state.");
-  }
-  if (!portal || !cloud) {
-    return reasons;
-  }
-
-  if (isPortalCloudRuntimeMismatch(portal, cloud)) {
-    reasons.push(`Portal ${formatPortalProblemState(portal.status)}; ${describeCloudCurrentState(cloud)}.`);
-  }
-  if (isPortalActive(portal.status) && isCloudCompleted(cloud)) {
-    reasons.push(`Portal ${formatPortalProblemState(portal.status)}; ${describeCloudCompletedState(cloud)}.`);
-  }
-  if (isPortalCompleted(portal.status) && isCloudActive(cloud)) {
-    reasons.push(`Portal ${formatPortalProblemState(portal.status)}; ${describeCloudActiveState(cloud)}.`);
-  }
-  return reasons;
-}
-
-function formatPortalProblemState(status: CohortExamSessionAttemptView["status"]): string {
-  switch (status) {
-    case "in_progress":
-      return "in progress";
-    default:
-      return status;
-  }
-}
-
-function describeCloudActiveState(
-  cloud: ReconciliationCloudParticipant,
-): string {
-  const participationStatus = cloud.participationStatus?.trim();
-  if (participationStatus) {
-    return `CloudShare participation still ${participationStatus}`;
-  }
-  const environmentStatus = cloud.environmentStatus?.trim();
-  if (environmentStatus) {
-    return `CloudShare environment is still ${environmentStatus}`;
-  }
-  return "CloudShare participant is still active";
-}
-
-function describeCloudCurrentState(
-  cloud: ReconciliationCloudParticipant,
-): string {
-  const participationStatus = cloud.participationStatus?.trim();
-  if (participationStatus) {
-    return `CloudShare participation still ${participationStatus}`;
-  }
-  const environmentStatus = cloud.environmentStatus?.trim();
-  if (environmentStatus) {
-    return `CloudShare environment is still ${environmentStatus}`;
-  }
-  return "CloudShare participant is still active";
-}
-
-function describeCloudCompletedState(
-  cloud: ReconciliationCloudParticipant,
-): string {
-  const participationStatus = cloud.participationStatus?.trim();
-  if (participationStatus) {
-    return `CloudShare participation is ${participationStatus}`;
-  }
-  const environmentStatus = cloud.environmentStatus?.trim();
-  if (environmentStatus) {
-    return `CloudShare environment is ${environmentStatus}`;
-  }
-  return "CloudShare participant is already complete";
-}
-
-function getCloudParticipantKey(
-  participant: ReconciliationCloudParticipant,
-): string {
-  return `${participant.email}:${participant.studentId ?? participant.environmentId ?? "none"}`;
-}
-
-function isPortalCloudRuntimeMismatch(
-  portal: ReconciliationPortalAttempt,
-  cloud: ReconciliationCloudParticipant,
-): boolean {
-  if (portal.status === "suspended") {
-    return !isCloudSuspended(cloud) && isCloudInProgress(cloud);
-  }
-  if (portal.status === "in_progress") {
-    return isCloudSuspended(cloud);
-  }
-  return false;
-}
-
-function isCloudSuspended(
-  cloud: ReconciliationCloudParticipant,
-): boolean {
-  const participationStatus = cloud.participationStatus?.trim().toLowerCase();
-  if (participationStatus === "suspended") {
-    return true;
-  }
-  const environmentStatus = cloud.environmentStatus?.trim().toLowerCase();
-  return environmentStatus === "suspended";
+function getCloudParticipantKey(participant: {
+  readonly email: string;
+  readonly matchedExamAttemptId: string | null;
+}): string {
+  return participant.matchedExamAttemptId
+    ? `attempt:${participant.matchedExamAttemptId}`
+    : `email:${participant.email.trim().toLowerCase()}`;
 }
 
 function formatCandidateName(
