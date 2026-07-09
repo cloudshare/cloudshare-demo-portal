@@ -37,8 +37,7 @@ import { CandidateExamCard } from "./candidate-exam-card";
 export {
   CandidateCohortSessionOptions,
   CandidateExamCard,
-  getCandidateExamCardTakeExamAutoOpenReason,
-  getDefaultCandidateExamCardPanelState,
+  getCandidateExamCardImmediateActionReason,
   getTakeExamAvailabilitySummary,
   PublishedExamCardHeader,
 } from "./candidate-exam-card";
@@ -349,7 +348,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
           </p>
         )}
         {dashboard.attempts.length > 0 && (
-          <section style={cardStyle}>
+          <section style={attemptQueueSectionStyle}>
             <div style={sectionHeaderStyle}>
               <div>
                 <p style={eyebrowLabelStyle}>Attempt queues</p>
@@ -365,13 +364,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
               activeFilter={attemptQueue.activeFilter}
               onFilterChange={setSelectedAttemptFilter}
             />
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 330px), 1fr))",
-                gap: "0.75rem",
-              }}
-            >
+            <div style={attemptCardGridStyle}>
               {attemptQueue.attempts.length === 0 ? (
                 <p style={{ ...mutedPanelStyle, margin: 0 }}>{getCandidateAttemptQueueEmptyMessage(selectedAttemptFilter)}</p>
               ) : null}
@@ -401,17 +394,10 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                 );
 
                 return (
-                  <article key={attempt.attemptId} style={cardStyle}>
-                    <div style={{ display: "grid", gap: "0.75rem" }}>
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          gap: "1rem",
-                          flexWrap: "wrap",
-                          alignItems: "flex-start",
-                        }}
-                      >
+                  <article key={attempt.attemptId} style={attemptCardStyle}>
+                    <div style={attemptCardContentStyle}>
+                      <div style={attemptCardAccentStyle} />
+                      <div style={attemptCardHeaderStyle}>
                         <div>
                           <strong style={{ display: "block", fontSize: "1rem", color: "#0f172a" }}>
                             {attempt.examTitle}
@@ -424,13 +410,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                           {formatCandidateAttemptStatus(attempt.displayStatus)}
                         </span>
                       </div>
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
-                          gap: "0.75rem",
-                        }}
-                      >
+                      <div style={attemptMetaGridStyle}>
                         <div style={metaItemStyle}>
                           <span style={metaLabelStyle}>Access window</span>
                           <span style={{ ...metaValueStyle, display: "grid", gap: "0.15rem" }}>
@@ -464,7 +444,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                         </div>
                       </div>
                       {primaryAction.label && (
-                        <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+                        <div style={attemptActionStackStyle}>
                           <button
                             onClick={() => {
                               if (primaryAction.label === "View score") {
@@ -474,7 +454,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                               openLabConsole(attempt.attemptId, attempt.status);
                             }}
                             disabled={primaryAction.disabled}
-                            style={getButtonStyle(primaryButtonStyle, primaryAction.disabled)}
+                            style={getButtonStyle(attemptPrimaryButtonStyle, primaryAction.disabled)}
                           >
                             {primaryAction.label}
                           </button>
@@ -512,15 +492,14 @@ export function CandidateHome({ email }: CandidateHomeProps) {
             <div style={sectionHeaderStyle}>
               <div>
                 <p style={eyebrowLabelStyle}>Published Exams</p>
-                <h2 style={sectionTitleStyle}>Browse and take an exam</h2>
+                <h2 style={sectionTitleStyle}>Choose an exam</h2>
               </div>
               <p style={sectionCopyStyle}>
                 {dashboard.exams.length} published {dashboard.exams.length === 1 ? "Exam" : "Exams"}
               </p>
             </div>
-            <div style={{ display: "grid", gap: "0.9rem" }}>
+            <div style={publishedExamCardGridStyle}>
               {dashboard.exams.map((exam) => {
-                const attempt = attemptForExam(exam.id);
                 const attemptedSessionIds = new Set(
                   dashboard.attempts
                     .map((candidateAttempt) => candidateAttempt.cohortSessionId)
@@ -532,10 +511,7 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                   <CandidateExamCard
                     key={exam.id}
                     exam={exam}
-                    attempt={attempt}
                     attemptedSessionIds={attemptedSessionIds}
-                    nowMs={nowMs}
-                    allAttempts={dashboard.attempts}
                     scheduleDraft={scheduleDrafts[exam.id] ?? ""}
                     scheduleFeedback={feedback}
                     submittingExamId={submittingExamId}
@@ -553,13 +529,6 @@ export function CandidateHome({ email }: CandidateHomeProps) {
                     }}
                     onSchedule={() => {
                       void submitSchedule(exam.id);
-                    }}
-                    onCurrentAttemptAction={(currentAttempt, action) => {
-                      if (action === "View score") {
-                        openScorePage(currentAttempt.id);
-                        return;
-                      }
-                      openLabConsole(currentAttempt.id, currentAttempt.status);
                     }}
                     onStartCohortSession={(sessionId) => {
                       void joinCohortSession(exam.id, sessionId);
@@ -636,9 +605,86 @@ const attemptFilterCountStyle: CSSProperties = {
   lineHeight: 1.1,
 };
 
-const publishedExamSectionStyle: CSSProperties = {
+const attemptQueueSectionStyle: CSSProperties = {
+  ...cardStyle,
   display: "grid",
   gap: "1rem",
+  background: "#ffffff",
+  border: "1px solid #cbd5e1",
+  borderLeft: "6px solid #0f766e",
+  boxShadow: "0 4px 14px rgba(15, 23, 42, 0.08)",
+};
+
+const attemptCardGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 18rem), 1fr))",
+  gap: "1rem",
+  alignItems: "stretch",
+};
+
+const attemptCardStyle: CSSProperties = {
+  ...cardStyle,
+  padding: 0,
+  overflow: "hidden",
+  border: "1px solid #dbe4ef",
+  boxShadow: "0 1px 2px rgba(15, 23, 42, 0.08)",
+};
+
+const attemptCardContentStyle: CSSProperties = {
+  display: "grid",
+  gap: "1rem",
+  height: "100%",
+  padding: "1.05rem",
+  boxSizing: "border-box",
+};
+
+const attemptCardAccentStyle: CSSProperties = {
+  height: "3px",
+  borderRadius: "999px",
+  background: "linear-gradient(90deg, #4f46e5 0%, #10b981 55%, #f97316 100%)",
+};
+
+const attemptCardHeaderStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: "1rem",
+  flexWrap: "wrap",
+  alignItems: "flex-start",
+};
+
+const attemptMetaGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+  gap: "0.75rem",
+};
+
+const attemptActionStackStyle: CSSProperties = {
+  display: "grid",
+  gap: "0.5rem",
+  marginTop: "auto",
+};
+
+const attemptPrimaryButtonStyle: CSSProperties = {
+  ...primaryButtonStyle,
+  width: "100%",
+  minHeight: "3.1rem",
+};
+
+const publishedExamSectionStyle: CSSProperties = {
+  ...cardStyle,
+  display: "grid",
+  gap: "1rem",
+  background: "#eef6ff",
+  border: "1px solid #bfdbfe",
+  borderLeft: "6px solid #4f46e5",
+  boxShadow: "0 4px 14px rgba(37, 99, 235, 0.1)",
+};
+
+const publishedExamCardGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 18rem), 1fr))",
+  gap: "1rem",
+  alignItems: "stretch",
 };
 
 const metaItemStyle: CSSProperties = {
