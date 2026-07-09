@@ -13,6 +13,7 @@ import type {
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
 import type { Logger } from "@/observability/logger";
+import { CloudShareRateLimitError } from "@/integrations/cloudshare";
 import { scheduleExamAttemptRuntime } from "./exam-attempt-scheduling-runtime";
 
 function makeLogger(): Logger {
@@ -571,6 +572,91 @@ describe("ExamAttempt scheduling runtime", () => {
         failureMode: "snapshot_drift",
         savedSnapshotId: "snap-1",
         currentDefaultSnapshotId: "snap-2",
+      },
+    });
+  });
+
+  it("returns a rate-limited response instead of misleading snapshot drift when the Blueprint lookup is throttled", async () => {
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
+    const getBlueprintDetail = vi.fn(async () => {
+      throw new CloudShareRateLimitError(
+        "CloudShare rate limited blueprint detail",
+        429,
+        "rate_limit",
+        {
+          method: "GET",
+          path: "/api/v3/projects/project-1/blueprints/bp-1",
+          integrationSurface: "cloudshare.v3.projects.blueprint_detail",
+          responseHeaders: { "retry-after": "12" },
+        },
+      );
+    });
+    const requestV4Detailed = vi.fn();
+
+    const response = await scheduleExamAttemptRuntime(
+      {
+        exams: await makeExamRepository(),
+        attempts,
+        launches,
+        audit: createInMemoryAuditRepository(),
+        eventLog: createInMemoryEventLogRepository(),
+        connections: makeConnectionRepository(),
+        cloudshare: makeCloudShareFactory({
+          getBlueprintDetail,
+          requestV4Detailed: requestV4Detailed as unknown as ReturnType<
+            CloudShareClientFactory["forConnection"]
+          >["requestV4Detailed"],
+        }),
+        diagnostics,
+        logger: makeLogger(),
+        now: () => new Date("2026-06-15T10:00:00.000Z"),
+        newId: vi.fn(),
+        newCorrelationId: () => "corr-snapshot-rate-limit-schedule",
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        examId: "exam-1",
+        scheduledFor: "2026-06-15T16:00:00.000Z",
+      },
+    );
+
+    expect(response).toEqual({
+      status: 429,
+      body: {
+        error:
+          "Something is not working right now. Contact your instructor before trying again.",
+        correlationId: "corr-snapshot-rate-limit-schedule",
+      },
+    });
+    expect(requestV4Detailed).not.toHaveBeenCalled();
+    await expect(attempts.listByCandidate("candidate-1")).resolves.toEqual([]);
+    await expect(launches.findByExamAttemptId("attempt-1")).resolves.toBeNull();
+
+    const [entry] = await diagnosticsRepository.query({
+      customerId: "customer-helios",
+      examId: "exam-1",
+      operation: "exam_attempt.schedule",
+      outcome: "failure",
+    });
+    expect(entry).toMatchObject({
+      candidateEmail: "candidate@helioscx.demo",
+      correlationId: "corr-snapshot-rate-limit-schedule",
+      details: {
+        failureMode: "snapshot_guard_unavailable",
+        integrationFailureMode: "rate_limit",
+      },
+      response: {
+        status: 429,
+        headers: {
+          "retry-after": "12",
+        },
       },
     });
   });

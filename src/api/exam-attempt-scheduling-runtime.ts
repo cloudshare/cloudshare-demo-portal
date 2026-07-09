@@ -4,6 +4,7 @@ import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
+import { CLOUDSHARE_429_CANDIDATE_MESSAGE } from "@/domain/cloudshare-rate-limit-message";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { EventLogRepository } from "@/domain/event-log";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
@@ -20,6 +21,7 @@ import {
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
+  isCloudShareRateLimitError,
 } from "@/integrations/cloudshare";
 import {
   createCloudShareLabProvisioner,
@@ -153,8 +155,10 @@ export async function scheduleExamAttemptRuntime(
     return {
       status: snapshotGuardFailure.status,
       body: {
-        error:
-          "Exam scheduling is temporarily unavailable because the lab configuration changed. Contact your instructor.",
+          error:
+            snapshotGuardFailure.status === 429
+              ? CLOUDSHARE_429_CANDIDATE_MESSAGE
+              : "Exam scheduling is temporarily unavailable because the lab configuration changed. Contact your instructor.",
         correlationId,
       },
     };
@@ -295,9 +299,11 @@ export async function scheduleExamAttemptRuntime(
       });
       deps.logger.warn("candidate exam scheduling failed", diagnostic);
       return {
-        status: 502,
+        status: isCloudShareRateLimitError(error.context.cause) ? 429 : 502,
         body: {
-          error: "CloudShare provisioning failed for the scheduled exam.",
+          error: isCloudShareRateLimitError(error.context.cause)
+            ? CLOUDSHARE_429_CANDIDATE_MESSAGE
+            : "CloudShare provisioning failed for the scheduled exam.",
           correlationId,
         },
       };
@@ -451,21 +457,22 @@ function toProvisioningDiagnostic(
   };
 
   const cause = error.context.cause;
-  if (cause instanceof CloudShareRequestError) {
+  if (isCloudShareRateLimitError(cause) || cause instanceof CloudShareRequestError) {
     return {
       ...base,
-      method: cause.context?.method ?? base.method,
-      path: cause.context?.path ?? base.path,
-      host: cause.context?.host,
-      integrationSurface: cause.context?.integrationSurface ?? base.integrationSurface,
-      failureMode: "http_status",
-      responseStatus: cause.status,
-      requestHeaders: cause.context?.requestHeaders,
-      requestBody: cause.context?.requestBody,
-      responseHeaders: cause.context?.responseHeaders,
-      responseBody: cause.context?.responseBody,
-      network: cause.context?.network,
-      tls: cause.context?.tls,
+      method: (cause as CloudShareRequestError).context?.method ?? base.method,
+      path: (cause as CloudShareRequestError).context?.path ?? base.path,
+      host: (cause as CloudShareRequestError).context?.host,
+      integrationSurface: (cause as CloudShareRequestError).context?.integrationSurface ?? base.integrationSurface,
+      failureMode:
+        isCloudShareRateLimitError(cause) ? "rate_limit" : "http_status",
+      responseStatus: (cause as CloudShareRequestError).status,
+      requestHeaders: (cause as CloudShareRequestError).context?.requestHeaders,
+      requestBody: (cause as CloudShareRequestError).context?.requestBody,
+      responseHeaders: (cause as CloudShareRequestError).context?.responseHeaders,
+      responseBody: (cause as CloudShareRequestError).context?.responseBody,
+      network: (cause as CloudShareRequestError).context?.network,
+      tls: (cause as CloudShareRequestError).context?.tls,
     };
   }
   if (cause instanceof CloudShareTransportError) {

@@ -4,6 +4,7 @@ import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
+import { CLOUDSHARE_429_CANDIDATE_MESSAGE } from "@/domain/cloudshare-rate-limit-message";
 import type { CohortExamSessionRepository } from "@/domain/cohort-exam-session";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { EventLogRepository } from "@/domain/event-log";
@@ -22,6 +23,7 @@ import {
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
+  isCloudShareRateLimitError,
 } from "@/integrations/cloudshare";
 import { createCloudShareLabProvisioner } from "@/integrations/cloudshare/labs";
 import type { Logger } from "@/observability/logger";
@@ -338,7 +340,13 @@ export async function joinCohortExamSessionRuntime(
     await deps.attempts.delete(attemptId);
     return {
       status: snapshotGuardFailure.status,
-      body: { error: snapshotGuardFailure.message },
+      body: {
+        error:
+          snapshotGuardFailure.status === 429
+            ? CLOUDSHARE_429_CANDIDATE_MESSAGE
+            : snapshotGuardFailure.message,
+        correlationId: snapshotGuardFailure.correlationId,
+      },
     };
   }
 
@@ -371,9 +379,11 @@ export async function joinCohortExamSessionRuntime(
     });
     await deps.attempts.delete(attemptId);
     return {
-      status: 502,
+      status: isCloudShareRateLimitError(cause) ? 429 : 502,
       body: {
-        error: "CloudShare could not confirm this Cohort Exam Session is open yet.",
+        error: isCloudShareRateLimitError(cause)
+          ? CLOUDSHARE_429_CANDIDATE_MESSAGE
+          : "CloudShare could not confirm this Cohort Exam Session is open yet.",
         correlationId,
       },
     };
@@ -477,9 +487,11 @@ export async function joinCohortExamSessionRuntime(
     });
     await deps.attempts.delete(attemptId);
     return {
-      status: 502,
+      status: isCloudShareRateLimitError(cause) ? 429 : 502,
       body: {
-        error: "CloudShare provisioning failed for the shared cohort Exam Session.",
+        error: isCloudShareRateLimitError(cause)
+          ? CLOUDSHARE_429_CANDIDATE_MESSAGE
+          : "CloudShare provisioning failed for the shared cohort Exam Session.",
         correlationId,
       },
     };
@@ -543,9 +555,11 @@ export async function joinCohortExamSessionRuntime(
     });
     await deps.attempts.delete(attemptId);
     return {
-      status: 502,
+      status: isCloudShareRateLimitError(cause) ? 429 : 502,
       body: {
-        error: "CloudShare provisioning failed for the shared cohort Exam Session.",
+        error: isCloudShareRateLimitError(cause)
+          ? CLOUDSHARE_429_CANDIDATE_MESSAGE
+          : "CloudShare provisioning failed for the shared cohort Exam Session.",
         correlationId,
       },
     };
@@ -853,14 +867,14 @@ function toProvisioningDiagnostic(
   return {
     request,
     response,
-    details: {
-      attemptedOperation,
-      integrationSurface:
-        context.integrationSurface ?? fallbackIntegrationSurface(attemptedOperation),
-      failureMode: inferFailureMode(cause),
-      ...(status !== undefined ? { responseStatus: status } : {}),
-      ...(context.issues ? { issues: context.issues } : {}),
-      ...(context.cause ? { cause: context.cause } : {}),
+      details: {
+        attemptedOperation,
+        integrationSurface:
+          context.integrationSurface ?? fallbackIntegrationSurface(attemptedOperation),
+        failureMode: inferFailureMode(cause),
+        ...(status !== undefined ? { responseStatus: status } : {}),
+        ...(context.issues ? { issues: context.issues } : {}),
+        ...(context.cause ? { cause: context.cause } : {}),
     },
   };
 }
@@ -902,6 +916,9 @@ function toProvisioningLogFields(diagnostic: {
 }
 
 function inferFailureMode(cause: unknown): string {
+  if (isCloudShareRateLimitError(cause)) {
+    return "rate_limit";
+  }
   if (cause instanceof CloudShareRequestError) {
     return "http_status";
   }

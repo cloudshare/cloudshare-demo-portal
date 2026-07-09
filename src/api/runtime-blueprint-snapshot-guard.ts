@@ -2,6 +2,7 @@ import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
+import { CLOUDSHARE_429_CANDIDATE_MESSAGE } from "@/domain/cloudshare-rate-limit-message";
 import type {
   DiagnosticActor,
   DiagnosticRecorder,
@@ -12,6 +13,7 @@ import {
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
+  isCloudShareRateLimitError,
   type CloudShareClient,
 } from "@/integrations/cloudshare";
 import {
@@ -22,6 +24,7 @@ import type { Logger } from "@/observability/logger";
 
 const SNAPSHOT_DRIFT_MESSAGE =
   "Exam entry is temporarily unavailable because the lab configuration changed. Contact your administrator.";
+const SNAPSHOT_GUARD_RATE_LIMIT_MESSAGE = CLOUDSHARE_429_CANDIDATE_MESSAGE;
 const BLUEPRINT_DETAIL_INTEGRATION_SURFACE = "cloudshare.v3.projects.blueprint_detail";
 
 export interface RuntimeBlueprintSnapshotGuardDeps {
@@ -49,8 +52,9 @@ export interface RuntimeBlueprintSnapshotGuardRequest {
 }
 
 export interface RuntimeBlueprintSnapshotGuardFailure {
-  readonly status: 423;
+  readonly status: 423 | 429;
   readonly message: string;
+  readonly correlationId?: string;
 }
 
 export async function guardRuntimeBlueprintSnapshot(
@@ -68,7 +72,7 @@ export async function guardRuntimeBlueprintSnapshot(
       currentDefaultSnapshotId: null,
       transport: "Runtime snapshot guard dependencies were not configured.",
     });
-    return { status: 423, message: SNAPSHOT_DRIFT_MESSAGE };
+    return { status: 423, message: SNAPSHOT_DRIFT_MESSAGE, correlationId: request.correlationId ?? undefined };
   }
 
   const connection = await deps.connections.findByCustomerId(request.customerId);
@@ -81,7 +85,7 @@ export async function guardRuntimeBlueprintSnapshot(
       currentDefaultSnapshotId: null,
       transport: "CloudShare connection not found for customer.",
     });
-    return { status: 423, message: SNAPSHOT_DRIFT_MESSAGE };
+    return { status: 423, message: SNAPSHOT_DRIFT_MESSAGE, correlationId: request.correlationId ?? undefined };
   }
 
   const source = resolveAuthoringSource(deps.cloudshare, connection);
@@ -106,10 +110,11 @@ export async function guardRuntimeBlueprintSnapshot(
         reason: "default_snapshot_changed",
         currentDefaultSnapshotId: blueprint.defaultSnapshotId,
       });
-      return { status: 423, message: SNAPSHOT_DRIFT_MESSAGE };
+      return { status: 423, message: SNAPSHOT_DRIFT_MESSAGE, correlationId: request.correlationId ?? undefined };
     }
   } catch (error) {
     const cloudShareError = asCloudShareErrorLike(error);
+    const rateLimited = isCloudShareRateLimitError(error);
     const response =
       cloudShareError?.context?.status !== undefined ||
       cloudShareError?.context?.responseHeaders ||
@@ -129,7 +134,7 @@ export async function guardRuntimeBlueprintSnapshot(
     await recordFailure(deps, request, {
       path: (cloudShareError?.context?.path as string | undefined) ?? path,
       response,
-      failureMode: "snapshot_lookup_failed",
+      failureMode: rateLimited ? "snapshot_guard_unavailable" : "snapshot_lookup_failed",
       reason: "blueprint_detail_lookup_failed",
       currentDefaultSnapshotId: null,
       transport: error instanceof Error ? error.message : String(error),
@@ -137,7 +142,11 @@ export async function guardRuntimeBlueprintSnapshot(
       requestHeaders: cloudShareError?.context?.requestHeaders as Record<string, unknown> | undefined,
       requestBody: normalizeDiagnosticPayload(cloudShareError?.context?.requestBody),
     });
-    return { status: 423, message: SNAPSHOT_DRIFT_MESSAGE };
+    return {
+      status: rateLimited ? 429 : 423,
+      message: rateLimited ? SNAPSHOT_GUARD_RATE_LIMIT_MESSAGE : SNAPSHOT_DRIFT_MESSAGE,
+      correlationId: request.correlationId ?? undefined,
+    };
   }
 
   return null;
@@ -174,7 +183,8 @@ function asCloudShareErrorLike(error: unknown): CloudShareError | null {
     typeof error === "object" &&
     error !== null &&
     typeof (error as { name?: unknown }).name === "string" &&
-    ((error as { name: string }).name === "CloudShareRequestError" ||
+    ((error as { name: string }).name === "CloudShareRateLimitError" ||
+      (error as { name: string }).name === "CloudShareRequestError" ||
       (error as { name: string }).name === "CloudShareTransportError" ||
       (error as { name: string }).name === "CloudShareResponseError" ||
       (error as { name: string }).name === "CloudShareError")
@@ -186,6 +196,9 @@ function asCloudShareErrorLike(error: unknown): CloudShareError | null {
 }
 
 function inferIntegrationFailureMode(error: unknown): string {
+  if (isCloudShareRateLimitError(error)) {
+    return "rate_limit";
+  }
   if (error instanceof CloudShareRequestError || (error as { name?: unknown })?.name === "CloudShareRequestError") {
     return "http_status";
   }
@@ -204,7 +217,7 @@ async function recordFailure(
   failure: {
     readonly path: string;
     readonly response: Record<string, unknown> | null;
-    readonly failureMode: "snapshot_drift" | "snapshot_lookup_failed";
+    readonly failureMode: "snapshot_drift" | "snapshot_lookup_failed" | "snapshot_guard_unavailable";
     readonly reason: string;
     readonly currentDefaultSnapshotId: string | null;
     readonly transport?: string;

@@ -1345,6 +1345,87 @@ thread, but reconciliation is detection/mitigation rather than prevention.
 
 ---
 
+## GAP-24 — Rate limiting and abuse protection need first-class handling and support evidence
+
+| Field | Detail |
+|---|---|
+| **Status** | Confirmed in portal handling; live CloudShare 429/abuse thresholds still partly unverified |
+| **Verified live** | Partial — live `429` response shape observed during QA; intentionally forcing or sustaining abuse-list behaviour is unsafe |
+
+**Observed behaviour**
+
+CloudShare can reject requests with classic HTTP rate limiting (`429 Too Many Requests`) and may
+also block requests through abuse-protection responses that present as non-success HTTP statuses with
+body text referring to abuse protection or an abuse list. When this happens, the previous portal
+behaviour treated the failure as a generic `CloudShareRequestError`, which caused three problems:
+
+1. rate-limit state was not modelled explicitly at the integration boundary;
+2. runtime Blueprint/Snapshot guards could misreport a temporary lookup failure as actual
+   `snapshot_drift`;
+3. repeated follow-up requests from the same Customer could hammer CloudShare immediately after a
+   `Retry-After` response.
+
+During 2026-07-09 QA, a live CloudShare v3 `ping` from the portal returned HTTP `429` with response
+body code `0x42901` and no usable `Retry-After` header. Operator context from CloudShare indicates
+that this can be caused by the request public IP landing on an abuse list. Once that happens, retrying
+alone may not clear the condition; a CloudShare/admin action may be needed to remove the IP from the
+abuse list or whitelist/allow-list the public IP. This is especially likely when the caller's public
+IP changes, such as after moving location. A whitelisted public IP should not normally appear on the
+abuse list.
+
+The portal now treats these as a first-class integration condition:
+
+- `CloudShareRateLimitError` is raised at the CloudShare boundary for `429` responses, including
+  v4 OAuth token throttling, and for explicit `403` abuse-list/protection responses;
+- redacted diagnostics retain `Retry-After` and related rate-limit headers;
+- safe idempotent reads (`GET`) may perform one bounded retry using `Retry-After` or a short jittered
+  delay;
+- side-effecting writes (`POST`/`PUT`/`DELETE`) do **not** auto-retry;
+- an observed rate limit activates a per-Customer cooldown so later requests fail fast with a typed
+  rate-limit condition instead of immediately hitting CloudShare again.
+
+**Impact on certification use**
+
+- Candidate/admin-facing flows can now return a deliberate rate-limit response instead of a generic
+  502/423, so support can distinguish "CloudShare is busy" from "the Exam configuration drifted".
+- Snapshot guard diagnostics now separate true `snapshot_drift` from
+  `snapshot_guard_unavailable` caused by throttling.
+- Support diagnostics retain the redacted upstream headers needed to reason about retry timing
+  without exposing credentials or bearer artifacts.
+- Admin/support-facing 429 paths now share the same guidance: CloudShare is returning a 429 for the
+  current request; support should treat this as likely rate limiting or abuse protection and check
+  whether the public IP needs CloudShare allow-list or abuse-list review before retrying by contacting
+  `support@cloudshare.com`.
+- Candidate-facing 429 paths intentionally do **not** mention CloudShare support, allow-lists, abuse
+  lists, or internal CloudShare details. Candidates are told that something is not working right now
+  and to contact their instructor before trying again.
+- The current cooldown store is intentionally minimal: it is **in-memory and per-process**, keyed by
+  Customer. That protects the main server instance from immediate repeated calls, but it is not yet
+  shared across multiple app instances or persisted across process restarts.
+
+**Action required (if applicable):**
+
+Confirm with CloudShare support/R&D:
+
+1. which non-429 statuses/bodies are the authoritative abuse-protection signals beyond explicit
+   `403` abuse-list/protection wording;
+2. whether `Retry-After` is always present and whether other rate-limit headers have a documented
+   contract;
+3. the operational process for removing a public IP from the abuse list;
+4. the exact whitelisting/customer allow-list process for demo traffic or portal server IPs, and how
+   to detect when the caller's public IP has changed;
+5. whether the portal should eventually persist/shared-cache the per-Customer cooldown across
+   instances instead of relying on per-process memory.
+
+**Code reference:** `src/integrations/cloudshare/errors.ts`,
+`src/integrations/cloudshare/client.ts`,
+`src/domain/cloudshare-rate-limit-message.ts`,
+`src/api/runtime-blueprint-snapshot-guard.ts`,
+`src/api/exam-attempt-scheduling-runtime.ts`,
+`src/api/exam-attempt-runtime.ts`
+
+---
+
 ## Gap template
 
 Copy this section when appending a new gap discovered during implementation:
@@ -1436,5 +1517,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-07-06 (added GAP-23 for CloudShare authenticated landing-page exposure after sponsored-link suspend).
+*Last updated: 2026-07-09 (updated GAP-24 with live `0x42901` evidence and CloudShare public-IP allow-list / abuse-list operator context).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*

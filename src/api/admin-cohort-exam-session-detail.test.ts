@@ -3,7 +3,7 @@ import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createDraftCohortExamSession, markCohortExamSessionPublished } from "@/domain/cohort-exam-session";
 import { createDraftExam, publishExam, type CreateDraftExamInput } from "@/domain/exam-catalog";
 import type { CloudShareClientFactory } from "@/domain/cloudshare-connection";
-import { CloudShareRequestError, CloudShareTransportError } from "@/integrations/cloudshare";
+import { CloudShareRateLimitError, CloudShareRequestError, CloudShareTransportError } from "@/integrations/cloudshare";
 import { createInMemoryCohortExamSessionRepository } from "@/persistence/cohort-exam-session-repository";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import { createInMemoryExamCatalogRepository } from "@/persistence/exam-catalog-repository";
@@ -1191,6 +1191,103 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
         failureMode: "transport",
         cause: "ECONNRESET",
         experienceId: "EXcohort-1",
+      },
+    });
+  });
+
+  it("records rate-limit diagnostics when aggregate Guided Journey progress is throttled", async () => {
+    const exams = createInMemoryExamCatalogRepository();
+    const sessions = createInMemoryCohortExamSessionRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({
+      repository: diagnosticsRepository,
+      secrets: ["secret-api-key"],
+    });
+    await seedPublishedExam(exams);
+    await seedPublishedSession(sessions);
+
+    const attempts: AdminCohortExamSessionAttemptRepository = {
+      listBySessionId: vi.fn().mockResolvedValue([]),
+    };
+
+    const cloudshare: CloudShareClientFactory = {
+      forConnection: () =>
+        ({
+          requestV4Detailed: vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+            if (spec.path === "/guided-journey/progress/EXcohort-1") {
+              throw new CloudShareRateLimitError("too many requests", 429, "rate_limit", {
+                method: "GET",
+                path: "/guided-journey/progress/EXcohort-1",
+                integrationSurface: "cloudshare.v4.guided_journey.progress.aggregate",
+                responseHeaders: { "retry-after": "45" },
+              });
+            }
+
+            return {
+              data: spec.schema.parse({ items: [] }),
+              host: "api.accelerate.cloudshare.com",
+              integrationSurface: "cloudshare.v4.training.participant",
+              request: { method: "GET", path: "/v4/trainings/EXcohort-1/students" },
+              response: { status: 200, body: { items: [] } },
+            };
+          }),
+        }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>,
+    };
+
+    const response = await handleGetAdminCohortExamSessionDetail(
+      {
+        exams,
+        sessions,
+        attempts,
+        diagnostics,
+        connections: {
+          findByCustomerId: vi.fn(async () => ({
+            customerId: "customer-1",
+            apiId: "api-id",
+            apiKey: "secret-api-key",
+            webhookSecret: "webhook-secret",
+            webhookPathToken: "webhook-token",
+            connectedAt: new Date("2026-07-01T00:00:00.000Z"),
+            verifiedAt: new Date("2026-07-01T00:05:00.000Z"),
+          })),
+          save: vi.fn(),
+          findByWebhookPathToken: vi.fn(),
+          markVerified: vi.fn(),
+        },
+        cloudshare,
+        logger: makeLogger(),
+        newCorrelationId: () => "corr-session-detail-aggregate-rate-limit",
+      },
+      {
+        customerId: "customer-1",
+        examId: "exam-1",
+        sessionId: "cohort-session-1",
+      },
+    );
+
+    expect(response.status).toBe(200);
+    if (!("monitoring" in response.body)) {
+      throw new Error("Expected monitoring payload");
+    }
+    expect(response.body.monitoring.guidedJourneyAggregate.status).toBe("unavailable");
+
+    const [entry] = await diagnosticsRepository.query({
+      customerId: "customer-1",
+      examId: "exam-1",
+      operation: "cohort_exam_session.guided_journey_aggregate.read",
+      outcome: "failure",
+    });
+    expect(entry).toMatchObject({
+      correlationId: "corr-session-detail-aggregate-rate-limit",
+      details: {
+        integrationSurface: "cloudshare.v4.guided_journey.progress.aggregate",
+        failureMode: "rate_limit",
+        responseStatus: 429,
+        experienceId: "EXcohort-1",
+      },
+      response: {
+        status: 429,
+        headers: { "retry-after": "45" },
       },
     });
   });

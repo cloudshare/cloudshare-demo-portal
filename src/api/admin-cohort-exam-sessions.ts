@@ -15,6 +15,7 @@ import type {
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
 import type { DiagnosticActor, DiagnosticLogEntryInput, DiagnosticRecorder } from "@/domain/diagnostic-log";
+import { CLOUDSHARE_429_ADMIN_SUPPORT_GUIDANCE } from "@/domain/cloudshare-rate-limit-message";
 import {
   ExamNotFoundError,
   isCohortExamSessionDeliveryAvailable,
@@ -25,6 +26,7 @@ import {
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
+  isCloudShareRateLimitError,
 } from "@/integrations/cloudshare";
 import { createCloudShareOnDemandExperienceCreator } from "@/integrations/cloudshare/cohort-experiences";
 import type { Logger } from "@/observability/logger";
@@ -255,7 +257,9 @@ export async function handlePublishCohortExamSession(
         status: snapshotGuardFailure.status,
         body: {
           error:
-            "Cohort Exam Session publish is temporarily unavailable because the lab configuration changed. Refresh CloudShare resources and check the Exam Blueprint/default Snapshot.",
+            snapshotGuardFailure.status === 429
+              ? CLOUDSHARE_429_ADMIN_SUPPORT_GUIDANCE
+              : "Cohort Exam Session publish is temporarily unavailable because the lab configuration changed. Refresh CloudShare resources and check the Exam Blueprint/default Snapshot.",
           correlationId,
         },
       };
@@ -484,10 +488,12 @@ export async function handlePublishCohortExamSession(
         ...toPublishFailureLogFields(error),
       });
       return {
-        status: 502,
+        status: isCloudShareRateLimitError(error) ? 429 : 502,
         body: {
           error:
-            classifyCloudSharePublishFailure(error) === "reconciliation_required"
+            isCloudShareRateLimitError(error)
+              ? CLOUDSHARE_429_ADMIN_SUPPORT_GUIDANCE
+              : classifyCloudSharePublishFailure(error) === "reconciliation_required"
               ? "CloudShare publish outcome is unknown. Reconcile it before retrying this Cohort Exam Session. Check the diagnostic log for the correlation ID."
               : "CloudShare could not publish this Cohort Exam Session. Check the diagnostic log for the correlation ID.",
           correlationId,
@@ -591,6 +597,9 @@ function toPublishFailureLogFields(error: unknown): Record<string, unknown> {
 }
 
 function inferPublishFailureMode(error: unknown): string {
+  if (isCloudShareRateLimitError(error)) {
+    return "rate_limit";
+  }
   if (error instanceof CloudShareRequestError || (error as { name?: unknown }).name === "CloudShareRequestError") {
     return "http_status";
   }

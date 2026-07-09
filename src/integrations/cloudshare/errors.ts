@@ -34,6 +34,32 @@ export class CloudShareRequestError extends CloudShareError {
   }
 }
 
+export type CloudShareRateLimitClassification = "rate_limit" | "abuse_protection";
+
+/** A CloudShare request was throttled or blocked by abuse protection. */
+export class CloudShareRateLimitError extends CloudShareRequestError {
+  readonly retryAfterSeconds?: number;
+  readonly rateLimitHeaders?: Record<string, string | string[]>;
+
+  constructor(
+    message: string,
+    status: number,
+    readonly classification: CloudShareRateLimitClassification,
+    context?: Record<string, unknown>,
+  ) {
+    super(message, status, context);
+    this.name = "CloudShareRateLimitError";
+    this.retryAfterSeconds =
+      typeof context?.retryAfterSeconds === "number"
+        ? context.retryAfterSeconds
+        : undefined;
+    this.rateLimitHeaders =
+      isRateLimitHeaderMap(context?.rateLimitHeaders)
+        ? context.rateLimitHeaders
+        : undefined;
+  }
+}
+
 /**
  * A request never reached CloudShare (or no response came back): DNS failure,
  * timeout, connection refused, TLS error. Distinct from {@link CloudShareRequestError}
@@ -61,4 +87,27 @@ export class CloudShareFixtureError extends CloudShareError {
     super(message, context);
     this.name = "CloudShareFixtureError";
   }
+}
+
+export function isCloudShareRateLimitError(error: unknown): error is CloudShareRateLimitError {
+  return (
+    error instanceof CloudShareRateLimitError ||
+    (typeof error === "object" &&
+      error !== null &&
+      (error as { name?: unknown }).name === "CloudShareRateLimitError")
+  );
+}
+
+function isRateLimitHeaderMap(
+  value: unknown,
+): value is Record<string, string | string[]> {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  return Object.values(value as Record<string, unknown>).every(
+    (entry) =>
+      typeof entry === "string" ||
+      (Array.isArray(entry) && entry.every((item) => typeof item === "string")),
+  );
 }

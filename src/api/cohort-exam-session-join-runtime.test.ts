@@ -20,7 +20,11 @@ import {
 } from "@/domain/exam-attempt";
 import { createDraftExam, publishExam, type CreateDraftExamInput } from "@/domain/exam-catalog";
 import type { CloudShareExamAuthoringSource } from "@/integrations/cloudshare/resources";
-import { CloudShareRequestError, CloudShareTransportError } from "@/integrations/cloudshare";
+import {
+  CloudShareRateLimitError,
+  CloudShareRequestError,
+  CloudShareTransportError,
+} from "@/integrations/cloudshare";
 import type { Logger } from "@/observability/logger";
 import { joinCohortExamSessionRuntime } from "./cohort-exam-session-join-runtime";
 
@@ -77,7 +81,8 @@ function makeConnectionRepository(
 }
 
 function makeCloudShareFactory(
-  overrides: Partial<ReturnType<CloudShareClientFactory["forConnection"]>> = {},
+  overrides: Partial<ReturnType<CloudShareClientFactory["forConnection"]>> &
+    Partial<CloudShareExamAuthoringSource> = {},
 ): CloudShareClientFactory {
   const source = makeAuthoringSource();
   const requestV4Detailed =
@@ -640,6 +645,7 @@ describe("joinCohortExamSessionRuntime", () => {
       body: {
         error:
           "Exam entry is temporarily unavailable because the lab configuration changed. Contact your administrator.",
+        correlationId: "corr-cohort-snapshot-drift",
       },
     });
     expect(requestV4Detailed).not.toHaveBeenCalled();
@@ -725,6 +731,7 @@ describe("joinCohortExamSessionRuntime", () => {
       body: {
         error:
           "Exam entry is temporarily unavailable because the lab configuration changed. Contact your administrator.",
+        correlationId: "corr-cohort-snapshot-lookup-fail",
       },
     });
     expect(requestV4Detailed).not.toHaveBeenCalled();
@@ -1338,6 +1345,60 @@ describe("joinCohortExamSessionRuntime", () => {
         }),
       }),
     ]);
+  });
+
+  it("returns candidate-safe copy when the Cohort Snapshot lookup is rate limited", async () => {
+    const exams = await makeExamRepository();
+    const sessions = await makePublishedSession();
+    const attempts = createInMemoryExamAttemptRepository();
+    const cloudshare = makeCloudShareFactory({
+      getBlueprintDetail: vi.fn().mockRejectedValue(
+        new CloudShareRateLimitError("too many requests", 429, "rate_limit", {
+          surface: "cloudshare.v3.projects.blueprint_detail",
+          method: "GET",
+          path: "/projects/project-1/blueprints/bp-1",
+          responseHeaders: {},
+          responseBody: { code: "0x42901" },
+        }),
+      ),
+    });
+
+    const response = await joinCohortExamSessionRuntime(
+      {
+        exams,
+        sessions,
+        attempts,
+        launches: createInMemoryLabLaunchRepository(),
+        audit: createInMemoryAuditRepository(),
+        eventLog: createInMemoryEventLogRepository(),
+        connections: makeConnectionRepository(),
+        cloudshare,
+        diagnostics: createDiagnosticRecorder({ repository: createInMemoryDiagnosticLogRepository() }),
+        logger: makeLogger(),
+        now: () => new Date("2026-07-05T10:00:00.000Z"),
+        newId: vi.fn().mockReturnValueOnce("attempt-rate-limited"),
+        newCorrelationId: () => "corr-cohort-snapshot-rate-limit",
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        examId: "exam-1",
+        cohortSessionId: "cohort-session-1",
+      },
+    );
+
+    expect(response).toEqual({
+      status: 429,
+      body: {
+        error: "Something is not working right now. Contact your instructor before trying again.",
+        correlationId: "corr-cohort-snapshot-rate-limit",
+      },
+    });
+    expect(JSON.stringify(response.body)).not.toContain("support@cloudshare.com");
+    await expect(attempts.findById("attempt-rate-limited")).resolves.toBeNull();
   });
 
   it("records a diagnostic when CloudShare is not connected before touching CloudShare", async () => {

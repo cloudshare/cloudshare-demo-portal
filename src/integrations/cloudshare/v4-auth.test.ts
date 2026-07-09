@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { createV4TokenProvider } from "./v4-auth";
-import { CloudShareAuthError } from "./errors";
+import { CloudShareAuthError, CloudShareRateLimitError } from "./errors";
 import type { HttpClient, HttpResponse } from "./http";
 
 const tokenResponse = (accessToken: string, expiresIn = 300): HttpResponse => ({
@@ -71,6 +71,56 @@ describe("createV4TokenProvider", () => {
     const { http } = stubHttp([{ status: 401, body: "unauthorized" }]);
     const provider = createV4TokenProvider({ ...baseOpts, http });
     await expect(provider.getToken()).rejects.toBeInstanceOf(CloudShareAuthError);
+  });
+
+  it("raises CloudShareRateLimitError on a throttled token response with retry headers", async () => {
+    const { http } = stubHttp([
+      {
+        status: 429,
+        body: "too many requests",
+        headers: { "Retry-After": "7", "X-RateLimit-Remaining": "0" },
+      },
+    ]);
+    const provider = createV4TokenProvider({ ...baseOpts, http });
+
+    const result = provider.getToken();
+    await expect(result).rejects.toBeInstanceOf(CloudShareRateLimitError);
+    await expect(result).rejects.toMatchObject({
+      name: "CloudShareRateLimitError",
+      status: 429,
+      classification: "rate_limit",
+      retryAfterSeconds: 7,
+      rateLimitHeaders: {
+        "Retry-After": "7",
+        "X-RateLimit-Remaining": "0",
+      },
+      context: {
+        method: "POST",
+        path: "/oauth/token",
+        integrationSurface: "cloudshare.v4.oauth.token",
+        requestHeaders: { "content-type": "application/x-www-form-urlencoded" },
+        requestBody: expect.not.stringContaining("secret-1"),
+        responseBody: "too many requests",
+      },
+    });
+  });
+
+  it("classifies explicit v4 token abuse-protection responses", async () => {
+    const { http } = stubHttp([
+      {
+        status: 403,
+        body: "Blocked by abuse protection list",
+        headers: { "Retry-After": "60" },
+      },
+    ]);
+    const provider = createV4TokenProvider({ ...baseOpts, http });
+
+    await expect(provider.getToken()).rejects.toMatchObject({
+      name: "CloudShareRateLimitError",
+      status: 403,
+      classification: "abuse_protection",
+      retryAfterSeconds: 60,
+    });
   });
 
   it("raises CloudShareAuthError on a malformed token body", async () => {

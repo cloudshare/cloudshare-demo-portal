@@ -11,12 +11,14 @@ import {
   type CohortExamSessionRepository,
 } from "@/domain/cohort-exam-session";
 import type { DiagnosticActor, DiagnosticLogEntryInput, DiagnosticRecorder } from "@/domain/diagnostic-log";
+import { CLOUDSHARE_429_ADMIN_SUPPORT_GUIDANCE } from "@/domain/cloudshare-rate-limit-message";
 import { ExamNotFoundError, type ExamRepository } from "@/domain/exam-catalog";
 import type { TrainingParticipant } from "@/domain/environment-correlation";
 import {
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
+  isCloudShareRateLimitError,
 } from "@/integrations/cloudshare";
 import { createCloudShareTrainingRetirementWriter } from "@/integrations/cloudshare/cohort-experience-retirement";
 import { createCloudShareTrainingParticipantReader } from "@/integrations/cloudshare/participants";
@@ -211,9 +213,11 @@ export async function handleRetireCohortExamSession(
         ...diagnostic.details,
       });
       return {
-        status: 502,
+        status: isCloudShareRateLimitError(error) ? 429 : 502,
         body: {
-          error: "CloudShare could not retire this Cohort Exam Session. Check the diagnostic log for the correlation ID.",
+          error: isCloudShareRateLimitError(error)
+            ? CLOUDSHARE_429_ADMIN_SUPPORT_GUIDANCE
+            : "CloudShare could not retire this Cohort Exam Session. Check the diagnostic log for the correlation ID.",
           correlationId,
         },
       };
@@ -370,6 +374,9 @@ function toCloudShareFailureDiagnostic(
 }
 
 function inferFailureMode(error: unknown): string {
+  if (isCloudShareRateLimitError(error)) {
+    return "rate_limit";
+  }
   if (error instanceof CloudShareRequestError || (error as { name?: unknown }).name === "CloudShareRequestError") {
     return "http_status";
   }
