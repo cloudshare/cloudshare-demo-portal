@@ -56,6 +56,27 @@ async function seedExam(
   );
 }
 
+function parseSuccessfulPublishV3(
+  spec: { path?: string; schema: { parse(value: unknown): unknown } },
+  teamRows: Array<{ id: string; name: string }> = [{ id: "TM-team-1", name: "Helios Team" }],
+) {
+  if (spec.path === "/projects/project-1/blueprints/bp-1") {
+    return spec.schema.parse({
+      id: "bp-1",
+      name: "Helios Exam Blueprint",
+      createFromVersions: [
+        {
+          id: "snap-1",
+          name: "Default Snapshot",
+          isDefault: true,
+          Regions: ["region-1", "region-2"],
+        },
+      ],
+    });
+  }
+  return spec.schema.parse({ rows: teamRows });
+}
+
 describe("admin Cohort Exam Session runtime", () => {
   const actor = {
     type: "admin",
@@ -231,10 +252,8 @@ describe("admin Cohort Exam Session runtime", () => {
       secrets: ["secret-api-key"],
     });
     const audit = { write: vi.fn().mockResolvedValue(undefined) };
-    const requestV3 = vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) =>
-      spec.schema.parse({
-        rows: [{ id: "TM-team-1", name: "Helios Team" }],
-      }),
+    const requestV3 = vi.fn(async (spec: { path?: string; schema: { parse(value: unknown): unknown } }) =>
+      parseSuccessfulPublishV3(spec),
     );
     const requestV4Detailed = vi.fn(
       async (spec: { method: string; path: string; body: Record<string, unknown>; schema: { parse(value: unknown): unknown } }) => ({
@@ -398,6 +417,126 @@ describe("admin Cohort Exam Session runtime", () => {
     );
   });
 
+  it("blocks publish before creating the shared Experience when the Blueprint default Snapshot drifted", async () => {
+    const exams = createInMemoryExamCatalogRepository();
+    const sessions = createInMemoryCohortExamSessionRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
+    await seedExam(exams);
+    await handleCreateDraftCohortExamSession(
+      {
+        exams,
+        sessions,
+        logger: makeLogger(),
+        now: () => new Date("2026-07-04T11:00:00.000Z"),
+        newId: () => "cohort-session-1",
+      },
+      {
+        customerId: "customer-1",
+        actor,
+        examId: "exam-1",
+        body: {
+          name: "July Admin Cohort",
+          admissionStartsAt: "2026-07-05T09:00:00.000Z",
+          admissionEndsAt: "2026-07-31T17:00:00.000Z",
+          capacity: 25,
+        },
+      },
+    );
+    const requestV3 = vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+      if (spec.path === "/projects/project-1/blueprints/bp-1") {
+        return spec.schema.parse({
+          id: "bp-1",
+          name: "Helios Exam Blueprint",
+          createFromVersions: [
+            {
+              id: "snap-2",
+              name: "Changed Default Snapshot",
+              isDefault: true,
+              Regions: ["region-1"],
+            },
+          ],
+        });
+      }
+      if (spec.path === "/teams") {
+        return spec.schema.parse({ rows: [{ id: "TM-team-1", name: "Helios Team" }] });
+      }
+      throw new Error(`unexpected v3 path ${spec.path}`);
+    });
+    const requestV4Detailed = vi.fn();
+    const cloudshare: CloudShareClientFactory = {
+      forConnection: () =>
+        ({
+          requestV3,
+          requestV4Detailed,
+        }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>,
+    };
+
+    const response = await handlePublishCohortExamSession(
+      {
+        exams,
+        sessions,
+        connections: {
+          findByCustomerId: vi.fn(async () => ({
+            customerId: "customer-1",
+            apiId: "api-id",
+            apiKey: "secret-api-key",
+            webhookSecret: "webhook-secret",
+            webhookPathToken: "webhook-token",
+            connectedAt: new Date("2026-07-01T00:00:00.000Z"),
+            verifiedAt: new Date("2026-07-01T00:05:00.000Z"),
+          })),
+          save: vi.fn(),
+          findByWebhookPathToken: vi.fn(),
+          markVerified: vi.fn(),
+        },
+        cloudshare,
+        diagnostics,
+        logger: makeLogger(),
+        now: () => new Date("2026-07-04T12:00:00.000Z"),
+        newCorrelationId: () => "corr-cohort-snapshot-drift",
+      },
+      {
+        customerId: "customer-1",
+        actor,
+        examId: "exam-1",
+        sessionId: "cohort-session-1",
+      },
+    );
+
+    expect(response).toEqual({
+      status: 423,
+      body: {
+        error:
+          "Cohort Exam Session publish is temporarily unavailable because the lab configuration changed. Refresh CloudShare resources and check the Exam Blueprint/default Snapshot.",
+        correlationId: "corr-cohort-snapshot-drift",
+      },
+    });
+    expect(requestV4Detailed).not.toHaveBeenCalled();
+    await expect(sessions.findById("cohort-session-1")).resolves.toMatchObject({
+      status: "draft",
+      cloudShareTrainingId: null,
+      cloudShareExperienceId: null,
+    });
+
+    const [entry] = await diagnosticsRepository.query({
+      customerId: "customer-1",
+      examId: "exam-1",
+      operation: "cohort_exam_session.publish",
+      outcome: "failure",
+    });
+    expect(entry).toMatchObject({
+      actor,
+      subject: { type: "cohort_exam_session", id: "cohort-session-1" },
+      correlationId: "corr-cohort-snapshot-drift",
+      details: {
+        failureMode: "snapshot_drift",
+        savedSnapshotId: "snap-1",
+        currentDefaultSnapshotId: "snap-2",
+      },
+    });
+  });
+
   it("keeps a session recoverable and records diagnostics when CloudShare rejects publish", async () => {
     const { exams, sessions, diagnosticsRepository, deps, requestV4Detailed } = await makePublishFailureDeps(
       new CloudShareRequestError("CloudShare rejected the training", 400, {
@@ -494,8 +633,8 @@ describe("admin Cohort Exam Session runtime", () => {
         },
       },
     );
-    const requestV3 = vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) =>
-      spec.schema.parse({ rows: [] }),
+    const requestV3 = vi.fn(async (spec: { path?: string; schema: { parse(value: unknown): unknown } }) =>
+      parseSuccessfulPublishV3(spec, []),
     );
     const requestV4Detailed = vi.fn();
     const cloudshare: CloudShareClientFactory = {
@@ -613,8 +752,8 @@ describe("admin Cohort Exam Session runtime", () => {
         await exams.save(exam);
       }),
     };
-    const requestV3 = vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) =>
-      spec.schema.parse({ rows: [{ id: "TM-team-1", name: "Helios Team" }] }),
+    const requestV3 = vi.fn(async (spec: { path?: string; schema: { parse(value: unknown): unknown } }) =>
+      parseSuccessfulPublishV3(spec),
     );
     const requestV4Detailed = vi.fn(
       async (spec: { method: string; path: string; body: Record<string, unknown>; schema: { parse(value: unknown): unknown } }) => ({
@@ -737,8 +876,8 @@ describe("admin Cohort Exam Session runtime", () => {
         },
       },
     );
-    const requestV3 = vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) =>
-      spec.schema.parse({ rows: [{ id: "TM-team-1", name: "Helios Team" }] }),
+    const requestV3 = vi.fn(async (spec: { path?: string; schema: { parse(value: unknown): unknown } }) =>
+      parseSuccessfulPublishV3(spec),
     );
     const trainingPost = deferred<{
       data: unknown;
@@ -1024,8 +1163,8 @@ async function makePublishFailureDeps(error: Error) {
       },
     },
   );
-  const requestV3 = vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) =>
-    spec.schema.parse({ rows: [{ id: "TM-team-1", name: "Helios Team" }] }),
+  const requestV3 = vi.fn(async (spec: { path?: string; schema: { parse(value: unknown): unknown } }) =>
+    parseSuccessfulPublishV3(spec),
   );
   const requestV4Detailed = vi.fn(async () => {
     throw error;

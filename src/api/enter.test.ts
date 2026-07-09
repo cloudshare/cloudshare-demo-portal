@@ -16,8 +16,10 @@ import type {
   V4RequestSpec,
 } from "@/integrations/cloudshare/client";
 import { CloudShareRequestError } from "@/integrations/cloudshare";
+import type { CloudShareExamAuthoringSource } from "@/integrations/cloudshare/resources";
 import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
+import { buildEnterExamBlockedPage } from "./enter";
 
 function makeLogger(): Logger {
   return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -54,13 +56,41 @@ function makeConnections(): CloudShareConnectionRepository {
 function makeCloudShareFactory(
   requestV3: ReturnType<CloudShareClientFactory["forConnection"]>["requestV3"],
 ): CloudShareClientFactory {
+  const source = makeAuthoringSource();
   return {
     forConnection: () => ({
+      ...source,
       requestV3,
       requestV3Text: vi.fn(),
       requestV4: vi.fn(),
       requestV4Detailed: vi.fn(),
     }),
+  };
+}
+
+function makeAuthoringSource(
+  overrides: Partial<CloudShareExamAuthoringSource> = {},
+): CloudShareExamAuthoringSource {
+  return {
+    listProjects: vi.fn().mockResolvedValue([]),
+    listRegions: vi.fn().mockResolvedValue([]),
+    listProjectBlueprints: vi.fn().mockResolvedValue([]),
+    listProjectPolicies: vi.fn().mockResolvedValue([]),
+    getBlueprintDetail: vi.fn().mockResolvedValue({
+      id: "bp-1",
+      name: "Helios Guided Journey",
+      description: "",
+      defaultSnapshotId: "snap-1",
+      snapshots: [
+        {
+          id: "snap-1",
+          name: "Default Snapshot",
+          isDefault: true,
+          regionIds: ["region-1"],
+        },
+      ],
+    }),
+    ...overrides,
   };
 }
 
@@ -252,6 +282,37 @@ describe("handleEnterExam", () => {
     expect(response.body).toBe("Exam entry is not available for this attempt.");
   });
 
+  it("builds a styled blocked-entry page that notifies and closes the child window", () => {
+    const html = buildEnterExamBlockedPage({
+      examAttemptId: "attempt-1",
+      status: 423,
+      message:
+        "Exam entry is temporarily unavailable because the lab configuration changed. Contact your administrator.",
+    });
+
+    expect(html).toContain("Exam entry unavailable");
+    expect(html).toContain("certalis:exam-entry-blocked");
+    expect(html).toContain("window.opener.postMessage");
+    expect(html).toContain("window.close()");
+    expect(html).toContain("/candidate/lab?examAttemptId=attempt-1");
+    expect(html).toContain(
+      "Exam entry is temporarily unavailable because the lab configuration changed. Contact your administrator.",
+    );
+  });
+
+  it("escapes blocked-entry page content before rendering fallback HTML", () => {
+    const html = buildEnterExamBlockedPage({
+      examAttemptId: "attempt-<1>",
+      status: 423,
+      message: "Blocked <script>alert('x')</script>",
+    });
+
+    expect(html).toContain("Blocked &lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;");
+    expect(html).not.toContain("Blocked <script>");
+    expect(html).toContain("attempt-%3C1%3E");
+    expect(html).toContain("\\u003c1>");
+  });
+
   it("redirects during the authored open window even when CloudShare environment readback would report expired", async () => {
     const attempts = createInMemoryExamAttemptRepository();
     const launches = createInMemoryLabLaunchRepository();
@@ -325,6 +386,7 @@ describe("handleEnterExam", () => {
     const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
     const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
     const timer = makeTimer();
+    const source = makeAuthoringSource();
     const requestV4Detailed = vi.fn().mockImplementation(
       async <T>(spec: V4RequestSpec<T>): Promise<CloudShareDetailedResult<T>> => {
         if (spec.path === "/trainings/EXtraining-1") {
@@ -384,6 +446,7 @@ describe("handleEnterExam", () => {
         connections: makeConnections(),
         cloudshare: {
           forConnection: () => ({
+            ...source,
             requestV3: vi.fn(),
             requestV3Text: vi.fn(),
             requestV4: vi.fn(),
@@ -444,6 +507,7 @@ describe("handleEnterExam", () => {
       createdAt: new Date("2026-06-15T10:00:00.000Z"),
     });
 
+    const source = makeAuthoringSource();
     const requestV4Detailed = vi.fn().mockImplementation(
       async <T>(spec: V4RequestSpec<T>): Promise<CloudShareDetailedResult<T>> => {
         if (spec.path === "/trainings/EXtraining-1") {
@@ -481,6 +545,7 @@ describe("handleEnterExam", () => {
         connections: makeConnections(),
         cloudshare: {
           forConnection: () => ({
+            ...source,
             requestV3: vi.fn(),
             requestV3Text: vi.fn(),
             requestV4: vi.fn(),

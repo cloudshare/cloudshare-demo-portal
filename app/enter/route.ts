@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { getServices } from "@/composition";
 import { getPortalSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
-import { handleEnterExam } from "@/api/enter";
+import { buildEnterExamBlockedPage, handleEnterExam } from "@/api/enter";
 
 export async function GET(request: Request) {
   const services = getServices();
@@ -49,6 +49,23 @@ export async function GET(request: Request) {
       candidateId: session.userId,
     },
   );
+
+  if (response.status >= 400) {
+    return new NextResponse(
+      buildEnterExamBlockedPage({
+        examAttemptId,
+        status: response.status,
+        message: response.body,
+      }),
+      {
+        status: response.status,
+        headers: {
+          "cache-control": "no-store",
+          "content-type": "text/html; charset=utf-8",
+        },
+      },
+    );
+  }
 
   return new NextResponse(response.body, {
     status: response.status,

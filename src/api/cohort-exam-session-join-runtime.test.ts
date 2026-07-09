@@ -19,7 +19,8 @@ import {
   type ExamAttemptRepository,
 } from "@/domain/exam-attempt";
 import { createDraftExam, publishExam, type CreateDraftExamInput } from "@/domain/exam-catalog";
-import { CloudShareRequestError } from "@/integrations/cloudshare";
+import type { CloudShareExamAuthoringSource } from "@/integrations/cloudshare/resources";
+import { CloudShareRequestError, CloudShareTransportError } from "@/integrations/cloudshare";
 import type { Logger } from "@/observability/logger";
 import { joinCohortExamSessionRuntime } from "./cohort-exam-session-join-runtime";
 
@@ -78,6 +79,7 @@ function makeConnectionRepository(
 function makeCloudShareFactory(
   overrides: Partial<ReturnType<CloudShareClientFactory["forConnection"]>> = {},
 ): CloudShareClientFactory {
+  const source = makeAuthoringSource();
   const requestV4Detailed =
     (overrides.requestV4Detailed as
       | ReturnType<CloudShareClientFactory["forConnection"]>["requestV4Detailed"]
@@ -130,12 +132,39 @@ function makeCloudShareFactory(
 
   return {
     forConnection: vi.fn(() => ({
+      ...source,
       requestV3: vi.fn(),
       requestV3Text: vi.fn(),
       requestV4: vi.fn(),
       requestV4Detailed,
       ...overrides,
     })),
+  };
+}
+
+function makeAuthoringSource(
+  overrides: Partial<CloudShareExamAuthoringSource> = {},
+): CloudShareExamAuthoringSource {
+  return {
+    listProjects: vi.fn().mockResolvedValue([]),
+    listRegions: vi.fn().mockResolvedValue([]),
+    listProjectBlueprints: vi.fn().mockResolvedValue([]),
+    listProjectPolicies: vi.fn().mockResolvedValue([]),
+    getBlueprintDetail: vi.fn().mockResolvedValue({
+      id: "bp-1",
+      name: "Helios Exam Blueprint",
+      description: "",
+      defaultSnapshotId: "snap-1",
+      snapshots: [
+        {
+          id: "snap-1",
+          name: "Default Snapshot",
+          isDefault: true,
+          regionIds: ["region-1"],
+        },
+      ],
+    }),
+    ...overrides,
   };
 }
 
@@ -500,6 +529,228 @@ describe("joinCohortExamSessionRuntime", () => {
         code: "cohort_session_retake_blocked",
       },
     });
+  });
+
+  it("allows join when the saved Exam snapshot still matches the current CloudShare Blueprint default Snapshot", async () => {
+    const exams = await makeExamRepository();
+    const sessions = await makePublishedSession();
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const source = makeAuthoringSource();
+
+    const response = await joinCohortExamSessionRuntime(
+      {
+        exams,
+        sessions,
+        attempts,
+        launches,
+        audit: createInMemoryAuditRepository(),
+        eventLog: createInMemoryEventLogRepository(),
+        connections: makeConnectionRepository(),
+        cloudshare: {
+          forConnection: vi.fn(() => ({
+            ...source,
+            requestV3: vi.fn(),
+            requestV3Text: vi.fn(),
+            requestV4: vi.fn(),
+            requestV4Detailed: makeCloudShareFactory().forConnection({} as never).requestV4Detailed,
+          })),
+        },
+        diagnostics: createDiagnosticRecorder({ repository: createInMemoryDiagnosticLogRepository() }),
+        logger: makeLogger(),
+        now: () => new Date("2026-07-05T10:00:00.000Z"),
+        newId: vi.fn().mockReturnValueOnce("attempt-1").mockReturnValueOnce("launch-1"),
+        newCorrelationId: () => "corr-cohort-snapshot-ok",
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        examId: "exam-1",
+        cohortSessionId: "cohort-session-1",
+      },
+    );
+
+    expect(response.status).toBe(201);
+    expect(source.getBlueprintDetail).toHaveBeenCalledWith("project-1", "bp-1");
+    await expect(launches.findByExamAttemptId("attempt-1")).resolves.toMatchObject({
+      trainingId: "EXcohort-1",
+    });
+  });
+
+  it("blocks join before participant add or sponsored-link creation when the CloudShare Blueprint default Snapshot has drifted", async () => {
+    const exams = await makeExamRepository();
+    const sessions = await makePublishedSession();
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const source = makeAuthoringSource({
+      getBlueprintDetail: vi.fn().mockResolvedValue({
+        id: "bp-1",
+        name: "Helios Exam Blueprint",
+        description: "",
+        defaultSnapshotId: "snap-2",
+        snapshots: [
+          { id: "snap-1", name: "Default Snapshot", isDefault: false, regionIds: ["region-1"] },
+          { id: "snap-2", name: "New Default Snapshot", isDefault: true, regionIds: ["region-1"] },
+        ],
+      }),
+    });
+    const requestV4Detailed = vi.fn();
+
+    const response = await joinCohortExamSessionRuntime(
+      {
+        exams,
+        sessions,
+        attempts,
+        launches,
+        audit: createInMemoryAuditRepository(),
+        eventLog: createInMemoryEventLogRepository(),
+        connections: makeConnectionRepository(),
+        cloudshare: {
+          forConnection: vi.fn(() => ({
+            ...source,
+            requestV3: vi.fn(),
+            requestV3Text: vi.fn(),
+            requestV4: vi.fn(),
+            requestV4Detailed,
+          })),
+        },
+        diagnostics: createDiagnosticRecorder({ repository: diagnosticsRepository }),
+        logger: makeLogger(),
+        now: () => new Date("2026-07-05T10:00:00.000Z"),
+        newId: vi.fn().mockReturnValueOnce("attempt-1").mockReturnValueOnce("launch-1"),
+        newCorrelationId: () => "corr-cohort-snapshot-drift",
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        examId: "exam-1",
+        cohortSessionId: "cohort-session-1",
+      },
+    );
+
+    expect(response).toEqual({
+      status: 423,
+      body: {
+        error:
+          "Exam entry is temporarily unavailable because the lab configuration changed. Contact your administrator.",
+      },
+    });
+    expect(requestV4Detailed).not.toHaveBeenCalled();
+    await expect(attempts.findById("attempt-1")).resolves.toBeNull();
+    await expect(launches.findByExamAttemptId("attempt-1")).resolves.toBeNull();
+    await expect(
+      diagnosticsRepository.query({ correlationId: "corr-cohort-snapshot-drift" }),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation: "cohort_exam_session.join",
+          outcome: "failure",
+          examId: "exam-1",
+          examAttemptId: "attempt-1",
+          candidateEmail: "candidate@helioscx.demo",
+          details: expect.objectContaining({
+            failureMode: "snapshot_drift",
+            projectId: "project-1",
+            blueprintId: "bp-1",
+            savedSnapshotId: "snap-1",
+            currentDefaultSnapshotId: "snap-2",
+            cohortSessionId: "cohort-session-1",
+          }),
+        }),
+      ]),
+    );
+  });
+
+  it("blocks join with candidate-safe unavailable copy and no usable attempt when the CloudShare default Snapshot lookup fails", async () => {
+    const exams = await makeExamRepository();
+    const sessions = await makePublishedSession();
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const source = makeAuthoringSource({
+      getBlueprintDetail: vi.fn().mockRejectedValue(
+        new CloudShareTransportError("CloudShare was unreachable", {
+          method: "GET",
+          path: "/api/v3/projects/project-1/blueprints/bp-1",
+          integrationSurface: "cloudshare.v3.projects.blueprint_detail",
+        }),
+      ),
+    });
+    const requestV4Detailed = vi.fn();
+
+    const response = await joinCohortExamSessionRuntime(
+      {
+        exams,
+        sessions,
+        attempts,
+        launches,
+        audit: createInMemoryAuditRepository(),
+        eventLog: createInMemoryEventLogRepository(),
+        connections: makeConnectionRepository(),
+        cloudshare: {
+          forConnection: vi.fn(() => ({
+            ...source,
+            requestV3: vi.fn(),
+            requestV3Text: vi.fn(),
+            requestV4: vi.fn(),
+            requestV4Detailed,
+          })),
+        },
+        diagnostics: createDiagnosticRecorder({ repository: diagnosticsRepository }),
+        logger: makeLogger(),
+        now: () => new Date("2026-07-05T10:00:00.000Z"),
+        newId: vi.fn().mockReturnValueOnce("attempt-1").mockReturnValueOnce("launch-1"),
+        newCorrelationId: () => "corr-cohort-snapshot-lookup-fail",
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        examId: "exam-1",
+        cohortSessionId: "cohort-session-1",
+      },
+    );
+
+    expect(response).toEqual({
+      status: 423,
+      body: {
+        error:
+          "Exam entry is temporarily unavailable because the lab configuration changed. Contact your administrator.",
+      },
+    });
+    expect(requestV4Detailed).not.toHaveBeenCalled();
+    await expect(attempts.findById("attempt-1")).resolves.toBeNull();
+    await expect(launches.findByExamAttemptId("attempt-1")).resolves.toBeNull();
+    await expect(
+      diagnosticsRepository.query({ correlationId: "corr-cohort-snapshot-lookup-fail" }),
+    ).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          operation: "cohort_exam_session.join",
+          outcome: "failure",
+          examAttemptId: "attempt-1",
+          request: expect.objectContaining({
+            method: "GET",
+            path: "/api/v3/projects/project-1/blueprints/bp-1",
+          }),
+          details: expect.objectContaining({
+            failureMode: "snapshot_lookup_failed",
+            currentDefaultSnapshotId: null,
+            transport: "CloudShare was unreachable",
+            cohortSessionId: "cohort-session-1",
+          }),
+        }),
+      ]),
+    );
   });
 
   it("blocks join when CloudShare reports the shared training starts in the future", async () => {

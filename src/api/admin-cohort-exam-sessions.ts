@@ -28,6 +28,7 @@ import {
 } from "@/integrations/cloudshare";
 import { createCloudShareOnDemandExperienceCreator } from "@/integrations/cloudshare/cohort-experiences";
 import type { Logger } from "@/observability/logger";
+import { guardRuntimeBlueprintSnapshot } from "./runtime-blueprint-snapshot-guard";
 
 export interface AdminCohortExamSessionDeps {
   readonly exams: ExamRepository;
@@ -236,6 +237,30 @@ export async function handlePublishCohortExamSession(
         body: { error: "CloudShare is not connected for this customer." },
       };
     }
+    const snapshotGuardFailure = await guardRuntimeBlueprintSnapshot(deps, {
+      source: "admin-exams",
+      operation: "cohort_exam_session.publish",
+      correlationId,
+      customerId: request.customerId,
+      examId: exam.id,
+      cohortSessionId: session.id,
+      actor: request.actor ?? null,
+      subject: { type: "cohort_exam_session", id: session.id },
+      projectId: exam.projectId,
+      blueprintId: exam.blueprintId,
+      savedSnapshotId: exam.snapshotId,
+    });
+    if (snapshotGuardFailure) {
+      return {
+        status: snapshotGuardFailure.status,
+        body: {
+          error:
+            "Cohort Exam Session publish is temporarily unavailable because the lab configuration changed. Refresh CloudShare resources and check the Exam Blueprint/default Snapshot.",
+          correlationId,
+        },
+      };
+    }
+
     const claimedSession = await deps.sessions.claimDraftForPublishing({
       id: session.id,
       customerId: request.customerId,

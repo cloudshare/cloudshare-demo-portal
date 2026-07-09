@@ -157,4 +157,23 @@ describe("lab launcher state helpers", () => {
       supportMessage: null,
     });
   });
+
+  it("shows blocked entry as a terminal warning without retry controls", () => {
+    expect(
+      getLauncherPresentation({
+        state: "blocked",
+        attemptStatus: "ready",
+        message:
+          "Exam entry is temporarily unavailable because the lab configuration changed. Contact your administrator.",
+      }),
+    ).toEqual({
+      tone: "error",
+      title: "Exam entry unavailable",
+      detail:
+        "Exam entry is temporarily unavailable because the lab configuration changed. Contact your administrator.",
+      primaryActionLabel: null,
+      supportMessage:
+        "Your exam attempt has not started. Contact your administrator before trying again.",
+    });
+  });
 });

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { openEnterExamWindow } from "./enter-exam";
-import { isLabWindowOpen } from "./lab-window";
+import { closeLabWindow, isLabWindowOpen } from "./lab-window";
 import { endLabAttempt, preflightLabAction, readHeartbeatAttemptStatus, resumeLabAttempt, suspendLabAttempt, type CandidateLabStatus, type AttemptStatus } from "./lab-launcher-client";
 import { describeAndReportLaunchFailure } from "./lab-launcher-runtime-diagnostics";
 import {
@@ -17,6 +17,7 @@ const HEARTBEAT_INTERVAL_MS = 15_000;
 const CHILD_POLL_INTERVAL_MS = 3_000;
 export const END_EXAM_CONFIRMATION_MESSAGE =
   "Ending this exam will allow you to get your results immediately, but also archive your CloudShare lab. This means you will lose access to this exam attempt, which cannot be undone.";
+const ENTER_BLOCKED_MESSAGE_TYPE = "certalis:exam-entry-blocked";
 
 export function confirmCandidateEndExam(
   confirmImpl?: (message: string) => boolean,
@@ -52,6 +53,41 @@ export function getRetainedWindowLaunchState(input: {
     return "open";
   }
   return null;
+}
+
+export function readEnterBlockedMessage(
+  event: Pick<MessageEvent, "origin" | "data">,
+  input: {
+    readonly expectedOrigin: string;
+    readonly examAttemptId: string;
+  },
+): { message: string; status: number } | null {
+  if (event.origin !== input.expectedOrigin) {
+    return null;
+  }
+  if (typeof event.data !== "object" || event.data === null) {
+    return null;
+  }
+
+  const payload = event.data as {
+    type?: unknown;
+    examAttemptId?: unknown;
+    message?: unknown;
+    status?: unknown;
+  };
+  if (
+    payload.type !== ENTER_BLOCKED_MESSAGE_TYPE ||
+    payload.examAttemptId !== input.examAttemptId ||
+    typeof payload.message !== "string" ||
+    payload.message.trim().length === 0
+  ) {
+    return null;
+  }
+
+  return {
+    message: payload.message,
+    status: typeof payload.status === "number" ? payload.status : 0,
+  };
 }
 
 /**
@@ -119,6 +155,18 @@ export function LabLauncher({
   const reportLabStatusLoaded = useCallback((status: CandidateLabStatus) => {
     onLabStatusLoadedRef.current?.(status);
   }, []);
+
+  const handleEnterBlocked = useCallback(
+    (message: string) => {
+      stopHeartbeat();
+      stopChildPoll();
+      closeLabWindow(examAttemptId);
+      setState("blocked");
+      setMessage(message);
+      reportAttemptStatusChange("ready");
+    },
+    [examAttemptId, reportAttemptStatusChange],
+  );
 
   const syncToAuthoritativeAttemptStatus = useCallback((status: AttemptStatus) => {
     const target = getLauncherSyncTarget(status);
@@ -431,6 +479,25 @@ export function LabLauncher({
       syncToAuthoritativeAttemptStatus(currentAttemptStatus);
     }
   }, [currentAttemptStatus, examAttemptId, syncToAuthoritativeAttemptStatus]);
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      const blocked = readEnterBlockedMessage(event, {
+        expectedOrigin: window.location.origin,
+        examAttemptId,
+      });
+      if (!blocked) {
+        return;
+      }
+
+      handleEnterBlocked(blocked.message);
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => {
+      window.removeEventListener("message", handleMessage);
+    };
+  }, [examAttemptId, handleEnterBlocked]);
 
   useEffect(() => {
     if (state !== "open") return;
