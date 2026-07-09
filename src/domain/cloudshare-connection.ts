@@ -1,10 +1,10 @@
 import type { CloudShareClient } from "@/integrations/cloudshare";
 import {
   CloudShareError,
-  CloudShareRateLimitError,
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
+  isCloudShareRateLimitError,
 } from "@/integrations/cloudshare";
 import { pingCloudShareV3 } from "@/integrations/cloudshare";
 
@@ -90,7 +90,7 @@ export async function testCloudShareConnection(
     await deps.connections.markVerified(customerId, verifiedAt);
     return { status: "connected", message: pong, verifiedAt };
   } catch (error) {
-    if (error instanceof CloudShareRateLimitError || isNamedCloudShareError(error, "CloudShareRateLimitError")) {
+    if (isCloudShareRateLimitError(error)) {
       throw new CloudShareConnectionTestError(
         "CloudShare temporarily rate limited the v3 ping. Wait a moment, then try Test connection again.",
         error.message,

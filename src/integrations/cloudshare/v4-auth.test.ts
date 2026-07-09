@@ -98,7 +98,28 @@ describe("createV4TokenProvider", () => {
         method: "POST",
         path: "/oauth/token",
         integrationSurface: "cloudshare.v4.oauth.token",
+        requestHeaders: { "content-type": "application/x-www-form-urlencoded" },
+        requestBody: expect.not.stringContaining("secret-1"),
+        responseBody: "too many requests",
       },
+    });
+  });
+
+  it("classifies explicit v4 token abuse-protection responses", async () => {
+    const { http } = stubHttp([
+      {
+        status: 403,
+        body: "Blocked by abuse protection list",
+        headers: { "Retry-After": "60" },
+      },
+    ]);
+    const provider = createV4TokenProvider({ ...baseOpts, http });
+
+    await expect(provider.getToken()).rejects.toMatchObject({
+      name: "CloudShareRateLimitError",
+      status: 403,
+      classification: "abuse_protection",
+      retryAfterSeconds: 60,
     });
   });
 

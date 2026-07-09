@@ -9,10 +9,10 @@ import type {
 } from "@/domain/diagnostic-log";
 import {
   CloudShareError,
-  CloudShareRateLimitError,
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
+  isCloudShareRateLimitError,
   type CloudShareClient,
 } from "@/integrations/cloudshare";
 import {
@@ -113,7 +113,7 @@ export async function guardRuntimeBlueprintSnapshot(
     }
   } catch (error) {
     const cloudShareError = asCloudShareErrorLike(error);
-    const rateLimited = isRateLimitErrorLike(error);
+    const rateLimited = isCloudShareRateLimitError(error);
     const response =
       cloudShareError?.context?.status !== undefined ||
       cloudShareError?.context?.responseHeaders ||
@@ -169,7 +169,6 @@ function resolveAuthoringSource(
 
 function asCloudShareErrorLike(error: unknown): CloudShareError | null {
   if (
-    error instanceof CloudShareRateLimitError ||
     error instanceof CloudShareRequestError ||
     error instanceof CloudShareTransportError ||
     error instanceof CloudShareResponseError ||
@@ -195,7 +194,7 @@ function asCloudShareErrorLike(error: unknown): CloudShareError | null {
 }
 
 function inferIntegrationFailureMode(error: unknown): string {
-  if (error instanceof CloudShareRateLimitError || (error as { name?: unknown })?.name === "CloudShareRateLimitError") {
+  if (isCloudShareRateLimitError(error)) {
     return "rate_limit";
   }
   if (error instanceof CloudShareRequestError || (error as { name?: unknown })?.name === "CloudShareRequestError") {
@@ -304,13 +303,4 @@ function normalizeDiagnosticPayload(value: unknown): unknown {
   } catch {
     return value;
   }
-}
-
-function isRateLimitErrorLike(error: unknown): boolean {
-  return (
-    error instanceof CloudShareRateLimitError ||
-    (typeof error === "object" &&
-      error !== null &&
-      (error as { name?: unknown }).name === "CloudShareRateLimitError")
-  );
 }

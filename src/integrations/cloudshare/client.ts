@@ -4,6 +4,7 @@ import {
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
+  isCloudShareRateLimitError,
 } from "./errors";
 import { redactCloudShareAdminSupportValue } from "./diagnostic-redaction";
 import type { HttpClient, HttpRequest } from "./http";
@@ -618,11 +619,23 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
   async function performV4Detailed<T>(
     spec: V4RequestSpec<T>,
   ): Promise<CloudShareDetailedResult<T>> {
+    const url = buildUrl(opts.endpoints.v4BaseUrl, spec.path, spec.query);
+    const requestInfo = describeRequest(url);
+    throwIfCooldownActive(
+      {
+        method: spec.method,
+        url,
+        headers: {},
+        ...(spec.body !== undefined ? { body: JSON.stringify(spec.body) } : {}),
+      },
+      requestInfo,
+    );
+
     let token: string;
     try {
       token = await opts.tokenProvider.getToken();
     } catch (error) {
-      if (error instanceof CloudShareRateLimitError || (error as { name?: unknown })?.name === "CloudShareRateLimitError") {
+      if (isCloudShareRateLimitError(error)) {
         updateCooldownFromRateLimit(error as CloudShareRateLimitError);
       }
       throw error;
@@ -636,7 +649,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
     return executeDetailed(
       {
         method: spec.method,
-        url: buildUrl(opts.endpoints.v4BaseUrl, spec.path, spec.query),
+        url,
         headers,
         body,
       },

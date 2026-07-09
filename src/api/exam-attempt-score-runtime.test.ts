@@ -14,7 +14,11 @@ import type {
   CloudShareConnectionRecord,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
-import { CloudShareResponseError, CloudShareTransportError } from "@/integrations/cloudshare";
+import {
+  CloudShareRateLimitError,
+  CloudShareResponseError,
+  CloudShareTransportError,
+} from "@/integrations/cloudshare";
 import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 
@@ -468,6 +472,48 @@ describe("getExamAttemptScoreRuntime", () => {
           method: "GET",
           path: "/guided-journey/progress/exp-1/student-1",
           failureMode: "transport",
+        }),
+      }),
+    );
+  });
+
+  it("returns 429 with rate-limit diagnostics when CloudShare score retrieval is throttled", async () => {
+    const deps = makeDeps({
+      progressError: new CloudShareRateLimitError("too many requests", 429, "rate_limit", {
+        method: "GET",
+        host: "api.accelerate.cloudshare.com",
+        path: "/guided-journey/progress/exp-1/student-1",
+        integrationSurface: "cloudshare.v4.guided_journey.progress",
+        responseHeaders: { "retry-after": "45" },
+        responseBody: "too many requests",
+      }),
+    });
+
+    const result = await getExamAttemptScoreRuntime(deps, makeRuntimeRequest());
+
+    expect(result).toEqual({
+      status: 429,
+      body: {
+        error: "CloudShare is rate limiting score retrieval. Wait a moment, then try again.",
+        correlationId: "corr-123",
+      },
+    });
+    expect(deps.logger.warn).toHaveBeenCalledWith(
+      "candidate score retrieval failed",
+      expect.objectContaining({
+        correlationId: "corr-123",
+        attemptedOperation: "get_guided_journey_progress",
+        failureMode: "rate_limit",
+        responseStatus: 429,
+      }),
+    );
+    expect(deps.audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "score_retrieved",
+        outcome: "failure",
+        details: expect.objectContaining({
+          failureMode: "rate_limit",
+          responseStatus: 429,
         }),
       }),
     );

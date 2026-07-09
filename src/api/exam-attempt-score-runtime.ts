@@ -18,6 +18,7 @@ import {
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
+  isCloudShareRateLimitError,
 } from "@/integrations/cloudshare";
 import { redactCloudShareAdminSupportValue } from "@/integrations/cloudshare/diagnostic-redaction";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
@@ -403,10 +404,13 @@ export async function getExamAttemptScoreRuntime(
         },
       });
       logScoreRetrievalFailure(deps.logger, diagnostic);
+      const rateLimited = asString(diagnostic.failureMode) === "rate_limit";
       return {
-        status: 502,
+        status: rateLimited ? 429 : 502,
         body: {
-          error: "score retrieval failed",
+          error: rateLimited
+            ? "CloudShare is rate limiting score retrieval. Wait a moment, then try again."
+            : "score retrieval failed",
           correlationId,
         },
       };
@@ -668,6 +672,7 @@ function buildParticipantResolutionDiagnostic(
   }
 
   if (
+    isCloudShareRateLimitError(error) ||
     error instanceof CloudShareRequestError ||
     error instanceof CloudShareTransportError ||
     error instanceof CloudShareResponseError
@@ -695,6 +700,18 @@ function toCloudShareDiagnostic(
     requestHeaders: redactDiagnosticSupportValue(cause.context?.requestHeaders),
     requestBody: redactDiagnosticSupportValue(cause.context?.requestBody),
   };
+
+  if (isCloudShareRateLimitError(cause)) {
+    return {
+      ...shared,
+      failureMode: "rate_limit",
+      responseStatus: cause.status,
+      responseHeaders: redactDiagnosticSupportValue(cause.context?.responseHeaders),
+      responseBody: redactDiagnosticSupportValue(cause.context?.responseBody),
+      network: cause.context?.network,
+      tls: cause.context?.tls,
+    };
+  }
 
   if (cause instanceof CloudShareRequestError) {
     return {

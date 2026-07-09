@@ -767,18 +767,19 @@ describe("createCloudShareClient — error mapping", () => {
 
   it("activates customer cooldown when v4 token acquisition is rate-limited", async () => {
     const send = vi.fn(async () => ok([{ id: "p1", name: "Proj" }]));
+    const getToken = vi.fn(async () => {
+      throw new CloudShareRateLimitError("token throttled", 429, "rate_limit", {
+        responseHeaders: { "retry-after": "20" },
+        rateLimitHeaders: { "retry-after": "20" },
+        retryAfterSeconds: 20,
+      });
+    });
     const cooldownStore = createCooldownStore();
     const client = createCloudShareClient({
       http: { send },
       endpoints,
       tokenProvider: {
-        getToken: async () => {
-          throw new CloudShareRateLimitError("token throttled", 429, "rate_limit", {
-            responseHeaders: { "retry-after": "20" },
-            rateLimitHeaders: { "retry-after": "20" },
-            retryAfterSeconds: 20,
-          });
-        },
+        getToken,
       },
       customerId: "customer-helios",
       cooldownStore,
@@ -792,11 +793,12 @@ describe("createCloudShareClient — error mapping", () => {
     ).rejects.toBeInstanceOf(CloudShareRateLimitError);
 
     await expect(
-      client.requestV3({ method: "GET", path: "/projects", schema: projectsSchema }),
+      client.requestV4({ method: "GET", path: "/projects", schema: projectsSchema }),
     ).rejects.toMatchObject({
       name: "CloudShareRateLimitError",
       context: expect.objectContaining({ cooldownActive: true }),
     });
+    expect(getToken).toHaveBeenCalledTimes(1);
     expect(send).not.toHaveBeenCalled();
   });
 });

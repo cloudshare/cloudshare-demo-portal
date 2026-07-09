@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { CloudShareAuthError, CloudShareRateLimitError } from "./errors";
 import type { HttpClient } from "./http";
+import { redactCloudShareAdminSupportValue } from "./diagnostic-redaction";
 
 /**
  * CloudShare v4 (Accelerate) OAuth. Acquires a Bearer JWT via the
@@ -70,20 +71,24 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
     }
 
     if (response.status !== 200) {
-      if (response.status === 429) {
+      const rateLimitClassification = classifyTokenRateLimit(response.status, response.body);
+      if (rateLimitClassification) {
         const rateLimitHeaders = extractRateLimitHeaders(response.headers);
         const retryAfterSeconds = parseRetryAfterSeconds(response.headers, now);
         throw new CloudShareRateLimitError(
           "v4 token endpoint returned a rate-limit status",
           response.status,
-          "rate_limit",
+          rateLimitClassification,
           {
             method: "POST",
             path: "/oauth/token",
             integrationSurface: "cloudshare.v4.oauth.token",
+            requestHeaders: { "content-type": "application/x-www-form-urlencoded" },
+            requestBody: redactTokenRequestBody(body),
             status: response.status,
             responseStatus: response.status,
             ...(rateLimitHeaders ? { responseHeaders: rateLimitHeaders, rateLimitHeaders } : {}),
+            responseBody: redactCloudShareAdminSupportValue(response.body),
             ...(retryAfterSeconds !== undefined
               ? { retryAfterSeconds }
               : {}),
@@ -124,6 +129,27 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
       return cached.accessToken;
     },
   };
+}
+
+function redactTokenRequestBody(body: string): string {
+  const params = new URLSearchParams(body);
+  if (params.has("client_secret")) {
+    params.set("client_secret", "[REDACTED]");
+  }
+  return params.toString();
+}
+
+function classifyTokenRateLimit(
+  status: number,
+  body: string,
+): "rate_limit" | "abuse_protection" | null {
+  if (status === 429) {
+    return "rate_limit";
+  }
+  if (status === 403 && /\babuse(?:\s|-)?(?:list|protection)\b/i.test(body)) {
+    return "abuse_protection";
+  }
+  return null;
 }
 
 function extractRateLimitHeaders(
