@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type {
   CloudShareClientFactory,
@@ -30,6 +31,7 @@ export interface ExamAttemptRuntimeDeps {
   readonly now?: () => Date;
   readonly diagnostics?: DiagnosticRecorder;
   readonly candidateEmail?: string;
+  readonly newCorrelationId?: () => string;
 }
 
 export interface EnterExamAttemptRuntimeRequest {
@@ -39,6 +41,7 @@ export interface EnterExamAttemptRuntimeRequest {
 
 export interface CandidateSafeBlockedEnterBody {
   readonly message: string;
+  readonly correlationId?: string;
 }
 
 export type EnterExamAttemptRuntimeResult =
@@ -49,7 +52,7 @@ export type EnterExamAttemptRuntimeResult =
     }
   | {
       readonly kind: "blocked";
-      readonly status: 400 | 403 | 404 | 409 | 423;
+      readonly status: 400 | 403 | 404 | 409 | 423 | 429;
       readonly body: CandidateSafeBlockedEnterBody;
     };
 
@@ -59,6 +62,7 @@ export async function enterExamAttemptRuntime(
   deps: ExamAttemptRuntimeDeps,
   request: EnterExamAttemptRuntimeRequest,
 ): Promise<EnterExamAttemptRuntimeResult> {
+  const correlationId = (deps.newCorrelationId ?? randomUUID)();
   let attempt = await deps.attempts.findById(request.examAttemptId);
   if (!attempt) {
     return blocked(404, "Exam attempt not found.");
@@ -79,6 +83,7 @@ export async function enterExamAttemptRuntime(
       candidateEmail: deps.candidateEmail ?? null,
       examId: attempt.examId ?? null,
       examAttemptId: request.examAttemptId,
+      correlationId,
       actor: { type: "candidate" as const, id: request.candidateId, email: deps.candidateEmail ?? null },
       subject: { type: "exam_attempt" as const, id: request.examAttemptId },
     };
@@ -119,6 +124,7 @@ export async function enterExamAttemptRuntime(
     candidateEmail: deps.candidateEmail ?? null,
     examId: attempt.examId ?? null,
     examAttemptId: request.examAttemptId,
+    correlationId,
     actor: { type: "candidate" as const, id: request.candidateId, email: deps.candidateEmail ?? null },
     subject: { type: "exam_attempt" as const, id: request.examAttemptId },
   };
@@ -261,6 +267,7 @@ export async function enterExamAttemptRuntime(
     const snapshotGuardFailure = await guardRuntimeBlueprintSnapshot(deps, {
       source: "runtime",
       operation: "exam_attempt.enter",
+      correlationId,
       customerId: attempt.customerId,
       examId: attempt.examId,
       examAttemptId: request.examAttemptId,
@@ -272,7 +279,11 @@ export async function enterExamAttemptRuntime(
       savedSnapshotId: exam.snapshotId,
     });
     if (snapshotGuardFailure) {
-      return blocked(snapshotGuardFailure.status, snapshotGuardFailure.message);
+      return blocked(
+        snapshotGuardFailure.status,
+        snapshotGuardFailure.message,
+        snapshotGuardFailure.correlationId,
+      );
     }
   }
 
@@ -321,13 +332,14 @@ export async function enterExamAttemptRuntime(
 }
 
 function blocked(
-  status: 400 | 403 | 404 | 409 | 423,
+  status: 400 | 403 | 404 | 409 | 423 | 429,
   message: string,
+  correlationId?: string,
 ): EnterExamAttemptRuntimeResult {
   return {
     kind: "blocked",
     status,
-    body: { message },
+    body: { message, ...(correlationId ? { correlationId } : {}) },
   };
 }
 

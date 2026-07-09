@@ -4,10 +4,12 @@ import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { EnvironmentCommandResult } from "@/domain/environment";
 import { ExamAttemptRuntimeError } from "@/domain/errors";
 import { archiveExam, type ArchiveExamResult } from "@/domain/exam-attempt-runtime-lifecycle";
+import { CLOUDSHARE_429_CANDIDATE_MESSAGE } from "@/domain/cloudshare-rate-limit-message";
 import {
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
+  isCloudShareRateLimitError,
 } from "@/integrations/cloudshare";
 import { createCloudShareEnvironmentController } from "@/integrations/cloudshare/environment-controller";
 import { createCloudShareEnvironmentSource } from "@/integrations/cloudshare/environment";
@@ -251,6 +253,19 @@ function mapArchiveErrorToCompleteResponse(
     error instanceof CloudShareResponseError ||
     (error instanceof CloudShareRequestError && error.status >= 500);
 
+  if (isCloudShareRateLimitError(error)) {
+    return {
+      status: 429,
+      body: {
+        error: CLOUDSHARE_429_CANDIDATE_MESSAGE,
+        examAttemptId,
+        operation: "complete",
+        retryable: true,
+        correlationId,
+      },
+    };
+  }
+
   if (error instanceof CloudShareRequestError && error.status < 500) {
     return {
       status: 502,
@@ -441,6 +456,13 @@ function commandResultToDiagnostic(
 }
 
 function cloudShareFailureDetails(error: unknown): Record<string, unknown> {
+  if (isCloudShareRateLimitError(error)) {
+    return {
+      failureMode: "rate_limit",
+      responseStatus: error.status,
+      ...(error.context ?? {}),
+    };
+  }
   if (error instanceof CloudShareRequestError) {
     return {
       failureMode: "http_status",

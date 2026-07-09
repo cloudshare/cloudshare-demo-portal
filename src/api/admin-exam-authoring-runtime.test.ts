@@ -5,7 +5,7 @@ import type {
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
 import { createDiagnosticRecorder, type DiagnosticRecorder } from "@/domain/diagnostic-log";
-import { CloudShareRequestError } from "@/integrations/cloudshare";
+import { CloudShareRateLimitError, CloudShareRequestError } from "@/integrations/cloudshare";
 import type { CloudShareExamAuthoringSource } from "@/integrations/cloudshare/resources";
 import type { Logger } from "@/observability/logger";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
@@ -222,6 +222,61 @@ describe("admin Exam authoring resource runtime", () => {
             error: "forbidden",
             signature: "[REDACTED]",
           },
+        },
+      }),
+    ]);
+  });
+
+  it("returns 429 and rate-limit diagnostics when a Project-scoped resource read is throttled", async () => {
+    const source = makeAuthoringSource({
+      listProjectPolicies: vi.fn().mockRejectedValue(
+        new CloudShareRateLimitError("too many requests", 429, "rate_limit", {
+          method: "GET",
+          requestHeaders: { authorization: "cs_sha1 [REDACTED]" },
+          responseHeaders: { "retry-after": "30" },
+          retryAfterSeconds: 30,
+        }),
+      ),
+    });
+    const diagnostics = makeDiagnostics();
+
+    const result = await getProjectResourcesRuntime(
+      {
+        connections: makeConnections(),
+        cloudshare: makeCloudShareFactory(source),
+        cache: createInMemoryExamAuthoringCacheRepository(),
+        diagnostics: diagnostics.recorder,
+        logger: makeLogger(),
+        now: () => new Date("2026-06-25T12:00:00.000Z"),
+        newCorrelationId: () => "corr-rate-limit",
+      },
+      { customerId: "customer-1", projectId: "project-1", refresh: true },
+    );
+
+    expect(result.status).toBe(429);
+    expect(result.body).toMatchObject({
+      error: "CloudShare is returning a 429 error for the current request. This is likely CloudShare rate limiting or abuse protection blocking the request. Check whether this public IP needs CloudShare allow-list or abuse-list review before retrying by contacting support@cloudshare.com.",
+      correlationId: "corr-rate-limit",
+      diagnostic: {
+        operation: "cloudshare.resource_sync.policies.read",
+        failureMode: "rate_limit",
+        responseStatus: 429,
+      },
+    });
+    await expect(
+      diagnostics.repository.query({
+        customerId: "customer-1",
+        operation: "cloudshare.resource_sync.policies.read",
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        outcome: "failure",
+        details: expect.objectContaining({
+          failureMode: "rate_limit",
+        }),
+        response: {
+          status: 429,
+          headers: { "retry-after": "30" },
         },
       }),
     ]);

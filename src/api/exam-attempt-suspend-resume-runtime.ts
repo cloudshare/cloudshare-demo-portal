@@ -6,6 +6,7 @@ import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
+import { CLOUDSHARE_429_CANDIDATE_MESSAGE } from "@/domain/cloudshare-rate-limit-message";
 import {
   suspendExam,
   resumeExam,
@@ -22,6 +23,7 @@ import {
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
+  isCloudShareRateLimitError,
 } from "@/integrations/cloudshare";
 import { createCloudShareEnvironmentController } from "@/integrations/cloudshare/environment-controller";
 import { createCloudShareEnvironmentSource } from "@/integrations/cloudshare/environment";
@@ -875,6 +877,15 @@ async function reportFailureDiagnostic(
       payload: diagnostic,
     });
     deps.logger.warn(spec.logMessage, diagnostic);
+    if (isCloudShareRateLimitError(err.context?.cause)) {
+      return {
+        status: 429,
+        body: {
+          error: CLOUDSHARE_429_CANDIDATE_MESSAGE,
+          correlationId,
+        },
+      };
+    }
     return (
       buildPendingTransitionResponse(spec.action, examAttemptId, err, correlationId) ?? {
         status: 502,
@@ -900,7 +911,15 @@ async function reportFailureDiagnostic(
       payload: diagnostic,
     });
     deps.logger.warn(spec.logMessage, diagnostic);
-    return { status: 502, body: { error: `exam ${spec.action} failed`, correlationId } };
+    return {
+      status: isCloudShareRateLimitError(err) ? 429 : 502,
+      body: {
+        error: isCloudShareRateLimitError(err)
+          ? CLOUDSHARE_429_CANDIDATE_MESSAGE
+          : `exam ${spec.action} failed`,
+        correlationId,
+      },
+    };
   }
 
   return null;
@@ -1031,6 +1050,20 @@ function buildCloudShareDiagnostic(
     host: err.context?.host,
   };
 
+  if (isCloudShareRateLimitError(err)) {
+    return {
+      ...base,
+      failureMode: "rate_limit",
+      responseStatus: err.status,
+      requestHeaders: err.context?.requestHeaders,
+      requestBody: err.context?.requestBody,
+      responseHeaders: err.context?.responseHeaders,
+      responseBody: err.context?.responseBody,
+      network: err.context?.network,
+      tls: err.context?.tls,
+    };
+  }
+
   if (err instanceof CloudShareRequestError) {
     return {
       ...base,
@@ -1072,6 +1105,7 @@ function isCloudShareFailure(
   err: unknown,
 ): err is CloudShareRequestError | CloudShareTransportError | CloudShareResponseError {
   return (
+    isCloudShareRateLimitError(err) ||
     err instanceof CloudShareRequestError ||
     err instanceof CloudShareTransportError ||
     err instanceof CloudShareResponseError

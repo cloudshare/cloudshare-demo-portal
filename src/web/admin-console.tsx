@@ -406,6 +406,28 @@ function CorrelationDiagnosticsLink(props: {
   );
 }
 
+export function CloudShareConnectionTestWarning(props: {
+  readonly warning: string;
+  readonly correlationId?: string | null;
+  readonly onOpenCorrelationDiagnostics?: (correlationId: string) => void;
+}) {
+  return (
+    <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.4rem" }}>
+      <p style={{ margin: 0 }}>{props.warning}</p>
+      {props.correlationId ? (
+        <p style={{ margin: 0, fontSize: "0.85rem" }}>
+          Open <strong>Support Diagnostics</strong> filtered by correlation ID{" "}
+          <CorrelationDiagnosticsLink
+            correlationId={props.correlationId}
+            onOpen={props.onOpenCorrelationDiagnostics}
+          />
+          .
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 class AdminSessionExpiredError extends Error {
   constructor() {
     super(ADMIN_SESSION_EXPIRED_MESSAGE);
@@ -608,14 +630,80 @@ const cohortSessionDetailLabelStyle: React.CSSProperties = {
   color: colors.textSecondary,
 };
 
+const problemReasonListStyle: React.CSSProperties = {
+  margin: "0.45rem 0 0",
+  paddingLeft: "1rem",
+  color: colors.textPrimary,
+};
+
+const reconciliationWarningRowStyle: React.CSSProperties = {
+  borderBottom: `1px solid ${colors.border}`,
+  background: colors.warningSoft,
+};
+
+function formatProblemRowCount(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 function CohortSessionDetailItem(props: {
   label: string;
   value: React.ReactNode;
+  help?: string;
 }) {
   return (
-    <div style={cohortSessionDetailItemStyle}>
+    <div style={cohortSessionDetailItemStyle} title={props.help}>
       <div style={cohortSessionDetailLabelStyle}>{props.label}</div>
       <div style={{ overflowWrap: "anywhere" }}>{props.value}</div>
+    </div>
+  );
+}
+
+function ProblemReasonList(props: { readonly reasons: readonly string[] }) {
+  if (props.reasons.length === 0) {
+    return null;
+  }
+
+  return (
+    <ul style={problemReasonListStyle}>
+      {props.reasons.map((reason) => (
+        <li key={reason}>{reason}</li>
+      ))}
+    </ul>
+  );
+}
+
+function CohortSessionProblemBridge(props: {
+  readonly problemCount: number;
+  readonly portalProblemRows: number;
+  readonly cloudShareProblemRows: number;
+  readonly cloudShareReadUnavailable: boolean;
+}) {
+  const totalProblemRows = props.portalProblemRows + props.cloudShareProblemRows;
+
+  if (props.problemCount === 0 && totalProblemRows === 0 && !props.cloudShareReadUnavailable) {
+    return (
+      <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
+        No reconciliation warnings are currently contributing to the Problems tile.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.35rem" }}>
+      <strong>Problems tile: {props.problemCount}</strong>
+      <span>
+        Rows below with reconciliation warnings: {totalProblemRows} total (
+        {formatProblemRowCount(props.portalProblemRows, "session exam attempt row", "session exam attempt rows")},{" "}
+        {formatProblemRowCount(props.cloudShareProblemRows, "CloudShare participant row", "CloudShare participant rows")}
+        ).
+      </span>
+      <span>
+        These warning-highlighted rows explain the Problems tile. Matched portal/CloudShare disagreements can appear in
+        both tables so you can inspect either side.
+      </span>
+      {props.cloudShareReadUnavailable ? (
+        <span>The CloudShare participant read unavailable panel below also contributes to Problems.</span>
+      ) : null}
     </div>
   );
 }
@@ -867,6 +955,11 @@ export function CohortSessionWorkspacePanel(props: {
   onOpenCorrelationDiagnostics?: (correlationId: string) => void;
 }) {
   const { session } = props;
+  const portalProblemRows =
+    props.detail?.portalAttempts.filter((attempt) => attempt.problemReasons.length > 0).length ?? 0;
+  const cloudShareProblemRows =
+    props.detail?.cloudShareParticipants.participants.filter((participant) => participant.problemReasons.length > 0)
+      .length ?? 0;
 
   return (
     <div style={{ ...cardStyle, display: "grid", gap: "1rem" }}>
@@ -1011,26 +1104,58 @@ export function CohortSessionWorkspacePanel(props: {
                   diagnosticFilters: props.detail.diagnostics.session,
                 })}
                 style={secondaryButtonStyle}
+                title="Open Support Diagnostics filtered to this Cohort Exam Session."
               >
                 Session diagnostics
               </a>
             </div>
 
             <div style={cohortSessionDetailGridStyle}>
-              <CohortSessionDetailItem label="Active" value={props.detail.summary.activeCount} />
-              <CohortSessionDetailItem label="In progress" value={props.detail.summary.inProgressCount} />
-              <CohortSessionDetailItem label="Completed" value={props.detail.summary.completedCount} />
-              <CohortSessionDetailItem label="Problems" value={props.detail.summary.problemCount} />
-              <CohortSessionDetailItem label="Session exam attempts" value={props.detail.summary.portalAttemptCount} />
+              <CohortSessionDetailItem
+                label="Active"
+                value={props.detail.summary.activeCount}
+                help="Portal attempts or CloudShare participants that are currently non-terminal for this Cohort Exam Session."
+              />
+              <CohortSessionDetailItem
+                label="In progress"
+                value={props.detail.summary.inProgressCount}
+                help="Portal attempts or CloudShare participants currently reported as in progress."
+              />
+              <CohortSessionDetailItem
+                label="Completed"
+                value={props.detail.summary.completedCount}
+                help="Portal attempts or CloudShare participants currently reported as completed."
+              />
+              <CohortSessionDetailItem
+                label="Problems"
+                value={props.detail.summary.problemCount}
+                help="State mismatch warnings, missing-match warnings, or CloudShare participant-check failures."
+              />
+              <CohortSessionDetailItem
+                label="Session exam attempts"
+                value={props.detail.summary.portalAttemptCount}
+                help="Rows from Certalis portal state: Candidates who have an ExamAttempt for this Cohort Exam Session."
+              />
               <CohortSessionDetailItem
                 label="CloudShare participants"
                 value={props.detail.summary.cloudShareParticipantCount}
+                help="Rows returned by CloudShare for the shared Experience/training used by this Cohort Exam Session."
               />
             </div>
 
             <div style={{ color: colors.textSecondary, fontSize: "0.9rem" }}>
               Counts are derived from session exam attempts and the CloudShare participant read for this shared Experience.
             </div>
+            <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
+              Problem count includes reconciliation warnings and CloudShare participant-check failures.
+              It is not a count of diagnostic errors.
+            </div>
+            <CohortSessionProblemBridge
+              problemCount={props.detail.summary.problemCount}
+              portalProblemRows={portalProblemRows}
+              cloudShareProblemRows={cloudShareProblemRows}
+              cloudShareReadUnavailable={props.detail.cloudShareParticipants.status === "unavailable"}
+            />
 
             <div style={{ display: "grid", gap: "0.75rem" }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
@@ -1045,7 +1170,7 @@ export function CohortSessionWorkspacePanel(props: {
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
                     <thead>
                       <tr style={{ background: colors.surfaceSubtle }}>
-                        {["Candidate", "Attempt state", "CloudShare IDs", "Diagnostics"].map((heading) => (
+                        {["Candidate", "Attempt state", "CloudShare IDs", "Reconciliation", "Diagnostics"].map((heading) => (
                           <th key={heading} style={{ textAlign: "left", padding: "0.55rem", borderBottom: `1px solid ${colors.border}` }}>
                             {heading}
                           </th>
@@ -1054,7 +1179,14 @@ export function CohortSessionWorkspacePanel(props: {
                     </thead>
                     <tbody>
                       {props.detail.portalAttempts.map((attempt) => (
-                        <tr key={attempt.id} style={{ borderBottom: `1px solid ${colors.border}` }}>
+                        <tr
+                          key={attempt.id}
+                          style={
+                            attempt.problemReasons.length > 0
+                              ? reconciliationWarningRowStyle
+                              : { borderBottom: `1px solid ${colors.border}` }
+                          }
+                        >
                           <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
                             <div style={{ fontWeight: 600 }}>{attempt.candidateName}</div>
                             <div style={{ color: colors.textSecondary }}>{attempt.candidateEmail}</div>
@@ -1067,6 +1199,13 @@ export function CohortSessionWorkspacePanel(props: {
                             <div>Attempt ID: {attempt.id}</div>
                             <div>Participant ID: {attempt.participantId ?? "-"}</div>
                             <div>Environment ID: {attempt.environmentId ?? attempt.environmentExternalId ?? "-"}</div>
+                          </td>
+                          <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
+                            {attempt.problemReasons.length > 0 ? (
+                              <ProblemReasonList reasons={attempt.problemReasons} />
+                            ) : (
+                              <span style={{ color: colors.textSecondary }}>No reconciliation warnings</span>
+                            )}
                           </td>
                           <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
                             <a
@@ -1124,8 +1263,9 @@ export function CohortSessionWorkspacePanel(props: {
                       diagnosticFilters: props.detail.diagnostics.cloudShareRead,
                     })}
                     style={secondaryButtonStyle}
+                    title="Open Support Diagnostics filtered to the CloudShare participant-list check for this Cohort Exam Session."
                   >
-                    CloudShare read diagnostics
+                    Participant check diagnostics
                   </a>
                 ) : null}
               </div>
@@ -1160,7 +1300,7 @@ export function CohortSessionWorkspacePanel(props: {
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
                     <thead>
                       <tr style={{ background: colors.surfaceSubtle }}>
-                        {["Participant", "CloudShare state", "Portal match", "Diagnostics"].map((heading) => (
+                        {["Participant", "CloudShare state", "Portal match", "Reconciliation", "Diagnostics"].map((heading) => (
                           <th key={heading} style={{ textAlign: "left", padding: "0.55rem", borderBottom: `1px solid ${colors.border}` }}>
                             {heading}
                           </th>
@@ -1169,7 +1309,14 @@ export function CohortSessionWorkspacePanel(props: {
                     </thead>
                     <tbody>
                       {props.detail.cloudShareParticipants.participants.map((participant) => (
-                        <tr key={`${participant.email}:${participant.studentId ?? participant.environmentId ?? "none"}`} style={{ borderBottom: `1px solid ${colors.border}` }}>
+                        <tr
+                          key={`${participant.email}:${participant.studentId ?? participant.environmentId ?? "none"}`}
+                          style={
+                            participant.problemReasons.length > 0
+                              ? reconciliationWarningRowStyle
+                              : { borderBottom: `1px solid ${colors.border}` }
+                          }
+                        >
                           <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
                             <div style={{ fontWeight: 600 }}>{participant.displayName ?? participant.email}</div>
                             <div style={{ color: colors.textSecondary }}>{participant.email}</div>
@@ -1183,6 +1330,13 @@ export function CohortSessionWorkspacePanel(props: {
                           </td>
                           <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
                             {participant.matchedExamAttemptId ? participant.matchedExamAttemptId : "No session exam attempt"}
+                          </td>
+                          <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
+                            {participant.problemReasons.length > 0 ? (
+                              <ProblemReasonList reasons={participant.problemReasons} />
+                            ) : (
+                              <span style={{ color: colors.textSecondary }}>No reconciliation warnings</span>
+                            )}
                           </td>
                           <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
                             <a
@@ -2070,8 +2224,7 @@ export function AdminConsole({
         diagnostic?: ConnectionDiagnostic | null;
       };
       if (!response.ok) {
-        setError(data.error ?? "CloudShare connection test failed");
-        setConnectionWarning("CloudShare connection test failed. Open Support Diagnostics with the correlation ID for the primary investigation view.");
+        setConnectionWarning(data.error ?? "CloudShare connection test failed. Open Support Diagnostics with the correlation ID for the primary investigation view.");
         setConnectionDiagnostic(data.diagnostic ?? null);
         setConnectionCorrelationId(data.correlationId ?? null);
         setConnectionOccurredAt(data.occurredAt ?? null);
@@ -2085,7 +2238,6 @@ export function AdminConsole({
       if (isAdminSessionExpiredError(caughtError)) {
         return;
       }
-      setError("CloudShare connection test failed");
       setConnectionWarning("CloudShare connection test failed. Open Support Diagnostics for more detail.");
     } finally {
       setLoading(false);
@@ -3379,21 +3531,6 @@ export function AdminConsole({
               </p>
             )}
           </div>
-          {connectionWarning && (
-            <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.4rem" }}>
-              <p style={{ margin: 0 }}>The CloudShare connection test failed. Support Diagnostics is the primary investigation view.</p>
-              {connectionCorrelationId && (
-                <p style={{ margin: 0, fontSize: "0.85rem" }}>
-                  Correlation ID:{" "}
-                  <CorrelationDiagnosticsLink
-                    correlationId={connectionCorrelationId}
-                    onOpen={openCorrelationSupportDiagnostics}
-                  />
-                </p>
-              )}
-            </div>
-          )}
-
           <label style={{ display: "grid", gap: "0.35rem" }}>
             <span>API ID</span>
             <input
@@ -3496,6 +3633,13 @@ export function AdminConsole({
               {loading ? "Testing..." : "Test connection"}
             </button>
           </div>
+          {connectionWarning && (
+            <CloudShareConnectionTestWarning
+              warning={connectionWarning}
+              correlationId={connectionCorrelationId}
+              onOpenCorrelationDiagnostics={openCorrelationSupportDiagnostics}
+            />
+          )}
           {connectionMessage && <p style={{ color: "#0a7a28", margin: 0 }}>{connectionMessage}</p>}
         </section>
       )}
