@@ -626,9 +626,10 @@ function formatProblemRowCount(count: number, singular: string, plural: string):
 function CohortSessionDetailItem(props: {
   label: string;
   value: React.ReactNode;
+  help?: string;
 }) {
   return (
-    <div style={cohortSessionDetailItemStyle}>
+    <div style={cohortSessionDetailItemStyle} title={props.help}>
       <div style={cohortSessionDetailLabelStyle}>{props.label}</div>
       <div style={{ overflowWrap: "anywhere" }}>{props.value}</div>
     </div>
@@ -1077,20 +1078,42 @@ export function CohortSessionWorkspacePanel(props: {
                   diagnosticFilters: props.detail.diagnostics.session,
                 })}
                 style={secondaryButtonStyle}
+                title="Open Support Diagnostics filtered to this Cohort Exam Session."
               >
                 Session diagnostics
               </a>
             </div>
 
             <div style={cohortSessionDetailGridStyle}>
-              <CohortSessionDetailItem label="Active" value={props.detail.summary.activeCount} />
-              <CohortSessionDetailItem label="In progress" value={props.detail.summary.inProgressCount} />
-              <CohortSessionDetailItem label="Completed" value={props.detail.summary.completedCount} />
-              <CohortSessionDetailItem label="Problems" value={props.detail.summary.problemCount} />
-              <CohortSessionDetailItem label="Session exam attempts" value={props.detail.summary.portalAttemptCount} />
+              <CohortSessionDetailItem
+                label="Active"
+                value={props.detail.summary.activeCount}
+                help="Portal attempts or CloudShare participants that are currently non-terminal for this Cohort Exam Session."
+              />
+              <CohortSessionDetailItem
+                label="In progress"
+                value={props.detail.summary.inProgressCount}
+                help="Portal attempts or CloudShare participants currently reported as in progress."
+              />
+              <CohortSessionDetailItem
+                label="Completed"
+                value={props.detail.summary.completedCount}
+                help="Portal attempts or CloudShare participants currently reported as completed."
+              />
+              <CohortSessionDetailItem
+                label="Problems"
+                value={props.detail.summary.problemCount}
+                help="State mismatch or missing-match warnings found while comparing portal attempts with CloudShare participants."
+              />
+              <CohortSessionDetailItem
+                label="Session exam attempts"
+                value={props.detail.summary.portalAttemptCount}
+                help="Rows from Certalis portal state: Candidates who have an ExamAttempt for this Cohort Exam Session."
+              />
               <CohortSessionDetailItem
                 label="CloudShare participants"
                 value={props.detail.summary.cloudShareParticipantCount}
+                help="Rows returned by CloudShare for the shared Experience/training used by this Cohort Exam Session."
               />
             </div>
 
@@ -1213,8 +1236,9 @@ export function CohortSessionWorkspacePanel(props: {
                       diagnosticFilters: props.detail.diagnostics.cloudShareRead,
                     })}
                     style={secondaryButtonStyle}
+                    title="Open Support Diagnostics filtered to the CloudShare participant-list check for this Cohort Exam Session."
                   >
-                    CloudShare read diagnostics
+                    Participant check diagnostics
                   </a>
                 ) : null}
               </div>

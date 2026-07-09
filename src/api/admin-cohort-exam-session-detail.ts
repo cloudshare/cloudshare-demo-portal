@@ -431,7 +431,7 @@ async function readCloudShareParticipants(
       examId: input.examId,
       correlationId: input.correlationId,
       subject: { type: "cohort_exam_session", id: input.session.session.id },
-      message: "CloudShare participants read for Cohort Exam Session monitoring",
+      message: "Fetched CloudShare participants for session monitoring",
       externalIds: {
         trainingId,
         ...(experienceId ? { experienceId } : {}),
@@ -460,7 +460,7 @@ async function readCloudShareParticipants(
       examId: input.examId,
       correlationId: input.correlationId,
       subject: { type: "cohort_exam_session", id: input.session.session.id },
-      message: "CloudShare participant read failed for Cohort Exam Session monitoring",
+      message: "Could not fetch CloudShare participants for session monitoring",
       externalIds: {
         trainingId,
         ...(experienceId ? { experienceId } : {}),

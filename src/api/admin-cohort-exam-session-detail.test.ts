@@ -680,6 +680,7 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
     });
     expect(entry).toMatchObject({
       outcome: "success",
+      message: "Fetched CloudShare participants for session monitoring",
       correlationId: "corr-session-detail-1",
       externalIds: {
         trainingId: "EXcohort-1",
