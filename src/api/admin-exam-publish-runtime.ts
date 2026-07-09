@@ -13,9 +13,11 @@ import {
 } from "@/domain/exam-catalog";
 import {
   CloudShareError,
+  CloudShareRateLimitError,
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
+  isCloudShareRateLimitError,
   type CloudShareClient,
 } from "@/integrations/cloudshare";
 import {
@@ -386,9 +388,11 @@ async function handleCloudShareFailure(
       ...diagnostic,
     });
     return {
-      status: 502,
+      status: isCloudShareRateLimitError(spec.error) ? 429 : 502,
       body: {
-        error: "CloudShare resource request failed.",
+        error: isCloudShareRateLimitError(spec.error)
+          ? "CloudShare is rate limiting Exam publishing. Wait a moment, then try again."
+          : "CloudShare resource request failed.",
         correlationId,
         occurredAt,
         diagnostic,
@@ -401,6 +405,7 @@ async function handleCloudShareFailure(
 
 function asCloudShareErrorLike(error: unknown): CloudShareError | null {
   if (
+    error instanceof CloudShareRateLimitError ||
     error instanceof CloudShareRequestError ||
     error instanceof CloudShareTransportError ||
     error instanceof CloudShareResponseError ||
@@ -413,7 +418,8 @@ function asCloudShareErrorLike(error: unknown): CloudShareError | null {
     typeof error === "object" &&
     error !== null &&
     typeof (error as { name?: unknown }).name === "string" &&
-    ((error as { name: string }).name === "CloudShareRequestError" ||
+    ((error as { name: string }).name === "CloudShareRateLimitError" ||
+      (error as { name: string }).name === "CloudShareRequestError" ||
       (error as { name: string }).name === "CloudShareTransportError" ||
       (error as { name: string }).name === "CloudShareResponseError" ||
       (error as { name: string }).name === "CloudShareError")
@@ -438,7 +444,10 @@ function buildDiagnostic(
     path,
   };
 
-  if (error instanceof CloudShareRequestError || errorName === "CloudShareRequestError") {
+  if (isCloudShareRateLimitError(error)) {
+    diagnostic.failureMode = "rate_limit";
+    diagnostic.responseStatus = error.status;
+  } else if (error instanceof CloudShareRequestError || errorName === "CloudShareRequestError") {
     diagnostic.failureMode = "http_status";
     diagnostic.responseStatus =
       error instanceof CloudShareRequestError ? error.status : error.context?.status;

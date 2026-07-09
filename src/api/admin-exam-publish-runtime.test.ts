@@ -10,6 +10,7 @@ import type {
   CloudShareBlueprintDetail,
   CloudShareExamAuthoringSource,
 } from "@/integrations/cloudshare/resources";
+import { CloudShareRateLimitError } from "@/integrations/cloudshare";
 import type { Logger } from "@/observability/logger";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import { createInMemoryExamAuthoringCacheRepository } from "@/persistence/exam-authoring-cache-repository";
@@ -246,6 +247,54 @@ describe("admin Exam publish runtime", () => {
     expect(response.body).toEqual({
       error:
         "The selected Blueprint default Snapshot has changed. Refresh CloudShare authoring resources and reselect the Exam provisioning tuple.",
+    });
+    await expect(repository.findById("exam-1")).resolves.toMatchObject({ status: "draft" });
+  });
+
+  it("returns 429 with rate-limit diagnostics when CloudShare throttles publish resource refresh", async () => {
+    const repository = createInMemoryExamCatalogRepository();
+    const diagnostics = makeDiagnostics();
+    const source = makeAuthoringSource({
+      getBlueprintDetail: vi.fn().mockRejectedValue(
+        new CloudShareRateLimitError("too many requests", 429, "rate_limit", {
+          method: "GET",
+          path: "/projects/project-1/blueprints/bp-1",
+          integrationSurface: "cloudshare.v3.projects.blueprint_detail",
+          responseHeaders: { "retry-after": "30" },
+        }),
+      ),
+    });
+    await createDraftExam(
+      {
+        repository,
+        now: () => new Date("2026-06-14T12:00:00.000Z"),
+        newId: () => "exam-1",
+      },
+      makeExamInput(),
+    );
+
+    const response = await publishAdminExamRuntime(
+      {
+        repository,
+        connections: makeConnections(),
+        cloudshare: makeCloudShareFactory(source),
+        cache: createInMemoryExamAuthoringCacheRepository(),
+        diagnostics: diagnostics.recorder,
+        logger: makeLogger(),
+        now: () => new Date("2026-06-14T12:30:00.000Z"),
+        newCorrelationId: () => "corr-publish-rate-limit",
+      },
+      { customerId: "customer-1", examId: "exam-1" },
+    );
+
+    expect(response.status).toBe(429);
+    expect(response.body).toMatchObject({
+      error: "CloudShare is rate limiting Exam publishing. Wait a moment, then try again.",
+      correlationId: "corr-publish-rate-limit",
+      diagnostic: {
+        failureMode: "rate_limit",
+        responseStatus: 429,
+      },
     });
     await expect(repository.findById("exam-1")).resolves.toMatchObject({ status: "draft" });
   });

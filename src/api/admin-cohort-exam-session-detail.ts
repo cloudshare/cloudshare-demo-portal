@@ -14,6 +14,7 @@ import {
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
+  isCloudShareRateLimitError,
 } from "@/integrations/cloudshare";
 import {
   createCloudShareAggregateGuidedJourneyProvider,
@@ -851,6 +852,9 @@ function toCloudShareReadFailureDiagnostic(
 }
 
 function inferFailureMode(error: unknown): string {
+  if (isCloudShareRateLimitError(error)) {
+    return "rate_limit";
+  }
   if (error instanceof CloudShareRequestError) {
     return "http_status";
   }

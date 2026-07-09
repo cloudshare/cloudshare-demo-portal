@@ -17,6 +17,7 @@ import {
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
+  isCloudShareRateLimitError,
 } from "@/integrations/cloudshare";
 import { createCloudShareTrainingRetirementWriter } from "@/integrations/cloudshare/cohort-experience-retirement";
 import { createCloudShareTrainingParticipantReader } from "@/integrations/cloudshare/participants";
@@ -211,9 +212,11 @@ export async function handleRetireCohortExamSession(
         ...diagnostic.details,
       });
       return {
-        status: 502,
+        status: isCloudShareRateLimitError(error) ? 429 : 502,
         body: {
-          error: "CloudShare could not retire this Cohort Exam Session. Check the diagnostic log for the correlation ID.",
+          error: isCloudShareRateLimitError(error)
+            ? "CloudShare is rate limiting Cohort Exam Session retirement. Wait a moment, then try again."
+            : "CloudShare could not retire this Cohort Exam Session. Check the diagnostic log for the correlation ID.",
           correlationId,
         },
       };
@@ -370,6 +373,9 @@ function toCloudShareFailureDiagnostic(
 }
 
 function inferFailureMode(error: unknown): string {
+  if (isCloudShareRateLimitError(error)) {
+    return "rate_limit";
+  }
   if (error instanceof CloudShareRequestError || (error as { name?: unknown }).name === "CloudShareRequestError") {
     return "http_status";
   }

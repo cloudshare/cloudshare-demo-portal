@@ -19,7 +19,6 @@ import {
 } from "@/domain/exam-attempt";
 import type { LabLaunch, LabLaunchRepository } from "@/domain/lab-launch";
 import {
-  CloudShareRateLimitError,
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
@@ -915,7 +914,7 @@ function toProvisioningLogFields(diagnostic: {
 }
 
 function inferFailureMode(cause: unknown): string {
-  if (cause instanceof CloudShareRateLimitError) {
+  if (isCloudShareRateLimitError(cause)) {
     return "rate_limit";
   }
   if (cause instanceof CloudShareRequestError) {

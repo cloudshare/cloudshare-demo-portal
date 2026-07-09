@@ -17,7 +17,6 @@ import {
   scheduleExam,
 } from "@/domain/scheduling";
 import {
-  CloudShareRateLimitError,
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
@@ -457,22 +456,22 @@ function toProvisioningDiagnostic(
   };
 
   const cause = error.context.cause;
-  if (cause instanceof CloudShareRequestError) {
+  if (isCloudShareRateLimitError(cause) || cause instanceof CloudShareRequestError) {
     return {
       ...base,
-      method: cause.context?.method ?? base.method,
-      path: cause.context?.path ?? base.path,
-      host: cause.context?.host,
-      integrationSurface: cause.context?.integrationSurface ?? base.integrationSurface,
+      method: (cause as CloudShareRequestError).context?.method ?? base.method,
+      path: (cause as CloudShareRequestError).context?.path ?? base.path,
+      host: (cause as CloudShareRequestError).context?.host,
+      integrationSurface: (cause as CloudShareRequestError).context?.integrationSurface ?? base.integrationSurface,
       failureMode:
-        cause instanceof CloudShareRateLimitError ? "rate_limit" : "http_status",
-      responseStatus: cause.status,
-      requestHeaders: cause.context?.requestHeaders,
-      requestBody: cause.context?.requestBody,
-      responseHeaders: cause.context?.responseHeaders,
-      responseBody: cause.context?.responseBody,
-      network: cause.context?.network,
-      tls: cause.context?.tls,
+        isCloudShareRateLimitError(cause) ? "rate_limit" : "http_status",
+      responseStatus: (cause as CloudShareRequestError).status,
+      requestHeaders: (cause as CloudShareRequestError).context?.requestHeaders,
+      requestBody: (cause as CloudShareRequestError).context?.requestBody,
+      responseHeaders: (cause as CloudShareRequestError).context?.responseHeaders,
+      responseBody: (cause as CloudShareRequestError).context?.responseBody,
+      network: (cause as CloudShareRequestError).context?.network,
+      tls: (cause as CloudShareRequestError).context?.tls,
     };
   }
   if (cause instanceof CloudShareTransportError) {
