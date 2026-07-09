@@ -586,12 +586,14 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
         id: "attempt-1",
         candidateName: "Casey Rivera",
         status: "in_progress",
+        problemReasons: [],
         diagnosticFilters: { examAttemptId: "attempt-1" },
       },
       {
         id: "attempt-2",
         candidateName: "Jordan Lee",
         status: "completed",
+        problemReasons: [],
         diagnosticFilters: { examAttemptId: "attempt-2" },
       },
     ]);
@@ -611,14 +613,20 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
             candidateEmail: "casey@helioscx.demo",
             externalId: "env-1",
           },
+          problemReasons: [],
         },
         {
           email: "jordan@helioscx.demo",
           matchedExamAttemptId: "attempt-2",
+          problemReasons: [],
         },
         {
           email: "taylor@helioscx.demo",
           matchedExamAttemptId: null,
+          problemReasons: [
+            "CloudShare participant has no matching portal attempt.",
+            "CloudShare environment is in a non-terminal problem state.",
+          ],
         },
       ],
     });
@@ -672,6 +680,7 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
     });
     expect(entry).toMatchObject({
       outcome: "success",
+      message: "Fetched CloudShare participants for session monitoring",
       correlationId: "corr-session-detail-1",
       externalIds: {
         trainingId: "EXcohort-1",
@@ -800,6 +809,131 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
       cloudShareParticipantCount: 1,
       derivedFrom: "portal_and_cloudshare",
     });
+    expect(response.body.monitoring.cloudShareParticipants.participants).toMatchObject([
+      {
+        email: "taylor@helioscx.demo",
+        problemReasons: [
+          "CloudShare participant has no matching portal attempt.",
+          "CloudShare environment is in a non-terminal problem state.",
+        ],
+      },
+    ]);
+  });
+
+  it("explains portal and CloudShare state mismatches directly on the affected matched rows", async () => {
+    const exams = createInMemoryExamCatalogRepository();
+    const sessions = createInMemoryCohortExamSessionRepository();
+    await seedPublishedExam(exams);
+    await seedPublishedSession(sessions);
+
+    const attempts: AdminCohortExamSessionAttemptRepository = {
+      listBySessionId: vi.fn().mockResolvedValue([
+        {
+          id: "attempt-1",
+          customerId: "customer-1",
+          candidateId: "candidate-1",
+          candidateEmail: "casey@helioscx.demo",
+          candidateFirstName: "Casey",
+          candidateLastName: "Rivera",
+          examId: "exam-1",
+          examTitle: "Helios CloudShare Fundamentals",
+          status: "suspended",
+          scheduledFor: new Date("2026-07-06T10:00:00.000Z"),
+          createdAt: new Date("2026-07-06T10:00:00.000Z"),
+          trainingId: "EXcohort-1",
+          experienceId: "EXcohort-1",
+          environmentExternalId: "env-1",
+          environmentId: "env-1",
+          participantId: "student-1",
+        },
+      ]),
+    };
+
+    const cloudshare: CloudShareClientFactory = {
+      forConnection: () =>
+        ({
+          requestV4Detailed: vi.fn(
+            async (spec: { schema: { parse(value: unknown): unknown } }) => ({
+              data: spec.schema.parse({
+                items: [
+                  {
+                    email: "casey@helioscx.demo",
+                    firstName: "Casey",
+                    lastName: "Rivera",
+                    envId: "env-1",
+                    envStatus: "Running",
+                    participationStatus: "inProgress",
+                    id: "student-1",
+                    customProperties: {
+                      certalisExamAttemptId: "attempt-1",
+                      certalisCohortSessionId: "cohort-session-1",
+                      certalisCandidateId: "candidate-1",
+                    },
+                  },
+                ],
+              }),
+              host: "api.accelerate.cloudshare.com",
+              integrationSurface: "cloudshare.v4.training.participant",
+              request: {
+                method: "GET",
+                path: "/v4/trainings/EXcohort-1/students",
+              },
+              response: {
+                status: 200,
+                body: { items: [] },
+              },
+            }),
+          ),
+        }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>,
+    };
+
+    const response = await handleGetAdminCohortExamSessionDetail(
+      {
+        exams,
+        sessions,
+        attempts,
+        connections: {
+          findByCustomerId: vi.fn(async () => ({
+            customerId: "customer-1",
+            apiId: "api-id",
+            apiKey: "secret-api-key",
+            webhookSecret: "webhook-secret",
+            webhookPathToken: "webhook-token",
+            connectedAt: new Date("2026-07-01T00:00:00.000Z"),
+            verifiedAt: new Date("2026-07-01T00:05:00.000Z"),
+          })),
+          save: vi.fn(),
+          findByWebhookPathToken: vi.fn(),
+          markVerified: vi.fn(),
+        },
+        cloudshare,
+        logger: makeLogger(),
+      },
+      {
+        customerId: "customer-1",
+        examId: "exam-1",
+        sessionId: "cohort-session-1",
+      },
+    );
+
+    expect(response.status).toBe(200);
+    if (!("monitoring" in response.body)) {
+      throw new Error("Expected monitoring payload");
+    }
+    expect(response.body.monitoring.summary.problemCount).toBe(1);
+    expect(response.body.monitoring.portalAttempts).toMatchObject([
+      {
+        id: "attempt-1",
+        problemReasons: ["Portal suspended; CloudShare participation still inProgress."],
+      },
+    ]);
+    expect(response.body.monitoring.cloudShareParticipants.participants).toMatchObject([
+      {
+        email: "casey@helioscx.demo",
+        matchedExamAttemptId: "attempt-1",
+        problemReasons: ["Portal suspended; CloudShare participation still inProgress."],
+      },
+    ]);
   });
 
   it("does not request aggregate Guided Journey progress when score retrieval is disabled on the parent Exam", async () => {

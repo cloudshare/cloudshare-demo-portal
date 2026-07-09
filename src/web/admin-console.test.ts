@@ -905,6 +905,7 @@ describe("AdminConsole", () => {
               environmentExternalId: "env-1",
               environmentId: "env-1",
               participantId: "student-1",
+              problemReasons: ["Portal suspended; CloudShare participation still inProgress."],
               diagnosticFilters: { examAttemptId: "attempt-1" },
             },
           ],
@@ -925,6 +926,7 @@ describe("AdminConsole", () => {
                 participationStatus: "inProgress",
                 firstJoinedAt: "2026-09-01T09:10:00.000Z",
                 matchedExamAttemptId: "attempt-1",
+                problemReasons: ["Portal suspended; CloudShare participation still inProgress."],
                 diagnosticFilters: {
                   examAttemptId: "attempt-1",
                   candidateEmail: "casey@helioscx.demo",
@@ -942,6 +944,7 @@ describe("AdminConsole", () => {
                 participationStatus: "inProgress",
                 firstJoinedAt: "2026-09-01T09:12:00.000Z",
                 matchedExamAttemptId: null,
+                problemReasons: ["CloudShare participant has no matching portal attempt."],
                 diagnosticFilters: {
                   candidateEmail: "taylor@helioscx.demo",
                   externalId: "env-2",
@@ -1008,11 +1011,32 @@ describe("AdminConsole", () => {
     expect(html).toContain("20%");
     expect(html).toContain("Aggregate progress diagnostics");
     expect(html).toContain("Counts are derived from session exam attempts and the CloudShare participant read");
+    expect(html).toContain("Problems");
+    expect(html).toContain("Problem count includes reconciliation warnings and CloudShare participant-check failures.");
+    expect(html).toContain("It is not a count of diagnostic errors.");
+    expect(html).toContain(
+      'title="State mismatch warnings, missing-match warnings, or CloudShare participant-check failures."',
+    );
+    expect(html).toContain(
+      'title="Rows from Certalis portal state: Candidates who have an ExamAttempt for this Cohort Exam Session."',
+    );
+    expect(html).toContain(
+      'title="Rows returned by CloudShare for the shared Experience/training used by this Cohort Exam Session."',
+    );
+    expect(html).toContain(
+      'title="Open Support Diagnostics filtered to the CloudShare participant-list check for this Cohort Exam Session."',
+    );
+    expect(html).toContain("Rows below with reconciliation warnings: 3 total");
+    expect(html).toContain("1 session exam attempt row");
+    expect(html).toContain("2 CloudShare participant rows");
     expect(html).toContain("Casey Rivera");
-    expect(html).toContain("CloudShare read diagnostics");
+    expect(html).toContain("Participant check diagnostics");
+    expect(html).not.toContain("CloudShare read diagnostics");
     expect(html).toContain("Attempt diagnostics");
     expect(html).toContain("No session exam attempt");
     expect(html).not.toContain("No portal ExamAttempt");
+    expect(html).toContain("Portal suspended; CloudShare participation still inProgress.");
+    expect(html).toContain("CloudShare participant has no matching portal attempt.");
     expect(html).toContain("/admin?tab=support&amp;view=diagnostics&amp;examId=exam-1&amp;externalId=EX123");
     expect(html).toContain("/admin?tab=support&amp;view=diagnostics&amp;examAttemptId=attempt-1");
   });
@@ -1088,6 +1112,8 @@ describe("AdminConsole", () => {
 
     expect(html).toContain("CloudShare participant read unavailable");
     expect(html).toContain("CloudShare participant read failed for this Cohort Exam Session.");
+    expect(html).toContain("Problem count includes reconciliation warnings and CloudShare participant-check failures.");
+    expect(html).toContain("The CloudShare participant read unavailable panel below also contributes to Problems.");
     expect(html).toContain("Correlation ID:");
     expect(html).toContain("corr-1");
     expect(html).toContain("/admin?tab=support&amp;view=diagnostics&amp;correlationId=corr-1");

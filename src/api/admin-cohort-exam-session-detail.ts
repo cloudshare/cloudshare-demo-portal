@@ -24,6 +24,10 @@ import {
 import { createCloudShareTrainingParticipantReader } from "@/integrations/cloudshare/participants";
 import type { Logger } from "@/observability/logger";
 import { attachCohortExamSessionInheritedContext } from "@/domain/cohort-exam-session";
+import {
+  deriveCohortExamSessionMonitoringSummary,
+  deriveCohortExamSessionReconciliationRows,
+} from "@/domain/cohort-exam-session-monitoring";
 
 export interface AdminCohortExamSessionAttemptRecord {
   readonly id: string;
@@ -117,6 +121,7 @@ export interface CohortExamSessionAttemptView {
   readonly environmentExternalId: string | null;
   readonly environmentId: string | null;
   readonly participantId: string | null;
+  readonly problemReasons: readonly string[];
   readonly diagnosticFilters: DiagnosticFilterSeed;
 }
 
@@ -131,6 +136,7 @@ export interface CohortExamSessionParticipantView {
   readonly participationStatus: string | null;
   readonly firstJoinedAt: string | null;
   readonly matchedExamAttemptId: string | null;
+  readonly problemReasons: readonly string[];
   readonly diagnosticFilters: DiagnosticFilterSeed;
 }
 
@@ -426,7 +432,7 @@ async function readCloudShareParticipants(
       examId: input.examId,
       correlationId: input.correlationId,
       subject: { type: "cohort_exam_session", id: input.session.session.id },
-      message: "CloudShare participants read for Cohort Exam Session monitoring",
+      message: "Fetched CloudShare participants for session monitoring",
       externalIds: {
         trainingId,
         ...(experienceId ? { experienceId } : {}),
@@ -455,7 +461,7 @@ async function readCloudShareParticipants(
       examId: input.examId,
       correlationId: input.correlationId,
       subject: { type: "cohort_exam_session", id: input.session.session.id },
-      message: "CloudShare participant read failed for Cohort Exam Session monitoring",
+      message: "Could not fetch CloudShare participants for session monitoring",
       externalIds: {
         trainingId,
         ...(experienceId ? { experienceId } : {}),
@@ -502,7 +508,7 @@ function buildMonitoringView(
     attemptsByCandidateId.set(attempt.candidateId, attempt);
   }
 
-  const portalAttempts = attempts.map((attempt) => ({
+  const portalAttemptsWithoutProblems = attempts.map((attempt) => ({
     id: attempt.id,
     candidateId: attempt.candidateId,
     candidateName: formatCandidateName(attempt.candidateFirstName, attempt.candidateLastName, attempt.candidateEmail),
@@ -518,7 +524,7 @@ function buildMonitoringView(
     diagnosticFilters: { examAttemptId: attempt.id },
   }));
 
-  const cloudShareParticipants = cloudShareRead.participants.map((participant) => {
+  const cloudShareParticipantsWithoutProblems = cloudShareRead.participants.map((participant) => {
     const matchedAttempt =
       resolveMatchedAttempt(
         participant,
@@ -546,7 +552,32 @@ function buildMonitoringView(
     };
   });
 
-  const summary = deriveSummary(portalAttempts, cloudShareParticipants, cloudShareRead.status);
+  const reconciliationRows = deriveCohortExamSessionReconciliationRows(
+    portalAttemptsWithoutProblems,
+    cloudShareParticipantsWithoutProblems,
+  );
+  const portalProblemsById = new Map<string, readonly string[]>();
+  const cloudProblemsByParticipantKey = new Map<string, readonly string[]>();
+  for (const row of reconciliationRows) {
+    if (row.portal) {
+      portalProblemsById.set(row.portal.id, row.problemReasons);
+    }
+    if (row.cloud) {
+      cloudProblemsByParticipantKey.set(getCloudParticipantKey(row.cloud), row.problemReasons);
+    }
+  }
+
+  const portalAttempts = portalAttemptsWithoutProblems.map((attempt) => ({
+    ...attempt,
+    problemReasons: portalProblemsById.get(attempt.id) ?? [],
+  }));
+
+  const cloudShareParticipants = cloudShareParticipantsWithoutProblems.map((participant) => ({
+    ...participant,
+    problemReasons: cloudProblemsByParticipantKey.get(getCloudParticipantKey(participant)) ?? [],
+  }));
+
+  const summary = deriveCohortExamSessionMonitoringSummary(reconciliationRows, cloudShareRead.status);
   return {
     summary,
     portalAttempts,
@@ -614,184 +645,13 @@ function resolveMatchedAttempt(
   return attemptsByEmail.get(participant.email.trim().toLowerCase()) ?? null;
 }
 
-function deriveSummary(
-  portalAttempts: readonly CohortExamSessionAttemptView[],
-  participants: readonly CohortExamSessionParticipantView[],
-  cloudShareStatus: "available" | "unavailable" | "not_published",
-): CohortExamSessionMonitoringView["summary"] {
-  const attemptKeyByEmail = new Map<string, string>();
-  const rowsByKey = new Map<
-    string,
-    {
-      portal?: CohortExamSessionAttemptView;
-      cloud?: CohortExamSessionParticipantView;
-    }
-  >();
-
-  for (const attempt of portalAttempts) {
-    const key = toPortalSummaryRowKey(attempt);
-    attemptKeyByEmail.set(attempt.candidateEmail.trim().toLowerCase(), key);
-    rowsByKey.set(key, { ...(rowsByKey.get(key) ?? {}), portal: attempt });
-  }
-  for (const participant of participants) {
-    const key = toCloudShareSummaryRowKey(participant, attemptKeyByEmail);
-    rowsByKey.set(key, { ...(rowsByKey.get(key) ?? {}), cloud: participant });
-  }
-
-  let activeCount = 0;
-  let inProgressCount = 0;
-  let completedCount = 0;
-  let problemCount = cloudShareStatus === "unavailable" ? 1 : 0;
-
-  for (const row of rowsByKey.values()) {
-    const portalActive = isPortalActive(row.portal?.status);
-    const cloudActive = isCloudActive(row.cloud);
-    const portalCompleted = isPortalCompleted(row.portal?.status);
-    const cloudCompleted = isCloudCompleted(row.cloud);
-    const portalInProgress = row.portal?.status === "in_progress";
-    const cloudInProgress = isCloudInProgress(row.cloud);
-
-    if (portalActive || cloudActive) activeCount += 1;
-    if (portalInProgress || cloudInProgress) inProgressCount += 1;
-    if (portalCompleted || cloudCompleted) completedCount += 1;
-    if (isProblemRow(row.portal, row.cloud)) problemCount += 1;
-  }
-
-  return {
-    activeCount,
-    inProgressCount,
-    completedCount,
-    problemCount,
-    portalAttemptCount: portalAttempts.length,
-    cloudShareParticipantCount: participants.length,
-    derivedFrom: "portal_and_cloudshare",
-  };
-}
-
-function toPortalSummaryRowKey(attempt: CohortExamSessionAttemptView): string {
-  return `attempt:${attempt.id}`;
-}
-
-function toCloudShareSummaryRowKey(
-  participant: CohortExamSessionParticipantView,
-  attemptKeyByEmail: ReadonlyMap<string, string>,
-): string {
-  if (participant.matchedExamAttemptId) {
-    return `attempt:${participant.matchedExamAttemptId}`;
-  }
-  const normalizedEmail = participant.email.trim().toLowerCase();
-  return attemptKeyByEmail.get(normalizedEmail) ?? `email:${normalizedEmail}`;
-}
-
-function isPortalActive(status: CohortExamSessionAttemptView["status"] | undefined): boolean {
-  return status === "scheduled" || status === "ready" || status === "in_progress" || status === "suspended";
-}
-
-function isPortalCompleted(status: CohortExamSessionAttemptView["status"] | undefined): boolean {
-  return status === "completed" || status === "expired";
-}
-
-function isCloudActive(participant: CohortExamSessionParticipantView | undefined): boolean {
-  if (!participant) {
-    return false;
-  }
-  if (isCloudProblemParticipant(participant)) {
-    return false;
-  }
-  if (isCloudInProgress(participant)) {
-    return true;
-  }
-  const status = participant.participationStatus?.trim().toLowerCase();
-  return status === "pending" || status === "registered" || status === "assigned";
-}
-
-function isCloudInProgress(participant: CohortExamSessionParticipantView | undefined): boolean {
-  if (!participant) {
-    return false;
-  }
-  if (isCloudProblemParticipant(participant)) {
-    return false;
-  }
-  const participationStatus = participant.participationStatus?.trim().toLowerCase();
-  if (participationStatus === "inprogress") {
-    return true;
-  }
-  const environmentStatus = participant.environmentStatus?.trim().toLowerCase();
-  return Boolean(environmentStatus && isNormalActiveEnvironmentStatus(environmentStatus));
-}
-
-function isCloudCompleted(participant: CohortExamSessionParticipantView | undefined): boolean {
-  if (!participant) {
-    return false;
-  }
-  const participationStatus = participant.participationStatus?.trim().toLowerCase();
-  const environmentStatus = participant.environmentStatus?.trim().toLowerCase();
-  return participationStatus === "completed" || Boolean(environmentStatus && isTerminalEnvironmentStatus(environmentStatus));
-}
-
-function isTerminalEnvironmentStatus(status: string): boolean {
-  return status === "archived" || status === "deleted";
-}
-
-function isNormalActiveEnvironmentStatus(status: string): boolean {
-  return (
-    status === "ready" ||
-    status === "running" ||
-    status === "suspended" ||
-    status === "starting" ||
-    status === "provisioning" ||
-    status === "resuming" ||
-    status === "stopping"
-  );
-}
-
-function isCloudProblemParticipant(participant: CohortExamSessionParticipantView | undefined): boolean {
-  if (!participant) {
-    return false;
-  }
-  const participationStatus = participant.participationStatus?.trim().toLowerCase();
-  if (
-    participationStatus === "failed" ||
-    participationStatus === "error" ||
-    participationStatus === "aborted" ||
-    participationStatus === "denied"
-  ) {
-    return true;
-  }
-  const environmentStatus = participant.environmentStatus?.trim().toLowerCase();
-  if (!environmentStatus) {
-    return false;
-  }
-  if (isTerminalEnvironmentStatus(environmentStatus) || isNormalActiveEnvironmentStatus(environmentStatus)) {
-    return false;
-  }
-  return true;
-}
-
-function isProblemRow(
-  portal: CohortExamSessionAttemptView | undefined,
-  cloud: CohortExamSessionParticipantView | undefined,
-): boolean {
-  if (portal && !cloud && isPortalActive(portal.status)) {
-    return true;
-  }
-  if (cloud && !portal) {
-    return true;
-  }
-  if (!portal || !cloud) {
-    return false;
-  }
-
-  if (isCloudProblemParticipant(cloud)) {
-    return true;
-  }
-  if (isPortalActive(portal.status) && isCloudCompleted(cloud)) {
-    return true;
-  }
-  if (isPortalCompleted(portal.status) && isCloudActive(cloud)) {
-    return true;
-  }
-  return false;
+function getCloudParticipantKey(participant: {
+  readonly email: string;
+  readonly matchedExamAttemptId: string | null;
+}): string {
+  return participant.matchedExamAttemptId
+    ? `attempt:${participant.matchedExamAttemptId}`
+    : `email:${participant.email.trim().toLowerCase()}`;
 }
 
 function formatCandidateName(
