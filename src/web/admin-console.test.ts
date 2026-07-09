@@ -62,12 +62,13 @@ describe("AdminConsole", () => {
     const html = renderToStaticMarkup(
       createElement(CloudShareConnectionTestWarning, {
         warning:
-          "CloudShare rate limiting or abuse protection blocked the v3 ping. Check whether this public IP needs CloudShare allow-list or abuse-list review before retrying.",
+          "CloudShare is returning a 429 error stating that you need to contact support@cloudshare.com. This is likely CloudShare rate limiting or abuse protection blocking the request. Check whether this public IP needs CloudShare allow-list or abuse-list review before retrying.",
         correlationId: "corr-rate-limit",
       }),
     );
 
-    expect(html).toContain("CloudShare rate limiting or abuse protection blocked the v3 ping");
+    expect(html).toContain("CloudShare is returning a 429 error");
+    expect(html).toContain("support@cloudshare.com");
     expect(html).toContain("public IP");
     expect(html).toContain("Support Diagnostics");
     expect(html).toContain("/admin?tab=support&amp;view=diagnostics&amp;correlationId=corr-rate-limit");

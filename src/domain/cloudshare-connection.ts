@@ -92,7 +92,7 @@ export async function testCloudShareConnection(
   } catch (error) {
     if (isCloudShareRateLimitError(error)) {
       throw new CloudShareConnectionTestError(
-        "CloudShare rate limiting or abuse protection blocked the v3 ping. Check whether this public IP needs CloudShare allow-list or abuse-list review before retrying.",
+        "CloudShare is returning a 429 error stating that you need to contact support@cloudshare.com. This is likely CloudShare rate limiting or abuse protection blocking the request. Check whether this public IP needs CloudShare allow-list or abuse-list review before retrying.",
         error.message,
         {
           operation: "test_connection",
