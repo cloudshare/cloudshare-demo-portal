@@ -494,7 +494,7 @@ describe("getExamAttemptScoreRuntime", () => {
     expect(result).toEqual({
       status: 429,
       body: {
-        error: "CloudShare is rate limiting score retrieval. Wait a moment, then try again.",
+        error: "CloudShare is returning a 429 error stating that you need to contact support@cloudshare.com. This is likely CloudShare rate limiting or abuse protection blocking the request. Check whether this public IP needs CloudShare allow-list or abuse-list review before retrying.",
         correlationId: "corr-123",
       },
     });

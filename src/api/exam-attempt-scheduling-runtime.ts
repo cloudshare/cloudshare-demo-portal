@@ -4,6 +4,7 @@ import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
+import { CLOUDSHARE_429_SUPPORT_GUIDANCE } from "@/domain/cloudshare-rate-limit-message";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { EventLogRepository } from "@/domain/event-log";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
@@ -154,10 +155,10 @@ export async function scheduleExamAttemptRuntime(
     return {
       status: snapshotGuardFailure.status,
       body: {
-        error:
-          snapshotGuardFailure.status === 429
-            ? "Exam scheduling is temporarily unavailable because CloudShare is rate limiting requests. Wait a moment, then try again."
-            : "Exam scheduling is temporarily unavailable because the lab configuration changed. Contact your instructor.",
+          error:
+            snapshotGuardFailure.status === 429
+              ? CLOUDSHARE_429_SUPPORT_GUIDANCE
+              : "Exam scheduling is temporarily unavailable because the lab configuration changed. Contact your instructor.",
         correlationId,
       },
     };
@@ -301,7 +302,7 @@ export async function scheduleExamAttemptRuntime(
         status: isCloudShareRateLimitError(error.context.cause) ? 429 : 502,
         body: {
           error: isCloudShareRateLimitError(error.context.cause)
-            ? "Exam scheduling is temporarily unavailable because CloudShare is rate limiting requests. Wait a moment, then try again."
+            ? CLOUDSHARE_429_SUPPORT_GUIDANCE
             : "CloudShare provisioning failed for the scheduled exam.",
           correlationId,
         },

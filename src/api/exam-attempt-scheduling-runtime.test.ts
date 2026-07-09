@@ -631,7 +631,7 @@ describe("ExamAttempt scheduling runtime", () => {
       status: 429,
       body: {
         error:
-          "Exam scheduling is temporarily unavailable because CloudShare is rate limiting requests. Wait a moment, then try again.",
+          "CloudShare is returning a 429 error stating that you need to contact support@cloudshare.com. This is likely CloudShare rate limiting or abuse protection blocking the request. Check whether this public IP needs CloudShare allow-list or abuse-list review before retrying.",
         correlationId: "corr-snapshot-rate-limit-schedule",
       },
     });

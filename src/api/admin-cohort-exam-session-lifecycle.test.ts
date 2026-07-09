@@ -555,7 +555,7 @@ describe("admin cohort exam session lifecycle runtime", () => {
     expect(response).toEqual({
       status: 429,
       body: {
-        error: "CloudShare is rate limiting Cohort Exam Session retirement. Wait a moment, then try again.",
+        error: "CloudShare is returning a 429 error stating that you need to contact support@cloudshare.com. This is likely CloudShare rate limiting or abuse protection blocking the request. Check whether this public IP needs CloudShare allow-list or abuse-list review before retrying.",
         correlationId: "corr-retire-rate-limit",
       },
     });

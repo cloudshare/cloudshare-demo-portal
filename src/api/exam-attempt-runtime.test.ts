@@ -728,7 +728,7 @@ describe("enterExamAttemptRuntime", () => {
       status: 429,
       body: {
         message:
-          "Exam entry is temporarily unavailable because CloudShare is rate limiting requests. Wait a moment, then try again.",
+          "CloudShare is returning a 429 error stating that you need to contact support@cloudshare.com. This is likely CloudShare rate limiting or abuse protection blocking the request. Check whether this public IP needs CloudShare allow-list or abuse-list review before retrying.",
       },
     });
     expect(timer.resumed).toEqual([]);

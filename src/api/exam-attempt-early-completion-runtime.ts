@@ -4,6 +4,7 @@ import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { EnvironmentCommandResult } from "@/domain/environment";
 import { ExamAttemptRuntimeError } from "@/domain/errors";
 import { archiveExam, type ArchiveExamResult } from "@/domain/exam-attempt-runtime-lifecycle";
+import { CLOUDSHARE_429_SUPPORT_GUIDANCE } from "@/domain/cloudshare-rate-limit-message";
 import {
   CloudShareRequestError,
   CloudShareResponseError,
@@ -256,7 +257,7 @@ function mapArchiveErrorToCompleteResponse(
     return {
       status: 429,
       body: {
-        error: "CloudShare is rate limiting lab archive requests. Wait a moment, then retry End exam.",
+        error: CLOUDSHARE_429_SUPPORT_GUIDANCE,
         examAttemptId,
         operation: "complete",
         retryable: true,

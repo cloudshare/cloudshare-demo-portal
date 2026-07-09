@@ -4,6 +4,7 @@ import type {
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
 import type { DiagnosticLogEntryInput, DiagnosticRecorder } from "@/domain/diagnostic-log";
+import { CLOUDSHARE_429_SUPPORT_GUIDANCE } from "@/domain/cloudshare-rate-limit-message";
 import {
   CloudShareError,
   CloudShareRateLimitError,
@@ -550,7 +551,7 @@ async function handleCloudShareFailure(
       status: isCloudShareRateLimitError(spec.error) ? 429 : 502,
       body: {
         error: isCloudShareRateLimitError(spec.error)
-          ? "CloudShare is rate limiting resource requests. Wait a moment, then try again."
+          ? CLOUDSHARE_429_SUPPORT_GUIDANCE
           : "CloudShare resource request failed.",
         correlationId,
         occurredAt,

@@ -6,6 +6,7 @@ import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
+import { CLOUDSHARE_429_SUPPORT_GUIDANCE } from "@/domain/cloudshare-rate-limit-message";
 import {
   suspendExam,
   resumeExam,
@@ -880,7 +881,7 @@ async function reportFailureDiagnostic(
       return {
         status: 429,
         body: {
-          error: `CloudShare is rate limiting exam ${spec.action}. Wait a moment, then try again.`,
+          error: CLOUDSHARE_429_SUPPORT_GUIDANCE,
           correlationId,
         },
       };
@@ -914,7 +915,7 @@ async function reportFailureDiagnostic(
       status: isCloudShareRateLimitError(err) ? 429 : 502,
       body: {
         error: isCloudShareRateLimitError(err)
-          ? `CloudShare is rate limiting exam ${spec.action}. Wait a moment, then try again.`
+          ? CLOUDSHARE_429_SUPPORT_GUIDANCE
           : `exam ${spec.action} failed`,
         correlationId,
       },

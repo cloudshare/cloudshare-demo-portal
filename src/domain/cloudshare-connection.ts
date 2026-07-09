@@ -1,4 +1,5 @@
 import type { CloudShareClient } from "@/integrations/cloudshare";
+import { CLOUDSHARE_429_SUPPORT_GUIDANCE } from "./cloudshare-rate-limit-message";
 import {
   CloudShareError,
   CloudShareRequestError,
@@ -92,7 +93,7 @@ export async function testCloudShareConnection(
   } catch (error) {
     if (isCloudShareRateLimitError(error)) {
       throw new CloudShareConnectionTestError(
-        "CloudShare is returning a 429 error stating that you need to contact support@cloudshare.com. This is likely CloudShare rate limiting or abuse protection blocking the request. Check whether this public IP needs CloudShare allow-list or abuse-list review before retrying.",
+        CLOUDSHARE_429_SUPPORT_GUIDANCE,
         error.message,
         {
           operation: "test_connection",

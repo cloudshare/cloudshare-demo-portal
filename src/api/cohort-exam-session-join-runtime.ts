@@ -4,6 +4,7 @@ import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
+import { CLOUDSHARE_429_SUPPORT_GUIDANCE } from "@/domain/cloudshare-rate-limit-message";
 import type { CohortExamSessionRepository } from "@/domain/cohort-exam-session";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { EventLogRepository } from "@/domain/event-log";
@@ -342,7 +343,7 @@ export async function joinCohortExamSessionRuntime(
       body: {
         error:
           snapshotGuardFailure.status === 429
-            ? "This Cohort Exam Session is temporarily unavailable because CloudShare is rate limiting requests. Wait a moment, then try again."
+            ? CLOUDSHARE_429_SUPPORT_GUIDANCE
             : snapshotGuardFailure.message,
       },
     };
@@ -380,7 +381,7 @@ export async function joinCohortExamSessionRuntime(
       status: isCloudShareRateLimitError(cause) ? 429 : 502,
       body: {
         error: isCloudShareRateLimitError(cause)
-          ? "This Cohort Exam Session is temporarily unavailable because CloudShare is rate limiting requests. Wait a moment, then try again."
+          ? CLOUDSHARE_429_SUPPORT_GUIDANCE
           : "CloudShare could not confirm this Cohort Exam Session is open yet.",
         correlationId,
       },
@@ -488,7 +489,7 @@ export async function joinCohortExamSessionRuntime(
       status: isCloudShareRateLimitError(cause) ? 429 : 502,
       body: {
         error: isCloudShareRateLimitError(cause)
-          ? "This Cohort Exam Session is temporarily unavailable because CloudShare is rate limiting requests. Wait a moment, then try again."
+          ? CLOUDSHARE_429_SUPPORT_GUIDANCE
           : "CloudShare provisioning failed for the shared cohort Exam Session.",
         correlationId,
       },
@@ -556,7 +557,7 @@ export async function joinCohortExamSessionRuntime(
       status: isCloudShareRateLimitError(cause) ? 429 : 502,
       body: {
         error: isCloudShareRateLimitError(cause)
-          ? "This Cohort Exam Session is temporarily unavailable because CloudShare is rate limiting requests. Wait a moment, then try again."
+          ? CLOUDSHARE_429_SUPPORT_GUIDANCE
           : "CloudShare provisioning failed for the shared cohort Exam Session.",
         correlationId,
       },

@@ -15,6 +15,7 @@ import type {
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
 import type { DiagnosticActor, DiagnosticLogEntryInput, DiagnosticRecorder } from "@/domain/diagnostic-log";
+import { CLOUDSHARE_429_SUPPORT_GUIDANCE } from "@/domain/cloudshare-rate-limit-message";
 import {
   ExamNotFoundError,
   isCohortExamSessionDeliveryAvailable,
@@ -257,7 +258,7 @@ export async function handlePublishCohortExamSession(
         body: {
           error:
             snapshotGuardFailure.status === 429
-              ? "Cohort Exam Session publish is temporarily unavailable because CloudShare is rate limiting requests. Wait a moment, then try again."
+              ? CLOUDSHARE_429_SUPPORT_GUIDANCE
               : "Cohort Exam Session publish is temporarily unavailable because the lab configuration changed. Refresh CloudShare resources and check the Exam Blueprint/default Snapshot.",
           correlationId,
         },
@@ -491,7 +492,7 @@ export async function handlePublishCohortExamSession(
         body: {
           error:
             isCloudShareRateLimitError(error)
-              ? "Cohort Exam Session publish is temporarily unavailable because CloudShare is rate limiting requests. Wait a moment, then try again."
+              ? CLOUDSHARE_429_SUPPORT_GUIDANCE
               : classifyCloudSharePublishFailure(error) === "reconciliation_required"
               ? "CloudShare publish outcome is unknown. Reconcile it before retrying this Cohort Exam Session. Check the diagnostic log for the correlation ID."
               : "CloudShare could not publish this Cohort Exam Session. Check the diagnostic log for the correlation ID.",

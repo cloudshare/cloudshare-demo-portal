@@ -2,6 +2,7 @@ import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
+import { CLOUDSHARE_429_SUPPORT_GUIDANCE } from "@/domain/cloudshare-rate-limit-message";
 import type {
   DiagnosticActor,
   DiagnosticRecorder,
@@ -23,8 +24,7 @@ import type { Logger } from "@/observability/logger";
 
 const SNAPSHOT_DRIFT_MESSAGE =
   "Exam entry is temporarily unavailable because the lab configuration changed. Contact your administrator.";
-const SNAPSHOT_GUARD_RATE_LIMIT_MESSAGE =
-  "Exam entry is temporarily unavailable because CloudShare is rate limiting requests. Wait a moment, then try again.";
+const SNAPSHOT_GUARD_RATE_LIMIT_MESSAGE = CLOUDSHARE_429_SUPPORT_GUIDANCE;
 const BLUEPRINT_DETAIL_INTEGRATION_SURFACE = "cloudshare.v3.projects.blueprint_detail";
 
 export interface RuntimeBlueprintSnapshotGuardDeps {
