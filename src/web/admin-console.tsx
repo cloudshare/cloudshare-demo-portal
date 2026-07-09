@@ -614,6 +614,15 @@ const problemReasonListStyle: React.CSSProperties = {
   color: colors.textPrimary,
 };
 
+const reconciliationWarningRowStyle: React.CSSProperties = {
+  borderBottom: `1px solid ${colors.border}`,
+  background: colors.warningSoft,
+};
+
+function formatProblemRowCount(count: number, singular: string, plural: string): string {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 function CohortSessionDetailItem(props: {
   label: string;
   value: React.ReactNode;
@@ -637,6 +646,38 @@ function ProblemReasonList(props: { readonly reasons: readonly string[] }) {
         <li key={reason}>{reason}</li>
       ))}
     </ul>
+  );
+}
+
+function CohortSessionProblemBridge(props: {
+  readonly problemCount: number;
+  readonly portalProblemRows: number;
+  readonly cloudShareProblemRows: number;
+}) {
+  const totalProblemRows = props.portalProblemRows + props.cloudShareProblemRows;
+
+  if (props.problemCount === 0 && totalProblemRows === 0) {
+    return (
+      <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
+        No reconciliation warnings are currently contributing to the Problems tile.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.35rem" }}>
+      <strong>Problems tile: {props.problemCount}</strong>
+      <span>
+        Rows below with reconciliation warnings: {totalProblemRows} total (
+        {formatProblemRowCount(props.portalProblemRows, "session exam attempt row", "session exam attempt rows")},{" "}
+        {formatProblemRowCount(props.cloudShareProblemRows, "CloudShare participant row", "CloudShare participant rows")}
+        ).
+      </span>
+      <span>
+        These warning-highlighted rows explain the Problems tile. Matched portal/CloudShare disagreements can appear in
+        both tables so you can inspect either side.
+      </span>
+    </div>
   );
 }
 
@@ -887,6 +928,11 @@ export function CohortSessionWorkspacePanel(props: {
   onOpenCorrelationDiagnostics?: (correlationId: string) => void;
 }) {
   const { session } = props;
+  const portalProblemRows =
+    props.detail?.portalAttempts.filter((attempt) => attempt.problemReasons.length > 0).length ?? 0;
+  const cloudShareProblemRows =
+    props.detail?.cloudShareParticipants.participants.filter((participant) => participant.problemReasons.length > 0)
+      .length ?? 0;
 
   return (
     <div style={{ ...cardStyle, display: "grid", gap: "1rem" }}>
@@ -1055,6 +1101,11 @@ export function CohortSessionWorkspacePanel(props: {
               Problem count shows reconciliation warnings between portal attempt state and CloudShare participant state.
               It is not a count of diagnostic errors.
             </div>
+            <CohortSessionProblemBridge
+              problemCount={props.detail.summary.problemCount}
+              portalProblemRows={portalProblemRows}
+              cloudShareProblemRows={cloudShareProblemRows}
+            />
 
             <div style={{ display: "grid", gap: "0.75rem" }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
@@ -1078,7 +1129,14 @@ export function CohortSessionWorkspacePanel(props: {
                     </thead>
                     <tbody>
                       {props.detail.portalAttempts.map((attempt) => (
-                        <tr key={attempt.id} style={{ borderBottom: `1px solid ${colors.border}` }}>
+                        <tr
+                          key={attempt.id}
+                          style={
+                            attempt.problemReasons.length > 0
+                              ? reconciliationWarningRowStyle
+                              : { borderBottom: `1px solid ${colors.border}` }
+                          }
+                        >
                           <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
                             <div style={{ fontWeight: 600 }}>{attempt.candidateName}</div>
                             <div style={{ color: colors.textSecondary }}>{attempt.candidateEmail}</div>
@@ -1200,7 +1258,14 @@ export function CohortSessionWorkspacePanel(props: {
                     </thead>
                     <tbody>
                       {props.detail.cloudShareParticipants.participants.map((participant) => (
-                        <tr key={`${participant.email}:${participant.studentId ?? participant.environmentId ?? "none"}`} style={{ borderBottom: `1px solid ${colors.border}` }}>
+                        <tr
+                          key={`${participant.email}:${participant.studentId ?? participant.environmentId ?? "none"}`}
+                          style={
+                            participant.problemReasons.length > 0
+                              ? reconciliationWarningRowStyle
+                              : { borderBottom: `1px solid ${colors.border}` }
+                          }
+                        >
                           <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
                             <div style={{ fontWeight: 600 }}>{participant.displayName ?? participant.email}</div>
                             <div style={{ color: colors.textSecondary }}>{participant.email}</div>

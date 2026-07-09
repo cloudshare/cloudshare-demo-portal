@@ -997,6 +997,9 @@ describe("AdminConsole", () => {
     expect(html).toContain("Problems");
     expect(html).toContain("Problem count shows reconciliation warnings between portal attempt state and CloudShare participant state");
     expect(html).toContain("It is not a count of diagnostic errors.");
+    expect(html).toContain("Rows below with reconciliation warnings: 3 total");
+    expect(html).toContain("1 session exam attempt row");
+    expect(html).toContain("2 CloudShare participant rows");
     expect(html).toContain("Casey Rivera");
     expect(html).toContain("CloudShare read diagnostics");
     expect(html).toContain("Attempt diagnostics");
