@@ -574,7 +574,9 @@ async function buildMonitoringView(
   const reconciliationByRowKey = new Map<string, "normal" | "state_observation" | "needs_attention">();
   for (const row of reconciliationRows) {
     const rowKey = row.portal ? `attempt:${row.portal.id}` : `participant:${row.cloud?.email.trim().toLowerCase() ?? "unknown"}`;
-    const observation = row.problemReasons.length === 0 || !observations
+    // Record normal rows too. A normal read resets a prior mismatch, so the
+    // next mismatch begins a fresh two-consecutive-read grace period.
+    const observation = !observations
       ? null
       : await observations.record({
           customerId,
@@ -583,7 +585,10 @@ async function buildMonitoringView(
           signature: row.problemReasons.join("\n"),
           observedAt: new Date(),
         });
-    reconciliationByRowKey.set(rowKey, classifyCohortMonitoringObservation(observation));
+    reconciliationByRowKey.set(
+      rowKey,
+      row.problemReasons.length === 0 ? "normal" : classifyCohortMonitoringObservation(observation),
+    );
     if (row.portal) {
       portalProblemsById.set(row.portal.id, row.problemReasons);
     }

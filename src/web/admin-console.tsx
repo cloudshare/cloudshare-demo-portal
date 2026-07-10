@@ -1236,7 +1236,7 @@ export function CohortSessionWorkspacePanel(props: {
                             ) : attempt.reconciliation === "state_observation" ? (
                               <span style={{ color: colors.textSecondary }}>State observation: checking again on the next refresh</span>
                             ) : (
-                              <span style={{ color: colors.textSecondary }}>State observation: no action needed</span>
+                              <span style={{ color: colors.textSecondary }}>Normal: portal and CloudShare runtime state agree</span>
                             )}
                           </td>
                           <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
@@ -1356,8 +1356,8 @@ export function CohortSessionWorkspacePanel(props: {
                             <div style={{ color: colors.textSecondary }}>First joined: {formatUtcTimestamp(participant.firstJoinedAt)}</div>
                           </td>
                           <td style={{ padding: "0.55rem", verticalAlign: "top", overflowWrap: "anywhere" }}>
-                            <div>Participation: {participant.participationStatus ?? "-"}</div>
-                            <div>Environment: {participant.environmentStatus ?? "-"}</div>
+                            <div>Participation: {formatCloudShareMonitoringStatus(participant.participationStatus)}</div>
+                            <div>Environment: {formatCloudShareMonitoringStatus(participant.environmentStatus)}</div>
                             <div>Environment ID: {participant.environmentId ?? "-"}</div>
                             <div>Participant ID: {participant.studentId ?? "-"}</div>
                           </td>
@@ -1370,7 +1370,7 @@ export function CohortSessionWorkspacePanel(props: {
                             ) : participant.reconciliation === "state_observation" ? (
                               <span style={{ color: colors.textSecondary }}>State observation: checking again on the next refresh</span>
                             ) : (
-                              <span style={{ color: colors.textSecondary }}>State observation: no action needed</span>
+                              <span style={{ color: colors.textSecondary }}>Normal: portal and CloudShare runtime state agree</span>
                             )}
                           </td>
                           <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
@@ -1408,6 +1408,14 @@ export function CohortSessionWorkspacePanel(props: {
       </div>
     </div>
   );
+}
+
+function formatCloudShareMonitoringStatus(status: string | null): string {
+  if (!status) return "-";
+  return status
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .toLowerCase();
 }
 
 function AttentionGuidance(props: { readonly reasons: readonly string[] }) {
@@ -2004,7 +2012,7 @@ export function AdminConsole({
   const [focusedExamId, setFocusedExamId] = useState<string | null>(initialExamId ?? null);
   const [focusedCohortSessionId, setFocusedCohortSessionId] = useState<string | null>(initialCohortSessionId ?? null);
   const [supportView, setSupportView] = useState<AdminSupportView>(initialSupportView);
-  const [monitoringBranch, setMonitoringBranch] = useState<"cohort" | "individual">("cohort");
+  const [monitoringBranch, setMonitoringBranch] = useState<"cohort" | "individual" | null>(null);
   const [projects, setProjects] = useState<NamedResource[]>([]);
   const [regions, setRegions] = useState<NamedResource[]>([]);
   const [blueprints, setBlueprints] = useState<NamedResource[]>([]);
@@ -2961,7 +2969,6 @@ export function AdminConsole({
         [examId]: { name: "", admissionStartsAt: "", admissionEndsAt: "", capacity: "" },
       }));
       await loadCohortExamSessions(examId);
-      await loadCohortSessionDetail(examId, data.session.id);
       navigateAdmin({
         tab: "exams",
         examView: "session",
@@ -2996,7 +3003,6 @@ export function AdminConsole({
       setSelectedCohortSession(data);
       setExamMessage("Cohort Exam Session published to CloudShare.");
       await loadCohortExamSessions(examId);
-      await loadCohortSessionDetail(examId, data.session.id);
     } catch (caughtError) {
       if (isAdminSessionExpiredError(caughtError)) {
         return;
@@ -3023,7 +3029,6 @@ export function AdminConsole({
       }
       setExamMessage("Cohort Exam Session admission closed.");
       await loadCohortExamSessions(examId);
-      await loadCohortSessionDetail(examId, sessionId);
     } catch (caughtError) {
       if (isAdminSessionExpiredError(caughtError)) {
         return;
@@ -3073,7 +3078,6 @@ export function AdminConsole({
       }
       setExamMessage("Cohort Exam Session retired.");
       await loadCohortExamSessions(examId);
-      await loadCohortSessionDetail(examId, sessionId);
     } catch (caughtError) {
       if (isAdminSessionExpiredError(caughtError)) {
         return;
@@ -4297,7 +4301,6 @@ export function AdminConsole({
           <CohortSessionWorkspacePanel
               examTitle={focusedExam.title}
               session={focusedCohortSession}
-              detail={focusedCohortSessionDetail?.monitoring ?? null}
               loading={loading}
               onBack={() => navigateToExamSessions(focusedExam.id)}
               onPublish={() => void publishCohortSession(focusedExam.id, focusedCohortSession.session.id)}
@@ -4481,6 +4484,11 @@ export function AdminConsole({
             <div style={{ ...cardStyle, display: "flex", gap: "0.75rem", flexWrap: "wrap" }} aria-label="Session Monitoring branches">
               <button type="button" onClick={() => setMonitoringBranch("cohort")} style={monitoringBranch === "cohort" ? primaryButtonStyle : secondaryButtonStyle}>Cohort Exam Sessions</button>
               <button type="button" onClick={() => setMonitoringBranch("individual")} style={monitoringBranch === "individual" ? primaryButtonStyle : secondaryButtonStyle}>Individual Exam Delivery</button>
+            </div>
+          ) : null}
+          {!focusedCohortSession && monitoringBranch === null ? (
+            <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
+              Choose a monitoring view. Cohort Exam Sessions monitor a shared CloudShare Experience; Individual Exam Delivery monitors one Candidate attempt at a time.
             </div>
           ) : null}
           {focusedExam && focusedCohortSession ? (
