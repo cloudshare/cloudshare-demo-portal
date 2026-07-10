@@ -133,7 +133,11 @@ describe("Cohort Exam Session monitoring interactions", () => {
       />,
     );
 
-    await user.click(screen.getByRole("button", { name: /State observations.*2/ }));
+    const stateObservationsFilter = screen.getByRole("button", { name: /State observations.*2/ });
+    expect(stateObservationsFilter.getAttribute("style")).toContain("background: rgb(239, 246, 255)");
+    expect(screen.getByRole("button", { name: /Needs attention.*0/ }).getAttribute("style")).not.toContain("background: rgb(239, 246, 255)");
+
+    await user.click(stateObservationsFilter);
     expect(screen.getAllByText("Observed Casey")).toHaveLength(2);
     expect(screen.queryByText("Normal Riley")).toBeNull();
     expect(screen.getAllByText("State observation: checking again on the next refresh")).toHaveLength(2);

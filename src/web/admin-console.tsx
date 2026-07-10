@@ -676,6 +676,7 @@ function CohortSessionMonitoringSummaryItem(props: {
   readonly help: string;
   readonly selected: boolean;
   readonly onSelect: () => void;
+  readonly tone?: "informational";
 }) {
   return (
     <button
@@ -685,7 +686,8 @@ function CohortSessionMonitoringSummaryItem(props: {
       onClick={props.onSelect}
       style={{
         ...cohortSessionDetailItemStyle,
-        border: props.selected ? `2px solid ${colors.accent}` : "1px solid transparent",
+        background: props.tone === "informational" ? colors.infoSoft : undefined,
+        border: props.selected ? `2px solid ${props.tone === "informational" ? colors.info : colors.accent}` : "1px solid transparent",
         textAlign: "left",
         cursor: "pointer",
         color: colors.textPrimary,
@@ -1236,6 +1238,7 @@ export function CohortSessionWorkspacePanel(props: {
                 help="New state differences are observed once before becoming actionable, so transient updates do not cause unnecessary alarm."
                 selected={summaryFilter === "state_observations"}
                 onSelect={() => setSummaryFilter("state_observations")}
+                tone="informational"
               />
               <CohortSessionMonitoringSummaryItem
                 label="Session exam attempts"
