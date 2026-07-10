@@ -395,7 +395,7 @@ describe("cloudShareLabProvisioner — request shape", () => {
       integrationSurface: "cloudshare.v4.training.user_properties",
       request: {
         method: "GET",
-        path: "/trainings/EXtraining-1/user-properties",
+        path: "/trainings/EXtraining-1/users/properties",
       },
       response: {
         status: 200,
@@ -416,7 +416,7 @@ describe("cloudShareLabProvisioner — request shape", () => {
       2,
       expect.objectContaining({
         method: "POST",
-        path: "/trainings/EXtraining-1/user-properties",
+        path: "/trainings/EXtraining-1/users/properties",
         body: { Name: "certalisCandidateId" },
       }),
     );

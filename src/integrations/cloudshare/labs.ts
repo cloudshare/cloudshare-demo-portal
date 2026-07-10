@@ -294,7 +294,7 @@ export function createCloudShareLabProvisioner(
     ): Promise<EnsureTrainingUserPropertyKeysResult> {
       const detailed = await requestV4WithDiagnostics({
         method: "GET",
-        path: `/trainings/${input.trainingId}/user-properties`,
+        path: `/trainings/${input.trainingId}/users/properties`,
         schema: trainingUserPropertyDefinitionsSchema,
       });
       const existingDefinitions = detailed.data;
@@ -305,7 +305,7 @@ export function createCloudShareLabProvisioner(
       for (const missingKey of missingKeys) {
         const created = await requestV4WithDiagnostics({
           method: "POST",
-          path: `/trainings/${input.trainingId}/user-properties`,
+          path: `/trainings/${input.trainingId}/users/properties`,
           body: { Name: missingKey },
           schema: createdTrainingUserPropertySchema,
         });

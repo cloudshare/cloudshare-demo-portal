@@ -110,9 +110,9 @@ function makeCloudShareFactory(
                 start: "2026-07-05T08:30:00",
                 timeZone: "UTC",
               }
-            : spec.method === "GET" && spec.path === "/trainings/EXcohort-1/user-properties"
+            : spec.method === "GET" && spec.path === "/trainings/EXcohort-1/users/properties"
               ? []
-              : spec.method === "POST" && spec.path === "/trainings/EXcohort-1/user-properties"
+              : spec.method === "POST" && spec.path === "/trainings/EXcohort-1/users/properties"
                 ? { id: (spec.body as { Name?: string } | undefined)?.Name, name: (spec.body as { Name?: string } | undefined)?.Name }
                 : spec.path === "/trainings/EXcohort-1/students"
                   ? [{}]
@@ -131,7 +131,7 @@ function makeCloudShareFactory(
             ? "cloudshare.v4.training.participant"
             : spec.path.endsWith("/sponsored-link")
               ? "cloudshare.v4.training.sponsored_link"
-              : spec.path.endsWith("/user-properties")
+              : spec.path.endsWith("/users/properties")
                 ? "cloudshare.v4.training.user_properties"
                 : "cloudshare.v4.training.get",
           request: {
@@ -360,7 +360,7 @@ describe("joinCohortExamSessionRuntime", () => {
             },
           };
         }
-        if (spec.method === "GET" && spec.path === "/trainings/EXcohort-1/user-properties") {
+        if (spec.method === "GET" && spec.path === "/trainings/EXcohort-1/users/properties") {
           return {
             data: spec.schema.parse([]),
             host: "api.accelerate.cloudshare.com",
@@ -369,7 +369,7 @@ describe("joinCohortExamSessionRuntime", () => {
             response: { status: 200, body: [] },
           };
         }
-        if (spec.method === "POST" && spec.path === "/trainings/EXcohort-1/user-properties") {
+        if (spec.method === "POST" && spec.path === "/trainings/EXcohort-1/users/properties") {
           const raw = {
             id: (spec.body as { Name?: string }).Name,
             name: (spec.body as { Name?: string }).Name,
@@ -471,7 +471,7 @@ describe("joinCohortExamSessionRuntime", () => {
     ]);
     expect(requestV3).not.toHaveBeenCalledWith(expect.objectContaining({ path: "/class/actions/customfields" }));
     const ensureCallOrders = requestV4Detailed.mock.calls.flatMap((call, index) =>
-      call[0].path === "/trainings/EXcohort-1/user-properties"
+      call[0].path === "/trainings/EXcohort-1/users/properties"
         ? [requestV4Detailed.mock.invocationCallOrder[index]]
         : [],
     );
@@ -624,10 +624,10 @@ describe("joinCohortExamSessionRuntime", () => {
             response: { status: 200, body: raw },
           };
         }
-        if (spec.method === "GET" && spec.path === "/trainings/EXcohort-1/user-properties") {
+        if (spec.method === "GET" && spec.path === "/trainings/EXcohort-1/users/properties") {
           throw new CloudShareResponseError("CloudShare response did not match the expected schema", {
             method: "GET",
-            path: "/v4/trainings/EXcohort-1/user-properties",
+            path: "/v4/trainings/EXcohort-1/users/properties",
             integrationSurface: "cloudshare.v4.training.user_properties",
             status: 500,
             responseBody: { error: "tenant unavailable" },
@@ -690,7 +690,7 @@ describe("joinCohortExamSessionRuntime", () => {
         outcome: "failure",
         request: {
           method: "GET",
-          path: "/v4/trainings/EXcohort-1/user-properties",
+          path: "/v4/trainings/EXcohort-1/users/properties",
         },
         response: {
           status: 500,
@@ -1242,7 +1242,7 @@ describe("joinCohortExamSessionRuntime", () => {
                 },
               };
             }
-            if (spec.path === "/trainings/EXcohort-1/user-properties") {
+            if (spec.path === "/trainings/EXcohort-1/users/properties") {
               if ("method" in spec && spec.method === "POST") {
                 return {
                   data: { id: "TF-created", name: "certalisCandidateId" },
@@ -1367,7 +1367,7 @@ describe("joinCohortExamSessionRuntime", () => {
                 response: { status: 200, body: raw },
               };
             }
-            if (spec.path === "/trainings/EXcohort-1/user-properties") {
+            if (spec.path === "/trainings/EXcohort-1/users/properties") {
               const raw =
                 spec.method === "POST"
                   ? { id: "TF-created", name: "certalisCandidateId" }

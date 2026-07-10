@@ -107,7 +107,7 @@ function makeCloudShareFactory(
       if (spec.path === "/trainings") {
         return { id: "EXtraining-1" };
       }
-      if (spec.path === "/trainings/EXtraining-1/user-properties") {
+      if (spec.path === "/trainings/EXtraining-1/users/properties") {
         return "method" in spec && spec.method === "POST"
           ? { id: "TF-created", name: "certalisCandidateId" }
           : [];
@@ -150,7 +150,7 @@ function makeCloudShareFactory(
           integrationSurface:
             spec.path === "/trainings"
               ? "cloudshare.v4.training"
-              : spec.path.endsWith("/user-properties")
+              : spec.path.endsWith("/users/properties")
                 ? "cloudshare.v4.training.user_properties"
               : spec.path.endsWith("/students")
                 ? "cloudshare.v4.training.participant"
@@ -270,7 +270,7 @@ describe("ExamAttempt scheduling runtime", () => {
         const raw =
           spec.path === "/trainings"
             ? { id: "EXtraining-1" }
-            : spec.path === "/trainings/EXtraining-1/user-properties"
+            : spec.path === "/trainings/EXtraining-1/users/properties"
               ? spec.method === "POST"
                 ? { id: "TF-created", name: "certalisCandidateId" }
                 : []

@@ -157,7 +157,7 @@ function makeLabs(order: string[] = []): LabProvisioner {
           { id: "certalisCandidateId", name: "certalisCandidateId" },
         ],
         integrationSurface: "cloudshare.v4.training.user_properties",
-        request: { method: "GET", path: "/trainings/training-1/user-properties" },
+        request: { method: "GET", path: "/trainings/training-1/users/properties" },
         response: { status: 200, body: [] },
       };
     },
@@ -1009,7 +1009,7 @@ describe("scheduleExam", () => {
     });
     expect(ensureUserProperties?.request).toMatchObject({
       method: "GET",
-      path: "/trainings/training-1/user-properties",
+      path: "/trainings/training-1/users/properties",
     });
 
     const addParticipant = thread.find((e) => e.operation === "cloudshare.add_participant");

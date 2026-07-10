@@ -260,14 +260,14 @@ describe("admin Cohort Exam Session runtime", () => {
         const body =
           spec.method === "POST" && spec.path === "/trainings"
             ? { id: "EXcohort-1", apiKeyEcho: "secret-api-key" }
-            : spec.method === "POST" && spec.path === "/trainings/EXcohort-1/user-properties"
+            : spec.method === "POST" && spec.path === "/trainings/EXcohort-1/users/properties"
               ? { id: spec.body?.Name, name: spec.body?.Name }
               : [];
         return {
           data: spec.schema.parse(body),
           host: "api.accelerate.cloudshare.com",
           integrationSurface:
-            spec.path.includes("user-properties")
+            spec.path.includes("users/properties")
               ? "cloudshare.v4.training.user_properties"
               : "cloudshare.v4.training",
           request: {
@@ -390,7 +390,7 @@ describe("admin Cohort Exam Session runtime", () => {
     );
     const createCallOrder = requestV4Detailed.mock.invocationCallOrder[0];
     const userPropertyCallOrders = requestV4Detailed.mock.calls.flatMap((call, index) =>
-      call[0].path === "/trainings/EXcohort-1/user-properties"
+      call[0].path === "/trainings/EXcohort-1/users/properties"
         ? [requestV4Detailed.mock.invocationCallOrder[index]]
         : [],
     );
@@ -783,13 +783,13 @@ describe("admin Cohort Exam Session runtime", () => {
         const body =
           spec.method === "POST" && spec.path === "/trainings"
             ? { id: "EXcohort-1" }
-            : spec.method === "POST" && spec.path === "/trainings/EXcohort-1/user-properties"
+            : spec.method === "POST" && spec.path === "/trainings/EXcohort-1/users/properties"
               ? { id: spec.body?.Name, name: spec.body?.Name }
               : [];
         return {
           data: spec.schema.parse(body),
           host: "api.accelerate.cloudshare.com",
-          integrationSurface: spec.path.includes("user-properties")
+          integrationSurface: spec.path.includes("users/properties")
             ? "cloudshare.v4.training.user_properties"
             : "cloudshare.v4.training",
           request: {
@@ -932,7 +932,7 @@ describe("admin Cohort Exam Session runtime", () => {
           };
         }
         const body =
-          spec.method === "POST" && spec.path === "/trainings/EXcohort-1/user-properties"
+          spec.method === "POST" && spec.path === "/trainings/EXcohort-1/users/properties"
             ? { id: spec.body?.Name, name: spec.body?.Name }
             : [];
         return {

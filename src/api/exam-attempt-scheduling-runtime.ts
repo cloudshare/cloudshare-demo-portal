@@ -440,7 +440,7 @@ function toProvisioningDiagnostic(
 ): Record<string, unknown> {
   const pathByOperation = {
     create_training: "/v4/trainings",
-    ensure_user_properties: `/v4/trainings/${error.context.trainingId ?? "{trainingId}"}/user-properties`,
+    ensure_user_properties: `/v4/trainings/${error.context.trainingId ?? "{trainingId}"}/users/properties`,
     add_participant: `/v4/trainings/${error.context.trainingId ?? "{trainingId}"}/students`,
     create_sponsored_link: `/v4/trainings/${error.context.trainingId ?? "{trainingId}"}/sponsored-link`,
   } as const;

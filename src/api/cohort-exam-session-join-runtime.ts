@@ -968,7 +968,7 @@ function fallbackProvisioningPath(attemptedOperation: JoinProvisioningOperation)
     return "/v4/trainings/{trainingId}";
   }
   if (attemptedOperation === "ensure_user_properties") {
-    return "/v4/trainings/{trainingId}/user-properties";
+    return "/v4/trainings/{trainingId}/users/properties";
   }
   if (attemptedOperation === "add_participant") {
     return "/v4/trainings/{trainingId}/students";
