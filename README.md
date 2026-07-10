@@ -118,6 +118,19 @@ npm run lint         # ESLint
 npm run build        # Production build
 ```
 
+### Local Cohort Monitoring 429 QA fixture
+
+To verify the rate-limit presentation without contacting CloudShare, start `next dev` with
+`PORTAL_LOCAL_QA_SCENARIO=cohort-participant-429`, then run:
+
+```bash
+npm run qa:seed-cohort-rate-limit
+```
+
+The command prints the exact admin URL. This development-only scenario intercepts only the fixture
+Cohort Session participant read and throws deterministic, redacted 429 (`0x42901`) evidence before
+any CloudShare request is made. It cannot activate in production.
+
 `npm test` uses a dedicated SQLite database at `prisma/test.db`. It does not run against the
 local development `DATABASE_URL` from `.env`, so running the suite should not delete QA data from
 the dev portal database.

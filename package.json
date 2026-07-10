@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:e2e:live": "vitest run --config vitest.e2e.config.ts",
     "test:watch": "vitest",
+    "qa:seed-cohort-rate-limit": "node scripts/seed-local-cohort-rate-limit-qa.mjs",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev"
   },

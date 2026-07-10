@@ -26,6 +26,7 @@ import {
   type CloudShareEnvironmentSimulator,
 } from "@/integrations/cloudshare/environment-simulator";
 import { createCloudShareEnvironmentController } from "@/integrations/cloudshare/environment-controller";
+import { withLocalCohortRateLimitQaFixture } from "@/integrations/cloudshare/local-rate-limit-qa-fixture";
 import { createInMemoryWebhookIdempotencyStore } from "@/persistence/webhook-idempotency-store";
 import {
   createHeartbeatAutoSuspend,
@@ -303,7 +304,7 @@ export function getServices(): Services {
   );
   const cloudshareClientFactory: CloudShareClientFactory = {
     forConnection: (connection) =>
-      createCloudShareIntegrationForConnection({
+      withLocalCohortRateLimitQaFixture(createCloudShareIntegrationForConnection({
         mode: config.runtime.mode,
         trace: traceCloudShare,
         connection: {
@@ -312,7 +313,7 @@ export function getServices(): Services {
           apiKey: connection.apiKey,
           webhookSecret: connection.webhookSecret,
         },
-      }),
+      })),
   };
 
   // Heartbeat auto-suspend. The suspend function is pre-bound to the current
