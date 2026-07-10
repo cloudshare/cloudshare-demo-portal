@@ -247,7 +247,8 @@ describe("external lease inspection", () => {
       requestV3Detailed: vi.fn(async () => {
         throw {
           name: "CloudShareRateLimitError",
-          message: "requests are cooling down",
+          message:
+            "requests are cooling down: Bearer rehydrated-message-secret https://use.cloudshare.com/Ent/Login.aspx?token=rehydrated-message-secret",
           classification: "rate_limit",
           context: {
             status: 429,
@@ -278,6 +279,8 @@ describe("external lease inspection", () => {
               bearerHeader: "Bearer rehydrated-secret",
               loginUrl: "https://use.cloudshare.com/Ent/Login.aspx?token=rehydrated-secret",
             },
+            network: { proxyAuthorization: "Bearer rehydrated-network-secret" },
+            tls: { authorizationError: "rehydrated-tls-secret" },
           },
         };
       }),
@@ -316,7 +319,13 @@ describe("external lease inspection", () => {
         },
       },
     });
+    expect(lease.error).toContain("Bearer [REDACTED]");
+    expect(lease.error).not.toContain("rehydrated-message-secret");
+    expect(lease.response).not.toHaveProperty("network");
+    expect(lease.response).not.toHaveProperty("tls");
     expect(JSON.stringify(lease)).not.toContain("rehydrated-secret");
     expect(JSON.stringify(lease)).not.toContain("rehydrated-request-secret");
+    expect(JSON.stringify(lease)).not.toContain("rehydrated-network-secret");
+    expect(JSON.stringify(lease)).not.toContain("rehydrated-tls-secret");
   });
 });

@@ -240,10 +240,10 @@ function mapLeaseFailure(input: {
 }): CloudShareExternalLease {
   if (isCloudShareRateLimitError(input.error)) {
     const error = input.error as CloudShareRequestError;
-    const context =
-      input.error instanceof CloudShareRateLimitError
-        ? error.context
-        : sanitizeRehydratedRateLimitContext(error.context);
+    const isRehydrated = !(input.error instanceof CloudShareRateLimitError);
+    const context = isRehydrated
+      ? sanitizeRehydratedRateLimitContext(error.context)
+      : error.context;
     const status = asNumber(error.status) ?? asNumber(context?.status) ?? 429;
     const request = requestEvidenceFromContext(context, input.fallbackPath);
     const response = responseEvidenceFromContext(status, context);
@@ -260,7 +260,7 @@ function mapLeaseFailure(input: {
       responseStatus: status,
       responseEvidence: context?.cooldownActive === true ? "cached_prior" : "current",
       failureMode: "rate_limit",
-      error: error.message,
+      error: isRehydrated ? sanitizeRehydratedErrorMessage(error.message) : error.message,
     };
   }
 
@@ -364,8 +364,9 @@ function sanitizeRehydratedRateLimitContext(
     return context;
   }
 
+  const { network: _network, tls: _tls, ...safeContext } = context;
   return {
-    ...context,
+    ...safeContext,
     ...(context.requestHeaders !== undefined
       ? { requestHeaders: sanitizeRehydratedHeaders(context.requestHeaders) }
       : {}),
@@ -382,6 +383,14 @@ function sanitizeRehydratedRateLimitContext(
       ? { responseBody: sanitizeRehydratedBody(context.responseBody) }
       : {}),
   };
+}
+
+function sanitizeRehydratedErrorMessage(message: unknown): string {
+  const redacted = redactCloudShareAdminSupportValue(message, {
+    preserveSponsoredLinkLoginUrl: false,
+    redactTokenLikeKeys: true,
+  });
+  return typeof redacted === "string" ? redacted : JSON.stringify(redacted);
 }
 
 function sanitizeRehydratedHeaders(value: unknown): Record<string, unknown> | unknown {
