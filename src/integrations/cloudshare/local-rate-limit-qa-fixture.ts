@@ -4,20 +4,19 @@ import type { CloudShareClient, V4RequestSpec } from "./client";
 /**
  * A deliberately opt-in development-only fixture for browser QA of the Cohort
  * Session Monitoring rate-limit presentation. It never sends a request to
- * CloudShare and is impossible to activate outside `next dev`.
+ * CloudShare. Its sentinel ID is reserved permanently so a restart cannot turn
+ * the seeded data into a live request.
  */
 export const LOCAL_COHORT_RATE_LIMIT_TRAINING_ID = "EXlocalRateLimit429";
 
-const scenarioName = "cohort-participant-429";
-
 export function withLocalCohortRateLimitQaFixture(
   client: CloudShareClient,
-  env: NodeJS.ProcessEnv = process.env,
+  _env: NodeJS.ProcessEnv = process.env,
 ): CloudShareClient {
-  if (env.NODE_ENV !== "development" || env.PORTAL_LOCAL_QA_SCENARIO !== scenarioName) {
-    return client;
-  }
-
+  // This sentinel is reserved permanently. The seed script writes it only to
+  // local QA data, but a restart must never turn that data into a live request.
+  // Keeping the block unconditional also makes an accidental production import
+  // safe: no CloudShare request can be made for this synthetic ID.
   const shouldFail = (spec: Pick<V4RequestSpec<unknown>, "method" | "path">) =>
     spec.method === "GET" && spec.path === `/trainings/${LOCAL_COHORT_RATE_LIMIT_TRAINING_ID}/students`;
 

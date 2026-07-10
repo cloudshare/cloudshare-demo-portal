@@ -1,11 +1,8 @@
-import { readFileSync } from "node:fs";
 import { PrismaClient } from "@prisma/client";
+import { readSafeLocalDatabaseUrl } from "./local-qa-safety.mjs";
 
 // Local-only data used with PORTAL_LOCAL_QA_SCENARIO=cohort-participant-429.
-if (!process.env.DATABASE_URL) {
-  const match = readFileSync(".env", "utf8").match(/^DATABASE_URL=(.+)$/m);
-  if (match) process.env.DATABASE_URL = match[1].replace(/^['"]|['"]$/g, "");
-}
+process.env.DATABASE_URL = readSafeLocalDatabaseUrl(process.env);
 const prisma = new PrismaClient();
 const examId = "local-qa-cohort-rate-limit-exam";
 const sessionId = "local-qa-cohort-rate-limit-session";
