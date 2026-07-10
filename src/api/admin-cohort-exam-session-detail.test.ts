@@ -1212,6 +1212,69 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
     });
   });
 
+  it("keeps a generic participant-read transport failure unavailable, redacted, and in Needs attention", async () => {
+    const exams = createInMemoryExamCatalogRepository();
+    const sessions = createInMemoryCohortExamSessionRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository, secrets: ["secret-api-key"] });
+    await seedPublishedExam(exams);
+    await seedPublishedSession(sessions);
+
+    const response = await handleGetAdminCohortExamSessionDetail(
+      {
+        exams,
+        sessions,
+        attempts: {
+          listBySessionId: vi.fn().mockResolvedValue([{
+            id: "attempt-transport", customerId: "customer-1", candidateId: "candidate-1", candidateEmail: "casey@helioscx.demo",
+            candidateFirstName: "Casey", candidateLastName: "Rivera", examId: "exam-1", examTitle: "Helios CloudShare Fundamentals",
+            status: "ready", scheduledFor: new Date("2026-07-06T10:00:00.000Z"), createdAt: new Date("2026-07-06T10:00:00.000Z"),
+            trainingId: "EXcohort-1", experienceId: "EXcohort-1", environmentExternalId: null, environmentId: null, participantId: null,
+          }]),
+        },
+        diagnostics,
+        connections: {
+          findByCustomerId: vi.fn(async () => ({
+            customerId: "customer-1", apiId: "api-id", apiKey: "secret-api-key", webhookSecret: "webhook-secret", webhookPathToken: "webhook-token",
+            connectedAt: new Date("2026-07-01T00:00:00.000Z"), verifiedAt: new Date("2026-07-01T00:05:00.000Z"),
+          })), save: vi.fn(), findByWebhookPathToken: vi.fn(), markVerified: vi.fn(),
+        },
+        cloudshare: {
+          forConnection: () => ({
+            requestV4Detailed: vi.fn(async () => {
+              throw new CloudShareTransportError("CloudShare was unreachable", {
+                method: "GET", path: "/v4/trainings/EXcohort-1/students", integrationSurface: "cloudshare.v4.training.participant",
+                requestHeaders: { authorization: "Bearer secret-api-key" }, cause: "ECONNRESET",
+              });
+            }),
+          }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>,
+        },
+        logger: makeLogger(),
+        newCorrelationId: () => "corr-session-detail-transport",
+      },
+      { customerId: "customer-1", examId: "exam-1", sessionId: "cohort-session-1" },
+    );
+
+    expect(response.status).toBe(200);
+    if (!("monitoring" in response.body)) throw new Error("Expected monitoring payload");
+    expect(response.body.monitoring.summary.problemCount).toBe(2);
+    expect(response.body.monitoring.cloudShareParticipants).toMatchObject({
+      status: "unavailable", participants: [], readError: "CloudShare participant read failed for this Cohort Exam Session.",
+      correlationId: "corr-session-detail-transport",
+    });
+    expect(response.body.monitoring.portalAttempts).toMatchObject([{
+      id: "attempt-transport", problemReasons: ["Portal has an attempt but no matching CloudShare participant."],
+    }]);
+
+    const [entry] = await diagnosticsRepository.query({ customerId: "customer-1", examId: "exam-1", operation: "cohort_exam_session.monitor.read_participants", outcome: "failure" });
+    expect(entry).toMatchObject({
+      correlationId: "corr-session-detail-transport",
+      request: { method: "GET", path: "/v4/trainings/EXcohort-1/students", headers: { authorization: "[REDACTED]" } },
+      response: null,
+      details: { integrationSurface: "cloudshare.v4.training.participant", failureMode: "transport", cause: "ECONNRESET" },
+    });
+  });
+
   it("returns an unavailable aggregate Guided Journey state and records a supportable diagnostic when no aggregate data is available", async () => {
     const exams = createInMemoryExamCatalogRepository();
     const sessions = createInMemoryCohortExamSessionRepository();
