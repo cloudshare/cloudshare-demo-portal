@@ -672,7 +672,7 @@ function ProblemReasonList(props: { readonly reasons: readonly string[] }) {
   );
 }
 
-function CohortSessionProblemBridge(props: {
+function CohortSessionAttentionSummary(props: {
   readonly problemCount: number;
   readonly portalProblemRows: number;
   readonly cloudShareProblemRows: number;
@@ -683,26 +683,26 @@ function CohortSessionProblemBridge(props: {
   if (props.problemCount === 0 && totalProblemRows === 0 && !props.cloudShareReadUnavailable) {
     return (
       <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
-        No reconciliation warnings are currently contributing to the Problems tile.
+        No items currently need attention. Environment and portal runtime state agree.
       </div>
     );
   }
 
   return (
     <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.35rem" }}>
-      <strong>Problems tile: {props.problemCount}</strong>
+      <strong>Needs attention: {props.problemCount}</strong>
       <span>
-        Rows below with reconciliation warnings: {totalProblemRows} total (
+        Rows below with actionable state conflicts: {totalProblemRows} total (
         {formatProblemRowCount(props.portalProblemRows, "session exam attempt row", "session exam attempt rows")},{" "}
         {formatProblemRowCount(props.cloudShareProblemRows, "CloudShare participant row", "CloudShare participant rows")}
         ).
       </span>
       <span>
-        These warning-highlighted rows explain the Problems tile. Matched portal/CloudShare disagreements can appear in
-        both tables so you can inspect either side.
+        Each item states the conflicting state and points to the relevant evidence. Matched portal/CloudShare rows can
+        appear in both tables because they describe the same correlation from different sides.
       </span>
       {props.cloudShareReadUnavailable ? (
-        <span>The CloudShare participant read unavailable panel below also contributes to Problems.</span>
+        <span>The unavailable CloudShare participant read below needs attention because current environment state cannot be established.</span>
       ) : null}
     </div>
   );
@@ -1173,7 +1173,7 @@ export function CohortSessionWorkspacePanel(props: {
             <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
               Needs attention only counts actionable runtime contradictions, missing correlations, or an unavailable participant read.
             </div>
-            <CohortSessionProblemBridge
+            <CohortSessionAttentionSummary
               problemCount={props.detail.summary.problemCount}
               portalProblemRows={portalProblemRows}
               cloudShareProblemRows={cloudShareProblemRows}
@@ -1225,7 +1225,7 @@ export function CohortSessionWorkspacePanel(props: {
                           </td>
                           <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
                             {attempt.problemReasons.length > 0 ? (
-                              <ProblemReasonList reasons={attempt.problemReasons} />
+                              <AttentionGuidance reasons={attempt.problemReasons} />
                             ) : (
                               <span style={{ color: colors.textSecondary }}>State observation: no action needed</span>
                             )}
@@ -1356,7 +1356,7 @@ export function CohortSessionWorkspacePanel(props: {
                           </td>
                           <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
                             {participant.problemReasons.length > 0 ? (
-                              <ProblemReasonList reasons={participant.problemReasons} />
+                              <AttentionGuidance reasons={participant.problemReasons} />
                             ) : (
                               <span style={{ color: colors.textSecondary }}>State observation: no action needed</span>
                             )}
@@ -1383,6 +1383,15 @@ export function CohortSessionWorkspacePanel(props: {
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+function AttentionGuidance(props: { readonly reasons: readonly string[] }) {
+  return (
+    <div style={{ display: "grid", gap: "0.35rem" }}>
+      <ProblemReasonList reasons={props.reasons} />
+      <span style={{ color: colors.textSecondary }}>Refresh now. If this remains after the next check, open the linked timeline to inspect the relevant events.</span>
     </div>
   );
 }

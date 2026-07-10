@@ -1027,7 +1027,7 @@ describe("AdminConsole", () => {
     expect(html).toContain(
       'title="Open Support Diagnostics filtered to the CloudShare participant-list check for this Cohort Exam Session."',
     );
-    expect(html).toContain("Rows below with reconciliation warnings: 3 total");
+    expect(html).toContain("Rows below with actionable state conflicts: 3 total");
     expect(html).toContain("1 session exam attempt row");
     expect(html).toContain("2 CloudShare participant rows");
     expect(html).toContain("Casey Rivera");
@@ -1116,7 +1116,7 @@ describe("AdminConsole", () => {
     expect(html).toContain("CloudShare participant read unavailable");
     expect(html).toContain("CloudShare participant read failed for this Cohort Exam Session.");
     expect(html).toContain("Needs attention only counts actionable runtime contradictions, missing correlations, or an unavailable participant read.");
-    expect(html).toContain("The CloudShare participant read unavailable panel below also contributes to Problems.");
+    expect(html).toContain("The unavailable CloudShare participant read below needs attention because current environment state cannot be established.");
     expect(html).toContain("Correlation ID:");
     expect(html).toContain("corr-1");
     expect(html).toContain("/admin?tab=support&amp;view=diagnostics&amp;correlationId=corr-1");
