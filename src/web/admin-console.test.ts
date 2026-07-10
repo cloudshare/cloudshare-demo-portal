@@ -1033,7 +1033,8 @@ describe("AdminConsole", () => {
     expect(html).toContain("Casey Rivera");
     expect(html).toContain("Participant check diagnostics");
     expect(html).not.toContain("CloudShare read diagnostics");
-    expect(html).toContain("Attempt diagnostics");
+    expect(html).toContain("Attempt timeline");
+    expect(html).toContain("Participant correlation diagnostics");
     expect(html).toContain("No session exam attempt");
     expect(html).not.toContain("No portal ExamAttempt");
     expect(html).toContain("Portal suspended; CloudShare participation still inProgress.");
