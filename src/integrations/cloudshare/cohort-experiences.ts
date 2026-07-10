@@ -6,6 +6,7 @@ import type {
   CloudShareResponseDiagnostics,
 } from "./client";
 import { CloudShareResponseError } from "./errors";
+import { toCloudShareExternalId } from "./external-id";
 
 const experienceSchema = z.object({ id: z.string().min(1) });
 type ProjectTeam = { id: string; name: string };
@@ -128,7 +129,7 @@ export function createCloudShareOnDemandExperienceCreator(
         MainInstructor: { Email: input.instructorId },
         TimeZone: input.timeZoneId,
         Passphrase: input.passphrase,
-        ...(input.externalId ? { ExternalId: input.externalId } : {}),
+        ...(input.externalId ? { ExternalId: toCloudShareExternalId(input.externalId) } : {}),
         RegistrationType: "registeredStudentsOnly",
         UsersEarlyAccess: { GrantEarlyAccess: 2 },
       };

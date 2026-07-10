@@ -942,6 +942,14 @@ Earlier Issue #301 probe evidence remains useful for the participant payload sha
 advanced to property-name validation. That confirms the portal must send an array model and ensure
 the Experience-level property definitions before adding participants.
 
+**Follow-up (2026-07-10, Issue #301 ExternalId live format gap):** CloudShare documents the v4
+training `externalId` as a string between 3 and 50 characters, but live `POST /v4/trainings`
+rejected a canonical GUID value such as `0d379db9-6b08-4457-b863-eb5f45323d24` with
+`'External Id' is not in the correct format.` The likely undocumented constraint is that hyphen
+characters are not accepted. Until CloudShare confirms or fixes the contract, the portal preserves
+its local UUID/GUID identifiers but sends the hyphenless 32-character form in the CloudShare
+`ExternalId` field, for example `0d379db96b084457b863eb5f45323d24`.
+
 **Update (2026-07-01, Issue #251 QA clarification):** the Project Policy detail endpoint is
 undocumented but live-observed:
 `GET /api/v3/projects/PRCU02uuokHPBfjMedkmradg2/policies/POavMAu1wiaVydJdYUOAExJg2` returned

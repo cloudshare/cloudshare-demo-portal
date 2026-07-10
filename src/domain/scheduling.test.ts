@@ -135,7 +135,7 @@ function makeLabs(order: string[] = []): LabProvisioner {
             MainInstructor: { Email: "instructor-1" },
             TimeZone: "UTC",
             Passphrase: "certalis-attempt-1",
-            ExternalId: "attempt-1",
+            ExternalId: "attempt1",
             UsersEarlyAccess: { GrantEarlyAccess: 2 },
           },
         },

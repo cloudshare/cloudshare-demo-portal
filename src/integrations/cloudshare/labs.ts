@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { CloudShareClient, CloudShareDetailedResult } from "./client";
+import { toCloudShareExternalId } from "./external-id";
 import type {
   AddParticipantInput,
   AddParticipantResult,
@@ -239,7 +240,7 @@ export function createCloudShareLabProvisioner(
           MainInstructor: { Email: input.instructorId },
           TimeZone: input.timeZoneId,
           Passphrase: input.passphrase,
-          ...(input.externalId ? { ExternalId: input.externalId } : {}),
+          ...(input.externalId ? { ExternalId: toCloudShareExternalId(input.externalId) } : {}),
           // Matches the v3 class API value for "No early access allowed".
           UsersEarlyAccess: { GrantEarlyAccess: 2 },
         },

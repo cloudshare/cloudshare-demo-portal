@@ -36,6 +36,7 @@ describe("cloudShareLabProvisioner — request shape", () => {
       instructorId: "instructor@example.com",
       passphrase: "certalis-attempt-1",
       timeZoneId: "UTC",
+      externalId: "0d379db9-6b08-4457-b863-eb5f45323d24",
     });
 
     expect(result).toEqual({
@@ -59,6 +60,7 @@ describe("cloudShareLabProvisioner — request shape", () => {
           MainInstructor: { Email: "instructor@example.com" },
           TimeZone: "UTC",
           Passphrase: "certalis-attempt-1",
+          ExternalId: "0d379db96b084457b863eb5f45323d24",
           UsersEarlyAccess: { GrantEarlyAccess: 2 },
         },
       },
@@ -100,6 +102,7 @@ describe("cloudShareLabProvisioner — request shape", () => {
       MainInstructor: { Email: "instructor@example.com" },
       TimeZone: "UTC",
       Passphrase: "certalis-attempt-1",
+      ExternalId: "0d379db96b084457b863eb5f45323d24",
       UsersEarlyAccess: { GrantEarlyAccess: 2 },
     });
   });

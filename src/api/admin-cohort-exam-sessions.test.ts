@@ -379,7 +379,7 @@ describe("admin Cohort Exam Session runtime", () => {
           MainInstructor: { Email: "instructor-1" },
           TimeZone: "UTC",
           Passphrase: "certalis-cohort-session-1",
-          ExternalId: "cohort-session-1",
+          ExternalId: "cohortsession1",
           RegistrationType: "registeredStudentsOnly",
           UsersEarlyAccess: { GrantEarlyAccess: 2 },
         }),
