@@ -658,6 +658,48 @@ function CohortSessionDetailItem(props: {
   );
 }
 
+type CohortMonitoringSummaryFilter = "active" | "in_progress" | "completed" | "problems" | "portal_attempts" | "cloudshare_participants";
+
+const cohortMonitoringSummaryFilterLabel: Record<CohortMonitoringSummaryFilter, string> = {
+  active: "Active",
+  in_progress: "In progress",
+  completed: "Completed",
+  problems: "Needs attention",
+  portal_attempts: "Session exam attempts",
+  cloudshare_participants: "CloudShare participants",
+};
+
+function CohortSessionMonitoringSummaryItem(props: {
+  readonly label: string;
+  readonly value: React.ReactNode;
+  readonly help: string;
+  readonly selected: boolean;
+  readonly onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      title={props.help}
+      aria-pressed={props.selected}
+      onClick={props.onSelect}
+      style={{
+        ...cohortSessionDetailItemStyle,
+        border: props.selected ? `2px solid ${colors.accent}` : "1px solid transparent",
+        textAlign: "left",
+        cursor: "pointer",
+        color: colors.textPrimary,
+      }}
+    >
+      <span style={cohortSessionDetailLabelStyle}>{props.label}</span>
+      <span style={{ overflowWrap: "anywhere" }}>{props.value}</span>
+    </button>
+  );
+}
+
+function isCohortMonitoringProblem(row: { readonly reconciliation?: "normal" | "state_observation" | "needs_attention"; readonly problemReasons: readonly string[] }): boolean {
+  return (row.reconciliation ?? (row.problemReasons.length > 0 ? "needs_attention" : "normal")) === "needs_attention";
+}
+
 function ProblemReasonList(props: { readonly reasons: readonly string[] }) {
   if (props.reasons.length === 0) {
     return null;
@@ -962,6 +1004,7 @@ export function CohortSessionWorkspacePanel(props: {
   const { session } = props;
   const isMonitoring = props.mode === "monitoring";
   const [timeline, setTimeline] = useState<{ title: string; events: readonly string[]; diagnostics: DiagnosticLogFilters } | null>(null);
+  const [summaryFilter, setSummaryFilter] = useState<CohortMonitoringSummaryFilter | null>(null);
   const timelineRef = useRef<HTMLElement>(null);
   useEffect(() => { if (timeline) timelineRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }, [timeline]);
   const portalProblemRows =
@@ -969,6 +1012,20 @@ export function CohortSessionWorkspacePanel(props: {
   const cloudShareProblemRows =
     props.detail?.cloudShareParticipants.participants.filter((participant) => (participant.reconciliation ?? (participant.problemReasons.length > 0 ? "needs_attention" : "normal")) === "needs_attention")
       .length ?? 0;
+  const portalAttempts = props.detail?.portalAttempts ?? [];
+  const cloudShareParticipants = props.detail?.cloudShareParticipants.participants ?? [];
+  const visiblePortalAttempts = portalAttempts.filter((attempt) => {
+    if (!summaryFilter || summaryFilter === "cloudshare_participants") return !summaryFilter || summaryFilter !== "cloudshare_participants";
+    if (summaryFilter === "portal_attempts") return true;
+    if (summaryFilter === "active" || summaryFilter === "in_progress" || summaryFilter === "completed") return attempt.summaryContributions?.includes(summaryFilter) ?? false;
+    return isCohortMonitoringProblem(attempt);
+  });
+  const visibleCloudShareParticipants = cloudShareParticipants.filter((participant) => {
+    if (!summaryFilter || summaryFilter === "portal_attempts") return !summaryFilter || summaryFilter !== "portal_attempts";
+    if (summaryFilter === "cloudshare_participants") return true;
+    if (summaryFilter === "active" || summaryFilter === "in_progress" || summaryFilter === "completed") return participant.summaryContributions?.includes(summaryFilter) ?? false;
+    return isCohortMonitoringProblem(participant);
+  });
 
   return (
     <div style={{ ...cardStyle, display: "grid", gap: "1rem" }}>
@@ -1138,42 +1195,61 @@ export function CohortSessionWorkspacePanel(props: {
             </div>
 
             <div style={cohortSessionDetailGridStyle}>
-              <CohortSessionDetailItem
+              <CohortSessionMonitoringSummaryItem
                 label="Active"
                 value={props.detail.summary.activeCount}
                 help="Portal attempts or CloudShare participants that are currently non-terminal for this Cohort Exam Session."
+                selected={summaryFilter === "active"}
+                onSelect={() => setSummaryFilter("active")}
               />
-              <CohortSessionDetailItem
+              <CohortSessionMonitoringSummaryItem
                 label="In progress"
                 value={props.detail.summary.inProgressCount}
                 help="Portal attempts or CloudShare participants currently reported as in progress."
+                selected={summaryFilter === "in_progress"}
+                onSelect={() => setSummaryFilter("in_progress")}
               />
-              <CohortSessionDetailItem
+              <CohortSessionMonitoringSummaryItem
                 label="Completed"
                 value={props.detail.summary.completedCount}
                 help="Portal attempts or CloudShare participants currently reported as completed."
+                selected={summaryFilter === "completed"}
+                onSelect={() => setSummaryFilter("completed")}
               />
-              <CohortSessionDetailItem
+              <CohortSessionMonitoringSummaryItem
                 label="Needs attention"
                 value={props.detail.summary.needsAttentionCount ?? props.detail.summary.problemCount}
                 help="True runtime contradictions, missing correlations, or a failed CloudShare participant read."
+                selected={summaryFilter === "problems"}
+                onSelect={() => setSummaryFilter("problems")}
               />
               <CohortSessionDetailItem
                 label="State observations"
                 value={props.detail.summary.stateObservationCount ?? 0}
                 help="New state differences are observed once before becoming actionable, so transient updates do not cause unnecessary alarm."
               />
-              <CohortSessionDetailItem
+              <CohortSessionMonitoringSummaryItem
                 label="Session exam attempts"
                 value={props.detail.summary.portalAttemptCount}
                 help="Rows from Certalis portal state: Candidates who have an ExamAttempt for this Cohort Exam Session."
+                selected={summaryFilter === "portal_attempts"}
+                onSelect={() => setSummaryFilter("portal_attempts")}
               />
-              <CohortSessionDetailItem
+              <CohortSessionMonitoringSummaryItem
                 label="CloudShare participants"
                 value={props.detail.summary.cloudShareParticipantCount}
                 help="Rows returned by CloudShare for the shared Experience/training used by this Cohort Exam Session."
+                selected={summaryFilter === "cloudshare_participants"}
+                onSelect={() => setSummaryFilter("cloudshare_participants")}
               />
             </div>
+
+            {summaryFilter ? (
+              <div role="status" style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap", color: colors.textSecondary }}>
+                <span>Showing rows contributing to: <strong style={{ color: colors.textPrimary }}>{cohortMonitoringSummaryFilterLabel[summaryFilter]}</strong></span>
+                <button type="button" onClick={() => setSummaryFilter(null)} style={secondaryButtonStyle}>Clear summary filter</button>
+              </div>
+            ) : null}
 
             <div style={{ color: colors.textSecondary, fontSize: "0.9rem" }}>
               Counts are derived from session exam attempts and the CloudShare participant read for this shared Experience.
@@ -1190,9 +1266,9 @@ export function CohortSessionWorkspacePanel(props: {
               <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
                 <strong>Session exam attempts</strong>
               </div>
-              {props.detail.portalAttempts.length === 0 ? (
+              {visiblePortalAttempts.length === 0 ? (
                 <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
-                  No session exam attempts have joined this Cohort Exam Session yet.
+                  {summaryFilter ? "No session exam attempts contribute to this summary count." : "No session exam attempts have joined this Cohort Exam Session yet."}
                 </div>
               ) : (
                 <div style={{ ...cardStyle, padding: 0, overflowX: "auto" }}>
@@ -1207,7 +1283,7 @@ export function CohortSessionWorkspacePanel(props: {
                       </tr>
                     </thead>
                     <tbody>
-                      {props.detail.portalAttempts.map((attempt) => (
+                      {visiblePortalAttempts.map((attempt) => (
                         <tr
                           key={attempt.id}
                           style={
@@ -1322,12 +1398,12 @@ export function CohortSessionWorkspacePanel(props: {
                 </div>
               ) : null}
               {props.detail.cloudShareParticipants.status !== "not_published" &&
-              props.detail.cloudShareParticipants.participants.length === 0 ? (
+              visibleCloudShareParticipants.length === 0 ? (
                 <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
-                  No CloudShare participants are currently visible for this shared Experience.
+                  {summaryFilter ? "No CloudShare participants contribute to this summary count." : "No CloudShare participants are currently visible for this shared Experience."}
                 </div>
               ) : null}
-              {props.detail.cloudShareParticipants.participants.length > 0 ? (
+              {visibleCloudShareParticipants.length > 0 ? (
                 <div style={{ ...cardStyle, padding: 0, overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" }}>
                     <thead>
@@ -1340,7 +1416,7 @@ export function CohortSessionWorkspacePanel(props: {
                       </tr>
                     </thead>
                     <tbody>
-                      {props.detail.cloudShareParticipants.participants.map((participant) => (
+                      {visibleCloudShareParticipants.map((participant) => (
                         <tr
                           key={`${participant.email}:${participant.studentId ?? participant.environmentId ?? "none"}`}
                           style={

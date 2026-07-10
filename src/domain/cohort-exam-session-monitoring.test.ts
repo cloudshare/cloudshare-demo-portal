@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   deriveCohortExamSessionMonitoringSummary,
   deriveCohortExamSessionReconciliationRows,
+  getCohortExamSessionMonitoringStateContributions,
 } from "./cohort-exam-session-monitoring";
 
 describe("cohort exam session monitoring reconciliation", () => {
@@ -96,5 +97,15 @@ describe("cohort exam session monitoring reconciliation", () => {
       }),
     ]);
     expect(deriveCohortExamSessionMonitoringSummary(rows, "available").problemCount).toBe(1);
+  });
+
+  it("does not classify a suspended CloudShare participant as an active summary contributor", () => {
+    const rows = deriveCohortExamSessionReconciliationRows([], [{
+      email: "suspended@helioscx.demo", matchedExamAttemptId: null, studentId: "student-1", environmentId: "env-1",
+      participationStatus: "inProgress", environmentStatus: "Suspended",
+    }]);
+
+    expect(getCohortExamSessionMonitoringStateContributions(rows[0]!)).toEqual([]);
+    expect(deriveCohortExamSessionMonitoringSummary(rows, "available").activeCount).toBe(0);
   });
 });

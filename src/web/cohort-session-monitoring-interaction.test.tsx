@@ -38,6 +38,75 @@ const session: Session = {
 };
 
 describe("Cohort Exam Session monitoring interactions", () => {
+  it("filters contributing rows from a summary widget and clears the filter", async () => {
+    const user = userEvent.setup();
+    render(
+      <CohortSessionWorkspacePanel
+        mode="monitoring"
+        examTitle="Helios Foundations"
+        session={session}
+        loading={false}
+        onBack={vi.fn()}
+        onPublish={vi.fn()}
+        detail={{
+          summary: { activeCount: 1, inProgressCount: 1, completedCount: 1, problemCount: 0, portalAttemptCount: 2, cloudShareParticipantCount: 2, derivedFrom: "portal_and_cloudshare" },
+          portalAttempts: [
+            { id: "attempt-active", candidateId: "candidate-active", candidateName: "Active Casey", candidateEmail: "active@helioscx.demo", status: "in_progress", scheduledFor: null, createdAt: "2026-09-01T09:00:00.000Z", trainingId: "experience-1", experienceId: "experience-1", environmentExternalId: null, environmentId: null, participantId: null, summaryContributions: ["active", "in_progress"], problemReasons: [], diagnosticFilters: { examAttemptId: "attempt-active" } },
+            { id: "attempt-complete", candidateId: "candidate-complete", candidateName: "Completed Riley", candidateEmail: "completed@helioscx.demo", status: "completed", scheduledFor: null, createdAt: "2026-09-01T09:00:00.000Z", trainingId: "experience-1", experienceId: "experience-1", environmentExternalId: null, environmentId: null, participantId: null, summaryContributions: ["completed"], problemReasons: [], diagnosticFilters: { examAttemptId: "attempt-complete" } },
+          ],
+          cloudShareParticipants: { status: "available", trainingId: "experience-1", readError: null, correlationId: null, participants: [
+            { email: "active@helioscx.demo", firstName: "Active", lastName: "Casey", displayName: "Active Casey", studentId: "participant-active", environmentId: "environment-active", environmentStatus: "Running", participationStatus: "inProgress", firstJoinedAt: null, matchedExamAttemptId: "attempt-active", summaryContributions: ["active", "in_progress"], problemReasons: [], diagnosticFilters: { examAttemptId: "attempt-active" } },
+            { email: "completed@helioscx.demo", firstName: "Completed", lastName: "Riley", displayName: "Completed Riley", studentId: "participant-complete", environmentId: "environment-complete", environmentStatus: "Archived", participationStatus: "completed", firstJoinedAt: null, matchedExamAttemptId: "attempt-complete", summaryContributions: ["completed"], problemReasons: [], diagnosticFilters: { examAttemptId: "attempt-complete" } },
+            { email: "suspended@helioscx.demo", firstName: "Suspended", lastName: "Jordan", displayName: "Suspended Jordan", studentId: "participant-suspended", environmentId: "environment-suspended", environmentStatus: "Suspended", participationStatus: "inProgress", firstJoinedAt: null, matchedExamAttemptId: null, summaryContributions: [], problemReasons: [], diagnosticFilters: { candidateEmail: "suspended@helioscx.demo" } },
+          ] },
+          guidedJourneyAggregate: { status: "disabled", experienceId: "experience-1", readError: null, correlationId: null, progress: null },
+          diagnostics: { session: { examId: "exam-1", externalId: "experience-1" } },
+        }}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /Active.*1/ }));
+    expect(screen.getAllByText("Active Casey")).toHaveLength(2);
+    expect(screen.queryByText("Completed Riley")).toBeNull();
+    expect(screen.queryByText("Suspended Jordan")).toBeNull();
+    expect(screen.getByRole("button", { name: "Clear summary filter" })).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Clear summary filter" }));
+    expect(screen.getAllByText("Completed Riley")).toHaveLength(2);
+  });
+
+  it("filters Problems to rows with actionable reconciliation reasons only", async () => {
+    const user = userEvent.setup();
+    render(
+      <CohortSessionWorkspacePanel
+        mode="monitoring"
+        examTitle="Helios Foundations"
+        session={session}
+        loading={false}
+        onBack={vi.fn()}
+        onPublish={vi.fn()}
+        detail={{
+          summary: { activeCount: 1, inProgressCount: 1, completedCount: 0, problemCount: 1, needsAttentionCount: 1, portalAttemptCount: 2, cloudShareParticipantCount: 2, derivedFrom: "portal_and_cloudshare" },
+          portalAttempts: [
+            { id: "attempt-problem", candidateId: "candidate-problem", candidateName: "Problem Casey", candidateEmail: "problem@helioscx.demo", status: "in_progress", scheduledFor: null, createdAt: "2026-09-01T09:00:00.000Z", trainingId: "experience-1", experienceId: "experience-1", environmentExternalId: null, environmentId: null, participantId: null, reconciliation: "needs_attention", problemReasons: ["Portal has an attempt but no matching CloudShare participant."], diagnosticFilters: { examAttemptId: "attempt-problem" } },
+            { id: "attempt-normal", candidateId: "candidate-normal", candidateName: "Normal Riley", candidateEmail: "normal@helioscx.demo", status: "in_progress", scheduledFor: null, createdAt: "2026-09-01T09:00:00.000Z", trainingId: "experience-1", experienceId: "experience-1", environmentExternalId: null, environmentId: null, participantId: null, problemReasons: [], diagnosticFilters: { examAttemptId: "attempt-normal" } },
+          ],
+          cloudShareParticipants: { status: "available", trainingId: "experience-1", readError: null, correlationId: null, participants: [
+            { email: "problem@helioscx.demo", firstName: "Problem", lastName: "Casey", displayName: "Problem Casey", studentId: "participant-problem", environmentId: "environment-problem", environmentStatus: "Error", participationStatus: "inProgress", firstJoinedAt: null, matchedExamAttemptId: "attempt-problem", reconciliation: "needs_attention", problemReasons: ["CloudShare environment is in a non-terminal problem state."], diagnosticFilters: { examAttemptId: "attempt-problem" } },
+            { email: "normal@helioscx.demo", firstName: "Normal", lastName: "Riley", displayName: "Normal Riley", studentId: "participant-normal", environmentId: "environment-normal", environmentStatus: "Running", participationStatus: "inProgress", firstJoinedAt: null, matchedExamAttemptId: "attempt-normal", problemReasons: [], diagnosticFilters: { examAttemptId: "attempt-normal" } },
+          ] },
+          guidedJourneyAggregate: { status: "disabled", experienceId: "experience-1", readError: null, correlationId: null, progress: null },
+          diagnostics: { session: { examId: "exam-1", externalId: "experience-1" } },
+        }}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /Needs attention.*1/ }));
+    expect(screen.getAllByText("Problem Casey")).toHaveLength(2);
+    expect(screen.queryByText("Normal Riley")).toBeNull();
+    expect(screen.getByText("CloudShare environment is in a non-terminal problem state.")).toBeTruthy();
+  });
+
   it("opens a Cohort Exam Session monitoring detail from the Support list", async () => {
     const user = userEvent.setup();
     const onOpen = vi.fn();
