@@ -4,7 +4,7 @@ import type {
   CloudShareDetailedResult,
   V4RequestSpec,
 } from "./client";
-import { CloudShareRequestError } from "./errors";
+import { CloudShareRateLimitError, CloudShareRequestError } from "./errors";
 import {
   inspectCloudShareEnvironmentLease,
   inspectCloudShareTrainingLease,
@@ -210,5 +210,122 @@ describe("external lease inspection", () => {
         body: { message: "Forbidden" },
       },
     });
+  });
+
+  it("preserves cached prior 429 evidence when an environment read is blocked by cooldown", async () => {
+    const client = makeClient({
+      requestV3Detailed: vi.fn(async () => {
+        throw new CloudShareRateLimitError("requests are cooling down", 429, "rate_limit", {
+          method: "GET",
+          host: "use.cloudshare.com",
+          path: "/v3/envs/ENVS-live-1",
+          integrationSurface: "cloudshare.v3.env.get",
+          cooldownActive: true,
+          responseHeaders: { "retry-after": "30" },
+          responseBody: { error: "Too many requests" },
+        });
+      }),
+    });
+
+    const lease = await inspectCloudShareEnvironmentLease(client, "ENVS-live-1");
+
+    expect(lease).toMatchObject({
+      kind: "unknown",
+      failureMode: "rate_limit",
+      responseStatus: 429,
+      responseEvidence: "cached_prior",
+      response: {
+        status: 429,
+        headers: { "retry-after": "30" },
+        body: { error: "Too many requests" },
+      },
+    });
+  });
+
+  it("classifies a rehydrated rate-limit error with its cached prior evidence", async () => {
+    const client = makeClient({
+      requestV3Detailed: vi.fn(async () => {
+        throw {
+          name: "CloudShareRateLimitError",
+          message:
+            "requests are cooling down: Bearer rehydrated-message-secret https://use.cloudshare.com/Ent/Login.aspx?token=rehydrated-message-secret",
+          classification: "rate_limit",
+          context: {
+            status: 429,
+            method: "GET",
+            host: "use.cloudshare.com",
+            path: "/v3/envs/ENVS-live-1",
+            integrationSurface: "cloudshare.v3.env.get",
+            cooldownActive: true,
+            requestHeaders: {
+              authorization: "Bearer rehydrated-request-secret",
+              cookie: "cloudshare-session=rehydrated-request-secret",
+            },
+            requestQuery: {
+              token: "rehydrated-request-secret",
+              returnUrl: "https://use.cloudshare.com/Ent/Login.aspx?token=rehydrated-request-secret",
+            },
+            requestBody: {
+              bearerHeader: "Bearer rehydrated-request-secret",
+              loginUrl: "https://use.cloudshare.com/Ent/Login.aspx?token=rehydrated-request-secret",
+            },
+            responseHeaders: {
+              "retry-after": "30",
+              authorization: "Bearer rehydrated-secret",
+              "set-cookie": "cloudshare-session=rehydrated-secret",
+            },
+            responseBody: {
+              error: "Too many requests",
+              bearerHeader: "Bearer rehydrated-secret",
+              loginUrl: "https://use.cloudshare.com/Ent/Login.aspx?token=rehydrated-secret",
+            },
+            network: { proxyAuthorization: "Bearer rehydrated-network-secret" },
+            tls: { authorizationError: "rehydrated-tls-secret" },
+          },
+        };
+      }),
+    });
+
+    const lease = await inspectCloudShareEnvironmentLease(client, "ENVS-live-1");
+
+    expect(lease).toMatchObject({
+      kind: "unknown",
+      failureMode: "rate_limit",
+      responseStatus: 429,
+      responseEvidence: "cached_prior",
+      request: {
+        headers: {
+          authorization: "[REDACTED]",
+          cookie: "[REDACTED]",
+        },
+        query: {
+          token: "[REDACTED]",
+          returnUrl: "[REDACTED]",
+        },
+        body: {
+          bearerHeader: "[REDACTED]",
+          loginUrl: "[REDACTED]",
+        },
+      },
+      response: {
+        status: 429,
+        headers: {
+          authorization: "[REDACTED]",
+          "set-cookie": "[REDACTED]",
+        },
+        body: {
+          bearerHeader: "[REDACTED]",
+          loginUrl: "[REDACTED]",
+        },
+      },
+    });
+    expect(lease.error).toContain("Bearer [REDACTED]");
+    expect(lease.error).not.toContain("rehydrated-message-secret");
+    expect(lease.response).not.toHaveProperty("network");
+    expect(lease.response).not.toHaveProperty("tls");
+    expect(JSON.stringify(lease)).not.toContain("rehydrated-secret");
+    expect(JSON.stringify(lease)).not.toContain("rehydrated-request-secret");
+    expect(JSON.stringify(lease)).not.toContain("rehydrated-network-secret");
+    expect(JSON.stringify(lease)).not.toContain("rehydrated-tls-secret");
   });
 });

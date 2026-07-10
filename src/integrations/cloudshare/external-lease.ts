@@ -5,10 +5,13 @@ import type {
   CloudShareResponseDiagnostics,
 } from "./client";
 import {
+  CloudShareRateLimitError,
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
+  isCloudShareRateLimitError,
 } from "./errors";
+import { redactCloudShareAdminSupportValue } from "./diagnostic-redaction";
 import { mapCloudShareEnvironmentStatus } from "./environment";
 
 const v3EnvironmentSchema = z
@@ -33,7 +36,8 @@ const v4TrainingSchema = z.object({
 });
 
 type LeaseTarget = "environment" | "training" | "experience";
-type LeaseFailureMode = "http_status" | "transport" | "unexpected_response" | "unknown";
+type LeaseFailureMode = "http_status" | "rate_limit" | "transport" | "unexpected_response" | "unknown";
+type ResponseEvidence = "current" | "cached_prior";
 type LeaseReason = "not_found" | "status_terminal" | "end_elapsed";
 type LeaseAttemptedOperation = "get_environment" | "get_training";
 
@@ -49,6 +53,7 @@ interface LeaseEvidenceBase {
   readonly environmentStatus?: string | null;
   readonly leaseEndsAt?: string | null;
   readonly responseStatus?: number | null;
+  readonly responseEvidence?: ResponseEvidence;
   readonly failureMode?: LeaseFailureMode;
   readonly error?: string | null;
   readonly reason?: LeaseReason;
@@ -233,6 +238,32 @@ function mapLeaseFailure(input: {
   readonly error: unknown;
   readonly notFoundStatus: string;
 }): CloudShareExternalLease {
+  if (isCloudShareRateLimitError(input.error)) {
+    const error = input.error as CloudShareRequestError;
+    const isRehydrated = !(input.error instanceof CloudShareRateLimitError);
+    const context = isRehydrated
+      ? sanitizeRehydratedRateLimitContext(error.context)
+      : error.context;
+    const status = asNumber(error.status) ?? asNumber(context?.status) ?? 429;
+    const request = requestEvidenceFromContext(context, input.fallbackPath);
+    const response = responseEvidenceFromContext(status, context);
+    return {
+      kind: "unknown",
+      target: input.target,
+      attemptedOperation: input.attemptedOperation,
+      integrationSurface: asString(context?.integrationSurface) ?? input.integrationSurface,
+      method: asString(request?.method) ?? "GET",
+      path: asString(request?.path) ?? input.fallbackPath,
+      host: asString(context?.host) ?? null,
+      request,
+      response,
+      responseStatus: status,
+      responseEvidence: context?.cooldownActive === true ? "cached_prior" : "current",
+      failureMode: "rate_limit",
+      error: isRehydrated ? sanitizeRehydratedErrorMessage(error.message) : error.message,
+    };
+  }
+
   if (input.error instanceof CloudShareRequestError) {
     const request = requestEvidenceFromContext(input.error.context, input.fallbackPath);
     const response = responseEvidenceFromContext(input.error.status, input.error.context);
@@ -324,6 +355,83 @@ function mapLeaseFailure(input: {
     failureMode: "unknown",
     error: input.error instanceof Error ? input.error.message : String(input.error),
   };
+}
+
+function sanitizeRehydratedRateLimitContext(
+  context: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!context) {
+    return context;
+  }
+
+  const { network: _network, tls: _tls, ...safeContext } = context;
+  return {
+    ...safeContext,
+    ...(context.requestHeaders !== undefined
+      ? { requestHeaders: sanitizeRehydratedHeaders(context.requestHeaders) }
+      : {}),
+    ...(context.requestQuery !== undefined
+      ? { requestQuery: sanitizeRehydratedRequestQuery(context.requestQuery) }
+      : {}),
+    ...(context.requestBody !== undefined
+      ? { requestBody: sanitizeRehydratedBody(context.requestBody) }
+      : {}),
+    ...(context.responseHeaders !== undefined
+      ? { responseHeaders: sanitizeRehydratedHeaders(context.responseHeaders) }
+      : {}),
+    ...(context.responseBody !== undefined
+      ? { responseBody: sanitizeRehydratedBody(context.responseBody) }
+      : {}),
+  };
+}
+
+function sanitizeRehydratedErrorMessage(message: unknown): string {
+  const redacted = redactCloudShareAdminSupportValue(message, {
+    preserveSponsoredLinkLoginUrl: false,
+    redactTokenLikeKeys: true,
+  });
+  return typeof redacted === "string" ? redacted : JSON.stringify(redacted);
+}
+
+function sanitizeRehydratedHeaders(value: unknown): Record<string, unknown> | unknown {
+  const redacted = redactCloudShareAdminSupportValue(value, {
+    preserveSponsoredLinkLoginUrl: false,
+    redactTokenLikeKeys: true,
+  });
+  if (!isRecord(redacted)) {
+    return redacted;
+  }
+
+  for (const key of Object.keys(redacted)) {
+    if (key.toLowerCase() === "set-cookie" || key.toLowerCase() === "cookie") {
+      redacted[key] = "[REDACTED]";
+    }
+  }
+  return redacted;
+}
+
+function sanitizeRehydratedRequestQuery(value: unknown): Record<string, unknown> | unknown {
+  const redacted = redactCloudShareAdminSupportValue(value, {
+    preserveSponsoredLinkLoginUrl: false,
+    redactTokenLikeKeys: true,
+  });
+  if (!isRecord(redacted)) {
+    return redacted;
+  }
+
+  for (const key of Object.keys(redacted)) {
+    if (/cookie/i.test(key)) {
+      redacted[key] = "[REDACTED]";
+    }
+  }
+  return redacted;
+}
+
+function sanitizeRehydratedBody(value: unknown): unknown {
+  return redactCloudShareAdminSupportValue(value, {
+    preserveSponsoredLinkLoginUrl: false,
+    redactTokenLikeKeys: true,
+  });
 }
 
 function requestEvidenceFromContext(

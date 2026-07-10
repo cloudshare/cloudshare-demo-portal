@@ -124,6 +124,9 @@ interface CloudShareRateLimitCooldown {
   readonly classification: "rate_limit" | "abuse_protection";
   readonly retryAfterSeconds?: number;
   readonly rateLimitHeaders?: Record<string, string | string[]>;
+  /** Redacted evidence from the response that started the cooldown. */
+  readonly responseHeaders?: Record<string, string | string[]>;
+  readonly responseBody?: unknown;
 }
 
 export interface CloudShareRateLimitCooldownStore {
@@ -201,6 +204,16 @@ function sanitizeResponseHeaders(
     delete sanitized["Set-Cookie"];
   }
   return sanitized;
+}
+
+function isHeaderMap(value: unknown): value is Record<string, string | string[]> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Object.values(value as Record<string, unknown>).every(
+      (entry) => typeof entry === "string" || (Array.isArray(entry) && entry.every((item) => typeof item === "string")),
+    )
+  );
 }
 
 function sanitizeBody(body: string | undefined): unknown {
@@ -384,6 +397,12 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
       classification: error.classification,
       ...(retryAfterSeconds !== undefined ? { retryAfterSeconds } : {}),
       ...(error.rateLimitHeaders ? { rateLimitHeaders: error.rateLimitHeaders } : {}),
+      ...(isHeaderMap(error.context?.responseHeaders)
+        ? { responseHeaders: error.context.responseHeaders }
+        : {}),
+      ...(error.context?.responseBody !== undefined
+        ? { responseBody: error.context.responseBody }
+        : {}),
     });
   }
 
@@ -436,7 +455,12 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           ? { retryAfterSeconds: cooldown.retryAfterSeconds }
           : {}),
         ...(cooldown.rateLimitHeaders ? { rateLimitHeaders: cooldown.rateLimitHeaders } : {}),
-        ...(cooldown.rateLimitHeaders ? { responseHeaders: cooldown.rateLimitHeaders } : {}),
+        ...(cooldown.responseHeaders
+          ? { responseHeaders: cooldown.responseHeaders }
+          : cooldown.rateLimitHeaders
+            ? { responseHeaders: cooldown.rateLimitHeaders }
+            : {}),
+        ...(cooldown.responseBody !== undefined ? { responseBody: cooldown.responseBody } : {}),
       },
     );
   }
