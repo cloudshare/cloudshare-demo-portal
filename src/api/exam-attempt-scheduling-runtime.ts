@@ -440,11 +440,13 @@ function toProvisioningDiagnostic(
 ): Record<string, unknown> {
   const pathByOperation = {
     create_training: "/v4/trainings",
+    ensure_user_properties: `/v4/trainings/${error.context.trainingId ?? "{trainingId}"}/user-properties`,
     add_participant: `/v4/trainings/${error.context.trainingId ?? "{trainingId}"}/students`,
     create_sponsored_link: `/v4/trainings/${error.context.trainingId ?? "{trainingId}"}/sponsored-link`,
   } as const;
   const integrationSurfaceByOperation = {
     create_training: "cloudshare.v4.training",
+    ensure_user_properties: "cloudshare.v4.training.user_properties",
     add_participant: "cloudshare.v4.training.participant",
     create_sponsored_link: "cloudshare.v4.training.sponsored_link",
   } as const;

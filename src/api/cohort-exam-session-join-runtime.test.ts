@@ -88,16 +88,9 @@ function makeCloudShareFactory(
   const source = makeAuthoringSource();
   const requestV3 =
     (overrides.requestV3 as ReturnType<CloudShareClientFactory["forConnection"]>["requestV3"] | undefined) ??
-    (vi.fn(async (spec: { path?: string; query?: Record<string, string>; schema: { parse(value: unknown): unknown } }) => {
-      if (spec.path === "/class/actions/customfields") {
-        return spec.schema.parse([
-          { id: "TF-attempt", name: "certalisExamAttemptId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
-          { id: "TF-cohort", name: "certalisCohortSessionId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
-          { id: "TF-candidate", name: "certalisCandidateId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
-        ]);
-      }
-      return spec.schema.parse([]);
-    }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>["requestV3"]);
+    (vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) =>
+      spec.schema.parse([]),
+    ) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>["requestV3"]);
   const requestV4Detailed =
     (overrides.requestV4Detailed as
       | ReturnType<CloudShareClientFactory["forConnection"]>["requestV4Detailed"]
@@ -117,13 +110,17 @@ function makeCloudShareFactory(
                 start: "2026-07-05T08:30:00",
                 timeZone: "UTC",
               }
-            : spec.path === "/trainings/EXcohort-1/students"
-            ? [{}]
-            : spec.path === "/trainings/EXcohort-1/sponsored-link"
-              ? {
-                  loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/cohort",
-                }
-              : null;
+            : spec.method === "GET" && spec.path === "/trainings/EXcohort-1/user-properties"
+              ? []
+              : spec.method === "POST" && spec.path === "/trainings/EXcohort-1/user-properties"
+                ? { id: (spec.body as { Name?: string } | undefined)?.Name, name: (spec.body as { Name?: string } | undefined)?.Name }
+                : spec.path === "/trainings/EXcohort-1/students"
+                  ? [{}]
+                  : spec.path === "/trainings/EXcohort-1/sponsored-link"
+                    ? {
+                        loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/cohort",
+                      }
+                    : null;
         if (!raw) {
           throw new Error(`unexpected path ${spec.path}`);
         }
@@ -134,7 +131,9 @@ function makeCloudShareFactory(
             ? "cloudshare.v4.training.participant"
             : spec.path.endsWith("/sponsored-link")
               ? "cloudshare.v4.training.sponsored_link"
-              : "cloudshare.v4.training.get",
+              : spec.path.endsWith("/user-properties")
+                ? "cloudshare.v4.training.user_properties"
+                : "cloudshare.v4.training.get",
           request: {
             method: spec.method,
             path: spec.path,
@@ -310,21 +309,8 @@ describe("joinCohortExamSessionRuntime", () => {
     const attempts = createInMemoryExamAttemptRepository();
     const launches = createInMemoryLabLaunchRepository();
     const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
-    const requestV3 = vi.fn(
-      async (spec: {
-        path?: string;
-        query?: Record<string, string>;
-        schema: { parse(value: unknown): unknown };
-      }) => {
-        if (spec.path === "/class/actions/customfields") {
-          return spec.schema.parse([
-            { id: "TF-attempt", name: "certalisExamAttemptId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
-            { id: "TF-cohort", name: "certalisCohortSessionId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
-            { id: "TF-candidate", name: "certalisCandidateId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
-          ]);
-        }
-        return spec.schema.parse([]);
-      },
+    const requestV3 = vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) =>
+      spec.schema.parse([]),
     );
     const requestV4Detailed = vi.fn(
       async (spec: {
@@ -372,6 +358,28 @@ describe("joinCohortExamSessionRuntime", () => {
                 },
               ],
             },
+          };
+        }
+        if (spec.method === "GET" && spec.path === "/trainings/EXcohort-1/user-properties") {
+          return {
+            data: spec.schema.parse([]),
+            host: "api.accelerate.cloudshare.com",
+            integrationSurface: "cloudshare.v4.training.user_properties",
+            request: { method: spec.method, path: spec.path },
+            response: { status: 200, body: [] },
+          };
+        }
+        if (spec.method === "POST" && spec.path === "/trainings/EXcohort-1/user-properties") {
+          const raw = {
+            id: (spec.body as { Name?: string }).Name,
+            name: (spec.body as { Name?: string }).Name,
+          };
+          return {
+            data: spec.schema.parse(raw),
+            host: "api.accelerate.cloudshare.com",
+            integrationSurface: "cloudshare.v4.training.user_properties",
+            request: { method: spec.method, path: spec.path, body: spec.body },
+            response: { status: 201, body: raw },
           };
         }
         if (spec.path === "/trainings/EXcohort-1/sponsored-link") {
@@ -425,14 +433,16 @@ describe("joinCohortExamSessionRuntime", () => {
     );
 
     expect(response.status).toBe(201);
-    expect(requestV4Detailed.mock.calls[1]?.[0]?.body).toEqual([
+    const studentAddCall = requestV4Detailed.mock.calls.find(
+      (call) => call[0].method === "POST" && call[0].path === "/trainings/EXcohort-1/students",
+    );
+    expect(studentAddCall?.[0]?.body).toEqual([
       {
         email: "candidate@helioscx.demo",
         firstName: "Asha",
         lastName: "Patel",
         customProperties: [
           { Name: "certalisExamAttemptId", Value: "attempt-1" },
-          { Name: "certalisCohortSessionId", Value: "cohort-session-1" },
           { Name: "certalisCandidateId", Value: "candidate-1" },
         ],
       },
@@ -459,16 +469,20 @@ describe("joinCohortExamSessionRuntime", () => {
         }),
       }),
     ]);
-    expect(requestV3).toHaveBeenCalledWith(
-      expect.objectContaining({
-        method: "GET",
-        path: "/class/actions/customfields",
-        query: { projectId: "project-1" },
-      }),
+    expect(requestV3).not.toHaveBeenCalledWith(expect.objectContaining({ path: "/class/actions/customfields" }));
+    const ensureCallOrders = requestV4Detailed.mock.calls.flatMap((call, index) =>
+      call[0].path === "/trainings/EXcohort-1/user-properties"
+        ? [requestV4Detailed.mock.invocationCallOrder[index]]
+        : [],
     );
-    expect(requestV3.mock.invocationCallOrder[0]).toBeLessThan(
-      requestV4Detailed.mock.invocationCallOrder[1],
-    );
+    const studentAddOrder =
+      requestV4Detailed.mock.invocationCallOrder[
+        requestV4Detailed.mock.calls.findIndex(
+          (call) => call[0].method === "POST" && call[0].path === "/trainings/EXcohort-1/students",
+        )
+      ];
+    expect(ensureCallOrders).toHaveLength(3);
+    expect(ensureCallOrders.every((order) => order < studentAddOrder)).toBe(true);
   });
 
   it("blocks candidate join when the Cohort Exam Session admission has been closed", async () => {
@@ -585,23 +599,9 @@ describe("joinCohortExamSessionRuntime", () => {
     const launches = createInMemoryLabLaunchRepository();
     const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
     const eventLog = createInMemoryEventLogRepository();
-    const requestV3 = vi.fn(async () => {
-      throw new CloudShareResponseError(
-        "Required CloudShare training user-property keys are not configured for this project.",
-        {
-          method: "GET",
-          path: "/api/v3/class/actions/customfields",
-          requestQuery: { projectId: "project-1" },
-          integrationSurface: "cloudshare.v3.class.customfields",
-          status: 200,
-          responseBody: {
-            missingKeys: ["certalisCandidateId"],
-            availableKeys: ["certalisExamAttemptId", "certalisCohortSessionId"],
-          },
-          cause: "missing_training_user_property_keys",
-        },
-      );
-    });
+    const requestV3 = vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) =>
+      spec.schema.parse([]),
+    );
     const requestV4Detailed = vi.fn(
       async (spec: {
         method: string;
@@ -623,6 +623,16 @@ describe("joinCohortExamSessionRuntime", () => {
             request: { method: spec.method, path: spec.path },
             response: { status: 200, body: raw },
           };
+        }
+        if (spec.method === "GET" && spec.path === "/trainings/EXcohort-1/user-properties") {
+          throw new CloudShareResponseError("CloudShare response did not match the expected schema", {
+            method: "GET",
+            path: "/v4/trainings/EXcohort-1/user-properties",
+            integrationSurface: "cloudshare.v4.training.user_properties",
+            status: 500,
+            responseBody: { error: "tenant unavailable" },
+            issues: ["Unable to read training user properties."],
+          });
         }
         throw new Error(`unexpected path ${spec.path}`);
       },
@@ -665,14 +675,8 @@ describe("joinCohortExamSessionRuntime", () => {
         correlationId: "corr-user-properties-fail",
       },
     });
-    expect(requestV3).toHaveBeenCalledWith(
-      expect.objectContaining({
-        method: "GET",
-        path: "/class/actions/customfields",
-        query: { projectId: "project-1" },
-      }),
-    );
-    expect(requestV4Detailed).toHaveBeenCalledTimes(1);
+    expect(requestV3).not.toHaveBeenCalledWith(expect.objectContaining({ path: "/class/actions/customfields" }));
+    expect(requestV4Detailed).toHaveBeenCalledTimes(2);
     await expect(attempts.findById("attempt-1")).resolves.toBeNull();
     await expect(launches.findByExamAttemptId("attempt-1")).resolves.toBeNull();
     await expect(
@@ -686,21 +690,16 @@ describe("joinCohortExamSessionRuntime", () => {
         outcome: "failure",
         request: {
           method: "GET",
-          path: "/api/v3/class/actions/customfields",
-          query: { projectId: "project-1" },
+          path: "/v4/trainings/EXcohort-1/user-properties",
         },
         response: {
-          status: 200,
-          body: {
-            missingKeys: ["certalisCandidateId"],
-            availableKeys: ["certalisExamAttemptId", "certalisCohortSessionId"],
-          },
+          status: 500,
+          body: { error: "tenant unavailable" },
         },
         details: expect.objectContaining({
           attemptedOperation: "ensure_user_properties",
-          integrationSurface: "cloudshare.v3.class.customfields",
-          responseStatus: 200,
-          cause: "missing_training_user_property_keys",
+          integrationSurface: "cloudshare.v4.training.user_properties",
+          responseStatus: 500,
         }),
       }),
     ]);
@@ -709,8 +708,7 @@ describe("joinCohortExamSessionRuntime", () => {
         eventId: "corr-user-properties-fail",
         payload: expect.objectContaining({
           attemptedOperation: "ensure_user_properties",
-          responseStatus: 200,
-          query: { projectId: "project-1" },
+          responseStatus: 500,
         }),
       }),
     ]);
@@ -735,16 +733,9 @@ describe("joinCohortExamSessionRuntime", () => {
         cloudshare: {
           forConnection: vi.fn(() => ({
             ...source,
-            requestV3: vi.fn(async (spec: { path?: string; schema: { parse(value: unknown): unknown } }) => {
-              if (spec.path === "/class/actions/customfields") {
-                return spec.schema.parse([
-                  { id: "TF-attempt", name: "certalisExamAttemptId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
-                  { id: "TF-cohort", name: "certalisCohortSessionId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
-                  { id: "TF-candidate", name: "certalisCandidateId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
-                ]);
-              }
-              return spec.schema.parse([]);
-            }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>["requestV3"],
+            requestV3: vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) =>
+              spec.schema.parse([]),
+            ) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>["requestV3"],
             requestV3Text: vi.fn(),
             requestV4: vi.fn(),
             requestV4Detailed: makeCloudShareFactory().forConnection({} as never).requestV4Detailed,
@@ -1251,6 +1242,24 @@ describe("joinCohortExamSessionRuntime", () => {
                 },
               };
             }
+            if (spec.path === "/trainings/EXcohort-1/user-properties") {
+              if ("method" in spec && spec.method === "POST") {
+                return {
+                  data: { id: "TF-created", name: "certalisCandidateId" },
+                  host: "api.accelerate.cloudshare.com",
+                  integrationSurface: "cloudshare.v4.training.user_properties",
+                  request: { method: "POST", path: spec.path },
+                  response: { status: 201, body: { id: "TF-created", name: "certalisCandidateId" } },
+                };
+              }
+              return {
+                data: [],
+                host: "api.accelerate.cloudshare.com",
+                integrationSurface: "cloudshare.v4.training.user_properties",
+                request: { method: "GET", path: spec.path },
+                response: { status: 200, body: [] },
+              };
+            }
             if (spec.path === "/trainings/EXcohort-1/students") {
               throw new CloudShareRequestError("forbidden", 403, {
                 method: "POST",
@@ -1356,6 +1365,19 @@ describe("joinCohortExamSessionRuntime", () => {
                 integrationSurface: "cloudshare.v4.training.get",
                 request: { method: spec.method, path: spec.path },
                 response: { status: 200, body: raw },
+              };
+            }
+            if (spec.path === "/trainings/EXcohort-1/user-properties") {
+              const raw =
+                spec.method === "POST"
+                  ? { id: "TF-created", name: "certalisCandidateId" }
+                  : [];
+              return {
+                data: spec.schema.parse(raw),
+                host: "api.accelerate.cloudshare.com",
+                integrationSurface: "cloudshare.v4.training.user_properties",
+                request: { method: spec.method, path: spec.path },
+                response: { status: spec.method === "POST" ? 201 : 200, body: raw },
               };
             }
             if (spec.path === "/trainings/EXcohort-1/students") {

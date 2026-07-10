@@ -79,13 +79,6 @@ function makeCloudShareFactory(overrides: Partial<ReturnType<CloudShareClientFac
   const requestV3 =
     (overrides.requestV3 as ReturnType<CloudShareClientFactory["forConnection"]>["requestV3"] | undefined) ??
     (vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
-      if (spec.path === "/class/actions/customfields") {
-        return spec.schema.parse([
-          { id: "TF-attempt", name: "certalisExamAttemptId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
-          { id: "TF-cohort", name: "certalisCohortSessionId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
-          { id: "TF-candidate", name: "certalisCandidateId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
-        ]);
-      }
       if (spec.path === "/teams") {
         return spec.schema.parse({ rows: [{ id: "TM-team-1", name: "Helios Team" }] });
       }
@@ -105,6 +98,11 @@ function makeCloudShareFactory(overrides: Partial<ReturnType<CloudShareClientFac
           start: "2026-07-05T08:30:00",
           timeZone: "UTC",
         };
+      }
+      if (spec.path === "/trainings/EXtraining-1/user-properties" || spec.path === "/trainings/EXcohort-1/user-properties") {
+        return "method" in spec && spec.method === "POST"
+          ? { id: "TF-created", name: "certalisCandidateId" }
+          : [];
       }
       if (spec.path === "/trainings/EXtraining-1/students" || spec.path === "/trainings/EXcohort-1/students") {
         return [
@@ -138,6 +136,8 @@ function makeCloudShareFactory(overrides: Partial<ReturnType<CloudShareClientFac
           ? "cloudshare.v4.training"
           : spec.path === "/trainings/EXcohort-1"
             ? "cloudshare.v4.training.get"
+          : spec.path.endsWith("/user-properties")
+            ? "cloudshare.v4.training.user_properties"
           : spec.path.endsWith("/students")
             ? "cloudshare.v4.training.participant"
             : spec.path.endsWith("/sponsored-link")
@@ -655,6 +655,11 @@ describe("candidate scheduling handlers", () => {
           requestV4: vi.fn(async (spec: { path: string }) => {
             if (spec.path === "/trainings") {
               return { id: "EXtraining-1" };
+            }
+            if (spec.path === "/trainings/EXtraining-1/user-properties") {
+              return "method" in spec && spec.method === "POST"
+                ? { id: "TF-created", name: "certalisCandidateId" }
+                : [];
             }
             throw new CloudShareRequestError("forbidden", 403, {
               requestBody: {

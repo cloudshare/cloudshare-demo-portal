@@ -282,58 +282,12 @@ export async function handlePublishCohortExamSession(
 
     const cloudshareClient = deps.cloudshare.forConnection(connection);
     const provisioner = createCloudShareLabProvisioner(cloudshareClient);
-    try {
-      await provisioner.ensureTrainingUserPropertyKeys?.({
-        projectId: exam.projectId,
-        requiredKeys: CERTALIS_TRAINING_USER_PROPERTY_KEYS,
-      });
-    } catch (error) {
-      await recordCohortExamSessionPublishFailure(
-        { repository: deps.sessions, now: deps.now },
-        {
-          session: claimedSession,
-          correlationId,
-          error:
-            "Required CloudShare training user-property keys are unavailable. Confirm the CloudShare project custom fields before retrying.",
-        },
-      );
-      await safeRecordDiagnostic(deps, {
-        source: "admin-exams",
-        customerId: request.customerId,
-        actor: request.actor ?? null,
-        subject: { type: "cohort_exam_session", id: claimedSession.id },
-        examId: exam.id,
-        level: "warn",
-        operation: "cohort_exam_session.publish",
-        outcome: "failure",
-        correlationId,
-        message: "Cohort Exam Session publish failed before CloudShare Experience creation while confirming training user-property keys",
-        externalIds: buildPublishFailureExternalIds(exam),
-        ...toPublishFailureDiagnostic(error),
-      });
-      deps.logger.warn("cohort session publish training user-property preflight failed", {
-        correlationId,
-        customerId: request.customerId,
-        examId: exam.id,
-        sessionId: claimedSession.id,
-        ...toPublishFailureLogFields(error),
-      });
-      return {
-        status: isCloudShareRateLimitError(error) ? 429 : 502,
-        body: {
-          error:
-            isCloudShareRateLimitError(error)
-              ? CLOUDSHARE_429_ADMIN_SUPPORT_GUIDANCE
-              : "CloudShare required training user-property keys are unavailable. Check the diagnostic log for the correlation ID.",
-          correlationId,
-        },
-      };
-    }
     const creator = createCloudShareOnDemandExperienceCreator(cloudshareClient);
     const created = await creator.createOnDemandExperience({
       name: buildCohortExperienceName(exam.title, claimedSession.name),
       startsAt: claimedSession.admissionStartsAt,
       endsAt: claimedSession.admissionEndsAt,
+      externalId: claimedSession.id,
       projectId: exam.projectId,
       blueprintId: exam.blueprintId,
       policyId: exam.policyId,
@@ -344,7 +298,6 @@ export async function handlePublishCohortExamSession(
     });
     try {
       await provisioner.ensureTrainingUserPropertyKeys?.({
-        projectId: exam.projectId,
         trainingId: created.trainingId,
         experienceId: created.experienceId,
         requiredKeys: CERTALIS_TRAINING_USER_PROPERTY_KEYS,
@@ -356,7 +309,7 @@ export async function handlePublishCohortExamSession(
           session: claimedSession,
           correlationId,
           error:
-            "CloudShare Experience was created, but required training user-property keys were not available. Reconcile this Cohort Exam Session before retrying.",
+            "CloudShare Experience was created, but required training user-property keys could not be added. Reconcile this Cohort Exam Session before retrying.",
           trainingId: created.trainingId,
           experienceId: created.experienceId,
           teamId: created.teamId,
@@ -372,7 +325,7 @@ export async function handlePublishCohortExamSession(
         operation: "cohort_exam_session.publish",
         outcome: "failure",
         correlationId,
-        message: "Cohort Exam Session publish failed after CloudShare Experience creation while confirming training user-property keys",
+        message: "Cohort Exam Session publish failed after CloudShare Experience creation while adding training user-property keys",
         externalIds: {
           trainingId: created.trainingId,
           experienceId: created.experienceId,
@@ -396,7 +349,7 @@ export async function handlePublishCohortExamSession(
           error:
             isCloudShareRateLimitError(error)
               ? CLOUDSHARE_429_ADMIN_SUPPORT_GUIDANCE
-              : "CloudShare created the Cohort Exam Session, but the required training user-property keys are unavailable. Reconcile it before retrying and check the diagnostic log for the correlation ID.",
+              : "CloudShare created the Cohort Exam Session, but the required training user-property keys could not be added. Reconcile it before retrying and check the diagnostic log for the correlation ID.",
           correlationId,
         },
       };

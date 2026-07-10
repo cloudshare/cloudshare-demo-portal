@@ -107,6 +107,11 @@ function makeCloudShareFactory(
       if (spec.path === "/trainings") {
         return { id: "EXtraining-1" };
       }
+      if (spec.path === "/trainings/EXtraining-1/user-properties") {
+        return "method" in spec && spec.method === "POST"
+          ? { id: "TF-created", name: "certalisCandidateId" }
+          : [];
+      }
       if (spec.path === "/trainings/EXtraining-1/students") {
         return [
           {
@@ -145,6 +150,8 @@ function makeCloudShareFactory(
           integrationSurface:
             spec.path === "/trainings"
               ? "cloudshare.v4.training"
+              : spec.path.endsWith("/user-properties")
+                ? "cloudshare.v4.training.user_properties"
               : spec.path.endsWith("/students")
                 ? "cloudshare.v4.training.participant"
                 : spec.path.endsWith("/sponsored-link")
@@ -263,6 +270,10 @@ describe("ExamAttempt scheduling runtime", () => {
         const raw =
           spec.path === "/trainings"
             ? { id: "EXtraining-1" }
+            : spec.path === "/trainings/EXtraining-1/user-properties"
+              ? spec.method === "POST"
+                ? { id: "TF-created", name: "certalisCandidateId" }
+                : []
             : spec.path === "/trainings/EXtraining-1/students"
               ? [{ email: "candidate@helioscx.demo", firstName: "Asha", lastName: "Patel" }]
               : spec.path === "/trainings/EXtraining-1/sponsored-link"

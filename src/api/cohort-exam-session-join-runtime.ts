@@ -475,7 +475,6 @@ export async function joinCohortExamSessionRuntime(
   let ensuredTrainingUserProperties;
   try {
     ensuredTrainingUserProperties = await trainingUserPropertyEnsurer({
-      projectId: exam.projectId,
       trainingId: session.cloudShareTrainingId,
       experienceId: session.cloudShareExperienceId,
       requiredKeys: CERTALIS_TRAINING_USER_PROPERTY_KEYS,
@@ -540,7 +539,7 @@ export async function joinCohortExamSessionRuntime(
       : {}),
     details: {
       integrationSurface:
-        ensuredTrainingUserProperties.integrationSurface ?? "cloudshare.v3.class.customfields",
+        ensuredTrainingUserProperties.integrationSurface ?? "cloudshare.v4.training.user_properties",
       requiredKeys: ensuredTrainingUserProperties.requiredKeys,
       availableKeys: ensuredTrainingUserProperties.availableKeys,
     },
@@ -554,7 +553,6 @@ export async function joinCohortExamSessionRuntime(
       firstName: request.candidateFirstName.trim(),
       lastName: request.candidateLastName.trim(),
       certalisExamAttemptId: attemptId,
-      certalisCohortSessionId: session.id,
       certalisCandidateId: request.candidateId,
     });
   } catch (cause) {
@@ -970,7 +968,7 @@ function fallbackProvisioningPath(attemptedOperation: JoinProvisioningOperation)
     return "/v4/trainings/{trainingId}";
   }
   if (attemptedOperation === "ensure_user_properties") {
-    return "/api/v3/class/actions/customfields";
+    return "/v4/trainings/{trainingId}/user-properties";
   }
   if (attemptedOperation === "add_participant") {
     return "/v4/trainings/{trainingId}/students";
@@ -983,7 +981,7 @@ function fallbackIntegrationSurface(attemptedOperation: JoinProvisioningOperatio
     return "cloudshare.v4.training.get";
   }
   if (attemptedOperation === "ensure_user_properties") {
-    return "cloudshare.v3.class.customfields";
+    return "cloudshare.v4.training.user_properties";
   }
   if (attemptedOperation === "add_participant") {
     return "cloudshare.v4.training.participant";

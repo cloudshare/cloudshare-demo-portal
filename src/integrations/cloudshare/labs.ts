@@ -19,7 +19,6 @@ import type {
   TrainingUserPropertyDefinition,
 } from "@/domain/lab-launch";
 import { CERTALIS_TRAINING_USER_PROPERTY_KEYS as CERTALIS_PROPERTY_KEYS } from "@/domain/lab-launch";
-import { CloudShareResponseError } from "./errors";
 
 /**
  * CloudShare implementation of the {@link LabProvisioner} port, built on the v4
@@ -28,8 +27,7 @@ import { CloudShareResponseError } from "./errors";
  *
  * NOTE (assumptions to verify against a live tenant, isolated behind this module):
  * the exact v4 paths/bodies below are modelled on the documented Accelerate
- * flow, the v3 class contract, and live 400 diagnostics. Only this file changes
- * if the live v4 contract differs.
+ * flow and live 400 diagnostics. Only this file changes if the live v4 contract differs.
  */
 
 const experienceSchema = z.object({ id: z.string().min(1) });
@@ -49,16 +47,26 @@ const trainingUserPropertyDefinitionSchema = z
   .passthrough();
 const trainingUserPropertyDefinitionsSchema = z.preprocess(
   (payload) => {
-    if (!Array.isArray(payload)) {
-      return payload;
+    const rows =
+      typeof payload === "object" && payload !== null && "items" in payload
+        ? (payload as { items: unknown }).items
+        : typeof payload === "object" && payload !== null && "Items" in payload
+          ? (payload as { Items: unknown }).Items
+          : typeof payload === "object" && payload !== null && "userProperties" in payload
+            ? (payload as { userProperties: unknown }).userProperties
+            : typeof payload === "object" && payload !== null && "UserProperties" in payload
+              ? (payload as { UserProperties: unknown }).UserProperties
+              : payload;
+    if (!Array.isArray(rows)) {
+      return rows;
     }
-    return payload.map((row) => {
+    return rows.map((row) => {
       if (!row || typeof row !== "object") {
         return row;
       }
       const record = row as Record<string, unknown>;
       return {
-        id: record.id ?? record.Id,
+        id: record.id ?? record.Id ?? record.name ?? record.Name,
         name: record.name ?? record.Name,
         type: record.type ?? record.Type ?? null,
         isRequired: record.isRequired ?? record.IsRequired,
@@ -70,6 +78,21 @@ const trainingUserPropertyDefinitionsSchema = z.preprocess(
   },
   z.array(trainingUserPropertyDefinitionSchema),
 );
+const createdTrainingUserPropertySchema = z.preprocess((payload) => {
+  if (!payload || typeof payload !== "object") {
+    return payload;
+  }
+  const record = payload as Record<string, unknown>;
+  return {
+    id: record.id ?? record.Id ?? record.name ?? record.Name,
+    name: record.name ?? record.Name,
+    type: record.type ?? record.Type ?? null,
+    isRequired: record.isRequired ?? record.IsRequired,
+    regex: record.regex ?? record.Regex ?? null,
+    defaultValue: record.defaultValue ?? record.DefaultValue ?? null,
+    value: record.value ?? record.Value ?? null,
+  };
+}, trainingUserPropertyDefinitionSchema);
 const trainingStartStateSchema = z
   .object({
     id: z.string().min(1),
@@ -158,35 +181,6 @@ export function createCloudShareLabProvisioner(
     return requestV4Detailed(spec) as Promise<CloudShareDetailedResult<T>>;
   }
 
-  async function requestV3WithDiagnostics<T>(
-    spec: {
-      readonly method: "GET" | "POST" | "PUT" | "DELETE";
-      readonly path: string;
-      readonly query?: Record<string, string>;
-      readonly schema: z.ZodType<T, z.ZodType["_def"], unknown>;
-    },
-  ): Promise<CloudShareDetailedResult<T>> {
-    if (typeof client.requestV3Detailed === "function") {
-      return client.requestV3Detailed(spec) as Promise<CloudShareDetailedResult<T>>;
-    }
-
-    const data = await client.requestV3(spec);
-    return {
-      data,
-      host: "",
-      integrationSurface: "cloudshare.v3",
-      request: {
-        method: spec.method,
-        path: spec.path,
-        ...(spec.query ? { query: spec.query } : {}),
-      },
-      response: {
-        status: 200,
-        body: data,
-      },
-    };
-  }
-
   return {
     async createTraining(input: CreateTrainingInput): Promise<CreateTrainingResult> {
       let teams: ProjectTeam[];
@@ -245,6 +239,7 @@ export function createCloudShareLabProvisioner(
           MainInstructor: { Email: input.instructorId },
           TimeZone: input.timeZoneId,
           Passphrase: input.passphrase,
+          ...(input.externalId ? { ExternalId: input.externalId } : {}),
           // Matches the v3 class API value for "No early access allowed".
           UsersEarlyAccess: { GrantEarlyAccess: 2 },
         },
@@ -296,47 +291,35 @@ export function createCloudShareLabProvisioner(
     async ensureTrainingUserPropertyKeys(
       input: EnsureTrainingUserPropertyKeysInput,
     ): Promise<EnsureTrainingUserPropertyKeysResult> {
-      const detailed = await requestV3WithDiagnostics({
+      const detailed = await requestV4WithDiagnostics({
         method: "GET",
-        path: "/class/actions/customfields",
-        query: { projectId: input.projectId },
+        path: `/trainings/${input.trainingId}/user-properties`,
         schema: trainingUserPropertyDefinitionsSchema,
       });
-      const definitions = detailed.data;
-      const availableKeys = definitions.map((definition) => definition.name);
+      const existingDefinitions = detailed.data;
+      const availableKeys = existingDefinitions.map((definition) => definition.name);
       const missingKeys = input.requiredKeys.filter((requiredKey) => !availableKeys.includes(requiredKey));
 
-      if (missingKeys.length > 0) {
-        throw new CloudShareResponseError(
-          "Required CloudShare training user-property keys are not configured for this project.",
-          {
-            method: detailed.request.method,
-            path: detailed.request.path,
-            requestQuery: detailed.request.query,
-            integrationSurface: "cloudshare.v3.class.customfields",
-            status: detailed.response.status,
-            responseBody: {
-              missingKeys,
-              availableKeys,
-              definitions: detailed.response.body,
-            },
-            issues: missingKeys.map(
-              (missingKey) =>
-                `Required CloudShare training user-property key '${missingKey}' is missing for project ${input.projectId}.`,
-            ),
-            cause: "missing_training_user_property_keys",
-          },
-        );
+      const createdDefinitions: TrainingUserPropertyDefinition[] = [];
+      for (const missingKey of missingKeys) {
+        const created = await requestV4WithDiagnostics({
+          method: "POST",
+          path: `/trainings/${input.trainingId}/user-properties`,
+          body: { Name: missingKey },
+          schema: createdTrainingUserPropertySchema,
+        });
+        createdDefinitions.push(created.data);
       }
+      const definitions = [...existingDefinitions, ...createdDefinitions];
+      const ensuredKeys = definitions.map((definition) => definition.name);
 
       return {
-        projectId: input.projectId,
-        ...(input.trainingId ? { trainingId: input.trainingId } : {}),
+        trainingId: input.trainingId,
         ...(input.experienceId ? { experienceId: input.experienceId } : {}),
         requiredKeys: [...input.requiredKeys],
-        availableKeys,
+        availableKeys: ensuredKeys,
         definitions: definitions as TrainingUserPropertyDefinition[],
-        integrationSurface: "cloudshare.v3.class.customfields",
+        integrationSurface: "cloudshare.v4.training.user_properties",
         request: detailed.request,
         response: detailed.response,
       };
@@ -440,10 +423,9 @@ function parseCloudShareTrainingDate(value: string, timeZone?: string): Date | u
 
 function buildParticipantCustomProperties(
   input: AddParticipantInput,
-): Array<{ Name: string; Value: string }> | undefined {
+): Array<{ Name: string; Value: string | null }> | undefined {
   const values: Record<CertalisTrainingUserPropertyKey, string | undefined> = {
     certalisExamAttemptId: input.certalisExamAttemptId,
-    certalisCohortSessionId: input.certalisCohortSessionId,
     certalisCandidateId: input.certalisCandidateId,
   };
   const entries = CERTALIS_PROPERTY_KEYS.flatMap((key) => {

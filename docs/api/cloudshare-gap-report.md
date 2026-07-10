@@ -907,37 +907,40 @@ Instructor identifiers. The admin UI displayed the persisted CloudShare training
 Team ID, and the success diagnostic retained redacted request/response evidence with correlation
 ID `8c260d9e-33cb-4062-8254-29ae3098ad57`.
 
-**Update (2026-07-10, Issue #301 live training-user-property probe):** a disposable self-paced
-training probe confirmed that `POST /v4/trainings/{trainingId}/students` still rejects the old
-object-shaped participant correlation bag with the live error:
-`$[0].customProperties` could not be converted to CloudShare's
-`UserPropertyValueRequestEncryptedModel[]`. A second live probe with
-`customProperties: [{ key, value }]` also failed; CloudShare validated the collection shape far
-enough to require `CustomProperties[*].Name`, then reported that the named property definition did
-not exist. The current tenant therefore expects participant custom properties to be sent as an
-array of `{ Name, Value }` entries, not as a plain object.
+**Update (2026-07-10, Issue #301 Accelerate user-property correction):** the Classic v3
+`/api/v3/class/*` custom-field endpoints are not the Accelerate Experience user-property contract.
+They expose older project/class custom fields and must not be used to provision Accelerate
+Experience user properties. Treat any new `/api/v3/class/` usage in Accelerate training flows as a
+warning during review. The observed v3 custom-field gap still matters for Classic: the API can read
+project custom-field definitions, but no public root-user create/update/delete API has been
+identified for those Classic project fields.
 
-The same probe also established that the tenant's property-definition source is the documented v3
-endpoint `GET /api/v3/class/actions/customfields?projectId={projectId}`. That endpoint returned the
-project's available class custom-field definitions, and the v3 docs explicitly state that those
-definitions are support-managed rather than tenant-created through the public API. Live
-`GET /v4/trainings/{trainingId}` returned `customFields: []`, and a follow-up
-`PUT /v4/trainings/{id}` with `CustomFields: [{ Name: "certalisExamAttemptId" }]` failed with
-`Field definition 'certalisExamAttemptId' does not exist`, confirming that training update can only
-reference pre-existing project field definitions. For this portal, the integration boundary must
-therefore:
+Accelerate Experience metadata and user properties are separate concepts:
 
-- verify the required Certalis field definitions exist through the v3 customfields read before
-  adding participants, and
-- fail supportably when the tenant/project is missing those definitions, rather than sending a v4
-  participant payload CloudShare will reject with a conversion error.
+- Experience-level external correlation belongs on v4 training/Experience metadata such as
+  `ExternalId`/`externalId`, with labels available for simple text tags.
+- Per-user Certalis values belong in v4 training user properties. The portal must create/read those
+  definitions on the specific Experience after `POST /v4/trainings` succeeds and before calling
+  `POST /v4/trainings/{trainingId}/students` or the instructor equivalent.
+- `certalisExamAttemptId` and `certalisCandidateId` are per-user property keys. The cohort/session
+  identifier is Experience-level correlation and should not be created as a per-user property.
 
-**Follow-up (2026-07-10, Issue #301 read-only live check):** a signed read-only
-`GET /api/v3/class/actions/customfields?projectId=PRCU02uuokHPBfjMedkmradg2` returned `200` with
-zero class custom-field definitions for the current Helios Exams 1 project. The required Certalis
-keys `certalisExamAttemptId`, `certalisCohortSessionId`, and `certalisCandidateId` were therefore
-all absent. Until CloudShare support creates those project definitions, the portal must stop before
-participant add and expose the missing-key diagnostic instead of attempting to join the candidate.
+The corrected portal sequence is:
+
+1. `POST /v4/trainings` with `ExternalId` set to the portal ExamAttempt ID for individual scheduled
+   Exams, or the Cohort Exam Session ID for cohort-backed Experiences.
+2. `GET /v4/trainings/{trainingId}/user-properties`, then `POST
+   /v4/trainings/{trainingId}/user-properties` for any missing required Certalis keys.
+3. `POST /v4/trainings/{trainingId}/students` with `customProperties` as an array of
+   `{ Name, Value }` entries for the ensured per-user keys. Values may be `null` initially when the
+   integration does not yet have the final value, and can later be updated through the v4
+   student/instructor edit endpoints.
+
+Earlier Issue #301 probe evidence remains useful for the participant payload shape:
+`POST /v4/trainings/{trainingId}/students` rejected the old object-shaped
+`customProperties` payload with a `$[0].customProperties` conversion error, while an array payload
+advanced to property-name validation. That confirms the portal must send an array model and ensure
+the Experience-level property definitions before adding participants.
 
 **Update (2026-07-01, Issue #251 QA clarification):** the Project Policy detail endpoint is
 undocumented but live-observed:

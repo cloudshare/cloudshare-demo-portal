@@ -135,6 +135,7 @@ function makeLabs(order: string[] = []): LabProvisioner {
             MainInstructor: { Email: "instructor-1" },
             TimeZone: "UTC",
             Passphrase: "certalis-attempt-1",
+            ExternalId: "attempt-1",
             UsersEarlyAccess: { GrantEarlyAccess: 2 },
           },
         },
@@ -142,6 +143,22 @@ function makeLabs(order: string[] = []): LabProvisioner {
           status: 200,
           body: { id: "training-1" },
         },
+      };
+    },
+    async ensureTrainingUserPropertyKeys() {
+      order.push("ensureUserProperties");
+      return {
+        trainingId: "training-1",
+        experienceId: "training-1",
+        requiredKeys: ["certalisExamAttemptId", "certalisCandidateId"],
+        availableKeys: ["certalisExamAttemptId", "certalisCandidateId"],
+        definitions: [
+          { id: "certalisExamAttemptId", name: "certalisExamAttemptId" },
+          { id: "certalisCandidateId", name: "certalisCandidateId" },
+        ],
+        integrationSurface: "cloudshare.v4.training.user_properties",
+        request: { method: "GET", path: "/trainings/training-1/user-properties" },
+        response: { status: 200, body: [] },
       };
     },
     async addParticipant() {
@@ -298,12 +315,14 @@ describe("scheduleExam", () => {
       },
     );
 
-    expect(order).toEqual(["createTraining", "addParticipant", "createSponsoredLink"]);
+    expect(order).toEqual(["createTraining", "ensureUserProperties", "addParticipant", "createSponsoredLink"]);
     expect(addParticipant).toHaveBeenCalledWith({
       trainingId: "training-1",
       email: "candidate@helioscx.demo",
       firstName: "Asha",
       lastName: "Patel",
+      certalisExamAttemptId: "attempt-1",
+      certalisCandidateId: "candidate-1",
     });
     expect(createSponsoredLink).toHaveBeenCalledWith({
       trainingId: "training-1",
@@ -848,6 +867,18 @@ describe("scheduleExam", () => {
               order.push("createTraining");
               return { trainingId: "training-1" };
             },
+            async ensureTrainingUserPropertyKeys() {
+              order.push("ensureUserProperties");
+              return {
+                trainingId: "training-1",
+                requiredKeys: ["certalisExamAttemptId", "certalisCandidateId"],
+                availableKeys: ["certalisExamAttemptId", "certalisCandidateId"],
+                definitions: [
+                  { id: "certalisExamAttemptId", name: "certalisExamAttemptId" },
+                  { id: "certalisCandidateId", name: "certalisCandidateId" },
+                ],
+              };
+            },
             async addParticipant() {
               order.push("addParticipant");
               throw new Error("forbidden");
@@ -872,7 +903,7 @@ describe("scheduleExam", () => {
       ),
     ).rejects.toBeInstanceOf(CloudShareProvisioningError);
 
-    expect(order).toEqual(["createTraining", "addParticipant"]);
+    expect(order).toEqual(["createTraining", "ensureUserProperties", "addParticipant"]);
     expect(sponsoredLink).not.toHaveBeenCalled();
     await expect(attempts.findById("attempt-1")).resolves.toBeNull();
     await expect(launches.findByExamAttemptId("attempt-1")).resolves.toBeNull();
@@ -934,6 +965,7 @@ describe("scheduleExam", () => {
       [
         "exam_attempt.schedule",
         "cloudshare.create_training",
+        "cloudshare.ensure_user_properties",
         "cloudshare.add_participant",
         "cloudshare.create_sponsored_link",
         "exam_attempt.provisioned",
@@ -969,6 +1001,15 @@ describe("scheduleExam", () => {
     expect(training?.response).toMatchObject({
       status: 200,
       body: { id: "training-1" },
+    });
+
+    const ensureUserProperties = thread.find((e) => e.operation === "cloudshare.ensure_user_properties");
+    expect(ensureUserProperties?.details).toMatchObject({
+      integrationSurface: "cloudshare.v4.training.user_properties",
+    });
+    expect(ensureUserProperties?.request).toMatchObject({
+      method: "GET",
+      path: "/trainings/training-1/user-properties",
     });
 
     const addParticipant = thread.find((e) => e.operation === "cloudshare.add_participant");

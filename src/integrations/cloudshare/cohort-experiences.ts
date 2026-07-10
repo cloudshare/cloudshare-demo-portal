@@ -36,6 +36,7 @@ export interface CreateOnDemandExperienceRequest {
   readonly name: string;
   readonly startsAt: Date;
   readonly endsAt?: Date | null;
+  readonly externalId?: string;
   readonly projectId: string;
   readonly blueprintId: string;
   readonly policyId: string;
@@ -127,6 +128,7 @@ export function createCloudShareOnDemandExperienceCreator(
         MainInstructor: { Email: input.instructorId },
         TimeZone: input.timeZoneId,
         Passphrase: input.passphrase,
+        ...(input.externalId ? { ExternalId: input.externalId } : {}),
         RegistrationType: "registeredStudentsOnly",
         UsersEarlyAccess: { GrantEarlyAccess: 2 },
       };

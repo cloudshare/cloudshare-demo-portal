@@ -60,13 +60,6 @@ function parseSuccessfulPublishV3(
   spec: { path?: string; schema: { parse(value: unknown): unknown } },
   teamRows: Array<{ id: string; name: string }> = [{ id: "TM-team-1", name: "Helios Team" }],
 ) {
-  if (spec.path === "/class/actions/customfields") {
-    return spec.schema.parse([
-      { id: "TF-attempt", name: "certalisExamAttemptId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
-      { id: "TF-cohort", name: "certalisCohortSessionId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
-      { id: "TF-candidate", name: "certalisCandidateId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
-    ]);
-  }
   if (spec.path === "/projects/project-1/blueprints/bp-1") {
     return spec.schema.parse({
       id: "bp-1",
@@ -263,22 +256,33 @@ describe("admin Cohort Exam Session runtime", () => {
       parseSuccessfulPublishV3(spec),
     );
     const requestV4Detailed = vi.fn(
-      async (spec: { method: string; path: string; body: Record<string, unknown>; schema: { parse(value: unknown): unknown } }) => ({
-        data: spec.schema.parse({ id: "EXcohort-1" }),
-        host: "api.accelerate.cloudshare.com",
-        integrationSurface: "cloudshare.v4.training",
-        request: {
-          method: spec.method,
-          path: "/v4" + spec.path,
-          headers: { authorization: "Bearer secret-api-key" },
-          body: spec.body,
-        },
-        response: {
-          status: 201,
-          headers: { "content-type": "application/json" },
-          body: { id: "EXcohort-1", apiKeyEcho: "secret-api-key" },
-        },
-      }),
+      async (spec: { method: string; path: string; body?: Record<string, unknown>; schema: { parse(value: unknown): unknown } }) => {
+        const body =
+          spec.method === "POST" && spec.path === "/trainings"
+            ? { id: "EXcohort-1", apiKeyEcho: "secret-api-key" }
+            : spec.method === "POST" && spec.path === "/trainings/EXcohort-1/user-properties"
+              ? { id: spec.body?.Name, name: spec.body?.Name }
+              : [];
+        return {
+          data: spec.schema.parse(body),
+          host: "api.accelerate.cloudshare.com",
+          integrationSurface:
+            spec.path.includes("user-properties")
+              ? "cloudshare.v4.training.user_properties"
+              : "cloudshare.v4.training",
+          request: {
+            method: spec.method,
+            path: "/v4" + spec.path,
+            headers: { authorization: "Bearer secret-api-key" },
+            ...(spec.body ? { body: spec.body } : {}),
+          },
+          response: {
+            status: spec.method === "POST" ? 201 : 200,
+            headers: { "content-type": "application/json" },
+            body,
+          },
+        };
+      },
     );
     const cloudshare: CloudShareClientFactory = {
       forConnection: () =>
@@ -375,26 +379,23 @@ describe("admin Cohort Exam Session runtime", () => {
           MainInstructor: { Email: "instructor-1" },
           TimeZone: "UTC",
           Passphrase: "certalis-cohort-session-1",
+          ExternalId: "cohort-session-1",
           RegistrationType: "registeredStudentsOnly",
           UsersEarlyAccess: { GrantEarlyAccess: 2 },
         }),
       }),
     );
-    expect(requestV3).toHaveBeenCalledWith(
-      expect.objectContaining({
-        method: "GET",
-        path: "/class/actions/customfields",
-        query: { projectId: "project-1" },
-      }),
+    expect(requestV3).not.toHaveBeenCalledWith(
+      expect.objectContaining({ path: "/class/actions/customfields" }),
     );
-    const customFieldCallOrders = requestV3.mock.calls.flatMap((call, index) =>
-      call[0].path === "/class/actions/customfields"
-        ? [requestV3.mock.invocationCallOrder[index]]
+    const createCallOrder = requestV4Detailed.mock.invocationCallOrder[0];
+    const userPropertyCallOrders = requestV4Detailed.mock.calls.flatMap((call, index) =>
+      call[0].path === "/trainings/EXcohort-1/user-properties"
+        ? [requestV4Detailed.mock.invocationCallOrder[index]]
         : [],
     );
-    expect(customFieldCallOrders).toHaveLength(2);
-    expect(customFieldCallOrders[0]).toBeLessThan(requestV4Detailed.mock.invocationCallOrder[0]);
-    expect(customFieldCallOrders[1]).toBeGreaterThan(requestV4Detailed.mock.invocationCallOrder[0]);
+    expect(userPropertyCallOrders).toHaveLength(3);
+    expect(userPropertyCallOrders.every((order) => order > createCallOrder)).toBe(true);
 
     const [entry] = await diagnosticsRepository.query({
       customerId: "customer-1",
@@ -778,22 +779,32 @@ describe("admin Cohort Exam Session runtime", () => {
       parseSuccessfulPublishV3(spec),
     );
     const requestV4Detailed = vi.fn(
-      async (spec: { method: string; path: string; body: Record<string, unknown>; schema: { parse(value: unknown): unknown } }) => ({
-        data: spec.schema.parse({ id: "EXcohort-1" }),
-        host: "api.accelerate.cloudshare.com",
-        integrationSurface: "cloudshare.v4.training",
-        request: {
-          method: spec.method,
-          path: "/v4" + spec.path,
-          headers: { authorization: "Bearer secret-api-key" },
-          body: spec.body,
-        },
-        response: {
-          status: 201,
-          headers: { "content-type": "application/json" },
-          body: { id: "EXcohort-1" },
-        },
-      }),
+      async (spec: { method: string; path: string; body?: Record<string, unknown>; schema: { parse(value: unknown): unknown } }) => {
+        const body =
+          spec.method === "POST" && spec.path === "/trainings"
+            ? { id: "EXcohort-1" }
+            : spec.method === "POST" && spec.path === "/trainings/EXcohort-1/user-properties"
+              ? { id: spec.body?.Name, name: spec.body?.Name }
+              : [];
+        return {
+          data: spec.schema.parse(body),
+          host: "api.accelerate.cloudshare.com",
+          integrationSurface: spec.path.includes("user-properties")
+            ? "cloudshare.v4.training.user_properties"
+            : "cloudshare.v4.training",
+          request: {
+            method: spec.method,
+            path: "/v4" + spec.path,
+            headers: { authorization: "Bearer secret-api-key" },
+            ...(spec.body ? { body: spec.body } : {}),
+          },
+          response: {
+            status: spec.method === "POST" ? 201 : 200,
+            headers: { "content-type": "application/json" },
+            body,
+          },
+        };
+      },
     );
     const cloudshare: CloudShareClientFactory = {
       forConnection: () =>
@@ -909,14 +920,27 @@ describe("admin Cohort Exam Session runtime", () => {
       response: Record<string, unknown>;
     }>();
     const requestV4Detailed = vi.fn(
-      async (spec: { method: string; path: string; body: Record<string, unknown>; schema: { parse(value: unknown): unknown } }) => {
-        await trainingPost.promise;
+      async (spec: { method: string; path: string; body?: Record<string, unknown>; schema: { parse(value: unknown): unknown } }) => {
+        if (spec.method === "POST" && spec.path === "/trainings") {
+          await trainingPost.promise;
+          return {
+            data: spec.schema.parse({ id: "EXcohort-1" }),
+            host: "api.accelerate.cloudshare.com",
+            integrationSurface: "cloudshare.v4.training",
+            request: { method: spec.method, path: spec.path, body: spec.body },
+            response: { status: 201, body: { id: "EXcohort-1" } },
+          };
+        }
+        const body =
+          spec.method === "POST" && spec.path === "/trainings/EXcohort-1/user-properties"
+            ? { id: spec.body?.Name, name: spec.body?.Name }
+            : [];
         return {
-          data: spec.schema.parse({ id: "EXcohort-1" }),
+          data: spec.schema.parse(body),
           host: "api.accelerate.cloudshare.com",
-          integrationSurface: "cloudshare.v4.training",
-          request: { method: spec.method, path: spec.path, body: spec.body },
-          response: { status: 201, body: { id: "EXcohort-1" } },
+          integrationSurface: "cloudshare.v4.training.user_properties",
+          request: { method: spec.method, path: spec.path, ...(spec.body ? { body: spec.body } : {}) },
+          response: { status: spec.method === "POST" ? 201 : 200, body },
         };
       },
     );
@@ -963,7 +987,11 @@ describe("admin Cohort Exam Session runtime", () => {
       examId: "exam-1",
       sessionId: "cohort-session-1",
     });
-    await vi.waitFor(() => expect(requestV4Detailed).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() =>
+      expect(
+        requestV4Detailed.mock.calls.filter((call) => call[0].method === "POST" && call[0].path === "/trainings"),
+      ).toHaveLength(1),
+    );
     trainingPost.resolve({
       data: { id: "unused" },
       host: "api.accelerate.cloudshare.com",
@@ -974,7 +1002,8 @@ describe("admin Cohort Exam Session runtime", () => {
     const responses = await Promise.all([first, second]);
 
     expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
-    expect(requestV4Detailed).toHaveBeenCalledTimes(1);
+    expect(requestV4Detailed.mock.calls.filter((call) => call[0].method === "POST" && call[0].path === "/trainings")).toHaveLength(1);
+    expect(requestV4Detailed).toHaveBeenCalledTimes(4);
     await expect(sessions.findById("cohort-session-1")).resolves.toMatchObject({
       status: "published",
       cloudShareTrainingId: "EXcohort-1",

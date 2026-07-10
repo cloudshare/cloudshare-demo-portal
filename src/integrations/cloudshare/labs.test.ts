@@ -224,7 +224,6 @@ describe("cloudShareLabProvisioner — request shape", () => {
       firstName: "Candidate",
       lastName: "Demo",
       certalisExamAttemptId: "attempt-1",
-      certalisCohortSessionId: "cohort-session-1",
       certalisCandidateId: "candidate-1",
     });
 
@@ -235,7 +234,6 @@ describe("cloudShareLabProvisioner — request shape", () => {
         lastName: "Demo",
         customProperties: [
           { Name: "certalisExamAttemptId", Value: "attempt-1" },
-          { Name: "certalisCohortSessionId", Value: "cohort-session-1" },
           { Name: "certalisCandidateId", Value: "candidate-1" },
         ],
       },
@@ -300,76 +298,75 @@ describe("cloudShareLabProvisioner — request shape", () => {
     });
   });
 
-  it("confirms required training user-property keys through the documented v3 customfields endpoint", async () => {
-    const requestV3Detailed = vi.fn(async (spec: { method: string; path: string; query?: Record<string, string>; schema: { parse(value: unknown): unknown } }) => {
-      const raw = [
-        {
-          id: "TF-certalisExamAttemptId",
-          name: "certalisExamAttemptId",
-          type: 0,
-          isRequired: false,
-          regex: "",
-          defaultValue: null,
-          value: null,
-        },
-        {
-          id: "TF-certalisCohortSessionId",
-          name: "certalisCohortSessionId",
-          type: 0,
-          isRequired: false,
-          regex: "",
-          defaultValue: null,
-          value: null,
-        },
-        {
-          id: "TF-certalisCandidateId",
-          name: "certalisCandidateId",
-          type: 0,
-          isRequired: false,
-          regex: "",
-          defaultValue: null,
-          value: null,
-        },
-      ];
+  it("adds missing training user-property keys through the v4 Experience user-property endpoint", async () => {
+    const requestV4Detailed = vi.fn(async (spec: { method: string; path: string; body?: unknown; schema: { parse(value: unknown): unknown } }) => {
+      if (spec.method === "GET") {
+        const raw = [
+          {
+            id: "TF-certalisExamAttemptId",
+            name: "certalisExamAttemptId",
+            type: 0,
+            isRequired: false,
+            regex: "",
+            defaultValue: null,
+            value: null,
+          },
+        ];
+        return {
+          data: spec.schema.parse(raw),
+          host: "api.accelerate.cloudshare.com",
+          integrationSurface: "cloudshare.v4.training.user_properties",
+          request: {
+            method: spec.method,
+            path: spec.path,
+          },
+          response: { status: 200, body: raw },
+        };
+      }
+      const raw = {
+        id: "TF-certalisCandidateId",
+        name: "certalisCandidateId",
+        type: 0,
+        isRequired: false,
+        regex: "",
+        defaultValue: null,
+        value: null,
+      };
       return {
         data: spec.schema.parse(raw),
-        host: "use.cloudshare.com",
-        integrationSurface: "cloudshare.v3.class.customfields",
+        host: "api.accelerate.cloudshare.com",
+        integrationSurface: "cloudshare.v4.training.user_properties",
         request: {
           method: spec.method,
           path: spec.path,
-          ...(spec.query ? { query: spec.query } : {}),
+          body: spec.body,
         },
-        response: { status: 200, body: raw },
+        response: { status: 201, body: raw },
       };
     });
     const client = {
-      requestV4Detailed: vi.fn(),
+      requestV4Detailed,
       requestV4: vi.fn(),
       requestV3: vi.fn(),
-      requestV3Detailed,
     } as unknown as CloudShareClient;
     const labs = createCloudShareLabProvisioner(client);
 
     await expect(
       labs.ensureTrainingUserPropertyKeys!({
-        projectId: "project-1",
+        trainingId: "EXtraining-1",
         requiredKeys: [
           "certalisExamAttemptId",
-          "certalisCohortSessionId",
           "certalisCandidateId",
         ],
       }),
     ).resolves.toEqual({
-      projectId: "project-1",
+      trainingId: "EXtraining-1",
       requiredKeys: [
         "certalisExamAttemptId",
-        "certalisCohortSessionId",
         "certalisCandidateId",
       ],
       availableKeys: [
         "certalisExamAttemptId",
-        "certalisCohortSessionId",
         "certalisCandidateId",
       ],
       definitions: [
@@ -383,15 +380,6 @@ describe("cloudShareLabProvisioner — request shape", () => {
           value: null,
         },
         {
-          id: "TF-certalisCohortSessionId",
-          name: "certalisCohortSessionId",
-          type: 0,
-          isRequired: false,
-          regex: "",
-          defaultValue: null,
-          value: null,
-        },
-        {
           id: "TF-certalisCandidateId",
           name: "certalisCandidateId",
           type: 0,
@@ -401,11 +389,10 @@ describe("cloudShareLabProvisioner — request shape", () => {
           value: null,
         },
       ],
-      integrationSurface: "cloudshare.v3.class.customfields",
+      integrationSurface: "cloudshare.v4.training.user_properties",
       request: {
         method: "GET",
-        path: "/class/actions/customfields",
-        query: { projectId: "project-1" },
+        path: "/trainings/EXtraining-1/user-properties",
       },
       response: {
         status: 200,
@@ -419,27 +406,17 @@ describe("cloudShareLabProvisioner — request shape", () => {
             defaultValue: null,
             value: null,
           },
-          {
-            id: "TF-certalisCohortSessionId",
-            name: "certalisCohortSessionId",
-            type: 0,
-            isRequired: false,
-            regex: "",
-            defaultValue: null,
-            value: null,
-          },
-          {
-            id: "TF-certalisCandidateId",
-            name: "certalisCandidateId",
-            type: 0,
-            isRequired: false,
-            regex: "",
-            defaultValue: null,
-            value: null,
-          },
         ],
       },
     });
+    expect(requestV4Detailed).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        method: "POST",
+        path: "/trainings/EXtraining-1/user-properties",
+        body: { Name: "certalisCandidateId" },
+      }),
+    );
   });
 
   it("treats timezone-less CloudShare training start readback as UTC", async () => {
