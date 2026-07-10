@@ -9,7 +9,9 @@ It exists because Slice 1 exposed that "tests exist" is not enough for integrati
   framework-agnostic `src/api/*` handler before or alongside the UI. UI components must call the
   same API a script or E2E test can call.
 - Build through the real integration adapter seam. Mock CloudShare only at `integrations/cloudshare`, never inside `domain`.
-- Verify protocol details against the CloudShare docs, the known-good Postman implementation where available, and the live tenant before relying on them.
+- Verify protocol details against the local CloudShare API exports documented in
+  `docs/api/cloudshare-api-reference.md`, the CloudShare docs, the known-good Postman implementation
+  where available, and the live tenant before relying on them.
 - Treat local live credentials in `.env.e2e.local` as the development evidence path. Do not commit real credentials.
   In Codex worktrees where `.env.e2e.local` is absent, the user's seed credential file is
   `D:\Code_projects\cloudshare-demo-portal\config\portal-seed.local.json`. Generate a temporary,
@@ -29,6 +31,8 @@ It exists because Slice 1 exposed that "tests exist" is not enough for integrati
 2. Define the portal API endpoint(s) first: method, path, auth/session requirement, request body,
    response body, status codes, redaction rules, and idempotency / retry behavior.
 3. Identify every CloudShare endpoint, auth scheme, response shape, and failure mode the slice depends on.
+   For v4 Accelerate endpoints, verify paths in `docs/api/cloudshare-api-reference.md` and the
+   corresponding export under `docs/api/assets/`; do not infer paths from adjacent endpoint names.
 4. For any uncertain CloudShare behavior, write or run the smallest live probe at the integration seam before building UI or domain behavior around it.
 5. Decide the support diagnostic payload before implementation, so failures are supportable from the first live run. For CloudShare API calls, this payload must include redacted request and response evidence, not only a derived status or summary.
 

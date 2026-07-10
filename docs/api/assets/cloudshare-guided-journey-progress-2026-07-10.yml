@@ -1,0 +1,249 @@
+openapi: 3.0.1
+info:
+  version: 1.0.0
+  title: CloudShare Guided Journey APIs
+  description: Experience Guided Journey Progress APIs
+  contact:
+    name: CloudShare Support
+    email: support@cloudshare.com
+    url: 'https://www.cloudshare.com'
+servers:
+  - url: 'https://api.accelerate.cloudshare.com/v4'
+paths:
+  '/guided-journey/progress/{experienceId}':
+    get:
+      tags:
+        - Progress
+      summary: Get Aggeregated Progress Data
+      description: Get aggregated guided journey progress data for experience
+      operationId: GetAggeregatedExperienceGuidedJourneyProgress
+      parameters:
+        - $ref: '#/components/parameters/experienceIdParam'
+        - name: experienceId
+          in: path
+          description: Sales or training experience ID
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/getProgressByExperienceIdResponse'
+        '400':
+          description: Bad request (Invalid input)
+        '404':
+          description: Data not found
+        '500':
+          description: Internal Server Error
+      security:
+        - MainAPIAuth: []
+      servers:
+        - url: 'https://api.accelerate.cloudshare.com/v4'
+  '/guided-journey/progress/{experienceId}/{participantId}':
+    get:
+      tags:
+        - Progress
+      summary: Get Participant`s Progress Data
+      description: Get guided journey progress data for experience participant
+      operationId: GetParticipantsGuidedJourneyProgress
+      parameters:
+        - $ref: '#/components/parameters/experienceIdParam'
+        - $ref: '#/components/parameters/participantIdParam'
+        - name: experienceId
+          in: path
+          description: Sales or training experience ID
+          required: true
+          schema:
+            type: string
+        - name: participantId
+          in: path
+          description: Experience participant ID
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: successful operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/getProgressByExperienceIdAndParticipantIdResponse'
+        '400':
+          description: Bad request (Invalid input)
+        '404':
+          description: Data not found
+        '500':
+          description: Internal Server Error
+      security:
+        - MainAPIAuth: []
+      servers:
+        - url: 'https://api.accelerate.cloudshare.com/v4'
+tags:
+  - name: Progress
+    description: Guided Journey progress-related data
+components:
+  parameters:
+    experienceIdParam:
+      name: experienceId
+      in: path
+      description: Experience ID
+      required: true
+      schema:
+        $ref: '#/components/schemas/experienceId'
+    participantIdParam:
+      name: participantId
+      in: path
+      description: Experience Participant ID
+      required: true
+      schema:
+        $ref: '#/components/schemas/participantId'
+  securitySchemes:
+    MainAPIAuth:
+      type: oauth2
+      flows:
+        clientCredentials:
+          scopes: {}
+          tokenUrl: 'https://api.accelerate.cloudshare.com/v4/oauth/token'
+  schemas:
+    getProgressByExperienceIdResponse:
+      type: object
+      properties:
+        avgExploredRate:
+          type: number
+          description: Average explored rate of all participants. Participant explored rate is number of sections with 'Explored' status divided by total number of sections
+          example: 0.8
+        avgInProgressRate:
+          type: number
+          description: Average in progress rate of all participants. Participant in progress rate is number of sections with 'In Progress' status divided by total number of sections
+          example: 0.15
+        avgNotStartedRate:
+          type: number
+          description: Average not started rate of all participants. Participant not started rate is number of sections with 'Not Started' status divided by total number of sections
+          example: 0.05
+        avgPassedRate:
+          type: number
+          description: Average 'Visual AI Check' passed rate of all participants. Participant passed rate is number of checks with 'Passed' status divided by total number of checks
+          example: 0.5
+        avgFailedRate:
+          type: number
+          description: Average 'Visual AI Check' failed rate of all participants. Participant failed rate is number of checks with 'Failed' status divided by total number of checks
+          example: 0.25
+        avgNotInitiatedRate:
+          type: number
+          description: Average 'Visual AI Check' not initiated rate of all participants. Participant not initiated rate is number of checks with 'Not Initiated' status divided by total number of checks
+          example: 0.25
+        aggSectionStatuses:
+          type: array
+          maxItems: 256
+          items:
+            type: object
+            properties:
+              number:
+                type: number
+                description: section number in the guided journey sequence
+                example: 1
+              name:
+                type: string
+                description: Section title
+                example: Getting Started
+              exploredRate:
+                type: number
+                description: Number of participant that have a 'Explored' status in this section divided by total number of participants
+                example: 0.7
+              inProgressRate:
+                type: number
+                description: Number of participant that have a 'In Progress' status in this section divided by total number of participants
+                example: 0.2
+              notStartedRate:
+                type: number
+                description: Number of participant that have a 'Not Started' status in this section divided by total number of participants
+                example: 0.1
+              passedRate:
+                type: number
+                description: Number of participant that have a 'Passed' status of the 'Visual AI Check' in this section divided by total number of participants
+                example: 0.5
+              failedRate:
+                type: number
+                description: Number of participant that have a 'Failed' status of the 'Visual AI Check' in this section divided by total number of participants
+                example: 0.25
+              notInitiatedRate:
+                type: number
+                description: Number of participant that have a 'Not Initiated' status of the 'Visual AI Check' in this section divided by total number of participants
+                example: 0.25
+              avgTimeSpent:
+                type: number
+                description: Average time spent on section by participant in seconds
+                example: 120
+              estimatedTimeMinutes:
+                type: number
+                description: The etimated time set for this 'Visual AI Check' in seconds
+                example: 180
+    getProgressByExperienceIdAndParticipantIdResponse:
+      type: object
+      properties:
+        exploredRate:
+          type: number
+          description: number of sections with status 'Explored' divided by total number of sections
+          example: 0.85
+        inProgressRate:
+          type: number
+          description: number of sections with status 'In Progress' divided by total number of sections
+          example: 0.1
+        notStartedRate:
+          type: number
+          description: number of sections with status 'Not Started' divided by total number of sections
+          example: 0.05
+        PassedRate:
+          type: number
+          description: Number of 'Visual AI Checks' with status 'Passed' divided by total number of checks
+          example: 0.5
+        FailedRate:
+          type: number
+          description: Number of 'Visual AI Checks' with status 'Failed' divided by total number of checks
+          example: 0.25
+        NotInitiatedRate:
+          type: number
+          description: Number of 'Visual AI Checks' with status 'Not Initiated' divided by total number of checks
+          example: 0.25
+        sectionStatuses:
+          type: array
+          maxItems: 256
+          items:
+            type: object
+            properties:
+              number:
+                type: number
+                description: section number in the guided journey sequence
+                example: 1
+              name:
+                type: string
+                description: Section title
+                example: Getting Started
+              status:
+                $ref: '#/components/schemas/guidedJournetSectionStatusEnum'
+              isInFocus:
+                type: boolean
+                description: Is user currently viewing this section
+                example: true
+              timeSpent:
+                type: number
+                description: Time spent on section by participant in seconds
+                example: 120
+    guidedJournetSectionStatusEnum:
+      type: string
+      enum:
+        - Explored
+        - In Progress
+        - Not Started
+      example: In Progress
+    experienceId:
+      type: string
+      example: EXX7eOZS3Hhn4WkCSj3EeLqg2
+    participantId:
+      type: string
+      example: PTcblnYRK1nOeie3b5rK7qXw2
+security:
+  - MainAPIAuth: []

@@ -915,6 +915,10 @@ warning during review. The observed v3 custom-field gap still matters for Classi
 project custom-field definitions, but no public root-user create/update/delete API has been
 identified for those Classic project fields.
 
+The local exported v4 OpenAPI reference is now tracked in `docs/api/cloudshare-api-reference.md`
+and `docs/api/assets/cloudshare-public-api-v4-2026-07-10.json`; use it as the first source for
+Accelerate endpoint paths before coding.
+
 Accelerate Experience metadata and user properties are separate concepts:
 
 - Experience-level external correlation belongs on v4 training/Experience metadata such as
