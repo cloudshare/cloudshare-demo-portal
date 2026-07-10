@@ -107,6 +107,36 @@ describe("Cohort Exam Session monitoring interactions", () => {
     expect(screen.getByText("CloudShare environment is in a non-terminal problem state.")).toBeTruthy();
   });
 
+  it("presents a rate-limited participant roster refresh without treating portal attempts as reconciliation problems", () => {
+    render(
+      <CohortSessionWorkspacePanel
+        mode="monitoring"
+        examTitle="Helios Foundations"
+        session={session}
+        loading={false}
+        onBack={vi.fn()}
+        onPublish={vi.fn()}
+        detail={{
+          summary: { activeCount: 1, inProgressCount: 1, completedCount: 0, problemCount: 0, needsAttentionCount: 0, portalAttemptCount: 1, cloudShareParticipantCount: 0, derivedFrom: "portal_and_cloudshare" },
+          portalAttempts: [{ id: "attempt-rate-limited", candidateId: "candidate-rate-limited", candidateName: "Casey Rivera", candidateEmail: "casey@helioscx.demo", status: "in_progress", scheduledFor: null, createdAt: "2026-09-01T09:00:00.000Z", trainingId: "experience-1", experienceId: "experience-1", environmentExternalId: null, environmentId: null, participantId: null, reconciliation: "unknown", problemReasons: [], diagnosticFilters: { examAttemptId: "attempt-rate-limited" } }],
+          cloudShareParticipants: { status: "rate_limited", trainingId: "experience-1", readError: "CloudShare rate limited the participant roster refresh for this Cohort Exam Session.", correlationId: "corr-rate-limited-roster", retryAfterSeconds: 45, participants: [] },
+          guidedJourneyAggregate: { status: "disabled", experienceId: "experience-1", readError: null, correlationId: null, progress: null },
+          diagnostics: { session: { examId: "exam-1", externalId: "experience-1" }, cloudShareRead: { correlationId: "corr-rate-limited-roster", operation: "cohort_exam_session.monitor.read_participants" } },
+        }}
+      />,
+    );
+
+    expect(screen.getAllByText("CloudShare participant roster refresh is rate limited")).toHaveLength(1);
+    expect(screen.getByText(/Retry after 45 seconds/)).toBeTruthy();
+    expect(screen.getByText("Current CloudShare state is unavailable because participant monitoring is temporarily throttled; no reconciliation conclusion is available.")).toBeTruthy();
+    expect(screen.getAllByText("corr-rate-limited-roster")).toHaveLength(1);
+    expect(screen.getByRole("link", { name: "Participant check diagnostics" }).getAttribute("href")).toBe(
+      "/admin?tab=support&view=diagnostics&operation=cohort_exam_session.monitor.read_participants&correlationId=corr-rate-limited-roster",
+    );
+    expect(screen.queryByText("Portal has an attempt but no matching CloudShare participant.")).toBeNull();
+    expect(screen.getByRole("button", { name: /Needs attention.*0/ })).toBeTruthy();
+  });
+
   it("filters state observations in both tables and clears the summary filter", async () => {
     const user = userEvent.setup();
     render(

@@ -731,6 +731,7 @@ describe("createCloudShareClient — error mapping", () => {
       headers: { "retry-after": "30" },
       body: JSON.stringify({ error: "Too many requests" }),
     });
+    let nowMs = 1_700_000_000_000;
     const client = createCloudShareClient({
       http,
       endpoints,
@@ -738,7 +739,7 @@ describe("createCloudShareClient — error mapping", () => {
       customerId: "customer-helios",
       cooldownStore: createCooldownStore(),
       v3: { apiId: "api-id", apiKey: "api-key" },
-      now: () => 1_700_000_000_000,
+      now: () => nowMs,
       newToken: () => "tokfixed01",
     });
 
@@ -751,6 +752,8 @@ describe("createCloudShareClient — error mapping", () => {
       }),
     ).rejects.toBeInstanceOf(CloudShareRateLimitError);
 
+    nowMs += 15_000;
+
     await expect(
       client.requestV4({ method: "GET", path: "/projects", schema: projectsSchema }),
     ).rejects.toMatchObject({
@@ -759,6 +762,7 @@ describe("createCloudShareClient — error mapping", () => {
       classification: "rate_limit",
       context: expect.objectContaining({
         cooldownActive: true,
+        retryAfterSeconds: 15,
         responseHeaders: { "retry-after": "30" },
         responseBody: { error: "Too many requests" },
       }),

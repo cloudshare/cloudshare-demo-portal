@@ -451,9 +451,10 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
         requestQuery: sanitizeQuery(extractQuery(request.url)),
         requestHeaders: sanitizeHeaders(request.headers),
         cooldownActive: true,
-        ...(cooldown.retryAfterSeconds !== undefined
-          ? { retryAfterSeconds: cooldown.retryAfterSeconds }
-          : {}),
+        retryAfterSeconds: Math.max(
+          0,
+          Math.ceil((cooldown.untilEpochMs - getNowMs()) / 1_000),
+        ),
         ...(cooldown.rateLimitHeaders ? { rateLimitHeaders: cooldown.rateLimitHeaders } : {}),
         ...(cooldown.responseHeaders
           ? { responseHeaders: cooldown.responseHeaders }

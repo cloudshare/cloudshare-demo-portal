@@ -1142,9 +1142,10 @@ describe("AdminConsole", () => {
       }),
     );
 
-    expect(html).toContain("CloudShare participant monitoring is temporarily throttled");
+    expect(html).toContain("CloudShare participant roster refresh is rate limited");
     expect(html).toContain("CloudShare is temporarily throttling participant monitoring requests. Check the correlated diagnostics before retrying.");
     expect(html).toContain("Current CloudShare state is unavailable because participant monitoring is temporarily throttled; no reconciliation conclusion is available.");
+    expect((html.match(/>corr-1<\/a>/g) ?? [])).toHaveLength(1);
     expect(html).not.toContain("Normal: portal and CloudShare runtime state agree");
     expect(html).not.toContain("Needs attention only counts actionable runtime contradictions, missing correlations, or an unavailable participant read.");
     expect(html).not.toContain("The unavailable CloudShare participant read below needs attention because current environment state cannot be established.");
