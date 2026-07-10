@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
+  CandidateExamCard,
   CandidateCohortSessionOptions,
   CandidateAttemptStatusFilterButtons,
-  CandidatePublishedExamScheduleShell,
-  getAvailableSessionsSummary,
+  getCandidateExamCardImmediateActionReason,
+  getTakeExamAvailabilitySummary,
   PublishedExamCardHeader,
 } from "./candidate-home";
 import {
@@ -106,21 +107,162 @@ describe("candidate home layout", () => {
     expect(html).toContain(">3<");
   });
 
-  it("keeps published Exam scheduling collapsed by default without mounting scheduling fields", () => {
+  it("renders each Exam as a candidate-facing action card with details on the back", () => {
     const html = renderToStaticMarkup(
-      createElement(
-        CandidatePublishedExamScheduleShell,
-        { examCount: 2 },
-        createElement("p", null, "Schedule date and time"),
-      ),
+      createElement(CandidateExamCard, {
+        exam: {
+          id: "exam-1",
+          title: "Linux Environment with xRDP v2",
+          description: "Validate remote environment workflows.",
+          timeLimitMinutes: 90,
+          storageLeaseMinutes: 180,
+          openPeriodMinutes: 120,
+          scoreRetrievalEnabled: true,
+          individualSchedulingEnabled: true,
+          availableCohortSessions: [],
+        },
+        attemptedSessionIds: new Set<string>(),
+        scheduleDraft: "",
+        scheduleFeedback: null,
+        submittingExamId: null,
+        submittingSessionId: null,
+        onScheduleDraftChange: () => undefined,
+        onSchedule: () => undefined,
+        onStartCohortSession: () => undefined,
+      }),
     );
 
-    expect(html).toContain("<details");
-    expect(html).not.toContain("<details open=\"\"");
-    expect(html).toContain("Browse and schedule");
-    expect(html).toContain("2 published Exams");
-    expect(html).toContain("Browse scheduling options");
-    expect(html).not.toContain("Schedule date and time");
+    expect((html.match(/<summary/g) ?? []).length).toBe(0);
+    expect(html).toContain("How you can take it");
+    expect(html).toContain("Schedule a start time");
+    expect(html).toContain("Exam details");
+    expect(html).toContain("Back to exam");
+    expect(html).toContain("Guided Journey scoring");
+    expect(html).toContain("Schedule date and time");
+    expect(html).toContain("Schedule exam");
+    expect(html).not.toContain("Browse");
+    expect(html).not.toContain("Start a shared cohort session");
+  });
+
+  it("keeps owned attempt actions out of the published Exam catalogue card", () => {
+    const html = renderToStaticMarkup(
+      createElement(CandidateExamCard, {
+        exam: {
+          id: "exam-1",
+          title: "Linux Environment with xRDP v2",
+          description: "Validate remote environment workflows.",
+          timeLimitMinutes: 90,
+          storageLeaseMinutes: 180,
+          openPeriodMinutes: 120,
+          scoreRetrievalEnabled: true,
+          individualSchedulingEnabled: false,
+          availableCohortSessions: [],
+        },
+        attemptedSessionIds: new Set<string>(),
+        scheduleDraft: "",
+        scheduleFeedback: null,
+        submittingExamId: null,
+        submittingSessionId: null,
+        onScheduleDraftChange: () => undefined,
+        onSchedule: () => undefined,
+        onStartCohortSession: () => undefined,
+      }),
+    );
+
+    expect(html).toContain("Not available right now");
+    expect(html).not.toContain("Score available");
+    expect(html).not.toContain("View score");
+    expect(html).not.toContain("Current attempt");
+  });
+
+  it("keeps long Exam descriptions on the details face instead of the card front", () => {
+    const description =
+      "This long description belongs on the back of the card so the catalogue keeps a consistent front-face layout.";
+    const html = renderToStaticMarkup(
+      createElement(CandidateExamCard, {
+        exam: {
+          id: "exam-1",
+          title: "Linux Environment with xRDP v2",
+          description,
+          timeLimitMinutes: 90,
+          storageLeaseMinutes: 180,
+          openPeriodMinutes: 120,
+          scoreRetrievalEnabled: true,
+          individualSchedulingEnabled: true,
+          availableCohortSessions: [],
+        },
+        attemptedSessionIds: new Set<string>(),
+        scheduleDraft: "",
+        scheduleFeedback: null,
+        submittingExamId: null,
+        submittingSessionId: null,
+        onScheduleDraftChange: () => undefined,
+        onSchedule: () => undefined,
+        onStartCohortSession: () => undefined,
+      }),
+    );
+
+    expect(html.indexOf(description)).toBeGreaterThan(html.indexOf("EXAM DETAILS"));
+  });
+
+  it("identifies immediately available catalogue starts without using owned attempt state", () => {
+    const exam = {
+      id: "exam-2",
+      title: "Ready exam",
+      description: "",
+      timeLimitMinutes: 90,
+      storageLeaseMinutes: null,
+      openPeriodMinutes: 120,
+      scoreRetrievalEnabled: false,
+      individualSchedulingEnabled: true,
+      availableCohortSessions: [
+        {
+          id: "session-1",
+          name: "Morning Cohort",
+          admissionStartsAt: "2026-07-09T10:00:00.000Z",
+          admissionEndsAt: "2026-07-09T12:00:00.000Z",
+        },
+      ],
+    };
+    expect(
+      getCandidateExamCardImmediateActionReason({
+        exam,
+      }),
+    ).toBe("available-now:exam-2:session-1");
+    expect(
+      getCandidateExamCardImmediateActionReason({
+        exam: {
+          ...exam,
+          availableCohortSessions: [],
+        },
+      }),
+    ).toBeNull();
+  });
+
+  it("renders the action side first when only scheduling is available", () => {
+    expect(
+      renderToStaticMarkup(createElement(CandidateExamCard, {
+        exam: {
+          id: "exam-1",
+          title: "Individual exam",
+          description: "",
+          timeLimitMinutes: 90,
+          storageLeaseMinutes: null,
+          openPeriodMinutes: 120,
+          scoreRetrievalEnabled: false,
+          individualSchedulingEnabled: true,
+          availableCohortSessions: [],
+        },
+        scheduleDraft: "",
+        scheduleFeedback: null,
+        submittingExamId: null,
+        submittingSessionId: null,
+        attemptedSessionIds: new Set<string>(),
+        onScheduleDraftChange: () => undefined,
+        onSchedule: () => undefined,
+        onStartCohortSession: () => undefined,
+      })),
+    ).toContain("Schedule a start time");
   });
 
   it("keeps published Exam scheduling actions aligned to the right edge", () => {
@@ -144,26 +286,43 @@ describe("candidate home layout", () => {
 
   it("summarizes available sessions without exposing delivery-mode implementation details", () => {
     expect(
-      getAvailableSessionsSummary({
+      getTakeExamAvailabilitySummary({
         availableCohortSessionCount: 2,
         individualSchedulingEnabled: true,
+        primaryActionLabel: null,
+        primaryActionDisabled: false,
       }),
-    ).toBe("2 ready to start");
+    ).toBe("2 start times available now");
     expect(
-      getAvailableSessionsSummary({
+      getTakeExamAvailabilitySummary({
         availableCohortSessionCount: 0,
         individualSchedulingEnabled: true,
+        primaryActionLabel: null,
+        primaryActionDisabled: false,
       }),
-    ).toBe("Individual scheduling available");
+    ).toBe("Schedule a start time");
     expect(
-      getAvailableSessionsSummary({
+      getTakeExamAvailabilitySummary({
         availableCohortSessionCount: 0,
         individualSchedulingEnabled: false,
+        primaryActionLabel: null,
+        primaryActionDisabled: false,
       }),
-    ).toBe("No sessions available right now");
+    ).toBe("Not available right now");
   });
 
-  it("renders available Cohort Exam Sessions as options on the parent Exam card", () => {
+  it("summarizes completed scored attempts as an available current-attempt action", () => {
+    expect(
+      getTakeExamAvailabilitySummary({
+        availableCohortSessionCount: 0,
+        individualSchedulingEnabled: false,
+        primaryActionLabel: "View score",
+        primaryActionDisabled: false,
+      }),
+    ).toBe("Score available");
+  });
+
+  it("renders immediately available starts without exposing delivery-mode implementation details", () => {
     const html = renderToStaticMarkup(
       createElement(CandidateCohortSessionOptions, {
         sessions: [
@@ -187,11 +346,15 @@ describe("candidate home layout", () => {
       }),
     );
 
-    expect(html).toContain("Start a shared cohort session");
-    expect(html).toContain("Morning Cohort");
-    expect(html).toContain("Afternoon Cohort");
-    expect(html).toContain("Closes 2026-07-05 13:00");
+    expect(html).toContain("Available now");
+    expect(html).toContain("Ready option 1");
+    expect(html).toContain("Ready option 2");
+    expect(html).toContain("Available until 2026-07-05 13:00");
     expect((html.match(/Start exam/g) ?? []).length).toBe(2);
+    expect(html).not.toContain("Start a shared cohort session");
+    expect(html).not.toContain("Morning Cohort");
+    expect(html).not.toContain("Afternoon Cohort");
+    expect(html).not.toContain("Cohort");
     expect(html).not.toContain("Guided Journey aggregate progress");
     expect(html).not.toContain("This Cohort Exam Session / CloudShare Experience");
     expect(html).not.toContain("avgExploredRate");
