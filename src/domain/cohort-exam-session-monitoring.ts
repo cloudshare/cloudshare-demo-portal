@@ -153,9 +153,8 @@ function isCloudActive(participant: CohortExamSessionCloudParticipantSnapshot | 
   if (isCloudProblemParticipant(participant)) {
     return false;
   }
-  if (isCloudInProgress(participant)) {
-    return true;
-  }
+  if (participant.environmentStatus?.trim()) return isCloudInProgress(participant);
+  if (isCloudInProgress(participant)) return true;
   const status = participant.participationStatus?.trim().toLowerCase();
   return status === "pending" || status === "registered" || status === "assigned";
 }
@@ -178,14 +177,18 @@ function isCloudCompleted(participant: CohortExamSessionCloudParticipantSnapshot
   if (!participant) {
     return false;
   }
-  const participationStatus = participant.participationStatus?.trim().toLowerCase();
   const environmentStatus = participant.environmentStatus?.trim().toLowerCase();
-  return participationStatus === "completed" || Boolean(environmentStatus && isTerminalEnvironmentStatus(environmentStatus));
+  if (environmentStatus) return isTerminalEnvironmentStatus(environmentStatus);
+  return participant.participationStatus?.trim().toLowerCase() === "completed";
 }
 
 function isCloudProblemParticipant(participant: CohortExamSessionCloudParticipantSnapshot | undefined): boolean {
   if (!participant) {
     return false;
+  }
+  const environmentStatus = participant.environmentStatus?.trim().toLowerCase();
+  if (environmentStatus) {
+    return !isTerminalEnvironmentStatus(environmentStatus) && !isNormalActiveEnvironmentStatus(environmentStatus);
   }
   const participationStatus = participant.participationStatus?.trim().toLowerCase();
   if (
@@ -196,14 +199,7 @@ function isCloudProblemParticipant(participant: CohortExamSessionCloudParticipan
   ) {
     return true;
   }
-  const environmentStatus = participant.environmentStatus?.trim().toLowerCase();
-  if (!environmentStatus) {
-    return false;
-  }
-  if (isTerminalEnvironmentStatus(environmentStatus) || isNormalActiveEnvironmentStatus(environmentStatus)) {
-    return false;
-  }
-  return true;
+  return false;
 }
 
 function isPortalCloudRuntimeMismatch(
