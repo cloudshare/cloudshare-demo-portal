@@ -85,6 +85,18 @@ function makeCloudShareFactory(
     Partial<CloudShareExamAuthoringSource> = {},
 ): CloudShareClientFactory {
   const source = makeAuthoringSource();
+  const requestV3 =
+    (overrides.requestV3 as ReturnType<CloudShareClientFactory["forConnection"]>["requestV3"] | undefined) ??
+    (vi.fn(async (spec: { path?: string; query?: Record<string, string>; schema: { parse(value: unknown): unknown } }) => {
+      if (spec.path === "/class/actions/customfields") {
+        return spec.schema.parse([
+          { id: "TF-attempt", name: "certalisExamAttemptId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
+          { id: "TF-cohort", name: "certalisCohortSessionId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
+          { id: "TF-candidate", name: "certalisCandidateId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
+        ]);
+      }
+      return spec.schema.parse([]);
+    }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>["requestV3"]);
   const requestV4Detailed =
     (overrides.requestV4Detailed as
       | ReturnType<CloudShareClientFactory["forConnection"]>["requestV4Detailed"]
@@ -138,7 +150,7 @@ function makeCloudShareFactory(
   return {
     forConnection: vi.fn(() => ({
       ...source,
-      requestV3: vi.fn(),
+      requestV3,
       requestV3Text: vi.fn(),
       requestV4: vi.fn(),
       requestV4Detailed,
@@ -398,11 +410,11 @@ describe("joinCohortExamSessionRuntime", () => {
         email: "candidate@helioscx.demo",
         firstName: "Asha",
         lastName: "Patel",
-        customProperties: {
-          certalisExamAttemptId: "attempt-1",
-          certalisCohortSessionId: "cohort-session-1",
-          certalisCandidateId: "candidate-1",
-        },
+        customProperties: [
+          { Name: "certalisExamAttemptId", Value: "attempt-1" },
+          { Name: "certalisCohortSessionId", Value: "cohort-session-1" },
+          { Name: "certalisCandidateId", Value: "candidate-1" },
+        ],
       },
     ]);
     await expect(launches.findByExamAttemptId("attempt-1")).resolves.toMatchObject({
@@ -555,7 +567,16 @@ describe("joinCohortExamSessionRuntime", () => {
         cloudshare: {
           forConnection: vi.fn(() => ({
             ...source,
-            requestV3: vi.fn(),
+            requestV3: vi.fn(async (spec: { path?: string; schema: { parse(value: unknown): unknown } }) => {
+              if (spec.path === "/class/actions/customfields") {
+                return spec.schema.parse([
+                  { id: "TF-attempt", name: "certalisExamAttemptId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
+                  { id: "TF-cohort", name: "certalisCohortSessionId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
+                  { id: "TF-candidate", name: "certalisCandidateId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
+                ]);
+              }
+              return spec.schema.parse([]);
+            }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>["requestV3"],
             requestV3Text: vi.fn(),
             requestV4: vi.fn(),
             requestV4Detailed: makeCloudShareFactory().forConnection({} as never).requestV4Detailed,

@@ -233,11 +233,11 @@ describe("cloudShareLabProvisioner — request shape", () => {
         email: "candidate@helioscx.demo",
         firstName: "Candidate",
         lastName: "Demo",
-        customProperties: {
-          certalisExamAttemptId: "attempt-1",
-          certalisCohortSessionId: "cohort-session-1",
-          certalisCandidateId: "candidate-1",
-        },
+        customProperties: [
+          { Name: "certalisExamAttemptId", Value: "attempt-1" },
+          { Name: "certalisCohortSessionId", Value: "cohort-session-1" },
+          { Name: "certalisCandidateId", Value: "candidate-1" },
+        ],
       },
     ]);
     expect(result).toMatchObject({
@@ -297,6 +297,148 @@ describe("cloudShareLabProvisioner — request shape", () => {
       method: "GET",
       path: "/trainings/EXtraining-1",
       schema: expect.anything(),
+    });
+  });
+
+  it("confirms required training user-property keys through the documented v3 customfields endpoint", async () => {
+    const requestV3Detailed = vi.fn(async (spec: { method: string; path: string; query?: Record<string, string>; schema: { parse(value: unknown): unknown } }) => {
+      const raw = [
+        {
+          id: "TF-certalisExamAttemptId",
+          name: "certalisExamAttemptId",
+          type: 0,
+          isRequired: false,
+          regex: "",
+          defaultValue: null,
+          value: null,
+        },
+        {
+          id: "TF-certalisCohortSessionId",
+          name: "certalisCohortSessionId",
+          type: 0,
+          isRequired: false,
+          regex: "",
+          defaultValue: null,
+          value: null,
+        },
+        {
+          id: "TF-certalisCandidateId",
+          name: "certalisCandidateId",
+          type: 0,
+          isRequired: false,
+          regex: "",
+          defaultValue: null,
+          value: null,
+        },
+      ];
+      return {
+        data: spec.schema.parse(raw),
+        host: "use.cloudshare.com",
+        integrationSurface: "cloudshare.v3.class.customfields",
+        request: {
+          method: spec.method,
+          path: spec.path,
+          ...(spec.query ? { query: spec.query } : {}),
+        },
+        response: { status: 200, body: raw },
+      };
+    });
+    const client = {
+      requestV4Detailed: vi.fn(),
+      requestV4: vi.fn(),
+      requestV3: vi.fn(),
+      requestV3Detailed,
+    } as unknown as CloudShareClient;
+    const labs = createCloudShareLabProvisioner(client);
+
+    await expect(
+      labs.ensureTrainingUserPropertyKeys!({
+        projectId: "project-1",
+        requiredKeys: [
+          "certalisExamAttemptId",
+          "certalisCohortSessionId",
+          "certalisCandidateId",
+        ],
+      }),
+    ).resolves.toEqual({
+      projectId: "project-1",
+      requiredKeys: [
+        "certalisExamAttemptId",
+        "certalisCohortSessionId",
+        "certalisCandidateId",
+      ],
+      availableKeys: [
+        "certalisExamAttemptId",
+        "certalisCohortSessionId",
+        "certalisCandidateId",
+      ],
+      definitions: [
+        {
+          id: "TF-certalisExamAttemptId",
+          name: "certalisExamAttemptId",
+          type: 0,
+          isRequired: false,
+          regex: "",
+          defaultValue: null,
+          value: null,
+        },
+        {
+          id: "TF-certalisCohortSessionId",
+          name: "certalisCohortSessionId",
+          type: 0,
+          isRequired: false,
+          regex: "",
+          defaultValue: null,
+          value: null,
+        },
+        {
+          id: "TF-certalisCandidateId",
+          name: "certalisCandidateId",
+          type: 0,
+          isRequired: false,
+          regex: "",
+          defaultValue: null,
+          value: null,
+        },
+      ],
+      integrationSurface: "cloudshare.v3.class.customfields",
+      request: {
+        method: "GET",
+        path: "/class/actions/customfields",
+        query: { projectId: "project-1" },
+      },
+      response: {
+        status: 200,
+        body: [
+          {
+            id: "TF-certalisExamAttemptId",
+            name: "certalisExamAttemptId",
+            type: 0,
+            isRequired: false,
+            regex: "",
+            defaultValue: null,
+            value: null,
+          },
+          {
+            id: "TF-certalisCohortSessionId",
+            name: "certalisCohortSessionId",
+            type: 0,
+            isRequired: false,
+            regex: "",
+            defaultValue: null,
+            value: null,
+          },
+          {
+            id: "TF-certalisCandidateId",
+            name: "certalisCandidateId",
+            type: 0,
+            isRequired: false,
+            regex: "",
+            defaultValue: null,
+            value: null,
+          },
+        ],
+      },
     });
   });
 

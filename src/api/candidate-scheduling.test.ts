@@ -79,6 +79,13 @@ function makeCloudShareFactory(overrides: Partial<ReturnType<CloudShareClientFac
   const requestV3 =
     (overrides.requestV3 as ReturnType<CloudShareClientFactory["forConnection"]>["requestV3"] | undefined) ??
     (vi.fn(async (spec: { path: string; schema: { parse(value: unknown): unknown } }) => {
+      if (spec.path === "/class/actions/customfields") {
+        return spec.schema.parse([
+          { id: "TF-attempt", name: "certalisExamAttemptId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
+          { id: "TF-cohort", name: "certalisCohortSessionId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
+          { id: "TF-candidate", name: "certalisCandidateId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
+        ]);
+      }
       if (spec.path === "/teams") {
         return spec.schema.parse({ rows: [{ id: "TM-team-1", name: "Helios Team" }] });
       }

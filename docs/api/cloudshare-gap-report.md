@@ -907,6 +907,31 @@ Instructor identifiers. The admin UI displayed the persisted CloudShare training
 Team ID, and the success diagnostic retained redacted request/response evidence with correlation
 ID `8c260d9e-33cb-4062-8254-29ae3098ad57`.
 
+**Update (2026-07-10, Issue #301 live training-user-property probe):** a disposable self-paced
+training probe confirmed that `POST /v4/trainings/{trainingId}/students` still rejects the old
+object-shaped participant correlation bag with the live error:
+`$[0].customProperties` could not be converted to CloudShare's
+`UserPropertyValueRequestEncryptedModel[]`. A second live probe with
+`customProperties: [{ key, value }]` also failed; CloudShare validated the collection shape far
+enough to require `CustomProperties[*].Name`, then reported that the named property definition did
+not exist. The current tenant therefore expects participant custom properties to be sent as an
+array of `{ Name, Value }` entries, not as a plain object.
+
+The same probe also established that the tenant's property-definition source is the documented v3
+endpoint `GET /api/v3/class/actions/customfields?projectId={projectId}`. That endpoint returned the
+project's available class custom-field definitions, and the v3 docs explicitly state that those
+definitions are support-managed rather than tenant-created through the public API. Live
+`GET /v4/trainings/{trainingId}` returned `customFields: []`, and a follow-up
+`PUT /v4/trainings/{id}` with `CustomFields: [{ Name: "certalisExamAttemptId" }]` failed with
+`Field definition 'certalisExamAttemptId' does not exist`, confirming that training update can only
+reference pre-existing project field definitions. For this portal, the integration boundary must
+therefore:
+
+- verify the required Certalis field definitions exist through the v3 customfields read before
+  adding participants, and
+- fail supportably when the tenant/project is missing those definitions, rather than sending a v4
+  participant payload CloudShare will reject with a conversion error.
+
 **Update (2026-07-01, Issue #251 QA clarification):** the Project Policy detail endpoint is
 undocumented but live-observed:
 `GET /api/v3/projects/PRCU02uuokHPBfjMedkmradg2/policies/POavMAu1wiaVydJdYUOAExJg2` returned

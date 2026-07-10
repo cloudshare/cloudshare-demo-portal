@@ -60,6 +60,13 @@ function parseSuccessfulPublishV3(
   spec: { path?: string; schema: { parse(value: unknown): unknown } },
   teamRows: Array<{ id: string; name: string }> = [{ id: "TM-team-1", name: "Helios Team" }],
 ) {
+  if (spec.path === "/class/actions/customfields") {
+    return spec.schema.parse([
+      { id: "TF-attempt", name: "certalisExamAttemptId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
+      { id: "TF-cohort", name: "certalisCohortSessionId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
+      { id: "TF-candidate", name: "certalisCandidateId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
+    ]);
+  }
   if (spec.path === "/projects/project-1/blueprints/bp-1") {
     return spec.schema.parse({
       id: "bp-1",
@@ -371,6 +378,13 @@ describe("admin Cohort Exam Session runtime", () => {
           RegistrationType: "registeredStudentsOnly",
           UsersEarlyAccess: { GrantEarlyAccess: 2 },
         }),
+      }),
+    );
+    expect(requestV3).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "GET",
+        path: "/class/actions/customfields",
+        query: { projectId: "project-1" },
       }),
     );
 

@@ -12,8 +12,12 @@ import type {
   CreateSponsoredLinkResult,
   GetTrainingStartStateInput,
   GetTrainingStartStateResult,
+  EnsureTrainingUserPropertyKeysInput,
+  EnsureTrainingUserPropertyKeysResult,
   LabProvisioner,
+  TrainingUserPropertyDefinition,
 } from "@/domain/lab-launch";
+import { CloudShareResponseError } from "./errors";
 
 /**
  * CloudShare implementation of the {@link LabProvisioner} port, built on the v4
@@ -30,6 +34,40 @@ const experienceSchema = z.object({ id: z.string().min(1) });
 const addTrainingStudentsSchema = z.array(z.object({}).passthrough());
 const addExperienceStudentSchema = z.object({}).passthrough();
 const sponsoredLinkSchema = z.object({ loginUrl: z.string().url() });
+const trainingUserPropertyDefinitionSchema = z
+  .object({
+    id: z.string().min(1),
+    name: z.string().min(1),
+    type: z.number().int().nullable().optional(),
+    isRequired: z.boolean().optional(),
+    regex: z.string().nullable().optional(),
+    defaultValue: z.string().nullable().optional(),
+    value: z.string().nullable().optional(),
+  })
+  .passthrough();
+const trainingUserPropertyDefinitionsSchema = z.preprocess(
+  (payload) => {
+    if (!Array.isArray(payload)) {
+      return payload;
+    }
+    return payload.map((row) => {
+      if (!row || typeof row !== "object") {
+        return row;
+      }
+      const record = row as Record<string, unknown>;
+      return {
+        id: record.id ?? record.Id,
+        name: record.name ?? record.Name,
+        type: record.type ?? record.Type ?? null,
+        isRequired: record.isRequired ?? record.IsRequired,
+        regex: record.regex ?? record.Regex ?? null,
+        defaultValue: record.defaultValue ?? record.DefaultValue ?? null,
+        value: record.value ?? record.Value ?? null,
+      };
+    });
+  },
+  z.array(trainingUserPropertyDefinitionSchema),
+);
 const trainingStartStateSchema = z
   .object({
     id: z.string().min(1),
@@ -116,6 +154,35 @@ export function createCloudShareLabProvisioner(
     },
   ): Promise<CloudShareDetailedResult<T>> {
     return requestV4Detailed(spec) as Promise<CloudShareDetailedResult<T>>;
+  }
+
+  async function requestV3WithDiagnostics<T>(
+    spec: {
+      readonly method: "GET" | "POST" | "PUT" | "DELETE";
+      readonly path: string;
+      readonly query?: Record<string, string>;
+      readonly schema: z.ZodType<T, z.ZodType["_def"], unknown>;
+    },
+  ): Promise<CloudShareDetailedResult<T>> {
+    if (typeof client.requestV3Detailed === "function") {
+      return client.requestV3Detailed(spec) as Promise<CloudShareDetailedResult<T>>;
+    }
+
+    const data = await client.requestV3(spec);
+    return {
+      data,
+      host: "",
+      integrationSurface: "cloudshare.v3",
+      request: {
+        method: spec.method,
+        path: spec.path,
+        ...(spec.query ? { query: spec.query } : {}),
+      },
+      response: {
+        status: 200,
+        body: data,
+      },
+    };
   }
 
   return {
@@ -224,6 +291,53 @@ export function createCloudShareLabProvisioner(
       };
     },
 
+    async ensureTrainingUserPropertyKeys(
+      input: EnsureTrainingUserPropertyKeysInput,
+    ): Promise<EnsureTrainingUserPropertyKeysResult> {
+      const detailed = await requestV3WithDiagnostics({
+        method: "GET",
+        path: "/class/actions/customfields",
+        query: { projectId: input.projectId },
+        schema: trainingUserPropertyDefinitionsSchema,
+      });
+      const definitions = detailed.data;
+      const availableKeys = definitions.map((definition) => definition.name);
+      const missingKeys = input.requiredKeys.filter((requiredKey) => !availableKeys.includes(requiredKey));
+
+      if (missingKeys.length > 0) {
+        throw new CloudShareResponseError(
+          "Required CloudShare training user-property keys are not configured for this project.",
+          {
+            method: detailed.request.method,
+            path: detailed.request.path,
+            requestQuery: detailed.request.query,
+            integrationSurface: "cloudshare.v3.class.customfields",
+            status: detailed.response.status,
+            responseBody: {
+              missingKeys,
+              availableKeys,
+              definitions: detailed.response.body,
+            },
+            issues: missingKeys.map(
+              (missingKey) =>
+                `Required CloudShare training user-property key '${missingKey}' is missing for project ${input.projectId}.`,
+            ),
+            cause: "missing_training_user_property_keys",
+          },
+        );
+      }
+
+      return {
+        projectId: input.projectId,
+        requiredKeys: [...input.requiredKeys],
+        availableKeys,
+        definitions: definitions as TrainingUserPropertyDefinition[],
+        integrationSurface: "cloudshare.v3.class.customfields",
+        request: detailed.request,
+        response: detailed.response,
+      };
+    },
+
     async addParticipant(input: AddParticipantInput): Promise<AddParticipantResult> {
       const detailed = await requestV4WithDiagnostics({
         method: "POST",
@@ -320,18 +434,20 @@ function parseCloudShareTrainingDate(value: string, timeZone?: string): Date | u
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 }
 
-function buildParticipantCustomProperties(input: AddParticipantInput): Record<string, string> | undefined {
+function buildParticipantCustomProperties(
+  input: AddParticipantInput,
+): Array<{ Name: string; Value: string }> | undefined {
   const entries = Object.entries({
     certalisExamAttemptId: input.certalisExamAttemptId,
     certalisCohortSessionId: input.certalisCohortSessionId,
     certalisCandidateId: input.certalisCandidateId,
   }).flatMap(([key, value]) =>
     typeof value === "string" && value.trim().length > 0
-      ? [[key, value.trim()] as const]
+      ? [{ Name: key, Value: value.trim() }]
       : [],
   );
 
-  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+  return entries.length > 0 ? entries : undefined;
 }
 
 function readParticipantId(rows: unknown): string | undefined {

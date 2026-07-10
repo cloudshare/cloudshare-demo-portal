@@ -28,6 +28,7 @@ import {
   CloudShareTransportError,
   isCloudShareRateLimitError,
 } from "@/integrations/cloudshare";
+import { createCloudShareLabProvisioner } from "@/integrations/cloudshare/labs";
 import { createCloudShareOnDemandExperienceCreator } from "@/integrations/cloudshare/cohort-experiences";
 import type { Logger } from "@/observability/logger";
 import { guardRuntimeBlueprintSnapshot } from "./runtime-blueprint-snapshot-guard";
@@ -278,7 +279,8 @@ export async function handlePublishCohortExamSession(
       };
     }
 
-    const creator = createCloudShareOnDemandExperienceCreator(deps.cloudshare.forConnection(connection));
+    const cloudshareClient = deps.cloudshare.forConnection(connection);
+    const creator = createCloudShareOnDemandExperienceCreator(cloudshareClient);
     const created = await creator.createOnDemandExperience({
       name: buildCohortExperienceName(exam.title, claimedSession.name),
       startsAt: claimedSession.admissionStartsAt,
@@ -291,6 +293,68 @@ export async function handlePublishCohortExamSession(
       timeZoneId: "UTC",
       passphrase: `certalis-${claimedSession.id}`,
     });
+    const provisioner = createCloudShareLabProvisioner(cloudshareClient);
+    try {
+      await provisioner.ensureTrainingUserPropertyKeys?.({
+        projectId: exam.projectId,
+        requiredKeys: [
+          "certalisExamAttemptId",
+          "certalisCohortSessionId",
+          "certalisCandidateId",
+        ],
+      });
+    } catch (error) {
+      await markCohortExamSessionPublishReconciliationRequired(
+        { repository: deps.sessions, now: deps.now },
+        {
+          session: claimedSession,
+          correlationId,
+          error:
+            "CloudShare Experience was created, but required training user-property keys were not available. Reconcile this Cohort Exam Session before retrying.",
+          trainingId: created.trainingId,
+          experienceId: created.experienceId,
+          teamId: created.teamId,
+        },
+      );
+      await safeRecordDiagnostic(deps, {
+        source: "admin-exams",
+        customerId: request.customerId,
+        actor: request.actor ?? null,
+        subject: { type: "cohort_exam_session", id: claimedSession.id },
+        examId: exam.id,
+        level: "warn",
+        operation: "cohort_exam_session.publish",
+        outcome: "failure",
+        correlationId,
+        message: "Cohort Exam Session publish failed after CloudShare Experience creation while confirming training user-property keys",
+        externalIds: {
+          trainingId: created.trainingId,
+          experienceId: created.experienceId,
+          teamId: created.teamId,
+        },
+        ...toPublishFailureDiagnostic(error),
+      });
+      deps.logger.warn("cohort session publish training user-property validation failed", {
+        correlationId,
+        customerId: request.customerId,
+        examId: exam.id,
+        sessionId: claimedSession.id,
+        trainingId: created.trainingId,
+        experienceId: created.experienceId,
+        teamId: created.teamId,
+        ...toPublishFailureLogFields(error),
+      });
+      return {
+        status: isCloudShareRateLimitError(error) ? 429 : 502,
+        body: {
+          error:
+            isCloudShareRateLimitError(error)
+              ? CLOUDSHARE_429_ADMIN_SUPPORT_GUIDANCE
+              : "CloudShare created the Cohort Exam Session, but the required training user-property keys are unavailable. Reconcile it before retrying and check the diagnostic log for the correlation ID.",
+          correlationId,
+        },
+      };
+    }
     let parentExam = exam;
     let parentExamStatusChanged = false;
     let localPersistenceStage: "parent_exam_publish" | "cohort_session_publish" =
