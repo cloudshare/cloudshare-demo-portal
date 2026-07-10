@@ -2052,7 +2052,7 @@ export function AdminConsole({
     }
     if (tab === "support" && supportView === "monitoring") {
       void loadMonitoring();
-      void loadExamCatalog();
+      void loadExamCatalog(false);
     }
     if (tab === "candidates") {
       void loadCandidates();
@@ -2097,7 +2097,9 @@ export function AdminConsole({
     if (tab !== "support" || supportView !== "monitoring" || !focusedExamId || !focusedCohortSessionId) {
       return;
     }
-    void loadCohortExamSessions(focusedExamId);
+    if (!cohortSessionsByExamId[focusedExamId]) {
+      void loadCohortExamSessions(focusedExamId);
+    }
     void loadCohortSessionDetail(focusedExamId, focusedCohortSessionId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, supportView, focusedExamId, focusedCohortSessionId]);
@@ -2782,7 +2784,7 @@ export function AdminConsole({
     }
   }
 
-  async function loadExamCatalog() {
+  async function loadExamCatalog(loadCohortSessions = true) {
     beginExamCatalogLoading();
     try {
       const response = await fetchAdmin("/api/admin/exams");
@@ -2799,7 +2801,11 @@ export function AdminConsole({
       const nextArchivedExams = data.archivedExams ?? [];
       setExamCatalog(nextExams);
       setArchivedExamCatalog(nextArchivedExams);
-      await Promise.all(nextExams.map((exam) => loadCohortExamSessions(exam.id)));
+      await Promise.all(
+        nextExams
+          .filter((exam) => loadCohortSessions || !cohortSessionsByExamId[exam.id])
+          .map((exam) => loadCohortExamSessions(exam.id)),
+      );
     } catch (caughtError) {
       if (isAdminSessionExpiredError(caughtError)) {
         return;
