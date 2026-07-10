@@ -954,6 +954,7 @@ export function CohortSessionWorkspacePanel(props: {
   onCloseAdmission?: () => void;
   onRetire?: () => void;
   onOpenMonitoring?: () => void;
+  onOpenDiagnostics?: (filters: DiagnosticLogFilters) => void;
   onOpenCorrelationDiagnostics?: (correlationId: string) => void;
 }) {
   const { session } = props;
@@ -1118,6 +1119,12 @@ export function CohortSessionWorkspacePanel(props: {
                 })}
                 style={secondaryButtonStyle}
                 title="Open Support Diagnostics filtered to this Cohort Exam Session."
+                onClick={(event) => {
+                  if (props.onOpenDiagnostics) {
+                    event.preventDefault();
+                    props.onOpenDiagnostics(props.detail!.diagnostics.session);
+                  }
+                }}
               >
                 Session diagnostics
               </a>
@@ -2060,16 +2067,6 @@ export function AdminConsole({
   }, [tab, examView, supportView]);
 
   useEffect(() => {
-    if (tab !== "support" || supportView !== "monitoring") {
-      return;
-    }
-    for (const exam of allExamCatalog) {
-      void loadCohortExamSessions(exam.id);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, supportView, examCatalog, archivedExamCatalog]);
-
-  useEffect(() => {
     if (tab !== "exams" || examView !== "edit" || !focusedExamId || editingExamId === focusedExamId) {
       return;
     }
@@ -2404,6 +2401,11 @@ export function AdminConsole({
     if (tab === "support" && supportView === "diagnostics") {
       void loadDiagnostics(false, navigation.pageOffset, navigation.filters);
     }
+  }
+
+  function openSessionSupportDiagnostics(filters: DiagnosticLogFilters) {
+    navigateAdmin({ tab: "support", supportView: "diagnostics", diagnosticFilters: filters });
+    setExpandedDiagnosticId(null);
   }
 
   function loadMoreMonitoringHistory() {
@@ -4254,6 +4256,7 @@ export function AdminConsole({
               }
               onRetire={() => void retireCohortSession(focusedExam.id, focusedCohortSession.session.id)}
               onOpenCorrelationDiagnostics={openCorrelationSupportDiagnostics}
+              onOpenDiagnostics={openSessionSupportDiagnostics}
               onOpenMonitoring={() =>
                 navigateAdmin({
                   tab: "support",
@@ -4433,6 +4436,7 @@ export function AdminConsole({
               loading={loading}
               onBack={() => navigateAdmin({ tab: "support", supportView: "monitoring" })}
               onPublish={() => undefined}
+              onOpenDiagnostics={openSessionSupportDiagnostics}
             />
           ) : (
             <CohortSessionMonitoringList

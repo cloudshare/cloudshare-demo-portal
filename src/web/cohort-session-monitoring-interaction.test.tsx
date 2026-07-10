@@ -4,9 +4,13 @@ import userEvent from "@testing-library/user-event";
 import React, { type ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
 import {
+  AdminConsole,
   CohortSessionMonitoringList,
   CohortSessionWorkspacePanel,
 } from "./admin-console";
+
+const routerPush = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: routerPush, replace: vi.fn(), refresh: vi.fn() }) }));
 
 type WorkspaceProps = ComponentProps<typeof CohortSessionWorkspacePanel>;
 type Session = WorkspaceProps["session"];
@@ -93,5 +97,76 @@ describe("Cohort Exam Session monitoring interactions", () => {
     expect(screen.getByRole("link", { name: "Session diagnostics" }).getAttribute("href")).toBe(
       "/admin?tab=support&view=diagnostics&examId=exam-1&externalId=experience-1",
     );
+  });
+});
+
+function json(body: unknown): Response {
+  return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+}
+
+const exam = {
+  id: "exam-1", title: "Helios Foundations", description: "Shared practice lab", timeLimitMinutes: 90,
+  openPeriodMinutes: 120, scoreRetrievalEnabled: false, deliveryAvailability: "cohort", status: "published",
+  publishedAt: "2026-09-01T00:00:00.000Z", projectId: "project-1", projectName: "Project Atlas",
+  blueprintId: "blueprint-1", blueprintName: "Blueprint Aurora", snapshotId: "snapshot-1", snapshotName: "Snapshot Echo",
+  allowedRegions: [], policyId: "policy-1", policyName: "Policy Orbit", instructorName: "Jordan Lee",
+};
+
+const cohortDetail = {
+  session,
+  monitoring: {
+    summary: { activeCount: 1, inProgressCount: 1, completedCount: 0, problemCount: 0, portalAttemptCount: 1, cloudShareParticipantCount: 1, derivedFrom: "portal_and_cloudshare" },
+    portalAttempts: [{ id: "attempt-1", candidateId: "candidate-1", candidateName: "Casey Rivera", candidateEmail: "casey@helioscx.demo", status: "in_progress", scheduledFor: "2026-09-01T09:00:00.000Z", createdAt: "2026-09-01T09:00:00.000Z", trainingId: "experience-1", experienceId: "experience-1", environmentExternalId: "environment-1", environmentId: "environment-1", participantId: "participant-1", problemReasons: [], diagnosticFilters: { examAttemptId: "attempt-1" } }],
+    cloudShareParticipants: { status: "available", trainingId: "experience-1", readError: null, correlationId: null, participants: [{ email: "casey@helioscx.demo", firstName: "Casey", lastName: "Rivera", displayName: "Casey Rivera", studentId: "participant-1", environmentId: "environment-1", environmentStatus: "Running", participationStatus: "inProgress", firstJoinedAt: "2026-09-01T09:05:00.000Z", matchedExamAttemptId: "attempt-1", problemReasons: [], diagnosticFilters: { examAttemptId: "attempt-1" } }] },
+    guidedJourneyAggregate: { status: "disabled", experienceId: "experience-1", readError: null, correlationId: null, progress: null },
+    diagnostics: { session: { examId: "exam-1", externalId: "experience-1" } },
+  },
+};
+
+function installAdminConsoleFetchMock() {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url === "/api/auth/session") return json({});
+    if (url === "/api/admin/cloudshare") return json({ hasConnection: true, connectedAt: null, verifiedAt: null, webhookPath: null });
+    if (url === "/api/admin/exams") return json({ activeExams: [exam], archivedExams: [] });
+    if (url === "/api/admin/exams/exam-1/cohort-sessions") return json({ sessions: [session] });
+    if (url === "/api/admin/exams/exam-1/cohort-sessions/cohort-session-1") return json(cohortDetail);
+    if (url.startsWith("/api/admin/monitoring")) return json({ monitoring: { summary: { scheduled: 0, ready: 0, inProgress: 0, suspended: 0, completed: 0, expired: 0, total: 0 }, currentAttempts: { scheduled: [], ready: [], inProgress: [], suspended: [] }, history: [], historyPage: { limit: 25, offset: 0, total: 0, hasMore: false, nextOffset: null } } });
+    if (url.startsWith("/api/admin/diagnostics")) return json({ entries: [], page: { limit: 50, offset: 0, total: 0, hasMore: false, nextOffset: null } });
+    throw new Error(`Unexpected fetch: ${url}`);
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
+describe("AdminConsole Cohort Exam Session monitoring path", () => {
+  it("navigates Catalog to Support detail and then scoped diagnostics through the real AdminConsole handlers", async () => {
+    const user = userEvent.setup();
+    installAdminConsoleFetchMock();
+    render(<AdminConsole email="admin@helioscx.demo" />);
+
+    await user.click(await screen.findByRole("button", { name: "Manage Cohort Sessions" }));
+    await user.click(await screen.findByRole("button", { name: "View session details" }));
+    await user.click(await screen.findByRole("button", { name: "Open in Session Monitoring" }));
+    expect(await screen.findByText("Cohort Exam Session monitoring")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "Back to Cohort Sessions" }));
+    await user.click(await screen.findByRole("button", { name: "Open monitoring" }));
+
+    expect(await screen.findByText("Cohort Exam Session monitoring")).toBeTruthy();
+    expect(screen.getAllByText("Casey Rivera")).toHaveLength(2);
+    expect(screen.getByText("Environment: Running")).toBeTruthy();
+    expect(routerPush).toHaveBeenCalledWith("/admin?tab=support&examId=exam-1&sessionId=cohort-session-1");
+
+    await user.click(screen.getByRole("link", { name: "Session diagnostics" }));
+    expect(await screen.findByText("Investigative filters")).toBeTruthy();
+    expect(routerPush).toHaveBeenCalledWith("/admin?tab=support&view=diagnostics&examId=exam-1&externalId=experience-1");
+  });
+
+  it("reads each cohort-session list once when Support Monitoring is entered", async () => {
+    const fetchMock = installAdminConsoleFetchMock();
+    render(<AdminConsole email="admin@helioscx.demo" initialTab="support" initialSupportView="monitoring" />);
+
+    await screen.findByRole("button", { name: "Open monitoring" });
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/admin/exams/exam-1/cohort-sessions")).toHaveLength(1);
   });
 });
