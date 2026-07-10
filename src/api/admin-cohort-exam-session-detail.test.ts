@@ -924,14 +924,14 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
     expect(response.body.monitoring.portalAttempts).toMatchObject([
       {
         id: "attempt-1",
-        problemReasons: ["Portal suspended; CloudShare participation still inProgress."],
+        problemReasons: ["Portal suspended; CloudShare environment is running."],
       },
     ]);
     expect(response.body.monitoring.cloudShareParticipants.participants).toMatchObject([
       {
         email: "casey@helioscx.demo",
         matchedExamAttemptId: "attempt-1",
-        problemReasons: ["Portal suspended; CloudShare participation still inProgress."],
+        problemReasons: ["Portal suspended; CloudShare environment is running."],
       },
     ]);
   });

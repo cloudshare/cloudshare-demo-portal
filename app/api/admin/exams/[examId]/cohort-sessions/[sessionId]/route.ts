@@ -22,6 +22,7 @@ export async function GET(
     {
       exams: services.exams,
       sessions: services.cohortExamSessions,
+      observations: services.cohortMonitoringObservations,
       attempts: createPrismaAdminCohortExamSessionAttemptRepository(services.prisma),
       diagnostics: services.diagnosticRecorder,
       connections: services.cloudshareConnections,

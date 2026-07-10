@@ -958,15 +958,14 @@ export function CohortSessionWorkspacePanel(props: {
   onOpenCorrelationDiagnostics?: (correlationId: string) => void;
   lastCheckedAt?: string | null;
   onRefresh?: () => void;
-  attentionConfirmed?: boolean;
 }) {
   const { session } = props;
   const isMonitoring = props.mode === "monitoring";
-  const showAttention = props.attentionConfirmed ?? true;
+  const [timeline, setTimeline] = useState<{ title: string; events: readonly string[]; diagnostics: DiagnosticLogFilters } | null>(null);
   const portalProblemRows =
-    props.detail?.portalAttempts.filter((attempt) => attempt.problemReasons.length > 0).length ?? 0;
+    props.detail?.portalAttempts.filter((attempt) => (attempt.reconciliation ?? (attempt.problemReasons.length > 0 ? "needs_attention" : "normal")) === "needs_attention").length ?? 0;
   const cloudShareProblemRows =
-    props.detail?.cloudShareParticipants.participants.filter((participant) => participant.problemReasons.length > 0)
+    props.detail?.cloudShareParticipants.participants.filter((participant) => (participant.reconciliation ?? (participant.problemReasons.length > 0 ? "needs_attention" : "normal")) === "needs_attention")
       .length ?? 0;
 
   return (
@@ -1154,8 +1153,13 @@ export function CohortSessionWorkspacePanel(props: {
               />
               <CohortSessionDetailItem
                 label="Needs attention"
-                value={showAttention ? props.detail.summary.problemCount : 0}
+                value={props.detail.summary.needsAttentionCount ?? props.detail.summary.problemCount}
                 help="True runtime contradictions, missing correlations, or a failed CloudShare participant read."
+              />
+              <CohortSessionDetailItem
+                label="State observations"
+                value={props.detail.summary.stateObservationCount ?? 0}
+                help="New state differences are observed once before becoming actionable, so transient updates do not cause unnecessary alarm."
               />
               <CohortSessionDetailItem
                 label="Session exam attempts"
@@ -1175,9 +1179,9 @@ export function CohortSessionWorkspacePanel(props: {
             <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
               Needs attention only counts actionable runtime contradictions, missing correlations, or an unavailable participant read.
             </div>
-            {!showAttention && props.detail.summary.problemCount > 0 ? <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>State observations detected. They will need attention only if they remain after the next automatic refresh.</div> : null}
+            {(props.detail.summary.stateObservationCount ?? 0) > 0 ? <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>State observations detected. They will need attention only if they remain after the next automatic refresh.</div> : null}
             <CohortSessionAttentionSummary
-              problemCount={showAttention ? props.detail.summary.problemCount : 0}
+              problemCount={props.detail.summary.needsAttentionCount ?? props.detail.summary.problemCount}
               portalProblemRows={portalProblemRows}
               cloudShareProblemRows={cloudShareProblemRows}
               cloudShareReadUnavailable={props.detail.cloudShareParticipants.status === "unavailable"}
@@ -1208,7 +1212,7 @@ export function CohortSessionWorkspacePanel(props: {
                         <tr
                           key={attempt.id}
                           style={
-                            attempt.problemReasons.length > 0
+                            (attempt.reconciliation ?? (attempt.problemReasons.length > 0 ? "needs_attention" : "normal")) === "needs_attention"
                               ? reconciliationWarningRowStyle
                               : { borderBottom: `1px solid ${colors.border}` }
                           }
@@ -1227,23 +1231,26 @@ export function CohortSessionWorkspacePanel(props: {
                             <div>Environment ID: {attempt.environmentId ?? attempt.environmentExternalId ?? "-"}</div>
                           </td>
                           <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
-                            {attempt.problemReasons.length > 0 ? (
+                            {(attempt.reconciliation ?? (attempt.problemReasons.length > 0 ? "needs_attention" : "normal")) === "needs_attention" ? (
                               <AttentionGuidance reasons={attempt.problemReasons} />
+                            ) : attempt.reconciliation === "state_observation" ? (
+                              <span style={{ color: colors.textSecondary }}>State observation: checking again on the next refresh</span>
                             ) : (
                               <span style={{ color: colors.textSecondary }}>State observation: no action needed</span>
                             )}
                           </td>
                           <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
-                            <a
-                              href={buildAdminConsoleHref({
-                                tab: "support",
-                                supportView: "diagnostics",
-                                diagnosticFilters: attempt.diagnosticFilters,
-                              })}
-                              style={secondaryButtonStyle}
-                            >
+                            <button type="button" style={secondaryButtonStyle} onClick={() => setTimeline({
+                              title: `Attempt timeline: ${attempt.candidateName}`,
+                              events: [
+                                `Certalis currently records this attempt as ${formatCandidateAttemptStatus(attempt.status)}.`,
+                                attempt.problemReasons[0] ?? "The portal and CloudShare runtime state currently agree.",
+                                "CloudShare participant reads are checked again every 30 seconds while this session is open.",
+                              ],
+                              diagnostics: attempt.diagnosticFilters,
+                            })}>
                               Attempt timeline
-                            </a>
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -1338,7 +1345,7 @@ export function CohortSessionWorkspacePanel(props: {
                         <tr
                           key={`${participant.email}:${participant.studentId ?? participant.environmentId ?? "none"}`}
                           style={
-                            participant.problemReasons.length > 0
+                            (participant.reconciliation ?? (participant.problemReasons.length > 0 ? "needs_attention" : "normal")) === "needs_attention"
                               ? reconciliationWarningRowStyle
                               : { borderBottom: `1px solid ${colors.border}` }
                           }
@@ -1358,23 +1365,26 @@ export function CohortSessionWorkspacePanel(props: {
                             {participant.matchedExamAttemptId ? participant.matchedExamAttemptId : "No session exam attempt"}
                           </td>
                           <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
-                            {participant.problemReasons.length > 0 ? (
+                            {(participant.reconciliation ?? (participant.problemReasons.length > 0 ? "needs_attention" : "normal")) === "needs_attention" ? (
                               <AttentionGuidance reasons={participant.problemReasons} />
+                            ) : participant.reconciliation === "state_observation" ? (
+                              <span style={{ color: colors.textSecondary }}>State observation: checking again on the next refresh</span>
                             ) : (
                               <span style={{ color: colors.textSecondary }}>State observation: no action needed</span>
                             )}
                           </td>
                           <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
-                            <a
-                              href={buildAdminConsoleHref({
-                                tab: "support",
-                                supportView: "diagnostics",
-                                diagnosticFilters: participant.diagnosticFilters,
-                              })}
-                              style={secondaryButtonStyle}
-                            >
+                            <button type="button" style={secondaryButtonStyle} onClick={() => setTimeline({
+                              title: `Participant correlation: ${participant.displayName ?? participant.email}`,
+                              events: [
+                                `CloudShare reports environment state as ${participant.environmentStatus ?? "unavailable"}.`,
+                                `CloudShare reports participation as ${participant.participationStatus ?? "unavailable"}; this is membership context, not runtime authority.`,
+                                participant.problemReasons[0] ?? "The participant is correlated to the portal attempt without an actionable contradiction.",
+                              ],
+                              diagnostics: participant.diagnosticFilters,
+                            })}>
                               Participant correlation diagnostics
-                            </a>
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -1383,6 +1393,16 @@ export function CohortSessionWorkspacePanel(props: {
                 </div>
               ) : null}
             </div>
+            {timeline ? (
+              <section style={{ ...mutedPanelStyle, display: "grid", gap: "0.5rem" }} aria-label="Monitoring timeline explanation">
+                <strong>{timeline.title}</strong>
+                <ol style={{ margin: 0, paddingLeft: "1.25rem" }}>{timeline.events.map((event) => <li key={event}>{event}</li>)}</ol>
+                <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                  <button type="button" style={secondaryButtonStyle} onClick={() => setTimeline(null)}>Close timeline</button>
+                  <a href={buildAdminConsoleHref({ tab: "support", supportView: "diagnostics", diagnosticFilters: timeline.diagnostics })} style={secondaryButtonStyle}>View forensic logs</a>
+                </div>
+              </section>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -2008,7 +2028,6 @@ export function AdminConsole({
   const cohortSessionLoadsRef = useRef(new Map<string, Promise<void>>());
   const [cohortSessionDetailsById, setCohortSessionDetailsById] = useState<Record<string, CohortExamSessionDetailRecord>>({});
   const [cohortMonitoringLastCheckedAt, setCohortMonitoringLastCheckedAt] = useState<string | null>(null);
-  const [cohortObservationReads, setCohortObservationReads] = useState<Record<string, { signature: string; count: number }>>({});
   const [cohortSessionFormsByExamId, setCohortSessionFormsByExamId] = useState<Record<string, CohortExamSessionFormState>>({});
   const [selectedCohortSession, setSelectedCohortSession] = useState<CohortExamSessionRecord | null>(null);
   const [monitoring, setMonitoring] = useState<MonitoringView | null>(null);
@@ -2875,14 +2894,6 @@ export function AdminConsole({
         [sessionId]: data,
       }));
       setCohortMonitoringLastCheckedAt(new Date().toISOString());
-      const signature = JSON.stringify({
-        portal: data.monitoring.portalAttempts.flatMap((attempt) => attempt.problemReasons),
-        participants: data.monitoring.cloudShareParticipants.participants.flatMap((participant) => participant.problemReasons),
-      });
-      setCohortObservationReads((current) => {
-        const previous = current[sessionId];
-        return { ...current, [sessionId]: { signature, count: previous?.signature === signature ? previous.count + 1 : 1 } };
-      });
     } catch (caughtError) {
       if (isAdminSessionExpiredError(caughtError)) {
         return;
@@ -4481,7 +4492,6 @@ export function AdminConsole({
               loading={loading}
               lastCheckedAt={cohortMonitoringLastCheckedAt}
               onRefresh={() => void loadCohortSessionDetail(focusedExam.id, focusedCohortSession.session.id)}
-              attentionConfirmed={focusedCohortSessionDetail?.monitoring.cloudShareParticipants.status === "unavailable" || (cohortObservationReads[focusedCohortSession.session.id]?.count ?? 0) >= 2}
               onBack={() => navigateAdmin({ tab: "support", supportView: "monitoring" })}
               onPublish={() => undefined}
               onOpenDiagnostics={openSessionSupportDiagnostics}

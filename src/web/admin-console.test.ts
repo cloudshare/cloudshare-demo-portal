@@ -1040,7 +1040,7 @@ describe("AdminConsole", () => {
     expect(html).toContain("Portal suspended; CloudShare participation still inProgress.");
     expect(html).toContain("CloudShare participant has no matching portal attempt.");
     expect(html).toContain("/admin?tab=support&amp;view=diagnostics&amp;examId=exam-1&amp;externalId=EX123");
-    expect(html).toContain("/admin?tab=support&amp;view=diagnostics&amp;examAttemptId=attempt-1");
+    expect(html).not.toContain("/admin?tab=support&amp;view=diagnostics&amp;examAttemptId=attempt-1");
   });
 
   it("renders a degraded CloudShare participant read state without hiding the session workspace", () => {

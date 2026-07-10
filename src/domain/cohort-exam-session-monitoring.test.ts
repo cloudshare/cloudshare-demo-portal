@@ -57,10 +57,22 @@ describe("cohort exam session monitoring reconciliation", () => {
 
     expect(rows).toEqual([
       expect.objectContaining({
-        problemReasons: ["Portal in progress; CloudShare environment is Suspended."],
+        problemReasons: ["Portal in progress; CloudShare environment is suspended."],
       }),
     ]);
     expect(deriveCohortExamSessionMonitoringSummary(rows, "available").problemCount).toBe(1);
+  });
+
+  it("uses the environment runtime state, not inProgress membership context, to explain a suspended portal mismatch", () => {
+    const rows = deriveCohortExamSessionReconciliationRows(
+      [{ id: "attempt-1", candidateEmail: "casey@helioscx.demo", status: "suspended" }],
+      [{
+        email: "casey@helioscx.demo", matchedExamAttemptId: "attempt-1", studentId: "student-1", environmentId: "env-1",
+        participationStatus: "inProgress", environmentStatus: "Running",
+      }],
+    );
+
+    expect(rows[0]?.problemReasons).toEqual(["Portal suspended; CloudShare environment is running."]);
   });
 
   it("describes a CloudShare participant with no matching portal attempt", () => {

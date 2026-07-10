@@ -28,6 +28,10 @@ import {
   deriveCohortExamSessionMonitoringSummary,
   deriveCohortExamSessionReconciliationRows,
 } from "@/domain/cohort-exam-session-monitoring";
+import {
+  classifyCohortMonitoringObservation,
+  type CohortMonitoringObservationRepository,
+} from "@/domain/cohort-monitoring-observation";
 
 export interface AdminCohortExamSessionAttemptRecord {
   readonly id: string;
@@ -80,6 +84,8 @@ export interface CohortExamSessionMonitoringView {
     readonly inProgressCount: number;
     readonly completedCount: number;
     readonly problemCount: number;
+    readonly stateObservationCount?: number;
+    readonly needsAttentionCount?: number;
     readonly portalAttemptCount: number;
     readonly cloudShareParticipantCount: number;
     readonly derivedFrom: "portal_and_cloudshare";
@@ -122,6 +128,7 @@ export interface CohortExamSessionAttemptView {
   readonly environmentId: string | null;
   readonly participantId: string | null;
   readonly problemReasons: readonly string[];
+  readonly reconciliation?: "normal" | "state_observation" | "needs_attention";
   readonly diagnosticFilters: DiagnosticFilterSeed;
 }
 
@@ -137,6 +144,7 @@ export interface CohortExamSessionParticipantView {
   readonly firstJoinedAt: string | null;
   readonly matchedExamAttemptId: string | null;
   readonly problemReasons: readonly string[];
+  readonly reconciliation?: "normal" | "state_observation" | "needs_attention";
   readonly diagnosticFilters: DiagnosticFilterSeed;
 }
 
@@ -148,6 +156,7 @@ export interface AdminCohortExamSessionDetailDeps {
   readonly connections?: CloudShareConnectionRepository;
   readonly cloudshare?: CloudShareClientFactory;
   readonly logger: Logger;
+  readonly observations?: CohortMonitoringObservationRepository;
   readonly newCorrelationId?: () => string;
 }
 
@@ -194,7 +203,9 @@ export async function handleGetAdminCohortExamSessionDetail(
       status: 200,
       body: {
         session: sessionView,
-        monitoring: buildMonitoringView(
+        monitoring: await buildMonitoringView(
+          deps.observations,
+          request.customerId,
           sessionView,
           attempts,
           cloudShareRead,
@@ -486,7 +497,9 @@ async function readCloudShareParticipants(
   }
 }
 
-function buildMonitoringView(
+async function buildMonitoringView(
+  observations: CohortMonitoringObservationRepository | undefined,
+  customerId: string,
   session: CohortExamSessionWithInheritedContext,
   attempts: readonly AdminCohortExamSessionAttemptRecord[],
   cloudShareRead: {
@@ -498,7 +511,7 @@ function buildMonitoringView(
   aggregateProgress: CohortExamSessionGuidedJourneyAggregateView,
   participantReadCorrelationId: string,
   aggregateProgressCorrelationId: string,
-): CohortExamSessionMonitoringView {
+): Promise<CohortExamSessionMonitoringView> {
   const attemptsByEmail = new Map<string, AdminCohortExamSessionAttemptRecord>();
   const attemptsById = new Map<string, AdminCohortExamSessionAttemptRecord>();
   const attemptsByCandidateId = new Map<string, AdminCohortExamSessionAttemptRecord>();
@@ -558,7 +571,19 @@ function buildMonitoringView(
   );
   const portalProblemsById = new Map<string, readonly string[]>();
   const cloudProblemsByParticipantKey = new Map<string, readonly string[]>();
+  const reconciliationByRowKey = new Map<string, "normal" | "state_observation" | "needs_attention">();
   for (const row of reconciliationRows) {
+    const rowKey = row.portal ? `attempt:${row.portal.id}` : `participant:${row.cloud?.email.trim().toLowerCase() ?? "unknown"}`;
+    const observation = row.problemReasons.length === 0 || !observations
+      ? null
+      : await observations.record({
+          customerId,
+          cohortSessionId: session.session.id,
+          rowKey,
+          signature: row.problemReasons.join("\n"),
+          observedAt: new Date(),
+        });
+    reconciliationByRowKey.set(rowKey, classifyCohortMonitoringObservation(observation));
     if (row.portal) {
       portalProblemsById.set(row.portal.id, row.problemReasons);
     }
@@ -570,14 +595,35 @@ function buildMonitoringView(
   const portalAttempts = portalAttemptsWithoutProblems.map((attempt) => ({
     ...attempt,
     problemReasons: portalProblemsById.get(attempt.id) ?? [],
+    reconciliation: reconciliationByRowKey.get(`attempt:${attempt.id}`) ?? "normal",
   }));
 
   const cloudShareParticipants = cloudShareParticipantsWithoutProblems.map((participant) => ({
     ...participant,
     problemReasons: cloudProblemsByParticipantKey.get(getCloudParticipantKey(participant)) ?? [],
+    reconciliation:
+      reconciliationByRowKey.get(
+        participant.matchedExamAttemptId
+          ? `attempt:${participant.matchedExamAttemptId}`
+          : `participant:${participant.email.trim().toLowerCase()}`,
+      ) ?? "normal",
   }));
 
-  const summary = deriveCohortExamSessionMonitoringSummary(reconciliationRows, cloudShareRead.status);
+  const rawSummary = deriveCohortExamSessionMonitoringSummary(reconciliationRows, cloudShareRead.status);
+  if (!observations) {
+    return buildLegacyMonitoringView(rawSummary, portalAttempts, cloudShareParticipants, session, cloudShareRead, aggregateProgress, participantReadCorrelationId, aggregateProgressCorrelationId);
+  }
+  const reconciliationStates = [...reconciliationByRowKey.values()];
+  const needsAttentionCount =
+    (cloudShareRead.status === "unavailable" ? 1 : 0) +
+    reconciliationStates.filter((state) => state === "needs_attention").length;
+  const stateObservationCount = reconciliationStates.filter((state) => state === "state_observation").length;
+  const summary = {
+    ...rawSummary,
+    problemCount: needsAttentionCount,
+    needsAttentionCount,
+    stateObservationCount,
+  };
   return {
     summary,
     portalAttempts,
@@ -610,6 +656,29 @@ function buildMonitoringView(
             },
           }
         : {}),
+    },
+  };
+}
+
+function buildLegacyMonitoringView(
+  summary: ReturnType<typeof deriveCohortExamSessionMonitoringSummary>,
+  portalAttempts: readonly CohortExamSessionAttemptView[],
+  cloudShareParticipants: readonly CohortExamSessionParticipantView[],
+  session: CohortExamSessionWithInheritedContext,
+  cloudShareRead: { readonly status: "available" | "unavailable" | "not_published"; readonly readError: string | null; readonly correlationId: string | null },
+  aggregateProgress: CohortExamSessionGuidedJourneyAggregateView,
+  participantReadCorrelationId: string,
+  aggregateProgressCorrelationId: string,
+): CohortExamSessionMonitoringView {
+  return {
+    summary,
+    portalAttempts,
+    cloudShareParticipants: { status: cloudShareRead.status, trainingId: session.session.cloudShareTrainingId ?? null, readError: cloudShareRead.readError, correlationId: cloudShareRead.correlationId, participants: cloudShareParticipants },
+    guidedJourneyAggregate: aggregateProgress,
+    diagnostics: {
+      session: { examId: session.session.examId, ...(session.session.cloudShareTrainingId ? { externalId: session.session.cloudShareTrainingId } : {}) },
+      ...(cloudShareRead.status !== "not_published" ? { cloudShareRead: { correlationId: participantReadCorrelationId, operation: "cohort_exam_session.monitor.read_participants" } } : {}),
+      ...(aggregateProgress.status !== "disabled" && aggregateProgress.status !== "not_published" ? { guidedJourneyAggregateRead: { correlationId: aggregateProgressCorrelationId, operation: "cohort_exam_session.guided_journey_aggregate.read" } } : {}),
     },
   };
 }

@@ -121,6 +121,19 @@ model CohortExamSession {
   @@index([cloudShareTrainingId])
 }
 
+model CohortMonitoringObservation {
+  id              String   @id @default(cuid())
+  customerId      String
+  cohortSessionId String
+  rowKey          String
+  signature       String
+  consecutiveReads Int      @default(1)
+  observedAt      DateTime
+
+  @@unique([customerId, cohortSessionId, rowKey])
+  @@index([cohortSessionId, observedAt])
+}
+
 model ExamAttempt {
   id          String     @id
   customerId  String

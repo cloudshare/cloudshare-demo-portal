@@ -216,12 +216,15 @@ function isPortalCloudRuntimeMismatch(
 }
 
 function isCloudSuspended(cloud: CohortExamSessionCloudParticipantSnapshot): boolean {
+  const environmentStatus = cloud.environmentStatus?.trim().toLowerCase();
+  if (environmentStatus) {
+    return environmentStatus === "suspended";
+  }
   const participationStatus = cloud.participationStatus?.trim().toLowerCase();
   if (participationStatus === "suspended") {
     return true;
   }
-  const environmentStatus = cloud.environmentStatus?.trim().toLowerCase();
-  return environmentStatus === "suspended";
+  return false;
 }
 
 function describeCloudOngoingState(cloud: CohortExamSessionCloudParticipantSnapshot): string {
@@ -241,34 +244,45 @@ function describeCloudRuntimeMismatch(
   cloud: CohortExamSessionCloudParticipantSnapshot,
 ): string {
   if (portal.status === "suspended") {
+    const environmentStatus = cloud.environmentStatus?.trim();
+    if (environmentStatus) {
+      return `CloudShare environment is ${formatCloudShareStatus(environmentStatus)}`;
+    }
     const participationStatus = cloud.participationStatus?.trim();
     if (participationStatus) {
-      return `CloudShare participation still ${participationStatus}`;
+      return `CloudShare participation still ${formatCloudShareStatus(participationStatus)}`;
     }
   }
   if (isCloudSuspended(cloud)) {
     const environmentStatus = cloud.environmentStatus?.trim();
     if (environmentStatus) {
-      return `CloudShare environment is ${environmentStatus}`;
+      return `CloudShare environment is ${formatCloudShareStatus(environmentStatus)}`;
     }
     const participationStatus = cloud.participationStatus?.trim();
     if (participationStatus) {
-      return `CloudShare participation is ${participationStatus}`;
+      return `CloudShare participation is ${formatCloudShareStatus(participationStatus)}`;
     }
   }
   return describeCloudOngoingState(cloud);
 }
 
 function describeCloudCompletedState(cloud: CohortExamSessionCloudParticipantSnapshot): string {
-  const participationStatus = cloud.participationStatus?.trim();
-  if (participationStatus) {
-    return `CloudShare participation is ${participationStatus}`;
-  }
   const environmentStatus = cloud.environmentStatus?.trim();
   if (environmentStatus) {
-    return `CloudShare environment is ${environmentStatus}`;
+    return `CloudShare environment is ${formatCloudShareStatus(environmentStatus)}`;
+  }
+  const participationStatus = cloud.participationStatus?.trim();
+  if (participationStatus) {
+    return `CloudShare participation is ${formatCloudShareStatus(participationStatus)}`;
   }
   return "CloudShare participant is already complete";
+}
+
+function formatCloudShareStatus(status: string): string {
+  return status
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .toLowerCase();
 }
 
 function isTerminalEnvironmentStatus(status: string): boolean {
