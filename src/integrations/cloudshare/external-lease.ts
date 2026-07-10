@@ -5,11 +5,13 @@ import type {
   CloudShareResponseDiagnostics,
 } from "./client";
 import {
+  CloudShareRateLimitError,
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
   isCloudShareRateLimitError,
 } from "./errors";
+import { redactCloudShareAdminSupportValue } from "./diagnostic-redaction";
 import { mapCloudShareEnvironmentStatus } from "./environment";
 
 const v3EnvironmentSchema = z
@@ -238,7 +240,10 @@ function mapLeaseFailure(input: {
 }): CloudShareExternalLease {
   if (isCloudShareRateLimitError(input.error)) {
     const error = input.error as CloudShareRequestError;
-    const context = error.context;
+    const context =
+      input.error instanceof CloudShareRateLimitError
+        ? error.context
+        : sanitizeRehydratedRateLimitContext(error.context);
     const status = asNumber(error.status) ?? asNumber(context?.status) ?? 429;
     const request = requestEvidenceFromContext(context, input.fallbackPath);
     const response = responseEvidenceFromContext(status, context);
@@ -350,6 +355,46 @@ function mapLeaseFailure(input: {
     failureMode: "unknown",
     error: input.error instanceof Error ? input.error.message : String(input.error),
   };
+}
+
+function sanitizeRehydratedRateLimitContext(
+  context: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!context) {
+    return context;
+  }
+
+  return {
+    ...context,
+    ...(context.responseHeaders !== undefined
+      ? { responseHeaders: sanitizeRehydratedResponseHeaders(context.responseHeaders) }
+      : {}),
+    ...(context.responseBody !== undefined
+      ? {
+          responseBody: redactCloudShareAdminSupportValue(context.responseBody, {
+            preserveSponsoredLinkLoginUrl: false,
+            redactTokenLikeKeys: true,
+          }),
+        }
+      : {}),
+  };
+}
+
+function sanitizeRehydratedResponseHeaders(value: unknown): Record<string, unknown> | unknown {
+  const redacted = redactCloudShareAdminSupportValue(value, {
+    preserveSponsoredLinkLoginUrl: false,
+    redactTokenLikeKeys: true,
+  });
+  if (!isRecord(redacted)) {
+    return redacted;
+  }
+
+  for (const key of Object.keys(redacted)) {
+    if (key.toLowerCase() === "set-cookie") {
+      redacted[key] = "[REDACTED]";
+    }
+  }
+  return redacted;
 }
 
 function requestEvidenceFromContext(
