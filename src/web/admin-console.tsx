@@ -703,7 +703,7 @@ function isCohortMonitoringProblem(row: { readonly reconciliation?: "normal" | "
   return (row.reconciliation ?? (row.problemReasons.length > 0 ? "needs_attention" : "normal")) === "needs_attention";
 }
 
-function isCohortMonitoringStateObservation(row: { readonly reconciliation?: "normal" | "state_observation" | "needs_attention"; readonly problemReasons: readonly string[] }): boolean {
+function isCohortMonitoringStateObservation(row: { readonly reconciliation?: "normal" | "unknown" | "state_observation" | "needs_attention"; readonly problemReasons: readonly string[] }): boolean {
   return (row.reconciliation ?? (row.problemReasons.length > 0 ? "needs_attention" : "normal")) === "state_observation";
 }
 
