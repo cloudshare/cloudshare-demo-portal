@@ -167,12 +167,11 @@ function isCloudInProgress(participant: CohortExamSessionCloudParticipantSnapsho
   if (isCloudProblemParticipant(participant)) {
     return false;
   }
-  const participationStatus = participant.participationStatus?.trim().toLowerCase();
-  if (participationStatus === "inprogress") {
-    return true;
-  }
   const environmentStatus = participant.environmentStatus?.trim().toLowerCase();
-  return Boolean(environmentStatus && isNormalActiveEnvironmentStatus(environmentStatus));
+  if (environmentStatus) {
+    return environmentStatus !== "suspended" && isNormalActiveEnvironmentStatus(environmentStatus);
+  }
+  return participant.participationStatus?.trim().toLowerCase() === "inprogress";
 }
 
 function isCloudCompleted(participant: CohortExamSessionCloudParticipantSnapshot | undefined): boolean {
@@ -230,13 +229,13 @@ function isCloudSuspended(cloud: CohortExamSessionCloudParticipantSnapshot): boo
 }
 
 function describeCloudOngoingState(cloud: CohortExamSessionCloudParticipantSnapshot): string {
-  const participationStatus = cloud.participationStatus?.trim();
-  if (participationStatus) {
-    return `CloudShare participation still ${participationStatus}`;
-  }
   const environmentStatus = cloud.environmentStatus?.trim();
   if (environmentStatus) {
     return `CloudShare environment is still ${environmentStatus}`;
+  }
+  const participationStatus = cloud.participationStatus?.trim();
+  if (participationStatus) {
+    return `CloudShare participation still ${participationStatus}`;
   }
   return "CloudShare participant is still active";
 }

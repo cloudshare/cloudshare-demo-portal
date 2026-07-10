@@ -956,6 +956,8 @@ export function CohortSessionWorkspacePanel(props: {
   onOpenMonitoring?: () => void;
   onOpenDiagnostics?: (filters: DiagnosticLogFilters) => void;
   onOpenCorrelationDiagnostics?: (correlationId: string) => void;
+  lastCheckedAt?: string | null;
+  onRefresh?: () => void;
 }) {
   const { session } = props;
   const isMonitoring = props.mode === "monitoring";
@@ -1111,6 +1113,8 @@ export function CohortSessionWorkspacePanel(props: {
           <div style={{ display: "grid", gap: "0.9rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
               <strong>Session monitoring</strong>
+              {props.lastCheckedAt ? <span style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>Last checked: {formatUtcTimestamp(props.lastCheckedAt)}</span> : null}
+              {props.onRefresh ? <button type="button" onClick={props.onRefresh} style={secondaryButtonStyle}>Refresh session</button> : null}
               <a
                 href={buildAdminConsoleHref({
                   tab: "support",
@@ -1147,9 +1151,9 @@ export function CohortSessionWorkspacePanel(props: {
                 help="Portal attempts or CloudShare participants currently reported as completed."
               />
               <CohortSessionDetailItem
-                label="Problems"
+                label="Needs attention"
                 value={props.detail.summary.problemCount}
-                help="State mismatch warnings, missing-match warnings, or CloudShare participant-check failures."
+                help="True runtime contradictions, missing correlations, or a failed CloudShare participant read."
               />
               <CohortSessionDetailItem
                 label="Session exam attempts"
@@ -1167,8 +1171,7 @@ export function CohortSessionWorkspacePanel(props: {
               Counts are derived from session exam attempts and the CloudShare participant read for this shared Experience.
             </div>
             <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
-              Problem count includes reconciliation warnings and CloudShare participant-check failures.
-              It is not a count of diagnostic errors.
+              Needs attention only counts actionable runtime contradictions, missing correlations, or an unavailable participant read.
             </div>
             <CohortSessionProblemBridge
               problemCount={props.detail.summary.problemCount}
@@ -1224,7 +1227,7 @@ export function CohortSessionWorkspacePanel(props: {
                             {attempt.problemReasons.length > 0 ? (
                               <ProblemReasonList reasons={attempt.problemReasons} />
                             ) : (
-                              <span style={{ color: colors.textSecondary }}>No reconciliation warnings</span>
+                              <span style={{ color: colors.textSecondary }}>State observation: no action needed</span>
                             )}
                           </td>
                           <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
@@ -1236,7 +1239,7 @@ export function CohortSessionWorkspacePanel(props: {
                               })}
                               style={secondaryButtonStyle}
                             >
-                              Attempt diagnostics
+                              Attempt timeline
                             </a>
                           </td>
                         </tr>
@@ -1355,7 +1358,7 @@ export function CohortSessionWorkspacePanel(props: {
                             {participant.problemReasons.length > 0 ? (
                               <ProblemReasonList reasons={participant.problemReasons} />
                             ) : (
-                              <span style={{ color: colors.textSecondary }}>No reconciliation warnings</span>
+                              <span style={{ color: colors.textSecondary }}>State observation: no action needed</span>
                             )}
                           </td>
                           <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
@@ -1367,7 +1370,7 @@ export function CohortSessionWorkspacePanel(props: {
                               })}
                               style={secondaryButtonStyle}
                             >
-                              Attempt diagnostics
+                              Participant correlation diagnostics
                             </a>
                           </td>
                         </tr>
@@ -1969,6 +1972,7 @@ export function AdminConsole({
   const [focusedExamId, setFocusedExamId] = useState<string | null>(initialExamId ?? null);
   const [focusedCohortSessionId, setFocusedCohortSessionId] = useState<string | null>(initialCohortSessionId ?? null);
   const [supportView, setSupportView] = useState<AdminSupportView>(initialSupportView);
+  const [monitoringBranch, setMonitoringBranch] = useState<"cohort" | "individual">("cohort");
   const [projects, setProjects] = useState<NamedResource[]>([]);
   const [regions, setRegions] = useState<NamedResource[]>([]);
   const [blueprints, setBlueprints] = useState<NamedResource[]>([]);
@@ -1991,6 +1995,7 @@ export function AdminConsole({
   const cohortSessionCacheRef = useRef<Record<string, CohortExamSessionRecord[]>>({});
   const cohortSessionLoadsRef = useRef(new Map<string, Promise<void>>());
   const [cohortSessionDetailsById, setCohortSessionDetailsById] = useState<Record<string, CohortExamSessionDetailRecord>>({});
+  const [cohortMonitoringLastCheckedAt, setCohortMonitoringLastCheckedAt] = useState<string | null>(null);
   const [cohortSessionFormsByExamId, setCohortSessionFormsByExamId] = useState<Record<string, CohortExamSessionFormState>>({});
   const [selectedCohortSession, setSelectedCohortSession] = useState<CohortExamSessionRecord | null>(null);
   const [monitoring, setMonitoring] = useState<MonitoringView | null>(null);
@@ -2067,6 +2072,13 @@ export function AdminConsole({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, examView, supportView]);
+
+  useEffect(() => {
+    if (tab !== "support" || supportView !== "monitoring" || !focusedExamId || !focusedCohortSessionId) return;
+    const interval = window.setInterval(() => void loadCohortSessionDetail(focusedExamId, focusedCohortSessionId), 30_000);
+    return () => window.clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, supportView, focusedExamId, focusedCohortSessionId]);
 
   useEffect(() => {
     if (tab !== "exams" || examView !== "edit" || !focusedExamId || editingExamId === focusedExamId) {
@@ -2849,6 +2861,7 @@ export function AdminConsole({
         ...current,
         [sessionId]: data,
       }));
+      setCohortMonitoringLastCheckedAt(new Date().toISOString());
     } catch (caughtError) {
       if (isAdminSessionExpiredError(caughtError)) {
         return;
@@ -4432,6 +4445,12 @@ export function AdminConsole({
 
       {tab === "support" && supportView === "monitoring" && (
         <section style={{ display: "grid", gap: "1rem" }}>
+          {!focusedCohortSession ? (
+            <div style={{ ...cardStyle, display: "flex", gap: "0.75rem", flexWrap: "wrap" }} aria-label="Session Monitoring branches">
+              <button type="button" onClick={() => setMonitoringBranch("cohort")} style={monitoringBranch === "cohort" ? primaryButtonStyle : secondaryButtonStyle}>Cohort Exam Sessions</button>
+              <button type="button" onClick={() => setMonitoringBranch("individual")} style={monitoringBranch === "individual" ? primaryButtonStyle : secondaryButtonStyle}>Individual Exam Delivery</button>
+            </div>
+          ) : null}
           {focusedExam && focusedCohortSession ? (
             <CohortSessionWorkspacePanel
               mode="monitoring"
@@ -4439,25 +4458,28 @@ export function AdminConsole({
               session={focusedCohortSession}
               detail={focusedCohortSessionDetail?.monitoring ?? null}
               loading={loading}
+              lastCheckedAt={cohortMonitoringLastCheckedAt}
+              onRefresh={() => void loadCohortSessionDetail(focusedExam.id, focusedCohortSession.session.id)}
               onBack={() => navigateAdmin({ tab: "support", supportView: "monitoring" })}
               onPublish={() => undefined}
               onOpenDiagnostics={openSessionSupportDiagnostics}
             />
-          ) : (
+          ) : monitoringBranch === "cohort" ? (
             <CohortSessionMonitoringList
               sessions={monitoredCohortSessions}
-              onOpen={(examId, cohortSessionId) =>
-                navigateAdmin({ tab: "support", supportView: "monitoring", examId, cohortSessionId })
-              }
+              onOpen={(examId, cohortSessionId) => {
+                setMonitoringBranch("cohort");
+                navigateAdmin({ tab: "support", supportView: "monitoring", examId, cohortSessionId });
+              }}
             />
-          )}
-          {monitoring ? (
-            <SessionMonitoringPanel monitoring={monitoring} loading={loading} onRefresh={() => void loadMonitoring()} onLoadMoreHistory={loadMoreMonitoringHistory} onOpenSupportDiagnostics={openExamAttemptSupportDiagnostics} />
-          ) : (
-            <button onClick={() => void loadMonitoring()} disabled={loading} style={{ padding: "0.45rem 0.9rem" }}>
-              {loading ? "Loading..." : "Refresh Monitoring"}
-            </button>
-          )}
+          ) : null}
+          {monitoringBranch === "individual" ? (monitoring ? (
+              <SessionMonitoringPanel monitoring={monitoring} loading={loading} onRefresh={() => void loadMonitoring()} onLoadMoreHistory={loadMoreMonitoringHistory} onOpenSupportDiagnostics={openExamAttemptSupportDiagnostics} />
+            ) : (
+              <button onClick={() => void loadMonitoring()} disabled={loading} style={{ padding: "0.45rem 0.9rem" }}>
+                {loading ? "Loading..." : "Refresh Monitoring"}
+              </button>
+            )) : null}
         </section>
       )}
 

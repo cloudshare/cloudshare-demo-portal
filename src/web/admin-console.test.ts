@@ -1013,7 +1013,7 @@ describe("AdminConsole", () => {
     expect(html).toContain("Aggregate progress diagnostics");
     expect(html).toContain("Counts are derived from session exam attempts and the CloudShare participant read");
     expect(html).toContain("Problems");
-    expect(html).toContain("Problem count includes reconciliation warnings and CloudShare participant-check failures.");
+    expect(html).toContain("Needs attention only counts actionable runtime contradictions, missing correlations, or an unavailable participant read.");
     expect(html).toContain("It is not a count of diagnostic errors.");
     expect(html).toContain(
       'title="State mismatch warnings, missing-match warnings, or CloudShare participant-check failures."',
@@ -1114,7 +1114,7 @@ describe("AdminConsole", () => {
 
     expect(html).toContain("CloudShare participant read unavailable");
     expect(html).toContain("CloudShare participant read failed for this Cohort Exam Session.");
-    expect(html).toContain("Problem count includes reconciliation warnings and CloudShare participant-check failures.");
+    expect(html).toContain("Needs attention only counts actionable runtime contradictions, missing correlations, or an unavailable participant read.");
     expect(html).toContain("The CloudShare participant read unavailable panel below also contributes to Problems.");
     expect(html).toContain("Correlation ID:");
     expect(html).toContain("corr-1");

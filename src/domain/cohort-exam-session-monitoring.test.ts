@@ -5,7 +5,7 @@ import {
 } from "./cohort-exam-session-monitoring";
 
 describe("cohort exam session monitoring reconciliation", () => {
-  it("describes the QA mismatch when the portal is suspended but CloudShare participation is still inProgress", () => {
+  it("treats a suspended environment as compatible with a suspended portal attempt", () => {
     const rows = deriveCohortExamSessionReconciliationRows(
       [
         {
@@ -28,10 +28,10 @@ describe("cohort exam session monitoring reconciliation", () => {
 
     expect(rows).toEqual([
       expect.objectContaining({
-        problemReasons: ["Portal suspended; CloudShare participation still inProgress."],
+        problemReasons: [],
       }),
     ]);
-    expect(deriveCohortExamSessionMonitoringSummary(rows, "available").problemCount).toBe(1);
+    expect(deriveCohortExamSessionMonitoringSummary(rows, "available").problemCount).toBe(0);
   });
 
   it("describes a portal and CloudShare runtime mismatch with the CloudShare suspended state", () => {
