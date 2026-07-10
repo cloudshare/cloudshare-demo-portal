@@ -34,7 +34,8 @@ The exported v4 bundle lists the following training paths relevant to the MVP:
 | Training user-property definitions | `GET`, `POST`, `DELETE` | `/trainings/{trainingId}/users/properties` |
 | Specific training user-property definition | `PUT`, `DELETE` | `/trainings/{trainingId}/users/properties/{propertyId}` |
 | Student environment correlation | `POST` | `/trainings/{trainingId}/students/{studentId}/environment` |
-| Student unassigned environment | `GET`, `POST`, `DELETE` | `/trainings/{trainingId}/students/{studentId}/unassigned-environment` |
+| Create student unassigned environment | `POST` | `/trainings/{trainingId}/students/unassigned-environment` |
+| Read/delete student unassigned environment | `GET`, `DELETE` | `/trainings/{trainingId}/students/{studentId}/unassigned-environment` |
 
 Important: training user-property definitions use `/trainings/{trainingId}/users/properties`, not
 `/trainings/{trainingId}/user-properties`.
