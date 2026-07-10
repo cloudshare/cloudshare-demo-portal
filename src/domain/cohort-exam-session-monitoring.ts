@@ -29,6 +29,18 @@ export interface CohortExamSessionReconciliationRow {
   readonly problemReasons: readonly string[];
 }
 
+export type CohortExamSessionMonitoringStateContribution = "active" | "in_progress" | "completed";
+
+export function getCohortExamSessionMonitoringStateContributions(
+  row: CohortExamSessionReconciliationRow,
+): readonly CohortExamSessionMonitoringStateContribution[] {
+  const contributions: CohortExamSessionMonitoringStateContribution[] = [];
+  if (isPortalActive(row.portal?.status) || isCloudActive(row.cloud)) contributions.push("active");
+  if (row.portal?.status === "in_progress" || isCloudInProgress(row.cloud)) contributions.push("in_progress");
+  if (isPortalCompleted(row.portal?.status) || isCloudCompleted(row.cloud)) contributions.push("completed");
+  return contributions;
+}
+
 export function deriveCohortExamSessionReconciliationRows(
   portalAttempts: readonly CohortExamSessionPortalAttemptSnapshot[],
   participants: readonly CohortExamSessionCloudParticipantSnapshot[],
@@ -72,16 +84,10 @@ export function deriveCohortExamSessionMonitoringSummary(
   let problemCount = cloudShareStatus === "unavailable" ? 1 : 0;
 
   for (const row of rows) {
-    const portalActive = isPortalActive(row.portal?.status);
-    const cloudActive = isCloudActive(row.cloud);
-    const portalCompleted = isPortalCompleted(row.portal?.status);
-    const cloudCompleted = isCloudCompleted(row.cloud);
-    const portalInProgress = row.portal?.status === "in_progress";
-    const cloudInProgress = isCloudInProgress(row.cloud);
-
-    if (portalActive || cloudActive) activeCount += 1;
-    if (portalInProgress || cloudInProgress) inProgressCount += 1;
-    if (portalCompleted || cloudCompleted) completedCount += 1;
+    const contributions = getCohortExamSessionMonitoringStateContributions(row);
+    if (contributions.includes("active")) activeCount += 1;
+    if (contributions.includes("in_progress")) inProgressCount += 1;
+    if (contributions.includes("completed")) completedCount += 1;
     if (row.problemReasons.length > 0) problemCount += 1;
   }
 

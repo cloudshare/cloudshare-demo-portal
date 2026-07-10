@@ -700,34 +700,6 @@ function isCohortMonitoringProblem(row: { readonly reconciliation?: "normal" | "
   return (row.reconciliation ?? (row.problemReasons.length > 0 ? "needs_attention" : "normal")) === "needs_attention";
 }
 
-function isCohortMonitoringCloudProblem(participant: { readonly environmentStatus: string | null; readonly participationStatus: string | null }): boolean {
-  const environmentStatus = participant.environmentStatus?.trim().toLowerCase();
-  if (environmentStatus) {
-    return !["archived", "deleted", "ready", "running", "suspended", "starting", "provisioning", "resuming", "stopping"].includes(environmentStatus);
-  }
-  return ["failed", "error", "aborted", "denied"].includes(participant.participationStatus?.trim().toLowerCase() ?? "");
-}
-
-function isCohortMonitoringCloudActive(participant: { readonly environmentStatus: string | null; readonly participationStatus: string | null }): boolean {
-  if (isCohortMonitoringCloudProblem(participant)) return false;
-  const environmentStatus = participant.environmentStatus?.trim().toLowerCase();
-  if (environmentStatus) return environmentStatus !== "archived" && environmentStatus !== "deleted";
-  const participationStatus = participant.participationStatus?.trim().toLowerCase();
-  return participationStatus === "inprogress" || participationStatus === "pending" || participationStatus === "registered" || participationStatus === "assigned";
-}
-
-function isCohortMonitoringCloudInProgress(participant: { readonly environmentStatus: string | null; readonly participationStatus: string | null }): boolean {
-  if (isCohortMonitoringCloudProblem(participant)) return false;
-  const environmentStatus = participant.environmentStatus?.trim().toLowerCase();
-  if (environmentStatus) return environmentStatus !== "suspended" && ["ready", "running", "starting", "provisioning", "resuming", "stopping"].includes(environmentStatus);
-  return participant.participationStatus?.trim().toLowerCase() === "inprogress";
-}
-
-function isCohortMonitoringCloudCompleted(participant: { readonly environmentStatus: string | null; readonly participationStatus: string | null }): boolean {
-  const environmentStatus = participant.environmentStatus?.trim().toLowerCase();
-  return environmentStatus === "archived" || environmentStatus === "deleted" || participant.participationStatus?.trim().toLowerCase() === "completed";
-}
-
 function ProblemReasonList(props: { readonly reasons: readonly string[] }) {
   if (props.reasons.length === 0) {
     return null;
@@ -1045,17 +1017,13 @@ export function CohortSessionWorkspacePanel(props: {
   const visiblePortalAttempts = portalAttempts.filter((attempt) => {
     if (!summaryFilter || summaryFilter === "cloudshare_participants") return !summaryFilter || summaryFilter !== "cloudshare_participants";
     if (summaryFilter === "portal_attempts") return true;
-    if (summaryFilter === "active") return ["scheduled", "ready", "in_progress", "suspended"].includes(attempt.status);
-    if (summaryFilter === "in_progress") return attempt.status === "in_progress";
-    if (summaryFilter === "completed") return attempt.status === "completed" || attempt.status === "expired";
+    if (summaryFilter === "active" || summaryFilter === "in_progress" || summaryFilter === "completed") return attempt.summaryContributions?.includes(summaryFilter) ?? false;
     return isCohortMonitoringProblem(attempt);
   });
   const visibleCloudShareParticipants = cloudShareParticipants.filter((participant) => {
     if (!summaryFilter || summaryFilter === "portal_attempts") return !summaryFilter || summaryFilter !== "portal_attempts";
     if (summaryFilter === "cloudshare_participants") return true;
-    if (summaryFilter === "active") return isCohortMonitoringCloudActive(participant);
-    if (summaryFilter === "in_progress") return isCohortMonitoringCloudInProgress(participant);
-    if (summaryFilter === "completed") return isCohortMonitoringCloudCompleted(participant);
+    if (summaryFilter === "active" || summaryFilter === "in_progress" || summaryFilter === "completed") return participant.summaryContributions?.includes(summaryFilter) ?? false;
     return isCohortMonitoringProblem(participant);
   });
 

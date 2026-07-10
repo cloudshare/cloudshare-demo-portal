@@ -27,6 +27,8 @@ import { attachCohortExamSessionInheritedContext } from "@/domain/cohort-exam-se
 import {
   deriveCohortExamSessionMonitoringSummary,
   deriveCohortExamSessionReconciliationRows,
+  getCohortExamSessionMonitoringStateContributions,
+  type CohortExamSessionMonitoringStateContribution,
 } from "@/domain/cohort-exam-session-monitoring";
 import {
   classifyCohortMonitoringObservation,
@@ -129,6 +131,7 @@ export interface CohortExamSessionAttemptView {
   readonly participantId: string | null;
   readonly problemReasons: readonly string[];
   readonly reconciliation?: "normal" | "state_observation" | "needs_attention";
+  readonly summaryContributions?: readonly CohortExamSessionMonitoringStateContribution[];
   readonly diagnosticFilters: DiagnosticFilterSeed;
 }
 
@@ -145,6 +148,7 @@ export interface CohortExamSessionParticipantView {
   readonly matchedExamAttemptId: string | null;
   readonly problemReasons: readonly string[];
   readonly reconciliation?: "normal" | "state_observation" | "needs_attention";
+  readonly summaryContributions?: readonly CohortExamSessionMonitoringStateContribution[];
   readonly diagnosticFilters: DiagnosticFilterSeed;
 }
 
@@ -572,6 +576,7 @@ async function buildMonitoringView(
   const portalProblemsById = new Map<string, readonly string[]>();
   const cloudProblemsByParticipantKey = new Map<string, readonly string[]>();
   const reconciliationByRowKey = new Map<string, "normal" | "state_observation" | "needs_attention">();
+  const summaryContributionsByRowKey = new Map<string, readonly CohortExamSessionMonitoringStateContribution[]>();
   for (const row of reconciliationRows) {
     const rowKey = row.portal ? `attempt:${row.portal.id}` : `participant:${row.cloud?.email.trim().toLowerCase() ?? "unknown"}`;
     // Record normal rows too. A normal read resets a prior mismatch, so the
@@ -589,6 +594,7 @@ async function buildMonitoringView(
       rowKey,
       row.problemReasons.length === 0 ? "normal" : classifyCohortMonitoringObservation(observation),
     );
+    summaryContributionsByRowKey.set(rowKey, getCohortExamSessionMonitoringStateContributions(row));
     if (row.portal) {
       portalProblemsById.set(row.portal.id, row.problemReasons);
     }
@@ -601,6 +607,7 @@ async function buildMonitoringView(
     ...attempt,
     problemReasons: portalProblemsById.get(attempt.id) ?? [],
     reconciliation: reconciliationByRowKey.get(`attempt:${attempt.id}`) ?? "normal",
+    summaryContributions: summaryContributionsByRowKey.get(`attempt:${attempt.id}`) ?? [],
   }));
 
   const cloudShareParticipants = cloudShareParticipantsWithoutProblems.map((participant) => ({
@@ -612,6 +619,12 @@ async function buildMonitoringView(
           ? `attempt:${participant.matchedExamAttemptId}`
           : `participant:${participant.email.trim().toLowerCase()}`,
       ) ?? "normal",
+    summaryContributions:
+      summaryContributionsByRowKey.get(
+        participant.matchedExamAttemptId
+          ? `attempt:${participant.matchedExamAttemptId}`
+          : `participant:${participant.email.trim().toLowerCase()}`,
+      ) ?? [],
   }));
 
   const rawSummary = deriveCohortExamSessionMonitoringSummary(reconciliationRows, cloudShareRead.status);

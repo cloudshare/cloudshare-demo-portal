@@ -230,6 +230,7 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
           candidateEmail: "casey+renamed@helioscx.demo",
           externalId: "env-1",
         },
+        summaryContributions: ["active", "in_progress"],
       },
       {
         email: "jordan+renamed@helioscx.demo",
@@ -239,6 +240,7 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
           candidateEmail: "jordan+renamed@helioscx.demo",
           externalId: "env-2",
         },
+        summaryContributions: ["active", "in_progress"],
       },
     ]);
     expect(response.body.monitoring.summary).toEqual({
