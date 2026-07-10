@@ -571,10 +571,17 @@ async function buildMonitoringView(
     };
   });
 
-  const reconciliationRows = deriveCohortExamSessionReconciliationRows(
+  const derivedReconciliationRows = deriveCohortExamSessionReconciliationRows(
     portalAttemptsWithoutProblems,
     cloudShareParticipantsWithoutProblems,
   );
+  // A throttled read contains no current CloudShare participant state. Do not
+  // turn that absence into a portal/CloudShare contradiction or reset a prior
+  // observation: this response is incomplete, not an empty participant list.
+  const reconciliationRows =
+    cloudShareRead.status === "rate_limited"
+      ? derivedReconciliationRows.map((row) => ({ ...row, problemReasons: [] }))
+      : derivedReconciliationRows;
   const portalProblemsById = new Map<string, readonly string[]>();
   const cloudProblemsByParticipantKey = new Map<string, readonly string[]>();
   const reconciliationByRowKey = new Map<string, "normal" | "state_observation" | "needs_attention">();
@@ -583,7 +590,7 @@ async function buildMonitoringView(
     const rowKey = row.portal ? `attempt:${row.portal.id}` : `participant:${row.cloud?.email.trim().toLowerCase() ?? "unknown"}`;
     // Record normal rows too. A normal read resets a prior mismatch, so the
     // next mismatch begins a fresh two-consecutive-read grace period.
-    const observation = !observations
+    const observation = !observations || cloudShareRead.status === "rate_limited"
       ? null
       : await observations.record({
           customerId,

@@ -1415,7 +1415,8 @@ export function CohortSessionWorkspacePanel(props: {
                   Publish this Cohort Exam Session to CloudShare before participant monitoring becomes available.
                 </div>
               ) : null}
-              {props.detail.cloudShareParticipants.status === "available" &&
+              {props.detail.cloudShareParticipants.status !== "not_published" &&
+              props.detail.cloudShareParticipants.status !== "rate_limited" &&
               visibleCloudShareParticipants.length === 0 ? (
                 <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
                   {summaryFilter ? "No CloudShare participants contribute to this summary count." : "No CloudShare participants are currently visible for this shared Experience."}

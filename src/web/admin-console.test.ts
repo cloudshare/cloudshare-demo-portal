@@ -1,4 +1,4 @@
-import { createElement } from "react";
+import { createElement, type ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -1044,8 +1044,7 @@ describe("AdminConsole", () => {
   });
 
   it("renders a rate-limited participant read as temporary throttling without counting it as needs attention", () => {
-    const html = renderToStaticMarkup(
-      createElement(CohortSessionWorkspacePanel, {
+    const panelProps: ComponentProps<typeof CohortSessionWorkspacePanel> = {
         examTitle: "Helios CX Admin Foundations",
         session: {
           session: {
@@ -1110,6 +1109,19 @@ describe("AdminConsole", () => {
         loading: false,
         onBack: vi.fn(),
         onPublish: vi.fn(),
+    };
+    const html = renderToStaticMarkup(createElement(CohortSessionWorkspacePanel, panelProps));
+    const unavailableHtml = renderToStaticMarkup(
+      createElement(CohortSessionWorkspacePanel, {
+        ...panelProps,
+        detail: {
+          ...panelProps.detail!,
+          cloudShareParticipants: {
+            ...panelProps.detail!.cloudShareParticipants,
+            status: "unavailable",
+            readError: "CloudShare participant read failed for this Cohort Exam Session.",
+          },
+        },
       }),
     );
 
@@ -1123,6 +1135,8 @@ describe("AdminConsole", () => {
     expect(html).toContain("Aggregate Guided Journey progress unavailable");
     expect(html).toContain("corr-aggregate-1");
     expect(html).toContain("/admin?tab=support&amp;view=diagnostics&amp;correlationId=corr-aggregate-1");
+    expect(unavailableHtml).toContain("CloudShare participant read unavailable");
+    expect(unavailableHtml).toContain("No CloudShare participants are currently visible for this shared Experience.");
   });
 
   it("renders the aggregate section as disabled when the parent Exam does not retrieve Guided Journey scores", () => {

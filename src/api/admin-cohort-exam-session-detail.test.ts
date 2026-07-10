@@ -1147,7 +1147,28 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
       {
         exams,
         sessions,
-        attempts: { listBySessionId: vi.fn().mockResolvedValue([]) },
+        attempts: {
+          listBySessionId: vi.fn().mockResolvedValue([
+            {
+              id: "attempt-rate-limited",
+              customerId: "customer-1",
+              candidateId: "candidate-1",
+              candidateEmail: "casey@helioscx.demo",
+              candidateFirstName: "Casey",
+              candidateLastName: "Rivera",
+              examId: "exam-1",
+              examTitle: "Helios CloudShare Fundamentals",
+              status: "ready",
+              scheduledFor: new Date("2026-07-06T10:00:00.000Z"),
+              createdAt: new Date("2026-07-06T10:00:00.000Z"),
+              trainingId: "EXcohort-1",
+              experienceId: "EXcohort-1",
+              environmentExternalId: null,
+              environmentId: null,
+              participantId: null,
+            },
+          ]),
+        },
         diagnostics,
         connections: {
           findByCustomerId: vi.fn(async () => ({ customerId: "customer-1", apiId: "api-id", apiKey: "secret-api-key", webhookSecret: "webhook-secret", webhookPathToken: "webhook-token", connectedAt: new Date(), verifiedAt: new Date() })),
@@ -1163,6 +1184,9 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
     expect(response.status).toBe(200);
     if (!("monitoring" in response.body)) throw new Error("Expected monitoring payload");
     expect(response.body.monitoring.summary.problemCount).toBe(0);
+    expect(response.body.monitoring.portalAttempts).toMatchObject([
+      { id: "attempt-rate-limited", problemReasons: [], reconciliation: "normal" },
+    ]);
     expect(response.body.monitoring.cloudShareParticipants).toMatchObject({
       status: "rate_limited",
       participants: [],
