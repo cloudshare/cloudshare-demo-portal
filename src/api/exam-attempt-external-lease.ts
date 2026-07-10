@@ -221,6 +221,9 @@ export async function recordExamAttemptExternalLeaseInspectionFailure(
       path: input.inspection.path,
       failureMode: input.inspection.failureMode,
       responseStatus: input.inspection.responseStatus ?? null,
+      ...(input.inspection.responseEvidence
+        ? { responseEvidence: input.inspection.responseEvidence }
+        : {}),
       ...(input.inspection.error ? { error: input.inspection.error } : {}),
     },
   });

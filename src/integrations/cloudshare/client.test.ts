@@ -759,6 +759,8 @@ describe("createCloudShareClient — error mapping", () => {
       classification: "rate_limit",
       context: expect.objectContaining({
         cooldownActive: true,
+        responseHeaders: { "retry-after": "30" },
+        responseBody: { error: "Too many requests" },
       }),
     });
 

@@ -4,7 +4,7 @@ import type {
   CloudShareDetailedResult,
   V4RequestSpec,
 } from "./client";
-import { CloudShareRequestError } from "./errors";
+import { CloudShareRateLimitError, CloudShareRequestError } from "./errors";
 import {
   inspectCloudShareEnvironmentLease,
   inspectCloudShareTrainingLease,
@@ -209,6 +209,68 @@ describe("external lease inspection", () => {
         status: 403,
         body: { message: "Forbidden" },
       },
+    });
+  });
+
+  it("preserves cached prior 429 evidence when an environment read is blocked by cooldown", async () => {
+    const client = makeClient({
+      requestV3Detailed: vi.fn(async () => {
+        throw new CloudShareRateLimitError("requests are cooling down", 429, "rate_limit", {
+          method: "GET",
+          host: "use.cloudshare.com",
+          path: "/v3/envs/ENVS-live-1",
+          integrationSurface: "cloudshare.v3.env.get",
+          cooldownActive: true,
+          responseHeaders: { "retry-after": "30" },
+          responseBody: { error: "Too many requests" },
+        });
+      }),
+    });
+
+    const lease = await inspectCloudShareEnvironmentLease(client, "ENVS-live-1");
+
+    expect(lease).toMatchObject({
+      kind: "unknown",
+      failureMode: "rate_limit",
+      responseStatus: 429,
+      responseEvidence: "cached_prior",
+      response: {
+        status: 429,
+        headers: { "retry-after": "30" },
+        body: { error: "Too many requests" },
+      },
+    });
+  });
+
+  it("classifies a rehydrated rate-limit error with its cached prior evidence", async () => {
+    const client = makeClient({
+      requestV3Detailed: vi.fn(async () => {
+        throw {
+          name: "CloudShareRateLimitError",
+          message: "requests are cooling down",
+          classification: "rate_limit",
+          context: {
+            status: 429,
+            method: "GET",
+            host: "use.cloudshare.com",
+            path: "/v3/envs/ENVS-live-1",
+            integrationSurface: "cloudshare.v3.env.get",
+            cooldownActive: true,
+            responseHeaders: { "retry-after": "30" },
+            responseBody: { error: "Too many requests" },
+          },
+        };
+      }),
+    });
+
+    const lease = await inspectCloudShareEnvironmentLease(client, "ENVS-live-1");
+
+    expect(lease).toMatchObject({
+      kind: "unknown",
+      failureMode: "rate_limit",
+      responseStatus: 429,
+      responseEvidence: "cached_prior",
+      response: { status: 429, body: { error: "Too many requests" } },
     });
   });
 });

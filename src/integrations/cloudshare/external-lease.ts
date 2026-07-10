@@ -8,6 +8,7 @@ import {
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
+  isCloudShareRateLimitError,
 } from "./errors";
 import { mapCloudShareEnvironmentStatus } from "./environment";
 
@@ -33,7 +34,8 @@ const v4TrainingSchema = z.object({
 });
 
 type LeaseTarget = "environment" | "training" | "experience";
-type LeaseFailureMode = "http_status" | "transport" | "unexpected_response" | "unknown";
+type LeaseFailureMode = "http_status" | "rate_limit" | "transport" | "unexpected_response" | "unknown";
+type ResponseEvidence = "current" | "cached_prior";
 type LeaseReason = "not_found" | "status_terminal" | "end_elapsed";
 type LeaseAttemptedOperation = "get_environment" | "get_training";
 
@@ -49,6 +51,7 @@ interface LeaseEvidenceBase {
   readonly environmentStatus?: string | null;
   readonly leaseEndsAt?: string | null;
   readonly responseStatus?: number | null;
+  readonly responseEvidence?: ResponseEvidence;
   readonly failureMode?: LeaseFailureMode;
   readonly error?: string | null;
   readonly reason?: LeaseReason;
@@ -233,6 +236,29 @@ function mapLeaseFailure(input: {
   readonly error: unknown;
   readonly notFoundStatus: string;
 }): CloudShareExternalLease {
+  if (isCloudShareRateLimitError(input.error)) {
+    const error = input.error as CloudShareRequestError;
+    const context = error.context;
+    const status = asNumber(error.status) ?? asNumber(context?.status) ?? 429;
+    const request = requestEvidenceFromContext(context, input.fallbackPath);
+    const response = responseEvidenceFromContext(status, context);
+    return {
+      kind: "unknown",
+      target: input.target,
+      attemptedOperation: input.attemptedOperation,
+      integrationSurface: asString(context?.integrationSurface) ?? input.integrationSurface,
+      method: asString(request?.method) ?? "GET",
+      path: asString(request?.path) ?? input.fallbackPath,
+      host: asString(context?.host) ?? null,
+      request,
+      response,
+      responseStatus: status,
+      responseEvidence: context?.cooldownActive === true ? "cached_prior" : "current",
+      failureMode: "rate_limit",
+      error: error.message,
+    };
+  }
+
   if (input.error instanceof CloudShareRequestError) {
     const request = requestEvidenceFromContext(input.error.context, input.fallbackPath);
     const response = responseEvidenceFromContext(input.error.status, input.error.context);

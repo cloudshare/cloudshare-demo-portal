@@ -355,4 +355,75 @@ describe("DiagnosticLogTable", () => {
     expect(requestIndex).toBeLessThan(responseIndex);
     expect(responseIndex).toBeLessThan(detailsIndex);
   });
+
+  it("renders a response section for real, cached-prior, and transport diagnostic evidence", () => {
+    const html = renderToStaticMarkup(
+      createElement(DiagnosticLogTable, {
+        entries: [
+          {
+            id: "diag-real", occurredAt: "2026-07-10T10:00:00.000Z", level: "warn", source: "runtime",
+            operation: "cloudshare.exam_attempt_external_lease.read", outcome: "failure", customerId: "customer-helios",
+            actor: { type: "system" }, subject: { type: "exam_attempt", id: "attempt-1" }, message: "Forbidden",
+            correlationId: "corr-real", candidateEmail: null, examId: "exam-1", examAttemptId: "attempt-1",
+            request: { method: "GET", path: "/v3/envs/env-1" },
+            response: { status: 403, headers: { "content-type": "application/json" }, body: { message: "Forbidden" } },
+          },
+          {
+            id: "diag-cached", occurredAt: "2026-07-10T10:01:00.000Z", level: "warn", source: "runtime",
+            operation: "cloudshare.exam_attempt_external_lease.read", outcome: "failure", customerId: "customer-helios",
+            actor: { type: "system" }, subject: { type: "exam_attempt", id: "attempt-1" }, message: "Cooling down",
+            correlationId: "corr-cached", candidateEmail: null, examId: "exam-1", examAttemptId: "attempt-1",
+            request: { method: "GET", path: "/v3/envs/env-1" },
+            response: { status: 429, headers: { "retry-after": "30" }, body: { error: "Too many requests" } },
+            details: { responseEvidence: "cached_prior" },
+          },
+          {
+            id: "diag-transport", occurredAt: "2026-07-10T10:02:00.000Z", level: "warn", source: "runtime",
+            operation: "cloudshare.exam_attempt_external_lease.read", outcome: "failure", customerId: "customer-helios",
+            actor: { type: "system" }, subject: { type: "exam_attempt", id: "attempt-1" }, message: "Timed out",
+            correlationId: "corr-transport", candidateEmail: null, examId: "exam-1", examAttemptId: "attempt-1",
+            request: { method: "GET", path: "/v3/envs/env-1" }, response: null,
+            details: { failureMode: "transport" },
+          },
+        ],
+        expandedDiagnosticId: "diag-real",
+        onToggleExpanded: () => {},
+      }),
+    );
+
+    expect(html).toContain('<strong>Response</strong>');
+    expect(html).toContain("&quot;status&quot;: 403");
+
+    const cachedHtml = renderToStaticMarkup(
+      createElement(DiagnosticLogTable, {
+        entries: [
+          {
+            id: "diag-cached", occurredAt: "2026-07-10T10:01:00.000Z", level: "warn", source: "runtime",
+            operation: "cloudshare.exam_attempt_external_lease.read", outcome: "failure", customerId: "customer-helios",
+            actor: { type: "system" }, subject: { type: "exam_attempt", id: "attempt-1" }, message: "Cooling down",
+            correlationId: "corr-cached", candidateEmail: null, examId: "exam-1", examAttemptId: "attempt-1",
+            request: { method: "GET", path: "/v3/envs/env-1" }, response: { status: 429, body: { error: "Too many requests" } },
+            details: { responseEvidence: "cached_prior" },
+          },
+        ], expandedDiagnosticId: "diag-cached", onToggleExpanded: () => {},
+      }),
+    );
+    expect(cachedHtml).toContain("Cached prior-response evidence; no new HTTP request was sent during cooldown.");
+
+    const transportHtml = renderToStaticMarkup(
+      createElement(DiagnosticLogTable, {
+        entries: [
+          {
+            id: "diag-transport", occurredAt: "2026-07-10T10:02:00.000Z", level: "warn", source: "runtime",
+            operation: "cloudshare.exam_attempt_external_lease.read", outcome: "failure", customerId: "customer-helios",
+            actor: { type: "system" }, subject: { type: "exam_attempt", id: "attempt-1" }, message: "Timed out",
+            correlationId: "corr-transport", candidateEmail: null, examId: "exam-1", examAttemptId: "attempt-1",
+            request: { method: "GET", path: "/v3/envs/env-1" }, response: null, details: { failureMode: "transport" },
+          },
+        ], expandedDiagnosticId: "diag-transport", onToggleExpanded: () => {},
+      }),
+    );
+    expect(transportHtml).toContain('<strong>Response</strong>');
+    expect(transportHtml).toContain("No response received.");
+  });
 });

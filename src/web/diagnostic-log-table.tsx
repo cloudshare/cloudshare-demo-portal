@@ -158,14 +158,14 @@ function summariseRequestResponse(entry: DiagnosticLogTableEntry): string {
 }
 
 function StructuredDetailBlock(props: {
-  readonly label: string;
+  readonly label?: string;
   readonly value: Record<string, unknown> | Record<string, string>;
 }) {
   const formatted = useMemo(() => formatStructuredValue(props.value), [props.value]);
 
   return (
     <div>
-      <strong>{props.label}</strong>
+      {props.label ? <strong>{props.label}</strong> : null}
       <pre
         style={{
           margin: "0.25rem 0 0.75rem",
@@ -181,6 +181,32 @@ function StructuredDetailBlock(props: {
           Detail output truncated in the table view ({formatted.omittedCharacters.toLocaleString()} more characters omitted).
         </div>
       )}
+    </div>
+  );
+}
+
+function ResponseDetailBlock(props: {
+  readonly response: Record<string, unknown> | null | undefined;
+  readonly cachedPrior: boolean;
+}) {
+  if (!props.response || !hasStructuredContent(props.response)) {
+    return (
+      <div>
+        <strong>Response</strong>
+        <div style={{ margin: "0.25rem 0 0.75rem" }}>No response received.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <strong>Response</strong>
+      {props.cachedPrior ? (
+        <div style={{ margin: "0.25rem 0", color: colors.textSecondary }}>
+          Cached prior-response evidence; no new HTTP request was sent during cooldown.
+        </div>
+      ) : null}
+      <StructuredDetailBlock label="" value={props.response} />
     </div>
   );
 }
@@ -329,9 +355,12 @@ export function DiagnosticLogTable({
             const sections = [
               hasStructuredContent(displayExternalIds) ? { label: "External IDs", value: displayExternalIds! } : null,
               hasStructuredContent(entry.request) ? { label: "Request", value: entry.request! } : null,
-              hasStructuredContent(entry.response) ? { label: "Response", value: entry.response! } : null,
               hasStructuredContent(entry.details) ? { label: "Details", value: entry.details! } : null,
             ].filter((section): section is { label: string; value: Record<string, unknown> | Record<string, string> } => section !== null);
+            const isRequestDiagnostic = hasStructuredContent(entry.request);
+            const hasCachedPriorResponse = entry.details?.responseEvidence === "cached_prior";
+            const detailSection = sections.find((section) => section.label === "Details") ?? null;
+            const evidenceSections = sections.filter((section) => section.label !== "Details");
 
             return (
               <Fragment key={entry.id}>
@@ -453,13 +482,17 @@ export function DiagnosticLogTable({
                     >
                       {hints.length > 0 ? <SupportHintsBlock hints={hints} /> : null}
                       {quickFacts.length > 0 ? <QuickFactsBlock facts={quickFacts} /> : null}
-                      {sections.length > 0 ? (
-                        sections.map((section) => (
-                          <StructuredDetailBlock key={section.label} label={section.label} value={section.value} />
-                        ))
-                      ) : (
+                      {evidenceSections.map((section) => (
+                        <StructuredDetailBlock key={section.label} label={section.label} value={section.value} />
+                      ))}
+                      {isRequestDiagnostic ? (
+                        <ResponseDetailBlock response={entry.response} cachedPrior={hasCachedPriorResponse} />
+                      ) : null}
+                      {detailSection ? (
+                        <StructuredDetailBlock label={detailSection.label} value={detailSection.value} />
+                      ) : evidenceSections.length === 0 && !isRequestDiagnostic ? (
                         <span style={{ color: "#888" }}>No additional detail.</span>
-                      )}
+                      ) : null}
                     </td>
                   </tr>
                 )}
