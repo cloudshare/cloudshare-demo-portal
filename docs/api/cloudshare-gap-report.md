@@ -933,8 +933,11 @@ The corrected portal sequence is:
 
 1. `POST /v4/trainings` with `ExternalId` set to the portal ExamAttempt ID for individual scheduled
    Exams, or the Cohort Exam Session ID for cohort-backed Experiences.
-2. `GET /v4/trainings/{trainingId}/users/properties`, then `POST
-   /v4/trainings/{trainingId}/users/properties` for any missing required Certalis keys.
+2. `GET /v4/trainings/{trainingId}/users/properties` to retrieve all property definitions for the
+   Experience, treating `null` or `[]` as no definitions, then compare keys locally. If any required
+   Certalis keys are missing, call `POST /v4/trainings/{trainingId}/users/properties` with an array
+   request body such as `[{ "name": "certalisExamAttemptId" }]`; CloudShare also returns an array of
+   created definitions.
 3. `POST /v4/trainings/{trainingId}/students` with `customProperties` as an array of
    `{ Name, Value }` entries for the ensured per-user keys. Values may be `null` initially when the
    integration does not yet have the final value, and can later be updated through the v4

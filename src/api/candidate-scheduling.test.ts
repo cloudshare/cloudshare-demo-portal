@@ -101,7 +101,10 @@ function makeCloudShareFactory(overrides: Partial<ReturnType<CloudShareClientFac
       }
       if (spec.path === "/trainings/EXtraining-1/users/properties" || spec.path === "/trainings/EXcohort-1/users/properties") {
         return "method" in spec && spec.method === "POST"
-          ? { id: "TF-created", name: "certalisCandidateId" }
+          ? ((spec as { body?: unknown }).body as Array<{ name: string }>).map((property) => ({
+              id: `TF-${property.name}`,
+              name: property.name,
+            }))
           : [];
       }
       if (spec.path === "/trainings/EXtraining-1/students" || spec.path === "/trainings/EXcohort-1/students") {
@@ -658,7 +661,10 @@ describe("candidate scheduling handlers", () => {
             }
             if (spec.path === "/trainings/EXtraining-1/users/properties") {
               return "method" in spec && spec.method === "POST"
-                ? { id: "TF-created", name: "certalisCandidateId" }
+                ? ((spec as { body?: unknown }).body as Array<{ name: string }>).map((property) => ({
+                    id: `TF-${property.name}`,
+                    name: property.name,
+                  }))
                 : [];
             }
             throw new CloudShareRequestError("forbidden", 403, {

@@ -109,7 +109,10 @@ function makeCloudShareFactory(
       }
       if (spec.path === "/trainings/EXtraining-1/users/properties") {
         return "method" in spec && spec.method === "POST"
-          ? { id: "TF-created", name: "certalisCandidateId" }
+          ? ((spec as { body?: unknown }).body as Array<{ name: string }>).map((property) => ({
+              id: `TF-${property.name}`,
+              name: property.name,
+            }))
           : [];
       }
       if (spec.path === "/trainings/EXtraining-1/students") {
@@ -272,7 +275,10 @@ describe("ExamAttempt scheduling runtime", () => {
             ? { id: "EXtraining-1" }
             : spec.path === "/trainings/EXtraining-1/users/properties"
               ? spec.method === "POST"
-                ? { id: "TF-created", name: "certalisCandidateId" }
+                ? (spec.body as Array<{ name: string }>).map((property) => ({
+                    id: `TF-${property.name}`,
+                    name: property.name,
+                  }))
                 : []
             : spec.path === "/trainings/EXtraining-1/students"
               ? [{ email: "candidate@helioscx.demo", firstName: "Asha", lastName: "Patel" }]

@@ -326,15 +326,17 @@ describe("cloudShareLabProvisioner — request shape", () => {
           response: { status: 200, body: raw },
         };
       }
-      const raw = {
-        id: "TF-certalisCandidateId",
-        name: "certalisCandidateId",
-        type: 0,
-        isRequired: false,
-        regex: "",
-        defaultValue: null,
-        value: null,
-      };
+      const raw = [
+        {
+          id: "TF-certalisCandidateId",
+          name: "certalisCandidateId",
+          type: 0,
+          isRequired: false,
+          regex: "",
+          defaultValue: null,
+          value: null,
+        },
+      ];
       return {
         data: spec.schema.parse(raw),
         host: "api.accelerate.cloudshare.com",
@@ -417,7 +419,7 @@ describe("cloudShareLabProvisioner — request shape", () => {
       expect.objectContaining({
         method: "POST",
         path: "/trainings/EXtraining-1/users/properties",
-        body: { Name: "certalisCandidateId" },
+        body: [{ name: "certalisCandidateId" }],
       }),
     );
   });

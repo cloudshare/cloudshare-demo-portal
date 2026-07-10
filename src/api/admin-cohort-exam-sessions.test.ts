@@ -256,12 +256,15 @@ describe("admin Cohort Exam Session runtime", () => {
       parseSuccessfulPublishV3(spec),
     );
     const requestV4Detailed = vi.fn(
-      async (spec: { method: string; path: string; body?: Record<string, unknown>; schema: { parse(value: unknown): unknown } }) => {
+      async (spec: { method: string; path: string; body?: unknown; schema: { parse(value: unknown): unknown } }) => {
         const body =
           spec.method === "POST" && spec.path === "/trainings"
             ? { id: "EXcohort-1", apiKeyEcho: "secret-api-key" }
             : spec.method === "POST" && spec.path === "/trainings/EXcohort-1/users/properties"
-              ? { id: spec.body?.Name, name: spec.body?.Name }
+              ? (spec.body as Array<{ name: string }>).map((property) => ({
+                  id: `TF-${property.name}`,
+                  name: property.name,
+                }))
               : [];
         return {
           data: spec.schema.parse(body),
@@ -394,8 +397,18 @@ describe("admin Cohort Exam Session runtime", () => {
         ? [requestV4Detailed.mock.invocationCallOrder[index]]
         : [],
     );
-    expect(userPropertyCallOrders).toHaveLength(3);
+    expect(userPropertyCallOrders).toHaveLength(2);
     expect(userPropertyCallOrders.every((order) => order > createCallOrder)).toBe(true);
+    expect(requestV4Detailed.mock.calls).toContainEqual([
+      expect.objectContaining({
+        method: "POST",
+        path: "/trainings/EXcohort-1/users/properties",
+        body: [
+          { name: "certalisExamAttemptId" },
+          { name: "certalisCandidateId" },
+        ],
+      }),
+    ]);
 
     const [entry] = await diagnosticsRepository.query({
       customerId: "customer-1",
@@ -779,12 +792,15 @@ describe("admin Cohort Exam Session runtime", () => {
       parseSuccessfulPublishV3(spec),
     );
     const requestV4Detailed = vi.fn(
-      async (spec: { method: string; path: string; body?: Record<string, unknown>; schema: { parse(value: unknown): unknown } }) => {
+      async (spec: { method: string; path: string; body?: unknown; schema: { parse(value: unknown): unknown } }) => {
         const body =
           spec.method === "POST" && spec.path === "/trainings"
             ? { id: "EXcohort-1" }
             : spec.method === "POST" && spec.path === "/trainings/EXcohort-1/users/properties"
-              ? { id: spec.body?.Name, name: spec.body?.Name }
+              ? (spec.body as Array<{ name: string }>).map((property) => ({
+                  id: `TF-${property.name}`,
+                  name: property.name,
+                }))
               : [];
         return {
           data: spec.schema.parse(body),
@@ -933,7 +949,10 @@ describe("admin Cohort Exam Session runtime", () => {
         }
         const body =
           spec.method === "POST" && spec.path === "/trainings/EXcohort-1/users/properties"
-            ? { id: spec.body?.Name, name: spec.body?.Name }
+            ? (spec.body as unknown as Array<{ name: string }>).map((property) => ({
+                id: `TF-${property.name}`,
+                name: property.name,
+              }))
             : [];
         return {
           data: spec.schema.parse(body),
@@ -1003,7 +1022,7 @@ describe("admin Cohort Exam Session runtime", () => {
 
     expect(responses.map((response) => response.status).sort()).toEqual([200, 409]);
     expect(requestV4Detailed.mock.calls.filter((call) => call[0].method === "POST" && call[0].path === "/trainings")).toHaveLength(1);
-    expect(requestV4Detailed).toHaveBeenCalledTimes(4);
+    expect(requestV4Detailed).toHaveBeenCalledTimes(3);
     await expect(sessions.findById("cohort-session-1")).resolves.toMatchObject({
       status: "published",
       cloudShareTrainingId: "EXcohort-1",

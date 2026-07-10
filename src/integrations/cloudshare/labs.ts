@@ -48,6 +48,9 @@ const trainingUserPropertyDefinitionSchema = z
   .passthrough();
 const trainingUserPropertyDefinitionsSchema = z.preprocess(
   (payload) => {
+    if (payload == null) {
+      return [];
+    }
     const rows =
       typeof payload === "object" && payload !== null && "items" in payload
         ? (payload as { items: unknown }).items
@@ -79,21 +82,7 @@ const trainingUserPropertyDefinitionsSchema = z.preprocess(
   },
   z.array(trainingUserPropertyDefinitionSchema),
 );
-const createdTrainingUserPropertySchema = z.preprocess((payload) => {
-  if (!payload || typeof payload !== "object") {
-    return payload;
-  }
-  const record = payload as Record<string, unknown>;
-  return {
-    id: record.id ?? record.Id ?? record.name ?? record.Name,
-    name: record.name ?? record.Name,
-    type: record.type ?? record.Type ?? null,
-    isRequired: record.isRequired ?? record.IsRequired,
-    regex: record.regex ?? record.Regex ?? null,
-    defaultValue: record.defaultValue ?? record.DefaultValue ?? null,
-    value: record.value ?? record.Value ?? null,
-  };
-}, trainingUserPropertyDefinitionSchema);
+const createdTrainingUserPropertiesSchema = trainingUserPropertyDefinitionsSchema;
 const trainingStartStateSchema = z
   .object({
     id: z.string().min(1),
@@ -301,15 +290,15 @@ export function createCloudShareLabProvisioner(
       const availableKeys = existingDefinitions.map((definition) => definition.name);
       const missingKeys = input.requiredKeys.filter((requiredKey) => !availableKeys.includes(requiredKey));
 
-      const createdDefinitions: TrainingUserPropertyDefinition[] = [];
-      for (const missingKey of missingKeys) {
+      let createdDefinitions: TrainingUserPropertyDefinition[] = [];
+      if (missingKeys.length > 0) {
         const created = await requestV4WithDiagnostics({
           method: "POST",
           path: `/trainings/${input.trainingId}/users/properties`,
-          body: { Name: missingKey },
-          schema: createdTrainingUserPropertySchema,
+          body: missingKeys.map((missingKey) => ({ name: missingKey })),
+          schema: createdTrainingUserPropertiesSchema,
         });
-        createdDefinitions.push(created.data);
+        createdDefinitions = [...created.data];
       }
       const definitions = [...existingDefinitions, ...createdDefinitions];
       const ensuredKeys = definitions.map((definition) => definition.name);

@@ -40,6 +40,12 @@ The exported v4 bundle lists the following training paths relevant to the MVP:
 Important: training user-property definitions use `/trainings/{trainingId}/users/properties`, not
 `/trainings/{trainingId}/user-properties`.
 
+For training user-property definitions, `GET /trainings/{trainingId}/users/properties` returns all
+definitions for the Experience; it is not filterable by key. Treat a `null` or empty array response
+as no definitions, then compare keys locally. `POST /trainings/{trainingId}/users/properties` takes
+an array body such as `[{ "name": "certalisExamAttemptId" }]` and returns an array of created
+definitions.
+
 ## Guided Journey Progress Paths
 
 The Guided Journey export lists:

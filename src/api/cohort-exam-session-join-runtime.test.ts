@@ -113,7 +113,10 @@ function makeCloudShareFactory(
             : spec.method === "GET" && spec.path === "/trainings/EXcohort-1/users/properties"
               ? []
               : spec.method === "POST" && spec.path === "/trainings/EXcohort-1/users/properties"
-                ? { id: (spec.body as { Name?: string } | undefined)?.Name, name: (spec.body as { Name?: string } | undefined)?.Name }
+                ? (spec.body as Array<{ name: string }>).map((property) => ({
+                    id: `TF-${property.name}`,
+                    name: property.name,
+                  }))
                 : spec.path === "/trainings/EXcohort-1/students"
                   ? [{}]
                   : spec.path === "/trainings/EXcohort-1/sponsored-link"
@@ -370,10 +373,10 @@ describe("joinCohortExamSessionRuntime", () => {
           };
         }
         if (spec.method === "POST" && spec.path === "/trainings/EXcohort-1/users/properties") {
-          const raw = {
-            id: (spec.body as { Name?: string }).Name,
-            name: (spec.body as { Name?: string }).Name,
-          };
+          const raw = (spec.body as Array<{ name: string }>).map((property) => ({
+            id: `TF-${property.name}`,
+            name: property.name,
+          }));
           return {
             data: spec.schema.parse(raw),
             host: "api.accelerate.cloudshare.com",
@@ -481,8 +484,18 @@ describe("joinCohortExamSessionRuntime", () => {
           (call) => call[0].method === "POST" && call[0].path === "/trainings/EXcohort-1/students",
         )
       ];
-    expect(ensureCallOrders).toHaveLength(3);
+    expect(ensureCallOrders).toHaveLength(2);
     expect(ensureCallOrders.every((order) => order < studentAddOrder)).toBe(true);
+    expect(requestV4Detailed.mock.calls).toContainEqual([
+      expect.objectContaining({
+        method: "POST",
+        path: "/trainings/EXcohort-1/users/properties",
+        body: [
+          { name: "certalisExamAttemptId" },
+          { name: "certalisCandidateId" },
+        ],
+      }),
+    ]);
   });
 
   it("blocks candidate join when the Cohort Exam Session admission has been closed", async () => {
@@ -1244,12 +1257,16 @@ describe("joinCohortExamSessionRuntime", () => {
             }
             if (spec.path === "/trainings/EXcohort-1/users/properties") {
               if ("method" in spec && spec.method === "POST") {
+                const raw = ((spec as { body?: unknown }).body as Array<{ name: string }>).map((property) => ({
+                  id: `TF-${property.name}`,
+                  name: property.name,
+                }));
                 return {
-                  data: { id: "TF-created", name: "certalisCandidateId" },
+                  data: raw,
                   host: "api.accelerate.cloudshare.com",
                   integrationSurface: "cloudshare.v4.training.user_properties",
                   request: { method: "POST", path: spec.path },
-                  response: { status: 201, body: { id: "TF-created", name: "certalisCandidateId" } },
+                  response: { status: 201, body: raw },
                 };
               }
               return {
@@ -1370,7 +1387,10 @@ describe("joinCohortExamSessionRuntime", () => {
             if (spec.path === "/trainings/EXcohort-1/users/properties") {
               const raw =
                 spec.method === "POST"
-                  ? { id: "TF-created", name: "certalisCandidateId" }
+                  ? ((spec as { body?: unknown }).body as Array<{ name: string }>).map((property) => ({
+                      id: `TF-${property.name}`,
+                      name: property.name,
+                    }))
                   : [];
               return {
                 data: spec.schema.parse(raw),
