@@ -658,13 +658,14 @@ function CohortSessionDetailItem(props: {
   );
 }
 
-type CohortMonitoringSummaryFilter = "active" | "in_progress" | "completed" | "problems" | "portal_attempts" | "cloudshare_participants";
+type CohortMonitoringSummaryFilter = "active" | "in_progress" | "completed" | "problems" | "state_observations" | "portal_attempts" | "cloudshare_participants";
 
 const cohortMonitoringSummaryFilterLabel: Record<CohortMonitoringSummaryFilter, string> = {
   active: "Active",
   in_progress: "In progress",
   completed: "Completed",
   problems: "Needs attention",
+  state_observations: "State observations",
   portal_attempts: "Session exam attempts",
   cloudshare_participants: "CloudShare participants",
 };
@@ -698,6 +699,10 @@ function CohortSessionMonitoringSummaryItem(props: {
 
 function isCohortMonitoringProblem(row: { readonly reconciliation?: "normal" | "state_observation" | "needs_attention"; readonly problemReasons: readonly string[] }): boolean {
   return (row.reconciliation ?? (row.problemReasons.length > 0 ? "needs_attention" : "normal")) === "needs_attention";
+}
+
+function isCohortMonitoringStateObservation(row: { readonly reconciliation?: "normal" | "state_observation" | "needs_attention"; readonly problemReasons: readonly string[] }): boolean {
+  return (row.reconciliation ?? (row.problemReasons.length > 0 ? "needs_attention" : "normal")) === "state_observation";
 }
 
 function ProblemReasonList(props: { readonly reasons: readonly string[] }) {
@@ -1018,12 +1023,14 @@ export function CohortSessionWorkspacePanel(props: {
     if (!summaryFilter || summaryFilter === "cloudshare_participants") return !summaryFilter || summaryFilter !== "cloudshare_participants";
     if (summaryFilter === "portal_attempts") return true;
     if (summaryFilter === "active" || summaryFilter === "in_progress" || summaryFilter === "completed") return attempt.summaryContributions?.includes(summaryFilter) ?? false;
+    if (summaryFilter === "state_observations") return isCohortMonitoringStateObservation(attempt);
     return isCohortMonitoringProblem(attempt);
   });
   const visibleCloudShareParticipants = cloudShareParticipants.filter((participant) => {
     if (!summaryFilter || summaryFilter === "portal_attempts") return !summaryFilter || summaryFilter !== "portal_attempts";
     if (summaryFilter === "cloudshare_participants") return true;
     if (summaryFilter === "active" || summaryFilter === "in_progress" || summaryFilter === "completed") return participant.summaryContributions?.includes(summaryFilter) ?? false;
+    if (summaryFilter === "state_observations") return isCohortMonitoringStateObservation(participant);
     return isCohortMonitoringProblem(participant);
   });
 
@@ -1223,10 +1230,12 @@ export function CohortSessionWorkspacePanel(props: {
                 selected={summaryFilter === "problems"}
                 onSelect={() => setSummaryFilter("problems")}
               />
-              <CohortSessionDetailItem
+              <CohortSessionMonitoringSummaryItem
                 label="State observations"
                 value={props.detail.summary.stateObservationCount ?? 0}
                 help="New state differences are observed once before becoming actionable, so transient updates do not cause unnecessary alarm."
+                selected={summaryFilter === "state_observations"}
+                onSelect={() => setSummaryFilter("state_observations")}
               />
               <CohortSessionMonitoringSummaryItem
                 label="Session exam attempts"
@@ -1268,7 +1277,7 @@ export function CohortSessionWorkspacePanel(props: {
               </div>
               {visiblePortalAttempts.length === 0 ? (
                 <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
-                  {summaryFilter ? "No session exam attempts contribute to this summary count." : "No session exam attempts have joined this Cohort Exam Session yet."}
+                  {summaryFilter === "state_observations" ? "No rows need a second state observation check on this refresh." : summaryFilter ? "No session exam attempts contribute to this summary count." : "No session exam attempts have joined this Cohort Exam Session yet."}
                 </div>
               ) : (
                 <div style={{ ...cardStyle, padding: 0, overflowX: "auto" }}>
@@ -1400,7 +1409,7 @@ export function CohortSessionWorkspacePanel(props: {
               {props.detail.cloudShareParticipants.status !== "not_published" &&
               visibleCloudShareParticipants.length === 0 ? (
                 <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
-                  {summaryFilter ? "No CloudShare participants contribute to this summary count." : "No CloudShare participants are currently visible for this shared Experience."}
+                  {summaryFilter === "state_observations" ? "No rows need a second state observation check on this refresh." : summaryFilter ? "No CloudShare participants contribute to this summary count." : "No CloudShare participants are currently visible for this shared Experience."}
                 </div>
               ) : null}
               {visibleCloudShareParticipants.length > 0 ? (

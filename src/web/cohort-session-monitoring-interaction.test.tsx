@@ -107,6 +107,65 @@ describe("Cohort Exam Session monitoring interactions", () => {
     expect(screen.getByText("CloudShare environment is in a non-terminal problem state.")).toBeTruthy();
   });
 
+  it("filters state observations in both tables and clears the summary filter", async () => {
+    const user = userEvent.setup();
+    render(
+      <CohortSessionWorkspacePanel
+        mode="monitoring"
+        examTitle="Helios Foundations"
+        session={session}
+        loading={false}
+        onBack={vi.fn()}
+        onPublish={vi.fn()}
+        detail={{
+          summary: { activeCount: 2, inProgressCount: 2, completedCount: 0, problemCount: 0, stateObservationCount: 2, portalAttemptCount: 2, cloudShareParticipantCount: 2, derivedFrom: "portal_and_cloudshare" },
+          portalAttempts: [
+            { id: "attempt-observed", candidateId: "candidate-observed", candidateName: "Observed Casey", candidateEmail: "observed@helioscx.demo", status: "in_progress", scheduledFor: null, createdAt: "2026-09-01T09:00:00.000Z", trainingId: "experience-1", experienceId: "experience-1", environmentExternalId: null, environmentId: null, participantId: null, reconciliation: "state_observation", problemReasons: [], diagnosticFilters: { examAttemptId: "attempt-observed" } },
+            { id: "attempt-normal", candidateId: "candidate-normal", candidateName: "Normal Riley", candidateEmail: "normal@helioscx.demo", status: "in_progress", scheduledFor: null, createdAt: "2026-09-01T09:00:00.000Z", trainingId: "experience-1", experienceId: "experience-1", environmentExternalId: null, environmentId: null, participantId: null, reconciliation: "normal", problemReasons: [], diagnosticFilters: { examAttemptId: "attempt-normal" } },
+          ],
+          cloudShareParticipants: { status: "available", trainingId: "experience-1", readError: null, correlationId: null, participants: [
+            { email: "observed@helioscx.demo", firstName: "Observed", lastName: "Casey", displayName: "Observed Casey", studentId: "participant-observed", environmentId: "environment-observed", environmentStatus: "Starting", participationStatus: "inProgress", firstJoinedAt: null, matchedExamAttemptId: "attempt-observed", reconciliation: "state_observation", problemReasons: [], diagnosticFilters: { examAttemptId: "attempt-observed" } },
+            { email: "normal@helioscx.demo", firstName: "Normal", lastName: "Riley", displayName: "Normal Riley", studentId: "participant-normal", environmentId: "environment-normal", environmentStatus: "Running", participationStatus: "inProgress", firstJoinedAt: null, matchedExamAttemptId: "attempt-normal", reconciliation: "normal", problemReasons: [], diagnosticFilters: { examAttemptId: "attempt-normal" } },
+          ] },
+          guidedJourneyAggregate: { status: "disabled", experienceId: "experience-1", readError: null, correlationId: null, progress: null },
+          diagnostics: { session: { examId: "exam-1", externalId: "experience-1" } },
+        }}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /State observations.*2/ }));
+    expect(screen.getAllByText("Observed Casey")).toHaveLength(2);
+    expect(screen.queryByText("Normal Riley")).toBeNull();
+    expect(screen.getAllByText("State observation: checking again on the next refresh")).toHaveLength(2);
+
+    await user.click(screen.getByRole("button", { name: "Clear summary filter" }));
+    expect(screen.getAllByText("Normal Riley")).toHaveLength(2);
+  });
+
+  it("explains when the state observations filter has no matching rows", async () => {
+    const user = userEvent.setup();
+    render(
+      <CohortSessionWorkspacePanel
+        mode="monitoring"
+        examTitle="Helios Foundations"
+        session={session}
+        loading={false}
+        onBack={vi.fn()}
+        onPublish={vi.fn()}
+        detail={{
+          summary: { activeCount: 1, inProgressCount: 1, completedCount: 0, problemCount: 0, stateObservationCount: 0, portalAttemptCount: 1, cloudShareParticipantCount: 1, derivedFrom: "portal_and_cloudshare" },
+          portalAttempts: [{ id: "attempt-normal", candidateId: "candidate-normal", candidateName: "Normal Riley", candidateEmail: "normal@helioscx.demo", status: "in_progress", scheduledFor: null, createdAt: "2026-09-01T09:00:00.000Z", trainingId: "experience-1", experienceId: "experience-1", environmentExternalId: null, environmentId: null, participantId: null, reconciliation: "normal", problemReasons: [], diagnosticFilters: { examAttemptId: "attempt-normal" } }],
+          cloudShareParticipants: { status: "available", trainingId: "experience-1", readError: null, correlationId: null, participants: [{ email: "normal@helioscx.demo", firstName: "Normal", lastName: "Riley", displayName: "Normal Riley", studentId: "participant-normal", environmentId: "environment-normal", environmentStatus: "Running", participationStatus: "inProgress", firstJoinedAt: null, matchedExamAttemptId: "attempt-normal", reconciliation: "normal", problemReasons: [], diagnosticFilters: { examAttemptId: "attempt-normal" } }] },
+          guidedJourneyAggregate: { status: "disabled", experienceId: "experience-1", readError: null, correlationId: null, progress: null },
+          diagnostics: { session: { examId: "exam-1", externalId: "experience-1" } },
+        }}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /State observations.*0/ }));
+    expect(screen.getAllByText("No rows need a second state observation check on this refresh.")).toHaveLength(2);
+  });
+
   it("opens a Cohort Exam Session monitoring detail from the Support list", async () => {
     const user = userEvent.setup();
     const onOpen = vi.fn();
