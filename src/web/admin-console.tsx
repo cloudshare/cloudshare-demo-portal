@@ -672,7 +672,7 @@ function ProblemReasonList(props: { readonly reasons: readonly string[] }) {
   );
 }
 
-function CohortSessionProblemBridge(props: {
+function CohortSessionAttentionSummary(props: {
   readonly problemCount: number;
   readonly portalProblemRows: number;
   readonly cloudShareProblemRows: number;
@@ -683,26 +683,26 @@ function CohortSessionProblemBridge(props: {
   if (props.problemCount === 0 && totalProblemRows === 0 && !props.cloudShareReadUnavailable) {
     return (
       <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
-        No reconciliation warnings are currently contributing to the Problems tile.
+        No items currently need attention. Environment and portal runtime state agree.
       </div>
     );
   }
 
   return (
     <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.35rem" }}>
-      <strong>Problems tile: {props.problemCount}</strong>
+      <strong>Needs attention: {props.problemCount}</strong>
       <span>
-        Rows below with reconciliation warnings: {totalProblemRows} total (
+        Rows below with actionable state conflicts: {totalProblemRows} total (
         {formatProblemRowCount(props.portalProblemRows, "session exam attempt row", "session exam attempt rows")},{" "}
         {formatProblemRowCount(props.cloudShareProblemRows, "CloudShare participant row", "CloudShare participant rows")}
         ).
       </span>
       <span>
-        These warning-highlighted rows explain the Problems tile. Matched portal/CloudShare disagreements can appear in
-        both tables so you can inspect either side.
+        Each item states the conflicting state and points to the relevant evidence. Matched portal/CloudShare rows can
+        appear in both tables because they describe the same correlation from different sides.
       </span>
       {props.cloudShareReadUnavailable ? (
-        <span>The CloudShare participant read unavailable panel below also contributes to Problems.</span>
+        <span>The unavailable CloudShare participant read below needs attention because current environment state cannot be established.</span>
       ) : null}
     </div>
   );
@@ -947,27 +947,38 @@ export function CohortSessionWorkspacePanel(props: {
   examTitle: string;
   session: CohortExamSessionRecord;
   detail?: CohortExamSessionMonitoringView | null;
+  mode?: "catalog" | "monitoring";
   loading: boolean;
   onBack: () => void;
   onPublish: () => void;
   onCloseAdmission?: () => void;
   onRetire?: () => void;
+  onOpenMonitoring?: () => void;
+  onOpenDiagnostics?: (filters: DiagnosticLogFilters) => void;
   onOpenCorrelationDiagnostics?: (correlationId: string) => void;
+  lastCheckedAt?: string | null;
+  onRefresh?: () => void;
 }) {
   const { session } = props;
+  const isMonitoring = props.mode === "monitoring";
+  const [timeline, setTimeline] = useState<{ title: string; events: readonly string[]; diagnostics: DiagnosticLogFilters } | null>(null);
+  const timelineRef = useRef<HTMLElement>(null);
+  useEffect(() => { if (timeline) timelineRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }, [timeline]);
   const portalProblemRows =
-    props.detail?.portalAttempts.filter((attempt) => attempt.problemReasons.length > 0).length ?? 0;
+    props.detail?.portalAttempts.filter((attempt) => (attempt.reconciliation ?? (attempt.problemReasons.length > 0 ? "needs_attention" : "normal")) === "needs_attention").length ?? 0;
   const cloudShareProblemRows =
-    props.detail?.cloudShareParticipants.participants.filter((participant) => participant.problemReasons.length > 0)
+    props.detail?.cloudShareParticipants.participants.filter((participant) => (participant.reconciliation ?? (participant.problemReasons.length > 0 ? "needs_attention" : "normal")) === "needs_attention")
       .length ?? 0;
 
   return (
     <div style={{ ...cardStyle, display: "grid", gap: "1rem" }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
         <div style={{ display: "grid", gap: "0.35rem" }}>
-          <h3 style={{ margin: 0 }}>Cohort Exam Session workspace</h3>
+          <h3 style={{ margin: 0 }}>{isMonitoring ? "Cohort Exam Session monitoring" : "Cohort Exam Session workspace"}</h3>
           <p style={{ margin: 0, color: colors.textSecondary }}>{props.examTitle}</p>
-          <CohortSessionDraftOnlyNotice />
+          {isMonitoring ? (
+            <p style={{ margin: 0, color: colors.textSecondary }}>Current Candidate attempts and shared CloudShare Experience state.</p>
+          ) : <CohortSessionDraftOnlyNotice />}
         </div>
         <button type="button" onClick={props.onBack} style={secondaryButtonStyle}>
           Back to Cohort Sessions
@@ -990,14 +1001,14 @@ export function CohortSessionWorkspacePanel(props: {
           </span>
         </div>
 
-        {session.session.status === "draft" ? (
+        {!isMonitoring && session.session.status === "draft" ? (
           <div style={{ display: "flex", justifyContent: "flex-start" }}>
             <button type="button" onClick={props.onPublish} disabled={props.loading} style={primaryButtonStyle}>
               Publish Cohort Session
             </button>
           </div>
         ) : null}
-        {(session.session.status === "published" || session.session.status === "closed") ? (
+        {!isMonitoring && (session.session.status === "published" || session.session.status === "closed") ? (
           <div style={{ display: "flex", justifyContent: "flex-start", gap: "0.5rem", flexWrap: "wrap" }}>
             {session.session.status === "published" ? (
               <button
@@ -1071,6 +1082,14 @@ export function CohortSessionWorkspacePanel(props: {
           </div>
         ) : null}
 
+        {!isMonitoring && props.onOpenMonitoring ? (
+          <div style={{ display: "flex", justifyContent: "flex-start" }}>
+            <button type="button" onClick={props.onOpenMonitoring} style={secondaryButtonStyle}>
+              Open in Session Monitoring
+            </button>
+          </div>
+        ) : null}
+
         <div style={cohortSessionDetailGridStyle}>
           <CohortSessionDetailItem label="Project" value={session.inheritedContext.project.name} />
           <CohortSessionDetailItem
@@ -1093,10 +1112,12 @@ export function CohortSessionWorkspacePanel(props: {
           />
         </div>
 
-        {props.detail ? (
+        {isMonitoring && props.detail ? (
           <div style={{ display: "grid", gap: "0.9rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
               <strong>Session monitoring</strong>
+              {props.lastCheckedAt ? <span style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>Last checked: {formatUtcTimestamp(props.lastCheckedAt)}</span> : null}
+              {props.onRefresh ? <button type="button" onClick={props.onRefresh} style={secondaryButtonStyle}>Refresh session</button> : null}
               <a
                 href={buildAdminConsoleHref({
                   tab: "support",
@@ -1105,6 +1126,12 @@ export function CohortSessionWorkspacePanel(props: {
                 })}
                 style={secondaryButtonStyle}
                 title="Open Support Diagnostics filtered to this Cohort Exam Session."
+                onClick={(event) => {
+                  if (props.onOpenDiagnostics) {
+                    event.preventDefault();
+                    props.onOpenDiagnostics(props.detail!.diagnostics.session);
+                  }
+                }}
               >
                 Session diagnostics
               </a>
@@ -1127,9 +1154,14 @@ export function CohortSessionWorkspacePanel(props: {
                 help="Portal attempts or CloudShare participants currently reported as completed."
               />
               <CohortSessionDetailItem
-                label="Problems"
-                value={props.detail.summary.problemCount}
-                help="State mismatch warnings, missing-match warnings, or CloudShare participant-check failures."
+                label="Needs attention"
+                value={props.detail.summary.needsAttentionCount ?? props.detail.summary.problemCount}
+                help="True runtime contradictions, missing correlations, or a failed CloudShare participant read."
+              />
+              <CohortSessionDetailItem
+                label="State observations"
+                value={props.detail.summary.stateObservationCount ?? 0}
+                help="New state differences are observed once before becoming actionable, so transient updates do not cause unnecessary alarm."
               />
               <CohortSessionDetailItem
                 label="Session exam attempts"
@@ -1146,12 +1178,9 @@ export function CohortSessionWorkspacePanel(props: {
             <div style={{ color: colors.textSecondary, fontSize: "0.9rem" }}>
               Counts are derived from session exam attempts and the CloudShare participant read for this shared Experience.
             </div>
-            <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
-              Problem count includes reconciliation warnings and CloudShare participant-check failures.
-              It is not a count of diagnostic errors.
-            </div>
-            <CohortSessionProblemBridge
-              problemCount={props.detail.summary.problemCount}
+            {(props.detail.summary.stateObservationCount ?? 0) > 0 ? <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>State observations detected. They will need attention only if they remain after the next automatic refresh.</div> : null}
+            <CohortSessionAttentionSummary
+              problemCount={props.detail.summary.needsAttentionCount ?? props.detail.summary.problemCount}
               portalProblemRows={portalProblemRows}
               cloudShareProblemRows={cloudShareProblemRows}
               cloudShareReadUnavailable={props.detail.cloudShareParticipants.status === "unavailable"}
@@ -1182,7 +1211,7 @@ export function CohortSessionWorkspacePanel(props: {
                         <tr
                           key={attempt.id}
                           style={
-                            attempt.problemReasons.length > 0
+                            (attempt.reconciliation ?? (attempt.problemReasons.length > 0 ? "needs_attention" : "normal")) === "needs_attention"
                               ? reconciliationWarningRowStyle
                               : { borderBottom: `1px solid ${colors.border}` }
                           }
@@ -1201,23 +1230,26 @@ export function CohortSessionWorkspacePanel(props: {
                             <div>Environment ID: {attempt.environmentId ?? attempt.environmentExternalId ?? "-"}</div>
                           </td>
                           <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
-                            {attempt.problemReasons.length > 0 ? (
-                              <ProblemReasonList reasons={attempt.problemReasons} />
+                            {(attempt.reconciliation ?? (attempt.problemReasons.length > 0 ? "needs_attention" : "normal")) === "needs_attention" ? (
+                              <AttentionGuidance reasons={attempt.problemReasons} />
+                            ) : attempt.reconciliation === "state_observation" ? (
+                              <span style={{ color: colors.textSecondary }}>State observation: checking again on the next refresh</span>
                             ) : (
-                              <span style={{ color: colors.textSecondary }}>No reconciliation warnings</span>
+                              <span style={{ color: colors.textSecondary }}>Normal: portal and CloudShare runtime state agree</span>
                             )}
                           </td>
                           <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
-                            <a
-                              href={buildAdminConsoleHref({
-                                tab: "support",
-                                supportView: "diagnostics",
-                                diagnosticFilters: attempt.diagnosticFilters,
-                              })}
-                              style={secondaryButtonStyle}
-                            >
-                              Attempt diagnostics
-                            </a>
+                            <button type="button" style={secondaryButtonStyle} onClick={() => setTimeline({
+                              title: `Attempt timeline: ${attempt.candidateName}`,
+                              events: [
+                                `Certalis currently records this attempt as ${formatCandidateAttemptStatus(attempt.status)}.`,
+                                attempt.problemReasons[0] ?? "The portal and CloudShare runtime state currently agree.",
+                                "CloudShare participant reads are checked again every 30 seconds while this session is open.",
+                              ],
+                              diagnostics: attempt.diagnosticFilters,
+                            })}>
+                              Attempt timeline
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -1312,7 +1344,7 @@ export function CohortSessionWorkspacePanel(props: {
                         <tr
                           key={`${participant.email}:${participant.studentId ?? participant.environmentId ?? "none"}`}
                           style={
-                            participant.problemReasons.length > 0
+                            (participant.reconciliation ?? (participant.problemReasons.length > 0 ? "needs_attention" : "normal")) === "needs_attention"
                               ? reconciliationWarningRowStyle
                               : { borderBottom: `1px solid ${colors.border}` }
                           }
@@ -1323,8 +1355,8 @@ export function CohortSessionWorkspacePanel(props: {
                             <div style={{ color: colors.textSecondary }}>First joined: {formatUtcTimestamp(participant.firstJoinedAt)}</div>
                           </td>
                           <td style={{ padding: "0.55rem", verticalAlign: "top", overflowWrap: "anywhere" }}>
-                            <div>Participation: {participant.participationStatus ?? "-"}</div>
-                            <div>Environment: {participant.environmentStatus ?? "-"}</div>
+                            <div>Participation: {formatCloudShareMonitoringStatus(participant.participationStatus)}</div>
+                            <div>Environment: {formatCloudShareMonitoringStatus(participant.environmentStatus)}</div>
                             <div>Environment ID: {participant.environmentId ?? "-"}</div>
                             <div>Participant ID: {participant.studentId ?? "-"}</div>
                           </td>
@@ -1332,23 +1364,26 @@ export function CohortSessionWorkspacePanel(props: {
                             {participant.matchedExamAttemptId ? participant.matchedExamAttemptId : "No session exam attempt"}
                           </td>
                           <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
-                            {participant.problemReasons.length > 0 ? (
-                              <ProblemReasonList reasons={participant.problemReasons} />
+                            {(participant.reconciliation ?? (participant.problemReasons.length > 0 ? "needs_attention" : "normal")) === "needs_attention" ? (
+                              <AttentionGuidance reasons={participant.problemReasons} />
+                            ) : participant.reconciliation === "state_observation" ? (
+                              <span style={{ color: colors.textSecondary }}>State observation: checking again on the next refresh</span>
                             ) : (
-                              <span style={{ color: colors.textSecondary }}>No reconciliation warnings</span>
+                              <span style={{ color: colors.textSecondary }}>Normal: portal and CloudShare runtime state agree</span>
                             )}
                           </td>
                           <td style={{ padding: "0.55rem", verticalAlign: "top" }}>
-                            <a
-                              href={buildAdminConsoleHref({
-                                tab: "support",
-                                supportView: "diagnostics",
-                                diagnosticFilters: participant.diagnosticFilters,
-                              })}
-                              style={secondaryButtonStyle}
-                            >
-                              Attempt diagnostics
-                            </a>
+                            <button type="button" style={secondaryButtonStyle} onClick={() => setTimeline({
+                              title: `Participant correlation: ${participant.displayName ?? participant.email}`,
+                              events: [
+                                `CloudShare reports environment state as ${participant.environmentStatus ?? "unavailable"}.`,
+                                `CloudShare reports participation as ${participant.participationStatus ?? "unavailable"}; this is membership context, not runtime authority.`,
+                                participant.problemReasons[0] ?? "The participant is correlated to the portal attempt without an actionable contradiction.",
+                              ],
+                              diagnostics: participant.diagnosticFilters,
+                            })}>
+                              Participant correlation diagnostics
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -1357,10 +1392,70 @@ export function CohortSessionWorkspacePanel(props: {
                 </div>
               ) : null}
             </div>
+            {timeline ? (
+              <section ref={timelineRef} role="region" style={{ position: "fixed", inset: "15% 15% auto", zIndex: 20, ...cardStyle, display: "grid", gap: "0.75rem", maxHeight: "70vh", overflowY: "auto", boxShadow: "0 12px 40px rgba(15,23,42,.28)" }} aria-label="Monitoring timeline explanation">
+                <strong>{timeline.title}</strong>
+                <ol style={{ margin: 0, paddingLeft: "1.25rem" }}>{timeline.events.map((event) => <li key={event}>{event}</li>)}</ol>
+                <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+                  <button type="button" style={secondaryButtonStyle} onClick={() => setTimeline(null)}>Close timeline</button>
+                  <a href={buildAdminConsoleHref({ tab: "support", supportView: "diagnostics", diagnosticFilters: timeline.diagnostics })} style={secondaryButtonStyle}>View forensic logs</a>
+                </div>
+              </section>
+            ) : null}
           </div>
         ) : null}
       </div>
     </div>
+  );
+}
+
+function formatCloudShareMonitoringStatus(status: string | null): string {
+  if (!status) return "-";
+  return status
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .toLowerCase();
+}
+
+function AttentionGuidance(props: { readonly reasons: readonly string[] }) {
+  return (
+    <div style={{ display: "grid", gap: "0.35rem" }}>
+      <ProblemReasonList reasons={props.reasons} />
+      <span style={{ color: colors.textSecondary }}>Refresh now. If this remains after the next check, open the linked timeline to inspect the relevant events.</span>
+    </div>
+  );
+}
+
+export function CohortSessionMonitoringList(props: {
+  readonly sessions: readonly { readonly exam: ExamRecord; readonly session: CohortExamSessionRecord }[];
+  readonly onOpen: (examId: string, sessionId: string) => void;
+}) {
+  return (
+    <section style={{ ...cardStyle, display: "grid", gap: "0.75rem" }} aria-label="Cohort Exam Session monitoring">
+      <div>
+        <h2 style={{ margin: 0, fontSize: "1rem" }}>Cohort Exam Sessions</h2>
+        <p style={{ margin: "0.35rem 0 0", color: colors.textSecondary }}>
+          Shared CloudShare Experiences grouped by Cohort Exam Session.
+        </p>
+      </div>
+      {props.sessions.length === 0 ? (
+        <p style={{ margin: 0, color: colors.textSecondary }}>No Cohort Exam Sessions are available for monitoring.</p>
+      ) : (
+        <div style={{ display: "grid", gap: "0.5rem" }}>
+          {props.sessions.map(({ exam, session }) => (
+            <div key={session.session.id} style={{ ...mutedPanelStyle, display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ display: "grid", gap: "0.15rem" }}>
+                <strong>{session.session.name}</strong>
+                <span style={{ color: colors.textSecondary }}>{exam.title} · {formatCohortSessionStatus(session.session.status)}</span>
+              </div>
+              <button type="button" onClick={() => props.onOpen(exam.id, session.session.id)} style={secondaryButtonStyle}>
+                Open monitoring
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -1916,6 +2011,7 @@ export function AdminConsole({
   const [focusedExamId, setFocusedExamId] = useState<string | null>(initialExamId ?? null);
   const [focusedCohortSessionId, setFocusedCohortSessionId] = useState<string | null>(initialCohortSessionId ?? null);
   const [supportView, setSupportView] = useState<AdminSupportView>(initialSupportView);
+  const [monitoringBranch, setMonitoringBranch] = useState<"cohort" | "individual" | null>(null);
   const [projects, setProjects] = useState<NamedResource[]>([]);
   const [regions, setRegions] = useState<NamedResource[]>([]);
   const [blueprints, setBlueprints] = useState<NamedResource[]>([]);
@@ -1935,7 +2031,10 @@ export function AdminConsole({
   const [examCatalog, setExamCatalog] = useState<ExamRecord[]>([]);
   const [archivedExamCatalog, setArchivedExamCatalog] = useState<ExamRecord[]>([]);
   const [cohortSessionsByExamId, setCohortSessionsByExamId] = useState<Record<string, CohortExamSessionRecord[]>>({});
+  const cohortSessionCacheRef = useRef<Record<string, CohortExamSessionRecord[]>>({});
+  const cohortSessionLoadsRef = useRef(new Map<string, Promise<void>>());
   const [cohortSessionDetailsById, setCohortSessionDetailsById] = useState<Record<string, CohortExamSessionDetailRecord>>({});
+  const [cohortMonitoringLastCheckedAt, setCohortMonitoringLastCheckedAt] = useState<string | null>(null);
   const [cohortSessionFormsByExamId, setCohortSessionFormsByExamId] = useState<Record<string, CohortExamSessionFormState>>({});
   const [selectedCohortSession, setSelectedCohortSession] = useState<CohortExamSessionRecord | null>(null);
   const [monitoring, setMonitoring] = useState<MonitoringView | null>(null);
@@ -1999,6 +2098,7 @@ export function AdminConsole({
     }
     if (tab === "support" && supportView === "monitoring") {
       void loadMonitoring();
+      void loadExamCatalog(false);
     }
     if (tab === "candidates") {
       void loadCandidates();
@@ -2011,6 +2111,13 @@ export function AdminConsole({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, examView, supportView]);
+
+  useEffect(() => {
+    if (tab !== "support" || supportView !== "monitoring" || !focusedExamId || !focusedCohortSessionId) return;
+    const interval = window.setInterval(() => void loadCohortSessionDetail(focusedExamId, focusedCohortSessionId), 30_000);
+    return () => window.clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, supportView, focusedExamId, focusedCohortSessionId]);
 
   useEffect(() => {
     if (tab !== "exams" || examView !== "edit" || !focusedExamId || editingExamId === focusedExamId) {
@@ -2032,12 +2139,15 @@ export function AdminConsole({
   }, [tab, examView, focusedExamId]);
 
   useEffect(() => {
-    if (tab !== "exams" || examView !== "session" || !focusedExamId || !focusedCohortSessionId) {
+    if (tab !== "support" || supportView !== "monitoring" || !focusedExamId || !focusedCohortSessionId) {
       return;
+    }
+    if (!cohortSessionCacheRef.current[focusedExamId]) {
+      void loadCohortExamSessions(focusedExamId);
     }
     void loadCohortSessionDetail(focusedExamId, focusedCohortSessionId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, examView, focusedExamId, focusedCohortSessionId]);
+  }, [tab, supportView, focusedExamId, focusedCohortSessionId]);
 
   function beginExamCatalogLoading() {
     examCatalogLoadingCountRef.current += 1;
@@ -2338,6 +2448,11 @@ export function AdminConsole({
     if (tab === "support" && supportView === "diagnostics") {
       void loadDiagnostics(false, navigation.pageOffset, navigation.filters);
     }
+  }
+
+  function openSessionSupportDiagnostics(filters: DiagnosticLogFilters) {
+    navigateAdmin({ tab: "support", supportView: "diagnostics", diagnosticFilters: filters });
+    setExpandedDiagnosticId(null);
   }
 
   function loadMoreMonitoringHistory() {
@@ -2714,7 +2829,7 @@ export function AdminConsole({
     }
   }
 
-  async function loadExamCatalog() {
+  async function loadExamCatalog(loadCohortSessions = true) {
     beginExamCatalogLoading();
     try {
       const response = await fetchAdmin("/api/admin/exams");
@@ -2731,7 +2846,11 @@ export function AdminConsole({
       const nextArchivedExams = data.archivedExams ?? [];
       setExamCatalog(nextExams);
       setArchivedExamCatalog(nextArchivedExams);
-      await Promise.all(nextExams.map((exam) => loadCohortExamSessions(exam.id)));
+      await Promise.all(
+        nextExams
+          .filter((exam) => loadCohortSessions || !cohortSessionCacheRef.current[exam.id])
+          .map((exam) => loadCohortExamSessions(exam.id)),
+      );
     } catch (caughtError) {
       if (isAdminSessionExpiredError(caughtError)) {
         return;
@@ -2743,23 +2862,28 @@ export function AdminConsole({
   }
 
   async function loadCohortExamSessions(examId: string) {
-    try {
-      const response = await fetchAdmin(`/api/admin/exams/${encodeURIComponent(examId)}/cohort-sessions`);
-      const data = (await response.json()) as { sessions?: CohortExamSessionRecord[]; error?: string };
-      if (!response.ok) {
-        setError(data.error ?? "Failed to load Cohort Exam Sessions");
-        return;
+    const inFlight = cohortSessionLoadsRef.current.get(examId);
+    if (inFlight) return inFlight;
+
+    const request = (async () => {
+      try {
+        const response = await fetchAdmin(`/api/admin/exams/${encodeURIComponent(examId)}/cohort-sessions`);
+        const data = (await response.json()) as { sessions?: CohortExamSessionRecord[]; error?: string };
+        if (!response.ok) {
+          setError(data.error ?? "Failed to load Cohort Exam Sessions");
+          return;
+        }
+        const sessions = data.sessions ?? [];
+        cohortSessionCacheRef.current = { ...cohortSessionCacheRef.current, [examId]: sessions };
+        setCohortSessionsByExamId((current) => ({ ...current, [examId]: sessions }));
+      } catch (caughtError) {
+        if (!isAdminSessionExpiredError(caughtError)) setError("Failed to load Cohort Exam Sessions");
+      } finally {
+        cohortSessionLoadsRef.current.delete(examId);
       }
-      setCohortSessionsByExamId((current) => ({
-        ...current,
-        [examId]: data.sessions ?? [],
-      }));
-    } catch (caughtError) {
-      if (isAdminSessionExpiredError(caughtError)) {
-        return;
-      }
-      setError("Failed to load Cohort Exam Sessions");
-    }
+    })();
+    cohortSessionLoadsRef.current.set(examId, request);
+    return request;
   }
 
   async function loadCohortSessionDetail(examId: string, sessionId: string) {
@@ -2776,6 +2900,7 @@ export function AdminConsole({
         ...current,
         [sessionId]: data,
       }));
+      setCohortMonitoringLastCheckedAt(new Date().toISOString());
     } catch (caughtError) {
       if (isAdminSessionExpiredError(caughtError)) {
         return;
@@ -2843,7 +2968,6 @@ export function AdminConsole({
         [examId]: { name: "", admissionStartsAt: "", admissionEndsAt: "", capacity: "" },
       }));
       await loadCohortExamSessions(examId);
-      await loadCohortSessionDetail(examId, data.session.id);
       navigateAdmin({
         tab: "exams",
         examView: "session",
@@ -2878,7 +3002,6 @@ export function AdminConsole({
       setSelectedCohortSession(data);
       setExamMessage("Cohort Exam Session published to CloudShare.");
       await loadCohortExamSessions(examId);
-      await loadCohortSessionDetail(examId, data.session.id);
     } catch (caughtError) {
       if (isAdminSessionExpiredError(caughtError)) {
         return;
@@ -2905,7 +3028,6 @@ export function AdminConsole({
       }
       setExamMessage("Cohort Exam Session admission closed.");
       await loadCohortExamSessions(examId);
-      await loadCohortSessionDetail(examId, sessionId);
     } catch (caughtError) {
       if (isAdminSessionExpiredError(caughtError)) {
         return;
@@ -2955,7 +3077,6 @@ export function AdminConsole({
       }
       setExamMessage("Cohort Exam Session retired.");
       await loadCohortExamSessions(examId);
-      await loadCohortSessionDetail(examId, sessionId);
     } catch (caughtError) {
       if (isAdminSessionExpiredError(caughtError)) {
         return;
@@ -3297,6 +3418,9 @@ export function AdminConsole({
     (selectedCohortSession?.session.id === focusedCohortSessionId ? selectedCohortSession : null);
   const focusedCohortSessionDetail =
     focusedCohortSessionId ? (cohortSessionDetailsById[focusedCohortSessionId] ?? null) : null;
+  const monitoredCohortSessions = allExamCatalog.flatMap((exam) =>
+    (cohortSessionsByExamId[exam.id] ?? []).map((session) => ({ exam, session })),
+  );
   useEffect(() => {
     if (!shouldReconcileAllowedRegionIds(defaultSnapshot)) {
       return;
@@ -4173,10 +4297,9 @@ export function AdminConsole({
           )}
 
           {examView === "session" && focusedExam && focusedCohortSession && (
-            <CohortSessionWorkspacePanel
+          <CohortSessionWorkspacePanel
               examTitle={focusedExam.title}
               session={focusedCohortSession}
-              detail={focusedCohortSessionDetail?.monitoring ?? null}
               loading={loading}
               onBack={() => navigateToExamSessions(focusedExam.id)}
               onPublish={() => void publishCohortSession(focusedExam.id, focusedCohortSession.session.id)}
@@ -4185,6 +4308,15 @@ export function AdminConsole({
               }
               onRetire={() => void retireCohortSession(focusedExam.id, focusedCohortSession.session.id)}
               onOpenCorrelationDiagnostics={openCorrelationSupportDiagnostics}
+              onOpenDiagnostics={openSessionSupportDiagnostics}
+              onOpenMonitoring={() =>
+                navigateAdmin({
+                  tab: "support",
+                  supportView: "monitoring",
+                  examId: focusedExam.id,
+                  cohortSessionId: focusedCohortSession.session.id,
+                })
+              }
             />
           )}
 
@@ -4346,21 +4478,48 @@ export function AdminConsole({
       )}
 
       {tab === "support" && supportView === "monitoring" && (
-        monitoring ? (
-          <SessionMonitoringPanel
-            monitoring={monitoring}
-            loading={loading}
-            onRefresh={() => void loadMonitoring()}
-            onLoadMoreHistory={loadMoreMonitoringHistory}
-            onOpenSupportDiagnostics={openExamAttemptSupportDiagnostics}
-          />
-        ) : (
-          <section>
-            <button onClick={() => void loadMonitoring()} disabled={loading} style={{ padding: "0.45rem 0.9rem" }}>
-              {loading ? "Loading..." : "Refresh Monitoring"}
-            </button>
-          </section>
-        )
+        <section style={{ display: "grid", gap: "1rem" }}>
+          {!focusedCohortSession ? (
+            <div style={{ ...cardStyle, display: "flex", gap: "0.75rem", flexWrap: "wrap" }} aria-label="Session Monitoring branches">
+              <button type="button" onClick={() => setMonitoringBranch("cohort")} style={monitoringBranch === "cohort" ? primaryButtonStyle : secondaryButtonStyle}>Cohort Exam Sessions</button>
+              <button type="button" onClick={() => setMonitoringBranch("individual")} style={monitoringBranch === "individual" ? primaryButtonStyle : secondaryButtonStyle}>Individual Exam Delivery</button>
+            </div>
+          ) : null}
+          {!focusedCohortSession && monitoringBranch === null ? (
+            <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
+              Choose a monitoring view. Cohort Exam Sessions monitor a shared CloudShare Experience; Individual Exam Delivery monitors one Candidate attempt at a time.
+            </div>
+          ) : null}
+          {focusedExam && focusedCohortSession ? (
+            <CohortSessionWorkspacePanel
+              mode="monitoring"
+              examTitle={focusedExam.title}
+              session={focusedCohortSession}
+              detail={focusedCohortSessionDetail?.monitoring ?? null}
+              loading={loading}
+              lastCheckedAt={cohortMonitoringLastCheckedAt}
+              onRefresh={() => void loadCohortSessionDetail(focusedExam.id, focusedCohortSession.session.id)}
+              onBack={() => navigateAdmin({ tab: "support", supportView: "monitoring" })}
+              onPublish={() => undefined}
+              onOpenDiagnostics={openSessionSupportDiagnostics}
+            />
+          ) : monitoringBranch === "cohort" ? (
+            <CohortSessionMonitoringList
+              sessions={monitoredCohortSessions}
+              onOpen={(examId, cohortSessionId) => {
+                setMonitoringBranch("cohort");
+                navigateAdmin({ tab: "support", supportView: "monitoring", examId, cohortSessionId });
+              }}
+            />
+          ) : null}
+          {monitoringBranch === "individual" ? (monitoring ? (
+              <SessionMonitoringPanel monitoring={monitoring} loading={loading} onRefresh={() => void loadMonitoring()} onLoadMoreHistory={loadMoreMonitoringHistory} onOpenSupportDiagnostics={openExamAttemptSupportDiagnostics} />
+            ) : (
+              <button onClick={() => void loadMonitoring()} disabled={loading} style={{ padding: "0.45rem 0.9rem" }}>
+                {loading ? "Loading..." : "Refresh Monitoring"}
+              </button>
+            )) : null}
+        </section>
       )}
 
       {tab === "support" && supportView === "diagnostics" && (

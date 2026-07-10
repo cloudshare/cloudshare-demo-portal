@@ -280,9 +280,9 @@ export function buildAdminConsoleHref(route: Partial<AdminConsoleRouteState> & {
   const params = new URLSearchParams();
   params.set("tab", route.tab);
 
-  if (route.tab === "exams") {
+  if (route.tab === "exams" || route.tab === "support") {
     const examView = route.examView ?? "catalog";
-    if (examView !== "catalog") {
+    if (route.tab === "exams" && examView !== "catalog") {
       params.set("view", examView);
     }
     if (route.examId) {
@@ -331,8 +331,8 @@ export function parseAdminConsoleRouteState(input: {
 }): AdminConsoleRouteState {
   const { tab, supportView } = parseAdminTabWithSupportView(input.tab, input.view);
   const examView = tab === "exams" ? parseAdminExamView(input.view) : "catalog";
-  const examId = tab === "exams" ? readRouteValue(input.examId) : undefined;
-  const cohortSessionId = tab === "exams" ? readRouteValue(input.sessionId) : undefined;
+  const examId = tab === "exams" || tab === "support" ? readRouteValue(input.examId) : undefined;
+  const cohortSessionId = tab === "exams" || tab === "support" ? readRouteValue(input.sessionId) : undefined;
   if (tab !== "support" || supportView !== "diagnostics") {
     return {
       tab,

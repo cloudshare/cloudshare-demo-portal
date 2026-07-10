@@ -153,9 +153,8 @@ function isCloudActive(participant: CohortExamSessionCloudParticipantSnapshot | 
   if (isCloudProblemParticipant(participant)) {
     return false;
   }
-  if (isCloudInProgress(participant)) {
-    return true;
-  }
+  if (participant.environmentStatus?.trim()) return isCloudInProgress(participant);
+  if (isCloudInProgress(participant)) return true;
   const status = participant.participationStatus?.trim().toLowerCase();
   return status === "pending" || status === "registered" || status === "assigned";
 }
@@ -167,26 +166,29 @@ function isCloudInProgress(participant: CohortExamSessionCloudParticipantSnapsho
   if (isCloudProblemParticipant(participant)) {
     return false;
   }
-  const participationStatus = participant.participationStatus?.trim().toLowerCase();
-  if (participationStatus === "inprogress") {
-    return true;
-  }
   const environmentStatus = participant.environmentStatus?.trim().toLowerCase();
-  return Boolean(environmentStatus && isNormalActiveEnvironmentStatus(environmentStatus));
+  if (environmentStatus) {
+    return environmentStatus !== "suspended" && isNormalActiveEnvironmentStatus(environmentStatus);
+  }
+  return participant.participationStatus?.trim().toLowerCase() === "inprogress";
 }
 
 function isCloudCompleted(participant: CohortExamSessionCloudParticipantSnapshot | undefined): boolean {
   if (!participant) {
     return false;
   }
-  const participationStatus = participant.participationStatus?.trim().toLowerCase();
   const environmentStatus = participant.environmentStatus?.trim().toLowerCase();
-  return participationStatus === "completed" || Boolean(environmentStatus && isTerminalEnvironmentStatus(environmentStatus));
+  if (environmentStatus) return isTerminalEnvironmentStatus(environmentStatus);
+  return participant.participationStatus?.trim().toLowerCase() === "completed";
 }
 
 function isCloudProblemParticipant(participant: CohortExamSessionCloudParticipantSnapshot | undefined): boolean {
   if (!participant) {
     return false;
+  }
+  const environmentStatus = participant.environmentStatus?.trim().toLowerCase();
+  if (environmentStatus) {
+    return !isTerminalEnvironmentStatus(environmentStatus) && !isNormalActiveEnvironmentStatus(environmentStatus);
   }
   const participationStatus = participant.participationStatus?.trim().toLowerCase();
   if (
@@ -197,14 +199,7 @@ function isCloudProblemParticipant(participant: CohortExamSessionCloudParticipan
   ) {
     return true;
   }
-  const environmentStatus = participant.environmentStatus?.trim().toLowerCase();
-  if (!environmentStatus) {
-    return false;
-  }
-  if (isTerminalEnvironmentStatus(environmentStatus) || isNormalActiveEnvironmentStatus(environmentStatus)) {
-    return false;
-  }
-  return true;
+  return false;
 }
 
 function isPortalCloudRuntimeMismatch(
@@ -221,22 +216,25 @@ function isPortalCloudRuntimeMismatch(
 }
 
 function isCloudSuspended(cloud: CohortExamSessionCloudParticipantSnapshot): boolean {
+  const environmentStatus = cloud.environmentStatus?.trim().toLowerCase();
+  if (environmentStatus) {
+    return environmentStatus === "suspended";
+  }
   const participationStatus = cloud.participationStatus?.trim().toLowerCase();
   if (participationStatus === "suspended") {
     return true;
   }
-  const environmentStatus = cloud.environmentStatus?.trim().toLowerCase();
-  return environmentStatus === "suspended";
+  return false;
 }
 
 function describeCloudOngoingState(cloud: CohortExamSessionCloudParticipantSnapshot): string {
-  const participationStatus = cloud.participationStatus?.trim();
-  if (participationStatus) {
-    return `CloudShare participation still ${participationStatus}`;
-  }
   const environmentStatus = cloud.environmentStatus?.trim();
   if (environmentStatus) {
     return `CloudShare environment is still ${environmentStatus}`;
+  }
+  const participationStatus = cloud.participationStatus?.trim();
+  if (participationStatus) {
+    return `CloudShare participation still ${participationStatus}`;
   }
   return "CloudShare participant is still active";
 }
@@ -246,34 +244,45 @@ function describeCloudRuntimeMismatch(
   cloud: CohortExamSessionCloudParticipantSnapshot,
 ): string {
   if (portal.status === "suspended") {
+    const environmentStatus = cloud.environmentStatus?.trim();
+    if (environmentStatus) {
+      return `CloudShare environment is ${formatCloudShareStatus(environmentStatus)}`;
+    }
     const participationStatus = cloud.participationStatus?.trim();
     if (participationStatus) {
-      return `CloudShare participation still ${participationStatus}`;
+      return `CloudShare participation still ${formatCloudShareStatus(participationStatus)}`;
     }
   }
   if (isCloudSuspended(cloud)) {
     const environmentStatus = cloud.environmentStatus?.trim();
     if (environmentStatus) {
-      return `CloudShare environment is ${environmentStatus}`;
+      return `CloudShare environment is ${formatCloudShareStatus(environmentStatus)}`;
     }
     const participationStatus = cloud.participationStatus?.trim();
     if (participationStatus) {
-      return `CloudShare participation is ${participationStatus}`;
+      return `CloudShare participation is ${formatCloudShareStatus(participationStatus)}`;
     }
   }
   return describeCloudOngoingState(cloud);
 }
 
 function describeCloudCompletedState(cloud: CohortExamSessionCloudParticipantSnapshot): string {
-  const participationStatus = cloud.participationStatus?.trim();
-  if (participationStatus) {
-    return `CloudShare participation is ${participationStatus}`;
-  }
   const environmentStatus = cloud.environmentStatus?.trim();
   if (environmentStatus) {
-    return `CloudShare environment is ${environmentStatus}`;
+    return `CloudShare environment is ${formatCloudShareStatus(environmentStatus)}`;
+  }
+  const participationStatus = cloud.participationStatus?.trim();
+  if (participationStatus) {
+    return `CloudShare participation is ${formatCloudShareStatus(participationStatus)}`;
   }
   return "CloudShare participant is already complete";
+}
+
+function formatCloudShareStatus(status: string): string {
+  return status
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .toLowerCase();
 }
 
 function isTerminalEnvironmentStatus(status: string): boolean {
