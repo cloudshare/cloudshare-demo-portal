@@ -1013,7 +1013,7 @@ describe("AdminConsole", () => {
     expect(html).toContain("Aggregate progress diagnostics");
     expect(html).toContain("Counts are derived from session exam attempts and the CloudShare participant read");
     expect(html).toContain("Needs attention");
-    expect(html).toContain("Needs attention only counts actionable runtime contradictions, missing correlations, or an unavailable participant read.");
+    expect(html).not.toContain("Needs attention only counts actionable runtime contradictions, missing correlations, or an unavailable participant read.");
     expect(html).not.toContain("It is not a count of diagnostic errors.");
     expect(html).toContain(
       'title="True runtime contradictions, missing correlations, or a failed CloudShare participant read."',
@@ -1115,7 +1115,7 @@ describe("AdminConsole", () => {
 
     expect(html).toContain("CloudShare participant read unavailable");
     expect(html).toContain("CloudShare participant read failed for this Cohort Exam Session.");
-    expect(html).toContain("Needs attention only counts actionable runtime contradictions, missing correlations, or an unavailable participant read.");
+    expect(html).not.toContain("Needs attention only counts actionable runtime contradictions, missing correlations, or an unavailable participant read.");
     expect(html).toContain("The unavailable CloudShare participant read below needs attention because current environment state cannot be established.");
     expect(html).toContain("Correlation ID:");
     expect(html).toContain("corr-1");
