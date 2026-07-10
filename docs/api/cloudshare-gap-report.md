@@ -932,6 +932,13 @@ therefore:
 - fail supportably when the tenant/project is missing those definitions, rather than sending a v4
   participant payload CloudShare will reject with a conversion error.
 
+**Follow-up (2026-07-10, Issue #301 read-only live check):** a signed read-only
+`GET /api/v3/class/actions/customfields?projectId=PRCU02uuokHPBfjMedkmradg2` returned `200` with
+zero class custom-field definitions for the current Helios Exams 1 project. The required Certalis
+keys `certalisExamAttemptId`, `certalisCohortSessionId`, and `certalisCandidateId` were therefore
+all absent. Until CloudShare support creates those project definitions, the portal must stop before
+participant add and expose the missing-key diagnostic instead of attempting to join the candidate.
+
 **Update (2026-07-01, Issue #251 QA clarification):** the Project Policy detail endpoint is
 undocumented but live-observed:
 `GET /api/v3/projects/PRCU02uuokHPBfjMedkmradg2/policies/POavMAu1wiaVydJdYUOAExJg2` returned
