@@ -74,6 +74,19 @@ describe("latest-only request coordination", () => {
       },
     });
   });
+
+  it("preserves a Cohort Exam Session selection when opening Support Session Monitoring", () => {
+    const href = buildAdminConsoleHref({
+      tab: "support",
+      supportView: "monitoring",
+      examId: "exam-1",
+      cohortSessionId: "cohort-session-1",
+    });
+
+    expect(href).toBe("/admin?tab=support&examId=exam-1&sessionId=cohort-session-1");
+    expect(parseAdminConsoleRouteState({ tab: "support", examId: "exam-1", sessionId: "cohort-session-1" }))
+      .toMatchObject({ tab: "support", supportView: "monitoring", examId: "exam-1", cohortSessionId: "cohort-session-1" });
+  });
 });
 
 describe("getExamAuthoringMode", () => {

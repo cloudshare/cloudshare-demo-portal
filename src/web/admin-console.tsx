@@ -947,14 +947,17 @@ export function CohortSessionWorkspacePanel(props: {
   examTitle: string;
   session: CohortExamSessionRecord;
   detail?: CohortExamSessionMonitoringView | null;
+  mode?: "catalog" | "monitoring";
   loading: boolean;
   onBack: () => void;
   onPublish: () => void;
   onCloseAdmission?: () => void;
   onRetire?: () => void;
+  onOpenMonitoring?: () => void;
   onOpenCorrelationDiagnostics?: (correlationId: string) => void;
 }) {
   const { session } = props;
+  const isMonitoring = props.mode === "monitoring";
   const portalProblemRows =
     props.detail?.portalAttempts.filter((attempt) => attempt.problemReasons.length > 0).length ?? 0;
   const cloudShareProblemRows =
@@ -965,9 +968,11 @@ export function CohortSessionWorkspacePanel(props: {
     <div style={{ ...cardStyle, display: "grid", gap: "1rem" }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
         <div style={{ display: "grid", gap: "0.35rem" }}>
-          <h3 style={{ margin: 0 }}>Cohort Exam Session workspace</h3>
+          <h3 style={{ margin: 0 }}>{isMonitoring ? "Cohort Exam Session monitoring" : "Cohort Exam Session workspace"}</h3>
           <p style={{ margin: 0, color: colors.textSecondary }}>{props.examTitle}</p>
-          <CohortSessionDraftOnlyNotice />
+          {isMonitoring ? (
+            <p style={{ margin: 0, color: colors.textSecondary }}>Current Candidate attempts and shared CloudShare Experience state.</p>
+          ) : <CohortSessionDraftOnlyNotice />}
         </div>
         <button type="button" onClick={props.onBack} style={secondaryButtonStyle}>
           Back to Cohort Sessions
@@ -990,14 +995,14 @@ export function CohortSessionWorkspacePanel(props: {
           </span>
         </div>
 
-        {session.session.status === "draft" ? (
+        {!isMonitoring && session.session.status === "draft" ? (
           <div style={{ display: "flex", justifyContent: "flex-start" }}>
             <button type="button" onClick={props.onPublish} disabled={props.loading} style={primaryButtonStyle}>
               Publish Cohort Session
             </button>
           </div>
         ) : null}
-        {(session.session.status === "published" || session.session.status === "closed") ? (
+        {!isMonitoring && (session.session.status === "published" || session.session.status === "closed") ? (
           <div style={{ display: "flex", justifyContent: "flex-start", gap: "0.5rem", flexWrap: "wrap" }}>
             {session.session.status === "published" ? (
               <button
@@ -1071,6 +1076,14 @@ export function CohortSessionWorkspacePanel(props: {
           </div>
         ) : null}
 
+        {!isMonitoring && props.onOpenMonitoring ? (
+          <div style={{ display: "flex", justifyContent: "flex-start" }}>
+            <button type="button" onClick={props.onOpenMonitoring} style={secondaryButtonStyle}>
+              Open in Session Monitoring
+            </button>
+          </div>
+        ) : null}
+
         <div style={cohortSessionDetailGridStyle}>
           <CohortSessionDetailItem label="Project" value={session.inheritedContext.project.name} />
           <CohortSessionDetailItem
@@ -1093,7 +1106,7 @@ export function CohortSessionWorkspacePanel(props: {
           />
         </div>
 
-        {props.detail ? (
+        {isMonitoring && props.detail ? (
           <div style={{ display: "grid", gap: "0.9rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
               <strong>Session monitoring</strong>
@@ -1361,6 +1374,39 @@ export function CohortSessionWorkspacePanel(props: {
         ) : null}
       </div>
     </div>
+  );
+}
+
+export function CohortSessionMonitoringList(props: {
+  readonly sessions: readonly { readonly exam: ExamRecord; readonly session: CohortExamSessionRecord }[];
+  readonly onOpen: (examId: string, sessionId: string) => void;
+}) {
+  return (
+    <section style={{ ...cardStyle, display: "grid", gap: "0.75rem" }} aria-label="Cohort Exam Session monitoring">
+      <div>
+        <h2 style={{ margin: 0, fontSize: "1rem" }}>Cohort Exam Sessions</h2>
+        <p style={{ margin: "0.35rem 0 0", color: colors.textSecondary }}>
+          Shared CloudShare Experiences grouped by Cohort Exam Session.
+        </p>
+      </div>
+      {props.sessions.length === 0 ? (
+        <p style={{ margin: 0, color: colors.textSecondary }}>No Cohort Exam Sessions are available for monitoring.</p>
+      ) : (
+        <div style={{ display: "grid", gap: "0.5rem" }}>
+          {props.sessions.map(({ exam, session }) => (
+            <div key={session.session.id} style={{ ...mutedPanelStyle, display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+              <div style={{ display: "grid", gap: "0.15rem" }}>
+                <strong>{session.session.name}</strong>
+                <span style={{ color: colors.textSecondary }}>{exam.title} · {formatCohortSessionStatus(session.session.status)}</span>
+              </div>
+              <button type="button" onClick={() => props.onOpen(exam.id, session.session.id)} style={secondaryButtonStyle}>
+                Open monitoring
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -1999,6 +2045,7 @@ export function AdminConsole({
     }
     if (tab === "support" && supportView === "monitoring") {
       void loadMonitoring();
+      void loadExamCatalog();
     }
     if (tab === "candidates") {
       void loadCandidates();
@@ -2011,6 +2058,16 @@ export function AdminConsole({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, examView, supportView]);
+
+  useEffect(() => {
+    if (tab !== "support" || supportView !== "monitoring") {
+      return;
+    }
+    for (const exam of allExamCatalog) {
+      void loadCohortExamSessions(exam.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, supportView, examCatalog, archivedExamCatalog]);
 
   useEffect(() => {
     if (tab !== "exams" || examView !== "edit" || !focusedExamId || editingExamId === focusedExamId) {
@@ -2038,6 +2095,15 @@ export function AdminConsole({
     void loadCohortSessionDetail(focusedExamId, focusedCohortSessionId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, examView, focusedExamId, focusedCohortSessionId]);
+
+  useEffect(() => {
+    if (tab !== "support" || supportView !== "monitoring" || !focusedExamId || !focusedCohortSessionId) {
+      return;
+    }
+    void loadCohortExamSessions(focusedExamId);
+    void loadCohortSessionDetail(focusedExamId, focusedCohortSessionId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, supportView, focusedExamId, focusedCohortSessionId]);
 
   function beginExamCatalogLoading() {
     examCatalogLoadingCountRef.current += 1;
@@ -3297,6 +3363,9 @@ export function AdminConsole({
     (selectedCohortSession?.session.id === focusedCohortSessionId ? selectedCohortSession : null);
   const focusedCohortSessionDetail =
     focusedCohortSessionId ? (cohortSessionDetailsById[focusedCohortSessionId] ?? null) : null;
+  const monitoredCohortSessions = allExamCatalog.flatMap((exam) =>
+    (cohortSessionsByExamId[exam.id] ?? []).map((session) => ({ exam, session })),
+  );
   useEffect(() => {
     if (!shouldReconcileAllowedRegionIds(defaultSnapshot)) {
       return;
@@ -4173,7 +4242,7 @@ export function AdminConsole({
           )}
 
           {examView === "session" && focusedExam && focusedCohortSession && (
-            <CohortSessionWorkspacePanel
+          <CohortSessionWorkspacePanel
               examTitle={focusedExam.title}
               session={focusedCohortSession}
               detail={focusedCohortSessionDetail?.monitoring ?? null}
@@ -4185,6 +4254,14 @@ export function AdminConsole({
               }
               onRetire={() => void retireCohortSession(focusedExam.id, focusedCohortSession.session.id)}
               onOpenCorrelationDiagnostics={openCorrelationSupportDiagnostics}
+              onOpenMonitoring={() =>
+                navigateAdmin({
+                  tab: "support",
+                  supportView: "monitoring",
+                  examId: focusedExam.id,
+                  cohortSessionId: focusedCohortSession.session.id,
+                })
+              }
             />
           )}
 
@@ -4346,21 +4423,33 @@ export function AdminConsole({
       )}
 
       {tab === "support" && supportView === "monitoring" && (
-        monitoring ? (
-          <SessionMonitoringPanel
-            monitoring={monitoring}
-            loading={loading}
-            onRefresh={() => void loadMonitoring()}
-            onLoadMoreHistory={loadMoreMonitoringHistory}
-            onOpenSupportDiagnostics={openExamAttemptSupportDiagnostics}
-          />
-        ) : (
-          <section>
+        <section style={{ display: "grid", gap: "1rem" }}>
+          {focusedExam && focusedCohortSession ? (
+            <CohortSessionWorkspacePanel
+              mode="monitoring"
+              examTitle={focusedExam.title}
+              session={focusedCohortSession}
+              detail={focusedCohortSessionDetail?.monitoring ?? null}
+              loading={loading}
+              onBack={() => navigateAdmin({ tab: "support", supportView: "monitoring" })}
+              onPublish={() => undefined}
+            />
+          ) : (
+            <CohortSessionMonitoringList
+              sessions={monitoredCohortSessions}
+              onOpen={(examId, cohortSessionId) =>
+                navigateAdmin({ tab: "support", supportView: "monitoring", examId, cohortSessionId })
+              }
+            />
+          )}
+          {monitoring ? (
+            <SessionMonitoringPanel monitoring={monitoring} loading={loading} onRefresh={() => void loadMonitoring()} onLoadMoreHistory={loadMoreMonitoringHistory} onOpenSupportDiagnostics={openExamAttemptSupportDiagnostics} />
+          ) : (
             <button onClick={() => void loadMonitoring()} disabled={loading} style={{ padding: "0.45rem 0.9rem" }}>
               {loading ? "Loading..." : "Refresh Monitoring"}
             </button>
-          </section>
-        )
+          )}
+        </section>
       )}
 
       {tab === "support" && supportView === "diagnostics" && (

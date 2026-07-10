@@ -881,6 +881,7 @@ describe("AdminConsole", () => {
             timeLimitMinutes: 90,
           },
         },
+        mode: "monitoring",
         detail: {
           summary: {
             activeCount: 2,
@@ -1067,6 +1068,7 @@ describe("AdminConsole", () => {
             timeLimitMinutes: 90,
           },
         },
+        mode: "monitoring",
         detail: {
           summary: {
             activeCount: 1,
@@ -1148,6 +1150,7 @@ describe("AdminConsole", () => {
             timeLimitMinutes: 90,
           },
         },
+        mode: "monitoring",
         detail: {
           summary: {
             activeCount: 0,
