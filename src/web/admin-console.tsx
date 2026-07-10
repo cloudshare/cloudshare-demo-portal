@@ -1988,6 +1988,7 @@ export function AdminConsole({
   const [examCatalog, setExamCatalog] = useState<ExamRecord[]>([]);
   const [archivedExamCatalog, setArchivedExamCatalog] = useState<ExamRecord[]>([]);
   const [cohortSessionsByExamId, setCohortSessionsByExamId] = useState<Record<string, CohortExamSessionRecord[]>>({});
+  const cohortSessionCacheRef = useRef<Record<string, CohortExamSessionRecord[]>>({});
   const cohortSessionLoadsRef = useRef(new Map<string, Promise<void>>());
   const [cohortSessionDetailsById, setCohortSessionDetailsById] = useState<Record<string, CohortExamSessionDetailRecord>>({});
   const [cohortSessionFormsByExamId, setCohortSessionFormsByExamId] = useState<Record<string, CohortExamSessionFormState>>({});
@@ -2087,18 +2088,10 @@ export function AdminConsole({
   }, [tab, examView, focusedExamId]);
 
   useEffect(() => {
-    if (tab !== "exams" || examView !== "session" || !focusedExamId || !focusedCohortSessionId) {
-      return;
-    }
-    void loadCohortSessionDetail(focusedExamId, focusedCohortSessionId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, examView, focusedExamId, focusedCohortSessionId]);
-
-  useEffect(() => {
     if (tab !== "support" || supportView !== "monitoring" || !focusedExamId || !focusedCohortSessionId) {
       return;
     }
-    if (!cohortSessionsByExamId[focusedExamId]) {
+    if (!cohortSessionCacheRef.current[focusedExamId]) {
       void loadCohortExamSessions(focusedExamId);
     }
     void loadCohortSessionDetail(focusedExamId, focusedCohortSessionId);
@@ -2804,7 +2797,7 @@ export function AdminConsole({
       setArchivedExamCatalog(nextArchivedExams);
       await Promise.all(
         nextExams
-          .filter((exam) => loadCohortSessions || !cohortSessionsByExamId[exam.id])
+          .filter((exam) => loadCohortSessions || !cohortSessionCacheRef.current[exam.id])
           .map((exam) => loadCohortExamSessions(exam.id)),
       );
     } catch (caughtError) {
@@ -2829,7 +2822,9 @@ export function AdminConsole({
           setError(data.error ?? "Failed to load Cohort Exam Sessions");
           return;
         }
-        setCohortSessionsByExamId((current) => ({ ...current, [examId]: data.sessions ?? [] }));
+        const sessions = data.sessions ?? [];
+        cohortSessionCacheRef.current = { ...cohortSessionCacheRef.current, [examId]: sessions };
+        setCohortSessionsByExamId((current) => ({ ...current, [examId]: sessions }));
       } catch (caughtError) {
         if (!isAdminSessionExpiredError(caughtError)) setError("Failed to load Cohort Exam Sessions");
       } finally {

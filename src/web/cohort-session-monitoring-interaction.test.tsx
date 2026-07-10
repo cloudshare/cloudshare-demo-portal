@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { render, screen } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React, { type ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
@@ -147,6 +147,7 @@ describe("AdminConsole Cohort Exam Session monitoring path", () => {
 
     await user.click(await screen.findByRole("button", { name: "Manage Cohort Sessions" }));
     await user.click(await screen.findByRole("button", { name: "View session details" }));
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/admin/exams/exam-1/cohort-sessions/cohort-session-1")).toHaveLength(0);
     fetchMock.mockClear();
     await user.click(await screen.findByRole("button", { name: "Open in Session Monitoring" }));
     expect(await screen.findByText("Cohort Exam Session monitoring")).toBeTruthy();
@@ -184,6 +185,28 @@ describe("AdminConsole Cohort Exam Session monitoring path", () => {
       />,
     );
 
+    expect(await screen.findByText("Cohort Exam Session monitoring")).toBeTruthy();
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/admin/exams/exam-1/cohort-sessions")).toHaveLength(1);
+  });
+
+  it("does not repeat a completed focused list read when the catalog response arrives later", async () => {
+    let resolveCatalog: ((response: Response) => void) | undefined;
+    const catalogResponse = new Promise<Response>((resolve) => { resolveCatalog = resolve; });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/admin/exams") return catalogResponse;
+      if (url === "/api/auth/session") return json({});
+      if (url === "/api/admin/cloudshare") return json({ hasConnection: true, connectedAt: null, verifiedAt: null, webhookPath: null });
+      if (url === "/api/admin/exams/exam-1/cohort-sessions") return json({ sessions: [session] });
+      if (url === "/api/admin/exams/exam-1/cohort-sessions/cohort-session-1") return json(cohortDetail);
+      if (url.startsWith("/api/admin/monitoring")) return json({ monitoring: { summary: { scheduled: 0, ready: 0, inProgress: 0, suspended: 0, completed: 0, expired: 0, total: 0 }, currentAttempts: { scheduled: [], ready: [], inProgress: [], suspended: [] }, history: [], historyPage: { limit: 25, offset: 0, total: 0, hasMore: false, nextOffset: null } } });
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<AdminConsole email="admin@helioscx.demo" initialTab="support" initialExamId="exam-1" initialCohortSessionId="cohort-session-1" />);
+
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => url === "/api/admin/exams/exam-1/cohort-sessions")).toHaveLength(1));
+    await act(async () => resolveCatalog?.(json({ activeExams: [exam], archivedExams: [] })));
     expect(await screen.findByText("Cohort Exam Session monitoring")).toBeTruthy();
     expect(fetchMock.mock.calls.filter(([url]) => url === "/api/admin/exams/exam-1/cohort-sessions")).toHaveLength(1);
   });
