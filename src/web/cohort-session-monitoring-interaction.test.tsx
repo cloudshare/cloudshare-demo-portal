@@ -126,9 +126,10 @@ describe("Cohort Exam Session monitoring interactions", () => {
       />,
     );
 
-    expect(screen.getByText("CloudShare participant roster refresh is rate limited")).toBeTruthy();
+    expect(screen.getAllByText("CloudShare participant roster refresh is rate limited")).toHaveLength(1);
     expect(screen.getByText(/Retry after 45 seconds/)).toBeTruthy();
     expect(screen.getByText("Current CloudShare state is unavailable because participant monitoring is temporarily throttled; no reconciliation conclusion is available.")).toBeTruthy();
+    expect(screen.getAllByText("corr-rate-limited-roster")).toHaveLength(1);
     expect(screen.getByRole("link", { name: "Participant check diagnostics" }).getAttribute("href")).toBe(
       "/admin?tab=support&view=diagnostics&operation=cohort_exam_session.monitor.read_participants&correlationId=corr-rate-limited-roster",
     );

@@ -1399,6 +1399,9 @@ export function CohortSessionWorkspacePanel(props: {
                 <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.35rem" }}>
                   <strong>CloudShare participant roster refresh is rate limited</strong>
                   <span>{props.detail.cloudShareParticipants.readError}</span>
+                  <span>
+                    CloudShare did not provide current participant state for this check. This is not a participant reconciliation failure.
+                  </span>
                   {props.detail.cloudShareParticipants.retryAfterSeconds !== undefined ? (
                     <span>Retry after {props.detail.cloudShareParticipants.retryAfterSeconds} seconds.</span>
                   ) : null}
@@ -1420,24 +1423,6 @@ export function CohortSessionWorkspacePanel(props: {
                   {props.detail.cloudShareParticipants.correlationId ? (
                     <span>
                       Correlation ID:{" "}
-                      <CorrelationDiagnosticsLink
-                        correlationId={props.detail.cloudShareParticipants.correlationId}
-                        onOpen={props.onOpenCorrelationDiagnostics}
-                      />
-                    </span>
-                  ) : null}
-                </div>
-              ) : null}
-              {props.detail.cloudShareParticipants.status === "rate_limited" ? (
-                <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.35rem" }}>
-                  <strong>CloudShare participant monitoring is temporarily throttled</strong>
-                  <span>{props.detail.cloudShareParticipants.readError}</span>
-                  <span>
-                    CloudShare did not provide current participant state for this check. This is not a participant reconciliation failure.
-                  </span>
-                  {props.detail.cloudShareParticipants.correlationId ? (
-                    <span>
-                      Correlation ID: {" "}
                       <CorrelationDiagnosticsLink
                         correlationId={props.detail.cloudShareParticipants.correlationId}
                         onOpen={props.onOpenCorrelationDiagnostics}
