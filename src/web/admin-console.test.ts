@@ -1012,11 +1012,11 @@ describe("AdminConsole", () => {
     expect(html).toContain("20%");
     expect(html).toContain("Aggregate progress diagnostics");
     expect(html).toContain("Counts are derived from session exam attempts and the CloudShare participant read");
-    expect(html).toContain("Problems");
+    expect(html).toContain("Needs attention");
     expect(html).toContain("Needs attention only counts actionable runtime contradictions, missing correlations, or an unavailable participant read.");
-    expect(html).toContain("It is not a count of diagnostic errors.");
+    expect(html).not.toContain("It is not a count of diagnostic errors.");
     expect(html).toContain(
-      'title="State mismatch warnings, missing-match warnings, or CloudShare participant-check failures."',
+      'title="True runtime contradictions, missing correlations, or a failed CloudShare participant read."',
     );
     expect(html).toContain(
       'title="Rows from Certalis portal state: Candidates who have an ExamAttempt for this Cohort Exam Session."',
