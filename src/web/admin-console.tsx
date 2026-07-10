@@ -962,6 +962,8 @@ export function CohortSessionWorkspacePanel(props: {
   const { session } = props;
   const isMonitoring = props.mode === "monitoring";
   const [timeline, setTimeline] = useState<{ title: string; events: readonly string[]; diagnostics: DiagnosticLogFilters } | null>(null);
+  const timelineRef = useRef<HTMLElement>(null);
+  useEffect(() => { if (timeline) timelineRef.current?.scrollIntoView({ behavior: "smooth", block: "center" }); }, [timeline]);
   const portalProblemRows =
     props.detail?.portalAttempts.filter((attempt) => (attempt.reconciliation ?? (attempt.problemReasons.length > 0 ? "needs_attention" : "normal")) === "needs_attention").length ?? 0;
   const cloudShareProblemRows =
@@ -1175,9 +1177,6 @@ export function CohortSessionWorkspacePanel(props: {
 
             <div style={{ color: colors.textSecondary, fontSize: "0.9rem" }}>
               Counts are derived from session exam attempts and the CloudShare participant read for this shared Experience.
-            </div>
-            <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
-              Needs attention only counts actionable runtime contradictions, missing correlations, or an unavailable participant read.
             </div>
             {(props.detail.summary.stateObservationCount ?? 0) > 0 ? <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>State observations detected. They will need attention only if they remain after the next automatic refresh.</div> : null}
             <CohortSessionAttentionSummary
@@ -1394,7 +1393,7 @@ export function CohortSessionWorkspacePanel(props: {
               ) : null}
             </div>
             {timeline ? (
-              <section style={{ ...mutedPanelStyle, display: "grid", gap: "0.5rem" }} aria-label="Monitoring timeline explanation">
+              <section ref={timelineRef} style={{ ...mutedPanelStyle, display: "grid", gap: "0.5rem" }} aria-label="Monitoring timeline explanation">
                 <strong>{timeline.title}</strong>
                 <ol style={{ margin: 0, paddingLeft: "1.25rem" }}>{timeline.events.map((event) => <li key={event}>{event}</li>)}</ol>
                 <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
