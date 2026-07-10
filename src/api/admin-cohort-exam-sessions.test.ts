@@ -387,6 +387,14 @@ describe("admin Cohort Exam Session runtime", () => {
         query: { projectId: "project-1" },
       }),
     );
+    const customFieldCallOrders = requestV3.mock.calls.flatMap((call, index) =>
+      call[0].path === "/class/actions/customfields"
+        ? [requestV3.mock.invocationCallOrder[index]]
+        : [],
+    );
+    expect(customFieldCallOrders).toHaveLength(2);
+    expect(customFieldCallOrders[0]).toBeLessThan(requestV4Detailed.mock.invocationCallOrder[0]);
+    expect(customFieldCallOrders[1]).toBeGreaterThan(requestV4Detailed.mock.invocationCallOrder[0]);
 
     const [entry] = await diagnosticsRepository.query({
       customerId: "customer-1",

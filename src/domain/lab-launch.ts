@@ -93,6 +93,16 @@ export interface AddParticipantInput {
   readonly certalisCohortSessionId?: string;
   readonly certalisCandidateId?: string;
 }
+
+export const CERTALIS_TRAINING_USER_PROPERTY_KEYS = [
+  "certalisExamAttemptId",
+  "certalisCohortSessionId",
+  "certalisCandidateId",
+] as const;
+
+export type CertalisTrainingUserPropertyKey =
+  (typeof CERTALIS_TRAINING_USER_PROPERTY_KEYS)[number];
+
 export interface AddParticipantResult {
   readonly participantId?: string;
   readonly integrationSurface?: string;
@@ -105,6 +115,8 @@ export interface AddParticipantResult {
 }
 export interface EnsureTrainingUserPropertyKeysInput {
   readonly projectId: string;
+  readonly trainingId?: string;
+  readonly experienceId?: string;
   readonly requiredKeys: readonly string[];
 }
 export interface TrainingUserPropertyDefinition {
@@ -118,6 +130,8 @@ export interface TrainingUserPropertyDefinition {
 }
 export interface EnsureTrainingUserPropertyKeysResult {
   readonly projectId: string;
+  readonly trainingId?: string;
+  readonly experienceId?: string;
   readonly requiredKeys: readonly string[];
   readonly availableKeys: readonly string[];
   readonly definitions: readonly TrainingUserPropertyDefinition[];

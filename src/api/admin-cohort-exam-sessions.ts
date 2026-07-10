@@ -22,6 +22,7 @@ import {
   publishExam,
   type ExamRepository,
 } from "@/domain/exam-catalog";
+import { CERTALIS_TRAINING_USER_PROPERTY_KEYS } from "@/domain/lab-launch";
 import {
   CloudShareRequestError,
   CloudShareResponseError,
@@ -280,6 +281,54 @@ export async function handlePublishCohortExamSession(
     }
 
     const cloudshareClient = deps.cloudshare.forConnection(connection);
+    const provisioner = createCloudShareLabProvisioner(cloudshareClient);
+    try {
+      await provisioner.ensureTrainingUserPropertyKeys?.({
+        projectId: exam.projectId,
+        requiredKeys: CERTALIS_TRAINING_USER_PROPERTY_KEYS,
+      });
+    } catch (error) {
+      await recordCohortExamSessionPublishFailure(
+        { repository: deps.sessions, now: deps.now },
+        {
+          session: claimedSession,
+          correlationId,
+          error:
+            "Required CloudShare training user-property keys are unavailable. Confirm the CloudShare project custom fields before retrying.",
+        },
+      );
+      await safeRecordDiagnostic(deps, {
+        source: "admin-exams",
+        customerId: request.customerId,
+        actor: request.actor ?? null,
+        subject: { type: "cohort_exam_session", id: claimedSession.id },
+        examId: exam.id,
+        level: "warn",
+        operation: "cohort_exam_session.publish",
+        outcome: "failure",
+        correlationId,
+        message: "Cohort Exam Session publish failed before CloudShare Experience creation while confirming training user-property keys",
+        externalIds: buildPublishFailureExternalIds(exam),
+        ...toPublishFailureDiagnostic(error),
+      });
+      deps.logger.warn("cohort session publish training user-property preflight failed", {
+        correlationId,
+        customerId: request.customerId,
+        examId: exam.id,
+        sessionId: claimedSession.id,
+        ...toPublishFailureLogFields(error),
+      });
+      return {
+        status: isCloudShareRateLimitError(error) ? 429 : 502,
+        body: {
+          error:
+            isCloudShareRateLimitError(error)
+              ? CLOUDSHARE_429_ADMIN_SUPPORT_GUIDANCE
+              : "CloudShare required training user-property keys are unavailable. Check the diagnostic log for the correlation ID.",
+          correlationId,
+        },
+      };
+    }
     const creator = createCloudShareOnDemandExperienceCreator(cloudshareClient);
     const created = await creator.createOnDemandExperience({
       name: buildCohortExperienceName(exam.title, claimedSession.name),
@@ -293,15 +342,12 @@ export async function handlePublishCohortExamSession(
       timeZoneId: "UTC",
       passphrase: `certalis-${claimedSession.id}`,
     });
-    const provisioner = createCloudShareLabProvisioner(cloudshareClient);
     try {
       await provisioner.ensureTrainingUserPropertyKeys?.({
         projectId: exam.projectId,
-        requiredKeys: [
-          "certalisExamAttemptId",
-          "certalisCohortSessionId",
-          "certalisCandidateId",
-        ],
+        trainingId: created.trainingId,
+        experienceId: created.experienceId,
+        requiredKeys: CERTALIS_TRAINING_USER_PROPERTY_KEYS,
       });
     } catch (error) {
       await markCohortExamSessionPublishReconciliationRequired(
@@ -621,6 +667,12 @@ function toPublishFailureDiagnostic(error: unknown): {
   readonly details: Record<string, unknown>;
 } {
   const context = (error as { context?: Record<string, unknown> }).context ?? {};
+  const status =
+    typeof (error as { status?: unknown }).status === "number"
+      ? (error as { status: number }).status
+      : typeof context.status === "number"
+        ? context.status
+        : undefined;
   const baseDetails = {
     integrationSurface: context.integrationSurface ?? "cloudshare.v4.training",
     failureMode: inferPublishFailureMode(error),
@@ -634,17 +686,16 @@ function toPublishFailureDiagnostic(error: unknown): {
       ...(context.requestBody ? { body: context.requestBody } : {}),
     },
     response:
-      context.responseHeaders || context.responseBody || typeof (error as { status?: unknown }).status === "number"
+      context.responseHeaders || context.responseBody !== undefined || status !== undefined
         ? {
-            ...(typeof (error as { status?: unknown }).status === "number"
-              ? { status: (error as { status: number }).status }
-              : {}),
+            ...(status !== undefined ? { status } : {}),
             ...(context.responseHeaders ? { headers: context.responseHeaders } : {}),
-            ...(context.responseBody ? { body: context.responseBody } : {}),
+            ...(context.responseBody !== undefined ? { body: context.responseBody } : {}),
           }
         : undefined,
     details: {
       ...baseDetails,
+      ...(status !== undefined ? { responseStatus: status } : {}),
       ...(context.cause ? { cause: context.cause } : {}),
       ...(context.issues ? { issues: context.issues } : {}),
     },
@@ -656,7 +707,10 @@ function toPublishFailureLogFields(error: unknown): Record<string, unknown> {
   return {
     integrationSurface: context.integrationSurface,
     failureMode: inferPublishFailureMode(error),
-    responseStatus: (error as { status?: unknown }).status,
+    responseStatus:
+      typeof (error as { status?: unknown }).status === "number"
+        ? (error as { status: number }).status
+        : context.status,
   };
 }
 

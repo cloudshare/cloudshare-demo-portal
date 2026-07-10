@@ -3,6 +3,7 @@ import type { CloudShareClient, CloudShareDetailedResult } from "./client";
 import type {
   AddParticipantInput,
   AddParticipantResult,
+  CertalisTrainingUserPropertyKey,
   AddStudentInput,
   CreateExperienceInput,
   CreateExperienceResult,
@@ -17,6 +18,7 @@ import type {
   LabProvisioner,
   TrainingUserPropertyDefinition,
 } from "@/domain/lab-launch";
+import { CERTALIS_TRAINING_USER_PROPERTY_KEYS as CERTALIS_PROPERTY_KEYS } from "@/domain/lab-launch";
 import { CloudShareResponseError } from "./errors";
 
 /**
@@ -329,6 +331,8 @@ export function createCloudShareLabProvisioner(
 
       return {
         projectId: input.projectId,
+        ...(input.trainingId ? { trainingId: input.trainingId } : {}),
+        ...(input.experienceId ? { experienceId: input.experienceId } : {}),
         requiredKeys: [...input.requiredKeys],
         availableKeys,
         definitions: definitions as TrainingUserPropertyDefinition[],
@@ -437,15 +441,19 @@ function parseCloudShareTrainingDate(value: string, timeZone?: string): Date | u
 function buildParticipantCustomProperties(
   input: AddParticipantInput,
 ): Array<{ Name: string; Value: string }> | undefined {
-  const entries = Object.entries({
+  const values: Record<CertalisTrainingUserPropertyKey, string | undefined> = {
     certalisExamAttemptId: input.certalisExamAttemptId,
     certalisCohortSessionId: input.certalisCohortSessionId,
     certalisCandidateId: input.certalisCandidateId,
-  }).flatMap(([key, value]) =>
+  };
+  const entries = CERTALIS_PROPERTY_KEYS.flatMap((key) => {
+    const value = values[key];
+    return (
     typeof value === "string" && value.trim().length > 0
       ? [{ Name: key, Value: value.trim() }]
-      : [],
-  );
+      : []
+    );
+  });
 
   return entries.length > 0 ? entries : undefined;
 }

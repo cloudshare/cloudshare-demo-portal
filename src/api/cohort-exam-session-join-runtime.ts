@@ -18,7 +18,11 @@ import {
   isSameExamAttemptAvailabilityConflictError,
   type ExamAttempt,
 } from "@/domain/exam-attempt";
-import type { LabLaunch, LabLaunchRepository } from "@/domain/lab-launch";
+import {
+  CERTALIS_TRAINING_USER_PROPERTY_KEYS,
+  type LabLaunch,
+  type LabLaunchRepository,
+} from "@/domain/lab-launch";
 import {
   CloudShareRequestError,
   CloudShareResponseError,
@@ -65,12 +69,6 @@ type JoinProvisioningOperation =
   | "ensure_user_properties"
   | "add_participant"
   | "create_sponsored_link";
-
-const REQUIRED_COHORT_TRAINING_USER_PROPERTY_KEYS = [
-  "certalisExamAttemptId",
-  "certalisCohortSessionId",
-  "certalisCandidateId",
-] as const;
 
 export async function joinCohortExamSessionRuntime(
   deps: CohortExamSessionJoinRuntimeDeps,
@@ -478,7 +476,9 @@ export async function joinCohortExamSessionRuntime(
   try {
     ensuredTrainingUserProperties = await trainingUserPropertyEnsurer({
       projectId: exam.projectId,
-      requiredKeys: REQUIRED_COHORT_TRAINING_USER_PROPERTY_KEYS,
+      trainingId: session.cloudShareTrainingId,
+      experienceId: session.cloudShareExperienceId,
+      requiredKeys: CERTALIS_TRAINING_USER_PROPERTY_KEYS,
     });
   } catch (cause) {
     await recordProvisioningFailure(deps, {
@@ -928,12 +928,15 @@ function toProvisioningDiagnostic(
   const status =
     typeof (cause as { status?: unknown }).status === "number"
       ? ((cause as { status: number }).status)
+      : typeof context.status === "number"
+        ? context.status
       : undefined;
   const request =
-    context.method || context.path || context.requestHeaders || context.requestBody
+    context.method || context.path || context.requestQuery || context.requestHeaders || context.requestBody
       ? {
           method: context.method ?? (attemptedOperation === "read_training" ? "GET" : "POST"),
           path: context.path ?? fallbackProvisioningPath(attemptedOperation),
+          ...(context.requestQuery ? { query: context.requestQuery } : {}),
           ...(context.requestHeaders ? { headers: context.requestHeaders } : {}),
           ...(context.requestBody !== undefined ? { body: context.requestBody } : {}),
         }
@@ -999,6 +1002,7 @@ function toProvisioningLogFields(diagnostic: {
     responseStatus: diagnostic.details.responseStatus,
     method: diagnostic.request?.method,
     path: diagnostic.request?.path,
+    query: diagnostic.request?.query,
     requestBody: diagnostic.request?.body,
     responseBody: diagnostic.response?.body,
   };

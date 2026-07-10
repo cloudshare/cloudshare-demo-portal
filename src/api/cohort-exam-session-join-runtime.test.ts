@@ -23,6 +23,7 @@ import type { CloudShareExamAuthoringSource } from "@/integrations/cloudshare/re
 import {
   CloudShareRateLimitError,
   CloudShareRequestError,
+  CloudShareResponseError,
   CloudShareTransportError,
 } from "@/integrations/cloudshare";
 import type { Logger } from "@/observability/logger";
@@ -309,6 +310,22 @@ describe("joinCohortExamSessionRuntime", () => {
     const attempts = createInMemoryExamAttemptRepository();
     const launches = createInMemoryLabLaunchRepository();
     const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const requestV3 = vi.fn(
+      async (spec: {
+        path?: string;
+        query?: Record<string, string>;
+        schema: { parse(value: unknown): unknown };
+      }) => {
+        if (spec.path === "/class/actions/customfields") {
+          return spec.schema.parse([
+            { id: "TF-attempt", name: "certalisExamAttemptId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
+            { id: "TF-cohort", name: "certalisCohortSessionId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
+            { id: "TF-candidate", name: "certalisCandidateId", type: 0, isRequired: false, regex: "", defaultValue: null, value: null },
+          ]);
+        }
+        return spec.schema.parse([]);
+      },
+    );
     const requestV4Detailed = vi.fn(
       async (spec: {
         method: string;
@@ -386,7 +403,10 @@ describe("joinCohortExamSessionRuntime", () => {
         audit: createInMemoryAuditRepository(),
         eventLog: createInMemoryEventLogRepository(),
         connections: makeConnectionRepository(),
-        cloudshare: makeCloudShareFactory({ requestV4Detailed: requestV4Detailed as never }),
+        cloudshare: makeCloudShareFactory({
+          requestV3: requestV3 as never,
+          requestV4Detailed: requestV4Detailed as never,
+        }),
         diagnostics: createDiagnosticRecorder({ repository: diagnosticsRepository }),
         logger: makeLogger(),
         now: () => new Date("2026-07-05T10:00:00.000Z"),
@@ -439,6 +459,16 @@ describe("joinCohortExamSessionRuntime", () => {
         }),
       }),
     ]);
+    expect(requestV3).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "GET",
+        path: "/class/actions/customfields",
+        query: { projectId: "project-1" },
+      }),
+    );
+    expect(requestV3.mock.invocationCallOrder[0]).toBeLessThan(
+      requestV4Detailed.mock.invocationCallOrder[1],
+    );
   });
 
   it("blocks candidate join when the Cohort Exam Session admission has been closed", async () => {
@@ -546,6 +576,144 @@ describe("joinCohortExamSessionRuntime", () => {
         code: "cohort_session_retake_blocked",
       },
     });
+  });
+
+  it("records supportable diagnostics when training user-property verification fails before participant add", async () => {
+    const exams = await makeExamRepository();
+    const sessions = await makePublishedSession();
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const eventLog = createInMemoryEventLogRepository();
+    const requestV3 = vi.fn(async () => {
+      throw new CloudShareResponseError(
+        "Required CloudShare training user-property keys are not configured for this project.",
+        {
+          method: "GET",
+          path: "/api/v3/class/actions/customfields",
+          requestQuery: { projectId: "project-1" },
+          integrationSurface: "cloudshare.v3.class.customfields",
+          status: 200,
+          responseBody: {
+            missingKeys: ["certalisCandidateId"],
+            availableKeys: ["certalisExamAttemptId", "certalisCohortSessionId"],
+          },
+          cause: "missing_training_user_property_keys",
+        },
+      );
+    });
+    const requestV4Detailed = vi.fn(
+      async (spec: {
+        method: string;
+        path: string;
+        body?: unknown;
+        schema: { parse(value: unknown): unknown };
+      }) => {
+        if (spec.path === "/trainings/EXcohort-1") {
+          const raw = {
+            id: "EXcohort-1",
+            status: "notStarted",
+            start: "2026-07-05T08:30:00",
+            timeZone: "UTC",
+          };
+          return {
+            data: spec.schema.parse(raw),
+            host: "api.accelerate.cloudshare.com",
+            integrationSurface: "cloudshare.v4.training.get",
+            request: { method: spec.method, path: spec.path },
+            response: { status: 200, body: raw },
+          };
+        }
+        throw new Error(`unexpected path ${spec.path}`);
+      },
+    );
+
+    const response = await joinCohortExamSessionRuntime(
+      {
+        exams,
+        sessions,
+        attempts,
+        launches,
+        audit: createInMemoryAuditRepository(),
+        eventLog,
+        connections: makeConnectionRepository(),
+        cloudshare: makeCloudShareFactory({
+          requestV3: requestV3 as never,
+          requestV4Detailed: requestV4Detailed as never,
+        }),
+        diagnostics: createDiagnosticRecorder({ repository: diagnosticsRepository }),
+        logger: makeLogger(),
+        now: () => new Date("2026-07-05T10:00:00.000Z"),
+        newId: vi.fn().mockReturnValueOnce("attempt-1").mockReturnValueOnce("launch-1"),
+        newCorrelationId: () => "corr-user-properties-fail",
+      },
+      {
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        candidateEmail: "candidate@helioscx.demo",
+        candidateFirstName: "Asha",
+        candidateLastName: "Patel",
+        examId: "exam-1",
+        cohortSessionId: "cohort-session-1",
+      },
+    );
+
+    expect(response).toEqual({
+      status: 502,
+      body: {
+        error: "CloudShare provisioning failed for the shared cohort Exam Session.",
+        correlationId: "corr-user-properties-fail",
+      },
+    });
+    expect(requestV3).toHaveBeenCalledWith(
+      expect.objectContaining({
+        method: "GET",
+        path: "/class/actions/customfields",
+        query: { projectId: "project-1" },
+      }),
+    );
+    expect(requestV4Detailed).toHaveBeenCalledTimes(1);
+    await expect(attempts.findById("attempt-1")).resolves.toBeNull();
+    await expect(launches.findByExamAttemptId("attempt-1")).resolves.toBeNull();
+    await expect(
+      diagnosticsRepository.query({
+        examAttemptId: "attempt-1",
+        correlationId: "corr-user-properties-fail",
+        operation: "cloudshare.ensure_user_properties",
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        outcome: "failure",
+        request: {
+          method: "GET",
+          path: "/api/v3/class/actions/customfields",
+          query: { projectId: "project-1" },
+        },
+        response: {
+          status: 200,
+          body: {
+            missingKeys: ["certalisCandidateId"],
+            availableKeys: ["certalisExamAttemptId", "certalisCohortSessionId"],
+          },
+        },
+        details: expect.objectContaining({
+          attemptedOperation: "ensure_user_properties",
+          integrationSurface: "cloudshare.v3.class.customfields",
+          responseStatus: 200,
+          cause: "missing_training_user_property_keys",
+        }),
+      }),
+    ]);
+    await expect(eventLog.listAll()).resolves.toEqual([
+      expect.objectContaining({
+        eventId: "corr-user-properties-fail",
+        payload: expect.objectContaining({
+          attemptedOperation: "ensure_user_properties",
+          responseStatus: 200,
+          query: { projectId: "project-1" },
+        }),
+      }),
+    ]);
   });
 
   it("allows join when the saved Exam snapshot still matches the current CloudShare Blueprint default Snapshot", async () => {
