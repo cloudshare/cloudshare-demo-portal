@@ -1393,7 +1393,7 @@ export function CohortSessionWorkspacePanel(props: {
               ) : null}
             </div>
             {timeline ? (
-              <section ref={timelineRef} style={{ ...mutedPanelStyle, display: "grid", gap: "0.5rem" }} aria-label="Monitoring timeline explanation">
+              <section ref={timelineRef} role="dialog" aria-modal="true" style={{ position: "fixed", inset: "15% 15% auto", zIndex: 20, ...cardStyle, display: "grid", gap: "0.75rem", maxHeight: "70vh", overflowY: "auto", boxShadow: "0 12px 40px rgba(15,23,42,.28)" }} aria-label="Monitoring timeline explanation">
                 <strong>{timeline.title}</strong>
                 <ol style={{ margin: 0, paddingLeft: "1.25rem" }}>{timeline.events.map((event) => <li key={event}>{event}</li>)}</ol>
                 <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
