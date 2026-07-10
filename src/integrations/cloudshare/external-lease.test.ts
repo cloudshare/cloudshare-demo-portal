@@ -256,6 +256,18 @@ describe("external lease inspection", () => {
             path: "/v3/envs/ENVS-live-1",
             integrationSurface: "cloudshare.v3.env.get",
             cooldownActive: true,
+            requestHeaders: {
+              authorization: "Bearer rehydrated-request-secret",
+              cookie: "cloudshare-session=rehydrated-request-secret",
+            },
+            requestQuery: {
+              token: "rehydrated-request-secret",
+              returnUrl: "https://use.cloudshare.com/Ent/Login.aspx?token=rehydrated-request-secret",
+            },
+            requestBody: {
+              bearerHeader: "Bearer rehydrated-request-secret",
+              loginUrl: "https://use.cloudshare.com/Ent/Login.aspx?token=rehydrated-request-secret",
+            },
             responseHeaders: {
               "retry-after": "30",
               authorization: "Bearer rehydrated-secret",
@@ -278,6 +290,20 @@ describe("external lease inspection", () => {
       failureMode: "rate_limit",
       responseStatus: 429,
       responseEvidence: "cached_prior",
+      request: {
+        headers: {
+          authorization: "[REDACTED]",
+          cookie: "[REDACTED]",
+        },
+        query: {
+          token: "[REDACTED]",
+          returnUrl: "[REDACTED]",
+        },
+        body: {
+          bearerHeader: "[REDACTED]",
+          loginUrl: "[REDACTED]",
+        },
+      },
       response: {
         status: 429,
         headers: {
@@ -291,5 +317,6 @@ describe("external lease inspection", () => {
       },
     });
     expect(JSON.stringify(lease)).not.toContain("rehydrated-secret");
+    expect(JSON.stringify(lease)).not.toContain("rehydrated-request-secret");
   });
 });

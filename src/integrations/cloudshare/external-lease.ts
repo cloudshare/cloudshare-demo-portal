@@ -366,21 +366,25 @@ function sanitizeRehydratedRateLimitContext(
 
   return {
     ...context,
+    ...(context.requestHeaders !== undefined
+      ? { requestHeaders: sanitizeRehydratedHeaders(context.requestHeaders) }
+      : {}),
+    ...(context.requestQuery !== undefined
+      ? { requestQuery: sanitizeRehydratedRequestQuery(context.requestQuery) }
+      : {}),
+    ...(context.requestBody !== undefined
+      ? { requestBody: sanitizeRehydratedBody(context.requestBody) }
+      : {}),
     ...(context.responseHeaders !== undefined
-      ? { responseHeaders: sanitizeRehydratedResponseHeaders(context.responseHeaders) }
+      ? { responseHeaders: sanitizeRehydratedHeaders(context.responseHeaders) }
       : {}),
     ...(context.responseBody !== undefined
-      ? {
-          responseBody: redactCloudShareAdminSupportValue(context.responseBody, {
-            preserveSponsoredLinkLoginUrl: false,
-            redactTokenLikeKeys: true,
-          }),
-        }
+      ? { responseBody: sanitizeRehydratedBody(context.responseBody) }
       : {}),
   };
 }
 
-function sanitizeRehydratedResponseHeaders(value: unknown): Record<string, unknown> | unknown {
+function sanitizeRehydratedHeaders(value: unknown): Record<string, unknown> | unknown {
   const redacted = redactCloudShareAdminSupportValue(value, {
     preserveSponsoredLinkLoginUrl: false,
     redactTokenLikeKeys: true,
@@ -390,11 +394,35 @@ function sanitizeRehydratedResponseHeaders(value: unknown): Record<string, unkno
   }
 
   for (const key of Object.keys(redacted)) {
-    if (key.toLowerCase() === "set-cookie") {
+    if (key.toLowerCase() === "set-cookie" || key.toLowerCase() === "cookie") {
       redacted[key] = "[REDACTED]";
     }
   }
   return redacted;
+}
+
+function sanitizeRehydratedRequestQuery(value: unknown): Record<string, unknown> | unknown {
+  const redacted = redactCloudShareAdminSupportValue(value, {
+    preserveSponsoredLinkLoginUrl: false,
+    redactTokenLikeKeys: true,
+  });
+  if (!isRecord(redacted)) {
+    return redacted;
+  }
+
+  for (const key of Object.keys(redacted)) {
+    if (/cookie/i.test(key)) {
+      redacted[key] = "[REDACTED]";
+    }
+  }
+  return redacted;
+}
+
+function sanitizeRehydratedBody(value: unknown): unknown {
+  return redactCloudShareAdminSupportValue(value, {
+    preserveSponsoredLinkLoginUrl: false,
+    redactTokenLikeKeys: true,
+  });
 }
 
 function requestEvidenceFromContext(
