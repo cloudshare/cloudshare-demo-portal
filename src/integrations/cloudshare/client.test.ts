@@ -104,7 +104,6 @@ describe("createCloudShareClient — v4", () => {
   it("emits support diagnostic request bodies while retaining training passphrases", async () => {
     const trace = vi.fn();
     const { http } = capturingHttp(ok({ id: "training-1" }));
-    let nowMs = 1_700_000_000_000;
     const client = createCloudShareClient({
       http,
       endpoints,
@@ -488,7 +487,7 @@ describe("createCloudShareClient — v3", () => {
       tokenProvider: stubTokenProvider,
       v3: { apiId: "api-id", apiKey: "api-key" },
       newToken: () => "tokfixed01",
-      now: () => nowMs,
+      now: () => 1_700_000_000_000,
       trace,
       customerId: "customer-helios",
     });
@@ -537,8 +536,6 @@ describe("createCloudShareClient — error mapping", () => {
   it("raises CloudShareRequestError on a non-2xx status", async () => {
     const { http } = capturingHttp({ status: 500, body: "boom" });
     const client = clientWith(http);
-    nowMs += 15_000;
-
     await expect(
       client.requestV4({ method: "GET", path: "/projects", schema: projectsSchema }),
     ).rejects.toBeInstanceOf(CloudShareRequestError);
@@ -734,6 +731,7 @@ describe("createCloudShareClient — error mapping", () => {
       headers: { "retry-after": "30" },
       body: JSON.stringify({ error: "Too many requests" }),
     });
+    let nowMs = 1_700_000_000_000;
     const client = createCloudShareClient({
       http,
       endpoints,
@@ -741,7 +739,7 @@ describe("createCloudShareClient — error mapping", () => {
       customerId: "customer-helios",
       cooldownStore: createCooldownStore(),
       v3: { apiId: "api-id", apiKey: "api-key" },
-      now: () => 1_700_000_000_000,
+      now: () => nowMs,
       newToken: () => "tokfixed01",
     });
 
@@ -753,6 +751,8 @@ describe("createCloudShareClient — error mapping", () => {
         schema: z.object({ id: z.string() }),
       }),
     ).rejects.toBeInstanceOf(CloudShareRateLimitError);
+
+    nowMs += 15_000;
 
     await expect(
       client.requestV4({ method: "GET", path: "/projects", schema: projectsSchema }),

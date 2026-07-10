@@ -1096,7 +1096,7 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
     expect(response.body.monitoring.portalAttempts).toMatchObject([
       {
         id: "attempt-1",
-        reconciliation: "unavailable",
+        reconciliation: "unknown",
         problemReasons: [],
       },
     ]);
@@ -1201,7 +1201,7 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
     expect(response.body.monitoring.cloudShareParticipants).toMatchObject({
       status: "rate_limited",
       participants: [],
-      readError: "CloudShare is temporarily throttling participant monitoring requests. Check the correlated diagnostics before retrying.",
+      readError: "CloudShare rate limited the participant roster refresh for this Cohort Exam Session.",
       correlationId: "corr-session-detail-rate-limit",
     });
 
