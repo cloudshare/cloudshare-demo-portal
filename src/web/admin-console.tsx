@@ -726,13 +726,16 @@ function CohortSessionAttentionSummary(props: {
   readonly portalProblemRows: number;
   readonly cloudShareProblemRows: number;
   readonly cloudShareReadUnavailable: boolean;
+  readonly cloudShareReadRateLimited: boolean;
 }) {
   const totalProblemRows = props.portalProblemRows + props.cloudShareProblemRows;
 
   if (props.problemCount === 0 && totalProblemRows === 0 && !props.cloudShareReadUnavailable) {
     return (
       <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
-        No items currently need attention. Environment and portal runtime state agree.
+        {props.cloudShareReadRateLimited
+          ? "CloudShare is cooling down the participant roster refresh. This does not create a reconciliation problem; the next refresh will compare the roster again."
+          : "No items currently need attention. Environment and portal runtime state agree."}
       </div>
     );
   }
@@ -1272,6 +1275,7 @@ export function CohortSessionWorkspacePanel(props: {
               portalProblemRows={portalProblemRows}
               cloudShareProblemRows={cloudShareProblemRows}
               cloudShareReadUnavailable={props.detail.cloudShareParticipants.status === "unavailable"}
+              cloudShareReadRateLimited={props.detail.cloudShareParticipants.status === "rate_limited"}
             />
 
             <div style={{ display: "grid", gap: "0.75rem" }}>
@@ -1391,6 +1395,24 @@ export function CohortSessionWorkspacePanel(props: {
                   </a>
                 ) : null}
               </div>
+              {props.detail.cloudShareParticipants.status === "rate_limited" ? (
+                <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.35rem" }}>
+                  <strong>CloudShare participant roster refresh is rate limited</strong>
+                  <span>{props.detail.cloudShareParticipants.readError}</span>
+                  {props.detail.cloudShareParticipants.retryAfterSeconds !== undefined ? (
+                    <span>Retry after {props.detail.cloudShareParticipants.retryAfterSeconds} seconds.</span>
+                  ) : null}
+                  {props.detail.cloudShareParticipants.correlationId ? (
+                    <span>
+                      Correlation ID:{" "}
+                      <CorrelationDiagnosticsLink
+                        correlationId={props.detail.cloudShareParticipants.correlationId}
+                        onOpen={props.onOpenCorrelationDiagnostics}
+                      />
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
               {props.detail.cloudShareParticipants.status === "unavailable" ? (
                 <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.35rem" }}>
                   <strong>CloudShare participant read unavailable</strong>

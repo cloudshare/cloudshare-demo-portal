@@ -98,6 +98,7 @@ export interface CohortExamSessionMonitoringView {
     readonly trainingId: string | null;
     readonly readError: string | null;
     readonly correlationId: string | null;
+    readonly retryAfterSeconds?: number;
     readonly participants: readonly CohortExamSessionParticipantView[];
   };
   readonly guidedJourneyAggregate: CohortExamSessionGuidedJourneyAggregateView;
@@ -391,6 +392,7 @@ async function readCloudShareParticipants(
   readonly participants: readonly TrainingParticipant[];
   readonly readError: string | null;
   readonly correlationId: string | null;
+  readonly retryAfterSeconds?: number;
 }> {
   const trainingId = input.session.session.cloudShareTrainingId?.trim() ?? "";
   const experienceId = input.session.session.cloudShareExperienceId?.trim() ?? "";
@@ -492,13 +494,17 @@ async function readCloudShareParticipants(
       correlationId: input.correlationId,
       ...diagnostic.details,
     });
+    const rateLimited = isCloudShareRateLimitError(error);
     return {
-      status: isCloudShareRateLimitError(error) ? "rate_limited" : "unavailable",
+      status: rateLimited ? "rate_limited" : "unavailable",
       participants: [],
-      readError: isCloudShareRateLimitError(error)
-        ? "CloudShare is temporarily throttling participant monitoring requests. Check the correlated diagnostics before retrying."
+      readError: rateLimited
+        ? "CloudShare rate limited the participant roster refresh for this Cohort Exam Session."
         : "CloudShare participant read failed for this Cohort Exam Session.",
       correlationId: input.correlationId,
+      ...(rateLimited && typeof error.retryAfterSeconds === "number"
+        ? { retryAfterSeconds: error.retryAfterSeconds }
+        : {}),
     };
   }
 }
@@ -513,6 +519,7 @@ async function buildMonitoringView(
     readonly participants: readonly TrainingParticipant[];
     readonly readError: string | null;
     readonly correlationId: string | null;
+    readonly retryAfterSeconds?: number;
   },
   aggregateProgress: CohortExamSessionGuidedJourneyAggregateView,
   participantReadCorrelationId: string,
@@ -574,6 +581,10 @@ async function buildMonitoringView(
   const derivedReconciliationRows = deriveCohortExamSessionReconciliationRows(
     portalAttemptsWithoutProblems,
     cloudShareParticipantsWithoutProblems,
+  ).map((row) =>
+    cloudShareRead.status === "rate_limited"
+      ? { ...row, problemReasons: [] }
+      : row,
   );
   // A throttled read contains no current CloudShare participant state. Do not
   // turn that absence into a portal/CloudShare contradiction or reset a prior
@@ -663,6 +674,7 @@ async function buildMonitoringView(
       trainingId: session.session.cloudShareTrainingId ?? null,
       readError: cloudShareRead.readError,
       correlationId: cloudShareRead.correlationId,
+      ...(cloudShareRead.retryAfterSeconds !== undefined ? { retryAfterSeconds: cloudShareRead.retryAfterSeconds } : {}),
       participants: cloudShareParticipants,
     },
     guidedJourneyAggregate: aggregateProgress,
@@ -696,7 +708,7 @@ function buildLegacyMonitoringView(
   portalAttempts: readonly CohortExamSessionAttemptView[],
   cloudShareParticipants: readonly CohortExamSessionParticipantView[],
   session: CohortExamSessionWithInheritedContext,
-  cloudShareRead: { readonly status: "available" | "unavailable" | "rate_limited" | "not_published"; readonly readError: string | null; readonly correlationId: string | null },
+  cloudShareRead: { readonly status: "available" | "unavailable" | "rate_limited" | "not_published"; readonly readError: string | null; readonly correlationId: string | null; readonly retryAfterSeconds?: number },
   aggregateProgress: CohortExamSessionGuidedJourneyAggregateView,
   participantReadCorrelationId: string,
   aggregateProgressCorrelationId: string,
@@ -704,7 +716,7 @@ function buildLegacyMonitoringView(
   return {
     summary,
     portalAttempts,
-    cloudShareParticipants: { status: cloudShareRead.status, trainingId: session.session.cloudShareTrainingId ?? null, readError: cloudShareRead.readError, correlationId: cloudShareRead.correlationId, participants: cloudShareParticipants },
+    cloudShareParticipants: { status: cloudShareRead.status, trainingId: session.session.cloudShareTrainingId ?? null, readError: cloudShareRead.readError, correlationId: cloudShareRead.correlationId, ...(cloudShareRead.retryAfterSeconds !== undefined ? { retryAfterSeconds: cloudShareRead.retryAfterSeconds } : {}), participants: cloudShareParticipants },
     guidedJourneyAggregate: aggregateProgress,
     diagnostics: {
       session: { examId: session.session.examId, ...(session.session.cloudShareTrainingId ? { externalId: session.session.cloudShareTrainingId } : {}) },

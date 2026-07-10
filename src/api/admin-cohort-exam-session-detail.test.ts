@@ -1045,12 +1045,12 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
       forConnection: () =>
         ({
           requestV4Detailed: vi.fn(async () => {
-            throw new CloudShareTransportError("CloudShare was unreachable", {
+            throw new CloudShareRateLimitError("CloudShare rate limited the roster read", 429, "rate_limit", {
               method: "GET",
               path: "/v4/trainings/EXcohort-1/students",
               integrationSurface: "cloudshare.v4.training.participant",
-              requestHeaders: { authorization: "Bearer secret-api-key" },
-              cause: "ECONNRESET",
+              responseHeaders: { "retry-after": "45" },
+              retryAfterSeconds: 45,
             });
           }),
         }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>,
@@ -1091,12 +1091,21 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
     if (!("monitoring" in response.body)) {
       throw new Error("Expected monitoring payload");
     }
-    expect(response.body.monitoring.summary.problemCount).toBe(2);
+    expect(response.body.monitoring.summary.problemCount).toBe(0);
+    expect(response.body.monitoring.summary.needsAttentionCount ?? 0).toBe(0);
+    expect(response.body.monitoring.portalAttempts).toMatchObject([
+      {
+        id: "attempt-1",
+        reconciliation: "unavailable",
+        problemReasons: [],
+      },
+    ]);
     expect(response.body.monitoring.cloudShareParticipants).toMatchObject({
-      status: "unavailable",
+      status: "rate_limited",
       participants: [],
-      readError: "CloudShare participant read failed for this Cohort Exam Session.",
+      readError: "CloudShare rate limited the participant roster refresh for this Cohort Exam Session.",
       correlationId: "corr-session-detail-failure",
+      retryAfterSeconds: 45,
     });
 
     const [entry] = await diagnosticsRepository.query({
@@ -1110,13 +1119,15 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
       request: {
         method: "GET",
         path: "/v4/trainings/EXcohort-1/students",
-        headers: { authorization: "[REDACTED]" },
       },
-      response: null,
+      response: {
+        status: 429,
+        headers: { "retry-after": "45" },
+      },
       details: {
         integrationSurface: "cloudshare.v4.training.participant",
-        failureMode: "transport",
-        cause: "ECONNRESET",
+        failureMode: "rate_limit",
+        responseStatus: 429,
       },
     });
   });
