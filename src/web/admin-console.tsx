@@ -958,9 +958,11 @@ export function CohortSessionWorkspacePanel(props: {
   onOpenCorrelationDiagnostics?: (correlationId: string) => void;
   lastCheckedAt?: string | null;
   onRefresh?: () => void;
+  attentionConfirmed?: boolean;
 }) {
   const { session } = props;
   const isMonitoring = props.mode === "monitoring";
+  const showAttention = props.attentionConfirmed ?? true;
   const portalProblemRows =
     props.detail?.portalAttempts.filter((attempt) => attempt.problemReasons.length > 0).length ?? 0;
   const cloudShareProblemRows =
@@ -1152,7 +1154,7 @@ export function CohortSessionWorkspacePanel(props: {
               />
               <CohortSessionDetailItem
                 label="Needs attention"
-                value={props.detail.summary.problemCount}
+                value={showAttention ? props.detail.summary.problemCount : 0}
                 help="True runtime contradictions, missing correlations, or a failed CloudShare participant read."
               />
               <CohortSessionDetailItem
@@ -1173,8 +1175,9 @@ export function CohortSessionWorkspacePanel(props: {
             <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
               Needs attention only counts actionable runtime contradictions, missing correlations, or an unavailable participant read.
             </div>
+            {!showAttention && props.detail.summary.problemCount > 0 ? <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>State observations detected. They will need attention only if they remain after the next automatic refresh.</div> : null}
             <CohortSessionAttentionSummary
-              problemCount={props.detail.summary.problemCount}
+              problemCount={showAttention ? props.detail.summary.problemCount : 0}
               portalProblemRows={portalProblemRows}
               cloudShareProblemRows={cloudShareProblemRows}
               cloudShareReadUnavailable={props.detail.cloudShareParticipants.status === "unavailable"}
@@ -2005,6 +2008,7 @@ export function AdminConsole({
   const cohortSessionLoadsRef = useRef(new Map<string, Promise<void>>());
   const [cohortSessionDetailsById, setCohortSessionDetailsById] = useState<Record<string, CohortExamSessionDetailRecord>>({});
   const [cohortMonitoringLastCheckedAt, setCohortMonitoringLastCheckedAt] = useState<string | null>(null);
+  const [cohortObservationReads, setCohortObservationReads] = useState<Record<string, { signature: string; count: number }>>({});
   const [cohortSessionFormsByExamId, setCohortSessionFormsByExamId] = useState<Record<string, CohortExamSessionFormState>>({});
   const [selectedCohortSession, setSelectedCohortSession] = useState<CohortExamSessionRecord | null>(null);
   const [monitoring, setMonitoring] = useState<MonitoringView | null>(null);
@@ -2871,6 +2875,14 @@ export function AdminConsole({
         [sessionId]: data,
       }));
       setCohortMonitoringLastCheckedAt(new Date().toISOString());
+      const signature = JSON.stringify({
+        portal: data.monitoring.portalAttempts.flatMap((attempt) => attempt.problemReasons),
+        participants: data.monitoring.cloudShareParticipants.participants.flatMap((participant) => participant.problemReasons),
+      });
+      setCohortObservationReads((current) => {
+        const previous = current[sessionId];
+        return { ...current, [sessionId]: { signature, count: previous?.signature === signature ? previous.count + 1 : 1 } };
+      });
     } catch (caughtError) {
       if (isAdminSessionExpiredError(caughtError)) {
         return;
@@ -4469,6 +4481,7 @@ export function AdminConsole({
               loading={loading}
               lastCheckedAt={cohortMonitoringLastCheckedAt}
               onRefresh={() => void loadCohortSessionDetail(focusedExam.id, focusedCohortSession.session.id)}
+              attentionConfirmed={focusedCohortSessionDetail?.monitoring.cloudShareParticipants.status === "unavailable" || (cohortObservationReads[focusedCohortSession.session.id]?.count ?? 0) >= 2}
               onBack={() => navigateAdmin({ tab: "support", supportView: "monitoring" })}
               onPublish={() => undefined}
               onOpenDiagnostics={openSessionSupportDiagnostics}
