@@ -104,6 +104,7 @@ describe("createCloudShareClient — v4", () => {
   it("emits support diagnostic request bodies while retaining training passphrases", async () => {
     const trace = vi.fn();
     const { http } = capturingHttp(ok({ id: "training-1" }));
+    let nowMs = 1_700_000_000_000;
     const client = createCloudShareClient({
       http,
       endpoints,
@@ -487,7 +488,7 @@ describe("createCloudShareClient — v3", () => {
       tokenProvider: stubTokenProvider,
       v3: { apiId: "api-id", apiKey: "api-key" },
       newToken: () => "tokfixed01",
-      now: () => 1_700_000_000_000,
+      now: () => nowMs,
       trace,
       customerId: "customer-helios",
     });
@@ -536,6 +537,8 @@ describe("createCloudShareClient — error mapping", () => {
   it("raises CloudShareRequestError on a non-2xx status", async () => {
     const { http } = capturingHttp({ status: 500, body: "boom" });
     const client = clientWith(http);
+    nowMs += 15_000;
+
     await expect(
       client.requestV4({ method: "GET", path: "/projects", schema: projectsSchema }),
     ).rejects.toBeInstanceOf(CloudShareRequestError);
@@ -759,6 +762,7 @@ describe("createCloudShareClient — error mapping", () => {
       classification: "rate_limit",
       context: expect.objectContaining({
         cooldownActive: true,
+        retryAfterSeconds: 15,
         responseHeaders: { "retry-after": "30" },
         responseBody: { error: "Too many requests" },
       }),
