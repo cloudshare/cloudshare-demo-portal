@@ -35,6 +35,7 @@ describe("cloudShareOnDemandExperienceCreator", () => {
       instructorId: "instructor-1",
       timeZoneId: "UTC",
       passphrase: "certalis-cohort-session-1",
+      externalId: "0d379db9-6b08-4457-b863-eb5f45323d24",
     });
 
     expect(requestV3).toHaveBeenCalledWith({
@@ -66,6 +67,7 @@ describe("cloudShareOnDemandExperienceCreator", () => {
         MainInstructor: { Email: "instructor-1" },
         TimeZone: "UTC",
         Passphrase: "certalis-cohort-session-1",
+        ExternalId: "0d379db96b084457b863eb5f45323d24",
         RegistrationType: "registeredStudentsOnly",
         UsersEarlyAccess: { GrantEarlyAccess: 2 },
       },

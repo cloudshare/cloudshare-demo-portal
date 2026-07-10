@@ -36,6 +36,7 @@ describe("cloudShareLabProvisioner — request shape", () => {
       instructorId: "instructor@example.com",
       passphrase: "certalis-attempt-1",
       timeZoneId: "UTC",
+      externalId: "0d379db9-6b08-4457-b863-eb5f45323d24",
     });
 
     expect(result).toEqual({
@@ -59,6 +60,7 @@ describe("cloudShareLabProvisioner — request shape", () => {
           MainInstructor: { Email: "instructor@example.com" },
           TimeZone: "UTC",
           Passphrase: "certalis-attempt-1",
+          ExternalId: "0d379db96b084457b863eb5f45323d24",
           UsersEarlyAccess: { GrantEarlyAccess: 2 },
         },
       },
@@ -100,6 +102,7 @@ describe("cloudShareLabProvisioner — request shape", () => {
       MainInstructor: { Email: "instructor@example.com" },
       TimeZone: "UTC",
       Passphrase: "certalis-attempt-1",
+      ExternalId: "0d379db96b084457b863eb5f45323d24",
       UsersEarlyAccess: { GrantEarlyAccess: 2 },
     });
   });
@@ -224,7 +227,6 @@ describe("cloudShareLabProvisioner — request shape", () => {
       firstName: "Candidate",
       lastName: "Demo",
       certalisExamAttemptId: "attempt-1",
-      certalisCohortSessionId: "cohort-session-1",
       certalisCandidateId: "candidate-1",
     });
 
@@ -233,11 +235,10 @@ describe("cloudShareLabProvisioner — request shape", () => {
         email: "candidate@helioscx.demo",
         firstName: "Candidate",
         lastName: "Demo",
-        customProperties: {
-          certalisExamAttemptId: "attempt-1",
-          certalisCohortSessionId: "cohort-session-1",
-          certalisCandidateId: "candidate-1",
-        },
+        customProperties: [
+          { Name: "certalisExamAttemptId", Value: "attempt-1" },
+          { Name: "certalisCandidateId", Value: "candidate-1" },
+        ],
       },
     ]);
     expect(result).toMatchObject({
@@ -297,6 +298,211 @@ describe("cloudShareLabProvisioner — request shape", () => {
       method: "GET",
       path: "/trainings/EXtraining-1",
       schema: expect.anything(),
+    });
+  });
+
+  it("adds missing training user-property keys through the v4 Experience user-property endpoint", async () => {
+    const requestV4Detailed = vi.fn(async (spec: { method: string; path: string; body?: unknown; schema: { parse(value: unknown): unknown } }) => {
+      if (spec.method === "GET") {
+        const raw = [
+          {
+            id: "TF-certalisExamAttemptId",
+            name: "certalisExamAttemptId",
+            type: 0,
+            isRequired: false,
+            regex: "",
+            defaultValue: null,
+            value: null,
+          },
+        ];
+        return {
+          data: spec.schema.parse(raw),
+          host: "api.accelerate.cloudshare.com",
+          integrationSurface: "cloudshare.v4.training.user_properties",
+          request: {
+            method: spec.method,
+            path: spec.path,
+          },
+          response: { status: 200, body: raw },
+        };
+      }
+      const raw = [
+        {
+          id: "TF-certalisCandidateId",
+          name: "certalisCandidateId",
+          type: 0,
+          isRequired: false,
+          regex: "",
+          defaultValue: null,
+          value: null,
+        },
+      ];
+      return {
+        data: spec.schema.parse(raw),
+        host: "api.accelerate.cloudshare.com",
+        integrationSurface: "cloudshare.v4.training.user_properties",
+        request: {
+          method: spec.method,
+          path: spec.path,
+          body: spec.body,
+        },
+        response: { status: 201, body: raw },
+      };
+    });
+    const client = {
+      requestV4Detailed,
+      requestV4: vi.fn(),
+      requestV3: vi.fn(),
+    } as unknown as CloudShareClient;
+    const labs = createCloudShareLabProvisioner(client);
+
+    await expect(
+      labs.ensureTrainingUserPropertyKeys!({
+        trainingId: "EXtraining-1",
+        requiredKeys: [
+          "certalisExamAttemptId",
+          "certalisCandidateId",
+        ],
+      }),
+    ).resolves.toEqual({
+      trainingId: "EXtraining-1",
+      requiredKeys: [
+        "certalisExamAttemptId",
+        "certalisCandidateId",
+      ],
+      availableKeys: [
+        "certalisExamAttemptId",
+        "certalisCandidateId",
+      ],
+      definitions: [
+        {
+          id: "TF-certalisExamAttemptId",
+          name: "certalisExamAttemptId",
+          type: 0,
+          isRequired: false,
+          regex: "",
+          defaultValue: null,
+          value: null,
+        },
+        {
+          id: "TF-certalisCandidateId",
+          name: "certalisCandidateId",
+          type: 0,
+          isRequired: false,
+          regex: "",
+          defaultValue: null,
+          value: null,
+        },
+      ],
+      integrationSurface: "cloudshare.v4.training.user_properties",
+      request: {
+        method: "POST",
+        path: "/trainings/EXtraining-1/users/properties",
+        body: [{ name: "certalisCandidateId" }],
+      },
+      response: {
+        status: 201,
+        body: [
+          {
+            id: "TF-certalisCandidateId",
+            name: "certalisCandidateId",
+            type: 0,
+            isRequired: false,
+            regex: "",
+            defaultValue: null,
+            value: null,
+          },
+        ],
+      },
+      requests: [
+        {
+          method: "GET",
+          path: "/trainings/EXtraining-1/users/properties",
+        },
+        {
+          method: "POST",
+          path: "/trainings/EXtraining-1/users/properties",
+          body: [{ name: "certalisCandidateId" }],
+        },
+      ],
+      responses: [
+        {
+          status: 200,
+          body: [
+            {
+              id: "TF-certalisExamAttemptId",
+              name: "certalisExamAttemptId",
+              type: 0,
+              isRequired: false,
+              regex: "",
+              defaultValue: null,
+              value: null,
+            },
+          ],
+        },
+        {
+          status: 201,
+          body: [
+            {
+              id: "TF-certalisCandidateId",
+              name: "certalisCandidateId",
+              type: 0,
+              isRequired: false,
+              regex: "",
+              defaultValue: null,
+              value: null,
+            },
+          ],
+        },
+      ],
+    });
+    expect(requestV4Detailed).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        method: "POST",
+        path: "/trainings/EXtraining-1/users/properties",
+        body: [{ name: "certalisCandidateId" }],
+      }),
+    );
+  });
+
+  it("rejects training user-property provisioning when CloudShare returns a partial create response", async () => {
+    const requestV4Detailed = vi.fn(async (spec: { method: string; path: string; body?: unknown; schema: { parse(value: unknown): unknown } }) => {
+      const raw = spec.method === "GET" ? [] : [{ id: "TF-certalisExamAttemptId", name: "certalisExamAttemptId" }];
+      return {
+        data: spec.schema.parse(raw),
+        host: "api.accelerate.cloudshare.com",
+        integrationSurface: "cloudshare.v4.training.user_properties",
+        request: {
+          method: spec.method,
+          path: spec.path,
+          ...(spec.body ? { body: spec.body } : {}),
+        },
+        response: { status: spec.method === "GET" ? 200 : 201, body: raw },
+      };
+    });
+    const client = {
+      requestV4Detailed,
+      requestV4: vi.fn(),
+      requestV3: vi.fn(),
+    } as unknown as CloudShareClient;
+    const labs = createCloudShareLabProvisioner(client);
+
+    await expect(
+      labs.ensureTrainingUserPropertyKeys!({
+        trainingId: "EXtraining-1",
+        requiredKeys: ["certalisExamAttemptId", "certalisCandidateId"],
+      }),
+    ).rejects.toMatchObject({
+      name: "CloudShareResponseError",
+      context: {
+        method: "POST",
+        path: "/trainings/EXtraining-1/users/properties",
+        integrationSurface: "cloudshare.v4.training.user_properties",
+        status: 201,
+        cause: "missing_training_user_property_keys_after_create",
+        responseBody: [{ id: "TF-certalisExamAttemptId", name: "certalisExamAttemptId" }],
+      },
     });
   });
 

@@ -99,6 +99,14 @@ function makeCloudShareFactory(overrides: Partial<ReturnType<CloudShareClientFac
           timeZone: "UTC",
         };
       }
+      if (spec.path === "/trainings/EXtraining-1/users/properties" || spec.path === "/trainings/EXcohort-1/users/properties") {
+        return "method" in spec && spec.method === "POST"
+          ? ((spec as { body?: unknown }).body as Array<{ name: string }>).map((property) => ({
+              id: `TF-${property.name}`,
+              name: property.name,
+            }))
+          : [];
+      }
       if (spec.path === "/trainings/EXtraining-1/students" || spec.path === "/trainings/EXcohort-1/students") {
         return [
           {
@@ -131,6 +139,8 @@ function makeCloudShareFactory(overrides: Partial<ReturnType<CloudShareClientFac
           ? "cloudshare.v4.training"
           : spec.path === "/trainings/EXcohort-1"
             ? "cloudshare.v4.training.get"
+          : spec.path.endsWith("/users/properties")
+            ? "cloudshare.v4.training.user_properties"
           : spec.path.endsWith("/students")
             ? "cloudshare.v4.training.participant"
             : spec.path.endsWith("/sponsored-link")
@@ -648,6 +658,14 @@ describe("candidate scheduling handlers", () => {
           requestV4: vi.fn(async (spec: { path: string }) => {
             if (spec.path === "/trainings") {
               return { id: "EXtraining-1" };
+            }
+            if (spec.path === "/trainings/EXtraining-1/users/properties") {
+              return "method" in spec && spec.method === "POST"
+                ? ((spec as { body?: unknown }).body as Array<{ name: string }>).map((property) => ({
+                    id: `TF-${property.name}`,
+                    name: property.name,
+                  }))
+                : [];
             }
             throw new CloudShareRequestError("forbidden", 403, {
               requestBody: {

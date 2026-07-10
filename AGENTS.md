@@ -95,6 +95,9 @@ showing real CloudShare behaviour, CloudShare wins.
 - Work in small vertical slices (one GitHub issue at a time, in dependency order).
 - For any slice touching CloudShare or another live integration, follow
   `docs/architecture/integration-slice-protocol.md` before coding, during implementation, and before review.
+- Before adding or changing CloudShare v4 endpoint paths, consult
+  `docs/api/cloudshare-api-reference.md` and the exported OpenAPI bundles in `docs/api/assets/`.
+  Do not infer paths from naming patterns.
 - Prefer boring, explicit code over clever abstractions.
 - Displayed portal dates/times must use deterministic ISO 8601-style formats rather than locale-dependent rendering. Use a `YYYY-MM-DD...` shape, and make the timezone explicit whenever the view is showing UTC or another non-local reference time.
 - Build API-first. Any capability that changes or exposes portal state needs a typed HTTP API route

@@ -907,6 +907,56 @@ Instructor identifiers. The admin UI displayed the persisted CloudShare training
 Team ID, and the success diagnostic retained redacted request/response evidence with correlation
 ID `8c260d9e-33cb-4062-8254-29ae3098ad57`.
 
+**Update (2026-07-10, Issue #301 Accelerate user-property correction):** the Classic v3
+`/api/v3/class/*` custom-field endpoints are not the Accelerate Experience user-property contract.
+They expose older project/class custom fields and must not be used to provision Accelerate
+Experience user properties. Treat any new `/api/v3/class/` usage in Accelerate training flows as a
+warning during review. The observed v3 custom-field gap still matters for Classic: the API can read
+project custom-field definitions, but no public root-user create/update/delete API has been
+identified for those Classic project fields.
+
+The local exported v4 OpenAPI reference is now tracked in `docs/api/cloudshare-api-reference.md`
+and `docs/api/assets/cloudshare-public-api-v4-2026-07-10.json`; use it as the first source for
+Accelerate endpoint paths before coding.
+
+Accelerate Experience metadata and user properties are separate concepts:
+
+- Experience-level external correlation belongs on v4 training/Experience metadata such as
+  `ExternalId`/`externalId`, with labels available for simple text tags.
+- Per-user Certalis values belong in v4 training user properties. The portal must create/read those
+  definitions on the specific Experience after `POST /v4/trainings` succeeds and before calling
+  `POST /v4/trainings/{trainingId}/students` or the instructor equivalent.
+- `certalisExamAttemptId` and `certalisCandidateId` are per-user property keys. The cohort/session
+  identifier is Experience-level correlation and should not be created as a per-user property.
+
+The corrected portal sequence is:
+
+1. `POST /v4/trainings` with `ExternalId` set to the portal ExamAttempt ID for individual scheduled
+   Exams, or the Cohort Exam Session ID for cohort-backed Experiences.
+2. `GET /v4/trainings/{trainingId}/users/properties` to retrieve all property definitions for the
+   Experience, treating `null` or `[]` as no definitions, then compare keys locally. If any required
+   Certalis keys are missing, call `POST /v4/trainings/{trainingId}/users/properties` with an array
+   request body such as `[{ "name": "certalisExamAttemptId" }]`; CloudShare also returns an array of
+   created definitions.
+3. `POST /v4/trainings/{trainingId}/students` with `customProperties` as an array of
+   `{ Name, Value }` entries for the ensured per-user keys. Values may be `null` initially when the
+   integration does not yet have the final value, and can later be updated through the v4
+   student/instructor edit endpoints.
+
+Earlier Issue #301 probe evidence remains useful for the participant payload shape:
+`POST /v4/trainings/{trainingId}/students` rejected the old object-shaped
+`customProperties` payload with a `$[0].customProperties` conversion error, while an array payload
+advanced to property-name validation. That confirms the portal must send an array model and ensure
+the Experience-level property definitions before adding participants.
+
+**Follow-up (2026-07-10, Issue #301 ExternalId live format gap):** CloudShare documents the v4
+training `externalId` as a string between 3 and 50 characters, but live `POST /v4/trainings`
+rejected a canonical GUID value such as `0d379db9-6b08-4457-b863-eb5f45323d24` with
+`'External Id' is not in the correct format.` The likely undocumented constraint is that hyphen
+characters are not accepted. Until CloudShare confirms or fixes the contract, the portal preserves
+its local UUID/GUID identifiers but sends the hyphenless 32-character form in the CloudShare
+`ExternalId` field, for example `0d379db96b084457b863eb5f45323d24`.
+
 **Update (2026-07-01, Issue #251 QA clarification):** the Project Policy detail endpoint is
 undocumented but live-observed:
 `GET /api/v3/projects/PRCU02uuokHPBfjMedkmradg2/policies/POavMAu1wiaVydJdYUOAExJg2` returned

@@ -18,7 +18,11 @@ import {
   isSameExamAttemptAvailabilityConflictError,
   type ExamAttempt,
 } from "@/domain/exam-attempt";
-import type { LabLaunch, LabLaunchRepository } from "@/domain/lab-launch";
+import {
+  CERTALIS_TRAINING_USER_PROPERTY_KEYS,
+  type LabLaunch,
+  type LabLaunchRepository,
+} from "@/domain/lab-launch";
 import {
   CloudShareRequestError,
   CloudShareResponseError,
@@ -62,6 +66,7 @@ export interface CohortExamSessionJoinRuntimeResponse {
 
 type JoinProvisioningOperation =
   | "read_training"
+  | "ensure_user_properties"
   | "add_participant"
   | "create_sponsored_link";
 
@@ -354,8 +359,12 @@ export async function joinCohortExamSessionRuntime(
   const labs = createCloudShareLabProvisioner(cloudshare);
   const trainingStartStateReader = labs.getTrainingStartState;
   const participantAdder = labs.addParticipant;
+  const trainingUserPropertyEnsurer = labs.ensureTrainingUserPropertyKeys;
   if (!trainingStartStateReader) {
     throw new Error("LabProvisioner does not support cohort training start-state reads.");
+  }
+  if (!trainingUserPropertyEnsurer) {
+    throw new Error("LabProvisioner does not support cohort training user-property validation.");
   }
   if (!participantAdder) {
     throw new Error("LabProvisioner does not support cohort participant registration.");
@@ -463,6 +472,82 @@ export async function joinCohortExamSessionRuntime(
     };
   }
 
+  let ensuredTrainingUserProperties;
+  try {
+    ensuredTrainingUserProperties = await trainingUserPropertyEnsurer({
+      trainingId: session.cloudShareTrainingId,
+      experienceId: session.cloudShareExperienceId,
+      requiredKeys: CERTALIS_TRAINING_USER_PROPERTY_KEYS,
+    });
+  } catch (cause) {
+    await recordProvisioningFailure(deps, {
+      anchors,
+      attemptId,
+      correlationId,
+      examId: exam.id,
+      candidateId: request.candidateId,
+      externalIds,
+      attemptedOperation: "ensure_user_properties",
+      cause,
+    });
+    await deps.attempts.delete(attemptId);
+    return {
+      status: isCloudShareRateLimitError(cause) ? 429 : 502,
+      body: {
+        error: isCloudShareRateLimitError(cause)
+          ? CLOUDSHARE_429_CANDIDATE_MESSAGE
+          : "CloudShare provisioning failed for the shared cohort Exam Session.",
+        correlationId,
+      },
+    };
+  }
+
+  await deps.diagnostics?.record({
+    ...anchors,
+    level: "info",
+    operation: "cloudshare.ensure_user_properties",
+    outcome: "success",
+    message: "CloudShare training user-property keys confirmed for shared Cohort Exam Session",
+    externalIds,
+    ...(ensuredTrainingUserProperties.request
+      ? {
+          request: {
+            method: ensuredTrainingUserProperties.request.method,
+            path: ensuredTrainingUserProperties.request.path,
+            ...(ensuredTrainingUserProperties.request.query
+              ? { query: ensuredTrainingUserProperties.request.query }
+              : {}),
+            ...(ensuredTrainingUserProperties.request.headers
+              ? { headers: ensuredTrainingUserProperties.request.headers }
+              : {}),
+            ...(ensuredTrainingUserProperties.request.body !== undefined
+              ? { body: ensuredTrainingUserProperties.request.body }
+              : {}),
+          },
+        }
+      : {}),
+    ...(ensuredTrainingUserProperties.response
+      ? {
+          response: {
+            status: ensuredTrainingUserProperties.response.status,
+            ...(ensuredTrainingUserProperties.response.headers
+              ? { headers: ensuredTrainingUserProperties.response.headers }
+              : {}),
+            body: ensuredTrainingUserProperties.response.body,
+          },
+        }
+      : {}),
+    details: {
+      integrationSurface:
+        ensuredTrainingUserProperties.integrationSurface ?? "cloudshare.v4.training.user_properties",
+      requiredKeys: ensuredTrainingUserProperties.requiredKeys,
+      availableKeys: ensuredTrainingUserProperties.availableKeys,
+      ...(toTrainingUserPropertyHttpExchanges(ensuredTrainingUserProperties) !== undefined
+        ? { httpExchanges: toTrainingUserPropertyHttpExchanges(ensuredTrainingUserProperties) }
+        : {}),
+    },
+  });
+
   let addParticipantResult;
   try {
     addParticipantResult = await participantAdder({
@@ -471,7 +556,6 @@ export async function joinCohortExamSessionRuntime(
       firstName: request.candidateFirstName.trim(),
       lastName: request.candidateLastName.trim(),
       certalisExamAttemptId: attemptId,
-      certalisCohortSessionId: session.id,
       certalisCandidateId: request.candidateId,
     });
   } catch (cause) {
@@ -666,6 +750,43 @@ export async function joinCohortExamSessionRuntime(
   };
 }
 
+function toTrainingUserPropertyHttpExchanges(input: {
+  readonly requests?: readonly {
+    readonly method: string;
+    readonly path: string;
+    readonly query?: Record<string, string>;
+    readonly headers?: Record<string, string>;
+    readonly body?: unknown;
+  }[];
+  readonly responses?: readonly {
+    readonly status: number;
+    readonly headers?: Record<string, string | string[]>;
+    readonly body: unknown;
+  }[];
+}): readonly Record<string, unknown>[] | undefined {
+  if (!input.requests?.length) {
+    return undefined;
+  }
+  return input.requests.map((request, index) => ({
+    request: {
+      method: request.method,
+      path: request.path,
+      ...(request.query ? { query: request.query } : {}),
+      ...(request.headers ? { headers: request.headers } : {}),
+      ...(request.body !== undefined ? { body: request.body } : {}),
+    },
+    ...(input.responses?.[index]
+      ? {
+          response: {
+            status: input.responses[index].status,
+            ...(input.responses[index].headers ? { headers: input.responses[index].headers } : {}),
+            body: input.responses[index].body,
+          },
+        }
+      : {}),
+  }));
+}
+
 function findSameExamAvailabilityOverlap(input: {
   readonly attempts: readonly ExamAttempt[];
   readonly examId: string;
@@ -845,12 +966,15 @@ function toProvisioningDiagnostic(
   const status =
     typeof (cause as { status?: unknown }).status === "number"
       ? ((cause as { status: number }).status)
+      : typeof context.status === "number"
+        ? context.status
       : undefined;
   const request =
-    context.method || context.path || context.requestHeaders || context.requestBody
+    context.method || context.path || context.requestQuery || context.requestHeaders || context.requestBody
       ? {
           method: context.method ?? (attemptedOperation === "read_training" ? "GET" : "POST"),
           path: context.path ?? fallbackProvisioningPath(attemptedOperation),
+          ...(context.requestQuery ? { query: context.requestQuery } : {}),
           ...(context.requestHeaders ? { headers: context.requestHeaders } : {}),
           ...(context.requestBody !== undefined ? { body: context.requestBody } : {}),
         }
@@ -883,6 +1007,9 @@ function fallbackProvisioningPath(attemptedOperation: JoinProvisioningOperation)
   if (attemptedOperation === "read_training") {
     return "/v4/trainings/{trainingId}";
   }
+  if (attemptedOperation === "ensure_user_properties") {
+    return "/v4/trainings/{trainingId}/users/properties";
+  }
   if (attemptedOperation === "add_participant") {
     return "/v4/trainings/{trainingId}/students";
   }
@@ -892,6 +1019,9 @@ function fallbackProvisioningPath(attemptedOperation: JoinProvisioningOperation)
 function fallbackIntegrationSurface(attemptedOperation: JoinProvisioningOperation): string {
   if (attemptedOperation === "read_training") {
     return "cloudshare.v4.training.get";
+  }
+  if (attemptedOperation === "ensure_user_properties") {
+    return "cloudshare.v4.training.user_properties";
   }
   if (attemptedOperation === "add_participant") {
     return "cloudshare.v4.training.participant";
@@ -910,6 +1040,7 @@ function toProvisioningLogFields(diagnostic: {
     responseStatus: diagnostic.details.responseStatus,
     method: diagnostic.request?.method,
     path: diagnostic.request?.path,
+    query: diagnostic.request?.query,
     requestBody: diagnostic.request?.body,
     responseBody: diagnostic.response?.body,
   };

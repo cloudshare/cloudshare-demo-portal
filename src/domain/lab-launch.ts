@@ -56,6 +56,7 @@ export interface CreateTrainingInput {
   readonly title: string;
   readonly scheduledFor: Date;
   readonly endsAt: Date;
+  readonly externalId?: string;
   readonly projectId: string;
   readonly blueprintId: string;
   readonly policyId: string;
@@ -67,6 +68,7 @@ export interface CreateTrainingInput {
 export interface ProvisioningRequestEvidence {
   readonly method: string;
   readonly path: string;
+  readonly query?: Record<string, string>;
   readonly headers?: Record<string, string>;
   readonly body?: unknown;
 }
@@ -89,9 +91,17 @@ export interface AddParticipantInput {
   readonly firstName: string;
   readonly lastName: string;
   readonly certalisExamAttemptId?: string;
-  readonly certalisCohortSessionId?: string;
   readonly certalisCandidateId?: string;
 }
+
+export const CERTALIS_TRAINING_USER_PROPERTY_KEYS = [
+  "certalisExamAttemptId",
+  "certalisCandidateId",
+] as const;
+
+export type CertalisTrainingUserPropertyKey =
+  (typeof CERTALIS_TRAINING_USER_PROPERTY_KEYS)[number];
+
 export interface AddParticipantResult {
   readonly participantId?: string;
   readonly integrationSurface?: string;
@@ -101,6 +111,32 @@ export interface AddParticipantResult {
     readonly headers?: Record<string, string | string[]>;
     readonly body: unknown;
   };
+}
+export interface EnsureTrainingUserPropertyKeysInput {
+  readonly trainingId: string;
+  readonly experienceId?: string;
+  readonly requiredKeys: readonly string[];
+}
+export interface TrainingUserPropertyDefinition {
+  readonly id: string;
+  readonly name: string;
+  readonly type?: number | null;
+  readonly isRequired?: boolean;
+  readonly regex?: string | null;
+  readonly defaultValue?: string | null;
+  readonly value?: string | null;
+}
+export interface EnsureTrainingUserPropertyKeysResult {
+  readonly trainingId?: string;
+  readonly experienceId?: string;
+  readonly requiredKeys: readonly string[];
+  readonly availableKeys: readonly string[];
+  readonly definitions: readonly TrainingUserPropertyDefinition[];
+  readonly integrationSurface?: string;
+  readonly request?: ProvisioningRequestEvidence;
+  readonly response?: ProvisioningResponseEvidence;
+  readonly requests?: readonly ProvisioningRequestEvidence[];
+  readonly responses?: readonly ProvisioningResponseEvidence[];
 }
 export interface CreateSponsoredLinkInput {
   readonly experienceId?: string;
@@ -131,6 +167,9 @@ export interface GetTrainingStartStateResult {
 
 export interface LabProvisioner {
   createTraining?(input: CreateTrainingInput): Promise<CreateTrainingResult>;
+  ensureTrainingUserPropertyKeys?(
+    input: EnsureTrainingUserPropertyKeysInput,
+  ): Promise<EnsureTrainingUserPropertyKeysResult>;
   getTrainingStartState?(
     input: GetTrainingStartStateInput,
   ): Promise<GetTrainingStartStateResult>;

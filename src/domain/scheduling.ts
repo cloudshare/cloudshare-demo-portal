@@ -13,10 +13,17 @@ import type {
 } from "./lab-launch";
 import type { DiagnosticRecorder } from "./diagnostic-log";
 
-type ProvisioningOperation = "create_training" | "add_participant" | "create_sponsored_link";
+import { CERTALIS_TRAINING_USER_PROPERTY_KEYS as CERTALIS_USER_PROPERTY_KEYS } from "./lab-launch";
+
+type ProvisioningOperation =
+  | "create_training"
+  | "ensure_user_properties"
+  | "add_participant"
+  | "create_sponsored_link";
 
 const PROVISIONING_SURFACE: Record<ProvisioningOperation, string> = {
   create_training: "cloudshare.v4.training",
+  ensure_user_properties: "cloudshare.v4.training.user_properties",
   add_participant: "cloudshare.v4.training.participant",
   create_sponsored_link: "cloudshare.v4.training.sponsored_link",
 };
@@ -104,6 +111,7 @@ function toDiagnosticRequestEvidence(
   return {
     method: request.method,
     path: request.path,
+    ...(request.query ? { query: request.query } : {}),
     ...(request.headers ? { headers: request.headers } : {}),
     ...(request.body !== undefined ? { body: request.body } : {}),
   };
@@ -120,6 +128,19 @@ function toDiagnosticResponseEvidence(
     ...(response.headers ? { headers: response.headers } : {}),
     body: response.body,
   };
+}
+
+function toDiagnosticHttpExchanges(
+  requests: readonly ProvisioningRequestEvidence[] | undefined,
+  responses: readonly ProvisioningResponseEvidence[] | undefined,
+): readonly Record<string, unknown>[] | undefined {
+  if (!requests?.length) {
+    return undefined;
+  }
+  return requests.map((request, index) => ({
+    request: toDiagnosticRequestEvidence(request),
+    ...(responses?.[index] ? { response: toDiagnosticResponseEvidence(responses[index]) } : {}),
+  }));
 }
 
 const COLD_START_WARNING_WINDOW_MS = 5 * 60 * 60 * 1000;
@@ -161,7 +182,7 @@ export class CloudShareProvisioningError extends Error {
     message: string,
     readonly context: {
       readonly attemptId: string;
-      readonly attemptedOperation: "create_training" | "add_participant" | "create_sponsored_link";
+      readonly attemptedOperation: ProvisioningOperation;
       readonly trainingId?: string;
       readonly cause: unknown;
     },
@@ -322,8 +343,9 @@ export async function scheduleExam(
   });
 
   const trainingCreator = deps.labs.createTraining;
+  const userPropertyEnsurer = deps.labs.ensureTrainingUserPropertyKeys;
   const participantAdder = deps.labs.addParticipant;
-  if (!trainingCreator || !participantAdder) {
+  if (!trainingCreator || !userPropertyEnsurer || !participantAdder) {
     throw new Error("LabProvisioner does not support training scheduling.");
   }
 
@@ -353,6 +375,7 @@ export async function scheduleExam(
       instructorId: exam.instructorId,
       passphrase: `certalis-${attemptId}`,
       timeZoneId: "UTC",
+      externalId: attemptId,
     });
     trainingId = training.trainingId;
     teamId = training.teamId;
@@ -392,6 +415,51 @@ export async function scheduleExam(
       : {}),
   });
 
+  let ensureUserPropertiesResult;
+  try {
+    ensureUserPropertiesResult = await userPropertyEnsurer({
+      trainingId,
+      experienceId: trainingId,
+      requiredKeys: CERTALIS_USER_PROPERTY_KEYS,
+    });
+  } catch (cause) {
+    await recordFailure("ensure_user_properties", cause, { trainingId, experienceId: trainingId });
+    await recordProvisioningFailure("ensure_user_properties");
+    await deps.attempts.delete(attemptId);
+    throw new CloudShareProvisioningError("CloudShare training user-property provisioning failed.", {
+      attemptId,
+      attemptedOperation: "ensure_user_properties",
+      trainingId,
+      cause,
+    });
+  }
+
+  await recordSuccess("cloudshare.ensure_user_properties", "CloudShare training user-property keys ensured", {
+    externalIds: { trainingId, experienceId: trainingId },
+    ...(toDiagnosticRequestEvidence(ensureUserPropertiesResult.request)
+      ? { request: toDiagnosticRequestEvidence(ensureUserPropertiesResult.request)! }
+      : {}),
+    ...(toDiagnosticResponseEvidence(ensureUserPropertiesResult.response)
+      ? { response: toDiagnosticResponseEvidence(ensureUserPropertiesResult.response)! }
+      : {}),
+    details: {
+      ...(ensureUserPropertiesResult.integrationSurface
+        ? { integrationSurface: ensureUserPropertiesResult.integrationSurface }
+        : {}),
+      ...(toDiagnosticHttpExchanges(
+        ensureUserPropertiesResult.requests,
+        ensureUserPropertiesResult.responses,
+      )
+        ? {
+            httpExchanges: toDiagnosticHttpExchanges(
+              ensureUserPropertiesResult.requests,
+              ensureUserPropertiesResult.responses,
+            ),
+          }
+        : {}),
+    },
+  });
+
   const participant = {
     firstName: input.candidateFirstName.trim(),
     lastName: input.candidateLastName.trim(),
@@ -403,6 +471,8 @@ export async function scheduleExam(
       email: input.candidateEmail,
       firstName: participant.firstName,
       lastName: participant.lastName,
+      certalisExamAttemptId: attemptId,
+      certalisCandidateId: input.candidateId,
     });
   } catch (cause) {
     await recordFailure("add_participant", cause, { trainingId });

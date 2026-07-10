@@ -22,12 +22,14 @@ import {
   publishExam,
   type ExamRepository,
 } from "@/domain/exam-catalog";
+import { CERTALIS_TRAINING_USER_PROPERTY_KEYS } from "@/domain/lab-launch";
 import {
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
   isCloudShareRateLimitError,
 } from "@/integrations/cloudshare";
+import { createCloudShareLabProvisioner } from "@/integrations/cloudshare/labs";
 import { createCloudShareOnDemandExperienceCreator } from "@/integrations/cloudshare/cohort-experiences";
 import type { Logger } from "@/observability/logger";
 import { guardRuntimeBlueprintSnapshot } from "./runtime-blueprint-snapshot-guard";
@@ -278,11 +280,14 @@ export async function handlePublishCohortExamSession(
       };
     }
 
-    const creator = createCloudShareOnDemandExperienceCreator(deps.cloudshare.forConnection(connection));
+    const cloudshareClient = deps.cloudshare.forConnection(connection);
+    const provisioner = createCloudShareLabProvisioner(cloudshareClient);
+    const creator = createCloudShareOnDemandExperienceCreator(cloudshareClient);
     const created = await creator.createOnDemandExperience({
       name: buildCohortExperienceName(exam.title, claimedSession.name),
       startsAt: claimedSession.admissionStartsAt,
       endsAt: claimedSession.admissionEndsAt,
+      externalId: claimedSession.id,
       projectId: exam.projectId,
       blueprintId: exam.blueprintId,
       policyId: exam.policyId,
@@ -291,6 +296,107 @@ export async function handlePublishCohortExamSession(
       timeZoneId: "UTC",
       passphrase: `certalis-${claimedSession.id}`,
     });
+    let ensuredTrainingUserProperties;
+    try {
+      ensuredTrainingUserProperties = await provisioner.ensureTrainingUserPropertyKeys?.({
+        trainingId: created.trainingId,
+        experienceId: created.experienceId,
+        requiredKeys: CERTALIS_TRAINING_USER_PROPERTY_KEYS,
+      });
+    } catch (error) {
+      await markCohortExamSessionPublishReconciliationRequired(
+        { repository: deps.sessions, now: deps.now },
+        {
+          session: claimedSession,
+          correlationId,
+          error:
+            "CloudShare Experience was created, but required training user-property keys could not be added. Reconcile this Cohort Exam Session before retrying.",
+          trainingId: created.trainingId,
+          experienceId: created.experienceId,
+          teamId: created.teamId,
+        },
+      );
+      await safeRecordDiagnostic(deps, {
+        source: "admin-exams",
+        customerId: request.customerId,
+        actor: request.actor ?? null,
+        subject: { type: "cohort_exam_session", id: claimedSession.id },
+        examId: exam.id,
+        level: "warn",
+        operation: "cohort_exam_session.publish",
+        outcome: "failure",
+        correlationId,
+        message: "Cohort Exam Session publish failed after CloudShare Experience creation while adding training user-property keys",
+        externalIds: {
+          trainingId: created.trainingId,
+          experienceId: created.experienceId,
+          teamId: created.teamId,
+        },
+        ...toPublishFailureDiagnostic(error, "ensure_user_properties"),
+      });
+      deps.logger.warn("cohort session publish training user-property validation failed", {
+        correlationId,
+        customerId: request.customerId,
+        examId: exam.id,
+        sessionId: claimedSession.id,
+        trainingId: created.trainingId,
+        experienceId: created.experienceId,
+        teamId: created.teamId,
+        ...toPublishFailureLogFields(error),
+      });
+      return {
+        status: isCloudShareRateLimitError(error) ? 429 : 502,
+        body: {
+          error:
+            isCloudShareRateLimitError(error)
+              ? CLOUDSHARE_429_ADMIN_SUPPORT_GUIDANCE
+              : "CloudShare created the Cohort Exam Session, but the required training user-property keys could not be added. Reconcile it before retrying and check the diagnostic log for the correlation ID.",
+          correlationId,
+        },
+      };
+    }
+    if (ensuredTrainingUserProperties) {
+      await safeRecordDiagnostic(deps, {
+        source: "admin-exams",
+        customerId: request.customerId,
+        actor: request.actor ?? null,
+        subject: { type: "cohort_exam_session", id: claimedSession.id },
+        examId: exam.id,
+        level: "info",
+        operation: "cloudshare.ensure_user_properties",
+        outcome: "success",
+        correlationId,
+        message: "CloudShare training user-property keys ensured for Cohort Exam Session",
+        externalIds: {
+          trainingId: created.trainingId,
+          experienceId: created.experienceId,
+          teamId: created.teamId,
+        },
+        ...(toCloudShareRequestDiagnostic(ensuredTrainingUserProperties.request)
+          ? { request: toCloudShareRequestDiagnostic(ensuredTrainingUserProperties.request) }
+          : {}),
+        ...(toCloudShareResponseDiagnostic(ensuredTrainingUserProperties.response)
+          ? { response: toCloudShareResponseDiagnostic(ensuredTrainingUserProperties.response) }
+          : {}),
+        details: {
+          integrationSurface:
+            ensuredTrainingUserProperties.integrationSurface ?? "cloudshare.v4.training.user_properties",
+          requiredKeys: ensuredTrainingUserProperties.requiredKeys,
+          availableKeys: ensuredTrainingUserProperties.availableKeys,
+          ...(toCloudShareHttpExchanges(
+            ensuredTrainingUserProperties.requests,
+            ensuredTrainingUserProperties.responses,
+          )
+            ? {
+                httpExchanges: toCloudShareHttpExchanges(
+                  ensuredTrainingUserProperties.requests,
+                  ensuredTrainingUserProperties.responses,
+                ),
+              }
+            : {}),
+        },
+      });
+    }
     let parentExam = exam;
     let parentExamStatusChanged = false;
     let localPersistenceStage: "parent_exam_publish" | "cohort_session_publish" =
@@ -551,12 +657,87 @@ function buildPublishFailureExternalIds(exam: { projectId: string; blueprintId: 
   };
 }
 
-function toPublishFailureDiagnostic(error: unknown): {
+function toCloudShareRequestDiagnostic(
+  request:
+    | {
+        readonly method: string;
+        readonly path: string;
+        readonly query?: Record<string, string>;
+        readonly headers?: Record<string, string>;
+        readonly body?: unknown;
+      }
+    | undefined,
+): Record<string, unknown> | undefined {
+  if (!request) {
+    return undefined;
+  }
+  return {
+    method: request.method,
+    path: request.path,
+    ...(request.query ? { query: request.query } : {}),
+    ...(request.headers ? { headers: request.headers } : {}),
+    ...(request.body !== undefined ? { body: request.body } : {}),
+  };
+}
+
+function toCloudShareResponseDiagnostic(
+  response:
+    | {
+        readonly status: number;
+        readonly headers?: Record<string, string | string[]>;
+        readonly body: unknown;
+      }
+    | undefined,
+): Record<string, unknown> | undefined {
+  if (!response) {
+    return undefined;
+  }
+  return {
+    status: response.status,
+    ...(response.headers ? { headers: response.headers } : {}),
+    body: response.body,
+  };
+}
+
+function toCloudShareHttpExchanges(
+  requests:
+    | readonly {
+        readonly method: string;
+        readonly path: string;
+        readonly query?: Record<string, string>;
+        readonly headers?: Record<string, string>;
+        readonly body?: unknown;
+      }[]
+    | undefined,
+  responses:
+    | readonly {
+        readonly status: number;
+        readonly headers?: Record<string, string | string[]>;
+        readonly body: unknown;
+      }[]
+    | undefined,
+): readonly Record<string, unknown>[] | undefined {
+  if (!requests?.length) {
+    return undefined;
+  }
+  return requests.map((request, index) => ({
+    request: toCloudShareRequestDiagnostic(request),
+    ...(responses?.[index] ? { response: toCloudShareResponseDiagnostic(responses[index]) } : {}),
+  }));
+}
+
+function toPublishFailureDiagnostic(error: unknown, attemptedOperation?: string): {
   readonly request?: Record<string, unknown>;
   readonly response?: Record<string, unknown>;
   readonly details: Record<string, unknown>;
 } {
   const context = (error as { context?: Record<string, unknown> }).context ?? {};
+  const status =
+    typeof (error as { status?: unknown }).status === "number"
+      ? (error as { status: number }).status
+      : typeof context.status === "number"
+        ? context.status
+        : undefined;
   const baseDetails = {
     integrationSurface: context.integrationSurface ?? "cloudshare.v4.training",
     failureMode: inferPublishFailureMode(error),
@@ -570,17 +751,17 @@ function toPublishFailureDiagnostic(error: unknown): {
       ...(context.requestBody ? { body: context.requestBody } : {}),
     },
     response:
-      context.responseHeaders || context.responseBody || typeof (error as { status?: unknown }).status === "number"
+      context.responseHeaders || context.responseBody !== undefined || status !== undefined
         ? {
-            ...(typeof (error as { status?: unknown }).status === "number"
-              ? { status: (error as { status: number }).status }
-              : {}),
+            ...(status !== undefined ? { status } : {}),
             ...(context.responseHeaders ? { headers: context.responseHeaders } : {}),
-            ...(context.responseBody ? { body: context.responseBody } : {}),
+            ...(context.responseBody !== undefined ? { body: context.responseBody } : {}),
           }
         : undefined,
     details: {
       ...baseDetails,
+      ...(attemptedOperation ? { attemptedOperation } : {}),
+      ...(status !== undefined ? { responseStatus: status } : {}),
       ...(context.cause ? { cause: context.cause } : {}),
       ...(context.issues ? { issues: context.issues } : {}),
     },
@@ -592,7 +773,10 @@ function toPublishFailureLogFields(error: unknown): Record<string, unknown> {
   return {
     integrationSurface: context.integrationSurface,
     failureMode: inferPublishFailureMode(error),
-    responseStatus: (error as { status?: unknown }).status,
+    responseStatus:
+      typeof (error as { status?: unknown }).status === "number"
+        ? (error as { status: number }).status
+        : context.status,
   };
 }
 
