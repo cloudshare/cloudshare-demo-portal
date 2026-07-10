@@ -1185,7 +1185,7 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
     if (!("monitoring" in response.body)) throw new Error("Expected monitoring payload");
     expect(response.body.monitoring.summary.problemCount).toBe(0);
     expect(response.body.monitoring.portalAttempts).toMatchObject([
-      { id: "attempt-rate-limited", problemReasons: [], reconciliation: "normal" },
+      { id: "attempt-rate-limited", problemReasons: [], reconciliation: "unknown" },
     ]);
     expect(response.body.monitoring.cloudShareParticipants).toMatchObject({
       status: "rate_limited",

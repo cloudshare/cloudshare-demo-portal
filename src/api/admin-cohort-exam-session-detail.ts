@@ -130,7 +130,7 @@ export interface CohortExamSessionAttemptView {
   readonly environmentId: string | null;
   readonly participantId: string | null;
   readonly problemReasons: readonly string[];
-  readonly reconciliation?: "normal" | "state_observation" | "needs_attention";
+  readonly reconciliation?: "normal" | "unknown" | "state_observation" | "needs_attention";
   readonly summaryContributions?: readonly CohortExamSessionMonitoringStateContribution[];
   readonly diagnosticFilters: DiagnosticFilterSeed;
 }
@@ -147,7 +147,7 @@ export interface CohortExamSessionParticipantView {
   readonly firstJoinedAt: string | null;
   readonly matchedExamAttemptId: string | null;
   readonly problemReasons: readonly string[];
-  readonly reconciliation?: "normal" | "state_observation" | "needs_attention";
+  readonly reconciliation?: "normal" | "unknown" | "state_observation" | "needs_attention";
   readonly summaryContributions?: readonly CohortExamSessionMonitoringStateContribution[];
   readonly diagnosticFilters: DiagnosticFilterSeed;
 }
@@ -584,7 +584,7 @@ async function buildMonitoringView(
       : derivedReconciliationRows;
   const portalProblemsById = new Map<string, readonly string[]>();
   const cloudProblemsByParticipantKey = new Map<string, readonly string[]>();
-  const reconciliationByRowKey = new Map<string, "normal" | "state_observation" | "needs_attention">();
+  const reconciliationByRowKey = new Map<string, "normal" | "unknown" | "state_observation" | "needs_attention">();
   const summaryContributionsByRowKey = new Map<string, readonly CohortExamSessionMonitoringStateContribution[]>();
   for (const row of reconciliationRows) {
     const rowKey = row.portal ? `attempt:${row.portal.id}` : `participant:${row.cloud?.email.trim().toLowerCase() ?? "unknown"}`;
@@ -601,7 +601,11 @@ async function buildMonitoringView(
         });
     reconciliationByRowKey.set(
       rowKey,
-      row.problemReasons.length === 0 ? "normal" : classifyCohortMonitoringObservation(observation),
+      cloudShareRead.status === "rate_limited"
+        ? "unknown"
+        : row.problemReasons.length === 0
+          ? "normal"
+          : classifyCohortMonitoringObservation(observation),
     );
     summaryContributionsByRowKey.set(rowKey, getCohortExamSessionMonitoringStateContributions(row));
     if (row.portal) {

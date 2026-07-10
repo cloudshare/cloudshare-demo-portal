@@ -1079,7 +1079,24 @@ describe("AdminConsole", () => {
             cloudShareParticipantCount: 0,
             derivedFrom: "portal_and_cloudshare",
           },
-          portalAttempts: [],
+          portalAttempts: [{
+            id: "attempt-rate-limited",
+            candidateId: "candidate-1",
+            candidateName: "Casey Rivera",
+            candidateEmail: "casey@helioscx.demo",
+            status: "ready",
+            scheduledFor: "2026-09-01T09:00:00.000Z",
+            createdAt: "2026-09-01T08:00:00.000Z",
+            trainingId: "EX123",
+            experienceId: "EX123",
+            environmentExternalId: null,
+            environmentId: null,
+            participantId: null,
+            problemReasons: [],
+            reconciliation: "unknown",
+            summaryContributions: ["active"],
+            diagnosticFilters: { examAttemptId: "attempt-rate-limited" },
+          }],
           cloudShareParticipants: {
             status: "rate_limited",
             trainingId: "EX123",
@@ -1127,6 +1144,8 @@ describe("AdminConsole", () => {
 
     expect(html).toContain("CloudShare participant monitoring is temporarily throttled");
     expect(html).toContain("CloudShare is temporarily throttling participant monitoring requests. Check the correlated diagnostics before retrying.");
+    expect(html).toContain("Current CloudShare state is unavailable because participant monitoring is temporarily throttled; no reconciliation conclusion is available.");
+    expect(html).not.toContain("Normal: portal and CloudShare runtime state agree");
     expect(html).not.toContain("Needs attention only counts actionable runtime contradictions, missing correlations, or an unavailable participant read.");
     expect(html).not.toContain("The unavailable CloudShare participant read below needs attention because current environment state cannot be established.");
     expect(html).toContain("Correlation ID:");
