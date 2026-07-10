@@ -1043,7 +1043,7 @@ describe("AdminConsole", () => {
     expect(html).not.toContain("/admin?tab=support&amp;view=diagnostics&amp;examAttemptId=attempt-1");
   });
 
-  it("renders a degraded CloudShare participant read state without hiding the session workspace", () => {
+  it("renders a rate-limited participant read as temporary throttling without counting it as needs attention", () => {
     const html = renderToStaticMarkup(
       createElement(CohortSessionWorkspacePanel, {
         examTitle: "Helios CX Admin Foundations",
@@ -1075,16 +1075,16 @@ describe("AdminConsole", () => {
             activeCount: 1,
             inProgressCount: 0,
             completedCount: 0,
-            problemCount: 2,
+            problemCount: 1,
             portalAttemptCount: 1,
             cloudShareParticipantCount: 0,
             derivedFrom: "portal_and_cloudshare",
           },
           portalAttempts: [],
           cloudShareParticipants: {
-            status: "unavailable",
+            status: "rate_limited",
             trainingId: "EX123",
-            readError: "CloudShare participant read failed for this Cohort Exam Session.",
+            readError: "CloudShare is temporarily throttling participant monitoring requests. Check the correlated diagnostics before retrying.",
             correlationId: "corr-1",
             participants: [],
           },
@@ -1113,10 +1113,10 @@ describe("AdminConsole", () => {
       }),
     );
 
-    expect(html).toContain("CloudShare participant read unavailable");
-    expect(html).toContain("CloudShare participant read failed for this Cohort Exam Session.");
+    expect(html).toContain("CloudShare participant monitoring is temporarily throttled");
+    expect(html).toContain("CloudShare is temporarily throttling participant monitoring requests. Check the correlated diagnostics before retrying.");
     expect(html).not.toContain("Needs attention only counts actionable runtime contradictions, missing correlations, or an unavailable participant read.");
-    expect(html).toContain("The unavailable CloudShare participant read below needs attention because current environment state cannot be established.");
+    expect(html).not.toContain("The unavailable CloudShare participant read below needs attention because current environment state cannot be established.");
     expect(html).toContain("Correlation ID:");
     expect(html).toContain("corr-1");
     expect(html).toContain("/admin?tab=support&amp;view=diagnostics&amp;correlationId=corr-1");

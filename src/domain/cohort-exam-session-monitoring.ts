@@ -76,7 +76,7 @@ export function deriveCohortExamSessionReconciliationRows(
 
 export function deriveCohortExamSessionMonitoringSummary(
   rows: readonly CohortExamSessionReconciliationRow[],
-  cloudShareStatus: "available" | "unavailable" | "not_published",
+  cloudShareStatus: "available" | "unavailable" | "rate_limited" | "not_published",
 ): CohortExamSessionMonitoringSummary {
   let activeCount = 0;
   let inProgressCount = 0;

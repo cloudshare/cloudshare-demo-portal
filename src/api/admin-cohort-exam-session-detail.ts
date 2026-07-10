@@ -94,7 +94,7 @@ export interface CohortExamSessionMonitoringView {
   };
   readonly portalAttempts: readonly CohortExamSessionAttemptView[];
   readonly cloudShareParticipants: {
-    readonly status: "available" | "unavailable" | "not_published";
+    readonly status: "available" | "unavailable" | "rate_limited" | "not_published";
     readonly trainingId: string | null;
     readonly readError: string | null;
     readonly correlationId: string | null;
@@ -387,7 +387,7 @@ async function readCloudShareParticipants(
     readonly correlationId: string;
   },
 ): Promise<{
-  readonly status: "available" | "unavailable" | "not_published";
+  readonly status: "available" | "unavailable" | "rate_limited" | "not_published";
   readonly participants: readonly TrainingParticipant[];
   readonly readError: string | null;
   readonly correlationId: string | null;
@@ -493,9 +493,11 @@ async function readCloudShareParticipants(
       ...diagnostic.details,
     });
     return {
-      status: "unavailable",
+      status: isCloudShareRateLimitError(error) ? "rate_limited" : "unavailable",
       participants: [],
-      readError: "CloudShare participant read failed for this Cohort Exam Session.",
+      readError: isCloudShareRateLimitError(error)
+        ? "CloudShare is temporarily throttling participant monitoring requests. Check the correlated diagnostics before retrying."
+        : "CloudShare participant read failed for this Cohort Exam Session.",
       correlationId: input.correlationId,
     };
   }
@@ -507,7 +509,7 @@ async function buildMonitoringView(
   session: CohortExamSessionWithInheritedContext,
   attempts: readonly AdminCohortExamSessionAttemptRecord[],
   cloudShareRead: {
-    readonly status: "available" | "unavailable" | "not_published";
+    readonly status: "available" | "unavailable" | "rate_limited" | "not_published";
     readonly participants: readonly TrainingParticipant[];
     readonly readError: string | null;
     readonly correlationId: string | null;
@@ -683,7 +685,7 @@ function buildLegacyMonitoringView(
   portalAttempts: readonly CohortExamSessionAttemptView[],
   cloudShareParticipants: readonly CohortExamSessionParticipantView[],
   session: CohortExamSessionWithInheritedContext,
-  cloudShareRead: { readonly status: "available" | "unavailable" | "not_published"; readonly readError: string | null; readonly correlationId: string | null },
+  cloudShareRead: { readonly status: "available" | "unavailable" | "rate_limited" | "not_published"; readonly readError: string | null; readonly correlationId: string | null },
   aggregateProgress: CohortExamSessionGuidedJourneyAggregateView,
   participantReadCorrelationId: string,
   aggregateProgressCorrelationId: string,
