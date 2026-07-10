@@ -111,6 +111,7 @@ function toDiagnosticRequestEvidence(
   return {
     method: request.method,
     path: request.path,
+    ...(request.query ? { query: request.query } : {}),
     ...(request.headers ? { headers: request.headers } : {}),
     ...(request.body !== undefined ? { body: request.body } : {}),
   };
@@ -127,6 +128,19 @@ function toDiagnosticResponseEvidence(
     ...(response.headers ? { headers: response.headers } : {}),
     body: response.body,
   };
+}
+
+function toDiagnosticHttpExchanges(
+  requests: readonly ProvisioningRequestEvidence[] | undefined,
+  responses: readonly ProvisioningResponseEvidence[] | undefined,
+): readonly Record<string, unknown>[] | undefined {
+  if (!requests?.length) {
+    return undefined;
+  }
+  return requests.map((request, index) => ({
+    request: toDiagnosticRequestEvidence(request),
+    ...(responses?.[index] ? { response: toDiagnosticResponseEvidence(responses[index]) } : {}),
+  }));
 }
 
 const COLD_START_WARNING_WINDOW_MS = 5 * 60 * 60 * 1000;
@@ -428,9 +442,22 @@ export async function scheduleExam(
     ...(toDiagnosticResponseEvidence(ensureUserPropertiesResult.response)
       ? { response: toDiagnosticResponseEvidence(ensureUserPropertiesResult.response)! }
       : {}),
-    ...(ensureUserPropertiesResult.integrationSurface
-      ? { details: { integrationSurface: ensureUserPropertiesResult.integrationSurface } }
-      : {}),
+    details: {
+      ...(ensureUserPropertiesResult.integrationSurface
+        ? { integrationSurface: ensureUserPropertiesResult.integrationSurface }
+        : {}),
+      ...(toDiagnosticHttpExchanges(
+        ensureUserPropertiesResult.requests,
+        ensureUserPropertiesResult.responses,
+      )
+        ? {
+            httpExchanges: toDiagnosticHttpExchanges(
+              ensureUserPropertiesResult.requests,
+              ensureUserPropertiesResult.responses,
+            ),
+          }
+        : {}),
+    },
   });
 
   const participant = {

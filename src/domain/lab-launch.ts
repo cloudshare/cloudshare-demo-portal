@@ -135,6 +135,8 @@ export interface EnsureTrainingUserPropertyKeysResult {
   readonly integrationSurface?: string;
   readonly request?: ProvisioningRequestEvidence;
   readonly response?: ProvisioningResponseEvidence;
+  readonly requests?: readonly ProvisioningRequestEvidence[];
+  readonly responses?: readonly ProvisioningResponseEvidence[];
 }
 export interface CreateSponsoredLinkInput {
   readonly experienceId?: string;

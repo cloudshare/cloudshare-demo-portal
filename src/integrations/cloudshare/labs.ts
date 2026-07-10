@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { CloudShareClient, CloudShareDetailedResult } from "./client";
+import { CloudShareResponseError } from "./errors";
 import { toCloudShareExternalId } from "./external-id";
 import type {
   AddParticipantInput,
@@ -291,8 +292,11 @@ export function createCloudShareLabProvisioner(
       const missingKeys = input.requiredKeys.filter((requiredKey) => !availableKeys.includes(requiredKey));
 
       let createdDefinitions: TrainingUserPropertyDefinition[] = [];
+      let created:
+        | CloudShareDetailedResult<TrainingUserPropertyDefinition[]>
+        | undefined;
       if (missingKeys.length > 0) {
-        const created = await requestV4WithDiagnostics({
+        created = await requestV4WithDiagnostics({
           method: "POST",
           path: `/trainings/${input.trainingId}/users/properties`,
           body: missingKeys.map((missingKey) => ({ name: missingKey })),
@@ -302,6 +306,27 @@ export function createCloudShareLabProvisioner(
       }
       const definitions = [...existingDefinitions, ...createdDefinitions];
       const ensuredKeys = definitions.map((definition) => definition.name);
+      const stillMissingKeys = input.requiredKeys.filter((requiredKey) => !ensuredKeys.includes(requiredKey));
+      if (stillMissingKeys.length > 0) {
+        const evidence = created ?? detailed;
+        throw new CloudShareResponseError("CloudShare training user-property provisioning did not return all required keys.", {
+          method: evidence.request.method,
+          path: evidence.request.path,
+          requestHeaders: evidence.request.headers,
+          requestBody: evidence.request.body,
+          integrationSurface: "cloudshare.v4.training.user_properties",
+          status: evidence.response.status,
+          responseHeaders: evidence.response.headers,
+          responseBody: evidence.response.body,
+          cause: "missing_training_user_property_keys_after_create",
+          issues: stillMissingKeys.map(
+            (missingKey) =>
+              `Required CloudShare training user-property key '${missingKey}' was not returned for training ${input.trainingId}.`,
+          ),
+        });
+      }
+      const exchanges = [detailed, ...(created ? [created] : [])];
+      const primaryEvidence = created ?? detailed;
 
       return {
         trainingId: input.trainingId,
@@ -310,8 +335,10 @@ export function createCloudShareLabProvisioner(
         availableKeys: ensuredKeys,
         definitions: definitions as TrainingUserPropertyDefinition[],
         integrationSurface: "cloudshare.v4.training.user_properties",
-        request: detailed.request,
-        response: detailed.response,
+        request: primaryEvidence.request,
+        response: primaryEvidence.response,
+        requests: exchanges.map((exchange) => exchange.request),
+        responses: exchanges.map((exchange) => exchange.response),
       };
     },
 

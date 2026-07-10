@@ -542,6 +542,9 @@ export async function joinCohortExamSessionRuntime(
         ensuredTrainingUserProperties.integrationSurface ?? "cloudshare.v4.training.user_properties",
       requiredKeys: ensuredTrainingUserProperties.requiredKeys,
       availableKeys: ensuredTrainingUserProperties.availableKeys,
+      ...(toTrainingUserPropertyHttpExchanges(ensuredTrainingUserProperties) !== undefined
+        ? { httpExchanges: toTrainingUserPropertyHttpExchanges(ensuredTrainingUserProperties) }
+        : {}),
     },
   });
 
@@ -745,6 +748,43 @@ export async function joinCohortExamSessionRuntime(
       correlationId,
     },
   };
+}
+
+function toTrainingUserPropertyHttpExchanges(input: {
+  readonly requests?: readonly {
+    readonly method: string;
+    readonly path: string;
+    readonly query?: Record<string, string>;
+    readonly headers?: Record<string, string>;
+    readonly body?: unknown;
+  }[];
+  readonly responses?: readonly {
+    readonly status: number;
+    readonly headers?: Record<string, string | string[]>;
+    readonly body: unknown;
+  }[];
+}): readonly Record<string, unknown>[] | undefined {
+  if (!input.requests?.length) {
+    return undefined;
+  }
+  return input.requests.map((request, index) => ({
+    request: {
+      method: request.method,
+      path: request.path,
+      ...(request.query ? { query: request.query } : {}),
+      ...(request.headers ? { headers: request.headers } : {}),
+      ...(request.body !== undefined ? { body: request.body } : {}),
+    },
+    ...(input.responses?.[index]
+      ? {
+          response: {
+            status: input.responses[index].status,
+            ...(input.responses[index].headers ? { headers: input.responses[index].headers } : {}),
+            body: input.responses[index].body,
+          },
+        }
+      : {}),
+  }));
 }
 
 function findSameExamAvailabilityOverlap(input: {

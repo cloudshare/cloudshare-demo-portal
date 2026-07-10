@@ -431,6 +431,50 @@ describe("admin Cohort Exam Session runtime", () => {
       },
     });
     expect(JSON.stringify(entry)).not.toContain("secret-api-key");
+    const [ensureEntry] = await diagnosticsRepository.query({
+      customerId: "customer-1",
+      examId: "exam-1",
+      operation: "cloudshare.ensure_user_properties",
+    });
+    expect(ensureEntry).toMatchObject({
+      outcome: "success",
+      correlationId: "corr-cohort-publish-1",
+      externalIds: {
+        trainingId: "EXcohort-1",
+        experienceId: "EXcohort-1",
+        teamId: "TM-team-1",
+      },
+      request: {
+        method: "POST",
+        path: "/v4/trainings/EXcohort-1/users/properties",
+        body: [
+          { name: "certalisExamAttemptId" },
+          { name: "certalisCandidateId" },
+        ],
+      },
+      response: { status: 201 },
+      details: {
+        integrationSurface: "cloudshare.v4.training.user_properties",
+        httpExchanges: [
+          {
+            request: { method: "GET", path: "/v4/trainings/EXcohort-1/users/properties" },
+            response: { status: 200 },
+          },
+          {
+            request: {
+              method: "POST",
+              path: "/v4/trainings/EXcohort-1/users/properties",
+              body: [
+                { name: "certalisExamAttemptId" },
+                { name: "certalisCandidateId" },
+              ],
+            },
+            response: { status: 201 },
+          },
+        ],
+      },
+    });
+    expect(JSON.stringify(ensureEntry)).not.toContain("secret-api-key");
     expect(audit.write).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "audit-parent-exam-published",
@@ -641,6 +685,140 @@ describe("admin Cohort Exam Session runtime", () => {
     });
     expect(retry.status).toBe(502);
     expect(requestV4Detailed).toHaveBeenCalledTimes(2);
+  });
+
+  it("records attempted operation when training user-property creation returns incomplete keys after Experience creation", async () => {
+    const exams = createInMemoryExamCatalogRepository();
+    const sessions = createInMemoryCohortExamSessionRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
+    await seedExam(exams);
+    await handleCreateDraftCohortExamSession(
+      {
+        exams,
+        sessions,
+        logger: makeLogger(),
+        now: () => new Date("2026-07-04T11:00:00.000Z"),
+        newId: () => "cohort-session-1",
+      },
+      {
+        customerId: "customer-1",
+        actor,
+        examId: "exam-1",
+        body: {
+          name: "July Admin Cohort",
+          admissionStartsAt: "2026-07-05T09:00:00.000Z",
+        },
+      },
+    );
+    const requestV3 = vi.fn(async (spec: { path?: string; schema: { parse(value: unknown): unknown } }) =>
+      parseSuccessfulPublishV3(spec),
+    );
+    const requestV4Detailed = vi.fn(
+      async (spec: { method: string; path: string; body?: unknown; schema: { parse(value: unknown): unknown } }) => {
+        const body =
+          spec.method === "POST" && spec.path === "/trainings"
+            ? { id: "EXcohort-1" }
+            : spec.method === "POST" && spec.path === "/trainings/EXcohort-1/users/properties"
+              ? [{ id: "TF-certalisExamAttemptId", name: "certalisExamAttemptId" }]
+              : [];
+        return {
+          data: spec.schema.parse(body),
+          host: "api.accelerate.cloudshare.com",
+          integrationSurface: spec.path.includes("users/properties")
+            ? "cloudshare.v4.training.user_properties"
+            : "cloudshare.v4.training",
+          request: {
+            method: spec.method,
+            path: spec.path,
+            ...(spec.body ? { body: spec.body } : {}),
+          },
+          response: { status: spec.method === "POST" ? 201 : 200, body },
+        };
+      },
+    );
+    const cloudshare: CloudShareClientFactory = {
+      forConnection: () =>
+        ({
+          requestV3,
+          requestV4Detailed,
+        }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>,
+    };
+
+    const response = await handlePublishCohortExamSession(
+      {
+        exams,
+        sessions,
+        connections: {
+          findByCustomerId: vi.fn(async () => ({
+            customerId: "customer-1",
+            apiId: "api-id",
+            apiKey: "secret-api-key",
+            webhookSecret: "webhook-secret",
+            webhookPathToken: "webhook-token",
+            connectedAt: new Date("2026-07-01T00:00:00.000Z"),
+            verifiedAt: new Date("2026-07-01T00:05:00.000Z"),
+          })),
+          save: vi.fn(),
+          findByWebhookPathToken: vi.fn(),
+          markVerified: vi.fn(),
+        },
+        cloudshare,
+        diagnostics,
+        logger: makeLogger(),
+        now: () => new Date("2026-07-04T12:00:00.000Z"),
+        newCorrelationId: () => "corr-user-properties-partial",
+      },
+      {
+        customerId: "customer-1",
+        actor,
+        examId: "exam-1",
+        sessionId: "cohort-session-1",
+      },
+    );
+
+    expect(response).toMatchObject({
+      status: 502,
+      body: {
+        error:
+          "CloudShare created the Cohort Exam Session, but the required training user-property keys could not be added. Reconcile it before retrying and check the diagnostic log for the correlation ID.",
+        correlationId: "corr-user-properties-partial",
+      },
+    });
+    await expect(sessions.findById("cohort-session-1")).resolves.toMatchObject({
+      status: "publish_reconciliation_required",
+      cloudShareTrainingId: "EXcohort-1",
+      cloudShareExperienceId: "EXcohort-1",
+      lastPublishCorrelationId: "corr-user-properties-partial",
+    });
+    const [entry] = await diagnosticsRepository.query({
+      customerId: "customer-1",
+      examId: "exam-1",
+      operation: "cohort_exam_session.publish",
+      outcome: "failure",
+    });
+    expect(entry).toMatchObject({
+      correlationId: "corr-user-properties-partial",
+      request: {
+        method: "POST",
+        path: "/trainings/EXcohort-1/users/properties",
+        body: [
+          { name: "certalisExamAttemptId" },
+          { name: "certalisCandidateId" },
+        ],
+      },
+      response: {
+        status: 201,
+        body: [{ id: "TF-certalisExamAttemptId", name: "certalisExamAttemptId" }],
+      },
+      details: {
+        attemptedOperation: "ensure_user_properties",
+        integrationSurface: "cloudshare.v4.training.user_properties",
+        failureMode: "unexpected_response",
+        responseStatus: 201,
+        cause: "missing_training_user_property_keys_after_create",
+      },
+    });
   });
 
   it("keeps a session recoverable and records diagnostics when CloudShare cannot resolve a Project Team", async () => {

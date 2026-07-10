@@ -296,8 +296,9 @@ export async function handlePublishCohortExamSession(
       timeZoneId: "UTC",
       passphrase: `certalis-${claimedSession.id}`,
     });
+    let ensuredTrainingUserProperties;
     try {
-      await provisioner.ensureTrainingUserPropertyKeys?.({
+      ensuredTrainingUserProperties = await provisioner.ensureTrainingUserPropertyKeys?.({
         trainingId: created.trainingId,
         experienceId: created.experienceId,
         requiredKeys: CERTALIS_TRAINING_USER_PROPERTY_KEYS,
@@ -331,7 +332,7 @@ export async function handlePublishCohortExamSession(
           experienceId: created.experienceId,
           teamId: created.teamId,
         },
-        ...toPublishFailureDiagnostic(error),
+        ...toPublishFailureDiagnostic(error, "ensure_user_properties"),
       });
       deps.logger.warn("cohort session publish training user-property validation failed", {
         correlationId,
@@ -353,6 +354,48 @@ export async function handlePublishCohortExamSession(
           correlationId,
         },
       };
+    }
+    if (ensuredTrainingUserProperties) {
+      await safeRecordDiagnostic(deps, {
+        source: "admin-exams",
+        customerId: request.customerId,
+        actor: request.actor ?? null,
+        subject: { type: "cohort_exam_session", id: claimedSession.id },
+        examId: exam.id,
+        level: "info",
+        operation: "cloudshare.ensure_user_properties",
+        outcome: "success",
+        correlationId,
+        message: "CloudShare training user-property keys ensured for Cohort Exam Session",
+        externalIds: {
+          trainingId: created.trainingId,
+          experienceId: created.experienceId,
+          teamId: created.teamId,
+        },
+        ...(toCloudShareRequestDiagnostic(ensuredTrainingUserProperties.request)
+          ? { request: toCloudShareRequestDiagnostic(ensuredTrainingUserProperties.request) }
+          : {}),
+        ...(toCloudShareResponseDiagnostic(ensuredTrainingUserProperties.response)
+          ? { response: toCloudShareResponseDiagnostic(ensuredTrainingUserProperties.response) }
+          : {}),
+        details: {
+          integrationSurface:
+            ensuredTrainingUserProperties.integrationSurface ?? "cloudshare.v4.training.user_properties",
+          requiredKeys: ensuredTrainingUserProperties.requiredKeys,
+          availableKeys: ensuredTrainingUserProperties.availableKeys,
+          ...(toCloudShareHttpExchanges(
+            ensuredTrainingUserProperties.requests,
+            ensuredTrainingUserProperties.responses,
+          )
+            ? {
+                httpExchanges: toCloudShareHttpExchanges(
+                  ensuredTrainingUserProperties.requests,
+                  ensuredTrainingUserProperties.responses,
+                ),
+              }
+            : {}),
+        },
+      });
     }
     let parentExam = exam;
     let parentExamStatusChanged = false;
@@ -614,7 +657,76 @@ function buildPublishFailureExternalIds(exam: { projectId: string; blueprintId: 
   };
 }
 
-function toPublishFailureDiagnostic(error: unknown): {
+function toCloudShareRequestDiagnostic(
+  request:
+    | {
+        readonly method: string;
+        readonly path: string;
+        readonly query?: Record<string, string>;
+        readonly headers?: Record<string, string>;
+        readonly body?: unknown;
+      }
+    | undefined,
+): Record<string, unknown> | undefined {
+  if (!request) {
+    return undefined;
+  }
+  return {
+    method: request.method,
+    path: request.path,
+    ...(request.query ? { query: request.query } : {}),
+    ...(request.headers ? { headers: request.headers } : {}),
+    ...(request.body !== undefined ? { body: request.body } : {}),
+  };
+}
+
+function toCloudShareResponseDiagnostic(
+  response:
+    | {
+        readonly status: number;
+        readonly headers?: Record<string, string | string[]>;
+        readonly body: unknown;
+      }
+    | undefined,
+): Record<string, unknown> | undefined {
+  if (!response) {
+    return undefined;
+  }
+  return {
+    status: response.status,
+    ...(response.headers ? { headers: response.headers } : {}),
+    body: response.body,
+  };
+}
+
+function toCloudShareHttpExchanges(
+  requests:
+    | readonly {
+        readonly method: string;
+        readonly path: string;
+        readonly query?: Record<string, string>;
+        readonly headers?: Record<string, string>;
+        readonly body?: unknown;
+      }[]
+    | undefined,
+  responses:
+    | readonly {
+        readonly status: number;
+        readonly headers?: Record<string, string | string[]>;
+        readonly body: unknown;
+      }[]
+    | undefined,
+): readonly Record<string, unknown>[] | undefined {
+  if (!requests?.length) {
+    return undefined;
+  }
+  return requests.map((request, index) => ({
+    request: toCloudShareRequestDiagnostic(request),
+    ...(responses?.[index] ? { response: toCloudShareResponseDiagnostic(responses[index]) } : {}),
+  }));
+}
+
+function toPublishFailureDiagnostic(error: unknown, attemptedOperation?: string): {
   readonly request?: Record<string, unknown>;
   readonly response?: Record<string, unknown>;
   readonly details: Record<string, unknown>;
@@ -648,6 +760,7 @@ function toPublishFailureDiagnostic(error: unknown): {
         : undefined,
     details: {
       ...baseDetails,
+      ...(attemptedOperation ? { attemptedOperation } : {}),
       ...(status !== undefined ? { responseStatus: status } : {}),
       ...(context.cause ? { cause: context.cause } : {}),
       ...(context.issues ? { issues: context.issues } : {}),
