@@ -699,7 +699,7 @@ function CohortSessionMonitoringSummaryItem(props: {
   );
 }
 
-function isCohortMonitoringProblem(row: { readonly reconciliation?: "normal" | "state_observation" | "needs_attention"; readonly problemReasons: readonly string[] }): boolean {
+function isCohortMonitoringProblem(row: { readonly reconciliation?: "normal" | "unknown" | "state_observation" | "needs_attention"; readonly problemReasons: readonly string[] }): boolean {
   return (row.reconciliation ?? (row.problemReasons.length > 0 ? "needs_attention" : "normal")) === "needs_attention";
 }
 
@@ -1322,6 +1322,8 @@ export function CohortSessionWorkspacePanel(props: {
                               <AttentionGuidance reasons={attempt.problemReasons} />
                             ) : attempt.reconciliation === "state_observation" ? (
                               <span style={{ color: colors.textSecondary }}>State observation: checking again on the next refresh</span>
+                            ) : attempt.reconciliation === "unknown" ? (
+                              <span style={{ color: colors.textSecondary }}>Current CloudShare state is unavailable because participant monitoring is temporarily throttled; no reconciliation conclusion is available.</span>
                             ) : (
                               <span style={{ color: colors.textSecondary }}>Normal: portal and CloudShare runtime state agree</span>
                             )}
@@ -1404,12 +1406,31 @@ export function CohortSessionWorkspacePanel(props: {
                   ) : null}
                 </div>
               ) : null}
+              {props.detail.cloudShareParticipants.status === "rate_limited" ? (
+                <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.35rem" }}>
+                  <strong>CloudShare participant monitoring is temporarily throttled</strong>
+                  <span>{props.detail.cloudShareParticipants.readError}</span>
+                  <span>
+                    CloudShare did not provide current participant state for this check. This is not a participant reconciliation failure.
+                  </span>
+                  {props.detail.cloudShareParticipants.correlationId ? (
+                    <span>
+                      Correlation ID: {" "}
+                      <CorrelationDiagnosticsLink
+                        correlationId={props.detail.cloudShareParticipants.correlationId}
+                        onOpen={props.onOpenCorrelationDiagnostics}
+                      />
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
               {props.detail.cloudShareParticipants.status === "not_published" ? (
                 <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
                   Publish this Cohort Exam Session to CloudShare before participant monitoring becomes available.
                 </div>
               ) : null}
               {props.detail.cloudShareParticipants.status !== "not_published" &&
+              props.detail.cloudShareParticipants.status !== "rate_limited" &&
               visibleCloudShareParticipants.length === 0 ? (
                 <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
                   {summaryFilter === "state_observations" ? "No rows need a second state observation check on this refresh." : summaryFilter ? "No CloudShare participants contribute to this summary count." : "No CloudShare participants are currently visible for this shared Experience."}
@@ -1456,6 +1477,8 @@ export function CohortSessionWorkspacePanel(props: {
                               <AttentionGuidance reasons={participant.problemReasons} />
                             ) : participant.reconciliation === "state_observation" ? (
                               <span style={{ color: colors.textSecondary }}>State observation: checking again on the next refresh</span>
+                            ) : participant.reconciliation === "unknown" ? (
+                              <span style={{ color: colors.textSecondary }}>Current CloudShare state is unavailable because participant monitoring is temporarily throttled; no reconciliation conclusion is available.</span>
                             ) : (
                               <span style={{ color: colors.textSecondary }}>Normal: portal and CloudShare runtime state agree</span>
                             )}

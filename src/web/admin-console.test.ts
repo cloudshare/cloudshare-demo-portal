@@ -1,4 +1,4 @@
-import { createElement } from "react";
+import { createElement, type ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -1043,9 +1043,8 @@ describe("AdminConsole", () => {
     expect(html).not.toContain("/admin?tab=support&amp;view=diagnostics&amp;examAttemptId=attempt-1");
   });
 
-  it("renders a degraded CloudShare participant read state without hiding the session workspace", () => {
-    const html = renderToStaticMarkup(
-      createElement(CohortSessionWorkspacePanel, {
+  it("renders a rate-limited participant read as temporary throttling without counting it as needs attention", () => {
+    const panelProps: ComponentProps<typeof CohortSessionWorkspacePanel> = {
         examTitle: "Helios CX Admin Foundations",
         session: {
           session: {
@@ -1075,16 +1074,33 @@ describe("AdminConsole", () => {
             activeCount: 1,
             inProgressCount: 0,
             completedCount: 0,
-            problemCount: 2,
+            problemCount: 1,
             portalAttemptCount: 1,
             cloudShareParticipantCount: 0,
             derivedFrom: "portal_and_cloudshare",
           },
-          portalAttempts: [],
-          cloudShareParticipants: {
-            status: "unavailable",
+          portalAttempts: [{
+            id: "attempt-rate-limited",
+            candidateId: "candidate-1",
+            candidateName: "Casey Rivera",
+            candidateEmail: "casey@helioscx.demo",
+            status: "ready",
+            scheduledFor: "2026-09-01T09:00:00.000Z",
+            createdAt: "2026-09-01T08:00:00.000Z",
             trainingId: "EX123",
-            readError: "CloudShare participant read failed for this Cohort Exam Session.",
+            experienceId: "EX123",
+            environmentExternalId: null,
+            environmentId: null,
+            participantId: null,
+            problemReasons: [],
+            reconciliation: "unknown",
+            summaryContributions: ["active"],
+            diagnosticFilters: { examAttemptId: "attempt-rate-limited" },
+          }],
+          cloudShareParticipants: {
+            status: "rate_limited",
+            trainingId: "EX123",
+            readError: "CloudShare is temporarily throttling participant monitoring requests. Check the correlated diagnostics before retrying.",
             correlationId: "corr-1",
             participants: [],
           },
@@ -1110,19 +1126,36 @@ describe("AdminConsole", () => {
         loading: false,
         onBack: vi.fn(),
         onPublish: vi.fn(),
+    };
+    const html = renderToStaticMarkup(createElement(CohortSessionWorkspacePanel, panelProps));
+    const unavailableHtml = renderToStaticMarkup(
+      createElement(CohortSessionWorkspacePanel, {
+        ...panelProps,
+        detail: {
+          ...panelProps.detail!,
+          cloudShareParticipants: {
+            ...panelProps.detail!.cloudShareParticipants,
+            status: "unavailable",
+            readError: "CloudShare participant read failed for this Cohort Exam Session.",
+          },
+        },
       }),
     );
 
-    expect(html).toContain("CloudShare participant read unavailable");
-    expect(html).toContain("CloudShare participant read failed for this Cohort Exam Session.");
+    expect(html).toContain("CloudShare participant monitoring is temporarily throttled");
+    expect(html).toContain("CloudShare is temporarily throttling participant monitoring requests. Check the correlated diagnostics before retrying.");
+    expect(html).toContain("Current CloudShare state is unavailable because participant monitoring is temporarily throttled; no reconciliation conclusion is available.");
+    expect(html).not.toContain("Normal: portal and CloudShare runtime state agree");
     expect(html).not.toContain("Needs attention only counts actionable runtime contradictions, missing correlations, or an unavailable participant read.");
-    expect(html).toContain("The unavailable CloudShare participant read below needs attention because current environment state cannot be established.");
+    expect(html).not.toContain("The unavailable CloudShare participant read below needs attention because current environment state cannot be established.");
     expect(html).toContain("Correlation ID:");
     expect(html).toContain("corr-1");
     expect(html).toContain("/admin?tab=support&amp;view=diagnostics&amp;correlationId=corr-1");
     expect(html).toContain("Aggregate Guided Journey progress unavailable");
     expect(html).toContain("corr-aggregate-1");
     expect(html).toContain("/admin?tab=support&amp;view=diagnostics&amp;correlationId=corr-aggregate-1");
+    expect(unavailableHtml).toContain("CloudShare participant read unavailable");
+    expect(unavailableHtml).toContain("No CloudShare participants are currently visible for this shared Experience.");
   });
 
   it("renders the aggregate section as disabled when the parent Exam does not retrieve Guided Journey scores", () => {

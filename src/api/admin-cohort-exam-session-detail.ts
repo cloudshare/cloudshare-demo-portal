@@ -94,7 +94,7 @@ export interface CohortExamSessionMonitoringView {
   };
   readonly portalAttempts: readonly CohortExamSessionAttemptView[];
   readonly cloudShareParticipants: {
-    readonly status: "available" | "unavailable" | "not_published";
+    readonly status: "available" | "unavailable" | "rate_limited" | "not_published";
     readonly trainingId: string | null;
     readonly readError: string | null;
     readonly correlationId: string | null;
@@ -130,7 +130,7 @@ export interface CohortExamSessionAttemptView {
   readonly environmentId: string | null;
   readonly participantId: string | null;
   readonly problemReasons: readonly string[];
-  readonly reconciliation?: "normal" | "state_observation" | "needs_attention";
+  readonly reconciliation?: "normal" | "unknown" | "state_observation" | "needs_attention";
   readonly summaryContributions?: readonly CohortExamSessionMonitoringStateContribution[];
   readonly diagnosticFilters: DiagnosticFilterSeed;
 }
@@ -147,7 +147,7 @@ export interface CohortExamSessionParticipantView {
   readonly firstJoinedAt: string | null;
   readonly matchedExamAttemptId: string | null;
   readonly problemReasons: readonly string[];
-  readonly reconciliation?: "normal" | "state_observation" | "needs_attention";
+  readonly reconciliation?: "normal" | "unknown" | "state_observation" | "needs_attention";
   readonly summaryContributions?: readonly CohortExamSessionMonitoringStateContribution[];
   readonly diagnosticFilters: DiagnosticFilterSeed;
 }
@@ -387,7 +387,7 @@ async function readCloudShareParticipants(
     readonly correlationId: string;
   },
 ): Promise<{
-  readonly status: "available" | "unavailable" | "not_published";
+  readonly status: "available" | "unavailable" | "rate_limited" | "not_published";
   readonly participants: readonly TrainingParticipant[];
   readonly readError: string | null;
   readonly correlationId: string | null;
@@ -493,9 +493,11 @@ async function readCloudShareParticipants(
       ...diagnostic.details,
     });
     return {
-      status: "unavailable",
+      status: isCloudShareRateLimitError(error) ? "rate_limited" : "unavailable",
       participants: [],
-      readError: "CloudShare participant read failed for this Cohort Exam Session.",
+      readError: isCloudShareRateLimitError(error)
+        ? "CloudShare is temporarily throttling participant monitoring requests. Check the correlated diagnostics before retrying."
+        : "CloudShare participant read failed for this Cohort Exam Session.",
       correlationId: input.correlationId,
     };
   }
@@ -507,7 +509,7 @@ async function buildMonitoringView(
   session: CohortExamSessionWithInheritedContext,
   attempts: readonly AdminCohortExamSessionAttemptRecord[],
   cloudShareRead: {
-    readonly status: "available" | "unavailable" | "not_published";
+    readonly status: "available" | "unavailable" | "rate_limited" | "not_published";
     readonly participants: readonly TrainingParticipant[];
     readonly readError: string | null;
     readonly correlationId: string | null;
@@ -569,19 +571,26 @@ async function buildMonitoringView(
     };
   });
 
-  const reconciliationRows = deriveCohortExamSessionReconciliationRows(
+  const derivedReconciliationRows = deriveCohortExamSessionReconciliationRows(
     portalAttemptsWithoutProblems,
     cloudShareParticipantsWithoutProblems,
   );
+  // A throttled read contains no current CloudShare participant state. Do not
+  // turn that absence into a portal/CloudShare contradiction or reset a prior
+  // observation: this response is incomplete, not an empty participant list.
+  const reconciliationRows =
+    cloudShareRead.status === "rate_limited"
+      ? derivedReconciliationRows.map((row) => ({ ...row, problemReasons: [] }))
+      : derivedReconciliationRows;
   const portalProblemsById = new Map<string, readonly string[]>();
   const cloudProblemsByParticipantKey = new Map<string, readonly string[]>();
-  const reconciliationByRowKey = new Map<string, "normal" | "state_observation" | "needs_attention">();
+  const reconciliationByRowKey = new Map<string, "normal" | "unknown" | "state_observation" | "needs_attention">();
   const summaryContributionsByRowKey = new Map<string, readonly CohortExamSessionMonitoringStateContribution[]>();
   for (const row of reconciliationRows) {
     const rowKey = row.portal ? `attempt:${row.portal.id}` : `participant:${row.cloud?.email.trim().toLowerCase() ?? "unknown"}`;
     // Record normal rows too. A normal read resets a prior mismatch, so the
     // next mismatch begins a fresh two-consecutive-read grace period.
-    const observation = !observations
+    const observation = !observations || cloudShareRead.status === "rate_limited"
       ? null
       : await observations.record({
           customerId,
@@ -592,7 +601,11 @@ async function buildMonitoringView(
         });
     reconciliationByRowKey.set(
       rowKey,
-      row.problemReasons.length === 0 ? "normal" : classifyCohortMonitoringObservation(observation),
+      cloudShareRead.status === "rate_limited"
+        ? "unknown"
+        : row.problemReasons.length === 0
+          ? "normal"
+          : classifyCohortMonitoringObservation(observation),
     );
     summaryContributionsByRowKey.set(rowKey, getCohortExamSessionMonitoringStateContributions(row));
     if (row.portal) {
@@ -683,7 +696,7 @@ function buildLegacyMonitoringView(
   portalAttempts: readonly CohortExamSessionAttemptView[],
   cloudShareParticipants: readonly CohortExamSessionParticipantView[],
   session: CohortExamSessionWithInheritedContext,
-  cloudShareRead: { readonly status: "available" | "unavailable" | "not_published"; readonly readError: string | null; readonly correlationId: string | null },
+  cloudShareRead: { readonly status: "available" | "unavailable" | "rate_limited" | "not_published"; readonly readError: string | null; readonly correlationId: string | null },
   aggregateProgress: CohortExamSessionGuidedJourneyAggregateView,
   participantReadCorrelationId: string,
   aggregateProgressCorrelationId: string,

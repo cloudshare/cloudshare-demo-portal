@@ -1121,6 +1121,86 @@ describe("handleGetAdminCohortExamSessionDetail", () => {
     });
   });
 
+  it("reports a rate-limited participant read as temporary CloudShare throttling without adding an actionable reconciliation problem", async () => {
+    const exams = createInMemoryExamCatalogRepository();
+    const sessions = createInMemoryCohortExamSessionRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository, secrets: ["secret-api-key"] });
+    await seedPublishedExam(exams);
+    await seedPublishedSession(sessions);
+
+    const cloudshare: CloudShareClientFactory = {
+      forConnection: () => ({
+        requestV4Detailed: vi.fn(async () => {
+          throw new CloudShareRateLimitError("CloudShare is temporarily throttling requests", 429, "abuse_protection", {
+            method: "GET",
+            path: "/v4/trainings/EXcohort-1/students",
+            integrationSurface: "cloudshare.v4.training.participant",
+            responseHeaders: { "retry-after": "60" },
+            responseBody: { code: "0x42901" },
+          });
+        }),
+      }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>,
+    };
+
+    const response = await handleGetAdminCohortExamSessionDetail(
+      {
+        exams,
+        sessions,
+        attempts: {
+          listBySessionId: vi.fn().mockResolvedValue([
+            {
+              id: "attempt-rate-limited",
+              customerId: "customer-1",
+              candidateId: "candidate-1",
+              candidateEmail: "casey@helioscx.demo",
+              candidateFirstName: "Casey",
+              candidateLastName: "Rivera",
+              examId: "exam-1",
+              examTitle: "Helios CloudShare Fundamentals",
+              status: "ready",
+              scheduledFor: new Date("2026-07-06T10:00:00.000Z"),
+              createdAt: new Date("2026-07-06T10:00:00.000Z"),
+              trainingId: "EXcohort-1",
+              experienceId: "EXcohort-1",
+              environmentExternalId: null,
+              environmentId: null,
+              participantId: null,
+            },
+          ]),
+        },
+        diagnostics,
+        connections: {
+          findByCustomerId: vi.fn(async () => ({ customerId: "customer-1", apiId: "api-id", apiKey: "secret-api-key", webhookSecret: "webhook-secret", webhookPathToken: "webhook-token", connectedAt: new Date(), verifiedAt: new Date() })),
+          save: vi.fn(), findByWebhookPathToken: vi.fn(), markVerified: vi.fn(),
+        },
+        cloudshare,
+        logger: makeLogger(),
+        newCorrelationId: () => "corr-session-detail-rate-limit",
+      },
+      { customerId: "customer-1", examId: "exam-1", sessionId: "cohort-session-1" },
+    );
+
+    expect(response.status).toBe(200);
+    if (!("monitoring" in response.body)) throw new Error("Expected monitoring payload");
+    expect(response.body.monitoring.summary.problemCount).toBe(0);
+    expect(response.body.monitoring.portalAttempts).toMatchObject([
+      { id: "attempt-rate-limited", problemReasons: [], reconciliation: "unknown" },
+    ]);
+    expect(response.body.monitoring.cloudShareParticipants).toMatchObject({
+      status: "rate_limited",
+      participants: [],
+      readError: "CloudShare is temporarily throttling participant monitoring requests. Check the correlated diagnostics before retrying.",
+      correlationId: "corr-session-detail-rate-limit",
+    });
+
+    const [entry] = await diagnosticsRepository.query({ customerId: "customer-1", operation: "cohort_exam_session.monitor.read_participants", outcome: "failure" });
+    expect(entry).toMatchObject({
+      details: { failureMode: "rate_limit", responseStatus: 429 },
+      response: { status: 429, headers: { "retry-after": "60" }, body: { code: "0x42901" } },
+    });
+  });
+
   it("returns an unavailable aggregate Guided Journey state and records a supportable diagnostic when no aggregate data is available", async () => {
     const exams = createInMemoryExamCatalogRepository();
     const sessions = createInMemoryCohortExamSessionRepository();
