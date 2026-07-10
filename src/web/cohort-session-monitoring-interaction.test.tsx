@@ -171,4 +171,20 @@ describe("AdminConsole Cohort Exam Session monitoring path", () => {
     await screen.findByRole("button", { name: "Open monitoring" });
     expect(fetchMock.mock.calls.filter(([url]) => url === "/api/admin/exams/exam-1/cohort-sessions")).toHaveLength(1);
   });
+
+  it("coalesces the cohort-session read for a cold focused Support deep link", async () => {
+    const fetchMock = installAdminConsoleFetchMock();
+    render(
+      <AdminConsole
+        email="admin@helioscx.demo"
+        initialTab="support"
+        initialSupportView="monitoring"
+        initialExamId="exam-1"
+        initialCohortSessionId="cohort-session-1"
+      />,
+    );
+
+    expect(await screen.findByText("Cohort Exam Session monitoring")).toBeTruthy();
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/admin/exams/exam-1/cohort-sessions")).toHaveLength(1);
+  });
 });

@@ -1988,6 +1988,7 @@ export function AdminConsole({
   const [examCatalog, setExamCatalog] = useState<ExamRecord[]>([]);
   const [archivedExamCatalog, setArchivedExamCatalog] = useState<ExamRecord[]>([]);
   const [cohortSessionsByExamId, setCohortSessionsByExamId] = useState<Record<string, CohortExamSessionRecord[]>>({});
+  const cohortSessionLoadsRef = useRef(new Map<string, Promise<void>>());
   const [cohortSessionDetailsById, setCohortSessionDetailsById] = useState<Record<string, CohortExamSessionDetailRecord>>({});
   const [cohortSessionFormsByExamId, setCohortSessionFormsByExamId] = useState<Record<string, CohortExamSessionFormState>>({});
   const [selectedCohortSession, setSelectedCohortSession] = useState<CohortExamSessionRecord | null>(null);
@@ -2817,23 +2818,26 @@ export function AdminConsole({
   }
 
   async function loadCohortExamSessions(examId: string) {
-    try {
-      const response = await fetchAdmin(`/api/admin/exams/${encodeURIComponent(examId)}/cohort-sessions`);
-      const data = (await response.json()) as { sessions?: CohortExamSessionRecord[]; error?: string };
-      if (!response.ok) {
-        setError(data.error ?? "Failed to load Cohort Exam Sessions");
-        return;
+    const inFlight = cohortSessionLoadsRef.current.get(examId);
+    if (inFlight) return inFlight;
+
+    const request = (async () => {
+      try {
+        const response = await fetchAdmin(`/api/admin/exams/${encodeURIComponent(examId)}/cohort-sessions`);
+        const data = (await response.json()) as { sessions?: CohortExamSessionRecord[]; error?: string };
+        if (!response.ok) {
+          setError(data.error ?? "Failed to load Cohort Exam Sessions");
+          return;
+        }
+        setCohortSessionsByExamId((current) => ({ ...current, [examId]: data.sessions ?? [] }));
+      } catch (caughtError) {
+        if (!isAdminSessionExpiredError(caughtError)) setError("Failed to load Cohort Exam Sessions");
+      } finally {
+        cohortSessionLoadsRef.current.delete(examId);
       }
-      setCohortSessionsByExamId((current) => ({
-        ...current,
-        [examId]: data.sessions ?? [],
-      }));
-    } catch (caughtError) {
-      if (isAdminSessionExpiredError(caughtError)) {
-        return;
-      }
-      setError("Failed to load Cohort Exam Sessions");
-    }
+    })();
+    cohortSessionLoadsRef.current.set(examId, request);
+    return request;
   }
 
   async function loadCohortSessionDetail(examId: string, sessionId: string) {
