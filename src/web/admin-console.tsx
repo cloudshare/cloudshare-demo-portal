@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import {
   beginLatestOnlyRequest,
   buildMonitoringHistoryQueryString,
-  buildDiagnosticLogQueryString,
   getAllowedRegionValidationMessage,
   getCompatibleRegions,
   getDefaultOpenPeriodMinutes,
@@ -21,11 +20,9 @@ import {
   ADMIN_TABS,
   buildAdminNavigationHref,
   createCorrelationDiagnosticsNavigationIntent,
-  createExamAttemptDiagnosticsNavigationIntent,
   createSupportDiagnosticsNavigationIntent,
   getAdminTabLabel,
   getAdminSupportViewLabel,
-  normaliseDiagnosticLogFilters,
   shouldClearAdminBannerOnTabChange,
   type AdminExamView,
   type AdminNavigationIntent,
@@ -41,10 +38,7 @@ import {
 import { CloudShareConnectionFeature } from "./admin-cloudshare-connection";
 import { AdminCandidateRosterFeature } from "./admin-candidate-roster";
 import { formatAdminAttemptStatus, formatAdminUtcTimestamp } from "./admin-attempt-presentation";
-import {
-  DiagnosticLogTable,
-  type DiagnosticLogTableEntry as DiagnosticLogEntry,
-} from "./diagnostic-log-table";
+import { AdminSupportFeature } from "./admin-support";
 import { SessionMonitoringPanel } from "./session-monitoring-panel";
 import type { AdminMonitoringView as MonitoringView } from "@/domain/admin-monitoring";
 import type {
@@ -82,54 +76,6 @@ interface AdminConsoleProps {
 interface AdminErrorState {
   readonly message: string;
   readonly correlationId?: string | null;
-}
-
-interface AuditRecord {
-  id: string;
-  customerId?: string | null;
-  actorType?: string | null;
-  actorId?: string | null;
-  actorEmail?: string | null;
-  subjectType?: string | null;
-  subjectId?: string | null;
-  action: string;
-  outcome: "success" | "failure" | "denied";
-  candidateId?: string | null;
-  candidateEmail?: string | null;
-  examId?: string | null;
-  examAttemptId?: string | null;
-  correlationId?: string | null;
-  details?: Record<string, unknown> | null;
-  error?: string | null;
-  occurredAt: string;
-}
-
-interface AuditTrailFilters {
-  readonly examAttemptId: string;
-  readonly action: string;
-  readonly outcome: string;
-  readonly actorEmail: string;
-  readonly subjectType: string;
-  readonly subjectId: string;
-  readonly examId: string;
-}
-
-const EMPTY_AUDIT_FILTERS: AuditTrailFilters = {
-  examAttemptId: "",
-  action: "",
-  outcome: "",
-  actorEmail: "",
-  subjectType: "",
-  subjectId: "",
-  examId: "",
-};
-
-interface DiagnosticLogPageResponse {
-  limit: number;
-  offset: number;
-  returned: number;
-  hasMore: boolean;
-  nextOffset: number | null;
 }
 
 interface ConnectionDiagnostic {
@@ -282,8 +228,6 @@ function CorrelationDiagnosticsLink(props: {
     </a>
   );
 }
-
-const DIAGNOSTIC_PAGE_LIMIT = 50;
 
 const adminTabNavStyle: React.CSSProperties = {
   display: "grid",
@@ -1861,12 +1805,7 @@ export function AdminConsole({
   const projectResourcesRequestIdRef = useRef(0);
   const blueprintDetailRequestIdRef = useRef(0);
   const examCatalogLoadingCountRef = useRef(0);
-  const [auditFilters, setAuditFilters] = useState<AuditTrailFilters>(EMPTY_AUDIT_FILTERS);
-  const [auditRecords, setAuditRecords] = useState<AuditRecord[] | null>(null);
-  const [diagnosticEntries, setDiagnosticEntries] = useState<DiagnosticLogEntry[] | null>(null);
   const [diagnosticFilters, setDiagnosticFilters] = useState<DiagnosticLogFilters>(initialDiagnosticFilters);
-  const [diagnosticPage, setDiagnosticPage] = useState<DiagnosticLogPageResponse | null>(null);
-  const [expandedDiagnosticId, setExpandedDiagnosticId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [examCatalogLoading, setExamCatalogLoading] = useState(false);
   const [errorState, setErrorState] = useState<AdminErrorState | null>(null);
@@ -1892,12 +1831,6 @@ export function AdminConsole({
     if (tab === "support" && supportView === "monitoring") {
       void loadMonitoring();
       void loadExamCatalog(false);
-    }
-    if (tab === "support" && supportView === "diagnostics") {
-      void loadDiagnostics();
-    }
-    if (tab === "support" && supportView === "audit") {
-      void loadAudit();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, examView, supportView]);
@@ -2020,52 +1953,6 @@ export function AdminConsole({
     void loadCohortExamSessions(examId);
   }
 
-  async function loadAudit(filters: AuditTrailFilters = auditFilters) {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams();
-      for (const [key, value] of Object.entries(filters)) {
-        const trimmed = value.trim();
-        if (trimmed) {
-          params.set(key, trimmed);
-        }
-      }
-      const query = params.toString();
-      const qs = query ? `?${query}` : "";
-      const res = await fetchAdmin(`/api/admin/audit${qs}`);
-      const data = await res.json() as { records?: AuditRecord[]; error?: string };
-      if (!res.ok) {
-        setError(data.error ?? "Failed to load audit trail");
-        return;
-      }
-      setAuditRecords(data.records ?? []);
-    } catch (caughtError) {
-      if (isAdminSessionExpiredError(caughtError)) {
-        return;
-      }
-      setError("Failed to load audit trail");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function setAuditFilter<K extends keyof AuditTrailFilters>(
-    key: K,
-    value: AuditTrailFilters[K],
-  ) {
-    setAuditFilters((current) => ({ ...current, [key]: value }));
-  }
-
-  function applyAuditFilters() {
-    void loadAudit();
-  }
-
-  function clearAuditFilters() {
-    setAuditFilters(EMPTY_AUDIT_FILTERS);
-    void loadAudit(EMPTY_AUDIT_FILTERS);
-  }
-
   async function loadMonitoring(historyOffset = 0) {
     setLoading(true);
     setError(null);
@@ -2091,26 +1978,7 @@ export function AdminConsole({
   }
 
   function openExamAttemptSupportDiagnostics(examAttemptId: string) {
-    const navigation = createExamAttemptDiagnosticsNavigationIntent(examAttemptId);
-    navigateAdmin(navigation);
-    setExpandedDiagnosticId(null);
-    if (tab === "support" && supportView === "diagnostics") {
-      void loadDiagnostics(false, 0, navigation.diagnosticFilters);
-    }
-  }
-
-  function openCorrelationSupportDiagnostics(correlationId: string) {
-    const navigation = createCorrelationDiagnosticsNavigationIntent(correlationId);
-    navigateAdmin(navigation);
-    setExpandedDiagnosticId(null);
-    if (tab === "support" && supportView === "diagnostics") {
-      void loadDiagnostics(false, 0, navigation.diagnosticFilters);
-    }
-  }
-
-  function openSessionSupportDiagnostics(filters: DiagnosticLogFilters) {
-    navigateAdmin({ tab: "support", supportView: "diagnostics", diagnosticFilters: filters });
-    setExpandedDiagnosticId(null);
+    navigateAdmin({ tab: "support", supportView: "diagnostics", diagnosticFilters: { examAttemptId } });
   }
 
   function loadMoreMonitoringHistory() {
@@ -2120,93 +1988,6 @@ export function AdminConsole({
     }
 
     void loadMonitoring(nextOffset);
-  }
-
-  async function loadDiagnostics(
-    background = false,
-    offset = 0,
-    filters: DiagnosticLogFilters = diagnosticFilters,
-  ) {
-    if (!background) {
-      setLoading(true);
-      setError(null);
-    }
-    try {
-      const query = buildDiagnosticLogQueryString(
-        normaliseDiagnosticLogFilters(filters),
-        { limit: DIAGNOSTIC_PAGE_LIMIT, offset },
-      );
-      const res = await fetchAdmin(`/api/admin/diagnostics${query}`);
-      const data = (await res.json()) as {
-        entries?: DiagnosticLogEntry[];
-        page?: DiagnosticLogPageResponse;
-        error?: string;
-      };
-      if (!res.ok) {
-        if (!background) {
-          setError(data.error ?? "Failed to load diagnostic log");
-        }
-        return;
-      }
-      setDiagnosticEntries(data.entries ?? []);
-      setDiagnosticPage(
-        data.page ?? {
-          limit: DIAGNOSTIC_PAGE_LIMIT,
-          offset,
-          returned: data.entries?.length ?? 0,
-          hasMore: false,
-          nextOffset: null,
-        },
-      );
-      setExpandedDiagnosticId(null);
-    } catch (caughtError) {
-      if (isAdminSessionExpiredError(caughtError)) {
-        return;
-      }
-      if (!background) {
-        setError("Failed to load diagnostic log");
-      }
-    } finally {
-      if (!background) {
-        setLoading(false);
-      }
-    }
-  }
-
-  function onLoadDiagnostics() {
-    void loadDiagnostics(false, 0);
-  }
-
-  function setDiagnosticFilter<K extends keyof DiagnosticLogFilters>(
-    key: K,
-    value: DiagnosticLogFilters[K],
-  ) {
-    setDiagnosticFilters((current) => ({ ...current, [key]: value }));
-  }
-
-  function applyDiagnosticFilters() {
-    navigateAdmin({ tab: "support", supportView: "diagnostics", diagnosticFilters });
-    void loadDiagnostics(false, 0);
-  }
-
-  function clearDiagnosticFilters() {
-    const clearedFilters: DiagnosticLogFilters = {};
-    navigateAdmin({ tab: "support", supportView: "diagnostics", diagnosticFilters: clearedFilters });
-    setDiagnosticPage(null);
-    setExpandedDiagnosticId(null);
-    void loadDiagnostics(false, 0, clearedFilters);
-  }
-
-  function loadPreviousDiagnosticPage() {
-    const nextOffset = Math.max((diagnosticPage?.offset ?? 0) - DIAGNOSTIC_PAGE_LIMIT, 0);
-    void loadDiagnostics(false, nextOffset);
-  }
-
-  function loadNextDiagnosticPage() {
-    if (diagnosticPage?.nextOffset === null || diagnosticPage?.nextOffset === undefined) {
-      return;
-    }
-    void loadDiagnostics(false, diagnosticPage.nextOffset);
   }
 
   function resetExamForm(next?: {
@@ -3700,122 +3481,13 @@ export function AdminConsole({
         </section>
       )}
 
-      {tab === "support" && supportView === "audit" && (
-        <section>
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
-              gap: "0.75rem",
-              marginBottom: "1rem",
-              alignItems: "end",
-            }}
-          >
-            <input
-              placeholder="Exam attempt ID"
-              value={auditFilters.examAttemptId}
-              onChange={(e) => setAuditFilter("examAttemptId", e.target.value)}
-              style={{ padding: "0.4rem" }}
-            />
-            <input
-              placeholder="Action"
-              value={auditFilters.action}
-              onChange={(e) => setAuditFilter("action", e.target.value)}
-              style={{ padding: "0.4rem" }}
-            />
-            <select
-              value={auditFilters.outcome}
-              onChange={(e) => setAuditFilter("outcome", e.target.value)}
-              style={{ padding: "0.4rem" }}
-            >
-              <option value="">Any outcome</option>
-              <option value="success">Success</option>
-              <option value="failure">Failure</option>
-              <option value="denied">Denied</option>
-            </select>
-            <input
-              placeholder="Actor email"
-              value={auditFilters.actorEmail}
-              onChange={(e) => setAuditFilter("actorEmail", e.target.value)}
-              style={{ padding: "0.4rem" }}
-            />
-            <input
-              placeholder="Subject type"
-              value={auditFilters.subjectType}
-              onChange={(e) => setAuditFilter("subjectType", e.target.value)}
-              style={{ padding: "0.4rem" }}
-            />
-            <input
-              placeholder="Subject ID"
-              value={auditFilters.subjectId}
-              onChange={(e) => setAuditFilter("subjectId", e.target.value)}
-              style={{ padding: "0.4rem" }}
-            />
-            <input
-              placeholder="Exam ID"
-              value={auditFilters.examId}
-              onChange={(e) => setAuditFilter("examId", e.target.value)}
-              style={{ padding: "0.4rem" }}
-            />
-            <button onClick={applyAuditFilters} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
-              {loading ? "Loading..." : "Apply Filters"}
-            </button>
-            <button onClick={clearAuditFilters} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
-              Clear Filters
-            </button>
-            <button onClick={() => void loadAudit()} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
-              Refresh Page
-            </button>
-          </div>
-          {auditRecords && (
-            <div style={{ ...cardStyle, padding: 0, overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
-                <thead>
-                  <tr style={{ background: colors.surfaceSubtle }}>
-                    {["Time", "Actor", "Subject", "Exam attempt", "Action", "Outcome", "Details / Error"].map((h) => (
-                      <th key={h} style={{ textAlign: "left", padding: "0.4rem", borderBottom: `1px solid ${colors.border}` }}>
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {auditRecords.length === 0 && (
-                    <tr>
-                      <td colSpan={7} style={{ padding: "0.5rem", color: colors.textSecondary }}>
-                        No records found
-                      </td>
-                    </tr>
-                  )}
-                  {auditRecords.map((r) => (
-                    <tr key={r.id} style={{ borderBottom: `1px solid ${colors.border}` }}>
-                      <td style={{ padding: "0.4rem", whiteSpace: "nowrap" }}>
-                        {formatAdminUtcTimestamp(r.occurredAt)}
-                      </td>
-                      <td style={{ padding: "0.4rem" }}>
-                        {r.actorEmail ?? r.actorId ?? r.actorType ?? "-"}
-                      </td>
-                      <td style={{ padding: "0.4rem" }}>
-                        {r.subjectType || r.subjectId
-                          ? `${r.subjectType ?? "subject"}:${r.subjectId ?? "-"}`
-                          : r.examId ?? "-"}
-                      </td>
-                      <td style={{ padding: "0.4rem" }}>{r.examAttemptId ?? "-"}</td>
-                      <td style={{ padding: "0.4rem" }}>{r.action}</td>
-                      <td style={{ padding: "0.4rem", color: r.outcome === "success" ? colors.success : colors.danger, fontWeight: "bold" }}>
-                        {r.outcome}
-                      </td>
-                      <td style={{ padding: "0.4rem", fontSize: "0.8rem", color: "#444" }}>
-                        {r.error ?? (r.details ? JSON.stringify(r.details) : "-")}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
-      )}
+      <AdminSupportFeature
+        active={tab === "support"}
+        view={supportView}
+        diagnosticFilters={diagnosticFilters}
+        fetchAdmin={fetchAdmin}
+        onNavigate={navigateAdmin}
+      />
 
       {tab === "support" && supportView === "monitoring" && (
         <section style={{ display: "grid", gap: "1rem" }}>
@@ -3860,277 +3532,6 @@ export function AdminConsole({
                 {loading ? "Loading..." : "Refresh Monitoring"}
               </button>
             )) : null}
-        </section>
-      )}
-
-      {tab === "support" && supportView === "diagnostics" && (
-        <section>
-          <p style={{ color: colors.textSecondary, marginTop: 0 }}>
-            The correlated diagnostic log: what the portal did, in what order, and how to trace it.
-            Entries are append-only and scoped to your Customer. This is the primary support workflow.
-            Session Monitoring remains the current-state queue view and should link into this tab for
-            forensic investigation. Timestamps are ISO 8601 in UTC. Secrets and credentials are redacted.
-          </p>
-          <div
-            style={{
-              border: "1px solid #dfe3eb",
-              borderRadius: "8px",
-              background: "#f8fafc",
-              padding: "1rem",
-              marginBottom: "1rem",
-            }}
-          >
-            <div style={{ marginBottom: "0.9rem" }}>
-              <h2 style={{ margin: 0, fontSize: "1rem" }}>Investigative filters</h2>
-              <p style={{ color: colors.textSecondary, margin: "0.35rem 0 0" }}>
-                Follow an exam attempt, correlation thread, or CloudShare event without changing the
-                underlying diagnostic filtering rules.
-              </p>
-            </div>
-            <div style={{ display: "grid", gap: "0.9rem" }}>
-              <fieldset
-                style={{
-                  margin: 0,
-                  border: "1px solid #d7dce4",
-                  borderRadius: "8px",
-                  padding: "0.8rem",
-                  minWidth: 0,
-                  background: "#fff",
-                }}
-              >
-                <legend style={{ padding: "0 0.35rem", fontWeight: 600 }}>Investigation thread</legend>
-                <div
-                  style={{
-                    display: "grid",
-                    gap: "0.75rem",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                    alignItems: "end",
-                  }}
-                >
-                  <label style={{ display: "grid", gap: "0.35rem" }}>
-                    <span>Exam attempt ID</span>
-                    <input
-                      {...extensionHydrationProps}
-                      value={diagnosticFilters.examAttemptId ?? ""}
-                      onChange={(event) => setDiagnosticFilter("examAttemptId", event.target.value)}
-                      placeholder="attempt-123"
-                    />
-                  </label>
-                  <label style={{ display: "grid", gap: "0.35rem" }}>
-                    <span>Correlation ID</span>
-                    <input
-                      {...extensionHydrationProps}
-                      value={diagnosticFilters.correlationId ?? ""}
-                      onChange={(event) => setDiagnosticFilter("correlationId", event.target.value)}
-                      placeholder="corr-123"
-                    />
-                  </label>
-                  <label style={{ display: "grid", gap: "0.35rem" }}>
-                    <span>Candidate email</span>
-                    <input
-                      {...extensionHydrationProps}
-                      value={diagnosticFilters.candidateEmail ?? ""}
-                      onChange={(event) => setDiagnosticFilter("candidateEmail", event.target.value)}
-                      placeholder="candidate@helioscx.demo"
-                    />
-                  </label>
-                  <label style={{ display: "grid", gap: "0.35rem" }}>
-                    <span>Exam ID</span>
-                    <input
-                      {...extensionHydrationProps}
-                      value={diagnosticFilters.examId ?? ""}
-                      onChange={(event) => setDiagnosticFilter("examId", event.target.value)}
-                      placeholder="exam-123"
-                    />
-                  </label>
-                  <label style={{ display: "grid", gap: "0.35rem" }}>
-                    <span>CloudShare / external ID</span>
-                    <input
-                      {...extensionHydrationProps}
-                      value={diagnosticFilters.externalId ?? ""}
-                      onChange={(event) => setDiagnosticFilter("externalId", event.target.value)}
-                      placeholder="env-123"
-                    />
-                  </label>
-                </div>
-              </fieldset>
-              <fieldset
-                style={{
-                  margin: 0,
-                  border: "1px solid #d7dce4",
-                  borderRadius: "8px",
-                  padding: "0.8rem",
-                  minWidth: 0,
-                  background: "#fff",
-                }}
-              >
-                <legend style={{ padding: "0 0.35rem", fontWeight: 600 }}>Event details</legend>
-                <div
-                  style={{
-                    display: "grid",
-                    gap: "0.75rem",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-                    alignItems: "end",
-                  }}
-                >
-                  <label style={{ display: "grid", gap: "0.35rem" }}>
-                    <span>Operation</span>
-                    <input
-                      {...extensionHydrationProps}
-                      value={diagnosticFilters.operation ?? ""}
-                      onChange={(event) => setDiagnosticFilter("operation", event.target.value)}
-                      placeholder="exam_attempt.resume"
-                    />
-                  </label>
-                  <label style={{ display: "grid", gap: "0.35rem" }}>
-                    <span>Outcome</span>
-                    <select
-                      {...extensionHydrationProps}
-                      value={diagnosticFilters.outcome ?? ""}
-                      onChange={(event) =>
-                        setDiagnosticFilter(
-                          "outcome",
-                          (event.target.value || undefined) as DiagnosticLogFilters["outcome"],
-                        )
-                      }
-                    >
-                      <option value="">All</option>
-                      <option value="success">Success</option>
-                      <option value="failure">Failure</option>
-                    </select>
-                  </label>
-                  <label style={{ display: "grid", gap: "0.35rem" }}>
-                    <span>Source</span>
-                    <input
-                      {...extensionHydrationProps}
-                      value={diagnosticFilters.source ?? ""}
-                      onChange={(event) => setDiagnosticFilter("source", event.target.value)}
-                      placeholder="runtime"
-                    />
-                  </label>
-                  <label style={{ display: "grid", gap: "0.35rem" }}>
-                    <span>Integration surface</span>
-                    <input
-                      {...extensionHydrationProps}
-                      value={diagnosticFilters.integrationSurface ?? ""}
-                      onChange={(event) => setDiagnosticFilter("integrationSurface", event.target.value)}
-                      placeholder="cloudshare.v4.environment"
-                    />
-                  </label>
-                  <label style={{ display: "grid", gap: "0.35rem" }}>
-                    <span>From (UTC ISO)</span>
-                    <input
-                      {...extensionHydrationProps}
-                      value={diagnosticFilters.from ?? ""}
-                      onChange={(event) => setDiagnosticFilter("from", event.target.value)}
-                      placeholder="2026-06-21T10:00:00.000Z"
-                    />
-                  </label>
-                  <label style={{ display: "grid", gap: "0.35rem" }}>
-                    <span>To (UTC ISO)</span>
-                    <input
-                      {...extensionHydrationProps}
-                      value={diagnosticFilters.to ?? ""}
-                      onChange={(event) => setDiagnosticFilter("to", event.target.value)}
-                      placeholder="2026-06-21T11:00:00.000Z"
-                    />
-                  </label>
-                </div>
-              </fieldset>
-            </div>
-            <div
-              style={{
-                display: "flex",
-                gap: "0.75rem",
-                flexWrap: "wrap",
-                marginTop: "0.9rem",
-              }}
-            >
-              <button {...extensionHydrationProps} onClick={applyDiagnosticFilters} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
-                {loading ? "Loading..." : "Apply Filters"}
-              </button>
-              <button {...extensionHydrationProps} onClick={clearDiagnosticFilters} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
-                Clear Filters
-              </button>
-              <button {...extensionHydrationProps} onClick={onLoadDiagnostics} disabled={loading} style={{ padding: "0.4rem 1rem" }}>
-                Refresh Page
-              </button>
-            </div>
-          </div>
-          {diagnosticPage && (
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: "0.75rem",
-                flexWrap: "wrap",
-                alignItems: "center",
-                marginBottom: "0.75rem",
-              }}
-            >
-              <div style={{ color: colors.textSecondary }}>
-                Showing {diagnosticPage.returned} entries starting at row {diagnosticPage.offset + 1}.
-              </div>
-              <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
-                <button
-                  {...extensionHydrationProps}
-                  onClick={loadPreviousDiagnosticPage}
-                  disabled={loading || (diagnosticPage.offset ?? 0) === 0}
-                  style={{ padding: "0.4rem 1rem" }}
-                >
-                  Previous
-                </button>
-                <button
-                  {...extensionHydrationProps}
-                  onClick={loadNextDiagnosticPage}
-                  disabled={loading || !diagnosticPage.hasMore}
-                  style={{ padding: "0.4rem 1rem" }}
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-          )}
-          {diagnosticFilters.examAttemptId ? (
-            <div
-              style={{
-                marginBottom: "0.75rem",
-                padding: "0.65rem 0.8rem",
-                border: "1px solid #dbe4ff",
-                borderRadius: "8px",
-                background: "#f5f8ff",
-                color: "#123",
-              }}
-            >
-              Filtered to exam attempt ID{" "}
-              <span style={{ fontFamily: "monospace" }}>{diagnosticFilters.examAttemptId}</span>.
-            </div>
-          ) : null}
-          {!diagnosticFilters.examAttemptId && diagnosticFilters.correlationId ? (
-            <div
-              style={{
-                marginBottom: "0.75rem",
-                padding: "0.65rem 0.8rem",
-                border: "1px solid #dbe4ff",
-                borderRadius: "8px",
-                background: "#f5f8ff",
-                color: "#123",
-              }}
-            >
-              Filtered to correlation ID{" "}
-              <span style={{ fontFamily: "monospace" }}>{diagnosticFilters.correlationId}</span>.
-            </div>
-          ) : null}
-          {diagnosticEntries && (
-            <DiagnosticLogTable
-              entries={diagnosticEntries}
-              expandedDiagnosticId={expandedDiagnosticId}
-              onToggleExpanded={(id) =>
-                setExpandedDiagnosticId(expandedDiagnosticId === id ? null : id)
-              }
-              onOpenExamAttempt={openExamAttemptSupportDiagnostics}
-            />
-          )}
         </section>
       )}
 
