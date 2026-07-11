@@ -3,13 +3,12 @@ import { resolve } from "node:path";
 import { z } from "zod";
 
 /**
- * Typed runtime configuration for the portal, organised into three categories:
+ * Typed runtime configuration for the portal, organised into two categories:
  *  - secrets:       sensitive credentials, env-only and redacted in logs
  *  - runtime:       operational flags (live-vs-fixture mode, tunnel URL)
- *  - demoResources: friendly names for the CloudShare resources the demo uses
  *
  * Config is validated at boot via {@link loadConfig}; the app fails fast if the
- * environment is missing or malformed rather than failing mid-demo.
+ * environment is missing or malformed rather than failing during portal operation.
  */
 
 /** Raised when the environment cannot be parsed into a valid {@link Config}. */

@@ -273,9 +273,6 @@ Slice 3 moves Candidate identity onto the same portal user/session model as the 
   drives home routing (`/admin` vs `/candidate`).
 - Candidate exam discovery is server-side: `GET /api/candidate/exams` filters to the signed-in
   Candidate's Customer and returns **published Exams only**.
-- The older token-based Candidate admission flow is retired at the public API boundary:
-  `POST /api/candidate/admit` and `GET /api/candidate/session` return `410 Gone` with replacement
-  API details. They are intentionally not connected to token-auth composition.
 
 ## Candidate exam catalog & scheduling
 
@@ -286,23 +283,14 @@ The active Certalis/Helios candidate flow is portal-authenticated:
 - `POST /api/candidate/exams` schedules an ExamAttempt and provisions the
   CloudShare LabLaunch through the active per-Customer CloudShare flow.
 - `GET /api/auth/session` is the active session-resume endpoint for Candidates
-  and admins; the retired `GET /api/candidate/session` endpoint now returns
-  `410 Gone`.
-- The retired simulator booking routes, `GET /api/exams/eligible` and
-  `POST /api/exams/book`, now return `410 Gone` with replacement API details.
-  They are intentionally not connected to the old simulator eligibility adapter
-  or `bookExam` flow.
+  and admins.
 
 ## Lab launch (entitlement-gated)
 
-Direct JSON launch via `POST /api/lab/launch` is retired. Sponsored-link
-`loginUrl` values are bearer credentials and must never be returned in JSON or
+Sponsored-link `loginUrl` values are bearer credentials and must never be returned in JSON or
 shown in the UI. Slice 5 owns the time-gated `/enter` endpoint, which will
 recompute entitlement server-side and issue a 302 redirect to the server-held
 sponsored link.
-
-The legacy `/api/lab/launch` route now returns `410 Gone` so it cannot bypass the
-launch-window gate or leak the sponsored link.
 
 ## Webhooks & environment state (polling is the source of truth)
 
