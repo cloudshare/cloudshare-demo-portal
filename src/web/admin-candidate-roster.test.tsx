@@ -97,4 +97,14 @@ describe("AdminCandidateRosterFeature", () => {
     expect(await screen.findByText("Roster unavailable")).toBeTruthy();
     expect(screen.getByText("No roster loaded.")).toBeTruthy();
   });
+
+  it("keeps roster request busy state inside the Candidate feature", async () => {
+    let resolveRoster: ((response: Response) => void) | undefined;
+    const fetchAdmin = vi.fn<AdminAuthenticatedRequest>(() => new Promise((resolve) => { resolveRoster = resolve; }));
+    render(<AdminCandidateRosterFeature active fetchAdmin={fetchAdmin} />);
+
+    expect(screen.getByRole("button", { name: "Search Candidates" }).hasAttribute("disabled")).toBe(true);
+    resolveRoster?.(json({ candidates: [] }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Search Candidates" }).hasAttribute("disabled")).toBe(false));
+  });
 });

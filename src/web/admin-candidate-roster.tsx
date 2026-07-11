@@ -162,7 +162,6 @@ export function AdminCandidateRosterPanel(props: {
 export function AdminCandidateRosterFeature(props: {
   readonly active: boolean;
   readonly fetchAdmin: AdminAuthenticatedRequest;
-  readonly onBusyChange?: (busy: boolean) => void;
 }) {
   const [candidateFirstName, setCandidateFirstName] = useState("");
   const [candidateLastName, setCandidateLastName] = useState("");
@@ -177,7 +176,6 @@ export function AdminCandidateRosterFeature(props: {
 
   function setBusy(busy: boolean) {
     setLoading(busy);
-    props.onBusyChange?.(busy);
   }
 
   async function loadCandidates(search = candidateSearch) {

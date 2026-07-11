@@ -3098,7 +3098,6 @@ export function AdminConsole({
       <AdminCandidateRosterFeature
         active={tab === "candidates"}
         fetchAdmin={fetchAdmin}
-        onBusyChange={setLoading}
       />
 
       <CloudShareConnectionFeature
