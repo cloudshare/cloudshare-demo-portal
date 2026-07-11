@@ -64,6 +64,15 @@ describe("AdminSupportFeature", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("clears a local Support error when the admin navigates away from Support", async () => {
+    const fetchAdmin = vi.fn<AdminAuthenticatedRequest>().mockResolvedValue(json({ error: "Diagnostics unavailable" }, 503));
+    const { rerender } = render(<AdminSupportFeature active view="diagnostics" diagnosticFilters={{}} fetchAdmin={fetchAdmin} onNavigate={vi.fn()} />);
+
+    await screen.findByRole("alert");
+    rerender(<AdminSupportFeature active={false} view="diagnostics" diagnosticFilters={{}} fetchAdmin={fetchAdmin} onNavigate={vi.fn()} />);
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("keeps Audit Trail filtering and refresh inside central Support using the existing API contract", async () => {
     const user = userEvent.setup();
     const fetchAdmin = vi.fn<AdminAuthenticatedRequest>().mockResolvedValue(json({ records: [] }));

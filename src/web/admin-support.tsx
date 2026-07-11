@@ -163,6 +163,10 @@ export function AdminSupportFeature(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.active, props.view]);
 
+  useEffect(() => {
+    if (!props.active) setError(null);
+  }, [props.active]);
+
   if (!props.active || (props.view !== "diagnostics" && props.view !== "audit")) return null;
 
   function applyDiagnosticFilters() {
