@@ -1,31 +1,36 @@
 import { describe, expect, it } from "vitest";
 import {
-  ADMIN_SESSION_EXPIRED_MESSAGE,
-  ADMIN_TABS,
   beginLatestOnlyRequest,
-  buildAdminConsoleHref,
-  buildCorrelationDiagnosticsNavigation,
   buildMonitoringHistoryQueryString,
-  buildExamAttemptDiagnosticsNavigation,
   buildDiagnosticLogQueryString,
   mergeMonitoringHistoryPage,
   buildWebhookCallbackUrl,
-  getAdminTabLabel,
   getAllowedRegionValidationMessage,
   getExamAuthoringMode,
   getCompatibleRegions,
   getDefaultOpenPeriodMinutes,
   getResetOpenPeriodMinutes,
-  normaliseDiagnosticLogFilters,
-  parseAdminConsoleRouteState,
-  type DiagnosticLogFilters,
-  isAdminSessionExpiredStatus,
   isLatestOnlyResponse,
   reconcileAllowedRegionIds,
   shouldShowCandidateProvisioning,
-  shouldClearAdminBannerOnTabChange,
   shouldReconcileAllowedRegionIds,
 } from "./admin-console-state";
+import {
+  ADMIN_TABS,
+  buildAdminConsoleHref,
+  buildAdminNavigationHref,
+  createCorrelationDiagnosticsNavigationIntent,
+  createExamAttemptDiagnosticsNavigationIntent,
+  getAdminTabLabel,
+  normaliseDiagnosticLogFilters,
+  parseAdminConsoleRouteState,
+  shouldClearAdminBannerOnTabChange,
+  type DiagnosticLogFilters,
+} from "./admin-shell-route";
+import {
+  ADMIN_SESSION_EXPIRED_MESSAGE,
+  isAdminSessionExpiredStatus,
+} from "./admin-authenticated-request";
 import type { AdminMonitoringView } from "@/domain/admin-monitoring";
 
 describe("latest-only request coordination", () => {
@@ -40,24 +45,26 @@ describe("latest-only request coordination", () => {
   });
 
   it("switches Session Monitoring drilldown actions to Support Diagnostics with the ExamAttempt filter applied", () => {
-    expect(buildExamAttemptDiagnosticsNavigation("  attempt-a  ")).toEqual({
+    const navigation = createExamAttemptDiagnosticsNavigationIntent("  attempt-a  ");
+    expect(navigation).toEqual({
       tab: "support",
       supportView: "diagnostics",
-      filters: {
+      diagnosticFilters: {
         examAttemptId: "attempt-a",
       },
-      pageOffset: 0,
-      href: "/admin?tab=support&view=diagnostics&examAttemptId=attempt-a",
     });
+    expect(buildAdminNavigationHref(navigation)).toBe(
+      "/admin?tab=support&view=diagnostics&examAttemptId=attempt-a",
+    );
   });
 
   it("drops stale diagnostic filters when Session Monitoring opens an ExamAttempt investigation", () => {
-    const navigation = buildExamAttemptDiagnosticsNavigation("attempt-a");
+    const navigation = createExamAttemptDiagnosticsNavigationIntent("attempt-a");
 
-    expect(navigation.filters).toEqual({ examAttemptId: "attempt-a" });
-    expect(navigation.href).not.toContain("correlationId=");
-    expect(navigation.href).not.toContain("candidateEmail=");
-    expect(navigation.href).not.toContain("source=");
+    expect(navigation.diagnosticFilters).toEqual({ examAttemptId: "attempt-a" });
+    expect(buildAdminNavigationHref(navigation)).not.toContain("correlationId=");
+    expect(buildAdminNavigationHref(navigation)).not.toContain("candidateEmail=");
+    expect(buildAdminNavigationHref(navigation)).not.toContain("source=");
     expect(parseAdminConsoleRouteState({
       tab: "diagnostics",
       examAttemptId: "attempt-a",
@@ -305,13 +312,15 @@ describe("diagnostic log filter state", () => {
     ).toBe(
       "/admin?tab=support&view=diagnostics&examAttemptId=attempt-1&candidateEmail=candidate%40helioscx.demo&correlationId=corr-1",
     );
-    expect(buildCorrelationDiagnosticsNavigation(" corr-9 ")).toEqual({
+    const navigation = createCorrelationDiagnosticsNavigationIntent(" corr-9 ");
+    expect(navigation).toEqual({
       tab: "support",
       supportView: "diagnostics",
-      filters: { correlationId: "corr-9" },
-      pageOffset: 0,
-      href: "/admin?tab=support&view=diagnostics&correlationId=corr-9",
+      diagnosticFilters: { correlationId: "corr-9" },
     });
+    expect(buildAdminNavigationHref(navigation)).toBe(
+      "/admin?tab=support&view=diagnostics&correlationId=corr-9",
+    );
   });
 
   it("parses admin route state so linked investigations reopen on the diagnostics tab with filters applied", () => {
