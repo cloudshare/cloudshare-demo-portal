@@ -2,7 +2,6 @@ import { createElement, type ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import {
-  AdminCandidateRosterPanel,
   AdminConsole,
   CohortSessionDraftOnlyNotice,
   CohortSessionAuthoringPanel,
@@ -16,6 +15,7 @@ import {
   formatCohortSessionDateTime,
   normalizeAdminLocalDateTime,
 } from "./admin-console";
+import { AdminCandidateRosterPanel } from "./admin-candidate-roster";
 import {
   buildAdminNavigationHref,
   type AdminNavigationIntent,
