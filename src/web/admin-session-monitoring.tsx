@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { AdminMonitoringView } from "@/domain/admin-monitoring";
 import type { CohortExamSessionMonitoringView } from "@/api/admin-cohort-exam-session-detail";
 import type { AdminAuthenticatedRequest } from "./admin-authenticated-request";
@@ -11,7 +11,7 @@ import {
   type AdminNavigationIntent,
 } from "./admin-shell-route";
 import { SessionMonitoringPanel } from "./session-monitoring-panel";
-import { cardStyle, mutedPanelStyle } from "./card-styles";
+import { alertPanelStyle, cardStyle, mutedPanelStyle } from "./card-styles";
 import { primaryButtonStyle, secondaryButtonStyle } from "./button-styles";
 import { colors } from "./design-tokens";
 
@@ -44,6 +44,9 @@ export function AdminSessionMonitoringFeature({
   cohortContent,
   renderFocusedCohort,
 }: AdminSessionMonitoringFeatureProps) {
+  const focusedCohortKey = focusedExamId && focusedCohortSessionId
+    ? `${focusedExamId}/${focusedCohortSessionId}`
+    : null;
   const [branch, setBranch] = useState<MonitoringBranch>(null);
   const [monitoring, setMonitoring] = useState<AdminMonitoringView | null>(null);
   const [loading, setLoading] = useState(false);
@@ -51,6 +54,8 @@ export function AdminSessionMonitoringFeature({
   const [cohortDetail, setCohortDetail] = useState<CohortExamSessionMonitoringView | null>(null);
   const [cohortDetailKey, setCohortDetailKey] = useState<string | null>(null);
   const [cohortLastCheckedAt, setCohortLastCheckedAt] = useState<string | null>(null);
+  const focusedCohortKeyRef = useRef(focusedCohortKey);
+  focusedCohortKeyRef.current = focusedCohortKey;
 
   async function loadMonitoring(historyOffset = 0) {
     setLoading(true);
@@ -74,6 +79,7 @@ export function AdminSessionMonitoringFeature({
   }
 
   async function loadFocusedCohortSession(examId: string, sessionId: string) {
+    const requestKey = `${examId}/${sessionId}`;
     setError(null);
     try {
       const response = await fetchAdmin(
@@ -81,14 +87,19 @@ export function AdminSessionMonitoringFeature({
       );
       const data = await response.json() as { monitoring?: CohortExamSessionMonitoringView; error?: string };
       if (!response.ok || !data.monitoring) {
-        setError(data.error ?? "Failed to load Cohort Exam Session detail");
+        if (requestKey === focusedCohortKeyRef.current) {
+          setError(data.error ?? "Failed to load Cohort Exam Session detail");
+        }
         return;
       }
+      if (requestKey !== focusedCohortKeyRef.current) return;
       setCohortDetail(data.monitoring);
-      setCohortDetailKey(`${examId}/${sessionId}`);
+      setCohortDetailKey(requestKey);
       setCohortLastCheckedAt(new Date().toISOString());
     } catch (caughtError) {
-      if (!isAdminSessionExpiredError(caughtError)) setError("Failed to load Cohort Exam Session detail");
+      if (requestKey === focusedCohortKeyRef.current && !isAdminSessionExpiredError(caughtError)) {
+        setError("Failed to load Cohort Exam Session detail");
+      }
     }
   }
 
@@ -123,9 +134,6 @@ export function AdminSessionMonitoringFeature({
 
   if (!active) return null;
 
-  const focusedCohortKey = focusedExamId && focusedCohortSessionId
-    ? `${focusedExamId}/${focusedCohortSessionId}`
-    : null;
   const focusedCohort = hasFocusedCohortSession && renderFocusedCohort
     ? renderFocusedCohort({
       detail: cohortDetailKey === focusedCohortKey ? cohortDetail : null,
@@ -135,7 +143,14 @@ export function AdminSessionMonitoringFeature({
     : null;
   return (
     <section style={{ display: "grid", gap: "1rem" }}>
-      {error ? <div role="alert" style={{ border: "1px solid #fca5a5", borderRadius: "8px", padding: "0.75rem", color: "#991b1b" }}>{error}</div> : null}
+      {error ? (
+        <div role="alert" style={{ ...alertPanelStyle.danger, display: "grid", gap: "0.5rem" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "flex-start" }}>
+            <p style={{ margin: 0 }}>{error}</p>
+            <button type="button" onClick={() => setError(null)} style={{ padding: "0.25rem 0.55rem" }}>Dismiss</button>
+          </div>
+        </div>
+      ) : null}
       {!focusedCohort ? (
         <div style={{ ...cardStyle, display: "flex", gap: "0.75rem", flexWrap: "wrap" }} aria-label="Session Monitoring branches">
           <button type="button" onClick={() => setBranch("cohort")} style={branch === "cohort" ? primaryButtonStyle : secondaryButtonStyle}>Cohort Exam Sessions</button>

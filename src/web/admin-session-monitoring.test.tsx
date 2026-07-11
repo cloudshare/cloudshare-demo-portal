@@ -60,7 +60,8 @@ describe("AdminSessionMonitoringFeature", () => {
     vi.useRealTimers();
   });
 
-  it("does not render one Cohort Exam Session's detail while a new focused session loads", async () => {
+  it("keeps the newest focused Cohort Exam Session detail when an older request resolves late", async () => {
+    let resolveFirstSession: ((response: Response) => void) | undefined;
     let resolveSecondSession: ((response: Response) => void) | undefined;
     const fetchAdmin = vi.fn((input: RequestInfo | URL) => {
       const url = String(input);
@@ -68,7 +69,7 @@ describe("AdminSessionMonitoringFeature", () => {
         return Promise.resolve(new Response(JSON.stringify(monitoringResponse("attempt-1", 0, null))));
       }
       if (url.endsWith("/session-1")) {
-        return Promise.resolve(new Response(JSON.stringify({ monitoring: { summary: { activeCount: 1 } } })));
+        return new Promise<Response>((resolve) => { resolveFirstSession = resolve; });
       }
       if (url.endsWith("/session-2")) {
         return new Promise<Response>((resolve) => { resolveSecondSession = resolve; });
@@ -89,7 +90,6 @@ describe("AdminSessionMonitoringFeature", () => {
       />,
     );
 
-    await screen.findByText("1");
     view.rerender(
       <AdminSessionMonitoringFeature
         active
@@ -101,8 +101,57 @@ describe("AdminSessionMonitoringFeature", () => {
       />,
     );
 
-    expect(screen.getByText("Loading focused session")).toBeTruthy();
     await act(async () => resolveSecondSession?.(new Response(JSON.stringify({ monitoring: { summary: { activeCount: 2 } } }))));
     await screen.findByText("2");
+    await act(async () => resolveFirstSession?.(new Response(JSON.stringify({ monitoring: { summary: { activeCount: 1 } } }))));
+    expect(screen.getByText("2")).toBeTruthy();
+  });
+
+  it("lets an admin dismiss a failed monitoring refresh and retry from the unchanged branch control", async () => {
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url !== "/api/admin/monitoring?historyLimit=25&historyOffset=0") throw new Error(`Unexpected request: ${url}`);
+      if (fetchAdmin.mock.calls.length === 1) return new Response(JSON.stringify({ error: "Monitoring is unavailable" }), { status: 503 });
+      return new Response(JSON.stringify(monitoringResponse("attempt-1", 0, null)));
+    });
+    const user = userEvent.setup();
+
+    render(<AdminSessionMonitoringFeature active fetchAdmin={fetchAdmin} />);
+
+    expect((await screen.findByRole("alert")).textContent).toContain("Monitoring is unavailable");
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByRole("alert")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Individual Exam Delivery" }));
+    await user.click(screen.getByRole("button", { name: "Refresh Monitoring" }));
+    expect(await screen.findByText("Casey Rivera")).toBeTruthy();
+  });
+
+  it("lets an admin dismiss a failed focused Cohort Exam Session refresh", async () => {
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/admin/monitoring?historyLimit=25&historyOffset=0") {
+        return new Response(JSON.stringify(monitoringResponse("attempt-1", 0, null)));
+      }
+      if (url === "/api/admin/exams/exam-1/cohort-sessions/session-1") {
+        return new Response(JSON.stringify({ error: "Cohort detail is unavailable" }), { status: 503 });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    const user = userEvent.setup();
+
+    render(
+      <AdminSessionMonitoringFeature
+        active
+        fetchAdmin={fetchAdmin}
+        focusedExamId="exam-1"
+        focusedCohortSessionId="session-1"
+        hasFocusedCohortSession
+        renderFocusedCohort={() => <div>Cohort monitoring detail</div>}
+      />,
+    );
+
+    expect((await screen.findByRole("alert")).textContent).toContain("Cohort detail is unavailable");
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });
