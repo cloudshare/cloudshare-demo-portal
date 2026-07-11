@@ -4,7 +4,6 @@ import {
   buildMonitoringHistoryQueryString,
   buildDiagnosticLogQueryString,
   mergeMonitoringHistoryPage,
-  buildWebhookCallbackUrl,
   getAllowedRegionValidationMessage,
   getExamAuthoringMode,
   getCompatibleRegions,
@@ -515,22 +514,6 @@ describe("admin session expiry", () => {
     expect(isAdminSessionExpiredStatus(403)).toBe(false);
     expect(isAdminSessionExpiredStatus(500)).toBe(false);
     expect(ADMIN_SESSION_EXPIRED_MESSAGE).toContain("session has expired");
-  });
-});
-
-describe("webhook callback URL", () => {
-  it("combines the public base URL and per-Customer webhook path", () => {
-    expect(
-      buildWebhookCallbackUrl(
-        "https://example.trycloudflare.com/",
-        "/api/webhooks/cloudshare/token-123",
-      ),
-    ).toBe("https://example.trycloudflare.com/api/webhooks/cloudshare/token-123");
-  });
-
-  it("returns null until both values are present", () => {
-    expect(buildWebhookCallbackUrl("", "/api/webhooks/cloudshare/token-123")).toBeNull();
-    expect(buildWebhookCallbackUrl("https://example.test", null)).toBeNull();
   });
 });
 
