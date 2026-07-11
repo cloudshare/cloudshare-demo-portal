@@ -52,6 +52,16 @@ export interface SupportDiagnosticsNavigationIntent extends AdminNavigationInten
   readonly diagnosticFilters: DiagnosticLogFilters;
 }
 
+export function createSupportDiagnosticsNavigationIntent(
+  diagnosticFilters: DiagnosticLogFilters,
+): SupportDiagnosticsNavigationIntent {
+  return {
+    tab: "support",
+    supportView: "diagnostics",
+    diagnosticFilters,
+  };
+}
+
 export function getAdminTabLabel(tab: AdminTab): string {
   switch (tab) {
     case "exams":
@@ -168,21 +178,13 @@ export function buildAdminNavigationHref(intent: AdminNavigationIntent): string 
 export function createExamAttemptDiagnosticsNavigationIntent(
   examAttemptId: string,
 ): SupportDiagnosticsNavigationIntent {
-  return {
-    tab: "support",
-    supportView: "diagnostics",
-    diagnosticFilters: { examAttemptId: examAttemptId.trim() },
-  };
+  return createSupportDiagnosticsNavigationIntent({ examAttemptId: examAttemptId.trim() });
 }
 
 export function createCorrelationDiagnosticsNavigationIntent(
   correlationId: string,
 ): SupportDiagnosticsNavigationIntent {
-  return {
-    tab: "support",
-    supportView: "diagnostics",
-    diagnosticFilters: { correlationId: correlationId.trim() },
-  };
+  return createSupportDiagnosticsNavigationIntent({ correlationId: correlationId.trim() });
 }
 
 export function parseAdminConsoleRouteState(input: {

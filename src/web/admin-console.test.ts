@@ -17,6 +17,10 @@ import {
   formatCohortSessionDateTime,
   normalizeAdminLocalDateTime,
 } from "./admin-console";
+import {
+  buildAdminNavigationHref,
+  type AdminNavigationIntent,
+} from "./admin-shell-route";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -24,6 +28,8 @@ vi.mock("next/navigation", () => ({
     refresh: vi.fn(),
   }),
 }));
+
+const shellNavigationHref = (intent: AdminNavigationIntent) => buildAdminNavigationHref(intent);
 
 describe("AdminConsole", () => {
   it("renders Exams as the default admin work area and keeps CloudShare Connection out of the landing page", () => {
@@ -64,6 +70,7 @@ describe("AdminConsole", () => {
         warning:
           "CloudShare is returning a 429 error for the current request. This is likely CloudShare rate limiting or abuse protection blocking the request. Check whether this public IP needs CloudShare allow-list or abuse-list review before retrying by contacting support@cloudshare.com.",
         correlationId: "corr-rate-limit",
+        getNavigationHref: shellNavigationHref,
       }),
     );
 
@@ -712,6 +719,7 @@ describe("AdminConsole", () => {
         loading: false,
         onBack: vi.fn(),
         onPublish: vi.fn(),
+        getNavigationHref: shellNavigationHref,
       }),
     );
 
@@ -807,6 +815,7 @@ describe("AdminConsole", () => {
         loading: false,
         onBack: vi.fn(),
         onPublish: vi.fn(),
+        getNavigationHref: shellNavigationHref,
       }),
     );
 
@@ -996,6 +1005,7 @@ describe("AdminConsole", () => {
         loading: false,
         onBack: vi.fn(),
         onPublish: vi.fn(),
+        getNavigationHref: shellNavigationHref,
       }),
     );
 
@@ -1126,6 +1136,7 @@ describe("AdminConsole", () => {
         loading: false,
         onBack: vi.fn(),
         onPublish: vi.fn(),
+        getNavigationHref: shellNavigationHref,
     };
     const html = renderToStaticMarkup(createElement(CohortSessionWorkspacePanel, panelProps));
     const unavailableHtml = renderToStaticMarkup(

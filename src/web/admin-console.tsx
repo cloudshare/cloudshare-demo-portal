@@ -24,6 +24,7 @@ import {
   buildAdminNavigationHref,
   createCorrelationDiagnosticsNavigationIntent,
   createExamAttemptDiagnosticsNavigationIntent,
+  createSupportDiagnosticsNavigationIntent,
   getAdminTabLabel,
   getAdminSupportViewLabel,
   normaliseDiagnosticLogFilters,
@@ -392,18 +393,19 @@ function formatAttemptSummary(summary: AdminCandidateAttemptSummary): string {
 
 function CorrelationDiagnosticsLink(props: {
   readonly correlationId: string;
-  readonly onOpen?: (correlationId: string) => void;
+  readonly getNavigationHref?: (intent: AdminNavigationIntent) => string;
+  readonly onNavigate?: (intent: AdminNavigationIntent) => void;
   readonly children?: React.ReactNode;
 }) {
   const navigation = createCorrelationDiagnosticsNavigationIntent(props.correlationId);
 
   return (
     <a
-      href={buildAdminNavigationHref(navigation)}
+      href={props.getNavigationHref?.(navigation)}
       onClick={(event) => {
-        if (!props.onOpen) return;
+        if (!props.onNavigate) return;
         event.preventDefault();
-        props.onOpen(props.correlationId);
+        props.onNavigate(navigation);
       }}
       style={{ color: colors.info, fontFamily: "monospace", fontWeight: 700, overflowWrap: "anywhere" }}
     >
@@ -415,7 +417,8 @@ function CorrelationDiagnosticsLink(props: {
 export function CloudShareConnectionTestWarning(props: {
   readonly warning: string;
   readonly correlationId?: string | null;
-  readonly onOpenCorrelationDiagnostics?: (correlationId: string) => void;
+  readonly getNavigationHref?: (intent: AdminNavigationIntent) => string;
+  readonly onNavigate?: (intent: AdminNavigationIntent) => void;
 }) {
   return (
     <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.4rem" }}>
@@ -425,7 +428,8 @@ export function CloudShareConnectionTestWarning(props: {
           Open <strong>Support Diagnostics</strong> filtered by correlation ID{" "}
           <CorrelationDiagnosticsLink
             correlationId={props.correlationId}
-            onOpen={props.onOpenCorrelationDiagnostics}
+            getNavigationHref={props.getNavigationHref}
+            onNavigate={props.onNavigate}
           />
           .
         </p>
@@ -1001,8 +1005,8 @@ export function CohortSessionWorkspacePanel(props: {
   onCloseAdmission?: () => void;
   onRetire?: () => void;
   onOpenMonitoring?: () => void;
-  onOpenDiagnostics?: (filters: DiagnosticLogFilters) => void;
-  onOpenCorrelationDiagnostics?: (correlationId: string) => void;
+  getNavigationHref?: (intent: AdminNavigationIntent) => string;
+  onNavigate?: (intent: AdminNavigationIntent) => void;
   lastCheckedAt?: string | null;
   onRefresh?: () => void;
 }) {
@@ -1139,7 +1143,8 @@ export function CohortSessionWorkspacePanel(props: {
                 Correlation ID:{" "}
                 <CorrelationDiagnosticsLink
                   correlationId={session.session.lastPublishCorrelationId}
-                  onOpen={props.onOpenCorrelationDiagnostics}
+                  getNavigationHref={props.getNavigationHref}
+                  onNavigate={props.onNavigate}
                 />
               </span>
             ) : null}
@@ -1183,17 +1188,17 @@ export function CohortSessionWorkspacePanel(props: {
               {props.lastCheckedAt ? <span style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>Last checked: {formatUtcTimestamp(props.lastCheckedAt)}</span> : null}
               {props.onRefresh ? <button type="button" onClick={props.onRefresh} style={secondaryButtonStyle}>Refresh session</button> : null}
               <a
-                href={buildAdminNavigationHref({
-                  tab: "support",
-                  supportView: "diagnostics",
-                  diagnosticFilters: props.detail.diagnostics.session,
-                })}
+                href={props.getNavigationHref?.(
+                  createSupportDiagnosticsNavigationIntent(props.detail.diagnostics.session),
+                )}
                 style={secondaryButtonStyle}
                 title="Open Support Diagnostics filtered to this Cohort Exam Session."
                 onClick={(event) => {
-                  if (props.onOpenDiagnostics) {
+                  if (props.onNavigate) {
                     event.preventDefault();
-                    props.onOpenDiagnostics(props.detail!.diagnostics.session);
+                    props.onNavigate(
+                      createSupportDiagnosticsNavigationIntent(props.detail!.diagnostics.session),
+                    );
                   }
                 }}
               >
@@ -1353,11 +1358,11 @@ export function CohortSessionWorkspacePanel(props: {
                 <strong>Guided Journey aggregate progress</strong>
                 {props.detail.diagnostics.guidedJourneyAggregateRead ? (
                   <a
-                    href={buildAdminNavigationHref({
-                      tab: "support",
-                      supportView: "diagnostics",
-                      diagnosticFilters: props.detail.diagnostics.guidedJourneyAggregateRead,
-                    })}
+                    href={props.getNavigationHref?.(
+                      createSupportDiagnosticsNavigationIntent(
+                        props.detail.diagnostics.guidedJourneyAggregateRead,
+                      ),
+                    )}
                     style={secondaryButtonStyle}
                   >
                     Aggregate progress diagnostics
@@ -1369,7 +1374,8 @@ export function CohortSessionWorkspacePanel(props: {
               </div>
               <GuidedJourneyAggregatePanel
                 detail={props.detail.guidedJourneyAggregate}
-                onOpenCorrelationDiagnostics={props.onOpenCorrelationDiagnostics}
+                getNavigationHref={props.getNavigationHref}
+                onNavigate={props.onNavigate}
               />
             </div>
 
@@ -1378,11 +1384,9 @@ export function CohortSessionWorkspacePanel(props: {
                 <strong>CloudShare participants</strong>
                 {props.detail.diagnostics.cloudShareRead ? (
                   <a
-                    href={buildAdminNavigationHref({
-                      tab: "support",
-                      supportView: "diagnostics",
-                      diagnosticFilters: props.detail.diagnostics.cloudShareRead,
-                    })}
+                    href={props.getNavigationHref?.(
+                      createSupportDiagnosticsNavigationIntent(props.detail.diagnostics.cloudShareRead),
+                    )}
                     style={secondaryButtonStyle}
                     title="Open Support Diagnostics filtered to the CloudShare participant-list check for this Cohort Exam Session."
                   >
@@ -1405,7 +1409,8 @@ export function CohortSessionWorkspacePanel(props: {
                       Correlation ID:{" "}
                       <CorrelationDiagnosticsLink
                         correlationId={props.detail.cloudShareParticipants.correlationId}
-                        onOpen={props.onOpenCorrelationDiagnostics}
+                        getNavigationHref={props.getNavigationHref}
+                        onNavigate={props.onNavigate}
                       />
                     </span>
                   ) : null}
@@ -1420,7 +1425,8 @@ export function CohortSessionWorkspacePanel(props: {
                       Correlation ID:{" "}
                       <CorrelationDiagnosticsLink
                         correlationId={props.detail.cloudShareParticipants.correlationId}
-                        onOpen={props.onOpenCorrelationDiagnostics}
+                        getNavigationHref={props.getNavigationHref}
+                        onNavigate={props.onNavigate}
                       />
                     </span>
                   ) : null}
@@ -1511,7 +1517,19 @@ export function CohortSessionWorkspacePanel(props: {
                 <ol style={{ margin: 0, paddingLeft: "1.25rem" }}>{timeline.events.map((event) => <li key={event}>{event}</li>)}</ol>
                 <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                   <button type="button" style={secondaryButtonStyle} onClick={() => setTimeline(null)}>Close timeline</button>
-                  <a href={buildAdminNavigationHref({ tab: "support", supportView: "diagnostics", diagnosticFilters: timeline.diagnostics })} style={secondaryButtonStyle}>View forensic logs</a>
+                  <a
+                    href={props.getNavigationHref?.(
+                      createSupportDiagnosticsNavigationIntent(timeline.diagnostics),
+                    )}
+                    onClick={(event) => {
+                      if (!props.onNavigate) return;
+                      event.preventDefault();
+                      props.onNavigate(createSupportDiagnosticsNavigationIntent(timeline.diagnostics));
+                    }}
+                    style={secondaryButtonStyle}
+                  >
+                    View forensic logs
+                  </a>
                 </div>
               </section>
             ) : null}
@@ -1582,7 +1600,8 @@ function SelectionSummaryRow(props: { readonly label: string; readonly value: st
 
 function GuidedJourneyAggregatePanel(props: {
   readonly detail: CohortExamSessionGuidedJourneyAggregateView;
-  readonly onOpenCorrelationDiagnostics?: (correlationId: string) => void;
+  readonly getNavigationHref?: (intent: AdminNavigationIntent) => string;
+  readonly onNavigate?: (intent: AdminNavigationIntent) => void;
 }) {
   const detail = props.detail;
 
@@ -1612,7 +1631,8 @@ function GuidedJourneyAggregatePanel(props: {
             Correlation ID:{" "}
             <CorrelationDiagnosticsLink
               correlationId={detail.correlationId}
-              onOpen={props.onOpenCorrelationDiagnostics}
+              getNavigationHref={props.getNavigationHref}
+              onNavigate={props.onNavigate}
             />
           </span>
         ) : null}
@@ -2286,6 +2306,11 @@ export function AdminConsole({
   const fetchAdmin = useMemo(
     () => createAdminAuthenticatedRequest({ fetchImpl: fetch, onSessionExpired: handleAdminSessionExpired }),
     [handleAdminSessionExpired],
+  );
+
+  const getNavigationHref = useCallback(
+    (intent: AdminNavigationIntent) => buildAdminNavigationHref(intent),
+    [],
   );
 
   useEffect(() => {
@@ -3613,7 +3638,8 @@ export function AdminConsole({
                 Open <strong>Support Diagnostics</strong> filtered by correlation ID{" "}
                 <CorrelationDiagnosticsLink
                   correlationId={errorState.correlationId}
-                  onOpen={openCorrelationSupportDiagnostics}
+                  getNavigationHref={getNavigationHref}
+                  onNavigate={navigateAdmin}
                 />
                 .
               </p>
@@ -3624,7 +3650,8 @@ export function AdminConsole({
                 Open <strong>Support Diagnostics</strong> filtered by correlation ID{" "}
                 <CorrelationDiagnosticsLink
                   correlationId={examCorrelationId}
-                  onOpen={openCorrelationSupportDiagnostics}
+                  getNavigationHref={getNavigationHref}
+                  onNavigate={navigateAdmin}
                 />
                 .
               </p>
@@ -3635,7 +3662,8 @@ export function AdminConsole({
                 Open <strong>Support Diagnostics</strong> filtered by correlation ID{" "}
                 <CorrelationDiagnosticsLink
                   correlationId={connectionCorrelationId}
-                  onOpen={openCorrelationSupportDiagnostics}
+                  getNavigationHref={getNavigationHref}
+                  onNavigate={navigateAdmin}
                 />
                 .
               </p>
@@ -3853,7 +3881,8 @@ export function AdminConsole({
             <CloudShareConnectionTestWarning
               warning={connectionWarning}
               correlationId={connectionCorrelationId}
-              onOpenCorrelationDiagnostics={openCorrelationSupportDiagnostics}
+              getNavigationHref={getNavigationHref}
+              onNavigate={navigateAdmin}
             />
           )}
           {connectionMessage && <p style={{ color: "#0a7a28", margin: 0 }}>{connectionMessage}</p>}
@@ -4399,8 +4428,8 @@ export function AdminConsole({
                 void closeCohortSessionAdmission(focusedExam.id, focusedCohortSession.session.id)
               }
               onRetire={() => void retireCohortSession(focusedExam.id, focusedCohortSession.session.id)}
-              onOpenCorrelationDiagnostics={openCorrelationSupportDiagnostics}
-              onOpenDiagnostics={openSessionSupportDiagnostics}
+              getNavigationHref={getNavigationHref}
+              onNavigate={navigateAdmin}
               onOpenMonitoring={() =>
                 navigateAdmin({
                   tab: "support",
@@ -4593,7 +4622,8 @@ export function AdminConsole({
               onRefresh={() => void loadCohortSessionDetail(focusedExam.id, focusedCohortSession.session.id)}
               onBack={() => navigateAdmin({ tab: "support", supportView: "monitoring" })}
               onPublish={() => undefined}
-              onOpenDiagnostics={openSessionSupportDiagnostics}
+              getNavigationHref={getNavigationHref}
+              onNavigate={navigateAdmin}
             />
           ) : monitoringBranch === "cohort" ? (
             <CohortSessionMonitoringList

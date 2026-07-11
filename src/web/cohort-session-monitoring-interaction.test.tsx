@@ -8,12 +8,18 @@ import {
   CohortSessionMonitoringList,
   CohortSessionWorkspacePanel,
 } from "./admin-console";
+import {
+  buildAdminNavigationHref,
+  type AdminNavigationIntent,
+} from "./admin-shell-route";
 
 const routerPush = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: routerPush, replace: vi.fn(), refresh: vi.fn() }) }));
 
 type WorkspaceProps = ComponentProps<typeof CohortSessionWorkspacePanel>;
 type Session = WorkspaceProps["session"];
+
+const shellNavigationHref = (intent: AdminNavigationIntent) => buildAdminNavigationHref(intent);
 
 const session: Session = {
   session: {
@@ -48,6 +54,7 @@ describe("Cohort Exam Session monitoring interactions", () => {
         loading={false}
         onBack={vi.fn()}
         onPublish={vi.fn()}
+        getNavigationHref={shellNavigationHref}
         detail={{
           summary: { activeCount: 1, inProgressCount: 1, completedCount: 1, problemCount: 0, portalAttemptCount: 2, cloudShareParticipantCount: 2, derivedFrom: "portal_and_cloudshare" },
           portalAttempts: [
@@ -85,6 +92,7 @@ describe("Cohort Exam Session monitoring interactions", () => {
         loading={false}
         onBack={vi.fn()}
         onPublish={vi.fn()}
+        getNavigationHref={shellNavigationHref}
         detail={{
           summary: { activeCount: 1, inProgressCount: 1, completedCount: 0, problemCount: 1, needsAttentionCount: 1, portalAttemptCount: 2, cloudShareParticipantCount: 2, derivedFrom: "portal_and_cloudshare" },
           portalAttempts: [
@@ -116,6 +124,7 @@ describe("Cohort Exam Session monitoring interactions", () => {
         loading={false}
         onBack={vi.fn()}
         onPublish={vi.fn()}
+        getNavigationHref={shellNavigationHref}
         detail={{
           summary: { activeCount: 1, inProgressCount: 1, completedCount: 0, problemCount: 0, needsAttentionCount: 0, portalAttemptCount: 1, cloudShareParticipantCount: 0, derivedFrom: "portal_and_cloudshare" },
           portalAttempts: [{ id: "attempt-rate-limited", candidateId: "candidate-rate-limited", candidateName: "Casey Rivera", candidateEmail: "casey@helioscx.demo", status: "in_progress", scheduledFor: null, createdAt: "2026-09-01T09:00:00.000Z", trainingId: "experience-1", experienceId: "experience-1", environmentExternalId: null, environmentId: null, participantId: null, reconciliation: "unknown", problemReasons: [], diagnosticFilters: { examAttemptId: "attempt-rate-limited" } }],
@@ -237,7 +246,9 @@ describe("Cohort Exam Session monitoring interactions", () => {
     expect(screen.queryByText("Session exam attempts")).toBeNull();
   });
 
-  it("keeps Cohort diagnostics links scoped to the selected session", () => {
+  it("keeps Cohort diagnostics links scoped to the selected session and emits a shell navigation intent", async () => {
+    const user = userEvent.setup();
+    const onNavigate = vi.fn();
     render(
       <CohortSessionWorkspacePanel
         mode="monitoring"
@@ -246,6 +257,8 @@ describe("Cohort Exam Session monitoring interactions", () => {
         loading={false}
         onBack={vi.fn()}
         onPublish={vi.fn()}
+        getNavigationHref={shellNavigationHref}
+        onNavigate={onNavigate}
         detail={{
           summary: { activeCount: 0, inProgressCount: 0, completedCount: 0, problemCount: 0, portalAttemptCount: 0, cloudShareParticipantCount: 0, derivedFrom: "portal_and_cloudshare" },
           portalAttempts: [],
@@ -259,6 +272,12 @@ describe("Cohort Exam Session monitoring interactions", () => {
     expect(screen.getByRole("link", { name: "Session diagnostics" }).getAttribute("href")).toBe(
       "/admin?tab=support&view=diagnostics&examId=exam-1&externalId=experience-1",
     );
+    await user.click(screen.getByRole("link", { name: "Session diagnostics" }));
+    expect(onNavigate).toHaveBeenCalledWith({
+      tab: "support",
+      supportView: "diagnostics",
+      diagnosticFilters: { examId: "exam-1", externalId: "experience-1" },
+    });
   });
 });
 
