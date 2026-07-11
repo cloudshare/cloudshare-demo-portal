@@ -7,7 +7,6 @@ import {
   beginLatestOnlyRequest,
   buildMonitoringHistoryQueryString,
   buildDiagnosticLogQueryString,
-  buildWebhookCallbackUrl,
   getAllowedRegionValidationMessage,
   getCompatibleRegions,
   getDefaultOpenPeriodMinutes,
@@ -40,6 +39,7 @@ import {
   createAdminAuthenticatedRequest,
   isAdminSessionExpiredError,
 } from "./admin-authenticated-request";
+import { CloudShareConnectionFeature } from "./admin-cloudshare-connection";
 import {
   DiagnosticLogTable,
   type DiagnosticLogTableEntry as DiagnosticLogEntry,
@@ -81,13 +81,6 @@ interface AdminConsoleProps {
 interface AdminErrorState {
   readonly message: string;
   readonly correlationId?: string | null;
-}
-
-interface ConnectionState {
-  hasConnection: boolean;
-  connectedAt: string | null;
-  verifiedAt: string | null;
-  webhookPath: string | null;
 }
 
 interface AuditRecord {
@@ -411,30 +404,6 @@ function CorrelationDiagnosticsLink(props: {
     >
       {props.children ?? props.correlationId}
     </a>
-  );
-}
-
-export function CloudShareConnectionTestWarning(props: {
-  readonly warning: string;
-  readonly correlationId?: string | null;
-  readonly getNavigationHref?: (intent: AdminNavigationIntent) => string;
-  readonly onNavigate?: (intent: AdminNavigationIntent) => void;
-}) {
-  return (
-    <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.4rem" }}>
-      <p style={{ margin: 0 }}>{props.warning}</p>
-      {props.correlationId ? (
-        <p style={{ margin: 0, fontSize: "0.85rem" }}>
-          Open <strong>Support Diagnostics</strong> filtered by correlation ID{" "}
-          <CorrelationDiagnosticsLink
-            correlationId={props.correlationId}
-            getNavigationHref={props.getNavigationHref}
-            onNavigate={props.onNavigate}
-          />
-          .
-        </p>
-      ) : null}
-    </div>
   );
 }
 
@@ -2184,16 +2153,6 @@ export function AdminConsole({
   const [diagnosticFilters, setDiagnosticFilters] = useState<DiagnosticLogFilters>(initialDiagnosticFilters);
   const [diagnosticPage, setDiagnosticPage] = useState<DiagnosticLogPageResponse | null>(null);
   const [expandedDiagnosticId, setExpandedDiagnosticId] = useState<string | null>(null);
-  const [connection, setConnection] = useState<ConnectionState | null>(null);
-  const [apiId, setApiId] = useState("");
-  const [apiKey, setApiKey] = useState("");
-  const [webhookSecret, setWebhookSecret] = useState("");
-  const [webhookPublicBaseUrl, setWebhookPublicBaseUrl] = useState("");
-  const [connectionMessage, setConnectionMessage] = useState<string | null>(null);
-  const [connectionDiagnostic, setConnectionDiagnostic] = useState<ConnectionDiagnostic | null>(null);
-  const [connectionCorrelationId, setConnectionCorrelationId] = useState<string | null>(null);
-  const [connectionOccurredAt, setConnectionOccurredAt] = useState<string | null>(null);
-  const [connectionWarning, setConnectionWarning] = useState<string | null>(null);
   const [candidateFirstName, setCandidateFirstName] = useState("");
   const [candidateLastName, setCandidateLastName] = useState("");
   const [candidateEmail, setCandidateEmail] = useState("");
@@ -2216,11 +2175,6 @@ export function AdminConsole({
   function setErrorWithCorrelation(message: string, correlationId?: string | null) {
     setErrorState({ message, correlationId: correlationId ?? null });
   }
-
-  useEffect(() => {
-    void loadConnection();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   useEffect(() => {
     if (tab === "exams") {
@@ -2295,9 +2249,7 @@ export function AdminConsole({
   const handleAdminSessionExpired = useCallback(() => {
     setSessionExpired(true);
     setError(ADMIN_SESSION_EXPIRED_MESSAGE);
-    setConnectionCorrelationId(null);
     setExamCorrelationId(null);
-    setConnectionDiagnostic(null);
     setExamDiagnostic(null);
     router.replace("/login");
     router.refresh();
@@ -2363,120 +2315,6 @@ export function AdminConsole({
     setSelectedCohortSession(null);
     navigateAdmin({ tab: "exams", examView: "sessions", examId });
     void loadCohortExamSessions(examId);
-  }
-
-  async function loadConnection() {
-    try {
-      const response = await fetchAdmin("/api/admin/cloudshare");
-      const data = (await response.json()) as ConnectionState & { error?: string };
-      if (response.ok) {
-        setConnection({
-          hasConnection: data.hasConnection,
-          connectedAt: data.connectedAt,
-          verifiedAt: data.verifiedAt,
-          webhookPath: data.webhookPath,
-        });
-      }
-    } catch (caughtError) {
-      if (isAdminSessionExpiredError(caughtError)) {
-        return;
-      }
-    }
-  }
-
-  async function saveConnection() {
-    setLoading(true);
-    setError(null);
-    setConnectionMessage(null);
-    setConnectionDiagnostic(null);
-    setConnectionCorrelationId(null);
-    setConnectionOccurredAt(null);
-    setConnectionWarning(null);
-    const trimmedApiId = apiId.trim();
-    const trimmedApiKey = apiKey.trim();
-    const trimmedWebhookSecret = webhookSecret.trim();
-    if (!hasSavedConnection && (!trimmedApiId || !trimmedApiKey || !trimmedWebhookSecret)) {
-      setError("API ID, API Key, and Webhook Secret are required to save the first CloudShare Connection.");
-      setLoading(false);
-      return;
-    }
-    if (hasSavedConnection && !trimmedApiId && !trimmedApiKey && !trimmedWebhookSecret) {
-      setError("Enter at least one field to update the saved CloudShare Connection.");
-      setLoading(false);
-      return;
-    }
-    try {
-      const response = await fetchAdmin("/api/admin/cloudshare", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          apiId: trimmedApiId,
-          apiKey: trimmedApiKey,
-          webhookSecret: trimmedWebhookSecret,
-        }),
-      });
-      const data = (await response.json()) as ConnectionState & { error?: string };
-      if (!response.ok) {
-        setError(data.error ?? "Failed to save CloudShare Connection");
-        return;
-      }
-      setConnection({
-        hasConnection: data.hasConnection,
-        connectedAt: data.connectedAt,
-        verifiedAt: data.verifiedAt,
-        webhookPath: data.webhookPath,
-      });
-      setConnectionMessage("CloudShare Connection saved.");
-      setApiId("");
-      setApiKey("");
-      setWebhookSecret("");
-    } catch (caughtError) {
-      if (isAdminSessionExpiredError(caughtError)) {
-        return;
-      }
-      setError("Failed to save CloudShare Connection");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function testConnection() {
-    setLoading(true);
-    setError(null);
-    setConnectionMessage(null);
-    setConnectionDiagnostic(null);
-    setConnectionCorrelationId(null);
-    setConnectionOccurredAt(null);
-    setConnectionWarning(null);
-    try {
-      const response = await fetchAdmin("/api/admin/cloudshare/test", { method: "POST" });
-      const data = (await response.json()) as {
-        error?: string;
-        message?: string;
-        verifiedAt?: string;
-        correlationId?: string;
-        occurredAt?: string;
-        diagnostic?: ConnectionDiagnostic | null;
-      };
-      if (!response.ok) {
-        setConnectionWarning(data.error ?? "CloudShare connection test failed. Open Support Diagnostics with the correlation ID for the primary investigation view.");
-        setConnectionDiagnostic(data.diagnostic ?? null);
-        setConnectionCorrelationId(data.correlationId ?? null);
-        setConnectionOccurredAt(data.occurredAt ?? null);
-        return;
-      }
-      await loadConnection();
-      setConnectionMessage(`CloudShare responded with ${data.message}.`);
-      setConnectionCorrelationId(data.correlationId ?? null);
-      setConnectionOccurredAt(data.occurredAt ?? null);
-    } catch (caughtError) {
-      if (isAdminSessionExpiredError(caughtError)) {
-        return;
-      }
-      setConnectionWarning("CloudShare connection test failed. Open Support Diagnostics for more detail.");
-    } finally {
-      setLoading(false);
-    }
   }
 
   async function loadAudit(filters: AuditTrailFilters = auditFilters) {
@@ -3475,18 +3313,6 @@ export function AdminConsole({
     }
   }
 
-  const hasSavedConnection = connection?.hasConnection ?? false;
-  const isVerified = connection?.verifiedAt !== null && connection?.verifiedAt !== undefined;
-  const connectionStatusLabel = isVerified
-    ? "Verified"
-    : hasSavedConnection
-      ? "Saved, not yet verified"
-      : "No CloudShare Connection saved yet";
-  const storedSecretPlaceholder = hasSavedConnection ? "********" : "";
-  const webhookCallbackUrl = buildWebhookCallbackUrl(
-    webhookPublicBaseUrl,
-    connection?.webhookPath,
-  );
   const selectedProject = projects.find((item) => item.id === selectedProjectId) ?? null;
   const selectedBlueprint = blueprints.find((item) => item.id === selectedBlueprintId) ?? null;
   const selectedPolicy = policies.find((item) => item.id === selectedPolicyId) ?? null;
@@ -3656,18 +3482,6 @@ export function AdminConsole({
                 .
               </p>
             </div>
-          ) : connectionCorrelationId ? (
-            <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", alignItems: "center" }}>
-              <p style={{ margin: 0, fontSize: "0.85rem" }}>
-                Open <strong>Support Diagnostics</strong> filtered by correlation ID{" "}
-                <CorrelationDiagnosticsLink
-                  correlationId={connectionCorrelationId}
-                  getNavigationHref={getNavigationHref}
-                  onNavigate={navigateAdmin}
-                />
-                .
-              </p>
-            </div>
           ) : null}
         </div>
       )}
@@ -3756,138 +3570,13 @@ export function AdminConsole({
         </section>
       )}
 
-      {tab === "configuration" && (
-        <section style={{ display: "grid", gap: "1rem" }}>
-          <div style={mutedPanelStyle}>
-            <p style={{ margin: 0 }}>
-              Status:{" "}
-              <strong>{connectionStatusLabel}</strong>
-            </p>
-            {connection?.connectedAt && (
-              <p style={{ marginBottom: 0 }}>Saved (UTC): {formatUtcTimestamp(connection.connectedAt)}</p>
-            )}
-            {connection?.verifiedAt && (
-              <p style={{ marginBottom: 0 }}>Verified (UTC): {formatUtcTimestamp(connection.verifiedAt)}</p>
-            )}
-            {hasSavedConnection && !isVerified && (
-              <p style={{ marginBottom: 0, color: "#555" }}>
-                Connection details are stored. Run <strong>Test connection</strong> to verify them against CloudShare.
-              </p>
-            )}
-          </div>
-          <label style={{ display: "grid", gap: "0.35rem" }}>
-            <span>API ID</span>
-            <input
-              value={apiId}
-              onChange={(event) => setApiId(event.target.value)}
-              placeholder={hasSavedConnection ? "stored value present" : ""}
-              style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
-            />
-            {hasSavedConnection && !apiId && (
-              <span style={{ color: "#666", fontSize: "0.85rem" }}>
-                An API ID is stored. Enter a new value only to replace it.
-              </span>
-            )}
-          </label>
-          <label style={{ display: "grid", gap: "0.35rem" }}>
-            <span>API Key</span>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(event) => setApiKey(event.target.value)}
-              placeholder={storedSecretPlaceholder}
-              style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
-            />
-            {hasSavedConnection && !apiKey && (
-              <span style={{ color: "#666", fontSize: "0.85rem" }}>
-                A stored API Key is present. Enter a new value only to replace it.
-              </span>
-            )}
-          </label>
-          <label style={{ display: "grid", gap: "0.35rem" }}>
-            <span>Webhook Secret</span>
-            <input
-              type="password"
-              value={webhookSecret}
-              onChange={(event) => setWebhookSecret(event.target.value)}
-              placeholder={storedSecretPlaceholder}
-              style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
-            />
-            {hasSavedConnection && !webhookSecret && (
-              <span style={{ color: "#666", fontSize: "0.85rem" }}>
-                A stored Webhook Secret is present. Enter a new value only to replace it.
-              </span>
-            )}
-          </label>
-          {hasSavedConnection && (
-            <div style={{ ...alertPanelStyle.info, display: "grid", gap: "0.75rem" }}>
-              <div>
-                <strong>CloudShare webhook callback</strong>
-                <p style={{ margin: "0.35rem 0 0", color: "#45556c" }}>
-                  Register this callback manually in CloudShare until v3 webhook auto-registration is live-verified.
-                  Select only the environment lifecycle events.
-                </p>
-              </div>
-              <label style={{ display: "grid", gap: "0.35rem" }}>
-                <span>Public portal base URL</span>
-                <input
-                  value={webhookPublicBaseUrl}
-                  onChange={(event) => setWebhookPublicBaseUrl(event.target.value)}
-                  placeholder="https://<current-public-base-url>"
-                  style={{ padding: "0.7rem", border: "1px solid #aac4ea", borderRadius: "6px" }}
-                />
-              </label>
-              <div style={{ display: "grid", gap: "0.35rem" }}>
-                <span>Portal webhook path</span>
-                <code style={{ display: "block", overflowWrap: "anywhere", background: "#fff", padding: "0.7rem", borderRadius: "6px", border: "1px solid #d8e5f8" }}>
-                  {connection?.webhookPath ?? "Save a CloudShare Connection to generate a path."}
-                </code>
-              </div>
-              <div style={{ display: "grid", gap: "0.35rem" }}>
-                <span>Full CloudShare callback URL</span>
-                <code style={{ display: "block", overflowWrap: "anywhere", background: "#fff", padding: "0.7rem", borderRadius: "6px", border: "1px solid #d8e5f8" }}>
-                  {webhookCallbackUrl ?? "Enter the public base URL above."}
-                </code>
-              </div>
-              <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
-                <button
-                  type="button"
-                  disabled={!webhookCallbackUrl}
-                  onClick={() => {
-                    if (webhookCallbackUrl) {
-                      void navigator.clipboard?.writeText(webhookCallbackUrl);
-                      setConnectionMessage("Webhook callback URL copied.");
-                    }
-                  }}
-                  style={{ padding: "0.55rem 0.9rem" }}
-                >
-                  Copy callback URL
-                </button>
-                <span style={{ color: "#45556c", fontSize: "0.9rem" }}>
-                  Auto-create in CloudShare is deferred until the v3 create request/response is verified.
-                </span>
-              </div>
-            </div>
-          )}
-          <div style={{ display: "flex", gap: "0.75rem" }}>
-            <button onClick={saveConnection} disabled={loading} style={primaryButtonStyle}>
-              {loading ? "Saving..." : "Save CloudShare Connection"}
-            </button>
-            <button onClick={testConnection} disabled={loading || !connection?.hasConnection} style={secondaryButtonStyle}>
-              {loading ? "Testing..." : "Test connection"}
-            </button>
-          </div>
-          {connectionWarning && (
-            <CloudShareConnectionTestWarning
-              warning={connectionWarning}
-              correlationId={connectionCorrelationId}
-              getNavigationHref={getNavigationHref}
-              onNavigate={navigateAdmin}
-            />
-          )}
-          {connectionMessage && <p style={{ color: "#0a7a28", margin: 0 }}>{connectionMessage}</p>}
-        </section>
-      )}
+      <CloudShareConnectionFeature
+        active={tab === "configuration"}
+        fetchAdmin={fetchAdmin}
+        getNavigationHref={getNavigationHref}
+        onNavigate={navigateAdmin}
+        onBusyChange={setLoading}
+      />
 
       {tab === "exams" && (
         <section
