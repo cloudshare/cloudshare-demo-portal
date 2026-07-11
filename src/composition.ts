@@ -10,12 +10,6 @@ import {
   hashPassword,
   type PortalAuthenticator,
 } from "@/auth";
-import {
-  createKryterionSimulator,
-  type KryterionSimulator,
-} from "@/legacy-simulator/kryterion/simulator";
-import { createGenesysSimulator } from "@/legacy-simulator/genesys/simulator";
-import { genesysDemoData } from "@/legacy-simulator/genesys/demo-data";
 import { createInMemoryEventBus, type IntegrationEventBus } from "@/domain/event-bus";
 import { createCloudShareIntegration } from "@/integrations/cloudshare";
 import { createCloudShareIntegrationForConnection } from "@/integrations/cloudshare";
@@ -34,7 +28,6 @@ import {
 } from "@/domain/heartbeat-auto-suspend";
 import { runHeartbeatAutoSuspend } from "@/api/suspend-resume";
 import { createExamClock, type ExamClock } from "@/domain/exam-clock";
-import { type DemoStep } from "@/domain/demo-control";
 import { createCloudShareGuidedJourneyProvider } from "@/integrations/cloudshare/guided-journey";
 import { createPrismaAuditRepository } from "@/persistence/audit-repository";
 import { createInMemoryResourceRepository } from "@/persistence/resource-repository";
@@ -62,7 +55,6 @@ import {
 } from "@/persistence/portal-auth-repository";
 import { createCloudShareConnectionRepository } from "@/persistence/cloudshare-connection-repository";
 import type { ScoreRetrievalProvider } from "@/domain/score-result";
-import type { ExamEligibilityProvider } from "@/legacy-simulator/eligibility";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { LabProvisioner, LabLaunchRepository } from "@/domain/lab-launch";
 import type { EnvironmentController, EnvironmentRepository, EnvironmentStateSource } from "@/domain/environment";
@@ -93,23 +85,6 @@ import { createPrismaAdminExamAttemptDiagnosticContextRepository } from "@/persi
  * SQLite connection pool during development hot-reloads.
  */
 
-export interface LegacySimulatorDemoServices {
-  readonly kryterion: KryterionSimulator;
-  readonly genesys: ExamEligibilityProvider;
-}
-
-export interface LegacyDemoRuntimeControls {
-  /**
-   * Which demo steps have been explicitly completed in this server instance's
-   * lifetime. Cleared by `resetDemo()` for repeat runs.
-   */
-  readonly completedDemoSteps: ReadonlySet<DemoStep>;
-  /** Record one completed demo step — the only external mutation path for completedDemoSteps. */
-  readonly markStepDone: (step: DemoStep) => void;
-  /** Reset all demo in-memory state for a clean repeat run. */
-  readonly resetDemo: () => Promise<void>;
-}
-
 export interface Services {
   config: Config;
   logger: Logger;
@@ -117,10 +92,6 @@ export interface Services {
   heartbeats: HeartbeatRepository;
   portalAuth: PortalAuthenticator;
   portalUsers: PortalUserRepository;
-  /** Retired simulator dependencies retained only for the quarantined `/demo` compatibility surface. */
-  legacySimulatorDemo: LegacySimulatorDemoServices;
-  /** Deterministic `/demo` progress/reset controls retained only for the legacy demo surface. */
-  legacyDemoRuntimeControls: LegacyDemoRuntimeControls;
   examClock: ExamClock;
   examAttempts: ExamAttemptRepository;
   events: IntegrationEventBus;
@@ -224,16 +195,6 @@ export function getServices(): Services {
     users: portalUsers,
     sessions: portalSessions,
   });
-  const kryterion = createKryterionSimulator({
-    secret: config.secrets.kryterionTokenSecret,
-    ttlSeconds: 120,
-  });
-
-  // Legacy demo eligibility and active event bus. The bus carries
-  // exam_attempt.created events; a failing subscriber is logged, not allowed to
-  // break publishing.
-  const genesys = createGenesysSimulator(genesysDemoData);
-  // Each in-memory repo exposes reset() for the demo clean-slate operation.
   const examAttempts = createPrismaExamAttemptRepository(prisma);
   const events = createInMemoryEventBus({
     onError: (error, event) =>
@@ -389,29 +350,6 @@ export function getServices(): Services {
     });
   });
 
-  // Demo step progress tracker — cleared by resetDemo().
-  const completedDemoSteps = new Set<DemoStep>();
-
-  function markStepDone(step: DemoStep): void {
-    completedDemoSteps.add(step);
-  }
-
-  async function resetDemo(): Promise<void> {
-    await prisma.examClock.deleteMany();
-    await prisma.labLaunch.deleteMany();
-    await prisma.examAttempt.deleteMany();
-    await prisma.environmentRecord.deleteMany();
-    await audit.reset();
-    eventLog.reset();
-    await diagnostics.reset();
-    examAuthoringCache.reset();
-    webhookIdempotency.reset();
-    environmentSimulator?.reset();
-    kryterion.reset();
-    heartbeatAutoSuspend.reset();
-    completedDemoSteps.clear();
-  }
-
   const services: Services = {
     config,
     logger,
@@ -419,15 +357,6 @@ export function getServices(): Services {
     heartbeats,
     portalAuth,
     portalUsers,
-    legacySimulatorDemo: {
-      kryterion,
-      genesys,
-    },
-    legacyDemoRuntimeControls: {
-      completedDemoSteps,
-      markStepDone,
-      resetDemo,
-    },
     examClock,
     examAttempts,
     events,
@@ -464,11 +393,6 @@ function isReusableServices(services: Services): boolean {
   return (
     typeof services.cloudshareConnections?.findByWebhookPathToken === "function" &&
     typeof services.cloudshareClientFactory?.forConnection === "function" &&
-    typeof services.legacySimulatorDemo?.kryterion?.getTimerState === "function" &&
-    typeof services.legacySimulatorDemo?.genesys?.listEligibleExams === "function" &&
-    typeof services.legacyDemoRuntimeControls?.completedDemoSteps?.has === "function" &&
-    typeof services.legacyDemoRuntimeControls?.markStepDone === "function" &&
-    typeof services.legacyDemoRuntimeControls?.resetDemo === "function" &&
     typeof services.adminCandidates?.listByCustomerId === "function"
   );
 }

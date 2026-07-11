@@ -11,13 +11,8 @@ const validEnv = {
   CLOUDSHARE_V3_API_ID: "v3id",
   CLOUDSHARE_V3_API_KEY: "v3key",
   CLOUDSHARE_WEBHOOK_SECRET: "whsecret",
-  KRYTERION_TOKEN_SECRET: "kryterion-secret",
   PORTAL_MODE: "fixture",
   PORTAL_TUNNEL_URL: "",
-  DEMO_BLUEPRINT_NAME: "bp",
-  DEMO_POLICY_NAME: "pol",
-  DEMO_PROJECT_NAME: "proj",
-  DEMO_REGION_NAME: "region",
   PORTAL_SEED_SOURCE: "env",
   HELIOS_ADMIN_EMAIL: "admin@helioscx.demo",
   HELIOS_ADMIN_PASSWORD: "HeliosDemo123!",
@@ -34,7 +29,6 @@ describe("loadConfig", () => {
     expect(config.secrets.portalMasterKey).toBe(validEnv.PORTAL_MASTER_KEY);
     expect(config.secrets.webhookSecret).toBe("whsecret");
     expect(config.runtime.mode).toBe("fixture");
-    expect(config.demoResources.blueprintName).toBe("bp");
     expect(config.runtime.seedSource).toBe("env");
     expect(config.seed.heliosAdmin?.email).toBe("admin@helioscx.demo");
     expect(config.seed.heliosInstructor?.id).toBe("instructor-1");
@@ -127,6 +121,5 @@ describe("secretValues", () => {
     expect(values).toContain("secret");
     expect(values).toContain(validEnv.PORTAL_MASTER_KEY);
     expect(values).toContain("whsecret");
-    expect(values).toContain("kryterion-secret");
   });
 });

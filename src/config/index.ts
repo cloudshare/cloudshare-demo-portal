@@ -28,22 +28,12 @@ const envSchema = z.object({
   CLOUDSHARE_V3_API_ID: z.string().optional().default(""),
   CLOUDSHARE_V3_API_KEY: z.string().optional().default(""),
   CLOUDSHARE_WEBHOOK_SECRET: z.string().optional().default(""),
-  // Legacy Kryterion simulator token signing secret, retained only for `/demo`
-  // compatibility. Active Candidates use portal email/password sessions.
-  KRYTERION_TOKEN_SECRET: z.string().min(1),
-
   // Category 2 — runtime flags
   PORTAL_MODE: z.enum(["live", "fixture"]),
   PORTAL_TUNNEL_URL: z.string().optional().default(""),
   HEARTBEAT_TIMEOUT_MS: z.coerce.number().int().positive().optional().default(60_000),
   PORTAL_SEED_SOURCE: z.enum(["off", "env", "file"]).optional().default("env"),
   PORTAL_SEED_CONFIG_PATH: z.string().optional().default("./config/portal-seed.local.json"),
-
-  // Category 3 — demo resource selection
-  DEMO_BLUEPRINT_NAME: z.string().optional().default(""),
-  DEMO_POLICY_NAME: z.string().optional().default(""),
-  DEMO_PROJECT_NAME: z.string().optional().default(""),
-  DEMO_REGION_NAME: z.string().optional().default(""),
 
   // Seeded Helios admin login for the demo.
   HELIOS_ADMIN_EMAIL: z.string().email().optional(),
@@ -92,7 +82,6 @@ export interface Config {
     readonly cloudshareV3ApiKey: string;
     readonly webhookSecret: string;
     readonly portalMasterKey: string;
-    readonly kryterionTokenSecret: string;
     readonly adminToken: string;
   };
   readonly runtime: {
@@ -101,12 +90,6 @@ export interface Config {
     /** Milliseconds without a client heartbeat before the server auto-suspends the lab. */
     readonly heartbeatTimeoutMs: number;
     readonly seedSource: PortalSeedSource;
-  };
-  readonly demoResources: {
-    readonly blueprintName: string;
-    readonly policyName: string;
-    readonly projectName: string;
-    readonly regionName: string;
   };
   readonly seed: {
     readonly source: PortalSeedSource;
@@ -242,7 +225,6 @@ export function loadConfig(env: NodeJS.ProcessEnv | Record<string, unknown>): Co
       cloudshareV3ApiId: e.CLOUDSHARE_V3_API_ID,
       cloudshareV3ApiKey: e.CLOUDSHARE_V3_API_KEY,
       webhookSecret: e.CLOUDSHARE_WEBHOOK_SECRET,
-      kryterionTokenSecret: e.KRYTERION_TOKEN_SECRET,
       adminToken: e.ADMIN_TOKEN,
     },
     runtime: {
@@ -250,12 +232,6 @@ export function loadConfig(env: NodeJS.ProcessEnv | Record<string, unknown>): Co
       tunnelUrl: e.PORTAL_TUNNEL_URL,
       heartbeatTimeoutMs: e.HEARTBEAT_TIMEOUT_MS,
       seedSource: e.PORTAL_SEED_SOURCE,
-    },
-    demoResources: {
-      blueprintName: e.DEMO_BLUEPRINT_NAME,
-      policyName: e.DEMO_POLICY_NAME,
-      projectName: e.DEMO_PROJECT_NAME,
-      regionName: e.DEMO_REGION_NAME,
     },
     seed: resolveSeedConfig(e),
     databaseUrl: e.DATABASE_URL,
