@@ -5,7 +5,7 @@ import { getServices } from "@/composition";
 import { getPortalSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { AdminConsole } from "@/web/admin-console";
-import { parseAdminConsoleRouteState } from "@/web/admin-console-state";
+import { parseAdminConsoleRouteState } from "@/web/admin-shell-route";
 
 interface AdminPageProps {
   readonly searchParams?: Promise<Record<string, string | string[] | undefined>>;

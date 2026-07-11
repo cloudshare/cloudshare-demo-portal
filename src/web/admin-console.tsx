@@ -1,38 +1,44 @@
 "use client";
 
 import React from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  ADMIN_TABS,
-  ADMIN_SESSION_EXPIRED_MESSAGE,
-  type AdminTab,
-  type AdminExamView,
-  type AdminSupportView,
   beginLatestOnlyRequest,
-  buildAdminConsoleHref,
-  buildCorrelationDiagnosticsNavigation,
   buildMonitoringHistoryQueryString,
-  buildExamAttemptDiagnosticsNavigation,
   buildDiagnosticLogQueryString,
   buildWebhookCallbackUrl,
-  type DiagnosticLogFilters,
-  getAdminTabLabel,
-  getAdminSupportViewLabel,
   getAllowedRegionValidationMessage,
   getCompatibleRegions,
   getDefaultOpenPeriodMinutes,
   getExamAuthoringMode,
   getResetOpenPeriodMinutes,
-  isAdminSessionExpiredStatus,
   isLatestOnlyResponse,
   mergeMonitoringHistoryPage,
-  normaliseDiagnosticLogFilters,
   reconcileAllowedRegionIds,
-  shouldClearAdminBannerOnTabChange,
   shouldShowCandidateProvisioning,
   shouldReconcileAllowedRegionIds,
 } from "./admin-console-state";
+import {
+  ADMIN_TABS,
+  buildAdminNavigationHref,
+  createCorrelationDiagnosticsNavigationIntent,
+  createExamAttemptDiagnosticsNavigationIntent,
+  getAdminTabLabel,
+  getAdminSupportViewLabel,
+  normaliseDiagnosticLogFilters,
+  shouldClearAdminBannerOnTabChange,
+  type AdminExamView,
+  type AdminNavigationIntent,
+  type AdminSupportView,
+  type AdminTab,
+  type DiagnosticLogFilters,
+} from "./admin-shell-route";
+import {
+  ADMIN_SESSION_EXPIRED_MESSAGE,
+  createAdminAuthenticatedRequest,
+  isAdminSessionExpiredError,
+} from "./admin-authenticated-request";
 import {
   DiagnosticLogTable,
   type DiagnosticLogTableEntry as DiagnosticLogEntry,
@@ -389,11 +395,11 @@ function CorrelationDiagnosticsLink(props: {
   readonly onOpen?: (correlationId: string) => void;
   readonly children?: React.ReactNode;
 }) {
-  const navigation = buildCorrelationDiagnosticsNavigation(props.correlationId);
+  const navigation = createCorrelationDiagnosticsNavigationIntent(props.correlationId);
 
   return (
     <a
-      href={navigation.href}
+      href={buildAdminNavigationHref(navigation)}
       onClick={(event) => {
         if (!props.onOpen) return;
         event.preventDefault();
@@ -426,13 +432,6 @@ export function CloudShareConnectionTestWarning(props: {
       ) : null}
     </div>
   );
-}
-
-class AdminSessionExpiredError extends Error {
-  constructor() {
-    super(ADMIN_SESSION_EXPIRED_MESSAGE);
-    this.name = "AdminSessionExpiredError";
-  }
 }
 
 const DIAGNOSTIC_PAGE_LIMIT = 50;
@@ -514,10 +513,6 @@ function getLogoutButtonStyle(disabled: boolean): React.CSSProperties {
         ...disabledButtonStyle,
       }
     : accountLogoutButtonStyle;
-}
-
-function isAdminSessionExpiredError(error: unknown): error is AdminSessionExpiredError {
-  return error instanceof AdminSessionExpiredError;
 }
 
 function formatExamDeliveryAvailability(value: ExamRecord["deliveryAvailability"]): string {
@@ -1188,7 +1183,7 @@ export function CohortSessionWorkspacePanel(props: {
               {props.lastCheckedAt ? <span style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>Last checked: {formatUtcTimestamp(props.lastCheckedAt)}</span> : null}
               {props.onRefresh ? <button type="button" onClick={props.onRefresh} style={secondaryButtonStyle}>Refresh session</button> : null}
               <a
-                href={buildAdminConsoleHref({
+                href={buildAdminNavigationHref({
                   tab: "support",
                   supportView: "diagnostics",
                   diagnosticFilters: props.detail.diagnostics.session,
@@ -1358,7 +1353,7 @@ export function CohortSessionWorkspacePanel(props: {
                 <strong>Guided Journey aggregate progress</strong>
                 {props.detail.diagnostics.guidedJourneyAggregateRead ? (
                   <a
-                    href={buildAdminConsoleHref({
+                    href={buildAdminNavigationHref({
                       tab: "support",
                       supportView: "diagnostics",
                       diagnosticFilters: props.detail.diagnostics.guidedJourneyAggregateRead,
@@ -1383,7 +1378,7 @@ export function CohortSessionWorkspacePanel(props: {
                 <strong>CloudShare participants</strong>
                 {props.detail.diagnostics.cloudShareRead ? (
                   <a
-                    href={buildAdminConsoleHref({
+                    href={buildAdminNavigationHref({
                       tab: "support",
                       supportView: "diagnostics",
                       diagnosticFilters: props.detail.diagnostics.cloudShareRead,
@@ -1516,7 +1511,7 @@ export function CohortSessionWorkspacePanel(props: {
                 <ol style={{ margin: 0, paddingLeft: "1.25rem" }}>{timeline.events.map((event) => <li key={event}>{event}</li>)}</ol>
                 <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                   <button type="button" style={secondaryButtonStyle} onClick={() => setTimeline(null)}>Close timeline</button>
-                  <a href={buildAdminConsoleHref({ tab: "support", supportView: "diagnostics", diagnosticFilters: timeline.diagnostics })} style={secondaryButtonStyle}>View forensic logs</a>
+                  <a href={buildAdminNavigationHref({ tab: "support", supportView: "diagnostics", diagnosticFilters: timeline.diagnostics })} style={secondaryButtonStyle}>View forensic logs</a>
                 </div>
               </section>
             ) : null}
@@ -2288,6 +2283,11 @@ export function AdminConsole({
     router.refresh();
   }, [router]);
 
+  const fetchAdmin = useMemo(
+    () => createAdminAuthenticatedRequest({ fetchImpl: fetch, onSessionExpired: handleAdminSessionExpired }),
+    [handleAdminSessionExpired],
+  );
+
   useEffect(() => {
     if (sessionExpired) {
       return;
@@ -2302,27 +2302,18 @@ export function AdminConsole({
     return () => watchdog.stop();
   }, [handleAdminSessionExpired, sessionExpired]);
 
-  function navigateAdmin(next: {
-    tab: AdminTab;
-    examView?: AdminExamView;
-    examId?: string | null;
-    cohortSessionId?: string | null;
-    supportView?: AdminSupportView;
-    diagnosticFilters?: DiagnosticLogFilters;
-  }) {
+  function navigateAdmin(next: AdminNavigationIntent) {
     const nextDiagnosticFilters = next.diagnosticFilters ?? diagnosticFilters;
     const nextExamView = next.examView ?? "catalog";
     const nextSupportView = next.supportView ?? "monitoring";
-    router.push(
-      buildAdminConsoleHref({
-        tab: next.tab,
-        examView: nextExamView,
-        examId: next.examId ?? undefined,
-        cohortSessionId: next.cohortSessionId ?? undefined,
-        supportView: nextSupportView,
-        diagnosticFilters: nextDiagnosticFilters,
-      }),
-    );
+    router.push(buildAdminNavigationHref({
+      tab: next.tab,
+      examView: nextExamView,
+      examId: next.examId,
+      cohortSessionId: next.cohortSessionId,
+      supportView: nextSupportView,
+      diagnosticFilters: nextDiagnosticFilters,
+    }));
     setTab(next.tab);
     setExamView(nextExamView);
     setFocusedExamId(next.examId ?? null);
@@ -2347,15 +2338,6 @@ export function AdminConsole({
     setSelectedCohortSession(null);
     navigateAdmin({ tab: "exams", examView: "sessions", examId });
     void loadCohortExamSessions(examId);
-  }
-
-  async function fetchAdmin(input: string, init?: RequestInit): Promise<Response> {
-    const response = await fetch(input, init);
-    if (isAdminSessionExpiredStatus(response.status)) {
-      handleAdminSessionExpired();
-      throw new AdminSessionExpiredError();
-    }
-    return response;
   }
 
   async function loadConnection() {
@@ -2543,28 +2525,20 @@ export function AdminConsole({
   }
 
   function openExamAttemptSupportDiagnostics(examAttemptId: string) {
-    const navigation = buildExamAttemptDiagnosticsNavigation(examAttemptId);
-    navigateAdmin({
-      tab: "support",
-      supportView: "diagnostics",
-      diagnosticFilters: navigation.filters,
-    });
+    const navigation = createExamAttemptDiagnosticsNavigationIntent(examAttemptId);
+    navigateAdmin(navigation);
     setExpandedDiagnosticId(null);
     if (tab === "support" && supportView === "diagnostics") {
-      void loadDiagnostics(false, navigation.pageOffset, navigation.filters);
+      void loadDiagnostics(false, 0, navigation.diagnosticFilters);
     }
   }
 
   function openCorrelationSupportDiagnostics(correlationId: string) {
-    const navigation = buildCorrelationDiagnosticsNavigation(correlationId);
-    navigateAdmin({
-      tab: "support",
-      supportView: "diagnostics",
-      diagnosticFilters: navigation.filters,
-    });
+    const navigation = createCorrelationDiagnosticsNavigationIntent(correlationId);
+    navigateAdmin(navigation);
     setExpandedDiagnosticId(null);
     if (tab === "support" && supportView === "diagnostics") {
-      void loadDiagnostics(false, navigation.pageOffset, navigation.filters);
+      void loadDiagnostics(false, 0, navigation.diagnosticFilters);
     }
   }
 
