@@ -279,6 +279,19 @@ CloudShare resource tuple rather than re-authoring Blueprint, Policy, allowed Re
 Instructor, or Guided Journey settings.
 _Avoid_: scheduled attempt, demo session.
 
+### Future sales delivery
+
+**Sales Opportunity**:
+A future commercial engagement with one prospective organisation. It may group multiple related
+Sales Experiences, including a replacement when a prior time-bounded experience has ended.
+_Avoid_: Customer, Cohort Exam Session.
+
+**Sales Experience**:
+A future time-bounded CloudShare demo or proof-of-concept delivery run within a Sales Opportunity,
+which may give multiple participants access. It is distinct from a Cohort Exam Session even where
+their delivery structures are analogous.
+_Avoid_: Exam, Cohort Exam Session, generic session.
+
 **Certification**:
 The whole path/journey a Candidate takes — training plus one or more exams, some potentially
 outside CloudShare. Acknowledged as the real-world umbrella but **deliberately not built**; the
