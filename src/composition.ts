@@ -13,7 +13,7 @@ import {
 import { createInMemoryEventBus, type IntegrationEventBus } from "@/domain/event-bus";
 import { createCloudShareIntegration } from "@/integrations/cloudshare";
 import { createCloudShareIntegrationForConnection } from "@/integrations/cloudshare";
-import { createCloudShareLabProvisioner } from "@/integrations/cloudshare/labs";
+import { createCloudShareTrainingDelivery } from "@/integrations/cloudshare/training-delivery";
 import { createCloudShareEnvironmentSource } from "@/integrations/cloudshare/environment";
 import {
   createCloudShareEnvironmentSimulator,
@@ -28,7 +28,6 @@ import {
 } from "@/domain/heartbeat-auto-suspend";
 import { runHeartbeatAutoSuspend } from "@/api/suspend-resume";
 import { createExamClock, type ExamClock } from "@/domain/exam-clock";
-import { createCloudShareGuidedJourneyProvider } from "@/integrations/cloudshare/guided-journey";
 import { createPrismaAuditRepository } from "@/persistence/audit-repository";
 import { createInMemoryResourceRepository } from "@/persistence/resource-repository";
 import { createInMemoryEventLogRepository } from "@/persistence/event-log-repository";
@@ -218,7 +217,8 @@ export function getServices(): Services {
       apiKey: config.secrets.cloudshareV3ApiKey,
     },
   });
-  const labProvisioner = createCloudShareLabProvisioner(cloudshare);
+  const trainingDelivery = createCloudShareTrainingDelivery(cloudshare);
+  const labProvisioner = trainingDelivery;
   const labLaunches = createPrismaLabLaunchRepository(prisma);
 
   // Webhook receiver & polling source-of-truth. In demo mode the simulator is BOTH
@@ -244,7 +244,7 @@ export function getServices(): Services {
   });
   const eventLog = createInMemoryEventLogRepository();
 
-  const scoreRetriever = createCloudShareGuidedJourneyProvider(cloudshare);
+  const scoreRetriever = trainingDelivery;
 
   const audit = createPrismaAuditRepository(prisma);
   const resources = createInMemoryResourceRepository();

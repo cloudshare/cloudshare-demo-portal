@@ -29,7 +29,7 @@ import {
   CloudShareTransportError,
   isCloudShareRateLimitError,
 } from "@/integrations/cloudshare";
-import { createCloudShareLabProvisioner } from "@/integrations/cloudshare/labs";
+import { createCloudShareTrainingDelivery } from "@/integrations/cloudshare/training-delivery";
 import type { Logger } from "@/observability/logger";
 import { guardRuntimeBlueprintSnapshot } from "./runtime-blueprint-snapshot-guard";
 
@@ -356,19 +356,10 @@ export async function joinCohortExamSessionRuntime(
   }
 
   const cloudshare = deps.cloudshare.forConnection(connection);
-  const labs = createCloudShareLabProvisioner(cloudshare);
-  const trainingStartStateReader = labs.getTrainingStartState;
-  const participantAdder = labs.addParticipant;
-  const trainingUserPropertyEnsurer = labs.ensureTrainingUserPropertyKeys;
-  if (!trainingStartStateReader) {
-    throw new Error("LabProvisioner does not support cohort training start-state reads.");
-  }
-  if (!trainingUserPropertyEnsurer) {
-    throw new Error("LabProvisioner does not support cohort training user-property validation.");
-  }
-  if (!participantAdder) {
-    throw new Error("LabProvisioner does not support cohort participant registration.");
-  }
+  const trainingDelivery = createCloudShareTrainingDelivery(cloudshare);
+  const trainingStartStateReader = trainingDelivery.getTrainingStartState;
+  const participantAdder = trainingDelivery.addParticipant;
+  const trainingUserPropertyEnsurer = trainingDelivery.ensureTrainingUserPropertyKeys;
 
   let trainingStartState;
   try {
@@ -620,7 +611,7 @@ export async function joinCohortExamSessionRuntime(
 
   let sponsoredLink;
   try {
-    sponsoredLink = await labs.createSponsoredLink({
+    sponsoredLink = await trainingDelivery.createSponsoredLink({
       trainingId: session.cloudShareTrainingId,
       email: request.candidateEmail,
       firstName: request.candidateFirstName.trim(),

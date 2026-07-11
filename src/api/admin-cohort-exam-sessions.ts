@@ -29,8 +29,7 @@ import {
   CloudShareTransportError,
   isCloudShareRateLimitError,
 } from "@/integrations/cloudshare";
-import { createCloudShareLabProvisioner } from "@/integrations/cloudshare/labs";
-import { createCloudShareOnDemandExperienceCreator } from "@/integrations/cloudshare/cohort-experiences";
+import { createCloudShareTrainingDelivery } from "@/integrations/cloudshare/training-delivery";
 import type { Logger } from "@/observability/logger";
 import { guardRuntimeBlueprintSnapshot } from "./runtime-blueprint-snapshot-guard";
 
@@ -281,9 +280,8 @@ export async function handlePublishCohortExamSession(
     }
 
     const cloudshareClient = deps.cloudshare.forConnection(connection);
-    const provisioner = createCloudShareLabProvisioner(cloudshareClient);
-    const creator = createCloudShareOnDemandExperienceCreator(cloudshareClient);
-    const created = await creator.createOnDemandExperience({
+    const trainingDelivery = createCloudShareTrainingDelivery(cloudshareClient);
+    const created = await trainingDelivery.createCohortTraining({
       name: buildCohortExperienceName(exam.title, claimedSession.name),
       startsAt: claimedSession.admissionStartsAt,
       endsAt: claimedSession.admissionEndsAt,
@@ -298,7 +296,7 @@ export async function handlePublishCohortExamSession(
     });
     let ensuredTrainingUserProperties;
     try {
-      ensuredTrainingUserProperties = await provisioner.ensureTrainingUserPropertyKeys?.({
+      ensuredTrainingUserProperties = await trainingDelivery.ensureTrainingUserPropertyKeys({
         trainingId: created.trainingId,
         experienceId: created.experienceId,
         requiredKeys: CERTALIS_TRAINING_USER_PROPERTY_KEYS,

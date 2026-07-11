@@ -20,8 +20,7 @@ import {
   CloudShareTransportError,
   isCloudShareRateLimitError,
 } from "@/integrations/cloudshare";
-import { createCloudShareTrainingRetirementWriter } from "@/integrations/cloudshare/cohort-experience-retirement";
-import { createCloudShareTrainingParticipantReader } from "@/integrations/cloudshare/participants";
+import { createCloudShareTrainingDelivery } from "@/integrations/cloudshare/training-delivery";
 import type { Logger } from "@/observability/logger";
 import type { AdminCohortExamSessionAttemptRepository } from "./admin-cohort-exam-session-detail";
 
@@ -118,9 +117,8 @@ export async function handleRetireCohortExamSession(
       return { status: 409, body: { error: "CloudShare is not connected for this customer." } };
     }
 
-    const client = deps.cloudshare.forConnection(connection);
-    const participantReader = createCloudShareTrainingParticipantReader(client);
-    const participantRead = await participantReader.readParticipants(session.cloudShareTrainingId);
+    const trainingDelivery = createCloudShareTrainingDelivery(deps.cloudshare.forConnection(connection));
+    const participantRead = await trainingDelivery.readParticipants(session.cloudShareTrainingId);
     const attempts = await deps.attempts.listBySessionId(request.customerId, session.id);
     const warning = buildRetireWarning(participantRead.participants, attempts.length);
 
@@ -139,7 +137,7 @@ export async function handleRetireCohortExamSession(
     }
 
     const retiredAt = (deps.now ?? (() => new Date()))();
-    const result = await createCloudShareTrainingRetirementWriter(client).retireTrainingToEnd({
+    const result = await trainingDelivery.retireTrainingToEnd({
       trainingId: session.cloudShareTrainingId,
       end: retiredAt,
     });

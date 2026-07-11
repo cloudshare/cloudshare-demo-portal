@@ -17,11 +17,9 @@ import {
   isCloudShareRateLimitError,
 } from "@/integrations/cloudshare";
 import {
-  createCloudShareAggregateGuidedJourneyProvider,
+  createCloudShareTrainingDelivery,
   type AggregateGuidedJourneyProgress,
-  type DiagnosticAggregateGuidedJourneyProvider,
-} from "@/integrations/cloudshare/guided-journey";
-import { createCloudShareTrainingParticipantReader } from "@/integrations/cloudshare/participants";
+} from "@/integrations/cloudshare/training-delivery";
 import type { Logger } from "@/observability/logger";
 import { attachCohortExamSessionInheritedContext } from "@/domain/cohort-exam-session";
 import {
@@ -286,12 +284,12 @@ async function readCloudShareAggregateProgress(
     };
   }
 
-  const provider = createCloudShareAggregateGuidedJourneyProvider(
+  const trainingDelivery = createCloudShareTrainingDelivery(
     deps.cloudshare.forConnection(connection),
-  ) as DiagnosticAggregateGuidedJourneyProvider;
+  );
 
   try {
-    const result = await provider.getAggregateProgressForDiagnostics(experienceId);
+    const result = await trainingDelivery.getAggregateProgressForDiagnostics(experienceId);
     if (!result.progress) {
       await deps.diagnostics?.record({
         source: "admin-exams",
@@ -436,10 +434,10 @@ async function readCloudShareParticipants(
     };
   }
 
-  const reader = createCloudShareTrainingParticipantReader(deps.cloudshare.forConnection(connection));
+  const trainingDelivery = createCloudShareTrainingDelivery(deps.cloudshare.forConnection(connection));
 
   try {
-    const result = await reader.readParticipants(trainingId);
+    const result = await trainingDelivery.readParticipants(trainingId);
     await deps.diagnostics?.record({
       source: "admin-exams",
       level: "info",

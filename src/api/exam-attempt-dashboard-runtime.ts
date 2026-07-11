@@ -20,7 +20,7 @@ import {
   CloudShareResponseError,
   CloudShareTransportError,
 } from "@/integrations/cloudshare";
-import { createCloudShareParticipantLister } from "@/integrations/cloudshare/participants";
+import { createCloudShareTrainingDelivery } from "@/integrations/cloudshare/training-delivery";
 import type { Logger } from "@/observability/logger";
 import { recordExamAttemptCompletionDiagnostic } from "./exam-attempt-completion-diagnostics";
 import {
@@ -333,7 +333,7 @@ async function correlateCandidateAttemptEnvironments(
   }
 
   const correlationId = (deps.newCorrelationId ?? randomUUID)();
-  const participants = createCloudShareParticipantLister(deps.cloudshare.forConnection(connection));
+  const trainingDelivery = createCloudShareTrainingDelivery(deps.cloudshare.forConnection(connection));
   for (const examAttemptId of examAttemptIds) {
     const launch = await deps.launches.findByExamAttemptId(examAttemptId);
     const trainingId = launch?.trainingId;
@@ -345,7 +345,7 @@ async function correlateCandidateAttemptEnvironments(
       await correlateEnvironmentForExamAttempt(
         {
           launches: deps.launches,
-          participants,
+        participants: trainingDelivery,
         },
         { examAttemptId },
       );

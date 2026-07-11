@@ -7,11 +7,8 @@ import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { ExamRepository } from "@/domain/exam-catalog";
 import type { LabLaunchRepository } from "@/domain/lab-launch";
-import {
-  createCloudShareGuidedJourneyProvider,
-  SCORING_LIMITATIONS,
-} from "@/integrations/cloudshare/guided-journey";
-import { createCloudShareParticipantLister } from "@/integrations/cloudshare/participants";
+import { SCORING_LIMITATIONS } from "@/integrations/cloudshare/guided-journey";
+import { createCloudShareTrainingDelivery } from "@/integrations/cloudshare/training-delivery";
 import type { Logger } from "@/observability/logger";
 import { getExamAttemptScoreRuntime } from "./exam-attempt-score-runtime";
 
@@ -53,9 +50,9 @@ export async function captureCompletedExamScoreEvidence(
         audit: deps.audit,
         connections: deps.connections,
         createScoreRetriever: (connection) =>
-          createCloudShareGuidedJourneyProvider(deps.cloudshare!.forConnection(connection)),
+          createCloudShareTrainingDelivery(deps.cloudshare!.forConnection(connection)),
         createParticipantLister: (connection) =>
-          createCloudShareParticipantLister(deps.cloudshare!.forConnection(connection)),
+          createCloudShareTrainingDelivery(deps.cloudshare!.forConnection(connection)),
         logger: deps.logger,
         limitations: SCORING_LIMITATIONS,
         diagnostics: deps.diagnostics,

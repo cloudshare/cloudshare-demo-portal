@@ -4,11 +4,8 @@ import {
   MAX_DIAGNOSTIC_QUERY_LIMIT,
   type DiagnosticLogRepository,
 } from "@/domain/diagnostic-log";
-import {
-  createCloudShareGuidedJourneyProvider,
-  SCORING_LIMITATIONS,
-} from "@/integrations/cloudshare/guided-journey";
-import { createCloudShareParticipantLister } from "@/integrations/cloudshare/participants";
+import { SCORING_LIMITATIONS } from "@/integrations/cloudshare/guided-journey";
+import { createCloudShareTrainingDelivery } from "@/integrations/cloudshare/training-delivery";
 import {
   getExamAttemptScoreRuntime,
   type ExamAttemptScoreRuntimeDeps,
@@ -55,11 +52,11 @@ export function buildCandidateScoreDeps(
     audit: services.audit,
     connections: services.cloudshareConnections,
     createScoreRetriever: (connection) =>
-      createCloudShareGuidedJourneyProvider(
+      createCloudShareTrainingDelivery(
         services.cloudshareClientFactory.forConnection(connection),
       ),
     createParticipantLister: (connection) =>
-      createCloudShareParticipantLister(
+      createCloudShareTrainingDelivery(
         services.cloudshareClientFactory.forConnection(connection),
       ),
     logger: services.logger,
