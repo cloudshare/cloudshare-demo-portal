@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { AdminAuthenticatedRequest } from "./admin-authenticated-request";
 import { isAdminSessionExpiredError } from "./admin-authenticated-request";
 import { buildDiagnosticLogQueryString } from "./admin-console-state";
@@ -16,7 +16,7 @@ import {
   DiagnosticLogTable,
   type DiagnosticLogTableEntry as DiagnosticLogEntry,
 } from "./diagnostic-log-table";
-import { cardStyle } from "./card-styles";
+import { alertPanelStyle, cardStyle } from "./card-styles";
 import { colors } from "./design-tokens";
 
 const DIAGNOSTIC_PAGE_LIMIT = 50;
@@ -85,6 +85,7 @@ export function AdminSupportFeature(props: {
   const [expandedDiagnosticId, setExpandedDiagnosticId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const appliedRouteFiltersRef = useRef<string | null>(null);
 
   async function loadAudit(filters: AuditTrailFilters = auditFilters) {
     setLoading(true);
@@ -146,7 +147,12 @@ export function AdminSupportFeature(props: {
 
   useEffect(() => {
     setDiagnosticFilters(props.diagnosticFilters);
-    if (props.active && props.view === "diagnostics") void loadDiagnostics(0, props.diagnosticFilters);
+    const routeFilters = JSON.stringify(normaliseDiagnosticLogFilters(props.diagnosticFilters));
+    const wasExplicitlyApplied = appliedRouteFiltersRef.current === routeFilters;
+    appliedRouteFiltersRef.current = null;
+    if (props.active && props.view === "diagnostics" && !wasExplicitlyApplied) {
+      void loadDiagnostics(0, props.diagnosticFilters);
+    }
     // Route filters are shell-owned URL state; loading and presentation remain feature-owned.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.active, props.view, props.diagnosticFilters]);
@@ -161,6 +167,8 @@ export function AdminSupportFeature(props: {
 
   function applyDiagnosticFilters() {
     props.onNavigate({ tab: "support", supportView: "diagnostics", diagnosticFilters });
+    appliedRouteFiltersRef.current = JSON.stringify(normaliseDiagnosticLogFilters(diagnosticFilters));
+    void loadDiagnostics(0, diagnosticFilters);
   }
 
   function clearDiagnosticFilters() {
@@ -177,7 +185,7 @@ export function AdminSupportFeature(props: {
   if (props.view === "audit") {
     return (
       <section>
-        {error ? <p role="alert" style={{ color: colors.danger }}>{error}</p> : null}
+        {error ? <SupportError message={error} onDismiss={() => setError(null)} /> : null}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))", gap: "0.75rem", marginBottom: "1rem", alignItems: "end" }}>
           {(["examAttemptId", "action"] as const).map((key) => (
             <input key={key} placeholder={{ examAttemptId: "Exam attempt ID", action: "Action", actorEmail: "Actor email", subjectType: "Subject type", subjectId: "Subject ID", examId: "Exam ID" }[key]} value={auditFilters[key]} onChange={(event) => setAuditFilters((current) => ({ ...current, [key]: event.target.value }))} style={{ padding: "0.4rem" }} />
@@ -206,7 +214,7 @@ export function AdminSupportFeature(props: {
 
   return (
     <section>
-      {error ? <p role="alert" style={{ color: colors.danger }}>{error}</p> : null}
+      {error ? <SupportError message={error} onDismiss={() => setError(null)} /> : null}
       <p style={{ color: colors.textSecondary, marginTop: 0 }}>The correlated diagnostic log: what the portal did, in what order, and how to trace it. Entries are append-only and scoped to your Customer. This is the primary support workflow. Session Monitoring remains the current-state queue view and should link into this tab for forensic investigation. Timestamps are ISO 8601 in UTC. Secrets and credentials are redacted.</p>
       <div style={{ border: "1px solid #dfe3eb", borderRadius: "8px", background: "#f8fafc", padding: "1rem", marginBottom: "1rem" }}>
         <div style={{ marginBottom: "0.9rem" }}><h2 style={{ margin: 0, fontSize: "1rem" }}>Investigative filters</h2><p style={{ color: colors.textSecondary, margin: "0.35rem 0 0" }}>Follow an exam attempt, correlation thread, or CloudShare event without changing the underlying diagnostic filtering rules.</p></div>
@@ -226,4 +234,15 @@ export function AdminSupportFeature(props: {
 
 function DiagnosticFilterBanner(props: { readonly label: string; readonly value: string }) {
   return <div style={{ marginBottom: "0.75rem", padding: "0.65rem 0.8rem", border: "1px solid #dbe4ff", borderRadius: "8px", background: "#f5f8ff", color: "#123" }}>Filtered to {props.label} <span style={{ fontFamily: "monospace" }}>{props.value}</span>.</div>;
+}
+
+function SupportError(props: { readonly message: string; readonly onDismiss: () => void }) {
+  return (
+    <div role="alert" style={{ ...alertPanelStyle.danger, display: "grid", gap: "0.5rem" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "flex-start" }}>
+        <p style={{ margin: 0 }}>{props.message}</p>
+        <button type="button" onClick={props.onDismiss} style={{ padding: "0.25rem 0.55rem" }}>Dismiss</button>
+      </div>
+    </div>
+  );
 }

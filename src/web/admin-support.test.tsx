@@ -11,7 +11,7 @@ function json(body: unknown, status = 200): Response {
 }
 
 describe("AdminSupportFeature", () => {
-  it("loads central Support Diagnostics using the existing route filters and lets an admin refresh the same evidence", async () => {
+  it("reloads page zero when applying unchanged deep-linked Support Diagnostics filters", async () => {
     const user = userEvent.setup();
     const fetchAdmin = vi.fn<AdminAuthenticatedRequest>().mockResolvedValue(
       json({ entries: [], page: { limit: 50, offset: 0, returned: 0, hasMore: false, nextOffset: null } }),
@@ -32,11 +32,36 @@ describe("AdminSupportFeature", () => {
       "/api/admin/diagnostics?correlationId=corr-42&limit=50&offset=0",
     );
 
-    await user.click(screen.getByRole("button", { name: "Refresh Page" }));
+    await user.click(screen.getByRole("button", { name: "Apply Filters" }));
     await waitFor(() => expect(fetchAdmin).toHaveBeenCalledTimes(2));
     expect(fetchAdmin).toHaveBeenLastCalledWith(
       "/api/admin/diagnostics?correlationId=corr-42&limit=50&offset=0",
     );
+  });
+
+  it("resets Diagnostics pagination to page zero when applying filters", async () => {
+    const user = userEvent.setup();
+    const fetchAdmin = vi.fn<AdminAuthenticatedRequest>()
+      .mockResolvedValueOnce(json({ entries: [], page: { limit: 50, offset: 0, returned: 0, hasMore: true, nextOffset: 50 } }))
+      .mockResolvedValueOnce(json({ entries: [], page: { limit: 50, offset: 50, returned: 0, hasMore: false, nextOffset: null } }))
+      .mockResolvedValueOnce(json({ entries: [], page: { limit: 50, offset: 0, returned: 0, hasMore: true, nextOffset: 50 } }));
+
+    render(<AdminSupportFeature active view="diagnostics" diagnosticFilters={{}} fetchAdmin={fetchAdmin} onNavigate={vi.fn()} />);
+    await screen.findByRole("button", { name: "Next" });
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() => expect(fetchAdmin).toHaveBeenLastCalledWith("/api/admin/diagnostics?limit=50&offset=50"));
+    await user.click(screen.getByRole("button", { name: "Apply Filters" }));
+    await waitFor(() => expect(fetchAdmin).toHaveBeenLastCalledWith("/api/admin/diagnostics?limit=50&offset=0"));
+  });
+
+  it("keeps Support request failures in the existing dismissible danger-banner presentation", async () => {
+    const user = userEvent.setup();
+    const fetchAdmin = vi.fn<AdminAuthenticatedRequest>().mockResolvedValue(json({ error: "Diagnostics unavailable" }, 503));
+    render(<AdminSupportFeature active view="diagnostics" diagnosticFilters={{}} fetchAdmin={fetchAdmin} onNavigate={vi.fn()} />);
+
+    expect((await screen.findByRole("alert")).textContent).toContain("Diagnostics unavailable");
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("keeps Audit Trail filtering and refresh inside central Support using the existing API contract", async () => {
