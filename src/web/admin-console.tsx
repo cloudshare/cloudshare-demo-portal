@@ -5,14 +5,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   beginLatestOnlyRequest,
-  buildMonitoringHistoryQueryString,
   getAllowedRegionValidationMessage,
   getCompatibleRegions,
   getDefaultOpenPeriodMinutes,
   getExamAuthoringMode,
   getResetOpenPeriodMinutes,
   isLatestOnlyResponse,
-  mergeMonitoringHistoryPage,
   reconcileAllowedRegionIds,
   shouldReconcileAllowedRegionIds,
 } from "./admin-console-state";
@@ -39,8 +37,7 @@ import { CloudShareConnectionFeature } from "./admin-cloudshare-connection";
 import { AdminCandidateRosterFeature } from "./admin-candidate-roster";
 import { formatAdminAttemptStatus, formatAdminUtcTimestamp } from "./admin-attempt-presentation";
 import { AdminSupportFeature } from "./admin-support";
-import { SessionMonitoringPanel } from "./session-monitoring-panel";
-import type { AdminMonitoringView as MonitoringView } from "@/domain/admin-monitoring";
+import { AdminSessionMonitoringFeature } from "./admin-session-monitoring";
 import type {
   CohortExamSessionGuidedJourneyAggregateView,
   CohortExamSessionMonitoringView,
@@ -172,11 +169,6 @@ interface CohortExamSessionRecord {
     scoreRetrievalEnabled: boolean;
     timeLimitMinutes: number;
   };
-}
-
-interface CohortExamSessionDetailRecord {
-  session: CohortExamSessionRecord;
-  monitoring: CohortExamSessionMonitoringView;
 }
 
 interface CohortExamSessionFormState {
@@ -1771,7 +1763,6 @@ export function AdminConsole({
   const [focusedExamId, setFocusedExamId] = useState<string | null>(initialExamId ?? null);
   const [focusedCohortSessionId, setFocusedCohortSessionId] = useState<string | null>(initialCohortSessionId ?? null);
   const [supportView, setSupportView] = useState<AdminSupportView>(initialSupportView);
-  const [monitoringBranch, setMonitoringBranch] = useState<"cohort" | "individual" | null>(null);
   const [projects, setProjects] = useState<NamedResource[]>([]);
   const [regions, setRegions] = useState<NamedResource[]>([]);
   const [blueprints, setBlueprints] = useState<NamedResource[]>([]);
@@ -1793,11 +1784,8 @@ export function AdminConsole({
   const [cohortSessionsByExamId, setCohortSessionsByExamId] = useState<Record<string, CohortExamSessionRecord[]>>({});
   const cohortSessionCacheRef = useRef<Record<string, CohortExamSessionRecord[]>>({});
   const cohortSessionLoadsRef = useRef(new Map<string, Promise<void>>());
-  const [cohortSessionDetailsById, setCohortSessionDetailsById] = useState<Record<string, CohortExamSessionDetailRecord>>({});
-  const [cohortMonitoringLastCheckedAt, setCohortMonitoringLastCheckedAt] = useState<string | null>(null);
   const [cohortSessionFormsByExamId, setCohortSessionFormsByExamId] = useState<Record<string, CohortExamSessionFormState>>({});
   const [selectedCohortSession, setSelectedCohortSession] = useState<CohortExamSessionRecord | null>(null);
-  const [monitoring, setMonitoring] = useState<MonitoringView | null>(null);
   const [examMessage, setExamMessage] = useState<string | null>(null);
   const [examFormFeedback, setExamFormFeedback] = useState<string | null>(null);
   const [examDiagnostic, setExamDiagnostic] = useState<ConnectionDiagnostic | null>(null);
@@ -1829,18 +1817,10 @@ export function AdminConsole({
       }
     }
     if (tab === "support" && supportView === "monitoring") {
-      void loadMonitoring();
       void loadExamCatalog(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, examView, supportView]);
-
-  useEffect(() => {
-    if (tab !== "support" || supportView !== "monitoring" || !focusedExamId || !focusedCohortSessionId) return;
-    const interval = window.setInterval(() => void loadCohortSessionDetail(focusedExamId, focusedCohortSessionId), 30_000);
-    return () => window.clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, supportView, focusedExamId, focusedCohortSessionId]);
 
   useEffect(() => {
     if (tab !== "exams" || examView !== "edit" || !focusedExamId || editingExamId === focusedExamId) {
@@ -1860,17 +1840,6 @@ export function AdminConsole({
     void loadCohortExamSessions(focusedExamId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, examView, focusedExamId]);
-
-  useEffect(() => {
-    if (tab !== "support" || supportView !== "monitoring" || !focusedExamId || !focusedCohortSessionId) {
-      return;
-    }
-    if (!cohortSessionCacheRef.current[focusedExamId]) {
-      void loadCohortExamSessions(focusedExamId);
-    }
-    void loadCohortSessionDetail(focusedExamId, focusedCohortSessionId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, supportView, focusedExamId, focusedCohortSessionId]);
 
   function beginExamCatalogLoading() {
     examCatalogLoadingCountRef.current += 1;
@@ -1951,43 +1920,6 @@ export function AdminConsole({
     setSelectedCohortSession(null);
     navigateAdmin({ tab: "exams", examView: "sessions", examId });
     void loadCohortExamSessions(examId);
-  }
-
-  async function loadMonitoring(historyOffset = 0) {
-    setLoading(true);
-    setError(null);
-    try {
-      const query = buildMonitoringHistoryQueryString({ limit: 25, offset: historyOffset });
-      const res = await fetchAdmin(`/api/admin/monitoring${query}`);
-      const data = (await res.json()) as { monitoring?: MonitoringView; error?: string };
-      if (!res.ok) {
-        setError(data.error ?? "Failed to load session monitoring");
-        return;
-      }
-      setMonitoring((current) =>
-        data.monitoring ? mergeMonitoringHistoryPage(historyOffset === 0 ? null : current, data.monitoring) : null,
-      );
-    } catch (caughtError) {
-      if (isAdminSessionExpiredError(caughtError)) {
-        return;
-      }
-      setError("Failed to load session monitoring");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  function openExamAttemptSupportDiagnostics(examAttemptId: string) {
-    navigateAdmin({ tab: "support", supportView: "diagnostics", diagnosticFilters: { examAttemptId } });
-  }
-
-  function loadMoreMonitoringHistory() {
-    const nextOffset = monitoring?.historyPage.nextOffset;
-    if (typeof nextOffset !== "number") {
-      return;
-    }
-
-    void loadMonitoring(nextOffset);
   }
 
   function resetExamForm(next?: {
@@ -2267,29 +2199,6 @@ export function AdminConsole({
     })();
     cohortSessionLoadsRef.current.set(examId, request);
     return request;
-  }
-
-  async function loadCohortSessionDetail(examId: string, sessionId: string) {
-    try {
-      const response = await fetchAdmin(
-        `/api/admin/exams/${encodeURIComponent(examId)}/cohort-sessions/${encodeURIComponent(sessionId)}`,
-      );
-      const data = (await response.json()) as CohortExamSessionDetailRecord & { error?: string };
-      if (!response.ok) {
-        setError(data.error ?? "Failed to load Cohort Exam Session detail");
-        return;
-      }
-      setCohortSessionDetailsById((current) => ({
-        ...current,
-        [sessionId]: data,
-      }));
-      setCohortMonitoringLastCheckedAt(new Date().toISOString());
-    } catch (caughtError) {
-      if (isAdminSessionExpiredError(caughtError)) {
-        return;
-      }
-      setError("Failed to load Cohort Exam Session detail");
-    }
   }
 
   function getCohortSessionForm(examId: string): CohortExamSessionFormState {
@@ -2750,8 +2659,6 @@ export function AdminConsole({
       ? focusedExamSessions.find((session) => session.session.id === focusedCohortSessionId)
       : null) ??
     (selectedCohortSession?.session.id === focusedCohortSessionId ? selectedCohortSession : null);
-  const focusedCohortSessionDetail =
-    focusedCohortSessionId ? (cohortSessionDetailsById[focusedCohortSessionId] ?? null) : null;
   const monitoredCohortSessions = allExamCatalog.flatMap((exam) =>
     (cohortSessionsByExamId[exam.id] ?? []).map((session) => ({ exam, session })),
   );
@@ -3489,51 +3396,42 @@ export function AdminConsole({
         onNavigate={navigateAdmin}
       />
 
-      {tab === "support" && supportView === "monitoring" && (
-        <section style={{ display: "grid", gap: "1rem" }}>
-          {!focusedCohortSession ? (
-            <div style={{ ...cardStyle, display: "flex", gap: "0.75rem", flexWrap: "wrap" }} aria-label="Session Monitoring branches">
-              <button type="button" onClick={() => setMonitoringBranch("cohort")} style={monitoringBranch === "cohort" ? primaryButtonStyle : secondaryButtonStyle}>Cohort Exam Sessions</button>
-              <button type="button" onClick={() => setMonitoringBranch("individual")} style={monitoringBranch === "individual" ? primaryButtonStyle : secondaryButtonStyle}>Individual Exam Delivery</button>
-            </div>
-          ) : null}
-          {!focusedCohortSession && monitoringBranch === null ? (
-            <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>
-              Choose a monitoring view. Cohort Exam Sessions monitor a shared CloudShare Experience; Individual Exam Delivery monitors one Candidate attempt at a time.
-            </div>
-          ) : null}
-          {focusedExam && focusedCohortSession ? (
+      <AdminSessionMonitoringFeature
+        active={tab === "support" && supportView === "monitoring"}
+        fetchAdmin={fetchAdmin}
+        onNavigate={navigateAdmin}
+        focusedExamId={focusedExamId}
+        focusedCohortSessionId={focusedCohortSessionId}
+        hasFocusedCohortSession={focusedCohortSession !== null}
+        onEnsureCohortSessions={(examId) => {
+          if (!cohortSessionCacheRef.current[examId]) void loadCohortExamSessions(examId);
+        }}
+        renderFocusedCohort={({ detail, lastCheckedAt, onRefresh }) =>
+          focusedExam && focusedCohortSession ? (
             <CohortSessionWorkspacePanel
               mode="monitoring"
               examTitle={focusedExam.title}
               session={focusedCohortSession}
-              detail={focusedCohortSessionDetail?.monitoring ?? null}
+              detail={detail}
               loading={loading}
-              lastCheckedAt={cohortMonitoringLastCheckedAt}
-              onRefresh={() => void loadCohortSessionDetail(focusedExam.id, focusedCohortSession.session.id)}
+              lastCheckedAt={lastCheckedAt}
+              onRefresh={onRefresh}
               onBack={() => navigateAdmin({ tab: "support", supportView: "monitoring" })}
               onPublish={() => undefined}
               getNavigationHref={getNavigationHref}
               onNavigate={navigateAdmin}
             />
-          ) : monitoringBranch === "cohort" ? (
-            <CohortSessionMonitoringList
-              sessions={monitoredCohortSessions}
-              onOpen={(examId, cohortSessionId) => {
-                setMonitoringBranch("cohort");
-                navigateAdmin({ tab: "support", supportView: "monitoring", examId, cohortSessionId });
-              }}
-            />
-          ) : null}
-          {monitoringBranch === "individual" ? (monitoring ? (
-              <SessionMonitoringPanel monitoring={monitoring} loading={loading} onRefresh={() => void loadMonitoring()} onLoadMoreHistory={loadMoreMonitoringHistory} onOpenSupportDiagnostics={openExamAttemptSupportDiagnostics} />
-            ) : (
-              <button onClick={() => void loadMonitoring()} disabled={loading} style={{ padding: "0.45rem 0.9rem" }}>
-                {loading ? "Loading..." : "Refresh Monitoring"}
-              </button>
-            )) : null}
-        </section>
-      )}
+          ) : undefined
+        }
+        cohortContent={
+          <CohortSessionMonitoringList
+            sessions={monitoredCohortSessions}
+            onOpen={(examId, cohortSessionId) =>
+              navigateAdmin({ tab: "support", supportView: "monitoring", examId, cohortSessionId })
+            }
+          />
+        }
+      />
 
     </main>
   );
