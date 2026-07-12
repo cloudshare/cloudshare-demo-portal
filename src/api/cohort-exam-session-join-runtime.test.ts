@@ -1336,7 +1336,16 @@ describe("joinCohortExamSessionRuntime", () => {
     ).resolves.toEqual(
       expect.arrayContaining([
         expect.objectContaining({ operation: "cloudshare.read_training", outcome: "success" }),
-        expect.objectContaining({ operation: "cloudshare.ensure_user_properties", outcome: "success" }),
+        expect.objectContaining({
+          operation: "cloudshare.ensure_user_properties",
+          outcome: "success",
+          details: expect.objectContaining({
+            httpExchanges: expect.arrayContaining([
+              expect.objectContaining({ request: expect.objectContaining({ method: "GET" }) }),
+              expect.objectContaining({ request: expect.objectContaining({ method: "POST" }) }),
+            ]),
+          }),
+        }),
         expect.objectContaining({
           operation: "cloudshare.add_participant",
           outcome: "failure",
@@ -1453,7 +1462,16 @@ describe("joinCohortExamSessionRuntime", () => {
     ).resolves.toEqual(
       expect.arrayContaining([
         expect.objectContaining({ operation: "cloudshare.read_training", outcome: "success" }),
-        expect.objectContaining({ operation: "cloudshare.ensure_user_properties", outcome: "success" }),
+        expect.objectContaining({
+          operation: "cloudshare.ensure_user_properties",
+          outcome: "success",
+          details: expect.objectContaining({
+            httpExchanges: expect.arrayContaining([
+              expect.objectContaining({ request: expect.objectContaining({ method: "GET" }) }),
+              expect.objectContaining({ request: expect.objectContaining({ method: "POST" }) }),
+            ]),
+          }),
+        }),
         expect.objectContaining({ operation: "cloudshare.add_participant", outcome: "success" }),
         expect.objectContaining({
           operation: "cloudshare.create_sponsored_link",

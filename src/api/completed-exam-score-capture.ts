@@ -7,8 +7,10 @@ import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { ExamRepository } from "@/domain/exam-catalog";
 import type { LabLaunchRepository } from "@/domain/lab-launch";
-import { SCORING_LIMITATIONS } from "@/integrations/cloudshare/guided-journey";
-import { createCloudShareTrainingDelivery } from "@/integrations/cloudshare/training-delivery";
+import {
+  createCloudShareTrainingDelivery,
+  SCORING_LIMITATIONS,
+} from "@/integrations/cloudshare/training-delivery";
 import type { Logger } from "@/observability/logger";
 import { getExamAttemptScoreRuntime } from "./exam-attempt-score-runtime";
 

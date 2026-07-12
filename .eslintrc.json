@@ -1,4 +1,34 @@
 {
   "extends": "next/core-web-vitals",
-  "ignorePatterns": ["node_modules/", ".next/", "src/generated/"]
+  "ignorePatterns": ["node_modules/", ".next/", "src/generated/"],
+  "overrides": [
+    {
+      "files": ["src/**/*.{ts,tsx}"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/integrations/cloudshare/labs",
+                  "@/integrations/cloudshare/participants",
+                  "@/integrations/cloudshare/cohort-experiences",
+                  "@/integrations/cloudshare/cohort-experience-retirement",
+                  "@/integrations/cloudshare/guided-journey"
+                ],
+                "message": "Active runtime code must use the TrainingDelivery interface, not its internal CloudShare factory modules."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/integrations/cloudshare/training-delivery.ts", "**/*.test.ts", "tests/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    }
+  ]
 }

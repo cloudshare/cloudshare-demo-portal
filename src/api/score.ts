@@ -4,8 +4,10 @@ import {
   MAX_DIAGNOSTIC_QUERY_LIMIT,
   type DiagnosticLogRepository,
 } from "@/domain/diagnostic-log";
-import { SCORING_LIMITATIONS } from "@/integrations/cloudshare/guided-journey";
-import { createCloudShareTrainingDelivery } from "@/integrations/cloudshare/training-delivery";
+import {
+  createCloudShareTrainingDelivery,
+  SCORING_LIMITATIONS,
+} from "@/integrations/cloudshare/training-delivery";
 import {
   getExamAttemptScoreRuntime,
   type ExamAttemptScoreRuntimeDeps,

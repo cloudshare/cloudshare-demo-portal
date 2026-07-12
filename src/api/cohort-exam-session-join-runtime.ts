@@ -392,7 +392,12 @@ export async function joinCohortExamSessionRuntime(
         externalIds,
         ...(properties.request ? { request: properties.request as unknown as Record<string, unknown> } : {}),
         ...(properties.response ? { response: properties.response as unknown as Record<string, unknown> } : {}),
-        details: { integrationSurface: properties.integrationSurface ?? "cloudshare.v4.training.user_properties" },
+        details: {
+          integrationSurface: properties.integrationSurface ?? "cloudshare.v4.training.user_properties",
+          ...(toTrainingUserPropertyHttpExchanges(properties) !== undefined
+            ? { httpExchanges: toTrainingUserPropertyHttpExchanges(properties) }
+            : {}),
+        },
       });
     }
     if (completed?.participant) {

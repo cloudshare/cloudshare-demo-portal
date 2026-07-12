@@ -46,6 +46,7 @@ export type {
   AggregateGuidedJourneyDiagnostics,
   AggregateGuidedJourneyProgress,
 } from "./guided-journey";
+export { SCORING_LIMITATIONS } from "./guided-journey";
 export type { CloudShareLabProvisionerObserver } from "./labs";
 export type { TrainingParticipantReadResult } from "./participants";
 
