@@ -20,9 +20,8 @@ npm run prisma:migrate
 npm run dev
 ```
 
-Open **http://localhost:3000/login** for the shared portal login, **http://localhost:3000/register**
-for Candidate self-registration, or **http://localhost:3000/demo** for the older walking-skeleton
-demo surface.
+Open **http://localhost:3000/login** for the shared portal login or
+**http://localhost:3000/register** for Candidate self-registration.
 
 ### Key URLs
 
@@ -32,17 +31,9 @@ demo surface.
 | `/register` | Candidate self-registration |
 | `/admin` | **Connect CloudShare** + admin console |
 | `/candidate` | Candidate home — published Exams for the signed-in Customer |
-| `/demo` | **Demo Control Panel** — five-step happy path, start here |
 | `/candidate/lab?examAttemptId=<id>` | Candidate lab page (launch, heartbeat, suspend) |
 | `/candidate/score?examAttemptId=<id>` | Candidate score page |
 | `/api/health` | Health check — `{ ok: true }` |
-
-### Running the demo
-
-1. Open `/demo`.
-2. Click **▶ Auto-play** to run all five steps automatically, or click **Run** on each step manually.
-3. The Domain State table at the bottom shows live IDs, environment status, timer, and login URL.
-4. Click **↺ Reset** to wipe all in-memory state for a clean repeat run — no server restart needed.
 
 ### Environment variables
 
@@ -53,7 +44,6 @@ All variables are Zod-validated at boot; missing required values cause a fast-fa
 | `PORTAL_MASTER_KEY` | yes | — | Base64 32-byte key used to encrypt stored CloudShare credentials |
 | `PORTAL_MODE` | yes | `fixture` | `fixture` (simulators) or `live` (real CloudShare API) |
 | `DATABASE_URL` | yes | `file:./dev.db` | SQLite path |
-| `KRYTERION_TOKEN_SECRET` | yes | — | HMAC-SHA256 secret for the legacy token simulator retained by demo-only code |
 | `PORTAL_SEED_SOURCE` | no | `env` | `off`, `env`, or `file` for the seeded Helios admin/demo tenant |
 | `PORTAL_SEED_CONFIG_PATH` | no | `./config/portal-seed.local.json` | Local JSON seed file path when `PORTAL_SEED_SOURCE=file` |
 | `HELIOS_ADMIN_EMAIL` | `env` seed only | — | Seeded Helios admin login email |
@@ -70,10 +60,6 @@ All variables are Zod-validated at boot; missing required values cause a fast-fa
 | `CLOUDSHARE_WEBHOOK_SECRET` | legacy | — | Transitional global credential; new webhook handling uses the per-Customer CloudShare Connection secret |
 | `PORTAL_TUNNEL_URL` | live QA only | — | Optional public URL used when manually registering CloudShare webhooks during local QA |
 | `HEARTBEAT_TIMEOUT_MS` | no | `60000` | Auto-suspend timeout in ms |
-| `DEMO_BLUEPRINT_NAME` | optional legacy | `""` | Legacy global blueprint name from the pre-Exam flow; not required for Slice 2 project-first authoring |
-| `DEMO_POLICY_NAME` | optional legacy | `""` | Legacy global policy name from the pre-Exam flow; not required for Slice 2 project-first authoring |
-| `DEMO_PROJECT_NAME` | optional legacy | `""` | Legacy global project name from the pre-Exam flow; not required for Slice 2 project-first authoring |
-| `DEMO_REGION_NAME` | optional legacy | `""` | Legacy global region name from the pre-Exam flow; not required for Slice 2 project-first authoring |
 
 ### Seeded admin config
 
@@ -219,8 +205,6 @@ Working repository for the CloudShare demo portal discovery, specs/requirements,
 - `src/api` — framework-agnostic request handlers (policy), wired to Next.js routes in `app/api`
 - `src/auth` — candidate authentication seam (see below)
 - `src/integrations/cloudshare` — CloudShare adapter (see below)
-- `src/legacy-simulator/genesys` — retired Genesys simulator compatibility data for `/demo`
-- `src/legacy-simulator/kryterion` — retired Kryterion simulator compatibility code for `/demo`
 - `src/web` — browser-side helpers and client components (e.g. lab child-window)
 - `src/composition.ts` — composition root wiring the modules together
 
@@ -289,9 +273,6 @@ Slice 3 moves Candidate identity onto the same portal user/session model as the 
   drives home routing (`/admin` vs `/candidate`).
 - Candidate exam discovery is server-side: `GET /api/candidate/exams` filters to the signed-in
   Candidate's Customer and returns **published Exams only**.
-- The older token-based Candidate admission flow is retired at the public API boundary:
-  `POST /api/candidate/admit` and `GET /api/candidate/session` return `410 Gone` with replacement
-  API details. They are intentionally not connected to token-auth composition.
 
 ## Candidate exam catalog & scheduling
 
@@ -302,23 +283,14 @@ The active Certalis/Helios candidate flow is portal-authenticated:
 - `POST /api/candidate/exams` schedules an ExamAttempt and provisions the
   CloudShare LabLaunch through the active per-Customer CloudShare flow.
 - `GET /api/auth/session` is the active session-resume endpoint for Candidates
-  and admins; the retired `GET /api/candidate/session` endpoint now returns
-  `410 Gone`.
-- The retired simulator booking routes, `GET /api/exams/eligible` and
-  `POST /api/exams/book`, now return `410 Gone` with replacement API details.
-  They are intentionally not connected to the old simulator eligibility adapter
-  or `bookExam` flow.
+  and admins.
 
 ## Lab launch (entitlement-gated)
 
-Direct JSON launch via `POST /api/lab/launch` is retired. Sponsored-link
-`loginUrl` values are bearer credentials and must never be returned in JSON or
+Sponsored-link `loginUrl` values are bearer credentials and must never be returned in JSON or
 shown in the UI. Slice 5 owns the time-gated `/enter` endpoint, which will
 recompute entitlement server-side and issue a 302 redirect to the server-held
 sponsored link.
-
-The legacy `/api/lab/launch` route now returns `410 Gone` so it cannot bypass the
-launch-window gate or leak the sponsored link.
 
 ## Webhooks & environment state (polling is the source of truth)
 
@@ -395,7 +367,7 @@ progress from CloudShare and returns a typed `ScoreResult`:
 1. Bitmap checkpoints: visual-state comparison only, not process-level capture.
 2. End-state only — approach and intermediate steps are not assessed.
 3. Deterministic script-based verification is not GA until Q3 2026.
-4. Final certification weighting is Genesys's responsibility, not the portal's.
+4. Final certification weighting is outside the portal's scope.
 
 Works in both `fixture` and `live` modes. The bundled fixture
 (`v4-get-participant-progress.json`) returns 75 % / 3 of 4 tasks for the demo
@@ -465,52 +437,8 @@ subject, ExamAttempt, action, outcome, and redacted details/error, with filters 
 platform-level entries.
 
 **Persistence:** `AuditRepository` uses the durable `AuditTrailEntry` Prisma model. Resource and
-legacy event stores retain their own repository implementations.
+Event Log stores retain their own repository implementations.
 
 **Architecture separation:** `src/api/admin.ts` contains the three framework-agnostic handlers
 (testable without Next.js); `app/api/admin/*/route.ts` are the thin Next.js wrappers.
 
-## Legacy Demo Control Panel
-
-Operator-facing panel at `/demo` that preserves the older deterministic simulator
-walkthrough as ordered, state-gated steps. This is retained as a compatibility
-surface for fixture demos; the active Certalis/Helios Candidate lifecycle uses
-the portal-authenticated Exam catalog, scheduling, and runtime APIs.
-
-**Steps (in order):**
-1. **Book Exam** — registers `cand-001` for `GCP-ASSOC` → creates `ExamAttempt`
-2. **Launch Lab** — provisions a CloudShare lab for the attempt → creates `LabLaunch`; seeds the demo simulator so the environment appears `running` immediately
-3. **Suspend Exam** — suspends the environment and pauses the legacy simulator timer
-4. **Resume Exam** — resumes the environment and restarts the timer
-5. **Retrieve Score** — fetches Guided Journey progress from CloudShare
-
-**Controls:**
-- **Run** button on each step — execute one step manually
-- **▶ Auto-play** — runs all available steps sequentially from the current position
-- **↺ Reset** — clears all in-memory state (exam attempts, lab launches, environment
-  simulator, legacy simulator timers) for a clean repeat run without restarting the server
-- **⟳ Refresh** — re-reads current domain state
-
-**State display:** the bottom panel shows live domain state (ExamAttempt ID, LabLaunch
-ID, environment status, timer status, and elapsed time). It does not expose the
-CloudShare sponsored-link login URL.
-
-**Architecture:**
-- `src/domain/demo-control.ts` — `DemoStep`, `StepStatus`, `DemoGates`, `STEP_META`,
-  and the pure `computeStepStatuses` gating function
-- `src/legacy-simulator/genesys` — retired Genesys simulator and deterministic demo
-  seed data retained for `/demo` compatibility only
-- `src/legacy-simulator/book-exam.ts` — retired simulator `bookExam` compatibility
-  use case retained for `/demo` only; active Candidate scheduling does not import it
-- `src/api/legacy-simulator-demo-control.ts` — quarantined framework-agnostic compatibility
-  handlers for `handleGetDemoState`, `handleExecuteStep`, and `handleResetDemo`; composes
-  the retired simulator use cases (`bookExam`, `launchLab`, `suspendExam`, `resumeExam`,
-  `retrieveScore`) in one place for `/demo` only
-- `src/composition.ts` exposes the retired simulator adapters only through
-  `legacySimulatorDemo`, and exposes deterministic demo-only reset/progress controls only
-  through `legacyDemoRuntimeControls`; neither set is exposed as active top-level services
-- `app/api/demo/{state,step,reset}/route.ts` — thin Next.js route wrappers
-- `app/demo/page.tsx` — React client component (step list, auto-play, domain state table)
-- Each in-memory repository exposes a `reset()` method; the composition root's `resetDemo()`
-  calls them all, plus the environment simulator and legacy simulator timer, so a reset
-  is a clean slate without a server restart
