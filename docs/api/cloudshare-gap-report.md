@@ -1505,6 +1505,15 @@ Refresh or correct the local Certalis CloudShare Connection, rerun the real Sale
 and record the redacted request/response diagnostics and browser-console result in the PR before
 merge.
 
+**Update (2026-07-12, Certalis Sales UI live read):** The Certalis Sales Admin successfully loaded
+the real Certalis Project, global Region, and Policy choices through the Sales UI. The observed
+Policy storage lease was 30 days, and the browser console had no errors. The sole visible Certalis
+Project currently returned **zero Blueprints**, so no valid Demo Item can be created, edited, or
+archived for live verification. This is a tenant inventory blocker, not a portal request failure;
+the per-read diagnostics are persisted under the `sales-demo-items` source. Add at least one
+Sales-appropriate Blueprint to the Certalis Project, then repeat creation/archive and focused human
+QA on the main checkout.
+
 ---
 
 Copy this section when appending a new gap discovered during implementation:
