@@ -1,15 +1,15 @@
 import { createElement, type ComponentProps } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
+import { AdminConsole } from "./admin-console";
 import {
-  AdminConsole,
   CohortSessionDraftOnlyNotice,
   CohortSessionAuthoringPanel,
   CohortSessionWorkspacePanel,
-  ExamWorkspaceBreadcrumbs,
   formatCohortSessionDateTime,
   normalizeAdminLocalDateTime,
-} from "./admin-console";
+} from "./admin-cohort-exam-sessions";
+import { ExamWorkspaceBreadcrumbs } from "./admin-exam-workspace-breadcrumbs";
 import { AdminCandidateRosterPanel } from "./admin-candidate-roster";
 import {
   AdminExamCatalogAuthoringFeature,

@@ -210,8 +210,8 @@ export interface AdminExamCatalogAuthoringFeatureProps {
   readonly focusedExamId: string | null;
   readonly fetchAdmin: AdminAuthenticatedRequest;
   readonly onNavigate: (intent: AdminNavigationIntent) => void;
-  readonly onCatalogChange: (catalog: { readonly activeExams: readonly ExamRecord[]; readonly archivedExams: readonly ExamRecord[] }) => void;
-  readonly getHasActiveCohortSessions: (examId: string) => boolean;
+  readonly onCatalogChange?: (catalog: { readonly activeExams: readonly ExamRecord[]; readonly archivedExams: readonly ExamRecord[] }) => void;
+  readonly getHasActiveCohortSessions?: (examId: string) => boolean;
 }
 
 export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthoringFeatureProps) {
@@ -359,7 +359,7 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
       const data = await response.json() as { activeExams?: ExamRecord[]; archivedExams?: ExamRecord[]; error?: string };
       if (!response.ok) { setError(data.error ?? "Failed to load exam catalog"); return; }
       const active = data.activeExams ?? []; const archived = data.archivedExams ?? [];
-      setActiveExams(active); setArchivedExams(archived); props.onCatalogChange({ activeExams: active, archivedExams: archived });
+      setActiveExams(active); setArchivedExams(archived); props.onCatalogChange?.({ activeExams: active, archivedExams: archived });
     } catch (caught) { if (!isAdminSessionExpiredError(caught)) setError("Failed to load exam catalog"); }
     finally { endCatalogLoading(); }
   }
@@ -480,7 +480,7 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
       <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}><button onClick={() => void saveDraft()} disabled={loading || allowedRegionValidationMessage !== null} style={primaryButtonStyle}>{loading ? "Saving..." : editingExamId ? "Update Draft Exam" : "Save Draft Exam"}</button>{editingExamId ? <button onClick={navigateCatalog} disabled={loading} style={secondaryButtonStyle}>Cancel Edit</button> : null}{message ? <span style={{ color: "#0a7a28" }}>{message}</span> : null}</div>
       {feedback ? <p id="exam-form-feedback" role="alert" style={{ margin: "-0.25rem 0 0", color: "#b42318", background: "#fff5f7", border: "1px solid #f1c7d0", borderRadius: "6px", padding: "0.75rem 0.9rem" }}>{feedback}</p> : null}
     </> : null}
-    {props.examView === "catalog" ? <CatalogTables activeExams={activeExams} archivedExams={archivedExams} loading={loading} editingExamId={editingExamId} hasActiveCohortSessions={props.getHasActiveCohortSessions} onEdit={(exam) => void editExam(exam)} onLifecycle={(id, action) => void lifecycle(id, action)} onSessions={(examId) => props.onNavigate({ tab: "exams", examView: "sessions", examId })} /> : null}
+    {props.examView === "catalog" ? <CatalogTables activeExams={activeExams} archivedExams={archivedExams} loading={loading} editingExamId={editingExamId} hasActiveCohortSessions={props.getHasActiveCohortSessions ?? (() => false)} onEdit={(exam) => void editExam(exam)} onLifecycle={(id, action) => void lifecycle(id, action)} onSessions={(examId) => props.onNavigate({ tab: "exams", examView: "sessions", examId })} /> : null}
   </section>;
 }
 
