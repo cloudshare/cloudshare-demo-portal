@@ -43,7 +43,7 @@ const envSchema = z.object({
   HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_ID: z.string().optional(),
   HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_NAME: z.string().optional(),
   CERTALIS_SALES_ADMIN_EMAIL: z.string().email().optional().default("sales-admin@certalis.demo"),
-  CERTALIS_SALES_ADMIN_PASSWORD: z.string().min(8).optional().default("CertalisDemo123!"),
+  CERTALIS_SALES_ADMIN_PASSWORD: z.string().min(8).optional(),
 
   // Legacy admin bearer token (deprecated by Slice 1 login, tolerated for
   // unfinished slices that still assume it exists).
@@ -74,7 +74,7 @@ const seedFileSchema = z.object({
     name: z.string().min(1),
   }),
   certalisSalesAdminEmail: z.string().email().optional().default("sales-admin@certalis.demo"),
-  certalisSalesAdminPassword: z.string().min(8).optional().default("CertalisDemo123!"),
+  certalisSalesAdminPassword: z.string().min(8),
 });
 
 export interface Config {
@@ -147,10 +147,12 @@ function resolveSeedConfig(
       !env.HELIOS_ADMIN_EMAIL ||
       !env.HELIOS_ADMIN_PASSWORD ||
       !env.HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_ID ||
-      !env.HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_NAME
+      !env.HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_NAME ||
+      !env.CERTALIS_SALES_ADMIN_EMAIL ||
+      !env.CERTALIS_SALES_ADMIN_PASSWORD
     ) {
       throw new ConfigError(
-        "Invalid portal configuration:\nSeed source 'env' requires HELIOS_ADMIN_EMAIL, HELIOS_ADMIN_PASSWORD, HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_ID, and HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_NAME",
+        "Invalid portal configuration:\nSeed source 'env' requires HELIOS_ADMIN_EMAIL, HELIOS_ADMIN_PASSWORD, HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_ID, HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_NAME, CERTALIS_SALES_ADMIN_EMAIL, and CERTALIS_SALES_ADMIN_PASSWORD",
       );
     }
 
