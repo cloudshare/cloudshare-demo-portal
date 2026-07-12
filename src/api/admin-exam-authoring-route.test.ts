@@ -25,6 +25,8 @@ vi.mock("next/headers", () => ({
 
 vi.mock("@/composition", () => ({
   getServices: mockGetServices,
+  getPortalSessionServices: mockGetServices,
+  getAdminExamAuthoringServices: mockGetServices,
 }));
 
 vi.mock("@/auth/portal-session", () => ({

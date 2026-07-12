@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { getServices } from "@/composition";
+import { getPortalLogoutServices, getPortalSessionServices } from "@/composition";
 import {
   buildPortalLogoutDeps,
   handlePortalLogout,
@@ -8,8 +8,9 @@ import {
 } from "@/api/portal-auth";
 
 export async function POST() {
-  const services = getServices();
-  await services.ensurePortalSeeded();
+  const sessionServices = getPortalSessionServices();
+  await sessionServices.ensurePortalSeeded();
+  const services = getPortalLogoutServices();
 
   const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
   await handlePortalLogout(buildPortalLogoutDeps(services), { sessionId });

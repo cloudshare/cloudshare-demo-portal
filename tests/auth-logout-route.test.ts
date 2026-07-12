@@ -16,6 +16,8 @@ vi.mock("next/headers", () => ({
 
 vi.mock("@/composition", () => ({
   getServices: mockGetServices,
+  getPortalSessionServices: mockGetServices,
+  getPortalLogoutServices: mockGetServices,
 }));
 
 vi.mock("@/api/suspend-resume", () => ({

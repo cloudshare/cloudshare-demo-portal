@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { getServices } from "@/composition";
+import {
+  getAdminCandidateServices,
+  getCandidateRegistrationServices,
+  getPortalSessionServices,
+} from "@/composition";
 import { getPortalAdminSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import {
@@ -13,18 +17,18 @@ import {
 } from "@/api/admin-candidates";
 
 export async function GET(request: Request) {
-  const services = getServices();
-  await services.ensurePortalSeeded();
+  const portalSessionServices = getPortalSessionServices();
+  await portalSessionServices.ensurePortalSeeded();
 
   const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
-  const session = await getPortalAdminSession(services, sessionId);
+  const session = await getPortalAdminSession(portalSessionServices, sessionId);
   if (!session) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
   const { searchParams } = new URL(request.url);
   const response = await handleGetAdminCandidateRoster(
-    buildAdminCandidateDeps(services),
+    buildAdminCandidateDeps(getAdminCandidateServices()),
     {
       customerId: session.customerId,
       query: {
@@ -37,11 +41,11 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const services = getServices();
-  await services.ensurePortalSeeded();
+  const portalSessionServices = getPortalSessionServices();
+  await portalSessionServices.ensurePortalSeeded();
 
   const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
-  const session = await getPortalAdminSession(services, sessionId);
+  const session = await getPortalAdminSession(portalSessionServices, sessionId);
   if (!session) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
@@ -54,7 +58,7 @@ export async function POST(request: Request) {
   }
 
   const response = await handleAdminCreateCandidate(
-    buildCandidateRegistrationDeps(services),
+    buildCandidateRegistrationDeps(getCandidateRegistrationServices()),
     { customerId: session.customerId, body },
   );
 

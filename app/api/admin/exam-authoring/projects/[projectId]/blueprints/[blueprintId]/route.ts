@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { getServices } from "@/composition";
+import { getAdminExamAuthoringServices, getPortalSessionServices } from "@/composition";
 import { getPortalAdminSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import {
@@ -12,9 +12,9 @@ export async function GET(
   request: Request,
   context: { params: Promise<{ projectId: string; blueprintId: string }> },
 ) {
-  const services = getServices();
+  const portalSessionServices = getPortalSessionServices();
   const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
-  const session = await getPortalAdminSession(services, sessionId);
+  const session = await getPortalAdminSession(portalSessionServices, sessionId);
   if (!session) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
@@ -23,7 +23,7 @@ export async function GET(
   const refresh = url.searchParams.get("refresh") === "true";
   const { projectId, blueprintId } = await context.params;
   const response = await handleGetBlueprintDetail(
-    buildAdminExamAuthoringDeps(services),
+    buildAdminExamAuthoringDeps(getAdminExamAuthoringServices()),
     { customerId: session.customerId, projectId, blueprintId, refresh },
   );
 

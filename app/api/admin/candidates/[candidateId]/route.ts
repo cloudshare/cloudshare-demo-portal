@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { getServices } from "@/composition";
+import {
+  getAdminCandidateServices,
+  getPortalSessionServices,
+} from "@/composition";
 import { getPortalAdminSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import {
@@ -12,18 +15,18 @@ export async function GET(
   _request: Request,
   context: { params: Promise<{ candidateId: string }> },
 ) {
-  const services = getServices();
-  await services.ensurePortalSeeded();
+  const portalSessionServices = getPortalSessionServices();
+  await portalSessionServices.ensurePortalSeeded();
 
   const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
-  const session = await getPortalAdminSession(services, sessionId);
+  const session = await getPortalAdminSession(portalSessionServices, sessionId);
   if (!session) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
   const { candidateId } = await context.params;
   const response = await handleGetAdminCandidateDetail(
-    buildAdminCandidateDeps(services),
+    buildAdminCandidateDeps(getAdminCandidateServices()),
     { customerId: session.customerId, candidateId },
   );
 

@@ -20,6 +20,7 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/composition", () => ({
   getServices: mockGetServices,
+  getPortalSessionServices: mockGetServices,
 }));
 
 vi.mock("@/auth/portal-session", () => ({

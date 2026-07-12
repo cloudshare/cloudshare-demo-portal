@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getServices } from "@/composition";
+import { getPortalLoginServices, getPortalSessionServices } from "@/composition";
 import {
   buildPortalLoginDeps,
   handlePortalLogin,
@@ -8,8 +8,9 @@ import {
 import { DEFAULT_PORTAL_SESSION_TTL_MS } from "@/auth";
 
 export async function POST(request: Request) {
-  const services = getServices();
-  await services.ensurePortalSeeded();
+  const sessionServices = getPortalSessionServices();
+  await sessionServices.ensurePortalSeeded();
+  const services = getPortalLoginServices();
 
   const contentType = request.headers.get("content-type") ?? "";
   const expectsJson = contentType.includes("application/json");

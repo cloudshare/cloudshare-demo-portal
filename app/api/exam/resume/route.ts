@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { getServices } from "@/composition";
+import { getCandidateSuspendResumeServices, getPortalSessionServices } from "@/composition";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { handleCandidateResumeExamRoute } from "@/api/candidate-suspend-resume-route";
 import { getPortalSession } from "@/auth/portal-session";
@@ -11,7 +11,7 @@ import { getPortalSession } from "@/auth/portal-session";
  * The refreshed link stays server-only; the candidate re-enters through `/enter`.
  */
 export async function POST(request: Request) {
-  const services = getServices();
+  const services = getCandidateSuspendResumeServices();
 
   let body: unknown;
   try {
@@ -27,8 +27,9 @@ export async function POST(request: Request) {
   }
 
   const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
+  const portalSessionServices = getPortalSessionServices();
   const getCurrentPortalSession = (currentSessionId: string | undefined) =>
-    getPortalSession(services, currentSessionId);
+    getPortalSession(portalSessionServices, currentSessionId);
 
   const resp = await handleCandidateResumeExamRoute(services, {
     sessionId,

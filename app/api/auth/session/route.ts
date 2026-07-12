@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { getServices } from "@/composition";
+import { getPortalSessionServices } from "@/composition";
 import {
   buildPortalSessionDeps,
   handleGetPortalSession,
@@ -8,7 +8,7 @@ import {
 } from "@/api/portal-auth";
 
 export async function GET() {
-  const services = getServices();
+  const services = getPortalSessionServices();
   await services.ensurePortalSeeded();
 
   const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
