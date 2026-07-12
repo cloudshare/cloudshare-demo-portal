@@ -12,10 +12,20 @@
               {
                 "group": [
                   "@/integrations/cloudshare/labs",
+                  "**/integrations/cloudshare/labs",
+                  "**/integrations/cloudshare/labs.*",
                   "@/integrations/cloudshare/participants",
+                  "**/integrations/cloudshare/participants",
+                  "**/integrations/cloudshare/participants.*",
                   "@/integrations/cloudshare/cohort-experiences",
+                  "**/integrations/cloudshare/cohort-experiences",
+                  "**/integrations/cloudshare/cohort-experiences.*",
                   "@/integrations/cloudshare/cohort-experience-retirement",
-                  "@/integrations/cloudshare/guided-journey"
+                  "**/integrations/cloudshare/cohort-experience-retirement",
+                  "**/integrations/cloudshare/cohort-experience-retirement.*",
+                  "@/integrations/cloudshare/guided-journey",
+                  "**/integrations/cloudshare/guided-journey",
+                  "**/integrations/cloudshare/guided-journey.*"
                 ],
                 "message": "Active runtime code must use the TrainingDelivery interface, not its internal CloudShare factory modules."
               }
