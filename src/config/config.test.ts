@@ -67,6 +67,11 @@ describe("loadConfig", () => {
           },
           certalisSalesAdminEmail: "file-sales-admin@certalis.demo",
           certalisSalesAdminPassword: "FileCertalisPassword123!",
+          certalisSalesShareConnection: {
+            apiId: "certalis-api-id",
+            apiKey: "certalis-api-key",
+            webhookSecret: "certalis-whsec",
+          },
         },
         null,
         2,
@@ -91,6 +96,7 @@ describe("loadConfig", () => {
       expect(config.seed.certalisSalesAdmin?.email).toBe(
         "file-sales-admin@certalis.demo",
       );
+      expect(config.seed.certalisSalesCloudShareConnection?.apiKey).toBe("certalis-api-key");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

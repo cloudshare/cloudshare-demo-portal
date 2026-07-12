@@ -69,7 +69,7 @@ All variables are Zod-validated at boot; missing required values cause a fast-fa
 Preferred local setup:
 
 1. Copy `config/portal-seed.example.json` to `config/portal-seed.local.json`.
-2. Fill in the Helios admin login, instructor, optional CloudShare Connection values, and the Certalis Sales Admin login there. Choose non-empty passwords (at least eight characters); the committed template deliberately contains no usable passwords.
+2. Fill in the Helios admin login, instructor, optional CloudShare Connection values, and the Certalis Sales Admin login there. To author live Sales Demo Items, set `certalisSalesShareConnection` to the same `{ apiId, apiKey, webhookSecret }` shape; it is encrypted and stored against Certalis, never shared with Helios. Choose non-empty passwords (at least eight characters); the committed template deliberately contains no usable passwords.
 3. Set `PORTAL_SEED_SOURCE=file` in `.env`.
 
 If you prefer env-only seeding, set `PORTAL_SEED_SOURCE=env` and fill the `HELIOS_*` and `CERTALIS_SALES_ADMIN_*` variables instead. The Sales Admin password is required and has no fallback.
@@ -434,6 +434,12 @@ subject fields, `candidateId`/`candidateEmail`, `examId`, `examAttemptId`,
   Long-term Exam authoring should not globally sync every visible Project-scoped object; it should
   list Projects and global Regions, then fetch/cache Project-scoped Blueprints, Policies, later
   Project Members / Instructor choices, and Blueprint-detail Snapshots for the selected Project.
+
+**Sales API endpoints** (Sales Admin session only):
+
+- `GET` / `POST /api/sales/demo-items` — list historical/active Demo Items or save a live-resource-validated item.
+- `PUT /api/sales/demo-items/{demoItemId}` and `POST /api/sales/demo-items/{demoItemId}/archive` — edit or archive an item. Archived items stay in history and cannot begin a Sales Demo Session.
+- `GET /api/sales/demo-item-authoring` and `GET /api/sales/demo-item-authoring/projects/{projectId}` — Customer-scoped live Project, Region, Blueprint, and Policy choices for the Sales workspace.
 
 **Admin UI** (`/admin`) includes Audit Trail and Support Diagnostics tabs. Audit Trail shows actor,
 subject, ExamAttempt, action, outcome, and redacted details/error, with filters for both runtime and

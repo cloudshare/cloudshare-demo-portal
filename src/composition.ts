@@ -502,7 +502,7 @@ export function getServices(): Services {
           : null;
 
         if (certalisSalesAdmin) {
-          await portalUsers.upsertSeedUser({
+          const certalisUser = await portalUsers.upsertSeedUser({
             customerSlug: "certalis",
             customerName: "Certalis",
             email: certalisSalesAdmin.email,
@@ -510,6 +510,14 @@ export function getServices(): Services {
             role: "admin",
             workspace: "sales",
           });
+          if (config.seed.certalisSalesCloudShareConnection) {
+            await cloudshareConnections.save({
+              customerId: certalisUser.customerId,
+              apiId: config.seed.certalisSalesCloudShareConnection.apiId,
+              apiKey: config.seed.certalisSalesCloudShareConnection.apiKey,
+              webhookSecret: config.seed.certalisSalesCloudShareConnection.webhookSecret,
+            });
+          }
         }
 
         if (user && config.seed.heliosCloudShareConnection) {
