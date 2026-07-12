@@ -1478,6 +1478,35 @@ Confirm with CloudShare support/R&D:
 
 ## Gap template
 
+## GAP-25 — Certalis Sales resource authoring live verification is blocked by local connection authentication
+
+| Field | Detail |
+|---|---|
+| **Status** | Observed — local verification blocker |
+| **Verified live** | Partial — v3 endpoint reached on 2026-07-12, but authentication was rejected |
+
+**Observed behaviour**
+
+The #346 live-check attempt reached the CloudShare v3 surface but returned HTTP `401` with the
+redacted response code `0x40102` (failed signature authentication) for the locally available seed
+connection. The browser-control session also became unavailable after local server restarts, so the
+Certalis Sales Admin UI could not complete its live resource selection flow.
+
+**Impact on sales enablement**
+
+The portal's deterministic handler, adapter, and browser-component checks prove the resource
+selection contract, but they do not substitute for required live Certalis CloudShare verification.
+No Sales Demo Item should be treated as live-verified until a current Certalis connection can read
+Projects, Regions, project Blueprints, and Policies through the real Sales UI.
+
+**Action required**
+
+Refresh or correct the local Certalis CloudShare Connection, rerun the real Sales UI authoring flow,
+and record the redacted request/response diagnostics and browser-console result in the PR before
+merge.
+
+---
+
 Copy this section when appending a new gap discovered during implementation:
 
 ```markdown

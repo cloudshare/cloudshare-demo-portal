@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 export type DemoItemStatus = "active" | "archived";
-export type SalesExperienceType = "guided_demo" | "hands_on_demo";
+export type SalesExperienceType = "demo" | "poc" | "pov" | "trial";
 
 export interface DemoItemBlueprint {
   readonly id: string;
@@ -57,7 +57,7 @@ export function validateDemoItemInput(input: SaveDemoItemInput): void {
   if (input.blueprints.length === 0 || input.blueprints.some((blueprint) => !blueprint.id.trim() || !blueprint.name.trim())) throw new DemoItemValidationError("Select one or more ordered Blueprints from CloudShare.");
   if (new Set(input.blueprints.map((blueprint) => blueprint.id)).size !== input.blueprints.length) throw new DemoItemValidationError("A Blueprint can only appear once in a Demo Item.");
   if (!Number.isInteger(input.defaultDurationMinutes) || input.defaultDurationMinutes <= 0) throw new DemoItemValidationError("The selected Policy must provide a positive storage lease for the default duration.");
-  if (input.salesExperienceType !== "guided_demo" && input.salesExperienceType !== "hands_on_demo") throw new DemoItemValidationError("Select a supported Sales Experience type.");
+  if (!["demo", "poc", "pov", "trial"].includes(input.salesExperienceType)) throw new DemoItemValidationError("Select Demo, POC, POV, or Trial as the Sales Experience type.");
 }
 
 export async function createDemoItem(deps: { readonly repository: DemoItemRepository; readonly now?: () => Date; readonly newId?: () => string }, input: SaveDemoItemInput): Promise<DemoItem> {

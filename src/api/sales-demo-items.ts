@@ -1,8 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { CloudShareClientFactory, CloudShareConnectionRepository } from "@/domain/cloudshare-connection";
 import type { DiagnosticActor, DiagnosticRecorder } from "@/domain/diagnostic-log";
+import type { AuditRepository } from "@/domain/audit-trail";
 import { archiveDemoItem, createDemoItem, DemoItemNotFoundError, DemoItemValidationError, type DemoItemRepository, updateDemoItem } from "@/domain/demo-item";
-import { CloudShareRequestError, CloudShareTransportError } from "@/integrations/cloudshare";
+import { CloudShareError } from "@/integrations/cloudshare";
 import { createCloudShareExamAuthoringSource, type CloudShareExamAuthoringSource } from "@/integrations/cloudshare/resources";
 
 const writeSchema = z.object({
@@ -12,7 +14,7 @@ const writeSchema = z.object({
   blueprintIds: z.array(z.string().trim().min(1)).min(1),
   policyId: z.string().trim().min(1),
   regionId: z.string().trim().min(1),
-  salesExperienceType: z.enum(["guided_demo", "hands_on_demo"]),
+  salesExperienceType: z.enum(["demo", "poc", "pov", "trial"]),
 });
 
 type WriteRequest = z.infer<typeof writeSchema>;
@@ -21,6 +23,7 @@ export interface SalesDemoItemDeps {
   readonly connections: Pick<CloudShareConnectionRepository, "findByCustomerId">;
   readonly cloudshare: Pick<CloudShareClientFactory, "forConnection">;
   readonly diagnostics?: DiagnosticRecorder;
+  readonly audit?: Pick<AuditRepository, "write">;
   readonly now?: () => Date;
   readonly newId?: () => string;
 }
@@ -38,6 +41,11 @@ export async function handleListSalesDemoItems(deps: Pick<SalesDemoItemDeps, "re
   return response(200, { activeDemoItems: items.filter((item) => item.status === "active"), archivedDemoItems: items.filter((item) => item.status === "archived") });
 }
 
+export async function handleGetSalesDemoItem(deps: Pick<SalesDemoItemDeps, "repository">, request: { customerId: string; id: string }) {
+  const item = await deps.repository.findById(request.id);
+  return !item || item.customerId !== request.customerId ? response(404, { error: "Demo Item was not found for this Customer." }) : response(200, { demoItem: item });
+}
+
 export async function handleCreateSalesDemoItem(deps: SalesDemoItemDeps, request: SalesDemoItemRequest) {
   return save(deps, request, null);
 }
@@ -53,33 +61,39 @@ async function save(deps: SalesDemoItemDeps, request: SalesDemoItemRequest, id: 
   if (!connection) return response(404, { error: "Save a Certalis CloudShare Connection before authoring Demo Items." });
 
   try {
-    const live = await resolveLiveSelections(deps.cloudshare, connection, parsed.data);
+    const correlationId = randomUUID();
+    const live = await resolveLiveSelections(deps, request, connection, parsed.data, correlationId);
     const input = { customerId: request.customerId, name: parsed.data.name, description: parsed.data.description, project: live.project, blueprints: live.blueprints, policy: live.policy, region: live.region, salesExperienceType: parsed.data.salesExperienceType, defaultDurationMinutes: live.defaultDurationMinutes };
     const item = id
       ? await updateDemoItem({ repository: deps.repository, now: deps.now }, { id, ...input })
       : await createDemoItem({ repository: deps.repository, now: deps.now, newId: deps.newId }, input);
-    await deps.diagnostics?.record({ source: "sales-demo-items", operation: id ? "sales.demo_item.updated" : "sales.demo_item.created", outcome: "success", customerId: request.customerId, actor: request.actor, subject: { type: "demo_item", id: item.id }, message: `Demo Item ${id ? "updated" : "created"} from live CloudShare resources`, externalIds: { demoItemId: item.id, projectId: item.project.id, policyId: item.policy.id, regionId: item.region.id }, details: { integrationSurface: "cloudshare.v3.authoring_resources", blueprintCount: item.blueprints.length, defaultDurationMinutes: item.defaultDurationMinutes } });
+    await deps.diagnostics?.record({ source: "sales-demo-items", operation: id ? "sales.demo_item.updated" : "sales.demo_item.created", outcome: "success", customerId: request.customerId, actor: request.actor, subject: { type: "demo_item", id: item.id }, correlationId, message: `Demo Item ${id ? "updated" : "created"} from live CloudShare resources`, externalIds: { demoItemId: item.id, projectId: item.project.id, policyId: item.policy.id, regionId: item.region.id }, details: { integrationSurface: "cloudshare.v3.authoring_resources", blueprintCount: item.blueprints.length, defaultDurationMinutes: item.defaultDurationMinutes } });
+    await writeAudit(deps, request, item.id, id ? "sales.demo_item.updated" : "sales.demo_item.created", "success", correlationId, { projectId: item.project.id, blueprintIds: item.blueprints.map((blueprint) => blueprint.id), policyId: item.policy.id, regionId: item.region.id });
     return response(id ? 200 : 201, { demoItem: item });
   } catch (error) {
     if (error instanceof DemoItemValidationError) return response(400, { error: error.message });
     if (error instanceof DemoItemNotFoundError) return response(404, { error: error.message });
-    const status = error instanceof CloudShareRequestError ? 502 : error instanceof CloudShareTransportError ? 502 : 400;
-    const diagnostic = { operation: "sales.demo_item.authoring_resources.read", integrationSurface: "cloudshare.v3.authoring_resources", failureMode: error instanceof CloudShareRequestError ? "http_status" : error instanceof CloudShareTransportError ? "transport" : "resource_selection", ...(error instanceof CloudShareRequestError ? { responseStatus: error.status } : {}) };
-    await deps.diagnostics?.record({ source: "sales-demo-items", operation: "sales.demo_item.authoring_resources.read", outcome: "failure", level: "warn", customerId: request.customerId, actor: request.actor, message: "Demo Item resource validation failed", details: diagnostic });
-    return response(status, { error: error instanceof Error ? error.message : "Unable to validate the selected CloudShare resources.", diagnostic });
+    const correlationId = randomUUID();
+    const typed = error instanceof CloudShareError;
+    const diagnostic = { operation: "sales.demo_item.authoring_resources.read", integrationSurface: "cloudshare.v3.authoring_resources", failureMode: typed ? cloudShareFailureMode(error) : "resource_selection", ...(typed && error.context?.status ? { responseStatus: error.context.status } : {}) };
+    await deps.diagnostics?.record({ source: "sales-demo-items", operation: "sales.demo_item.authoring_resources.read", outcome: "failure", level: "warn", customerId: request.customerId, actor: request.actor, correlationId, message: "Demo Item resource validation failed", request: typed ? diagnosticRequest(error) : { method: "GET", path: "/projects" }, response: typed ? diagnosticResponse(error) : {}, details: diagnostic });
+    await writeAudit(deps, request, id ?? "unpersisted", id ? "sales.demo_item.updated" : "sales.demo_item.created", "failure", correlationId, null);
+    return response(typed ? 502 : 400, { error: typed ? "CloudShare resource validation failed. Review support diagnostics." : error instanceof Error ? error.message : "Unable to validate the selected CloudShare resources.", correlationId, diagnostic });
   }
 }
 
-export async function handleArchiveSalesDemoItem(deps: Pick<SalesDemoItemDeps, "repository" | "diagnostics" | "now">, request: { readonly customerId: string; readonly actor?: DiagnosticActor | null; readonly id: string }) {
+export async function handleArchiveSalesDemoItem(deps: Pick<SalesDemoItemDeps, "repository" | "diagnostics" | "audit" | "now">, request: { readonly customerId: string; readonly actor?: DiagnosticActor | null; readonly id: string }) {
   try {
     const item = await archiveDemoItem({ repository: deps.repository, now: deps.now }, request);
-    await deps.diagnostics?.record({ source: "sales-demo-items", operation: "sales.demo_item.archived", outcome: "success", customerId: request.customerId, actor: request.actor, subject: { type: "demo_item", id: item.id }, message: "Demo Item archived; it remains history-only and cannot start a Sales Demo Session.", externalIds: { demoItemId: item.id } });
+    const correlationId = randomUUID();
+    await deps.diagnostics?.record({ source: "sales-demo-items", operation: "sales.demo_item.archived", outcome: "success", customerId: request.customerId, actor: request.actor, subject: { type: "demo_item", id: item.id }, correlationId, message: "Demo Item archived; it remains history-only and cannot start a Sales Demo Session.", externalIds: { demoItemId: item.id } });
+    await writeAudit(deps, request, item.id, "sales.demo_item.archived", "success", correlationId, null);
     return response(200, { demoItem: item });
-  } catch (error) { return response(error instanceof DemoItemNotFoundError ? 404 : 400, { error: error instanceof Error ? error.message : "Unable to archive Demo Item." }); }
+  } catch (error) { await writeAudit(deps, request, request.id, "sales.demo_item.archived", "failure", randomUUID(), null); return response(error instanceof DemoItemNotFoundError ? 404 : 400, { error: error instanceof Error ? error.message : "Unable to archive Demo Item." }); }
 }
 
-async function resolveLiveSelections(factory: CloudShareClientFactory, connection: Exclude<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>, null>, input: WriteRequest) {
-  const candidate = factory.forConnection(connection) as unknown;
+async function resolveLiveSelections(deps: Pick<SalesDemoItemDeps, "cloudshare" | "diagnostics">, request: SalesDemoItemRequest, connection: Exclude<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>, null>, input: WriteRequest, correlationId: string) {
+  const candidate = deps.cloudshare.forConnection(connection) as unknown;
   const source: CloudShareExamAuthoringSource = typeof candidate === "object" && candidate !== null && "listProjects" in candidate
     ? candidate as CloudShareExamAuthoringSource
     : createCloudShareExamAuthoringSource(candidate as Parameters<typeof createCloudShareExamAuthoringSource>[0]);
@@ -90,5 +104,14 @@ async function resolveLiveSelections(factory: CloudShareClientFactory, connectio
   const ordered = input.blueprintIds.map((id) => blueprints.find((blueprint) => blueprint.id === id));
   if (!project || !region || !policy || ordered.some((blueprint) => !blueprint)) throw new DemoItemValidationError("One or more selected resources are no longer available from the Certalis CloudShare Connection. Refresh and select by name again.");
   if (!policy.storageLeaseMinutes) throw new DemoItemValidationError("The selected Policy does not expose a storage lease, so it cannot provide a default Sales Demo duration.");
+  await deps.diagnostics?.record({ source: "sales-demo-items", operation: "sales.demo_item.authoring_resources.read", outcome: "success", customerId: request.customerId, actor: request.actor, correlationId, message: "Live CloudShare resources revalidated for Demo Item authoring", request: { method: "GET", paths: ["/projects", "/regions", `/projects/${input.projectId}/blueprints`, `/projects/${input.projectId}/policies`] }, response: { status: 200, projectCount: projects.length, regionCount: regions.length, blueprintCount: blueprints.length, policyCount: policies.length }, details: { integrationSurface: "cloudshare.v3.authoring_resources" }, externalIds: { projectId: project.id, policyId: policy.id, regionId: region.id } });
   return { project, region: { id: region.id, name: region.friendlyName ?? region.name }, policy: { id: policy.id, name: policy.name }, blueprints: ordered as Array<{ id: string; name: string }>, defaultDurationMinutes: policy.storageLeaseMinutes };
 }
+
+async function writeAudit(deps: Pick<SalesDemoItemDeps, "audit">, request: { customerId: string; actor?: DiagnosticActor | null }, subjectId: string, action: string, outcome: "success" | "failure", correlationId: string, details: Record<string, unknown> | null) {
+  await deps.audit?.write({ id: randomUUID(), occurredAt: new Date(), customerId: request.customerId, actorType: request.actor?.type ?? null, actorId: request.actor?.id ?? null, actorEmail: request.actor?.email ?? null, action, subjectType: "demo_item", subjectId, outcome, correlationId, details });
+}
+
+function cloudShareFailureMode(error: CloudShareError): string { return error.name === "CloudShareTransportError" ? "transport" : error.name === "CloudShareResponseError" ? "unexpected_response" : error.name === "CloudShareRateLimitError" ? "rate_limit" : "http_status"; }
+function diagnosticRequest(error: CloudShareError): Record<string, unknown> { return { method: error.context?.method ?? "GET", path: error.context?.path ?? "/projects", ...(error.context?.requestHeaders ? { headers: error.context.requestHeaders } : {}), ...(error.context?.requestBody !== undefined ? { body: error.context.requestBody } : {}) }; }
+function diagnosticResponse(error: CloudShareError): Record<string, unknown> { return { ...(error.context?.status ? { status: error.context.status } : {}), ...(error.context?.responseHeaders ? { headers: error.context.responseHeaders } : {}), ...(error.context?.responseBody !== undefined ? { body: error.context.responseBody } : {}) }; }
