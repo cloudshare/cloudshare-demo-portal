@@ -12,9 +12,11 @@ decryption happens only at call time; raw keys are never logged). The **Certific
 (Certalis) holds no CloudShare credentials of its own.** The CloudShare integration client is
 therefore instantiated **per-Customer** from the stored connection, not from global config.
 
-The demo seeds one Customer (Helios) and its connection through the same encrypted store/code path,
-so it is pre-connected; the live "Connect CloudShare" path is still built (it is the realistic
-onboarding flow). Connections are validated with the v3 `ping` → `pong` request.
+The demo seeds Helios CX and Certalis as separate Customers. Each may have its own connection
+through the same encrypted store/code path; Certalis's Sales workspace is a Customer-scoped
+exception to the earlier certification-only wording, not a global Provider credential. The live
+"Connect CloudShare" path is still built (it is the realistic onboarding flow). Connections are
+validated with the v3 `ping` → `pong` request.
 
 ## Why
 
