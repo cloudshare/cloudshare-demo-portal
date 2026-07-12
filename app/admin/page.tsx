@@ -23,6 +23,9 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   if (session.role !== "admin") {
     redirect("/candidate");
   }
+  if (session.workspace === "sales") {
+    redirect("/sales");
+  }
 
   return (
     <AdminConsole

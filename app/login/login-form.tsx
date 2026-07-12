@@ -30,14 +30,14 @@ export function LoginForm({ initialError, initialEmail }: LoginFormProps) {
 
       const data = (await response.json()) as {
         error?: string;
-        session?: { role?: "admin" | "candidate" };
+        session?: { role?: "admin" | "candidate"; workspace?: "certification" | "sales" | "both" };
       };
       if (!response.ok) {
         setError(data.error ?? "Login failed");
         return;
       }
 
-      window.location.assign(data.session?.role === "admin" ? "/admin" : "/candidate");
+      window.location.assign(data.session?.role === "admin" ? data.session.workspace === "sales" ? "/sales" : "/admin" : "/candidate");
     } catch {
       setError("Login failed");
     } finally {
@@ -59,7 +59,7 @@ export function LoginForm({ initialError, initialEmail }: LoginFormProps) {
       <div style={{ ...cardStyle, width: "100%", maxWidth: "420px" }}>
         <h1 style={{ ...pageHeadingStyle, fontSize: "1.6rem", marginTop: 0 }}>Certalis Portal Login</h1>
         <p style={{ color: colors.textSecondary, marginBottom: spacing.lg }}>
-          Sign in as a Helios admin or Candidate.
+          Sign in as a Helios admin, Certalis Sales Admin, or Candidate.
         </p>
         <form
           onSubmit={onSubmit}

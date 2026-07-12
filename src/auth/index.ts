@@ -10,6 +10,7 @@ export {
 export {
   type PortalSession,
   type PortalCustomerRecord,
+  type PortalCustomerWorkspace,
   type PortalSessionStore,
   type CreatePortalUserInput,
   type PortalUserRecord,

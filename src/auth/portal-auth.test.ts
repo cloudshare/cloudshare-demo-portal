@@ -38,6 +38,7 @@ describe("portalAuthenticator.signIn", () => {
       userId: "user-1",
       customerId: "customer-helios",
       role: "admin",
+      workspace: "certification",
       email: "admin@helios.example",
       firstName: null,
       lastName: null,

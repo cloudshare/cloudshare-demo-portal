@@ -17,16 +17,18 @@ This glossary is the source of truth for the project's language. It is not a spe
 **Certification Provider** (brand: **Certalis**):
 The company that owns and operates the portal. In this codebase the portal **is** the
 Certification Provider — it is not an external system. Certalis builds the CloudShare
-integration and runs the infrastructure, but **holds no CloudShare credentials of its own** —
-each Customer supplies their own.
+integration and runs the infrastructure, but holds **no global CloudShare credentials** — each
+Customer supplies its own encrypted Connection. Certalis's isolated Sales workspace is itself a
+seeded Customer when it needs a Connection.
 _Avoid_: Kryterion, proctoring vendor.
 
 **Customer** (brand: **Helios CX**):
 An organisation that is a customer of both the Certification Provider and CloudShare. The
 Customer **owns its CloudShare subscription** and supplies its CloudShare API credentials to
 the portal. Its admin curates which CloudShare environments are offered as certifications to
-its candidates. Modelled as a tenant/data entity, not an external API. The demo seeds exactly
-one Customer (Helios); multi-tenant support is deferred.
+its candidates. Modelled as a tenant/data entity, not an external API. The demo seeds Helios CX
+for certification and Certalis for the isolated Sales Admin workspace; multi-tenant management is
+still deferred.
 _Avoid_: Genesys, client, account, tenant (when speaking of the org itself).
 
 **Candidate**:
@@ -37,6 +39,13 @@ _Avoid_: student, learner, user (when a Candidate is meant).
 **Certalis Admin**:
 Provider-side operator who manages portal infrastructure and onboards Customers.
 _Avoid_: superadmin.
+
+**Certalis Sales Admin**:
+An existing-role `admin` user belonging to the seeded Certalis Customer. The Customer's persisted
+workspace configuration routes this user to the Sales workspace; it is not a brand-name exception,
+a cross-Customer administrator, or a reduced `sales_pro` role. This workspace is isolated from
+Helios CX certification data and may use its own encrypted per-Customer CloudShare Connection.
+_Avoid_: superadmin, sales_pro.
 
 **Helios Admin** (Customer Admin):
 Customer-side operator who logs into the portal and defines which CloudShare environments
@@ -280,6 +289,11 @@ Instructor, or Guided Journey settings.
 _Avoid_: scheduled attempt, demo session.
 
 ### Future sales delivery
+
+**Sales Workspace**:
+The configuration-selected, Certalis Customer-scoped administration entry point for future sales
+delivery. It is intentionally empty in the initial slice and must not expose Helios CX Exams,
+Candidates, CloudShare Connections, audits, or diagnostics.
 
 **Sales Opportunity**:
 A future commercial engagement with one prospective organisation. It may group multiple related

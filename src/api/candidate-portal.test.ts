@@ -235,6 +235,7 @@ describe("candidate login", () => {
         email: "candidate@helioscx.demo",
         role: "candidate",
         customerId: "customer-helios",
+        workspace: "certification",
       },
     });
   });

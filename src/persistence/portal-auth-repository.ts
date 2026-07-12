@@ -6,6 +6,7 @@ import type {
   PortalSessionStore,
   PortalUserRecord,
   PortalUserRole,
+  PortalCustomerWorkspace,
   PortalUserProvisioningStore,
   PortalUserStore,
 } from "@/auth";
@@ -16,6 +17,7 @@ export interface PortalUserSeedInput {
   readonly email: string;
   readonly passwordHash: string;
   readonly role: PortalUserRole;
+  readonly workspace?: PortalCustomerWorkspace;
 }
 
 export interface PortalUserRepository extends PortalUserProvisioningStore {
@@ -29,6 +31,7 @@ export function createPortalUserRepository(
     async findByEmail(email: string): Promise<PortalUserRecord | null> {
       const user = await prisma.user.findUnique({
         where: { email: email.trim().toLowerCase() },
+        include: { customer: true },
       });
       if (!user) {
         return null;
@@ -42,6 +45,7 @@ export function createPortalUserRepository(
         lastName: user.lastName,
         passwordHash: user.passwordHash,
         role: asPortalUserRole(user.role),
+        workspace: asPortalCustomerWorkspace(user.customer.workspace),
       };
     },
 
@@ -57,6 +61,7 @@ export function createPortalUserRepository(
         id: customer.id,
         slug: customer.slug,
         name: customer.name,
+        workspace: asPortalCustomerWorkspace(customer.workspace),
       };
     },
 
@@ -80,16 +85,18 @@ export function createPortalUserRepository(
         lastName: user.lastName,
         passwordHash: user.passwordHash,
         role: asPortalUserRole(user.role),
+        workspace: "certification",
       };
     },
 
     async upsertSeedUser(input: PortalUserSeedInput): Promise<PortalUserRecord> {
       const customer = await prisma.customer.upsert({
         where: { slug: input.customerSlug },
-        update: { name: input.customerName },
+        update: { name: input.customerName, workspace: input.workspace ?? "certification" },
         create: {
           slug: input.customerSlug,
           name: input.customerName,
+          workspace: input.workspace ?? "certification",
         },
       });
 
@@ -120,6 +127,7 @@ export function createPortalUserRepository(
         lastName: user.lastName,
         passwordHash: user.passwordHash,
         role: asPortalUserRole(user.role),
+        workspace: input.workspace ?? "certification",
       };
     },
   };
@@ -144,7 +152,7 @@ export function createPortalSessionStore(
     async findById(sessionId: string): Promise<PortalSession | null> {
       const session = await prisma.portalSession.findUnique({
         where: { id: sessionId },
-        include: { user: true },
+        include: { user: { include: { customer: true } } },
       });
       if (!session) {
         return null;
@@ -155,6 +163,7 @@ export function createPortalSessionStore(
         userId: session.user.id,
         customerId: session.user.customerId,
         role: asPortalUserRole(session.user.role),
+        workspace: asPortalCustomerWorkspace(session.user.customer.workspace),
         email: session.user.email,
         firstName: session.user.firstName,
         lastName: session.user.lastName,
@@ -172,4 +181,8 @@ export function createPortalSessionStore(
 
 function asPortalUserRole(role: string): PortalUserRole {
   return role === "admin" ? "admin" : "candidate";
+}
+
+function asPortalCustomerWorkspace(value: string): PortalCustomerWorkspace {
+  return value === "sales" || value === "both" ? value : "certification";
 }

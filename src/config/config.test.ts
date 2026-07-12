@@ -18,6 +18,8 @@ const validEnv = {
   HELIOS_ADMIN_PASSWORD: "HeliosDemo123!",
   HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_ID: "instructor-1",
   HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_NAME: "Helios Service Account",
+  CERTALIS_SALES_ADMIN_EMAIL: "sales-admin@certalis.demo",
+  CERTALIS_SALES_ADMIN_PASSWORD: "CertalisTestPassword123!",
   DATABASE_URL: "file:./dev.db",
 };
 
@@ -63,6 +65,8 @@ describe("loadConfig", () => {
             id: "file-instructor",
             name: "File Service Account",
           },
+          certalisSalesAdminEmail: "file-sales-admin@certalis.demo",
+          certalisSalesAdminPassword: "FileCertalisPassword123!",
         },
         null,
         2,
@@ -84,6 +88,50 @@ describe("loadConfig", () => {
       expect(config.seed.heliosAdmin?.email).toBe("file-admin@helioscx.demo");
       expect(config.seed.heliosCloudShareConnection?.apiKey).toBe("file-api-key");
       expect(config.seed.heliosInstructor?.name).toBe("File Service Account");
+      expect(config.seed.certalisSalesAdmin?.email).toBe(
+        "file-sales-admin@certalis.demo",
+      );
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("requires an explicit Sales Admin password for environment seeds", () => {
+    expect(() =>
+      loadConfig({
+        ...validEnv,
+        CERTALIS_SALES_ADMIN_PASSWORD: undefined,
+      }),
+    ).toThrow(
+      "CERTALIS_SALES_ADMIN_PASSWORD",
+    );
+  });
+
+  it("rejects a file seed without a Sales Admin password", () => {
+    const dir = mkdtempSync(join(tmpdir(), "portal-seed-"));
+    const path = join(dir, "portal-seed.local.json");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        heliosAdminEmail: "file-admin@helioscx.demo",
+        heliosAdminPassword: "FileSeed123!",
+        heliosCloudShareConnection: null,
+        heliosInstructor: {
+          id: "file-instructor",
+          name: "File Service Account",
+        },
+        certalisSalesAdminEmail: "file-sales-admin@certalis.demo",
+      }),
+    );
+
+    try {
+      expect(() =>
+        loadConfig({
+          ...validEnv,
+          PORTAL_SEED_SOURCE: "file",
+          PORTAL_SEED_CONFIG_PATH: path,
+        }),
+      ).toThrow(ConfigError);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

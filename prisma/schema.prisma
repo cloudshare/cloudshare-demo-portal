@@ -22,6 +22,7 @@ model Customer {
   id                   String                @id @default(cuid())
   slug                 String                @unique
   name                 String
+  workspace            String                @default("certification")
   createdAt            DateTime              @default(now())
   users                User[]
   exams                Exam[]

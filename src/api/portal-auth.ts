@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   InvalidPortalCredentialsError,
   type PortalAuthenticator,
@@ -5,6 +6,7 @@ import {
   type PortalUserStore,
 } from "@/auth";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
+import type { AuditRepository } from "@/domain/audit-trail";
 import {
   buildCandidateLogoutAutoSuspendDeps,
   suspendCandidateRunningLabsForLogout,
@@ -50,6 +52,8 @@ export interface PortalAuthDeps {
    * invalidated. Used to suspend running labs on explicit logout.
    */
   readonly onCandidateLogout?: (session: PortalSession) => Promise<void>;
+  /** Append-only authentication evidence; present in composed runtime services. */
+  readonly audit?: AuditRepository;
 }
 
 export interface PortalSessionServices {
@@ -59,6 +63,7 @@ export interface PortalSessionServices {
 export interface PortalLoginServices extends PortalSessionServices {
   readonly diagnosticRecorder: DiagnosticRecorder;
   readonly portalUsers: PortalUserStore;
+  readonly audit?: AuditRepository;
 }
 
 interface PortalLogoutBuilderOptions {
@@ -91,6 +96,7 @@ export function buildPortalLoginDeps(services: PortalLoginServices): PortalAuthD
     portalAuth: services.portalAuth,
     diagnostics: services.diagnosticRecorder,
     users: services.portalUsers,
+    ...(services.audit ? { audit: services.audit } : {}),
   };
 }
 
@@ -147,7 +153,13 @@ export async function handlePortalLogin(
       subject: { type: "customer", id: session.customerId },
       candidateEmail: session.role === "admin" ? null : session.email,
       message: `Portal ${session.role} login succeeded`,
-      details: { role: session.role },
+      details: { role: session.role, workspace: session.workspace },
+    });
+    await deps.audit?.write({
+      id: randomUUID(), customerId: session.customerId, actorType: actorTypeForRole(session.role),
+      actorId: session.userId, actorEmail: session.email, action: "portal.login", outcome: "success",
+      subjectType: "customer", subjectId: session.customerId,
+      details: { role: session.role, workspace: session.workspace }, occurredAt: new Date(),
     });
     return {
       status: 200,
@@ -156,6 +168,7 @@ export async function handlePortalLogin(
           email: session.email,
           role: session.role,
           customerId: session.customerId,
+          workspace: session.workspace,
         },
       },
       session,
@@ -199,6 +212,14 @@ export async function handlePortalLogin(
             : "unexpected_error",
       },
     });
+    await deps.audit?.write({
+      id: randomUUID(), customerId: known?.customerId ?? null,
+      actorType: known ? actorTypeForRole(known.role) : "anonymous", actorId: known?.id ?? null,
+      actorEmail: email || null, action: "portal.login", outcome: "failure",
+      subjectType: known ? "customer" : null, subjectId: known?.customerId ?? null,
+      details: { reason: isInvalidCreds ? "invalid_credentials" : "unexpected_error", workspace: known?.workspace ?? null },
+      occurredAt: new Date(),
+    });
 
     if (isInvalidCreds) {
       return { status: 401, body: { error: (error as Error).message } };
@@ -225,8 +246,9 @@ export async function handleGetPortalSession(
     body: {
       session: {
         email: session.email,
-        role: session.role,
-        customerId: session.customerId,
+          role: session.role,
+          customerId: session.customerId,
+          workspace: session.workspace,
       },
     },
     session,

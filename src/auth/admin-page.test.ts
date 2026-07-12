@@ -72,4 +72,17 @@ describe("admin page routing", () => {
       props: { email: "admin@helioscx.demo" },
     });
   });
+
+  it("redirects a Sales-configured admin to the isolated Sales workspace", async () => {
+    mockGetPortalSession.mockResolvedValue({
+      sessionId: "portal-session-1",
+      customerId: "customer-certalis",
+      email: "sales-admin@certalis.demo",
+      role: "admin",
+      workspace: "sales",
+    });
+
+    await expect(AdminPage({})).rejects.toThrow("redirect:/sales");
+    expect(mockRedirect).toHaveBeenCalledWith("/sales");
+  });
 });
