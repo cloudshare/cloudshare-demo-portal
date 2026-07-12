@@ -443,4 +443,57 @@ describe("AdminCohortExamSessionsFeature seam", () => {
       "/admin?tab=support&view=diagnostics&correlationId=corr-publish",
     );
   });
+
+  it("keeps the newest focused monitoring response when a stale Cohort refresh resolves late", async () => {
+    let resolveFirst: ((response: Response) => void) | undefined;
+    let resolveSecond: ((response: Response) => void) | undefined;
+    const secondSession = { ...session, session: { ...session.session, id: "cohort-session-2", name: "October Admin Cohort" } };
+    const fetchAdmin = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/admin/exams") return Promise.resolve(json({ activeExams: [exam], archivedExams: [] }));
+      if (url === "/api/admin/exams/exam-1/cohort-sessions") return Promise.resolve(json({ sessions: [session, secondSession] }));
+      if (url.endsWith("cohort-session-1")) return new Promise<Response>((resolve) => { resolveFirst = resolve; });
+      if (url.endsWith("cohort-session-2")) return new Promise<Response>((resolve) => { resolveSecond = resolve; });
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    const view = render(<AdminCohortExamSessionsFeature active examView="catalog" focusedExamId="exam-1" focusedCohortSessionId="cohort-session-1" supportMonitoringActive fetchAdmin={fetchAdmin} onNavigate={vi.fn()} getNavigationHref={shellNavigationHref} onCohortActivityChange={vi.fn()} catalog={null} />);
+
+    await waitFor(() => expect(resolveFirst).toBeDefined());
+    view.rerender(<AdminCohortExamSessionsFeature active examView="catalog" focusedExamId="exam-1" focusedCohortSessionId="cohort-session-2" supportMonitoringActive fetchAdmin={fetchAdmin} onNavigate={vi.fn()} getNavigationHref={shellNavigationHref} onCohortActivityChange={vi.fn()} catalog={null} />);
+    await waitFor(() => expect(resolveSecond).toBeDefined());
+    await act(async () => resolveSecond?.(json({ monitoring: { ...cohortDetail.monitoring, summary: { ...cohortDetail.monitoring.summary, activeCount: 2 } } })));
+    expect(await screen.findByText("2")).toBeTruthy();
+    await act(async () => resolveFirst?.(json({ monitoring: { ...cohortDetail.monitoring, summary: { ...cohortDetail.monitoring.summary, activeCount: 1 } } })));
+    expect(screen.getByText("2")).toBeTruthy();
+  });
+
+  it("keeps a failed focused Cohort refresh dismissible", async () => {
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/admin/exams") return json({ activeExams: [exam], archivedExams: [] });
+      if (url === "/api/admin/exams/exam-1/cohort-sessions") return json({ sessions: [session] });
+      if (url.endsWith("cohort-session-1")) return new Response(JSON.stringify({ error: "Cohort detail is unavailable" }), { status: 503 });
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    const user = userEvent.setup();
+    render(<AdminCohortExamSessionsFeature active examView="catalog" focusedExamId="exam-1" focusedCohortSessionId="cohort-session-1" supportMonitoringActive fetchAdmin={fetchAdmin} onNavigate={vi.fn()} getNavigationHref={shellNavigationHref} onCohortActivityChange={vi.fn()} catalog={null} />);
+
+    expect((await screen.findByRole("alert")).textContent).toContain("Cohort detail is unavailable");
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("shows the shared Exam Catalog loading overlay while a Cohort detail route resolves its parent Exam", async () => {
+    let resolveCatalog: ((response: Response) => void) | undefined;
+    const fetchAdmin = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/admin/exams") return new Promise<Response>((resolve) => { resolveCatalog = resolve; });
+      if (url === "/api/admin/exams/exam-1/cohort-sessions") return Promise.resolve(json({ sessions: [session] }));
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    render(<AdminCohortExamSessionsFeature active examView="session" focusedExamId="exam-1" focusedCohortSessionId="cohort-session-1" supportMonitoringActive={false} fetchAdmin={fetchAdmin} onNavigate={vi.fn()} getNavigationHref={shellNavigationHref} onCohortActivityChange={vi.fn()} catalog={null} />);
+
+    expect(await screen.findByText("Loading Exam Catalog resources")).toBeTruthy();
+    await act(async () => resolveCatalog?.(json({ activeExams: [exam], archivedExams: [] })));
+  });
 });

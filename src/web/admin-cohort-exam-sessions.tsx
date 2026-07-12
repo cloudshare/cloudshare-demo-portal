@@ -10,7 +10,7 @@ import {
   createCorrelationDiagnosticsNavigationIntent,
   createSupportDiagnosticsNavigationIntent,
 } from "./admin-shell-route";
-import { isCohortSessionAuthoringAvailable, type ExamRecord } from "./admin-exam-catalog-authoring";
+import { ExamCatalogLoadingOverlay, isCohortSessionAuthoringAvailable, type ExamRecord } from "./admin-exam-catalog-authoring";
 import { formatAdminAttemptStatus, formatAdminUtcTimestamp } from "./admin-attempt-presentation";
 import { alertPanelStyle, cardStyle, mutedPanelStyle } from "./card-styles";
 import { compactButtonStyle, primaryButtonStyle, secondaryButtonStyle } from "./button-styles";
@@ -18,7 +18,6 @@ import { colors } from "./design-tokens";
 import { statusBadgeStyle, type StatusTone } from "./status-badge";
 import type { AdminAuthenticatedRequest } from "./admin-authenticated-request";
 import { isAdminSessionExpiredError } from "./admin-authenticated-request";
-import { AdminSessionMonitoringFeature } from "./admin-session-monitoring";
 import { ExamWorkspaceBreadcrumbs } from "./admin-exam-workspace-breadcrumbs";
 
 export interface CohortExamSessionRecord {
@@ -56,8 +55,6 @@ export interface CohortExamSessionFormState {
   admissionEndsAt: string;
   capacity: string;
 }
-
-type CohortMonitoringBranch = "cohort" | "individual" | null;
 
 const emptyCohortSessionForm = (): CohortExamSessionFormState => ({
   name: "", admissionStartsAt: "", admissionEndsAt: "", capacity: "",
@@ -1241,7 +1238,6 @@ export function AdminCohortExamSessionsFeature(props: AdminCohortExamSessionsFea
   const [monitoringDetailKey, setMonitoringDetailKey] = useState<string | null>(null);
   const [monitoringLastCheckedAt, setMonitoringLastCheckedAt] = useState<string | null>(null);
   const focusedKeyRef = useRef<string | null>(null);
-  const [monitoringBranch, setMonitoringBranch] = useState<CohortMonitoringBranch>(null);
   const [loading, setLoading] = useState(false);
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1369,6 +1365,7 @@ export function AdminCohortExamSessionsFeature(props: AdminCohortExamSessionsFea
     if (props.supportMonitoringActive && props.focusedExamId && props.focusedCohortSessionId) {
       void loadCatalog(false); void ensureSessions(props.focusedExamId); void loadMonitoringDetail(props.focusedExamId, props.focusedCohortSessionId);
     }
+    if (props.supportMonitoringActive && !props.focusedExamId && !props.focusedCohortSessionId) void loadCatalog(true);
     // The shell adapter is stable; activation and route changes own this lifecycle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.active, props.examView, props.supportMonitoringActive, props.focusedExamId, props.focusedCohortSessionId]);
@@ -1384,6 +1381,7 @@ export function AdminCohortExamSessionsFeature(props: AdminCohortExamSessionsFea
   const hasFocusedMonitoring = props.supportMonitoringActive && focusedSession && focusedExam;
   const currentMonitoringDetail = monitoringDetailKey === focusedKey ? monitoringDetail : null;
   return <section aria-busy={catalogLoading} style={{ display: "grid", gap: "1rem", position: "relative", overflow: "hidden" }}>
+    {catalogLoading ? <ExamCatalogLoadingOverlay /> : null}
     {error ? <div role="alert" style={{ ...alertPanelStyle.danger, display: "grid", gap: "0.5rem" }}><div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "flex-start" }}><p style={{ margin: 0 }}>{error}</p><button type="button" onClick={() => { setError(null); setErrorCorrelationId(null); }} style={{ padding: "0.25rem 0.55rem" }}>Dismiss</button></div>{errorCorrelationId ? <p style={{ margin: 0, fontSize: "0.85rem" }}>Open <strong>Support Diagnostics</strong> filtered by correlation ID <CorrelationDiagnosticsLink correlationId={errorCorrelationId} getNavigationHref={props.getNavigationHref} onNavigate={props.onNavigate} />.</p> : null}</div> : null}
     {message ? <div role="status" style={alertPanelStyle.success}>{message}</div> : null}
     {(props.examView === "sessions" || props.examView === "session") && focusedExam ? <>
@@ -1393,11 +1391,8 @@ export function AdminCohortExamSessionsFeature(props: AdminCohortExamSessionsFea
       {props.examView === "session" && props.focusedCohortSessionId && !focusedSession ? <div style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.5rem" }}><p style={{ margin: 0 }}>Cohort Exam Session detail is not loaded yet.</p><button type="button" onClick={() => void loadSessions(focusedExam.id)} style={secondaryButtonStyle}>Refresh Cohort Sessions</button></div> : null}
     </> : null}
     {props.supportMonitoringActive ? <>
-      {!hasFocusedMonitoring ? <div style={{ ...cardStyle, display: "flex", gap: "0.75rem", flexWrap: "wrap" }} aria-label="Session Monitoring branches"><button type="button" onClick={() => { setMonitoringBranch("cohort"); void loadCatalog(true); }} style={monitoringBranch === "cohort" ? primaryButtonStyle : secondaryButtonStyle}>Cohort Exam Sessions</button><button type="button" onClick={() => setMonitoringBranch("individual")} style={monitoringBranch === "individual" ? primaryButtonStyle : secondaryButtonStyle}>Individual Exam Delivery</button></div> : null}
-      {!hasFocusedMonitoring && monitoringBranch === null ? <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>Choose a monitoring view. Cohort Exam Sessions monitor a shared CloudShare Experience; Individual Exam Delivery monitors one Candidate attempt at a time.</div> : null}
       {hasFocusedMonitoring ? <CohortSessionWorkspacePanel mode="monitoring" examTitle={focusedExam.title} session={focusedSession} detail={currentMonitoringDetail} loading={loading} lastCheckedAt={monitoringDetailKey === focusedKey ? monitoringLastCheckedAt : null} onRefresh={() => void loadMonitoringDetail(focusedExam.id, focusedSession.session.id)} onBack={() => props.onNavigate({ tab: "support", supportView: "monitoring" })} onPublish={() => undefined} getNavigationHref={props.getNavigationHref} onNavigate={props.onNavigate} /> : null}
-      {!hasFocusedMonitoring && monitoringBranch === "cohort" ? <CohortSessionMonitoringList sessions={monitoredSessions} onOpen={(examId, cohortSessionId) => props.onNavigate({ tab: "support", supportView: "monitoring", examId, cohortSessionId })} /> : null}
-      {!hasFocusedMonitoring && monitoringBranch === "individual" ? <AdminSessionMonitoringFeature active fetchAdmin={props.fetchAdmin} onNavigate={props.onNavigate} /> : null}
+      {!hasFocusedMonitoring ? <CohortSessionMonitoringList sessions={monitoredSessions} onOpen={(examId, cohortSessionId) => props.onNavigate({ tab: "support", supportView: "monitoring", examId, cohortSessionId })} /> : null}
     </> : null}
   </section>;
 }
