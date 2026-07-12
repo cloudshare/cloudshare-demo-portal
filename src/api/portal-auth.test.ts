@@ -83,6 +83,20 @@ describe("handlePortalLogin", () => {
     });
   });
 
+  it("records append-only Customer-scoped audit evidence for a successful admin login", async () => {
+    const deps = await makeDeps();
+    const audit = { write: vi.fn().mockResolvedValue(undefined) };
+
+    await handlePortalLogin({ ...deps, audit }, {
+      body: { email: "admin@helioscx.demo", password: "correct-horse-battery-staple" },
+    });
+
+    expect(audit.write).toHaveBeenCalledWith(expect.objectContaining({
+      customerId: "customer-helios", actorEmail: "admin@helioscx.demo", action: "portal.login",
+      outcome: "success", details: { role: "admin", workspace: "certification" },
+    }));
+  });
+
   it("rejects bad credentials without leaking internals", async () => {
     const deps = await makeDeps();
 
