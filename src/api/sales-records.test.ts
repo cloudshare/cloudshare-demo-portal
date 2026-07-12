@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createInMemoryAuditRepository } from "@/persistence/audit-repository";
 import { createInMemorySalesRecordRepository } from "@/domain/sales-records";
-import type { AuditRepository } from "@/domain/audit-trail";
 import {
   handleArchiveSalesOpportunity,
   handleCreateOpportunityContact,
@@ -12,12 +11,23 @@ import {
   type SalesRecordsDeps,
 } from "./sales-records";
 
-function createDeps(): SalesRecordsDeps {
+function createDeps(): SalesRecordsDeps & { audit: ReturnType<typeof createInMemoryAuditRepository>; diagnostics: { append: ReturnType<typeof vi.fn> } } {
   let sequence = 0;
+  const records = createInMemorySalesRecordRepository();
+  const audit = createInMemoryAuditRepository();
+  const diagnostics = { append: vi.fn().mockResolvedValue(undefined) };
   return {
-    records: createInMemorySalesRecordRepository(),
-    audit: createInMemoryAuditRepository(),
-    diagnostics: { append: vi.fn().mockResolvedValue(undefined) },
+    records,
+    audit,
+    diagnostics,
+    writer: { async commit(input) {
+      if (input.record.type === "account") await records.saveAccount(input.record.value);
+      if (input.record.type === "opportunity") await records.saveOpportunity(input.record.value);
+      if (input.record.type === "opportunity_contact") await records.saveContact(input.record.value);
+      await audit.write(input.audit);
+      await diagnostics.append(input.diagnostic);
+    } },
+    redactDiagnostic: (input) => input,
     logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     now: () => new Date("2026-07-12T17:00:00.000Z"),
     newId: () => `record-${++sequence}`,
@@ -60,30 +70,30 @@ describe("Customer-scoped Sales record API handlers", () => {
     const deps = createDeps();
     await handleCreateSalesAccount(deps, { customerId: "certalis", actor: admin, body: { name: "Acme Labs", kind: "current_customer" } });
 
-    const records = await (deps.audit as AuditRepository).query({ customerId: "certalis", subjectType: "account" });
+    const records = await deps.audit.query({ customerId: "certalis", subjectType: "account" });
     expect(records).toHaveLength(1);
     expect(records[0]).toMatchObject({ action: "account.created", actorEmail: "sales-admin@certalis.demo", outcome: "success" });
     expect(deps.diagnostics.append).toHaveBeenCalledWith(expect.objectContaining({ operation: "account.created", customerId: "certalis", details: expect.objectContaining({ integrationSurface: "local_sales_records" }) }));
   });
 
-  it("retains a newly created Account as archived history and returns a supportable failure when required evidence cannot be appended", async () => {
+  it("returns a supportable failure without persisting a partial record when the atomic writer rejects", async () => {
     const deps = createDeps();
-    deps.diagnostics.append = vi.fn().mockRejectedValue(new Error("diagnostic store unavailable"));
+    deps.writer.commit = vi.fn().mockRejectedValue(new Error("diagnostic store unavailable"));
 
     const response = await handleCreateSalesAccount(deps, { customerId: "certalis", actor: admin, body: { name: "Acme Labs", kind: "prospect" } });
     const records = await handleListSalesRecords(deps, { customerId: "certalis", actor: admin });
 
     expect(response.status).toBe(503);
-    expect(records.body).toMatchObject({ accounts: [expect.objectContaining({ name: "Acme Labs", archivedAt: "2026-07-12T17:00:00.000Z" })] });
+    expect(records.body).toMatchObject({ accounts: [] });
   });
 
   it("returns a supportable failure instead of an unhandled 500 when durable persistence fails", async () => {
     const deps = createDeps();
-    deps.records.saveAccount = vi.fn().mockRejectedValue(new Error("database unavailable"));
+    deps.writer.commit = vi.fn().mockRejectedValue(new Error("database unavailable"));
 
     const response = await handleCreateSalesAccount(deps, { customerId: "certalis", actor: admin, body: { name: "Acme Labs", kind: "prospect" } });
 
     expect(response.status).toBe(503);
-    expect(deps.logger.error).toHaveBeenCalledWith("sales record mutation could not be confirmed", expect.objectContaining({ action: "account.created", error: "database unavailable" }));
+    expect(deps.logger.error).toHaveBeenCalledWith("sales record transaction failed", expect.objectContaining({ action: "account.created", errorType: "Error" }));
   });
 });

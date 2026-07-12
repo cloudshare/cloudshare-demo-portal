@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
-import type { AuditRepository } from "@/domain/audit-trail";
-import type { DiagnosticActor, DiagnosticLogRepository } from "@/domain/diagnostic-log";
+import type { DiagnosticActor, DiagnosticLogEntryInput } from "@/domain/diagnostic-log";
 import type { AccountKind, OpportunityStatus, SalesRecordRepository } from "@/domain/sales-records";
+import type { SalesMutationRecord, SalesMutationWriter } from "@/domain/sales-mutation-writer";
 import type { Logger } from "@/observability/logger";
 
 export interface SalesRecordsDeps {
   readonly records: SalesRecordRepository;
-  readonly audit: Pick<AuditRepository, "write">;
-  readonly diagnostics: Pick<DiagnosticLogRepository, "append">;
+  readonly writer: SalesMutationWriter;
+  readonly redactDiagnostic: (input: DiagnosticLogEntryInput) => DiagnosticLogEntryInput;
   readonly logger: Logger;
   readonly now?: () => Date;
   readonly newId?: () => string;
@@ -36,7 +36,7 @@ export async function handleCreateSalesAccount(deps: SalesRecordsDeps, request: 
   if (!input) return badRequest("Account name and kind (prospect or current_customer) are required.");
   const now = currentTime(deps);
   const account = { id: newId(deps), customerId: request.customerId, ...input, archivedAt: null, createdAt: now, updatedAt: now };
-  if (!await persistMutation(deps, request, "account.created", "account", account.id, { name: account.name, kind: account.kind }, () => deps.records.saveAccount(account), () => deps.records.saveAccount({ ...account, archivedAt: currentTime(deps), updatedAt: currentTime(deps) }))) return evidenceUnavailable();
+  if (!await persistMutation(deps, request, "account.created", "account", account.id, { name: account.name, kind: account.kind }, { type: "account", value: account })) return evidenceUnavailable();
   return { status: 201, body: { account: serialise(account) } };
 }
 
@@ -46,7 +46,7 @@ export async function handleUpdateSalesAccount(deps: SalesRecordsDeps, request: 
   const input = parseAccount(request.body);
   if (!input) return badRequest("Account name and kind (prospect or current_customer) are required.");
   const account = { ...existing, ...input, updatedAt: currentTime(deps) };
-  if (!await persistMutation(deps, request, "account.updated", "account", account.id, { name: account.name, kind: account.kind }, () => deps.records.saveAccount(account))) return evidenceUnavailable();
+  if (!await persistMutation(deps, request, "account.updated", "account", account.id, { name: account.name, kind: account.kind }, { type: "account", value: account })) return evidenceUnavailable();
   return { status: 200, body: { account: serialise(account) } };
 }
 
@@ -55,7 +55,7 @@ export async function handleArchiveSalesAccount(deps: SalesRecordsDeps, request:
   if (!existing) return notFound("account");
   const now = currentTime(deps);
   const account = { ...existing, archivedAt: existing.archivedAt ?? now, updatedAt: now };
-  if (!await persistMutation(deps, request, "account.archived", "account", account.id, { archivedAt: account.archivedAt.toISOString() }, () => deps.records.saveAccount(account))) return evidenceUnavailable();
+  if (!await persistMutation(deps, request, "account.archived", "account", account.id, { archivedAt: account.archivedAt.toISOString() }, { type: "account", value: account })) return evidenceUnavailable();
   return { status: 200, body: { account: serialise(account) } };
 }
 
@@ -66,7 +66,7 @@ export async function handleCreateSalesOpportunity(deps: SalesRecordsDeps, reque
   if (!account) return notFound("account");
   const now = currentTime(deps);
   const opportunity = { id: newId(deps), customerId: request.customerId, ...input, archivedAt: null, createdAt: now, updatedAt: now };
-  if (!await persistMutation(deps, request, "opportunity.created", "opportunity", opportunity.id, { accountId: opportunity.accountId, name: opportunity.name, status: opportunity.status }, () => deps.records.saveOpportunity(opportunity), () => deps.records.saveOpportunity({ ...opportunity, archivedAt: currentTime(deps), updatedAt: currentTime(deps) }))) return evidenceUnavailable();
+  if (!await persistMutation(deps, request, "opportunity.created", "opportunity", opportunity.id, { accountId: opportunity.accountId, name: opportunity.name, status: opportunity.status }, { type: "opportunity", value: opportunity })) return evidenceUnavailable();
   return { status: 201, body: { opportunity: serialise(opportunity) } };
 }
 
@@ -77,7 +77,7 @@ export async function handleUpdateSalesOpportunity(deps: SalesRecordsDeps, reque
   if (!input) return badRequest("Opportunity accountId, name, and status (open, won, or lost) are required.");
   if (!await deps.records.findAccount(request.customerId, input.accountId)) return notFound("account");
   const opportunity = { ...existing, ...input, updatedAt: currentTime(deps) };
-  if (!await persistMutation(deps, request, "opportunity.updated", "opportunity", opportunity.id, { accountId: opportunity.accountId, name: opportunity.name, status: opportunity.status }, () => deps.records.saveOpportunity(opportunity))) return evidenceUnavailable();
+  if (!await persistMutation(deps, request, "opportunity.updated", "opportunity", opportunity.id, { accountId: opportunity.accountId, name: opportunity.name, status: opportunity.status }, { type: "opportunity", value: opportunity })) return evidenceUnavailable();
   return { status: 200, body: { opportunity: serialise(opportunity) } };
 }
 
@@ -86,7 +86,7 @@ export async function handleArchiveSalesOpportunity(deps: SalesRecordsDeps, requ
   if (!existing) return notFound("opportunity");
   const now = currentTime(deps);
   const opportunity = { ...existing, archivedAt: existing.archivedAt ?? now, updatedAt: now };
-  if (!await persistMutation(deps, request, "opportunity.archived", "opportunity", opportunity.id, { archivedAt: opportunity.archivedAt.toISOString() }, () => deps.records.saveOpportunity(opportunity))) return evidenceUnavailable();
+  if (!await persistMutation(deps, request, "opportunity.archived", "opportunity", opportunity.id, { archivedAt: opportunity.archivedAt.toISOString() }, { type: "opportunity", value: opportunity })) return evidenceUnavailable();
   return { status: 200, body: { opportunity: serialise(opportunity) } };
 }
 
@@ -96,7 +96,7 @@ export async function handleCreateOpportunityContact(deps: SalesRecordsDeps, req
   if (!await deps.records.findOpportunity(request.customerId, input.opportunityId)) return notFound("opportunity");
   const now = currentTime(deps);
   const contact = { id: newId(deps), customerId: request.customerId, ...input, createdAt: now, updatedAt: now };
-  if (!await persistMutation(deps, request, "opportunity_contact.created", "opportunity_contact", contact.id, { opportunityId: contact.opportunityId, email: contact.email }, () => deps.records.saveContact(contact))) return evidenceUnavailable();
+  if (!await persistMutation(deps, request, "opportunity_contact.created", "opportunity_contact", contact.id, { opportunityId: contact.opportunityId, email: contact.email }, { type: "opportunity_contact", value: contact })) return evidenceUnavailable();
   return { status: 201, body: { contact: serialise(contact) } };
 }
 
@@ -107,7 +107,7 @@ export async function handleUpdateOpportunityContact(deps: SalesRecordsDeps, req
   if (!input) return badRequest("Contact opportunityId, first name, last name, and email are required.");
   if (!await deps.records.findOpportunity(request.customerId, input.opportunityId)) return notFound("opportunity");
   const contact = { ...existing, ...input, updatedAt: currentTime(deps) };
-  if (!await persistMutation(deps, request, "opportunity_contact.updated", "opportunity_contact", contact.id, { opportunityId: contact.opportunityId, email: contact.email }, () => deps.records.saveContact(contact))) return evidenceUnavailable();
+  if (!await persistMutation(deps, request, "opportunity_contact.updated", "opportunity_contact", contact.id, { opportunityId: contact.opportunityId, email: contact.email }, { type: "opportunity_contact", value: contact })) return evidenceUnavailable();
   return { status: 200, body: { contact: serialise(contact) } };
 }
 
@@ -130,33 +130,19 @@ function newId(deps: SalesRecordsDeps): string { return (deps.newId ?? randomUUI
 function serialise<T>(value: T): T { return JSON.parse(JSON.stringify(value)) as T; }
 function badRequest(error: string): SalesResponse { return { status: 400, body: { error } }; }
 function notFound(subject: string): SalesResponse { return { status: 404, body: { error: `${subject} not found` } }; }
-function evidenceUnavailable(): SalesResponse { return { status: 503, body: { error: "The Sales record change could not be confirmed because persistence or required support evidence failed. The record was retained for support; retry the operation." } }; }
+function evidenceUnavailable(): SalesResponse { return { status: 503, body: { error: "The Sales record change could not be saved. Retry the operation or provide this support reference: sales-record-write-failed." } }; }
 
-async function persistMutation(deps: SalesRecordsDeps, request: SalesRequest, action: string, subjectType: string, subjectId: string, details: Record<string, unknown>, persist: () => Promise<void>, retainAfterEvidenceFailure?: () => Promise<void>): Promise<boolean> {
+async function persistMutation(deps: SalesRecordsDeps, request: SalesRequest, action: string, subjectType: string, subjectId: string, details: Record<string, unknown>, record: SalesMutationRecord): Promise<boolean> {
+  const correlationId = newId(deps);
   try {
-    await persist();
-    await recordMutation(deps, request, action, subjectType, subjectId, details);
+    await deps.writer.commit({
+      record,
+      audit: { id: newId(deps), occurredAt: currentTime(deps), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action, subjectType, subjectId, outcome: "success", correlationId, details },
+      diagnostic: deps.redactDiagnostic({ source: "sales-records", operation: action, outcome: "success", level: "info", customerId: request.customerId, actor: request.actor, subject: { type: subjectType, id: subjectId }, message: `Sales ${action} completed`, correlationId, details: { integrationSurface: "local_sales_records", ...details } }),
+    });
     return true;
   } catch (error) {
-    if (retainAfterEvidenceFailure) {
-      try { await retainAfterEvidenceFailure(); } catch (retentionError) { deps.logger.error("sales record failure retention update failed", { action, subjectType, subjectId, error: retentionError instanceof Error ? retentionError.message : String(retentionError) }); }
-    }
-    await recordCompensationEvidence(deps, request, action, subjectType, subjectId, error);
-    deps.logger.error("sales record mutation could not be confirmed", { action, subjectType, subjectId, error: error instanceof Error ? error.message : String(error) });
+    deps.logger.error("sales record transaction failed", { action, subjectType, subjectId, correlationId, errorType: error instanceof Error ? error.name : typeof error });
     return false;
   }
-}
-
-async function recordMutation(deps: SalesRecordsDeps, request: SalesRequest, action: string, subjectType: string, subjectId: string, details: Record<string, unknown>): Promise<void> {
-  const occurredAt = currentTime(deps);
-  await deps.audit.write({ id: newId(deps), occurredAt, customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action, subjectType, subjectId, outcome: "success", details });
-  await deps.diagnostics.append({ source: "sales-records", operation: action, outcome: "success", level: "info", customerId: request.customerId, actor: request.actor, subject: { type: subjectType, id: subjectId }, message: `Sales ${action} completed`, details: { integrationSurface: "local_sales_records", ...details } });
-}
-
-async function recordCompensationEvidence(deps: SalesRecordsDeps, request: SalesRequest, action: string, subjectType: string, subjectId: string, cause: unknown): Promise<void> {
-  const error = cause instanceof Error ? cause.message : String(cause);
-  await Promise.allSettled([
-    deps.audit.write({ id: newId(deps), occurredAt: currentTime(deps), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: `${action}.compensated`, subjectType, subjectId, outcome: "failure", error, details: { reason: "required support evidence append failed" } }),
-    deps.diagnostics.append({ source: "sales-records", operation: `${action}.compensated`, outcome: "failure", level: "error", customerId: request.customerId, actor: request.actor, subject: { type: subjectType, id: subjectId }, message: "Sales mutation was compensated because required support evidence could not be recorded", details: { integrationSurface: "local_sales_records", evidenceFailure: error } }),
-  ]);
 }

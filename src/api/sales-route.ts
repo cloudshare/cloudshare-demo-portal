@@ -4,6 +4,9 @@ import { getServices } from "@/composition";
 import { getPortalAdminSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { createPrismaSalesRecordRepository } from "@/persistence/prisma-sales-record-repository";
+import { createPrismaSalesMutationWriter } from "@/persistence/prisma-sales-mutation-writer";
+import { redactDiagnosticInput } from "@/domain/diagnostic-log";
+import { secretValues } from "@/config";
 import type { SalesRecordsDeps } from "@/api/sales-records";
 
 export async function getSalesRouteContext(): Promise<{ readonly deps: SalesRecordsDeps; readonly customerId: string; readonly actor: { readonly type: string; readonly id: string; readonly email: string } } | NextResponse> {
@@ -13,7 +16,7 @@ export async function getSalesRouteContext(): Promise<{ readonly deps: SalesReco
   const session = await getPortalAdminSession(services, sessionId);
   if (!session || session.workspace !== "sales") return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   return {
-    deps: { records: createPrismaSalesRecordRepository(services.prisma), audit: services.audit, diagnostics: services.diagnostics, logger: services.logger },
+    deps: { records: createPrismaSalesRecordRepository(services.prisma), writer: createPrismaSalesMutationWriter(services.prisma), redactDiagnostic: (input) => redactDiagnosticInput(input, { secrets: secretValues(services.config) }), logger: services.logger },
     customerId: session.customerId,
     actor: { type: "admin", id: session.userId, email: session.email },
   };

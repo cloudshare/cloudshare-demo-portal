@@ -54,6 +54,7 @@ export function SalesWorkspace({ email }: { readonly email: string }) {
       <label style={{ display: "grid", gap: "0.3rem", flex: "1 1 18rem" }}>Search Accounts and Opportunities<input aria-label="Search Accounts and Opportunities" value={search} onChange={(event) => setSearch(event.target.value)} style={controlStyle} placeholder="Organization or opportunity" /></label>
       <button type="button" onClick={() => void load()} disabled={loading} style={compactButtonStyle}>Search</button>
       {message ? <span role="status">{message}</span> : null}
+      <a href="/api/admin/diagnostics?source=sales-records">View Sales diagnostics</a>
     </section>
     <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(290px, 1fr))", gap: "1rem", marginTop: "1rem" }}>
       <AccountPanel accounts={data.accounts} loading={loading} mutate={mutate} />
