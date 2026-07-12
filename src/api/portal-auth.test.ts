@@ -87,7 +87,7 @@ describe("handlePortalLogin", () => {
     const deps = await makeDeps();
     const audit = { write: vi.fn().mockResolvedValue(undefined) };
 
-    await handlePortalLogin({ ...deps, audit }, {
+    await handlePortalLogin({ ...deps, audit: audit as never }, {
       body: { email: "admin@helioscx.demo", password: "correct-horse-battery-staple" },
     });
 
