@@ -28,7 +28,6 @@ describe("AdminSessionMonitoringFeature", () => {
 
     render(<AdminSessionMonitoringFeature active fetchAdmin={fetchAdmin} />);
 
-    await user.click(await screen.findByRole("button", { name: "Individual Exam Delivery" }));
     await screen.findByText("Casey Rivera");
     await user.click(screen.getByRole("button", { name: /Completed/ }));
     await screen.findByText("History attempt-1");
@@ -37,74 +36,6 @@ describe("AdminSessionMonitoringFeature", () => {
     await waitFor(() => expect(screen.getByText("History attempt-2")).toBeTruthy());
     expect(fetchAdmin).toHaveBeenCalledWith("/api/admin/monitoring?historyLimit=25&historyOffset=0");
     expect(fetchAdmin).toHaveBeenCalledWith("/api/admin/monitoring?historyLimit=25&historyOffset=1");
-  });
-
-  it("refreshes a focused Cohort Exam Session immediately and every 30 seconds", async () => {
-    vi.useFakeTimers();
-    const fetchAdmin = vi.fn(async () => new Response(JSON.stringify({ monitoring: {} })));
-
-    render(
-      <AdminSessionMonitoringFeature
-        active
-        fetchAdmin={fetchAdmin}
-        focusedExamId="exam-1"
-        focusedCohortSessionId="session-1"
-        hasFocusedCohortSession
-        renderFocusedCohort={() => <div>Cohort monitoring detail</div>}
-      />,
-    );
-
-    expect(fetchAdmin).toHaveBeenCalledWith("/api/admin/exams/exam-1/cohort-sessions/session-1");
-    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
-    expect(fetchAdmin).toHaveBeenCalledTimes(3);
-    vi.useRealTimers();
-  });
-
-  it("keeps the newest focused Cohort Exam Session detail when an older request resolves late", async () => {
-    let resolveFirstSession: ((response: Response) => void) | undefined;
-    let resolveSecondSession: ((response: Response) => void) | undefined;
-    const fetchAdmin = vi.fn((input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url === "/api/admin/monitoring?historyLimit=25&historyOffset=0") {
-        return Promise.resolve(new Response(JSON.stringify(monitoringResponse("attempt-1", 0, null))));
-      }
-      if (url.endsWith("/session-1")) {
-        return new Promise<Response>((resolve) => { resolveFirstSession = resolve; });
-      }
-      if (url.endsWith("/session-2")) {
-        return new Promise<Response>((resolve) => { resolveSecondSession = resolve; });
-      }
-      throw new Error(`Unexpected request: ${url}`);
-    });
-    const renderDetail = ({ detail }: { readonly detail: { readonly summary?: { readonly activeCount?: number } } | null }) => (
-      <div>{detail?.summary?.activeCount ?? "Loading focused session"}</div>
-    );
-    const view = render(
-      <AdminSessionMonitoringFeature
-        active
-        fetchAdmin={fetchAdmin}
-        focusedExamId="exam-1"
-        focusedCohortSessionId="session-1"
-        hasFocusedCohortSession
-        renderFocusedCohort={renderDetail}
-      />,
-    );
-
-    view.rerender(
-      <AdminSessionMonitoringFeature
-        active
-        fetchAdmin={fetchAdmin}
-        focusedExamId="exam-1"
-        focusedCohortSessionId="session-2"
-        hasFocusedCohortSession
-        renderFocusedCohort={renderDetail}
-      />,
-    );
-
-    await act(async () => resolveSecondSession?.(new Response(JSON.stringify({ monitoring: { summary: { activeCount: 2 } } }))));
-    await screen.findByText("2");
-    await act(async () => resolveFirstSession?.(new Response(JSON.stringify({ monitoring: { summary: { activeCount: 1 } } }))));
-    expect(screen.getByText("2")).toBeTruthy();
   });
 
   it("lets an admin dismiss a failed monitoring refresh and retry from the unchanged branch control", async () => {
@@ -121,37 +52,8 @@ describe("AdminSessionMonitoringFeature", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("Monitoring is unavailable");
     await user.click(screen.getByRole("button", { name: "Dismiss" }));
     expect(screen.queryByRole("alert")).toBeNull();
-    await user.click(screen.getByRole("button", { name: "Individual Exam Delivery" }));
     await user.click(screen.getByRole("button", { name: "Refresh Monitoring" }));
     expect(await screen.findByText("Casey Rivera")).toBeTruthy();
   });
 
-  it("lets an admin dismiss a failed focused Cohort Exam Session refresh", async () => {
-    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input);
-      if (url === "/api/admin/monitoring?historyLimit=25&historyOffset=0") {
-        return new Response(JSON.stringify(monitoringResponse("attempt-1", 0, null)));
-      }
-      if (url === "/api/admin/exams/exam-1/cohort-sessions/session-1") {
-        return new Response(JSON.stringify({ error: "Cohort detail is unavailable" }), { status: 503 });
-      }
-      throw new Error(`Unexpected request: ${url}`);
-    });
-    const user = userEvent.setup();
-
-    render(
-      <AdminSessionMonitoringFeature
-        active
-        fetchAdmin={fetchAdmin}
-        focusedExamId="exam-1"
-        focusedCohortSessionId="session-1"
-        hasFocusedCohortSession
-        renderFocusedCohort={() => <div>Cohort monitoring detail</div>}
-      />,
-    );
-
-    expect((await screen.findByRole("alert")).textContent).toContain("Cohort detail is unavailable");
-    await user.click(screen.getByRole("button", { name: "Dismiss" }));
-    expect(screen.queryByRole("alert")).toBeNull();
-  });
 });

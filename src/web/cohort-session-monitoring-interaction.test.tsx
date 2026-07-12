@@ -3,11 +3,12 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React, { type ComponentProps } from "react";
 import { describe, expect, it, vi } from "vitest";
+import { AdminConsole } from "./admin-console";
 import {
-  AdminConsole,
+  AdminCohortExamSessionsFeature,
   CohortSessionMonitoringList,
   CohortSessionWorkspacePanel,
-} from "./admin-console";
+} from "./admin-cohort-exam-sessions";
 import {
   buildAdminNavigationHref,
   type AdminNavigationIntent,
@@ -393,5 +394,53 @@ describe("AdminConsole Cohort Exam Session monitoring path", () => {
     await act(async () => resolveCatalog?.(json({ activeExams: [exam], archivedExams: [] })));
     expect(await screen.findByText("Cohort Exam Session monitoring")).toBeTruthy();
     expect(fetchMock.mock.calls.filter(([url]) => url === "/api/admin/exams/exam-1/cohort-sessions")).toHaveLength(1);
+  });
+});
+
+describe("AdminCohortExamSessionsFeature seam", () => {
+  it("owns focused-session loading, lifecycle errors, and shell navigation intents", async () => {
+    const user = userEvent.setup();
+    const onNavigate = vi.fn();
+    const draftSession = {
+      ...session,
+      session: { ...session.session, status: "draft" as const, cloudShareExperienceId: null },
+    };
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/admin/exams") return json({ activeExams: [exam], archivedExams: [] });
+      if (url === "/api/admin/exams/exam-1/cohort-sessions") return json({ sessions: [draftSession] });
+      if (url.endsWith("/publish") && init?.method === "POST") {
+        return new Response(JSON.stringify({ error: "CloudShare publishing is unavailable", correlationId: "corr-publish" }), { status: 503 });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    render(
+      <AdminCohortExamSessionsFeature
+        active
+        examView="session"
+        focusedExamId="exam-1"
+        focusedCohortSessionId="cohort-session-1"
+        supportMonitoringActive={false}
+        fetchAdmin={fetchAdmin}
+        onNavigate={onNavigate}
+        getNavigationHref={shellNavigationHref}
+        catalog={null}
+        onCohortActivityChange={vi.fn()}
+      />,
+    );
+
+    await screen.findByText("Cohort Exam Session workspace");
+    expect(fetchAdmin).toHaveBeenCalledWith("/api/admin/exams/exam-1/cohort-sessions");
+    await user.click(screen.getByRole("button", { name: "Open in Session Monitoring" }));
+    expect(onNavigate).toHaveBeenCalledWith({
+      tab: "support", supportView: "monitoring", examId: "exam-1", cohortSessionId: "cohort-session-1",
+    });
+    await user.click(screen.getByRole("button", { name: "Publish Cohort Session" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("CloudShare publishing is unavailable");
+    expect(screen.getByRole("alert").textContent).toContain("corr-publish");
+    expect(screen.getByRole("link", { name: "corr-publish" }).getAttribute("href")).toBe(
+      "/admin?tab=support&view=diagnostics&correlationId=corr-publish",
+    );
   });
 });
