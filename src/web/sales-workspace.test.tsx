@@ -19,5 +19,8 @@ describe("SalesWorkspace", () => {
     expect(html).toContain("Opportunities");
     expect(html).toContain("Opportunity Contacts");
     expect(html).toContain('href="/sales/diagnostics"');
+    expect(html).toContain("Demo Item catalog");
+    expect(html).toContain("Create Demo Item");
+    expect(html).toContain("No active Demo Items yet.");
   });
 });

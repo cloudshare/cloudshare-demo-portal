@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { CloudShareConnectionFeature } from "./admin-cloudshare-connection";
 import { createAdminAuthenticatedRequest } from "./admin-authenticated-request";
 import { accountLogoutButtonStyle, compactButtonStyle, dangerButtonStyle, disabledButtonStyle, primaryButtonStyle } from "./button-styles";
 import { cardStyle, mutedPanelStyle } from "./card-styles";
@@ -16,6 +17,9 @@ type SalesSelection = { accountId: string | null; opportunityId: string | null }
 type Lifecycle = "active" | "archived" | "all";
 type Sort = "name" | "created";
 type Dialog = { kind: "account"; record?: Account } | { kind: "opportunity"; record?: Opportunity } | { kind: "contact"; record?: Contact } | null;
+type Named = { id: string; name: string; friendlyName?: string };
+type Policy = Named & { storageLeaseMinutes: number | null };
+type DemoItem = { id: string; name: string; description: string; project: Named; blueprints: Named[]; policy: Named; region: Named; salesExperienceType: "guided_demo" | "hands_on_demo"; defaultDurationMinutes: number; status: "active" | "archived" };
 
 const blank: SalesData = { accounts: [], opportunities: [], contacts: [] };
 const controlStyle = { padding: "0.55rem", border: "1px solid #b7bdc8", borderRadius: "6px", background: "#fff" };
@@ -129,7 +133,7 @@ export function SalesWorkspace({ email, initialSelection }: { readonly email: st
   const contactInstruction = selectedOpportunity?.archivedAt ? "Archived Opportunities cannot receive Contacts." : undefined;
 
   return <main style={salesWorkspaceStyle}>
-    <PortalPageHeader eyebrow="Certalis Sales Portal" title="Sales Workspace" description="A local, Customer-scoped commercial record workspace. No CRM sync or CloudShare Sales Experience operation is performed here." email={email} actions={<button onClick={() => void logout()} style={accountLogoutButtonStyle}>Log out</button>} />
+    <PortalPageHeader eyebrow="Certalis Sales Portal" title="Sales Workspace" description="Customer-scoped commercial records and archive-only CloudShare Demo Item curation. No CRM sync or Sales Experience provisioning is performed here." email={email} actions={<button onClick={() => void logout()} style={accountLogoutButtonStyle}>Log out</button>} />
     <section style={{ ...mutedPanelStyle, display: "flex", gap: "0.75rem", alignItems: "end", flexWrap: "wrap" }} aria-label="Sales workspace controls">
       <label style={{ display: "grid", gap: "0.3rem", flex: "1 1 22rem" }}>Search current view<input aria-label="Search current view" value={search} onChange={(event) => setSearch(event.target.value)} style={controlStyle} placeholder="Account, opportunity, or contact" /></label>
       <span style={{ color: "#52606d", fontSize: "0.9rem" }}>Select an Account, then an Opportunity, to work down the relationship.</span>
@@ -151,7 +155,83 @@ export function SalesWorkspace({ email, initialSelection }: { readonly email: st
       </RecordGrid>
     </div>
     {dialog ? <RecordDialog dialog={dialog} opener={dialogOpenerRef.current} selectedAccount={selectedAccount} selectedOpportunity={selectedOpportunity} accounts={data.accounts} opportunities={data.opportunities} loading={loading} onClose={closeDialog} onSave={mutate} /> : null}
+    <DemoItemCatalog fetchAdmin={fetchSales} />
   </main>;
+}
+
+function DemoItemCatalog({ fetchAdmin }: { fetchAdmin: typeof fetch }) {
+  const [showConnection, setShowConnection] = useState(false);
+  const [items, setItems] = useState<DemoItem[]>([]);
+  const [archived, setArchived] = useState<DemoItem[]>([]);
+  const [projects, setProjects] = useState<Named[]>([]);
+  const [regions, setRegions] = useState<Named[]>([]);
+  const [blueprints, setBlueprints] = useState<Named[]>([]);
+  const [policies, setPolicies] = useState<Policy[]>([]);
+  const [projectId, setProjectId] = useState("");
+  const [blueprintIds, setBlueprintIds] = useState<string[]>([]);
+  const [policyId, setPolicyId] = useState("");
+  const [regionId, setRegionId] = useState("");
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [salesExperienceType, setSalesExperienceType] = useState<DemoItem["salesExperienceType"]>("guided_demo");
+  const [error, setError] = useState<string | null>(null);
+  const [diagnostic, setDiagnostic] = useState<Record<string, unknown> | null>(null);
+  const [loading, setLoading] = useState(false);
+  const selectedPolicy = policies.find((policy) => policy.id === policyId);
+
+  const loadItems = useCallback(async () => {
+    const response = await fetchAdmin("/api/sales/demo-items");
+    const body = await response.json() as { activeDemoItems?: DemoItem[]; archivedDemoItems?: DemoItem[]; error?: string };
+    if (!response.ok) throw new Error(body.error ?? "Failed to load Demo Items");
+    setItems(body.activeDemoItems ?? []);
+    setArchived(body.archivedDemoItems ?? []);
+  }, [fetchAdmin]);
+  const loadBootstrap = useCallback(async () => {
+    setLoading(true); setError(null); setDiagnostic(null);
+    try {
+      const response = await fetchAdmin("/api/sales/demo-item-authoring?refresh=true");
+      const body = await response.json() as { projects?: Named[]; regions?: Named[]; error?: string; diagnostic?: Record<string, unknown> };
+      if (!response.ok) { setError(body.error ?? "Failed to load CloudShare resources"); setDiagnostic(body.diagnostic ?? null); return; }
+      setProjects(body.projects ?? []); setRegions(body.regions ?? []);
+    } finally { setLoading(false); }
+  }, [fetchAdmin]);
+  useEffect(() => { void loadItems().catch((caught) => setError(caught instanceof Error ? caught.message : "Failed to load Demo Items")); }, [loadItems]);
+
+  const selectProject = async (next: string) => {
+    setProjectId(next); setBlueprintIds([]); setPolicyId(""); setBlueprints([]); setPolicies([]);
+    if (!next) return;
+    setLoading(true); setError(null); setDiagnostic(null);
+    try {
+      const response = await fetchAdmin(`/api/sales/demo-item-authoring/projects/${encodeURIComponent(next)}?refresh=true`);
+      const body = await response.json() as { blueprints?: Named[]; policies?: Policy[]; error?: string; diagnostic?: Record<string, unknown> };
+      if (!response.ok) { setError(body.error ?? "Failed to load Project resources"); setDiagnostic(body.diagnostic ?? null); return; }
+      setBlueprints(body.blueprints ?? []); setPolicies(body.policies ?? []);
+    } finally { setLoading(false); }
+  };
+  const save = async () => {
+    setLoading(true); setError(null); setDiagnostic(null);
+    try {
+      const response = await fetchAdmin("/api/sales/demo-items", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, description, projectId, blueprintIds, policyId, regionId, salesExperienceType }) });
+      const body = await response.json() as { error?: string; diagnostic?: Record<string, unknown> };
+      if (!response.ok) { setError(body.error ?? "Unable to save Demo Item"); setDiagnostic(body.diagnostic ?? null); return; }
+      setName(""); setDescription(""); setBlueprintIds([]); await loadItems();
+    } finally { setLoading(false); }
+  };
+  const archive = async (id: string) => {
+    setError(null);
+    const response = await fetchAdmin(`/api/sales/demo-items/${encodeURIComponent(id)}/archive`, { method: "POST" });
+    const body = await response.json() as { error?: string; diagnostic?: Record<string, unknown> };
+    if (!response.ok) { setError(body.error ?? "Unable to archive Demo Item"); setDiagnostic(body.diagnostic ?? null); return; }
+    await loadItems();
+  };
+
+  return <section style={{ display: "grid", gap: "1rem", marginTop: "1rem" }} aria-label="Demo Item catalog">
+    <section style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem" }}><h2 style={{ margin: 0 }}>Demo Item catalog</h2><p style={{ margin: 0 }}>Demo Items are archive-only templates. They do not provision Sales Experiences or share environments.</p><div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}><button type="button" onClick={() => void loadBootstrap()} disabled={loading}>{loading ? "Loading…" : "Load live CloudShare resources"}</button><button type="button" onClick={() => setShowConnection((value) => !value)}>{showConnection ? "Hide CloudShare Connection" : "Connect CloudShare"}</button></div></section>
+    {showConnection ? <section style={{ display: "grid", gap: "1rem" }} aria-label="Sales CloudShare Connection"><h2 style={{ margin: 0 }}>CloudShare Connection</h2><CloudShareConnectionFeature active fetchAdmin={fetchAdmin} getNavigationHref={() => "/sales"} onNavigate={() => undefined} /></section> : null}
+    <section aria-label="Demo Item authoring" style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem" }}><h2 style={{ margin: 0 }}>Create Demo Item</h2><label>Name<input aria-label="Demo Item name" value={name} onChange={(event) => setName(event.target.value)} /></label><label>Description<textarea value={description} onChange={(event) => setDescription(event.target.value)} /></label><label>Project<select aria-label="Project" value={projectId} onChange={(event) => void selectProject(event.target.value)}><option value="">Select a Project</option>{projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><fieldset><legend>Blueprints (selection order is launch order)</legend>{blueprints.map((item) => <label key={item.id} style={{ display: "block" }}><input type="checkbox" checked={blueprintIds.includes(item.id)} onChange={() => setBlueprintIds((current) => current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id])} /> {item.name}</label>)}</fieldset><label>Policy<select aria-label="Policy" value={policyId} onChange={(event) => setPolicyId(event.target.value)}><option value="">Select a Policy</option>{policies.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><span>{selectedPolicy?.storageLeaseMinutes ? `Default duration: ${selectedPolicy.storageLeaseMinutes} minutes (Policy storage lease)` : "Choose a Policy with a storage lease."}</span><label>Region<select aria-label="Region" value={regionId} onChange={(event) => setRegionId(event.target.value)}><option value="">Select a Region</option>{regions.map((item) => <option key={item.id} value={item.id}>{item.friendlyName ?? item.name}</option>)}</select></label><label>Sales Experience type<select aria-label="Sales Experience type" value={salesExperienceType} onChange={(event) => setSalesExperienceType(event.target.value as DemoItem["salesExperienceType"])}><option value="guided_demo">Guided demo</option><option value="hands_on_demo">Hands-on demo</option></select></label><button type="button" onClick={() => void save()} disabled={loading}>Save Demo Item</button>{error ? <p role="alert">{error}</p> : null}{diagnostic ? <pre aria-label="Support diagnostics">{JSON.stringify(diagnostic, null, 2)}</pre> : null}</section>
+    <section aria-label="Active Demo Items"><h2>Active Demo Items</h2>{items.length === 0 ? <p>No active Demo Items yet.</p> : <ul>{items.map((item) => <li key={item.id}><strong>{item.name}</strong> — {item.blueprints.map((blueprint) => blueprint.name).join(" → ")}; {item.policy.name}; {item.region.name}; {item.defaultDurationMinutes} min <button type="button" onClick={() => void archive(item.id)}>Archive</button></li>)}</ul>}</section>
+    <section aria-label="Archived Demo Items"><h2>Archived history</h2>{archived.length === 0 ? <p>No archived Demo Items.</p> : <ul>{archived.map((item) => <li key={item.id}>{item.name} (archived; cannot start a Sales Demo Session)</li>)}</ul>}</section>
+  </section>;
 }
 
 function RecordGrid({ title, columns, context, count, lifecycle, sort, onLifecycle, onSort, addLabel, disabled, addInstruction, onAdd, children }: { title: string; columns: readonly string[]; context?: React.ReactNode; count: number; lifecycle: Lifecycle; sort: Sort; onLifecycle: (value: Lifecycle) => void; onSort: (value: Sort) => void; addLabel: string; disabled?: boolean; addInstruction?: string; onAdd: (event: React.MouseEvent<HTMLButtonElement>) => void; children: React.ReactNode }) {
