@@ -178,12 +178,12 @@ function sleep(ms: number): Promise<void> {
 }
 
 function chooseLiveExam(exams: readonly CandidateExamItem[]): CandidateExamItem {
-  const preferred = exams.find((exam) => exam.title === 'Windows Boxes');
+  const preferred = exams.find((exam) => /^qa #328\b/i.test(exam.title));
   if (preferred) {
     return preferred;
   }
 
-  const nonQa = exams.filter((exam) => !/^qa\b/i.test(exam.title));
+  const nonQa = exams.filter((exam) => exam.title !== "Windows Boxes" && !/^qa\b/i.test(exam.title));
   const pool = nonQa.length > 0 ? nonQa : exams;
   return [...pool].sort((a, b) => a.timeLimitMinutes - b.timeLimitMinutes)[0];
 }

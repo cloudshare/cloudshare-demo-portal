@@ -76,6 +76,7 @@ export interface CloudShareTrainingRetirementWriter {
   }): Promise<RetireCloudShareTrainingResult>;
 }
 
+/** @internal TrainingDelivery implementation detail; active runtimes use training-delivery.ts. */
 export function createCloudShareTrainingRetirementWriter(
   client: CloudShareClient,
 ): CloudShareTrainingRetirementWriter {

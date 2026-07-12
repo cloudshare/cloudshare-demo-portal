@@ -155,6 +155,7 @@ function inferFailureMode(error: unknown): CloudShareTeamReadFailureEvent["failu
   return "cloudshare_error";
 }
 
+/** @internal TrainingDelivery implementation detail; active runtimes use training-delivery.ts. */
 export function createCloudShareLabProvisioner(
   client: CloudShareClient,
   observer?: CloudShareLabProvisionerObserver,

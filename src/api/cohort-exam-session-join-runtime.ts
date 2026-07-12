@@ -19,9 +19,10 @@ import {
   type ExamAttempt,
 } from "@/domain/exam-attempt";
 import {
-  CERTALIS_TRAINING_USER_PROPERTY_KEYS,
+  type CohortParticipantAdmissionResult,
   type LabLaunch,
   type LabLaunchRepository,
+  TrainingDeliveryOperationError,
 } from "@/domain/lab-launch";
 import {
   CloudShareRequestError,
@@ -29,7 +30,7 @@ import {
   CloudShareTransportError,
   isCloudShareRateLimitError,
 } from "@/integrations/cloudshare";
-import { createCloudShareLabProvisioner } from "@/integrations/cloudshare/labs";
+import { createCloudShareTrainingDelivery } from "@/integrations/cloudshare/training-delivery";
 import type { Logger } from "@/observability/logger";
 import { guardRuntimeBlueprintSnapshot } from "./runtime-blueprint-snapshot-guard";
 
@@ -356,26 +357,87 @@ export async function joinCohortExamSessionRuntime(
   }
 
   const cloudshare = deps.cloudshare.forConnection(connection);
-  const labs = createCloudShareLabProvisioner(cloudshare);
-  const trainingStartStateReader = labs.getTrainingStartState;
-  const participantAdder = labs.addParticipant;
-  const trainingUserPropertyEnsurer = labs.ensureTrainingUserPropertyKeys;
-  if (!trainingStartStateReader) {
-    throw new Error("LabProvisioner does not support cohort training start-state reads.");
-  }
-  if (!trainingUserPropertyEnsurer) {
-    throw new Error("LabProvisioner does not support cohort training user-property validation.");
-  }
-  if (!participantAdder) {
-    throw new Error("LabProvisioner does not support cohort participant registration.");
-  }
+  const trainingDelivery = createCloudShareTrainingDelivery(cloudshare);
+  const recordCompletedAdmissionSteps = async (
+    completed:
+      | {
+          readonly startState?: CohortParticipantAdmissionResult["startState"];
+          readonly userProperties?: Extract<CohortParticipantAdmissionResult, { admission: "open" }>["userProperties"];
+          readonly participant?: Extract<CohortParticipantAdmissionResult, { admission: "open" }>["participant"];
+        }
+      | undefined,
+  ) => {
+    if (completed?.startState) {
+      const startState = completed.startState;
+      await deps.diagnostics?.record({
+        ...anchors,
+        level: "info",
+        operation: "cloudshare.read_training",
+        outcome: "success",
+        message: "CloudShare training start state read for shared Cohort Exam Session",
+        externalIds,
+        ...(startState.request ? { request: startState.request as unknown as Record<string, unknown> } : {}),
+        ...(startState.response ? { response: startState.response as unknown as Record<string, unknown> } : {}),
+        details: { integrationSurface: startState.integrationSurface ?? "cloudshare.v4.training.get" },
+      });
+    }
+    if (completed?.userProperties) {
+      const properties = completed.userProperties;
+      await deps.diagnostics?.record({
+        ...anchors,
+        level: "info",
+        operation: "cloudshare.ensure_user_properties",
+        outcome: "success",
+        message: "CloudShare training user-property keys confirmed for shared Cohort Exam Session",
+        externalIds,
+        ...(properties.request ? { request: properties.request as unknown as Record<string, unknown> } : {}),
+        ...(properties.response ? { response: properties.response as unknown as Record<string, unknown> } : {}),
+        details: {
+          integrationSurface: properties.integrationSurface ?? "cloudshare.v4.training.user_properties",
+          ...(toTrainingUserPropertyHttpExchanges(properties) !== undefined
+            ? { httpExchanges: toTrainingUserPropertyHttpExchanges(properties) }
+            : {}),
+        },
+      });
+    }
+    if (completed?.participant) {
+      const participant = completed.participant;
+      await deps.diagnostics?.record({
+        ...anchors,
+        level: "info",
+        operation: "cloudshare.add_participant",
+        outcome: "success",
+        message: "CloudShare participant added to shared Cohort Exam Session",
+        externalIds: participant.participantId ? { ...externalIds, participantId: participant.participantId } : externalIds,
+        ...(participant.request ? { request: participant.request as unknown as Record<string, unknown> } : {}),
+        response: participant.response as unknown as Record<string, unknown>,
+        ...(participant.integrationSurface ? { details: { integrationSurface: participant.integrationSurface } } : {}),
+      });
+    }
+  };
 
-  let trainingStartState;
+  let admission;
   try {
-    trainingStartState = await trainingStartStateReader({
+    admission = await trainingDelivery.admitCohortParticipant({
       trainingId: session.cloudShareTrainingId,
+      experienceId: session.cloudShareExperienceId,
+      now,
+      participant: {
+        email: request.candidateEmail,
+        firstName: request.candidateFirstName.trim(),
+        lastName: request.candidateLastName.trim(),
+        certalisExamAttemptId: attemptId,
+        certalisCandidateId: request.candidateId,
+      },
     });
   } catch (cause) {
+    if (cause instanceof TrainingDeliveryOperationError) {
+      await recordCompletedAdmissionSteps(cause.context.cohort);
+    }
+    const failure =
+      cause instanceof TrainingDeliveryOperationError
+        ? { operation: cause.operation, cause: cause.context.cause }
+        : { operation: "read_training" as const, cause };
     await recordProvisioningFailure(deps, {
       anchors,
       attemptId,
@@ -383,20 +445,25 @@ export async function joinCohortExamSessionRuntime(
       examId: exam.id,
       candidateId: request.candidateId,
       externalIds,
-      attemptedOperation: "read_training",
-      cause,
+      attemptedOperation:
+        failure.operation === "create_training" ? "read_training" : failure.operation,
+      cause: failure.cause,
     });
     await deps.attempts.delete(attemptId);
     return {
-      status: isCloudShareRateLimitError(cause) ? 429 : 502,
+      status: isCloudShareRateLimitError(failure.cause) ? 429 : 502,
       body: {
-        error: isCloudShareRateLimitError(cause)
+        error: isCloudShareRateLimitError(failure.cause)
           ? CLOUDSHARE_429_CANDIDATE_MESSAGE
-          : "CloudShare could not confirm this Cohort Exam Session is open yet.",
+          : failure.operation === "read_training"
+            ? "CloudShare could not confirm this Cohort Exam Session is open yet."
+            : "CloudShare provisioning failed for the shared cohort Exam Session.",
         correlationId,
       },
     };
   }
+
+  const trainingStartState = admission.startState;
 
   await deps.diagnostics?.record({
     ...anchors,
@@ -440,7 +507,7 @@ export async function joinCohortExamSessionRuntime(
     },
   });
 
-  if (trainingStartState.startsAt && trainingStartState.startsAt.getTime() > now.getTime()) {
+  if (admission.admission === "not_started") {
     await recordJoinRejection(deps, {
       request,
       correlationId,
@@ -452,7 +519,7 @@ export async function joinCohortExamSessionRuntime(
       externalIds,
       details: {
         cloudShareStatus: trainingStartState.status,
-        cloudShareStartsAt: trainingStartState.startsAt.toISOString(),
+        cloudShareStartsAt: trainingStartState.startsAt?.toISOString() ?? null,
         cloudShareRawStartsAt: trainingStartState.rawStartsAt,
         cloudShareTimeZone: trainingStartState.timeZone,
         localAdmissionStartsAt: session.admissionStartsAt.toISOString(),
@@ -466,41 +533,13 @@ export async function joinCohortExamSessionRuntime(
       body: {
         error: "This Cohort Exam Session is not open in CloudShare yet.",
         code: "cloudshare_training_not_started",
-        cloudShareStartsAt: trainingStartState.startsAt.toISOString(),
+        cloudShareStartsAt: trainingStartState.startsAt?.toISOString() ?? null,
         correlationId,
       },
     };
   }
 
-  let ensuredTrainingUserProperties;
-  try {
-    ensuredTrainingUserProperties = await trainingUserPropertyEnsurer({
-      trainingId: session.cloudShareTrainingId,
-      experienceId: session.cloudShareExperienceId,
-      requiredKeys: CERTALIS_TRAINING_USER_PROPERTY_KEYS,
-    });
-  } catch (cause) {
-    await recordProvisioningFailure(deps, {
-      anchors,
-      attemptId,
-      correlationId,
-      examId: exam.id,
-      candidateId: request.candidateId,
-      externalIds,
-      attemptedOperation: "ensure_user_properties",
-      cause,
-    });
-    await deps.attempts.delete(attemptId);
-    return {
-      status: isCloudShareRateLimitError(cause) ? 429 : 502,
-      body: {
-        error: isCloudShareRateLimitError(cause)
-          ? CLOUDSHARE_429_CANDIDATE_MESSAGE
-          : "CloudShare provisioning failed for the shared cohort Exam Session.",
-        correlationId,
-      },
-    };
-  }
+  const ensuredTrainingUserProperties = admission.userProperties;
 
   await deps.diagnostics?.record({
     ...anchors,
@@ -548,38 +587,7 @@ export async function joinCohortExamSessionRuntime(
     },
   });
 
-  let addParticipantResult;
-  try {
-    addParticipantResult = await participantAdder({
-      trainingId: session.cloudShareTrainingId,
-      email: request.candidateEmail,
-      firstName: request.candidateFirstName.trim(),
-      lastName: request.candidateLastName.trim(),
-      certalisExamAttemptId: attemptId,
-      certalisCandidateId: request.candidateId,
-    });
-  } catch (cause) {
-    await recordProvisioningFailure(deps, {
-      anchors,
-      attemptId,
-      correlationId,
-      examId: exam.id,
-      candidateId: request.candidateId,
-      externalIds,
-      attemptedOperation: "add_participant",
-      cause,
-    });
-    await deps.attempts.delete(attemptId);
-    return {
-      status: isCloudShareRateLimitError(cause) ? 429 : 502,
-      body: {
-        error: isCloudShareRateLimitError(cause)
-          ? CLOUDSHARE_429_CANDIDATE_MESSAGE
-          : "CloudShare provisioning failed for the shared cohort Exam Session.",
-        correlationId,
-      },
-    };
-  }
+  const addParticipantResult = admission.participant;
 
   const participantExternalIds = addParticipantResult.participantId
     ? { ...externalIds, participantId: addParticipantResult.participantId }
@@ -618,36 +626,7 @@ export async function joinCohortExamSessionRuntime(
       : undefined,
   });
 
-  let sponsoredLink;
-  try {
-    sponsoredLink = await labs.createSponsoredLink({
-      trainingId: session.cloudShareTrainingId,
-      email: request.candidateEmail,
-      firstName: request.candidateFirstName.trim(),
-      lastName: request.candidateLastName.trim(),
-    });
-  } catch (cause) {
-    await recordProvisioningFailure(deps, {
-      anchors,
-      attemptId,
-      correlationId,
-      examId: exam.id,
-      candidateId: request.candidateId,
-      externalIds,
-      attemptedOperation: "create_sponsored_link",
-      cause,
-    });
-    await deps.attempts.delete(attemptId);
-    return {
-      status: isCloudShareRateLimitError(cause) ? 429 : 502,
-      body: {
-        error: isCloudShareRateLimitError(cause)
-          ? CLOUDSHARE_429_CANDIDATE_MESSAGE
-          : "CloudShare provisioning failed for the shared cohort Exam Session.",
-        correlationId,
-      },
-    };
-  }
+  const sponsoredLink = admission.sponsoredLink;
 
   await deps.diagnostics?.record({
     ...anchors,

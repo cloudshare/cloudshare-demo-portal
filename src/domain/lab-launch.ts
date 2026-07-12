@@ -165,6 +165,102 @@ export interface GetTrainingStartStateResult {
   readonly response?: ProvisioningResponseEvidence;
 }
 
+/**
+ * Training-only delivery seams. These describe portal work in terms of complete
+ * Training outcomes, rather than CloudShare endpoint calls. Sales must prove
+ * its own adapter before any cross-product seam is introduced.
+ */
+export interface IndividualTrainingProvisioningInput {
+  readonly training: CreateTrainingInput;
+  readonly participant: Omit<AddParticipantInput, "trainingId">;
+}
+
+export interface IndividualTrainingProvisioningResult {
+  readonly training: CreateTrainingResult;
+  readonly userProperties: EnsureTrainingUserPropertyKeysResult;
+  readonly participant: AddParticipantResult;
+  readonly sponsoredLink: CreateSponsoredLinkResult;
+}
+
+export interface CohortTrainingPublicationInput {
+  readonly name: string;
+  readonly startsAt: Date;
+  readonly endsAt: Date | null;
+  readonly externalId: string;
+  readonly projectId: string;
+  readonly blueprintId: string;
+  readonly policyId: string;
+  readonly regionIds: readonly string[];
+  readonly instructorId: string;
+  readonly timeZoneId: string;
+  readonly passphrase: string;
+}
+
+export interface CohortTrainingPublicationResult {
+  readonly trainingId: string;
+  readonly experienceId: string;
+  readonly teamId: string;
+  readonly teamCount?: number;
+  readonly integrationSurface?: string;
+  readonly request?: ProvisioningRequestEvidence;
+  readonly response?: ProvisioningResponseEvidence;
+  readonly userProperties: EnsureTrainingUserPropertyKeysResult;
+}
+
+export interface CohortParticipantAdmissionInput {
+  readonly trainingId: string;
+  readonly experienceId: string;
+  readonly now: Date;
+  readonly participant: Omit<AddParticipantInput, "trainingId">;
+}
+
+export type CohortParticipantAdmissionResult =
+  | {
+      readonly admission: "not_started";
+      readonly startState: GetTrainingStartStateResult;
+    }
+  | {
+      readonly admission: "open";
+      readonly startState: GetTrainingStartStateResult;
+      readonly userProperties: EnsureTrainingUserPropertyKeysResult;
+      readonly participant: AddParticipantResult;
+      readonly sponsoredLink: CreateSponsoredLinkResult;
+    };
+
+export type TrainingDeliveryOperation =
+  | "create_training"
+  | "ensure_user_properties"
+  | "add_participant"
+  | "create_sponsored_link"
+  | "read_training";
+
+/** A structural failure that lets portal-owned diagnostics retain the failed step. */
+export class TrainingDeliveryOperationError extends Error {
+  constructor(
+    readonly operation: TrainingDeliveryOperation,
+    readonly context: {
+      readonly cause: unknown;
+      readonly trainingId?: string;
+      readonly experienceId?: string;
+      readonly individual?: Partial<IndividualTrainingProvisioningResult>;
+      readonly cohort?: Partial<CohortParticipantAdmissionResult>;
+      readonly publication?: Partial<CohortTrainingPublicationResult>;
+    },
+  ) {
+    super(`CloudShare Training delivery failed during ${operation.replace(/_/g, " ")}.`);
+    this.name = "TrainingDeliveryOperationError";
+  }
+}
+
+export interface IndividualTrainingDelivery {
+  provisionIndividual(input: IndividualTrainingProvisioningInput): Promise<IndividualTrainingProvisioningResult>;
+}
+
+export interface CohortTrainingDelivery {
+  publishCohortTraining(input: CohortTrainingPublicationInput): Promise<CohortTrainingPublicationResult>;
+  admitCohortParticipant(input: CohortParticipantAdmissionInput): Promise<CohortParticipantAdmissionResult>;
+}
+
 export interface LabProvisioner {
   createTraining?(input: CreateTrainingInput): Promise<CreateTrainingResult>;
   ensureTrainingUserPropertyKeys?(

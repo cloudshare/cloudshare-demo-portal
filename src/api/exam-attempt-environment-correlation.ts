@@ -14,7 +14,7 @@ import {
   CloudShareResponseError,
   CloudShareTransportError,
 } from "@/integrations/cloudshare";
-import { createCloudShareParticipantLister } from "@/integrations/cloudshare/participants";
+import { createCloudShareTrainingDelivery } from "@/integrations/cloudshare/training-delivery";
 
 export interface EnsureExamAttemptEnvironmentCorrelationDeps {
   readonly attempts: ExamAttemptRepository;
@@ -61,7 +61,7 @@ export async function ensureExamAttemptEnvironmentCorrelation(
     const result = await correlateEnvironmentForExamAttempt(
       {
         launches: deps.launches,
-        participants: createCloudShareParticipantLister(deps.cloudshare.forConnection(connection)),
+        participants: createCloudShareTrainingDelivery(deps.cloudshare.forConnection(connection)),
       },
       { examAttemptId: input.examAttemptId },
     );

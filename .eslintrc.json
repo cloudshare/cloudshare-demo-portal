@@ -1,4 +1,64 @@
 {
   "extends": "next/core-web-vitals",
-  "ignorePatterns": ["node_modules/", ".next/", "src/generated/"]
+  "ignorePatterns": ["node_modules/", ".next/", "src/generated/"],
+  "overrides": [
+    {
+      "files": ["src/**/*.{ts,tsx}"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "patterns": [
+              {
+                "group": [
+                  "@/integrations/cloudshare/labs",
+                  "./labs",
+                  "./labs.*",
+                  "../labs",
+                  "../labs.*",
+                  "**/integrations/cloudshare/labs",
+                  "**/integrations/cloudshare/labs.*",
+                  "@/integrations/cloudshare/participants",
+                  "./participants",
+                  "./participants.*",
+                  "../participants",
+                  "../participants.*",
+                  "**/integrations/cloudshare/participants",
+                  "**/integrations/cloudshare/participants.*",
+                  "@/integrations/cloudshare/cohort-experiences",
+                  "./cohort-experiences",
+                  "./cohort-experiences.*",
+                  "../cohort-experiences",
+                  "../cohort-experiences.*",
+                  "**/integrations/cloudshare/cohort-experiences",
+                  "**/integrations/cloudshare/cohort-experiences.*",
+                  "@/integrations/cloudshare/cohort-experience-retirement",
+                  "./cohort-experience-retirement",
+                  "./cohort-experience-retirement.*",
+                  "../cohort-experience-retirement",
+                  "../cohort-experience-retirement.*",
+                  "**/integrations/cloudshare/cohort-experience-retirement",
+                  "**/integrations/cloudshare/cohort-experience-retirement.*",
+                  "@/integrations/cloudshare/guided-journey",
+                  "./guided-journey",
+                  "./guided-journey.*",
+                  "../guided-journey",
+                  "../guided-journey.*",
+                  "**/integrations/cloudshare/guided-journey",
+                  "**/integrations/cloudshare/guided-journey.*"
+                ],
+                "message": "Active runtime code must use the TrainingDelivery interface, not its internal CloudShare factory modules."
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["src/integrations/cloudshare/training-delivery.ts", "**/*.test.ts", "tests/**/*.ts"],
+      "rules": {
+        "no-restricted-imports": "off"
+      }
+    }
+  ]
 }

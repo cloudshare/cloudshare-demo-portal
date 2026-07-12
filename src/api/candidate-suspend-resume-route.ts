@@ -15,7 +15,6 @@ export interface CandidateSuspendResumeServices {
   readonly environmentController: SuspendHandlerDeps["controller"];
   readonly examAttempts: SuspendHandlerDeps["attempts"];
   readonly labLaunches: SuspendHandlerDeps["launches"];
-  readonly labProvisioner: ResumeHandlerDeps["labs"];
   readonly examClock: SuspendHandlerDeps["timer"] & SuspendHandlerDeps["clocks"];
   readonly exams: NonNullable<SuspendHandlerDeps["exams"]>;
   readonly logger: SuspendHandlerDeps["logger"];
@@ -67,10 +66,7 @@ export function buildCandidateResumeWorkflowDeps(
   services: CandidateSuspendResumeServices,
   options: CandidateSuspendResumeDepsOptions = {},
 ): ResumeHandlerDeps {
-  return {
-    ...buildCandidateSuspendWorkflowDeps(services, options),
-    labs: services.labProvisioner,
-  };
+  return buildCandidateSuspendWorkflowDeps(services, options);
 }
 
 export async function handleCandidateSuspendExamRoute(

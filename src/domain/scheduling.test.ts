@@ -14,7 +14,12 @@ import {
   ScheduleValidationError,
   scheduleExam,
 } from "./scheduling";
-import type { CreateTrainingInput, LabProvisioner } from "./lab-launch";
+import {
+  TrainingDeliveryOperationError,
+  type CreateTrainingInput,
+  type IndividualTrainingDelivery,
+  type LabProvisioner,
+} from "./lab-launch";
 import { createDiagnosticRecorder } from "./diagnostic-log";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 
@@ -73,10 +78,10 @@ it("uses the authored open period for CloudShare training End while preserving t
       exams,
       attempts: createInMemoryExamAttemptRepository(),
       launches: createInMemoryLabLaunchRepository(),
-      labs: {
+      trainingDelivery: testTrainingDelivery({
         ...makeLabs(),
         createTraining,
-      },
+      }),
       newId: vi.fn().mockReturnValueOnce("attempt-1").mockReturnValueOnce("launch-1"),
       now: () => new Date("2026-06-15T10:00:00.000Z"),
     },
@@ -104,7 +109,7 @@ it("uses the authored open period for CloudShare training End while preserving t
   });
 });
 
-function makeLabs(order: string[] = []): LabProvisioner {
+function makeLabs(order: string[] = []): LabProvisioner & IndividualTrainingDelivery {
   return {
     async createExperience() {
       throw new Error("legacy experience flow not used in scheduling tests");
@@ -202,7 +207,61 @@ function makeLabs(order: string[] = []): LabProvisioner {
         },
       };
     },
+    async provisionIndividual(input) {
+      let training;
+      try {
+        training = await this.createTraining!(input.training);
+      } catch (cause) {
+        throw new TrainingDeliveryOperationError("create_training", { cause });
+      }
+      let userProperties;
+      try {
+        userProperties = await this.ensureTrainingUserPropertyKeys!({
+          trainingId: training.trainingId,
+          experienceId: training.trainingId,
+          requiredKeys: ["certalisExamAttemptId", "certalisCandidateId"],
+        });
+      } catch (cause) {
+        throw new TrainingDeliveryOperationError("ensure_user_properties", {
+          cause,
+          trainingId: training.trainingId,
+          individual: { training },
+        });
+      }
+      let participant;
+      try {
+        participant = await this.addParticipant!({
+          ...input.participant,
+          trainingId: training.trainingId,
+        });
+      } catch (cause) {
+        throw new TrainingDeliveryOperationError("add_participant", {
+          cause,
+          trainingId: training.trainingId,
+          individual: { training, userProperties },
+        });
+      }
+      try {
+        const sponsoredLink = await this.createSponsoredLink!({
+          trainingId: training.trainingId,
+          email: input.participant.email,
+          firstName: input.participant.firstName,
+          lastName: input.participant.lastName,
+        });
+        return { training, userProperties, participant, sponsoredLink };
+      } catch (cause) {
+        throw new TrainingDeliveryOperationError("create_sponsored_link", {
+          cause,
+          trainingId: training.trainingId,
+          individual: { training, userProperties, participant },
+        });
+      }
+    },
   };
+}
+
+function testTrainingDelivery<T extends IndividualTrainingDelivery>(delivery: T): IndividualTrainingDelivery {
+  return delivery;
 }
 
 async function setup(examOverrides: Partial<CreateDraftExamInput> = {}) {
@@ -247,10 +306,10 @@ describe("scheduleExam", () => {
           exams,
           attempts,
           launches,
-          labs: {
+          trainingDelivery: testTrainingDelivery({
             ...makeLabs(),
             createTraining,
-          },
+          }),
           newId: vi.fn(),
           now: () => new Date("2026-06-15T10:00:00.000Z"),
         },
@@ -293,11 +352,11 @@ describe("scheduleExam", () => {
         exams,
         attempts,
         launches,
-        labs: {
+        trainingDelivery: testTrainingDelivery({
           ...makeLabs(order),
           addParticipant,
           createSponsoredLink,
-        },
+        }),
         newId: vi
           .fn()
           .mockReturnValueOnce("attempt-1")
@@ -366,10 +425,10 @@ describe("scheduleExam", () => {
         exams,
         attempts,
         launches,
-        labs: {
+        trainingDelivery: testTrainingDelivery({
           ...makeLabs(),
           createTraining,
-        },
+        }),
         newId: vi
           .fn()
           .mockReturnValueOnce("attempt-1")
@@ -408,10 +467,10 @@ describe("scheduleExam", () => {
         exams,
         attempts,
         launches,
-        labs: {
+        trainingDelivery: testTrainingDelivery({
           ...makeLabs(),
           createTraining,
-        },
+        }),
         newId: vi
           .fn()
           .mockReturnValueOnce("attempt-1")
@@ -448,10 +507,10 @@ describe("scheduleExam", () => {
         exams,
         attempts,
         launches,
-        labs: {
+        trainingDelivery: testTrainingDelivery({
           ...makeLabs(),
           createTraining,
-        },
+        }),
         newId: vi
           .fn()
           .mockReturnValueOnce("attempt-1")
@@ -483,7 +542,7 @@ describe("scheduleExam", () => {
         exams,
         attempts,
         launches,
-        labs: makeLabs(),
+        trainingDelivery: makeLabs(),
         newId: vi
           .fn()
           .mockReturnValueOnce("attempt-1")
@@ -526,10 +585,10 @@ describe("scheduleExam", () => {
           exams,
           attempts,
           launches,
-          labs: {
+          trainingDelivery: testTrainingDelivery({
             ...makeLabs(),
             createTraining,
-          },
+          }),
           newId: vi.fn(),
           now: () => new Date("2026-06-15T10:00:00.000Z"),
         },
@@ -575,10 +634,10 @@ describe("scheduleExam", () => {
           exams,
           attempts,
           launches,
-          labs: {
+          trainingDelivery: testTrainingDelivery({
             ...makeLabs(),
             createTraining,
-          },
+          }),
           newId: vi.fn(),
           now: () => new Date("2026-06-15T10:00:00.000Z"),
         },
@@ -622,10 +681,10 @@ describe("scheduleExam", () => {
         exams,
         attempts,
         launches,
-        labs: {
+        trainingDelivery: testTrainingDelivery({
           ...makeLabs(),
           createTraining,
-        },
+        }),
         newId: vi.fn().mockReturnValueOnce("attempt-2").mockReturnValueOnce("launch-2"),
         now: () => new Date("2026-06-15T10:00:00.000Z"),
       },
@@ -671,10 +730,10 @@ describe("scheduleExam", () => {
           exams,
           attempts,
           launches,
-          labs: {
+          trainingDelivery: testTrainingDelivery({
             ...makeLabs(),
             createTraining,
-          },
+          }),
           newId: vi.fn().mockReturnValueOnce("attempt-2").mockReturnValueOnce("launch-2"),
           now: () => new Date("2026-06-15T10:00:00.000Z"),
         },
@@ -724,10 +783,10 @@ describe("scheduleExam", () => {
         exams,
         attempts,
         launches,
-        labs: {
+        trainingDelivery: testTrainingDelivery({
           ...makeLabs(),
           createTraining,
-        },
+        }),
         newId: vi.fn().mockReturnValueOnce("attempt-2").mockReturnValueOnce("launch-2"),
         now: () => new Date("2026-06-15T10:00:00.000Z"),
       },
@@ -776,10 +835,10 @@ describe("scheduleExam", () => {
         exams,
         attempts,
         launches,
-        labs: {
+        trainingDelivery: testTrainingDelivery({
           ...makeLabs(),
           createTraining,
-        },
+        }),
         newId: vi.fn().mockReturnValueOnce("attempt-2").mockReturnValueOnce("launch-2"),
         now: () => new Date("2026-06-15T10:00:00.000Z"),
       },
@@ -820,10 +879,10 @@ describe("scheduleExam", () => {
           exams,
           attempts,
           launches,
-          labs: {
+          trainingDelivery: testTrainingDelivery({
             ...makeLabs(),
             createTraining,
-          },
+          }),
           newId: vi.fn(),
           now: () => new Date("2026-06-15T10:00:00.000Z"),
         },
@@ -856,7 +915,7 @@ describe("scheduleExam", () => {
           exams,
           attempts,
           launches,
-          labs: {
+          trainingDelivery: testTrainingDelivery({
             async createExperience() {
               throw new Error("legacy experience flow not used in scheduling tests");
             },
@@ -884,7 +943,36 @@ describe("scheduleExam", () => {
               throw new Error("forbidden");
             },
             createSponsoredLink: sponsoredLink,
-          },
+            async provisionIndividual(input) {
+              const lowLevel = this as unknown as LabProvisioner;
+              const training = await lowLevel.createTraining!(input.training);
+              const userProperties = await lowLevel.ensureTrainingUserPropertyKeys!({
+                trainingId: training.trainingId,
+                experienceId: training.trainingId,
+                requiredKeys: ["certalisExamAttemptId", "certalisCandidateId"],
+              });
+              let participant;
+              try {
+                participant = await lowLevel.addParticipant!({
+                  ...input.participant,
+                  trainingId: training.trainingId,
+                });
+              } catch (cause) {
+                throw new TrainingDeliveryOperationError("add_participant", {
+                  cause,
+                  trainingId: training.trainingId,
+                  individual: { training, userProperties },
+                });
+              }
+              const sponsoredLinkResult = await lowLevel.createSponsoredLink!({
+                trainingId: training.trainingId,
+                email: input.participant.email,
+                firstName: input.participant.firstName,
+                lastName: input.participant.lastName,
+              });
+              return { training, userProperties, participant, sponsoredLink: sponsoredLinkResult };
+            },
+          }),
           newId: vi
             .fn()
             .mockReturnValueOnce("attempt-1")
@@ -919,7 +1007,7 @@ describe("scheduleExam", () => {
         exams,
         attempts,
         launches,
-        labs: {
+        trainingDelivery: testTrainingDelivery({
           ...makeLabs(),
           async createSponsoredLink() {
             return {
@@ -940,7 +1028,7 @@ describe("scheduleExam", () => {
               },
             };
           },
-        },
+        }),
         newId: vi.fn().mockReturnValueOnce("attempt-1").mockReturnValueOnce("launch-1"),
         now: () => new Date("2026-06-15T10:00:00.000Z"),
         diagnostics,
@@ -1067,12 +1155,12 @@ describe("scheduleExam", () => {
           exams,
           attempts,
           launches,
-          labs: {
+          trainingDelivery: testTrainingDelivery({
             ...makeLabs(),
             async addParticipant() {
               throw cloudShareError;
             },
-          },
+          }),
           newId: vi.fn().mockReturnValueOnce("attempt-1").mockReturnValueOnce("launch-1"),
           now: () => new Date("2026-06-15T10:00:00.000Z"),
           diagnostics,
@@ -1121,12 +1209,12 @@ describe("scheduleExam", () => {
           exams,
           attempts,
           launches,
-          labs: {
+          trainingDelivery: testTrainingDelivery({
             ...makeLabs(),
             async addParticipant() {
               throw new Error("forbidden");
             },
-          },
+          }),
           newId: vi.fn().mockReturnValueOnce("attempt-1").mockReturnValueOnce("launch-1"),
           now: () => new Date("2026-06-15T10:00:00.000Z"),
           diagnostics,
@@ -1174,12 +1262,12 @@ describe("scheduleExam", () => {
           exams,
           attempts,
           launches,
-          labs: {
+          trainingDelivery: testTrainingDelivery({
             ...makeLabs(),
             async createTraining() {
               throw transportError;
             },
-          },
+          }),
           newId: vi.fn().mockReturnValueOnce("attempt-1").mockReturnValueOnce("launch-1"),
           now: () => new Date("2026-06-15T10:00:00.000Z"),
           diagnostics,
@@ -1233,12 +1321,12 @@ describe("scheduleExam", () => {
           exams,
           attempts,
           launches,
-          labs: {
+          trainingDelivery: testTrainingDelivery({
             ...makeLabs(),
             async addParticipant() {
               throw responseError;
             },
-          },
+          }),
           newId: vi.fn().mockReturnValueOnce("attempt-1").mockReturnValueOnce("launch-1"),
           now: () => new Date("2026-06-15T10:00:00.000Z"),
           diagnostics,
@@ -1292,12 +1380,12 @@ describe("scheduleExam", () => {
           exams,
           attempts,
           launches,
-          labs: {
+          trainingDelivery: testTrainingDelivery({
             ...makeLabs(),
             async createSponsoredLink() {
               throw leakyError;
             },
-          },
+          }),
           newId: vi.fn().mockReturnValueOnce("attempt-1").mockReturnValueOnce("launch-1"),
           now: () => new Date("2026-06-15T10:00:00.000Z"),
           diagnostics,
@@ -1335,7 +1423,7 @@ describe("scheduleExam", () => {
           exams,
           attempts,
           launches,
-          labs: makeLabs(),
+          trainingDelivery: makeLabs(),
           newId: vi.fn(),
           now: () => new Date("2026-06-15T10:00:00.000Z"),
         },

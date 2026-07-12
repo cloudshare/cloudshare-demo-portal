@@ -1335,6 +1335,17 @@ describe("joinCohortExamSessionRuntime", () => {
       diagnosticsRepository.query({ examAttemptId: "attempt-1", correlationId: "corr-cohort-join-fail" }),
     ).resolves.toEqual(
       expect.arrayContaining([
+        expect.objectContaining({ operation: "cloudshare.read_training", outcome: "success" }),
+        expect.objectContaining({
+          operation: "cloudshare.ensure_user_properties",
+          outcome: "success",
+          details: expect.objectContaining({
+            httpExchanges: expect.arrayContaining([
+              expect.objectContaining({ request: expect.objectContaining({ method: "GET" }) }),
+              expect.objectContaining({ request: expect.objectContaining({ method: "POST" }) }),
+            ]),
+          }),
+        }),
         expect.objectContaining({
           operation: "cloudshare.add_participant",
           outcome: "failure",
@@ -1450,6 +1461,18 @@ describe("joinCohortExamSessionRuntime", () => {
       diagnosticsRepository.query({ examAttemptId: "attempt-1", correlationId: "corr-cohort-link-fail" }),
     ).resolves.toEqual(
       expect.arrayContaining([
+        expect.objectContaining({ operation: "cloudshare.read_training", outcome: "success" }),
+        expect.objectContaining({
+          operation: "cloudshare.ensure_user_properties",
+          outcome: "success",
+          details: expect.objectContaining({
+            httpExchanges: expect.arrayContaining([
+              expect.objectContaining({ request: expect.objectContaining({ method: "GET" }) }),
+              expect.objectContaining({ request: expect.objectContaining({ method: "POST" }) }),
+            ]),
+          }),
+        }),
+        expect.objectContaining({ operation: "cloudshare.add_participant", outcome: "success" }),
         expect.objectContaining({
           operation: "cloudshare.create_sponsored_link",
           outcome: "failure",

@@ -24,9 +24,9 @@ import {
   isCloudShareRateLimitError,
 } from "@/integrations/cloudshare";
 import {
-  createCloudShareLabProvisioner,
+  createCloudShareTrainingDelivery,
   type CloudShareLabProvisionerObserver,
-} from "@/integrations/cloudshare/labs";
+} from "@/integrations/cloudshare/training-delivery";
 import type { Logger } from "@/observability/logger";
 import { guardRuntimeBlueprintSnapshot } from "./runtime-blueprint-snapshot-guard";
 
@@ -164,16 +164,18 @@ export async function scheduleExamAttemptRuntime(
     };
   }
 
-  const labs = createCloudShareLabProvisioner(
+  const trainingDelivery = createCloudShareTrainingDelivery(
     cloudshare,
-    createTeamReadDiagnosticObserver({
-      diagnostics: deps.diagnostics,
-      customerId: request.customerId,
-      candidateId: request.candidateId,
-      candidateEmail: request.candidateEmail,
-      examId: request.examId,
-      correlationId,
-    }),
+    {
+      observer: createTeamReadDiagnosticObserver({
+        diagnostics: deps.diagnostics,
+        customerId: request.customerId,
+        candidateId: request.candidateId,
+        candidateEmail: request.candidateEmail,
+        examId: request.examId,
+        correlationId,
+      }),
+    },
   );
 
   try {
@@ -182,7 +184,7 @@ export async function scheduleExamAttemptRuntime(
         exams: deps.exams,
         attempts: deps.attempts,
         launches: deps.launches,
-        labs,
+        trainingDelivery,
         newId: deps.newId ?? randomUUID,
         now: deps.now ?? (() => new Date()),
         diagnostics: deps.diagnostics,

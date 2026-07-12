@@ -7,13 +7,12 @@ import {
 import type {
   LabLaunch,
   LabLaunchRepository,
-  LabProvisioner,
+  IndividualTrainingDelivery,
   ProvisioningRequestEvidence,
   ProvisioningResponseEvidence,
 } from "./lab-launch";
+import { TrainingDeliveryOperationError } from "./lab-launch";
 import type { DiagnosticRecorder } from "./diagnostic-log";
-
-import { CERTALIS_TRAINING_USER_PROPERTY_KEYS as CERTALIS_USER_PROPERTY_KEYS } from "./lab-launch";
 
 type ProvisioningOperation =
   | "create_training"
@@ -192,11 +191,27 @@ export class CloudShareProvisioningError extends Error {
   }
 }
 
+function toTrainingDeliveryFailure(cause: unknown): {
+  readonly operation: ProvisioningOperation;
+  readonly cause: unknown;
+  readonly trainingId?: string;
+} {
+  if (cause instanceof TrainingDeliveryOperationError) {
+    return {
+      operation: cause.operation === "read_training" ? "create_training" : cause.operation,
+      cause: cause.context.cause,
+      ...(cause.context.trainingId ? { trainingId: cause.context.trainingId } : {}),
+    };
+  }
+  return { operation: "create_training", cause };
+}
+
 export interface ScheduleExamDeps {
   readonly exams: ExamRepository;
   readonly attempts: ExamAttemptRepository;
   readonly launches: LabLaunchRepository;
-  readonly labs: LabProvisioner;
+  /** Scheduling crosses one deep Training-delivery operation. */
+  readonly trainingDelivery: IndividualTrainingDelivery;
   readonly newId: () => string;
   readonly now: () => Date;
   /** Optional support diagnostics. Callers always wire it; recording never throws. */
@@ -337,17 +352,57 @@ export async function scheduleExam(
       message: `ExamAttempt provisioning failed during CloudShare ${op.replace(/_/g, " ")}`,
       details: { failedDuring: op },
     });
+  const recordCompletedIndividualSteps = async (
+    completed: Partial<Awaited<ReturnType<IndividualTrainingDelivery["provisionIndividual"]>>> | undefined,
+  ) => {
+    if (completed?.training) {
+      const training = completed.training;
+      await recordSuccess("cloudshare.create_training", "CloudShare training created", {
+        externalIds: { trainingId: training.trainingId },
+        ...(toDiagnosticRequestEvidence(training.request)
+          ? { request: toDiagnosticRequestEvidence(training.request)! }
+          : {}),
+        ...(toDiagnosticResponseEvidence(training.response)
+          ? { response: toDiagnosticResponseEvidence(training.response)! }
+          : {}),
+        ...(training.integrationSurface ? { details: { integrationSurface: training.integrationSurface } } : {}),
+      });
+    }
+    if (completed?.userProperties && completed.training) {
+      const properties = completed.userProperties;
+      const trainingId = completed.training.trainingId;
+      await recordSuccess("cloudshare.ensure_user_properties", "CloudShare training user-property keys ensured", {
+        externalIds: { trainingId, experienceId: trainingId },
+        ...(toDiagnosticRequestEvidence(properties.request)
+          ? { request: toDiagnosticRequestEvidence(properties.request)! }
+          : {}),
+        ...(toDiagnosticResponseEvidence(properties.response)
+          ? { response: toDiagnosticResponseEvidence(properties.response)! }
+          : {}),
+        details: {
+          ...(properties.integrationSurface ? { integrationSurface: properties.integrationSurface } : {}),
+          ...(toDiagnosticHttpExchanges(properties.requests, properties.responses)
+            ? { httpExchanges: toDiagnosticHttpExchanges(properties.requests, properties.responses) }
+            : {}),
+        },
+      });
+    }
+    if (completed?.participant && completed.training) {
+      const participant = completed.participant;
+      await recordSuccess("cloudshare.add_participant", "CloudShare participant added", {
+        externalIds: { trainingId: completed.training.trainingId },
+        ...(toDiagnosticRequestEvidence(participant.request)
+          ? { request: toDiagnosticRequestEvidence(participant.request)! }
+          : {}),
+        response: toDiagnosticResponseEvidence(participant.response)!,
+        ...(participant.integrationSurface ? { details: { integrationSurface: participant.integrationSurface } } : {}),
+      });
+    }
+  };
 
   await recordSuccess("exam_attempt.schedule", "ExamAttempt scheduled", {
     request: { scheduledFor: input.scheduledFor.toISOString() },
   });
-
-  const trainingCreator = deps.labs.createTraining;
-  const userPropertyEnsurer = deps.labs.ensureTrainingUserPropertyKeys;
-  const participantAdder = deps.labs.addParticipant;
-  if (!trainingCreator || !userPropertyEnsurer || !participantAdder) {
-    throw new Error("LabProvisioner does not support training scheduling.");
-  }
 
   const trainingTitle = buildCloudShareTrainingName({
     blueprintName: exam.blueprintName,
@@ -358,40 +413,53 @@ export async function scheduleExam(
     createdAt,
   });
 
-  let trainingId: string;
-  let teamId: string | undefined;
-  let createTrainingIntegrationSurface: string | undefined;
-  let createTrainingRequest: ProvisioningRequestEvidence | undefined;
-  let createTrainingResponse: ProvisioningResponseEvidence | undefined;
+  let provisioned;
   try {
-    const training = await trainingCreator({
-      title: trainingTitle,
-      scheduledFor: input.scheduledFor,
-      endsAt: new Date(input.scheduledFor.getTime() + exam.openPeriodMinutes * 60 * 1000),
-      projectId: exam.projectId,
-      blueprintId: exam.blueprintId,
-      policyId: exam.policyId,
-      regionIds: exam.allowedRegions.map((region) => region.id),
-      instructorId: exam.instructorId,
-      passphrase: `certalis-${attemptId}`,
-      timeZoneId: "UTC",
-      externalId: attemptId,
+    provisioned = await deps.trainingDelivery.provisionIndividual({
+      training: {
+        title: trainingTitle,
+        scheduledFor: input.scheduledFor,
+        endsAt: new Date(input.scheduledFor.getTime() + exam.openPeriodMinutes * 60 * 1000),
+        projectId: exam.projectId,
+        blueprintId: exam.blueprintId,
+        policyId: exam.policyId,
+        regionIds: exam.allowedRegions.map((region) => region.id),
+        instructorId: exam.instructorId,
+        passphrase: `certalis-${attemptId}`,
+        timeZoneId: "UTC",
+        externalId: attemptId,
+      },
+      participant: {
+        email: input.candidateEmail,
+        firstName: input.candidateFirstName.trim(),
+        lastName: input.candidateLastName.trim(),
+        certalisExamAttemptId: attemptId,
+        certalisCandidateId: input.candidateId,
+      },
     });
-    trainingId = training.trainingId;
-    teamId = training.teamId;
-    createTrainingIntegrationSurface = training.integrationSurface;
-    createTrainingRequest = training.request;
-    createTrainingResponse = training.response;
   } catch (cause) {
-    await recordFailure("create_training", cause);
-    await recordProvisioningFailure("create_training");
+    const failure = toTrainingDeliveryFailure(cause);
+    if (cause instanceof TrainingDeliveryOperationError) {
+      await recordCompletedIndividualSteps(cause.context.individual);
+    }
+    await recordFailure(failure.operation, failure.cause, failure.trainingId ? { trainingId: failure.trainingId } : undefined);
+    await recordProvisioningFailure(failure.operation);
     await deps.attempts.delete(attemptId);
-    throw new CloudShareProvisioningError("CloudShare training creation failed.", {
+    throw new CloudShareProvisioningError(
+      `CloudShare Training provisioning failed during ${failure.operation.replace(/_/g, " ")}.`,
+      {
       attemptId,
-      attemptedOperation: "create_training",
-      cause,
-    });
+        attemptedOperation: failure.operation,
+        ...(failure.trainingId ? { trainingId: failure.trainingId } : {}),
+        cause: failure.cause,
+      },
+    );
   }
+
+  const { training, userProperties: ensureUserPropertiesResult, participant: addParticipantResult, sponsoredLink } =
+    provisioned;
+  const trainingId = training.trainingId;
+  const teamId = training.teamId;
 
   const regionIds = exam.allowedRegions.map((region) => region.id).join(",");
   await recordSuccess("cloudshare.create_training", "CloudShare training created", {
@@ -404,35 +472,16 @@ export async function scheduleExam(
       ...(teamId ? { teamId } : {}),
       ...(regionIds ? { regionIds } : {}),
     },
-    ...(toDiagnosticRequestEvidence(createTrainingRequest)
-      ? { request: toDiagnosticRequestEvidence(createTrainingRequest)! }
+    ...(toDiagnosticRequestEvidence(training.request)
+      ? { request: toDiagnosticRequestEvidence(training.request)! }
       : {}),
-    ...(toDiagnosticResponseEvidence(createTrainingResponse)
-      ? { response: toDiagnosticResponseEvidence(createTrainingResponse)! }
+    ...(toDiagnosticResponseEvidence(training.response)
+      ? { response: toDiagnosticResponseEvidence(training.response)! }
       : {}),
-    ...(createTrainingIntegrationSurface
-      ? { details: { integrationSurface: createTrainingIntegrationSurface } }
+    ...(training.integrationSurface
+      ? { details: { integrationSurface: training.integrationSurface } }
       : {}),
   });
-
-  let ensureUserPropertiesResult;
-  try {
-    ensureUserPropertiesResult = await userPropertyEnsurer({
-      trainingId,
-      experienceId: trainingId,
-      requiredKeys: CERTALIS_USER_PROPERTY_KEYS,
-    });
-  } catch (cause) {
-    await recordFailure("ensure_user_properties", cause, { trainingId, experienceId: trainingId });
-    await recordProvisioningFailure("ensure_user_properties");
-    await deps.attempts.delete(attemptId);
-    throw new CloudShareProvisioningError("CloudShare training user-property provisioning failed.", {
-      attemptId,
-      attemptedOperation: "ensure_user_properties",
-      trainingId,
-      cause,
-    });
-  }
 
   await recordSuccess("cloudshare.ensure_user_properties", "CloudShare training user-property keys ensured", {
     externalIds: { trainingId, experienceId: trainingId },
@@ -460,32 +509,6 @@ export async function scheduleExam(
     },
   });
 
-  const participant = {
-    firstName: input.candidateFirstName.trim(),
-    lastName: input.candidateLastName.trim(),
-  };
-  let addParticipantResult;
-  try {
-    addParticipantResult = await participantAdder({
-      trainingId,
-      email: input.candidateEmail,
-      firstName: participant.firstName,
-      lastName: participant.lastName,
-      certalisExamAttemptId: attemptId,
-      certalisCandidateId: input.candidateId,
-    });
-  } catch (cause) {
-    await recordFailure("add_participant", cause, { trainingId });
-    await recordProvisioningFailure("add_participant");
-    await deps.attempts.delete(attemptId);
-    throw new CloudShareProvisioningError("CloudShare participant registration failed.", {
-      attemptId,
-      attemptedOperation: "add_participant",
-      trainingId,
-      cause,
-    });
-  }
-
   await recordSuccess("cloudshare.add_participant", "CloudShare participant added", {
     externalIds: { trainingId },
     ...(toDiagnosticRequestEvidence(addParticipantResult.request)
@@ -497,43 +520,16 @@ export async function scheduleExam(
       : {}),
   });
 
-  let loginUrl: string;
-  let createSponsoredLinkIntegrationSurface: string | undefined;
-  let createSponsoredLinkRequest: ProvisioningRequestEvidence | undefined;
-  let createSponsoredLinkResponse: ProvisioningResponseEvidence | undefined;
-  try {
-    const sponsoredLink = await deps.labs.createSponsoredLink({
-      trainingId,
-      email: input.candidateEmail,
-      firstName: participant.firstName,
-      lastName: participant.lastName,
-    });
-    loginUrl = sponsoredLink.loginUrl;
-    createSponsoredLinkIntegrationSurface = sponsoredLink.integrationSurface;
-    createSponsoredLinkRequest = sponsoredLink.request;
-    createSponsoredLinkResponse = sponsoredLink.response;
-  } catch (cause) {
-    await recordFailure("create_sponsored_link", cause, { trainingId });
-    await recordProvisioningFailure("create_sponsored_link");
-    await deps.attempts.delete(attemptId);
-    throw new CloudShareProvisioningError("CloudShare sponsored-link creation failed.", {
-      attemptId,
-      attemptedOperation: "create_sponsored_link",
-      trainingId,
-      cause,
-    });
-  }
-
   await recordSuccess("cloudshare.create_sponsored_link", "CloudShare sponsored link created", {
     externalIds: { trainingId },
-    ...(toDiagnosticRequestEvidence(createSponsoredLinkRequest)
-      ? { request: toDiagnosticRequestEvidence(createSponsoredLinkRequest)! }
+    ...(toDiagnosticRequestEvidence(sponsoredLink.request)
+      ? { request: toDiagnosticRequestEvidence(sponsoredLink.request)! }
       : {}),
-    ...(toDiagnosticResponseEvidence(createSponsoredLinkResponse)
-      ? { response: toDiagnosticResponseEvidence(createSponsoredLinkResponse)! }
+    ...(toDiagnosticResponseEvidence(sponsoredLink.response)
+      ? { response: toDiagnosticResponseEvidence(sponsoredLink.response)! }
       : {}),
-    ...(createSponsoredLinkIntegrationSurface
-      ? { details: { integrationSurface: createSponsoredLinkIntegrationSurface } }
+    ...(sponsoredLink.integrationSurface
+      ? { details: { integrationSurface: sponsoredLink.integrationSurface } }
       : {}),
   });
 
@@ -545,7 +541,7 @@ export async function scheduleExam(
     participantEmail: input.candidateEmail,
     trainingId,
     experienceId: trainingId,
-    loginUrl,
+    loginUrl: sponsoredLink.loginUrl,
     status: "launched",
     createdAt: deps.now(),
   };
