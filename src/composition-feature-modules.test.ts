@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createFeatureModules,
+  disposeStaleServices,
   isReusableFeatureModules,
   type FeatureModuleInputs,
 } from "./composition";
@@ -93,5 +94,19 @@ describe("composition feature modules", () => {
         candidateSuspendResume: {},
       }),
     ).toBe(false);
+  });
+
+
+  it("cleans up a legacy singleton without a dispose method", () => {
+    const disconnect = vi.fn();
+    const stop = vi.fn();
+
+    disposeStaleServices({
+      prisma: { $disconnect: disconnect },
+      heartbeatAutoSuspend: { stop },
+    });
+
+    expect(disconnect).toHaveBeenCalledOnce();
+    expect(stop).toHaveBeenCalledOnce();
   });
 });

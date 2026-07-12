@@ -321,7 +321,7 @@ export function getServices(): Services {
     // Next dev hot-reload can preserve the global singleton while module shapes
     // change. If a required service method is missing, discard the stale instance
     // instead of mixing new route code with old dependency objects.
-    globalForServices.__portalServices.dispose();
+    disposeStaleServices(globalForServices.__portalServices);
     globalForServices.__portalServices = undefined;
   }
 
@@ -605,4 +605,28 @@ export function getCandidateSuspendResumeServices(): CandidateSuspendResumeServi
 
 function isReusableServices(services: Services): boolean {
   return typeof services.dispose === "function" && isReusableFeatureModules(services.featureModules);
+}
+
+export function disposeStaleServices(services: unknown): void {
+  if (typeof services !== "object" || services === null) {
+    return;
+  }
+
+  const stale = services as {
+    dispose?: unknown;
+    prisma?: { $disconnect?: unknown };
+    heartbeatAutoSuspend?: { stop?: unknown };
+  };
+
+  if (typeof stale.dispose === "function") {
+    stale.dispose();
+    return;
+  }
+
+  if (typeof stale.prisma?.$disconnect === "function") {
+    void stale.prisma.$disconnect();
+  }
+  if (typeof stale.heartbeatAutoSuspend?.stop === "function") {
+    stale.heartbeatAutoSuspend.stop();
+  }
 }
