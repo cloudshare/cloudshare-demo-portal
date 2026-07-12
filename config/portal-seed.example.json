@@ -1,11 +1,11 @@
 {
   "heliosAdminEmail": "admin@helioscx.demo",
-  "heliosAdminPassword": "HeliosDemo123!",
+  "heliosAdminPassword": "",
   "heliosCloudShareConnection": null,
   "heliosInstructor": {
     "id": "replace-with-real-cloudshare-member-id",
     "name": "Helios Service Account"
   },
   "certalisSalesAdminEmail": "sales-admin@certalis.demo",
-  "certalisSalesAdminPassword": "CertalisDemo123!"
+  "certalisSalesAdminPassword": ""
 }
