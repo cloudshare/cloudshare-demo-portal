@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
@@ -24,6 +24,21 @@ import {
 } from "./candidate-home-layout";
 
 describe("candidate home layout", () => {
+  const originalTimezone = process.env.TZ;
+
+  beforeAll(() => {
+    process.env.TZ = "Europe/London";
+  });
+
+  afterAll(() => {
+    if (originalTimezone === undefined) {
+      delete process.env.TZ;
+      return;
+    }
+
+    process.env.TZ = originalTimezone;
+  });
+
   it("lets the signed-in panel stack instead of overlapping the Candidate Home heading", () => {
     expect(candidateHomeHeaderStyle.flexWrap).toBe("wrap");
     expect(candidateHomeHeaderIntroStyle).toMatchObject({

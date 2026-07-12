@@ -1,6 +1,6 @@
 import React, { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   applyMonitoringFilters,
   buildMonitoringHistoryAttemptKey,
@@ -98,9 +98,22 @@ function makeMonitoringView(partial: Partial<AdminMonitoringView> = {}): AdminMo
 describe("SessionMonitoringPanel", () => {
   const originalTimezone = process.env.TZ;
 
+  beforeAll(() => {
+    process.env.TZ = "UTC";
+  });
+
   afterEach(() => {
-    process.env.TZ = originalTimezone;
+    process.env.TZ = "UTC";
     vi.restoreAllMocks();
+  });
+
+  afterAll(() => {
+    if (originalTimezone === undefined) {
+      delete process.env.TZ;
+      return;
+    }
+
+    process.env.TZ = originalTimezone;
   });
 
   it("defaults to the in-progress queue so terminal history does not dominate the page", () => {
