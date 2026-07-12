@@ -226,6 +226,7 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
   const [selectedAllowedRegionIds, setSelectedAllowedRegionIds] = useState<string[]>([]);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [timeLimitMinutes, setTimeLimitMinutes] = useState("90");
   const [openPeriodMinutes, setOpenPeriodMinutes] = useState("");
   const [scoreRetrievalEnabled, setScoreRetrievalEnabled] = useState(false);
   const [deliveryAvailability, setDeliveryAvailability] = useState<"individual" | "cohort" | "both">("individual");
@@ -278,6 +279,7 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
   function selectPolicy(nextPolicyId: string) {
     const nextPolicy = policies.find((policy) => policy.id === nextPolicyId);
     setSelectedPolicyId(nextPolicyId);
+    if (nextPolicy?.runtimeLeaseMinutes) setTimeLimitMinutes(String(nextPolicy.runtimeLeaseMinutes));
     setFeedback(null);
     setOpenPeriodMinutes(getDefaultOpenPeriodMinutes(nextPolicy));
   }
@@ -325,6 +327,7 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
       const nextPolicyId = nextPolicies.some((policy) => policy.id === (preferredPolicyId ?? selectedPolicyId)) ? (preferredPolicyId ?? selectedPolicyId) : (nextPolicies[0]?.id ?? "");
       const policy = nextPolicies.find((item) => item.id === nextPolicyId);
       setSelectedPolicyId(nextPolicyId);
+      if (policy?.runtimeLeaseMinutes) setTimeLimitMinutes(String(policy.runtimeLeaseMinutes));
       const nextBlueprintId = nextBlueprints.some((blueprint) => blueprint.id === (preferredBlueprintId ?? selectedBlueprintId)) ? (preferredBlueprintId ?? selectedBlueprintId) : (nextBlueprints[0]?.id ?? "");
       setSelectedBlueprintId(nextBlueprintId);
       if (!editingExamId && props.examView !== "edit") setOpenPeriodMinutes(getDefaultOpenPeriodMinutes(policy));
@@ -361,10 +364,11 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
     finally { endCatalogLoading(); }
   }
 
-  function resetForm(next?: Partial<Pick<ExamRecord, "title" | "description" | "scoreRetrievalEnabled" | "deliveryAvailability" | "openPeriodMinutes">>) {
+  function resetForm(next?: Partial<Pick<ExamRecord, "title" | "description" | "scoreRetrievalEnabled" | "deliveryAvailability" | "timeLimitMinutes" | "openPeriodMinutes">>) {
     setEditingExamId(null); setMessage(null); setFeedback(null);
     setTitle(next?.title ?? blueprintDetail?.name ?? ""); setDescription(next?.description ?? stripHtmlToText(blueprintDetail?.description));
     setScoreRetrievalEnabled(next?.scoreRetrievalEnabled ?? false); setDeliveryAvailability(next?.deliveryAvailability ?? "individual");
+    setTimeLimitMinutes(next?.timeLimitMinutes?.toString() ?? "");
     setOpenPeriodMinutes(getResetOpenPeriodMinutes({ explicitOpenPeriodMinutes: next?.openPeriodMinutes?.toString(), selectedPolicy }));
   }
 
@@ -374,7 +378,7 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
     await loadProjectResources(exam.projectId, false, exam.blueprintId, exam.policyId);
     setSelectedBlueprintId(exam.blueprintId); setSelectedPolicyId(exam.policyId);
     await loadBlueprintDetail(exam.projectId, exam.blueprintId, false);
-    setTitle(exam.title); setDescription(exam.description); setScoreRetrievalEnabled(exam.scoreRetrievalEnabled); setDeliveryAvailability(exam.deliveryAvailability ?? "individual"); setOpenPeriodMinutes(String(exam.openPeriodMinutes));
+    setTitle(exam.title); setDescription(exam.description); setScoreRetrievalEnabled(exam.scoreRetrievalEnabled); setDeliveryAvailability(exam.deliveryAvailability ?? "individual"); setTimeLimitMinutes(String(exam.timeLimitMinutes)); setOpenPeriodMinutes(String(exam.openPeriodMinutes));
     props.onNavigate({ tab: "exams", examView: "edit", examId: exam.id }); setLoading(false);
   }
 
@@ -437,7 +441,7 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
 
   if (!props.active) return null;
   const authoring = props.examView === "create" || props.examView === "edit";
-  const effectiveTime = selectedPolicy?.runtimeLeaseMinutes ?? "";
+  const effectiveTime = selectedPolicy?.runtimeLeaseMinutes ?? timeLimitMinutes;
   const duplicateWarning = getDuplicateExamResourceTupleWarning({ exams: allExams, currentExamId: editingExamId, projectId: selectedProjectId, blueprintId: selectedBlueprintId, snapshotId: defaultSnapshot?.id ?? null, policyId: selectedPolicyId, deliveryAvailability });
   const compactFieldStyle = {
     padding: "0.7rem", paddingRight: "2.25rem", border: "1px solid #ccc", borderRadius: "6px",

@@ -29,12 +29,7 @@ import { AdminSupportFeature } from "./admin-support";
 import { AdminSessionMonitoringFeature } from "./admin-session-monitoring";
 import {
   AdminExamCatalogAuthoringFeature,
-  ExamAuthoringSelectionSummary,
   ExamCatalogLoadingOverlay,
-  ExamCatalogRowActions,
-  formatShortExamId,
-  getDeliveryAvailabilityAuthoringOptions,
-  getDuplicateExamResourceTupleWarning,
   isCohortSessionAuthoringAvailable,
   type ExamRecord as CatalogExamRecord,
 } from "./admin-exam-catalog-authoring";
@@ -55,16 +50,6 @@ import {
 import { colors } from "./design-tokens";
 import { statusBadgeStyle, getExamStatusTone, type StatusTone } from "./status-badge";
 import { PortalPageHeader } from "./portal-page-header";
-
-export {
-  ExamAuthoringSelectionSummary,
-  ExamCatalogLoadingOverlay,
-  ExamCatalogRowActions,
-  formatShortExamId,
-  getDeliveryAvailabilityAuthoringOptions,
-  getDuplicateExamResourceTupleWarning,
-  isCohortSessionAuthoringAvailable,
-};
 
 const extensionHydrationProps = {
   suppressHydrationWarning: true,

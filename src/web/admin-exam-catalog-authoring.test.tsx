@@ -11,6 +11,36 @@ function json(body: unknown, status = 200): Response {
 }
 
 describe("AdminExamCatalogAuthoringFeature", () => {
+  it("keeps the persisted Exam time limit visible while editing an Exam whose Policy is no longer available", async () => {
+    const user = userEvent.setup();
+    const stalePolicyExam = {
+      id: "exam-stale-policy", title: "Stale policy Exam", description: "Existing draft", timeLimitMinutes: 75,
+      openPeriodMinutes: 90, scoreRetrievalEnabled: false, deliveryAvailability: "individual" as const,
+      status: "draft" as const, publishedAt: null, projectId: "project-1", projectName: "Project One",
+      blueprintId: "blueprint-1", blueprintName: "Blueprint One", snapshotId: "snapshot-1", snapshotName: "Snapshot One",
+      allowedRegions: [{ id: "region-1", name: "US East" }], policyId: "policy-retired", policyName: "Retired Policy", instructorName: "Service account",
+    };
+    const fetchAdmin = vi.fn<AdminAuthenticatedRequest>(async (input) => {
+      const url = String(input);
+      if (url === "/api/admin/exams") return json({ activeExams: [stalePolicyExam], archivedExams: [] });
+      if (url === "/api/admin/exam-authoring") return json({ projects: [{ id: "project-1", name: "Project One" }], regions: [{ id: "region-1", name: "US East" }] });
+      if (url === "/api/admin/exam-authoring/projects/project-1" || url === "/api/admin/exam-authoring/projects/project-1?refresh=true") return json({ blueprints: [{ id: "blueprint-1", name: "Blueprint One" }], policies: [] });
+      if (url === "/api/admin/exam-authoring/projects/project-1/blueprints/blueprint-1") return json({ blueprint: { id: "blueprint-1", name: "Blueprint One", description: "", defaultSnapshotId: "snapshot-1", snapshots: [{ id: "snapshot-1", name: "Snapshot One", isDefault: true, regionIds: ["region-1"] }] } });
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    function FeatureHarness() {
+      const [view, setView] = React.useState<"catalog" | "edit">("catalog");
+      return <AdminExamCatalogAuthoringFeature active examView={view} focusedExamId={view === "edit" ? stalePolicyExam.id : null} fetchAdmin={fetchAdmin} onNavigate={(intent) => setView(intent.examView === "edit" ? "edit" : "catalog")} onCatalogChange={vi.fn()} getHasActiveCohortSessions={() => false} />;
+    }
+
+    render(<FeatureHarness />);
+    await user.click(await screen.findByRole("button", { name: "Edit Exam" }));
+
+    expect((await screen.findByRole("spinbutton", { name: /Time limit \(minutes\)/ }) as HTMLInputElement).value).toBe("75");
+    expect((screen.getByRole("spinbutton", { name: /Open period \(minutes\)/ }) as HTMLInputElement).value).toBe("90");
+    expect((screen.getByRole("combobox", { name: "Policy" }) as HTMLSelectElement).value).toBe("");
+  });
+
   it("refreshes dependent Project resources, shows the read-only default Snapshot, and reconciles Region validation", async () => {
     const user = userEvent.setup();
     const fetchAdmin = vi.fn<AdminAuthenticatedRequest>(async (input) => {
