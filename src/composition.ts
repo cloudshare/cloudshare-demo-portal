@@ -129,6 +129,7 @@ export function createFeatureModules(services: FeatureModuleInputs): FeatureModu
         portalAuth: services.portalAuth,
         diagnosticRecorder: services.diagnosticRecorder,
         portalUsers: services.portalUsers,
+        audit: services.audit,
       },
       logout: {
         portalAuth: services.portalAuth,
@@ -199,7 +200,7 @@ export function isReusableFeatureModules(value: unknown): value is FeatureModule
   const modules = value as Partial<FeatureModules>;
   return (
     hasModuleProperties(modules.portal?.session, ["portalAuth", "ensurePortalSeeded"]) &&
-    hasModuleProperties(modules.portal?.login, ["portalAuth", "portalUsers", "diagnosticRecorder"]) &&
+    hasModuleProperties(modules.portal?.login, ["portalAuth", "portalUsers", "diagnosticRecorder", "audit"]) &&
     hasModuleProperties(modules.portal?.logout, [
       "portalAuth",
       "diagnosticRecorder",
@@ -482,21 +483,36 @@ export function getServices(): Services {
 
   async function ensurePortalSeeded(): Promise<void> {
     const heliosAdmin = config.seed.heliosAdmin;
-    if (!heliosAdmin) {
+    const certalisSalesAdmin = config.seed.certalisSalesAdmin;
+    if (!heliosAdmin && !certalisSalesAdmin) {
       return;
     }
 
     if (!portalSeedPromise) {
       portalSeedPromise = (async () => {
-        const user = await portalUsers.upsertSeedUser({
-          customerSlug: "helios-cx",
-          customerName: "Helios CX",
-          email: heliosAdmin.email,
-          passwordHash: await hashPassword(heliosAdmin.password),
-          role: "admin",
-        });
+        const user = heliosAdmin
+          ? await portalUsers.upsertSeedUser({
+              customerSlug: "helios-cx",
+              customerName: "Helios CX",
+              email: heliosAdmin.email,
+              passwordHash: await hashPassword(heliosAdmin.password),
+              role: "admin",
+              workspace: "certification",
+            })
+          : null;
 
-        if (config.seed.heliosCloudShareConnection) {
+        if (certalisSalesAdmin) {
+          await portalUsers.upsertSeedUser({
+            customerSlug: "certalis",
+            customerName: "Certalis",
+            email: certalisSalesAdmin.email,
+            passwordHash: await hashPassword(certalisSalesAdmin.password),
+            role: "admin",
+            workspace: "sales",
+          });
+        }
+
+        if (user && config.seed.heliosCloudShareConnection) {
           await cloudshareConnections.save({
             customerId: user.customerId,
             apiId: config.seed.heliosCloudShareConnection.apiId,

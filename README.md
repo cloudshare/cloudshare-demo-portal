@@ -27,9 +27,10 @@ Open **http://localhost:3000/login** for the shared portal login or
 
 | URL | What |
 |---|---|
-| `/login` | Shared portal login for Helios admins and Candidates |
+| `/login` | Shared portal login for Helios admins, Certalis Sales Admin, and Candidates |
 | `/register` | Candidate self-registration |
 | `/admin` | **Connect CloudShare** + admin console |
+| `/sales` | Isolated Certalis Sales workspace; no Helios certification data |
 | `/candidate` | Candidate home — published Exams for the signed-in Customer |
 | `/candidate/lab?examAttemptId=<id>` | Candidate lab page (launch, heartbeat, suspend) |
 | `/candidate/score?examAttemptId=<id>` | Candidate score page |
@@ -44,10 +45,12 @@ All variables are Zod-validated at boot; missing required values cause a fast-fa
 | `PORTAL_MASTER_KEY` | yes | — | Base64 32-byte key used to encrypt stored CloudShare credentials |
 | `PORTAL_MODE` | yes | `fixture` | `fixture` (simulators) or `live` (real CloudShare API) |
 | `DATABASE_URL` | yes | `file:./dev.db` | SQLite path |
-| `PORTAL_SEED_SOURCE` | no | `env` | `off`, `env`, or `file` for the seeded Helios admin/demo tenant |
+| `PORTAL_SEED_SOURCE` | no | `env` | `off`, `env`, or `file` for the seeded Helios and Certalis demo Customers |
 | `PORTAL_SEED_CONFIG_PATH` | no | `./config/portal-seed.local.json` | Local JSON seed file path when `PORTAL_SEED_SOURCE=file` |
 | `HELIOS_ADMIN_EMAIL` | `env` seed only | — | Seeded Helios admin login email |
 | `HELIOS_ADMIN_PASSWORD` | `env` seed only | — | Seeded Helios admin login password |
+| `CERTALIS_SALES_ADMIN_EMAIL` | `env` seed only | `sales-admin@certalis.demo` | Seeded Certalis Sales Admin login email |
+| `CERTALIS_SALES_ADMIN_PASSWORD` | `env` seed only | demo default | Seeded Certalis Sales Admin login password |
 | `HELIOS_SEED_CLOUDSHARE_API_ID` | `env` seed only | — | Optional seeded CloudShare API ID stored through the normal encrypted path |
 | `HELIOS_SEED_CLOUDSHARE_API_KEY` | `env` seed only | — | Optional seeded CloudShare API key |
 | `HELIOS_SEED_CLOUDSHARE_WEBHOOK_SECRET` | `env` seed only | — | Optional seeded CloudShare webhook secret |
@@ -66,7 +69,7 @@ All variables are Zod-validated at boot; missing required values cause a fast-fa
 Preferred local setup:
 
 1. Copy `config/portal-seed.example.json` to `config/portal-seed.local.json`.
-2. Fill in the Helios admin login, instructor, and optional CloudShare Connection values there.
+2. Fill in the Helios admin login, instructor, optional CloudShare Connection values, and the Certalis Sales Admin login there.
 3. Set `PORTAL_SEED_SOURCE=file` in `.env`.
 
 If you prefer env-only seeding, set `PORTAL_SEED_SOURCE=env` and fill the `HELIOS_*` variables instead.

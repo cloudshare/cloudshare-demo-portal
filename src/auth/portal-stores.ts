@@ -1,9 +1,11 @@
 export type PortalUserRole = "admin" | "candidate";
+export type PortalCustomerWorkspace = "certification" | "sales" | "both";
 
 export interface PortalCustomerRecord {
   readonly id: string;
   readonly slug: string;
   readonly name: string;
+  readonly workspace?: PortalCustomerWorkspace;
 }
 
 export interface PortalUserRecord {
@@ -14,6 +16,7 @@ export interface PortalUserRecord {
   readonly lastName?: string | null;
   readonly passwordHash: string;
   readonly role: PortalUserRole;
+  readonly workspace?: PortalCustomerWorkspace;
 }
 
 export interface PortalSession {
@@ -21,6 +24,7 @@ export interface PortalSession {
   readonly userId: string;
   readonly customerId: string;
   readonly role: PortalUserRole;
+  readonly workspace?: PortalCustomerWorkspace;
   readonly email: string;
   readonly firstName?: string | null;
   readonly lastName?: string | null;

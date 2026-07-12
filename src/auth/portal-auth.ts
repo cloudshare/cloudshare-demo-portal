@@ -53,6 +53,7 @@ export function createPortalAuthenticator(
         userId: user.id,
         customerId: user.customerId,
         role: user.role,
+        workspace: user.workspace ?? "certification",
         email: user.email,
         firstName: user.firstName ?? null,
         lastName: user.lastName ?? null,

@@ -39,7 +39,7 @@ export async function POST(request: Request) {
     const redirectUrl = new URL(
       response.session
         ? response.session.role === "admin"
-          ? "/admin"
+          ? response.session.workspace === "sales" ? "/sales" : "/admin"
           : "/candidate"
         : "/login",
       request.url,

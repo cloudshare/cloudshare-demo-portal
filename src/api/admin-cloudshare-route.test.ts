@@ -271,6 +271,28 @@ describe("admin CloudShare routes", () => {
     });
   });
 
+  it("uses only the authenticated Certalis Customer for Sales workspace CloudShare lookup", async () => {
+    const findByCustomerId = vi.fn().mockResolvedValue(null);
+    mockGetPortalAdminSession.mockResolvedValue({
+      sessionId: "portal-session-certalis",
+      customerId: "customer-certalis",
+      email: "sales-admin@certalis.demo",
+      role: "admin",
+      workspace: "sales",
+    });
+    mockGetServices.mockReturnValue(makeServices({
+      cloudshareConnections: {
+        save: vi.fn(), markVerified: vi.fn(), findByCustomerId, findByWebhookPathToken: vi.fn(),
+      },
+    }));
+
+    const response = await GET();
+
+    expect(response.status).toBe(200);
+    expect(findByCustomerId).toHaveBeenCalledWith("customer-certalis");
+    expect(findByCustomerId).not.toHaveBeenCalledWith("customer-helios");
+  });
+
   it("rejects anonymous admin route access", async () => {
     mockGetServices.mockReturnValue(makeServices());
     mockGetPortalAdminSession.mockResolvedValue(null);

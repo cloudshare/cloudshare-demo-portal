@@ -17,8 +17,9 @@ This glossary is the source of truth for the project's language. It is not a spe
 **Certification Provider** (brand: **Certalis**):
 The company that owns and operates the portal. In this codebase the portal **is** the
 Certification Provider — it is not an external system. Certalis builds the CloudShare
-integration and runs the infrastructure, but **holds no CloudShare credentials of its own** —
-each Customer supplies their own.
+integration and runs the infrastructure, but holds **no global CloudShare credentials** — each
+Customer supplies its own encrypted Connection. Certalis's isolated Sales workspace is itself a
+seeded Customer when it needs a Connection.
 _Avoid_: Kryterion, proctoring vendor.
 
 **Customer** (brand: **Helios CX**):

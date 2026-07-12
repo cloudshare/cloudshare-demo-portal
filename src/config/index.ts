@@ -42,6 +42,8 @@ const envSchema = z.object({
   HELIOS_SEED_CLOUDSHARE_WEBHOOK_SECRET: z.string().optional().default(""),
   HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_ID: z.string().optional(),
   HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_NAME: z.string().optional(),
+  CERTALIS_SALES_ADMIN_EMAIL: z.string().email().optional().default("sales-admin@certalis.demo"),
+  CERTALIS_SALES_ADMIN_PASSWORD: z.string().min(8).optional().default("CertalisDemo123!"),
 
   // Legacy admin bearer token (deprecated by Slice 1 login, tolerated for
   // unfinished slices that still assume it exists).
@@ -71,6 +73,8 @@ const seedFileSchema = z.object({
     id: z.string().min(1),
     name: z.string().min(1),
   }),
+  certalisSalesAdminEmail: z.string().email().optional().default("sales-admin@certalis.demo"),
+  certalisSalesAdminPassword: z.string().min(8).optional().default("CertalisDemo123!"),
 });
 
 export interface Config {
@@ -112,6 +116,10 @@ export interface Config {
           readonly name: string;
         }
       | null;
+    readonly certalisSalesAdmin: {
+      readonly email: string;
+      readonly password: string;
+    } | null;
   };
   readonly databaseUrl: string;
 }
@@ -130,6 +138,7 @@ function resolveSeedConfig(
       heliosAdmin: null,
       heliosCloudShareConnection: null,
       heliosInstructor: null,
+      certalisSalesAdmin: null,
     };
   }
 
@@ -166,6 +175,10 @@ function resolveSeedConfig(
         id: env.HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_ID,
         name: env.HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_NAME,
       },
+      certalisSalesAdmin: {
+        email: env.CERTALIS_SALES_ADMIN_EMAIL,
+        password: env.CERTALIS_SALES_ADMIN_PASSWORD,
+      },
     };
   }
 
@@ -196,6 +209,10 @@ function resolveSeedConfig(
     },
     heliosCloudShareConnection: parsed.data.heliosCloudShareConnection,
     heliosInstructor: parsed.data.heliosInstructor,
+    certalisSalesAdmin: {
+      email: parsed.data.certalisSalesAdminEmail,
+      password: parsed.data.certalisSalesAdminPassword,
+    },
   };
 }
 
@@ -246,5 +263,6 @@ export function secretValues(config: Config): string[] {
     config.seed.heliosCloudShareConnection?.apiId ?? "",
     config.seed.heliosCloudShareConnection?.apiKey ?? "",
     config.seed.heliosCloudShareConnection?.webhookSecret ?? "",
+    config.seed.certalisSalesAdmin?.password ?? "",
   ].filter(Boolean);
 }

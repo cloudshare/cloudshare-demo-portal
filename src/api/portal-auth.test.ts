@@ -78,6 +78,7 @@ describe("handlePortalLogin", () => {
         email: "admin@helioscx.demo",
         role: "admin",
         customerId: "customer-helios",
+        workspace: "certification",
       },
     });
   });
@@ -135,6 +136,7 @@ describe("handleGetPortalSession", () => {
         email: "admin@helioscx.demo",
         role: "admin",
         customerId: "customer-helios",
+        workspace: "certification",
       },
     });
   });
