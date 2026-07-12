@@ -1,11 +1,12 @@
 import { isIndividualExamDeliveryAvailable, type ExamRepository } from "./exam-catalog";
+import type { ExamAttemptRepository } from "./exam-attempt";
 import {
-  isSameExamAttemptAvailabilityConflictError,
-  type ExamAttempt,
-  type ExamAttemptRepository,
-} from "./exam-attempt";
+  CandidateAdmissionConflictError,
+  completeCandidateAdmission,
+  recoverCandidateAdmissionAttempt,
+  reserveCandidateAdmissionAttempt,
+} from "./candidate-admission";
 import type {
-  LabLaunch,
   LabLaunchRepository,
   IndividualTrainingDelivery,
   ProvisioningRequestEvidence,
@@ -260,42 +261,24 @@ export async function scheduleExam(
     throw new ScheduleExamNotFoundError();
   }
 
-  const overlap = await findSameExamAvailabilityOverlap({
-    attempts: deps.attempts,
-    candidateId: input.candidateId,
-    examId: exam.id,
-    scheduledFor: input.scheduledFor,
-    availabilityWindowMinutes: exam.storageLeaseMinutes ?? exam.openPeriodMinutes,
-  });
-  if (overlap) {
-    throw new ScheduleOverlapError({
-      examId: exam.id,
-      conflictingAttemptId: overlap.conflictingAttemptId,
-      nextAvailableAt: overlap.nextAvailableAt,
-    });
-  }
-
   const attemptId = deps.newId();
   const createdAt = deps.now();
-  const attempt: ExamAttempt = {
-    id: attemptId,
-    customerId: input.customerId,
-    candidateId: input.candidateId,
-    examId: exam.id,
-    status: "scheduled",
-    scheduledFor: input.scheduledFor,
-    createdAt,
-  };
+  let attempt;
   try {
-    if (deps.attempts.saveWithSameExamAvailabilityGuard) {
-      await deps.attempts.saveWithSameExamAvailabilityGuard(attempt, {
+    attempt = await reserveCandidateAdmissionAttempt(
+      { attempts: deps.attempts },
+      {
+        attemptId,
+        customerId: input.customerId,
+        candidateId: input.candidateId,
+        examId: exam.id,
+        scheduledFor: input.scheduledFor,
+        createdAt,
         availabilityWindowMinutes: exam.storageLeaseMinutes ?? exam.openPeriodMinutes,
-      });
-    } else {
-      await deps.attempts.save(attempt);
-    }
+      },
+    );
   } catch (error) {
-    if (isSameExamAttemptAvailabilityConflictError(error)) {
+    if (error instanceof CandidateAdmissionConflictError) {
       throw new ScheduleOverlapError({
         examId: exam.id,
         conflictingAttemptId: error.conflictingAttemptId,
@@ -444,7 +427,7 @@ export async function scheduleExam(
     }
     await recordFailure(failure.operation, failure.cause, failure.trainingId ? { trainingId: failure.trainingId } : undefined);
     await recordProvisioningFailure(failure.operation);
-    await deps.attempts.delete(attemptId);
+    await recoverCandidateAdmissionAttempt({ attempts: deps.attempts }, attemptId);
     throw new CloudShareProvisioningError(
       `CloudShare Training provisioning failed during ${failure.operation.replace(/_/g, " ")}.`,
       {
@@ -533,10 +516,12 @@ export async function scheduleExam(
       : {}),
   });
 
-  const readyAttempt: ExamAttempt = { ...attempt, status: "ready" };
-  const launch: LabLaunch = {
+  const completed = await completeCandidateAdmission(
+    { attempts: deps.attempts, launches: deps.launches },
+    {
+      attempt,
+      launch: {
     id: deps.newId(),
-    examAttemptId: attempt.id,
     candidateId: input.candidateId,
     participantEmail: input.candidateEmail,
     trainingId,
@@ -544,9 +529,10 @@ export async function scheduleExam(
     loginUrl: sponsoredLink.loginUrl,
     status: "launched",
     createdAt: deps.now(),
-  };
-  await deps.attempts.save(readyAttempt);
-  await deps.launches.save(launch);
+      },
+    },
+  );
+  const readyAttempt = completed.attempt;
 
   await recordSuccess("exam_attempt.provisioned", "ExamAttempt provisioned and ready", {
     externalIds: { trainingId, experienceId: trainingId },

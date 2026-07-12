@@ -14,16 +14,20 @@ import {
   type ExamRepository,
 } from "@/domain/exam-catalog";
 import {
-  isDuplicateCohortExamAttemptError,
-  isSameExamAttemptAvailabilityConflictError,
-  type ExamAttempt,
-} from "@/domain/exam-attempt";
-import {
   type CohortParticipantAdmissionResult,
-  type LabLaunch,
   type LabLaunchRepository,
   TrainingDeliveryOperationError,
 } from "@/domain/lab-launch";
+import {
+  CandidateAdmissionConflictError,
+  CandidateAdmissionRetakeError,
+  assertCandidateAdmissionAvailability,
+  completeCandidateAdmission,
+  recoverCandidateAdmissionAttempt,
+  requireCandidateAdmissionConnection,
+  requireCandidateAdmissionIdentity,
+  reserveCandidateAdmissionAttempt,
+} from "@/domain/candidate-admission";
 import {
   CloudShareRequestError,
   CloudShareResponseError,
@@ -111,12 +115,13 @@ export async function joinCohortExamSessionRuntime(
     return { status: 404, body: { error: "Available Cohort Exam Session not found." } };
   }
 
-  if (
-    !request.candidateFirstName?.trim() ||
-    !request.candidateLastName?.trim() ||
-    request.candidateFirstName.trim().length < 2 ||
-    request.candidateLastName.trim().length < 2
-  ) {
+  let candidateIdentity;
+  try {
+    candidateIdentity = requireCandidateAdmissionIdentity({
+      firstName: request.candidateFirstName ?? "",
+      lastName: request.candidateLastName ?? "",
+    });
+  } catch {
     await recordJoinRejection(deps, {
       request,
       correlationId,
@@ -141,12 +146,16 @@ export async function joinCohortExamSessionRuntime(
   }
 
   const existingAttempts = await deps.attempts.listByCandidate(request.candidateId);
-  if (
-    existingAttempts.some(
-      (attempt) =>
-        attempt.examId === exam.id && attempt.cohortSessionId === session.id,
-    )
-  ) {
+  try {
+    assertCandidateAdmissionAvailability({
+      attempts: existingAttempts,
+      examId: exam.id,
+      cohortSessionId: session.id,
+      scheduledFor: now,
+      availabilityWindowMinutes: exam.storageLeaseMinutes ?? exam.openPeriodMinutes,
+    });
+  } catch (error) {
+    if (error instanceof CandidateAdmissionRetakeError) {
     await recordJoinRejection(deps, {
       request,
       correlationId,
@@ -169,15 +178,8 @@ export async function joinCohortExamSessionRuntime(
         code: "cohort_session_retake_blocked",
       },
     };
-  }
-
-  const overlap = findSameExamAvailabilityOverlap({
-    attempts: existingAttempts,
-    examId: exam.id,
-    scheduledFor: now,
-    availabilityWindowMinutes: exam.storageLeaseMinutes ?? exam.openPeriodMinutes,
-  });
-  if (overlap) {
+    }
+    if (error instanceof CandidateAdmissionConflictError) {
     await recordJoinRejection(deps, {
       request,
       correlationId,
@@ -192,8 +194,8 @@ export async function joinCohortExamSessionRuntime(
         experienceId: session.cloudShareExperienceId,
       },
       details: {
-        conflictingAttemptId: overlap.conflictingAttemptId,
-        nextAvailableAt: overlap.nextAvailableAt.toISOString(),
+        conflictingAttemptId: error.conflictingAttemptId,
+        nextAvailableAt: error.nextAvailableAt.toISOString(),
       },
       now,
     });
@@ -202,15 +204,19 @@ export async function joinCohortExamSessionRuntime(
       body: {
         error:
           `Another attempt for this Exam is still active or available. ` +
-          `You can schedule this Exam again after ${overlap.nextAvailableAt.toISOString()}.`,
+          `You can schedule this Exam again after ${error.nextAvailableAt.toISOString()}.`,
         code: "exam_attempt_overlap",
-        nextAvailableAt: overlap.nextAvailableAt.toISOString(),
+        nextAvailableAt: error.nextAvailableAt.toISOString(),
       },
     };
+    }
+    throw error;
   }
 
-  const connection = await deps.connections.findByCustomerId(request.customerId);
-  if (!connection) {
+  let connection;
+  try {
+    connection = await requireCandidateAdmissionConnection(deps.connections, request.customerId);
+  } catch {
     await recordJoinRejection(deps, {
       request,
       correlationId,
@@ -233,27 +239,23 @@ export async function joinCohortExamSessionRuntime(
   }
 
   const attemptId = (deps.newId ?? randomUUID)();
-  const createdAt = now;
-  const attempt: ExamAttempt = {
-    id: attemptId,
-    customerId: request.customerId,
-    candidateId: request.candidateId,
-    examId: exam.id,
-    cohortSessionId: session.id,
-    status: "scheduled",
-    scheduledFor: now,
-    createdAt,
-  };
+  let attempt;
   try {
-    if (deps.attempts.saveWithSameExamAvailabilityGuard) {
-      await deps.attempts.saveWithSameExamAvailabilityGuard(attempt, {
+    attempt = await reserveCandidateAdmissionAttempt(
+      { attempts: deps.attempts },
+      {
+        attemptId,
+        customerId: request.customerId,
+        candidateId: request.candidateId,
+        examId: exam.id,
+        cohortSessionId: session.id,
+        scheduledFor: now,
+        createdAt: now,
         availabilityWindowMinutes: exam.storageLeaseMinutes ?? exam.openPeriodMinutes,
-      });
-    } else {
-      await deps.attempts.save(attempt);
-    }
+      },
+    );
   } catch (error) {
-    if (isDuplicateCohortExamAttemptError(error)) {
+    if (error instanceof CandidateAdmissionRetakeError) {
       await recordJoinRejection(deps, {
         request,
         correlationId,
@@ -277,7 +279,7 @@ export async function joinCohortExamSessionRuntime(
         },
       };
     }
-    if (isSameExamAttemptAvailabilityConflictError(error)) {
+    if (error instanceof CandidateAdmissionConflictError) {
       await recordJoinRejection(deps, {
         request,
         correlationId,
@@ -343,7 +345,7 @@ export async function joinCohortExamSessionRuntime(
     savedSnapshotId: exam.snapshotId,
   });
   if (snapshotGuardFailure) {
-    await deps.attempts.delete(attemptId);
+    await recoverCandidateAdmissionAttempt({ attempts: deps.attempts }, attemptId);
     return {
       status: snapshotGuardFailure.status,
       body: {
@@ -424,8 +426,8 @@ export async function joinCohortExamSessionRuntime(
       now,
       participant: {
         email: request.candidateEmail,
-        firstName: request.candidateFirstName.trim(),
-        lastName: request.candidateLastName.trim(),
+        firstName: candidateIdentity.firstName,
+        lastName: candidateIdentity.lastName,
         certalisExamAttemptId: attemptId,
         certalisCandidateId: request.candidateId,
       },
@@ -449,7 +451,7 @@ export async function joinCohortExamSessionRuntime(
         failure.operation === "create_training" ? "read_training" : failure.operation,
       cause: failure.cause,
     });
-    await deps.attempts.delete(attemptId);
+    await recoverCandidateAdmissionAttempt({ attempts: deps.attempts }, attemptId);
     return {
       status: isCloudShareRateLimitError(failure.cause) ? 429 : 502,
       body: {
@@ -527,7 +529,7 @@ export async function joinCohortExamSessionRuntime(
       },
       now,
     });
-    await deps.attempts.delete(attemptId);
+    await recoverCandidateAdmissionAttempt({ attempts: deps.attempts }, attemptId);
     return {
       status: 409,
       body: {
@@ -659,23 +661,26 @@ export async function joinCohortExamSessionRuntime(
       : undefined,
   });
 
-  const readyAttempt: ExamAttempt = { ...attempt, status: "ready" };
-  const launch: LabLaunch = {
-    id: (deps.newId ?? randomUUID)(),
-    examAttemptId: attempt.id,
-    candidateId: request.candidateId,
-    participantEmail: request.candidateEmail,
-    ...(addParticipantResult.participantId
-      ? { participantId: addParticipantResult.participantId }
-      : {}),
-    trainingId: session.cloudShareTrainingId,
-    experienceId: session.cloudShareExperienceId,
-    loginUrl: sponsoredLink.loginUrl,
-    status: "launched",
-    createdAt: now,
-  };
-  await deps.attempts.save(readyAttempt);
-  await deps.launches.save(launch);
+  const completed = await completeCandidateAdmission(
+    { attempts: deps.attempts, launches: deps.launches },
+    {
+      attempt,
+      launch: {
+        id: (deps.newId ?? randomUUID)(),
+        candidateId: request.candidateId,
+        participantEmail: request.candidateEmail,
+        ...(addParticipantResult.participantId
+          ? { participantId: addParticipantResult.participantId }
+          : {}),
+        trainingId: session.cloudShareTrainingId,
+        experienceId: session.cloudShareExperienceId,
+        loginUrl: sponsoredLink.loginUrl,
+        status: "launched",
+        createdAt: now,
+      },
+    },
+  );
+  const readyAttempt = completed.attempt;
 
   await deps.audit.write({
     id: `${attemptId}:cohort_exam_session_joined:${correlationId}`,
@@ -764,42 +769,6 @@ function toTrainingUserPropertyHttpExchanges(input: {
         }
       : {}),
   }));
-}
-
-function findSameExamAvailabilityOverlap(input: {
-  readonly attempts: readonly ExamAttempt[];
-  readonly examId: string;
-  readonly scheduledFor: Date;
-  readonly availabilityWindowMinutes: number;
-}): { readonly conflictingAttemptId: string; readonly nextAvailableAt: Date } | null {
-  const requestedAtMs = input.scheduledFor.getTime();
-  const windowMs = input.availabilityWindowMinutes * 60_000;
-  const requestedEndMs = requestedAtMs + windowMs;
-
-  for (const attempt of input.attempts) {
-    if (
-      attempt.examId !== input.examId ||
-      attempt.status === "completed" ||
-      attempt.status === "expired" ||
-      !attempt.scheduledFor
-    ) {
-      continue;
-    }
-
-    const windowStartMs = attempt.scheduledFor.getTime();
-    if (!Number.isFinite(windowStartMs)) {
-      continue;
-    }
-    const windowEndMs = windowStartMs + windowMs;
-    if (requestedAtMs < windowEndMs && requestedEndMs > windowStartMs) {
-      return {
-        conflictingAttemptId: attempt.id,
-        nextAvailableAt: new Date(windowEndMs),
-      };
-    }
-  }
-
-  return null;
 }
 
 async function recordJoinRejection(
