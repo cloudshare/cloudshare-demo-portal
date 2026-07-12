@@ -7,7 +7,7 @@ import {
   isCloudShareRateLimitError,
 } from "./errors";
 import { redactCloudShareAdminSupportValue } from "./diagnostic-redaction";
-import type { HttpClient, HttpRequest } from "./http";
+import { HttpTransportError, type HttpClient, type HttpRequest } from "./http";
 import { buildV3AuthorizationHeader, signV3Request } from "./signing";
 import type { V4TokenProvider } from "./v4-auth";
 
@@ -479,6 +479,17 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
     return method === "GET";
   }
 
+  function transportContext(cause: unknown): Record<string, unknown> {
+    if (cause instanceof HttpTransportError) {
+      return {
+        cause: cause.cause instanceof Error ? { name: cause.cause.name, message: cause.cause.message } : String(cause.cause),
+        ...(cause.network ? { network: cause.network } : {}),
+        ...(cause.tls ? { tls: cause.tls } : {}),
+      };
+    }
+    return { cause: cause instanceof Error ? { name: cause.name, message: cause.message } : String(cause) };
+  }
+
   async function executeDetailed<T>(
     request: HttpRequest,
     schema: ZodType<T, ZodType["_def"], unknown>,
@@ -509,7 +520,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
             requestQuery: sanitizeQuery(extractQuery(request.url)),
             requestHeaders: sanitizeHeaders(request.headers),
             requestBody: sanitizeBody(request.body),
-            cause: cause instanceof Error ? cause.message : String(cause),
+            ...transportContext(cause),
           },
         );
       }
@@ -750,7 +761,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
             requestQuery: sanitizeQuery(extractQuery(request.url)),
             requestHeaders: sanitizeHeaders(request.headers),
             requestBody: sanitizeBody(request.body),
-            cause: cause instanceof Error ? cause.message : String(cause),
+            ...transportContext(cause),
           },
         );
       }

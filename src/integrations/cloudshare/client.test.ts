@@ -10,7 +10,7 @@ import {
   CloudShareResponseError,
   CloudShareTransportError,
 } from "./errors";
-import type { HttpClient, HttpRequest, HttpResponse } from "./http";
+import { HttpTransportError, type HttpClient, type HttpRequest, type HttpResponse } from "./http";
 import type { V4TokenProvider } from "./v4-auth";
 
 const endpoints = {
@@ -566,6 +566,13 @@ describe("createCloudShareClient — error mapping", () => {
     await expect(
       client.requestV4({ method: "GET", path: "/projects", schema: projectsSchema }),
     ).rejects.toBeInstanceOf(CloudShareTransportError);
+  });
+
+  it("propagates HTTP transport socket and TLS evidence into CloudShareTransportError", async () => {
+    const http: HttpClient = { async send() { throw new HttpTransportError("socket failed", new Error("ECONNRESET"), { transport: "tcp", remoteAddress: "127.0.0.1" }, { protocol: "TLSv1.3", authorized: false }); } };
+    await expect(clientWith(http).requestV4({ method: "GET", path: "/projects", schema: projectsSchema })).rejects.toMatchObject({
+      context: expect.objectContaining({ network: { transport: "tcp", remoteAddress: "127.0.0.1" }, tls: { protocol: "TLSv1.3", authorized: false } }),
+    });
   });
 
   it("raises CloudShareResponseError on a non-JSON body", async () => {
