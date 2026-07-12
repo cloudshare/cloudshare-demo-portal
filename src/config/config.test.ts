@@ -103,7 +103,7 @@ describe("loadConfig", () => {
         CERTALIS_SALES_ADMIN_PASSWORD: undefined,
       }),
     ).toThrow(
-      "CERTALIS_SALES_ADMIN_EMAIL and CERTALIS_SALES_ADMIN_PASSWORD",
+      "CERTALIS_SALES_ADMIN_PASSWORD",
     );
   });
 
