@@ -1,5 +1,6 @@
 "use client";
 
+import React from "react";
 import { useCallback, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CloudShareConnectionFeature } from "./admin-cloudshare-connection";
@@ -12,10 +13,11 @@ import { PortalPageHeader } from "./portal-page-header";
 export function SalesWorkspace({ email }: { readonly email: string }) {
   const router = useRouter();
   const [showConnection, setShowConnection] = useState(false);
+  const browserFetch = useCallback<typeof fetch>((input, init) => window.fetch(input, init), []);
   const fetchAdmin = useMemo(() => createAdminAuthenticatedRequest({
-    fetchImpl: window.fetch.bind(window),
+    fetchImpl: browserFetch,
     onSessionExpired: () => { router.replace("/login"); router.refresh(); },
-  }), [router]);
+  }), [browserFetch, router]);
   const logout = useCallback(async () => {
     await fetch("/api/auth/logout", { method: "POST" });
     router.push("/login"); router.refresh();
