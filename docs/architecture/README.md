@@ -26,3 +26,13 @@ reads; runtime handlers consume returned evidence for portal diagnostics and sta
 The module intentionally does not define a generic Session or Experience interface and does not
 reserve a Sales adapter. Sales has distinct v4 operations and must establish a concrete adapter
 before any portal-owned delivery mechanics are extracted as shared.
+
+## Candidate admission
+
+Candidate admission is the portal-owned lifecycle shared by Individual Exam Delivery and Cohort
+Exam Session delivery. It validates Candidate identity and the Customer-scoped CloudShare
+Connection, applies the same-Exam availability rule, reserves and recovers the provisional
+ExamAttempt, and finalizes the ready attempt with its server-only LabLaunch. Blueprint Snapshot
+guarding remains a shared runtime safety check. Individual and Cohort adapters retain their
+distinct availability rules, TrainingDelivery operations, CloudShare-specific diagnostics, and
+user-visible response wording. This is not a generic delivery, Session, or Experience model.

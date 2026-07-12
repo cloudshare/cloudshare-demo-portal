@@ -9,6 +9,14 @@ import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { EventLogRepository } from "@/domain/event-log";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import { isIndividualExamDeliveryAvailable, type ExamRepository } from "@/domain/exam-catalog";
+import {
+  CandidateAdmissionConnectionError,
+  findCandidateAdmissionOverlap,
+  recordCandidateAdmissionFailureEvidence,
+  recordCandidateAdmissionSuccessEvidence,
+  requireCandidateAdmissionConnection,
+  requireCandidateAdmissionIdentity,
+} from "@/domain/candidate-admission";
 import type { LabLaunchRepository } from "@/domain/lab-launch";
 import {
   CloudShareProvisioningError,
@@ -75,20 +83,24 @@ export async function scheduleExamAttemptRuntime(
     return { status: 404, body: { error: "Published exam not found." } };
   }
 
-  const connection = await deps.connections.findByCustomerId(request.customerId);
-  if (!connection) {
+  let connection;
+  try {
+    connection = await requireCandidateAdmissionConnection(deps.connections, request.customerId);
+  } catch (error) {
+    if (!(error instanceof CandidateAdmissionConnectionError)) throw error;
     return {
       status: 409,
       body: { error: "CloudShare is not connected for this customer." },
     };
   }
 
-  if (
-    !request.candidateFirstName?.trim() ||
-    !request.candidateLastName?.trim() ||
-    request.candidateFirstName.trim().length < 2 ||
-    request.candidateLastName.trim().length < 2
-  ) {
+  let candidateIdentity;
+  try {
+    candidateIdentity = requireCandidateAdmissionIdentity({
+      firstName: request.candidateFirstName ?? "",
+      lastName: request.candidateLastName ?? "",
+    });
+  } catch {
     return {
       status: 409,
       body: {
@@ -112,9 +124,8 @@ export async function scheduleExamAttemptRuntime(
     };
   }
 
-  const overlap = await findSameExamAvailabilityOverlap({
-    attempts: deps.attempts,
-    candidateId: request.candidateId,
+  const overlap = findCandidateAdmissionOverlap({
+    attempts: await deps.attempts.listByCandidate(request.candidateId),
     examId: exam.id,
     scheduledFor,
     availabilityWindowMinutes: exam.storageLeaseMinutes ?? exam.openPeriodMinutes,
@@ -193,8 +204,8 @@ export async function scheduleExamAttemptRuntime(
         customerId: request.customerId,
         candidateId: request.candidateId,
         candidateEmail: request.candidateEmail,
-        candidateFirstName: request.candidateFirstName.trim(),
-        candidateLastName: request.candidateLastName.trim(),
+        candidateFirstName: candidateIdentity.firstName,
+        candidateLastName: candidateIdentity.lastName,
         examId: request.examId,
         scheduledFor,
         correlationId,
@@ -212,25 +223,22 @@ export async function scheduleExamAttemptRuntime(
       attemptStatus: result.attempt.status,
       coldStartLikely: result.coldStartLikely,
     });
-    await deps.audit.write({
-      id: `${result.attempt.id}:lab_launched:${correlationId}`,
-      customerId: request.customerId,
-      actorType: "candidate",
-      actorId: request.candidateId,
-      subjectType: "exam_attempt",
-      subjectId: result.attempt.id,
-      examAttemptId: result.attempt.id,
-      candidateId: request.candidateId,
-      examId: result.attempt.examId,
-      correlationId,
-      action: "lab_launched",
-      outcome: "success",
-      details: {
-        trainingId: result.trainingId,
-        experienceId: result.experienceId,
+    await recordCandidateAdmissionSuccessEvidence(
+      { audit: deps.audit },
+      {
+        context: {
+          customerId: request.customerId,
+          candidateId: request.candidateId,
+          examAttemptId: result.attempt.id,
+          examId: result.attempt.examId,
+          correlationId,
+          occurredAt: deps.now?.() ?? new Date(),
+        },
+        auditId: `${result.attempt.id}:lab_launched:${correlationId}`,
+        action: "lab_launched",
+        details: { trainingId: result.trainingId, experienceId: result.experienceId },
       },
-      occurredAt: deps.now?.() ?? new Date(),
-    });
+    );
 
     return {
       status: 201,
@@ -269,36 +277,32 @@ export async function scheduleExamAttemptRuntime(
         operation: "schedule_exam",
         ...toProvisioningDiagnostic(error),
       };
-      await deps.eventLog.append({
-        eventId: correlationId,
-        type: "cloudshare.schedule_exam.failed",
-        occurredAt: deps.now?.() ?? new Date(),
-        payload: diagnostic,
-      });
-      await deps.audit.write({
-        id: `${error.context.attemptId}:lab_launch_failed:${correlationId}`,
-        customerId: request.customerId,
-        actorType: "candidate",
-        actorId: request.candidateId,
-        subjectType: "exam_attempt",
-        subjectId: error.context.attemptId,
-        examAttemptId: error.context.attemptId,
-        candidateId: request.candidateId,
-        correlationId,
-        action: "lab_launch_failed",
-        outcome: "failure",
-        details: {
-          attemptedOperation: diagnostic.attemptedOperation,
-          integrationSurface: diagnostic.integrationSurface,
-          method: diagnostic.method,
-          path: diagnostic.path,
-          failureMode: diagnostic.failureMode,
-          responseStatus: diagnostic.responseStatus,
-          correlationId,
+      await recordCandidateAdmissionFailureEvidence(
+        { audit: deps.audit, eventLog: deps.eventLog },
+        {
+          context: {
+            customerId: request.customerId,
+            candidateId: request.candidateId,
+            examAttemptId: error.context.attemptId,
+            correlationId,
+            occurredAt: deps.now?.() ?? new Date(),
+          },
+          auditId: `${error.context.attemptId}:lab_launch_failed:${correlationId}`,
+          auditAction: "lab_launch_failed",
+          auditDetails: {
+            attemptedOperation: diagnostic.attemptedOperation,
+            integrationSurface: diagnostic.integrationSurface,
+            method: diagnostic.method,
+            path: diagnostic.path,
+            failureMode: diagnostic.failureMode,
+            responseStatus: diagnostic.responseStatus,
+            correlationId,
+          },
+          auditError: "CloudShare provisioning failed for the scheduled exam.",
+          eventType: "cloudshare.schedule_exam.failed",
+          eventPayload: diagnostic,
         },
-        error: "CloudShare provisioning failed for the scheduled exam.",
-        occurredAt: deps.now?.() ?? new Date(),
-      });
+      );
       deps.logger.warn("candidate exam scheduling failed", diagnostic);
       return {
         status: isCloudShareRateLimitError(error.context.cause) ? 429 : 502,
@@ -326,44 +330,6 @@ function toCandidateScheduleValidationMessage(error: ScheduleValidationError): s
 
 function toCandidateScheduleOverlapMessage(error: ScheduleOverlapError): string {
   return `Another attempt for this Exam is still active or available. You can schedule this Exam again after ${error.nextAvailableAt.toISOString()}.`;
-}
-
-async function findSameExamAvailabilityOverlap(input: {
-  readonly attempts: ExamAttemptRepository;
-  readonly candidateId: string;
-  readonly examId: string;
-  readonly scheduledFor: Date;
-  readonly availabilityWindowMinutes: number;
-}): Promise<{ readonly conflictingAttemptId: string; readonly nextAvailableAt: Date } | null> {
-  const requestedAtMs = input.scheduledFor.getTime();
-  const windowMs = input.availabilityWindowMinutes * 60_000;
-  const requestedEndMs = requestedAtMs + windowMs;
-  const existingAttempts = await input.attempts.listByCandidate(input.candidateId);
-
-  for (const attempt of existingAttempts) {
-    if (
-      attempt.examId !== input.examId ||
-      attempt.status === "completed" ||
-      attempt.status === "expired" ||
-      !attempt.scheduledFor
-    ) {
-      continue;
-    }
-
-    const windowStartMs = attempt.scheduledFor.getTime();
-    if (!Number.isFinite(windowStartMs)) {
-      continue;
-    }
-    const windowEndMs = windowStartMs + windowMs;
-    if (requestedAtMs < windowEndMs && requestedEndMs > windowStartMs) {
-      return {
-        conflictingAttemptId: attempt.id,
-        nextAvailableAt: new Date(windowEndMs),
-      };
-    }
-  }
-
-  return null;
 }
 
 function createTeamReadDiagnosticObserver(input: {
