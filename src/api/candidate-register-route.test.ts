@@ -8,6 +8,8 @@ const { mockGetServices } = vi.hoisted(() => ({
 
 vi.mock("@/composition", () => ({
   getServices: mockGetServices,
+  getPortalSessionServices: mockGetServices,
+  getCandidateRegistrationServices: mockGetServices,
 }));
 
 function makeLogger(): Logger {

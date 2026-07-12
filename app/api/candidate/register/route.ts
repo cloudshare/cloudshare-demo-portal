@@ -1,13 +1,14 @@
 import { NextResponse } from "next/server";
-import { getServices } from "@/composition";
+import { getCandidateRegistrationServices, getPortalSessionServices } from "@/composition";
 import {
   buildCandidateRegistrationDeps,
   handleCandidateSelfRegistration,
 } from "@/api/candidate-portal";
 
 export async function POST(request: Request) {
-  const services = getServices();
-  await services.ensurePortalSeeded();
+  const sessionServices = getPortalSessionServices();
+  await sessionServices.ensurePortalSeeded();
+  const services = getCandidateRegistrationServices();
 
   const contentType = request.headers.get("content-type") ?? "";
   const expectsJson = contentType.includes("application/json");
