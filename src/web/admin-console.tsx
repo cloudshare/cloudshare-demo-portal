@@ -4,17 +4,6 @@ import React from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  beginLatestOnlyRequest,
-  getAllowedRegionValidationMessage,
-  getCompatibleRegions,
-  getDefaultOpenPeriodMinutes,
-  getExamAuthoringMode,
-  getResetOpenPeriodMinutes,
-  isLatestOnlyResponse,
-  reconcileAllowedRegionIds,
-  shouldReconcileAllowedRegionIds,
-} from "./admin-console-state";
-import {
   ADMIN_TABS,
   buildAdminNavigationHref,
   createCorrelationDiagnosticsNavigationIntent,
@@ -38,6 +27,12 @@ import { AdminCandidateRosterFeature } from "./admin-candidate-roster";
 import { formatAdminAttemptStatus, formatAdminUtcTimestamp } from "./admin-attempt-presentation";
 import { AdminSupportFeature } from "./admin-support";
 import { AdminSessionMonitoringFeature } from "./admin-session-monitoring";
+import {
+  AdminExamCatalogAuthoringFeature,
+  ExamCatalogLoadingOverlay,
+  isCohortSessionAuthoringAvailable,
+  type ExamRecord as CatalogExamRecord,
+} from "./admin-exam-catalog-authoring";
 import type {
   CohortExamSessionGuidedJourneyAggregateView,
   CohortExamSessionMonitoringView,
@@ -75,72 +70,7 @@ interface AdminErrorState {
   readonly correlationId?: string | null;
 }
 
-interface ConnectionDiagnostic {
-  operation: string;
-  integrationSurface: string;
-  integrationLabel?: string;
-  method: string;
-  path: string;
-  requestUrl?: string;
-  failureMode: string;
-  responseStatus?: number;
-  requestHeaders?: Record<string, unknown>;
-  requestBody?: unknown;
-  responseHeaders?: Record<string, unknown>;
-  responseBody?: unknown;
-  cause?: string;
-  network?: Record<string, unknown>;
-  tls?: Record<string, unknown>;
-}
-
-interface NamedResource {
-  id: string;
-  name: string;
-  friendlyName?: string;
-  description?: string;
-  runtimeLeaseMinutes?: number | null;
-  storageLeaseMinutes?: number | null;
-}
-
-interface BlueprintSnapshot {
-  id: string;
-  name: string;
-  isDefault: boolean;
-  regionIds: string[];
-}
-
-interface BlueprintDetail {
-  id: string;
-  name: string;
-  description: string;
-  defaultSnapshotId: string | null;
-  snapshots: BlueprintSnapshot[];
-}
-
-interface ExamRecord {
-  id: string;
-  title: string;
-  description: string;
-  timeLimitMinutes: number;
-  storageLeaseMinutes?: number | null;
-  openPeriodMinutes: number;
-  scoreRetrievalEnabled: boolean;
-  deliveryAvailability?: "individual" | "cohort" | "both";
-  status: "draft" | "published" | "archived";
-  publishedAt: string | null;
-  archivedAt?: string | null;
-  createdAt?: string;
-  projectId: string;
-  projectName: string;
-  blueprintId: string;
-  blueprintName: string;
-  snapshotId: string;
-  snapshotName: string;
-  allowedRegions: Array<{ id: string; name: string }>;
-  policyId: string;
-  policyName: string;
-  instructorName: string;
-}
+interface ExamRecord extends CatalogExamRecord {}
 
 interface CohortExamSessionRecord {
   session: {
@@ -180,22 +110,6 @@ interface CohortExamSessionFormState {
 
 function formatRateSummary(value: number): string {
   return `${Math.round(value * 100)}%`;
-}
-
-function stripHtmlToText(value: string | null | undefined): string {
-  if (!value) return "";
-  return value
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&#39;/gi, "'")
-    .replace(/&quot;/gi, "\"")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 function CorrelationDiagnosticsLink(props: {
@@ -245,52 +159,6 @@ const examCatalogBusyShellStyle: React.CSSProperties = {
   overflow: "hidden",
 };
 
-const examCatalogOverlayStyle: React.CSSProperties = {
-  position: "absolute",
-  inset: 0,
-  zIndex: 2,
-  display: "grid",
-  alignItems: "flex-start",
-  justifyItems: "center",
-  minHeight: "18rem",
-  padding: "1rem",
-  boxSizing: "border-box",
-  borderRadius: "8px",
-  background: "rgba(248, 250, 252, 0.82)",
-  backdropFilter: "blur(1px)",
-};
-
-const examCatalogOverlayPanelStyle: React.CSSProperties = {
-  ...cardStyle,
-  display: "flex",
-  alignItems: "center",
-  gap: "0.75rem",
-  flexWrap: "wrap",
-  maxWidth: "min(100%, 22rem)",
-  padding: "0.85rem 1rem",
-  color: colors.textPrimary,
-};
-
-const examCatalogSpinnerStyle: React.CSSProperties = {
-  width: "1.15rem",
-  height: "1.15rem",
-  borderRadius: "999px",
-  border: `3px solid ${colors.borderStrong}`,
-  borderTopColor: colors.accent,
-  animation: "portal-spin 800ms linear infinite",
-};
-
-export function ExamCatalogLoadingOverlay() {
-  return (
-    <div style={examCatalogOverlayStyle} aria-live="polite" aria-busy="true">
-      <div role="status" style={examCatalogOverlayPanelStyle}>
-        <span className="portal-spinner" aria-hidden="true" style={examCatalogSpinnerStyle} />
-        <span>Loading Exam Catalog resources</span>
-      </div>
-    </div>
-  );
-}
-
 function getLogoutButtonStyle(disabled: boolean): React.CSSProperties {
   return disabled
     ? {
@@ -304,14 +172,6 @@ function formatExamDeliveryAvailability(value: ExamRecord["deliveryAvailability"
   if (value === "cohort") return "Cohort Exam";
   if (value === "both") return "Individual + Cohort Exam";
   return "Individual Exam";
-}
-
-export function getDeliveryAvailabilityAuthoringOptions(value: ExamRecord["deliveryAvailability"]) {
-  void value;
-  return [
-    { value: "individual", label: "Individual Exam", disabled: false },
-    { value: "cohort", label: "Cohort Exam", disabled: false },
-  ];
 }
 
 export const COHORT_SESSION_DRAFT_ONLY_COPY =
@@ -562,49 +422,6 @@ function getCloudShareIdentifierFields(session: {
   }
 
   return fields;
-}
-
-export function formatShortExamId(id: string): string {
-  return id.length <= 8 ? id : id.slice(0, 8);
-}
-
-export function getDuplicateExamResourceTupleWarning(input: {
-  readonly exams: readonly ExamRecord[];
-  readonly currentExamId?: string | null;
-  readonly projectId: string;
-  readonly blueprintId: string;
-  readonly snapshotId: string | null;
-  readonly policyId: string;
-  readonly deliveryAvailability: ExamRecord["deliveryAvailability"];
-}): string | null {
-  const snapshotId = input.snapshotId ?? "";
-  if (!input.projectId || !input.blueprintId || !snapshotId || !input.policyId) {
-    return null;
-  }
-
-  const duplicate = input.exams.find(
-    (exam) =>
-      exam.id !== input.currentExamId &&
-      exam.projectId === input.projectId &&
-      exam.blueprintId === input.blueprintId &&
-      exam.snapshotId === snapshotId &&
-      exam.policyId === input.policyId &&
-      (exam.deliveryAvailability ?? "individual") === input.deliveryAvailability,
-  );
-
-  if (!duplicate) {
-    return null;
-  }
-
-  return `Another Exam already uses this Project, Blueprint, default Snapshot, Policy, and delivery mode: ${duplicate.title} (${formatShortExamId(
-    duplicate.id,
-  )}). Confirm the Exam title and delivery scope before saving.`;
-}
-
-export function isCohortSessionAuthoringAvailable(
-  value: ExamRecord["deliveryAvailability"],
-): boolean {
-  return value === "cohort" || value === "both";
 }
 
 export function normalizeAdminLocalDateTime(value: string): string | null {
@@ -1371,14 +1188,6 @@ export function CohortSessionMonitoringList(props: {
   );
 }
 
-function SelectionSummaryRow(props: { readonly label: string; readonly value: string }) {
-  return (
-    <div style={{ color: "#444", fontSize: "0.9rem", overflowWrap: "anywhere" }}>
-      {props.label}: {props.value}
-    </div>
-  );
-}
-
 function GuidedJourneyAggregatePanel(props: {
   readonly detail: CohortExamSessionGuidedJourneyAggregateView;
   readonly getNavigationHref?: (intent: AdminNavigationIntent) => string;
@@ -1470,180 +1279,6 @@ function GuidedJourneyAggregatePanel(props: {
             </tbody>
           </table>
         </div>
-      )}
-    </div>
-  );
-}
-
-export function ExamAuthoringSelectionSummary(props: {
-  readonly selectedProject: NamedResource | null;
-  readonly selectedBlueprint: NamedResource | null;
-  readonly defaultSnapshot: BlueprintSnapshot | null;
-  readonly selectedAllowedRegions: readonly NamedResource[];
-  readonly selectedPolicy: NamedResource | null;
-  readonly deliveryAvailability: ExamRecord["deliveryAvailability"];
-  readonly duplicateExamResourceTupleWarning?: string | null;
-}) {
-  const policySummary = [
-    props.selectedPolicy?.name ?? "-",
-    props.selectedPolicy?.runtimeLeaseMinutes
-      ? `${props.selectedPolicy.runtimeLeaseMinutes} minute runtime lease`
-      : null,
-    props.selectedPolicy?.storageLeaseMinutes
-      ? `${props.selectedPolicy.storageLeaseMinutes} minute storage retention`
-      : null,
-  ].filter(Boolean).join(" · ");
-
-  return (
-    <div
-      style={{
-        display: "grid",
-        gap: "0.5rem",
-        padding: "0.85rem 1rem",
-        border: "1px solid #e5e7eb",
-        borderRadius: "6px",
-        background: "#fafafa",
-      }}
-    >
-      <strong>Selection summary</strong>
-      <SelectionSummaryRow label="Project" value={props.selectedProject?.name ?? "-"} />
-      <SelectionSummaryRow label="Blueprint" value={props.selectedBlueprint?.name ?? "-"} />
-      <SelectionSummaryRow
-        label="Snapshot"
-        value={
-          props.defaultSnapshot
-            ? `${props.defaultSnapshot.name} (default only for Experience launches)`
-            : "-"
-        }
-      />
-      <SelectionSummaryRow
-        label="Allowed Regions"
-        value={
-          props.selectedAllowedRegions.length > 0
-            ? props.selectedAllowedRegions.map((region) => region.friendlyName ?? region.name).join(", ")
-            : "-"
-        }
-      />
-      <SelectionSummaryRow label="Policy" value={policySummary} />
-      <SelectionSummaryRow
-        label="Delivery"
-        value={formatExamDeliveryAvailability(props.deliveryAvailability)}
-      />
-      {props.duplicateExamResourceTupleWarning && (
-        <div
-          role="status"
-          style={{
-            color: "#7a4b00",
-            background: "#fff7e6",
-            border: "1px solid #f0d38a",
-            borderRadius: "6px",
-            padding: "0.7rem 0.85rem",
-          }}
-        >
-          {props.duplicateExamResourceTupleWarning}
-        </div>
-      )}
-    </div>
-  );
-}
-
-export function ExamCatalogRowActions(props: {
-  readonly exam: Pick<ExamRecord, "id" | "status" | "deliveryAvailability">;
-  readonly loading: boolean;
-  readonly editingExamId: string | null;
-  readonly hasActiveCohortSessions?: boolean;
-  readonly onEdit: () => void;
-  readonly onPublish: () => void;
-  readonly onUnpublish: () => void;
-  readonly onArchive?: () => void;
-  readonly onManageCohortSessions: () => void;
-}) {
-  const supportsCohortSessions = isCohortSessionAuthoringAvailable(props.exam.deliveryAvailability);
-  const isCohortOnly = props.exam.deliveryAvailability === "cohort";
-  const cohortArchiveDisabled = Boolean(props.hasActiveCohortSessions);
-
-  return (
-    <div style={{ display: "grid", gap: "0.5rem" }}>
-      <div style={{ color: colors.textSecondary, fontSize: "0.8rem" }}>
-        Delivery: {formatExamDeliveryAvailability(props.exam.deliveryAvailability)}
-      </div>
-      {supportsCohortSessions ? (
-        <button
-          type="button"
-          onClick={props.onManageCohortSessions}
-          disabled={props.loading}
-          style={{ padding: "0.45rem 0.75rem" }}
-        >
-          Manage Cohort Sessions
-        </button>
-      ) : null}
-      {isCohortOnly && props.exam.status === "published" ? (
-        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-          <button
-            onClick={props.onArchive}
-            disabled={props.loading || props.editingExamId !== null || cohortArchiveDisabled}
-            title={cohortArchiveDisabled ? "Retire all Cohort Exam Sessions before archiving this Exam." : undefined}
-            style={{ padding: "0.45rem 0.75rem" }}
-          >
-            Archive Exam
-          </button>
-          {cohortArchiveDisabled ? (
-            <span style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>
-              Retire all Cohort Exam Sessions first.
-            </span>
-          ) : null}
-        </div>
-      ) : isCohortOnly ? (
-        <div style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>
-          <div>Exam setup is {props.exam.status}</div>
-          <div>Publish the individual Cohort Sessions after opening this Exam.</div>
-        </div>
-      ) : props.exam.status === "draft" ? (
-        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-          {props.editingExamId === props.exam.id ? (
-            <span style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>
-              Editing - save or cancel before publishing.
-            </span>
-          ) : (
-            <>
-              <button
-                onClick={props.onEdit}
-                disabled={props.loading || props.editingExamId !== null}
-                style={{ padding: "0.45rem 0.75rem" }}
-              >
-                Edit Exam
-              </button>
-              <button
-                onClick={props.onPublish}
-                disabled={props.loading || props.editingExamId !== null}
-                style={{ padding: "0.45rem 0.75rem" }}
-              >
-                Publish Exam
-              </button>
-            </>
-          )}
-        </div>
-      ) : props.exam.status === "published" ? (
-        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-          <button
-            onClick={props.onUnpublish}
-            disabled={props.loading || props.editingExamId !== null}
-            style={{ padding: "0.45rem 0.75rem" }}
-          >
-            Unpublish Exam
-          </button>
-          <button
-            onClick={props.onArchive}
-            disabled={props.loading || props.editingExamId !== null}
-            style={{ padding: "0.45rem 0.75rem" }}
-          >
-            Archive Exam
-          </button>
-        </div>
-      ) : (
-        <span style={{ color: colors.textSecondary, fontSize: "0.85rem" }}>
-          Archived for history and support review.
-        </span>
       )}
     </div>
   );
@@ -1763,22 +1398,6 @@ export function AdminConsole({
   const [focusedExamId, setFocusedExamId] = useState<string | null>(initialExamId ?? null);
   const [focusedCohortSessionId, setFocusedCohortSessionId] = useState<string | null>(initialCohortSessionId ?? null);
   const [supportView, setSupportView] = useState<AdminSupportView>(initialSupportView);
-  const [projects, setProjects] = useState<NamedResource[]>([]);
-  const [regions, setRegions] = useState<NamedResource[]>([]);
-  const [blueprints, setBlueprints] = useState<NamedResource[]>([]);
-  const [policies, setPolicies] = useState<NamedResource[]>([]);
-  const [blueprintDetail, setBlueprintDetail] = useState<BlueprintDetail | null>(null);
-  const [selectedProjectId, setSelectedProjectId] = useState("");
-  const [selectedBlueprintId, setSelectedBlueprintId] = useState("");
-  const [selectedPolicyId, setSelectedPolicyId] = useState("");
-  const [selectedAllowedRegionIds, setSelectedAllowedRegionIds] = useState<string[]>([]);
-  const [examTitle, setExamTitle] = useState("");
-  const [examDescription, setExamDescription] = useState("");
-  const [timeLimitMinutes, setTimeLimitMinutes] = useState("90");
-  const [openPeriodMinutes, setOpenPeriodMinutes] = useState("90");
-  const [scoreRetrievalEnabled, setScoreRetrievalEnabled] = useState(false);
-  const [deliveryAvailability, setDeliveryAvailability] = useState<"individual" | "cohort" | "both">("individual");
-  const [editingExamId, setEditingExamId] = useState<string | null>(null);
   const [examCatalog, setExamCatalog] = useState<ExamRecord[]>([]);
   const [archivedExamCatalog, setArchivedExamCatalog] = useState<ExamRecord[]>([]);
   const [cohortSessionsByExamId, setCohortSessionsByExamId] = useState<Record<string, CohortExamSessionRecord[]>>({});
@@ -1787,11 +1406,6 @@ export function AdminConsole({
   const [cohortSessionFormsByExamId, setCohortSessionFormsByExamId] = useState<Record<string, CohortExamSessionFormState>>({});
   const [selectedCohortSession, setSelectedCohortSession] = useState<CohortExamSessionRecord | null>(null);
   const [examMessage, setExamMessage] = useState<string | null>(null);
-  const [examFormFeedback, setExamFormFeedback] = useState<string | null>(null);
-  const [examDiagnostic, setExamDiagnostic] = useState<ConnectionDiagnostic | null>(null);
-  const [examCorrelationId, setExamCorrelationId] = useState<string | null>(null);
-  const projectResourcesRequestIdRef = useRef(0);
-  const blueprintDetailRequestIdRef = useRef(0);
   const examCatalogLoadingCountRef = useRef(0);
   const [diagnosticFilters, setDiagnosticFilters] = useState<DiagnosticLogFilters>(initialDiagnosticFilters);
   const [loading, setLoading] = useState(false);
@@ -1810,28 +1424,14 @@ export function AdminConsole({
   }
 
   useEffect(() => {
-    if (tab === "exams") {
+    if (tab === "exams" && (examView === "sessions" || examView === "session")) {
       void loadExamCatalog();
-      if (examView === "create" || examView === "edit") {
-        void loadExamAuthoring();
-      }
     }
     if (tab === "support" && supportView === "monitoring") {
       void loadExamCatalog(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, examView, supportView]);
-
-  useEffect(() => {
-    if (tab !== "exams" || examView !== "edit" || !focusedExamId || editingExamId === focusedExamId) {
-      return;
-    }
-    const exam = allExamCatalog.find((item) => item.id === focusedExamId);
-    if (exam) {
-      void beginEditingExam(exam);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, examView, focusedExamId, allExamCatalog, editingExamId]);
 
   useEffect(() => {
     if (tab !== "exams" || (examView !== "sessions" && examView !== "session") || !focusedExamId) {
@@ -1854,8 +1454,6 @@ export function AdminConsole({
   const handleAdminSessionExpired = useCallback(() => {
     setSessionExpired(true);
     setError(ADMIN_SESSION_EXPIRED_MESSAGE);
-    setExamCorrelationId(null);
-    setExamDiagnostic(null);
     router.replace("/login");
     router.refresh();
   }, [router]);
@@ -1905,243 +1503,13 @@ export function AdminConsole({
   }
 
   function navigateToExamCatalog() {
-    setEditingExamId(null);
     setSelectedCohortSession(null);
     navigateAdmin({ tab: "exams", examView: "catalog" });
   }
-
-  function navigateToExamCreate() {
-    resetExamForm();
-    navigateAdmin({ tab: "exams", examView: "create" });
-    void loadExamAuthoring();
-  }
-
   function navigateToExamSessions(examId: string) {
     setSelectedCohortSession(null);
     navigateAdmin({ tab: "exams", examView: "sessions", examId });
     void loadCohortExamSessions(examId);
-  }
-
-  function resetExamForm(next?: {
-    title?: string;
-    description?: string;
-    scoreRetrievalEnabled?: boolean;
-    deliveryAvailability?: "individual" | "cohort" | "both";
-    timeLimitMinutes?: string;
-    openPeriodMinutes?: string;
-  }) {
-    setEditingExamId(null);
-    setExamMessage(null);
-    setExamFormFeedback(null);
-    setExamTitle(next?.title ?? blueprintDetail?.name ?? "");
-    setExamDescription(next?.description ?? stripHtmlToText(blueprintDetail?.description) ?? "");
-    setScoreRetrievalEnabled(next?.scoreRetrievalEnabled ?? false);
-    setDeliveryAvailability(next?.deliveryAvailability ?? "individual");
-    setTimeLimitMinutes(next?.timeLimitMinutes ?? "");
-    setOpenPeriodMinutes(
-      getResetOpenPeriodMinutes({
-        explicitOpenPeriodMinutes: next?.openPeriodMinutes,
-        selectedPolicy,
-        fallbackRuntimeLeaseMinutes: timeLimitMinutes,
-      }),
-    );
-  }
-
-  async function loadExamAuthoring(refresh = false) {
-    setLoading(true);
-    beginExamCatalogLoading();
-    setError(null);
-    setExamDiagnostic(null);
-    try {
-      const response = await fetchAdmin(`/api/admin/exam-authoring${refresh ? "?refresh=true" : ""}`);
-      const data = (await response.json()) as {
-        projects?: NamedResource[];
-        regions?: NamedResource[];
-        error?: string;
-        correlationId?: string | null;
-        diagnostic?: ConnectionDiagnostic | null;
-      };
-      if (!response.ok) {
-        setError(data.error ?? "Failed to load exam authoring resources");
-        setExamCorrelationId(data.correlationId ?? null);
-        setExamDiagnostic(data.diagnostic ?? null);
-        return;
-      }
-
-      const nextProjects = data.projects ?? [];
-      const nextRegions = data.regions ?? [];
-      setProjects(nextProjects);
-      setRegions(nextRegions);
-      const nextProjectId = nextProjects.some((project) => project.id === selectedProjectId)
-        ? selectedProjectId
-        : (nextProjects[0]?.id ?? "");
-      if (nextProjectId !== selectedProjectId) {
-        setSelectedProjectId(nextProjectId);
-      }
-      if (!selectedProjectId && nextProjectId) {
-        const projectId = nextProjectId;
-        setSelectedProjectId(projectId);
-        await loadProjectResources(projectId, true);
-      }
-    } catch (caughtError) {
-      if (isAdminSessionExpiredError(caughtError)) {
-        return;
-      }
-      setError("Failed to load exam authoring resources");
-    } finally {
-      setLoading(false);
-      endExamCatalogLoading();
-    }
-  }
-
-  async function loadProjectResources(
-    projectId: string,
-    refresh = false,
-    preferredBlueprintId?: string,
-    preferredPolicyId?: string,
-  ) {
-    const requestId = beginLatestOnlyRequest(projectResourcesRequestIdRef.current);
-    projectResourcesRequestIdRef.current = requestId;
-    setLoading(true);
-    beginExamCatalogLoading();
-    setError(null);
-    setExamDiagnostic(null);
-    try {
-      const response = await fetchAdmin(
-        `/api/admin/exam-authoring/projects/${encodeURIComponent(projectId)}${refresh ? "?refresh=true" : ""}`,
-      );
-      const data = (await response.json()) as {
-        blueprints?: NamedResource[];
-        policies?: NamedResource[];
-        error?: string;
-        correlationId?: string | null;
-        diagnostic?: ConnectionDiagnostic | null;
-      };
-      if (!response.ok) {
-        if (!isLatestOnlyResponse(projectResourcesRequestIdRef.current, requestId)) {
-          return;
-        }
-        setError(data.error ?? "Failed to load project resources");
-        setExamCorrelationId(data.correlationId ?? null);
-        setExamDiagnostic(data.diagnostic ?? null);
-        return;
-      }
-
-      if (!isLatestOnlyResponse(projectResourcesRequestIdRef.current, requestId)) {
-        return;
-      }
-
-      const nextBlueprints = data.blueprints ?? [];
-      const nextPolicies = data.policies ?? [];
-      const nextPolicy = setBluePrintState(nextBlueprints, nextPolicies, preferredPolicyId);
-      const desiredBlueprintId = preferredBlueprintId ?? selectedBlueprintId;
-      const nextBlueprintId = nextBlueprints.some((blueprint) => blueprint.id === desiredBlueprintId)
-        ? desiredBlueprintId
-        : (nextBlueprints[0]?.id ?? "");
-      if (nextBlueprintId !== selectedBlueprintId) {
-        setSelectedBlueprintId(nextBlueprintId);
-      }
-      if (nextBlueprintId) {
-        const blueprintId = nextBlueprintId;
-        setSelectedBlueprintId(blueprintId);
-        await loadBlueprintDetail(projectId, blueprintId, refresh, nextPolicy);
-      } else {
-        setBlueprintDetail(null);
-      }
-    } catch (caughtError) {
-      if (isAdminSessionExpiredError(caughtError)) {
-        return;
-      }
-      if (!isLatestOnlyResponse(projectResourcesRequestIdRef.current, requestId)) {
-        return;
-      }
-      setError("Failed to load project resources");
-    } finally {
-      setLoading(false);
-      endExamCatalogLoading();
-    }
-  }
-
-  function setBluePrintState(
-    nextBlueprints: NamedResource[],
-    nextPolicies: NamedResource[],
-    preferredPolicyId?: string,
-  ): NamedResource | undefined {
-    setBlueprints(nextBlueprints);
-    setPolicies(nextPolicies);
-    const desiredPolicyId = preferredPolicyId ?? selectedPolicyId;
-    const nextPolicyId = nextPolicies.some((policy) => policy.id === desiredPolicyId)
-      ? desiredPolicyId
-      : (nextPolicies[0]?.id ?? "");
-    setSelectedPolicyId(nextPolicyId);
-    const selectedPolicy = nextPolicies.find((policy) => policy.id === nextPolicyId);
-    if (selectedPolicy?.runtimeLeaseMinutes) {
-      setTimeLimitMinutes(String(selectedPolicy.runtimeLeaseMinutes));
-    }
-    if (!editingExamId && examView !== "edit") {
-      setOpenPeriodMinutes(getDefaultOpenPeriodMinutes(selectedPolicy));
-    }
-    return selectedPolicy;
-  }
-
-  async function loadBlueprintDetail(
-    projectId: string,
-    blueprintId: string,
-    refresh = false,
-    policyForDefault: NamedResource | null | undefined = selectedPolicy,
-  ) {
-    const requestId = beginLatestOnlyRequest(blueprintDetailRequestIdRef.current);
-    blueprintDetailRequestIdRef.current = requestId;
-    setLoading(true);
-    beginExamCatalogLoading();
-    setError(null);
-    setExamDiagnostic(null);
-    try {
-      const response = await fetchAdmin(
-        `/api/admin/exam-authoring/projects/${encodeURIComponent(projectId)}/blueprints/${encodeURIComponent(blueprintId)}${refresh ? "?refresh=true" : ""}`,
-      );
-      const data = (await response.json()) as {
-        blueprint?: BlueprintDetail;
-        error?: string;
-        correlationId?: string | null;
-        diagnostic?: ConnectionDiagnostic | null;
-      };
-      if (!response.ok) {
-        if (!isLatestOnlyResponse(blueprintDetailRequestIdRef.current, requestId)) {
-          return;
-        }
-        setError(data.error ?? "Failed to load blueprint detail");
-        setExamCorrelationId(data.correlationId ?? null);
-        setExamDiagnostic(data.diagnostic ?? null);
-        return;
-      }
-
-      if (!isLatestOnlyResponse(blueprintDetailRequestIdRef.current, requestId)) {
-        return;
-      }
-
-      const detail = data.blueprint ?? null;
-      setError(null);
-      setExamCorrelationId(null);
-      setExamDiagnostic(null);
-      setBlueprintDetail(detail);
-      if (!editingExamId && examView !== "edit" && detail) {
-        setExamTitle(detail.name);
-        setExamDescription(stripHtmlToText(detail.description));
-        setOpenPeriodMinutes(getDefaultOpenPeriodMinutes(policyForDefault));
-      }
-    } catch (caughtError) {
-      if (isAdminSessionExpiredError(caughtError)) {
-        return;
-      }
-      if (!isLatestOnlyResponse(blueprintDetailRequestIdRef.current, requestId)) {
-        return;
-      }
-      setError("Failed to load blueprint detail");
-    } finally {
-      setLoading(false);
-      endExamCatalogLoading();
-    }
   }
 
   async function loadExamCatalog(loadCohortSessions = true) {
@@ -2379,229 +1747,6 @@ export function AdminConsole({
     }
   }
 
-  async function saveDraftExam() {
-    setLoading(true);
-    setError(null);
-    setExamMessage(null);
-    setExamFormFeedback(null);
-    try {
-      const project = projects.find((item) => item.id === selectedProjectId);
-      const blueprint = blueprints.find((item) => item.id === selectedBlueprintId);
-      const policy = policies.find((item) => item.id === selectedPolicyId);
-      const snapshot = blueprintDetail?.snapshots.find(
-        (item) => item.id === blueprintDetail.defaultSnapshotId,
-      );
-      const policyTimeLimitMinutes = policy?.runtimeLeaseMinutes ?? null;
-      const parsedOpenPeriodMinutes = Number(openPeriodMinutes);
-      const validationMessage = getAllowedRegionValidationMessage(
-        selectedAllowedRegionIds,
-        compatibleRegions,
-      );
-
-      if (validationMessage) {
-        setError(validationMessage);
-        setExamFormFeedback(validationMessage);
-        return;
-      }
-
-      if (!project || !blueprint || !policy || !snapshot || !policyTimeLimitMinutes) {
-        const message = "Select a project, blueprint, policy, and allowed Region set before saving the Exam.";
-        setError(message);
-        setExamFormFeedback(message);
-        return;
-      }
-      if (!Number.isInteger(parsedOpenPeriodMinutes) || parsedOpenPeriodMinutes <= 0) {
-        const message = "Open period must be a positive whole number of minutes.";
-        setError(message);
-        setExamFormFeedback(message);
-        return;
-      }
-      if (parsedOpenPeriodMinutes < policyTimeLimitMinutes) {
-        const message = "Open period must be at least the Policy runtime lease.";
-        setError(message);
-        setExamFormFeedback(message);
-        return;
-      }
-      if (
-        policy.storageLeaseMinutes !== null &&
-        policy.storageLeaseMinutes !== undefined &&
-        parsedOpenPeriodMinutes > policy.storageLeaseMinutes
-      ) {
-        const message = "Open period must not exceed the Policy storage lease.";
-        setError(message);
-        setExamFormFeedback(message);
-        return;
-      }
-
-      const response = await fetchAdmin(
-        editingExamId
-          ? `/api/admin/exams/${encodeURIComponent(editingExamId)}`
-          : "/api/admin/exams",
-        {
-          method: editingExamId ? "PATCH" : "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            title: examTitle,
-            description: examDescription,
-            scoreRetrievalEnabled,
-            deliveryAvailability,
-            allowedRegionIds: selectedAllowedRegionIds,
-            policyId: policy.id,
-            openPeriodMinutes: parsedOpenPeriodMinutes,
-            ...(editingExamId
-              ? {}
-              : {
-                  projectId: project.id,
-                  projectName: project.name,
-                  blueprintId: blueprint.id,
-                  blueprintName: blueprint.name,
-                  snapshotId: snapshot.id,
-                  snapshotName: snapshot.name,
-                  policyName: policy.name,
-                }),
-          }),
-        },
-      );
-      const data = (await response.json()) as { error?: string };
-      if (!response.ok) {
-        const message = data.error ?? "Failed to save draft exam";
-        setError(message);
-        setExamFormFeedback(message);
-        return;
-      }
-
-      setExamMessage(editingExamId ? "Draft exam updated." : "Draft exam saved.");
-      resetExamForm();
-      await loadExamCatalog();
-      navigateToExamCatalog();
-    } catch (caughtError) {
-      if (isAdminSessionExpiredError(caughtError)) {
-        return;
-      }
-      setError("Failed to save draft exam");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function publishCatalogExam(examId: string) {
-    setLoading(true);
-    setError(null);
-    setExamMessage(null);
-    try {
-      const response = await fetchAdmin(`/api/admin/exams/${encodeURIComponent(examId)}/publish`, {
-        method: "POST",
-      });
-      const data = (await response.json()) as { error?: string };
-      if (!response.ok) {
-        setError(data.error ?? "Failed to publish exam");
-        return;
-      }
-      setExamMessage("Exam published.");
-      await loadExamCatalog();
-    } catch (caughtError) {
-      if (isAdminSessionExpiredError(caughtError)) {
-        return;
-      }
-      setError("Failed to publish exam");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function unpublishCatalogExam(examId: string) {
-    setLoading(true);
-    setError(null);
-    setExamMessage(null);
-    try {
-      const response = await fetchAdmin(`/api/admin/exams/${encodeURIComponent(examId)}/unpublish`, {
-        method: "POST",
-      });
-      const data = (await response.json()) as { error?: string };
-      if (!response.ok) {
-        setError(data.error ?? "Failed to unpublish exam");
-        return;
-      }
-      setExamMessage("Exam returned to draft.");
-      await loadExamCatalog();
-    } catch (caughtError) {
-      if (isAdminSessionExpiredError(caughtError)) {
-        return;
-      }
-      setError("Failed to unpublish exam");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function archiveCatalogExam(examId: string, confirmArchive = false) {
-    setLoading(true);
-    setError(null);
-    setExamMessage(null);
-    try {
-      const response = await fetchAdmin(`/api/admin/exams/${encodeURIComponent(examId)}/archive`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(confirmArchive ? { confirmArchive: true } : {}),
-      });
-      const data = (await response.json()) as {
-        error?: string;
-        code?: string;
-        warning?: {
-          scheduledAttemptCount?: number;
-          activeAttemptCount?: number;
-        };
-      };
-      if (response.status === 409 && data.code === "confirmation_required" && !confirmArchive) {
-        const proceed = window.confirm(
-          `Archive this Exam? ${data.warning?.scheduledAttemptCount ?? 0} scheduled attempt(s) and ` +
-            `${data.warning?.activeAttemptCount ?? 0} active attempt(s) still rely on it.`,
-        );
-        if (proceed) {
-          await archiveCatalogExam(examId, true);
-        }
-        return;
-      }
-      if (!response.ok) {
-        setError(data.error ?? "Failed to archive exam");
-        return;
-      }
-      setExamMessage("Exam archived.");
-      await loadExamCatalog();
-    } catch (caughtError) {
-      if (isAdminSessionExpiredError(caughtError)) {
-        return;
-      }
-      setError("Failed to archive exam");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function beginEditingExam(exam: ExamRecord) {
-    setLoading(true);
-    setError(null);
-    setExamMessage(null);
-    try {
-      setEditingExamId(exam.id);
-      setSelectedProjectId(exam.projectId);
-      setSelectedAllowedRegionIds(exam.allowedRegions.map((region) => region.id));
-      await loadProjectResources(exam.projectId, false, exam.blueprintId, exam.policyId);
-      setSelectedBlueprintId(exam.blueprintId);
-      setSelectedPolicyId(exam.policyId);
-      await loadBlueprintDetail(exam.projectId, exam.blueprintId, false);
-      setExamTitle(exam.title);
-      setExamDescription(exam.description);
-      setScoreRetrievalEnabled(exam.scoreRetrievalEnabled);
-      setDeliveryAvailability(exam.deliveryAvailability ?? "individual");
-      setTimeLimitMinutes(String(exam.timeLimitMinutes));
-      setOpenPeriodMinutes(String(exam.openPeriodMinutes));
-      navigateAdmin({ tab: "exams", examView: "edit", examId: exam.id });
-    } finally {
-      setLoading(false);
-    }
-  }
-
   async function logout() {
     setLoading(true);
     setError(null);
@@ -2613,45 +1758,6 @@ export function AdminConsole({
     }
   }
 
-  const selectedProject = projects.find((item) => item.id === selectedProjectId) ?? null;
-  const selectedBlueprint = blueprints.find((item) => item.id === selectedBlueprintId) ?? null;
-  const selectedPolicy = policies.find((item) => item.id === selectedPolicyId) ?? null;
-  const authoringMode = getExamAuthoringMode(editingExamId);
-  const defaultSnapshot =
-    blueprintDetail?.snapshots.find((item) => item.id === blueprintDetail.defaultSnapshotId) ?? null;
-  const duplicateExamResourceTupleWarning = getDuplicateExamResourceTupleWarning({
-    exams: allExamCatalog,
-    currentExamId: editingExamId,
-    projectId: selectedProjectId,
-    blueprintId: selectedBlueprintId,
-    snapshotId: defaultSnapshot?.id ?? null,
-    policyId: selectedPolicyId,
-    deliveryAvailability,
-  });
-  const compatibleRegions = getCompatibleRegions(regions, defaultSnapshot);
-  const selectedAllowedRegions = compatibleRegions.filter((region) =>
-    selectedAllowedRegionIds.includes(region.id),
-  );
-  const allowedRegionValidationMessage = getAllowedRegionValidationMessage(
-    selectedAllowedRegionIds,
-    compatibleRegions,
-  );
-  const effectiveTimeLimitMinutes =
-    selectedPolicy?.runtimeLeaseMinutes !== null && selectedPolicy?.runtimeLeaseMinutes !== undefined
-      ? String(selectedPolicy.runtimeLeaseMinutes)
-      : timeLimitMinutes;
-  const compactFieldStyle = {
-    padding: "0.7rem",
-    paddingRight: "2.25rem",
-    border: "1px solid #ccc",
-    borderRadius: "6px",
-    width: "100%",
-    boxSizing: "border-box",
-    minWidth: 0,
-    minHeight: "46px",
-  } as const;
-  const isExamAuthoringView = examView === "create" || examView === "edit";
-  const showCreateExamButton = examView !== "sessions" && examView !== "session";
   const focusedExam = focusedExamId ? (allExamCatalog.find((exam) => exam.id === focusedExamId) ?? null) : null;
   const focusedExamSessions = focusedExamId ? (cohortSessionsByExamId[focusedExamId] ?? []) : [];
   const focusedCohortSession =
@@ -2662,17 +1768,6 @@ export function AdminConsole({
   const monitoredCohortSessions = allExamCatalog.flatMap((exam) =>
     (cohortSessionsByExamId[exam.id] ?? []).map((session) => ({ exam, session })),
   );
-  useEffect(() => {
-    if (!shouldReconcileAllowedRegionIds(defaultSnapshot)) {
-      return;
-    }
-    const nextSelectedRegionIds = reconcileAllowedRegionIds(selectedAllowedRegionIds, compatibleRegions);
-    if (nextSelectedRegionIds.length === selectedAllowedRegionIds.length) {
-      return;
-    }
-    setSelectedAllowedRegionIds(nextSelectedRegionIds);
-  }, [compatibleRegions, defaultSnapshot, selectedAllowedRegionIds]);
-
   if (sessionExpired) {
     return (
       <main style={pageShellStyle}>
@@ -2767,18 +1862,6 @@ export function AdminConsole({
                 .
               </p>
             </div>
-          ) : tab === "exams" && examCorrelationId ? (
-            <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap", alignItems: "center" }}>
-              <p style={{ margin: 0, fontSize: "0.85rem" }}>
-                Open <strong>Support Diagnostics</strong> filtered by correlation ID{" "}
-                <CorrelationDiagnosticsLink
-                  correlationId={examCorrelationId}
-                  getNavigationHref={getNavigationHref}
-                  onNavigate={navigateAdmin}
-                />
-                .
-              </p>
-            </div>
           ) : null}
         </div>
       )}
@@ -2796,7 +1879,27 @@ export function AdminConsole({
         onBusyChange={setLoading}
       />
 
-      {tab === "exams" && (
+      {tab === "exams" && (examView === "catalog" || examView === "create" || examView === "edit") && (
+        <AdminExamCatalogAuthoringFeature
+          active
+          examView={examView}
+          focusedExamId={focusedExamId}
+          fetchAdmin={fetchAdmin}
+          onNavigate={navigateAdmin}
+          onCatalogChange={({ activeExams, archivedExams }) => {
+            const nextExams = [...activeExams];
+            const nextArchivedExams = [...archivedExams];
+            setExamCatalog(nextExams);
+            setArchivedExamCatalog(nextArchivedExams);
+            void Promise.all(nextExams.map((exam) => loadCohortExamSessions(exam.id)));
+          }}
+          getHasActiveCohortSessions={(examId) =>
+            (cohortSessionsByExamId[examId] ?? []).some((session) => session.session.status !== "retired")
+          }
+        />
+      )}
+
+      {tab === "exams" && (examView === "sessions" || examView === "session") && (
         <section
           aria-busy={examCatalogLoading}
           style={{ ...examCatalogBusyShellStyle, display: "grid", gap: "1rem" }}
@@ -2810,11 +1913,6 @@ export function AdminConsole({
                   Overview of Exams and delivery options for Helios CX.
                 </p>
               </div>
-              {showCreateExamButton ? (
-                <button type="button" onClick={navigateToExamCreate} disabled={loading} style={primaryButtonStyle}>
-                  Create Exam
-                </button>
-              ) : null}
             </div>
             <ExamWorkspaceBreadcrumbs
               examView={examView}
@@ -2824,466 +1922,6 @@ export function AdminConsole({
               onNavigateToSessions={focusedExam ? () => navigateToExamSessions(focusedExam.id) : undefined}
             />
           </div>
-          {isExamAuthoringView && (
-            <>
-          <div style={{ padding: "1rem", background: "#f7f7f8", borderRadius: "6px", display: "grid", gap: "0.5rem" }}>
-            <strong>Project-first Exam authoring</strong>
-            <span style={{ color: "#555" }}>
-              Regions are global reference data. Blueprints and Policies are fetched in the selected Project context. For experience-based Exams, CloudShare launches always use the Blueprint&apos;s current default snapshot.
-            </span>
-            <span style={{ color: "#555" }}>
-              Instructor choice is fixed to the seeded CloudShare service account for this slice and must be explicitly configured before an Exam can be saved.
-            </span>
-            <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-              <button onClick={() => void loadExamAuthoring(true)} disabled={loading} style={{ padding: "0.6rem 0.9rem" }}>
-                {loading ? "Loading..." : "Refresh Projects & Regions"}
-              </button>
-              {selectedProjectId && (
-                <button
-                  onClick={() => void loadProjectResources(selectedProjectId, true)}
-                  disabled={loading}
-                  style={{ padding: "0.6rem 0.9rem" }}
-                >
-                  {loading ? "Loading..." : "Refresh Selected Project"}
-                </button>
-              )}
-            </div>
-            {authoringMode.tupleChangeHint && (
-              <span style={{ color: "#555", fontSize: "0.9rem" }}>{authoringMode.tupleChangeHint}</span>
-            )}
-          </div>
-
-          {examDiagnostic && (
-            <div style={{ color: "#7a4b00", background: "#fff7e6", padding: "0.75rem", borderRadius: "6px", display: "grid", gap: "0.4rem" }}>
-              <p style={{ margin: 0 }}>CloudShare resource request failed.</p>
-              <p style={{ margin: 0, fontSize: "0.85rem" }}>
-                {examDiagnostic.method} {examDiagnostic.path} · {examDiagnostic.failureMode}
-                {typeof examDiagnostic.responseStatus === "number" ? ` · HTTP ${examDiagnostic.responseStatus}` : ""}
-              </p>
-            </div>
-          )}
-
-          <div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", alignItems: "start" }}>
-            <label style={{ display: "grid", gap: "0.35rem", minWidth: 0 }}>
-              <span>Project</span>
-              <select
-                value={selectedProjectId}
-                onChange={(event) => {
-                  const nextProjectId = event.target.value;
-                  setSelectedProjectId(nextProjectId);
-                  setEditingExamId(null);
-                  setSelectedBlueprintId("");
-                  setBlueprintDetail(null);
-                  void loadProjectResources(nextProjectId, true);
-                }}
-                style={compactFieldStyle}
-                disabled={authoringMode.provisioningLocked}
-              >
-                <option value="">Select a Project</option>
-                {projects.map((project) => (
-                  <option key={project.id} value={project.id}>
-                    {project.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label style={{ display: "grid", gap: "0.35rem", minWidth: 0 }}>
-              <span>Blueprint</span>
-              <select
-                value={selectedBlueprintId}
-                onChange={(event) => {
-                  const nextBlueprintId = event.target.value;
-                  setSelectedBlueprintId(nextBlueprintId);
-                  setEditingExamId(null);
-                  setExamFormFeedback(null);
-                  setOpenPeriodMinutes(getDefaultOpenPeriodMinutes(selectedPolicy));
-                  if (selectedProjectId && nextBlueprintId) {
-                    void loadBlueprintDetail(selectedProjectId, nextBlueprintId, true);
-                  }
-                }}
-                style={compactFieldStyle}
-                disabled={authoringMode.provisioningLocked}
-              >
-                <option value="">Select a Blueprint</option>
-                {blueprints.map((blueprint) => (
-                  <option key={blueprint.id} value={blueprint.id}>
-                    {blueprint.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label style={{ display: "grid", gap: "0.35rem", minWidth: 0 }}>
-              <span>Snapshot</span>
-              <div
-                title={defaultSnapshot ? `${defaultSnapshot.name} (default)` : "Select a Blueprint"}
-                style={{
-                  ...compactFieldStyle,
-                  background: "#f9fafb",
-                  color: defaultSnapshot ? "#111" : "#666",
-                  fontSize: "0.95rem",
-                  lineHeight: "1.2",
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                }}
-              >
-                {defaultSnapshot ? `${defaultSnapshot.name} (default)` : "Select a Blueprint"}
-              </div>
-            </label>
-
-            <label style={{ display: "grid", gap: "0.35rem", minWidth: 0 }}>
-              <span>Policy</span>
-              <select
-                value={selectedPolicyId}
-                onChange={(event) => {
-                  const nextPolicyId = event.target.value;
-                  const nextPolicy = policies.find((policy) => policy.id === nextPolicyId);
-                  setSelectedPolicyId(nextPolicyId);
-                  if (nextPolicy?.runtimeLeaseMinutes) {
-                    setTimeLimitMinutes(String(nextPolicy.runtimeLeaseMinutes));
-                  }
-                  setExamFormFeedback(null);
-                  setOpenPeriodMinutes(getDefaultOpenPeriodMinutes(nextPolicy));
-                }}
-                style={compactFieldStyle}
-              >
-                <option value="">Select a Policy</option>
-                {policies.map((policy) => (
-                  <option key={policy.id} value={policy.id}>
-                    {policy.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label style={{ display: "grid", gap: "0.35rem", minWidth: 0 }}>
-              <span>Allowed Regions</span>
-              <div
-                style={{
-                  ...compactFieldStyle,
-                  background: "#fff",
-                  display: "grid",
-                  gap: "0.5rem",
-                  paddingRight: "0.7rem",
-                }}
-              >
-                {compatibleRegions.length === 0 ? (
-                  <span style={{ color: "#666" }}>No deployed Regions found for the current default Snapshot.</span>
-                ) : (
-                  compatibleRegions.map((region) => (
-                    <label key={region.id} style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                      <input
-                        type="checkbox"
-                        checked={selectedAllowedRegionIds.includes(region.id)}
-                        onChange={(event) => {
-                          setSelectedAllowedRegionIds((current) =>
-                            event.target.checked
-                              ? [...current, region.id]
-                              : current.filter((regionId) => regionId !== region.id),
-                          );
-                        }}
-                      />
-                      <span>{region.friendlyName ?? region.name}</span>
-                    </label>
-                  ))
-                )}
-              </div>
-              {allowedRegionValidationMessage && (
-                <span style={{ color: "#b42318", fontSize: "0.85rem" }}>
-                  {allowedRegionValidationMessage}
-                </span>
-              )}
-            </label>
-          </div>
-
-          <ExamAuthoringSelectionSummary
-            selectedProject={selectedProject}
-            selectedBlueprint={selectedBlueprint}
-            defaultSnapshot={defaultSnapshot}
-            selectedAllowedRegions={selectedAllowedRegions}
-            selectedPolicy={selectedPolicy}
-            deliveryAvailability={deliveryAvailability}
-            duplicateExamResourceTupleWarning={duplicateExamResourceTupleWarning}
-          />
-
-          <div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", alignItems: "start" }}>
-            <label style={{ display: "grid", gap: "0.35rem", gridColumn: "1 / -1" }}>
-              <span>Exam title</span>
-              <input
-                value={examTitle}
-                onChange={(event) => setExamTitle(event.target.value)}
-                style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
-              />
-            </label>
-            <label style={{ display: "grid", gap: "0.35rem", gridColumn: "1 / -1" }}>
-              <span>Description</span>
-              <textarea
-                value={examDescription}
-                onChange={(event) => setExamDescription(event.target.value)}
-                rows={4}
-                style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }}
-              />
-            </label>
-            <label style={{ display: "grid", gap: "0.35rem" }}>
-              <span>Time limit (minutes)</span>
-              <input
-                type="number"
-                min={1}
-                value={effectiveTimeLimitMinutes}
-                readOnly
-                style={{ ...compactFieldStyle, background: "#f9fafb" }}
-              />
-              <span style={{ color: "#666", fontSize: "0.85rem" }}>
-                Time limit follows the selected CloudShare Policy runtime lease.
-              </span>
-            </label>
-            <label style={{ display: "grid", gap: "0.35rem" }}>
-              <span>Open period (minutes)</span>
-              <input
-                type="number"
-                min={Number(effectiveTimeLimitMinutes) || 1}
-                max={selectedPolicy?.storageLeaseMinutes ?? undefined}
-                value={openPeriodMinutes}
-                onChange={(event) => {
-                  setOpenPeriodMinutes(event.target.value);
-                  setExamFormFeedback(null);
-                }}
-                style={compactFieldStyle}
-                aria-describedby="exam-open-period-help exam-form-feedback"
-              />
-              <span id="exam-open-period-help" style={{ color: "#666", fontSize: "0.85rem" }}>
-                CloudShare Experience duration from scheduled start; defaults to the Policy runtime lease.
-              </span>
-            </label>
-            <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", gridColumn: "1 / -1" }}>
-              <input
-                type="checkbox"
-                checked={scoreRetrievalEnabled}
-                onChange={(event) => setScoreRetrievalEnabled(event.target.checked)}
-              />
-              <span>Retrieve Guided Journey score for this Exam</span>
-            </label>
-            <label style={{ display: "grid", gap: "0.35rem" }}>
-              <span>Delivery availability</span>
-              <select
-                value={deliveryAvailability}
-                onChange={(event) =>
-                  setDeliveryAvailability(event.target.value as "individual" | "cohort" | "both")
-                }
-                style={compactFieldStyle}
-              >
-                {getDeliveryAvailabilityAuthoringOptions(deliveryAvailability).map((option) => (
-                  <option key={option.value} value={option.value} disabled={option.disabled}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
-            <button
-              onClick={saveDraftExam}
-              disabled={loading || allowedRegionValidationMessage !== null}
-              style={{ padding: "0.7rem 1rem" }}
-            >
-              {loading ? "Saving..." : editingExamId ? "Update Draft Exam" : "Save Draft Exam"}
-            </button>
-            {editingExamId && (
-              <button onClick={navigateToExamCatalog} disabled={loading} style={{ padding: "0.7rem 1rem" }}>
-                Cancel Edit
-              </button>
-            )}
-            {examMessage && <span style={{ color: "#0a7a28" }}>{examMessage}</span>}
-          </div>
-          {examFormFeedback && (
-            <p
-              id="exam-form-feedback"
-              role="alert"
-              style={{
-                margin: "-0.25rem 0 0",
-                color: "#b42318",
-                background: "#fff5f7",
-                border: "1px solid #f1c7d0",
-                borderRadius: "6px",
-                padding: "0.75rem 0.9rem",
-              }}
-            >
-              {examFormFeedback}
-            </p>
-          )}
-            </>
-          )}
-
-          {examView === "catalog" && (
-          <div>
-            <h2 style={{ marginBottom: "0.6rem" }}>Current Exam Catalog</h2>
-            <p style={{ marginTop: 0, color: colors.textSecondary }}>
-              Open an Exam to manage its draft Cohort Exam Sessions. The catalog overview stays list-only.
-            </p>
-            <div style={{ ...cardStyle, padding: 0, overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
-                <thead>
-                  <tr style={{ background: colors.surfaceSubtle }}>
-                    {["Title", "Status", "Project", "Blueprint / Snapshot", "Allowed Regions", "Policy", "Duration", "Score", "Action"].map((heading) => (
-                      <th key={heading} style={{ textAlign: "left", padding: "0.4rem", borderBottom: `1px solid ${colors.border}` }}>
-                        {heading}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {examCatalog.length === 0 && (
-                    <tr>
-                      <td colSpan={9} style={{ padding: "0.5rem", color: colors.textSecondary }}>
-                        No exams yet.
-                      </td>
-                    </tr>
-                  )}
-                  {examCatalog.map((exam) => (
-                    <tr key={exam.id} style={{ borderBottom: `1px solid ${colors.border}`, verticalAlign: "top" }}>
-                      <td style={{ padding: "0.4rem" }}>
-                        <div style={{ fontWeight: 600 }}>{exam.title}</div>
-                        <div style={{ color: colors.textSecondary }}>{exam.description}</div>
-                        <div style={{ color: colors.textSecondary, fontSize: "0.75rem", marginTop: "0.25rem" }}>
-                          Exam ID: {formatShortExamId(exam.id)}
-                          {exam.createdAt ? ` · Created ${formatAdminUtcTimestamp(exam.createdAt)}` : ""} · Delivery:{" "}
-                          {formatExamDeliveryAvailability(exam.deliveryAvailability)}
-                        </div>
-                      </td>
-                      <td style={{ padding: "0.4rem" }}>
-                        <span style={statusBadgeStyle(getExamStatusTone(exam.status))}>{exam.status}</span>
-                        {exam.publishedAt && (
-                          <div style={{ color: colors.textSecondary, fontSize: "0.75rem" }}>
-                            {formatAdminUtcTimestamp(exam.publishedAt)}
-                          </div>
-                        )}
-                      </td>
-                      <td style={{ padding: "0.4rem" }}>{exam.projectName}</td>
-                      <td style={{ padding: "0.4rem" }}>
-                        <div>{exam.blueprintName}</div>
-                        <div style={{ color: colors.textSecondary, fontSize: "0.75rem" }}>{exam.snapshotName}</div>
-                      </td>
-                      <td style={{ padding: "0.4rem" }}>
-                        {exam.allowedRegions.map((region) => region.name).join(", ")}
-                      </td>
-                      <td style={{ padding: "0.4rem" }}>{exam.policyName}</td>
-                      <td style={{ padding: "0.4rem" }}>
-                        <div>{exam.timeLimitMinutes} min runtime</div>
-                        <div style={{ color: colors.textSecondary, fontSize: "0.75rem" }}>
-                          {exam.openPeriodMinutes} min open
-                        </div>
-                        {exam.storageLeaseMinutes ? (
-                          <div style={{ color: colors.textSecondary, fontSize: "0.75rem" }}>
-                            {exam.storageLeaseMinutes} min storage
-                          </div>
-                        ) : null}
-                      </td>
-                      <td style={{ padding: "0.4rem" }}>{exam.scoreRetrievalEnabled ? "Enabled" : "Off"}</td>
-                      <td style={{ padding: "0.4rem" }}>
-                        <ExamCatalogRowActions
-                          exam={exam}
-                          loading={loading}
-                          editingExamId={editingExamId}
-                          hasActiveCohortSessions={(cohortSessionsByExamId[exam.id] ?? []).some(
-                            (session) => session.session.status !== "retired",
-                          )}
-                          onEdit={() => void beginEditingExam(exam)}
-                          onPublish={() => void publishCatalogExam(exam.id)}
-                          onUnpublish={() => void unpublishCatalogExam(exam.id)}
-                          onArchive={() => void archiveCatalogExam(exam.id)}
-                          onManageCohortSessions={() => navigateToExamSessions(exam.id)}
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            <h2 style={{ margin: "1.5rem 0 0.6rem" }}>Archived Exams</h2>
-            <p style={{ marginTop: 0, color: colors.textSecondary }}>
-              Archived Individual Exams stay available for history, diagnostics, and support review.
-            </p>
-            <div style={{ ...cardStyle, padding: 0, overflowX: "auto" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
-                <thead>
-                  <tr style={{ background: colors.surfaceSubtle }}>
-                    {["Title", "Status", "Project", "Blueprint / Snapshot", "Allowed Regions", "Policy", "Duration", "Score", "Action"].map((heading) => (
-                      <th key={heading} style={{ textAlign: "left", padding: "0.4rem", borderBottom: `1px solid ${colors.border}` }}>
-                        {heading}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {archivedExamCatalog.length === 0 && (
-                    <tr>
-                      <td colSpan={9} style={{ padding: "0.5rem", color: colors.textSecondary }}>
-                        No archived exams.
-                      </td>
-                    </tr>
-                  )}
-                  {archivedExamCatalog.map((exam) => (
-                    <tr key={exam.id} style={{ borderBottom: `1px solid ${colors.border}`, verticalAlign: "top" }}>
-                      <td style={{ padding: "0.4rem" }}>
-                        <div style={{ fontWeight: 600 }}>{exam.title}</div>
-                        <div style={{ color: colors.textSecondary }}>{exam.description}</div>
-                        <div style={{ color: colors.textSecondary, fontSize: "0.75rem", marginTop: "0.25rem" }}>
-                          Exam ID: {formatShortExamId(exam.id)}
-                          {exam.createdAt ? ` · Created ${formatAdminUtcTimestamp(exam.createdAt)}` : ""} · Delivery:{" "}
-                          {formatExamDeliveryAvailability(exam.deliveryAvailability)}
-                        </div>
-                      </td>
-                      <td style={{ padding: "0.4rem" }}>
-                        <span style={statusBadgeStyle(getExamStatusTone(exam.status))}>{exam.status}</span>
-                        {exam.archivedAt && (
-                          <div style={{ color: colors.textSecondary, fontSize: "0.75rem" }}>
-                            Archived {formatAdminUtcTimestamp(exam.archivedAt)}
-                          </div>
-                        )}
-                      </td>
-                      <td style={{ padding: "0.4rem" }}>{exam.projectName}</td>
-                      <td style={{ padding: "0.4rem" }}>
-                        <div>{exam.blueprintName}</div>
-                        <div style={{ color: colors.textSecondary, fontSize: "0.75rem" }}>{exam.snapshotName}</div>
-                      </td>
-                      <td style={{ padding: "0.4rem" }}>
-                        {exam.allowedRegions.map((region) => region.name).join(", ")}
-                      </td>
-                      <td style={{ padding: "0.4rem" }}>{exam.policyName}</td>
-                      <td style={{ padding: "0.4rem" }}>
-                        <div>{exam.timeLimitMinutes} min runtime</div>
-                        <div style={{ color: colors.textSecondary, fontSize: "0.75rem" }}>
-                          {exam.openPeriodMinutes} min open
-                        </div>
-                        {exam.storageLeaseMinutes ? (
-                          <div style={{ color: colors.textSecondary, fontSize: "0.75rem" }}>
-                            {exam.storageLeaseMinutes} min storage
-                          </div>
-                        ) : null}
-                      </td>
-                      <td style={{ padding: "0.4rem" }}>{exam.scoreRetrievalEnabled ? "Enabled" : "Off"}</td>
-                      <td style={{ padding: "0.4rem" }}>
-                        <ExamCatalogRowActions
-                          exam={exam}
-                          loading={loading}
-                          editingExamId={editingExamId}
-                          onEdit={() => void beginEditingExam(exam)}
-                          onPublish={() => void publishCatalogExam(exam.id)}
-                          onUnpublish={() => void unpublishCatalogExam(exam.id)}
-                          onArchive={() => void archiveCatalogExam(exam.id)}
-                          onManageCohortSessions={() => navigateToExamSessions(exam.id)}
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-          )}
           {examView === "sessions" && focusedExam && (
             <div style={{ ...cardStyle, display: "grid", gap: "1rem" }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
