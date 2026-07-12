@@ -13,7 +13,7 @@ import {
   isLatestOnlyResponse,
   reconcileAllowedRegionIds,
   shouldReconcileAllowedRegionIds,
-} from "./admin-console-state";
+} from "./admin-exam-catalog-authoring-state";
 import {
   createCorrelationDiagnosticsNavigationIntent,
   type AdminExamView,

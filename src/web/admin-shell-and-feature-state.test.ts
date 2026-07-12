@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   beginLatestOnlyRequest,
-  buildDiagnosticLogQueryString,
   getAllowedRegionValidationMessage,
   getExamAuthoringMode,
   getCompatibleRegions,
@@ -9,9 +8,9 @@ import {
   getResetOpenPeriodMinutes,
   isLatestOnlyResponse,
   reconcileAllowedRegionIds,
-  shouldShowCandidateProvisioning,
   shouldReconcileAllowedRegionIds,
-} from "./admin-console-state";
+} from "./admin-exam-catalog-authoring-state";
+import { buildDiagnosticLogQueryString } from "./admin-support-state";
 import {
   ADMIN_TABS,
   buildAdminConsoleHref,
@@ -175,10 +174,6 @@ describe("admin tab model", () => {
     expect(ADMIN_TABS).not.toContain("diagnostics" as never);
     expect(ADMIN_TABS).not.toContain("events");
     expect(ADMIN_TABS).not.toContain("resources");
-    expect(shouldShowCandidateProvisioning("candidates")).toBe(true);
-    expect(shouldShowCandidateProvisioning("exams")).toBe(false);
-    expect(shouldShowCandidateProvisioning("support")).toBe(false);
-    expect(shouldShowCandidateProvisioning("configuration")).toBe(false);
   });
 
   it("defaults admin URLs to Exams and maps legacy admin tab URLs to their new work areas", () => {
