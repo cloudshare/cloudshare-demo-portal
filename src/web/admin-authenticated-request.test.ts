@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  ADMIN_SESSION_EXPIRED_MESSAGE,
   AdminSessionExpiredError,
   createAdminAuthenticatedRequest,
+  isAdminSessionExpiredStatus,
 } from "./admin-authenticated-request";
 
 describe("admin authenticated requests", () => {
@@ -23,5 +25,12 @@ describe("admin authenticated requests", () => {
 
     await expect(request("/api/admin/exams")).rejects.toBeInstanceOf(AdminSessionExpiredError);
     expect(onSessionExpired).toHaveBeenCalledOnce();
+  });
+
+  it("recognises only unauthenticated responses as expired admin sessions", () => {
+    expect(isAdminSessionExpiredStatus(401)).toBe(true);
+    expect(isAdminSessionExpiredStatus(403)).toBe(false);
+    expect(isAdminSessionExpiredStatus(500)).toBe(false);
+    expect(ADMIN_SESSION_EXPIRED_MESSAGE).toContain("session has expired");
   });
 });

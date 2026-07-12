@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import type { AdminAuthenticatedRequest } from "./admin-authenticated-request";
 import { isAdminSessionExpiredError } from "./admin-authenticated-request";
-import { buildDiagnosticLogQueryString } from "./admin-console-state";
+import { buildDiagnosticLogQueryString } from "./admin-support-state";
 import {
   createExamAttemptDiagnosticsNavigationIntent,
   normaliseDiagnosticLogFilters,

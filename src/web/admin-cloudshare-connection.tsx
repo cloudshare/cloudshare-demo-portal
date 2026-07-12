@@ -83,7 +83,6 @@ export function CloudShareConnectionFeature(props: {
   readonly fetchAdmin: AdminAuthenticatedRequest;
   readonly getNavigationHref: (intent: AdminNavigationIntent) => string;
   readonly onNavigate: (intent: AdminNavigationIntent) => void;
-  readonly onBusyChange?: (busy: boolean) => void;
 }) {
   const [connection, setConnection] = useState<ConnectionState | null>(null);
   const [apiId, setApiId] = useState("");
@@ -95,11 +94,6 @@ export function CloudShareConnectionFeature(props: {
   const [connectionCorrelationId, setConnectionCorrelationId] = useState<string | null>(null);
   const [connectionWarning, setConnectionWarning] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-
-  function setBusy(busy: boolean) {
-    setLoading(busy);
-    props.onBusyChange?.(busy);
-  }
 
   async function loadConnection() {
     try {
@@ -133,7 +127,7 @@ export function CloudShareConnectionFeature(props: {
   }, [props.active]);
 
   async function saveConnection() {
-    setBusy(true);
+    setLoading(true);
     setConnectionError(null);
     setConnectionMessage(null);
     setConnectionCorrelationId(null);
@@ -146,14 +140,14 @@ export function CloudShareConnectionFeature(props: {
       setConnectionError({
         message: "API ID, API Key, and Webhook Secret are required to save the first CloudShare Connection.",
       });
-      setBusy(false);
+      setLoading(false);
       return;
     }
     if (hasSavedConnection && !trimmedApiId && !trimmedApiKey && !trimmedWebhookSecret) {
       setConnectionError({
         message: "Enter at least one field to update the saved CloudShare Connection.",
       });
-      setBusy(false);
+      setLoading(false);
       return;
     }
     try {
@@ -187,12 +181,12 @@ export function CloudShareConnectionFeature(props: {
       }
       setConnectionError({ message: "Failed to save CloudShare Connection" });
     } finally {
-      setBusy(false);
+      setLoading(false);
     }
   }
 
   async function testConnection() {
-    setBusy(true);
+    setLoading(true);
     setConnectionError(null);
     setConnectionMessage(null);
     setConnectionCorrelationId(null);
@@ -218,7 +212,7 @@ export function CloudShareConnectionFeature(props: {
       }
       setConnectionWarning("CloudShare connection test failed. Open Support Diagnostics for more detail.");
     } finally {
-      setBusy(false);
+      setLoading(false);
     }
   }
 
