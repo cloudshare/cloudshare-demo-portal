@@ -4,7 +4,7 @@ import type { DemoItem, DemoItemRepository } from "@/domain/demo-item";
 import type { CloudShareConnectionRecord } from "@/domain/cloudshare-connection";
 import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
-import { CloudShareRequestError } from "@/integrations/cloudshare";
+import { CloudShareRequestError, CloudShareTransportError } from "@/integrations/cloudshare";
 
 function repository(): DemoItemRepository { const rows = new Map<string, DemoItem>(); return { save: async (item) => { rows.set(item.id, item); }, findById: async (id) => rows.get(id) ?? null, listByCustomerId: async (customerId) => [...rows.values()].filter((item) => item.customerId === customerId) }; }
 const connection: CloudShareConnectionRecord = { customerId: "certalis", apiId: "api-id", apiKey: "api-key", webhookSecret: "secret", webhookPathToken: "token", connectedAt: new Date(), verifiedAt: new Date() };
@@ -38,6 +38,14 @@ describe("Sales Demo Item API", () => {
     const [entry] = await diagnostics.query({ customerId: "certalis" });
     expect(entry.message).not.toContain("api-key");
     expect(entry).toMatchObject({ request: { method: "GET", path: "/projects?include=active", headers: { authorization: "[REDACTED]" } }, response: { status: 403, headers: { "x-request-id": "req-1" }, body: "{\"error\":\"forbidden\"}" } });
+  });
+
+  it("retains a redacted transport cause in diagnostic evidence without exposing it to the API response", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    const result = await handleCreateSalesDemoItem({ ...deps(repository(), source({ listProjects: vi.fn().mockRejectedValue(new CloudShareTransportError("tls handshake failed", { method: "GET", path: "/projects", cause: { code: "CERT_UNTRUSTED", message: "certificate rejected" } })) })), diagnostics: createDiagnosticRecorder({ repository: diagnostics }) }, { customerId: "certalis", body });
+    expect(result).toMatchObject({ status: 502, body: { error: "CloudShare resource validation failed. Review support diagnostics." } });
+    const [entry] = await diagnostics.query({ customerId: "certalis" });
+    expect(entry.response).toMatchObject({ cause: { code: "CERT_UNTRUSTED", message: "certificate rejected" } });
   });
 
   it("keeps archived items in history and does not return them as active", async () => {

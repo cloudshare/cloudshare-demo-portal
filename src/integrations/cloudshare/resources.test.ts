@@ -5,6 +5,8 @@ import type { HttpClient } from "./http";
 import {
   createCloudShareExamAuthoringSource,
   createCloudShareResourceLister,
+  createCloudShareSalesDemoItemResourceSource,
+  CloudShareSalesResourceReadError,
 } from "./resources";
 import type { CloudShareClient } from "./client";
 
@@ -590,6 +592,22 @@ describe("createCloudShareExamAuthoringSource", () => {
           },
         ],
       },
+    });
+  });
+});
+
+describe("createCloudShareSalesDemoItemResourceSource", () => {
+  it("preserves completed policy exchanges when a sibling policy detail fails", async () => {
+    const source = createCloudShareSalesDemoItemResourceSource(makeClient({
+      "v3:/projects/p-1/policies": [{ id: "pol-1", name: "One" }, { id: "pol-2", name: "Two" }],
+      "v3:/projects/p-1/policies/pol-1": { id: "pol-1", name: "One", storageLeaseMinutes: 60 },
+    }));
+    await expect(source.readProjectPolicies("p-1")).rejects.toMatchObject({
+      name: "CloudShareSalesResourceReadError",
+      completedReads: [
+        { request: { path: "/projects/p-1/policies" } },
+        { request: { path: "/projects/p-1/policies/pol-1" } },
+      ],
     });
   });
 });

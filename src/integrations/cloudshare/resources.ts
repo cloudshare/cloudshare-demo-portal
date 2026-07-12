@@ -178,6 +178,17 @@ export interface CloudShareDetailedResourceRead<T> {
   readonly integrationSurface: string;
 }
 
+/** Preserves completed exchanges when a grouped resource read only partly fails. */
+export class CloudShareSalesResourceReadError extends Error {
+  constructor(
+    readonly completedReads: readonly CloudShareDetailedResourceRead<unknown>[],
+    readonly cause: unknown,
+  ) {
+    super("CloudShare Sales resource read failed.");
+    this.name = "CloudShareSalesResourceReadError";
+  }
+}
+
 export function createCloudShareSalesDemoItemResourceSource(client: CloudShareClient): CloudShareSalesDemoItemResourceSource {
   async function read<T>(path: string, schema: z.ZodType<T, z.ZodType["_def"], unknown>, integrationSurface: string): Promise<CloudShareDetailedResourceRead<T>> {
     const detailed = await requestV3WithDiagnostics(client, { method: "GET", path, schema });
@@ -195,7 +206,10 @@ export function createCloudShareSalesDemoItemResourceSource(client: CloudShareCl
     },
     readProjectPolicies: async (projectId) => {
       const list = await read(`/projects/${projectId}/policies`, policyListSchema, "cloudshare.v3.projects.policies");
-      const details = await Promise.all(list.data.map((policy) => read(`/projects/${projectId}/policies/${policy.id}`, policyDetailSchema, "cloudshare.v3.projects.policy_detail")));
+      const settled = await Promise.allSettled(list.data.map((policy) => read(`/projects/${projectId}/policies/${policy.id}`, policyDetailSchema, "cloudshare.v3.projects.policy_detail")));
+      const details = settled.filter((result): result is PromiseFulfilledResult<CloudShareDetailedResourceRead<z.infer<typeof policyDetailSchema>>> => result.status === "fulfilled").map((result) => result.value);
+      const failed = settled.find((result): result is PromiseRejectedResult => result.status === "rejected");
+      if (failed) throw new CloudShareSalesResourceReadError([list, ...details], failed.reason);
       return { policies: list.data.map((policy, index) => ({ id: policy.id, name: policy.name, runtimeLeaseMinutes: details[index]?.data.runtimeLeaseMinutes ?? null, storageLeaseMinutes: details[index]?.data.storageLeaseMinutes ?? null, diagnosticRequest: details[index]?.request, diagnosticResponse: details[index]?.response })), reads: [list, ...details] };
     },
   };

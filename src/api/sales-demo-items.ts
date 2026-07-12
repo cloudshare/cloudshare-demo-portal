@@ -5,7 +5,7 @@ import type { DiagnosticActor, DiagnosticRecorder } from "@/domain/diagnostic-lo
 import type { AuditRepository } from "@/domain/audit-trail";
 import { archiveDemoItem, createDemoItem, DemoItemNotFoundError, DemoItemValidationError, type DemoItemRepository, updateDemoItem } from "@/domain/demo-item";
 import { CloudShareError } from "@/integrations/cloudshare";
-import { createCloudShareExamAuthoringSource, createCloudShareSalesDemoItemResourceSource, type CloudShareExamAuthoringSource, type CloudShareDetailedResourceRead } from "@/integrations/cloudshare/resources";
+import { CloudShareSalesResourceReadError, createCloudShareExamAuthoringSource, createCloudShareSalesDemoItemResourceSource, type CloudShareExamAuthoringSource, type CloudShareDetailedResourceRead } from "@/integrations/cloudshare/resources";
 
 const writeSchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -99,7 +99,14 @@ async function resolveLiveSelections(deps: Pick<SalesDemoItemDeps, "cloudshare" 
     const projects = await detailed.readProjects(); await recordSalesResourceRead(deps, request, correlationId, projects, "project");
     const regions = await detailed.readRegions(); await recordSalesResourceRead(deps, request, correlationId, regions, "region");
     const blueprints = await detailed.readProjectBlueprints(input.projectId); await recordSalesResourceRead(deps, request, correlationId, blueprints, "blueprint");
-    const policies = await detailed.readProjectPolicies(input.projectId);
+    let policies;
+    try { policies = await detailed.readProjectPolicies(input.projectId); } catch (error) {
+      if (error instanceof CloudShareSalesResourceReadError) {
+        for (const read of error.completedReads) await recordSalesResourceRead(deps, request, correlationId, read, read.integrationSurface.endsWith("policy_detail") ? "policy_detail" : "policy");
+        throw error.cause;
+      }
+      throw error;
+    }
     for (const read of policies.reads) await recordSalesResourceRead(deps, request, correlationId, read, read.integrationSurface.endsWith("policy_detail") ? "policy_detail" : "policy");
     return selectLiveResources(projects.data, regions.data, blueprints.data, policies.policies, input);
   }
@@ -134,4 +141,5 @@ async function writeAudit(deps: Pick<SalesDemoItemDeps, "audit">, request: { cus
 
 function cloudShareFailureMode(error: CloudShareError): string { return error.name === "CloudShareTransportError" ? "transport" : error.name === "CloudShareResponseError" ? "unexpected_response" : error.name === "CloudShareRateLimitError" ? "rate_limit" : "http_status"; }
 function diagnosticRequest(error: CloudShareError): Record<string, unknown> { return { method: error.context?.method ?? "GET", path: error.context?.path ?? "/projects", ...(error.context?.requestHeaders ? { headers: error.context.requestHeaders } : {}), ...(error.context?.requestBody !== undefined ? { body: error.context.requestBody } : {}) }; }
-function diagnosticResponse(error: CloudShareError): Record<string, unknown> { return { ...(error.context?.status ? { status: error.context.status } : {}), ...(error.context?.responseHeaders ? { headers: error.context.responseHeaders } : {}), ...(error.context?.responseBody !== undefined ? { body: error.context.responseBody } : {}) }; }
+function diagnosticResponse(error: CloudShareError): Record<string, unknown> { return { ...(error.context?.status ? { status: error.context.status } : {}), ...(error.context?.responseHeaders ? { headers: error.context.responseHeaders } : {}), ...(error.context?.responseBody !== undefined ? { body: error.context.responseBody } : {}), ...(error.context?.cause !== undefined ? { cause: normalizeTransportCause(error.context.cause) } : {}) }; }
+function normalizeTransportCause(cause: unknown): unknown { return cause instanceof Error ? { name: cause.name, message: cause.message } : cause; }
