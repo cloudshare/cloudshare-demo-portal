@@ -50,7 +50,7 @@ All variables are Zod-validated at boot; missing required values cause a fast-fa
 | `HELIOS_ADMIN_EMAIL` | `env` seed only | — | Seeded Helios admin login email |
 | `HELIOS_ADMIN_PASSWORD` | `env` seed only | — | Seeded Helios admin login password |
 | `CERTALIS_SALES_ADMIN_EMAIL` | `env` seed only | `sales-admin@certalis.demo` | Seeded Certalis Sales Admin login email |
-| `CERTALIS_SALES_ADMIN_PASSWORD` | `env` seed only | demo default | Seeded Certalis Sales Admin login password |
+| `CERTALIS_SALES_ADMIN_PASSWORD` | `env` seed only | — | Required seeded Certalis Sales Admin login password; choose it locally |
 | `HELIOS_SEED_CLOUDSHARE_API_ID` | `env` seed only | — | Optional seeded CloudShare API ID stored through the normal encrypted path |
 | `HELIOS_SEED_CLOUDSHARE_API_KEY` | `env` seed only | — | Optional seeded CloudShare API key |
 | `HELIOS_SEED_CLOUDSHARE_WEBHOOK_SECRET` | `env` seed only | — | Optional seeded CloudShare webhook secret |
@@ -69,10 +69,10 @@ All variables are Zod-validated at boot; missing required values cause a fast-fa
 Preferred local setup:
 
 1. Copy `config/portal-seed.example.json` to `config/portal-seed.local.json`.
-2. Fill in the Helios admin login, instructor, optional CloudShare Connection values, and the Certalis Sales Admin login there.
+2. Fill in the Helios admin login, instructor, optional CloudShare Connection values, and the Certalis Sales Admin login there. Choose non-empty passwords (at least eight characters); the committed template deliberately contains no usable passwords.
 3. Set `PORTAL_SEED_SOURCE=file` in `.env`.
 
-If you prefer env-only seeding, set `PORTAL_SEED_SOURCE=env` and fill the `HELIOS_*` variables instead.
+If you prefer env-only seeding, set `PORTAL_SEED_SOURCE=env` and fill the `HELIOS_*` and `CERTALIS_SALES_ADMIN_*` variables instead. The Sales Admin password is required and has no fallback.
 
 Set `PORTAL_SEED_SOURCE=off` to disable demo seeding entirely.
 
