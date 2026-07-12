@@ -29,8 +29,8 @@ describe("AdminExamCatalogAuthoringFeature", () => {
       throw new Error(`Unexpected request: ${url}`);
     });
     function FeatureHarness() {
-      const [view, setView] = React.useState<"catalog" | "edit">("catalog");
-      return <AdminExamCatalogAuthoringFeature active examView={view} focusedExamId={view === "edit" ? stalePolicyExam.id : null} fetchAdmin={fetchAdmin} onNavigate={(intent) => setView(intent.examView === "edit" ? "edit" : "catalog")} onCatalogChange={vi.fn()} getHasActiveCohortSessions={() => false} />;
+      const [view, setView] = React.useState<"catalog" | "edit" | "create">("catalog");
+      return <AdminExamCatalogAuthoringFeature active examView={view} focusedExamId={view === "edit" ? stalePolicyExam.id : null} fetchAdmin={fetchAdmin} onNavigate={(intent) => setView(intent.examView === "create" || intent.examView === "edit" ? intent.examView : "catalog")} onCatalogChange={vi.fn()} getHasActiveCohortSessions={() => false} />;
     }
 
     render(<FeatureHarness />);
@@ -39,6 +39,9 @@ describe("AdminExamCatalogAuthoringFeature", () => {
     expect((await screen.findByRole("spinbutton", { name: /Time limit \(minutes\)/ }) as HTMLInputElement).value).toBe("75");
     expect((screen.getByRole("spinbutton", { name: /Open period \(minutes\)/ }) as HTMLInputElement).value).toBe("90");
     expect((screen.getByRole("combobox", { name: "Policy" }) as HTMLSelectElement).value).toBe("");
+    await user.click(screen.getByRole("button", { name: "Cancel Edit" }));
+    await user.click(await screen.findByRole("button", { name: "Create Exam" }));
+    expect((await screen.findByRole("spinbutton", { name: /Open period \(minutes\)/ }) as HTMLInputElement).value).toBe("75");
   });
 
   it("refreshes dependent Project resources, shows the read-only default Snapshot, and reconciles Region validation", async () => {

@@ -369,7 +369,11 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
     setTitle(next?.title ?? blueprintDetail?.name ?? ""); setDescription(next?.description ?? stripHtmlToText(blueprintDetail?.description));
     setScoreRetrievalEnabled(next?.scoreRetrievalEnabled ?? false); setDeliveryAvailability(next?.deliveryAvailability ?? "individual");
     setTimeLimitMinutes(next?.timeLimitMinutes?.toString() ?? "");
-    setOpenPeriodMinutes(getResetOpenPeriodMinutes({ explicitOpenPeriodMinutes: next?.openPeriodMinutes?.toString(), selectedPolicy }));
+    setOpenPeriodMinutes(getResetOpenPeriodMinutes({
+      explicitOpenPeriodMinutes: next?.openPeriodMinutes?.toString(),
+      selectedPolicy,
+      fallbackRuntimeLeaseMinutes: timeLimitMinutes,
+    }));
   }
 
   async function editExam(exam: ExamRecord) {
