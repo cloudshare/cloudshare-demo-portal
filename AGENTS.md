@@ -43,6 +43,15 @@ showing real CloudShare behaviour, CloudShare wins.
 8. Use `/codebase-design` before changing architecture or module boundaries, and
    `/improve-codebase-architecture` regularly, especially after several features have landed.
 
+### Autonomous continuation
+
+When the user explicitly authorizes autonomous work (for example, asks the agent to continue
+without further check-ins), treat that authorization as binding until the requested work is
+genuinely complete or a real blocker requires the user's authority, credentials, or QA action.
+Keep progress updates in commentary; do **not** end the active turn with a status-only final
+response while implementation, review, verification, or merge work remains. A final response is
+reserved for completion, an explicit user-requested pause, or a genuine blocker.
+
 ## Local server convention
 
 - Keep port `3000` available for the user-owned tunnel-facing server. The user may stop/restart that
