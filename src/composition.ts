@@ -74,6 +74,17 @@ import type { CohortMonitoringObservationRepository } from "@/domain/cohort-moni
 import type { ExamAuthoringCacheRepository } from "@/persistence/exam-authoring-cache-repository";
 import { createSecretBox } from "@/security/secret-box";
 import { createPrismaAdminExamAttemptDiagnosticContextRepository } from "@/persistence/prisma-admin-exam-attempt-diagnostic-context-repository";
+import type { AdminCandidateServices } from "@/api/admin-candidates";
+import type { AdminCohortExamSessionServices } from "@/api/admin-cohort-exam-sessions";
+import type { AdminExamAuthoringServices } from "@/api/admin-exams";
+import type { CandidateRegistrationServices } from "@/api/candidate-portal";
+import type { CandidateSuspendResumeServices } from "@/api/candidate-suspend-resume-route";
+import type {
+  PortalLoginServices,
+  PortalLogoutServices,
+  PortalSessionServices,
+} from "@/api/portal-auth";
+import type { PortalSessionDeps } from "@/auth/portal-session";
 
 /**
  * Composition root. The framework-agnostic modules are pure and dependency-free;
@@ -83,6 +94,171 @@ import { createPrismaAdminExamAttemptDiagnosticContextRepository } from "@/persi
  * A single set of instances is reused across requests to avoid exhausting the
  * SQLite connection pool during development hot-reloads.
  */
+
+export type FeatureModuleInputs =
+  & PortalSessionDeps
+  & PortalLoginServices
+  & PortalLogoutServices
+  & CandidateRegistrationServices
+  & AdminCandidateServices
+  & AdminExamAuthoringServices
+  & AdminCohortExamSessionServices
+  & CandidateSuspendResumeServices;
+
+export interface FeatureModules {
+  readonly portal: {
+    readonly session: PortalSessionDeps & PortalSessionServices;
+    readonly login: PortalLoginServices;
+    readonly logout: PortalLogoutServices;
+  };
+  readonly registration: CandidateRegistrationServices;
+  readonly adminCandidates: AdminCandidateServices;
+  readonly adminExamAuthoring: AdminExamAuthoringServices;
+  readonly adminCohortExamSessions: AdminCohortExamSessionServices;
+  readonly candidateSuspendResume: CandidateSuspendResumeServices;
+}
+
+export function createFeatureModules(services: FeatureModuleInputs): FeatureModules {
+  return {
+    portal: {
+      session: {
+        portalAuth: services.portalAuth,
+        ensurePortalSeeded: services.ensurePortalSeeded,
+      },
+      login: {
+        portalAuth: services.portalAuth,
+        diagnosticRecorder: services.diagnosticRecorder,
+        portalUsers: services.portalUsers,
+      },
+      logout: {
+        portalAuth: services.portalAuth,
+        diagnosticRecorder: services.diagnosticRecorder,
+        environmentController: services.environmentController,
+        environmentSource: services.environmentSource,
+        examClock: services.examClock,
+        exams: services.exams,
+        examAttempts: services.examAttempts,
+        labLaunches: services.labLaunches,
+        logger: services.logger,
+        eventLog: services.eventLog,
+        cloudshareConnections: services.cloudshareConnections,
+        cloudshareClientFactory: services.cloudshareClientFactory,
+        heartbeatAutoSuspend: services.heartbeatAutoSuspend,
+        audit: services.audit,
+      },
+    },
+    registration: {
+      portalUsers: services.portalUsers,
+      logger: services.logger,
+      diagnosticRecorder: services.diagnosticRecorder,
+    },
+    adminCandidates: {
+      adminCandidates: services.adminCandidates,
+      diagnostics: services.diagnostics,
+      logger: services.logger,
+    },
+    adminExamAuthoring: {
+      cloudshareConnections: services.cloudshareConnections,
+      cloudshareClientFactory: services.cloudshareClientFactory,
+      examAuthoringCache: services.examAuthoringCache,
+      diagnosticRecorder: services.diagnosticRecorder,
+      logger: services.logger,
+    },
+    adminCohortExamSessions: {
+      exams: services.exams,
+      cohortExamSessions: services.cohortExamSessions,
+      diagnosticRecorder: services.diagnosticRecorder,
+      audit: services.audit,
+      cloudshareConnections: services.cloudshareConnections,
+      cloudshareClientFactory: services.cloudshareClientFactory,
+      logger: services.logger,
+    },
+    candidateSuspendResume: {
+      environmentSource: services.environmentSource,
+      environmentController: services.environmentController,
+      examAttempts: services.examAttempts,
+      labLaunches: services.labLaunches,
+      examClock: services.examClock,
+      exams: services.exams,
+      logger: services.logger,
+      heartbeatAutoSuspend: services.heartbeatAutoSuspend,
+      audit: services.audit,
+      eventLog: services.eventLog,
+      cloudshareConnections: services.cloudshareConnections,
+      cloudshareClientFactory: services.cloudshareClientFactory,
+      diagnosticRecorder: services.diagnosticRecorder,
+    },
+  };
+}
+
+export function isReusableFeatureModules(value: unknown): value is FeatureModules {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+
+  const modules = value as Partial<FeatureModules>;
+  return (
+    hasModuleProperties(modules.portal?.session, ["portalAuth", "ensurePortalSeeded"]) &&
+    hasModuleProperties(modules.portal?.login, ["portalAuth", "portalUsers", "diagnosticRecorder"]) &&
+    hasModuleProperties(modules.portal?.logout, [
+      "portalAuth",
+      "diagnosticRecorder",
+      "environmentController",
+      "environmentSource",
+      "examClock",
+      "exams",
+      "examAttempts",
+      "labLaunches",
+      "logger",
+      "eventLog",
+      "cloudshareConnections",
+      "cloudshareClientFactory",
+      "heartbeatAutoSuspend",
+      "audit",
+    ]) &&
+    hasModuleProperties(modules.registration, ["portalUsers", "logger", "diagnosticRecorder"]) &&
+    hasModuleProperties(modules.adminCandidates, ["adminCandidates", "diagnostics", "logger"]) &&
+    hasModuleProperties(modules.adminExamAuthoring, [
+      "cloudshareConnections",
+      "cloudshareClientFactory",
+      "examAuthoringCache",
+      "diagnosticRecorder",
+      "logger",
+    ]) &&
+    hasModuleProperties(modules.adminCohortExamSessions, [
+      "exams",
+      "cohortExamSessions",
+      "diagnosticRecorder",
+      "audit",
+      "cloudshareConnections",
+      "cloudshareClientFactory",
+      "logger",
+    ]) &&
+    hasModuleProperties(modules.candidateSuspendResume, [
+      "environmentSource",
+      "environmentController",
+      "examAttempts",
+      "labLaunches",
+      "examClock",
+      "exams",
+      "logger",
+      "heartbeatAutoSuspend",
+      "audit",
+      "eventLog",
+      "cloudshareConnections",
+      "cloudshareClientFactory",
+      "diagnosticRecorder",
+    ])
+  );
+}
+
+function hasModuleProperties(value: unknown, properties: readonly string[]): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    properties.every((property) => property in value)
+  );
+}
 
 export interface Services {
   config: Config;
@@ -128,6 +304,8 @@ export interface Services {
   cloudshareConnections: CloudShareConnectionRepository;
   cloudshareClientFactory: CloudShareClientFactory;
   ensurePortalSeeded(): Promise<void>;
+  featureModules: FeatureModules;
+  dispose(): void;
 }
 
 const globalForServices = globalThis as unknown as {
@@ -143,8 +321,7 @@ export function getServices(): Services {
     // Next dev hot-reload can preserve the global singleton while module shapes
     // change. If a required service method is missing, discard the stale instance
     // instead of mixing new route code with old dependency objects.
-    void globalForServices.__portalServices.prisma.$disconnect();
-    globalForServices.__portalServices.heartbeatAutoSuspend.stop();
+    globalForServices.__portalServices.dispose();
     globalForServices.__portalServices = undefined;
   }
 
@@ -348,7 +525,7 @@ export function getServices(): Services {
     });
   });
 
-  const services: Services = {
+  const serviceInputs: Omit<Services, "featureModules" | "dispose"> = {
     config,
     logger,
     prisma,
@@ -382,14 +559,50 @@ export function getServices(): Services {
     cloudshareClientFactory,
     ensurePortalSeeded,
   };
+  const services: Services = {
+    ...serviceInputs,
+    featureModules: createFeatureModules(serviceInputs),
+    dispose: () => {
+      void prisma.$disconnect();
+      heartbeatAutoSuspend.stop();
+    },
+  };
   globalForServices.__portalServices = services;
   return services;
 }
 
+export function getPortalSessionServices(): PortalSessionDeps & PortalSessionServices {
+  return getServices().featureModules.portal.session;
+}
+
+export function getPortalLoginServices(): PortalLoginServices {
+  return getServices().featureModules.portal.login;
+}
+
+export function getPortalLogoutServices(): PortalLogoutServices {
+  return getServices().featureModules.portal.logout;
+}
+
+export function getCandidateRegistrationServices(): CandidateRegistrationServices {
+  return getServices().featureModules.registration;
+}
+
+export function getAdminCandidateServices(): AdminCandidateServices {
+  return getServices().featureModules.adminCandidates;
+}
+
+export function getAdminExamAuthoringServices(): AdminExamAuthoringServices {
+  return getServices().featureModules.adminExamAuthoring;
+}
+
+export function getAdminCohortExamSessionServices(): AdminCohortExamSessionServices {
+  return getServices().featureModules.adminCohortExamSessions;
+}
+
+export function getCandidateSuspendResumeServices(): CandidateSuspendResumeServices {
+  return getServices().featureModules.candidateSuspendResume;
+}
+
 function isReusableServices(services: Services): boolean {
-  return (
-    typeof services.cloudshareConnections?.findByWebhookPathToken === "function" &&
-    typeof services.cloudshareClientFactory?.forConnection === "function" &&
-    typeof services.adminCandidates?.listByCustomerId === "function"
-  );
+  return typeof services.dispose === "function" && isReusableFeatureModules(services.featureModules);
 }
