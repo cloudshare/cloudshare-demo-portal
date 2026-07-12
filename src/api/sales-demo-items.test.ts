@@ -1,0 +1,44 @@
+import { describe, expect, it, vi } from "vitest";
+import { handleArchiveSalesDemoItem, handleCreateSalesDemoItem, handleListSalesDemoItems } from "./sales-demo-items";
+import type { DemoItem, DemoItemRepository } from "@/domain/demo-item";
+import type { CloudShareConnectionRecord } from "@/domain/cloudshare-connection";
+import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
+import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
+import { CloudShareRequestError } from "@/integrations/cloudshare";
+
+function repository(): DemoItemRepository { const rows = new Map<string, DemoItem>(); return { save: async (item) => { rows.set(item.id, item); }, findById: async (id) => rows.get(id) ?? null, listByCustomerId: async (customerId) => [...rows.values()].filter((item) => item.customerId === customerId) }; }
+const connection: CloudShareConnectionRecord = { customerId: "certalis", apiId: "api-id", apiKey: "api-key", webhookSecret: "secret", webhookPathToken: "token", connectedAt: new Date(), verifiedAt: new Date() };
+function source(overrides = {}) { return { listProjects: vi.fn().mockResolvedValue([{ id: "project-1", name: "Certalis Project" }]), listRegions: vi.fn().mockResolvedValue([{ id: "region-1", name: "us-west", friendlyName: "US West" }]), listProjectBlueprints: vi.fn().mockResolvedValue([{ id: "bp-1", name: "Foundation" }, { id: "bp-2", name: "Advanced" }]), listProjectPolicies: vi.fn().mockResolvedValue([{ id: "policy-1", name: "Sales policy", runtimeLeaseMinutes: 60, storageLeaseMinutes: 1440 }]), getBlueprintDetail: vi.fn(), ...overrides }; }
+function deps(repo = repository(), candidate = source()) { return { repository: repo, connections: { findByCustomerId: vi.fn().mockResolvedValue(connection) }, cloudshare: { forConnection: vi.fn().mockReturnValue(candidate) }, now: () => new Date("2026-07-12T12:00:00Z"), newId: () => "demo-1" }; }
+const body = { name: "CX foundation demo", description: "A sales-safe demo", projectId: "project-1", blueprintIds: ["bp-2", "bp-1"], policyId: "policy-1", regionId: "region-1", salesExperienceType: "guided_demo" };
+
+describe("Sales Demo Item API", () => {
+  it("creates a Customer-scoped item from live friendly resources and preserves Blueprint order", async () => {
+    const result = await handleCreateSalesDemoItem(deps(), { customerId: "certalis", body });
+    expect(result.status).toBe(201);
+    expect(result.body).toMatchObject({ demoItem: { customerId: "certalis", blueprints: [{ name: "Advanced" }, { name: "Foundation" }], policy: { name: "Sales policy" }, region: { name: "US West" }, defaultDurationMinutes: 1440 } });
+  });
+
+  it("rejects duplicate Blueprint choices before any persisted Sales Demo Item", async () => {
+    const repo = repository();
+    const result = await handleCreateSalesDemoItem(deps(repo), { customerId: "certalis", body: { ...body, blueprintIds: ["bp-1", "bp-1"] } });
+    expect(result.status).toBe(400);
+    await expect(handleListSalesDemoItems({ repository: repo }, { customerId: "certalis" })).resolves.toMatchObject({ body: { activeDemoItems: [] } });
+  });
+
+  it("records a redacted support diagnostic when live authoring resources fail", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    const result = await handleCreateSalesDemoItem({ ...deps(repository(), source({ listProjects: vi.fn().mockRejectedValue(new CloudShareRequestError("forbidden api-key", 403)) })), diagnostics: createDiagnosticRecorder({ repository: diagnostics, secrets: ["api-key"] }) }, { customerId: "certalis", body });
+    expect(result.status).toBe(502);
+    expect(result.body).toMatchObject({ diagnostic: { integrationSurface: "cloudshare.v3.authoring_resources", failureMode: "http_status", responseStatus: 403 } });
+    const [entry] = await diagnostics.query({ customerId: "certalis" });
+    expect(entry.message).not.toContain("api-key");
+  });
+
+  it("keeps archived items in history and does not return them as active", async () => {
+    const repo = repository(); const created = await handleCreateSalesDemoItem(deps(repo), { customerId: "certalis", body });
+    const id = (created.body.demoItem as DemoItem).id;
+    await expect(handleArchiveSalesDemoItem({ repository: repo }, { customerId: "certalis", id })).resolves.toMatchObject({ status: 200 });
+    await expect(handleListSalesDemoItems({ repository: repo }, { customerId: "certalis" })).resolves.toMatchObject({ body: { activeDemoItems: [], archivedDemoItems: [{ id, status: "archived" }] } });
+  });
+});

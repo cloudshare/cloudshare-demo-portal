@@ -26,6 +26,7 @@ model Customer {
   createdAt            DateTime              @default(now())
   users                User[]
   exams                Exam[]
+  demoItems            DemoItem[]
   examAttempts         ExamAttempt[]
   cloudShareConnection CloudShareConnection?
   salesAccounts        SalesAccount[]
@@ -79,6 +80,32 @@ model OpportunityContact {
   opportunity   SalesOpportunity @relation(fields: [customerId, opportunityId], references: [customerId, id], onDelete: Restrict)
 
   @@index([customerId, opportunityId, updatedAt])
+}
+
+// A Sales-owned, archive-only reusable CloudShare delivery template.  Resource
+// identifiers are selected from live per-Customer reads and are never a manual
+// authoring field.
+model DemoItem {
+  id                     String   @id
+  customerId             String
+  name                   String
+  description            String
+  projectId              String
+  projectName            String
+  blueprintsJson         String
+  policyId               String
+  policyName             String
+  regionId               String
+  regionName             String
+  salesExperienceType    String
+  defaultDurationMinutes Int
+  status                 String
+  archivedAt             DateTime?
+  createdAt              DateTime
+  updatedAt              DateTime
+  customer               Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, status])
 }
 
 model User {
