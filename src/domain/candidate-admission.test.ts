@@ -31,6 +31,14 @@ describe("Candidate admission", () => {
         "customer-helios",
       ),
     ).rejects.toMatchObject({ name: CandidateAdmissionConnectionError.name, customerId: "customer-helios" });
+
+    const persistenceFailure = new Error("connection repository unavailable");
+    await expect(
+      requireCandidateAdmissionConnection(
+        { findByCustomerId: async () => Promise.reject(persistenceFailure) } as never,
+        "customer-helios",
+      ),
+    ).rejects.toBe(persistenceFailure);
   });
 
   it("reserves a provisional ExamAttempt only when the Candidate has no overlapping availability", async () => {
@@ -137,6 +145,45 @@ describe("Candidate admission", () => {
     });
 
     await recoverCandidateAdmissionAttempt({ attempts }, completed.attempt.id);
+    await expect(attempts.findById("attempt-1")).resolves.toBeNull();
+  });
+
+  it("recovers the provisional ExamAttempt when LabLaunch persistence fails", async () => {
+    const attempts = createInMemoryExamAttemptRepository();
+    const launches = createInMemoryLabLaunchRepository();
+    const attempt = await reserveCandidateAdmissionAttempt(
+      { attempts },
+      {
+        attemptId: "attempt-1",
+        customerId: "customer-helios",
+        candidateId: "candidate-1",
+        examId: "exam-1",
+        scheduledFor: new Date("2026-07-12T12:00:00.000Z"),
+        createdAt: new Date("2026-07-12T12:00:00.000Z"),
+        availabilityWindowMinutes: 90,
+      },
+    );
+
+    await expect(
+      completeCandidateAdmission(
+        {
+          attempts,
+          launches: { ...launches, save: async () => Promise.reject(new Error("LabLaunch store unavailable")) },
+        },
+        {
+          attempt,
+          launch: {
+            id: "launch-1",
+            candidateId: "candidate-1",
+            experienceId: "experience-1",
+            loginUrl: "https://cloudshare.example/sponsored-link",
+            status: "launched",
+            createdAt: new Date("2026-07-12T12:00:00.000Z"),
+          },
+        },
+      ),
+    ).rejects.toThrow("LabLaunch store unavailable");
+
     await expect(attempts.findById("attempt-1")).resolves.toBeNull();
   });
 });

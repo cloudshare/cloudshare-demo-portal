@@ -20,10 +20,13 @@ import {
 } from "@/domain/lab-launch";
 import {
   CandidateAdmissionConflictError,
+  CandidateAdmissionConnectionError,
   CandidateAdmissionRetakeError,
   assertCandidateAdmissionAvailability,
   completeCandidateAdmission,
   recoverCandidateAdmissionAttempt,
+  recordCandidateAdmissionFailureEvidence,
+  recordCandidateAdmissionSuccessEvidence,
   requireCandidateAdmissionConnection,
   requireCandidateAdmissionIdentity,
   reserveCandidateAdmissionAttempt,
@@ -121,7 +124,8 @@ export async function joinCohortExamSessionRuntime(
       firstName: request.candidateFirstName ?? "",
       lastName: request.candidateLastName ?? "",
     });
-  } catch {
+  } catch (error) {
+    if (!(error instanceof CandidateAdmissionConnectionError)) throw error;
     await recordJoinRejection(deps, {
       request,
       correlationId,
@@ -682,22 +686,22 @@ export async function joinCohortExamSessionRuntime(
   );
   const readyAttempt = completed.attempt;
 
-  await deps.audit.write({
-    id: `${attemptId}:cohort_exam_session_joined:${correlationId}`,
-    customerId: request.customerId,
-    actorType: "candidate",
-    actorId: request.candidateId,
-    subjectType: "exam_attempt",
-    subjectId: attemptId,
-    examAttemptId: attemptId,
-    candidateId: request.candidateId,
-    examId: exam.id,
-    correlationId,
-    action: "cohort_exam_session_joined",
-    outcome: "success",
-    details: externalIds,
-    occurredAt: now,
-  });
+  await recordCandidateAdmissionSuccessEvidence(
+    { audit: deps.audit },
+    {
+      context: {
+        customerId: request.customerId,
+        candidateId: request.candidateId,
+        examAttemptId: attemptId,
+        examId: exam.id,
+        correlationId,
+        occurredAt: now,
+      },
+      auditId: `${attemptId}:cohort_exam_session_joined:${correlationId}`,
+      action: "cohort_exam_session_joined",
+      details: externalIds,
+    },
+  );
   await deps.diagnostics?.record({
     ...anchors,
     level: "info",
@@ -854,42 +858,37 @@ async function recordProvisioningFailure(
     ...(diagnostic.response ? { response: diagnostic.response } : {}),
     details: diagnostic.details,
   });
-  await deps.eventLog.append({
-    eventId: input.correlationId,
-    type: "cloudshare.cohort_exam_session_join.failed",
-    occurredAt: deps.now?.() ?? new Date(),
-    payload: {
-      correlationId: input.correlationId,
-      customerId: input.anchors.customerId,
-      candidateId: input.candidateId,
-      examId: input.examId,
-      examAttemptId: input.attemptId,
-      ...input.externalIds,
-      attemptedOperation: input.attemptedOperation,
-      ...toProvisioningLogFields(diagnostic),
+  const failureDetails = {
+    ...input.externalIds,
+    attemptedOperation: input.attemptedOperation,
+    ...toProvisioningLogFields(diagnostic),
+  };
+  await recordCandidateAdmissionFailureEvidence(
+    { audit: deps.audit, eventLog: deps.eventLog },
+    {
+      context: {
+        customerId: input.anchors.customerId,
+        candidateId: input.candidateId,
+        examAttemptId: input.attemptId,
+        examId: input.examId,
+        correlationId: input.correlationId,
+        occurredAt: deps.now?.() ?? new Date(),
+      },
+      auditId: `${input.attemptId}:cohort_exam_session_join_failed:${input.correlationId}`,
+      auditAction: "cohort_exam_session_join_failed",
+      auditDetails: failureDetails,
+      auditError: "CloudShare provisioning failed for the shared cohort Exam Session.",
+      eventType: "cloudshare.cohort_exam_session_join.failed",
+      eventPayload: {
+        correlationId: input.correlationId,
+        customerId: input.anchors.customerId,
+        candidateId: input.candidateId,
+        examId: input.examId,
+        examAttemptId: input.attemptId,
+        ...failureDetails,
+      },
     },
-  });
-  await deps.audit.write({
-    id: `${input.attemptId}:cohort_exam_session_join_failed:${input.correlationId}`,
-    customerId: input.anchors.customerId,
-    actorType: "candidate",
-    actorId: input.candidateId,
-    subjectType: "exam_attempt",
-    subjectId: input.attemptId,
-    examAttemptId: input.attemptId,
-    candidateId: input.candidateId,
-    examId: input.examId,
-    correlationId: input.correlationId,
-    action: "cohort_exam_session_join_failed",
-    outcome: "failure",
-    details: {
-      ...input.externalIds,
-      attemptedOperation: input.attemptedOperation,
-      ...toProvisioningLogFields(diagnostic),
-    },
-    error: "CloudShare provisioning failed for the shared cohort Exam Session.",
-    occurredAt: deps.now?.() ?? new Date(),
-  });
+  );
   deps.logger.warn("candidate cohort exam join failed", {
     correlationId: input.correlationId,
     customerId: input.anchors.customerId,

@@ -10,7 +10,10 @@ import type { EventLogRepository } from "@/domain/event-log";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import { isIndividualExamDeliveryAvailable, type ExamRepository } from "@/domain/exam-catalog";
 import {
+  CandidateAdmissionConnectionError,
   findCandidateAdmissionOverlap,
+  recordCandidateAdmissionFailureEvidence,
+  recordCandidateAdmissionSuccessEvidence,
   requireCandidateAdmissionConnection,
   requireCandidateAdmissionIdentity,
 } from "@/domain/candidate-admission";
@@ -83,7 +86,8 @@ export async function scheduleExamAttemptRuntime(
   let connection;
   try {
     connection = await requireCandidateAdmissionConnection(deps.connections, request.customerId);
-  } catch {
+  } catch (error) {
+    if (!(error instanceof CandidateAdmissionConnectionError)) throw error;
     return {
       status: 409,
       body: { error: "CloudShare is not connected for this customer." },
@@ -219,25 +223,22 @@ export async function scheduleExamAttemptRuntime(
       attemptStatus: result.attempt.status,
       coldStartLikely: result.coldStartLikely,
     });
-    await deps.audit.write({
-      id: `${result.attempt.id}:lab_launched:${correlationId}`,
-      customerId: request.customerId,
-      actorType: "candidate",
-      actorId: request.candidateId,
-      subjectType: "exam_attempt",
-      subjectId: result.attempt.id,
-      examAttemptId: result.attempt.id,
-      candidateId: request.candidateId,
-      examId: result.attempt.examId,
-      correlationId,
-      action: "lab_launched",
-      outcome: "success",
-      details: {
-        trainingId: result.trainingId,
-        experienceId: result.experienceId,
+    await recordCandidateAdmissionSuccessEvidence(
+      { audit: deps.audit },
+      {
+        context: {
+          customerId: request.customerId,
+          candidateId: request.candidateId,
+          examAttemptId: result.attempt.id,
+          examId: result.attempt.examId,
+          correlationId,
+          occurredAt: deps.now?.() ?? new Date(),
+        },
+        auditId: `${result.attempt.id}:lab_launched:${correlationId}`,
+        action: "lab_launched",
+        details: { trainingId: result.trainingId, experienceId: result.experienceId },
       },
-      occurredAt: deps.now?.() ?? new Date(),
-    });
+    );
 
     return {
       status: 201,
@@ -276,36 +277,32 @@ export async function scheduleExamAttemptRuntime(
         operation: "schedule_exam",
         ...toProvisioningDiagnostic(error),
       };
-      await deps.eventLog.append({
-        eventId: correlationId,
-        type: "cloudshare.schedule_exam.failed",
-        occurredAt: deps.now?.() ?? new Date(),
-        payload: diagnostic,
-      });
-      await deps.audit.write({
-        id: `${error.context.attemptId}:lab_launch_failed:${correlationId}`,
-        customerId: request.customerId,
-        actorType: "candidate",
-        actorId: request.candidateId,
-        subjectType: "exam_attempt",
-        subjectId: error.context.attemptId,
-        examAttemptId: error.context.attemptId,
-        candidateId: request.candidateId,
-        correlationId,
-        action: "lab_launch_failed",
-        outcome: "failure",
-        details: {
-          attemptedOperation: diagnostic.attemptedOperation,
-          integrationSurface: diagnostic.integrationSurface,
-          method: diagnostic.method,
-          path: diagnostic.path,
-          failureMode: diagnostic.failureMode,
-          responseStatus: diagnostic.responseStatus,
-          correlationId,
+      await recordCandidateAdmissionFailureEvidence(
+        { audit: deps.audit, eventLog: deps.eventLog },
+        {
+          context: {
+            customerId: request.customerId,
+            candidateId: request.candidateId,
+            examAttemptId: error.context.attemptId,
+            correlationId,
+            occurredAt: deps.now?.() ?? new Date(),
+          },
+          auditId: `${error.context.attemptId}:lab_launch_failed:${correlationId}`,
+          auditAction: "lab_launch_failed",
+          auditDetails: {
+            attemptedOperation: diagnostic.attemptedOperation,
+            integrationSurface: diagnostic.integrationSurface,
+            method: diagnostic.method,
+            path: diagnostic.path,
+            failureMode: diagnostic.failureMode,
+            responseStatus: diagnostic.responseStatus,
+            correlationId,
+          },
+          auditError: "CloudShare provisioning failed for the scheduled exam.",
+          eventType: "cloudshare.schedule_exam.failed",
+          eventPayload: diagnostic,
         },
-        error: "CloudShare provisioning failed for the scheduled exam.",
-        occurredAt: deps.now?.() ?? new Date(),
-      });
+      );
       deps.logger.warn("candidate exam scheduling failed", diagnostic);
       return {
         status: isCloudShareRateLimitError(error.context.cause) ? 429 : 502,

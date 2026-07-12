@@ -8,6 +8,8 @@ import type {
   CloudShareConnectionRecord,
   CloudShareConnectionRepository,
 } from "./cloudshare-connection";
+import type { AuditRepository } from "./audit-trail";
+import type { EventLogRepository } from "./event-log";
 import type { LabLaunch, LabLaunchRepository } from "./lab-launch";
 
 export class CandidateAdmissionIdentityError extends Error {
@@ -216,7 +218,12 @@ export async function completeCandidateAdmission(
   const attempt: ExamAttempt = { ...input.attempt, status: "ready" };
   const launch: LabLaunch = { ...input.launch, examAttemptId: attempt.id };
   await deps.attempts.save(attempt);
-  await deps.launches.save(launch);
+  try {
+    await deps.launches.save(launch);
+  } catch (error) {
+    await deps.attempts.delete(attempt.id);
+    throw error;
+  }
   return { attempt, launch };
 }
 
@@ -225,4 +232,85 @@ export async function recoverCandidateAdmissionAttempt(
   attemptId: string,
 ): Promise<void> {
   await deps.attempts.delete(attemptId);
+}
+
+export interface CandidateAdmissionEvidenceContext {
+  readonly customerId: string;
+  readonly candidateId: string;
+  readonly examAttemptId: string;
+  readonly correlationId: string;
+  readonly occurredAt: Date;
+  readonly examId?: string;
+}
+
+/**
+ * Portal lifecycle evidence belongs to Candidate admission. Delivery adapters
+ * retain only CloudShare operation diagnostics and supply their distinct action
+ * names and external identifiers here.
+ */
+export async function recordCandidateAdmissionSuccessEvidence(
+  deps: { readonly audit: Pick<AuditRepository, "write"> },
+  input: {
+    readonly context: CandidateAdmissionEvidenceContext;
+    readonly auditId: string;
+    readonly action: string;
+    readonly details: Record<string, unknown>;
+  },
+): Promise<void> {
+  await deps.audit.write({
+    id: input.auditId,
+    customerId: input.context.customerId,
+    actorType: "candidate",
+    actorId: input.context.candidateId,
+    subjectType: "exam_attempt",
+    subjectId: input.context.examAttemptId,
+    examAttemptId: input.context.examAttemptId,
+    candidateId: input.context.candidateId,
+    ...(input.context.examId ? { examId: input.context.examId } : {}),
+    correlationId: input.context.correlationId,
+    action: input.action,
+    outcome: "success",
+    details: input.details,
+    occurredAt: input.context.occurredAt,
+  });
+}
+
+export async function recordCandidateAdmissionFailureEvidence(
+  deps: {
+    readonly audit: Pick<AuditRepository, "write">;
+    readonly eventLog: EventLogRepository;
+  },
+  input: {
+    readonly context: CandidateAdmissionEvidenceContext;
+    readonly auditId: string;
+    readonly auditAction: string;
+    readonly auditDetails: Record<string, unknown>;
+    readonly auditError: string;
+    readonly eventType: string;
+    readonly eventPayload: Record<string, unknown>;
+  },
+): Promise<void> {
+  await deps.eventLog.append({
+    eventId: input.context.correlationId,
+    type: input.eventType,
+    occurredAt: input.context.occurredAt,
+    payload: input.eventPayload,
+  });
+  await deps.audit.write({
+    id: input.auditId,
+    customerId: input.context.customerId,
+    actorType: "candidate",
+    actorId: input.context.candidateId,
+    subjectType: "exam_attempt",
+    subjectId: input.context.examAttemptId,
+    examAttemptId: input.context.examAttemptId,
+    candidateId: input.context.candidateId,
+    ...(input.context.examId ? { examId: input.context.examId } : {}),
+    correlationId: input.context.correlationId,
+    action: input.auditAction,
+    outcome: "failure",
+    details: input.auditDetails,
+    error: input.auditError,
+    occurredAt: input.context.occurredAt,
+  });
 }
