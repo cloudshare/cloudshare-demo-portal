@@ -444,6 +444,18 @@ describe("AdminCohortExamSessionsFeature seam", () => {
     );
   });
 
+  it("warms generic Monitoring on initial Support entry and reveals the cached branch without a second request", async () => {
+    const user = userEvent.setup();
+    const fetchMock = installAdminConsoleFetchMock();
+    render(<AdminConsole email="admin@helioscx.demo" initialTab="support" initialSupportView="monitoring" />);
+
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => url === "/api/admin/monitoring?historyLimit=25&historyOffset=0")).toHaveLength(1));
+    expect(screen.queryByText(/Session Monitoring is the current-state operations surface/)).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Individual Exam Delivery" }));
+    expect(await screen.findByText(/Session Monitoring is the current-state operations surface/)).toBeTruthy();
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/admin/monitoring?historyLimit=25&historyOffset=0")).toHaveLength(1);
+  });
+
   it("keeps the newest focused monitoring response when a stale Cohort refresh resolves late", async () => {
     let resolveFirst: ((response: Response) => void) | undefined;
     let resolveSecond: ((response: Response) => void) | undefined;

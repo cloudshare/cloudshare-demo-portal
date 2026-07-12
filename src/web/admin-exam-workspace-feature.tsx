@@ -33,7 +33,7 @@ export function AdminExamWorkspaceFeature(props: AdminExamWorkspaceFeatureProps)
   }, []);
   const hasFocusedCohort = Boolean(props.focusedExamId && props.focusedCohortSessionId);
   const cohortMonitoringActive = props.supportMonitoringActive && (hasFocusedCohort || monitoringBranch === "cohort");
-  const individualMonitoringActive = props.supportMonitoringActive && !hasFocusedCohort && monitoringBranch === "individual";
+  const individualMonitoringVisible = props.supportMonitoringActive && !hasFocusedCohort && monitoringBranch === "individual";
 
   return <>
     <AdminExamCatalogAuthoringFeature
@@ -64,6 +64,6 @@ export function AdminExamWorkspaceFeature(props: AdminExamWorkspaceFeatureProps)
       onCohortActivityChange={updateCohortActivity}
       catalog={catalog}
     />
-    <AdminSessionMonitoringFeature active={individualMonitoringActive} fetchAdmin={props.fetchAdmin} onNavigate={props.onNavigate} />
+    <AdminSessionMonitoringFeature active={props.supportMonitoringActive} visible={individualMonitoringVisible} fetchAdmin={props.fetchAdmin} onNavigate={props.onNavigate} />
   </>;
 }

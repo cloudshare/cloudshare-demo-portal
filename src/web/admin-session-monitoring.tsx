@@ -14,12 +14,15 @@ import { alertPanelStyle } from "./card-styles";
 
 export interface AdminSessionMonitoringFeatureProps {
   readonly active: boolean;
+  /** Keep the current Monitoring cache warm without rendering until its branch is selected. */
+  readonly visible?: boolean;
   readonly fetchAdmin: AdminAuthenticatedRequest;
   readonly onNavigate?: (intent: AdminNavigationIntent) => void;
 }
 
 export function AdminSessionMonitoringFeature({
   active,
+  visible = true,
   fetchAdmin,
   onNavigate,
 }: AdminSessionMonitoringFeatureProps) {
@@ -54,7 +57,7 @@ export function AdminSessionMonitoringFeature({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
-  if (!active) return null;
+  if (!active || !visible) return null;
   return (
     <section style={{ display: "grid", gap: "1rem" }}>
       {error ? (
