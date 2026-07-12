@@ -66,7 +66,7 @@ describe("Customer-scoped Sales record API handlers", () => {
     expect(deps.diagnostics.append).toHaveBeenCalledWith(expect.objectContaining({ operation: "account.created", customerId: "certalis", details: expect.objectContaining({ integrationSurface: "local_sales_records" }) }));
   });
 
-  it("compensates a persisted mutation and returns a supportable failure when required evidence cannot be appended", async () => {
+  it("retains a newly created Account as archived history and returns a supportable failure when required evidence cannot be appended", async () => {
     const deps = createDeps();
     deps.diagnostics.append = vi.fn().mockRejectedValue(new Error("diagnostic store unavailable"));
 
@@ -74,6 +74,16 @@ describe("Customer-scoped Sales record API handlers", () => {
     const records = await handleListSalesRecords(deps, { customerId: "certalis", actor: admin });
 
     expect(response.status).toBe(503);
-    expect(records.body).toMatchObject({ accounts: [] });
+    expect(records.body).toMatchObject({ accounts: [expect.objectContaining({ name: "Acme Labs", archivedAt: "2026-07-12T17:00:00.000Z" })] });
+  });
+
+  it("returns a supportable failure instead of an unhandled 500 when durable persistence fails", async () => {
+    const deps = createDeps();
+    deps.records.saveAccount = vi.fn().mockRejectedValue(new Error("database unavailable"));
+
+    const response = await handleCreateSalesAccount(deps, { customerId: "certalis", actor: admin, body: { name: "Acme Labs", kind: "prospect" } });
+
+    expect(response.status).toBe(503);
+    expect(deps.logger.error).toHaveBeenCalledWith("sales record mutation could not be confirmed", expect.objectContaining({ action: "account.created", error: "database unavailable" }));
   });
 });
