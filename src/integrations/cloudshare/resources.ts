@@ -158,6 +158,49 @@ export interface CloudShareExamAuthoringSource {
   getBlueprintDetail(projectId: string, blueprintId: string): Promise<CloudShareBlueprintDetail>;
 }
 
+/** Detailed resource reads used by Sales Demo Item authoring. Keeping the raw
+ * HTTP exchange at this adapter boundary lets API handlers persist redacted,
+ * supportable evidence without coupling domain code to CloudShare wire models. */
+export interface CloudShareSalesDemoItemResourceSource {
+  readProjects(): Promise<CloudShareDetailedResourceRead<Array<{ id: string; name: string }>>>;
+  readRegions(): Promise<CloudShareDetailedResourceRead<Array<{ id: string; name: string; friendlyName?: string }>>>;
+  readProjectBlueprints(projectId: string): Promise<CloudShareDetailedResourceRead<Array<{ id: string; name: string }>>>;
+  readProjectPolicies(projectId: string): Promise<{
+    readonly policies: CloudShareExamAuthoringPolicy[];
+    readonly reads: readonly CloudShareDetailedResourceRead<unknown>[];
+  }>;
+}
+
+export interface CloudShareDetailedResourceRead<T> {
+  readonly data: T;
+  readonly request: Record<string, unknown>;
+  readonly response: Record<string, unknown>;
+  readonly integrationSurface: string;
+}
+
+export function createCloudShareSalesDemoItemResourceSource(client: CloudShareClient): CloudShareSalesDemoItemResourceSource {
+  async function read<T>(path: string, schema: z.ZodType<T, z.ZodType["_def"], unknown>, integrationSurface: string): Promise<CloudShareDetailedResourceRead<T>> {
+    const detailed = await requestV3WithDiagnostics(client, { method: "GET", path, schema });
+    return { data: detailed.data, request: toDiagnosticExchange(detailed).request, response: toDiagnosticExchange(detailed).response, integrationSurface };
+  }
+  return {
+    readProjects: () => read("/projects", projectListSchema, "cloudshare.v3.projects"),
+    readRegions: async () => {
+      const result = await read("/regions", regionListSchema, "cloudshare.v3.regions");
+      return { ...result, data: result.data.map((region) => ({ id: region.id, name: region.name, ...(region.friendlyName ? { friendlyName: region.friendlyName } : {}) })) };
+    },
+    readProjectBlueprints: async (projectId) => {
+      const result = await read(`/projects/${projectId}/blueprints`, blueprintListSchema, "cloudshare.v3.projects.blueprints");
+      return { ...result, data: result.data.map((blueprint) => ({ id: blueprint.id, name: blueprint.name })) };
+    },
+    readProjectPolicies: async (projectId) => {
+      const list = await read(`/projects/${projectId}/policies`, policyListSchema, "cloudshare.v3.projects.policies");
+      const details = await Promise.all(list.data.map((policy) => read(`/projects/${projectId}/policies/${policy.id}`, policyDetailSchema, "cloudshare.v3.projects.policy_detail")));
+      return { policies: list.data.map((policy, index) => ({ id: policy.id, name: policy.name, runtimeLeaseMinutes: details[index]?.data.runtimeLeaseMinutes ?? null, storageLeaseMinutes: details[index]?.data.storageLeaseMinutes ?? null, diagnosticRequest: details[index]?.request, diagnosticResponse: details[index]?.response })), reads: [list, ...details] };
+    },
+  };
+}
+
 /**
  * CloudShare implementation of the {@link CloudShareResourceLister} port.
  * Fetches the reference lists (blueprints, policies, projects, regions) used

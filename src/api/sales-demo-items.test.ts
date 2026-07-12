@@ -14,9 +14,13 @@ const body = { name: "CX foundation demo", description: "A sales-safe demo", pro
 
 describe("Sales Demo Item API", () => {
   it("creates a Customer-scoped item from live friendly resources and preserves Blueprint order", async () => {
-    const result = await handleCreateSalesDemoItem(deps(), { customerId: "certalis", body });
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    const result = await handleCreateSalesDemoItem({ ...deps(), diagnostics: createDiagnosticRecorder({ repository: diagnostics }) }, { customerId: "certalis", body });
     expect(result.status).toBe(201);
     expect(result.body).toMatchObject({ demoItem: { customerId: "certalis", blueprints: [{ name: "Advanced" }, { name: "Foundation" }], policy: { name: "Sales policy" }, region: { name: "US West" }, defaultDurationMinutes: 1440 } });
+    const reads = await diagnostics.query({ operation: "sales.demo_item.authoring_resources.read" });
+    expect(reads).toHaveLength(4);
+    expect(reads).toEqual(expect.arrayContaining([expect.objectContaining({ request: expect.objectContaining({ method: "GET", path: "/projects" }), response: expect.objectContaining({ status: 200, body: expect.any(Object) }) }), expect.objectContaining({ request: expect.objectContaining({ method: "GET", path: "/regions" }), response: expect.objectContaining({ status: 200, body: expect.any(Object) }) }), expect.objectContaining({ request: expect.objectContaining({ method: "GET", path: "/projects/project-1/blueprints" }), response: expect.objectContaining({ status: 200, body: expect.any(Object) }) }), expect.objectContaining({ request: expect.objectContaining({ method: "GET", path: "/projects/project-1/policies" }), response: expect.objectContaining({ status: 200, body: expect.any(Object) }) })]));
   });
 
   it("rejects duplicate Blueprint choices before any persisted Sales Demo Item", async () => {
@@ -28,11 +32,12 @@ describe("Sales Demo Item API", () => {
 
   it("records a redacted support diagnostic when live authoring resources fail", async () => {
     const diagnostics = createInMemoryDiagnosticLogRepository();
-    const result = await handleCreateSalesDemoItem({ ...deps(repository(), source({ listProjects: vi.fn().mockRejectedValue(new CloudShareRequestError("forbidden api-key", 403)) })), diagnostics: createDiagnosticRecorder({ repository: diagnostics, secrets: ["api-key"] }) }, { customerId: "certalis", body });
+    const result = await handleCreateSalesDemoItem({ ...deps(repository(), source({ listProjects: vi.fn().mockRejectedValue(new CloudShareRequestError("forbidden api-key", 403, { method: "GET", path: "/projects?include=active", requestHeaders: { authorization: "api-key" }, responseHeaders: { "x-request-id": "req-1" }, responseBody: "{\"error\":\"forbidden\"}" })) })), diagnostics: createDiagnosticRecorder({ repository: diagnostics, secrets: ["api-key"] }) }, { customerId: "certalis", body });
     expect(result.status).toBe(502);
     expect(result.body).toMatchObject({ diagnostic: { integrationSurface: "cloudshare.v3.authoring_resources", failureMode: "http_status", responseStatus: 403 } });
     const [entry] = await diagnostics.query({ customerId: "certalis" });
     expect(entry.message).not.toContain("api-key");
+    expect(entry).toMatchObject({ request: { method: "GET", path: "/projects?include=active", headers: { authorization: "[REDACTED]" } }, response: { status: 403, headers: { "x-request-id": "req-1" }, body: "{\"error\":\"forbidden\"}" } });
   });
 
   it("keeps archived items in history and does not return them as active", async () => {

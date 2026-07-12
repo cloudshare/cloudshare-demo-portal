@@ -5,7 +5,7 @@ import type { DiagnosticActor, DiagnosticRecorder } from "@/domain/diagnostic-lo
 import type { AuditRepository } from "@/domain/audit-trail";
 import { archiveDemoItem, createDemoItem, DemoItemNotFoundError, DemoItemValidationError, type DemoItemRepository, updateDemoItem } from "@/domain/demo-item";
 import { CloudShareError } from "@/integrations/cloudshare";
-import { createCloudShareExamAuthoringSource, type CloudShareExamAuthoringSource } from "@/integrations/cloudshare/resources";
+import { createCloudShareExamAuthoringSource, createCloudShareSalesDemoItemResourceSource, type CloudShareExamAuthoringSource, type CloudShareDetailedResourceRead } from "@/integrations/cloudshare/resources";
 
 const writeSchema = z.object({
   name: z.string().trim().min(1).max(120),
@@ -94,18 +94,38 @@ export async function handleArchiveSalesDemoItem(deps: Pick<SalesDemoItemDeps, "
 
 async function resolveLiveSelections(deps: Pick<SalesDemoItemDeps, "cloudshare" | "diagnostics">, request: SalesDemoItemRequest, connection: Exclude<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>, null>, input: WriteRequest, correlationId: string) {
   const candidate = deps.cloudshare.forConnection(connection) as unknown;
+  if (!(typeof candidate === "object" && candidate !== null && "listProjects" in candidate)) {
+    const detailed = createCloudShareSalesDemoItemResourceSource(candidate as Parameters<typeof createCloudShareSalesDemoItemResourceSource>[0]);
+    const projects = await detailed.readProjects(); await recordSalesResourceRead(deps, request, correlationId, projects, "project");
+    const regions = await detailed.readRegions(); await recordSalesResourceRead(deps, request, correlationId, regions, "region");
+    const blueprints = await detailed.readProjectBlueprints(input.projectId); await recordSalesResourceRead(deps, request, correlationId, blueprints, "blueprint");
+    const policies = await detailed.readProjectPolicies(input.projectId);
+    for (const read of policies.reads) await recordSalesResourceRead(deps, request, correlationId, read, read.integrationSurface.endsWith("policy_detail") ? "policy_detail" : "policy");
+    return selectLiveResources(projects.data, regions.data, blueprints.data, policies.policies, input);
+  }
   const source: CloudShareExamAuthoringSource = typeof candidate === "object" && candidate !== null && "listProjects" in candidate
     ? candidate as CloudShareExamAuthoringSource
     : createCloudShareExamAuthoringSource(candidate as Parameters<typeof createCloudShareExamAuthoringSource>[0]);
   const [projects, regions, blueprints, policies] = await Promise.all([source.listProjects(), source.listRegions(), source.listProjectBlueprints(input.projectId), source.listProjectPolicies(input.projectId)]);
+  await deps.diagnostics?.record({ source: "sales-demo-items", operation: "sales.demo_item.authoring_resources.read", outcome: "success", customerId: request.customerId, actor: request.actor, correlationId, message: "Live CloudShare resources revalidated for Demo Item authoring", request: { method: "GET", path: "/projects" }, response: { status: 200, body: { itemCount: projects.length } }, details: { integrationSurface: "cloudshare.v3.projects" }, externalIds: { resourceType: "project" } });
+  await deps.diagnostics?.record({ source: "sales-demo-items", operation: "sales.demo_item.authoring_resources.read", outcome: "success", customerId: request.customerId, actor: request.actor, correlationId, message: "Live CloudShare resources revalidated for Demo Item authoring", request: { method: "GET", path: "/regions" }, response: { status: 200, body: { itemCount: regions.length } }, details: { integrationSurface: "cloudshare.v3.regions" }, externalIds: { resourceType: "region" } });
+  await deps.diagnostics?.record({ source: "sales-demo-items", operation: "sales.demo_item.authoring_resources.read", outcome: "success", customerId: request.customerId, actor: request.actor, correlationId, message: "Live CloudShare resources revalidated for Demo Item authoring", request: { method: "GET", path: `/projects/${input.projectId}/blueprints` }, response: { status: 200, body: { itemCount: blueprints.length } }, details: { integrationSurface: "cloudshare.v3.projects.blueprints" }, externalIds: { resourceType: "blueprint", projectId: input.projectId } });
+  await deps.diagnostics?.record({ source: "sales-demo-items", operation: "sales.demo_item.authoring_resources.read", outcome: "success", customerId: request.customerId, actor: request.actor, correlationId, message: "Live CloudShare resources revalidated for Demo Item authoring", request: { method: "GET", path: `/projects/${input.projectId}/policies` }, response: { status: 200, body: { itemCount: policies.length } }, details: { integrationSurface: "cloudshare.v3.projects.policies" }, externalIds: { resourceType: "policy", projectId: input.projectId } });
+  return selectLiveResources(projects, regions, blueprints, policies, input);
+}
+
+function selectLiveResources(projects: Array<{ id: string; name: string }>, regions: Array<{ id: string; name: string; friendlyName?: string }>, blueprints: Array<{ id: string; name: string }>, policies: Array<{ id: string; name: string; storageLeaseMinutes?: number | null }>, input: WriteRequest) {
   const project = projects.find((item) => item.id === input.projectId);
   const region = regions.find((item) => item.id === input.regionId);
   const policy = policies.find((item) => item.id === input.policyId);
   const ordered = input.blueprintIds.map((id) => blueprints.find((blueprint) => blueprint.id === id));
   if (!project || !region || !policy || ordered.some((blueprint) => !blueprint)) throw new DemoItemValidationError("One or more selected resources are no longer available from the Certalis CloudShare Connection. Refresh and select by name again.");
   if (!policy.storageLeaseMinutes) throw new DemoItemValidationError("The selected Policy does not expose a storage lease, so it cannot provide a default Sales Demo duration.");
-  await deps.diagnostics?.record({ source: "sales-demo-items", operation: "sales.demo_item.authoring_resources.read", outcome: "success", customerId: request.customerId, actor: request.actor, correlationId, message: "Live CloudShare resources revalidated for Demo Item authoring", request: { method: "GET", paths: ["/projects", "/regions", `/projects/${input.projectId}/blueprints`, `/projects/${input.projectId}/policies`] }, response: { status: 200, projectCount: projects.length, regionCount: regions.length, blueprintCount: blueprints.length, policyCount: policies.length }, details: { integrationSurface: "cloudshare.v3.authoring_resources" }, externalIds: { projectId: project.id, policyId: policy.id, regionId: region.id } });
   return { project, region: { id: region.id, name: region.friendlyName ?? region.name }, policy: { id: policy.id, name: policy.name }, blueprints: ordered as Array<{ id: string; name: string }>, defaultDurationMinutes: policy.storageLeaseMinutes };
+}
+
+async function recordSalesResourceRead(deps: Pick<SalesDemoItemDeps, "diagnostics">, request: SalesDemoItemRequest, correlationId: string, read: CloudShareDetailedResourceRead<unknown>, resourceType: string) {
+  await deps.diagnostics?.record({ source: "sales-demo-items", operation: "sales.demo_item.authoring_resources.read", outcome: "success", customerId: request.customerId, actor: request.actor, correlationId, message: `${resourceType} resource read succeeded`, request: read.request, response: read.response, details: { integrationSurface: read.integrationSurface }, externalIds: { resourceType } });
 }
 
 async function writeAudit(deps: Pick<SalesDemoItemDeps, "audit">, request: { customerId: string; actor?: DiagnosticActor | null }, subjectId: string, action: string, outcome: "success" | "failure", correlationId: string, details: Record<string, unknown> | null) {
