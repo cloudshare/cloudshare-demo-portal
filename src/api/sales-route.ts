@@ -13,7 +13,7 @@ export async function getSalesRouteContext(): Promise<{ readonly deps: SalesReco
   const session = await getPortalAdminSession(services, sessionId);
   if (!session || session.workspace !== "sales") return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   return {
-    deps: { records: createPrismaSalesRecordRepository(services.prisma), audit: services.audit, diagnostics: services.diagnosticRecorder, logger: services.logger },
+    deps: { records: createPrismaSalesRecordRepository(services.prisma), audit: services.audit, diagnostics: services.diagnostics, logger: services.logger },
     customerId: session.customerId,
     actor: { type: "admin", id: session.userId, email: session.email },
   };

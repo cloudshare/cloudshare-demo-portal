@@ -20,9 +20,11 @@ CREATE TABLE "SalesOpportunity" (
   "createdAt" DATETIME NOT NULL,
   "updatedAt" DATETIME NOT NULL,
   CONSTRAINT "SalesOpportunity_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT "SalesOpportunity_accountId_fkey" FOREIGN KEY ("accountId") REFERENCES "SalesAccount" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+  CONSTRAINT "SalesOpportunity_customerId_accountId_fkey" FOREIGN KEY ("customerId", "accountId") REFERENCES "SalesAccount" ("customerId", "id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 CREATE INDEX "SalesOpportunity_customerId_accountId_updatedAt_idx" ON "SalesOpportunity"("customerId", "accountId", "updatedAt");
+CREATE UNIQUE INDEX "SalesAccount_customerId_id_key" ON "SalesAccount"("customerId", "id");
+CREATE UNIQUE INDEX "SalesOpportunity_customerId_id_key" ON "SalesOpportunity"("customerId", "id");
 
 CREATE TABLE "OpportunityContact" (
   "id" TEXT NOT NULL PRIMARY KEY,
@@ -34,6 +36,6 @@ CREATE TABLE "OpportunityContact" (
   "createdAt" DATETIME NOT NULL,
   "updatedAt" DATETIME NOT NULL,
   CONSTRAINT "OpportunityContact_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "Customer" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
-  CONSTRAINT "OpportunityContact_opportunityId_fkey" FOREIGN KEY ("opportunityId") REFERENCES "SalesOpportunity" ("id") ON DELETE RESTRICT ON UPDATE CASCADE
+  CONSTRAINT "OpportunityContact_customerId_opportunityId_fkey" FOREIGN KEY ("customerId", "opportunityId") REFERENCES "SalesOpportunity" ("customerId", "id") ON DELETE RESTRICT ON UPDATE CASCADE
 );
 CREATE INDEX "OpportunityContact_customerId_opportunityId_updatedAt_idx" ON "OpportunityContact"("customerId", "opportunityId", "updatedAt");

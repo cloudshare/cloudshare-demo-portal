@@ -40,12 +40,15 @@ export interface SalesRecordRepository {
   listAccounts(customerId: string, search?: string): Promise<readonly SalesAccount[]>;
   findAccount(customerId: string, id: string): Promise<SalesAccount | null>;
   saveAccount(account: SalesAccount): Promise<void>;
+  removeAccountForCompensation(customerId: string, id: string): Promise<void>;
   listOpportunities(customerId: string, search?: string): Promise<readonly SalesOpportunity[]>;
   findOpportunity(customerId: string, id: string): Promise<SalesOpportunity | null>;
   saveOpportunity(opportunity: SalesOpportunity): Promise<void>;
+  removeOpportunityForCompensation(customerId: string, id: string): Promise<void>;
   listContacts(customerId: string, opportunityId?: string): Promise<readonly OpportunityContact[]>;
   findContact(customerId: string, id: string): Promise<OpportunityContact | null>;
   saveContact(contact: OpportunityContact): Promise<void>;
+  removeContactForCompensation(customerId: string, id: string): Promise<void>;
 }
 
 export function createInMemorySalesRecordRepository(): SalesRecordRepository {
@@ -64,6 +67,7 @@ export function createInMemorySalesRecordRepository(): SalesRecordRepository {
       return record?.customerId === customerId ? record : null;
     },
     async saveAccount(account) { accounts.set(account.id, account); },
+    async removeAccountForCompensation(customerId, id) { if (accounts.get(id)?.customerId === customerId) accounts.delete(id); },
     async listOpportunities(customerId, search) {
       return [...opportunities.values()].filter((record) => record.customerId === customerId && matches([record.name], search));
     },
@@ -72,6 +76,7 @@ export function createInMemorySalesRecordRepository(): SalesRecordRepository {
       return record?.customerId === customerId ? record : null;
     },
     async saveOpportunity(opportunity) { opportunities.set(opportunity.id, opportunity); },
+    async removeOpportunityForCompensation(customerId, id) { if (opportunities.get(id)?.customerId === customerId) opportunities.delete(id); },
     async listContacts(customerId, opportunityId) {
       return [...contacts.values()].filter((record) => record.customerId === customerId && (!opportunityId || record.opportunityId === opportunityId));
     },
@@ -80,5 +85,6 @@ export function createInMemorySalesRecordRepository(): SalesRecordRepository {
       return record?.customerId === customerId ? record : null;
     },
     async saveContact(contact) { contacts.set(contact.id, contact); },
+    async removeContactForCompensation(customerId, id) { if (contacts.get(id)?.customerId === customerId) contacts.delete(id); },
   };
 }

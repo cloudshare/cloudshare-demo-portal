@@ -17,7 +17,7 @@ function createDeps(): SalesRecordsDeps {
   return {
     records: createInMemorySalesRecordRepository(),
     audit: createInMemoryAuditRepository(),
-    diagnostics: { record: vi.fn().mockResolvedValue(undefined) },
+    diagnostics: { append: vi.fn().mockResolvedValue(undefined) },
     logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     now: () => new Date("2026-07-12T17:00:00.000Z"),
     newId: () => `record-${++sequence}`,
@@ -63,6 +63,17 @@ describe("Customer-scoped Sales record API handlers", () => {
     const records = await (deps.audit as AuditRepository).query({ customerId: "certalis", subjectType: "account" });
     expect(records).toHaveLength(1);
     expect(records[0]).toMatchObject({ action: "account.created", actorEmail: "sales-admin@certalis.demo", outcome: "success" });
-    expect(deps.diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ operation: "account.created", customerId: "certalis", details: expect.objectContaining({ integrationSurface: "local_sales_records" }) }));
+    expect(deps.diagnostics.append).toHaveBeenCalledWith(expect.objectContaining({ operation: "account.created", customerId: "certalis", details: expect.objectContaining({ integrationSurface: "local_sales_records" }) }));
+  });
+
+  it("compensates a persisted mutation and returns a supportable failure when required evidence cannot be appended", async () => {
+    const deps = createDeps();
+    deps.diagnostics.append = vi.fn().mockRejectedValue(new Error("diagnostic store unavailable"));
+
+    const response = await handleCreateSalesAccount(deps, { customerId: "certalis", actor: admin, body: { name: "Acme Labs", kind: "prospect" } });
+    const records = await handleListSalesRecords(deps, { customerId: "certalis", actor: admin });
+
+    expect(response.status).toBe(503);
+    expect(records.body).toMatchObject({ accounts: [] });
   });
 });
