@@ -16,6 +16,7 @@ import {
   normalizeAdminLocalDateTime,
 } from "./admin-console";
 import { AdminCandidateRosterPanel } from "./admin-candidate-roster";
+import { AdminExamCatalogAuthoringFeature } from "./admin-exam-catalog-authoring";
 import {
   buildAdminNavigationHref,
   type AdminNavigationIntent,
@@ -31,6 +32,24 @@ vi.mock("next/navigation", () => ({
 const shellNavigationHref = (intent: AdminNavigationIntent) => buildAdminNavigationHref(intent);
 
 describe("AdminConsole", () => {
+  it("keeps Project-first authoring inside the Exam catalog feature seam", () => {
+    const html = renderToStaticMarkup(
+      createElement(AdminExamCatalogAuthoringFeature, {
+        active: true,
+        examView: "create",
+        focusedExamId: null,
+        fetchAdmin: vi.fn(),
+        onNavigate: vi.fn(),
+        onCatalogChange: vi.fn(),
+        getHasActiveCohortSessions: () => false,
+      }),
+    );
+
+    expect(html).toContain("Project-first Exam authoring");
+    expect(html).toContain("Open period (minutes)");
+    expect(html).not.toContain("Cohort Exam Session detail");
+  });
+
   it("renders Exams as the default admin work area and keeps CloudShare Connection out of the landing page", () => {
     const html = renderToStaticMarkup(createElement(AdminConsole, { email: "admin@helioscx.demo" }));
 
