@@ -11,6 +11,46 @@ function json(body: unknown, status = 200): Response {
 }
 
 describe("AdminExamCatalogAuthoringFeature", () => {
+  it("refreshes dependent Project resources, shows the read-only default Snapshot, and reconciles Region validation", async () => {
+    const user = userEvent.setup();
+    const fetchAdmin = vi.fn<AdminAuthenticatedRequest>(async (input) => {
+      const url = String(input);
+      if (url === "/api/admin/exams") return json({ activeExams: [], archivedExams: [] });
+      if (url === "/api/admin/exam-authoring") {
+        return json({
+          projects: [{ id: "project-1", name: "Project One" }, { id: "project-2", name: "Project Two" }],
+          regions: [{ id: "region-1", name: "useast", friendlyName: "US East" }],
+        });
+      }
+      if (url === "/api/admin/exam-authoring/projects/project-1?refresh=true") {
+        return json({ blueprints: [{ id: "blueprint-1", name: "Blueprint One" }], policies: [{ id: "policy-1", name: "One hour", runtimeLeaseMinutes: 60 }] });
+      }
+      if (url === "/api/admin/exam-authoring/projects/project-1/blueprints/blueprint-1?refresh=true") {
+        return json({ blueprint: { id: "blueprint-1", name: "Blueprint One", description: "", defaultSnapshotId: "snapshot-1", snapshots: [{ id: "snapshot-1", name: "Snapshot One", isDefault: true, regionIds: ["region-1"] }] } });
+      }
+      if (url === "/api/admin/exam-authoring/projects/project-2?refresh=true") {
+        return json({ blueprints: [{ id: "blueprint-2", name: "Blueprint Two" }], policies: [{ id: "policy-2", name: "Forty-five minutes", runtimeLeaseMinutes: 45 }] });
+      }
+      if (url === "/api/admin/exam-authoring/projects/project-2/blueprints/blueprint-2?refresh=true") {
+        return json({ blueprint: { id: "blueprint-2", name: "Blueprint Two", description: "", defaultSnapshotId: "snapshot-2", snapshots: [{ id: "snapshot-2", name: "Snapshot Two", isDefault: true, regionIds: ["region-not-deployed"] }] } });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+
+    render(<AdminExamCatalogAuthoringFeature active examView="create" focusedExamId={null} fetchAdmin={fetchAdmin} onNavigate={vi.fn()} onCatalogChange={vi.fn()} getHasActiveCohortSessions={() => false} />);
+
+    expect(await screen.findByText("Snapshot One (default)")).toBeTruthy();
+    await user.selectOptions(screen.getByRole("combobox", { name: "Project" }), "project-2");
+
+    expect(await screen.findByText("Snapshot Two (default)")).toBeTruthy();
+    expect(fetchAdmin).toHaveBeenCalledWith("/api/admin/exam-authoring/projects/project-2?refresh=true");
+    expect(fetchAdmin).toHaveBeenCalledWith("/api/admin/exam-authoring/projects/project-2/blueprints/blueprint-2?refresh=true");
+    expect((screen.getByRole("spinbutton", { name: /Open period \(minutes\)/ }) as HTMLInputElement).value).toBe("45");
+    expect(screen.getByText("No deployed Regions found for the current default Snapshot.")).toBeTruthy();
+    expect(screen.getByText("The selected Blueprint default Snapshot is not deployed to any Regions yet.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Save Draft Exam" }).hasAttribute("disabled")).toBe(true);
+  });
+
   it("keeps CloudShare authoring failures supportable through the shell-owned Support route", async () => {
     const user = userEvent.setup();
     const onNavigate = vi.fn();
@@ -92,7 +132,7 @@ describe("AdminExamCatalogAuthoringFeature", () => {
     expect(await screen.findByRole("option", { name: "Helios Project" })).toBeTruthy();
     expect((screen.getByRole("textbox", { name: "Exam title" }) as HTMLInputElement).value).toBe("Cloud Admin Blueprint");
     expect((screen.getByRole("spinbutton", { name: /Open period \(minutes\)/ }) as HTMLInputElement).value).toBe("60");
-    await user.click(screen.getByRole("checkbox", { name: "US East" }));
+    await user.click(screen.getByRole("checkbox", { name: /US East/ }));
     await user.clear(screen.getByRole("textbox", { name: "Exam title" }));
     await user.type(screen.getByRole("textbox", { name: "Exam title" }), "Helios Cloud Admin");
     await user.click(screen.getByRole("button", { name: "Save Draft Exam" }));

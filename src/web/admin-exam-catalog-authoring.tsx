@@ -257,6 +257,31 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
     props.onNavigate({ tab: "exams", examView: "catalog" });
   }
 
+  function selectProject(nextProjectId: string) {
+    setSelectedProjectId(nextProjectId);
+    setEditingExamId(null);
+    setSelectedBlueprintId("");
+    setBlueprintDetail(null);
+    void loadProjectResources(nextProjectId, true);
+  }
+
+  function selectBlueprint(nextBlueprintId: string) {
+    setSelectedBlueprintId(nextBlueprintId);
+    setEditingExamId(null);
+    setFeedback(null);
+    setOpenPeriodMinutes(getDefaultOpenPeriodMinutes(selectedPolicy));
+    if (selectedProjectId && nextBlueprintId) {
+      void loadBlueprintDetail(selectedProjectId, nextBlueprintId, true);
+    }
+  }
+
+  function selectPolicy(nextPolicyId: string) {
+    const nextPolicy = policies.find((policy) => policy.id === nextPolicyId);
+    setSelectedPolicyId(nextPolicyId);
+    setFeedback(null);
+    setOpenPeriodMinutes(getDefaultOpenPeriodMinutes(nextPolicy));
+  }
+
   function beginCatalogLoading() {
     catalogLoadingCountRef.current += 1;
     setCatalogLoading(true);
@@ -414,7 +439,10 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
   const authoring = props.examView === "create" || props.examView === "edit";
   const effectiveTime = selectedPolicy?.runtimeLeaseMinutes ?? "";
   const duplicateWarning = getDuplicateExamResourceTupleWarning({ exams: allExams, currentExamId: editingExamId, projectId: selectedProjectId, blueprintId: selectedBlueprintId, snapshotId: defaultSnapshot?.id ?? null, policyId: selectedPolicyId, deliveryAvailability });
-  const fieldStyle = { padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px", width: "100%", boxSizing: "border-box" } as const;
+  const compactFieldStyle = {
+    padding: "0.7rem", paddingRight: "2.25rem", border: "1px solid #ccc", borderRadius: "6px",
+    width: "100%", boxSizing: "border-box", minWidth: 0, minHeight: "46px",
+  } as const;
   return <section aria-busy={catalogLoading} style={{ ...busyShellStyle, display: "grid", gap: "1rem" }}>
     {catalogLoading ? <ExamCatalogLoadingOverlay /> : null}
     {error ? <div role="alert" style={{ ...alertPanelStyle.danger, display: "grid", gap: "0.5rem" }}><div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "flex-start" }}><p style={{ margin: 0 }}>{error}</p><button type="button" onClick={() => { setError(null); setCorrelationId(null); }} style={{ padding: "0.25rem 0.55rem" }}>Dismiss</button></div>{correlationId ? <p style={{ margin: 0, fontSize: "0.85rem" }}>Open <strong>Support Diagnostics</strong> filtered by correlation ID <button type="button" onClick={() => props.onNavigate(createCorrelationDiagnosticsNavigationIntent(correlationId))} style={{ color: colors.info, fontFamily: "monospace", fontWeight: 700, overflowWrap: "anywhere", border: 0, padding: 0, background: "transparent", cursor: "pointer" }}>{correlationId}</button>.</p> : null}</div> : null}
@@ -427,17 +455,18 @@ export function AdminExamCatalogAuthoringFeature(props: AdminExamCatalogAuthorin
     </div>
     {authoring ? <><div style={{ padding: "1rem", background: "#f7f7f8", borderRadius: "6px", display: "grid", gap: "0.5rem" }}><strong>Project-first Exam authoring</strong><span style={{ color: "#555" }}>Regions are global reference data. Blueprints and Policies are fetched in the selected Project context. For experience-based Exams, CloudShare launches always use the Blueprint&apos;s current default snapshot.</span><span style={{ color: "#555" }}>Instructor choice is fixed to the seeded CloudShare service account for this slice and must be explicitly configured before an Exam can be saved.</span><div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}><button onClick={() => void loadAuthoring(true)} disabled={loading}>{loading ? "Loading..." : "Refresh Projects & Regions"}</button>{selectedProjectId ? <button onClick={() => void loadProjectResources(selectedProjectId, true)} disabled={loading}>{loading ? "Loading..." : "Refresh Selected Project"}</button> : null}</div>{authoringMode.tupleChangeHint ? <span style={{ color: "#555" }}>{authoringMode.tupleChangeHint}</span> : null}</div>
       {diagnostic ? <div style={alertPanelStyle.warning}>CloudShare resource request failed. {diagnostic.method} {diagnostic.path} · {diagnostic.failureMode}{diagnostic.responseStatus ? ` · HTTP ${diagnostic.responseStatus}` : ""}</div> : null}
-      <div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))" }}>
-        <label style={{ display: "grid", gap: "0.35rem" }}>Project<select value={selectedProjectId} onChange={(e) => { const next = e.target.value; setSelectedProjectId(next); void loadProjectResources(next); }} disabled={loading || authoringMode.provisioningLocked} style={fieldStyle}><option value="">Select Project</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
-        <label style={{ display: "grid", gap: "0.35rem" }}>Blueprint<select value={selectedBlueprintId} onChange={(e) => { const next = e.target.value; setSelectedBlueprintId(next); if (selectedProjectId) void loadBlueprintDetail(selectedProjectId, next); }} disabled={loading || authoringMode.provisioningLocked} style={fieldStyle}><option value="">Select Blueprint</option>{blueprints.map((blueprint) => <option key={blueprint.id} value={blueprint.id}>{blueprint.name}</option>)}</select></label>
-        <label style={{ display: "grid", gap: "0.35rem" }}>Policy<select value={selectedPolicyId} onChange={(e) => { const next = e.target.value; setSelectedPolicyId(next); setOpenPeriodMinutes(getDefaultOpenPeriodMinutes(policies.find((policy) => policy.id === next))); }} disabled={loading} style={fieldStyle}><option value="">Select Policy</option>{policies.map((policy) => <option key={policy.id} value={policy.id}>{policy.name}</option>)}</select></label>
-        <label style={{ display: "grid", gap: "0.35rem" }}>Exam title<input value={title} onChange={(e) => setTitle(e.target.value)} style={fieldStyle} /></label>
-        <label style={{ display: "grid", gap: "0.35rem", gridColumn: "1 / -1" }}>Description<textarea value={description} onChange={(e) => setDescription(e.target.value)} style={fieldStyle} /></label>
-        <div style={{ display: "grid", gap: "0.35rem", gridColumn: "1 / -1" }}><span>Allowed Regions</span>{compatibleRegions.map((region) => <label key={region.id}><input type="checkbox" checked={selectedAllowedRegionIds.includes(region.id)} onChange={(e) => setSelectedAllowedRegionIds((current) => e.target.checked ? [...current, region.id] : current.filter((id) => id !== region.id))} /> {region.friendlyName ?? region.name}</label>)}</div>
-        <label style={{ display: "grid", gap: "0.35rem" }}>Time limit (minutes)<input value={String(effectiveTime)} readOnly style={fieldStyle} /><span style={{ color: "#666", fontSize: "0.85rem" }}>Time limit follows the selected CloudShare Policy runtime lease.</span></label>
-        <label style={{ display: "grid", gap: "0.35rem" }}>Open period (minutes)<input type="number" min={Number(effectiveTime) || 1} max={selectedPolicy?.storageLeaseMinutes ?? undefined} value={openPeriodMinutes} onChange={(e) => { setOpenPeriodMinutes(e.target.value); setFeedback(null); }} style={fieldStyle} /><span style={{ color: "#666", fontSize: "0.85rem" }}>CloudShare Experience duration from scheduled start; defaults to the Policy runtime lease.</span></label>
-        <label style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}><input type="checkbox" checked={scoreRetrievalEnabled} onChange={(e) => setScoreRetrievalEnabled(e.target.checked)} /> Retrieve Guided Journey score for this Exam</label>
-        <label style={{ display: "grid", gap: "0.35rem" }}>Delivery availability<select value={deliveryAvailability} onChange={(e) => setDeliveryAvailability(e.target.value as "individual" | "cohort" | "both")} style={fieldStyle}>{getDeliveryAvailabilityAuthoringOptions(deliveryAvailability).map((option) => <option key={option.value} value={option.value} disabled={option.disabled}>{option.label}</option>)}</select></label>
+      <div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", alignItems: "start" }}>
+        <label style={{ display: "grid", gap: "0.35rem", minWidth: 0 }}>Project<select value={selectedProjectId} onChange={(e) => selectProject(e.target.value)} disabled={authoringMode.provisioningLocked} style={compactFieldStyle}><option value="">Select a Project</option>{projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+        <label style={{ display: "grid", gap: "0.35rem", minWidth: 0 }}>Blueprint<select value={selectedBlueprintId} onChange={(e) => selectBlueprint(e.target.value)} disabled={authoringMode.provisioningLocked} style={compactFieldStyle}><option value="">Select a Blueprint</option>{blueprints.map((blueprint) => <option key={blueprint.id} value={blueprint.id}>{blueprint.name}</option>)}</select></label>
+        <label style={{ display: "grid", gap: "0.35rem", minWidth: 0 }}>Snapshot<div title={defaultSnapshot ? `${defaultSnapshot.name} (default)` : "Select a Blueprint"} style={{ ...compactFieldStyle, background: "#f9fafb", color: defaultSnapshot ? "#111" : "#666", fontSize: "0.95rem", lineHeight: "1.2", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{defaultSnapshot ? `${defaultSnapshot.name} (default)` : "Select a Blueprint"}</div></label>
+        <label style={{ display: "grid", gap: "0.35rem", minWidth: 0 }}>Policy<select value={selectedPolicyId} onChange={(e) => selectPolicy(e.target.value)} style={compactFieldStyle}><option value="">Select a Policy</option>{policies.map((policy) => <option key={policy.id} value={policy.id}>{policy.name}</option>)}</select></label>
+        <label style={{ display: "grid", gap: "0.35rem", minWidth: 0 }}>Allowed Regions<div style={{ ...compactFieldStyle, background: "#fff", display: "grid", gap: "0.5rem", paddingRight: "0.7rem" }}>{compatibleRegions.length === 0 ? <span style={{ color: "#666" }}>No deployed Regions found for the current default Snapshot.</span> : compatibleRegions.map((region) => <label key={region.id} style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}><input type="checkbox" checked={selectedAllowedRegionIds.includes(region.id)} onChange={(e) => setSelectedAllowedRegionIds((current) => e.target.checked ? [...current, region.id] : current.filter((id) => id !== region.id))} /><span>{region.friendlyName ?? region.name}</span></label>)}</div>{allowedRegionValidationMessage ? <span style={{ color: "#b42318", fontSize: "0.85rem" }}>{allowedRegionValidationMessage}</span> : null}</label>
+        <label style={{ display: "grid", gap: "0.35rem", gridColumn: "1 / -1" }}>Exam title<input value={title} onChange={(e) => setTitle(e.target.value)} style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }} /></label>
+        <label style={{ display: "grid", gap: "0.35rem", gridColumn: "1 / -1" }}>Description<textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4} style={{ padding: "0.7rem", border: "1px solid #ccc", borderRadius: "6px" }} /></label>
+        <label style={{ display: "grid", gap: "0.35rem" }}>Time limit (minutes)<input type="number" min={1} value={String(effectiveTime)} readOnly style={{ ...compactFieldStyle, background: "#f9fafb" }} /><span style={{ color: "#666", fontSize: "0.85rem" }}>Time limit follows the selected CloudShare Policy runtime lease.</span></label>
+        <label style={{ display: "grid", gap: "0.35rem" }}>Open period (minutes)<input type="number" min={Number(effectiveTime) || 1} max={selectedPolicy?.storageLeaseMinutes ?? undefined} value={openPeriodMinutes} onChange={(e) => { setOpenPeriodMinutes(e.target.value); setFeedback(null); }} style={compactFieldStyle} /><span style={{ color: "#666", fontSize: "0.85rem" }}>CloudShare Experience duration from scheduled start; defaults to the Policy runtime lease.</span></label>
+        <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", gridColumn: "1 / -1" }}><input type="checkbox" checked={scoreRetrievalEnabled} onChange={(e) => setScoreRetrievalEnabled(e.target.checked)} /> Retrieve Guided Journey score for this Exam</label>
+        <label style={{ display: "grid", gap: "0.35rem" }}>Delivery availability<select value={deliveryAvailability} onChange={(e) => setDeliveryAvailability(e.target.value as "individual" | "cohort" | "both")} style={compactFieldStyle}>{getDeliveryAvailabilityAuthoringOptions(deliveryAvailability).map((option) => <option key={option.value} value={option.value} disabled={option.disabled}>{option.label}</option>)}</select></label>
       </div>
       <ExamAuthoringSelectionSummary selectedProject={selectedProject} selectedBlueprint={selectedBlueprint} defaultSnapshot={defaultSnapshot} selectedAllowedRegions={selectedAllowedRegions} selectedPolicy={selectedPolicy} deliveryAvailability={deliveryAvailability} duplicateExamResourceTupleWarning={duplicateWarning} />
       <div style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}><button onClick={() => void saveDraft()} disabled={loading || allowedRegionValidationMessage !== null} style={primaryButtonStyle}>{loading ? "Saving..." : editingExamId ? "Update Draft Exam" : "Save Draft Exam"}</button>{editingExamId ? <button onClick={navigateCatalog} disabled={loading} style={secondaryButtonStyle}>Cancel Edit</button> : null}{message ? <span style={{ color: "#0a7a28" }}>{message}</span> : null}</div>
