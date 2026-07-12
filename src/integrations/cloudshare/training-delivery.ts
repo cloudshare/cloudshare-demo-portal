@@ -1,18 +1,18 @@
 import type {
-  AddParticipantInput,
-  AddParticipantResult,
-  AddStudentInput,
-  CreateExperienceInput,
-  CreateExperienceResult,
-  CreateSponsoredLinkInput,
-  CreateSponsoredLinkResult,
-  CreateTrainingInput,
-  CreateTrainingResult,
-  EnsureTrainingUserPropertyKeysInput,
-  EnsureTrainingUserPropertyKeysResult,
-  GetTrainingStartStateInput,
-  GetTrainingStartStateResult,
+  CohortParticipantAdmissionInput,
+  CohortParticipantAdmissionResult,
+  CohortTrainingDelivery,
+  CohortTrainingPublicationInput,
+  CohortTrainingPublicationResult,
+  IndividualTrainingDelivery,
+  IndividualTrainingProvisioningInput,
+  IndividualTrainingProvisioningResult,
   LabProvisioner,
+  TrainingDeliveryOperation,
+} from "@/domain/lab-launch";
+import {
+  CERTALIS_TRAINING_USER_PROPERTY_KEYS,
+  TrainingDeliveryOperationError,
 } from "@/domain/lab-launch";
 import type {
   ParticipantProgressDiagnostics,
@@ -21,8 +21,6 @@ import type { ParticipantLister, TrainingParticipant } from "@/domain/environmen
 import type { CloudShareClient } from "./client";
 import {
   createCloudShareOnDemandExperienceCreator,
-  type CreateOnDemandExperienceRequest,
-  type CreateOnDemandExperienceResult,
 } from "./cohort-experiences";
 import {
   createCloudShareTrainingRetirementWriter,
@@ -56,17 +54,7 @@ export type { TrainingParticipantReadResult } from "./participants";
  * client. It deliberately has no Sales or generic Experience counterpart: the
  * documented Sales workflow must establish its own concrete adapter first.
  */
-export interface TrainingDelivery extends LabProvisioner {
-  createTraining(input: CreateTrainingInput): Promise<CreateTrainingResult>;
-  ensureTrainingUserPropertyKeys(
-    input: EnsureTrainingUserPropertyKeysInput,
-  ): Promise<EnsureTrainingUserPropertyKeysResult>;
-  getTrainingStartState(input: GetTrainingStartStateInput): Promise<GetTrainingStartStateResult>;
-  addParticipant(input: AddParticipantInput): Promise<AddParticipantResult>;
-  createExperience(input: CreateExperienceInput): Promise<CreateExperienceResult>;
-  addStudent(input: AddStudentInput): Promise<void>;
-  createSponsoredLink(input: CreateSponsoredLinkInput): Promise<CreateSponsoredLinkResult>;
-  createCohortTraining(input: CreateOnDemandExperienceRequest): Promise<CreateOnDemandExperienceResult>;
+export interface TrainingDelivery extends IndividualTrainingDelivery, CohortTrainingDelivery {
   listParticipants(trainingId: string): Promise<readonly TrainingParticipant[]>;
   readParticipants(trainingId: string): Promise<TrainingParticipantReadResult>;
   retireTrainingToEnd(input: {
@@ -119,16 +107,9 @@ export function createCloudShareTrainingDelivery(
     (aggregateGuidedJourney ??= createCloudShareAggregateGuidedJourneyProvider(client));
 
   return {
-    createTraining: (input) => requireTrainingOperation(getLabs().createTraining, "create Training")(input),
-    ensureTrainingUserPropertyKeys: (input) =>
-      requireTrainingOperation(getLabs().ensureTrainingUserPropertyKeys, "ensure Training user-property keys")(input),
-    getTrainingStartState: (input) =>
-      requireTrainingOperation(getLabs().getTrainingStartState, "read Training start state")(input),
-    addParticipant: (input) => requireTrainingOperation(getLabs().addParticipant, "add a Training participant")(input),
-    createExperience: (input) => getLabs().createExperience(input),
-    addStudent: (input) => getLabs().addStudent(input),
-    createSponsoredLink: (input) => getLabs().createSponsoredLink(input),
-    createCohortTraining: (input) => getCohorts().createOnDemandExperience(input),
+    provisionIndividual: (input) => provisionIndividual(getLabs(), input),
+    publishCohortTraining: (input) => publishCohortTraining(getLabs(), getCohorts(), input),
+    admitCohortParticipant: (input) => admitCohortParticipant(getLabs(), input),
     listParticipants: (trainingId) => getParticipantLister().listParticipants(trainingId),
     readParticipants: (trainingId) => getParticipantReader().readParticipants(trainingId),
     retireTrainingToEnd: (input) => getRetirement().retireTrainingToEnd(input),
@@ -150,4 +131,173 @@ function requireTrainingOperation<Input, Result>(
     throw new Error(`CloudShare Training delivery cannot ${operationName}.`);
   }
   return operation;
+}
+
+async function provisionIndividual(
+  labs: LabProvisioner,
+  input: IndividualTrainingProvisioningInput,
+): Promise<IndividualTrainingProvisioningResult> {
+  let training: IndividualTrainingProvisioningResult["training"];
+  try {
+    training = await requireTrainingOperation(labs.createTraining, "create Training")(input.training);
+  } catch (cause) {
+    throw deliveryFailure("create_training", cause);
+  }
+
+  let userProperties: IndividualTrainingProvisioningResult["userProperties"];
+  try {
+    userProperties = await requireTrainingOperation(
+      labs.ensureTrainingUserPropertyKeys,
+      "ensure Training user-property keys",
+    )({
+      trainingId: training.trainingId,
+      experienceId: training.trainingId,
+      requiredKeys: CERTALIS_TRAINING_USER_PROPERTY_KEYS,
+    });
+  } catch (cause) {
+    throw deliveryFailure("ensure_user_properties", cause, {
+      trainingId: training.trainingId,
+      experienceId: training.trainingId,
+      individual: { training },
+    });
+  }
+
+  let participant: IndividualTrainingProvisioningResult["participant"];
+  try {
+    participant = await requireTrainingOperation(labs.addParticipant, "add a Training participant")({
+      ...input.participant,
+      trainingId: training.trainingId,
+    });
+  } catch (cause) {
+    throw deliveryFailure("add_participant", cause, {
+      trainingId: training.trainingId,
+      experienceId: training.trainingId,
+      individual: { training, userProperties },
+    });
+  }
+
+  try {
+    const sponsoredLink = await labs.createSponsoredLink({
+      trainingId: training.trainingId,
+      email: input.participant.email,
+      firstName: input.participant.firstName,
+      lastName: input.participant.lastName,
+    });
+    return { training, userProperties, participant, sponsoredLink };
+  } catch (cause) {
+    throw deliveryFailure("create_sponsored_link", cause, {
+      trainingId: training.trainingId,
+      experienceId: training.trainingId,
+      individual: { training, userProperties, participant },
+    });
+  }
+}
+
+async function publishCohortTraining(
+  labs: LabProvisioner,
+  cohorts: ReturnType<typeof createCloudShareOnDemandExperienceCreator>,
+  input: CohortTrainingPublicationInput,
+): Promise<CohortTrainingPublicationResult> {
+  let created: Omit<CohortTrainingPublicationResult, "userProperties">;
+  try {
+    created = await cohorts.createOnDemandExperience(input);
+  } catch (cause) {
+    throw deliveryFailure("create_training", cause);
+  }
+
+  try {
+    const userProperties = await requireTrainingOperation(
+      labs.ensureTrainingUserPropertyKeys,
+      "ensure Training user-property keys",
+    )({
+      trainingId: created.trainingId,
+      experienceId: created.experienceId,
+      requiredKeys: CERTALIS_TRAINING_USER_PROPERTY_KEYS,
+    });
+    return { ...created, userProperties };
+  } catch (cause) {
+    throw deliveryFailure("ensure_user_properties", cause, {
+      trainingId: created.trainingId,
+      experienceId: created.experienceId,
+      publication: created,
+    });
+  }
+}
+
+async function admitCohortParticipant(
+  labs: LabProvisioner,
+  input: CohortParticipantAdmissionInput,
+): Promise<CohortParticipantAdmissionResult> {
+  let startState: CohortParticipantAdmissionResult["startState"];
+  try {
+    startState = await requireTrainingOperation(
+      labs.getTrainingStartState,
+      "read Training start state",
+    )({ trainingId: input.trainingId });
+  } catch (cause) {
+    throw deliveryFailure("read_training", cause, {
+      trainingId: input.trainingId,
+      experienceId: input.experienceId,
+    });
+  }
+
+  if (startState.startsAt && startState.startsAt.getTime() > input.now.getTime()) {
+    return { admission: "not_started", startState };
+  }
+
+  let userProperties: Extract<CohortParticipantAdmissionResult, { admission: "open" }>["userProperties"];
+  try {
+    userProperties = await requireTrainingOperation(
+      labs.ensureTrainingUserPropertyKeys,
+      "ensure Training user-property keys",
+    )({
+      trainingId: input.trainingId,
+      experienceId: input.experienceId,
+      requiredKeys: CERTALIS_TRAINING_USER_PROPERTY_KEYS,
+    });
+  } catch (cause) {
+    throw deliveryFailure("ensure_user_properties", cause, {
+      trainingId: input.trainingId,
+      experienceId: input.experienceId,
+      cohort: { admission: "open", startState },
+    });
+  }
+
+  let participant: Extract<CohortParticipantAdmissionResult, { admission: "open" }>["participant"];
+  try {
+    participant = await requireTrainingOperation(labs.addParticipant, "add a Training participant")({
+      ...input.participant,
+      trainingId: input.trainingId,
+    });
+  } catch (cause) {
+    throw deliveryFailure("add_participant", cause, {
+      trainingId: input.trainingId,
+      experienceId: input.experienceId,
+      cohort: { admission: "open", startState, userProperties },
+    });
+  }
+
+  try {
+    const sponsoredLink = await labs.createSponsoredLink({
+      trainingId: input.trainingId,
+      email: input.participant.email,
+      firstName: input.participant.firstName,
+      lastName: input.participant.lastName,
+    });
+    return { admission: "open", startState, userProperties, participant, sponsoredLink };
+  } catch (cause) {
+    throw deliveryFailure("create_sponsored_link", cause, {
+      trainingId: input.trainingId,
+      experienceId: input.experienceId,
+      cohort: { admission: "open", startState, userProperties, participant },
+    });
+  }
+}
+
+function deliveryFailure(
+  operation: TrainingDeliveryOperation,
+  cause: unknown,
+  context: Omit<ConstructorParameters<typeof TrainingDeliveryOperationError>[1], "cause"> = {},
+): TrainingDeliveryOperationError {
+  return new TrainingDeliveryOperationError(operation, { cause, ...context });
 }

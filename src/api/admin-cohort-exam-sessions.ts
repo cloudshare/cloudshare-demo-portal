@@ -22,7 +22,7 @@ import {
   publishExam,
   type ExamRepository,
 } from "@/domain/exam-catalog";
-import { CERTALIS_TRAINING_USER_PROPERTY_KEYS } from "@/domain/lab-launch";
+import { TrainingDeliveryOperationError } from "@/domain/lab-launch";
 import {
   CloudShareRequestError,
   CloudShareResponseError,
@@ -281,27 +281,30 @@ export async function handlePublishCohortExamSession(
 
     const cloudshareClient = deps.cloudshare.forConnection(connection);
     const trainingDelivery = createCloudShareTrainingDelivery(cloudshareClient);
-    const created = await trainingDelivery.createCohortTraining({
-      name: buildCohortExperienceName(exam.title, claimedSession.name),
-      startsAt: claimedSession.admissionStartsAt,
-      endsAt: claimedSession.admissionEndsAt,
-      externalId: claimedSession.id,
-      projectId: exam.projectId,
-      blueprintId: exam.blueprintId,
-      policyId: exam.policyId,
-      regionIds: exam.allowedRegions.map((region) => region.id),
-      instructorId: exam.instructorId,
-      timeZoneId: "UTC",
-      passphrase: `certalis-${claimedSession.id}`,
-    });
-    let ensuredTrainingUserProperties;
+    let created;
     try {
-      ensuredTrainingUserProperties = await trainingDelivery.ensureTrainingUserPropertyKeys({
-        trainingId: created.trainingId,
-        experienceId: created.experienceId,
-        requiredKeys: CERTALIS_TRAINING_USER_PROPERTY_KEYS,
+      created = await trainingDelivery.publishCohortTraining({
+        name: buildCohortExperienceName(exam.title, claimedSession.name),
+        startsAt: claimedSession.admissionStartsAt,
+        endsAt: claimedSession.admissionEndsAt,
+        externalId: claimedSession.id,
+        projectId: exam.projectId,
+        blueprintId: exam.blueprintId,
+        policyId: exam.policyId,
+        regionIds: exam.allowedRegions.map((region) => region.id),
+        instructorId: exam.instructorId,
+        timeZoneId: "UTC",
+        passphrase: `certalis-${claimedSession.id}`,
       });
     } catch (error) {
+      const publication =
+        error instanceof TrainingDeliveryOperationError ? error.context.publication : undefined;
+      if (
+        error instanceof TrainingDeliveryOperationError &&
+        error.operation === "ensure_user_properties" &&
+        publication?.trainingId &&
+        publication.experienceId
+      ) {
       await markCohortExamSessionPublishReconciliationRequired(
         { repository: deps.sessions, now: deps.now },
         {
@@ -309,9 +312,9 @@ export async function handlePublishCohortExamSession(
           correlationId,
           error:
             "CloudShare Experience was created, but required training user-property keys could not be added. Reconcile this Cohort Exam Session before retrying.",
-          trainingId: created.trainingId,
-          experienceId: created.experienceId,
-          teamId: created.teamId,
+          trainingId: publication.trainingId,
+          experienceId: publication.experienceId,
+          ...(publication.teamId ? { teamId: publication.teamId } : {}),
         },
       );
       await safeRecordDiagnostic(deps, {
@@ -326,34 +329,36 @@ export async function handlePublishCohortExamSession(
         correlationId,
         message: "Cohort Exam Session publish failed after CloudShare Experience creation while adding training user-property keys",
         externalIds: {
-          trainingId: created.trainingId,
-          experienceId: created.experienceId,
-          teamId: created.teamId,
+          trainingId: publication.trainingId,
+          experienceId: publication.experienceId,
+          ...(publication.teamId ? { teamId: publication.teamId } : {}),
         },
-        ...toPublishFailureDiagnostic(error, "ensure_user_properties"),
+        ...toPublishFailureDiagnostic(error.context.cause, "ensure_user_properties"),
       });
       deps.logger.warn("cohort session publish training user-property validation failed", {
         correlationId,
         customerId: request.customerId,
         examId: exam.id,
         sessionId: claimedSession.id,
-        trainingId: created.trainingId,
-        experienceId: created.experienceId,
-        teamId: created.teamId,
-        ...toPublishFailureLogFields(error),
+        trainingId: publication.trainingId,
+        experienceId: publication.experienceId,
+        ...(publication.teamId ? { teamId: publication.teamId } : {}),
+        ...toPublishFailureLogFields(error.context.cause),
       });
       return {
-        status: isCloudShareRateLimitError(error) ? 429 : 502,
+          status: isCloudShareRateLimitError(error.context.cause) ? 429 : 502,
         body: {
           error:
-            isCloudShareRateLimitError(error)
+            isCloudShareRateLimitError(error.context.cause)
               ? CLOUDSHARE_429_ADMIN_SUPPORT_GUIDANCE
               : "CloudShare created the Cohort Exam Session, but the required training user-property keys could not be added. Reconcile it before retrying and check the diagnostic log for the correlation ID.",
           correlationId,
         },
       };
+      }
+      throw error;
     }
-    if (ensuredTrainingUserProperties) {
+    if (created.userProperties) {
       await safeRecordDiagnostic(deps, {
         source: "admin-exams",
         customerId: request.customerId,
@@ -370,25 +375,25 @@ export async function handlePublishCohortExamSession(
           experienceId: created.experienceId,
           teamId: created.teamId,
         },
-        ...(toCloudShareRequestDiagnostic(ensuredTrainingUserProperties.request)
-          ? { request: toCloudShareRequestDiagnostic(ensuredTrainingUserProperties.request) }
+        ...(toCloudShareRequestDiagnostic(created.userProperties.request)
+          ? { request: toCloudShareRequestDiagnostic(created.userProperties.request) }
           : {}),
-        ...(toCloudShareResponseDiagnostic(ensuredTrainingUserProperties.response)
-          ? { response: toCloudShareResponseDiagnostic(ensuredTrainingUserProperties.response) }
+        ...(toCloudShareResponseDiagnostic(created.userProperties.response)
+          ? { response: toCloudShareResponseDiagnostic(created.userProperties.response) }
           : {}),
         details: {
           integrationSurface:
-            ensuredTrainingUserProperties.integrationSurface ?? "cloudshare.v4.training.user_properties",
-          requiredKeys: ensuredTrainingUserProperties.requiredKeys,
-          availableKeys: ensuredTrainingUserProperties.availableKeys,
+            created.userProperties.integrationSurface ?? "cloudshare.v4.training.user_properties",
+          requiredKeys: created.userProperties.requiredKeys,
+          availableKeys: created.userProperties.availableKeys,
           ...(toCloudShareHttpExchanges(
-            ensuredTrainingUserProperties.requests,
-            ensuredTrainingUserProperties.responses,
+            created.userProperties.requests,
+            created.userProperties.responses,
           )
             ? {
                 httpExchanges: toCloudShareHttpExchanges(
-                  ensuredTrainingUserProperties.requests,
-                  ensuredTrainingUserProperties.responses,
+              created.userProperties.requests,
+              created.userProperties.responses,
                 ),
               }
             : {}),
@@ -639,6 +644,7 @@ function buildCohortExperienceName(examTitle: string, sessionName: string): stri
 }
 
 function isCloudSharePublishError(error: unknown): boolean {
+  error = unwrapTrainingDeliveryError(error);
   return (
     error instanceof CloudShareRequestError ||
     error instanceof CloudShareTransportError ||
@@ -729,6 +735,7 @@ function toPublishFailureDiagnostic(error: unknown, attemptedOperation?: string)
   readonly response?: Record<string, unknown>;
   readonly details: Record<string, unknown>;
 } {
+  error = unwrapTrainingDeliveryError(error);
   const context = (error as { context?: Record<string, unknown> }).context ?? {};
   const status =
     typeof (error as { status?: unknown }).status === "number"
@@ -767,6 +774,7 @@ function toPublishFailureDiagnostic(error: unknown, attemptedOperation?: string)
 }
 
 function toPublishFailureLogFields(error: unknown): Record<string, unknown> {
+  error = unwrapTrainingDeliveryError(error);
   const context = (error as { context?: Record<string, unknown> }).context ?? {};
   return {
     integrationSurface: context.integrationSurface,
@@ -779,6 +787,7 @@ function toPublishFailureLogFields(error: unknown): Record<string, unknown> {
 }
 
 function inferPublishFailureMode(error: unknown): string {
+  error = unwrapTrainingDeliveryError(error);
   if (isCloudShareRateLimitError(error)) {
     return "rate_limit";
   }
@@ -795,6 +804,7 @@ function inferPublishFailureMode(error: unknown): string {
 }
 
 function classifyCloudSharePublishFailure(error: unknown): "recoverable" | "reconciliation_required" {
+  error = unwrapTrainingDeliveryError(error);
   if (isAmbiguousCloudShareTrainingCreateFailure(error)) {
     return "reconciliation_required";
   }
@@ -805,6 +815,7 @@ function classifyCloudSharePublishFailure(error: unknown): "recoverable" | "reco
 }
 
 function isAmbiguousCloudShareTrainingCreateFailure(error: unknown): boolean {
+  error = unwrapTrainingDeliveryError(error);
   const name = (error as { name?: unknown }).name;
   if (error instanceof CloudShareRequestError || name === "CloudShareRequestError") {
     const context = (error as { context?: Record<string, unknown>; status?: unknown }).context ?? {};
@@ -823,6 +834,10 @@ function isAmbiguousCloudShareTrainingCreateFailure(error: unknown): boolean {
   }
   const context = (error as { context?: Record<string, unknown> }).context ?? {};
   return isCloudShareTrainingCreateRequestContext(context);
+}
+
+function unwrapTrainingDeliveryError(error: unknown): unknown {
+  return error instanceof TrainingDeliveryOperationError ? error.context.cause : error;
 }
 
 function isCloudShareTrainingCreateRequestContext(context: Record<string, unknown>): boolean {

@@ -184,7 +184,7 @@ export async function scheduleExamAttemptRuntime(
         exams: deps.exams,
         attempts: deps.attempts,
         launches: deps.launches,
-        labs: trainingDelivery,
+        trainingDelivery,
         newId: deps.newId ?? randomUUID,
         now: deps.now ?? (() => new Date()),
         diagnostics: deps.diagnostics,

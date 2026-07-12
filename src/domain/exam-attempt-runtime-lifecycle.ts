@@ -139,7 +139,8 @@ export interface ResumeExamDeps {
   readonly timer: ExamTimer;
   readonly attempts: ExamAttemptRepository;
   readonly launches: LabLaunchRepository;
-  readonly labs: LabProvisioner;
+  /** @deprecated Resume no longer uses provisioning; retained for structural test doubles. */
+  readonly labs?: LabProvisioner;
   readonly sleep: (ms: number) => Promise<void>;
   readonly poll?: PollOptions;
 }
