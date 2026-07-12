@@ -164,7 +164,10 @@ describe("AdminExamCatalogAuthoringFeature", () => {
 
     expect(await screen.findByRole("option", { name: "Helios Project" })).toBeTruthy();
     expect((screen.getByRole("textbox", { name: "Exam title" }) as HTMLInputElement).value).toBe("Cloud Admin Blueprint");
-    expect((screen.getByRole("spinbutton", { name: /Open period \(minutes\)/ }) as HTMLInputElement).value).toBe("60");
+    const openPeriodInput = screen.getByRole("spinbutton", { name: /Open period \(minutes\)/ }) as HTMLInputElement;
+    expect(openPeriodInput.value).toBe("60");
+    expect(openPeriodInput.getAttribute("aria-describedby")).toBe("exam-open-period-help exam-form-feedback");
+    expect(document.getElementById("exam-open-period-help")?.textContent).toContain("CloudShare Experience duration from scheduled start");
     await user.click(screen.getByRole("checkbox", { name: /US East/ }));
     await user.clear(screen.getByRole("textbox", { name: "Exam title" }));
     await user.type(screen.getByRole("textbox", { name: "Exam title" }), "Helios Cloud Admin");
@@ -191,5 +194,12 @@ describe("AdminExamCatalogAuthoringFeature", () => {
       }),
     }));
     expect(onNavigate).toHaveBeenCalledWith({ tab: "exams", examView: "catalog" });
+
+    await user.clear(openPeriodInput);
+    await user.click(screen.getByRole("button", { name: "Save Draft Exam" }));
+    const feedback = document.getElementById("exam-form-feedback");
+    expect(feedback?.textContent).toBe("Open period must be a positive whole number of minutes.");
+    expect(feedback?.style.background).toBe("rgb(255, 245, 247)");
+    expect(feedback?.style.border).toBe("1px solid rgb(241, 199, 208)");
   });
 });
