@@ -8,7 +8,6 @@ import type {
   LabLaunch,
   LabLaunchRepository,
   IndividualTrainingDelivery,
-  LabProvisioner,
   ProvisioningRequestEvidence,
   ProvisioningResponseEvidence,
 } from "./lab-launch";
@@ -211,12 +210,8 @@ export interface ScheduleExamDeps {
   readonly exams: ExamRepository;
   readonly attempts: ExamAttemptRepository;
   readonly launches: LabLaunchRepository;
-  /**
-   * Scheduling crosses one deep Training-delivery operation. The optional
-   * low-level members remain only to support existing structural test doubles;
-   * production callers receive the concrete Training adapter.
-   */
-  readonly trainingDelivery: IndividualTrainingDelivery & Partial<LabProvisioner>;
+  /** Scheduling crosses one deep Training-delivery operation. */
+  readonly trainingDelivery: IndividualTrainingDelivery;
   readonly newId: () => string;
   readonly now: () => Date;
   /** Optional support diagnostics. Callers always wire it; recording never throws. */
@@ -357,6 +352,53 @@ export async function scheduleExam(
       message: `ExamAttempt provisioning failed during CloudShare ${op.replace(/_/g, " ")}`,
       details: { failedDuring: op },
     });
+  const recordCompletedIndividualSteps = async (
+    completed: Partial<Awaited<ReturnType<IndividualTrainingDelivery["provisionIndividual"]>>> | undefined,
+  ) => {
+    if (completed?.training) {
+      const training = completed.training;
+      await recordSuccess("cloudshare.create_training", "CloudShare training created", {
+        externalIds: { trainingId: training.trainingId },
+        ...(toDiagnosticRequestEvidence(training.request)
+          ? { request: toDiagnosticRequestEvidence(training.request)! }
+          : {}),
+        ...(toDiagnosticResponseEvidence(training.response)
+          ? { response: toDiagnosticResponseEvidence(training.response)! }
+          : {}),
+        ...(training.integrationSurface ? { details: { integrationSurface: training.integrationSurface } } : {}),
+      });
+    }
+    if (completed?.userProperties && completed.training) {
+      const properties = completed.userProperties;
+      const trainingId = completed.training.trainingId;
+      await recordSuccess("cloudshare.ensure_user_properties", "CloudShare training user-property keys ensured", {
+        externalIds: { trainingId, experienceId: trainingId },
+        ...(toDiagnosticRequestEvidence(properties.request)
+          ? { request: toDiagnosticRequestEvidence(properties.request)! }
+          : {}),
+        ...(toDiagnosticResponseEvidence(properties.response)
+          ? { response: toDiagnosticResponseEvidence(properties.response)! }
+          : {}),
+        details: {
+          ...(properties.integrationSurface ? { integrationSurface: properties.integrationSurface } : {}),
+          ...(toDiagnosticHttpExchanges(properties.requests, properties.responses)
+            ? { httpExchanges: toDiagnosticHttpExchanges(properties.requests, properties.responses) }
+            : {}),
+        },
+      });
+    }
+    if (completed?.participant && completed.training) {
+      const participant = completed.participant;
+      await recordSuccess("cloudshare.add_participant", "CloudShare participant added", {
+        externalIds: { trainingId: completed.training.trainingId },
+        ...(toDiagnosticRequestEvidence(participant.request)
+          ? { request: toDiagnosticRequestEvidence(participant.request)! }
+          : {}),
+        response: toDiagnosticResponseEvidence(participant.response)!,
+        ...(participant.integrationSurface ? { details: { integrationSurface: participant.integrationSurface } } : {}),
+      });
+    }
+  };
 
   await recordSuccess("exam_attempt.schedule", "ExamAttempt scheduled", {
     request: { scheduledFor: input.scheduledFor.toISOString() },
@@ -397,6 +439,9 @@ export async function scheduleExam(
     });
   } catch (cause) {
     const failure = toTrainingDeliveryFailure(cause);
+    if (cause instanceof TrainingDeliveryOperationError) {
+      await recordCompletedIndividualSteps(cause.context.individual);
+    }
     await recordFailure(failure.operation, failure.cause, failure.trainingId ? { trainingId: failure.trainingId } : undefined);
     await recordProvisioningFailure(failure.operation);
     await deps.attempts.delete(attemptId);

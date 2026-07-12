@@ -173,6 +173,7 @@ const aggregateGuidedJourneyProgressSchema = z.unknown().transform<AggregateGuid
   return parsed.data;
 });
 
+/** @internal TrainingDelivery implementation detail; active runtimes use training-delivery.ts. */
 export function createCloudShareGuidedJourneyProvider(
   client: CloudShareClient,
 ): ScoreRetrievalProvider & DiagnosticScoreRetrievalProvider {
@@ -193,6 +194,7 @@ export function createCloudShareGuidedJourneyProvider(
   };
 }
 
+/** @internal TrainingDelivery implementation detail; active runtimes use training-delivery.ts. */
 export function createCloudShareAggregateGuidedJourneyProvider(
   client: CloudShareClient,
 ): AggregateGuidedJourneyProvider & DiagnosticAggregateGuidedJourneyProvider {

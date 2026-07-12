@@ -290,6 +290,7 @@ const trainingParticipantsSchema = z.preprocess(
   normalizedParticipantsSchema,
 );
 
+/** @internal TrainingDelivery implementation detail; active runtimes use training-delivery.ts. */
 export function createCloudShareParticipantLister(
   client: CloudShareClient,
 ): ParticipantLister {
@@ -331,6 +332,7 @@ export interface TrainingParticipantReader {
   readParticipants(trainingId: string): Promise<TrainingParticipantReadResult>;
 }
 
+/** @internal TrainingDelivery implementation detail; active runtimes use training-delivery.ts. */
 export function createCloudShareTrainingParticipantReader(
   client: CloudShareClient,
 ): TrainingParticipantReader {

@@ -68,6 +68,7 @@ function requireDetailedV4Client(client: CloudShareClient): NonNullable<CloudSha
   return client.requestV4Detailed.bind(client);
 }
 
+/** @internal TrainingDelivery implementation detail; active runtimes use training-delivery.ts. */
 export function createCloudShareOnDemandExperienceCreator(
   client: CloudShareClient,
 ): CloudShareOnDemandExperienceCreator {

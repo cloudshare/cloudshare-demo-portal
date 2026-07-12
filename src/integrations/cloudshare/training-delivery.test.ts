@@ -4,13 +4,16 @@ import { createCloudShareTrainingDelivery } from "./training-delivery";
 
 describe("Training delivery", () => {
   it("concentrates Training creation and participant reads behind one Customer-scoped interface", async () => {
+    const calls: string[] = [];
     const requestV3 = vi.fn(async (request: { readonly path: string }) => {
+      calls.push(`v3:${request.path}`);
       if (request.path === "/teams") {
         return [{ id: "team-1", name: "Delivery" }];
       }
       throw new Error(`Unexpected v3 request: ${request.path}`);
     });
     const requestV4Detailed = vi.fn(async (request: { readonly path: string; readonly method: string }) => {
+      calls.push(`${request.method}:${request.path}`);
       if (request.path === "/trainings") {
         return {
           data: { id: "EXtraining-1" },
@@ -76,6 +79,17 @@ describe("Training delivery", () => {
     expect(requestV4Detailed).toHaveBeenCalledWith(
       expect.objectContaining({ path: "/trainings" }),
     );
+    expect(calls.slice(0, 6)).toEqual([
+      "v3:/teams",
+      "POST:/trainings",
+      "GET:/trainings/EXtraining-1/users/properties",
+      "POST:/trainings/EXtraining-1/users/properties",
+      "POST:/trainings/EXtraining-1/students",
+      "POST:/trainings/EXtraining-1/sponsored-link",
+    ]);
+    expect(delivery).not.toHaveProperty("createTraining");
+    expect(delivery).not.toHaveProperty("addParticipant");
+    expect(delivery).not.toHaveProperty("createSponsoredLink");
   });
 
   it("stops individual provisioning before a sponsored link when participant admission fails", async () => {
@@ -163,6 +177,45 @@ describe("Training delivery", () => {
       "GET:/trainings/EXcohort-1/users/properties",
       "POST:/trainings/EXcohort-1/students",
       "POST:/trainings/EXcohort-1/sponsored-link",
+    ]);
+  });
+
+  it("stops Cohort admission before the sponsored link when participant admission fails", async () => {
+    const calls: string[] = [];
+    const requestV4Detailed = vi.fn(async (request: { readonly path: string; readonly method: string }) => {
+      calls.push(`${request.method}:${request.path}`);
+      if (request.method === "GET" && request.path === "/trainings/EXcohort-1") {
+        return detailed(request, { id: "EXcohort-1", start: "2026-07-11T09:00:00.000Z" });
+      }
+      if (request.method === "GET" && request.path.endsWith("/users/properties")) {
+        return detailed(request, [
+          { id: "attempt", name: "certalisExamAttemptId" },
+          { id: "candidate", name: "certalisCandidateId" },
+        ]);
+      }
+      if (request.method === "POST" && request.path.endsWith("/students")) {
+        throw new Error("participant rejected");
+      }
+      throw new Error(`Unexpected request: ${request.method} ${request.path}`);
+    });
+    const delivery = createCloudShareTrainingDelivery({
+      requestV3: vi.fn(),
+      requestV4: vi.fn(),
+      requestV4Detailed,
+    } as never);
+
+    await expect(
+      delivery.admitCohortParticipant({
+        trainingId: "EXcohort-1",
+        experienceId: "EXcohort-1",
+        now: new Date("2026-07-11T09:30:00.000Z"),
+        participant: { email: "candidate@example.test", firstName: "Candidate", lastName: "One" },
+      }),
+    ).rejects.toMatchObject({ name: TrainingDeliveryOperationError.name, operation: "add_participant" });
+    expect(calls).toEqual([
+      "GET:/trainings/EXcohort-1",
+      "GET:/trainings/EXcohort-1/users/properties",
+      "POST:/trainings/EXcohort-1/students",
     ]);
   });
 });

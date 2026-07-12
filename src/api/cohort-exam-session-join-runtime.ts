@@ -19,6 +19,7 @@ import {
   type ExamAttempt,
 } from "@/domain/exam-attempt";
 import {
+  type CohortParticipantAdmissionResult,
   type LabLaunch,
   type LabLaunchRepository,
   TrainingDeliveryOperationError,
@@ -357,6 +358,58 @@ export async function joinCohortExamSessionRuntime(
 
   const cloudshare = deps.cloudshare.forConnection(connection);
   const trainingDelivery = createCloudShareTrainingDelivery(cloudshare);
+  const recordCompletedAdmissionSteps = async (
+    completed:
+      | {
+          readonly startState?: CohortParticipantAdmissionResult["startState"];
+          readonly userProperties?: Extract<CohortParticipantAdmissionResult, { admission: "open" }>["userProperties"];
+          readonly participant?: Extract<CohortParticipantAdmissionResult, { admission: "open" }>["participant"];
+        }
+      | undefined,
+  ) => {
+    if (completed?.startState) {
+      const startState = completed.startState;
+      await deps.diagnostics?.record({
+        ...anchors,
+        level: "info",
+        operation: "cloudshare.read_training",
+        outcome: "success",
+        message: "CloudShare training start state read for shared Cohort Exam Session",
+        externalIds,
+        ...(startState.request ? { request: startState.request as unknown as Record<string, unknown> } : {}),
+        ...(startState.response ? { response: startState.response as unknown as Record<string, unknown> } : {}),
+        details: { integrationSurface: startState.integrationSurface ?? "cloudshare.v4.training.get" },
+      });
+    }
+    if (completed?.userProperties) {
+      const properties = completed.userProperties;
+      await deps.diagnostics?.record({
+        ...anchors,
+        level: "info",
+        operation: "cloudshare.ensure_user_properties",
+        outcome: "success",
+        message: "CloudShare training user-property keys confirmed for shared Cohort Exam Session",
+        externalIds,
+        ...(properties.request ? { request: properties.request as unknown as Record<string, unknown> } : {}),
+        ...(properties.response ? { response: properties.response as unknown as Record<string, unknown> } : {}),
+        details: { integrationSurface: properties.integrationSurface ?? "cloudshare.v4.training.user_properties" },
+      });
+    }
+    if (completed?.participant) {
+      const participant = completed.participant;
+      await deps.diagnostics?.record({
+        ...anchors,
+        level: "info",
+        operation: "cloudshare.add_participant",
+        outcome: "success",
+        message: "CloudShare participant added to shared Cohort Exam Session",
+        externalIds: participant.participantId ? { ...externalIds, participantId: participant.participantId } : externalIds,
+        ...(participant.request ? { request: participant.request as unknown as Record<string, unknown> } : {}),
+        response: participant.response as unknown as Record<string, unknown>,
+        ...(participant.integrationSurface ? { details: { integrationSurface: participant.integrationSurface } } : {}),
+      });
+    }
+  };
 
   let admission;
   try {
@@ -373,6 +426,9 @@ export async function joinCohortExamSessionRuntime(
       },
     });
   } catch (cause) {
+    if (cause instanceof TrainingDeliveryOperationError) {
+      await recordCompletedAdmissionSteps(cause.context.cohort);
+    }
     const failure =
       cause instanceof TrainingDeliveryOperationError
         ? { operation: cause.operation, cause: cause.context.cause }
