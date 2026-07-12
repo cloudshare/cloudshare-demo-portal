@@ -68,15 +68,16 @@ export function AdminConsole({
     router.replace("/login");
     router.refresh();
   }, [router]);
-  const fetchAdmin = useMemo(() => createAdminAuthenticatedRequest({ fetchImpl: fetch, onSessionExpired: handleAdminSessionExpired }), [handleAdminSessionExpired]);
+  const browserFetch = useCallback<typeof fetch>((input, init) => window.fetch(input, init), []);
+  const fetchAdmin = useMemo(() => createAdminAuthenticatedRequest({ fetchImpl: browserFetch, onSessionExpired: handleAdminSessionExpired }), [browserFetch, handleAdminSessionExpired]);
   const getNavigationHref = useCallback((intent: AdminNavigationIntent) => buildAdminNavigationHref(intent), []);
 
   useEffect(() => {
     if (sessionExpired) return;
-    const watchdog = startPortalSessionWatchdog({ fetchImpl: fetch, onExpired: handleAdminSessionExpired });
+    const watchdog = startPortalSessionWatchdog({ fetchImpl: browserFetch, onExpired: handleAdminSessionExpired });
     void watchdog.checkNow();
     return () => watchdog.stop();
-  }, [handleAdminSessionExpired, sessionExpired]);
+  }, [browserFetch, handleAdminSessionExpired, sessionExpired]);
 
   function navigateAdmin(next: AdminNavigationIntent) {
     const nextDiagnosticFilters = next.diagnosticFilters ?? diagnosticFilters;
