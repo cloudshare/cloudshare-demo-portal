@@ -26,9 +26,20 @@ describe("Sales workspace page", () => {
       email: "sales-admin@certalis.demo", role: "admin", workspace: "sales",
     });
 
-    const page = await SalesPage();
+    const page = await SalesPage({});
 
     expect(page).toMatchObject({ props: { email: "sales-admin@certalis.demo" } });
+  });
+
+  it("passes the Sales URL hierarchy into the client workspace for reload restoration", async () => {
+    mockGetPortalSession.mockResolvedValue({
+      sessionId: "session-certalis", userId: "admin-certalis", customerId: "customer-certalis",
+      email: "sales-admin@certalis.demo", role: "admin", workspace: "sales",
+    });
+
+    const page = await SalesPage({ searchParams: Promise.resolve({ accountId: "account-1", opportunityId: "opportunity-1" }) });
+
+    expect(page).toMatchObject({ props: { initialSelection: { accountId: "account-1", opportunityId: "opportunity-1" } } });
   });
 
   it("does not let a Helios certification admin use the Sales workspace", async () => {
@@ -37,7 +48,7 @@ describe("Sales workspace page", () => {
       email: "admin@helioscx.demo", role: "admin", workspace: "certification",
     });
 
-    await expect(SalesPage()).rejects.toThrow("redirect:/admin");
+    await expect(SalesPage({})).rejects.toThrow("redirect:/admin");
     expect(mockRedirect).toHaveBeenCalledWith("/admin");
   });
 });

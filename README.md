@@ -30,7 +30,7 @@ Open **http://localhost:3000/login** for the shared portal login or
 | `/login` | Shared portal login for Helios admins, Certalis Sales Admin, and Candidates |
 | `/register` | Candidate self-registration |
 | `/admin` | **Connect CloudShare** + admin console |
-| `/sales` | Isolated Certalis Sales workspace; no Helios certification data |
+| `/sales` | Isolated Certalis Sales workspace; no Helios certification data. URL-backed Account → Opportunity → Contact grids support local archive-only commercial records. |
 | `/candidate` | Candidate home — published Exams for the signed-in Customer |
 | `/candidate/lab?examAttemptId=<id>` | Candidate lab page (launch, heartbeat, suspend) |
 | `/candidate/score?examAttemptId=<id>` | Candidate score page |

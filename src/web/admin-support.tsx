@@ -74,18 +74,23 @@ export function AdminSupportFeature(props: {
   readonly active: boolean;
   readonly view: AdminSupportView;
   readonly diagnosticFilters: DiagnosticLogFilters;
+  /** Filters supplied by a specialised support view that must never be relaxed by local controls. */
+  readonly lockedDiagnosticFilters?: DiagnosticLogFilters;
+  /** Specialised support views may use a narrower server-side diagnostic route. */
+  readonly diagnosticsEndpoint?: string;
   readonly fetchAdmin: AdminAuthenticatedRequest;
   readonly onNavigate: (intent: AdminNavigationIntent) => void;
 }) {
   const [auditFilters, setAuditFilters] = useState<AuditTrailFilters>(EMPTY_AUDIT_FILTERS);
   const [auditRecords, setAuditRecords] = useState<readonly AuditRecord[] | null>(null);
-  const [diagnosticFilters, setDiagnosticFilters] = useState<DiagnosticLogFilters>(props.diagnosticFilters);
+  const [diagnosticFilters, setDiagnosticFilters] = useState<DiagnosticLogFilters>(() => mergeLockedDiagnosticFilters(props.diagnosticFilters, props.lockedDiagnosticFilters));
   const [diagnosticEntries, setDiagnosticEntries] = useState<readonly DiagnosticLogEntry[] | null>(null);
   const [diagnosticPage, setDiagnosticPage] = useState<DiagnosticLogPageResponse | null>(null);
   const [expandedDiagnosticId, setExpandedDiagnosticId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const appliedRouteFiltersRef = useRef<string | null>(null);
+  const lockedDiagnosticFiltersKey = JSON.stringify(props.lockedDiagnosticFilters ?? {});
 
   async function loadAudit(filters: AuditTrailFilters = auditFilters) {
     setLoading(true);
@@ -115,11 +120,12 @@ export function AdminSupportFeature(props: {
     setLoading(true);
     setError(null);
     try {
-      const query = buildDiagnosticLogQueryString(normaliseDiagnosticLogFilters(filters), {
+      const effectiveFilters = mergeLockedDiagnosticFilters(filters, props.lockedDiagnosticFilters);
+      const query = buildDiagnosticLogQueryString(effectiveFilters, {
         limit: DIAGNOSTIC_PAGE_LIMIT,
         offset,
       });
-      const response = await props.fetchAdmin(`/api/admin/diagnostics${query}`);
+      const response = await props.fetchAdmin(`${props.diagnosticsEndpoint ?? "/api/admin/diagnostics"}${query}`);
       const data = (await response.json()) as {
         entries?: DiagnosticLogEntry[];
         page?: DiagnosticLogPageResponse;
@@ -146,16 +152,17 @@ export function AdminSupportFeature(props: {
   }
 
   useEffect(() => {
-    setDiagnosticFilters(props.diagnosticFilters);
-    const routeFilters = JSON.stringify(normaliseDiagnosticLogFilters(props.diagnosticFilters));
+    const effectiveRouteFilters = mergeLockedDiagnosticFilters(props.diagnosticFilters, props.lockedDiagnosticFilters);
+    setDiagnosticFilters(effectiveRouteFilters);
+    const routeFilters = JSON.stringify(effectiveRouteFilters);
     const wasExplicitlyApplied = appliedRouteFiltersRef.current === routeFilters;
     appliedRouteFiltersRef.current = null;
     if (props.active && props.view === "diagnostics" && !wasExplicitlyApplied) {
-      void loadDiagnostics(0, props.diagnosticFilters);
+      void loadDiagnostics(0, effectiveRouteFilters);
     }
     // Route filters are shell-owned URL state; loading and presentation remain feature-owned.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.active, props.view, props.diagnosticFilters]);
+  }, [props.active, props.view, props.diagnosticFilters, lockedDiagnosticFiltersKey]);
 
   useEffect(() => {
     if (props.active && props.view === "audit") void loadAudit();
@@ -170,15 +177,20 @@ export function AdminSupportFeature(props: {
   if (!props.active || (props.view !== "diagnostics" && props.view !== "audit")) return null;
 
   function applyDiagnosticFilters() {
-    props.onNavigate({ tab: "support", supportView: "diagnostics", diagnosticFilters });
-    appliedRouteFiltersRef.current = JSON.stringify(normaliseDiagnosticLogFilters(diagnosticFilters));
-    void loadDiagnostics(0, diagnosticFilters);
+    const effectiveFilters = mergeLockedDiagnosticFilters(diagnosticFilters, props.lockedDiagnosticFilters);
+    setDiagnosticFilters(effectiveFilters);
+    props.onNavigate({ tab: "support", supportView: "diagnostics", diagnosticFilters: effectiveFilters });
+    appliedRouteFiltersRef.current = JSON.stringify(effectiveFilters);
+    void loadDiagnostics(0, effectiveFilters);
   }
 
   function clearDiagnosticFilters() {
-    props.onNavigate({ tab: "support", supportView: "diagnostics", diagnosticFilters: {} });
+    const effectiveFilters = mergeLockedDiagnosticFilters({}, props.lockedDiagnosticFilters);
+    setDiagnosticFilters(effectiveFilters);
+    props.onNavigate({ tab: "support", supportView: "diagnostics", diagnosticFilters: effectiveFilters });
     setDiagnosticPage(null);
     setExpandedDiagnosticId(null);
+    if (props.lockedDiagnosticFilters) void loadDiagnostics(0, effectiveFilters);
   }
 
   function openExamAttemptDiagnostics(examAttemptId: string) {
@@ -214,17 +226,19 @@ export function AdminSupportFeature(props: {
   ];
   const threadFilters = textFilters.slice(0, 5);
   const eventFilters = textFilters.slice(5);
+  const visibleEventFilters = eventFilters.filter((filter) => !props.lockedDiagnosticFilters?.[filter.key]);
   const renderTextFilter = (filter: typeof textFilters[number]) => <label key={filter.key} style={{ display: "grid", gap: "0.35rem" }}><span>{filter.label}</span><input {...extensionHydrationProps} value={diagnosticFilters[filter.key] ?? ""} onChange={(event) => setDiagnosticFilters((current) => ({ ...current, [filter.key]: event.target.value }))} placeholder={filter.placeholder} /></label>;
 
   return (
     <section>
       {error ? <SupportError message={error} onDismiss={() => setError(null)} /> : null}
       <p style={{ color: colors.textSecondary, marginTop: 0 }}>The correlated diagnostic log: what the portal did, in what order, and how to trace it. Entries are append-only and scoped to your Customer. This is the primary support workflow. Session Monitoring remains the current-state queue view and should link into this tab for forensic investigation. Timestamps are ISO 8601 in UTC. Secrets and credentials are redacted.</p>
+      {props.lockedDiagnosticFilters?.source === "sales-records" ? <div style={{ marginBottom: "0.75rem", padding: "0.65rem 0.8rem", border: "1px solid #b9ded7", borderRadius: "8px", background: "#eef8f6", color: "#174f4a" }}>This view is limited to local Sales record diagnostics.</div> : null}
       <div style={{ border: "1px solid #dfe3eb", borderRadius: "8px", background: "#f8fafc", padding: "1rem", marginBottom: "1rem" }}>
         <div style={{ marginBottom: "0.9rem" }}><h2 style={{ margin: 0, fontSize: "1rem" }}>Investigative filters</h2><p style={{ color: colors.textSecondary, margin: "0.35rem 0 0" }}>Follow an exam attempt, correlation thread, or CloudShare event without changing the underlying diagnostic filtering rules.</p></div>
         <div style={{ display: "grid", gap: "0.9rem" }}>
           <fieldset style={{ margin: 0, border: "1px solid #d7dce4", borderRadius: "8px", padding: "0.8rem", minWidth: 0, background: "#fff" }}><legend style={{ padding: "0 0.35rem", fontWeight: 600 }}>Investigation thread</legend><div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", alignItems: "end" }}>{threadFilters.map(renderTextFilter)}</div></fieldset>
-          <fieldset style={{ margin: 0, border: "1px solid #d7dce4", borderRadius: "8px", padding: "0.8rem", minWidth: 0, background: "#fff" }}><legend style={{ padding: "0 0.35rem", fontWeight: 600 }}>Event details</legend><div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", alignItems: "end" }}>{eventFilters.slice(0, 1).map(renderTextFilter)}<label style={{ display: "grid", gap: "0.35rem" }}><span>Outcome</span><select {...extensionHydrationProps} value={diagnosticFilters.outcome ?? ""} onChange={(event) => setDiagnosticFilters((current) => ({ ...current, outcome: (event.target.value || undefined) as DiagnosticLogFilters["outcome"] }))}><option value="">All</option><option value="success">Success</option><option value="failure">Failure</option></select></label>{eventFilters.slice(1).map(renderTextFilter)}</div></fieldset>
+          <fieldset style={{ margin: 0, border: "1px solid #d7dce4", borderRadius: "8px", padding: "0.8rem", minWidth: 0, background: "#fff" }}><legend style={{ padding: "0 0.35rem", fontWeight: 600 }}>Event details</legend><div style={{ display: "grid", gap: "0.75rem", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", alignItems: "end" }}>{visibleEventFilters.slice(0, 1).map(renderTextFilter)}<label style={{ display: "grid", gap: "0.35rem" }}><span>Outcome</span><select {...extensionHydrationProps} value={diagnosticFilters.outcome ?? ""} onChange={(event) => setDiagnosticFilters((current) => ({ ...current, outcome: (event.target.value || undefined) as DiagnosticLogFilters["outcome"] }))}><option value="">All</option><option value="success">Success</option><option value="failure">Failure</option></select></label>{visibleEventFilters.slice(1).map(renderTextFilter)}</div></fieldset>
         </div>
         <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginTop: "0.9rem" }}><button {...extensionHydrationProps} onClick={applyDiagnosticFilters} disabled={loading} style={{ padding: "0.4rem 1rem" }}>{loading ? "Loading..." : "Apply Filters"}</button><button {...extensionHydrationProps} onClick={clearDiagnosticFilters} disabled={loading} style={{ padding: "0.4rem 1rem" }}>Clear Filters</button><button {...extensionHydrationProps} onClick={() => void loadDiagnostics()} disabled={loading} style={{ padding: "0.4rem 1rem" }}>Refresh Page</button></div>
       </div>
@@ -234,6 +248,13 @@ export function AdminSupportFeature(props: {
       {diagnosticEntries ? <DiagnosticLogTable entries={diagnosticEntries} expandedDiagnosticId={expandedDiagnosticId} onToggleExpanded={(id) => setExpandedDiagnosticId((current) => current === id ? null : id)} onOpenExamAttempt={openExamAttemptDiagnostics} /> : null}
     </section>
   );
+}
+
+function mergeLockedDiagnosticFilters(
+  filters: DiagnosticLogFilters,
+  lockedFilters: DiagnosticLogFilters | undefined,
+): DiagnosticLogFilters {
+  return normaliseDiagnosticLogFilters({ ...filters, ...lockedFilters });
 }
 
 function DiagnosticFilterBanner(props: { readonly label: string; readonly value: string }) {

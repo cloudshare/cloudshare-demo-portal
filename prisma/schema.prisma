@@ -28,6 +28,57 @@ model Customer {
   exams                Exam[]
   examAttempts         ExamAttempt[]
   cloudShareConnection CloudShareConnection?
+  salesAccounts        SalesAccount[]
+  salesOpportunities   SalesOpportunity[]
+  opportunityContacts  OpportunityContact[]
+}
+
+model SalesAccount {
+  id         String   @id
+  customerId String
+  name       String
+  kind       String
+  archivedAt DateTime?
+  createdAt  DateTime
+  updatedAt  DateTime
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  opportunities SalesOpportunity[]
+
+  @@index([customerId, updatedAt])
+  @@unique([customerId, id])
+}
+
+model SalesOpportunity {
+  id         String   @id
+  customerId String
+  accountId  String
+  name       String
+  status     String
+  archivedAt DateTime?
+  createdAt  DateTime
+  updatedAt  DateTime
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  account    SalesAccount @relation(fields: [customerId, accountId], references: [customerId, id], onDelete: Restrict)
+  contacts   OpportunityContact[]
+
+  @@index([customerId, accountId, updatedAt])
+  @@unique([customerId, id])
+}
+
+model OpportunityContact {
+  id            String   @id
+  customerId    String
+  opportunityId String
+  firstName     String
+  lastName      String
+  email         String
+  archivedAt    DateTime?
+  createdAt     DateTime
+  updatedAt     DateTime
+  customer      Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  opportunity   SalesOpportunity @relation(fields: [customerId, opportunityId], references: [customerId, id], onDelete: Restrict)
+
+  @@index([customerId, opportunityId, updatedAt])
 }
 
 model User {
