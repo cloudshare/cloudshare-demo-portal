@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createAdminAuthenticatedRequest } from "./admin-authenticated-request";
 import { accountLogoutButtonStyle, compactButtonStyle, dangerButtonStyle, primaryButtonStyle } from "./button-styles";
@@ -71,11 +71,19 @@ export function SalesWorkspace({ email }: { readonly email: string }) {
   const logout = useCallback(async () => { await fetch("/api/auth/logout", { method: "POST" }); router.push("/login"); router.refresh(); }, [router]);
 
   const matchesSearch = useCallback((values: string[]) => !search.trim() || values.join(" ").toLowerCase().includes(search.trim().toLowerCase()), [search]);
-  const accounts = visible(data.accounts.filter((record) => matchesSearch([record.name])), filters.account, sorts.account, (record) => record.name);
-  const selectedAccount = data.accounts.find((record) => record.id === selection.accountId) ?? null;
-  const opportunities = visible(data.opportunities.filter((record) => record.accountId === selectedAccount?.id && matchesSearch([record.name])), filters.opportunity, sorts.opportunity, (record) => record.name);
-  const selectedOpportunity = data.opportunities.find((record) => record.id === selection.opportunityId && record.accountId === selectedAccount?.id) ?? null;
-  const contacts = visible(data.contacts.filter((record) => record.opportunityId === selectedOpportunity?.id && matchesSearch([record.firstName, record.lastName, record.email])), filters.contact, sorts.contact, (record) => `${record.lastName} ${record.firstName}`);
+  const visibleAccounts = visible(data.accounts, filters.account, sorts.account, (record) => record.name);
+  const selectedAccount = visibleAccounts.find((record) => record.id === selection.accountId) ?? null;
+  const visibleOpportunities = visible(data.opportunities.filter((record) => record.accountId === selectedAccount?.id), filters.opportunity, sorts.opportunity, (record) => record.name);
+  const selectedOpportunity = visibleOpportunities.find((record) => record.id === selection.opportunityId) ?? null;
+  const visibleContacts = visible(data.contacts.filter((record) => record.opportunityId === selectedOpportunity?.id), filters.contact, sorts.contact, (record) => `${record.lastName} ${record.firstName}`);
+  const accounts = visibleAccounts.filter((record) => matchesSearch([record.name]));
+  const opportunities = visibleOpportunities.filter((record) => matchesSearch([record.name]));
+  const contacts = visibleContacts.filter((record) => matchesSearch([record.firstName, record.lastName, record.email]));
+
+  useEffect(() => {
+    if (selection.accountId && !selectedAccount) { updateSelection(null, null); return; }
+    if (selection.opportunityId && !selectedOpportunity) updateSelection(selectedAccount?.id ?? null, null);
+  }, [selectedAccount, selectedOpportunity, selection.accountId, selection.opportunityId, updateSelection]);
 
   return <main style={pageShellStyle}>
     <PortalPageHeader eyebrow="Certalis Sales Portal" title="Sales Workspace" description="A local, Customer-scoped commercial record workspace. No CRM sync or CloudShare Sales Experience operation is performed here." email={email} actions={<button onClick={() => void logout()} style={accountLogoutButtonStyle}>Log out</button>} />
@@ -112,6 +120,7 @@ function RowActions({ editLabel, onEdit, archiveLabel, archived, loading, onArch
 }
 
 function RecordDialog({ dialog, selectedAccount, selectedOpportunity, accounts, opportunities, loading, onClose, onSave }: { dialog: Exclude<Dialog, null>; selectedAccount: Account | null; selectedOpportunity: Opportunity | null; accounts: Account[]; opportunities: Opportunity[]; loading: boolean; onClose: () => void; onSave: (url: string, method: "POST" | "PATCH", payload?: Record<string, unknown>) => Promise<boolean> }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
   const accountRecord = dialog.kind === "account" ? dialog.record : undefined;
   const opportunityRecord = dialog.kind === "opportunity" ? dialog.record : undefined;
   const contactRecord = dialog.kind === "contact" ? dialog.record : undefined;
@@ -126,7 +135,23 @@ function RecordDialog({ dialog, selectedAccount, selectedOpportunity, accounts, 
   const [email, setEmail] = useState(contactRecord?.email ?? "");
   const submit = (event: React.FormEvent) => { event.preventDefault(); if (dialog.kind === "account") void onSave(accountRecord ? `/api/sales/accounts/${accountRecord.id}` : "/api/sales/accounts", accountRecord ? "PATCH" : "POST", { name, kind }); if (dialog.kind === "opportunity") void onSave(opportunityRecord ? `/api/sales/opportunities/${opportunityRecord.id}` : "/api/sales/opportunities", opportunityRecord ? "PATCH" : "POST", { accountId, name, status }); if (dialog.kind === "contact") void onSave(contactRecord ? `/api/sales/contacts/${contactRecord.id}` : "/api/sales/contacts", contactRecord ? "PATCH" : "POST", { opportunityId, firstName, lastName, email }); };
   const title = `${isEdit ? "Edit" : "New"} ${dialog.kind === "contact" ? "Contact" : dialog.kind[0].toUpperCase() + dialog.kind.slice(1)}`;
-  return <div role="dialog" aria-modal="true" aria-label={title} style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.45)", display: "grid", placeItems: "center", zIndex: 20, padding: "1rem" }}><form onSubmit={submit} style={{ ...cardStyle, width: "min(34rem, 100%)", display: "grid", gap: "0.85rem", boxShadow: "0 20px 45px rgba(15, 23, 42, 0.25)" }}><div><h2 style={{ margin: 0 }}>{title}</h2><p style={{ margin: "0.25rem 0 0", color: "#52606d" }}>Changes are kept locally for this Customer and leave audit and diagnostic evidence.</p></div>{dialog.kind === "account" ? <><label>Account name<input autoFocus required value={name} onChange={(event) => setName(event.target.value)} style={controlStyle} /></label><label>Account type<select value={kind} onChange={(event) => setKind(event.target.value as Account["kind"])} style={controlStyle}><option value="prospect">Prospect</option><option value="current_customer">Current customer</option></select></label></> : null}{dialog.kind === "opportunity" ? <><label>Account<select required value={accountId} onChange={(event) => setAccountId(event.target.value)} style={controlStyle}>{accounts.filter((account) => !account.archivedAt || account.id === accountId).map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label><label>Opportunity name<input autoFocus required value={name} onChange={(event) => setName(event.target.value)} style={controlStyle} /></label><label>Status<select value={status} onChange={(event) => setStatus(event.target.value as Opportunity["status"])} style={controlStyle}><option value="open">Open</option><option value="won">Won</option><option value="lost">Lost</option></select></label></> : null}{dialog.kind === "contact" ? <><label>Opportunity<select required value={opportunityId} onChange={(event) => setOpportunityId(event.target.value)} style={controlStyle}>{opportunities.filter((opportunity) => !opportunity.archivedAt || opportunity.id === opportunityId).map((opportunity) => <option key={opportunity.id} value={opportunity.id}>{opportunity.name}</option>)}</select></label><label>First name<input autoFocus required value={firstName} onChange={(event) => setFirstName(event.target.value)} style={controlStyle} /></label><label>Last name<input required value={lastName} onChange={(event) => setLastName(event.target.value)} style={controlStyle} /></label><label>Email<input type="email" required value={email} onChange={(event) => setEmail(event.target.value)} style={controlStyle} /></label></> : null}<div style={{ display: "flex", justifyContent: "end", gap: "0.6rem" }}><button type="button" style={compactButtonStyle} onClick={onClose}>Cancel</button><button disabled={loading} style={primaryButtonStyle}>{isEdit ? "Save changes" : `Create ${dialog.kind === "contact" ? "Contact" : dialog.kind[0].toUpperCase() + dialog.kind.slice(1)}`}</button></div></form></div>;
+  useEffect(() => {
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusable = () => Array.from(dialogRef.current?.querySelectorAll<HTMLElement>("button:not([disabled]), input:not([disabled]), select:not([disabled])") ?? []);
+    focusable().find((element) => element.hasAttribute("autofocus"))?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); onClose(); return; }
+      if (event.key !== "Tab") return;
+      const elements = focusable();
+      if (!elements.length) { event.preventDefault(); return; }
+      const first = elements[0]; const last = elements[elements.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => { document.removeEventListener("keydown", handleKeyDown); previousFocus?.focus(); };
+  }, [onClose]);
+  return <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={title} style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.45)", display: "grid", placeItems: "center", zIndex: 20, padding: "1rem" }}><form onSubmit={submit} style={{ ...cardStyle, width: "min(34rem, 100%)", display: "grid", gap: "0.85rem", boxShadow: "0 20px 45px rgba(15, 23, 42, 0.25)" }}><div><h2 style={{ margin: 0 }}>{title}</h2><p style={{ margin: "0.25rem 0 0", color: "#52606d" }}>Changes are kept locally for this Customer and leave audit and diagnostic evidence.</p></div>{dialog.kind === "account" ? <><label>Account name<input autoFocus required value={name} onChange={(event) => setName(event.target.value)} style={controlStyle} /></label><label>Account type<select value={kind} onChange={(event) => setKind(event.target.value as Account["kind"])} style={controlStyle}><option value="prospect">Prospect</option><option value="current_customer">Current customer</option></select></label></> : null}{dialog.kind === "opportunity" ? <><label>Account<select required value={accountId} onChange={(event) => setAccountId(event.target.value)} style={controlStyle}>{accounts.filter((account) => !account.archivedAt || account.id === accountId).map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label><label>Opportunity name<input autoFocus required value={name} onChange={(event) => setName(event.target.value)} style={controlStyle} /></label><label>Status<select value={status} onChange={(event) => setStatus(event.target.value as Opportunity["status"])} style={controlStyle}><option value="open">Open</option><option value="won">Won</option><option value="lost">Lost</option></select></label></> : null}{dialog.kind === "contact" ? <><label>Opportunity<select required value={opportunityId} onChange={(event) => setOpportunityId(event.target.value)} style={controlStyle}>{opportunities.filter((opportunity) => !opportunity.archivedAt || opportunity.id === opportunityId).map((opportunity) => <option key={opportunity.id} value={opportunity.id}>{opportunity.name}</option>)}</select></label><label>First name<input autoFocus required value={firstName} onChange={(event) => setFirstName(event.target.value)} style={controlStyle} /></label><label>Last name<input required value={lastName} onChange={(event) => setLastName(event.target.value)} style={controlStyle} /></label><label>Email<input type="email" required value={email} onChange={(event) => setEmail(event.target.value)} style={controlStyle} /></label></> : null}<div style={{ display: "flex", justifyContent: "end", gap: "0.6rem" }}><button type="button" style={compactButtonStyle} onClick={onClose}>Cancel</button><button disabled={loading} style={primaryButtonStyle}>{isEdit ? "Save changes" : `Create ${dialog.kind === "contact" ? "Contact" : dialog.kind[0].toUpperCase() + dialog.kind.slice(1)}`}</button></div></form></div>;
 }
 
 function visible<T extends { archivedAt: string | null; createdAt: string }>(records: T[], lifecycle: Lifecycle, sort: Sort, name: (record: T) => string): T[] { return records.filter((record) => lifecycle === "all" || (lifecycle === "archived" ? Boolean(record.archivedAt) : !record.archivedAt)).sort((left, right) => sort === "created" ? right.createdAt.localeCompare(left.createdAt) : name(left).localeCompare(name(right))); }

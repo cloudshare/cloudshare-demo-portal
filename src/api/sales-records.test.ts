@@ -2,12 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import { createInMemoryAuditRepository } from "@/persistence/audit-repository";
 import { createInMemorySalesRecordRepository } from "@/domain/sales-records";
 import {
+  handleArchiveSalesAccount,
   handleArchiveOpportunityContact,
   handleArchiveSalesOpportunity,
   handleCreateOpportunityContact,
   handleCreateSalesAccount,
   handleCreateSalesOpportunity,
   handleListSalesRecords,
+  handleUpdateOpportunityContact,
   handleUpdateSalesOpportunity,
   type SalesRecordsDeps,
 } from "./sales-records";
@@ -22,9 +24,9 @@ function createDeps(): SalesRecordsDeps & { audit: ReturnType<typeof createInMem
     audit,
     diagnostics,
     writer: { async commit(input) {
-      if (input.record.type === "account") await records.saveAccount(input.record.value);
-      if (input.record.type === "opportunity") await records.saveOpportunity(input.record.value);
-      if (input.record.type === "opportunity_contact") await records.saveContact(input.record.value);
+      if (input.record?.type === "account") await records.saveAccount(input.record.value);
+      if (input.record?.type === "opportunity") await records.saveOpportunity(input.record.value);
+      if (input.record?.type === "opportunity_contact") await records.saveContact(input.record.value);
       await audit.write(input.audit);
       await diagnostics.append(input.diagnostic);
     } },
@@ -67,6 +69,39 @@ describe("Customer-scoped Sales record API handlers", () => {
     const records = await deps.audit.query({ customerId: "certalis", subjectType: "opportunity_contact" });
     expect(records.at(-1)).toMatchObject({ action: "opportunity_contact.archived", outcome: "success" });
     expect(deps.diagnostics.append).toHaveBeenCalledWith(expect.objectContaining({ operation: "opportunity_contact.archived" }));
+  });
+
+  it("rejects creation beneath archived parents and records the denied operation as support evidence", async () => {
+    const deps = createDeps();
+    const account = await handleCreateSalesAccount(deps, { customerId: "certalis", actor: admin, body: { name: "Acme Labs", kind: "prospect" } });
+    const accountId = (account.body.account as { id: string }).id;
+    await handleArchiveSalesAccount(deps, { customerId: "certalis", actor: admin, accountId });
+
+    const opportunity = await handleCreateSalesOpportunity(deps, { customerId: "certalis", actor: admin, body: { accountId, name: "Late proof", status: "open" } });
+
+    expect(opportunity).toEqual({ status: 409, body: { error: "Archived account cannot accept new or reparented Sales records." } });
+    const denied = await deps.audit.query({ customerId: "certalis", subjectType: "account" });
+    expect(denied.at(-1)).toMatchObject({ action: "opportunity.created", outcome: "denied", subjectId: accountId });
+    expect(deps.diagnostics.append).toHaveBeenCalledWith(expect.objectContaining({ operation: "opportunity.created", outcome: "failure", details: expect.objectContaining({ reason: "parent_archived" }) }));
+  });
+
+  it("does not reparent an active Opportunity or Contact into archived history", async () => {
+    const deps = createDeps();
+    const activeAccount = await handleCreateSalesAccount(deps, { customerId: "certalis", actor: admin, body: { name: "Active", kind: "prospect" } });
+    const archivedAccount = await handleCreateSalesAccount(deps, { customerId: "certalis", actor: admin, body: { name: "Archived", kind: "prospect" } });
+    const activeAccountId = (activeAccount.body.account as { id: string }).id;
+    const archivedAccountId = (archivedAccount.body.account as { id: string }).id;
+    await handleArchiveSalesAccount(deps, { customerId: "certalis", actor: admin, accountId: archivedAccountId });
+    const opportunity = await handleCreateSalesOpportunity(deps, { customerId: "certalis", actor: admin, body: { accountId: activeAccountId, name: "Proof", status: "open" } });
+    const opportunityId = (opportunity.body.opportunity as { id: string }).id;
+    const moved = await handleUpdateSalesOpportunity(deps, { customerId: "certalis", actor: admin, opportunityId, body: { accountId: archivedAccountId, name: "Proof", status: "open" } });
+    const contact = await handleCreateOpportunityContact(deps, { customerId: "certalis", actor: admin, body: { opportunityId, firstName: "Ada", lastName: "Lovelace", email: "ada@acme.test" } });
+    const contactId = (contact.body.contact as { id: string }).id;
+    await handleArchiveSalesOpportunity(deps, { customerId: "certalis", actor: admin, opportunityId });
+    const movedContact = await handleUpdateOpportunityContact(deps, { customerId: "certalis", actor: admin, contactId, body: { opportunityId, firstName: "Ada", lastName: "Lovelace", email: "ada@acme.test" } });
+
+    expect(moved).toEqual({ status: 409, body: { error: "Archived account cannot accept new or reparented Sales records." } });
+    expect(movedContact).toEqual({ status: 409, body: { error: "Archived opportunity cannot accept new or reparented Sales records." } });
   });
 
   it("does not expose Certalis records to a Helios Customer or allow cross-Customer parent references", async () => {

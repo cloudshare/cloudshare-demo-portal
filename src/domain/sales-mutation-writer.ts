@@ -10,7 +10,7 @@ export type SalesMutationRecord =
 /** Commits the local record and its two append-only evidence rows as one durable operation. */
 export interface SalesMutationWriter {
   commit(input: {
-    readonly record: SalesMutationRecord;
+    readonly record?: SalesMutationRecord;
     readonly audit: AuditRecord;
     readonly diagnostic: DiagnosticLogEntryInput;
   }): Promise<void>;

@@ -20,3 +20,8 @@ Opportunities, and an Opportunity selection reveals only that Opportunity's Cont
 defaults to active records and provides explicit Active, Archived, and All filters, ISO-style UTC
 lifecycle dates, sorting, result counts, and pagination-ready presentation. Record creation and
 editing use a compact modal; no inactive bulk-operation controls are shown.
+
+An archived Account cannot receive a new Opportunity or become a reparenting target. Likewise, an
+archived Opportunity cannot receive or become a reparenting target for an active Contact. A denied
+operation returns a deliberate conflict response and writes Customer-scoped audit and diagnostic
+evidence. Historical edits may retain an archived record's existing archived parent.

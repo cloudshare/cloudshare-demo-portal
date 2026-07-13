@@ -13,7 +13,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => mockRouter, useSearchParams
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
 describe("SalesWorkspace interaction", () => {
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(() => { vi.restoreAllMocks(); mockSearchParams.delete("accountId"); mockSearchParams.delete("opportunityId"); mockRouter.replace.mockClear(); });
 
   it("selects an Account into the URL and limits the next grid to its Opportunities without console errors", async () => {
     const user = userEvent.setup();
@@ -73,5 +73,24 @@ describe("SalesWorkspace interaction", () => {
 
     await user.selectOptions(screen.getByRole("combobox", { name: "Accounts lifecycle" }), "archived");
     expect(screen.getByRole("button", { name: "Select Historical Acme" })).not.toBeNull();
+  });
+
+  it("clears stale archived URL selection and closes a record dialog with Escape", async () => {
+    const user = userEvent.setup();
+    mockSearchParams.set("accountId", "archived-account");
+    vi.spyOn(window, "fetch").mockResolvedValue(json({
+      accounts: [{ id: "archived-account", name: "Historical Acme", kind: "prospect", archivedAt: "2026-07-11T17:00:00.000Z", createdAt: "2026-07-10T17:00:00.000Z" }], opportunities: [], contacts: [],
+    }));
+    render(<SalesWorkspace email="sales-admin@certalis.demo" />);
+    await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith("/sales"));
+    await user.click(screen.getByRole("button", { name: "New Account" }));
+    expect(screen.getByRole("dialog", { name: "New Account" })).not.toBeNull();
+    expect(document.activeElement).toBe(screen.getByLabelText("Account name"));
+    await user.keyboard("{Tab}{Tab}{Tab}{Tab}");
+    expect(document.activeElement).toBe(screen.getByLabelText("Account name"));
+
+    await user.keyboard("{Escape}");
+
+    expect(screen.queryByRole("dialog", { name: "New Account" })).toBeNull();
   });
 });

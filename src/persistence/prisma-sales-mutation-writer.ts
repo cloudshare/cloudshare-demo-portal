@@ -8,9 +8,9 @@ export function createPrismaSalesMutationWriter(prisma: PrismaClient): SalesMuta
   return {
     async commit(input) {
       await prisma.$transaction(async (tx) => {
-        if (input.record.type === "account") await tx.salesAccount.upsert({ where: { id: input.record.value.id }, update: input.record.value, create: input.record.value });
-        if (input.record.type === "opportunity") await tx.salesOpportunity.upsert({ where: { id: input.record.value.id }, update: input.record.value, create: input.record.value });
-        if (input.record.type === "opportunity_contact") await tx.opportunityContact.upsert({ where: { id: input.record.value.id }, update: input.record.value, create: input.record.value });
+        if (input.record?.type === "account") await tx.salesAccount.upsert({ where: { id: input.record.value.id }, update: input.record.value, create: input.record.value });
+        if (input.record?.type === "opportunity") await tx.salesOpportunity.upsert({ where: { id: input.record.value.id }, update: input.record.value, create: input.record.value });
+        if (input.record?.type === "opportunity_contact") await tx.opportunityContact.upsert({ where: { id: input.record.value.id }, update: input.record.value, create: input.record.value });
         await tx.auditTrailEntry.create({ data: toAuditRow(input.audit) });
         await tx.diagnosticLogEntry.create({ data: toDiagnosticRow(input.diagnostic) });
       });
