@@ -33,13 +33,15 @@ describe("SalesWorkspace interaction", () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     render(<SalesWorkspace email="sales-admin@certalis.demo" />);
-    await screen.findByRole("button", { name: "Select Acme Labs" });
-    await user.click(screen.getByRole("button", { name: "Select Acme Labs" }));
+    const acmeRow = await screen.findByRole("row", { name: /Acme Labs/ });
+    await user.click(acmeRow);
 
-    expect(mockRouter.replace).toHaveBeenCalledWith("/sales?accountId=account-1");
+    expect(mockRouter.replace).toHaveBeenCalledWith("/sales?accountId=account-1", { scroll: false });
     expect(window.location.search).toBe("?accountId=account-1");
+    expect(acmeRow.getAttribute("aria-selected")).toBe("true");
     expect(screen.getByText("Acme proof")).not.toBeNull();
     expect(screen.queryByText("Helios renewal")).toBeNull();
+    expect(screen.getByRole("region", { name: "Opportunities" }).textContent).toContain("Selected Account: Acme Labs");
     expect(consoleError).not.toHaveBeenCalled();
   });
 
@@ -52,7 +54,7 @@ describe("SalesWorkspace interaction", () => {
 
     render(<SalesWorkspace email="sales-admin@certalis.demo" initialSelection={{ accountId: "account-1", opportunityId: "opportunity-1" }} />);
 
-    await screen.findByRole("button", { name: "Select Acme proof" });
+    await screen.findByRole("row", { name: /Acme proof/ });
     expect(screen.getByText("Ada Lovelace")).not.toBeNull();
     expect(mockRouter.replace).not.toHaveBeenCalled();
   });
@@ -65,14 +67,14 @@ describe("SalesWorkspace interaction", () => {
       return json({ accounts: [{ id: "account-1", name: "Acme Labs", kind: "prospect", archivedAt: archived ? "2026-07-12T17:01:00.000Z" : null, createdAt: "2026-07-12T17:00:00.000Z" }], opportunities: [], contacts: [] });
     });
     render(<SalesWorkspace email="sales-admin@certalis.demo" />);
-    await screen.findByRole("button", { name: "Select Acme Labs" });
-    await user.click(screen.getByRole("button", { name: "Select Acme Labs" }));
+    await screen.findByRole("row", { name: /Acme Labs/ });
+    await user.click(screen.getByRole("row", { name: /Acme Labs/ }));
     mockRouter.replace.mockClear();
 
-    await user.click(screen.getByRole("button", { name: "Archive Account" }));
+    await user.click(screen.getByRole("button", { name: "Archive Acme Labs" }));
 
     await waitFor(() => expect((screen.getByRole("combobox", { name: "Accounts lifecycle" }) as HTMLSelectElement).value).toBe("archived"));
-    expect(screen.getByRole("button", { name: "Select Acme Labs" })).not.toBeNull();
+    expect(screen.getByRole("row", { name: /Acme Labs/ })).not.toBeNull();
     expect(mockRouter.replace).not.toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledWith("/api/sales/accounts/account-1/archive", expect.objectContaining({ method: "POST" }));
     expect(fetchMock).toHaveBeenCalledWith("/api/sales/accounts", { cache: "no-store" });
@@ -88,11 +90,11 @@ describe("SalesWorkspace interaction", () => {
     }));
 
     render(<SalesWorkspace email="sales-admin@certalis.demo" />);
-    await screen.findByRole("button", { name: "Select Active Acme" });
-    expect(screen.queryByRole("button", { name: "Select Historical Acme" })).toBeNull();
+    await screen.findByRole("row", { name: /Active Acme/ });
+    expect(screen.queryByRole("row", { name: /Historical Acme/ })).toBeNull();
 
     await user.selectOptions(screen.getByRole("combobox", { name: "Accounts lifecycle" }), "archived");
-    expect(screen.getByRole("button", { name: "Select Historical Acme" })).not.toBeNull();
+    expect(screen.getByRole("row", { name: /Historical Acme/ })).not.toBeNull();
   });
 
   it("preserves an archived URL drill-down and promotes its lifecycle filters", async () => {
@@ -108,8 +110,8 @@ describe("SalesWorkspace interaction", () => {
 
     await waitFor(() => expect((screen.getByRole("combobox", { name: "Accounts lifecycle" }) as HTMLSelectElement).value).toBe("archived"));
     expect((screen.getByRole("combobox", { name: "Opportunities lifecycle" }) as HTMLSelectElement).value).toBe("archived");
-    expect(screen.getByRole("button", { name: "Select Historical Acme" })).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Select Historical proof" })).not.toBeNull();
+    expect(screen.getByRole("row", { name: /Historical Acme/ })).not.toBeNull();
+    expect(screen.getByRole("row", { name: /Historical proof/ })).not.toBeNull();
     expect(screen.getByText("Ada Lovelace")).not.toBeNull();
     expect(mockRouter.replace).not.toHaveBeenCalled();
   });
@@ -130,5 +132,53 @@ describe("SalesWorkspace interaction", () => {
 
     expect(screen.queryByRole("dialog", { name: "New Account" })).toBeNull();
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "New Account" }));
+  });
+
+  it("explains disabled child creation and locks a new Opportunity to the selected Account", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "fetch").mockResolvedValue(json({
+      accounts: [{ id: "account-1", name: "Acme Labs", kind: "prospect", archivedAt: null, createdAt: "2026-07-12T17:00:00.000Z" }],
+      opportunities: [], contacts: [],
+    }));
+
+    render(<SalesWorkspace email="sales-admin@certalis.demo" />);
+    const newOpportunity = await screen.findByRole("button", { name: "New Opportunity" });
+    expect((newOpportunity as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText("Select an Account to add an Opportunity.")).not.toBeNull();
+
+    await user.click(screen.getByRole("row", { name: /Acme Labs/ }));
+    await user.click(newOpportunity);
+
+    const dialog = screen.getByRole("dialog", { name: "New Opportunity" });
+    expect(dialog).not.toBeNull();
+    expect(screen.getByText("Selected Account")).not.toBeNull();
+    expect(dialog.textContent).toContain("Acme Labs");
+    expect(screen.queryByLabelText("Account")).toBeNull();
+  });
+
+  it("locks a new Contact to the selected Opportunity and keeps action button copy compact", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "fetch").mockResolvedValue(json({
+      accounts: [{ id: "account-1", name: "Acme Labs", kind: "prospect", archivedAt: null, createdAt: "2026-07-12T17:00:00.000Z" }],
+      opportunities: [{ id: "opportunity-1", accountId: "account-1", name: "Acme proof", status: "open", archivedAt: null, createdAt: "2026-07-12T17:00:00.000Z" }],
+      contacts: [],
+    }));
+
+    render(<SalesWorkspace email="sales-admin@certalis.demo" />);
+    await screen.findByRole("row", { name: /Acme Labs/ });
+    expect((screen.getByRole("button", { name: "New Contact" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText("Select an Opportunity to add a Contact.")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Edit Acme Labs" }).textContent).toBe("Edit");
+    expect(screen.getByRole("button", { name: "Archive Acme Labs" }).textContent).toBe("Archive");
+
+    await user.click(screen.getByRole("row", { name: /Acme Labs/ }));
+    await user.click(screen.getByRole("row", { name: /Acme proof/ }));
+    await user.click(screen.getByRole("button", { name: "New Contact" }));
+
+    const dialog = screen.getByRole("dialog", { name: "New Contact" });
+    expect(dialog).not.toBeNull();
+    expect(screen.getByText("Selected Opportunity")).not.toBeNull();
+    expect(dialog.textContent).toContain("Acme proof");
+    expect(screen.queryByLabelText("Opportunity")).toBeNull();
   });
 });

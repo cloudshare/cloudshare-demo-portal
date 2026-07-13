@@ -15,14 +15,17 @@ The UI calls these typed, framework-agnostic handler-backed routes:
 - `POST` `/api/sales/opportunities`; `PATCH` `/api/sales/opportunities/:opportunityId`; `POST` `/archive`
 - `POST` `/api/sales/contacts`; `PATCH` `/api/sales/contacts/:contactId`; `POST` `/archive`
 
-The workspace is a URL-backed drill-down: an Account selection reveals only that Account's
-Opportunities, and an Opportunity selection reveals only that Opportunity's Contacts. Each grid
-defaults to active records and provides explicit Active, Archived, and All filters, ISO-style UTC
-lifecycle dates, sorting, result counts, and pagination-ready presentation. Record creation and
-editing use a compact modal; no inactive bulk-operation controls are shown. A URL-linked archived
-Account or Opportunity is intentional historical context: its relevant filter is promoted to
-Archived while the selection and its descendants remain visible. With no such selection, all grids
-default to Active.
+The workspace is a URL-backed, hierarchical drill-down: selecting an Account reveals only that
+Account's Opportunities, and selecting an Opportunity reveals only that Opportunity's Contacts.
+The desktop grids use the available workspace width, compact single-line rows, fixed action columns,
+and horizontal overflow on constrained viewports. Each grid defaults to active records and provides
+explicit Active, Archived, and All filters, ISO-style UTC lifecycle dates, sorting, and result
+counts. The selected Account or Opportunity remains explicit context for the next level. Creating
+an Opportunity or Contact is unavailable until that context is selected, and its creation dialog
+locks the parent rather than offering a broad parent picker; editing retains the supported reparent
+control. No inactive bulk-operation controls are shown. A URL-linked archived Account or Opportunity
+is intentional historical context: its relevant filter is promoted to Archived while the selection
+and its descendants remain visible. With no such selection, all grids default to Active.
 
 An archived Account cannot receive a new Opportunity or become a reparenting target. Likewise, an
 archived Opportunity cannot receive or become a reparenting target for an active Contact. A denied
