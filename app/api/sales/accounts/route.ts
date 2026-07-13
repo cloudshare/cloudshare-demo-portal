@@ -6,7 +6,7 @@ export async function GET(request: Request) {
   const context = await getSalesRouteContext(); if (isRouteResponse(context)) return context;
   const search = new URL(request.url).searchParams.get("search") ?? undefined;
   const response = await handleListSalesRecords(context.deps, { customerId: context.customerId, actor: context.actor, search });
-  return NextResponse.json(response.body, { status: response.status });
+  return NextResponse.json(response.body, { status: response.status, headers: { "cache-control": "no-store" } });
 }
 export async function POST(request: Request) {
   const context = await getSalesRouteContext(); if (isRouteResponse(context)) return context;

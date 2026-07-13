@@ -12,6 +12,7 @@ type Account = { id: string; name: string; kind: "prospect" | "current_customer"
 type Opportunity = { id: string; accountId: string; name: string; status: "open" | "won" | "lost"; archivedAt: string | null; createdAt: string; updatedAt?: string };
 type Contact = { id: string; opportunityId: string; firstName: string; lastName: string; email: string; archivedAt: string | null; createdAt: string; updatedAt?: string };
 type SalesData = { accounts: Account[]; opportunities: Opportunity[]; contacts: Contact[] };
+type SalesSelection = { accountId: string | null; opportunityId: string | null };
 type Lifecycle = "active" | "archived" | "all";
 type Sort = "name" | "created";
 type Dialog = { kind: "account"; record?: Account } | { kind: "opportunity"; record?: Opportunity } | { kind: "contact"; record?: Contact } | null;
@@ -20,10 +21,11 @@ const controlStyle = { padding: "0.55rem", border: "1px solid #b7bdc8", borderRa
 const tableStyle = { width: "100%", borderCollapse: "collapse" as const, minWidth: "46rem" };
 const cellStyle = { padding: "0.7rem 0.65rem", borderBottom: "1px solid #e2e8f0", textAlign: "left" as const, verticalAlign: "middle" };
 
-export function SalesWorkspace({ email }: { readonly email: string }) {
+export function SalesWorkspace({ email, initialSelection }: { readonly email: string; readonly initialSelection?: Partial<SalesSelection> }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [selection, setSelection] = useState(() => ({ accountId: searchParams.get("accountId"), opportunityId: searchParams.get("opportunityId") }));
+  const hasObservedSearchParams = useRef(false);
+  const [selection, setSelection] = useState<SalesSelection>(() => ({ accountId: initialSelection?.accountId ?? searchParams.get("accountId"), opportunityId: initialSelection?.opportunityId ?? searchParams.get("opportunityId") }));
   const browserFetch = useCallback<typeof fetch>((input, init) => window.fetch(input, init), []);
   const fetchSales = useMemo(() => createAdminAuthenticatedRequest({ fetchImpl: browserFetch, onSessionExpired: () => { router.replace("/login"); router.refresh(); } }), [browserFetch, router]);
   const [data, setData] = useState<SalesData>(blank);
@@ -37,13 +39,14 @@ export function SalesWorkspace({ email }: { readonly email: string }) {
   const [sorts, setSorts] = useState<{ account: Sort; opportunity: Sort; contact: Sort }>({ account: "name", opportunity: "name", contact: "name" });
 
   useEffect(() => {
+    if (!hasObservedSearchParams.current) { hasObservedSearchParams.current = true; return; }
     setSelection({ accountId: searchParams.get("accountId"), opportunityId: searchParams.get("opportunityId") });
   }, [searchParams]);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetchSales("/api/sales/accounts");
+      const response = await fetchSales("/api/sales/accounts", { cache: "no-store" });
       const body = await response.json() as SalesData & { error?: string };
       if (!response.ok) throw new Error(body.error ?? "Could not load Sales records.");
       setData(body); setMessage(null);
@@ -57,7 +60,9 @@ export function SalesWorkspace({ email }: { readonly email: string }) {
     if (accountId) params.set("accountId", accountId);
     if (opportunityId) params.set("opportunityId", opportunityId);
     const suffix = params.toString();
-    router.replace(`/sales${suffix ? `?${suffix}` : ""}`);
+    const href = `/sales${suffix ? `?${suffix}` : ""}`;
+    window.history.replaceState(window.history.state, "", href);
+    router.replace(href);
     setSelection({ accountId, opportunityId });
   }, [router]);
   const openDialog = useCallback((nextDialog: Exclude<Dialog, null>, opener: HTMLElement) => { dialogOpenerRef.current = opener; setDialog(nextDialog); }, []);
@@ -136,6 +141,7 @@ function RowActions({ editLabel, onEdit, archiveLabel, archived, loading, onArch
 
 function RecordDialog({ dialog, opener, selectedAccount, selectedOpportunity, accounts, opportunities, loading, onClose, onSave }: { dialog: Exclude<Dialog, null>; opener: HTMLElement | null; selectedAccount: Account | null; selectedOpportunity: Opportunity | null; accounts: Account[]; opportunities: Opportunity[]; loading: boolean; onClose: () => void; onSave: (url: string, method: "POST" | "PATCH", payload?: Record<string, unknown>) => Promise<boolean> }) {
   const dialogRef = useRef<HTMLDivElement>(null);
+  const initialFocusRef = useRef<HTMLInputElement>(null);
   const accountRecord = dialog.kind === "account" ? dialog.record : undefined;
   const opportunityRecord = dialog.kind === "opportunity" ? dialog.record : undefined;
   const contactRecord = dialog.kind === "contact" ? dialog.record : undefined;
@@ -152,7 +158,7 @@ function RecordDialog({ dialog, opener, selectedAccount, selectedOpportunity, ac
   const title = `${isEdit ? "Edit" : "New"} ${dialog.kind === "contact" ? "Contact" : dialog.kind[0].toUpperCase() + dialog.kind.slice(1)}`;
   useEffect(() => {
     const focusable = () => Array.from(dialogRef.current?.querySelectorAll<HTMLElement>("button:not([disabled]), input:not([disabled]), select:not([disabled])") ?? []);
-    focusable().find((element) => element.hasAttribute("autofocus"))?.focus();
+    initialFocusRef.current?.focus();
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") { event.preventDefault(); onClose(); return; }
       if (event.key !== "Tab") return;
@@ -165,7 +171,7 @@ function RecordDialog({ dialog, opener, selectedAccount, selectedOpportunity, ac
     document.addEventListener("keydown", handleKeyDown);
     return () => { document.removeEventListener("keydown", handleKeyDown); opener?.focus(); };
   }, [onClose, opener]);
-  return <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={title} style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.45)", display: "grid", placeItems: "center", zIndex: 20, padding: "1rem" }}><form onSubmit={submit} style={{ ...cardStyle, width: "min(34rem, 100%)", display: "grid", gap: "0.85rem", boxShadow: "0 20px 45px rgba(15, 23, 42, 0.25)" }}><div><h2 style={{ margin: 0 }}>{title}</h2><p style={{ margin: "0.25rem 0 0", color: "#52606d" }}>Changes are kept locally for this Customer and leave audit and diagnostic evidence.</p></div>{dialog.kind === "account" ? <><label>Account name<input autoFocus required value={name} onChange={(event) => setName(event.target.value)} style={controlStyle} /></label><label>Account type<select value={kind} onChange={(event) => setKind(event.target.value as Account["kind"])} style={controlStyle}><option value="prospect">Prospect</option><option value="current_customer">Current customer</option></select></label></> : null}{dialog.kind === "opportunity" ? <><label>Account<select required value={accountId} onChange={(event) => setAccountId(event.target.value)} style={controlStyle}>{accounts.filter((account) => !account.archivedAt || account.id === accountId).map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label><label>Opportunity name<input autoFocus required value={name} onChange={(event) => setName(event.target.value)} style={controlStyle} /></label><label>Status<select value={status} onChange={(event) => setStatus(event.target.value as Opportunity["status"])} style={controlStyle}><option value="open">Open</option><option value="won">Won</option><option value="lost">Lost</option></select></label></> : null}{dialog.kind === "contact" ? <><label>Opportunity<select required value={opportunityId} onChange={(event) => setOpportunityId(event.target.value)} style={controlStyle}>{opportunities.filter((opportunity) => !opportunity.archivedAt || opportunity.id === opportunityId).map((opportunity) => <option key={opportunity.id} value={opportunity.id}>{opportunity.name}</option>)}</select></label><label>First name<input autoFocus required value={firstName} onChange={(event) => setFirstName(event.target.value)} style={controlStyle} /></label><label>Last name<input required value={lastName} onChange={(event) => setLastName(event.target.value)} style={controlStyle} /></label><label>Email<input type="email" required value={email} onChange={(event) => setEmail(event.target.value)} style={controlStyle} /></label></> : null}<div style={{ display: "flex", justifyContent: "end", gap: "0.6rem" }}><button type="button" style={compactButtonStyle} onClick={onClose}>Cancel</button><button disabled={loading} style={primaryButtonStyle}>{isEdit ? "Save changes" : `Create ${dialog.kind === "contact" ? "Contact" : dialog.kind[0].toUpperCase() + dialog.kind.slice(1)}`}</button></div></form></div>;
+  return <div ref={dialogRef} role="dialog" aria-modal="true" aria-label={title} style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.45)", display: "grid", placeItems: "center", zIndex: 20, padding: "1rem" }}><form onSubmit={submit} style={{ ...cardStyle, width: "min(34rem, 100%)", display: "grid", gap: "0.85rem", boxShadow: "0 20px 45px rgba(15, 23, 42, 0.25)" }}><div><h2 style={{ margin: 0 }}>{title}</h2><p style={{ margin: "0.25rem 0 0", color: "#52606d" }}>Changes are kept locally for this Customer and leave audit and diagnostic evidence.</p></div>{dialog.kind === "account" ? <><label>Account name<input ref={initialFocusRef} required value={name} onChange={(event) => setName(event.target.value)} style={controlStyle} /></label><label>Account type<select value={kind} onChange={(event) => setKind(event.target.value as Account["kind"])} style={controlStyle}><option value="prospect">Prospect</option><option value="current_customer">Current customer</option></select></label></> : null}{dialog.kind === "opportunity" ? <><label>Account<select required value={accountId} onChange={(event) => setAccountId(event.target.value)} style={controlStyle}>{accounts.filter((account) => !account.archivedAt || account.id === accountId).map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label><label>Opportunity name<input ref={initialFocusRef} required value={name} onChange={(event) => setName(event.target.value)} style={controlStyle} /></label><label>Status<select value={status} onChange={(event) => setStatus(event.target.value as Opportunity["status"])} style={controlStyle}><option value="open">Open</option><option value="won">Won</option><option value="lost">Lost</option></select></label></> : null}{dialog.kind === "contact" ? <><label>Opportunity<select required value={opportunityId} onChange={(event) => setOpportunityId(event.target.value)} style={controlStyle}>{opportunities.filter((opportunity) => !opportunity.archivedAt || opportunity.id === opportunityId).map((opportunity) => <option key={opportunity.id} value={opportunity.id}>{opportunity.name}</option>)}</select></label><label>First name<input ref={initialFocusRef} required value={firstName} onChange={(event) => setFirstName(event.target.value)} style={controlStyle} /></label><label>Last name<input required value={lastName} onChange={(event) => setLastName(event.target.value)} style={controlStyle} /></label><label>Email<input type="email" required value={email} onChange={(event) => setEmail(event.target.value)} style={controlStyle} /></label></> : null}<div style={{ display: "flex", justifyContent: "end", gap: "0.6rem" }}><button type="button" style={compactButtonStyle} onClick={onClose}>Cancel</button><button disabled={loading} style={primaryButtonStyle}>{isEdit ? "Save changes" : `Create ${dialog.kind === "contact" ? "Contact" : dialog.kind[0].toUpperCase() + dialog.kind.slice(1)}`}</button></div></form></div>;
 }
 
 function visible<T extends { archivedAt: string | null; createdAt: string }>(records: T[], lifecycle: Lifecycle, sort: Sort, name: (record: T) => string): T[] { return records.filter((record) => lifecycle === "all" || (lifecycle === "archived" ? Boolean(record.archivedAt) : !record.archivedAt)).sort((left, right) => sort === "created" ? right.createdAt.localeCompare(left.createdAt) : name(left).localeCompare(name(right))); }

@@ -13,7 +13,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => mockRouter, useSearchParams
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
 describe("SalesWorkspace interaction", () => {
-  afterEach(() => { vi.restoreAllMocks(); mockSearchParams.delete("accountId"); mockSearchParams.delete("opportunityId"); mockRouter.replace.mockClear(); });
+  afterEach(() => { vi.restoreAllMocks(); mockSearchParams.delete("accountId"); mockSearchParams.delete("opportunityId"); mockRouter.replace.mockClear(); window.history.replaceState({}, "", "/sales"); });
 
   it("selects an Account into the URL and limits the next grid to its Opportunities without console errors", async () => {
     const user = userEvent.setup();
@@ -37,15 +37,30 @@ describe("SalesWorkspace interaction", () => {
     await user.click(screen.getByRole("button", { name: "Select Acme Labs" }));
 
     expect(mockRouter.replace).toHaveBeenCalledWith("/sales?accountId=account-1");
+    expect(window.location.search).toBe("?accountId=account-1");
     expect(screen.getByText("Acme proof")).not.toBeNull();
     expect(screen.queryByText("Helios renewal")).toBeNull();
     expect(consoleError).not.toHaveBeenCalled();
   });
 
+  it("restores initial URL selection from the server query state even before client search params settle", async () => {
+    vi.spyOn(window, "fetch").mockResolvedValue(json({
+      accounts: [{ id: "account-1", name: "Acme Labs", kind: "prospect", archivedAt: null, createdAt: "2026-07-12T17:00:00.000Z" }],
+      opportunities: [{ id: "opportunity-1", accountId: "account-1", name: "Acme proof", status: "open", archivedAt: null, createdAt: "2026-07-12T17:00:00.000Z" }],
+      contacts: [{ id: "contact-1", opportunityId: "opportunity-1", firstName: "Ada", lastName: "Lovelace", email: "ada@acme.test", archivedAt: null, createdAt: "2026-07-12T17:00:00.000Z" }],
+    }));
+
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialSelection={{ accountId: "account-1", opportunityId: "opportunity-1" }} />);
+
+    await screen.findByRole("button", { name: "Select Acme proof" });
+    expect(screen.getByText("Ada Lovelace")).not.toBeNull();
+    expect(mockRouter.replace).not.toHaveBeenCalled();
+  });
+
   it("keeps the selected Account as visible history when it is archived", async () => {
     const user = userEvent.setup();
     let archived = false;
-    vi.spyOn(window, "fetch").mockImplementation(async (_input, init) => {
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (_input, init) => {
       if (init?.method === "POST") { archived = true; return json({ account: { id: "account-1" } }); }
       return json({ accounts: [{ id: "account-1", name: "Acme Labs", kind: "prospect", archivedAt: archived ? "2026-07-12T17:01:00.000Z" : null, createdAt: "2026-07-12T17:00:00.000Z" }], opportunities: [], contacts: [] });
     });
@@ -59,6 +74,8 @@ describe("SalesWorkspace interaction", () => {
     await waitFor(() => expect((screen.getByRole("combobox", { name: "Accounts lifecycle" }) as HTMLSelectElement).value).toBe("archived"));
     expect(screen.getByRole("button", { name: "Select Acme Labs" })).not.toBeNull();
     expect(mockRouter.replace).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledWith("/api/sales/accounts/account-1/archive", expect.objectContaining({ method: "POST" }));
+    expect(fetchMock).toHaveBeenCalledWith("/api/sales/accounts", { cache: "no-store" });
   });
 
   it("hides archived Accounts by default and exposes them through the explicit lifecycle filter", async () => {
@@ -105,7 +122,7 @@ describe("SalesWorkspace interaction", () => {
     render(<SalesWorkspace email="sales-admin@certalis.demo" />);
     await user.click(screen.getByRole("button", { name: "New Account" }));
     expect(screen.getByRole("dialog", { name: "New Account" })).not.toBeNull();
-    expect(document.activeElement).toBe(screen.getByLabelText("Account name"));
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText("Account name")));
     await user.keyboard("{Tab}{Tab}{Tab}{Tab}");
     expect(document.activeElement).toBe(screen.getByLabelText("Account name"));
 
