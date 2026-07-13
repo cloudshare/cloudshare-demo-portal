@@ -20,7 +20,19 @@ export interface ActiveSalesParentGuard {
   readonly deniedDiagnostic: DiagnosticLogEntryInput;
 }
 
-export type SalesMutationCommitResult = { readonly outcome: "committed" } | { readonly outcome: "parent_archived" };
+/** Prevents a stale active PATCH from overwriting a concurrent archive. */
+export interface ActiveSalesRecordGuard {
+  readonly type: SalesMutationRecord["type"];
+  readonly id: string;
+  readonly customerId: string;
+  readonly deniedAudit: AuditRecord;
+  readonly deniedDiagnostic: DiagnosticLogEntryInput;
+}
+
+export type SalesMutationCommitResult =
+  | { readonly outcome: "committed" }
+  | { readonly outcome: "parent_archived" }
+  | { readonly outcome: "record_archived" };
 
 /** Commits the local record and its two append-only evidence rows as one durable operation. */
 export interface SalesMutationWriter {
@@ -29,5 +41,6 @@ export interface SalesMutationWriter {
     readonly audit: AuditRecord;
     readonly diagnostic: DiagnosticLogEntryInput;
     readonly activeParentGuard?: ActiveSalesParentGuard;
+    readonly activeRecordGuard?: ActiveSalesRecordGuard;
   }): Promise<SalesMutationCommitResult>;
 }

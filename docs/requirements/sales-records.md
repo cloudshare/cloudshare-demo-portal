@@ -19,11 +19,16 @@ The workspace is a URL-backed drill-down: an Account selection reveals only that
 Opportunities, and an Opportunity selection reveals only that Opportunity's Contacts. Each grid
 defaults to active records and provides explicit Active, Archived, and All filters, ISO-style UTC
 lifecycle dates, sorting, result counts, and pagination-ready presentation. Record creation and
-editing use a compact modal; no inactive bulk-operation controls are shown.
+editing use a compact modal; no inactive bulk-operation controls are shown. A URL-linked archived
+Account or Opportunity is intentional historical context: its relevant filter is promoted to
+Archived while the selection and its descendants remain visible. With no such selection, all grids
+default to Active.
 
 An archived Account cannot receive a new Opportunity or become a reparenting target. Likewise, an
 archived Opportunity cannot receive or become a reparenting target for an active Contact. A denied
 operation returns a deliberate conflict response and writes Customer-scoped audit and diagnostic
 evidence. The active-parent check is a conditional mutation in the same persistence transaction as
 the child write, so a concurrent archive cannot leave a newly written active child under archived
-history. Historical edits may retain an archived record's existing archived parent.
+history. Active-record PATCH operations have the same transactional archive guard, so a stale
+update cannot reactivate history; its denied audit and diagnostic evidence are committed atomically.
+Historical edits may retain an archived record's existing archived parent.

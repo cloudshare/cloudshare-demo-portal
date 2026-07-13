@@ -42,11 +42,12 @@ describe("SalesWorkspace interaction", () => {
     expect(consoleError).not.toHaveBeenCalled();
   });
 
-  it("clears the URL selection when archiving the selected Account", async () => {
+  it("keeps the selected Account as visible history when it is archived", async () => {
     const user = userEvent.setup();
+    let archived = false;
     vi.spyOn(window, "fetch").mockImplementation(async (_input, init) => {
-      if (init?.method === "POST") return json({ account: { id: "account-1" } });
-      return json({ accounts: [{ id: "account-1", name: "Acme Labs", kind: "prospect", archivedAt: null, createdAt: "2026-07-12T17:00:00.000Z" }], opportunities: [], contacts: [] });
+      if (init?.method === "POST") { archived = true; return json({ account: { id: "account-1" } }); }
+      return json({ accounts: [{ id: "account-1", name: "Acme Labs", kind: "prospect", archivedAt: archived ? "2026-07-12T17:01:00.000Z" : null, createdAt: "2026-07-12T17:00:00.000Z" }], opportunities: [], contacts: [] });
     });
     render(<SalesWorkspace email="sales-admin@certalis.demo" />);
     await screen.findByRole("button", { name: "Select Acme Labs" });
@@ -55,7 +56,9 @@ describe("SalesWorkspace interaction", () => {
 
     await user.click(screen.getByRole("button", { name: "Archive Account" }));
 
-    await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith("/sales"));
+    await waitFor(() => expect((screen.getByRole("combobox", { name: "Accounts lifecycle" }) as HTMLSelectElement).value).toBe("archived"));
+    expect(screen.getByRole("button", { name: "Select Acme Labs" })).not.toBeNull();
+    expect(mockRouter.replace).not.toHaveBeenCalled();
   });
 
   it("hides archived Accounts by default and exposes them through the explicit lifecycle filter", async () => {
@@ -75,14 +78,31 @@ describe("SalesWorkspace interaction", () => {
     expect(screen.getByRole("button", { name: "Select Historical Acme" })).not.toBeNull();
   });
 
-  it("clears stale archived URL selection and closes a record dialog with Escape", async () => {
-    const user = userEvent.setup();
+  it("preserves an archived URL drill-down and promotes its lifecycle filters", async () => {
     mockSearchParams.set("accountId", "archived-account");
+    mockSearchParams.set("opportunityId", "archived-opportunity");
     vi.spyOn(window, "fetch").mockResolvedValue(json({
-      accounts: [{ id: "archived-account", name: "Historical Acme", kind: "prospect", archivedAt: "2026-07-11T17:00:00.000Z", createdAt: "2026-07-10T17:00:00.000Z" }], opportunities: [], contacts: [],
+      accounts: [{ id: "archived-account", name: "Historical Acme", kind: "prospect", archivedAt: "2026-07-11T17:00:00.000Z", createdAt: "2026-07-10T17:00:00.000Z" }],
+      opportunities: [{ id: "archived-opportunity", accountId: "archived-account", name: "Historical proof", status: "lost", archivedAt: "2026-07-11T18:00:00.000Z", createdAt: "2026-07-10T18:00:00.000Z" }],
+      contacts: [{ id: "historical-contact", opportunityId: "archived-opportunity", firstName: "Ada", lastName: "Lovelace", email: "ada@acme.test", archivedAt: null, createdAt: "2026-07-10T18:00:00.000Z" }],
+    }));
+
+    render(<SalesWorkspace email="sales-admin@certalis.demo" />);
+
+    await waitFor(() => expect((screen.getByRole("combobox", { name: "Accounts lifecycle" }) as HTMLSelectElement).value).toBe("archived"));
+    expect((screen.getByRole("combobox", { name: "Opportunities lifecycle" }) as HTMLSelectElement).value).toBe("archived");
+    expect(screen.getByRole("button", { name: "Select Historical Acme" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Select Historical proof" })).not.toBeNull();
+    expect(screen.getByText("Ada Lovelace")).not.toBeNull();
+    expect(mockRouter.replace).not.toHaveBeenCalled();
+  });
+
+  it("closes a record dialog with Escape while retaining keyboard focus", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "fetch").mockResolvedValue(json({
+      accounts: [], opportunities: [], contacts: [],
     }));
     render(<SalesWorkspace email="sales-admin@certalis.demo" />);
-    await waitFor(() => expect(mockRouter.replace).toHaveBeenCalledWith("/sales"));
     await user.click(screen.getByRole("button", { name: "New Account" }));
     expect(screen.getByRole("dialog", { name: "New Account" })).not.toBeNull();
     expect(document.activeElement).toBe(screen.getByLabelText("Account name"));

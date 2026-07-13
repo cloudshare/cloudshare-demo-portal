@@ -8,6 +8,11 @@ export function createPrismaSalesMutationWriter(prisma: PrismaClient): SalesMuta
   return {
     async commit(input) {
       return prisma.$transaction(async (tx) => {
+        if (input.activeRecordGuard && !await reserveActiveRecord(tx, input.activeRecordGuard)) {
+          await tx.auditTrailEntry.create({ data: toAuditRow(input.activeRecordGuard.deniedAudit) });
+          await tx.diagnosticLogEntry.create({ data: toDiagnosticRow(input.activeRecordGuard.deniedDiagnostic) });
+          return { outcome: "record_archived" } as const;
+        }
         if (input.activeParentGuard && !await reserveActiveParent(tx, input.activeParentGuard)) {
           await tx.auditTrailEntry.create({ data: toAuditRow(input.activeParentGuard.deniedAudit) });
           await tx.diagnosticLogEntry.create({ data: toDiagnosticRow(input.activeParentGuard.deniedDiagnostic) });
@@ -22,6 +27,19 @@ export function createPrismaSalesMutationWriter(prisma: PrismaClient): SalesMuta
       });
     },
   };
+}
+
+async function reserveActiveRecord(
+  tx: Prisma.TransactionClient,
+  guard: import("@/domain/sales-mutation-writer").ActiveSalesRecordGuard,
+): Promise<boolean> {
+  const where = { id: guard.id, customerId: guard.customerId, archivedAt: null };
+  const result = guard.type === "account"
+    ? await tx.salesAccount.updateMany({ where, data: { id: guard.id } })
+    : guard.type === "opportunity"
+      ? await tx.salesOpportunity.updateMany({ where, data: { id: guard.id } })
+      : await tx.opportunityContact.updateMany({ where, data: { id: guard.id } });
+  return result.count === 1;
 }
 
 /**

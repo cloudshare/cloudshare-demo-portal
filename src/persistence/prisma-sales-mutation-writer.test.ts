@@ -45,4 +45,32 @@ describe("createPrismaSalesMutationWriter", () => {
     await expect(prisma.auditTrailEntry.findUnique({ where: { id: `audit-success-${suffix}` } })).resolves.toBeNull();
     await expect(prisma.diagnosticLogEntry.findFirst({ where: { customerId, operation: "opportunity.created" } })).resolves.toMatchObject({ outcome: "failure" });
   });
+
+  it("never lets a stale active patch reactivate an archived record", async () => {
+    const suffix = `${Date.now()}-patch`;
+    const customerId = `sales-writer-${suffix}`;
+    const accountId = `sales-account-${suffix}`;
+    const occurredAt = new Date("2026-07-12T17:00:00.000Z");
+    createdCustomerIds.add(customerId);
+    await prisma.customer.create({ data: { id: customerId, slug: `sales-writer-${suffix}`, name: "Certalis" } });
+    await prisma.salesAccount.create({ data: { id: accountId, customerId, name: "Archived account", kind: "prospect", archivedAt: occurredAt, createdAt: occurredAt, updatedAt: occurredAt } });
+
+    const result = await createPrismaSalesMutationWriter(prisma).commit({
+      record: { type: "account", value: { id: accountId, customerId, name: "Stale rename", kind: "prospect", archivedAt: null, createdAt: occurredAt, updatedAt: new Date("2026-07-12T17:01:00.000Z") } },
+      audit: { id: `audit-success-${suffix}`, occurredAt, customerId, actorType: "admin", actorId: "admin-1", action: "account.updated", subjectType: "account", subjectId: accountId, outcome: "success" },
+      diagnostic: { source: "sales-records", operation: "account.updated", outcome: "success", customerId, message: "should not be written" },
+      activeRecordGuard: {
+        type: "account",
+        id: accountId,
+        customerId,
+        deniedAudit: { id: `audit-denied-${suffix}`, occurredAt, customerId, actorType: "admin", actorId: "admin-1", action: "account.updated", subjectType: "account", subjectId: accountId, outcome: "denied" },
+        deniedDiagnostic: { source: "sales-records", operation: "account.updated", outcome: "failure", customerId, level: "warn", message: "record archived" },
+      },
+    });
+
+    expect(result).toEqual({ outcome: "record_archived" });
+    await expect(prisma.salesAccount.findUnique({ where: { id: accountId } })).resolves.toMatchObject({ name: "Archived account", archivedAt: occurredAt });
+    await expect(prisma.auditTrailEntry.findUnique({ where: { id: `audit-denied-${suffix}` } })).resolves.toMatchObject({ outcome: "denied", customerId, subjectId: accountId });
+    await expect(prisma.auditTrailEntry.findUnique({ where: { id: `audit-success-${suffix}` } })).resolves.toBeNull();
+  });
 });

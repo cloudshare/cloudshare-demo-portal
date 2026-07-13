@@ -30,6 +30,7 @@ export function SalesWorkspace({ email }: { readonly email: string }) {
   const [search, setSearch] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [dialog, setDialog] = useState<Dialog>(null);
   const [filters, setFilters] = useState<{ account: Lifecycle; opportunity: Lifecycle; contact: Lifecycle }>({ account: "active", opportunity: "active", contact: "active" });
   const [sorts, setSorts] = useState<{ account: Sort; opportunity: Sort; contact: Sort }>({ account: "name", opportunity: "name", contact: "name" });
@@ -46,7 +47,7 @@ export function SalesWorkspace({ email }: { readonly email: string }) {
       if (!response.ok) throw new Error(body.error ?? "Could not load Sales records.");
       setData(body); setMessage(null);
     } catch (error) { setMessage(error instanceof Error ? error.message : "Could not load Sales records."); }
-    finally { setLoading(false); }
+    finally { setLoading(false); setHasLoaded(true); }
   }, [fetchSales]);
   useEffect(() => { void load(); }, [load]);
 
@@ -71,19 +72,30 @@ export function SalesWorkspace({ email }: { readonly email: string }) {
   const logout = useCallback(async () => { await fetch("/api/auth/logout", { method: "POST" }); router.push("/login"); router.refresh(); }, [router]);
 
   const matchesSearch = useCallback((values: string[]) => !search.trim() || values.join(" ").toLowerCase().includes(search.trim().toLowerCase()), [search]);
+  const selectedAccount = data.accounts.find((record) => record.id === selection.accountId) ?? null;
+  const selectedOpportunity = selectedAccount
+    ? data.opportunities.find((record) => record.id === selection.opportunityId && record.accountId === selectedAccount.id) ?? null
+    : null;
   const visibleAccounts = visible(data.accounts, filters.account, sorts.account, (record) => record.name);
-  const selectedAccount = visibleAccounts.find((record) => record.id === selection.accountId) ?? null;
   const visibleOpportunities = visible(data.opportunities.filter((record) => record.accountId === selectedAccount?.id), filters.opportunity, sorts.opportunity, (record) => record.name);
-  const selectedOpportunity = visibleOpportunities.find((record) => record.id === selection.opportunityId) ?? null;
   const visibleContacts = visible(data.contacts.filter((record) => record.opportunityId === selectedOpportunity?.id), filters.contact, sorts.contact, (record) => `${record.lastName} ${record.firstName}`);
   const accounts = visibleAccounts.filter((record) => matchesSearch([record.name]));
   const opportunities = visibleOpportunities.filter((record) => matchesSearch([record.name]));
   const contacts = visibleContacts.filter((record) => matchesSearch([record.firstName, record.lastName, record.email]));
 
   useEffect(() => {
+    if (!hasLoaded) return;
     if (selection.accountId && !selectedAccount) { updateSelection(null, null); return; }
     if (selection.opportunityId && !selectedOpportunity) updateSelection(selectedAccount?.id ?? null, null);
-  }, [selectedAccount, selectedOpportunity, selection.accountId, selection.opportunityId, updateSelection]);
+  }, [hasLoaded, selectedAccount, selectedOpportunity, selection.accountId, selection.opportunityId, updateSelection]);
+
+  useEffect(() => {
+    setFilters((current) => ({
+      ...current,
+      account: selectedAccount?.archivedAt && current.account === "active" ? "archived" : current.account,
+      opportunity: selectedOpportunity?.archivedAt && current.opportunity === "active" ? "archived" : current.opportunity,
+    }));
+  }, [selectedAccount?.archivedAt, selectedOpportunity?.archivedAt]);
 
   return <main style={pageShellStyle}>
     <PortalPageHeader eyebrow="Certalis Sales Portal" title="Sales Workspace" description="A local, Customer-scoped commercial record workspace. No CRM sync or CloudShare Sales Experience operation is performed here." email={email} actions={<button onClick={() => void logout()} style={accountLogoutButtonStyle}>Log out</button>} />
@@ -96,11 +108,11 @@ export function SalesWorkspace({ email }: { readonly email: string }) {
     <div style={{ display: "grid", gap: "1rem", marginTop: "1rem" }}>
       <RecordGrid title="Accounts" count={accounts.length} lifecycle={filters.account} sort={sorts.account} onLifecycle={(value) => setFilters((current) => ({ ...current, account: value }))} onSort={(value) => setSorts((current) => ({ ...current, account: value }))} addLabel="New Account" onAdd={() => setDialog({ kind: "account" })}>
         <thead><tr><th style={cellStyle}>Account</th><th style={cellStyle}>Type</th><th style={cellStyle}>Created (UTC)</th><th style={cellStyle}>Archived (UTC)</th><th style={cellStyle}>Actions</th></tr></thead>
-        <tbody>{accounts.map((record) => <tr key={record.id} style={record.id === selectedAccount?.id ? { background: "#e8f5f3" } : undefined}><td style={cellStyle}><button type="button" onClick={() => updateSelection(record.id, null)} style={linkButtonStyle} aria-label={`Select ${record.name}`}>{record.name}</button></td><td style={cellStyle}>{labelAccountKind(record.kind)}</td><td style={cellStyle}>{formatUtc(record.createdAt)}</td><td style={cellStyle}>{formatUtc(record.archivedAt)}</td><td style={cellStyle}><RowActions editLabel={`Edit ${record.name}`} onEdit={() => setDialog({ kind: "account", record })} archiveLabel="Archive Account" archived={Boolean(record.archivedAt)} loading={loading} onArchive={() => void mutate(`/api/sales/accounts/${record.id}/archive`, "POST").then((saved) => { if (saved && record.id === selectedAccount?.id) updateSelection(null, null); })} /></td></tr>)}</tbody>
+        <tbody>{accounts.map((record) => <tr key={record.id} style={record.id === selectedAccount?.id ? { background: "#e8f5f3" } : undefined}><td style={cellStyle}><button type="button" onClick={() => updateSelection(record.id, null)} style={linkButtonStyle} aria-label={`Select ${record.name}`}>{record.name}</button></td><td style={cellStyle}>{labelAccountKind(record.kind)}</td><td style={cellStyle}>{formatUtc(record.createdAt)}</td><td style={cellStyle}>{formatUtc(record.archivedAt)}</td><td style={cellStyle}><RowActions editLabel={`Edit ${record.name}`} onEdit={() => setDialog({ kind: "account", record })} archiveLabel="Archive Account" archived={Boolean(record.archivedAt)} loading={loading} onArchive={() => void mutate(`/api/sales/accounts/${record.id}/archive`, "POST")} /></td></tr>)}</tbody>
       </RecordGrid>
       <RecordGrid title="Opportunities" context={selectedAccount ? `Account: ${selectedAccount.name}` : "Select an Account to view its Opportunities"} count={opportunities.length} lifecycle={filters.opportunity} sort={sorts.opportunity} onLifecycle={(value) => setFilters((current) => ({ ...current, opportunity: value }))} onSort={(value) => setSorts((current) => ({ ...current, opportunity: value }))} addLabel="New Opportunity" disabled={!selectedAccount || Boolean(selectedAccount.archivedAt)} onAdd={() => setDialog({ kind: "opportunity" })}>
         <thead><tr><th style={cellStyle}>Opportunity</th><th style={cellStyle}>Status</th><th style={cellStyle}>Created (UTC)</th><th style={cellStyle}>Archived (UTC)</th><th style={cellStyle}>Actions</th></tr></thead>
-        <tbody>{opportunities.map((record) => <tr key={record.id} style={record.id === selectedOpportunity?.id ? { background: "#e8f5f3" } : undefined}><td style={cellStyle}><button type="button" onClick={() => updateSelection(record.accountId, record.id)} style={linkButtonStyle} aria-label={`Select ${record.name}`}>{record.name}</button></td><td style={cellStyle}>{labelStatus(record.status)}</td><td style={cellStyle}>{formatUtc(record.createdAt)}</td><td style={cellStyle}>{formatUtc(record.archivedAt)}</td><td style={cellStyle}><RowActions editLabel={`Edit ${record.name}`} onEdit={() => setDialog({ kind: "opportunity", record })} archiveLabel="Archive Opportunity" archived={Boolean(record.archivedAt)} loading={loading} onArchive={() => void mutate(`/api/sales/opportunities/${record.id}/archive`, "POST").then((saved) => { if (saved && record.id === selectedOpportunity?.id) updateSelection(selectedAccount?.id ?? record.accountId, null); })} /></td></tr>)}</tbody>
+        <tbody>{opportunities.map((record) => <tr key={record.id} style={record.id === selectedOpportunity?.id ? { background: "#e8f5f3" } : undefined}><td style={cellStyle}><button type="button" onClick={() => updateSelection(record.accountId, record.id)} style={linkButtonStyle} aria-label={`Select ${record.name}`}>{record.name}</button></td><td style={cellStyle}>{labelStatus(record.status)}</td><td style={cellStyle}>{formatUtc(record.createdAt)}</td><td style={cellStyle}>{formatUtc(record.archivedAt)}</td><td style={cellStyle}><RowActions editLabel={`Edit ${record.name}`} onEdit={() => setDialog({ kind: "opportunity", record })} archiveLabel="Archive Opportunity" archived={Boolean(record.archivedAt)} loading={loading} onArchive={() => void mutate(`/api/sales/opportunities/${record.id}/archive`, "POST")} /></td></tr>)}</tbody>
       </RecordGrid>
       <RecordGrid title="Opportunity Contacts" context={selectedOpportunity ? `Opportunity: ${selectedOpportunity.name}` : "Select an Opportunity to view its Contacts"} count={contacts.length} lifecycle={filters.contact} sort={sorts.contact} onLifecycle={(value) => setFilters((current) => ({ ...current, contact: value }))} onSort={(value) => setSorts((current) => ({ ...current, contact: value }))} addLabel="New Contact" disabled={!selectedOpportunity || Boolean(selectedOpportunity.archivedAt)} onAdd={() => setDialog({ kind: "contact" })}>
         <thead><tr><th style={cellStyle}>Contact</th><th style={cellStyle}>Email</th><th style={cellStyle}>Created (UTC)</th><th style={cellStyle}>Archived (UTC)</th><th style={cellStyle}>Actions</th></tr></thead>

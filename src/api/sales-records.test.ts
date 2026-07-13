@@ -9,6 +9,7 @@ import {
   handleCreateSalesAccount,
   handleCreateSalesOpportunity,
   handleListSalesRecords,
+  handleUpdateSalesAccount,
   handleUpdateOpportunityContact,
   handleUpdateSalesOpportunity,
   type SalesRecordsDeps,
@@ -24,6 +25,18 @@ function createDeps(): SalesRecordsDeps & { audit: ReturnType<typeof createInMem
     audit,
     diagnostics,
     writer: { async commit(input) {
+      if (input.activeRecordGuard) {
+        const record = input.activeRecordGuard.type === "account"
+          ? await records.findAccount(input.activeRecordGuard.customerId, input.activeRecordGuard.id)
+          : input.activeRecordGuard.type === "opportunity"
+            ? await records.findOpportunity(input.activeRecordGuard.customerId, input.activeRecordGuard.id)
+            : await records.findContact(input.activeRecordGuard.customerId, input.activeRecordGuard.id);
+        if (!record || record.archivedAt) {
+          await audit.write(input.activeRecordGuard.deniedAudit);
+          await diagnostics.append(input.activeRecordGuard.deniedDiagnostic);
+          return { outcome: "record_archived" } as const;
+        }
+      }
       if (input.activeParentGuard) {
         const parent = input.activeParentGuard.type === "account"
           ? await records.findAccount(input.activeParentGuard.customerId, input.activeParentGuard.id)
@@ -116,6 +129,28 @@ describe("Customer-scoped Sales record API handlers", () => {
     expect(opportunity).toEqual({ status: 409, body: { error: "Archived account cannot accept new or reparented Sales records." } });
     expect(records.body).toMatchObject({ opportunities: [] });
     expect(denied.at(-1)).toMatchObject({ action: "opportunity.created", outcome: "denied", subjectId: accountId });
+  });
+
+  it("does not let a stale Account patch reactivate history after a concurrent archive", async () => {
+    const deps = createDeps();
+    const created = await handleCreateSalesAccount(deps, { customerId: "certalis", actor: admin, body: { name: "Acme Labs", kind: "prospect" } });
+    const accountId = (created.body.account as { id: string }).id;
+    const commit = deps.writer.commit;
+    deps.writer.commit = async (input) => {
+      if (input.activeRecordGuard?.type === "account") {
+        const record = await deps.records.findAccount("certalis", accountId);
+        if (record) await deps.records.saveAccount({ ...record, archivedAt: new Date("2026-07-12T17:01:00.000Z") });
+      }
+      return commit(input);
+    };
+
+    const response = await handleUpdateSalesAccount(deps, { customerId: "certalis", actor: admin, accountId, body: { name: "Renamed Acme", kind: "prospect" } });
+    const account = await deps.records.findAccount("certalis", accountId);
+    const denied = await deps.audit.query({ customerId: "certalis", subjectType: "account" });
+
+    expect(response).toEqual({ status: 409, body: { error: "Archived account cannot be updated." } });
+    expect(account).toMatchObject({ name: "Acme Labs", archivedAt: new Date("2026-07-12T17:01:00.000Z") });
+    expect(denied.at(-1)).toMatchObject({ action: "account.updated", outcome: "denied", subjectId: accountId, details: expect.objectContaining({ reason: "record_archived" }) });
   });
 
   it("does not reparent an active Opportunity or Contact into archived history", async () => {

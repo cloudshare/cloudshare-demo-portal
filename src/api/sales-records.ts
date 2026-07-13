@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { DiagnosticActor, DiagnosticLogEntryInput } from "@/domain/diagnostic-log";
 import type { AccountKind, OpportunityStatus, SalesRecordRepository } from "@/domain/sales-records";
-import type { ActiveSalesParentGuard, SalesMutationRecord, SalesMutationWriter } from "@/domain/sales-mutation-writer";
+import type { ActiveSalesParentGuard, ActiveSalesRecordGuard, SalesMutationRecord, SalesMutationWriter } from "@/domain/sales-mutation-writer";
 import type { Logger } from "@/observability/logger";
 
 export interface SalesRecordsDeps {
@@ -46,7 +46,9 @@ export async function handleUpdateSalesAccount(deps: SalesRecordsDeps, request: 
   const input = parseAccount(request.body);
   if (!input) return badRequest("Account name and kind (prospect or current_customer) are required.");
   const account = { ...existing, ...input, updatedAt: currentTime(deps) };
-  if (await persistMutation(deps, request, "account.updated", "account", account.id, { name: account.name, kind: account.kind }, { type: "account", value: account }) !== "committed") return evidenceUnavailable();
+  const result = await persistMutation(deps, request, "account.updated", "account", account.id, { name: account.name, kind: account.kind }, { type: "account", value: account }, undefined, existing.archivedAt ? undefined : activeRecordGuard(deps, request, "account.updated", "account", account.id));
+  if (result === "record_archived") return archivedRecordConflict("account");
+  if (result !== "committed") return evidenceUnavailable();
   return { status: 200, body: { account: serialise(account) } };
 }
 
@@ -80,8 +82,9 @@ export async function handleUpdateSalesOpportunity(deps: SalesRecordsDeps, reque
   const account = await deps.records.findAccount(request.customerId, input.accountId);
   if (!account) return notFound("account");
   const opportunity = { ...existing, ...input, updatedAt: currentTime(deps) };
-  const result = await persistMutation(deps, request, "opportunity.updated", "opportunity", opportunity.id, { accountId: opportunity.accountId, name: opportunity.name, status: opportunity.status }, { type: "opportunity", value: opportunity }, existing.archivedAt && existing.accountId === input.accountId ? undefined : activeParentGuard(deps, request, "opportunity.updated", "opportunity", existing.id, "account", account.id));
+  const result = await persistMutation(deps, request, "opportunity.updated", "opportunity", opportunity.id, { accountId: opportunity.accountId, name: opportunity.name, status: opportunity.status }, { type: "opportunity", value: opportunity }, existing.archivedAt && existing.accountId === input.accountId ? undefined : activeParentGuard(deps, request, "opportunity.updated", "opportunity", existing.id, "account", account.id), existing.archivedAt ? undefined : activeRecordGuard(deps, request, "opportunity.updated", "opportunity", opportunity.id));
   if (result === "parent_archived") return archivedParentConflict("account");
+  if (result === "record_archived") return archivedRecordConflict("opportunity");
   if (result !== "committed") return evidenceUnavailable();
   return { status: 200, body: { opportunity: serialise(opportunity) } };
 }
@@ -116,8 +119,9 @@ export async function handleUpdateOpportunityContact(deps: SalesRecordsDeps, req
   const opportunity = await deps.records.findOpportunity(request.customerId, input.opportunityId);
   if (!opportunity) return notFound("opportunity");
   const contact = { ...existing, ...input, updatedAt: currentTime(deps) };
-  const result = await persistMutation(deps, request, "opportunity_contact.updated", "opportunity_contact", contact.id, { opportunityId: contact.opportunityId, email: contact.email }, { type: "opportunity_contact", value: contact }, existing.archivedAt && existing.opportunityId === input.opportunityId ? undefined : activeParentGuard(deps, request, "opportunity_contact.updated", "opportunity_contact", existing.id, "opportunity", opportunity.id));
+  const result = await persistMutation(deps, request, "opportunity_contact.updated", "opportunity_contact", contact.id, { opportunityId: contact.opportunityId, email: contact.email }, { type: "opportunity_contact", value: contact }, existing.archivedAt && existing.opportunityId === input.opportunityId ? undefined : activeParentGuard(deps, request, "opportunity_contact.updated", "opportunity_contact", existing.id, "opportunity", opportunity.id), existing.archivedAt ? undefined : activeRecordGuard(deps, request, "opportunity_contact.updated", "opportunity_contact", contact.id));
   if (result === "parent_archived") return archivedParentConflict("opportunity");
+  if (result === "record_archived") return archivedRecordConflict("opportunity contact");
   if (result !== "committed") return evidenceUnavailable();
   return { status: 200, body: { contact: serialise(contact) } };
 }
@@ -152,6 +156,7 @@ function badRequest(error: string): SalesResponse { return { status: 400, body: 
 function notFound(subject: string): SalesResponse { return { status: 404, body: { error: `${subject} not found` } }; }
 function evidenceUnavailable(): SalesResponse { return { status: 503, body: { error: "The Sales record change could not be saved. Retry the operation or provide this support reference: sales-record-write-failed." } }; }
 function archivedParentConflict(parentType: "account" | "opportunity"): SalesResponse { return { status: 409, body: { error: `Archived ${parentType} cannot accept new or reparented Sales records.` } }; }
+function archivedRecordConflict(recordType: "account" | "opportunity" | "opportunity contact"): SalesResponse { return { status: 409, body: { error: `Archived ${recordType} cannot be updated.` } }; }
 
 function activeParentGuard(
   deps: SalesRecordsDeps,
@@ -172,6 +177,24 @@ function activeParentGuard(
   };
 }
 
+function activeRecordGuard(
+  deps: SalesRecordsDeps,
+  request: SalesRequest,
+  action: string,
+  recordType: SalesMutationRecord["type"],
+  recordId: string,
+): ActiveSalesRecordGuard {
+  const correlationId = newId(deps);
+  const label = recordType === "opportunity_contact" ? "opportunity contact" : recordType;
+  return {
+    type: recordType,
+    id: recordId,
+    customerId: request.customerId,
+    deniedAudit: { id: newId(deps), occurredAt: currentTime(deps), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action, subjectType: recordType, subjectId: recordId, outcome: "denied", correlationId, details: { integrationSurface: "local_sales_records", reason: "record_archived" } },
+    deniedDiagnostic: deps.redactDiagnostic({ source: "sales-records", operation: action, outcome: "failure", level: "warn", customerId: request.customerId, actor: request.actor, subject: { type: recordType, id: recordId }, message: `Sales ${action} denied because the ${label} was archived`, correlationId, details: { integrationSurface: "local_sales_records", reason: "record_archived" } }),
+  };
+}
+
 async function persistMutation(
   deps: SalesRecordsDeps,
   request: SalesRequest,
@@ -181,7 +204,8 @@ async function persistMutation(
   details: Record<string, unknown>,
   record: SalesMutationRecord,
   activeParentGuard?: ActiveSalesParentGuard,
-): Promise<"committed" | "parent_archived" | "failed"> {
+  activeRecordGuard?: ActiveSalesRecordGuard,
+): Promise<"committed" | "parent_archived" | "record_archived" | "failed"> {
   const correlationId = newId(deps);
   try {
     const result = await deps.writer.commit({
@@ -189,6 +213,7 @@ async function persistMutation(
       audit: { id: newId(deps), occurredAt: currentTime(deps), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action, subjectType, subjectId, outcome: "success", correlationId, details },
       diagnostic: deps.redactDiagnostic({ source: "sales-records", operation: action, outcome: "success", level: "info", customerId: request.customerId, actor: request.actor, subject: { type: subjectType, id: subjectId }, message: `Sales ${action} completed`, correlationId, details: { integrationSurface: "local_sales_records", ...details } }),
       activeParentGuard,
+      activeRecordGuard,
     });
     return result.outcome;
   } catch (error) {
