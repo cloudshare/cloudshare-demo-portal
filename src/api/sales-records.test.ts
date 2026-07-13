@@ -24,11 +24,22 @@ function createDeps(): SalesRecordsDeps & { audit: ReturnType<typeof createInMem
     audit,
     diagnostics,
     writer: { async commit(input) {
+      if (input.activeParentGuard) {
+        const parent = input.activeParentGuard.type === "account"
+          ? await records.findAccount(input.activeParentGuard.customerId, input.activeParentGuard.id)
+          : await records.findOpportunity(input.activeParentGuard.customerId, input.activeParentGuard.id);
+        if (!parent || parent.archivedAt) {
+          await audit.write(input.activeParentGuard.deniedAudit);
+          await diagnostics.append(input.activeParentGuard.deniedDiagnostic);
+          return { outcome: "parent_archived" } as const;
+        }
+      }
       if (input.record?.type === "account") await records.saveAccount(input.record.value);
       if (input.record?.type === "opportunity") await records.saveOpportunity(input.record.value);
       if (input.record?.type === "opportunity_contact") await records.saveContact(input.record.value);
       await audit.write(input.audit);
       await diagnostics.append(input.diagnostic);
+      return { outcome: "committed" } as const;
     } },
     redactDiagnostic: (input) => input,
     logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -83,6 +94,28 @@ describe("Customer-scoped Sales record API handlers", () => {
     const denied = await deps.audit.query({ customerId: "certalis", subjectType: "account" });
     expect(denied.at(-1)).toMatchObject({ action: "opportunity.created", outcome: "denied", subjectId: accountId });
     expect(deps.diagnostics.append).toHaveBeenCalledWith(expect.objectContaining({ operation: "opportunity.created", outcome: "failure", details: expect.objectContaining({ reason: "parent_archived" }) }));
+  });
+
+  it("denies a child write when its parent archives after the handler lookup but before the atomic writer commits", async () => {
+    const deps = createDeps();
+    const account = await handleCreateSalesAccount(deps, { customerId: "certalis", actor: admin, body: { name: "Acme Labs", kind: "prospect" } });
+    const accountId = (account.body.account as { id: string }).id;
+    const commit = deps.writer.commit;
+    deps.writer.commit = async (input) => {
+      if (input.activeParentGuard?.type === "account") {
+        const parent = await deps.records.findAccount("certalis", accountId);
+        if (parent) await deps.records.saveAccount({ ...parent, archivedAt: new Date("2026-07-12T17:01:00.000Z") });
+      }
+      return commit(input);
+    };
+
+    const opportunity = await handleCreateSalesOpportunity(deps, { customerId: "certalis", actor: admin, body: { accountId, name: "Late proof", status: "open" } });
+    const records = await handleListSalesRecords(deps, { customerId: "certalis", actor: admin });
+    const denied = await deps.audit.query({ customerId: "certalis", subjectType: "account" });
+
+    expect(opportunity).toEqual({ status: 409, body: { error: "Archived account cannot accept new or reparented Sales records." } });
+    expect(records.body).toMatchObject({ opportunities: [] });
+    expect(denied.at(-1)).toMatchObject({ action: "opportunity.created", outcome: "denied", subjectId: accountId });
   });
 
   it("does not reparent an active Opportunity or Contact into archived history", async () => {

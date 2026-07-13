@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { DiagnosticActor, DiagnosticLogEntryInput } from "@/domain/diagnostic-log";
 import type { AccountKind, OpportunityStatus, SalesRecordRepository } from "@/domain/sales-records";
-import type { SalesMutationRecord, SalesMutationWriter } from "@/domain/sales-mutation-writer";
+import type { ActiveSalesParentGuard, SalesMutationRecord, SalesMutationWriter } from "@/domain/sales-mutation-writer";
 import type { Logger } from "@/observability/logger";
 
 export interface SalesRecordsDeps {
@@ -36,7 +36,7 @@ export async function handleCreateSalesAccount(deps: SalesRecordsDeps, request: 
   if (!input) return badRequest("Account name and kind (prospect or current_customer) are required.");
   const now = currentTime(deps);
   const account = { id: newId(deps), customerId: request.customerId, ...input, archivedAt: null, createdAt: now, updatedAt: now };
-  if (!await persistMutation(deps, request, "account.created", "account", account.id, { name: account.name, kind: account.kind }, { type: "account", value: account })) return evidenceUnavailable();
+  if (await persistMutation(deps, request, "account.created", "account", account.id, { name: account.name, kind: account.kind }, { type: "account", value: account }) !== "committed") return evidenceUnavailable();
   return { status: 201, body: { account: serialise(account) } };
 }
 
@@ -46,7 +46,7 @@ export async function handleUpdateSalesAccount(deps: SalesRecordsDeps, request: 
   const input = parseAccount(request.body);
   if (!input) return badRequest("Account name and kind (prospect or current_customer) are required.");
   const account = { ...existing, ...input, updatedAt: currentTime(deps) };
-  if (!await persistMutation(deps, request, "account.updated", "account", account.id, { name: account.name, kind: account.kind }, { type: "account", value: account })) return evidenceUnavailable();
+  if (await persistMutation(deps, request, "account.updated", "account", account.id, { name: account.name, kind: account.kind }, { type: "account", value: account }) !== "committed") return evidenceUnavailable();
   return { status: 200, body: { account: serialise(account) } };
 }
 
@@ -55,7 +55,7 @@ export async function handleArchiveSalesAccount(deps: SalesRecordsDeps, request:
   if (!existing) return notFound("account");
   const now = currentTime(deps);
   const account = { ...existing, archivedAt: existing.archivedAt ?? now, updatedAt: now };
-  if (!await persistMutation(deps, request, "account.archived", "account", account.id, { archivedAt: account.archivedAt.toISOString() }, { type: "account", value: account })) return evidenceUnavailable();
+  if (await persistMutation(deps, request, "account.archived", "account", account.id, { archivedAt: account.archivedAt.toISOString() }, { type: "account", value: account }) !== "committed") return evidenceUnavailable();
   return { status: 200, body: { account: serialise(account) } };
 }
 
@@ -64,10 +64,11 @@ export async function handleCreateSalesOpportunity(deps: SalesRecordsDeps, reque
   if (!input) return badRequest("Opportunity accountId, name, and status (open, won, or lost) are required.");
   const account = await deps.records.findAccount(request.customerId, input.accountId);
   if (!account) return notFound("account");
-  if (account.archivedAt) return rejectArchivedParent(deps, request, "opportunity.created", "account", account.id, "account");
   const now = currentTime(deps);
   const opportunity = { id: newId(deps), customerId: request.customerId, ...input, archivedAt: null, createdAt: now, updatedAt: now };
-  if (!await persistMutation(deps, request, "opportunity.created", "opportunity", opportunity.id, { accountId: opportunity.accountId, name: opportunity.name, status: opportunity.status }, { type: "opportunity", value: opportunity })) return evidenceUnavailable();
+  const result = await persistMutation(deps, request, "opportunity.created", "opportunity", opportunity.id, { accountId: opportunity.accountId, name: opportunity.name, status: opportunity.status }, { type: "opportunity", value: opportunity }, activeParentGuard(deps, request, "opportunity.created", "account", account.id, "account"));
+  if (result === "parent_archived") return archivedParentConflict("account");
+  if (result !== "committed") return evidenceUnavailable();
   return { status: 201, body: { opportunity: serialise(opportunity) } };
 }
 
@@ -78,9 +79,10 @@ export async function handleUpdateSalesOpportunity(deps: SalesRecordsDeps, reque
   if (!input) return badRequest("Opportunity accountId, name, and status (open, won, or lost) are required.");
   const account = await deps.records.findAccount(request.customerId, input.accountId);
   if (!account) return notFound("account");
-  if (account.archivedAt && (!existing.archivedAt || existing.accountId !== input.accountId)) return rejectArchivedParent(deps, request, "opportunity.updated", "opportunity", existing.id, "account");
   const opportunity = { ...existing, ...input, updatedAt: currentTime(deps) };
-  if (!await persistMutation(deps, request, "opportunity.updated", "opportunity", opportunity.id, { accountId: opportunity.accountId, name: opportunity.name, status: opportunity.status }, { type: "opportunity", value: opportunity })) return evidenceUnavailable();
+  const result = await persistMutation(deps, request, "opportunity.updated", "opportunity", opportunity.id, { accountId: opportunity.accountId, name: opportunity.name, status: opportunity.status }, { type: "opportunity", value: opportunity }, existing.archivedAt && existing.accountId === input.accountId ? undefined : activeParentGuard(deps, request, "opportunity.updated", "opportunity", existing.id, "account", account.id));
+  if (result === "parent_archived") return archivedParentConflict("account");
+  if (result !== "committed") return evidenceUnavailable();
   return { status: 200, body: { opportunity: serialise(opportunity) } };
 }
 
@@ -89,7 +91,7 @@ export async function handleArchiveSalesOpportunity(deps: SalesRecordsDeps, requ
   if (!existing) return notFound("opportunity");
   const now = currentTime(deps);
   const opportunity = { ...existing, archivedAt: existing.archivedAt ?? now, updatedAt: now };
-  if (!await persistMutation(deps, request, "opportunity.archived", "opportunity", opportunity.id, { archivedAt: opportunity.archivedAt.toISOString() }, { type: "opportunity", value: opportunity })) return evidenceUnavailable();
+  if (await persistMutation(deps, request, "opportunity.archived", "opportunity", opportunity.id, { archivedAt: opportunity.archivedAt.toISOString() }, { type: "opportunity", value: opportunity }) !== "committed") return evidenceUnavailable();
   return { status: 200, body: { opportunity: serialise(opportunity) } };
 }
 
@@ -98,10 +100,11 @@ export async function handleCreateOpportunityContact(deps: SalesRecordsDeps, req
   if (!input) return badRequest("Contact opportunityId, first name, last name, and email are required.");
   const opportunity = await deps.records.findOpportunity(request.customerId, input.opportunityId);
   if (!opportunity) return notFound("opportunity");
-  if (opportunity.archivedAt) return rejectArchivedParent(deps, request, "opportunity_contact.created", "opportunity", opportunity.id, "opportunity");
   const now = currentTime(deps);
   const contact = { id: newId(deps), customerId: request.customerId, ...input, archivedAt: null, createdAt: now, updatedAt: now };
-  if (!await persistMutation(deps, request, "opportunity_contact.created", "opportunity_contact", contact.id, { opportunityId: contact.opportunityId, email: contact.email }, { type: "opportunity_contact", value: contact })) return evidenceUnavailable();
+  const result = await persistMutation(deps, request, "opportunity_contact.created", "opportunity_contact", contact.id, { opportunityId: contact.opportunityId, email: contact.email }, { type: "opportunity_contact", value: contact }, activeParentGuard(deps, request, "opportunity_contact.created", "opportunity", opportunity.id, "opportunity"));
+  if (result === "parent_archived") return archivedParentConflict("opportunity");
+  if (result !== "committed") return evidenceUnavailable();
   return { status: 201, body: { contact: serialise(contact) } };
 }
 
@@ -112,9 +115,10 @@ export async function handleUpdateOpportunityContact(deps: SalesRecordsDeps, req
   if (!input) return badRequest("Contact opportunityId, first name, last name, and email are required.");
   const opportunity = await deps.records.findOpportunity(request.customerId, input.opportunityId);
   if (!opportunity) return notFound("opportunity");
-  if (opportunity.archivedAt && (!existing.archivedAt || existing.opportunityId !== input.opportunityId)) return rejectArchivedParent(deps, request, "opportunity_contact.updated", "opportunity_contact", existing.id, "opportunity");
   const contact = { ...existing, ...input, updatedAt: currentTime(deps) };
-  if (!await persistMutation(deps, request, "opportunity_contact.updated", "opportunity_contact", contact.id, { opportunityId: contact.opportunityId, email: contact.email }, { type: "opportunity_contact", value: contact })) return evidenceUnavailable();
+  const result = await persistMutation(deps, request, "opportunity_contact.updated", "opportunity_contact", contact.id, { opportunityId: contact.opportunityId, email: contact.email }, { type: "opportunity_contact", value: contact }, existing.archivedAt && existing.opportunityId === input.opportunityId ? undefined : activeParentGuard(deps, request, "opportunity_contact.updated", "opportunity_contact", existing.id, "opportunity", opportunity.id));
+  if (result === "parent_archived") return archivedParentConflict("opportunity");
+  if (result !== "committed") return evidenceUnavailable();
   return { status: 200, body: { contact: serialise(contact) } };
 }
 
@@ -123,7 +127,7 @@ export async function handleArchiveOpportunityContact(deps: SalesRecordsDeps, re
   if (!existing) return notFound("opportunity contact");
   const now = currentTime(deps);
   const contact = { ...existing, archivedAt: existing.archivedAt ?? now, updatedAt: now };
-  if (!await persistMutation(deps, request, "opportunity_contact.archived", "opportunity_contact", contact.id, { archivedAt: contact.archivedAt.toISOString() }, { type: "opportunity_contact", value: contact })) return evidenceUnavailable();
+  if (await persistMutation(deps, request, "opportunity_contact.archived", "opportunity_contact", contact.id, { archivedAt: contact.archivedAt.toISOString() }, { type: "opportunity_contact", value: contact }) !== "committed") return evidenceUnavailable();
   return { status: 200, body: { contact: serialise(contact) } };
 }
 
@@ -147,31 +151,48 @@ function serialise<T>(value: T): T { return JSON.parse(JSON.stringify(value)) as
 function badRequest(error: string): SalesResponse { return { status: 400, body: { error } }; }
 function notFound(subject: string): SalesResponse { return { status: 404, body: { error: `${subject} not found` } }; }
 function evidenceUnavailable(): SalesResponse { return { status: 503, body: { error: "The Sales record change could not be saved. Retry the operation or provide this support reference: sales-record-write-failed." } }; }
+function archivedParentConflict(parentType: "account" | "opportunity"): SalesResponse { return { status: 409, body: { error: `Archived ${parentType} cannot accept new or reparented Sales records.` } }; }
 
-async function rejectArchivedParent(deps: SalesRecordsDeps, request: SalesRequest, action: string, subjectType: string, subjectId: string, parentType: "account" | "opportunity"): Promise<SalesResponse> {
+function activeParentGuard(
+  deps: SalesRecordsDeps,
+  request: SalesRequest,
+  action: string,
+  subjectType: string,
+  subjectId: string,
+  parentType: "account" | "opportunity",
+  parentId = subjectId,
+): ActiveSalesParentGuard {
   const correlationId = newId(deps);
-  try {
-    await deps.writer.commit({
-      audit: { id: newId(deps), occurredAt: currentTime(deps), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action, subjectType, subjectId, outcome: "denied", correlationId, details: { integrationSurface: "local_sales_records", reason: "parent_archived", parentType } },
-      diagnostic: deps.redactDiagnostic({ source: "sales-records", operation: action, outcome: "failure", level: "warn", customerId: request.customerId, actor: request.actor, subject: { type: subjectType, id: subjectId }, message: `Sales ${action} denied because its ${parentType} is archived`, correlationId, details: { integrationSurface: "local_sales_records", reason: "parent_archived", parentType } }),
-    });
-  } catch (error) {
-    deps.logger.error("sales record denial evidence failed", { action, subjectType, subjectId, correlationId, errorType: error instanceof Error ? error.name : typeof error });
-  }
-  return { status: 409, body: { error: `Archived ${parentType} cannot accept new or reparented Sales records.` } };
+  return {
+    type: parentType,
+    id: parentId,
+    customerId: request.customerId,
+    deniedAudit: { id: newId(deps), occurredAt: currentTime(deps), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action, subjectType, subjectId, outcome: "denied", correlationId, details: { integrationSurface: "local_sales_records", reason: "parent_archived", parentType } },
+    deniedDiagnostic: deps.redactDiagnostic({ source: "sales-records", operation: action, outcome: "failure", level: "warn", customerId: request.customerId, actor: request.actor, subject: { type: subjectType, id: subjectId }, message: `Sales ${action} denied because its ${parentType} is archived`, correlationId, details: { integrationSurface: "local_sales_records", reason: "parent_archived", parentType } }),
+  };
 }
 
-async function persistMutation(deps: SalesRecordsDeps, request: SalesRequest, action: string, subjectType: string, subjectId: string, details: Record<string, unknown>, record: SalesMutationRecord): Promise<boolean> {
+async function persistMutation(
+  deps: SalesRecordsDeps,
+  request: SalesRequest,
+  action: string,
+  subjectType: string,
+  subjectId: string,
+  details: Record<string, unknown>,
+  record: SalesMutationRecord,
+  activeParentGuard?: ActiveSalesParentGuard,
+): Promise<"committed" | "parent_archived" | "failed"> {
   const correlationId = newId(deps);
   try {
-    await deps.writer.commit({
+    const result = await deps.writer.commit({
       record,
       audit: { id: newId(deps), occurredAt: currentTime(deps), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action, subjectType, subjectId, outcome: "success", correlationId, details },
       diagnostic: deps.redactDiagnostic({ source: "sales-records", operation: action, outcome: "success", level: "info", customerId: request.customerId, actor: request.actor, subject: { type: subjectType, id: subjectId }, message: `Sales ${action} completed`, correlationId, details: { integrationSurface: "local_sales_records", ...details } }),
+      activeParentGuard,
     });
-    return true;
+    return result.outcome;
   } catch (error) {
     deps.logger.error("sales record transaction failed", { action, subjectType, subjectId, correlationId, errorType: error instanceof Error ? error.name : typeof error });
-    return false;
+    return "failed";
   }
 }

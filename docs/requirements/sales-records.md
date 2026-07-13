@@ -24,4 +24,6 @@ editing use a compact modal; no inactive bulk-operation controls are shown.
 An archived Account cannot receive a new Opportunity or become a reparenting target. Likewise, an
 archived Opportunity cannot receive or become a reparenting target for an active Contact. A denied
 operation returns a deliberate conflict response and writes Customer-scoped audit and diagnostic
-evidence. Historical edits may retain an archived record's existing archived parent.
+evidence. The active-parent check is a conditional mutation in the same persistence transaction as
+the child write, so a concurrent archive cannot leave a newly written active child under archived
+history. Historical edits may retain an archived record's existing archived parent.
