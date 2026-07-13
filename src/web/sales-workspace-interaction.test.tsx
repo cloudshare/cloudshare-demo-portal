@@ -134,7 +134,7 @@ describe("SalesWorkspace interaction", () => {
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "New Account" }));
   });
 
-  it("explains disabled child creation and locks a new Opportunity to the selected Account", async () => {
+  it("keeps disabled child creation compact and locks a new Opportunity to the selected Account", async () => {
     const user = userEvent.setup();
     vi.spyOn(window, "fetch").mockResolvedValue(json({
       accounts: [{ id: "account-1", name: "Acme Labs", kind: "prospect", archivedAt: null, createdAt: "2026-07-12T17:00:00.000Z" }],
@@ -144,7 +144,7 @@ describe("SalesWorkspace interaction", () => {
     render(<SalesWorkspace email="sales-admin@certalis.demo" />);
     const newOpportunity = await screen.findByRole("button", { name: "New Opportunity" });
     expect((newOpportunity as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText("Select an Account to add an Opportunity.")).not.toBeNull();
+    expect(screen.queryByText("Select an Account to add an Opportunity.")).toBeNull();
 
     await user.click(screen.getByRole("row", { name: /Acme Labs/ }));
     await user.click(newOpportunity);
@@ -167,7 +167,7 @@ describe("SalesWorkspace interaction", () => {
     render(<SalesWorkspace email="sales-admin@certalis.demo" />);
     await screen.findByRole("row", { name: /Acme Labs/ });
     expect((screen.getByRole("button", { name: "New Contact" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText("Select an Opportunity to add a Contact.")).not.toBeNull();
+    expect(screen.queryByText("Select an Opportunity to add a Contact.")).toBeNull();
     expect(screen.getByRole("button", { name: "Edit Acme Labs" }).textContent).toBe("Edit");
     expect(screen.getByRole("button", { name: "Archive Acme Labs" }).textContent).toBe("Archive");
 

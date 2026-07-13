@@ -26,7 +26,7 @@ describe("Sales workspace page", () => {
       email: "sales-admin@certalis.demo", role: "admin", workspace: "sales",
     });
 
-    const page = await SalesPage();
+    const page = await SalesPage({});
 
     expect(page).toMatchObject({ props: { email: "sales-admin@certalis.demo" } });
   });
@@ -48,7 +48,7 @@ describe("Sales workspace page", () => {
       email: "admin@helioscx.demo", role: "admin", workspace: "certification",
     });
 
-    await expect(SalesPage()).rejects.toThrow("redirect:/admin");
+    await expect(SalesPage({})).rejects.toThrow("redirect:/admin");
     expect(mockRedirect).toHaveBeenCalledWith("/admin");
   });
 });
