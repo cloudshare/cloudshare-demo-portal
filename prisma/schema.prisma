@@ -72,6 +72,7 @@ model OpportunityContact {
   firstName     String
   lastName      String
   email         String
+  archivedAt    DateTime?
   createdAt     DateTime
   updatedAt     DateTime
   customer      Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)

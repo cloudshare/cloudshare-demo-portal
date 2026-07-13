@@ -32,6 +32,7 @@ export interface OpportunityContact {
   readonly firstName: string;
   readonly lastName: string;
   readonly email: string;
+  readonly archivedAt: Date | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }

@@ -95,7 +95,7 @@ export async function handleCreateOpportunityContact(deps: SalesRecordsDeps, req
   if (!input) return badRequest("Contact opportunityId, first name, last name, and email are required.");
   if (!await deps.records.findOpportunity(request.customerId, input.opportunityId)) return notFound("opportunity");
   const now = currentTime(deps);
-  const contact = { id: newId(deps), customerId: request.customerId, ...input, createdAt: now, updatedAt: now };
+  const contact = { id: newId(deps), customerId: request.customerId, ...input, archivedAt: null, createdAt: now, updatedAt: now };
   if (!await persistMutation(deps, request, "opportunity_contact.created", "opportunity_contact", contact.id, { opportunityId: contact.opportunityId, email: contact.email }, { type: "opportunity_contact", value: contact })) return evidenceUnavailable();
   return { status: 201, body: { contact: serialise(contact) } };
 }
@@ -108,6 +108,15 @@ export async function handleUpdateOpportunityContact(deps: SalesRecordsDeps, req
   if (!await deps.records.findOpportunity(request.customerId, input.opportunityId)) return notFound("opportunity");
   const contact = { ...existing, ...input, updatedAt: currentTime(deps) };
   if (!await persistMutation(deps, request, "opportunity_contact.updated", "opportunity_contact", contact.id, { opportunityId: contact.opportunityId, email: contact.email }, { type: "opportunity_contact", value: contact })) return evidenceUnavailable();
+  return { status: 200, body: { contact: serialise(contact) } };
+}
+
+export async function handleArchiveOpportunityContact(deps: SalesRecordsDeps, request: SalesRequest & { readonly contactId: string }): Promise<SalesResponse> {
+  const existing = await deps.records.findContact(request.customerId, request.contactId);
+  if (!existing) return notFound("opportunity contact");
+  const now = currentTime(deps);
+  const contact = { ...existing, archivedAt: existing.archivedAt ?? now, updatedAt: now };
+  if (!await persistMutation(deps, request, "opportunity_contact.archived", "opportunity_contact", contact.id, { archivedAt: contact.archivedAt.toISOString() }, { type: "opportunity_contact", value: contact })) return evidenceUnavailable();
   return { status: 200, body: { contact: serialise(contact) } };
 }
 

@@ -5,6 +5,7 @@ import { SalesWorkspace } from "./sales-workspace";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 describe("SalesWorkspace", () => {

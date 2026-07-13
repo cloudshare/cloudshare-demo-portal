@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createInMemoryAuditRepository } from "@/persistence/audit-repository";
 import { createInMemorySalesRecordRepository } from "@/domain/sales-records";
 import {
+  handleArchiveOpportunityContact,
   handleArchiveSalesOpportunity,
   handleCreateOpportunityContact,
   handleCreateSalesAccount,
@@ -52,6 +53,20 @@ describe("Customer-scoped Sales record API handlers", () => {
     expect(archived.body.opportunity).toMatchObject({ archivedAt: "2026-07-12T17:00:00.000Z" });
     expect(contact.body.contact).toMatchObject({ email: "ada@acme.test" });
     expect(history.body).toMatchObject({ opportunities: [expect.objectContaining({ id: opportunityId, status: "won" })], contacts: [expect.objectContaining({ opportunityId })] });
+  });
+
+  it("archives a Contact as durable local history with audit and diagnostic evidence", async () => {
+    const deps = createDeps();
+    const account = await handleCreateSalesAccount(deps, { customerId: "certalis", actor: admin, body: { name: "Acme Labs", kind: "prospect" } });
+    const opportunity = await handleCreateSalesOpportunity(deps, { customerId: "certalis", actor: admin, body: { accountId: (account.body.account as { id: string }).id, name: "Accelerate proof", status: "open" } });
+    const contact = await handleCreateOpportunityContact(deps, { customerId: "certalis", actor: admin, body: { opportunityId: (opportunity.body.opportunity as { id: string }).id, firstName: "Ada", lastName: "Lovelace", email: "ada@acme.test" } });
+
+    const archived = await handleArchiveOpportunityContact(deps, { customerId: "certalis", actor: admin, contactId: (contact.body.contact as { id: string }).id });
+
+    expect(archived.body.contact).toMatchObject({ archivedAt: "2026-07-12T17:00:00.000Z" });
+    const records = await deps.audit.query({ customerId: "certalis", subjectType: "opportunity_contact" });
+    expect(records.at(-1)).toMatchObject({ action: "opportunity_contact.archived", outcome: "success" });
+    expect(deps.diagnostics.append).toHaveBeenCalledWith(expect.objectContaining({ operation: "opportunity_contact.archived" }));
   });
 
   it("does not expose Certalis records to a Helios Customer or allow cross-Customer parent references", async () => {
