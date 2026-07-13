@@ -181,4 +181,28 @@ describe("SalesWorkspace interaction", () => {
     expect(dialog.textContent).toContain("Acme proof");
     expect(screen.queryByLabelText("Opportunity")).toBeNull();
   });
+
+  it("keeps Space and Enter on row actions with the action instead of selecting its row", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "fetch").mockResolvedValue(json({
+      accounts: [{ id: "account-1", name: "Acme Labs", kind: "prospect", archivedAt: null, createdAt: "2026-07-12T17:00:00.000Z" }],
+      opportunities: [], contacts: [],
+    }));
+
+    render(<SalesWorkspace email="sales-admin@certalis.demo" />);
+    const edit = await screen.findByRole("button", { name: "Edit Acme Labs" });
+    edit.focus();
+    await user.keyboard(" ");
+
+    expect(screen.getByRole("dialog", { name: "Edit Account" })).not.toBeNull();
+    expect(mockRouter.replace).not.toHaveBeenCalled();
+    await user.keyboard("{Escape}");
+
+    mockRouter.replace.mockClear();
+    edit.focus();
+    await user.keyboard("{Enter}");
+
+    expect(screen.getByRole("dialog", { name: "Edit Account" })).not.toBeNull();
+    expect(mockRouter.replace).not.toHaveBeenCalled();
+  });
 });

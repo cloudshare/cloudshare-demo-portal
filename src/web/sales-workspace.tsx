@@ -120,6 +120,7 @@ export function SalesWorkspace({ email, initialSelection }: { readonly email: st
   }, [selectedAccount?.archivedAt, selectedOpportunity?.archivedAt]);
 
   const selectWithKeyboard = (event: React.KeyboardEvent<HTMLTableRowElement>, select: () => void) => {
+    if (event.target !== event.currentTarget) return;
     if (event.key === "Enter" || event.key === " ") { event.preventDefault(); select(); }
   };
   const opportunityInstruction = !selectedAccount ? "Select an Account to add an Opportunity." : selectedAccount.archivedAt ? "Archived Accounts cannot receive Opportunities." : undefined;
