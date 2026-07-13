@@ -77,4 +77,3 @@ describe("Sales Demo Item API", () => {
     expect(audit.write).toHaveBeenCalledWith(expect.objectContaining({ customerId: "certalis", action: "sales.demo_item.archived", subjectId: id, outcome: "success" }));
   });
 });
-
