@@ -73,4 +73,56 @@ describe("createPrismaSalesMutationWriter", () => {
     await expect(prisma.auditTrailEntry.findUnique({ where: { id: `audit-denied-${suffix}` } })).resolves.toMatchObject({ outcome: "denied", customerId, subjectId: accountId });
     await expect(prisma.auditTrailEntry.findUnique({ where: { id: `audit-success-${suffix}` } })).resolves.toBeNull();
   });
+
+  it("guards stale Opportunity and Contact patches in their real Prisma branches", async () => {
+    const suffix = `${Date.now()}-children`;
+    const customerId = `sales-writer-${suffix}`;
+    const accountId = `sales-account-${suffix}`;
+    const opportunityId = `sales-opportunity-${suffix}`;
+    const contactId = `sales-contact-${suffix}`;
+    const occurredAt = new Date("2026-07-12T17:00:00.000Z");
+    createdCustomerIds.add(customerId);
+    await prisma.customer.create({ data: { id: customerId, slug: `sales-writer-${suffix}`, name: "Certalis" } });
+    await prisma.salesAccount.create({ data: { id: accountId, customerId, name: "Account", kind: "prospect", archivedAt: null, createdAt: occurredAt, updatedAt: occurredAt } });
+    await prisma.salesOpportunity.create({ data: { id: opportunityId, customerId, accountId, name: "Archived opportunity", status: "lost", archivedAt: occurredAt, createdAt: occurredAt, updatedAt: occurredAt } });
+    await prisma.opportunityContact.create({ data: { id: contactId, customerId, opportunityId, firstName: "Ada", lastName: "Lovelace", email: `ada-${suffix}@acme.test`, archivedAt: occurredAt, createdAt: occurredAt, updatedAt: occurredAt } });
+    const writer = createPrismaSalesMutationWriter(prisma);
+
+    const opportunityResult = await writer.commit({
+      record: { type: "opportunity", value: { id: opportunityId, customerId, accountId, name: "Stale rename", status: "won", archivedAt: null, createdAt: occurredAt, updatedAt: new Date("2026-07-12T17:01:00.000Z") } },
+      audit: { id: `audit-success-opportunity-${suffix}`, occurredAt, customerId, action: "opportunity.updated", outcome: "success" },
+      diagnostic: { source: "sales-records", operation: "opportunity.updated", outcome: "success", customerId, message: "should not be written" },
+      activeRecordGuard: deniedRecordGuard("opportunity", opportunityId, customerId, occurredAt, suffix),
+    });
+    const contactResult = await writer.commit({
+      record: { type: "opportunity_contact", value: { id: contactId, customerId, opportunityId, firstName: "Ada", lastName: "Byron", email: `ada-${suffix}@acme.test`, archivedAt: null, createdAt: occurredAt, updatedAt: new Date("2026-07-12T17:01:00.000Z") } },
+      audit: { id: `audit-success-contact-${suffix}`, occurredAt, customerId, action: "opportunity_contact.updated", outcome: "success" },
+      diagnostic: { source: "sales-records", operation: "opportunity_contact.updated", outcome: "success", customerId, message: "should not be written" },
+      activeRecordGuard: deniedRecordGuard("opportunity_contact", contactId, customerId, occurredAt, suffix),
+    });
+
+    expect(opportunityResult).toEqual({ outcome: "record_archived" });
+    expect(contactResult).toEqual({ outcome: "record_archived" });
+    await expect(prisma.salesOpportunity.findUnique({ where: { id: opportunityId } })).resolves.toMatchObject({ name: "Archived opportunity", archivedAt: occurredAt });
+    await expect(prisma.opportunityContact.findUnique({ where: { id: contactId } })).resolves.toMatchObject({ lastName: "Lovelace", archivedAt: occurredAt });
+    await expect(prisma.auditTrailEntry.findMany({ where: { customerId, outcome: "success" } })).resolves.toEqual([]);
+    await expect(prisma.auditTrailEntry.findMany({ where: { customerId, outcome: "denied" } })).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ action: "opportunity.updated", subjectId: opportunityId }),
+      expect.objectContaining({ action: "opportunity_contact.updated", subjectId: contactId }),
+    ]));
+    await expect(prisma.diagnosticLogEntry.findMany({ where: { customerId, outcome: "failure" } })).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ operation: "opportunity.updated" }),
+      expect.objectContaining({ operation: "opportunity_contact.updated" }),
+    ]));
+  });
 });
+
+function deniedRecordGuard(type: "opportunity" | "opportunity_contact", id: string, customerId: string, occurredAt: Date, suffix: string) {
+  return {
+    type,
+    id,
+    customerId,
+    deniedAudit: { id: `audit-denied-${type}-${suffix}`, occurredAt, customerId, action: `${type}.updated`, subjectType: type, subjectId: id, outcome: "denied" as const },
+    deniedDiagnostic: { source: "sales-records", operation: `${type}.updated`, outcome: "failure" as const, customerId, level: "warn" as const, message: "record archived" },
+  };
+}
