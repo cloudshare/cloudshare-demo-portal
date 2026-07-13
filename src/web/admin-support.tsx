@@ -76,6 +76,8 @@ export function AdminSupportFeature(props: {
   readonly diagnosticFilters: DiagnosticLogFilters;
   /** Filters supplied by a specialised support view that must never be relaxed by local controls. */
   readonly lockedDiagnosticFilters?: DiagnosticLogFilters;
+  /** Specialised support views may use a narrower server-side diagnostic route. */
+  readonly diagnosticsEndpoint?: string;
   readonly fetchAdmin: AdminAuthenticatedRequest;
   readonly onNavigate: (intent: AdminNavigationIntent) => void;
 }) {
@@ -88,6 +90,7 @@ export function AdminSupportFeature(props: {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const appliedRouteFiltersRef = useRef<string | null>(null);
+  const lockedDiagnosticFiltersKey = JSON.stringify(props.lockedDiagnosticFilters ?? {});
 
   async function loadAudit(filters: AuditTrailFilters = auditFilters) {
     setLoading(true);
@@ -122,7 +125,7 @@ export function AdminSupportFeature(props: {
         limit: DIAGNOSTIC_PAGE_LIMIT,
         offset,
       });
-      const response = await props.fetchAdmin(`/api/admin/diagnostics${query}`);
+      const response = await props.fetchAdmin(`${props.diagnosticsEndpoint ?? "/api/admin/diagnostics"}${query}`);
       const data = (await response.json()) as {
         entries?: DiagnosticLogEntry[];
         page?: DiagnosticLogPageResponse;
@@ -159,7 +162,7 @@ export function AdminSupportFeature(props: {
     }
     // Route filters are shell-owned URL state; loading and presentation remain feature-owned.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [props.active, props.view, props.diagnosticFilters]);
+  }, [props.active, props.view, props.diagnosticFilters, lockedDiagnosticFiltersKey]);
 
   useEffect(() => {
     if (props.active && props.view === "audit") void loadAudit();

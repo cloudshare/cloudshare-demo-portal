@@ -126,20 +126,21 @@ describe("AdminSupportFeature", () => {
         view="diagnostics"
         diagnosticFilters={{}}
         lockedDiagnosticFilters={{ source: "sales-records" }}
+        diagnosticsEndpoint="/api/sales/diagnostics"
         fetchAdmin={fetchAdmin}
         onNavigate={vi.fn()}
       />,
     );
 
     expect(await screen.findByText("This view is limited to local Sales record diagnostics.")).toBeTruthy();
-    expect(fetchAdmin).toHaveBeenCalledWith("/api/admin/diagnostics?source=sales-records&limit=50&offset=0");
+    expect(fetchAdmin).toHaveBeenCalledWith("/api/sales/diagnostics?source=sales-records&limit=50&offset=0");
     expect(screen.queryByLabelText("Source")).toBeNull();
 
     await user.type(screen.getByPlaceholderText("corr-123"), "corr-sales");
     await user.click(screen.getByRole("button", { name: "Apply Filters" }));
-    await waitFor(() => expect(fetchAdmin).toHaveBeenLastCalledWith("/api/admin/diagnostics?source=sales-records&correlationId=corr-sales&limit=50&offset=0"));
+    await waitFor(() => expect(fetchAdmin).toHaveBeenLastCalledWith("/api/sales/diagnostics?source=sales-records&correlationId=corr-sales&limit=50&offset=0"));
 
     await user.click(screen.getByRole("button", { name: "Clear Filters" }));
-    await waitFor(() => expect(fetchAdmin).toHaveBeenLastCalledWith("/api/admin/diagnostics?source=sales-records&limit=50&offset=0"));
+    await waitFor(() => expect(fetchAdmin).toHaveBeenLastCalledWith("/api/sales/diagnostics?source=sales-records&limit=50&offset=0"));
   });
 });
