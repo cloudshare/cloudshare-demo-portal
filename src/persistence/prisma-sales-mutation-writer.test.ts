@@ -44,6 +44,7 @@ describe("createPrismaSalesMutationWriter", () => {
     await expect(prisma.auditTrailEntry.findUnique({ where: { id: `audit-denied-${suffix}` } })).resolves.toMatchObject({ outcome: "denied", customerId, subjectId: accountId });
     await expect(prisma.auditTrailEntry.findUnique({ where: { id: `audit-success-${suffix}` } })).resolves.toBeNull();
     await expect(prisma.diagnosticLogEntry.findFirst({ where: { customerId, operation: "opportunity.created" } })).resolves.toMatchObject({ outcome: "failure" });
+    await expect(prisma.diagnosticLogEntry.findMany({ where: { customerId, outcome: "success" } })).resolves.toEqual([]);
   });
 
   it("never lets a stale active patch reactivate an archived record", async () => {
@@ -72,6 +73,7 @@ describe("createPrismaSalesMutationWriter", () => {
     await expect(prisma.salesAccount.findUnique({ where: { id: accountId } })).resolves.toMatchObject({ name: "Archived account", archivedAt: occurredAt });
     await expect(prisma.auditTrailEntry.findUnique({ where: { id: `audit-denied-${suffix}` } })).resolves.toMatchObject({ outcome: "denied", customerId, subjectId: accountId });
     await expect(prisma.auditTrailEntry.findUnique({ where: { id: `audit-success-${suffix}` } })).resolves.toBeNull();
+    await expect(prisma.diagnosticLogEntry.findMany({ where: { customerId, outcome: "success" } })).resolves.toEqual([]);
   });
 
   it("guards stale Opportunity and Contact patches in their real Prisma branches", async () => {
@@ -106,6 +108,7 @@ describe("createPrismaSalesMutationWriter", () => {
     await expect(prisma.salesOpportunity.findUnique({ where: { id: opportunityId } })).resolves.toMatchObject({ name: "Archived opportunity", archivedAt: occurredAt });
     await expect(prisma.opportunityContact.findUnique({ where: { id: contactId } })).resolves.toMatchObject({ lastName: "Lovelace", archivedAt: occurredAt });
     await expect(prisma.auditTrailEntry.findMany({ where: { customerId, outcome: "success" } })).resolves.toEqual([]);
+    await expect(prisma.diagnosticLogEntry.findMany({ where: { customerId, outcome: "success" } })).resolves.toEqual([]);
     await expect(prisma.auditTrailEntry.findMany({ where: { customerId, outcome: "denied" } })).resolves.toEqual(expect.arrayContaining([
       expect.objectContaining({ action: "opportunity.updated", subjectId: opportunityId }),
       expect.objectContaining({ action: "opportunity_contact.updated", subjectId: contactId }),
