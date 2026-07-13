@@ -153,6 +153,38 @@ describe("Customer-scoped Sales record API handlers", () => {
     expect(denied.at(-1)).toMatchObject({ action: "account.updated", outcome: "denied", subjectId: accountId, details: expect.objectContaining({ reason: "record_archived" }) });
   });
 
+  it("does not let stale Opportunity or Contact patches reactivate history after a concurrent archive", async () => {
+    const deps = createDeps();
+    const account = await handleCreateSalesAccount(deps, { customerId: "certalis", actor: admin, body: { name: "Acme Labs", kind: "prospect" } });
+    const accountId = (account.body.account as { id: string }).id;
+    const opportunity = await handleCreateSalesOpportunity(deps, { customerId: "certalis", actor: admin, body: { accountId, name: "Proof", status: "open" } });
+    const opportunityId = (opportunity.body.opportunity as { id: string }).id;
+    const commit = deps.writer.commit;
+    deps.writer.commit = async (input) => {
+      if (input.activeRecordGuard?.type === "opportunity") {
+        const record = await deps.records.findOpportunity("certalis", input.activeRecordGuard.id);
+        if (record) await deps.records.saveOpportunity({ ...record, archivedAt: new Date("2026-07-12T17:01:00.000Z") });
+      }
+      if (input.activeRecordGuard?.type === "opportunity_contact") {
+        const record = await deps.records.findContact("certalis", input.activeRecordGuard.id);
+        if (record) await deps.records.saveContact({ ...record, archivedAt: new Date("2026-07-12T17:01:00.000Z") });
+      }
+      return commit(input);
+    };
+
+    const opportunityResponse = await handleUpdateSalesOpportunity(deps, { customerId: "certalis", actor: admin, opportunityId, body: { accountId, name: "Renamed proof", status: "won" } });
+    const replacement = await handleCreateSalesOpportunity(deps, { customerId: "certalis", actor: admin, body: { accountId, name: "Replacement proof", status: "open" } });
+    const replacementId = (replacement.body.opportunity as { id: string }).id;
+    const contact = await handleCreateOpportunityContact(deps, { customerId: "certalis", actor: admin, body: { opportunityId: replacementId, firstName: "Ada", lastName: "Lovelace", email: "ada@acme.test" } });
+    const contactId = (contact.body.contact as { id: string }).id;
+    const contactResponse = await handleUpdateOpportunityContact(deps, { customerId: "certalis", actor: admin, contactId, body: { opportunityId: replacementId, firstName: "Ada", lastName: "Byron", email: "ada@acme.test" } });
+
+    expect(opportunityResponse).toEqual({ status: 409, body: { error: "Archived opportunity cannot be updated." } });
+    expect(await deps.records.findOpportunity("certalis", opportunityId)).toMatchObject({ name: "Proof", archivedAt: new Date("2026-07-12T17:01:00.000Z") });
+    expect(contactResponse).toEqual({ status: 409, body: { error: "Archived opportunity contact cannot be updated." } });
+    expect(await deps.records.findContact("certalis", contactId)).toMatchObject({ lastName: "Lovelace", archivedAt: new Date("2026-07-12T17:01:00.000Z") });
+  });
+
   it("does not reparent an active Opportunity or Contact into archived history", async () => {
     const deps = createDeps();
     const activeAccount = await handleCreateSalesAccount(deps, { customerId: "certalis", actor: admin, body: { name: "Active", kind: "prospect" } });
