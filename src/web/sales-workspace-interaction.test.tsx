@@ -112,5 +112,6 @@ describe("SalesWorkspace interaction", () => {
     await user.keyboard("{Escape}");
 
     expect(screen.queryByRole("dialog", { name: "New Account" })).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "New Account" }));
   });
 });
