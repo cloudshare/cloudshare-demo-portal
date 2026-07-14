@@ -33,22 +33,36 @@ describe("Sales diagnostics HTTP isolation", () => {
     mockHandleGetDiagnosticLog.mockResolvedValue({ status: 200, body: { entries: [] } });
   });
 
-  it("forces sales-records when the Sales route receives an omitted or overridden source", async () => {
+  it("keeps the Sales Customer scope while preserving the requested Sales diagnostic source", async () => {
     mockGetPortalAdminSession.mockResolvedValue({ customerId: "customer-certalis", role: "admin", workspace: "sales" });
 
     const omitted = await getSalesDiagnostics(new Request("http://localhost:3000/api/sales/diagnostics?operation=account.created"));
-    const overridden = await getSalesDiagnostics(new Request("http://localhost:3000/api/sales/diagnostics?source=runtime&operation=account.created"));
+    const demoItems = await getSalesDiagnostics(new Request("http://localhost:3000/api/sales/diagnostics?source=sales-demo-items&operation=demo_item.resource_read"));
 
     expect(omitted.status).toBe(200);
-    expect(overridden.status).toBe(200);
+    expect(demoItems.status).toBe(200);
     expect(mockHandleGetDiagnosticLog).toHaveBeenNthCalledWith(1, expect.anything(), {
       customerId: "customer-certalis",
-      query: { operation: "account.created", source: "sales-records" },
+      query: { operation: "account.created", source: "sales-records", limit: "500", offset: "0" },
     });
     expect(mockHandleGetDiagnosticLog).toHaveBeenNthCalledWith(2, expect.anything(), {
       customerId: "customer-certalis",
-      query: { source: "sales-records", operation: "account.created" },
+      query: { operation: "account.created", source: "sales-demo-items", limit: "500", offset: "0" },
     });
+    expect(mockHandleGetDiagnosticLog).toHaveBeenNthCalledWith(3, expect.anything(), {
+      customerId: "customer-certalis",
+      query: { source: "sales-demo-items", operation: "demo_item.resource_read" },
+    });
+  });
+
+  it("does not let a Sales route caller widen support to an arbitrary source", async () => {
+    mockGetPortalAdminSession.mockResolvedValue({ customerId: "customer-certalis", role: "admin", workspace: "sales" });
+
+    const response = await getSalesDiagnostics(new Request("http://localhost:3000/api/sales/diagnostics?source=runtime"));
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "unsupported_sales_diagnostic_source" });
+    expect(mockHandleGetDiagnosticLog).not.toHaveBeenCalled();
   });
 
   it("does not expose generic Customer diagnostics to a Sales workspace session", async () => {

@@ -40,8 +40,9 @@ export function buildSalesWorkspaceHref(route: SalesNavigationIntent): string {
   params.set("tab", route.tab);
   if (route.tab === "demo-items") {
     const view = route.demoItemView ?? "catalog";
-    if (view !== "catalog") params.set("view", view);
-    if (route.demoItemId) params.set("demoItemId", route.demoItemId);
+    const requiresItem = view === "detail" || view === "edit";
+    if (view !== "catalog" && (!requiresItem || route.demoItemId)) params.set("view", view);
+    if (requiresItem && route.demoItemId) params.set("demoItemId", route.demoItemId);
   }
   if (route.tab === "records") {
     if (route.accountId) params.set("accountId", route.accountId);
@@ -58,8 +59,11 @@ export function parseSalesWorkspaceRouteState(input: {
   readonly opportunityId?: string | readonly string[];
 }): SalesWorkspaceRouteState {
   const tab = parseTab(readValue(input.tab));
-  const demoItemView = tab === "demo-items" ? parseDemoItemView(readValue(input.view)) : "catalog";
   const demoItemId = tab === "demo-items" ? readValue(input.demoItemId) : undefined;
+  const parsedDemoItemView = tab === "demo-items" ? parseDemoItemView(readValue(input.view)) : "catalog";
+  const demoItemView = (parsedDemoItemView === "detail" || parsedDemoItemView === "edit") && !demoItemId
+    ? "catalog"
+    : parsedDemoItemView;
   const accountId = tab === "records" ? readValue(input.accountId) : undefined;
   const opportunityId = tab === "records" ? readValue(input.opportunityId) : undefined;
   return {

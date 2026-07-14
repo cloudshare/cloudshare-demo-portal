@@ -44,6 +44,23 @@ describe("SalesWorkspace interaction", () => {
     expect(consoleError).not.toHaveBeenCalled();
   });
 
+  it("returns Demo Item authoring to the catalog URL so reload does not reopen the form", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => {
+      return String(input) === "/api/sales/demo-items"
+        ? json({ activeDemoItems: [], archivedDemoItems: [] })
+        : json({ projects: [], regions: [] });
+    });
+    render(<SalesWorkspace email="sales-admin@certalis.demo" />);
+
+    await user.click(screen.getByRole("button", { name: "Create Demo Item" }));
+    expect(await screen.findByRole("heading", { name: "Create Demo Item" })).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: "Back to catalog" }));
+
+    expect(mockRouter.push).toHaveBeenLastCalledWith("/sales?tab=demo-items");
+    expect(await screen.findByRole("heading", { name: "Demo Item catalog" })).not.toBeNull();
+  });
+
   it("restores initial URL selection from the server query state even before client search params settle", async () => {
     vi.spyOn(window, "fetch").mockResolvedValue(json({
       accounts: [{ id: "account-1", name: "Acme Labs", kind: "prospect", archivedAt: null, createdAt: "2026-07-12T17:00:00.000Z" }],

@@ -25,6 +25,10 @@ describe("Sales workspace shell routes", () => {
       .toMatchObject({ tab: "demo-items", demoItemView: "create" });
     expect(parseSalesWorkspaceRouteState({ tab: "demo-items", view: "detail", demoItemId: "demo-1" }))
       .toMatchObject({ tab: "demo-items", demoItemView: "detail", demoItemId: "demo-1" });
+    expect(parseSalesWorkspaceRouteState({ tab: "demo-items", view: "detail" }))
+      .toMatchObject({ tab: "demo-items", demoItemView: "catalog" });
+    expect(parseSalesWorkspaceRouteState({ tab: "demo-items", view: "edit" }))
+      .toMatchObject({ tab: "demo-items", demoItemView: "catalog" });
   });
 
   it("serialises nested Demo Item and Account hierarchy routes without mixing tabs", () => {
