@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { handleArchiveSalesItem, handleCreateSalesItem, handleListSalesItems } from "./sales-items";
+import { handleArchiveSalesItem, handleCreateSalesItem, handleGetSalesItemBlueprintDetails, handleListSalesItems } from "./sales-items";
 import type { Item, ItemRepository } from "@/domain/item";
 import type { CloudShareConnectionRecord } from "@/domain/cloudshare-connection";
 import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
@@ -12,7 +12,7 @@ function source(overrides = {}) { return { listProjects: vi.fn().mockResolvedVal
 function deps(repo = repository(), candidate: unknown = source()) { return { repository: repo, connections: { findByCustomerId: vi.fn().mockResolvedValue(connection) }, cloudshare: { forConnection: vi.fn().mockReturnValue(candidate) }, now: () => new Date("2026-07-12T12:00:00Z"), newId: () => "demo-1" }; }
 const body = { name: "CX foundation demo", description: "A sales-safe demo", projectId: "project-1", blueprintIds: ["bp-2", "bp-1"], policyId: "policy-1", regionIds: ["region-1"], salesExperienceType: "demo" };
 
-describe("Sales Demo Item API", () => {
+describe("Sales Item API", () => {
   it("creates a Customer-scoped item from live friendly resources and preserves Blueprint order", async () => {
     const diagnostics = createInMemoryDiagnosticLogRepository();
     const result = await handleCreateSalesItem({ ...deps(), diagnostics: createDiagnosticRecorder({ repository: diagnostics }) }, { customerId: "certalis", body });
@@ -21,11 +21,48 @@ describe("Sales Demo Item API", () => {
     expect(await diagnostics.query({ operation: "sales.item.created" })).toHaveLength(1);
   });
 
-  it("rejects duplicate Blueprint choices before any persisted Sales Demo Item", async () => {
+  it("rejects duplicate Blueprint choices before any persisted Item", async () => {
     const repo = repository();
     const result = await handleCreateSalesItem(deps(repo), { customerId: "certalis", body: { ...body, blueprintIds: ["bp-1", "bp-1"] } });
     expect(result.status).toBe(400);
     await expect(handleListSalesItems({ repository: repo }, { customerId: "certalis" })).resolves.toMatchObject({ body: { activeItems: [] } });
+  });
+
+  it("rejects a stale Region outside the shared default-Snapshot intersection without persisting an Item", async () => {
+    const repo = repository(); const diagnostics = createInMemoryDiagnosticLogRepository();
+    const candidate = source({ listRegions: vi.fn().mockResolvedValue([{ id: "region-1", name: "us-west" }, { id: "region-2", name: "us-east" }]), getBlueprintDetail: vi.fn(async (_projectId: string, id: string) => ({ id, name: id, description: "", defaultSnapshotId: "snapshot-1", snapshots: [{ id: "snapshot-1", name: "Default", isDefault: true, regionIds: id === "bp-1" ? ["region-1", "region-2"] : ["region-1"] }] })) });
+    const result = await handleCreateSalesItem({ ...deps(repo, candidate), diagnostics: createDiagnosticRecorder({ repository: diagnostics }) }, { customerId: "certalis", body: { ...body, blueprintIds: ["bp-1", "bp-2"], regionIds: ["region-2"] } });
+    expect(result).toMatchObject({ status: 400, body: { error: expect.stringContaining("Selected Regions must be shared by every selected Blueprint's default Snapshot.") } });
+    await expect(handleListSalesItems({ repository: repo }, { customerId: "certalis" })).resolves.toMatchObject({ body: { activeItems: [] } });
+    expect(await diagnostics.query({ source: "sales-items", operation: "sales.item.authoring_resources.read", outcome: "failure" })).toHaveLength(1);
+  });
+
+  it("rejects Blueprint steps with no shared default-Snapshot Region without persisting an Item", async () => {
+    const repo = repository(); const diagnostics = createInMemoryDiagnosticLogRepository();
+    const candidate = source({ getBlueprintDetail: vi.fn(async (_projectId: string, id: string) => ({ id, name: id, description: "", defaultSnapshotId: "snapshot-1", snapshots: [{ id: "snapshot-1", name: "Default", isDefault: true, regionIds: id === "bp-1" ? ["region-1"] : ["region-2"] }] })) });
+    const result = await handleCreateSalesItem({ ...deps(repo, candidate), diagnostics: createDiagnosticRecorder({ repository: diagnostics }) }, { customerId: "certalis", body: { ...body, blueprintIds: ["bp-1", "bp-2"], regionIds: ["region-1"] } });
+    expect(result).toMatchObject({ status: 400, body: { error: expect.stringContaining("The selected Blueprints have no shared default-Snapshot Region.") } });
+    await expect(handleListSalesItems({ repository: repo }, { customerId: "certalis" })).resolves.toMatchObject({ body: { activeItems: [] } });
+    expect(await diagnostics.query({ source: "sales-items", operation: "sales.item.authoring_resources.read", outcome: "failure" })).toHaveLength(1);
+  });
+
+  it("records redacted success evidence for live Blueprint-detail reads", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    const client = { requestV3Detailed: vi.fn(async (spec: { path: string; method: string; schema: { parse(value: unknown): unknown } }) => { const payload = { id: "bp-1", name: "Foundation", createFromVersions: [{ id: "snapshot-1", name: "Default", isDefault: true, regions: ["region-1"] }] }; return { data: spec.schema.parse(payload), request: { method: spec.method, path: spec.path, headers: { authorization: "api-key" } }, response: { status: 200, headers: { "x-request-id": "req-1" }, body: payload } }; }) };
+    const result = await handleGetSalesItemBlueprintDetails({ connections: { findByCustomerId: vi.fn().mockResolvedValue(connection) }, cloudshare: { forConnection: vi.fn().mockReturnValue(client) }, diagnostics: createDiagnosticRecorder({ repository: diagnostics, secrets: ["api-key"] }) }, { customerId: "certalis", projectId: "project-1", blueprintIds: ["bp-1"] });
+    expect(result).toMatchObject({ status: 200, body: { blueprintDetails: [{ id: "bp-1", defaultSnapshotRegionIds: ["region-1"] }] } });
+    const [entry] = await diagnostics.query({ source: "sales-items", operation: "sales.item.authoring_resources.read", outcome: "success" });
+    expect(entry).toMatchObject({ request: { path: "/projects/project-1/blueprints/bp-1", headers: { authorization: "[REDACTED]" } }, response: { status: 200 }, details: { integrationSurface: "cloudshare.v3.projects.blueprint_detail" } });
+  });
+
+  it("records redacted failure evidence when a live Blueprint-detail read fails", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    const client = { requestV3Detailed: vi.fn(async (spec: { path: string }) => { throw new CloudShareRequestError("forbidden api-key", 403, { method: "GET", path: spec.path, requestHeaders: { authorization: "api-key" }, responseHeaders: { "x-request-id": "req-1" }, responseBody: "{\\\"error\\\":\\\"forbidden\\\"}" }); }) };
+    const result = await handleGetSalesItemBlueprintDetails({ connections: { findByCustomerId: vi.fn().mockResolvedValue(connection) }, cloudshare: { forConnection: vi.fn().mockReturnValue(client) }, diagnostics: createDiagnosticRecorder({ repository: diagnostics, secrets: ["api-key"] }) }, { customerId: "certalis", projectId: "project-1", blueprintIds: ["bp-1"] });
+    expect(result).toMatchObject({ status: 502, body: { error: "CloudShare Blueprint detail validation failed. Review support diagnostics.", diagnostic: { integrationSurface: "cloudshare.v3.projects.blueprint_detail", responseStatus: 403 } } });
+    const [entry] = await diagnostics.query({ source: "sales-items", operation: "sales.item.authoring_resources.read", outcome: "failure" });
+    expect(entry).toMatchObject({ request: { path: "/projects/project-1/blueprints/bp-1", headers: { authorization: "[REDACTED]" } }, response: { status: 403, headers: { "x-request-id": "req-1" } }, details: { integrationSurface: "cloudshare.v3.projects.blueprint_detail" } });
+    expect(JSON.stringify(entry)).not.toContain("api-key");
   });
 
   it("records a redacted support diagnostic when live authoring resources fail", async () => {

@@ -205,16 +205,26 @@ export function createCloudShareSalesItemResourceSource(client: CloudShareClient
       const result = await read(`/projects/${projectId}/blueprints`, blueprintListSchema, "cloudshare.v3.projects.blueprints");
       return { ...result, data: result.data.map((blueprint) => ({ id: blueprint.id, name: blueprint.name })) };
     },
-    readProjectBlueprintDetails: async (projectId, blueprintIds) => Promise.all(blueprintIds.map(async (blueprintId) => {
-      const result = await read(`/projects/${projectId}/blueprints/${blueprintId}`, z.preprocess((value) => normalizeBlueprintDetailPayload(value, blueprintId), blueprintDetailSchema), "cloudshare.v3.projects.blueprint_detail");
-      const detail = result.data;
-      return { ...result, data: {
-        id: detail.id, name: detail.name, description: detail.description ?? "",
-        defaultSnapshotId: detail.createFromVersions.find((snapshot) => snapshot.isDefault)?.id ?? null,
-        snapshots: detail.createFromVersions.map((snapshot) => ({ id: snapshot.id, name: snapshot.name, isDefault: snapshot.isDefault, regionIds: (snapshot.regions ?? []).map((region) => typeof region === "string" ? region : region.id) })),
-        diagnosticSummary: summarizeBlueprintDetailForDiagnostics(detail),
-      } satisfies CloudShareBlueprintDetail };
-    })),
+    readProjectBlueprintDetails: async (projectId, blueprintIds) => {
+      const settled = await Promise.allSettled(blueprintIds.map(async (blueprintId) => {
+        const result = await read(`/projects/${projectId}/blueprints/${blueprintId}`, z.preprocess((value) => normalizeBlueprintDetailPayload(value, blueprintId), blueprintDetailSchema), "cloudshare.v3.projects.blueprint_detail");
+        const detail = result.data;
+        return { ...result, data: {
+          id: detail.id, name: detail.name, description: detail.description ?? "",
+          defaultSnapshotId: detail.createFromVersions.find((snapshot) => snapshot.isDefault)?.id ?? null,
+          snapshots: detail.createFromVersions.map((snapshot) => ({ id: snapshot.id, name: snapshot.name, isDefault: snapshot.isDefault, regionIds: (snapshot.regions ?? []).map((region) => typeof region === "string" ? region : region.id) })),
+          diagnosticSummary: summarizeBlueprintDetailForDiagnostics(detail),
+        } satisfies CloudShareBlueprintDetail };
+      }));
+      const reads: CloudShareDetailedResourceRead<CloudShareBlueprintDetail>[] = [];
+      let failure: unknown;
+      for (const result of settled) {
+        if (result.status === "fulfilled") reads.push(result.value);
+        else failure ??= result.reason;
+      }
+      if (failure !== undefined) throw new CloudShareSalesResourceReadError(reads, failure);
+      return reads;
+    },
     readProjectPolicies: async (projectId) => {
       const list = await read(`/projects/${projectId}/policies`, policyListSchema, "cloudshare.v3.projects.policies");
       const settled = await Promise.allSettled(list.data.map((policy) => read(`/projects/${projectId}/policies/${policy.id}`, policyDetailSchema, "cloudshare.v3.projects.policy_detail")));

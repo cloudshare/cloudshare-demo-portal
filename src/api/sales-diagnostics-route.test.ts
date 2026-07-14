@@ -37,10 +37,10 @@ describe("Sales diagnostics HTTP isolation", () => {
     mockGetPortalAdminSession.mockResolvedValue({ customerId: "customer-certalis", role: "admin", workspace: "sales" });
 
     const omitted = await getSalesDiagnostics(new Request("http://localhost:3000/api/sales/diagnostics?operation=account.created"));
-    const demoItems = await getSalesDiagnostics(new Request("http://localhost:3000/api/sales/diagnostics?source=sales-items&operation=item.resource_read"));
+    const itemDiagnostics = await getSalesDiagnostics(new Request("http://localhost:3000/api/sales/diagnostics?source=sales-items&operation=item.resource_read"));
 
     expect(omitted.status).toBe(200);
-    expect(demoItems.status).toBe(200);
+    expect(itemDiagnostics.status).toBe(200);
     expect(mockHandleGetDiagnosticLog).toHaveBeenNthCalledWith(1, expect.anything(), {
       customerId: "customer-certalis",
       query: { operation: "account.created", source: "sales-records", limit: "101", offset: "0" },

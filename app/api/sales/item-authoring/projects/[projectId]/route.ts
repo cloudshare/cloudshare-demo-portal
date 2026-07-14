@@ -4,7 +4,7 @@ import { getAdminExamAuthoringServices, getPortalSessionServices, getServices } 
 import { getPortalAdminSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { buildAdminExamAuthoringDeps, handleGetProjectResources } from "@/api/admin-exams";
-import { createCloudShareExamAuthoringSource, type CloudShareExamAuthoringSource } from "@/integrations/cloudshare/resources";
+import { handleGetSalesItemBlueprintDetails } from "@/api/sales-items";
 
 export async function GET(request: Request, { params }: { params: Promise<{ projectId: string }> }) {
   const session = await getPortalAdminSession(getPortalSessionServices(), (await cookies()).get(PORTAL_SESSION_COOKIE)?.value);
@@ -13,17 +13,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ proj
   const result = await handleGetProjectResources({ ...buildAdminExamAuthoringDeps(getAdminExamAuthoringServices()), diagnosticSource: "sales-items" }, { customerId: session.customerId, projectId, refresh: new URL(request.url).searchParams.get("refresh") === "true" });
   if (result.status !== 200) return NextResponse.json(result.body, { status: result.status });
   const services = getServices();
-  const connection = await services.cloudshareConnections.findByCustomerId(session.customerId);
-  if (!connection) return NextResponse.json({ error: "Save a Certalis CloudShare Connection before authoring Items." }, { status: 404 });
-  try {
-    const candidate = services.cloudshareClientFactory.forConnection(connection) as unknown;
-    const source: CloudShareExamAuthoringSource = typeof candidate === "object" && candidate !== null && "getBlueprintDetail" in candidate
-      ? candidate as CloudShareExamAuthoringSource
-      : createCloudShareExamAuthoringSource(candidate as Parameters<typeof createCloudShareExamAuthoringSource>[0]);
-    const body = result.body as { blueprints: Array<{ id: string; name: string; description?: string }> };
-    const details = await Promise.all(body.blueprints.map((blueprint) => source.getBlueprintDetail(projectId, blueprint.id)));
-    return NextResponse.json({ ...body, blueprints: body.blueprints.map((blueprint, index) => ({ ...blueprint, defaultSnapshotRegionIds: details[index]?.snapshots.find((snapshot) => snapshot.isDefault)?.regionIds ?? [] })) }, { status: result.status });
-  } catch {
-    return NextResponse.json({ error: "CloudShare Blueprint detail validation failed. Review support diagnostics." }, { status: 502 });
-  }
+  const body = result.body as { blueprints: Array<{ id: string; name: string; description?: string }> };
+  const details = await handleGetSalesItemBlueprintDetails({ connections: services.cloudshareConnections, cloudshare: services.cloudshareClientFactory, diagnostics: services.diagnosticRecorder }, { customerId: session.customerId, actor: { type: "admin", id: session.userId, email: session.email }, projectId, blueprintIds: body.blueprints.map((blueprint) => blueprint.id) });
+  if (details.status !== 200) return NextResponse.json(details.body, { status: details.status });
+  const blueprintDetails = details.body.blueprintDetails as Array<{ id: string; defaultSnapshotRegionIds: string[] }>;
+  return NextResponse.json({ ...body, blueprints: body.blueprints.map((blueprint) => ({ ...blueprint, defaultSnapshotRegionIds: blueprintDetails.find((detail) => detail.id === blueprint.id)?.defaultSnapshotRegionIds ?? [] })) }, { status: result.status });
 }

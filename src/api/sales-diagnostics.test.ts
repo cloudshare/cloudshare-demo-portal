@@ -3,7 +3,7 @@ import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-
 import { handleGetSalesDiagnosticLog } from "./sales-diagnostics";
 
 describe("Sales diagnostics handler", () => {
-  it("keeps the authenticated Customer scope while allowing an owned Demo Item source", async () => {
+  it("keeps the authenticated Customer scope while allowing an owned Item source", async () => {
     const diagnostics = { append: vi.fn(), query: vi.fn().mockResolvedValue([]) };
 
     await handleGetSalesDiagnosticLog(
@@ -18,7 +18,7 @@ describe("Sales diagnostics handler", () => {
     }));
   });
 
-  it("combines Sales record and Demo Item evidence when no source is selected", async () => {
+  it("combines Sales record and Item evidence when no source is selected", async () => {
     const diagnostics = { append: vi.fn(), query: vi.fn().mockResolvedValue([]) };
 
     await handleGetSalesDiagnosticLog(

@@ -13,6 +13,38 @@ export interface SalesItemDeps { readonly repository: ItemRepository; readonly c
 export interface SalesItemRequest { readonly customerId: string; readonly actor?: DiagnosticActor | null; readonly body?: unknown; }
 const response = (status: number, body: Record<string, unknown>) => ({ status, body });
 
+/** Reads the default-Snapshot Region coverage used by the Item form. This remains
+ * an API handler seam so every live read has Customer-scoped, redacted evidence. */
+export async function handleGetSalesItemBlueprintDetails(
+  deps: Pick<SalesItemDeps, "connections" | "cloudshare" | "diagnostics">,
+  request: { readonly customerId: string; readonly actor?: DiagnosticActor | null; readonly projectId: string; readonly blueprintIds: readonly string[] },
+) {
+  const connection = await deps.connections.findByCustomerId(request.customerId);
+  if (!connection) return response(404, { error: "Save a Certalis CloudShare Connection before authoring Items." });
+  const correlationId = randomUUID();
+  try {
+    const client = deps.cloudshare.forConnection(connection) as Parameters<typeof createCloudShareSalesItemResourceSource>[0];
+    const source = createCloudShareSalesItemResourceSource(client);
+    let reads: readonly CloudShareDetailedResourceRead<CloudShareBlueprintDetail>[];
+    try {
+      reads = await source.readProjectBlueprintDetails(request.projectId, request.blueprintIds);
+    } catch (error) {
+      if (error instanceof CloudShareSalesResourceReadError) {
+        for (const read of error.completedReads) await record(deps, request, correlationId, read, "blueprint_detail");
+        throw error.cause;
+      }
+      throw error;
+    }
+    for (const read of reads) await record(deps, request, correlationId, read, "blueprint_detail");
+    return response(200, { blueprintDetails: reads.map((read) => ({ id: read.data.id, defaultSnapshotRegionIds: read.data.snapshots.find((snapshot) => snapshot.isDefault)?.regionIds ?? [] })) });
+  } catch (error) {
+    const typed = error instanceof CloudShareError;
+    const diagnostic = { operation: "sales.item.authoring_resources.read", integrationSurface: "cloudshare.v3.projects.blueprint_detail", failureMode: typed ? failureMode(error) : "unexpected_response", ...(typed && error.context?.status ? { responseStatus: error.context.status } : {}) };
+    await deps.diagnostics?.record({ source: "sales-items", operation: "sales.item.authoring_resources.read", outcome: "failure", level: "warn", customerId: request.customerId, actor: request.actor, correlationId, message: "Item Blueprint-detail resource read failed", request: typed ? diagnosticRequest(error) : { method: "GET", path: `/projects/${request.projectId}/blueprints` }, response: typed ? diagnosticResponse(error) : {}, details: diagnostic, externalIds: { projectId: request.projectId, resourceType: "blueprint_detail" } });
+    return response(502, { error: "CloudShare Blueprint detail validation failed. Review support diagnostics.", correlationId, diagnostic });
+  }
+}
+
 export async function handleListSalesItems(deps: Pick<SalesItemDeps, "repository">, request: { customerId: string }) { const items = await deps.repository.listByCustomerId(request.customerId); return response(200, { activeItems: items.filter((item) => item.status === "active"), archivedItems: items.filter((item) => item.status === "archived") }); }
 export async function handleGetSalesItem(deps: Pick<SalesItemDeps, "repository">, request: { customerId: string; id: string }) { const item = await deps.repository.findById(request.id); return !item || item.customerId !== request.customerId ? response(404, { error: "Item was not found for this Customer." }) : response(200, { item }); }
 export const handleCreateSalesItem = (deps: SalesItemDeps, request: SalesItemRequest) => save(deps, request, null);
