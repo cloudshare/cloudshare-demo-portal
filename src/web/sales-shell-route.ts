@@ -1,8 +1,9 @@
-export type SalesTab = "items" | "records" | "support" | "configuration";
+export type SalesTab = "items" | "records" | "sessions" | "support" | "configuration";
 
 export const SALES_TABS: readonly SalesTab[] = [
   "items",
   "records",
+  "sessions",
   "support",
   "configuration",
 ];
@@ -32,6 +33,7 @@ export function getSalesTabLabel(tab: SalesTab): string {
   switch (tab) {
     case "items": return "Items";
     case "records": return "Accounts and opportunities";
+    case "sessions": return "Demo sessions";
     case "support": return "Support";
     case "configuration": return "Configuration";
   }
@@ -46,7 +48,7 @@ export function buildSalesWorkspaceHref(route: SalesNavigationIntent): string {
     if (view !== "catalog" && (!requiresItem || route.itemId)) params.set("view", view);
     if (requiresItem && route.itemId) params.set("itemId", route.itemId);
   }
-  if (route.tab === "records") {
+  if (route.tab === "records" || route.tab === "sessions") {
     if (route.accountId) params.set("accountId", route.accountId);
     if (route.opportunityId) params.set("opportunityId", route.opportunityId);
   }
@@ -68,8 +70,8 @@ export function parseSalesWorkspaceRouteState(input: {
   const itemView = (parsedItemView === "detail" || parsedItemView === "edit") && !itemId
     ? "catalog"
     : parsedItemView;
-  const accountId = tab === "records" ? readValue(input.accountId) : undefined;
-  const opportunityId = tab === "records" ? readValue(input.opportunityId) : undefined;
+  const accountId = tab === "records" || tab === "sessions" ? readValue(input.accountId) : undefined;
+  const opportunityId = tab === "records" || tab === "sessions" ? readValue(input.opportunityId) : undefined;
   const correlationId = tab === "support" ? readValue(input.correlationId) : undefined;
   return {
     tab,
@@ -86,7 +88,7 @@ function readValue(value: string | readonly string[] | undefined): string | unde
 }
 
 function parseTab(value: string | undefined): SalesTab {
-  if (value === "records" || value === "support" || value === "configuration") return value;
+  if (value === "records" || value === "sessions" || value === "support" || value === "configuration") return value;
   return "items";
 }
 

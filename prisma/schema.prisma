@@ -32,6 +32,7 @@ model Customer {
   salesAccounts        SalesAccount[]
   salesOpportunities   SalesOpportunity[]
   opportunityContacts  OpportunityContact[]
+  salesDemoSessions    SalesDemoSession[]
 }
 
 model SalesAccount {
@@ -61,6 +62,7 @@ model SalesOpportunity {
   customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   account    SalesAccount @relation(fields: [customerId, accountId], references: [customerId, id], onDelete: Restrict)
   contacts   OpportunityContact[]
+  demoSessions SalesDemoSession[]
 
   @@index([customerId, accountId, updatedAt])
   @@unique([customerId, id])
@@ -103,8 +105,35 @@ model Item {
   createdAt              DateTime
   updatedAt              DateTime
   customer               Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  demoSessions           SalesDemoSession[]
 
   @@index([customerId, status])
+  @@unique([customerId, id])
+}
+
+// Immutable portal-to-CloudShare correlation. Sales Experiences are never
+// deleted by Certalis; this record preserves commercial delivery history.
+model SalesDemoSession {
+  id                          String   @id
+  customerId                  String
+  opportunityId               String
+  itemId                      String
+  cloudShareSalesExperienceId String   @unique
+  externalId                  String
+  type                        String
+  start                       String
+  end                         String
+  timeZone                    String
+  registrationType            String
+  sendInvitations             String
+  createdAt                   DateTime
+  customer                    Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  opportunity                 SalesOpportunity @relation(fields: [customerId, opportunityId], references: [customerId, id], onDelete: Restrict)
+  item                        Item             @relation(fields: [customerId, itemId], references: [customerId, id], onDelete: Restrict)
+
+  @@index([customerId, opportunityId, createdAt])
+  @@index([customerId, itemId])
+  @@index([customerId, externalId])
 }
 
 model User {

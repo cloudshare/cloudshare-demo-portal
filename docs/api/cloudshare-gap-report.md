@@ -1613,6 +1613,39 @@ because a default Snapshot can move after an Item has been authored.
 
 ---
 
+## GAP-26 — Sales Experience main Sales Pro preflight remains a live-tenant verification point
+
+| Field | Detail |
+|---|---|
+| **Status** | Unverified |
+| **Verified live** | No — pending Issue #347 UI E2E |
+
+**Observed contract**
+
+The local v4 OpenAPI export documents `POST /sales`, including `mainSalesPro`, required
+`opportunity`, `registrationType`, explicit `start`/`timeZone`, and optional `end`/
+`sendInvitations`. It also documents `GET /sales/{id}/salespros`, which is scoped to an
+already-created Sales Experience. The export does not unambiguously identify a Project-scoped
+pre-creation Sales-Pro eligibility path.
+
+**Portal mitigation**
+
+The #347 Sales Delivery module performs its owner preflight entirely at the CloudShare adapter
+seam and retains request/response evidence on both validation and provisioning paths. Its real
+tenant path and exact field casing must be confirmed through the Certalis Sales UI before merge;
+the portal must not rely on a guessed v3 Project-member endpoint (those paths have previously
+returned 404; see GAP-10).
+
+**Action required:**
+
+Run a safe disposable Certalis Sales Experience through the Sales UI, record the accepted direct
+v4 preflight/create requests and response, then update this entry with the confirmed endpoint,
+field casing, and main Sales Pro eligibility behavior.
+
+**Code reference:** `src/integrations/cloudshare/sales-delivery.ts`, `src/api/sales-demo-sessions.ts`
+
+---
+
 ## GAP-N — Short descriptive title
 
 | Field | Detail |

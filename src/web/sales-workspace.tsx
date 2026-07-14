@@ -24,6 +24,7 @@ type Named = { id: string; name: string; friendlyName?: string };
 type BlueprintOption = Named & { defaultSnapshotRegionIds?: readonly string[] };
 type Policy = Named & { storageLeaseMinutes: number | null };
 type Item = { id: string; name: string; description: string; project: Named; blueprints: Named[]; policy: Named; regions: Named[]; salesExperienceType: "demo" | "poc" | "pov" | "trial"; defaultDurationMinutes: number; status: "active" | "archived" };
+type DemoSession = { id: string; opportunityId: string; itemId: string; cloudShareSalesExperienceId: string; externalId: string; type: "demo" | "poc" | "pov" | "trial"; start: string; end: string; timeZone: string; createdAt: string };
 
 const blank: SalesData = { accounts: [], opportunities: [], contacts: [] };
 const controlStyle = { padding: "0.55rem", border: "1px solid #b7bdc8", borderRadius: "6px", background: "#fff" };
@@ -46,8 +47,8 @@ export function SalesWorkspace({ email, initialRoute = { tab: "items", itemView:
       tab: intent.tab,
       itemView: intent.tab === "items" ? intent.itemView ?? "catalog" : "catalog",
       ...(intent.tab === "items" && intent.itemId ? { itemId: intent.itemId } : {}),
-      ...(intent.tab === "records" && intent.accountId ? { accountId: intent.accountId } : {}),
-      ...(intent.tab === "records" && intent.opportunityId ? { opportunityId: intent.opportunityId } : {}),
+      ...((intent.tab === "records" || intent.tab === "sessions") && intent.accountId ? { accountId: intent.accountId } : {}),
+      ...((intent.tab === "records" || intent.tab === "sessions") && intent.opportunityId ? { opportunityId: intent.opportunityId } : {}),
       ...(intent.tab === "support" && intent.correlationId ? { correlationId: intent.correlationId } : {}),
     };
     router.push(buildSalesWorkspaceHref(intent));
@@ -55,13 +56,14 @@ export function SalesWorkspace({ email, initialRoute = { tab: "items", itemView:
   }, [router]);
 
   return <main style={salesWorkspaceStyle}>
-    <PortalPageHeader eyebrow="Certalis Sales Portal" title="Sales Workspace" description="Curate archive-only CloudShare Items and customer-scoped commercial records. No CRM sync or Sales Experience provisioning is performed here." email={email} actions={<button onClick={() => void logout()} style={accountLogoutButtonStyle}>Log out</button>} />
+    <PortalPageHeader eyebrow="Certalis Sales Portal" title="Sales Workspace" description="Curate reusable Demo Items, commercial records, and time-bound CloudShare Sales Experiences in the isolated Certalis Customer workspace." email={email} actions={<button onClick={() => void logout()} style={accountLogoutButtonStyle}>Log out</button>} />
     <nav aria-label="Sales workspace sections" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(12rem, 1fr))", gap: "0.5rem", marginBottom: "1rem", borderBottom: `1px solid ${colors.border}`, paddingBottom: "0.5rem" }}>{SALES_TABS.map((tab) => {
       const active = route.tab === tab;
       return <button key={tab} type="button" aria-current={active ? "page" : undefined} onClick={() => navigate({ tab })} style={{ padding: "0.65rem 0.9rem", border: "1px solid", borderRadius: "8px", background: active ? colors.textPrimary : "#ffffff", color: active ? "#ffffff" : colors.textPrimary, borderColor: active ? colors.textPrimary : colors.border, cursor: "pointer", fontWeight: active ? 700 : 600 }}>{getSalesTabLabel(tab)}</button>;
     })}</nav>
     {route.tab === "items" ? <ItemCatalog fetchAdmin={fetchAdmin} view={route.itemView ?? "catalog"} focusedItemId={route.itemId} onNavigate={navigate} /> : null}
     {route.tab === "records" ? <SalesRecordsFeature initialSelection={{ accountId: route.accountId ?? null, opportunityId: route.opportunityId ?? null }} onNavigate={navigate} /> : null}
+    {route.tab === "sessions" ? <SalesDemoSessionsFeature onNavigate={navigate} /> : null}
     {route.tab === "support" ? <section aria-label="Sales support"><PortalSectionIntro title="Sales support" description="Append-only support evidence for Sales records and live Item resource curation in the Certalis Customer workspace." /><AdminSupportFeature active view="diagnostics" diagnosticFilters={route.correlationId ? { correlationId: route.correlationId } : {}} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={(intent) => navigate({ tab: "support", correlationId: intent.diagnosticFilters?.correlationId })} /></section> : null}
     {route.tab === "configuration" ? <section aria-label="Sales configuration"><PortalSectionIntro title="CloudShare Connection" description="Manage the encrypted CloudShare Connection for the isolated Certalis Sales Customer." /><CloudShareConnectionFeature active fetchAdmin={fetchAdmin} getNavigationHref={() => buildSalesWorkspaceHref({ tab: "configuration" })} onNavigate={() => undefined} /></section> : null}
   </main>;
@@ -70,6 +72,74 @@ export function SalesWorkspace({ email, initialRoute = { tab: "items", itemView:
 function PortalSectionIntro({ title, description }: { title: string; description: string }) {
   return <section style={{ ...mutedPanelStyle, display: "grid", gap: "0.4rem", marginBottom: "1rem" }}><h2 style={{ margin: 0 }}>{title}</h2><p style={{ margin: 0 }}>{description}</p></section>;
 }
+
+function SalesDemoSessionsFeature({ onNavigate }: { readonly onNavigate: (intent: SalesNavigationIntent) => void }) {
+  const router = useRouter();
+  const browserFetch = useCallback<typeof fetch>((input, init) => window.fetch(input, init), []);
+  const fetchSales = useMemo(() => createAdminAuthenticatedRequest({ fetchImpl: browserFetch, onSessionExpired: () => { router.replace("/login"); router.refresh(); } }), [browserFetch, router]);
+  const [records, setRecords] = useState<SalesData>(blank);
+  const [items, setItems] = useState<Item[]>([]);
+  const [sessions, setSessions] = useState<DemoSession[]>([]);
+  const [opportunityId, setOpportunityId] = useState("");
+  const [itemId, setItemId] = useState("");
+  const [startMode, setStartMode] = useState<"now" | "scheduled">("now");
+  const [start, setStart] = useState(() => localDateTime(new Date()));
+  const [end, setEnd] = useState("");
+  const [timeZone, setTimeZone] = useState("UTC");
+  const [type, setType] = useState<Item["salesExperienceType"]>("demo");
+  const [message, setMessage] = useState<string | null>(null);
+  const [correlationId, setCorrelationId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const selectedItem = items.find((item) => item.id === itemId) ?? null;
+  const selectedItemType = selectedItem?.salesExperienceType;
+  const selectedItemDuration = selectedItem?.defaultDurationMinutes;
+
+  const load = useCallback(async () => {
+    const [recordResponse, itemResponse] = await Promise.all([fetchSales("/api/sales/accounts", { cache: "no-store" }), fetchSales("/api/sales/items", { cache: "no-store" })]);
+    const recordBody = await recordResponse.json() as SalesData & { error?: string };
+    const itemBody = await itemResponse.json() as { activeItems?: Item[]; error?: string };
+    if (!recordResponse.ok || !itemResponse.ok) throw new Error(recordBody.error ?? itemBody.error ?? "Could not load Sales Demo Session choices.");
+    setRecords(recordBody); setItems(itemBody.activeItems ?? []);
+  }, [fetchSales]);
+  useEffect(() => { void load().catch((error) => setMessage(error instanceof Error ? error.message : "Could not load Sales Demo Session choices.")); }, [load]);
+  useEffect(() => {
+    if (!selectedItemType || !selectedItemDuration) return;
+    setType(selectedItemType);
+    setEnd(addMinutes(start, selectedItemDuration));
+  }, [selectedItemType, selectedItemDuration, start]);
+  useEffect(() => { if (selectedItemDuration && startMode === "now") { const next = localDateTime(new Date()); setStart(next); setEnd(addMinutes(next, selectedItemDuration)); } }, [startMode, selectedItemDuration]);
+  useEffect(() => { if (selectedItemDuration) setEnd(addMinutes(start, selectedItemDuration)); }, [start, selectedItemDuration]);
+  useEffect(() => { if (!opportunityId) { setSessions([]); return; } void fetchSales(`/api/sales/demo-sessions?opportunityId=${encodeURIComponent(opportunityId)}`, { cache: "no-store" }).then(async (response) => { const body = await response.json() as { sessions?: DemoSession[] }; if (response.ok) setSessions(body.sessions ?? []); }); }, [fetchSales, opportunityId]);
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault(); setMessage(null); setCorrelationId(null); setLoading(true);
+    try {
+      const response = await fetchSales("/api/sales/demo-sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ opportunityId, itemId, start, end, timeZone, type }) });
+      const body = await response.json() as { error?: string; correlationId?: string; session?: DemoSession };
+      if (!response.ok) { setCorrelationId(body.correlationId ?? null); throw new Error(body.error ?? "Could not provision the Sales Demo Session."); }
+      setSessions((current) => body.session ? [body.session, ...current] : current); setMessage("Sales Demo Session created. No invitations were sent.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Could not provision the Sales Demo Session."); } finally { setLoading(false); }
+  };
+  const opportunities = records.opportunities.filter((opportunity) => !opportunity.archivedAt);
+  return <section aria-label="Sales Demo Sessions">
+    <PortalSectionIntro title="Provision a Sales Demo Session" description="Creates one time-bound CloudShare Sales Experience. Registered participants only; invitations stay suppressed until the later enrollment and invitation slices." />
+    <form onSubmit={submit} style={{ ...cardStyle, padding: "1.25rem", display: "grid", gap: "1rem" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(16rem, 1fr))", gap: "1rem" }}>
+        <label style={{ display: "grid", gap: "0.35rem" }}>Opportunity<select aria-label="Opportunity" required value={opportunityId} onChange={(event) => setOpportunityId(event.target.value)} style={fullControlStyle}><option value="">Select an Opportunity</option>{opportunities.map((opportunity) => <option key={opportunity.id} value={opportunity.id}>{opportunity.name}</option>)}</select></label>
+        <label style={{ display: "grid", gap: "0.35rem" }}>Demo Item<select aria-label="Demo Item" required value={itemId} onChange={(event) => setItemId(event.target.value)} style={fullControlStyle}><option value="">Select a Demo Item</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <label style={{ display: "grid", gap: "0.35rem" }}>Sales Experience type<select aria-label="Sales Experience type" value={type} onChange={(event) => setType(event.target.value as Item["salesExperienceType"])} style={fullControlStyle}><option value="demo">Demo</option><option value="poc">POC</option><option value="pov">POV</option><option value="trial">Trial</option></select></label>
+        <label style={{ display: "grid", gap: "0.35rem" }}>CloudShare time zone<select aria-label="CloudShare time zone" value={timeZone} onChange={(event) => setTimeZone(event.target.value)} style={fullControlStyle}><option value="UTC">UTC</option><option value="Eastern Standard Time">Eastern Standard Time</option><option value="Mountain Standard Time">Mountain Standard Time</option><option value="Pacific Standard Time">Pacific Standard Time</option></select></label>
+      </div>
+      <fieldset style={{ border: "1px solid #d8dee8", borderRadius: "8px", padding: "0.85rem", display: "grid", gap: "0.7rem" }}><legend>Time window</legend><div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}><label><input type="radio" checked={startMode === "now"} onChange={() => setStartMode("now")} /> Start now</label><label><input type="radio" checked={startMode === "scheduled"} onChange={() => setStartMode("scheduled")} /> Schedule start</label></div><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(16rem, 1fr))", gap: "1rem" }}><label style={{ display: "grid", gap: "0.35rem" }}>Start <input aria-label="Start" type="datetime-local" required value={start} disabled={startMode === "now"} onChange={(event) => setStart(event.target.value)} style={fullControlStyle} /></label><label style={{ display: "grid", gap: "0.35rem" }}>End <input aria-label="End" type="datetime-local" required value={end} onChange={(event) => setEnd(event.target.value)} style={fullControlStyle} /></label></div><p style={{ margin: 0, color: "#52606d" }}>End is required and prefilled from the selected Item Policy storage lease. All displayed values are local CloudShare date-times in the selected explicit time zone.</p></fieldset>
+      <div style={{ display: "flex", justifyContent: "end", gap: "0.75rem", alignItems: "center" }}><button style={primaryButtonStyle} disabled={loading || !opportunityId || !itemId}>{loading ? "Provisioning…" : "Create Sales Demo Session"}</button></div>
+      {message ? <div role={correlationId ? "alert" : "status"} style={correlationId ? alertPanelStyle.danger : alertPanelStyle.success}>{message}{correlationId ? <> <button type="button" onClick={() => onNavigate({ tab: "support", correlationId })} style={{ border: 0, background: "transparent", color: colors.info, textDecoration: "underline", cursor: "pointer" }}>Open support diagnostics ({correlationId})</button></> : null}</div> : null}
+    </form>
+    {opportunityId ? <section style={{ ...cardStyle, marginTop: "1rem", padding: "1.25rem" }} aria-label="Opportunity Sales Demo Session history"><h2 style={{ marginTop: 0 }}>Session history</h2>{sessions.length === 0 ? <p>No Sales Demo Sessions have been created for this Opportunity.</p> : <ul>{sessions.map((session) => <li key={session.id}>{session.type.toUpperCase()} · {session.start} to {session.end} ({session.timeZone})</li>)}</ul>}</section> : null}
+  </section>;
+}
+
+function localDateTime(value: Date): string { const offset = value.getTimezoneOffset(); return new Date(value.getTime() - offset * 60_000).toISOString().slice(0, 16); }
+function addMinutes(value: string, minutes: number): string { const date = new Date(`${value}:00`); return Number.isNaN(date.getTime()) ? value : localDateTime(new Date(date.getTime() + minutes * 60_000)); }
 
 function SalesRecordsFeature({ initialSelection, onNavigate }: { readonly initialSelection?: Partial<SalesSelection>; readonly onNavigate: (intent: SalesNavigationIntent) => void }) {
   const router = useRouter();
