@@ -54,6 +54,23 @@ describe("SalesWorkspace", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/sales/demo-items", expect.objectContaining({ body: JSON.stringify({ name: "CX discovery demo", description: "", projectId: "project-1", blueprintIds: ["bp-2", "bp-1"], policyId: "policy-1", regionId: "region-1", salesExperienceType: "demo" }) }));
   });
 
+  it("groups Demo Item authoring fields while keeping the save action reachable", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      return String(input) === "/api/sales/demo-items"
+        ? json({ activeDemoItems: [], archivedDemoItems: [] })
+        : json({ projects: [], regions: [] });
+    }));
+    render(createElement(SalesWorkspace, { email: "sales-admin@certalis.demo" }));
+
+    await user.click(await screen.findByRole("button", { name: "Create Demo Item" }));
+
+    expect(await screen.findByRole("form", { name: "Demo Item authoring form" })).not.toBeNull();
+    expect(screen.getByRole("group", { name: "Live CloudShare resources" })).not.toBeNull();
+    expect(screen.getByRole("group", { name: "Blueprints (selection order is launch order)" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Save Demo Item" })).not.toBeNull();
+  });
+
   it("clicks the reachable inspect, edit, and archive controls for an existing Demo Item", async () => {
     const user = userEvent.setup();
     const item = { id: "demo-1", name: "Existing demo", description: "Existing description", project: { id: "project-1", name: "Certalis Project" }, blueprints: [{ id: "bp-1", name: "Foundation" }], policy: { id: "policy-1", name: "Sales policy" }, region: { id: "region-1", name: "US West" }, salesExperienceType: "poc", defaultDurationMinutes: 1440, status: "active" };
