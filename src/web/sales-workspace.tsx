@@ -2,11 +2,15 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { CloudShareConnectionFeature } from "./admin-cloudshare-connection";
+import { AdminSupportFeature } from "./admin-support";
 import { createAdminAuthenticatedRequest } from "./admin-authenticated-request";
 import { accountLogoutButtonStyle, compactButtonStyle, dangerButtonStyle, disabledButtonStyle, primaryButtonStyle } from "./button-styles";
-import { cardStyle, mutedPanelStyle } from "./card-styles";
+import { alertPanelStyle, cardStyle, mutedPanelStyle } from "./card-styles";
 import { pageShellStyle } from "./page-shell";
 import { PortalPageHeader } from "./portal-page-header";
+import { SALES_TABS, buildSalesWorkspaceHref, getSalesTabLabel, type SalesItemView, type SalesNavigationIntent, type SalesWorkspaceRouteState } from "./sales-shell-route";
+import { colors } from "./design-tokens";
 
 type Account = { id: string; name: string; kind: "prospect" | "current_customer"; archivedAt: string | null; createdAt: string; updatedAt?: string };
 type Opportunity = { id: string; accountId: string; name: string; status: "open" | "won" | "lost"; archivedAt: string | null; createdAt: string; updatedAt?: string };
@@ -16,6 +20,10 @@ type SalesSelection = { accountId: string | null; opportunityId: string | null }
 type Lifecycle = "active" | "archived" | "all";
 type Sort = "name" | "created";
 type Dialog = { kind: "account"; record?: Account } | { kind: "opportunity"; record?: Opportunity } | { kind: "contact"; record?: Contact } | null;
+type Named = { id: string; name: string; friendlyName?: string };
+type BlueprintOption = Named & { defaultSnapshotRegionIds?: readonly string[] };
+type Policy = Named & { storageLeaseMinutes: number | null };
+type Item = { id: string; name: string; description: string; project: Named; blueprints: Named[]; policy: Named; regions: Named[]; salesExperienceType: "demo" | "poc" | "pov" | "trial"; defaultDurationMinutes: number; status: "active" | "archived" };
 
 const blank: SalesData = { accounts: [], opportunities: [], contacts: [] };
 const controlStyle = { padding: "0.55rem", border: "1px solid #b7bdc8", borderRadius: "6px", background: "#fff" };
@@ -27,7 +35,43 @@ const actionCellStyle = { ...cellStyle, width: "9.5rem", textAlign: "right" as c
 const selectedRowStyle = { background: "#e8f5f3", boxShadow: "inset 4px 0 0 #0f6d66" };
 const selectableRowStyle = { cursor: "pointer" };
 
-export function SalesWorkspace({ email, initialSelection }: { readonly email: string; readonly initialSelection?: Partial<SalesSelection> }) {
+export function SalesWorkspace({ email, initialRoute = { tab: "items", itemView: "catalog" } }: { readonly email: string; readonly initialRoute?: SalesWorkspaceRouteState }) {
+  const router = useRouter();
+  const [route, setRoute] = useState<SalesWorkspaceRouteState>(initialRoute);
+  const browserFetch = useCallback<typeof fetch>((input, init) => window.fetch(input, init), []);
+  const fetchAdmin = useMemo(() => createAdminAuthenticatedRequest({ fetchImpl: browserFetch, onSessionExpired: () => { router.replace("/login"); router.refresh(); } }), [browserFetch, router]);
+  const logout = useCallback(async () => { await fetch("/api/auth/logout", { method: "POST" }); router.push("/login"); router.refresh(); }, [router]);
+  const navigate = useCallback((intent: SalesNavigationIntent) => {
+    const next: SalesWorkspaceRouteState = {
+      tab: intent.tab,
+      itemView: intent.tab === "items" ? intent.itemView ?? "catalog" : "catalog",
+      ...(intent.tab === "items" && intent.itemId ? { itemId: intent.itemId } : {}),
+      ...(intent.tab === "records" && intent.accountId ? { accountId: intent.accountId } : {}),
+      ...(intent.tab === "records" && intent.opportunityId ? { opportunityId: intent.opportunityId } : {}),
+      ...(intent.tab === "support" && intent.correlationId ? { correlationId: intent.correlationId } : {}),
+    };
+    router.push(buildSalesWorkspaceHref(intent));
+    setRoute(next);
+  }, [router]);
+
+  return <main style={salesWorkspaceStyle}>
+    <PortalPageHeader eyebrow="Certalis Sales Portal" title="Sales Workspace" description="Curate archive-only CloudShare Items and customer-scoped commercial records. No CRM sync or Sales Experience provisioning is performed here." email={email} actions={<button onClick={() => void logout()} style={accountLogoutButtonStyle}>Log out</button>} />
+    <nav aria-label="Sales workspace sections" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(12rem, 1fr))", gap: "0.5rem", marginBottom: "1rem", borderBottom: `1px solid ${colors.border}`, paddingBottom: "0.5rem" }}>{SALES_TABS.map((tab) => {
+      const active = route.tab === tab;
+      return <button key={tab} type="button" aria-current={active ? "page" : undefined} onClick={() => navigate({ tab })} style={{ padding: "0.65rem 0.9rem", border: "1px solid", borderRadius: "8px", background: active ? colors.textPrimary : "#ffffff", color: active ? "#ffffff" : colors.textPrimary, borderColor: active ? colors.textPrimary : colors.border, cursor: "pointer", fontWeight: active ? 700 : 600 }}>{getSalesTabLabel(tab)}</button>;
+    })}</nav>
+    {route.tab === "items" ? <ItemCatalog fetchAdmin={fetchAdmin} view={route.itemView ?? "catalog"} focusedItemId={route.itemId} onNavigate={navigate} /> : null}
+    {route.tab === "records" ? <SalesRecordsFeature initialSelection={{ accountId: route.accountId ?? null, opportunityId: route.opportunityId ?? null }} onNavigate={navigate} /> : null}
+    {route.tab === "support" ? <section aria-label="Sales support"><PortalSectionIntro title="Sales support" description="Append-only support evidence for Sales records and live Item resource curation in the Certalis Customer workspace." /><AdminSupportFeature active view="diagnostics" diagnosticFilters={route.correlationId ? { correlationId: route.correlationId } : {}} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={(intent) => navigate({ tab: "support", correlationId: intent.diagnosticFilters?.correlationId })} /></section> : null}
+    {route.tab === "configuration" ? <section aria-label="Sales configuration"><PortalSectionIntro title="CloudShare Connection" description="Manage the encrypted CloudShare Connection for the isolated Certalis Sales Customer." /><CloudShareConnectionFeature active fetchAdmin={fetchAdmin} getNavigationHref={() => buildSalesWorkspaceHref({ tab: "configuration" })} onNavigate={() => undefined} /></section> : null}
+  </main>;
+}
+
+function PortalSectionIntro({ title, description }: { title: string; description: string }) {
+  return <section style={{ ...mutedPanelStyle, display: "grid", gap: "0.4rem", marginBottom: "1rem" }}><h2 style={{ margin: 0 }}>{title}</h2><p style={{ margin: 0 }}>{description}</p></section>;
+}
+
+function SalesRecordsFeature({ initialSelection, onNavigate }: { readonly initialSelection?: Partial<SalesSelection>; readonly onNavigate: (intent: SalesNavigationIntent) => void }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const hasObservedSearchParams = useRef(false);
@@ -67,14 +111,9 @@ export function SalesWorkspace({ email, initialSelection }: { readonly email: st
   useEffect(() => { void load(); }, [load]);
 
   const updateSelection = useCallback((accountId: string | null, opportunityId: string | null) => {
-    const params = new URLSearchParams();
-    if (accountId) params.set("accountId", accountId);
-    if (opportunityId) params.set("opportunityId", opportunityId);
-    const href = `/sales${params.size ? `?${params.toString()}` : ""}`;
     setSelection({ accountId, opportunityId });
-    window.history.replaceState(window.history.state, "", href);
-    router.replace(href, { scroll: false });
-  }, [router]);
+    onNavigate({ tab: "records", accountId, opportunityId });
+  }, [onNavigate]);
   const openDialog = useCallback((nextDialog: Exclude<Dialog, null>, opener: HTMLElement) => { dialogOpenerRef.current = opener; setDialog(nextDialog); }, []);
   const closeDialog = useCallback(() => { setDialog(null); }, []);
   const mutate = useCallback(async (url: string, method: "POST" | "PATCH", payload?: Record<string, unknown>) => {
@@ -94,7 +133,6 @@ export function SalesWorkspace({ email, initialSelection }: { readonly email: st
       setLoading(false);
     }
   }, [fetchSales, load]);
-  const logout = useCallback(async () => { await fetch("/api/auth/logout", { method: "POST" }); router.push("/login"); router.refresh(); }, [router]);
 
   const matchesSearch = useCallback((values: string[]) => !search.trim() || values.join(" ").toLowerCase().includes(search.trim().toLowerCase()), [search]);
   const selectedAccount = data.accounts.find((record) => record.id === selection.accountId) ?? null;
@@ -128,13 +166,11 @@ export function SalesWorkspace({ email, initialSelection }: { readonly email: st
   const contactDisabled = !selectedOpportunity || Boolean(selectedOpportunity.archivedAt);
   const contactInstruction = selectedOpportunity?.archivedAt ? "Archived Opportunities cannot receive Contacts." : undefined;
 
-  return <main style={salesWorkspaceStyle}>
-    <PortalPageHeader eyebrow="Certalis Sales Portal" title="Sales Workspace" description="A local, Customer-scoped commercial record workspace. No CRM sync or CloudShare Sales Experience operation is performed here." email={email} actions={<button onClick={() => void logout()} style={accountLogoutButtonStyle}>Log out</button>} />
+  return <section aria-label="Accounts and opportunities">
     <section style={{ ...mutedPanelStyle, display: "flex", gap: "0.75rem", alignItems: "end", flexWrap: "wrap" }} aria-label="Sales workspace controls">
       <label style={{ display: "grid", gap: "0.3rem", flex: "1 1 22rem" }}>Search current view<input aria-label="Search current view" value={search} onChange={(event) => setSearch(event.target.value)} style={controlStyle} placeholder="Account, opportunity, or contact" /></label>
       <span style={{ color: "#52606d", fontSize: "0.9rem" }}>Select an Account, then an Opportunity, to work down the relationship.</span>
       {message ? <span role="status">{message}</span> : null}
-      <a href="/sales/diagnostics">View Sales diagnostics</a>
     </section>
     <div style={{ display: "grid", gap: "1rem", marginTop: "1rem" }}>
       <RecordGrid title="Accounts" columns={["36%", "14%", "20%", "18%", "12%"]} count={accounts.length} lifecycle={filters.account} sort={sorts.account} onLifecycle={(value) => setFilters((current) => ({ ...current, account: value }))} onSort={(value) => setSorts((current) => ({ ...current, account: value }))} addLabel="New Account" onAdd={(event) => openDialog({ kind: "account" }, event.currentTarget)}>
@@ -151,7 +187,159 @@ export function SalesWorkspace({ email, initialSelection }: { readonly email: st
       </RecordGrid>
     </div>
     {dialog ? <RecordDialog dialog={dialog} opener={dialogOpenerRef.current} selectedAccount={selectedAccount} selectedOpportunity={selectedOpportunity} accounts={data.accounts} opportunities={data.opportunities} loading={loading} onClose={closeDialog} onSave={mutate} /> : null}
-  </main>;
+  </section>;
+}
+
+function ItemCatalog({ fetchAdmin, view, focusedItemId, onNavigate }: { readonly fetchAdmin: typeof fetch; readonly view: SalesItemView; readonly focusedItemId?: string; readonly onNavigate: (intent: SalesNavigationIntent) => void }) {
+  const [items, setItems] = useState<Item[]>([]);
+  const [archived, setArchived] = useState<Item[]>([]);
+  const [projects, setProjects] = useState<Named[]>([]);
+  const [regions, setRegions] = useState<Named[]>([]);
+  const [blueprints, setBlueprints] = useState<BlueprintOption[]>([]);
+  const [policies, setPolicies] = useState<Policy[]>([]);
+  const [projectId, setProjectId] = useState("");
+  const [blueprintIds, setBlueprintIds] = useState<string[]>([]);
+  const [policyId, setPolicyId] = useState("");
+  const [regionIds, setRegionIds] = useState<string[]>([]);
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [salesExperienceType, setSalesExperienceType] = useState<Item["salesExperienceType"]>("demo");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [inspected, setInspected] = useState<Item | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [errorCorrelationId, setErrorCorrelationId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const selectedPolicy = policies.find((policy) => policy.id === policyId);
+  const eligibleRegionIds = useMemo(() => {
+    const selected = blueprintIds.map((id) => blueprints.find((blueprint) => blueprint.id === id)?.defaultSnapshotRegionIds ?? []);
+    return selected.length ? selected.reduce((shared, ids) => shared.filter((id) => ids.includes(id))) : [];
+  }, [blueprintIds, blueprints]);
+  const eligibleRegions = regions.filter((region) => eligibleRegionIds.includes(region.id));
+  useEffect(() => setRegionIds((current) => current.filter((id) => eligibleRegionIds.includes(id))), [eligibleRegionIds]);
+
+  const loadItems = useCallback(async () => {
+    const response = await fetchAdmin("/api/sales/items");
+    const body = await response.json() as { activeItems?: Item[]; archivedItems?: Item[]; error?: string };
+    if (!response.ok) throw new Error(body.error ?? "Failed to load Items");
+    setItems(body.activeItems ?? []);
+    setArchived(body.archivedItems ?? []);
+  }, [fetchAdmin]);
+  const loadBootstrap = useCallback(async () => {
+    setLoading(true); setError(null); setErrorCorrelationId(null);
+    try {
+      const response = await fetchAdmin("/api/sales/item-authoring?refresh=true");
+      const body = await response.json() as { projects?: Named[]; regions?: Named[]; error?: string; correlationId?: string | null };
+      if (!response.ok) { setError(body.error ?? "Failed to load CloudShare resources"); setErrorCorrelationId(body.correlationId ?? null); return; }
+      setProjects(body.projects ?? []); setRegions(body.regions ?? []);
+    } finally { setLoading(false); }
+  }, [fetchAdmin]);
+  useEffect(() => { void loadItems().catch((caught) => setError(caught instanceof Error ? caught.message : "Failed to load Items")); }, [loadItems]);
+  useEffect(() => {
+    if (view === "create") void loadBootstrap();
+  }, [loadBootstrap, view]);
+  const selectProject = useCallback(async (next: string) => {
+    setProjectId(next); setBlueprintIds([]); setRegionIds([]); setPolicyId(""); setBlueprints([]); setPolicies([]);
+    if (!next) return;
+    setLoading(true); setError(null); setErrorCorrelationId(null);
+    try {
+      const response = await fetchAdmin(`/api/sales/item-authoring/projects/${encodeURIComponent(next)}?refresh=true`);
+      const body = await response.json() as { blueprints?: BlueprintOption[]; policies?: Policy[]; error?: string; correlationId?: string | null };
+      if (!response.ok) { setError(body.error ?? "Failed to load Project resources"); setErrorCorrelationId(body.correlationId ?? null); return; }
+      setBlueprints(body.blueprints ?? []); setPolicies(body.policies ?? []);
+    } finally { setLoading(false); }
+  }, [fetchAdmin]);
+  const save = async () => {
+    setLoading(true); setError(null); setErrorCorrelationId(null);
+    try {
+      const response = await fetchAdmin(editingId ? `/api/sales/items/${encodeURIComponent(editingId)}` : "/api/sales/items", { method: editingId ? "PUT" : "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, description, projectId, blueprintIds, policyId, regionIds, salesExperienceType }) });
+      const body = await response.json() as { error?: string; correlationId?: string | null };
+      if (!response.ok) { setError(body.error ?? "Unable to save Item"); setErrorCorrelationId(body.correlationId ?? null); return; }
+      setName(""); setDescription(""); setBlueprintIds([]); setRegionIds([]); setEditingId(null); await loadItems(); onNavigate({ tab: "items", itemView: "catalog" });
+    } finally { setLoading(false); }
+  };
+  const cancelAuthoring = () => {
+    setName(""); setDescription(""); setProjectId(""); setBlueprintIds([]); setPolicyId(""); setRegionIds([]); setSalesExperienceType("demo"); setEditingId(null); setError(null); setErrorCorrelationId(null);
+    onNavigate({ tab: "items", itemView: "catalog" });
+  };
+  const inspect = useCallback(async (id: string) => {
+    const response = await fetchAdmin(`/api/sales/items/${encodeURIComponent(id)}`);
+    const body = await response.json() as { item?: Item; error?: string; correlationId?: string | null };
+    if (!response.ok) { setError(body.error ?? "Unable to inspect Item"); setErrorCorrelationId(body.correlationId ?? null); return; }
+    setInspected(body.item ?? null);
+  }, [fetchAdmin]);
+  const edit = useCallback(async (item: Item) => {
+    await loadBootstrap(); await selectProject(item.project.id);
+    setEditingId(item.id); setName(item.name); setDescription(item.description); setBlueprintIds(item.blueprints.map((blueprint) => blueprint.id)); setPolicyId(item.policy.id); setRegionIds(item.regions.map((region) => region.id)); setSalesExperienceType(item.salesExperienceType);
+  }, [loadBootstrap, selectProject]);
+  const archive = async (id: string) => {
+    setError(null); setErrorCorrelationId(null);
+    const response = await fetchAdmin(`/api/sales/items/${encodeURIComponent(id)}/archive`, { method: "POST" });
+    const body = await response.json() as { error?: string; correlationId?: string | null };
+    if (!response.ok) { setError(body.error ?? "Unable to archive Item"); setErrorCorrelationId(body.correlationId ?? null); return; }
+    await loadItems(); onNavigate({ tab: "items", itemView: "catalog" });
+  };
+
+  useEffect(() => {
+    if (view === "detail" && focusedItemId) void inspect(focusedItemId);
+  }, [focusedItemId, inspect, view]);
+  useEffect(() => {
+    if (view !== "edit" || !focusedItemId) return;
+    const item = items.find((candidate) => candidate.id === focusedItemId);
+    if (item) void edit(item);
+  }, [edit, focusedItemId, items, view]);
+
+  return <section style={{ display: "grid", gap: "1rem", marginTop: "1rem" }} aria-label="Item catalogue">
+    {view === "catalog" ? <><section style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem" }}><h2 style={{ margin: 0 }}>Item catalogue</h2><p style={{ margin: 0 }}>Choose a reusable, archive-only Item. It does not provision an Enablement Session or share an environment.</p><div><button type="button" style={primaryButtonStyle} onClick={() => onNavigate({ tab: "items", itemView: "create" })}>Create Item</button></div></section><section aria-label="Active Items" style={{ ...cardStyle, padding: "1.1rem" }}><h2 style={{ margin: 0 }}>Active Items</h2>{items.length === 0 ? <p>No active Items yet.</p> : <div style={{ display: "grid", gap: "0.75rem", marginTop: "0.75rem" }}>{items.map((item) => <article key={item.id} style={{ border: "1px solid #d6dbe3", borderRadius: "8px", padding: "0.9rem" }}><strong>{item.name}</strong><p style={{ margin: "0.35rem 0" }}>{item.blueprints.map((blueprint) => blueprint.name).join(" → ")} · {item.policy.name} · {item.regions.map((region) => region.name).join(", ")}</p><p style={{ margin: "0.35rem 0" }}>{item.defaultDurationMinutes} min · {item.salesExperienceType.toUpperCase()}</p><button type="button" onClick={() => onNavigate({ tab: "items", itemView: "detail", itemId: item.id })}>View details</button></article>)}</div>}</section><section aria-label="Archived Items" style={{ ...mutedPanelStyle }}><h2 style={{ margin: 0 }}>Archived history</h2>{archived.length === 0 ? <p>No archived Items.</p> : <ul>{archived.map((item) => <li key={item.id}>{item.name} (archived; cannot start an Enablement Session)</li>)}</ul>}</section></> : null}
+    {view === "create" || view === "edit" ? <>
+      <style>{`
+        .item-authoring-shell { max-width: 66rem; }
+        .item-authoring-form { display: grid; gap: 1.5rem; }
+        .item-authoring-header { display: grid; gap: 0.5rem; }
+        .item-authoring-header p { margin: 0; color: ${colors.textSecondary}; line-height: 1.5; }
+        .item-authoring-fields { display: grid; gap: 1rem; }
+        .item-authoring-field { display: grid; grid-template-columns: minmax(9rem, 11rem) minmax(0, 1fr); gap: 1rem; align-items: start; }
+        .item-authoring-label { color: ${colors.textPrimary}; font-weight: 600; line-height: 1.45; padding-top: 0.7rem; }
+        .item-authoring-control { width: 100%; min-width: 0; min-height: 2.7rem; box-sizing: border-box; padding: 0.65rem 0.75rem; border: 1px solid ${colors.borderStrong}; border-radius: 6px; background: ${colors.surface}; color: ${colors.textPrimary}; font: inherit; line-height: 1.35; }
+        .item-authoring-control:focus { outline: 3px solid ${colors.accentSoft}; outline-offset: 1px; border-color: ${colors.accent}; }
+        .item-authoring-control--textarea { min-height: 7rem; resize: vertical; }
+        .item-resource-set { display: grid; gap: 1rem; margin: 0; padding: 1rem; border: 1px solid ${colors.border}; border-radius: 8px; background: ${colors.surface}; }
+        .item-resource-set legend { padding: 0 0.35rem; color: ${colors.textPrimary}; font-weight: 700; }
+        .item-blueprint-set { display: grid; gap: 0.6rem; margin: 0; padding: 0.85rem 1rem; border: 1px solid ${colors.border}; border-radius: 6px; background: ${colors.surfaceMuted}; }
+        .item-blueprint-set legend { padding: 0 0.25rem; font-weight: 600; }
+        .item-blueprint-options { display: grid; gap: 0.55rem; }
+        .item-blueprint-option { display: flex; align-items: center; gap: 0.6rem; min-height: 1.5rem; line-height: 1.35; }
+        .item-blueprint-empty, .item-policy-help { margin: 0; color: ${colors.textMuted}; font-size: 0.9rem; line-height: 1.45; }
+        .item-authoring-actions { display: flex; align-items: center; gap: 0.75rem; padding-top: 0.25rem; }
+        @media (max-width: 640px) { .item-authoring-field { grid-template-columns: 1fr; gap: 0.45rem; } .item-authoring-label { padding-top: 0; } .item-resource-set { padding: 0.85rem; } }
+      `}</style>
+      <section aria-label="Item authoring" className="item-authoring-shell" style={{ ...mutedPanelStyle, padding: "clamp(1.1rem, 3vw, 1.75rem)" }}>
+        <form aria-label="Item authoring form" className="item-authoring-form" onSubmit={(event) => event.preventDefault()}>
+          <div className="item-authoring-header">
+            <div><button type="button" style={compactButtonStyle} onClick={cancelAuthoring} disabled={loading}>Back to catalogue</button><h2 style={{ margin: "0.85rem 0 0" }}>{view === "edit" ? "Edit Item" : "Create Item"}</h2></div>
+            <p>Select live CloudShare resources by friendly name. Selected Blueprint order becomes the future step order.</p>
+          </div>
+          <div className="item-authoring-fields">
+            <div className="item-authoring-field"><label className="item-authoring-label" htmlFor="item-name">Name</label><input id="item-name" className="item-authoring-control" aria-label="Item name" value={name} onChange={(event) => setName(event.target.value)} /></div>
+            <div className="item-authoring-field"><label className="item-authoring-label" htmlFor="item-description">Description</label><textarea id="item-description" className="item-authoring-control item-authoring-control--textarea" rows={4} value={description} onChange={(event) => setDescription(event.target.value)} /></div>
+            <fieldset className="item-resource-set"><legend>Live CloudShare resources</legend>
+              <div className="item-authoring-field"><label className="item-authoring-label" htmlFor="item-project">Project</label><div style={{ display: "grid", gap: "0.45rem", minWidth: 0 }}><select id="item-project" className="item-authoring-control" aria-label="Project" value={projectId} disabled={loading} onChange={(event) => void selectProject(event.target.value)}><option value="">Select a Project</option>{projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}><button type="button" style={compactButtonStyle} disabled={!projectId || loading} onClick={() => void selectProject(projectId)}>Refresh live resources</button><span className="item-policy-help">Refresh after CloudShare changes. Reconfirm Blueprint steps, Policy, and Regions.</span></div></div></div>
+              <fieldset className="item-blueprint-set"><legend>Blueprint steps</legend>{loading ? <p className="item-blueprint-empty">Loading Blueprints for this Project…</p> : !projectId ? <p className="item-blueprint-empty">Choose a Project to see its Blueprints.</p> : blueprints.length === 0 ? <p className="item-blueprint-empty">No Blueprints are available for this Project.</p> : <div className="item-blueprint-options">{blueprints.map((item) => { const step = blueprintIds.indexOf(item.id); return <label key={item.id} className="item-blueprint-option"><input type="checkbox" checked={step >= 0} onChange={() => setBlueprintIds((current) => current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id])} /> <span>{step >= 0 ? <strong>Step {step + 1}: </strong> : null}{item.name}</span></label>; })}</div>}<p className="item-policy-help">Removing a Blueprint immediately reindexes the remaining steps.</p></fieldset>
+              <div className="item-authoring-field"><label className="item-authoring-label" htmlFor="item-policy">Policy</label><div style={{ display: "grid", gap: "0.45rem", minWidth: 0 }}><select id="item-policy" className="item-authoring-control" aria-label="Policy" value={policyId} onChange={(event) => setPolicyId(event.target.value)}><option value="">Select a Policy</option>{policies.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><p className="item-policy-help">{selectedPolicy?.storageLeaseMinutes ? `Default duration: ${selectedPolicy.storageLeaseMinutes} minutes (Policy storage lease)` : "Choose a Policy with a storage lease."}</p></div></div>
+              <div className="item-authoring-field"><span className="item-authoring-label">Eligible Regions</span><div className="item-blueprint-options" role="group" aria-label="Eligible Regions">{blueprintIds.length === 0 ? <p className="item-policy-help">Select Blueprint steps to calculate eligible Regions.</p> : eligibleRegions.length === 0 ? <p className="item-policy-help">These Blueprint steps have no shared default-Snapshot Region and cannot be saved together.</p> : eligibleRegions.map((region) => <label key={region.id} className="item-blueprint-option"><input type="checkbox" checked={regionIds.includes(region.id)} onChange={() => setRegionIds((current) => current.includes(region.id) ? current.filter((id) => id !== region.id) : [...current, region.id])} /> <span>{region.friendlyName ?? region.name}</span></label>)}<p className="item-policy-help">Every selected Region must have the default Snapshot for every selected Blueprint.</p></div></div>
+            </fieldset>
+            <div className="item-authoring-field"><label className="item-authoring-label" htmlFor="item-sales-experience-type">Item type</label><select id="item-sales-experience-type" className="item-authoring-control" aria-label="Item type" value={salesExperienceType} onChange={(event) => setSalesExperienceType(event.target.value as Item["salesExperienceType"])}><option value="demo">Demo</option><option value="poc">POC</option><option value="pov">POV</option><option value="trial">Trial</option></select></div>
+          </div>
+          <div className="item-authoring-actions"><button type="button" style={compactButtonStyle} onClick={cancelAuthoring} disabled={loading}>Cancel</button><button type="button" style={primaryButtonStyle} onClick={() => void save()} disabled={loading}>{view === "edit" ? "Save Item changes" : "Save Item"}</button></div>
+          {error ? <ItemFailureAlert message={error} correlationId={errorCorrelationId} onDismiss={() => { setError(null); setErrorCorrelationId(null); }} onOpenSupport={() => errorCorrelationId && onNavigate({ tab: "support", correlationId: errorCorrelationId })} /> : null}
+        </form>
+      </section>
+    </> : null}
+    {view === "detail" ? <section aria-label="Item inspection" style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem" }}><button type="button" style={compactButtonStyle} onClick={() => onNavigate({ tab: "items", itemView: "catalog" })}>Back to catalogue</button>{inspected ? <><h2 style={{ margin: 0 }}>{inspected.name}</h2><p style={{ margin: 0 }}>{inspected.description}</p><p style={{ margin: 0 }}>{inspected.blueprints.map((blueprint) => blueprint.name).join(" → ")} · {inspected.policy.name} · {inspected.regions.map((region) => region.name).join(", ")} · {inspected.defaultDurationMinutes} min · {inspected.salesExperienceType.toUpperCase()}</p><div style={{ display: "flex", gap: "0.5rem" }}><button type="button" onClick={() => onNavigate({ tab: "items", itemView: "edit", itemId: inspected.id })}>Edit</button><button type="button" style={dangerButtonStyle} onClick={() => void archive(inspected.id)}>Archive</button></div></> : <p>Loading Item details…</p>}{error ? <ItemFailureAlert message={error} correlationId={errorCorrelationId} onDismiss={() => { setError(null); setErrorCorrelationId(null); }} onOpenSupport={() => errorCorrelationId && onNavigate({ tab: "support", correlationId: errorCorrelationId })} /> : null}</section> : null}
+  </section>;
+}
+
+function ItemFailureAlert({ message, correlationId, onDismiss, onOpenSupport }: { readonly message: string; readonly correlationId: string | null; readonly onDismiss: () => void; readonly onOpenSupport: () => void }) {
+  return <div role="alert" style={{ ...alertPanelStyle.danger, display: "grid", gap: "0.5rem" }}><div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "flex-start" }}><p style={{ margin: 0 }}>{message}</p><button type="button" onClick={onDismiss} style={{ padding: "0.25rem 0.55rem" }}>Dismiss</button></div>{correlationId ? <p style={{ margin: 0, fontSize: "0.85rem" }}>Open <strong>Support Diagnostics</strong> filtered by correlation ID <button type="button" onClick={onOpenSupport} style={{ color: colors.info, fontFamily: "monospace", fontWeight: 700, overflowWrap: "anywhere", border: 0, padding: 0, background: "transparent", cursor: "pointer" }}>{correlationId}</button>.</p> : null}</div>;
 }
 
 function RecordGrid({ title, columns, context, count, lifecycle, sort, onLifecycle, onSort, addLabel, disabled, addInstruction, onAdd, children }: { title: string; columns: readonly string[]; context?: React.ReactNode; count: number; lifecycle: Lifecycle; sort: Sort; onLifecycle: (value: Lifecycle) => void; onSort: (value: Sort) => void; addLabel: string; disabled?: boolean; addInstruction?: string; onAdd: (event: React.MouseEvent<HTMLButtonElement>) => void; children: React.ReactNode }) {

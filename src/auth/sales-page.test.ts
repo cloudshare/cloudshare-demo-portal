@@ -31,15 +31,15 @@ describe("Sales workspace page", () => {
     expect(page).toMatchObject({ props: { email: "sales-admin@certalis.demo" } });
   });
 
-  it("passes the Sales URL hierarchy into the client workspace for reload restoration", async () => {
+  it("passes the parsed Sales shell route into the client workspace for reload restoration", async () => {
     mockGetPortalSession.mockResolvedValue({
       sessionId: "session-certalis", userId: "admin-certalis", customerId: "customer-certalis",
       email: "sales-admin@certalis.demo", role: "admin", workspace: "sales",
     });
 
-    const page = await SalesPage({ searchParams: Promise.resolve({ accountId: "account-1", opportunityId: "opportunity-1" }) });
+    const page = await SalesPage({ searchParams: Promise.resolve({ tab: "records", accountId: "account-1", opportunityId: "opportunity-1" }) });
 
-    expect(page).toMatchObject({ props: { initialSelection: { accountId: "account-1", opportunityId: "opportunity-1" } } });
+    expect(page).toMatchObject({ props: { initialRoute: { tab: "records", accountId: "account-1", opportunityId: "opportunity-1" } } });
   });
 
   it("does not let a Helios certification admin use the Sales workspace", async () => {

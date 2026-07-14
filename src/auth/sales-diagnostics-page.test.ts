@@ -20,12 +20,11 @@ describe("Sales diagnostics page", () => {
     mockGetServices.mockReturnValue({});
   });
 
-  it("renders the Sales-only diagnostics screen for a sales-configured Customer admin", async () => {
+  it("forwards the legacy diagnostics route to Sales Support for a sales-configured Customer admin", async () => {
     mockGetPortalSession.mockResolvedValue({ role: "admin", workspace: "sales", email: "sales-admin@certalis.demo" });
 
-    const page = await SalesDiagnosticsPage();
-
-    expect(page).toMatchObject({ props: { email: "sales-admin@certalis.demo" } });
+    await expect(SalesDiagnosticsPage()).rejects.toThrow("redirect:/sales?tab=support");
+    expect(mockRedirect).toHaveBeenCalledWith("/sales?tab=support");
   });
 
   it("redirects a certification workspace admin away from Sales diagnostics", async () => {

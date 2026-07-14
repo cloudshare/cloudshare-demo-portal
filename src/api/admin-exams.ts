@@ -64,6 +64,7 @@ interface AdminExamAuthoringDeps {
   readonly logger: Logger;
   readonly now?: () => Date;
   readonly newCorrelationId?: () => string;
+  readonly diagnosticSource?: string;
 }
 
 interface AdminExamCatalogDeps extends AdminExamDraftRuntimeDeps {

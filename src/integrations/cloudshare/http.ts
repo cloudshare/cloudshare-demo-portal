@@ -44,6 +44,19 @@ export interface HttpClient {
   send(request: HttpRequest): Promise<HttpResponse>;
 }
 
+/** A transport failure with the socket evidence available before a response exists. */
+export class HttpTransportError extends Error {
+  constructor(
+    message: string,
+    readonly cause: unknown,
+    readonly network?: HttpResponse["network"],
+    readonly tls?: HttpResponse["tls"],
+  ) {
+    super(message);
+    this.name = "HttpTransportError";
+  }
+}
+
 function readNetwork(socket: Socket | TLSSocket | null | undefined):
   | HttpResponse["network"]
   | undefined {
@@ -116,7 +129,12 @@ export function createFetchHttpClient(): HttpClient {
           },
         );
 
-        req.on("error", reject);
+        req.on("error", (error) => reject(new HttpTransportError(
+          error.message,
+          error,
+          readNetwork(req.socket),
+          readTls(req.socket),
+        )));
 
         if (request.body) {
           req.write(request.body);

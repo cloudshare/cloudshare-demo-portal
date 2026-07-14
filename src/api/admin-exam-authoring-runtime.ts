@@ -29,6 +29,7 @@ export interface AdminExamAuthoringRuntimeDeps {
   readonly logger: Logger;
   readonly now?: () => Date;
   readonly newCorrelationId?: () => string;
+  readonly diagnosticSource?: string;
 }
 
 export interface AdminExamAuthoringRuntimeResponse {
@@ -322,7 +323,7 @@ function resolveAuthoringSource(
 }
 
 async function recordResourceRead(
-  deps: Pick<AdminExamAuthoringRuntimeDeps, "diagnostics" | "logger">,
+  deps: Pick<AdminExamAuthoringRuntimeDeps, "diagnostics" | "logger" | "diagnosticSource">,
   spec: {
     readonly customerId: string;
     readonly operation: string;
@@ -335,7 +336,7 @@ async function recordResourceRead(
   },
 ): Promise<void> {
   await safeRecordDiagnostic(deps, {
-    source: "admin-exams",
+    source: deps.diagnosticSource ?? "admin-exams",
     customerId: spec.customerId,
     level: "info",
     operation: spec.operation,
@@ -496,7 +497,7 @@ async function safeRecordDiagnostic(
 }
 
 async function handleCloudShareFailure(
-  deps: Pick<AdminExamAuthoringRuntimeDeps, "diagnostics" | "logger" | "now" | "newCorrelationId">,
+  deps: Pick<AdminExamAuthoringRuntimeDeps, "diagnostics" | "logger" | "now" | "newCorrelationId" | "diagnosticSource">,
   spec: ResourceDiagnosticFailureSpec,
 ): Promise<AdminExamAuthoringRuntimeResponse> {
   const cloudShareError = asCloudShareErrorLike(spec.error);
@@ -510,7 +511,7 @@ async function handleCloudShareFailure(
     const correlationId = (deps.newCorrelationId ?? randomUUID)();
     const occurredAt = (deps.now ?? (() => new Date()))().toISOString();
     await safeRecordDiagnostic(deps, {
-      source: "admin-exams",
+      source: deps.diagnosticSource ?? "admin-exams",
       customerId: spec.customerId,
       level: "warn",
       operation: spec.operation,

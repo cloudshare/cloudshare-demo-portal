@@ -69,6 +69,10 @@ const seedFileSchema = z.object({
   heliosAdminEmail: z.string().email(),
   heliosAdminPassword: z.string().min(8),
   heliosCloudShareConnection: seedConnectionSchema,
+  // Certalis uses the same encrypted, per-Customer connection path as Helios.
+  // Accept the original local-seed spelling as an alias during the Sales rollout.
+  certalisSalesCloudShareConnection: seedConnectionSchema.optional(),
+  certalisSalesShareConnection: seedConnectionSchema.optional(),
   heliosInstructor: z.object({
     id: z.string().min(1),
     name: z.string().min(1),
@@ -110,6 +114,13 @@ export interface Config {
           readonly webhookSecret: string;
         }
       | null;
+    readonly certalisSalesCloudShareConnection:
+      | {
+          readonly apiId: string;
+          readonly apiKey: string;
+          readonly webhookSecret: string;
+        }
+      | null;
     readonly heliosInstructor:
       | {
           readonly id: string;
@@ -137,6 +148,7 @@ function resolveSeedConfig(
       configPath: null,
       heliosAdmin: null,
       heliosCloudShareConnection: null,
+      certalisSalesCloudShareConnection: null,
       heliosInstructor: null,
       certalisSalesAdmin: null,
     };
@@ -173,6 +185,7 @@ function resolveSeedConfig(
               webhookSecret: env.HELIOS_SEED_CLOUDSHARE_WEBHOOK_SECRET,
             }
           : null,
+      certalisSalesCloudShareConnection: null,
       heliosInstructor: {
         id: env.HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_ID,
         name: env.HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_NAME,
@@ -210,6 +223,8 @@ function resolveSeedConfig(
       password: parsed.data.heliosAdminPassword,
     },
     heliosCloudShareConnection: parsed.data.heliosCloudShareConnection,
+    certalisSalesCloudShareConnection:
+      parsed.data.certalisSalesCloudShareConnection ?? parsed.data.certalisSalesShareConnection ?? null,
     heliosInstructor: parsed.data.heliosInstructor,
     certalisSalesAdmin: {
       email: parsed.data.certalisSalesAdminEmail,
@@ -265,6 +280,9 @@ export function secretValues(config: Config): string[] {
     config.seed.heliosCloudShareConnection?.apiId ?? "",
     config.seed.heliosCloudShareConnection?.apiKey ?? "",
     config.seed.heliosCloudShareConnection?.webhookSecret ?? "",
+    config.seed.certalisSalesCloudShareConnection?.apiId ?? "",
+    config.seed.certalisSalesCloudShareConnection?.apiKey ?? "",
+    config.seed.certalisSalesCloudShareConnection?.webhookSecret ?? "",
     config.seed.certalisSalesAdmin?.password ?? "",
   ].filter(Boolean);
 }

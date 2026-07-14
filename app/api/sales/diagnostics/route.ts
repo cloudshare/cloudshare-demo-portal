@@ -6,7 +6,7 @@ import { handleGetSalesDiagnosticLog } from "@/api/sales-diagnostics";
 import { getPortalAdminSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 
-/** GET /api/sales/diagnostics — Sales-only, local-record diagnostic evidence. */
+/** GET /api/sales/diagnostics — Customer-scoped Sales support evidence. */
 export async function GET(request: Request) {
   const services = getServices();
   const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;

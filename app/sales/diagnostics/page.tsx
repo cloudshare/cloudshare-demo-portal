@@ -4,7 +4,6 @@ import { redirect } from "next/navigation";
 import { getPortalSessionServices } from "@/composition";
 import { getPortalSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
-import { SalesDiagnostics } from "@/web/sales-diagnostics";
 
 export default async function SalesDiagnosticsPage() {
   const services = getPortalSessionServices();
@@ -14,5 +13,5 @@ export default async function SalesDiagnosticsPage() {
   if (session.role !== "admin") redirect("/candidate");
   if (session.workspace !== "sales") redirect("/admin");
 
-  return <SalesDiagnostics email={session.email} />;
+  redirect("/sales?tab=support");
 }

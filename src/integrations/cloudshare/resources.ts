@@ -158,6 +158,84 @@ export interface CloudShareExamAuthoringSource {
   getBlueprintDetail(projectId: string, blueprintId: string): Promise<CloudShareBlueprintDetail>;
 }
 
+/** Detailed resource reads used by Sales Item authoring. Keeping the raw
+ * HTTP exchange at this adapter boundary lets API handlers persist redacted,
+ * supportable evidence without coupling domain code to CloudShare wire models. */
+export interface CloudShareSalesItemResourceSource {
+  readProjects(): Promise<CloudShareDetailedResourceRead<Array<{ id: string; name: string }>>>;
+  readRegions(): Promise<CloudShareDetailedResourceRead<Array<{ id: string; name: string; friendlyName?: string }>>>;
+  readProjectBlueprints(projectId: string): Promise<CloudShareDetailedResourceRead<Array<{ id: string; name: string }>>>;
+  readProjectBlueprintDetails(projectId: string, blueprintIds: readonly string[]): Promise<readonly CloudShareDetailedResourceRead<CloudShareBlueprintDetail>[]>;
+  readProjectPolicies(projectId: string): Promise<{
+    readonly policies: CloudShareExamAuthoringPolicy[];
+    readonly reads: readonly CloudShareDetailedResourceRead<unknown>[];
+  }>;
+}
+
+export interface CloudShareDetailedResourceRead<T> {
+  readonly data: T;
+  readonly request: Record<string, unknown>;
+  readonly response: Record<string, unknown>;
+  readonly integrationSurface: string;
+}
+
+/** Preserves completed exchanges when a grouped resource read only partly fails. */
+export class CloudShareSalesResourceReadError extends Error {
+  constructor(
+    readonly completedReads: readonly CloudShareDetailedResourceRead<unknown>[],
+    readonly cause: unknown,
+  ) {
+    super("CloudShare Sales resource read failed.");
+    this.name = "CloudShareSalesResourceReadError";
+  }
+}
+
+export function createCloudShareSalesItemResourceSource(client: CloudShareClient): CloudShareSalesItemResourceSource {
+  async function read<T>(path: string, schema: z.ZodType<T, z.ZodType["_def"], unknown>, integrationSurface: string): Promise<CloudShareDetailedResourceRead<T>> {
+    const detailed = await requestV3WithDiagnostics(client, { method: "GET", path, schema });
+    return { data: detailed.data, request: toDiagnosticExchange(detailed).request, response: toDiagnosticExchange(detailed).response, integrationSurface };
+  }
+  return {
+    readProjects: () => read("/projects", projectListSchema, "cloudshare.v3.projects"),
+    readRegions: async () => {
+      const result = await read("/regions", regionListSchema, "cloudshare.v3.regions");
+      return { ...result, data: result.data.map((region) => ({ id: region.id, name: region.name, ...(region.friendlyName ? { friendlyName: region.friendlyName } : {}) })) };
+    },
+    readProjectBlueprints: async (projectId) => {
+      const result = await read(`/projects/${projectId}/blueprints`, blueprintListSchema, "cloudshare.v3.projects.blueprints");
+      return { ...result, data: result.data.map((blueprint) => ({ id: blueprint.id, name: blueprint.name })) };
+    },
+    readProjectBlueprintDetails: async (projectId, blueprintIds) => {
+      const settled = await Promise.allSettled(blueprintIds.map(async (blueprintId) => {
+        const result = await read(`/projects/${projectId}/blueprints/${blueprintId}`, z.preprocess((value) => normalizeBlueprintDetailPayload(value, blueprintId), blueprintDetailSchema), "cloudshare.v3.projects.blueprint_detail");
+        const detail = result.data;
+        return { ...result, data: {
+          id: detail.id, name: detail.name, description: detail.description ?? "",
+          defaultSnapshotId: detail.createFromVersions.find((snapshot) => snapshot.isDefault)?.id ?? null,
+          snapshots: detail.createFromVersions.map((snapshot) => ({ id: snapshot.id, name: snapshot.name, isDefault: snapshot.isDefault, regionIds: (snapshot.regions ?? []).map((region) => typeof region === "string" ? region : region.id) })),
+          diagnosticSummary: summarizeBlueprintDetailForDiagnostics(detail),
+        } satisfies CloudShareBlueprintDetail };
+      }));
+      const reads: CloudShareDetailedResourceRead<CloudShareBlueprintDetail>[] = [];
+      let failure: unknown;
+      for (const result of settled) {
+        if (result.status === "fulfilled") reads.push(result.value);
+        else failure ??= result.reason;
+      }
+      if (failure !== undefined) throw new CloudShareSalesResourceReadError(reads, failure);
+      return reads;
+    },
+    readProjectPolicies: async (projectId) => {
+      const list = await read(`/projects/${projectId}/policies`, policyListSchema, "cloudshare.v3.projects.policies");
+      const settled = await Promise.allSettled(list.data.map((policy) => read(`/projects/${projectId}/policies/${policy.id}`, policyDetailSchema, "cloudshare.v3.projects.policy_detail")));
+      const details = settled.filter((result): result is PromiseFulfilledResult<CloudShareDetailedResourceRead<z.infer<typeof policyDetailSchema>>> => result.status === "fulfilled").map((result) => result.value);
+      const failed = settled.find((result): result is PromiseRejectedResult => result.status === "rejected");
+      if (failed) throw new CloudShareSalesResourceReadError([list, ...details], failed.reason);
+      return { policies: list.data.map((policy, index) => ({ id: policy.id, name: policy.name, runtimeLeaseMinutes: details[index]?.data.runtimeLeaseMinutes ?? null, storageLeaseMinutes: details[index]?.data.storageLeaseMinutes ?? null, diagnosticRequest: details[index]?.request, diagnosticResponse: details[index]?.response })), reads: [list, ...details] };
+    },
+  };
+}
+
 /**
  * CloudShare implementation of the {@link CloudShareResourceLister} port.
  * Fetches the reference lists (blueprints, policies, projects, regions) used

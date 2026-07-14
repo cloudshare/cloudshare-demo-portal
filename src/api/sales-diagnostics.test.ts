@@ -1,19 +1,95 @@
 import { describe, expect, it, vi } from "vitest";
+import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import { handleGetSalesDiagnosticLog } from "./sales-diagnostics";
 
 describe("Sales diagnostics handler", () => {
-  it("forces the local Sales source even when a caller supplies a different source", async () => {
+  it("keeps the authenticated Customer scope while allowing an owned Item source", async () => {
     const diagnostics = { append: vi.fn(), query: vi.fn().mockResolvedValue([]) };
 
     await handleGetSalesDiagnosticLog(
       { diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } },
-      { customerId: "customer-certalis", query: { source: "runtime", operation: "account.created" } },
+      { customerId: "customer-certalis", query: { source: "sales-items", operation: "item.resource_read" } },
     );
 
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({
       customerId: "customer-certalis",
-      source: "sales-records",
-      operation: "account.created",
+      source: "sales-items",
+      operation: "item.resource_read",
     }));
+  });
+
+  it("combines Sales record and Item evidence when no source is selected", async () => {
+    const diagnostics = { append: vi.fn(), query: vi.fn().mockResolvedValue([]) };
+
+    await handleGetSalesDiagnosticLog(
+      { diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } },
+      { customerId: "customer-certalis", query: {} },
+    );
+
+    expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-records" }));
+    expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-items" }));
+  });
+
+  it("rejects an arbitrary source instead of widening Sales support", async () => {
+    const diagnostics = { append: vi.fn(), query: vi.fn().mockResolvedValue([]) };
+
+    const response = await handleGetSalesDiagnosticLog(
+      { diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } },
+      { customerId: "customer-certalis", query: { source: "runtime" } },
+    );
+
+    expect(response).toEqual({ status: 400, body: { error: "unsupported_sales_diagnostic_source" } });
+    expect(diagnostics.query).not.toHaveBeenCalled();
+  });
+
+  it("rejects an aggregate offset beyond the safe read window before querying diagnostics", async () => {
+    const diagnostics = { append: vi.fn(), query: vi.fn().mockResolvedValue([]) };
+
+    const response = await handleGetSalesDiagnosticLog(
+      { diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } },
+      { customerId: "customer-certalis", query: { offset: "5001", limit: "100" } },
+    );
+
+    expect(response).toEqual({
+      status: 400,
+      body: { error: "sales_diagnostic_offset_exceeds_maximum", maxOffset: 5000 },
+    });
+    expect(diagnostics.query).not.toHaveBeenCalled();
+  });
+
+  it("reaches older globally ordered entries beyond 500 per source with a sound next page", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    const base = Date.UTC(2026, 6, 13, 12, 0, 0);
+    for (let index = 0; index < 600; index += 1) {
+      await diagnostics.append({ source: "sales-records", operation: "account.updated", outcome: "success", customerId: "customer-certalis", message: `record-${index}`, occurredAt: new Date(base + index * 2_000) });
+    }
+    for (let index = 0; index < 600; index += 1) {
+      await diagnostics.append({ source: "sales-items", operation: "item.resource_read", outcome: "success", customerId: "customer-certalis", message: `item-${index}`, occurredAt: new Date(base + index * 2_000 + 1_000) });
+    }
+
+    const response = await handleGetSalesDiagnosticLog(
+      { diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } },
+      { customerId: "customer-certalis", query: { offset: "550", limit: "3" } },
+    );
+
+    expect(response).toMatchObject({
+      status: 200,
+      body: {
+        entries: [{ id: "diag-925" }, { id: "diag-325" }, { id: "diag-924" }],
+        page: { limit: 3, offset: 550, returned: 3, hasMore: true, nextOffset: 553 },
+      },
+    });
+  });
+
+  it("clamps an invalid zero limit so aggregate pagination can advance", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    await diagnostics.append({ source: "sales-records", operation: "account.updated", outcome: "success", customerId: "customer-certalis", message: "one" });
+
+    const response = await handleGetSalesDiagnosticLog(
+      { diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } },
+      { customerId: "customer-certalis", query: { limit: "0" } },
+    );
+
+    expect(response).toMatchObject({ status: 200, body: { page: { limit: 100, returned: 1, hasMore: false, nextOffset: null } } });
   });
 });
