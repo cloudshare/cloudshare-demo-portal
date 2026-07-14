@@ -11,6 +11,7 @@ import { pageShellStyle } from "./page-shell";
 import { PortalPageHeader } from "./portal-page-header";
 import { SALES_TABS, buildSalesWorkspaceHref, getSalesTabLabel, type SalesItemView, type SalesNavigationIntent, type SalesWorkspaceRouteState } from "./sales-shell-route";
 import { colors } from "./design-tokens";
+import { addCloudShareWallClockMinutes, formatCloudShareWallClock } from "@/domain/cloudshare-wall-clock";
 
 type Account = { id: string; name: string; kind: "prospect" | "current_customer"; archivedAt: string | null; createdAt: string; updatedAt?: string };
 type Opportunity = { id: string; accountId: string; name: string; status: "open" | "won" | "lost"; archivedAt: string | null; createdAt: string; updatedAt?: string };
@@ -83,7 +84,7 @@ function SalesDemoSessionsFeature({ onNavigate }: { readonly onNavigate: (intent
   const [opportunityId, setOpportunityId] = useState("");
   const [itemId, setItemId] = useState("");
   const [startMode, setStartMode] = useState<"now" | "scheduled">("now");
-  const [start, setStart] = useState(() => localDateTime(new Date()));
+  const [start, setStart] = useState(() => formatCloudShareWallClock(new Date(), "UTC") ?? "");
   const [end, setEnd] = useState("");
   const [timeZone, setTimeZone] = useState("UTC");
   const [type, setType] = useState<Item["salesExperienceType"]>("demo");
@@ -105,10 +106,10 @@ function SalesDemoSessionsFeature({ onNavigate }: { readonly onNavigate: (intent
   useEffect(() => {
     if (!selectedItemType || !selectedItemDuration) return;
     setType(selectedItemType);
-    setEnd(addMinutes(start, selectedItemDuration));
-  }, [selectedItemType, selectedItemDuration, start]);
-  useEffect(() => { if (selectedItemDuration && startMode === "now") { const next = localDateTime(new Date()); setStart(next); setEnd(addMinutes(next, selectedItemDuration)); } }, [startMode, selectedItemDuration]);
-  useEffect(() => { if (selectedItemDuration) setEnd(addMinutes(start, selectedItemDuration)); }, [start, selectedItemDuration]);
+    setEnd(addCloudShareWallClockMinutes(start, timeZone, selectedItemDuration) ?? "");
+  }, [selectedItemType, selectedItemDuration, start, timeZone]);
+  useEffect(() => { if (selectedItemDuration && startMode === "now") { const next = formatCloudShareWallClock(new Date(), timeZone) ?? ""; setStart(next); setEnd(addCloudShareWallClockMinutes(next, timeZone, selectedItemDuration) ?? ""); } }, [startMode, selectedItemDuration, timeZone]);
+  useEffect(() => { if (selectedItemDuration) setEnd(addCloudShareWallClockMinutes(start, timeZone, selectedItemDuration) ?? ""); }, [start, selectedItemDuration, timeZone]);
   useEffect(() => { if (!opportunityId) { setSessions([]); return; } void fetchSales(`/api/sales/demo-sessions?opportunityId=${encodeURIComponent(opportunityId)}`, { cache: "no-store" }).then(async (response) => { const body = await response.json() as { sessions?: DemoSession[] }; if (response.ok) setSessions(body.sessions ?? []); }); }, [fetchSales, opportunityId]);
 
   const submit = async (event: React.FormEvent) => {
@@ -138,8 +139,6 @@ function SalesDemoSessionsFeature({ onNavigate }: { readonly onNavigate: (intent
   </section>;
 }
 
-function localDateTime(value: Date): string { const offset = value.getTimezoneOffset(); return new Date(value.getTime() - offset * 60_000).toISOString().slice(0, 16); }
-function addMinutes(value: string, minutes: number): string { const date = new Date(`${value}:00`); return Number.isNaN(date.getTime()) ? value : localDateTime(new Date(date.getTime() + minutes * 60_000)); }
 
 function SalesRecordsFeature({ initialSelection, onNavigate }: { readonly initialSelection?: Partial<SalesSelection>; readonly onNavigate: (intent: SalesNavigationIntent) => void }) {
   const router = useRouter();

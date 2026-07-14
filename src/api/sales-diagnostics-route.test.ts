@@ -51,6 +51,10 @@ describe("Sales diagnostics HTTP isolation", () => {
     });
     expect(mockHandleGetDiagnosticLog).toHaveBeenNthCalledWith(3, expect.anything(), {
       customerId: "customer-certalis",
+      query: { operation: "account.created", source: "sales-demo-sessions", limit: "101", offset: "0" },
+    });
+    expect(mockHandleGetDiagnosticLog).toHaveBeenNthCalledWith(4, expect.anything(), {
+      customerId: "customer-certalis",
       query: { source: "sales-items", operation: "item.resource_read" },
     });
   });

@@ -15,9 +15,11 @@ CloudShare v4 Sales Experience; it does not add participants or send invitations
 - The handler verifies that both selected local records belong to the Customer, are
   active, and that end is after start. It resolves the stored encrypted Certalis
   CloudShare Connection only at call time.
-- The Sales Delivery module validates the authenticated admin as main Sales Pro before
-  creation, then owns the direct v4 request shape. The UI and domain never call
-  CloudShare directly.
+- The Sales Delivery module owns the direct v4 request shape. CloudShare validates the
+  supplied main Sales Pro atomically during creation and Certalis maps that failure to
+  a correlated, supportable response. A valid Project-scoped pre-create Sales-Pro
+  lookup is not currently documented or live-confirmed; see GAP-26. The UI and domain
+  never call CloudShare directly.
 - The v4 creation request supplies the readable Opportunity name, a stable
   `certalis:opp:<opportunity-id>` external ID, `registeredParticipantsOnly`, and
   `sendInvitations: "dontSend"`. Local state retains both the Sales Experience ID and

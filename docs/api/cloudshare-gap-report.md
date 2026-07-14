@@ -1617,8 +1617,8 @@ because a default Snapshot can move after an Item has been authored.
 
 | Field | Detail |
 |---|---|
-| **Status** | Unverified |
-| **Verified live** | No — pending Issue #347 UI E2E |
+| **Status** | Confirmed blocker |
+| **Verified live** | Partial — read-only Certalis v4 probe on 2026-07-14 |
 
 **Observed contract**
 
@@ -1626,21 +1626,23 @@ The local v4 OpenAPI export documents `POST /sales`, including `mainSalesPro`, r
 `opportunity`, `registrationType`, explicit `start`/`timeZone`, and optional `end`/
 `sendInvitations`. It also documents `GET /sales/{id}/salespros`, which is scoped to an
 already-created Sales Experience. The export does not unambiguously identify a Project-scoped
-pre-creation Sales-Pro eligibility path.
+pre-creation Sales-Pro eligibility path. A read-only direct probe of the inferred
+`GET /v4/salespros` path against the Certalis Sales Connection returned HTTP 404 (request
+completed in 3.6 seconds); the inferred path has been removed and must not be used.
 
 **Portal mitigation**
 
-The #347 Sales Delivery module performs its owner preflight entirely at the CloudShare adapter
-seam and retains request/response evidence on both validation and provisioning paths. Its real
-tenant path and exact field casing must be confirmed through the Certalis Sales UI before merge;
-the portal must not rely on a guessed v3 Project-member endpoint (those paths have previously
-returned 404; see GAP-10).
+The #347 Sales Delivery module makes the documented atomic `POST /sales` request and maps a
+CloudShare main-Sales-Pro rejection to a supportable 422 result. It revalidates Demo Item
+resources before the mutation and retains redacted evidence, but it cannot honestly claim a
+separate pre-create eligibility check. The portal must not rely on a guessed endpoint.
 
 **Action required:**
 
-Run a safe disposable Certalis Sales Experience through the Sales UI, record the accepted direct
-v4 preflight/create requests and response, then update this entry with the confirmed endpoint,
-field casing, and main Sales Pro eligibility behavior.
+CloudShare must provide or document a legitimate Project-scoped eligibility endpoint, or the
+issue acceptance criterion must explicitly waive a separate preflight in favour of atomic create
+validation. Separately, run a safe disposable Certalis Sales Experience through the Sales UI to
+confirm the direct request/response, field casing, and the resulting main Sales Pro behaviour.
 
 **Code reference:** `src/integrations/cloudshare/sales-delivery.ts`, `src/api/sales-demo-sessions.ts`
 

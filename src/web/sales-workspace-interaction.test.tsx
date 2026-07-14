@@ -65,6 +65,24 @@ describe("SalesWorkspace interaction", () => {
     expect(consoleError).not.toHaveBeenCalled();
   });
 
+  it("links a Sales Demo Session failure correlation to Sales Support", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const path = String(input);
+      if (path === "/api/sales/accounts") return json({ accounts: [], opportunities: [{ id: "opp-1", accountId: "account-1", name: "Acme evaluation", status: "open", archivedAt: null, createdAt: "2026-07-14T15:00:00.000Z" }], contacts: [] });
+      if (path === "/api/sales/items") return json({ activeItems: [{ id: "item-1", name: "Accelerate Demo", description: "", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" }] });
+      if (path.startsWith("/api/sales/demo-sessions?") && !init?.method) return json({ sessions: [] });
+      if (path === "/api/sales/demo-sessions" && init?.method === "POST") return json({ error: "CloudShare failed", correlationId: "corr-sales-1" }, 502);
+      return json({ error: "unexpected" }, 500);
+    });
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    await screen.findByRole("combobox", { name: "Opportunity" });
+    await user.selectOptions(screen.getByRole("combobox", { name: "Opportunity" }), "opp-1"); await user.selectOptions(screen.getByRole("combobox", { name: "Demo Item" }), "item-1");
+    await user.click(screen.getByRole("button", { name: "Create Sales Demo Session" }));
+    const support = await screen.findByRole("button", { name: /Open support diagnostics/ }); await user.click(support);
+    expect(mockRouter.push).toHaveBeenLastCalledWith("/sales?tab=support&correlationId=corr-sales-1");
+  });
+
   it("returns Item authoring to the catalogue URL so reload does not reopen the form", async () => {
     const user = userEvent.setup();
     vi.spyOn(window, "fetch").mockImplementation(async (input) => {

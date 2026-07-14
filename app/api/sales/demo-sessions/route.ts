@@ -8,6 +8,7 @@ import { createPrismaSalesRecordRepository } from "@/persistence/prisma-sales-re
 import { createPrismaItemRepository } from "@/persistence/prisma-item-repository";
 import { createPrismaSalesDemoSessionRepository } from "@/persistence/prisma-sales-demo-session-repository";
 import { createCloudShareSalesDelivery } from "@/integrations/cloudshare/sales-delivery";
+import { createCloudShareSalesItemProvisioningValidator } from "@/integrations/cloudshare/sales-item-provisioning";
 
 async function context() {
   const services = getServices();
@@ -32,7 +33,7 @@ export async function POST(request: Request) {
   try { body = await request.json(); } catch { return NextResponse.json({ error: "invalid JSON body" }, { status: 400 }); }
   const result = await handleCreateSalesDemoSession({
     records: createPrismaSalesRecordRepository(services.prisma), items: createPrismaItemRepository(services.prisma), sessions: createPrismaSalesDemoSessionRepository(services.prisma), connections: services.cloudshareConnections,
-    deliveryFactory: { forConnection: (connection) => createCloudShareSalesDelivery(services.cloudshareClientFactory.forConnection(connection)) }, diagnostics: services.diagnosticRecorder, audit: services.audit,
+    deliveryFactory: { forConnection: (connection) => createCloudShareSalesDelivery(services.cloudshareClientFactory.forConnection(connection)) }, itemProvisioningValidatorFactory: { forConnection: (connection) => createCloudShareSalesItemProvisioningValidator(services.cloudshareClientFactory.forConnection(connection)) }, diagnostics: services.diagnosticRecorder, audit: services.audit,
   }, { customerId: session.customerId, actor: { type: "admin", id: session.userId, email: session.email }, body });
   return NextResponse.json(result.body, { status: result.status });
 }

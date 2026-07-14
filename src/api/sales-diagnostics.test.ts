@@ -18,6 +18,12 @@ describe("Sales diagnostics handler", () => {
     }));
   });
 
+  it("allows Sales Demo Session diagnostics to be correlated from Sales Support", async () => {
+    const diagnostics = { append: vi.fn(), query: vi.fn().mockResolvedValue([]) };
+    await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { source: "sales-demo-sessions", correlationId: "corr-1" } });
+    expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-demo-sessions", correlationId: "corr-1" }));
+  });
+
   it("combines Sales record and Item evidence when no source is selected", async () => {
     const diagnostics = { append: vi.fn(), query: vi.fn().mockResolvedValue([]) };
 

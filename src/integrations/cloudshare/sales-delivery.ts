@@ -22,11 +22,9 @@ export interface CreateSalesDemoSessionInput {
   readonly sendInvitations: "dontSend";
 }
 export interface SalesDelivery {
-  validateMainSalesPro(input: { readonly projectId: string; readonly email: string }): Promise<SalesDeliveryEvidence>;
   createSession(input: CreateSalesDemoSessionInput): Promise<{ readonly salesExperienceId: string } & SalesDeliveryEvidence>;
 }
 
-const salesProListSchema = z.object({ salesPros: z.array(z.object({ email: z.string().email() })).default([]) });
 const salesExperienceSchema = z.object({ id: z.string().min(1) });
 
 /** The deep CloudShare Sales Delivery module. Callers never learn v4 paths,
@@ -40,23 +38,10 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
     return { data: result.data, evidence: { request: { method: result.request.method, path: result.request.path, ...(result.request.body === undefined ? {} : { body: result.request.body }) }, response: { status: result.response.status, body: result.response.body } } };
   }
   return {
-    async validateMainSalesPro({ projectId, email }) {
-      // The documented direct-v4 listing is the Sales-Pro availability read used
-      // by the configured Project. Keep the wire request inside this adapter.
-      const { data, evidence } = await detailed({ method: "GET", path: "/salespros", schema: salesProListSchema });
-      if (!(data.salesPros ?? []).some((salesPro) => salesPro.email.toLowerCase() === email.toLowerCase())) {
-        throw new SalesMainProValidationError(`The authenticated Sales Admin is not an eligible CloudShare main Sales Pro for Project ${projectId}.`, evidence);
-      }
-      return evidence;
-    },
     async createSession(input) {
       const body = { name: input.name, type: input.type, projectId: input.projectId, blueprintIds: input.blueprintIds, cloudshareRegionIds: input.regionIds, policyId: input.policyId, opportunity: input.opportunity, externalId: input.externalId, start: input.start, end: input.end, timeZone: input.timeZone, mainSalesPro: { email: input.mainSalesProEmail }, registrationType: input.registrationType, sendInvitations: input.sendInvitations };
       const { data, evidence } = await detailed({ method: "POST", path: "/sales", body, schema: salesExperienceSchema });
       return { salesExperienceId: data.id, ...evidence };
     },
   };
-}
-
-export class SalesMainProValidationError extends Error {
-  constructor(message: string, readonly evidence?: SalesDeliveryEvidence) { super(message); this.name = "SalesMainProValidationError"; }
 }
