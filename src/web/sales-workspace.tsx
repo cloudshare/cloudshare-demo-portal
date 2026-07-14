@@ -302,7 +302,7 @@ function DemoItemCatalog({ fetchAdmin, view, focusedDemoItemId, onNavigate }: { 
         @media (max-width: 640px) { .demo-item-authoring-field { grid-template-columns: 1fr; gap: 0.45rem; } .demo-item-authoring-label { padding-top: 0; } .demo-item-resource-set { padding: 0.85rem; } }
       `}</style>
       <section aria-label="Demo Item authoring" className="demo-item-authoring-shell" style={{ ...mutedPanelStyle, padding: "clamp(1.1rem, 3vw, 1.75rem)" }}>
-        <form aria-label="Demo Item authoring form" className="demo-item-authoring-form" onSubmit={(event) => { event.preventDefault(); void save(); }}>
+        <form aria-label="Demo Item authoring form" className="demo-item-authoring-form" onSubmit={(event) => event.preventDefault()}>
           <div className="demo-item-authoring-header">
             <div><button type="button" style={compactButtonStyle} onClick={() => onNavigate({ tab: "demo-items", demoItemView: "catalog" })}>Back to catalog</button><h2 style={{ margin: "0.85rem 0 0" }}>{view === "edit" ? "Edit Demo Item" : "Create Demo Item"}</h2></div>
             <p>Select live CloudShare resources by friendly name. Blueprint order is the future launch order.</p>
@@ -318,7 +318,7 @@ function DemoItemCatalog({ fetchAdmin, view, focusedDemoItemId, onNavigate }: { 
             </fieldset>
             <div className="demo-item-authoring-field"><label className="demo-item-authoring-label" htmlFor="demo-item-sales-experience-type">Sales Experience type</label><select id="demo-item-sales-experience-type" className="demo-item-authoring-control" aria-label="Sales Experience type" value={salesExperienceType} onChange={(event) => setSalesExperienceType(event.target.value as DemoItem["salesExperienceType"])}><option value="demo">Demo</option><option value="poc">POC</option><option value="pov">POV</option><option value="trial">Trial</option></select></div>
           </div>
-          <div className="demo-item-authoring-actions"><button type="submit" style={primaryButtonStyle} disabled={loading}>{view === "edit" ? "Save Demo Item changes" : "Save Demo Item"}</button></div>
+          <div className="demo-item-authoring-actions"><button type="button" style={primaryButtonStyle} onClick={() => void save()} disabled={loading}>{view === "edit" ? "Save Demo Item changes" : "Save Demo Item"}</button></div>
           {error ? <p role="alert" style={{ margin: 0 }}>{error}</p> : null}{diagnostic ? <pre aria-label="Support diagnostics">{JSON.stringify(diagnostic, null, 2)}</pre> : null}
         </form>
       </section>

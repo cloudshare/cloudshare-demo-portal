@@ -71,6 +71,23 @@ describe("SalesWorkspace", () => {
     expect(screen.getByRole("button", { name: "Save Demo Item" })).not.toBeNull();
   });
 
+  it("requires the explicit Save action instead of submitting a Demo Item when Enter is pressed in a field", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      return String(input) === "/api/sales/demo-items"
+        ? json({ activeDemoItems: [], archivedDemoItems: [] })
+        : json({ projects: [], regions: [] });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(createElement(SalesWorkspace, { email: "sales-admin@certalis.demo" }));
+
+    await user.click(await screen.findByRole("button", { name: "Create Demo Item" }));
+    await user.type(screen.getByRole("textbox", { name: "Demo Item name" }), "Do not submit");
+    await user.keyboard("{Enter}");
+
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/sales/demo-items", expect.objectContaining({ method: "POST" }));
+  });
+
   it("clicks the reachable inspect, edit, and archive controls for an existing Demo Item", async () => {
     const user = userEvent.setup();
     const item = { id: "demo-1", name: "Existing demo", description: "Existing description", project: { id: "project-1", name: "Certalis Project" }, blueprints: [{ id: "bp-1", name: "Foundation" }], policy: { id: "policy-1", name: "Sales policy" }, region: { id: "region-1", name: "US West" }, salesExperienceType: "poc", defaultDurationMinutes: 1440, status: "active" };
