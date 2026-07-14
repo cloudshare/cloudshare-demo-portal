@@ -315,7 +315,7 @@ function ItemCatalog({ fetchAdmin, view, focusedItemId, onNavigate }: { readonly
       <section aria-label="Item authoring" className="item-authoring-shell" style={{ ...mutedPanelStyle, padding: "clamp(1.1rem, 3vw, 1.75rem)" }}>
         <form aria-label="Item authoring form" className="item-authoring-form" onSubmit={(event) => event.preventDefault()}>
           <div className="item-authoring-header">
-            <div><button type="button" style={compactButtonStyle} onClick={cancelAuthoring}>Back to catalogue</button><h2 style={{ margin: "0.85rem 0 0" }}>{view === "edit" ? "Edit Item" : "Create Item"}</h2></div>
+            <div><button type="button" style={compactButtonStyle} onClick={cancelAuthoring} disabled={loading}>Back to catalogue</button><h2 style={{ margin: "0.85rem 0 0" }}>{view === "edit" ? "Edit Item" : "Create Item"}</h2></div>
             <p>Select live CloudShare resources by friendly name. Selected Blueprint order becomes the future step order.</p>
           </div>
           <div className="item-authoring-fields">

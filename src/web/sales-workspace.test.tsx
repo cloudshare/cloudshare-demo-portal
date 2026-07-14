@@ -95,6 +95,30 @@ describe("Sales Item authoring", () => {
     expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining("/api/sales/items/"), expect.objectContaining({ method: "PUT" }));
   });
 
+  it("keeps both authoring exits unavailable while an Item save is in flight", async () => {
+    const user = userEvent.setup();
+    const saveResponse = deferred<Response>();
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/sales/items" && !init?.method) return json({ activeItems: [], archivedItems: [] });
+      if (url === "/api/sales/item-authoring?refresh=true") return json({ projects: [], regions: [] });
+      if (url === "/api/sales/items" && init?.method === "POST") return saveResponse.promise;
+      return json({});
+    });
+    render(<SalesWorkspace email="sales-admin@certalis.demo" />);
+
+    await user.click(await screen.findByRole("button", { name: "Create Item" }));
+    await user.type(screen.getByRole("textbox", { name: "Item name" }), "Saving Item");
+    await user.click(screen.getByRole("button", { name: "Save Item" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Back to catalogue" })).toHaveProperty("disabled", true);
+      expect(screen.getByRole("button", { name: "Cancel" })).toHaveProperty("disabled", true);
+    });
+    saveResponse.resolve(json({ item: { id: "item-1" } }, 201));
+    await screen.findByRole("heading", { name: "Item catalogue" });
+  });
+
   it("links a live resource failure to Sales Support without rendering raw diagnostics", async () => {
     const user = userEvent.setup();
     vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
