@@ -8,6 +8,7 @@ import {
 const SALES_DIAGNOSTIC_SOURCES = ["sales-records", "sales-demo-items"] as const;
 const SALES_DIAGNOSTIC_SOURCE_PAGE_LIMIT = 500;
 const SALES_DIAGNOSTIC_MAX_PAGE_LIMIT = 500;
+const SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET = 5_000;
 
 type SalesDiagnosticSource = typeof SALES_DIAGNOSTIC_SOURCES[number];
 type DiagnosticPageBody = {
@@ -35,6 +36,15 @@ export async function handleGetSalesDiagnosticLog(
 
   const requestedLimit = parseLimit(request.query.limit);
   const requestedOffset = parseOffset(request.query.offset);
+  if (requestedOffset > SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET) {
+    return {
+      status: 400,
+      body: {
+        error: "sales_diagnostic_offset_exceeds_maximum",
+        maxOffset: SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET,
+      },
+    };
+  }
   const requiredEntriesPerSource = requestedOffset + requestedLimit + 1;
   const sourceEntries = await Promise.all(SALES_DIAGNOSTIC_SOURCES.map((source) => readSourceEntries({
     deps,

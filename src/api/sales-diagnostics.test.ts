@@ -42,6 +42,21 @@ describe("Sales diagnostics handler", () => {
     expect(diagnostics.query).not.toHaveBeenCalled();
   });
 
+  it("rejects an aggregate offset beyond the safe read window before querying diagnostics", async () => {
+    const diagnostics = { append: vi.fn(), query: vi.fn().mockResolvedValue([]) };
+
+    const response = await handleGetSalesDiagnosticLog(
+      { diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } },
+      { customerId: "customer-certalis", query: { offset: "5001", limit: "100" } },
+    );
+
+    expect(response).toEqual({
+      status: 400,
+      body: { error: "sales_diagnostic_offset_exceeds_maximum", maxOffset: 5000 },
+    });
+    expect(diagnostics.query).not.toHaveBeenCalled();
+  });
+
   it("reaches older globally ordered entries beyond 500 per source with a sound next page", async () => {
     const diagnostics = createInMemoryDiagnosticLogRepository();
     const base = Date.UTC(2026, 6, 13, 12, 0, 0);
