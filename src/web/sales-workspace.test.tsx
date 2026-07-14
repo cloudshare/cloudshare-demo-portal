@@ -75,6 +75,26 @@ describe("Sales Item authoring", () => {
     expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 
+  it("cancels unsaved Item authoring and returns to the catalogue without saving", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/sales/items" && !init?.method) return json({ activeItems: [], archivedItems: [] });
+      if (url === "/api/sales/item-authoring?refresh=true") return json({ projects: [], regions: [] });
+      return json({});
+    });
+    render(<SalesWorkspace email="sales-admin@certalis.demo" />);
+
+    await user.click(await screen.findByRole("button", { name: "Create Item" }));
+    await user.type(screen.getByRole("textbox", { name: "Item name" }), "Unsaved Item");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+
+    await screen.findByRole("heading", { name: "Item catalogue" });
+    expect(router.push).toHaveBeenLastCalledWith("/sales?tab=items");
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/sales/items", expect.objectContaining({ method: "POST" }));
+    expect(fetchMock).not.toHaveBeenCalledWith(expect.stringContaining("/api/sales/items/"), expect.objectContaining({ method: "PUT" }));
+  });
+
   it("links a live resource failure to Sales Support without rendering raw diagnostics", async () => {
     const user = userEvent.setup();
     vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {

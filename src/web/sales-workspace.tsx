@@ -257,6 +257,10 @@ function ItemCatalog({ fetchAdmin, view, focusedItemId, onNavigate }: { readonly
       setName(""); setDescription(""); setBlueprintIds([]); setRegionIds([]); setEditingId(null); await loadItems(); onNavigate({ tab: "items", itemView: "catalog" });
     } finally { setLoading(false); }
   };
+  const cancelAuthoring = () => {
+    setName(""); setDescription(""); setProjectId(""); setBlueprintIds([]); setPolicyId(""); setRegionIds([]); setSalesExperienceType("demo"); setEditingId(null); setError(null); setErrorCorrelationId(null);
+    onNavigate({ tab: "items", itemView: "catalog" });
+  };
   const inspect = useCallback(async (id: string) => {
     const response = await fetchAdmin(`/api/sales/items/${encodeURIComponent(id)}`);
     const body = await response.json() as { item?: Item; error?: string; correlationId?: string | null };
@@ -311,7 +315,7 @@ function ItemCatalog({ fetchAdmin, view, focusedItemId, onNavigate }: { readonly
       <section aria-label="Item authoring" className="item-authoring-shell" style={{ ...mutedPanelStyle, padding: "clamp(1.1rem, 3vw, 1.75rem)" }}>
         <form aria-label="Item authoring form" className="item-authoring-form" onSubmit={(event) => event.preventDefault()}>
           <div className="item-authoring-header">
-            <div><button type="button" style={compactButtonStyle} onClick={() => onNavigate({ tab: "items", itemView: "catalog" })}>Back to catalogue</button><h2 style={{ margin: "0.85rem 0 0" }}>{view === "edit" ? "Edit Item" : "Create Item"}</h2></div>
+            <div><button type="button" style={compactButtonStyle} onClick={cancelAuthoring}>Back to catalogue</button><h2 style={{ margin: "0.85rem 0 0" }}>{view === "edit" ? "Edit Item" : "Create Item"}</h2></div>
             <p>Select live CloudShare resources by friendly name. Selected Blueprint order becomes the future step order.</p>
           </div>
           <div className="item-authoring-fields">
@@ -325,7 +329,7 @@ function ItemCatalog({ fetchAdmin, view, focusedItemId, onNavigate }: { readonly
             </fieldset>
             <div className="item-authoring-field"><label className="item-authoring-label" htmlFor="item-sales-experience-type">Item type</label><select id="item-sales-experience-type" className="item-authoring-control" aria-label="Item type" value={salesExperienceType} onChange={(event) => setSalesExperienceType(event.target.value as Item["salesExperienceType"])}><option value="demo">Demo</option><option value="poc">POC</option><option value="pov">POV</option><option value="trial">Trial</option></select></div>
           </div>
-          <div className="item-authoring-actions"><button type="button" style={primaryButtonStyle} onClick={() => void save()} disabled={loading}>{view === "edit" ? "Save Item changes" : "Save Item"}</button></div>
+          <div className="item-authoring-actions"><button type="button" style={compactButtonStyle} onClick={cancelAuthoring} disabled={loading}>Cancel</button><button type="button" style={primaryButtonStyle} onClick={() => void save()} disabled={loading}>{view === "edit" ? "Save Item changes" : "Save Item"}</button></div>
           {error ? <ItemFailureAlert message={error} correlationId={errorCorrelationId} onDismiss={() => { setError(null); setErrorCorrelationId(null); }} onOpenSupport={() => errorCorrelationId && onNavigate({ tab: "support", correlationId: errorCorrelationId })} /> : null}
         </form>
       </section>
