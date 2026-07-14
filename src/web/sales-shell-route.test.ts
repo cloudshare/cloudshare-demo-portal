@@ -13,4 +13,9 @@ describe("Sales workspace shell routes", () => {
     expect(parseSalesWorkspaceRouteState({ tab: "items", view: "detail", itemId: "item-1" })).toMatchObject({ tab: "items", itemView: "detail", itemId: "item-1" });
     expect(buildSalesWorkspaceHref({ tab: "records", accountId: "account-1", opportunityId: "opportunity-1" })).toBe("/sales?tab=records&accountId=account-1&opportunityId=opportunity-1");
   });
+
+  it("opens Sales Support on the failure correlation thread", () => {
+    expect(buildSalesWorkspaceHref({ tab: "support", correlationId: "corr-sales-429" })).toBe("/sales?tab=support&correlationId=corr-sales-429");
+    expect(parseSalesWorkspaceRouteState({ tab: "support", correlationId: "corr-sales-429" })).toMatchObject({ tab: "support", correlationId: "corr-sales-429" });
+  });
 });

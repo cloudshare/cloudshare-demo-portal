@@ -15,6 +15,7 @@ export interface SalesWorkspaceRouteState {
   readonly itemId?: string;
   readonly accountId?: string;
   readonly opportunityId?: string;
+  readonly correlationId?: string;
 }
 
 /** A feature requests a Sales destination; only the shell turns it into browser history. */
@@ -24,6 +25,7 @@ export interface SalesNavigationIntent {
   readonly itemId?: string | null;
   readonly accountId?: string | null;
   readonly opportunityId?: string | null;
+  readonly correlationId?: string | null;
 }
 
 export function getSalesTabLabel(tab: SalesTab): string {
@@ -48,6 +50,7 @@ export function buildSalesWorkspaceHref(route: SalesNavigationIntent): string {
     if (route.accountId) params.set("accountId", route.accountId);
     if (route.opportunityId) params.set("opportunityId", route.opportunityId);
   }
+  if (route.tab === "support" && route.correlationId) params.set("correlationId", route.correlationId);
   return `/sales?${params.toString()}`;
 }
 
@@ -57,6 +60,7 @@ export function parseSalesWorkspaceRouteState(input: {
   readonly itemId?: string | readonly string[];
   readonly accountId?: string | readonly string[];
   readonly opportunityId?: string | readonly string[];
+  readonly correlationId?: string | readonly string[];
 }): SalesWorkspaceRouteState {
   const tab = parseTab(readValue(input.tab));
   const itemId = tab === "items" ? readValue(input.itemId) : undefined;
@@ -66,12 +70,14 @@ export function parseSalesWorkspaceRouteState(input: {
     : parsedItemView;
   const accountId = tab === "records" ? readValue(input.accountId) : undefined;
   const opportunityId = tab === "records" ? readValue(input.opportunityId) : undefined;
+  const correlationId = tab === "support" ? readValue(input.correlationId) : undefined;
   return {
     tab,
     itemView,
     ...(itemId ? { itemId } : {}),
     ...(accountId ? { accountId } : {}),
     ...(opportunityId ? { opportunityId } : {}),
+    ...(correlationId ? { correlationId } : {}),
   };
 }
 

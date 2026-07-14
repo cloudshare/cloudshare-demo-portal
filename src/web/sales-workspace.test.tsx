@@ -74,4 +74,22 @@ describe("Sales Item authoring", () => {
     expect(projectReadCount).toBe(2);
     expect(fetchMock).toHaveBeenCalledTimes(4);
   });
+
+  it("links a live resource failure to Sales Support without rendering raw diagnostics", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/sales/items" && !init?.method) return json({ activeItems: [], archivedItems: [] });
+      if (url === "/api/sales/item-authoring?refresh=true") return json({ error: "CloudShare is temporarily rate limited.", correlationId: "corr-sales-429", diagnostic: { integrationSurface: "cloudshare.v3.projects", responseStatus: 429 } }, 429);
+      return json({});
+    });
+    render(<SalesWorkspace email="sales-admin@certalis.demo" />);
+
+    await user.click(await screen.findByRole("button", { name: "Create Item" }));
+
+    expect((await screen.findByRole("alert")).textContent).toContain("CloudShare is temporarily rate limited.");
+    expect(screen.queryByLabelText("Support diagnostics")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "corr-sales-429" }));
+    expect(router.push).toHaveBeenLastCalledWith("/sales?tab=support&correlationId=corr-sales-429");
+  });
 });

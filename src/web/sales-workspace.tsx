@@ -6,7 +6,7 @@ import { CloudShareConnectionFeature } from "./admin-cloudshare-connection";
 import { AdminSupportFeature } from "./admin-support";
 import { createAdminAuthenticatedRequest } from "./admin-authenticated-request";
 import { accountLogoutButtonStyle, compactButtonStyle, dangerButtonStyle, disabledButtonStyle, primaryButtonStyle } from "./button-styles";
-import { cardStyle, mutedPanelStyle } from "./card-styles";
+import { alertPanelStyle, cardStyle, mutedPanelStyle } from "./card-styles";
 import { pageShellStyle } from "./page-shell";
 import { PortalPageHeader } from "./portal-page-header";
 import { SALES_TABS, buildSalesWorkspaceHref, getSalesTabLabel, type SalesItemView, type SalesNavigationIntent, type SalesWorkspaceRouteState } from "./sales-shell-route";
@@ -48,6 +48,7 @@ export function SalesWorkspace({ email, initialRoute = { tab: "items", itemView:
       ...(intent.tab === "items" && intent.itemId ? { itemId: intent.itemId } : {}),
       ...(intent.tab === "records" && intent.accountId ? { accountId: intent.accountId } : {}),
       ...(intent.tab === "records" && intent.opportunityId ? { opportunityId: intent.opportunityId } : {}),
+      ...(intent.tab === "support" && intent.correlationId ? { correlationId: intent.correlationId } : {}),
     };
     router.push(buildSalesWorkspaceHref(intent));
     setRoute(next);
@@ -61,7 +62,7 @@ export function SalesWorkspace({ email, initialRoute = { tab: "items", itemView:
     })}</nav>
     {route.tab === "items" ? <ItemCatalog fetchAdmin={fetchAdmin} view={route.itemView ?? "catalog"} focusedItemId={route.itemId} onNavigate={navigate} /> : null}
     {route.tab === "records" ? <SalesRecordsFeature initialSelection={{ accountId: route.accountId ?? null, opportunityId: route.opportunityId ?? null }} onNavigate={navigate} /> : null}
-    {route.tab === "support" ? <section aria-label="Sales support"><PortalSectionIntro title="Sales support" description="Append-only support evidence for Sales records and live Item resource curation in the Certalis Customer workspace." /><AdminSupportFeature active view="diagnostics" diagnosticFilters={{}} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={() => undefined} /></section> : null}
+    {route.tab === "support" ? <section aria-label="Sales support"><PortalSectionIntro title="Sales support" description="Append-only support evidence for Sales records and live Item resource curation in the Certalis Customer workspace." /><AdminSupportFeature active view="diagnostics" diagnosticFilters={route.correlationId ? { correlationId: route.correlationId } : {}} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={(intent) => navigate({ tab: "support", correlationId: intent.diagnosticFilters?.correlationId })} /></section> : null}
     {route.tab === "configuration" ? <section aria-label="Sales configuration"><PortalSectionIntro title="CloudShare Connection" description="Manage the encrypted CloudShare Connection for the isolated Certalis Sales Customer." /><CloudShareConnectionFeature active fetchAdmin={fetchAdmin} getNavigationHref={() => buildSalesWorkspaceHref({ tab: "configuration" })} onNavigate={() => undefined} /></section> : null}
   </main>;
 }
@@ -206,7 +207,7 @@ function ItemCatalog({ fetchAdmin, view, focusedItemId, onNavigate }: { readonly
   const [editingId, setEditingId] = useState<string | null>(null);
   const [inspected, setInspected] = useState<Item | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [diagnostic, setDiagnostic] = useState<Record<string, unknown> | null>(null);
+  const [errorCorrelationId, setErrorCorrelationId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const selectedPolicy = policies.find((policy) => policy.id === policyId);
   const eligibleRegionIds = useMemo(() => {
@@ -224,11 +225,11 @@ function ItemCatalog({ fetchAdmin, view, focusedItemId, onNavigate }: { readonly
     setArchived(body.archivedItems ?? []);
   }, [fetchAdmin]);
   const loadBootstrap = useCallback(async () => {
-    setLoading(true); setError(null); setDiagnostic(null);
+    setLoading(true); setError(null); setErrorCorrelationId(null);
     try {
       const response = await fetchAdmin("/api/sales/item-authoring?refresh=true");
-      const body = await response.json() as { projects?: Named[]; regions?: Named[]; error?: string; diagnostic?: Record<string, unknown> };
-      if (!response.ok) { setError(body.error ?? "Failed to load CloudShare resources"); setDiagnostic(body.diagnostic ?? null); return; }
+      const body = await response.json() as { projects?: Named[]; regions?: Named[]; error?: string; correlationId?: string | null };
+      if (!response.ok) { setError(body.error ?? "Failed to load CloudShare resources"); setErrorCorrelationId(body.correlationId ?? null); return; }
       setProjects(body.projects ?? []); setRegions(body.regions ?? []);
     } finally { setLoading(false); }
   }, [fetchAdmin]);
@@ -239,27 +240,27 @@ function ItemCatalog({ fetchAdmin, view, focusedItemId, onNavigate }: { readonly
   const selectProject = useCallback(async (next: string) => {
     setProjectId(next); setBlueprintIds([]); setRegionIds([]); setPolicyId(""); setBlueprints([]); setPolicies([]);
     if (!next) return;
-    setLoading(true); setError(null); setDiagnostic(null);
+    setLoading(true); setError(null); setErrorCorrelationId(null);
     try {
       const response = await fetchAdmin(`/api/sales/item-authoring/projects/${encodeURIComponent(next)}?refresh=true`);
-      const body = await response.json() as { blueprints?: BlueprintOption[]; policies?: Policy[]; error?: string; diagnostic?: Record<string, unknown> };
-      if (!response.ok) { setError(body.error ?? "Failed to load Project resources"); setDiagnostic(body.diagnostic ?? null); return; }
+      const body = await response.json() as { blueprints?: BlueprintOption[]; policies?: Policy[]; error?: string; correlationId?: string | null };
+      if (!response.ok) { setError(body.error ?? "Failed to load Project resources"); setErrorCorrelationId(body.correlationId ?? null); return; }
       setBlueprints(body.blueprints ?? []); setPolicies(body.policies ?? []);
     } finally { setLoading(false); }
   }, [fetchAdmin]);
   const save = async () => {
-    setLoading(true); setError(null); setDiagnostic(null);
+    setLoading(true); setError(null); setErrorCorrelationId(null);
     try {
       const response = await fetchAdmin(editingId ? `/api/sales/items/${encodeURIComponent(editingId)}` : "/api/sales/items", { method: editingId ? "PUT" : "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, description, projectId, blueprintIds, policyId, regionIds, salesExperienceType }) });
-      const body = await response.json() as { error?: string; diagnostic?: Record<string, unknown> };
-      if (!response.ok) { setError(body.error ?? "Unable to save Item"); setDiagnostic(body.diagnostic ?? null); return; }
+      const body = await response.json() as { error?: string; correlationId?: string | null };
+      if (!response.ok) { setError(body.error ?? "Unable to save Item"); setErrorCorrelationId(body.correlationId ?? null); return; }
       setName(""); setDescription(""); setBlueprintIds([]); setRegionIds([]); setEditingId(null); await loadItems(); onNavigate({ tab: "items", itemView: "catalog" });
     } finally { setLoading(false); }
   };
   const inspect = useCallback(async (id: string) => {
     const response = await fetchAdmin(`/api/sales/items/${encodeURIComponent(id)}`);
-    const body = await response.json() as { item?: Item; error?: string; diagnostic?: Record<string, unknown> };
-    if (!response.ok) { setError(body.error ?? "Unable to inspect Item"); setDiagnostic(body.diagnostic ?? null); return; }
+    const body = await response.json() as { item?: Item; error?: string; correlationId?: string | null };
+    if (!response.ok) { setError(body.error ?? "Unable to inspect Item"); setErrorCorrelationId(body.correlationId ?? null); return; }
     setInspected(body.item ?? null);
   }, [fetchAdmin]);
   const edit = useCallback(async (item: Item) => {
@@ -267,10 +268,10 @@ function ItemCatalog({ fetchAdmin, view, focusedItemId, onNavigate }: { readonly
     setEditingId(item.id); setName(item.name); setDescription(item.description); setBlueprintIds(item.blueprints.map((blueprint) => blueprint.id)); setPolicyId(item.policy.id); setRegionIds(item.regions.map((region) => region.id)); setSalesExperienceType(item.salesExperienceType);
   }, [loadBootstrap, selectProject]);
   const archive = async (id: string) => {
-    setError(null);
+    setError(null); setErrorCorrelationId(null);
     const response = await fetchAdmin(`/api/sales/items/${encodeURIComponent(id)}/archive`, { method: "POST" });
-    const body = await response.json() as { error?: string; diagnostic?: Record<string, unknown> };
-    if (!response.ok) { setError(body.error ?? "Unable to archive Item"); setDiagnostic(body.diagnostic ?? null); return; }
+    const body = await response.json() as { error?: string; correlationId?: string | null };
+    if (!response.ok) { setError(body.error ?? "Unable to archive Item"); setErrorCorrelationId(body.correlationId ?? null); return; }
     await loadItems(); onNavigate({ tab: "items", itemView: "catalog" });
   };
 
@@ -325,12 +326,16 @@ function ItemCatalog({ fetchAdmin, view, focusedItemId, onNavigate }: { readonly
             <div className="item-authoring-field"><label className="item-authoring-label" htmlFor="item-sales-experience-type">Item type</label><select id="item-sales-experience-type" className="item-authoring-control" aria-label="Item type" value={salesExperienceType} onChange={(event) => setSalesExperienceType(event.target.value as Item["salesExperienceType"])}><option value="demo">Demo</option><option value="poc">POC</option><option value="pov">POV</option><option value="trial">Trial</option></select></div>
           </div>
           <div className="item-authoring-actions"><button type="button" style={primaryButtonStyle} onClick={() => void save()} disabled={loading}>{view === "edit" ? "Save Item changes" : "Save Item"}</button></div>
-          {error ? <p role="alert" style={{ margin: 0 }}>{error}</p> : null}{diagnostic ? <pre aria-label="Support diagnostics">{JSON.stringify(diagnostic, null, 2)}</pre> : null}
+          {error ? <ItemFailureAlert message={error} correlationId={errorCorrelationId} onDismiss={() => { setError(null); setErrorCorrelationId(null); }} onOpenSupport={() => errorCorrelationId && onNavigate({ tab: "support", correlationId: errorCorrelationId })} /> : null}
         </form>
       </section>
     </> : null}
-    {view === "detail" ? <section aria-label="Item inspection" style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem" }}><button type="button" style={compactButtonStyle} onClick={() => onNavigate({ tab: "items", itemView: "catalog" })}>Back to catalogue</button>{inspected ? <><h2 style={{ margin: 0 }}>{inspected.name}</h2><p style={{ margin: 0 }}>{inspected.description}</p><p style={{ margin: 0 }}>{inspected.blueprints.map((blueprint) => blueprint.name).join(" → ")} · {inspected.policy.name} · {inspected.regions.map((region) => region.name).join(", ")} · {inspected.defaultDurationMinutes} min · {inspected.salesExperienceType.toUpperCase()}</p><div style={{ display: "flex", gap: "0.5rem" }}><button type="button" onClick={() => onNavigate({ tab: "items", itemView: "edit", itemId: inspected.id })}>Edit</button><button type="button" style={dangerButtonStyle} onClick={() => void archive(inspected.id)}>Archive</button></div></> : <p>Loading Item details…</p>}{error ? <p role="alert">{error}</p> : null}{diagnostic ? <pre aria-label="Support diagnostics">{JSON.stringify(diagnostic, null, 2)}</pre> : null}</section> : null}
+    {view === "detail" ? <section aria-label="Item inspection" style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem" }}><button type="button" style={compactButtonStyle} onClick={() => onNavigate({ tab: "items", itemView: "catalog" })}>Back to catalogue</button>{inspected ? <><h2 style={{ margin: 0 }}>{inspected.name}</h2><p style={{ margin: 0 }}>{inspected.description}</p><p style={{ margin: 0 }}>{inspected.blueprints.map((blueprint) => blueprint.name).join(" → ")} · {inspected.policy.name} · {inspected.regions.map((region) => region.name).join(", ")} · {inspected.defaultDurationMinutes} min · {inspected.salesExperienceType.toUpperCase()}</p><div style={{ display: "flex", gap: "0.5rem" }}><button type="button" onClick={() => onNavigate({ tab: "items", itemView: "edit", itemId: inspected.id })}>Edit</button><button type="button" style={dangerButtonStyle} onClick={() => void archive(inspected.id)}>Archive</button></div></> : <p>Loading Item details…</p>}{error ? <ItemFailureAlert message={error} correlationId={errorCorrelationId} onDismiss={() => { setError(null); setErrorCorrelationId(null); }} onOpenSupport={() => errorCorrelationId && onNavigate({ tab: "support", correlationId: errorCorrelationId })} /> : null}</section> : null}
   </section>;
+}
+
+function ItemFailureAlert({ message, correlationId, onDismiss, onOpenSupport }: { readonly message: string; readonly correlationId: string | null; readonly onDismiss: () => void; readonly onOpenSupport: () => void }) {
+  return <div role="alert" style={{ ...alertPanelStyle.danger, display: "grid", gap: "0.5rem" }}><div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "flex-start" }}><p style={{ margin: 0 }}>{message}</p><button type="button" onClick={onDismiss} style={{ padding: "0.25rem 0.55rem" }}>Dismiss</button></div>{correlationId ? <p style={{ margin: 0, fontSize: "0.85rem" }}>Open <strong>Support Diagnostics</strong> filtered by correlation ID <button type="button" onClick={onOpenSupport} style={{ color: colors.info, fontFamily: "monospace", fontWeight: 700, overflowWrap: "anywhere", border: 0, padding: 0, background: "transparent", cursor: "pointer" }}>{correlationId}</button>.</p> : null}</div>;
 }
 
 function RecordGrid({ title, columns, context, count, lifecycle, sort, onLifecycle, onSort, addLabel, disabled, addInstruction, onAdd, children }: { title: string; columns: readonly string[]; context?: React.ReactNode; count: number; lifecycle: Lifecycle; sort: Sort; onLifecycle: (value: Lifecycle) => void; onSort: (value: Sort) => void; addLabel: string; disabled?: boolean; addInstruction?: string; onAdd: (event: React.MouseEvent<HTMLButtonElement>) => void; children: React.ReactNode }) {
