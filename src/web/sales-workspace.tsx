@@ -90,6 +90,7 @@ function SalesDemoSessionsFeature({ onNavigate }: { readonly onNavigate: (intent
   const [type, setType] = useState<Item["salesExperienceType"]>("demo");
   const [message, setMessage] = useState<string | null>(null);
   const [correlationId, setCorrelationId] = useState<string | null>(null);
+  const [needsAttention, setNeedsAttention] = useState(false);
   const [loading, setLoading] = useState(false);
   const selectedItem = items.find((item) => item.id === itemId) ?? null;
   const selectedItemType = selectedItem?.salesExperienceType;
@@ -113,14 +114,16 @@ function SalesDemoSessionsFeature({ onNavigate }: { readonly onNavigate: (intent
   useEffect(() => { if (!opportunityId) { setSessions([]); return; } void fetchSales(`/api/sales/demo-sessions?opportunityId=${encodeURIComponent(opportunityId)}`, { cache: "no-store" }).then(async (response) => { const body = await response.json() as { sessions?: DemoSession[] }; if (response.ok) setSessions(body.sessions ?? []); }); }, [fetchSales, opportunityId]);
 
   const submit = async (event: React.FormEvent) => {
-    event.preventDefault(); setMessage(null); setCorrelationId(null); setLoading(true);
+    event.preventDefault(); setMessage(null); setCorrelationId(null); setNeedsAttention(false); setLoading(true);
     try {
       const response = await fetchSales("/api/sales/demo-sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ opportunityId, itemId, start, end, timeZone, type }) });
       const body = await response.json() as { error?: string; correlationId?: string; session?: DemoSession; needsAttention?: boolean; warning?: string };
       if (!response.ok) { setCorrelationId(body.correlationId ?? null); throw new Error(body.error ?? "Could not provision the Sales Demo Session."); }
       setSessions((current) => body.session ? [body.session, ...current] : current);
-      setCorrelationId(body.needsAttention ? body.correlationId ?? null : null);
-      setMessage(body.warning ?? "Sales Demo Session created. No invitations were sent.");
+      if (body.needsAttention) {
+        setNeedsAttention(true); setCorrelationId(body.correlationId ?? null);
+        setMessage(`Needs attention: ${body.warning ?? "Sales Demo Session was created. Do not retry creation; review support diagnostics."}`);
+      } else setMessage("Sales Demo Session created. No invitations were sent.");
     } catch (error) { setMessage(error instanceof Error ? error.message : "Could not provision the Sales Demo Session."); } finally { setLoading(false); }
   };
   const opportunities = records.opportunities.filter((opportunity) => !opportunity.archivedAt);
@@ -135,7 +138,7 @@ function SalesDemoSessionsFeature({ onNavigate }: { readonly onNavigate: (intent
       </div>
       <fieldset style={{ border: "1px solid #d8dee8", borderRadius: "8px", padding: "0.85rem", display: "grid", gap: "0.7rem" }}><legend>Time window</legend><div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}><label><input type="radio" checked={startMode === "now"} onChange={() => setStartMode("now")} /> Start now</label><label><input type="radio" checked={startMode === "scheduled"} onChange={() => setStartMode("scheduled")} /> Schedule start</label></div><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(16rem, 1fr))", gap: "1rem" }}><label style={{ display: "grid", gap: "0.35rem" }}>Start <input aria-label="Start" type="datetime-local" required value={start} disabled={startMode === "now"} onChange={(event) => setStart(event.target.value)} style={fullControlStyle} /></label><label style={{ display: "grid", gap: "0.35rem" }}>End <input aria-label="End" type="datetime-local" required value={end} onChange={(event) => setEnd(event.target.value)} style={fullControlStyle} /></label></div><p style={{ margin: 0, color: "#52606d" }}>End is required and prefilled from the selected Item Policy storage lease. All displayed values are local CloudShare date-times in the selected explicit time zone.</p></fieldset>
       <div style={{ display: "flex", justifyContent: "end", gap: "0.75rem", alignItems: "center" }}><button style={primaryButtonStyle} disabled={loading || !opportunityId || !itemId}>{loading ? "Provisioning…" : "Create Sales Demo Session"}</button></div>
-      {message ? <div role={correlationId ? "alert" : "status"} style={correlationId ? alertPanelStyle.danger : alertPanelStyle.success}>{message}{correlationId ? <> <button type="button" onClick={() => onNavigate({ tab: "support", correlationId })} style={{ border: 0, background: "transparent", color: colors.info, textDecoration: "underline", cursor: "pointer" }}>Open support diagnostics ({correlationId})</button></> : null}</div> : null}
+      {message ? <div role={correlationId ? "alert" : "status"} style={correlationId ? alertPanelStyle.danger : alertPanelStyle.success}>{message}{needsAttention ? <strong> Do not retry creation.</strong> : null}{correlationId ? <> <button type="button" onClick={() => onNavigate({ tab: "support", correlationId })} style={{ border: 0, background: "transparent", color: colors.info, textDecoration: "underline", cursor: "pointer" }}>Open support diagnostics ({correlationId})</button></> : null}</div> : null}
     </form>
     {opportunityId ? <section style={{ ...cardStyle, marginTop: "1rem", padding: "1.25rem" }} aria-label="Opportunity Sales Demo Session history"><h2 style={{ marginTop: 0 }}>Session history</h2>{sessions.length === 0 ? <p>No Sales Demo Sessions have been created for this Opportunity.</p> : <ul>{sessions.map((session) => <li key={session.id}>{session.type.toUpperCase()} · {session.start} to {session.end} ({session.timeZone})</li>)}</ul>}</section> : null}
   </section>;
