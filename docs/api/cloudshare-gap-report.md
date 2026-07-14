@@ -1654,6 +1654,7 @@ confirm the direct request/response, field casing, and the resulting main Sales 
 |---|---|
 | **Status** | Product/API dependency — not implemented or used by the portal |
 | **Verified live** | No — do not probe or rely on the unproductized endpoint in Issue #347 verification |
+| **CloudShare R&D ticket** | [BAC-25223](https://cloudshare.atlassian.net/browse/BAC-25223) — productize a supported Experience ID → legacy/class ID mapping for the operator Instructor Console URL |
 
 **Required future capability**
 
