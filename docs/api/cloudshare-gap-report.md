@@ -1648,6 +1648,53 @@ confirm the direct request/response, field casing, and the resulting main Sales 
 
 ---
 
+## GAP-27 — Sales operator Instructor Console link needs a supported Experience-to-legacy mapping
+
+| Field | Detail |
+|---|---|
+| **Status** | Product/API dependency — not implemented or used by the portal |
+| **Verified live** | No — do not probe or rely on the unproductized endpoint in Issue #347 verification |
+
+**Required future capability**
+
+An authorized Certalis sales operator (initially a Sales Admin; later potentially a Sales Rep or
+Sales Engineer) may need an operator-only outbound link to the CloudShare Instructor Console for a
+Sales Demo Session, so they can monitor and manage participant environments in real time. The
+desired external destination has the form:
+
+`https://accelerate.cloudshare.com/instructor-console/<legacyClassId>`
+
+This is a future optional navigation capability only. It must not embed the Instructor Console,
+and its portal authorization, audit evidence, and outbound-link treatment must be designed in the
+delivery/monitoring slice that introduces it.
+
+**Why the current Sales Experience contract is insufficient**
+
+The v4 Sales Experience creation response can include `accessLink`, but that is a participant
+invitation/login URL. It is not an operator console URL and must remain distinct from any future
+operator navigation; it must not be repurposed for Instructor Console access.
+
+The Accelerate Sales Experience ID retained by a `SalesDemoSession` is also not directly usable in
+the Instructor Console URL. Discovery identified an undocumented, unproductized read at
+`GET https://accelerate-api.cloudshare.com/api/v1/Experiences/<experience-id>` that appears to
+return a Classic `legacyId` / class ID. Certalis must not call, test, or make a runtime dependency
+on that endpoint, including during Issue #347 live verification.
+
+**Action required**
+
+CloudShare must provide one of the following supported contracts before Certalis builds this link:
+
+1. a documented, authorized mapping from Accelerate Experience ID to the legacy Classic class ID; or
+2. a documented, authorized Instructor Console URL for an Accelerate Sales Experience.
+
+The future slice should preserve the existing local Sales Experience correlation, avoid exposing
+bearer credentials or participant `accessLink` values, apply role/Customer scoping, and write
+redacted audit/diagnostic evidence for operator-link use.
+
+**Code reference:** `src/domain/sales-demo-session.ts`, `src/api/sales-demo-sessions.ts`
+
+---
+
 ## GAP-N — Short descriptive title
 
 | Field | Detail |
