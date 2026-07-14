@@ -30,7 +30,7 @@ describe("Sales diagnostics HTTP isolation", () => {
     mockCookies.mockResolvedValue({ get: () => ({ value: "session-certalis" }) });
     mockGetServices.mockReturnValue({});
     mockBuildAdminDiagnosticLogDeps.mockReturnValue({ diagnostics: "deps" });
-    mockHandleGetDiagnosticLog.mockResolvedValue({ status: 200, body: { entries: [] } });
+    mockHandleGetDiagnosticLog.mockResolvedValue({ status: 200, body: { entries: [], page: { hasMore: false, nextOffset: null } } });
   });
 
   it("keeps the Sales Customer scope while preserving the requested Sales diagnostic source", async () => {
@@ -43,11 +43,11 @@ describe("Sales diagnostics HTTP isolation", () => {
     expect(demoItems.status).toBe(200);
     expect(mockHandleGetDiagnosticLog).toHaveBeenNthCalledWith(1, expect.anything(), {
       customerId: "customer-certalis",
-      query: { operation: "account.created", source: "sales-records", limit: "500", offset: "0" },
+      query: { operation: "account.created", source: "sales-records", limit: "101", offset: "0" },
     });
     expect(mockHandleGetDiagnosticLog).toHaveBeenNthCalledWith(2, expect.anything(), {
       customerId: "customer-certalis",
-      query: { operation: "account.created", source: "sales-demo-items", limit: "500", offset: "0" },
+      query: { operation: "account.created", source: "sales-demo-items", limit: "101", offset: "0" },
     });
     expect(mockHandleGetDiagnosticLog).toHaveBeenNthCalledWith(3, expect.anything(), {
       customerId: "customer-certalis",

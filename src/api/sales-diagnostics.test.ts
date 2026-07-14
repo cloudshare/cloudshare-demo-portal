@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import { handleGetSalesDiagnosticLog } from "./sales-diagnostics";
 
 describe("Sales diagnostics handler", () => {
@@ -39,5 +40,41 @@ describe("Sales diagnostics handler", () => {
 
     expect(response).toEqual({ status: 400, body: { error: "unsupported_sales_diagnostic_source" } });
     expect(diagnostics.query).not.toHaveBeenCalled();
+  });
+
+  it("reaches older globally ordered entries beyond 500 per source with a sound next page", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    const base = Date.UTC(2026, 6, 13, 12, 0, 0);
+    for (let index = 0; index < 600; index += 1) {
+      await diagnostics.append({ source: "sales-records", operation: "account.updated", outcome: "success", customerId: "customer-certalis", message: `record-${index}`, occurredAt: new Date(base + index * 2_000) });
+    }
+    for (let index = 0; index < 600; index += 1) {
+      await diagnostics.append({ source: "sales-demo-items", operation: "demo_item.resource_read", outcome: "success", customerId: "customer-certalis", message: `item-${index}`, occurredAt: new Date(base + index * 2_000 + 1_000) });
+    }
+
+    const response = await handleGetSalesDiagnosticLog(
+      { diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } },
+      { customerId: "customer-certalis", query: { offset: "550", limit: "3" } },
+    );
+
+    expect(response).toMatchObject({
+      status: 200,
+      body: {
+        entries: [{ id: "diag-925" }, { id: "diag-325" }, { id: "diag-924" }],
+        page: { limit: 3, offset: 550, returned: 3, hasMore: true, nextOffset: 553 },
+      },
+    });
+  });
+
+  it("clamps an invalid zero limit so aggregate pagination can advance", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    await diagnostics.append({ source: "sales-records", operation: "account.updated", outcome: "success", customerId: "customer-certalis", message: "one" });
+
+    const response = await handleGetSalesDiagnosticLog(
+      { diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } },
+      { customerId: "customer-certalis", query: { limit: "0" } },
+    );
+
+    expect(response).toMatchObject({ status: 200, body: { page: { limit: 100, returned: 1, hasMore: false, nextOffset: null } } });
   });
 });
