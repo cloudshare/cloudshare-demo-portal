@@ -5,6 +5,7 @@ import { getPortalSessionServices } from "@/composition";
 import { getPortalSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { SalesWorkspace } from "@/web/sales-workspace";
+import { parseSalesWorkspaceRouteState } from "@/web/sales-shell-route";
 
 type SalesPageProps = { readonly searchParams?: Promise<Record<string, string | string[] | undefined>> };
 
@@ -16,9 +17,5 @@ export default async function SalesPage({ searchParams }: SalesPageProps) {
   if (session.role !== "admin") redirect("/candidate");
   if (session.workspace !== "sales") redirect("/admin");
   const params = await searchParams ?? {};
-  return <SalesWorkspace email={session.email} initialSelection={{ accountId: selectionValue(params.accountId), opportunityId: selectionValue(params.opportunityId) }} />;
-}
-
-function selectionValue(value: string | string[] | undefined): string | null {
-  return typeof value === "string" && value ? value : null;
+  return <SalesWorkspace email={session.email} initialRoute={parseSalesWorkspaceRouteState(params)} />;
 }

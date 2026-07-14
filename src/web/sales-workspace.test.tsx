@@ -18,10 +18,10 @@ describe("SalesWorkspace", () => {
     );
 
     expect(html).toContain("Sales Workspace");
-    expect(html).toContain("Accounts");
-    expect(html).toContain("Opportunities");
-    expect(html).toContain("Opportunity Contacts");
-    expect(html).toContain('href="/sales/diagnostics"');
+    expect(html).toContain("Demo items");
+    expect(html).toContain("Accounts and opportunities");
+    expect(html).toContain("Support");
+    expect(html).toContain("Configuration");
     expect(html).toContain("Demo Item catalog");
     expect(html).toContain("Create Demo Item");
     expect(html).toContain("No active Demo Items yet.");
@@ -40,7 +40,7 @@ describe("SalesWorkspace", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(createElement(SalesWorkspace, { email: "sales-admin@certalis.demo" }));
 
-    await user.click(await screen.findByRole("button", { name: "Load live CloudShare resources" }));
+    await user.click(await screen.findByRole("button", { name: "Create Demo Item" }));
     await user.selectOptions(screen.getByRole("combobox", { name: "Project" }), "project-1");
     await user.click(await screen.findByRole("checkbox", { name: "Advanced" }));
     await user.click(screen.getByRole("checkbox", { name: "Foundation" }));
@@ -68,10 +68,8 @@ describe("SalesWorkspace", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     render(createElement(SalesWorkspace, { email: "sales-admin@certalis.demo" }));
-    await user.click(await screen.findByRole("button", { name: "Inspect" }));
+    await user.click(await screen.findByRole("button", { name: "View details" }));
     expect((await screen.findByRole("region", { name: "Demo Item inspection" })).textContent).toContain("Existing description");
-    await user.click(screen.getByRole("button", { name: "Edit" }));
-    expect(await screen.findByRole("heading", { name: "Edit Demo Item" })).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "Archive" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/sales/demo-items/demo-1/archive", expect.objectContaining({ method: "POST" })));
   });
