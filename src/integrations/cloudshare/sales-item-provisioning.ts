@@ -1,5 +1,5 @@
 import type { Item } from "@/domain/item";
-import { createCloudShareSalesItemResourceSource, type CloudShareDetailedResourceRead } from "./resources";
+import { CloudShareSalesResourceReadError, createCloudShareSalesItemResourceSource, type CloudShareDetailedResourceRead } from "./resources";
 import type { CloudShareClient } from "./client";
 
 export interface SalesItemProvisioningValidator {
@@ -12,10 +12,26 @@ export function createCloudShareSalesItemProvisioningValidator(client: CloudShar
   return {
     async revalidate(item) {
       const source = createCloudShareSalesItemResourceSource(client);
-      const [blueprints, details, policies] = await Promise.all([
+      const settled = await Promise.allSettled([
         source.readProjectBlueprints(item.project.id), source.readProjectBlueprintDetails(item.project.id, item.blueprints.map((blueprint) => blueprint.id)), source.readProjectPolicies(item.project.id),
       ]);
-      const reads: CloudShareDetailedResourceRead<unknown>[] = [blueprints, ...details, ...policies.reads];
+      const reads: CloudShareDetailedResourceRead<unknown>[] = [];
+      const [blueprintResult, detailResult, policyResult] = settled;
+      if (blueprintResult.status === "fulfilled") reads.push(blueprintResult.value);
+      if (detailResult.status === "fulfilled") reads.push(...detailResult.value);
+      if (policyResult.status === "fulfilled") reads.push(...policyResult.value.reads);
+      const resourceReadFailure = settled.find((result): result is PromiseRejectedResult => result.status === "rejected");
+      if (resourceReadFailure) {
+        const cause = resourceReadFailure.reason;
+        if (cause instanceof CloudShareSalesResourceReadError) reads.push(...cause.completedReads);
+        throw new SalesItemProvisioningReadError("CloudShare could not fully revalidate this Demo Item before provisioning.", reads, cause instanceof CloudShareSalesResourceReadError ? cause.cause : cause);
+      }
+      // The settled rejection above is exhaustive; retain individual guards so
+      // TypeScript can narrow each heterogeneous Promise result.
+      if (blueprintResult.status !== "fulfilled" || detailResult.status !== "fulfilled" || policyResult.status !== "fulfilled") throw new Error("Unreachable Sales Item revalidation state.");
+      const blueprints = blueprintResult.value;
+      const details = detailResult.value;
+      const policies = policyResult.value;
       const liveBlueprintIds = new Set(blueprints.data.map((blueprint) => blueprint.id));
       if (item.blueprints.some((blueprint) => !liveBlueprintIds.has(blueprint.id))) throw new SalesItemProvisioningValidationError("A selected Demo Item Blueprint is no longer available in its CloudShare Project.", reads);
       if (!policies.policies.some((policy) => policy.id === item.policy.id)) throw new SalesItemProvisioningValidationError("The selected Demo Item Policy is no longer available in its CloudShare Project.", reads);
@@ -28,4 +44,10 @@ export function createCloudShareSalesItemProvisioningValidator(client: CloudShar
 
 export class SalesItemProvisioningValidationError extends Error {
   constructor(message: string, readonly completedReads: readonly CloudShareDetailedResourceRead<unknown>[]) { super(message); this.name = "SalesItemProvisioningValidationError"; }
+}
+
+/** A typed read failure is distinct from stale Item configuration: the portal
+ * preserves all completed v3 exchanges and surfaces the original typed cause. */
+export class SalesItemProvisioningReadError extends Error {
+  constructor(message: string, readonly completedReads: readonly CloudShareDetailedResourceRead<unknown>[], readonly cause: unknown) { super(message); this.name = "SalesItemProvisioningReadError"; }
 }

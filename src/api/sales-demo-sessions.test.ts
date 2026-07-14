@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { handleCreateSalesDemoSession } from "./sales-demo-sessions";
 import { createInMemorySalesRecordRepository } from "@/domain/sales-records";
+import { CloudShareRequestError } from "@/integrations/cloudshare/errors";
+import { SalesItemProvisioningReadError } from "@/integrations/cloudshare/sales-item-provisioning";
 
 const admin = { type: "admin", id: "sales-admin", email: "sales-admin@certalis.demo" };
 
@@ -57,5 +59,31 @@ describe("Sales Demo Session API handler", () => {
     const item = { id: "item-1", customerId: "certalis", name: "Demo", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" };
     const result = await handleCreateSalesDemoSession({ records, items: { findById: vi.fn().mockResolvedValue(item) }, sessions: { save: vi.fn().mockRejectedValue(new Error("database unavailable")), listByOpportunity: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSession: vi.fn().mockResolvedValue({ salesExperienceId: "sales-created", request: { method: "POST", path: "/sales", body: {} }, response: { status: 201, body: { id: "sales-created" } } }) }) }, diagnostics: { record: vi.fn().mockRejectedValue(new Error("diagnostic unavailable")) }, audit: { write: vi.fn().mockRejectedValue(new Error("audit unavailable")) } }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-1", itemId: "item-1", start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
     expect(result).toMatchObject({ status: 503, body: { needsAttention: true, cloudShareSalesExperienceId: "sales-created", correlationId: expect.any(String) } });
+  });
+
+  it("preserves the completed v3 reads and typed failure exchange when Item revalidation cannot finish", async () => {
+    const records = createInMemorySalesRecordRepository(); await records.saveOpportunity({ id: "opp-1", customerId: "certalis", accountId: "account-1", name: "Acme", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
+    const diagnostics = { record: vi.fn().mockResolvedValue(undefined) };
+    const cause = new CloudShareRequestError("CloudShare timed out", 504, { method: "GET", path: "/projects/project-1/policies", requestQuery: { page: "1" }, requestHeaders: { "x-request-id": "req-v3" }, responseHeaders: { "x-cloud": "slow" }, responseBody: { error: "timeout" }, network: { remoteAddress: "203.0.113.9" }, tls: { protocol: "TLSv1.3" } });
+    const revalidate = vi.fn().mockRejectedValue(new SalesItemProvisioningReadError("Could not read Item", [{ data: {}, request: { method: "GET", path: "/projects/project-1/blueprints" }, response: { status: 200 }, integrationSurface: "cloudshare.v3.projects.blueprints" }], cause));
+    const result = await handleCreateSalesDemoSession({ records, items: { findById: vi.fn().mockResolvedValue({ id: "item-1", customerId: "certalis", name: "Demo", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" }) }, sessions: { save: vi.fn(), listByOpportunity: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSession: vi.fn() }) }, itemProvisioningValidator: { revalidate }, diagnostics, audit: { write: vi.fn() } }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-1", itemId: "item-1", start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
+    expect(result).toMatchObject({ status: 502, body: { correlationId: expect.any(String) } });
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ operation: "sales.demo_session.item_resources.revalidated", outcome: "failure", details: expect.objectContaining({ integrationSurface: "cloudshare.v3.projects.blueprints" }) }));
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ operation: "sales.demo_session.created", details: expect.objectContaining({ integrationSurface: "cloudshare.v3.sales_item_resources", failureMode: "item_resource_read" }), request: expect.objectContaining({ query: { page: "1" }, headers: { "x-request-id": "req-v3" } }), response: expect.objectContaining({ status: 504, headers: { "x-cloud": "slow" }, network: { remoteAddress: "203.0.113.9" }, tls: { protocol: "TLSv1.3" } }) }));
+  });
+
+  it("returns a created needs-attention response if evidence fails after local persistence", async () => {
+    const records = createInMemorySalesRecordRepository(); await records.saveOpportunity({ id: "opp-1", customerId: "certalis", accountId: "account-1", name: "Acme", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
+    const item = { id: "item-1", customerId: "certalis", name: "Demo", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" };
+    const result = await handleCreateSalesDemoSession({ records, items: { findById: vi.fn().mockResolvedValue(item) }, sessions: { save: vi.fn().mockResolvedValue(undefined), listByOpportunity: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSession: vi.fn().mockResolvedValue({ salesExperienceId: "sales-created", request: { method: "POST", path: "/sales", headers: { "x-request": "safe" }, body: {} }, response: { status: 201, headers: { "x-cloud": "created" }, body: { id: "sales-created" } } }) }) }, diagnostics: { record: vi.fn().mockRejectedValue(new Error("diagnostics unavailable")) }, audit: { write: vi.fn().mockRejectedValue(new Error("audit unavailable")) } }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-1", itemId: "item-1", start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
+    expect(result).toMatchObject({ status: 201, body: { session: { cloudShareSalesExperienceId: "sales-created" }, needsAttention: true, correlationId: expect.any(String) } });
+  });
+
+  it("blocks legacy Opportunity names that exceed CloudShare's v4 limit before any delivery call", async () => {
+    const records = createInMemorySalesRecordRepository(); await records.saveOpportunity({ id: "opp-1", customerId: "certalis", accountId: "account-1", name: "x".repeat(101), status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
+    const delivery = { createSession: vi.fn() };
+    const result = await handleCreateSalesDemoSession({ records, items: { findById: vi.fn() }, sessions: { save: vi.fn(), listByOpportunity: vi.fn() }, connections: { findByCustomerId: vi.fn() }, deliveryFactory: { forConnection: vi.fn().mockReturnValue(delivery) }, diagnostics: { record: vi.fn() }, audit: { write: vi.fn() } }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-1", itemId: "item-1", start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
+    expect(result).toMatchObject({ status: 422, body: { correlationId: expect.any(String) } });
+    expect(delivery.createSession).not.toHaveBeenCalled();
   });
 });

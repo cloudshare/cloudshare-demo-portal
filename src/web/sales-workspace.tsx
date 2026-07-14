@@ -116,9 +116,11 @@ function SalesDemoSessionsFeature({ onNavigate }: { readonly onNavigate: (intent
     event.preventDefault(); setMessage(null); setCorrelationId(null); setLoading(true);
     try {
       const response = await fetchSales("/api/sales/demo-sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ opportunityId, itemId, start, end, timeZone, type }) });
-      const body = await response.json() as { error?: string; correlationId?: string; session?: DemoSession };
+      const body = await response.json() as { error?: string; correlationId?: string; session?: DemoSession; needsAttention?: boolean; warning?: string };
       if (!response.ok) { setCorrelationId(body.correlationId ?? null); throw new Error(body.error ?? "Could not provision the Sales Demo Session."); }
-      setSessions((current) => body.session ? [body.session, ...current] : current); setMessage("Sales Demo Session created. No invitations were sent.");
+      setSessions((current) => body.session ? [body.session, ...current] : current);
+      setCorrelationId(body.needsAttention ? body.correlationId ?? null : null);
+      setMessage(body.warning ?? "Sales Demo Session created. No invitations were sent.");
     } catch (error) { setMessage(error instanceof Error ? error.message : "Could not provision the Sales Demo Session."); } finally { setLoading(false); }
   };
   const opportunities = records.opportunities.filter((opportunity) => !opportunity.archivedAt);

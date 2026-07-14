@@ -1,9 +1,12 @@
 import { z } from "zod";
 import type { SalesExperienceType } from "@/domain/item";
-import type { CloudShareClient, CloudShareDetailedResult } from "./client";
+import type { CloudShareClient, CloudShareDetailedResult, CloudShareRequestDiagnostics, CloudShareResponseDiagnostics } from "./client";
 
-export interface SalesDeliveryRequestEvidence { readonly method: string; readonly path: string; readonly body?: unknown; }
-export interface SalesDeliveryResponseEvidence { readonly status: number; readonly body: unknown; }
+/** Already-sanitized data returned by the client boundary. Keep the complete
+ * exchange because Sales support needs headers and transport facts as well as
+ * the Sales response body. */
+export interface SalesDeliveryRequestEvidence extends CloudShareRequestDiagnostics {}
+export interface SalesDeliveryResponseEvidence extends CloudShareResponseDiagnostics {}
 export interface SalesDeliveryEvidence { readonly request: SalesDeliveryRequestEvidence; readonly response: SalesDeliveryResponseEvidence; }
 export interface CreateSalesDemoSessionInput {
   readonly name: string;
@@ -35,7 +38,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
     const result = client.requestV4Detailed
       ? await client.requestV4Detailed(spec)
       : await client.requestV4(spec).then((data) => ({ data, request: { method: spec.method, path: spec.path, ...(spec.body === undefined ? {} : { body: spec.body }) }, response: { status: 200, body: data } } as CloudShareDetailedResult<T>));
-    return { data: result.data, evidence: { request: { method: result.request.method, path: result.request.path, ...(result.request.body === undefined ? {} : { body: result.request.body }) }, response: { status: result.response.status, body: result.response.body } } };
+    return { data: result.data, evidence: { request: result.request, response: result.response } };
   }
   return {
     async createSession(input) {
