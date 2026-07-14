@@ -8,6 +8,7 @@ import { SalesWorkspace } from "./sales-workspace";
 const router = { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() };
 vi.mock("next/navigation", () => ({ useRouter: () => router, useSearchParams: () => new URLSearchParams() }));
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+const deferred = <T,>() => { let resolve!: (value: T) => void; return { promise: new Promise<T>((done) => { resolve = done; }), resolve }; };
 
 describe("Sales Item authoring", () => {
   afterEach(() => { vi.restoreAllMocks(); router.push.mockClear(); });
@@ -41,5 +42,36 @@ describe("Sales Item authoring", () => {
     await user.selectOptions(screen.getByRole("combobox", { name: "Policy" }), "policy-1");
     await user.click(screen.getByRole("button", { name: "Save Item" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/sales/items", expect.objectContaining({ method: "POST", body: expect.stringContaining('"regionIds":["amsterdam"]') })));
+  });
+
+  it("refreshes the selected Project's live Blueprint list on demand", async () => {
+    const user = userEvent.setup();
+    let projectReadCount = 0;
+    const refreshedResources = deferred<Response>();
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/sales/items" && !init?.method) return json({ activeItems: [], archivedItems: [] });
+      if (url === "/api/sales/item-authoring?refresh=true") return json({ projects: [{ id: "project-1", name: "Certalis Sales" }], regions: [] });
+      if (url === "/api/sales/item-authoring/projects/project-1?refresh=true") {
+        projectReadCount += 1;
+        return projectReadCount === 1
+          ? json({ blueprints: [{ id: "old", name: "Original Blueprint", defaultSnapshotRegionIds: ["miami"] }], policies: [] })
+          : refreshedResources.promise;
+      }
+      return json({});
+    });
+    render(<SalesWorkspace email="sales-admin@certalis.demo" />);
+
+    await user.click(await screen.findByRole("button", { name: "Create Item" }));
+    await user.selectOptions(screen.getByRole("combobox", { name: "Project" }), "project-1");
+    await screen.findByText("Original Blueprint");
+    await user.click(screen.getByRole("button", { name: "Refresh live resources" }));
+    expect(screen.getByRole("combobox", { name: "Project" })).toHaveProperty("disabled", true);
+    refreshedResources.resolve(json({ blueprints: [{ id: "new", name: "Newly added Blueprint", defaultSnapshotRegionIds: ["miami"] }], policies: [] }));
+
+    expect(await screen.findByText("Newly added Blueprint")).not.toBeNull();
+    expect(screen.queryByText("Original Blueprint")).toBeNull();
+    expect(projectReadCount).toBe(2);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
   });
 });
