@@ -160,10 +160,10 @@ describe("admin Exam authoring resource runtime", () => {
 
   it("uses the initiating Sales source label while preserving per-read operations", async () => {
     const diagnostics = makeDiagnostics();
-    await getExamAuthoringBootstrapRuntime({ connections: makeConnections(), cloudshare: makeCloudShareFactory(makeAuthoringSource()), cache: createInMemoryExamAuthoringCacheRepository(), diagnostics: diagnostics.recorder, logger: makeLogger(), diagnosticSource: "sales-demo-items" }, { customerId: "customer-1", refresh: true });
+    await getExamAuthoringBootstrapRuntime({ connections: makeConnections(), cloudshare: makeCloudShareFactory(makeAuthoringSource()), cache: createInMemoryExamAuthoringCacheRepository(), diagnostics: diagnostics.recorder, logger: makeLogger(), diagnosticSource: "sales-items" }, { customerId: "customer-1", refresh: true });
     await expect(diagnostics.repository.query({ customerId: "customer-1" })).resolves.toEqual(expect.arrayContaining([
-      expect.objectContaining({ source: "sales-demo-items", operation: "cloudshare.resource_sync.projects.read" }),
-      expect.objectContaining({ source: "sales-demo-items", operation: "cloudshare.resource_sync.regions.read" }),
+      expect.objectContaining({ source: "sales-items", operation: "cloudshare.resource_sync.projects.read" }),
+      expect.objectContaining({ source: "sales-items", operation: "cloudshare.resource_sync.regions.read" }),
     ]));
   });
 

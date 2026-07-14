@@ -1,18 +1,18 @@
-export type SalesTab = "demo-items" | "records" | "support" | "configuration";
+export type SalesTab = "items" | "records" | "support" | "configuration";
 
 export const SALES_TABS: readonly SalesTab[] = [
-  "demo-items",
+  "items",
   "records",
   "support",
   "configuration",
 ];
 
-export type SalesDemoItemView = "catalog" | "create" | "detail" | "edit";
+export type SalesItemView = "catalog" | "create" | "detail" | "edit";
 
 export interface SalesWorkspaceRouteState {
   readonly tab: SalesTab;
-  readonly demoItemView: SalesDemoItemView;
-  readonly demoItemId?: string;
+  readonly itemView?: SalesItemView;
+  readonly itemId?: string;
   readonly accountId?: string;
   readonly opportunityId?: string;
 }
@@ -20,15 +20,15 @@ export interface SalesWorkspaceRouteState {
 /** A feature requests a Sales destination; only the shell turns it into browser history. */
 export interface SalesNavigationIntent {
   readonly tab: SalesTab;
-  readonly demoItemView?: SalesDemoItemView;
-  readonly demoItemId?: string | null;
+  readonly itemView?: SalesItemView;
+  readonly itemId?: string | null;
   readonly accountId?: string | null;
   readonly opportunityId?: string | null;
 }
 
 export function getSalesTabLabel(tab: SalesTab): string {
   switch (tab) {
-    case "demo-items": return "Demo items";
+    case "items": return "Items";
     case "records": return "Accounts and opportunities";
     case "support": return "Support";
     case "configuration": return "Configuration";
@@ -38,11 +38,11 @@ export function getSalesTabLabel(tab: SalesTab): string {
 export function buildSalesWorkspaceHref(route: SalesNavigationIntent): string {
   const params = new URLSearchParams();
   params.set("tab", route.tab);
-  if (route.tab === "demo-items") {
-    const view = route.demoItemView ?? "catalog";
+  if (route.tab === "items") {
+    const view = route.itemView ?? "catalog";
     const requiresItem = view === "detail" || view === "edit";
-    if (view !== "catalog" && (!requiresItem || route.demoItemId)) params.set("view", view);
-    if (requiresItem && route.demoItemId) params.set("demoItemId", route.demoItemId);
+    if (view !== "catalog" && (!requiresItem || route.itemId)) params.set("view", view);
+    if (requiresItem && route.itemId) params.set("itemId", route.itemId);
   }
   if (route.tab === "records") {
     if (route.accountId) params.set("accountId", route.accountId);
@@ -54,22 +54,22 @@ export function buildSalesWorkspaceHref(route: SalesNavigationIntent): string {
 export function parseSalesWorkspaceRouteState(input: {
   readonly tab?: string | readonly string[];
   readonly view?: string | readonly string[];
-  readonly demoItemId?: string | readonly string[];
+  readonly itemId?: string | readonly string[];
   readonly accountId?: string | readonly string[];
   readonly opportunityId?: string | readonly string[];
 }): SalesWorkspaceRouteState {
   const tab = parseTab(readValue(input.tab));
-  const demoItemId = tab === "demo-items" ? readValue(input.demoItemId) : undefined;
-  const parsedDemoItemView = tab === "demo-items" ? parseDemoItemView(readValue(input.view)) : "catalog";
-  const demoItemView = (parsedDemoItemView === "detail" || parsedDemoItemView === "edit") && !demoItemId
+  const itemId = tab === "items" ? readValue(input.itemId) : undefined;
+  const parsedItemView = tab === "items" ? parseItemView(readValue(input.view)) : "catalog";
+  const itemView = (parsedItemView === "detail" || parsedItemView === "edit") && !itemId
     ? "catalog"
-    : parsedDemoItemView;
+    : parsedItemView;
   const accountId = tab === "records" ? readValue(input.accountId) : undefined;
   const opportunityId = tab === "records" ? readValue(input.opportunityId) : undefined;
   return {
     tab,
-    demoItemView,
-    ...(demoItemId ? { demoItemId } : {}),
+    itemView,
+    ...(itemId ? { itemId } : {}),
     ...(accountId ? { accountId } : {}),
     ...(opportunityId ? { opportunityId } : {}),
   };
@@ -81,9 +81,9 @@ function readValue(value: string | readonly string[] | undefined): string | unde
 
 function parseTab(value: string | undefined): SalesTab {
   if (value === "records" || value === "support" || value === "configuration") return value;
-  return "demo-items";
+  return "items";
 }
 
-function parseDemoItemView(value: string | undefined): SalesDemoItemView {
+function parseItemView(value: string | undefined): SalesItemView {
   return value === "create" || value === "detail" || value === "edit" ? value : "catalog";
 }

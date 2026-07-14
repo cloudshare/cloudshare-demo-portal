@@ -9,7 +9,7 @@ import { accountLogoutButtonStyle, compactButtonStyle, dangerButtonStyle, disabl
 import { cardStyle, mutedPanelStyle } from "./card-styles";
 import { pageShellStyle } from "./page-shell";
 import { PortalPageHeader } from "./portal-page-header";
-import { SALES_TABS, buildSalesWorkspaceHref, getSalesTabLabel, type SalesDemoItemView, type SalesNavigationIntent, type SalesWorkspaceRouteState } from "./sales-shell-route";
+import { SALES_TABS, buildSalesWorkspaceHref, getSalesTabLabel, type SalesItemView, type SalesNavigationIntent, type SalesWorkspaceRouteState } from "./sales-shell-route";
 import { colors } from "./design-tokens";
 
 type Account = { id: string; name: string; kind: "prospect" | "current_customer"; archivedAt: string | null; createdAt: string; updatedAt?: string };
@@ -21,8 +21,9 @@ type Lifecycle = "active" | "archived" | "all";
 type Sort = "name" | "created";
 type Dialog = { kind: "account"; record?: Account } | { kind: "opportunity"; record?: Opportunity } | { kind: "contact"; record?: Contact } | null;
 type Named = { id: string; name: string; friendlyName?: string };
+type BlueprintOption = Named & { defaultSnapshotRegionIds?: readonly string[] };
 type Policy = Named & { storageLeaseMinutes: number | null };
-type DemoItem = { id: string; name: string; description: string; project: Named; blueprints: Named[]; policy: Named; region: Named; salesExperienceType: "demo" | "poc" | "pov" | "trial"; defaultDurationMinutes: number; status: "active" | "archived" };
+type Item = { id: string; name: string; description: string; project: Named; blueprints: Named[]; policy: Named; regions: Named[]; salesExperienceType: "demo" | "poc" | "pov" | "trial"; defaultDurationMinutes: number; status: "active" | "archived" };
 
 const blank: SalesData = { accounts: [], opportunities: [], contacts: [] };
 const controlStyle = { padding: "0.55rem", border: "1px solid #b7bdc8", borderRadius: "6px", background: "#fff" };
@@ -34,7 +35,7 @@ const actionCellStyle = { ...cellStyle, width: "9.5rem", textAlign: "right" as c
 const selectedRowStyle = { background: "#e8f5f3", boxShadow: "inset 4px 0 0 #0f6d66" };
 const selectableRowStyle = { cursor: "pointer" };
 
-export function SalesWorkspace({ email, initialRoute = { tab: "demo-items", demoItemView: "catalog" } }: { readonly email: string; readonly initialRoute?: SalesWorkspaceRouteState }) {
+export function SalesWorkspace({ email, initialRoute = { tab: "items", itemView: "catalog" } }: { readonly email: string; readonly initialRoute?: SalesWorkspaceRouteState }) {
   const router = useRouter();
   const [route, setRoute] = useState<SalesWorkspaceRouteState>(initialRoute);
   const browserFetch = useCallback<typeof fetch>((input, init) => window.fetch(input, init), []);
@@ -43,8 +44,8 @@ export function SalesWorkspace({ email, initialRoute = { tab: "demo-items", demo
   const navigate = useCallback((intent: SalesNavigationIntent) => {
     const next: SalesWorkspaceRouteState = {
       tab: intent.tab,
-      demoItemView: intent.tab === "demo-items" ? intent.demoItemView ?? "catalog" : "catalog",
-      ...(intent.tab === "demo-items" && intent.demoItemId ? { demoItemId: intent.demoItemId } : {}),
+      itemView: intent.tab === "items" ? intent.itemView ?? "catalog" : "catalog",
+      ...(intent.tab === "items" && intent.itemId ? { itemId: intent.itemId } : {}),
       ...(intent.tab === "records" && intent.accountId ? { accountId: intent.accountId } : {}),
       ...(intent.tab === "records" && intent.opportunityId ? { opportunityId: intent.opportunityId } : {}),
     };
@@ -53,14 +54,14 @@ export function SalesWorkspace({ email, initialRoute = { tab: "demo-items", demo
   }, [router]);
 
   return <main style={salesWorkspaceStyle}>
-    <PortalPageHeader eyebrow="Certalis Sales Portal" title="Sales Workspace" description="Curate archive-only CloudShare Demo Items and customer-scoped commercial records. No CRM sync or Sales Experience provisioning is performed here." email={email} actions={<button onClick={() => void logout()} style={accountLogoutButtonStyle}>Log out</button>} />
+    <PortalPageHeader eyebrow="Certalis Sales Portal" title="Sales Workspace" description="Curate archive-only CloudShare Items and customer-scoped commercial records. No CRM sync or Sales Experience provisioning is performed here." email={email} actions={<button onClick={() => void logout()} style={accountLogoutButtonStyle}>Log out</button>} />
     <nav aria-label="Sales workspace sections" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(12rem, 1fr))", gap: "0.5rem", marginBottom: "1rem", borderBottom: `1px solid ${colors.border}`, paddingBottom: "0.5rem" }}>{SALES_TABS.map((tab) => {
       const active = route.tab === tab;
       return <button key={tab} type="button" aria-current={active ? "page" : undefined} onClick={() => navigate({ tab })} style={{ padding: "0.65rem 0.9rem", border: "1px solid", borderRadius: "8px", background: active ? colors.textPrimary : "#ffffff", color: active ? "#ffffff" : colors.textPrimary, borderColor: active ? colors.textPrimary : colors.border, cursor: "pointer", fontWeight: active ? 700 : 600 }}>{getSalesTabLabel(tab)}</button>;
     })}</nav>
-    {route.tab === "demo-items" ? <DemoItemCatalog fetchAdmin={fetchAdmin} view={route.demoItemView} focusedDemoItemId={route.demoItemId} onNavigate={navigate} /> : null}
+    {route.tab === "items" ? <ItemCatalog fetchAdmin={fetchAdmin} view={route.itemView ?? "catalog"} focusedItemId={route.itemId} onNavigate={navigate} /> : null}
     {route.tab === "records" ? <SalesRecordsFeature initialSelection={{ accountId: route.accountId ?? null, opportunityId: route.opportunityId ?? null }} onNavigate={navigate} /> : null}
-    {route.tab === "support" ? <section aria-label="Sales support"><PortalSectionIntro title="Sales support" description="Append-only support evidence for Sales records and live Demo Item resource curation in the Certalis Customer workspace." /><AdminSupportFeature active view="diagnostics" diagnosticFilters={{}} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={() => undefined} /></section> : null}
+    {route.tab === "support" ? <section aria-label="Sales support"><PortalSectionIntro title="Sales support" description="Append-only support evidence for Sales records and live Item resource curation in the Certalis Customer workspace." /><AdminSupportFeature active view="diagnostics" diagnosticFilters={{}} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={() => undefined} /></section> : null}
     {route.tab === "configuration" ? <section aria-label="Sales configuration"><PortalSectionIntro title="CloudShare Connection" description="Manage the encrypted CloudShare Connection for the isolated Certalis Sales Customer." /><CloudShareConnectionFeature active fetchAdmin={fetchAdmin} getNavigationHref={() => buildSalesWorkspaceHref({ tab: "configuration" })} onNavigate={() => undefined} /></section> : null}
   </main>;
 }
@@ -188,55 +189,61 @@ function SalesRecordsFeature({ initialSelection, onNavigate }: { readonly initia
   </section>;
 }
 
-function DemoItemCatalog({ fetchAdmin, view, focusedDemoItemId, onNavigate }: { readonly fetchAdmin: typeof fetch; readonly view: SalesDemoItemView; readonly focusedDemoItemId?: string; readonly onNavigate: (intent: SalesNavigationIntent) => void }) {
-  const [items, setItems] = useState<DemoItem[]>([]);
-  const [archived, setArchived] = useState<DemoItem[]>([]);
+function ItemCatalog({ fetchAdmin, view, focusedItemId, onNavigate }: { readonly fetchAdmin: typeof fetch; readonly view: SalesItemView; readonly focusedItemId?: string; readonly onNavigate: (intent: SalesNavigationIntent) => void }) {
+  const [items, setItems] = useState<Item[]>([]);
+  const [archived, setArchived] = useState<Item[]>([]);
   const [projects, setProjects] = useState<Named[]>([]);
   const [regions, setRegions] = useState<Named[]>([]);
-  const [blueprints, setBlueprints] = useState<Named[]>([]);
+  const [blueprints, setBlueprints] = useState<BlueprintOption[]>([]);
   const [policies, setPolicies] = useState<Policy[]>([]);
   const [projectId, setProjectId] = useState("");
   const [blueprintIds, setBlueprintIds] = useState<string[]>([]);
   const [policyId, setPolicyId] = useState("");
-  const [regionId, setRegionId] = useState("");
+  const [regionIds, setRegionIds] = useState<string[]>([]);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [salesExperienceType, setSalesExperienceType] = useState<DemoItem["salesExperienceType"]>("demo");
+  const [salesExperienceType, setSalesExperienceType] = useState<Item["salesExperienceType"]>("demo");
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [inspected, setInspected] = useState<DemoItem | null>(null);
+  const [inspected, setInspected] = useState<Item | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [diagnostic, setDiagnostic] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(false);
   const selectedPolicy = policies.find((policy) => policy.id === policyId);
+  const eligibleRegionIds = useMemo(() => {
+    const selected = blueprintIds.map((id) => blueprints.find((blueprint) => blueprint.id === id)?.defaultSnapshotRegionIds ?? []);
+    return selected.length ? selected.reduce((shared, ids) => shared.filter((id) => ids.includes(id))) : [];
+  }, [blueprintIds, blueprints]);
+  const eligibleRegions = regions.filter((region) => eligibleRegionIds.includes(region.id));
+  useEffect(() => setRegionIds((current) => current.filter((id) => eligibleRegionIds.includes(id))), [eligibleRegionIds]);
 
   const loadItems = useCallback(async () => {
-    const response = await fetchAdmin("/api/sales/demo-items");
-    const body = await response.json() as { activeDemoItems?: DemoItem[]; archivedDemoItems?: DemoItem[]; error?: string };
-    if (!response.ok) throw new Error(body.error ?? "Failed to load Demo Items");
-    setItems(body.activeDemoItems ?? []);
-    setArchived(body.archivedDemoItems ?? []);
+    const response = await fetchAdmin("/api/sales/items");
+    const body = await response.json() as { activeItems?: Item[]; archivedItems?: Item[]; error?: string };
+    if (!response.ok) throw new Error(body.error ?? "Failed to load Items");
+    setItems(body.activeItems ?? []);
+    setArchived(body.archivedItems ?? []);
   }, [fetchAdmin]);
   const loadBootstrap = useCallback(async () => {
     setLoading(true); setError(null); setDiagnostic(null);
     try {
-      const response = await fetchAdmin("/api/sales/demo-item-authoring?refresh=true");
+      const response = await fetchAdmin("/api/sales/item-authoring?refresh=true");
       const body = await response.json() as { projects?: Named[]; regions?: Named[]; error?: string; diagnostic?: Record<string, unknown> };
       if (!response.ok) { setError(body.error ?? "Failed to load CloudShare resources"); setDiagnostic(body.diagnostic ?? null); return; }
       setProjects(body.projects ?? []); setRegions(body.regions ?? []);
     } finally { setLoading(false); }
   }, [fetchAdmin]);
-  useEffect(() => { void loadItems().catch((caught) => setError(caught instanceof Error ? caught.message : "Failed to load Demo Items")); }, [loadItems]);
+  useEffect(() => { void loadItems().catch((caught) => setError(caught instanceof Error ? caught.message : "Failed to load Items")); }, [loadItems]);
   useEffect(() => {
     if (view === "create") void loadBootstrap();
   }, [loadBootstrap, view]);
 
   const selectProject = useCallback(async (next: string) => {
-    setProjectId(next); setBlueprintIds([]); setPolicyId(""); setBlueprints([]); setPolicies([]);
+    setProjectId(next); setBlueprintIds([]); setRegionIds([]); setPolicyId(""); setBlueprints([]); setPolicies([]);
     if (!next) return;
     setLoading(true); setError(null); setDiagnostic(null);
     try {
-      const response = await fetchAdmin(`/api/sales/demo-item-authoring/projects/${encodeURIComponent(next)}?refresh=true`);
-      const body = await response.json() as { blueprints?: Named[]; policies?: Policy[]; error?: string; diagnostic?: Record<string, unknown> };
+      const response = await fetchAdmin(`/api/sales/item-authoring/projects/${encodeURIComponent(next)}?refresh=true`);
+      const body = await response.json() as { blueprints?: BlueprintOption[]; policies?: Policy[]; error?: string; diagnostic?: Record<string, unknown> };
       if (!response.ok) { setError(body.error ?? "Failed to load Project resources"); setDiagnostic(body.diagnostic ?? null); return; }
       setBlueprints(body.blueprints ?? []); setPolicies(body.policies ?? []);
     } finally { setLoading(false); }
@@ -244,41 +251,41 @@ function DemoItemCatalog({ fetchAdmin, view, focusedDemoItemId, onNavigate }: { 
   const save = async () => {
     setLoading(true); setError(null); setDiagnostic(null);
     try {
-      const response = await fetchAdmin(editingId ? `/api/sales/demo-items/${encodeURIComponent(editingId)}` : "/api/sales/demo-items", { method: editingId ? "PUT" : "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, description, projectId, blueprintIds, policyId, regionId, salesExperienceType }) });
+      const response = await fetchAdmin(editingId ? `/api/sales/items/${encodeURIComponent(editingId)}` : "/api/sales/items", { method: editingId ? "PUT" : "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, description, projectId, blueprintIds, policyId, regionIds, salesExperienceType }) });
       const body = await response.json() as { error?: string; diagnostic?: Record<string, unknown> };
-      if (!response.ok) { setError(body.error ?? "Unable to save Demo Item"); setDiagnostic(body.diagnostic ?? null); return; }
-      setName(""); setDescription(""); setBlueprintIds([]); setEditingId(null); await loadItems(); onNavigate({ tab: "demo-items" });
+      if (!response.ok) { setError(body.error ?? "Unable to save Item"); setDiagnostic(body.diagnostic ?? null); return; }
+      setName(""); setDescription(""); setBlueprintIds([]); setRegionIds([]); setEditingId(null); await loadItems(); onNavigate({ tab: "items", itemView: "catalog" });
     } finally { setLoading(false); }
   };
   const inspect = useCallback(async (id: string) => {
-    const response = await fetchAdmin(`/api/sales/demo-items/${encodeURIComponent(id)}`);
-    const body = await response.json() as { demoItem?: DemoItem; error?: string; diagnostic?: Record<string, unknown> };
-    if (!response.ok) { setError(body.error ?? "Unable to inspect Demo Item"); setDiagnostic(body.diagnostic ?? null); return; }
-    setInspected(body.demoItem ?? null);
+    const response = await fetchAdmin(`/api/sales/items/${encodeURIComponent(id)}`);
+    const body = await response.json() as { item?: Item; error?: string; diagnostic?: Record<string, unknown> };
+    if (!response.ok) { setError(body.error ?? "Unable to inspect Item"); setDiagnostic(body.diagnostic ?? null); return; }
+    setInspected(body.item ?? null);
   }, [fetchAdmin]);
-  const edit = useCallback(async (item: DemoItem) => {
+  const edit = useCallback(async (item: Item) => {
     await loadBootstrap(); await selectProject(item.project.id);
-    setEditingId(item.id); setName(item.name); setDescription(item.description); setBlueprintIds(item.blueprints.map((blueprint) => blueprint.id)); setPolicyId(item.policy.id); setRegionId(item.region.id); setSalesExperienceType(item.salesExperienceType);
+    setEditingId(item.id); setName(item.name); setDescription(item.description); setBlueprintIds(item.blueprints.map((blueprint) => blueprint.id)); setPolicyId(item.policy.id); setRegionIds(item.regions.map((region) => region.id)); setSalesExperienceType(item.salesExperienceType);
   }, [loadBootstrap, selectProject]);
   const archive = async (id: string) => {
     setError(null);
-    const response = await fetchAdmin(`/api/sales/demo-items/${encodeURIComponent(id)}/archive`, { method: "POST" });
+    const response = await fetchAdmin(`/api/sales/items/${encodeURIComponent(id)}/archive`, { method: "POST" });
     const body = await response.json() as { error?: string; diagnostic?: Record<string, unknown> };
-    if (!response.ok) { setError(body.error ?? "Unable to archive Demo Item"); setDiagnostic(body.diagnostic ?? null); return; }
-    await loadItems(); onNavigate({ tab: "demo-items" });
+    if (!response.ok) { setError(body.error ?? "Unable to archive Item"); setDiagnostic(body.diagnostic ?? null); return; }
+    await loadItems(); onNavigate({ tab: "items", itemView: "catalog" });
   };
 
   useEffect(() => {
-    if (view === "detail" && focusedDemoItemId) void inspect(focusedDemoItemId);
-  }, [focusedDemoItemId, inspect, view]);
+    if (view === "detail" && focusedItemId) void inspect(focusedItemId);
+  }, [focusedItemId, inspect, view]);
   useEffect(() => {
-    if (view !== "edit" || !focusedDemoItemId) return;
-    const item = items.find((candidate) => candidate.id === focusedDemoItemId);
+    if (view !== "edit" || !focusedItemId) return;
+    const item = items.find((candidate) => candidate.id === focusedItemId);
     if (item) void edit(item);
-  }, [edit, focusedDemoItemId, items, view]);
+  }, [edit, focusedItemId, items, view]);
 
-  return <section style={{ display: "grid", gap: "1rem", marginTop: "1rem" }} aria-label="Demo Item catalog">
-    {view === "catalog" ? <><section style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem" }}><h2 style={{ margin: 0 }}>Demo Item catalog</h2><p style={{ margin: 0 }}>Choose a reusable, archive-only Demo Item template. It does not provision a Sales Experience or share an environment.</p><div><button type="button" style={primaryButtonStyle} onClick={() => onNavigate({ tab: "demo-items", demoItemView: "create" })}>Create Demo Item</button></div></section><section aria-label="Active Demo Items" style={{ ...cardStyle, padding: "1.1rem" }}><h2 style={{ margin: 0 }}>Active Demo Items</h2>{items.length === 0 ? <p>No active Demo Items yet.</p> : <div style={{ display: "grid", gap: "0.75rem", marginTop: "0.75rem" }}>{items.map((item) => <article key={item.id} style={{ border: "1px solid #d6dbe3", borderRadius: "8px", padding: "0.9rem" }}><strong>{item.name}</strong><p style={{ margin: "0.35rem 0" }}>{item.blueprints.map((blueprint) => blueprint.name).join(" → ")} · {item.policy.name} · {item.region.name}</p><p style={{ margin: "0.35rem 0" }}>{item.defaultDurationMinutes} min · {item.salesExperienceType.toUpperCase()}</p><button type="button" onClick={() => onNavigate({ tab: "demo-items", demoItemView: "detail", demoItemId: item.id })}>View details</button></article>)}</div>}</section><section aria-label="Archived Demo Items" style={{ ...mutedPanelStyle }}><h2 style={{ margin: 0 }}>Archived history</h2>{archived.length === 0 ? <p>No archived Demo Items.</p> : <ul>{archived.map((item) => <li key={item.id}>{item.name} (archived; cannot start a Sales Demo Session)</li>)}</ul>}</section></> : null}
+  return <section style={{ display: "grid", gap: "1rem", marginTop: "1rem" }} aria-label="Item catalogue">
+    {view === "catalog" ? <><section style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem" }}><h2 style={{ margin: 0 }}>Item catalogue</h2><p style={{ margin: 0 }}>Choose a reusable, archive-only Item. It does not provision an Enablement Session or share an environment.</p><div><button type="button" style={primaryButtonStyle} onClick={() => onNavigate({ tab: "items", itemView: "create" })}>Create Item</button></div></section><section aria-label="Active Items" style={{ ...cardStyle, padding: "1.1rem" }}><h2 style={{ margin: 0 }}>Active Items</h2>{items.length === 0 ? <p>No active Items yet.</p> : <div style={{ display: "grid", gap: "0.75rem", marginTop: "0.75rem" }}>{items.map((item) => <article key={item.id} style={{ border: "1px solid #d6dbe3", borderRadius: "8px", padding: "0.9rem" }}><strong>{item.name}</strong><p style={{ margin: "0.35rem 0" }}>{item.blueprints.map((blueprint) => blueprint.name).join(" → ")} · {item.policy.name} · {item.regions.map((region) => region.name).join(", ")}</p><p style={{ margin: "0.35rem 0" }}>{item.defaultDurationMinutes} min · {item.salesExperienceType.toUpperCase()}</p><button type="button" onClick={() => onNavigate({ tab: "items", itemView: "detail", itemId: item.id })}>View details</button></article>)}</div>}</section><section aria-label="Archived Items" style={{ ...mutedPanelStyle }}><h2 style={{ margin: 0 }}>Archived history</h2>{archived.length === 0 ? <p>No archived Items.</p> : <ul>{archived.map((item) => <li key={item.id}>{item.name} (archived; cannot start an Enablement Session)</li>)}</ul>}</section></> : null}
     {view === "create" || view === "edit" ? <>
       <style>{`
         .demo-item-authoring-shell { max-width: 66rem; }
@@ -301,29 +308,29 @@ function DemoItemCatalog({ fetchAdmin, view, focusedDemoItemId, onNavigate }: { 
         .demo-item-authoring-actions { display: flex; align-items: center; gap: 0.75rem; padding-top: 0.25rem; }
         @media (max-width: 640px) { .demo-item-authoring-field { grid-template-columns: 1fr; gap: 0.45rem; } .demo-item-authoring-label { padding-top: 0; } .demo-item-resource-set { padding: 0.85rem; } }
       `}</style>
-      <section aria-label="Demo Item authoring" className="demo-item-authoring-shell" style={{ ...mutedPanelStyle, padding: "clamp(1.1rem, 3vw, 1.75rem)" }}>
-        <form aria-label="Demo Item authoring form" className="demo-item-authoring-form" onSubmit={(event) => event.preventDefault()}>
+      <section aria-label="Item authoring" className="demo-item-authoring-shell" style={{ ...mutedPanelStyle, padding: "clamp(1.1rem, 3vw, 1.75rem)" }}>
+        <form aria-label="Item authoring form" className="demo-item-authoring-form" onSubmit={(event) => event.preventDefault()}>
           <div className="demo-item-authoring-header">
-            <div><button type="button" style={compactButtonStyle} onClick={() => onNavigate({ tab: "demo-items", demoItemView: "catalog" })}>Back to catalog</button><h2 style={{ margin: "0.85rem 0 0" }}>{view === "edit" ? "Edit Demo Item" : "Create Demo Item"}</h2></div>
-            <p>Select live CloudShare resources by friendly name. Blueprint order is the future launch order.</p>
+            <div><button type="button" style={compactButtonStyle} onClick={() => onNavigate({ tab: "items", itemView: "catalog" })}>Back to catalogue</button><h2 style={{ margin: "0.85rem 0 0" }}>{view === "edit" ? "Edit Item" : "Create Item"}</h2></div>
+            <p>Select live CloudShare resources by friendly name. Selected Blueprint order becomes the future step order.</p>
           </div>
           <div className="demo-item-authoring-fields">
-            <div className="demo-item-authoring-field"><label className="demo-item-authoring-label" htmlFor="demo-item-name">Name</label><input id="demo-item-name" className="demo-item-authoring-control" aria-label="Demo Item name" value={name} onChange={(event) => setName(event.target.value)} /></div>
+            <div className="demo-item-authoring-field"><label className="demo-item-authoring-label" htmlFor="demo-item-name">Name</label><input id="demo-item-name" className="demo-item-authoring-control" aria-label="Item name" value={name} onChange={(event) => setName(event.target.value)} /></div>
             <div className="demo-item-authoring-field"><label className="demo-item-authoring-label" htmlFor="demo-item-description">Description</label><textarea id="demo-item-description" className="demo-item-authoring-control demo-item-authoring-control--textarea" rows={4} value={description} onChange={(event) => setDescription(event.target.value)} /></div>
             <fieldset className="demo-item-resource-set"><legend>Live CloudShare resources</legend>
               <div className="demo-item-authoring-field"><label className="demo-item-authoring-label" htmlFor="demo-item-project">Project</label><select id="demo-item-project" className="demo-item-authoring-control" aria-label="Project" value={projectId} onChange={(event) => void selectProject(event.target.value)}><option value="">Select a Project</option>{projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
-              <fieldset className="demo-item-blueprint-set"><legend>Blueprints (selection order is launch order)</legend>{loading ? <p className="demo-item-blueprint-empty">Loading Blueprints for this Project…</p> : !projectId ? <p className="demo-item-blueprint-empty">Choose a Project to see its Blueprints.</p> : blueprints.length === 0 ? <p className="demo-item-blueprint-empty">No Blueprints are available for this Project.</p> : <div className="demo-item-blueprint-options">{blueprints.map((item) => <label key={item.id} className="demo-item-blueprint-option"><input type="checkbox" checked={blueprintIds.includes(item.id)} onChange={() => setBlueprintIds((current) => current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id])} /> <span>{item.name}</span></label>)}</div>}</fieldset>
+              <fieldset className="demo-item-blueprint-set"><legend>Blueprint steps</legend>{loading ? <p className="demo-item-blueprint-empty">Loading Blueprints for this Project…</p> : !projectId ? <p className="demo-item-blueprint-empty">Choose a Project to see its Blueprints.</p> : blueprints.length === 0 ? <p className="demo-item-blueprint-empty">No Blueprints are available for this Project.</p> : <div className="demo-item-blueprint-options">{blueprints.map((item) => { const step = blueprintIds.indexOf(item.id); return <label key={item.id} className="demo-item-blueprint-option"><input type="checkbox" checked={step >= 0} onChange={() => setBlueprintIds((current) => current.includes(item.id) ? current.filter((id) => id !== item.id) : [...current, item.id])} /> <span>{step >= 0 ? <strong>Step {step + 1}: </strong> : null}{item.name}</span></label>; })}</div>}<p className="demo-item-policy-help">Removing a Blueprint immediately reindexes the remaining steps.</p></fieldset>
               <div className="demo-item-authoring-field"><label className="demo-item-authoring-label" htmlFor="demo-item-policy">Policy</label><div style={{ display: "grid", gap: "0.45rem", minWidth: 0 }}><select id="demo-item-policy" className="demo-item-authoring-control" aria-label="Policy" value={policyId} onChange={(event) => setPolicyId(event.target.value)}><option value="">Select a Policy</option>{policies.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><p className="demo-item-policy-help">{selectedPolicy?.storageLeaseMinutes ? `Default duration: ${selectedPolicy.storageLeaseMinutes} minutes (Policy storage lease)` : "Choose a Policy with a storage lease."}</p></div></div>
-              <div className="demo-item-authoring-field"><label className="demo-item-authoring-label" htmlFor="demo-item-region">Region</label><select id="demo-item-region" className="demo-item-authoring-control" aria-label="Region" value={regionId} onChange={(event) => setRegionId(event.target.value)}><option value="">Select a Region</option>{regions.map((item) => <option key={item.id} value={item.id}>{item.friendlyName ?? item.name}</option>)}</select></div>
+              <div className="demo-item-authoring-field"><span className="demo-item-authoring-label">Eligible Regions</span><div className="demo-item-blueprint-options" role="group" aria-label="Eligible Regions">{blueprintIds.length === 0 ? <p className="demo-item-policy-help">Select Blueprint steps to calculate eligible Regions.</p> : eligibleRegions.length === 0 ? <p className="demo-item-policy-help">These Blueprint steps have no shared default-Snapshot Region and cannot be saved together.</p> : eligibleRegions.map((region) => <label key={region.id} className="demo-item-blueprint-option"><input type="checkbox" checked={regionIds.includes(region.id)} onChange={() => setRegionIds((current) => current.includes(region.id) ? current.filter((id) => id !== region.id) : [...current, region.id])} /> <span>{region.friendlyName ?? region.name}</span></label>)}<p className="demo-item-policy-help">Every selected Region must have the default Snapshot for every selected Blueprint.</p></div></div>
             </fieldset>
-            <div className="demo-item-authoring-field"><label className="demo-item-authoring-label" htmlFor="demo-item-sales-experience-type">Sales Experience type</label><select id="demo-item-sales-experience-type" className="demo-item-authoring-control" aria-label="Sales Experience type" value={salesExperienceType} onChange={(event) => setSalesExperienceType(event.target.value as DemoItem["salesExperienceType"])}><option value="demo">Demo</option><option value="poc">POC</option><option value="pov">POV</option><option value="trial">Trial</option></select></div>
+            <div className="demo-item-authoring-field"><label className="demo-item-authoring-label" htmlFor="demo-item-sales-experience-type">Item type</label><select id="demo-item-sales-experience-type" className="demo-item-authoring-control" aria-label="Item type" value={salesExperienceType} onChange={(event) => setSalesExperienceType(event.target.value as Item["salesExperienceType"])}><option value="demo">Demo</option><option value="poc">POC</option><option value="pov">POV</option><option value="trial">Trial</option></select></div>
           </div>
-          <div className="demo-item-authoring-actions"><button type="button" style={primaryButtonStyle} onClick={() => void save()} disabled={loading}>{view === "edit" ? "Save Demo Item changes" : "Save Demo Item"}</button></div>
+          <div className="demo-item-authoring-actions"><button type="button" style={primaryButtonStyle} onClick={() => void save()} disabled={loading}>{view === "edit" ? "Save Item changes" : "Save Item"}</button></div>
           {error ? <p role="alert" style={{ margin: 0 }}>{error}</p> : null}{diagnostic ? <pre aria-label="Support diagnostics">{JSON.stringify(diagnostic, null, 2)}</pre> : null}
         </form>
       </section>
     </> : null}
-    {view === "detail" ? <section aria-label="Demo Item inspection" style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem" }}><button type="button" style={compactButtonStyle} onClick={() => onNavigate({ tab: "demo-items", demoItemView: "catalog" })}>Back to catalog</button>{inspected ? <><h2 style={{ margin: 0 }}>{inspected.name}</h2><p style={{ margin: 0 }}>{inspected.description}</p><p style={{ margin: 0 }}>{inspected.blueprints.map((blueprint) => blueprint.name).join(" → ")} · {inspected.policy.name} · {inspected.region.name} · {inspected.defaultDurationMinutes} min · {inspected.salesExperienceType.toUpperCase()}</p><div style={{ display: "flex", gap: "0.5rem" }}><button type="button" onClick={() => onNavigate({ tab: "demo-items", demoItemView: "edit", demoItemId: inspected.id })}>Edit</button><button type="button" style={dangerButtonStyle} onClick={() => void archive(inspected.id)}>Archive</button></div></> : <p>Loading Demo Item details…</p>}{error ? <p role="alert">{error}</p> : null}{diagnostic ? <pre aria-label="Support diagnostics">{JSON.stringify(diagnostic, null, 2)}</pre> : null}</section> : null}
+    {view === "detail" ? <section aria-label="Item inspection" style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem" }}><button type="button" style={compactButtonStyle} onClick={() => onNavigate({ tab: "items", itemView: "catalog" })}>Back to catalogue</button>{inspected ? <><h2 style={{ margin: 0 }}>{inspected.name}</h2><p style={{ margin: 0 }}>{inspected.description}</p><p style={{ margin: 0 }}>{inspected.blueprints.map((blueprint) => blueprint.name).join(" → ")} · {inspected.policy.name} · {inspected.regions.map((region) => region.name).join(", ")} · {inspected.defaultDurationMinutes} min · {inspected.salesExperienceType.toUpperCase()}</p><div style={{ display: "flex", gap: "0.5rem" }}><button type="button" onClick={() => onNavigate({ tab: "items", itemView: "edit", itemId: inspected.id })}>Edit</button><button type="button" style={dangerButtonStyle} onClick={() => void archive(inspected.id)}>Archive</button></div></> : <p>Loading Item details…</p>}{error ? <p role="alert">{error}</p> : null}{diagnostic ? <pre aria-label="Support diagnostics">{JSON.stringify(diagnostic, null, 2)}</pre> : null}</section> : null}
   </section>;
 }
 

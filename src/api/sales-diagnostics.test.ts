@@ -8,13 +8,13 @@ describe("Sales diagnostics handler", () => {
 
     await handleGetSalesDiagnosticLog(
       { diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } },
-      { customerId: "customer-certalis", query: { source: "sales-demo-items", operation: "demo_item.resource_read" } },
+      { customerId: "customer-certalis", query: { source: "sales-items", operation: "item.resource_read" } },
     );
 
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({
       customerId: "customer-certalis",
-      source: "sales-demo-items",
-      operation: "demo_item.resource_read",
+      source: "sales-items",
+      operation: "item.resource_read",
     }));
   });
 
@@ -27,7 +27,7 @@ describe("Sales diagnostics handler", () => {
     );
 
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-records" }));
-    expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-demo-items" }));
+    expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-items" }));
   });
 
   it("rejects an arbitrary source instead of widening Sales support", async () => {
@@ -64,7 +64,7 @@ describe("Sales diagnostics handler", () => {
       await diagnostics.append({ source: "sales-records", operation: "account.updated", outcome: "success", customerId: "customer-certalis", message: `record-${index}`, occurredAt: new Date(base + index * 2_000) });
     }
     for (let index = 0; index < 600; index += 1) {
-      await diagnostics.append({ source: "sales-demo-items", operation: "demo_item.resource_read", outcome: "success", customerId: "customer-certalis", message: `item-${index}`, occurredAt: new Date(base + index * 2_000 + 1_000) });
+      await diagnostics.append({ source: "sales-items", operation: "item.resource_read", outcome: "success", customerId: "customer-certalis", message: `item-${index}`, occurredAt: new Date(base + index * 2_000 + 1_000) });
     }
 
     const response = await handleGetSalesDiagnosticLog(

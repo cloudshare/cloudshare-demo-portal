@@ -1496,7 +1496,7 @@ Certalis Sales Admin UI could not complete its live resource selection flow.
 
 The portal's deterministic handler, adapter, and browser-component checks prove the resource
 selection contract, but they do not substitute for required live Certalis CloudShare verification.
-No Sales Demo Item should be treated as live-verified until a current Certalis connection can read
+No Sales Item should be treated as live-verified until a current Certalis connection can read
 Projects, Regions, project Blueprints, and Policies through the real Sales UI.
 
 **Action required**
@@ -1507,12 +1507,11 @@ merge.
 
 **Update (2026-07-12, Certalis Sales UI live read):** The Certalis Sales Admin successfully loaded
 the real Certalis Project, global Region, and Policy choices through the Sales UI. The observed
-Policy storage lease was 30 days, and the browser console had no errors. The sole visible Certalis
-Project currently returned **zero Blueprints**, so no valid Demo Item can be created, edited, or
-archived for live verification. This is a tenant inventory blocker, not a portal request failure;
-the per-read diagnostics are persisted under the `sales-demo-items` source. Add at least one
-Sales-appropriate Blueprint to the Certalis Project, then repeat creation/archive and focused human
-QA on the main checkout.
+Policy storage lease was 30 days, and the browser console had no errors. The earlier zero-Blueprint
+observation was a discovery/configuration mismatch: the current Certalis Sales Project returns two
+Blueprints through the verified endpoint. Those resources can now be authored as Items and the
+per-read diagnostics are persisted under the `sales-items` source. See GAP-25 for the confirmed
+default-Snapshot Region intersection rule and the linked CloudShare R&D report.
 
 ---
 
@@ -1575,6 +1574,42 @@ A dedicated slice must:
 4. Update all mock stubs and unit tests that implement `LabProvisioner` to supply the new fields.
 
 Until this is resolved, the diagnostic log for provisioning operations is incomplete.
+
+---
+
+## GAP-25 — Accelerate permits an invalid multi-step Region selection
+
+| Field | Detail |
+|---|---|
+| **Status** | Confirmed |
+| **Verified live** | Yes — Certalis Sales Customer, 2026-07-13 |
+| **CloudShare R&D report** | [SUP-4994](https://cloudshare.atlassian.net/browse/SUP-4994) |
+
+**Observed behaviour**
+
+The native Accelerate Experience wizard lets an admin select every Region exposed by one
+Blueprint, even when another selected step's default Snapshot is unavailable in one of those
+Regions. Opening that incompatible step then fails.
+
+**Portal mitigation**
+
+Certalis Sales Items calculate their eligible Region set as the intersection of the current
+default-Snapshot Region IDs for every ordered Blueprint step. The authoring UI only offers that
+intersection and the Item save handler reads and revalidates every Blueprint detail before it
+persists an Item. A missing shared Region or any submitted Region outside that intersection is
+blocked with a Customer-scoped, redacted support diagnostic.
+
+Live Certalis evidence: the Certalis Sales Project exposes two Blueprints, and their current
+default Snapshots share Miami only. The portal therefore offers Miami for their combined Item;
+it does not offer Amsterdam or Singapore merely because another selected Blueprint may expose
+them.
+
+**Future delivery requirement**
+
+An Enablement Session must repeat this validation immediately before CloudShare provisioning,
+because a default Snapshot can move after an Item has been authored.
+
+**Code reference:** `src/api/sales-items.ts`, `src/integrations/cloudshare/resources.ts`
 
 ---
 

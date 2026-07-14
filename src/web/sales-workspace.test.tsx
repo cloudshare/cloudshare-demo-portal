@@ -1,114 +1,45 @@
 /** @vitest-environment jsdom */
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import React from "react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { SalesWorkspace } from "./sales-workspace";
 
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn(), replace: vi.fn(), refresh: vi.fn() }),
-  useSearchParams: () => new URLSearchParams(),
-}));
+const router = { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() };
+vi.mock("next/navigation", () => ({ useRouter: () => router, useSearchParams: () => new URLSearchParams() }));
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
-describe("SalesWorkspace", () => {
-  it("server-renders the initial Sales workspace without browser globals", () => {
-    const html = renderToStaticMarkup(
-      createElement(SalesWorkspace, { email: "sales-admin@certalis.demo" }),
-    );
+describe("Sales Item authoring", () => {
+  afterEach(() => { vi.restoreAllMocks(); router.push.mockClear(); });
 
-    expect(html).toContain("Sales Workspace");
-    expect(html).toContain("Demo items");
-    expect(html).toContain("Accounts and opportunities");
-    expect(html).toContain("Support");
-    expect(html).toContain("Configuration");
-    expect(html).toContain("Demo Item catalog");
-    expect(html).toContain("Create Demo Item");
-    expect(html).toContain("No active Demo Items yet.");
-  });
-
-  it("drives live-resource controls to save an ordered Demo Item and shows the default Policy duration", async () => {
+  it("numbers Blueprint steps by selection order, reindexes on removal, and posts only shared default-Snapshot Regions", async () => {
     const user = userEvent.setup();
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
       const url = String(input);
-      if (url === "/api/sales/demo-items" && !init?.method) return json({ activeDemoItems: [], archivedDemoItems: [] });
-      if (url === "/api/sales/demo-item-authoring?refresh=true") return json({ projects: [{ id: "project-1", name: "Certalis Project" }], regions: [{ id: "region-1", name: "US West", friendlyName: "US West" }] });
-      if (url === "/api/sales/demo-item-authoring/projects/project-1?refresh=true") return json({ blueprints: [{ id: "bp-1", name: "Foundation" }, { id: "bp-2", name: "Advanced" }], policies: [{ id: "policy-1", name: "Sales policy", storageLeaseMinutes: 1440 }] });
-      if (url === "/api/sales/demo-items" && init?.method === "POST") return json({ demoItem: { id: "demo-1" } }, 201);
-      throw new Error(`Unexpected request: ${url}`);
+      if (url === "/api/sales/items" && !init?.method) return json({ activeItems: [], archivedItems: [] });
+      if (url === "/api/sales/item-authoring?refresh=true") return json({ projects: [{ id: "project-1", name: "Certalis Sales" }], regions: [{ id: "miami", name: "Miami", friendlyName: "Miami" }, { id: "amsterdam", name: "Amsterdam", friendlyName: "Amsterdam" }] });
+      if (url === "/api/sales/item-authoring/projects/project-1?refresh=true") return json({ blueprints: [{ id: "foundation", name: "Foundation", defaultSnapshotRegionIds: ["miami", "amsterdam"] }, { id: "advanced", name: "Advanced", defaultSnapshotRegionIds: ["miami"] }], policies: [{ id: "policy-1", name: "One day", storageLeaseMinutes: 1440 }] });
+      if (url === "/api/sales/items" && init?.method === "POST") return json({ item: { id: "item-1" } }, 201);
+      return json({});
     });
-    vi.stubGlobal("fetch", fetchMock);
-    render(createElement(SalesWorkspace, { email: "sales-admin@certalis.demo" }));
-
-    await user.click(await screen.findByRole("button", { name: "Create Demo Item" }));
+    render(<SalesWorkspace email="sales-admin@certalis.demo" />);
+    await user.click(await screen.findByRole("button", { name: "Create Item" }));
     await user.selectOptions(screen.getByRole("combobox", { name: "Project" }), "project-1");
-    await user.click(await screen.findByRole("checkbox", { name: "Advanced" }));
-    await user.click(screen.getByRole("checkbox", { name: "Foundation" }));
+    await screen.findByText("Foundation");
+    const [foundation, advanced] = screen.getAllByRole("checkbox");
+    await user.click(advanced);
+    await user.click(foundation);
+    await waitFor(() => expect(screen.getByText("Advanced").closest("label")?.textContent).toContain("Step 1"));
+    expect(screen.getByText("Foundation").closest("label")?.textContent).toContain("Step 2");
+    expect(screen.queryByText("Amsterdam")).toBeNull();
+    await user.click(advanced);
+    await waitFor(() => expect(screen.getByText("Foundation").closest("label")?.textContent).toContain("Step 1"));
+    expect(screen.getByText("Amsterdam")).not.toBeNull();
+    expect(screen.queryByText(/Step 2:/)).toBeNull();
+    await user.click(screen.getByText("Amsterdam"));
+    await user.type(screen.getByRole("textbox", { name: "Item name" }), "Regional POC");
     await user.selectOptions(screen.getByRole("combobox", { name: "Policy" }), "policy-1");
-    await user.selectOptions(screen.getByRole("combobox", { name: "Region" }), "region-1");
-    await user.type(screen.getByRole("textbox", { name: "Demo Item name" }), "CX discovery demo");
-    expect(await screen.findByText("Default duration: 1440 minutes (Policy storage lease)")).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "Save Demo Item" }));
-
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/sales/demo-items", expect.objectContaining({ method: "POST" })));
-    expect(fetchMock).toHaveBeenCalledWith("/api/sales/demo-items", expect.objectContaining({ body: JSON.stringify({ name: "CX discovery demo", description: "", projectId: "project-1", blueprintIds: ["bp-2", "bp-1"], policyId: "policy-1", regionId: "region-1", salesExperienceType: "demo" }) }));
-  });
-
-  it("groups Demo Item authoring fields while keeping the save action reachable", async () => {
-    const user = userEvent.setup();
-    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
-      return String(input) === "/api/sales/demo-items"
-        ? json({ activeDemoItems: [], archivedDemoItems: [] })
-        : json({ projects: [], regions: [] });
-    }));
-    render(createElement(SalesWorkspace, { email: "sales-admin@certalis.demo" }));
-
-    await user.click(await screen.findByRole("button", { name: "Create Demo Item" }));
-
-    expect(await screen.findByRole("form", { name: "Demo Item authoring form" })).not.toBeNull();
-    expect(screen.getByRole("group", { name: "Live CloudShare resources" })).not.toBeNull();
-    expect(screen.getByRole("group", { name: "Blueprints (selection order is launch order)" })).not.toBeNull();
-    expect(screen.getByRole("button", { name: "Save Demo Item" })).not.toBeNull();
-  });
-
-  it("requires the explicit Save action instead of submitting a Demo Item when Enter is pressed in a field", async () => {
-    const user = userEvent.setup();
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      return String(input) === "/api/sales/demo-items"
-        ? json({ activeDemoItems: [], archivedDemoItems: [] })
-        : json({ projects: [], regions: [] });
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    render(createElement(SalesWorkspace, { email: "sales-admin@certalis.demo" }));
-
-    await user.click(await screen.findByRole("button", { name: "Create Demo Item" }));
-    await user.type(screen.getByRole("textbox", { name: "Demo Item name" }), "Do not submit");
-    await user.keyboard("{Enter}");
-
-    expect(fetchMock).not.toHaveBeenCalledWith("/api/sales/demo-items", expect.objectContaining({ method: "POST" }));
-  });
-
-  it("clicks the reachable inspect, edit, and archive controls for an existing Demo Item", async () => {
-    const user = userEvent.setup();
-    const item = { id: "demo-1", name: "Existing demo", description: "Existing description", project: { id: "project-1", name: "Certalis Project" }, blueprints: [{ id: "bp-1", name: "Foundation" }], policy: { id: "policy-1", name: "Sales policy" }, region: { id: "region-1", name: "US West" }, salesExperienceType: "poc", defaultDurationMinutes: 1440, status: "active" };
-    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      if (url === "/api/sales/demo-items" && !init?.method) return json({ activeDemoItems: [item], archivedDemoItems: [] });
-      if (url === "/api/sales/demo-items/demo-1" && !init?.method) return json({ demoItem: item });
-      if (url === "/api/sales/demo-item-authoring?refresh=true") return json({ projects: [item.project], regions: [{ ...item.region, friendlyName: item.region.name }] });
-      if (url === "/api/sales/demo-item-authoring/projects/project-1?refresh=true") return json({ blueprints: item.blueprints, policies: [{ ...item.policy, storageLeaseMinutes: 1440 }] });
-      if (url === "/api/sales/demo-items/demo-1/archive" && init?.method === "POST") return json({ demoItem: { ...item, status: "archived" } });
-      throw new Error(`Unexpected request: ${url}`);
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    render(createElement(SalesWorkspace, { email: "sales-admin@certalis.demo" }));
-    await user.click(await screen.findByRole("button", { name: "View details" }));
-    expect((await screen.findByRole("region", { name: "Demo Item inspection" })).textContent).toContain("Existing description");
-    await user.click(screen.getByRole("button", { name: "Archive" }));
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/sales/demo-items/demo-1/archive", expect.objectContaining({ method: "POST" })));
+    await user.click(screen.getByRole("button", { name: "Save Item" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/sales/items", expect.objectContaining({ method: "POST", body: expect.stringContaining('"regionIds":["amsterdam"]') })));
   });
 });
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
-}
-

@@ -37,7 +37,7 @@ describe("Sales diagnostics HTTP isolation", () => {
     mockGetPortalAdminSession.mockResolvedValue({ customerId: "customer-certalis", role: "admin", workspace: "sales" });
 
     const omitted = await getSalesDiagnostics(new Request("http://localhost:3000/api/sales/diagnostics?operation=account.created"));
-    const demoItems = await getSalesDiagnostics(new Request("http://localhost:3000/api/sales/diagnostics?source=sales-demo-items&operation=demo_item.resource_read"));
+    const demoItems = await getSalesDiagnostics(new Request("http://localhost:3000/api/sales/diagnostics?source=sales-items&operation=item.resource_read"));
 
     expect(omitted.status).toBe(200);
     expect(demoItems.status).toBe(200);
@@ -47,11 +47,11 @@ describe("Sales diagnostics HTTP isolation", () => {
     });
     expect(mockHandleGetDiagnosticLog).toHaveBeenNthCalledWith(2, expect.anything(), {
       customerId: "customer-certalis",
-      query: { operation: "account.created", source: "sales-demo-items", limit: "101", offset: "0" },
+      query: { operation: "account.created", source: "sales-items", limit: "101", offset: "0" },
     });
     expect(mockHandleGetDiagnosticLog).toHaveBeenNthCalledWith(3, expect.anything(), {
       customerId: "customer-certalis",
-      query: { source: "sales-demo-items", operation: "demo_item.resource_read" },
+      query: { source: "sales-items", operation: "item.resource_read" },
     });
   });
 

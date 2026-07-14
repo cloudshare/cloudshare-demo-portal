@@ -26,7 +26,7 @@ model Customer {
   createdAt            DateTime              @default(now())
   users                User[]
   exams                Exam[]
-  demoItems            DemoItem[]
+  items                Item[]
   examAttempts         ExamAttempt[]
   cloudShareConnection CloudShareConnection?
   salesAccounts        SalesAccount[]
@@ -85,7 +85,7 @@ model OpportunityContact {
 // A Sales-owned, archive-only reusable CloudShare delivery template.  Resource
 // identifiers are selected from live per-Customer reads and are never a manual
 // authoring field.
-model DemoItem {
+model Item {
   id                     String   @id
   customerId             String
   name                   String
@@ -95,8 +95,7 @@ model DemoItem {
   blueprintsJson         String
   policyId               String
   policyName             String
-  regionId               String
-  regionName             String
+  regionsJson            String
   salesExperienceType    String
   defaultDurationMinutes Int
   status                 String

@@ -5,7 +5,7 @@ import {
   type DiagnosticLogHandlerDeps,
 } from "./admin";
 
-const SALES_DIAGNOSTIC_SOURCES = ["sales-records", "sales-demo-items"] as const;
+const SALES_DIAGNOSTIC_SOURCES = ["sales-records", "sales-items"] as const;
 const SALES_DIAGNOSTIC_SOURCE_PAGE_LIMIT = 500;
 const SALES_DIAGNOSTIC_MAX_PAGE_LIMIT = 500;
 const SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET = 5_000;
@@ -18,7 +18,7 @@ type DiagnosticPageBody = {
 
 /**
  * Sales support is Customer-scoped but includes local records and the live
- * Demo Item integration. Source remains a normal support filter so an admin
+ * Item integration. Source remains a normal support filter so an admin
  * can investigate either stream without crossing Customer boundaries.
  */
 export async function handleGetSalesDiagnosticLog(

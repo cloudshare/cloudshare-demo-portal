@@ -158,13 +158,14 @@ export interface CloudShareExamAuthoringSource {
   getBlueprintDetail(projectId: string, blueprintId: string): Promise<CloudShareBlueprintDetail>;
 }
 
-/** Detailed resource reads used by Sales Demo Item authoring. Keeping the raw
+/** Detailed resource reads used by Sales Item authoring. Keeping the raw
  * HTTP exchange at this adapter boundary lets API handlers persist redacted,
  * supportable evidence without coupling domain code to CloudShare wire models. */
-export interface CloudShareSalesDemoItemResourceSource {
+export interface CloudShareSalesItemResourceSource {
   readProjects(): Promise<CloudShareDetailedResourceRead<Array<{ id: string; name: string }>>>;
   readRegions(): Promise<CloudShareDetailedResourceRead<Array<{ id: string; name: string; friendlyName?: string }>>>;
   readProjectBlueprints(projectId: string): Promise<CloudShareDetailedResourceRead<Array<{ id: string; name: string }>>>;
+  readProjectBlueprintDetails(projectId: string, blueprintIds: readonly string[]): Promise<readonly CloudShareDetailedResourceRead<CloudShareBlueprintDetail>[]>;
   readProjectPolicies(projectId: string): Promise<{
     readonly policies: CloudShareExamAuthoringPolicy[];
     readonly reads: readonly CloudShareDetailedResourceRead<unknown>[];
@@ -189,7 +190,7 @@ export class CloudShareSalesResourceReadError extends Error {
   }
 }
 
-export function createCloudShareSalesDemoItemResourceSource(client: CloudShareClient): CloudShareSalesDemoItemResourceSource {
+export function createCloudShareSalesItemResourceSource(client: CloudShareClient): CloudShareSalesItemResourceSource {
   async function read<T>(path: string, schema: z.ZodType<T, z.ZodType["_def"], unknown>, integrationSurface: string): Promise<CloudShareDetailedResourceRead<T>> {
     const detailed = await requestV3WithDiagnostics(client, { method: "GET", path, schema });
     return { data: detailed.data, request: toDiagnosticExchange(detailed).request, response: toDiagnosticExchange(detailed).response, integrationSurface };
@@ -204,6 +205,16 @@ export function createCloudShareSalesDemoItemResourceSource(client: CloudShareCl
       const result = await read(`/projects/${projectId}/blueprints`, blueprintListSchema, "cloudshare.v3.projects.blueprints");
       return { ...result, data: result.data.map((blueprint) => ({ id: blueprint.id, name: blueprint.name })) };
     },
+    readProjectBlueprintDetails: async (projectId, blueprintIds) => Promise.all(blueprintIds.map(async (blueprintId) => {
+      const result = await read(`/projects/${projectId}/blueprints/${blueprintId}`, z.preprocess((value) => normalizeBlueprintDetailPayload(value, blueprintId), blueprintDetailSchema), "cloudshare.v3.projects.blueprint_detail");
+      const detail = result.data;
+      return { ...result, data: {
+        id: detail.id, name: detail.name, description: detail.description ?? "",
+        defaultSnapshotId: detail.createFromVersions.find((snapshot) => snapshot.isDefault)?.id ?? null,
+        snapshots: detail.createFromVersions.map((snapshot) => ({ id: snapshot.id, name: snapshot.name, isDefault: snapshot.isDefault, regionIds: (snapshot.regions ?? []).map((region) => typeof region === "string" ? region : region.id) })),
+        diagnosticSummary: summarizeBlueprintDetailForDiagnostics(detail),
+      } satisfies CloudShareBlueprintDetail };
+    })),
     readProjectPolicies: async (projectId) => {
       const list = await read(`/projects/${projectId}/policies`, policyListSchema, "cloudshare.v3.projects.policies");
       const settled = await Promise.allSettled(list.data.map((policy) => read(`/projects/${projectId}/policies/${policy.id}`, policyDetailSchema, "cloudshare.v3.projects.policy_detail")));

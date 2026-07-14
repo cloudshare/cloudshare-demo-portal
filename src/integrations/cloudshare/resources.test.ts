@@ -5,7 +5,7 @@ import type { HttpClient } from "./http";
 import {
   createCloudShareExamAuthoringSource,
   createCloudShareResourceLister,
-  createCloudShareSalesDemoItemResourceSource,
+  createCloudShareSalesItemResourceSource,
   CloudShareSalesResourceReadError,
 } from "./resources";
 import type { CloudShareClient } from "./client";
@@ -596,9 +596,9 @@ describe("createCloudShareExamAuthoringSource", () => {
   });
 });
 
-describe("createCloudShareSalesDemoItemResourceSource", () => {
+describe("createCloudShareSalesItemResourceSource", () => {
   it("preserves completed policy exchanges when a sibling policy detail fails", async () => {
-    const source = createCloudShareSalesDemoItemResourceSource(makeClient({
+    const source = createCloudShareSalesItemResourceSource(makeClient({
       "v3:/projects/p-1/policies": [{ id: "pol-1", name: "One" }, { id: "pol-2", name: "Two" }],
       "v3:/projects/p-1/policies/pol-1": { id: "pol-1", name: "One", storageLeaseMinutes: 60 },
     }));
