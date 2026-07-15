@@ -11,6 +11,7 @@ import { createPrismaSalesDemoSessionRepository } from "@/persistence/prisma-sal
 import { createCloudShareSalesDelivery } from "@/integrations/cloudshare/sales-delivery";
 import { createCloudShareSalesItemProvisioningValidator } from "@/integrations/cloudshare/sales-item-provisioning";
 import { createCloudShareProjectMemberSource } from "@/integrations/cloudshare/project-members";
+import { createPrismaSalesSessionConfigurationRepository } from "@/persistence/prisma-sales-session-configuration-repository";
 
 async function context() {
   const services = getServices();
@@ -37,7 +38,7 @@ export async function POST(request: Request) {
   try { body = await request.json(); } catch { return NextResponse.json({ error: "invalid JSON body" }, { status: 400 }); }
   const result = await handleCreateSalesDemoSession({
     records: createPrismaSalesRecordRepository(services.prisma), items: createPrismaItemRepository(services.prisma), sessions: createPrismaSalesDemoSessionRepository(services.prisma), connections: services.cloudshareConnections,
-    deliveryFactory: { forConnection: (connection) => createCloudShareSalesDelivery(services.cloudshareClientFactory.forConnection(connection)) }, itemProvisioningValidatorFactory: { forConnection: (connection) => createCloudShareSalesItemProvisioningValidator(services.cloudshareClientFactory.forConnection(connection)) }, projectMemberSourceFactory: { forConnection: (connection) => createCloudShareProjectMemberSource(services.cloudshareClientFactory.forConnection(connection)) }, diagnostics: services.diagnosticRecorder, audit: services.audit,
+    deliveryFactory: { forConnection: (connection) => createCloudShareSalesDelivery(services.cloudshareClientFactory.forConnection(connection)) }, itemProvisioningValidatorFactory: { forConnection: (connection) => createCloudShareSalesItemProvisioningValidator(services.cloudshareClientFactory.forConnection(connection)) }, projectMemberSourceFactory: { forConnection: (connection) => createCloudShareProjectMemberSource(services.cloudshareClientFactory.forConnection(connection)) }, settings: createPrismaSalesSessionConfigurationRepository(services.prisma), diagnostics: services.diagnosticRecorder, audit: services.audit,
   }, { customerId: session.customerId, actor: { type: "admin", id: session.userId, email: session.email }, body });
   return NextResponse.json(result.body, { status: result.status });
 }

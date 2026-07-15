@@ -8,6 +8,7 @@ import type { SalesDemoSession, SalesDemoSessionRepository } from "@/domain/sale
 import type { SalesRecordRepository } from "@/domain/sales-records";
 import { isValidCloudShareWallClock } from "@/domain/cloudshare-wall-clock";
 import { DEFAULT_SALES_SESSION_NAME_TEMPLATE, renderSalesSessionName } from "@/domain/sales-session-name";
+import type { SalesSessionConfigurationRepository } from "@/domain/sales-session-configuration";
 import { createCloudShareSalesDelivery, type SalesDelivery } from "@/integrations/cloudshare/sales-delivery";
 import { SalesItemProvisioningReadError, SalesItemProvisioningValidationError, type SalesItemProvisioningValidator } from "@/integrations/cloudshare/sales-item-provisioning";
 import { createCloudShareProjectMemberSource, type CloudShareProjectMemberSource } from "@/integrations/cloudshare/project-members";
@@ -35,6 +36,7 @@ export interface SalesDemoSessionDeps {
   readonly projectMemberSourceFactory?: { forConnection(connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>): CloudShareProjectMemberSource };
   readonly diagnostics?: DiagnosticRecorder;
   readonly audit?: Pick<AuditRepository, "write">;
+  readonly settings?: SalesSessionConfigurationRepository;
   readonly now?: () => Date;
   readonly newId?: () => string;
 }
@@ -77,7 +79,8 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
   const id = (deps.newId ?? randomUUID)();
   const revision = ((await deps.sessions.listByOpportunity(request.customerId, opportunity.id)) ?? []).length + 1;
   const account = deps.records.findAccount ? await deps.records.findAccount(request.customerId, opportunity.accountId) : null;
-  const sessionName = renderSalesSessionName(parsed.data.sessionNameTemplate ?? DEFAULT_SALES_SESSION_NAME_TEMPLATE, { account: account?.name ?? "Account", opportunity: opportunity.name, revision, item: item.name });
+  const configuredTemplate = (await deps.settings?.find(request.customerId))?.template;
+  const sessionName = renderSalesSessionName(parsed.data.sessionNameTemplate ?? configuredTemplate ?? DEFAULT_SALES_SESSION_NAME_TEMPLATE, { account: account?.name ?? "Account", opportunity: opportunity.name, revision, item: item.name });
   if (!sessionName) return rejected(deps, request, 422, "Session name template must include {revision} and render to at most 100 characters.", "invalid_session_name_template", { opportunityId: opportunity.id });
   // CloudShare's live v4 validator rejects separators even though the OpenAPI
   // describes ExternalId as a generic string. Keep the portal's UUID locally,

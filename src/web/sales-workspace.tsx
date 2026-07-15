@@ -96,6 +96,7 @@ function SalesDemoSessionsFeature({ onNavigate }: { readonly onNavigate: (intent
   const [type, setType] = useState<Item["salesExperienceType"]>("demo");
   const [timezones, setTimezones] = useState<{ id: string; name: string }[]>([]);
   const [timezoneFreshness, setTimezoneFreshness] = useState<string | null>(null);
+  const [sessionNameTemplate, setSessionNameTemplate] = useState("{account} - {opportunity} ({revision}) - {item}");
   const [message, setMessage] = useState<string | null>(null);
   const [correlationId, setCorrelationId] = useState<string | null>(null);
   const [needsAttention, setNeedsAttention] = useState(false);
@@ -107,6 +108,7 @@ function SalesDemoSessionsFeature({ onNavigate }: { readonly onNavigate: (intent
   const selectedItemDuration = selectedItem?.defaultDurationMinutes;
 
   useEffect(() => { currentStart.current = start; currentTimeZone.current = timeZone; }, [start, timeZone]);
+  useEffect(() => { void fetchSales("/api/sales/session-configuration", { cache: "no-store" }).then(async (response) => { const body = await response.json() as { template?: string }; if (response.ok && body.template) setSessionNameTemplate(body.template); }); }, [fetchSales]);
   useEffect(() => { void fetchSales("/api/sales/timezones", { cache: "no-store" }).then(async (response) => { const body = await response.json() as { timezones?: { id: string; name: string }[]; freshness?: string; preference?: { timeZone?: string | null; experienceType?: Item["salesExperienceType"] | null } }; if (!response.ok) return; setTimezones(body.timezones ?? []); setTimezoneFreshness(body.freshness ?? null); if (body.preference?.timeZone) setTimeZone(body.preference.timeZone); if (body.preference?.experienceType) setType(body.preference.experienceType); }); }, [fetchSales]);
   useEffect(() => { if (timezones.length === 0) return; void fetchSales("/api/sales/timezones", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ timeZone, experienceType: type }) }); }, [fetchSales, timeZone, type, timezones.length]);
 
@@ -141,7 +143,7 @@ function SalesDemoSessionsFeature({ onNavigate }: { readonly onNavigate: (intent
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); setMessage(null); setCorrelationId(null); setNeedsAttention(false); setLoading(true);
     try {
-      const response = await fetchSales("/api/sales/enablement-sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ opportunityId, itemId, salesProEmail, start, end, timeZone, type }) });
+      const response = await fetchSales("/api/sales/enablement-sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ opportunityId, itemId, salesProEmail, start, end, timeZone, type, sessionNameTemplate }) });
       const body = await response.json() as { error?: string; correlationId?: string; session?: EnablementSession; needsAttention?: boolean; warning?: string };
       if (!response.ok) { setCorrelationId(body.correlationId ?? null); throw new Error(body.error ?? "Could not provision the Sales Enablement Session."); }
       setSessions((current) => body.session ? [body.session, ...current] : current);
@@ -153,6 +155,8 @@ function SalesDemoSessionsFeature({ onNavigate }: { readonly onNavigate: (intent
   };
   const opportunities = records.opportunities.filter((opportunity) => !opportunity.archivedAt);
   const accountById = new Map(records.accounts.map((account) => [account.id, account.name]));
+  const selectedOpportunity = opportunities.find((opportunity) => opportunity.id === opportunityId);
+  const previewName = sessionNameTemplate.replaceAll("{account}", selectedOpportunity ? accountById.get(selectedOpportunity.accountId) ?? "Account" : "Account").replaceAll("{opportunity}", selectedOpportunity?.name ?? "Opportunity").replaceAll("{revision}", "1").replaceAll("{item}", selectedItem?.name ?? "Item");
   return <section aria-label="Sales Enablement Sessions">
     <PortalSectionIntro title="Provision a Sales Enablement Session" description="Creates one time-bound CloudShare Sales Experience. Registered participants only; invitations stay suppressed until the later enrollment and invitation slices." />
     <form onSubmit={submit} style={{ ...cardStyle, padding: "1.25rem", display: "grid", gap: "1rem" }}>
@@ -164,6 +168,7 @@ function SalesDemoSessionsFeature({ onNavigate }: { readonly onNavigate: (intent
         <label style={{ display: "grid", gap: "0.35rem" }}>CloudShare time zone<input aria-label="CloudShare time zone" list="cloudshare-timezones" required value={timeZone} onChange={(event) => setTimeZone(event.target.value)} style={fullControlStyle} /><datalist id="cloudshare-timezones">{timezones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}</datalist>{timezoneFreshness ? <small>Timezone catalogue: {timezoneFreshness}</small> : null}</label>
       </div>
       <fieldset style={{ border: "1px solid #d8dee8", borderRadius: "8px", padding: "0.85rem", display: "grid", gap: "0.7rem" }}><legend>Time window</legend><div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}><label><input type="radio" checked={startMode === "now"} onChange={() => setStartMode("now")} /> Start now</label><label><input type="radio" checked={startMode === "scheduled"} onChange={() => setStartMode("scheduled")} /> Schedule start</label></div><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(16rem, 1fr))", gap: "1rem" }}><label style={{ display: "grid", gap: "0.35rem" }}>Start <input aria-label="Start" type="datetime-local" required value={start} disabled={startMode === "now"} onChange={(event) => setStart(event.target.value)} style={fullControlStyle} /></label><label style={{ display: "grid", gap: "0.35rem" }}>End <input aria-label="End" type="datetime-local" required value={end} onChange={(event) => { setEndHasManualOverride(true); setEnd(event.target.value); }} style={fullControlStyle} /></label></div><p style={{ margin: 0, color: "#52606d" }}>End is required and initially prefilled from the selected Item Policy storage lease; the Sales Admin may override it. All displayed values are local CloudShare date-times in the selected explicit time zone.</p></fieldset>
+      <fieldset style={{ border: "1px solid #d8dee8", borderRadius: "8px", padding: "0.85rem", display: "grid", gap: "0.5rem" }}><legend>Session name template</legend><label style={{ display: "grid", gap: "0.35rem" }}>Template <input aria-label="Session name template" value={sessionNameTemplate} onChange={(event) => setSessionNameTemplate(event.target.value)} style={fullControlStyle} /></label><output aria-label="Session name preview">Preview: {previewName}</output><button type="button" onClick={() => void fetchSales("/api/sales/session-configuration", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ template: sessionNameTemplate }) })} style={compactButtonStyle}>Save template</button></fieldset>
       <div style={{ display: "flex", justifyContent: "end", gap: "0.75rem", alignItems: "center" }}><button style={primaryButtonStyle} disabled={loading || projectMemberLoading || !opportunityId || !itemId || !salesProEmail}>{loading ? "Provisioning…" : "Create Sales Enablement Session"}</button></div>
       {message ? <div role={correlationId ? "alert" : "status"} style={correlationId ? alertPanelStyle.danger : alertPanelStyle.success}>{message}{needsAttention ? <strong> Do not retry creation.</strong> : null}{correlationId ? <> <button type="button" onClick={() => onNavigate({ tab: "support", correlationId })} style={{ border: 0, background: "transparent", color: colors.info, textDecoration: "underline", cursor: "pointer" }}>Open support diagnostics ({correlationId})</button></> : null}</div> : null}
     </form>

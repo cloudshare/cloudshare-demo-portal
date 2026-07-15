@@ -34,6 +34,7 @@ model Customer {
   opportunityContacts  OpportunityContact[]
   salesDemoSessions    SalesDemoSession[]
   salesTimezoneCache   SalesTimezoneCache?
+  salesSessionNameTemplate String @default("{account} - {opportunity} ({revision}) - {item}")
 }
 
 model SalesAccount {
