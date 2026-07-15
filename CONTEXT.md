@@ -307,7 +307,7 @@ catalogue Item with explicit start/end/timezone and a Main Sales Pro selected fr
 Project-member read. It is distinct from a Cohort Exam Session even where delivery structures are
 analogous. The Item owns the Project/resources; the Sales Pro belongs to the Session, never to the
 Item configuration.
-_Avoid_: Sales Demo Session, Exam, Cohort Exam Session, generic session.
+_Avoid_: Exam, Cohort Exam Session, generic session.
 
 **Sales Experience**:
 The CloudShare v4 resource backing a Sales Enablement Session.

@@ -18,10 +18,23 @@ describe("Sales diagnostics handler", () => {
     }));
   });
 
-  it("allows Sales Demo Session diagnostics to be correlated from Sales Support", async () => {
+  it("allows Sales Enablement Session diagnostics to be correlated from Sales Support", async () => {
     const diagnostics = { append: vi.fn(), query: vi.fn().mockResolvedValue([]) };
     await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { source: "sales-demo-sessions", correlationId: "corr-1" } });
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-demo-sessions", correlationId: "corr-1" }));
+  });
+
+  it("allows Project-member lookup failures to be correlated from Sales Support", async () => {
+    const diagnostics = { append: vi.fn(), query: vi.fn().mockResolvedValue([]) };
+    await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { source: "sales-project-members", correlationId: "corr-members-failed" } });
+    expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-project-members", correlationId: "corr-members-failed" }));
+  });
+
+  it("returns a correlated Project-member lookup failure through the aggregate Sales Support feed", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    await diagnostics.append({ source: "sales-project-members", operation: "sales.enablement_session.project_members.read", outcome: "failure", customerId: "customer-certalis", correlationId: "corr-members-failed", message: "CloudShare could not read active Project members", occurredAt: new Date("2026-07-15T00:00:00.000Z") });
+    const response = await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { correlationId: "corr-members-failed" } });
+    expect(response).toMatchObject({ status: 200, body: { entries: [expect.objectContaining({ source: "sales-project-members", correlationId: "corr-members-failed", outcome: "failure" })] } });
   });
 
   it("combines Sales record and Item evidence when no source is selected", async () => {
@@ -34,6 +47,7 @@ describe("Sales diagnostics handler", () => {
 
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-records" }));
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-items" }));
+    expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-project-members" }));
   });
 
   it("rejects an arbitrary source instead of widening Sales support", async () => {

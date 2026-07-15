@@ -1660,7 +1660,7 @@ confirm the direct request/response, field casing, and the resulting main Sales 
 
 An authorized Certalis sales operator (initially a Sales Admin; later potentially a Sales Rep or
 Sales Engineer) may need an operator-only outbound link to the CloudShare Instructor Console for a
-Sales Demo Session, so they can monitor and manage participant environments in real time. The
+Sales Enablement Session, so they can monitor and manage participant environments in real time. The
 desired external destination has the form:
 
 `https://accelerate.cloudshare.com/instructor-console/<legacyClassId>`

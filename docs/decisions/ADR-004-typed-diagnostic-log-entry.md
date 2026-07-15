@@ -2,7 +2,7 @@
 
 Accepted.
 
-Support diagnostics will use a typed, append-only `DiagnosticLogEntry` model as the platform support source of truth, rather than treating the existing free-form support-log JSON as the long-term model. The portal is intended to become an extensible demo platform, not only an Exam demo, so diagnostic entries are generic platform traces with nullable domain anchors such as Candidate email, Exam ID, ExamAttempt ID, CloudShare IDs, and future LMS or sales-demo identifiers. Existing prototype support-log rows are disposable development data and must not constrain the new diagnostic model.
+Support diagnostics will use a typed, append-only `DiagnosticLogEntry` model as the platform support source of truth, rather than treating the existing free-form support-log JSON as the long-term model. The portal is intended to become an extensible demo platform, not only an Exam demo, so diagnostic entries are generic platform traces with nullable domain anchors such as Candidate email, Exam ID, ExamAttempt ID, CloudShare IDs, and future LMS or Sales Enablement identifiers. Existing prototype support-log rows are disposable development data and must not constrain the new diagnostic model.
 
 **Consequences**
 

@@ -112,7 +112,7 @@ first-class deliverable.
 - Development is **API-first**. Every portal capability that changes or exposes domain state must
   have a typed HTTP API route and framework-agnostic handler before or alongside the UI. React
   screens are clients of those APIs, not privileged backdoors into domain services. This keeps the
-  portal scriptable for demos, future sales-demo variants, automated E2E flows, and non-browser
+  portal scriptable for demos, future Sales Enablement variants, automated E2E flows, and non-browser
   integrations.
 - Slice 1 already follows this shape for the CloudShare Connection:
   `POST /api/auth/login` accepts JSON credentials and sets the portal session cookie,

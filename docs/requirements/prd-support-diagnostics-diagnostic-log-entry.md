@@ -39,7 +39,7 @@ Existing prototype support-log rows are development data and do not need migrati
 16. As a Helios admin, I want missing-signature and invalid-signature webhook attempts to expose safe metadata but not arbitrary raw untrusted request bodies during normal logging, so that public webhook traffic cannot become a sensitive data sink.
 17. As a Helios admin, I want DiagnosticLogEntry rows to be append-only, so that the log remains a record of what was known at the time.
 18. As a Helios admin, I want later correlation discoveries to emit new linked entries rather than rewrite old rows, so that the diagnostic timeline remains truthful.
-19. As a future Certalis builder, I want DiagnosticLogEntry to be a generic platform trace with nullable domain anchors, so that future LMS, sales-demo, or Salesforce-like flows can reuse the same support model.
+19. As a future Certalis builder, I want DiagnosticLogEntry to be a generic platform trace with nullable domain anchors, so that future LMS, Sales Enablement, or Salesforce-like flows can reuse the same support model.
 20. As a reviewer, I want tests to prove diagnostic entries are emitted on success and failure paths, so that supportability does not regress.
 21. As a reviewer, I want tests to prove filtering works on first-class correlation fields, so that the Support UI is not dependent on brittle JSON-string searches.
 
@@ -99,7 +99,7 @@ The same taxonomy applies to client traces, request/response error contexts, sch
 - Rebuilding Session Monitoring.
 - Replacing Audit Trail.
 - Adding production retention, archival, or role-based access controls beyond the current admin-only support surface.
-- Completing every possible future LMS, sales-demo, or Salesforce diagnostic anchor.
+- Completing every possible future LMS, Sales Enablement, or Salesforce diagnostic anchor.
 - Building sensitive diagnostic mode in the first write-path slice unless that slice explicitly scopes it; the first slice may define the configuration seam without exposing a full UI.
 
 ## Further Notes

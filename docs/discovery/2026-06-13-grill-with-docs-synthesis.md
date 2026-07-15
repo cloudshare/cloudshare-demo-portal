@@ -13,7 +13,7 @@ Demonstrate **CloudShare's capabilities** — real experience provisioning, spon
 suspend/resume, scoring — through a believable, **interactive** certification-provider portal with
 first-class **admin** and **candidate** experiences. The provider/customer/training framing is set
 dressing; when a choice trades portal richness against showing real CloudShare behaviour,
-CloudShare wins. Built as a reusable framework (an eye on a future real portal / sales-demo
+CloudShare wins. Built as a reusable framework (an eye on a future real portal / Sales Enablement
 vehicle), but not over-engineered for production.
 
 ---
