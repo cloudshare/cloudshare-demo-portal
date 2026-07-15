@@ -34,6 +34,7 @@ export interface SalesDemoSessionRepository {
   listByOpportunity(customerId: string, opportunityId: string): Promise<readonly SalesDemoSession[]>;
   findById?(customerId: string, id: string): Promise<SalesDemoSession | null>;
   updateOperationalState?(id: string, state: { cloudShareSalesExperienceId?: string; operationalStatus: "active" | "needs_attention"; attentionReason?: string | null }): Promise<void>;
+  updateDisplayName?(id: string, sessionName: string): Promise<void>;
 }
 
 export function createInMemorySalesDemoSessionRepository(): SalesDemoSessionRepository {

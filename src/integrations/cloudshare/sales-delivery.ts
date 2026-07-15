@@ -63,8 +63,20 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
       const { data: current } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceSchema });
       const required = [current.name, current.type, current.projectId, current.blueprintIds, current.cloudshareRegionIds, current.policyId, current.opportunity, current.mainSalesPro, current.registrationType, current.start, current.timeZone];
       if (required.some((value) => value === undefined || value === null)) throw new Error("CloudShare did not return the complete documented Sales Experience required for a safe update.");
-      const body = { ...current, ...changes, id: undefined, status: undefined };
-      delete (body as Record<string, unknown>).id; delete (body as Record<string, unknown>).status;
+      const body = {
+        name: changes.name ?? current.name,
+        type: current.type,
+        projectId: current.projectId,
+        blueprintIds: current.blueprintIds,
+        cloudshareRegionIds: current.cloudshareRegionIds,
+        policyId: current.policyId,
+        opportunity: current.opportunity,
+        mainSalesPro: current.mainSalesPro,
+        registrationType: current.registrationType,
+        start: changes.start ?? current.start,
+        end: changes.end === undefined ? current.end : changes.end,
+        timeZone: changes.timeZone ?? current.timeZone,
+      };
       const { data, evidence } = await detailed({ method: "PUT", path: `/sales/${encodeURIComponent(salesExperienceId)}`, body, schema: salesExperienceSchema });
       return { id: data.id, ...evidence };
     },
