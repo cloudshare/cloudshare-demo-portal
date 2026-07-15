@@ -105,12 +105,19 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     await recordProjectMemberRead(deps, request, correlationId, item.id, item.project.id, memberRead, "success");
     const selectedSalesPro = memberRead.members.find((member) => member.email.toLowerCase() === parsed.data.salesProEmail.toLowerCase());
     if (!selectedSalesPro) throw new SalesProjectMemberSelectionError("The selected Sales Pro is no longer an active member of this Item's CloudShare Project.", memberRead);
-    const created = await delivery.createSession(toDeliveryInput(parsed.data, item, opportunity.name, externalId, passphrase, selectedSalesPro.email, sessionName));
     const now = (deps.now ?? (() => new Date()))();
-    const session: SalesDemoSession = { id, customerId: request.customerId, opportunityId: opportunity.id, itemId: item.id, cloudShareSalesExperienceId: created.salesExperienceId, externalId, type: parsed.data.type ?? item.salesExperienceType, start: parsed.data.start, end: parsed.data.end, timeZone: parsed.data.timeZone, salesProEmail: selectedSalesPro.email, salesProDisplayName: selectedSalesPro.displayName, registrationType: "registeredParticipantsOnly", sendInvitations: "dontSend", sessionName, revision, createdAt: now };
+    const reservation: SalesDemoSession = { id, customerId: request.customerId, opportunityId: opportunity.id, itemId: item.id, cloudShareSalesExperienceId: `pending:${id}`, externalId, type: parsed.data.type ?? item.salesExperienceType, start: parsed.data.start, end: parsed.data.end, timeZone: parsed.data.timeZone, salesProEmail: selectedSalesPro.email, salesProDisplayName: selectedSalesPro.displayName, registrationType: "registeredParticipantsOnly", sendInvitations: "dontSend", sessionName, revision, operationalStatus: "provisioning", createdAt: now };
+    // Prisma-backed repositories reserve the unique revision before CloudShare.
+    // A collision therefore returns before any external Experience is created.
+    if (deps.sessions.updateOperationalState) {
+      try { await deps.sessions.save(reservation); }
+      catch { return response(409, { error: "A Sales Enablement Session is already being provisioned for this Opportunity revision. Refresh the Session operations view before retrying.", needsAttention: true }); }
+    }
+    const created = await delivery.createSession(toDeliveryInput(parsed.data, item, opportunity.name, externalId, passphrase, selectedSalesPro.email, sessionName));
+    const session: SalesDemoSession = { ...reservation, cloudShareSalesExperienceId: created.salesExperienceId, operationalStatus: "active" };
     // Deliberate partial-failure behaviour: the external Experience is retained
     // when local persistence fails; support evidence identifies its immutable ID.
-    try { await deps.sessions.save(session); } catch (error) {
+    try { if (deps.sessions.updateOperationalState) await deps.sessions.updateOperationalState(id, { cloudShareSalesExperienceId: created.salesExperienceId, operationalStatus: "active", attentionReason: null }); else await deps.sessions.save(session); } catch (error) {
       // Neither evidence store may erase the already-created remote ID from the
       // response: the admin must be told not to retry even during a secondary
       // observability outage.
@@ -134,6 +141,7 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     const memberReadFailure = error instanceof SalesProjectMemberReadError;
     const itemValidationFailure = error instanceof SalesItemProvisioningValidationError;
     const itemReadFailure = error instanceof SalesItemProvisioningReadError;
+    if (deps.sessions.updateOperationalState) await Promise.allSettled([deps.sessions.updateOperationalState(id, { operationalStatus: "needs_attention", attentionReason: "CloudShare Sales Experience creation failed" })]);
     if (itemValidationFailure || itemReadFailure) {
       await recordResourceReads(deps, request, correlationId, item.id, item.project.id, error.completedReads, "failure");
     }

@@ -15,6 +15,12 @@ const projectMembers = {
 };
 
 describe("Sales Enablement Session API handler", () => {
+  it("reserves the revision before CloudShare and never calls CloudShare if that reservation collides", async () => {
+    const records = createInMemorySalesRecordRepository(); await records.saveOpportunity({ id: "opp-1", customerId: "certalis", accountId: "account-1", name: "Acme", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
+    const delivery = { createSession: vi.fn() };
+    const result = await handleCreateSalesDemoSession({ records, items: { findById: vi.fn().mockResolvedValue({ id: "item-1", customerId: "certalis", name: "Demo", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" }) }, sessions: { save: vi.fn().mockRejectedValue(new Error("unique revision")), updateOperationalState: vi.fn(), listByOpportunity: vi.fn().mockResolvedValue([]) }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, deliveryFactory: { forConnection: vi.fn().mockReturnValue(delivery) }, projectMembers, diagnostics: { record: vi.fn() }, audit: { write: vi.fn() } }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-1", itemId: "item-1", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
+    expect(result).toMatchObject({ status: 409 }); expect(delivery.createSession).not.toHaveBeenCalled();
+  });
   it("creates one Customer-scoped registered-only Sales Experience and records correlated evidence", async () => {
     const records = createInMemorySalesRecordRepository();
     await records.saveOpportunity({ id: "opp-1", customerId: "certalis", accountId: "account-1", name: "Acme evaluation", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
