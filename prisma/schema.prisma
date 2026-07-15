@@ -132,6 +132,8 @@ model SalesDemoSession {
   sendInvitations             String
   sessionName                 String   @default("")
   revision                    Int      @default(1)
+  operationalStatus           String   @default("active")
+  attentionReason             String?
   createdAt                   DateTime
   customer                    Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
   opportunity                 SalesOpportunity @relation(fields: [customerId, opportunityId], references: [customerId, id], onDelete: Restrict)

@@ -25,12 +25,12 @@ export function buildOperationalSalesSessions(
   filter: SalesSessionLifecycle = "all",
 ): readonly OperationalSalesSession[] {
   const views = sessions.map((session) => {
-    const lifecycle = session.cloudShareSalesExperienceId === "unprovisioned"
+    const lifecycle = session.operationalStatus === "provisioning" || session.operationalStatus === "needs_attention" || session.cloudShareSalesExperienceId === "unprovisioned"
       ? "provisioning" as const
       : session.start > wallClock(now, session.timeZone)
         ? "upcoming" as const
         : session.end <= wallClock(now, session.timeZone) ? "ended" as const : "in_progress" as const;
-    return { id: session.id, opportunityId: session.opportunityId, itemId: session.itemId, type: session.type, start: session.start, end: session.end, timeZone: session.timeZone, salesProDisplayName: session.salesProDisplayName, createdAt: session.createdAt.toISOString(), lifecycle, needsAttention: lifecycle === "provisioning" };
+    return { id: session.id, opportunityId: session.opportunityId, itemId: session.itemId, type: session.type, start: session.start, end: session.end, timeZone: session.timeZone, salesProDisplayName: session.salesProDisplayName, createdAt: session.createdAt.toISOString(), lifecycle, needsAttention: session.operationalStatus === "needs_attention" || lifecycle === "provisioning" };
   });
   return views.filter((session) => filter === "all" || (filter === "needs_attention" ? session.needsAttention : session.lifecycle === filter));
 }
