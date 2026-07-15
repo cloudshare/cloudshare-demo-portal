@@ -1,4 +1,7 @@
 import type { CloudShareConnectionRepository, CloudShareClientFactory } from "@/domain/cloudshare-connection";
+import { randomUUID } from "node:crypto";
+import type { AuditRepository } from "@/domain/audit-trail";
+import type { DiagnosticActor, DiagnosticRecorder } from "@/domain/diagnostic-log";
 import { isSalesExperienceType, isSalesTimezoneCacheFresh, type SalesAdminPreferenceRepository, type SalesTimezoneCacheRepository } from "@/domain/sales-timezones";
 import { createCloudShareTimezoneSource, type CloudShareTimezoneSource } from "@/integrations/cloudshare/timezones";
 
@@ -9,9 +12,11 @@ export interface SalesTimezonesDeps {
   readonly timezoneSourceFactory?: { forConnection(connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>): CloudShareTimezoneSource };
   readonly cloudshare?: Pick<CloudShareClientFactory, "forConnection">;
   readonly now?: () => Date;
+  readonly diagnostics?: DiagnosticRecorder;
+  readonly audit?: Pick<AuditRepository, "write">;
 }
 
-export async function handleGetSalesTimezones(deps: SalesTimezonesDeps, request: { customerId: string; userId: string }) {
+export async function handleGetSalesTimezones(deps: SalesTimezonesDeps, request: { customerId: string; userId: string; actor?: DiagnosticActor }) {
   const now = (deps.now ?? (() => new Date()))();
   const [cached, preference] = await Promise.all([deps.cache.find(request.customerId), deps.preferences.find(request.userId)]);
   if (cached && isSalesTimezoneCacheFresh(cached, now)) return { status: 200, body: { timezones: cached.timezones, fetchedAt: cached.fetchedAt.toISOString(), freshness: "fresh", preference } };
@@ -22,8 +27,13 @@ export async function handleGetSalesTimezones(deps: SalesTimezonesDeps, request:
     const live = await source.list();
     await deps.cache.save({ customerId: request.customerId, timezones: live.timezones, fetchedAt: now });
     return { status: 200, body: { timezones: live.timezones, fetchedAt: now.toISOString(), freshness: "live", preference } };
-  } catch {
-    return cached ? { status: 200, body: { timezones: cached.timezones, fetchedAt: cached.fetchedAt.toISOString(), freshness: "stale", preference, warning: "CloudShare could not refresh timezones; showing the last verified catalogue." } } : { status: 502, body: { error: "CloudShare could not retrieve supported timezones." } };
+  } catch (error) {
+    const correlationId = randomUUID();
+    await Promise.allSettled([
+      deps.diagnostics?.record({ source: "sales-timezones", operation: "sales.timezones.refreshed", outcome: "failure", level: "warn", customerId: request.customerId, actor: request.actor, message: "CloudShare timezone catalogue refresh failed", correlationId, details: { integrationSurface: "cloudshare.v3.timezones", failureMode: "timezone_catalogue_read", error: error instanceof Error ? error.message : String(error) } }),
+      deps.audit?.write({ id: randomUUID(), occurredAt: now, customerId: request.customerId, actorType: request.actor?.type, actorId: request.actor?.id, actorEmail: request.actor?.email, action: "sales.timezones.refreshed", subjectType: "sales_timezone_cache", subjectId: request.customerId, outcome: "failure", correlationId, details: { integrationSurface: "cloudshare.v3.timezones", failureMode: "timezone_catalogue_read" }, error: error instanceof Error ? error.message : String(error) }),
+    ]);
+    return cached ? { status: 200, body: { timezones: cached.timezones, fetchedAt: cached.fetchedAt.toISOString(), freshness: "stale", correlationId, warning: "CloudShare could not refresh timezones; showing the last verified catalogue." } } : { status: 502, body: { error: "CloudShare could not retrieve supported timezones.", correlationId } };
   }
 }
 

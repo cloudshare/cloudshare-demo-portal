@@ -9,8 +9,10 @@ describe("Sales timezone API", () => {
   });
   it("falls back to stale verified values when the live read fails and persists validated preferences", async () => {
     const cache = { find: vi.fn().mockResolvedValue({ customerId: "certalis", timezones: [{ id: "UTC", name: "UTC" }], fetchedAt: new Date("2026-07-13T09:00:00Z") }), save: vi.fn() };
-    const result = await handleGetSalesTimezones({ cache, preferences, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, timezoneSourceFactory: { forConnection: () => ({ list: vi.fn().mockRejectedValue(new Error("offline")) }) }, now: () => new Date("2026-07-15T10:00:00Z") }, { customerId: "certalis", userId: "admin" });
-    expect(result).toMatchObject({ status: 200, body: { freshness: "stale", warning: expect.any(String) } });
+    const diagnostics = { record: vi.fn().mockResolvedValue(undefined) }; const audit = { write: vi.fn().mockResolvedValue(undefined) };
+    const result = await handleGetSalesTimezones({ cache, preferences, diagnostics, audit, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, timezoneSourceFactory: { forConnection: () => ({ list: vi.fn().mockRejectedValue(new Error("offline")) }) }, now: () => new Date("2026-07-15T10:00:00Z") }, { customerId: "certalis", userId: "admin", actor: { type: "admin", id: "admin", email: "admin@certalis.demo" } });
+    expect(result).toMatchObject({ status: 200, body: { freshness: "stale", warning: expect.any(String), correlationId: expect.any(String) } });
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ correlationId: expect.any(String), details: expect.objectContaining({ integrationSurface: "cloudshare.v3.timezones" }) }));
     await expect(handleSaveSalesPreference({ cache, preferences, connections: { findByCustomerId: vi.fn() } }, { userId: "admin", body: { timeZone: "UTC", experienceType: "poc" } })).resolves.toMatchObject({ status: 204 });
     expect(preferences.save).toHaveBeenCalledWith("admin", { timeZone: "UTC", experienceType: "poc" });
   });
