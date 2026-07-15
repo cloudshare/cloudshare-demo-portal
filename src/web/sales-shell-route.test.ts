@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { SALES_TABS, buildSalesWorkspaceHref, getSalesTabLabel, parseSalesWorkspaceRouteState } from "./sales-shell-route";
 
 describe("Sales workspace shell routes", () => {
-  it("keeps Items first and uses the canonical Item route", () => {
-    expect(SALES_TABS).toEqual(["items", "records", "sessions", "support", "configuration"]);
-    expect(SALES_TABS.map(getSalesTabLabel)).toEqual(["Items", "Accounts and opportunities", "Sales Enablement Sessions", "Support", "Configuration"]);
-    expect(parseSalesWorkspaceRouteState({})).toMatchObject({ tab: "items", itemView: "catalog" });
+  it("keeps Sessions first while retaining the canonical Item route", () => {
+    expect(SALES_TABS).toEqual(["sessions", "items", "records", "support", "configuration"]);
+    expect(SALES_TABS.map(getSalesTabLabel)).toEqual(["Sales Enablement Sessions", "Items", "Accounts and opportunities", "Support", "Configuration"]);
+    expect(parseSalesWorkspaceRouteState({})).toMatchObject({ tab: "sessions", itemView: "catalog" });
   });
 
   it("serialises Item authoring and detail routes without mixing Sales sections", () => {

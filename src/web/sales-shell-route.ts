@@ -88,7 +88,7 @@ function readValue(value: string | readonly string[] | undefined): string | unde
 }
 
 function parseTab(value: string | undefined): SalesTab {
-  if (value === "records" || value === "sessions" || value === "support" || value === "configuration") return value;
+  if (value === "items" || value === "records" || value === "sessions" || value === "support" || value === "configuration") return value;
   return "sessions";
 }
 
