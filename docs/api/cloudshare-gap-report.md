@@ -1702,6 +1702,8 @@ redacted audit/diagnostic evidence for operator-link use.
 |---|---|
 | **Status** | Discovery evidence only — not implemented, tested live, or used by Issue #347 |
 | **Verified live** | No — the portal must not make this undocumented surface a runtime dependency |
+| **Documentation defect** | [SUP-5002](https://cloudshare.atlassian.net/browse/SUP-5002) — the v4 Sales-Pro description refers to an undefined `Get/salespros` endpoint |
+| **Productization path** | [BAC-24702 — Productise Project User Management APIs](https://cloudshare.atlassian.net/browse/BAC-24702) |
 
 **Why the earlier `/salespros` assumption was wrong**
 
@@ -1721,6 +1723,10 @@ Discovery indicates that both `projectUsers=true` and `getRows=true` are require
 to succeed; additional GUI parameters may exist. This may be useful evidence for CloudShare while
 productizing a supported Project membership / Sales Pro eligibility API, but Certalis must not call,
 probe, or rely on this endpoint in #347's implementation or live verification.
+
+SUP-5002 tracks the misleading API documentation. BAC-24702 is the requested path to productize
+the Project User Management APIs so a future Sales Delivery adapter can replace this unsupported
+GUI surface with a documented contract.
 
 **Prior-art check: Exam instructor seam**
 
