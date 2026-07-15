@@ -1696,6 +1696,53 @@ redacted audit/diagnostic evidence for operator-link use.
 
 ---
 
+## GAP-28 — Project-scoped Sales Pro eligibility is available only through an undocumented GUI member read
+
+| Field | Detail |
+|---|---|
+| **Status** | Discovery evidence only — not implemented, tested live, or used by Issue #347 |
+| **Verified live** | No — the portal must not make this undocumented surface a runtime dependency |
+
+**Why the earlier `/salespros` assumption was wrong**
+
+The local v4 export's `POST /sales/{id}/salespros` description says to use a `Get/salespros`
+endpoint to list Sales Pros assigned to a Project. It does not define that endpoint in the OpenAPI
+bundle. Treating prose in that description as a v4 `GET /salespros` path was an inference, not a
+documented contract; the safe Certalis probe returned 404 and the inferred adapter call was removed.
+
+**GUI discovery**
+
+CloudShare's own GUI appears to list active Project members through the undocumented classic-v3
+surface:
+
+`GET https://use.cloudshare.com/api/v3/users?projectUsers=true&status=active&projectId=<project-id>&getRows=true`
+
+Discovery indicates that both `projectUsers=true` and `getRows=true` are required for this request
+to succeed; additional GUI parameters may exist. This may be useful evidence for CloudShare while
+productizing a supported Project membership / Sales Pro eligibility API, but Certalis must not call,
+probe, or rely on this endpoint in #347's implementation or live verification.
+
+**Prior-art check: Exam instructor seam**
+
+The Exam authoring/delivery seam does **not** retrieve Project members or dynamically list
+Instructors. It requires the explicitly configured, seeded Helios service-account instructor and
+passes that configured email as `MainInstructor` when creating the Training/Cohort Experience. The
+v4 export documents list/add instructor operations only for an already-created Training Experience;
+its add-instructor description separately points to legacy v3 documentation for available Project
+instructors. It is therefore not a supported precedent for a Sales pre-create eligibility lookup.
+
+**Action required**
+
+CloudShare should document and support a Project-scoped membership/eligibility read with the
+minimum fields necessary to verify an authenticated Sales Admin as the requested `mainSalesPro`,
+including authorization and stable response semantics. Only then may a future Sales Delivery adapter
+introduce this preflight behind its typed seam.
+
+**Code reference:** `src/api/admin-exam-draft-runtime.ts`, `src/api/admin-exams.ts`,
+`src/integrations/cloudshare/cohort-experiences.ts`, `docs/api/assets/cloudshare-public-api-v4-2026-07-10.json`
+
+---
+
 ## GAP-N — Short descriptive title
 
 | Field | Detail |
