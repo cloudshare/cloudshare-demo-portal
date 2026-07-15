@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { afterAll, afterEach, describe, expect, it } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import { createPrismaSalesMutationWriter } from "./prisma-sales-mutation-writer";
@@ -17,7 +18,7 @@ afterEach(async () => {
 
 describe("createPrismaSalesMutationWriter", () => {
   it("atomically denies a child mutation when its Customer-scoped parent is archived", async () => {
-    const suffix = Date.now().toString();
+    const suffix = randomUUID();
     const customerId = `sales-writer-${suffix}`;
     const accountId = `sales-account-${suffix}`;
     const opportunityId = `sales-opportunity-${suffix}`;
@@ -48,7 +49,7 @@ describe("createPrismaSalesMutationWriter", () => {
   });
 
   it("never lets a stale active patch reactivate an archived record", async () => {
-    const suffix = `${Date.now()}-patch`;
+    const suffix = `${randomUUID()}-patch`;
     const customerId = `sales-writer-${suffix}`;
     const accountId = `sales-account-${suffix}`;
     const occurredAt = new Date("2026-07-12T17:00:00.000Z");
@@ -77,7 +78,7 @@ describe("createPrismaSalesMutationWriter", () => {
   });
 
   it("guards stale Opportunity and Contact patches in their real Prisma branches", async () => {
-    const suffix = `${Date.now()}-children`;
+    const suffix = `${randomUUID()}-children`;
     const customerId = `sales-writer-${suffix}`;
     const accountId = `sales-account-${suffix}`;
     const opportunityId = `sales-opportunity-${suffix}`;
