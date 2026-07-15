@@ -83,6 +83,9 @@ function SalesDemoSessionsFeature({ onNavigate }: { readonly onNavigate: (intent
   const [items, setItems] = useState<Item[]>([]);
   const [sessions, setSessions] = useState<EnablementSession[]>([]);
   const [sessionLifecycle, setSessionLifecycle] = useState("all");
+  const [sessionAccountId, setSessionAccountId] = useState("");
+  const [opportunitySearch, setOpportunitySearch] = useState("");
+  const [sessionOpportunityOptions, setSessionOpportunityOptions] = useState<{ id: string; accountId: string; label: string }[]>([]);
   const [opportunityId, setOpportunityId] = useState("");
   const [itemId, setItemId] = useState("");
   const [projectMembers, setProjectMembers] = useState<ProjectMember[]>([]);
@@ -129,6 +132,7 @@ function SalesDemoSessionsFeature({ onNavigate }: { readonly onNavigate: (intent
   }, [itemId, selectedItemType, selectedItemDuration]);
   useEffect(() => { if (selectedItemDuration && startMode === "now") setStart(formatCloudShareWallClock(new Date(), timeZone) ?? ""); }, [startMode, selectedItemDuration, timeZone]);
   useEffect(() => { if (selectedItemDuration && !endHasManualOverride) setEnd(addCloudShareWallClockMinutes(start, timeZone, selectedItemDuration) ?? ""); }, [start, selectedItemDuration, timeZone, endHasManualOverride]);
+  useEffect(() => { const query = new URLSearchParams({ page: "1", pageSize: "20" }); if (sessionAccountId) query.set("accountId", sessionAccountId); if (opportunitySearch.trim()) query.set("search", opportunitySearch.trim()); void fetchSales(`/api/sales/session-opportunities?${query.toString()}`, { cache: "no-store" }).then(async (response) => { const body = await response.json() as { opportunities?: { id: string; accountId: string; label: string }[] }; if (response.ok && body.opportunities) setSessionOpportunityOptions(body.opportunities); }); }, [fetchSales, opportunitySearch, sessionAccountId]);
   useEffect(() => { void fetchSales(`/api/sales/enablement-sessions?lifecycle=${encodeURIComponent(sessionLifecycle)}`, { cache: "no-store" }).then(async (response) => { const body = await response.json() as { sessions?: EnablementSession[] }; if (response.ok) setSessions(body.sessions ?? []); }); }, [fetchSales, sessionLifecycle]);
   useEffect(() => {
     setProjectMembers([]); setSalesProEmail("");
@@ -156,12 +160,15 @@ function SalesDemoSessionsFeature({ onNavigate }: { readonly onNavigate: (intent
   const opportunities = records.opportunities.filter((opportunity) => !opportunity.archivedAt);
   const accountById = new Map(records.accounts.map((account) => [account.id, account.name]));
   const selectedOpportunity = opportunities.find((opportunity) => opportunity.id === opportunityId);
+  const renderedOpportunities = sessionOpportunityOptions.length > 0 ? sessionOpportunityOptions : opportunities.filter((opportunity) => !sessionAccountId || opportunity.accountId === sessionAccountId).map((opportunity) => ({ id: opportunity.id, accountId: opportunity.accountId, label: `${accountById.get(opportunity.accountId) ?? "Unknown Account"} - ${opportunity.name}` }));
   const previewName = sessionNameTemplate.replaceAll("{account}", selectedOpportunity ? accountById.get(selectedOpportunity.accountId) ?? "Account" : "Account").replaceAll("{opportunity}", selectedOpportunity?.name ?? "Opportunity").replaceAll("{revision}", "1").replaceAll("{item}", selectedItem?.name ?? "Item");
   return <section aria-label="Sales Enablement Sessions">
     <PortalSectionIntro title="Provision a Sales Enablement Session" description="Creates one time-bound CloudShare Sales Experience. Registered participants only; invitations stay suppressed until the later enrollment and invitation slices." />
     <form onSubmit={submit} style={{ ...cardStyle, padding: "1.25rem", display: "grid", gap: "1rem" }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(16rem, 1fr))", gap: "1rem" }}>
-        <label style={{ display: "grid", gap: "0.35rem" }}>Opportunity<select aria-label="Opportunity" required value={opportunityId} onChange={(event) => setOpportunityId(event.target.value)} style={fullControlStyle}><option value="">Select an Opportunity</option>{opportunities.map((opportunity) => <option key={opportunity.id} value={opportunity.id}>{accountById.get(opportunity.accountId) ?? "Unknown Account"} — {opportunity.name}</option>)}</select></label>
+        <label style={{ display: "grid", gap: "0.35rem" }}>Account<select aria-label="Session Account" value={sessionAccountId} onChange={(event) => { setSessionAccountId(event.target.value); setOpportunityId(""); }} style={fullControlStyle}><option value="">All Accounts</option>{records.accounts.filter((account) => !account.archivedAt).map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label>
+        <label style={{ display: "grid", gap: "0.35rem" }}>Search Opportunities<input aria-label="Search Opportunities" value={opportunitySearch} onChange={(event) => setOpportunitySearch(event.target.value)} style={fullControlStyle} /></label>
+        <label style={{ display: "grid", gap: "0.35rem" }}>Opportunity<select aria-label="Opportunity" required value={opportunityId} onChange={(event) => setOpportunityId(event.target.value)} style={fullControlStyle}><option value="">Select an Opportunity</option>{renderedOpportunities.map((opportunity) => <option key={opportunity.id} value={opportunity.id}>{opportunity.label}</option>)}</select></label>
         <label style={{ display: "grid", gap: "0.35rem" }}>Catalogue Item<select aria-label="Catalogue Item" required value={itemId} onChange={(event) => setItemId(event.target.value)} style={fullControlStyle}><option value="">Select a Catalogue Item</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <label style={{ display: "grid", gap: "0.35rem" }}>Sales Pro<select aria-label="Sales Pro" required value={salesProEmail} onChange={(event) => setSalesProEmail(event.target.value)} disabled={!itemId || projectMemberLoading} style={fullControlStyle}><option value="">{projectMemberLoading ? "Loading active Project members…" : "Select an active Project member"}</option>{projectMembers.map((member) => <option key={member.email} value={member.email}>{member.displayName} ({member.email})</option>)}</select></label>
         <label style={{ display: "grid", gap: "0.35rem" }}>Sales Experience type<select aria-label="Sales Experience type" value={type} onChange={(event) => setType(event.target.value as Item["salesExperienceType"])} style={fullControlStyle}><option value="demo">Demo</option><option value="poc">POC</option><option value="pov">POV</option><option value="trial">Trial</option></select></label>
