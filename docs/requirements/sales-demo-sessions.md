@@ -23,13 +23,15 @@ CloudShare v4 Sales Experience; it does not add participants or send invitations
   CloudShare Connection only at call time.
 - The Sales Delivery module owns the direct v4 request shape. CloudShare validates the
   supplied main Sales Pro atomically during creation and Certalis maps that failure to
-  a correlated, supportable response. A valid Project-scoped pre-create Sales-Pro
-  lookup is not currently documented or live-confirmed; see GAP-26. The UI and domain
-  never call CloudShare directly.
-- The v4 creation request supplies the readable Opportunity name, a stable
-  `certalis:opp:<opportunity-id>` external ID, `registeredParticipantsOnly`, and
-  `sendInvitations: "dontSend"`. Local state retains both the Sales Experience ID and
-  Certalis correlation even when a later session is created for the same Opportunity.
+  a correlated, supportable response. The documented Sales-Pro lookup was unavailable;
+  the authorised temporary Project-member GUI read is documented in GAP-28. The UI and
+  domain never call CloudShare directly.
+- The v4 creation request supplies the readable Opportunity name plus a bounded
+  per-Session discriminator, a per-Session opaque 32-character external ID (the live
+  v4 validator rejects the documented formatted `certalis:opp:<opportunity-id>` form),
+  `registeredParticipantsOnly`, and `sendInvitations: "dontSend"`. Local state retains
+  both the Sales Experience ID and Certalis correlation, so later Sessions for the same
+  Opportunity remain independently traceable.
 - Success, Sales-Pro validation failure, and CloudShare creation failure write
   correlated Customer-scoped audit and redacted diagnostic evidence. If CloudShare
   creates an Experience but the portal cannot persist its correlation, the operation is

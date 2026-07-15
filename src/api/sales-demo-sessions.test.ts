@@ -29,11 +29,20 @@ describe("Sales Enablement Session API handler", () => {
     expect(result).toMatchObject({ status: 201, body: { session: { id: "session-1", opportunityId: "opp-1", itemId: "item-1", salesProDisplayName: "Sales Admin" } } });
     expect(JSON.stringify(result.body)).not.toContain("cloudShareSalesExperienceId");
     expect(JSON.stringify(result.body)).not.toContain("sales-1");
-    expect(delivery.createSession).toHaveBeenCalledWith(expect.objectContaining({ opportunity: "Acme evaluation", externalId: "session1", passphrase: expect.stringMatching(/^[A-Za-z0-9]{32}$/), registrationType: "registeredParticipantsOnly", sendInvitations: "dontSend", mainSalesProEmail: admin.email, type: "poc" }));
+    expect(delivery.createSession).toHaveBeenCalledWith(expect.objectContaining({ name: "Accelerate Demo — Acme evaluation — session1", opportunity: "Acme evaluation", externalId: "session1", passphrase: expect.stringMatching(/^[A-Za-z0-9]{32}$/), registrationType: "registeredParticipantsOnly", sendInvitations: "dontSend", mainSalesProEmail: admin.email, type: "poc" }));
     expect(sessions.save).toHaveBeenCalledWith(expect.objectContaining({ opportunityId: "opp-1", itemId: "item-1" }));
     expect(itemProvisioningValidator.revalidate).toHaveBeenCalledWith(expect.objectContaining({ id: "item-1" }));
     expect(audit.write).toHaveBeenCalledWith(expect.objectContaining({ action: "sales.demo_session.created", correlationId: expect.any(String), outcome: "success" }));
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ operation: "sales.demo_session.created", details: expect.objectContaining({ integrationSurface: "cloudshare.v4.sales", registrationType: "registeredParticipantsOnly" }) }));
+
+    await handleCreateSalesDemoSession({ records, items, sessions, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, deliveryFactory: { forConnection: vi.fn().mockReturnValue(delivery) }, projectMembers, itemProvisioningValidator, diagnostics, audit, now: () => new Date("2026-07-14T15:00:00.000Z"), newId: () => "session-2" }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-1", itemId: "item-1", salesProEmail: admin.email, start: "2026-07-16T09:00", end: "2026-07-17T09:00", timeZone: "Mountain Standard Time", type: "poc" } });
+
+    const [first, second] = delivery.createSession.mock.calls.map(([input]) => input);
+    expect(first.name).not.toBe(second.name);
+    expect(first.name).toMatch(/session1$/);
+    expect(second.name).toMatch(/session2$/);
+    expect(first.name.length).toBeLessThanOrEqual(100);
+    expect(second.name.length).toBeLessThanOrEqual(100);
   });
 
   it("surfaces CloudShare main Sales Pro validation from the atomic create request with supportable evidence", async () => {
@@ -41,16 +50,25 @@ describe("Sales Enablement Session API handler", () => {
     await records.saveOpportunity({ id: "opp-1", customerId: "certalis", accountId: "account-1", name: "Acme evaluation", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
     const delivery = { createSession: vi.fn().mockRejectedValue(new Error("not a Project Sales Pro")) };
     const diagnostics = { record: vi.fn().mockResolvedValue(undefined) };
-    const result = await handleCreateSalesDemoSession({ records, items: { findById: vi.fn().mockResolvedValue({ id: "item-1", customerId: "certalis", name: "Demo", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" }) }, sessions: { save: vi.fn(), listByOpportunity: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, deliveryFactory: { forConnection: vi.fn().mockReturnValue(delivery) }, projectMembers, diagnostics, audit: { write: vi.fn() }, newId: () => "session-1" }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-1", itemId: "item-1", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "Mountain Standard Time" } });
+    const result = await handleCreateSalesDemoSession({ records, items: { findById: vi.fn().mockResolvedValue({ id: "item-1", customerId: "certalis", name: "Demo", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" }) }, sessions: { save: vi.fn(), listByOpportunity: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, deliveryFactory: { forConnection: vi.fn().mockReturnValue(delivery) }, projectMembers, diagnostics, audit: { write: vi.fn().mockRejectedValue(new Error("audit unavailable")) }, newId: () => "session-1" }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-1", itemId: "item-1", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "Mountain Standard Time" } });
     expect(result).toMatchObject({ status: 422, body: { correlationId: expect.any(String) } });
     expect(delivery.createSession).toHaveBeenCalledOnce();
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ outcome: "failure", details: expect.objectContaining({ failureMode: "main_sales_pro_validation" }) }));
   });
 
+  it("preserves a CloudShare validation response when failure evidence stores are unavailable", async () => {
+    const records = createInMemorySalesRecordRepository();
+    await records.saveOpportunity({ id: "opp-1", customerId: "certalis", accountId: "account-1", name: "Acme", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
+    const item = { id: "item-1", customerId: "certalis", name: "Demo", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" };
+    const result = await handleCreateSalesDemoSession({ records, items: { findById: vi.fn().mockResolvedValue(item) }, sessions: { save: vi.fn(), listByOpportunity: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSession: vi.fn().mockRejectedValue(new Error("not a Project Sales Pro")) }) }, projectMembers, diagnostics: { record: vi.fn().mockRejectedValue(new Error("diagnostics unavailable")) }, audit: { write: vi.fn().mockRejectedValue(new Error("audit unavailable")) } }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-1", itemId: "item-1", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
+
+    expect(result).toMatchObject({ status: 422, body: { error: "CloudShare rejected the selected Sales Pro. Review support diagnostics.", correlationId: expect.any(String) } });
+  });
+
   it("denies cross-Customer Opportunity selection with correlated audit and diagnostic evidence", async () => {
     const records = createInMemorySalesRecordRepository();
     await records.saveOpportunity({ id: "opp-other", customerId: "helios", accountId: "account-1", name: "Other", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
-    const diagnostics = { record: vi.fn().mockResolvedValue(undefined) }; const audit = { write: vi.fn().mockResolvedValue(undefined) };
+    const diagnostics = { record: vi.fn().mockResolvedValue(undefined) }; const audit = { write: vi.fn().mockRejectedValue(new Error("audit unavailable")) };
     const result = await handleCreateSalesDemoSession({ records, items: { findById: vi.fn() }, sessions: { save: vi.fn(), listByOpportunity: vi.fn() }, connections: { findByCustomerId: vi.fn() }, diagnostics, audit }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-other", itemId: "item-1", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
     expect(result).toMatchObject({ status: 404, body: { correlationId: expect.any(String) } });
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ source: "sales-demo-sessions", request: { method: "POST", path: "/api/sales/demo-sessions" }, response: { status: 404 }, details: expect.objectContaining({ failureMode: "opportunity_not_found" }) }));
