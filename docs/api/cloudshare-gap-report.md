@@ -1700,8 +1700,8 @@ redacted audit/diagnostic evidence for operator-link use.
 
 | Field | Detail |
 |---|---|
-| **Status** | Discovery evidence only — not implemented, tested live, or used by Issue #347 |
-| **Verified live** | No — the portal must not make this undocumented surface a runtime dependency |
+| **Status** | Implemented behind a typed, isolated Sales Enablement Session adapter pending productization |
+| **Verified live** | Yes — safe read-only Certalis probe passed on 2026-07-14 |
 | **Documentation defect** | [SUP-5002](https://cloudshare.atlassian.net/browse/SUP-5002) — the v4 Sales-Pro description refers to an undefined `Get/salespros` endpoint |
 | **Productization path** | [BAC-24702 — Productise Project User Management APIs](https://cloudshare.atlassian.net/browse/BAC-24702) |
 
@@ -1719,10 +1719,12 @@ surface:
 
 `GET https://use.cloudshare.com/api/v3/users?projectUsers=true&status=active&projectId=<project-id>&getRows=true`
 
-Discovery indicates that both `projectUsers=true` and `getRows=true` are required for this request
-to succeed; additional GUI parameters may exist. This may be useful evidence for CloudShare while
-productizing a supported Project membership / Sales Pro eligibility API, but Certalis must not call,
-probe, or rely on this endpoint in #347's implementation or live verification.
+Live verification on 2026-07-14 confirmed HTTP 200 for a Certalis Project using exactly
+`projectUsers=true`, `status=active`, `projectId`, and `getRows=true`. The GUI response exposed a
+row collection (observed as `Rows`) with member identity fields including email and name parts;
+Certalis normalizes only email plus a display name and never returns raw CloudShare member IDs to
+the browser. Both `projectUsers=true` and `getRows=true` remain required by the implemented typed
+adapter; additional GUI parameters remain undocumented.
 
 SUP-5002 tracks the misleading API documentation. BAC-24702 is the requested path to productize
 the Project User Management APIs so a future Sales Delivery adapter can replace this unsupported
@@ -1737,15 +1739,26 @@ v4 export documents list/add instructor operations only for an already-created T
 its add-instructor description separately points to legacy v3 documentation for available Project
 instructors. It is therefore not a supported precedent for a Sales pre-create eligibility lookup.
 
+**Current Certalis containment**
+
+The Sales Enablement Session form performs this live lookup only after the Sales Admin selects an
+Item (thereby inferring its Project), does not cache it, and re-fetches/revalidates the selected
+Sales Pro immediately before `POST /sales`. A failed lookup or removed/inactive selection blocks
+creation with correlated, redacted diagnostics. The narrow race after the revalidation and before
+CloudShare processes the create request is accepted as an extreme edge case; CloudShare remains the
+final authority. The selected email and display name are persisted on the immutable Session
+correlation, not on the catalogue Item.
+
 **Action required**
 
 CloudShare should document and support a Project-scoped membership/eligibility read with the
-minimum fields necessary to verify an authenticated Sales Admin as the requested `mainSalesPro`,
-including authorization and stable response semantics. Only then may a future Sales Delivery adapter
-introduce this preflight behind its typed seam.
+minimum fields necessary to select and verify a Sales Pro as the requested `mainSalesPro`, including
+authorization and stable response semantics. BAC-24702 is the requested productization path that
+will replace this isolated GUI adapter with a supported contract.
 
-**Code reference:** `src/api/admin-exam-draft-runtime.ts`, `src/api/admin-exams.ts`,
-`src/integrations/cloudshare/cohort-experiences.ts`, `docs/api/assets/cloudshare-public-api-v4-2026-07-10.json`
+**Code reference:** `src/integrations/cloudshare/project-members.ts`,
+`src/api/sales-project-members.ts`, `src/api/sales-demo-sessions.ts`,
+`docs/api/assets/cloudshare-public-api-v4-2026-07-10.json`
 
 ---
 

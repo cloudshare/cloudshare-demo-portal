@@ -8,6 +8,6 @@ export function createPrismaSalesDemoSessionRepository(prisma: PrismaClient): Sa
   };
 }
 
-function toDomain(row: { id: string; customerId: string; opportunityId: string; itemId: string; cloudShareSalesExperienceId: string; externalId: string; type: string; start: string; end: string; timeZone: string; registrationType: string; sendInvitations: string; createdAt: Date }): SalesDemoSession {
+function toDomain(row: { id: string; customerId: string; opportunityId: string; itemId: string; cloudShareSalesExperienceId: string; externalId: string; type: string; start: string; end: string; timeZone: string; salesProEmail: string; salesProDisplayName: string; registrationType: string; sendInvitations: string; createdAt: Date }): SalesDemoSession {
   return { ...row, type: row.type as SalesDemoSession["type"], registrationType: "registeredParticipantsOnly", sendInvitations: "dontSend" };
 }

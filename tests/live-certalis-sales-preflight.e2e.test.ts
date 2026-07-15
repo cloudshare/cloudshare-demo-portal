@@ -2,7 +2,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { CloudShareRequestError, createCloudShareIntegrationForConnection } from "@/integrations/cloudshare";
+import { createCloudShareIntegrationForConnection } from "@/integrations/cloudshare";
+import { createCloudShareProjectMemberSource } from "@/integrations/cloudshare/project-members";
 
 function certalisConnection() {
   const path = process.env.PORTAL_SEED_CONFIG_PATH ?? "D:/Code_projects/cloudshare-demo-portal/config/portal-seed.local.json";
@@ -15,8 +16,14 @@ function certalisConnection() {
 const connection = certalisConnection();
 
 describe("live Certalis Sales-Pro preflight probe", () => {
-  it.runIf(connection)("confirms that the inferred Get/salespros preflight path is absent", async () => {
+  it.runIf(connection)("reads active members for a live Certalis Project through the GUI contract", async () => {
     const client = createCloudShareIntegrationForConnection({ mode: "live", connection: connection! });
-    await expect(client.requestV4Detailed!({ method: "GET", path: "/salespros", schema: z.object({ count: z.number().optional(), salesPros: z.array(z.object({ email: z.string().email() })) }) })).rejects.toMatchObject({ name: CloudShareRequestError.name, status: 404, context: { method: "GET", path: "/v4/salespros" } });
+    const projects = await client.requestV3Detailed!({ method: "GET", path: "/projects", schema: z.array(z.object({ id: z.string().min(1), name: z.string().min(1) })) });
+    const project = projects.data[0];
+    expect(project).toBeDefined();
+    const read = await createCloudShareProjectMemberSource(client).listActiveProjectMembers(project!.id);
+    expect(read.response.status).toBe(200);
+    expect(read.members).toEqual(expect.any(Array));
+    expect(read.request.query).toEqual({ projectUsers: "true", status: "active", projectId: project!.id, getRows: "true" });
   }, 20_000);
 });

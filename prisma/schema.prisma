@@ -124,6 +124,8 @@ model SalesDemoSession {
   start                       String
   end                         String
   timeZone                    String
+  salesProEmail               String
+  salesProDisplayName         String
   registrationType            String
   sendInvitations             String
   createdAt                   DateTime

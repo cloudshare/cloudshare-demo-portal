@@ -1,17 +1,23 @@
-# Sales Demo Session provisioning
+# Sales Enablement Session provisioning
 
 Issue #347 adds the first direct Sales Enablement delivery operation. An authenticated
-Certalis Sales Admin creates one immutable local `SalesDemoSession` for one active
+Certalis Sales Admin creates one immutable local Sales Enablement Session for one active
 Customer-scoped Opportunity and one active Demo Item. It maps one-to-one to a direct
 CloudShare v4 Sales Experience; it does not add participants or send invitations.
 
 ## Portal contract
 
-- `POST /api/sales/demo-sessions` requires the authenticated Sales workspace Customer.
+- `POST /api/sales/enablement-sessions` requires the authenticated Sales workspace Customer.
+  `/api/sales/demo-sessions` remains a legacy-compatible alias while existing persisted history is
+  migrated safely.
 - Request: `opportunityId`, `itemId`, timezone-less ISO `start` and mandatory `end`, an
   explicit CloudShare `timeZone`, and optional editable `type` (`demo`, `poc`, `pov`,
   `trial`). The UI starts at now or a scheduled local CloudShare date-time and pre-fills
   `end` from the selected Item Policy storage lease.
+- Selecting an Item infers its Project and performs a fresh, non-cached active Project-member
+  read. The Sales Admin selects the Main Sales Pro for this Session; the handler repeats that
+  lookup immediately before `POST /sales` and blocks creation if the selection is absent or inactive.
+  Selected display name and email are persisted on the immutable Session, never on the Item.
 - The handler verifies that both selected local records belong to the Customer, are
   active, and that end is after start. It resolves the stored encrypted Certalis
   CloudShare Connection only at call time.

@@ -12,6 +12,9 @@ export interface SalesDemoSession {
   readonly start: string;
   readonly end: string;
   readonly timeZone: string;
+  /** Selected from a fresh live Project-member read at provision time, never from Item config. */
+  readonly salesProEmail: string;
+  readonly salesProDisplayName: string;
   readonly registrationType: "registeredParticipantsOnly";
   readonly sendInvitations: "dontSend";
   readonly createdAt: Date;

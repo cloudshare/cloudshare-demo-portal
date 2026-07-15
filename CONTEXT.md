@@ -300,11 +300,17 @@ A future commercial engagement with one prospective organisation. It may group m
 Sales Experiences, including a replacement when a prior time-bounded experience has ended.
 _Avoid_: Customer, Cohort Exam Session.
 
+**Sales Enablement Session**:
+A time-bounded Certalis delivery run within a Sales Opportunity, backed by one CloudShare Sales
+Experience and supporting demo, proof-of-concept, proof-of-value, or trial work. It combines one
+catalogue Item with explicit start/end/timezone and a Main Sales Pro selected from a fresh live
+Project-member read. It is distinct from a Cohort Exam Session even where delivery structures are
+analogous. The Item owns the Project/resources; the Sales Pro belongs to the Session, never to the
+Item configuration.
+_Avoid_: Sales Demo Session, Exam, Cohort Exam Session, generic session.
+
 **Sales Experience**:
-A future time-bounded CloudShare demo or proof-of-concept delivery run within a Sales Opportunity,
-which may give multiple participants access. It is distinct from a Cohort Exam Session even where
-their delivery structures are analogous.
-_Avoid_: Exam, Cohort Exam Session, generic session.
+The CloudShare v4 resource backing a Sales Enablement Session.
 
 **Certification**:
 The whole path/journey a Candidate takes — training plus one or more exams, some potentially

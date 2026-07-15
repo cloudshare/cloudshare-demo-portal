@@ -26,6 +26,7 @@ type BlueprintOption = Named & { defaultSnapshotRegionIds?: readonly string[] };
 type Policy = Named & { storageLeaseMinutes: number | null };
 type Item = { id: string; name: string; description: string; project: Named; blueprints: Named[]; policy: Named; regions: Named[]; salesExperienceType: "demo" | "poc" | "pov" | "trial"; defaultDurationMinutes: number; status: "active" | "archived" };
 type DemoSession = { id: string; opportunityId: string; itemId: string; cloudShareSalesExperienceId: string; externalId: string; type: "demo" | "poc" | "pov" | "trial"; start: string; end: string; timeZone: string; createdAt: string };
+type ProjectMember = { email: string; displayName: string };
 
 const blank: SalesData = { accounts: [], opportunities: [], contacts: [] };
 const controlStyle = { padding: "0.55rem", border: "1px solid #b7bdc8", borderRadius: "6px", background: "#fff" };
@@ -83,6 +84,9 @@ function SalesDemoSessionsFeature({ onNavigate }: { readonly onNavigate: (intent
   const [sessions, setSessions] = useState<DemoSession[]>([]);
   const [opportunityId, setOpportunityId] = useState("");
   const [itemId, setItemId] = useState("");
+  const [projectMembers, setProjectMembers] = useState<ProjectMember[]>([]);
+  const [salesProEmail, setSalesProEmail] = useState("");
+  const [projectMemberLoading, setProjectMemberLoading] = useState(false);
   const [startMode, setStartMode] = useState<"now" | "scheduled">("now");
   const [start, setStart] = useState(() => formatCloudShareWallClock(new Date(), "UTC") ?? "");
   const [end, setEnd] = useState("");
@@ -100,10 +104,10 @@ function SalesDemoSessionsFeature({ onNavigate }: { readonly onNavigate: (intent
     const [recordResponse, itemResponse] = await Promise.all([fetchSales("/api/sales/accounts", { cache: "no-store" }), fetchSales("/api/sales/items", { cache: "no-store" })]);
     const recordBody = await recordResponse.json() as SalesData & { error?: string };
     const itemBody = await itemResponse.json() as { activeItems?: Item[]; error?: string };
-    if (!recordResponse.ok || !itemResponse.ok) throw new Error(recordBody.error ?? itemBody.error ?? "Could not load Sales Demo Session choices.");
+    if (!recordResponse.ok || !itemResponse.ok) throw new Error(recordBody.error ?? itemBody.error ?? "Could not load Sales Enablement Session choices.");
     setRecords(recordBody); setItems(itemBody.activeItems ?? []);
   }, [fetchSales]);
-  useEffect(() => { void load().catch((error) => setMessage(error instanceof Error ? error.message : "Could not load Sales Demo Session choices.")); }, [load]);
+  useEffect(() => { void load().catch((error) => setMessage(error instanceof Error ? error.message : "Could not load Sales Enablement Session choices.")); }, [load]);
   useEffect(() => {
     if (!selectedItemType || !selectedItemDuration) return;
     setType(selectedItemType);
@@ -111,36 +115,46 @@ function SalesDemoSessionsFeature({ onNavigate }: { readonly onNavigate: (intent
   }, [selectedItemType, selectedItemDuration, start, timeZone]);
   useEffect(() => { if (selectedItemDuration && startMode === "now") { const next = formatCloudShareWallClock(new Date(), timeZone) ?? ""; setStart(next); setEnd(addCloudShareWallClockMinutes(next, timeZone, selectedItemDuration) ?? ""); } }, [startMode, selectedItemDuration, timeZone]);
   useEffect(() => { if (selectedItemDuration) setEnd(addCloudShareWallClockMinutes(start, timeZone, selectedItemDuration) ?? ""); }, [start, selectedItemDuration, timeZone]);
-  useEffect(() => { if (!opportunityId) { setSessions([]); return; } void fetchSales(`/api/sales/demo-sessions?opportunityId=${encodeURIComponent(opportunityId)}`, { cache: "no-store" }).then(async (response) => { const body = await response.json() as { sessions?: DemoSession[] }; if (response.ok) setSessions(body.sessions ?? []); }); }, [fetchSales, opportunityId]);
+  useEffect(() => { if (!opportunityId) { setSessions([]); return; } void fetchSales(`/api/sales/enablement-sessions?opportunityId=${encodeURIComponent(opportunityId)}`, { cache: "no-store" }).then(async (response) => { const body = await response.json() as { sessions?: DemoSession[] }; if (response.ok) setSessions(body.sessions ?? []); }); }, [fetchSales, opportunityId]);
+  useEffect(() => {
+    setProjectMembers([]); setSalesProEmail("");
+    if (!itemId) return;
+    setProjectMemberLoading(true);
+    void fetchSales(`/api/sales/enablement-sessions/project-members?itemId=${encodeURIComponent(itemId)}`, { cache: "no-store" })
+      .then(async (response) => { const body = await response.json() as { members?: ProjectMember[]; error?: string }; if (!response.ok) throw new Error(body.error ?? "Could not retrieve active Project members."); setProjectMembers(body.members ?? []); })
+      .catch((error) => setMessage(error instanceof Error ? error.message : "Could not retrieve active Project members."))
+      .finally(() => setProjectMemberLoading(false));
+  }, [fetchSales, itemId]);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); setMessage(null); setCorrelationId(null); setNeedsAttention(false); setLoading(true);
     try {
-      const response = await fetchSales("/api/sales/demo-sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ opportunityId, itemId, start, end, timeZone, type }) });
+      const response = await fetchSales("/api/sales/enablement-sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ opportunityId, itemId, salesProEmail, start, end, timeZone, type }) });
       const body = await response.json() as { error?: string; correlationId?: string; session?: DemoSession; needsAttention?: boolean; warning?: string };
-      if (!response.ok) { setCorrelationId(body.correlationId ?? null); throw new Error(body.error ?? "Could not provision the Sales Demo Session."); }
+      if (!response.ok) { setCorrelationId(body.correlationId ?? null); throw new Error(body.error ?? "Could not provision the Sales Enablement Session."); }
       setSessions((current) => body.session ? [body.session, ...current] : current);
       if (body.needsAttention) {
         setNeedsAttention(true); setCorrelationId(body.correlationId ?? null);
-        setMessage(`Needs attention: ${body.warning ?? "Sales Demo Session was created. Do not retry creation; review support diagnostics."}`);
-      } else setMessage("Sales Demo Session created. No invitations were sent.");
-    } catch (error) { setMessage(error instanceof Error ? error.message : "Could not provision the Sales Demo Session."); } finally { setLoading(false); }
+        setMessage(`Needs attention: ${body.warning ?? "Sales Enablement Session was created. Do not retry creation; review support diagnostics."}`);
+      } else setMessage("Sales Enablement Session created. No invitations were sent.");
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Could not provision the Sales Enablement Session."); } finally { setLoading(false); }
   };
   const opportunities = records.opportunities.filter((opportunity) => !opportunity.archivedAt);
-  return <section aria-label="Sales Demo Sessions">
-    <PortalSectionIntro title="Provision a Sales Demo Session" description="Creates one time-bound CloudShare Sales Experience. Registered participants only; invitations stay suppressed until the later enrollment and invitation slices." />
+  return <section aria-label="Sales Enablement Sessions">
+    <PortalSectionIntro title="Provision a Sales Enablement Session" description="Creates one time-bound CloudShare Sales Experience. Registered participants only; invitations stay suppressed until the later enrollment and invitation slices." />
     <form onSubmit={submit} style={{ ...cardStyle, padding: "1.25rem", display: "grid", gap: "1rem" }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(16rem, 1fr))", gap: "1rem" }}>
         <label style={{ display: "grid", gap: "0.35rem" }}>Opportunity<select aria-label="Opportunity" required value={opportunityId} onChange={(event) => setOpportunityId(event.target.value)} style={fullControlStyle}><option value="">Select an Opportunity</option>{opportunities.map((opportunity) => <option key={opportunity.id} value={opportunity.id}>{opportunity.name}</option>)}</select></label>
-        <label style={{ display: "grid", gap: "0.35rem" }}>Demo Item<select aria-label="Demo Item" required value={itemId} onChange={(event) => setItemId(event.target.value)} style={fullControlStyle}><option value="">Select a Demo Item</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <label style={{ display: "grid", gap: "0.35rem" }}>Catalogue Item<select aria-label="Catalogue Item" required value={itemId} onChange={(event) => setItemId(event.target.value)} style={fullControlStyle}><option value="">Select a Catalogue Item</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <label style={{ display: "grid", gap: "0.35rem" }}>Sales Pro<select aria-label="Sales Pro" required value={salesProEmail} onChange={(event) => setSalesProEmail(event.target.value)} disabled={!itemId || projectMemberLoading} style={fullControlStyle}><option value="">{projectMemberLoading ? "Loading active Project members…" : "Select an active Project member"}</option>{projectMembers.map((member) => <option key={member.email} value={member.email}>{member.displayName} ({member.email})</option>)}</select></label>
         <label style={{ display: "grid", gap: "0.35rem" }}>Sales Experience type<select aria-label="Sales Experience type" value={type} onChange={(event) => setType(event.target.value as Item["salesExperienceType"])} style={fullControlStyle}><option value="demo">Demo</option><option value="poc">POC</option><option value="pov">POV</option><option value="trial">Trial</option></select></label>
         <label style={{ display: "grid", gap: "0.35rem" }}>CloudShare time zone<select aria-label="CloudShare time zone" value={timeZone} onChange={(event) => setTimeZone(event.target.value)} style={fullControlStyle}><option value="UTC">UTC</option><option value="Eastern Standard Time">Eastern Standard Time</option><option value="Mountain Standard Time">Mountain Standard Time</option><option value="Pacific Standard Time">Pacific Standard Time</option></select></label>
       </div>
       <fieldset style={{ border: "1px solid #d8dee8", borderRadius: "8px", padding: "0.85rem", display: "grid", gap: "0.7rem" }}><legend>Time window</legend><div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}><label><input type="radio" checked={startMode === "now"} onChange={() => setStartMode("now")} /> Start now</label><label><input type="radio" checked={startMode === "scheduled"} onChange={() => setStartMode("scheduled")} /> Schedule start</label></div><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(16rem, 1fr))", gap: "1rem" }}><label style={{ display: "grid", gap: "0.35rem" }}>Start <input aria-label="Start" type="datetime-local" required value={start} disabled={startMode === "now"} onChange={(event) => setStart(event.target.value)} style={fullControlStyle} /></label><label style={{ display: "grid", gap: "0.35rem" }}>End <input aria-label="End" type="datetime-local" required value={end} onChange={(event) => setEnd(event.target.value)} style={fullControlStyle} /></label></div><p style={{ margin: 0, color: "#52606d" }}>End is required and prefilled from the selected Item Policy storage lease. All displayed values are local CloudShare date-times in the selected explicit time zone.</p></fieldset>
-      <div style={{ display: "flex", justifyContent: "end", gap: "0.75rem", alignItems: "center" }}><button style={primaryButtonStyle} disabled={loading || !opportunityId || !itemId}>{loading ? "Provisioning…" : "Create Sales Demo Session"}</button></div>
+      <div style={{ display: "flex", justifyContent: "end", gap: "0.75rem", alignItems: "center" }}><button style={primaryButtonStyle} disabled={loading || projectMemberLoading || !opportunityId || !itemId || !salesProEmail}>{loading ? "Provisioning…" : "Create Sales Enablement Session"}</button></div>
       {message ? <div role={correlationId ? "alert" : "status"} style={correlationId ? alertPanelStyle.danger : alertPanelStyle.success}>{message}{needsAttention ? <strong> Do not retry creation.</strong> : null}{correlationId ? <> <button type="button" onClick={() => onNavigate({ tab: "support", correlationId })} style={{ border: 0, background: "transparent", color: colors.info, textDecoration: "underline", cursor: "pointer" }}>Open support diagnostics ({correlationId})</button></> : null}</div> : null}
     </form>
-    {opportunityId ? <section style={{ ...cardStyle, marginTop: "1rem", padding: "1.25rem" }} aria-label="Opportunity Sales Demo Session history"><h2 style={{ marginTop: 0 }}>Session history</h2>{sessions.length === 0 ? <p>No Sales Demo Sessions have been created for this Opportunity.</p> : <ul>{sessions.map((session) => <li key={session.id}>{session.type.toUpperCase()} · {session.start} to {session.end} ({session.timeZone})</li>)}</ul>}</section> : null}
+    {opportunityId ? <section style={{ ...cardStyle, marginTop: "1rem", padding: "1.25rem" }} aria-label="Opportunity Sales Enablement Session history"><h2 style={{ marginTop: 0 }}>Session history</h2>{sessions.length === 0 ? <p>No Sales Enablement Sessions have been created for this Opportunity.</p> : <ul>{sessions.map((session) => <li key={session.id}>{session.type.toUpperCase()} · {session.start} to {session.end} ({session.timeZone})</li>)}</ul>}</section> : null}
   </section>;
 }
 
