@@ -101,7 +101,7 @@ describe("createCloudShareClient — v4", () => {
     expect(last()?.headers?.authorization).toBe("Bearer test-bearer");
   });
 
-  it("emits support diagnostic request bodies while retaining training passphrases", async () => {
+  it("redacts training and Sales Experience passphrases from trace request bodies", async () => {
     const trace = vi.fn();
     const { http } = capturingHttp(ok({ id: "training-1" }));
     const client = createCloudShareClient({
@@ -138,7 +138,7 @@ describe("createCloudShareClient — v4", () => {
         },
         requestBody: {
           Name: "Exam GCP-ASSOC",
-          Passphrase: "certalis-attempt-1",
+          Passphrase: "[REDACTED]",
           MainInstructor: { Email: "instructor@example.com" },
         },
       }),
@@ -182,7 +182,7 @@ describe("createCloudShareClient — v4", () => {
       fields: expect.objectContaining({
         requestBody: {
           Name: "Exam GCP-ASSOC",
-          Passphrase: "certalis-attempt-1",
+          Passphrase: "[REDACTED]",
           ApiKey: "[REDACTED]",
           WebhookSecret: "[REDACTED]",
           Password: "[REDACTED]",
@@ -196,7 +196,7 @@ describe("createCloudShareClient — v4", () => {
     });
   });
 
-  it("retains training passphrases in response diagnostics", async () => {
+  it("redacts training passphrases in response diagnostics", async () => {
     const trace = vi.fn();
     const { http } = capturingHttp(
       ok({
@@ -232,8 +232,8 @@ describe("createCloudShareClient — v4", () => {
       fields: expect.objectContaining({
         responseBody: JSON.stringify({
           id: "training-1",
-          Passphrase: "certalis-attempt-1",
-          passphrase: "candidate-visible-passphrase",
+          Passphrase: "[REDACTED]",
+          passphrase: "[REDACTED]",
           ApiKey: "[REDACTED]",
         }),
       }),
