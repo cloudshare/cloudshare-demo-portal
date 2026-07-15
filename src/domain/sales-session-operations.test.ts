@@ -28,4 +28,9 @@ describe("Sales Session operations read model", () => {
     expect(rows.map((row) => row.lifecycle)).toEqual(["needs_attention", "provisioning"]);
     expect(buildOperationalSalesSessions(sessions, new Date("2026-07-15T09:00:00Z"), "provisioning")).not.toContainEqual(expect.objectContaining({ id: "attention" }));
   });
+
+  it("derives lifecycle through the shared Windows wall-clock resolver", () => {
+    const rows = buildOperationalSalesSessions([{ ...base, id: "central-america", cloudShareSalesExperienceId: "sales-1", timeZone: "Central America Standard Time", start: "2026-07-15T08:00", end: "2026-07-15T10:00" }], new Date("2026-07-15T14:00:00Z"));
+    expect(rows[0]?.lifecycle).toBe("in_progress");
+  });
 });
