@@ -282,7 +282,7 @@ describe("createCloudShareGuidedJourneyProvider", () => {
     ).rejects.toBeInstanceOf(CloudShareResponseError);
   });
 
-  it("preserves admin-only support evidence in unsupported Guided Journey payload diagnostics while redacting true credentials", async () => {
+  it("redacts Guided Journey passphrases in unsupported payload diagnostics", async () => {
     const payload = {
       exploredRate: 1.2,
       sectionStatuses: [
@@ -314,7 +314,7 @@ describe("createCloudShareGuidedJourneyProvider", () => {
               status: "explored",
             },
           ],
-          passphrase: "candidate-visible-passphrase",
+          passphrase: "[REDACTED]",
           loginUrl: "https://use.cloudshare.com/Ent/Login.aspx?token=admin-evidence",
           apiKey: "[REDACTED]",
           authorization: "Bearer [REDACTED]",

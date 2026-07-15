@@ -574,7 +574,7 @@ describe("getExamAttemptScoreRuntime", () => {
     );
   });
 
-  it("retains admin support evidence in Guided Journey diagnostic bodies without exposing it to candidates", async () => {
+  it("redacts Guided Journey passphrases in support diagnostics without exposing them to candidates", async () => {
     const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
     const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
     const diagnosticsAwareRetriever: DiagnosticScoreRetrievalProvider = {
@@ -618,8 +618,8 @@ describe("getExamAttemptScoreRuntime", () => {
     );
     expect(entry?.response).toEqual({
       body: {
-        Passphrase: "certalis-attempt-1",
-        passphrase: "candidate-support-passphrase",
+        Passphrase: "[REDACTED]",
+        passphrase: "[REDACTED]",
         loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/support-token",
         accessToken: "[REDACTED]",
       },

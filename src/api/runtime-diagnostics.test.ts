@@ -1050,7 +1050,7 @@ describe("score diagnostics", () => {
     expect(JSON.stringify(failure)).toContain("support-evidence-token");
   });
 
-  it("preserves admin-only CloudShare support evidence in score failure diagnostics while still redacting true credentials", async () => {
+  it("preserves non-credential support evidence in score failure diagnostics while redacting credentials", async () => {
     const malformedRetriever: DiagnosticScoreRetrievalProvider = {
       getParticipantProgress: vi.fn(),
       getParticipantProgressForDiagnostics: vi.fn().mockRejectedValue(
@@ -1082,7 +1082,7 @@ describe("score diagnostics", () => {
     expect(failure?.response).toEqual({
       body: {
         hello: "world",
-        passphrase: "candidate-visible-passphrase",
+        passphrase: "[REDACTED]",
         loginUrl: "https://use.cloudshare.com/Ent/Login.aspx?token=admin-evidence",
         apiKey: "[REDACTED]",
         authorization: "Bearer [REDACTED]",
