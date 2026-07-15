@@ -38,7 +38,7 @@ const actionCellStyle = { ...cellStyle, width: "9.5rem", textAlign: "right" as c
 const selectedRowStyle = { background: "#e8f5f3", boxShadow: "inset 4px 0 0 #0f6d66" };
 const selectableRowStyle = { cursor: "pointer" };
 
-export function SalesWorkspace({ email, initialRoute = { tab: "items", itemView: "catalog" } }: { readonly email: string; readonly initialRoute?: SalesWorkspaceRouteState }) {
+export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemView: "catalog" } }: { readonly email: string; readonly initialRoute?: SalesWorkspaceRouteState }) {
   const router = useRouter();
   const [route, setRoute] = useState<SalesWorkspaceRouteState>(initialRoute);
   const browserFetch = useCallback<typeof fetch>((input, init) => window.fetch(input, init), []);
