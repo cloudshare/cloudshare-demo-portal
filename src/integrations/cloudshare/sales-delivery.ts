@@ -17,6 +17,10 @@ export interface CreateSalesDemoSessionInput {
   readonly policyId: string;
   readonly opportunity: string;
   readonly externalId: string;
+  /** Required by CloudShare even when registered-only admission and native
+   * invitations make it unreachable by portal users. Generated per session
+   * and retained only in redacted server-side diagnostic evidence. */
+  readonly passphrase: string;
   readonly start: string;
   readonly end: string;
   readonly timeZone: string;
@@ -42,7 +46,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
   }
   return {
     async createSession(input) {
-      const body = { name: input.name, type: input.type, projectId: input.projectId, blueprintIds: input.blueprintIds, cloudshareRegionIds: input.regionIds, policyId: input.policyId, opportunity: input.opportunity, externalId: input.externalId, start: input.start, end: input.end, timeZone: input.timeZone, mainSalesPro: { email: input.mainSalesProEmail }, registrationType: input.registrationType, sendInvitations: input.sendInvitations };
+      const body = { name: input.name, type: input.type, projectId: input.projectId, blueprintIds: input.blueprintIds, cloudshareRegionIds: input.regionIds, policyId: input.policyId, opportunity: input.opportunity, externalId: input.externalId, passphrase: input.passphrase, start: input.start, end: input.end, timeZone: input.timeZone, mainSalesPro: { email: input.mainSalesProEmail }, registrationType: input.registrationType, sendInvitations: input.sendInvitations };
       const { data, evidence } = await detailed({ method: "POST", path: "/sales", body, schema: salesExperienceSchema });
       return { salesExperienceId: data.id, ...evidence };
     },

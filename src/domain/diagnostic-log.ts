@@ -142,6 +142,7 @@ const REDACTED = "[REDACTED]";
  */
 const SENSITIVE_KEY_PATTERNS = [
   "password",
+  "passphrase",
   "secret",
   "token",
   "apikey",
@@ -173,6 +174,7 @@ function isSensitiveKey(key: string, context: DiagnosticRedactionContext): boole
   if (context === "bodyEvidence") {
     return [
       "password",
+      "passphrase",
       "secret",
       "apikey",
       "api_key",

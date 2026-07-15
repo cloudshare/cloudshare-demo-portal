@@ -104,6 +104,18 @@ describe("redactDiagnosticInput", () => {
     expect(redacted.externalIds).toEqual({ environmentId: "env_1", apiKey: "[REDACTED]" });
   });
 
+  it("redacts a Sales Experience passphrase from persisted diagnostic evidence", () => {
+    const redacted = redactDiagnosticInput({
+      source: "integration",
+      operation: "sales.enablement_session.created",
+      outcome: "failure",
+      message: "CloudShare rejected a Sales Experience",
+      request: { body: { passphrase: "ephemeral-sales-passphrase" } },
+    });
+    expect(JSON.stringify(redacted)).not.toContain("ephemeral-sales-passphrase");
+    expect(redacted.request).toEqual({ body: { passphrase: "[REDACTED]" } });
+  });
+
   it("retains sponsored-link loginUrl values in admin diagnostic payloads", () => {
     const redacted = redactDiagnosticInput({
       source: "integration",

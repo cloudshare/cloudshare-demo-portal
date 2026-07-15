@@ -1552,8 +1552,9 @@ diagnostics, and resource diagnostics:
 
 - **Always redact:** API keys, bearer tokens, authorization headers, webhook secrets,
   HMAC/signature values, passwords, and actual credentials.
-- **Admin-only server evidence:** sponsored-link `loginUrl` values and training `passphrase`
-  values remain visible in admin-only `DiagnosticLogEntry` evidence.
+- **Admin-only server evidence:** sponsored-link `loginUrl` values may remain visible in admin-only
+  `DiagnosticLogEntry` evidence. Training and Sales Experience `passphrase` values are credentials
+  and are always redacted.
 - **Ordinary support evidence:** CloudShare request bodies, response bodies, and parsed webhook
   event payloads remain visible by default, including auth-adjacent body field names such as
   `token` or `authorization` when they are payload evidence rather than actual credentials.

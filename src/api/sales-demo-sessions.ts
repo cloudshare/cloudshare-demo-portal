@@ -74,10 +74,14 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
   if (!connection) return rejected(deps, request, 404, "Save a Certalis CloudShare Connection before provisioning a Sales Enablement Session.", "connection_missing");
 
   const id = (deps.newId ?? randomUUID)();
-  // This deliberately identifies the commercial Opportunity rather than this
-  // mutable UI submission: every replacement Sales Experience stays correlated
-  // to the same immutable Certalis Opportunity key for future CRM mapping.
-  const externalId = `certalis:opp:${opportunity.id}`;
+  // CloudShare's live v4 validator rejects separators even though the OpenAPI
+  // describes ExternalId as a generic string. Keep the portal's UUID locally,
+  // while sending its 32-character opaque form to CloudShare.
+  const externalId = opaqueCloudShareId(id);
+  // v4 currently requires a passphrase for a Sales Experience even when the
+  // admission model is registered-only and native invitations are disabled.
+  // It is never returned to the browser or persisted as a portal credential.
+  const passphrase = opaqueCloudShareId(randomUUID());
   const correlationId = randomUUID();
   const delivery = deps.deliveryFactory?.forConnection(connection) ?? createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection));
   try {
@@ -93,7 +97,7 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     await recordProjectMemberRead(deps, request, correlationId, item.id, item.project.id, memberRead, "success");
     const selectedSalesPro = memberRead.members.find((member) => member.email.toLowerCase() === parsed.data.salesProEmail.toLowerCase());
     if (!selectedSalesPro) throw new SalesProjectMemberSelectionError("The selected Sales Pro is no longer an active member of this Item's CloudShare Project.", memberRead);
-    const created = await delivery.createSession(toDeliveryInput(parsed.data, item, opportunity.name, externalId, selectedSalesPro.email));
+    const created = await delivery.createSession(toDeliveryInput(parsed.data, item, opportunity.name, externalId, passphrase, selectedSalesPro.email));
     const now = (deps.now ?? (() => new Date()))();
     const session: SalesDemoSession = { id, customerId: request.customerId, opportunityId: opportunity.id, itemId: item.id, cloudShareSalesExperienceId: created.salesExperienceId, externalId, type: parsed.data.type ?? item.salesExperienceType, start: parsed.data.start, end: parsed.data.end, timeZone: parsed.data.timeZone, salesProEmail: selectedSalesPro.email, salesProDisplayName: selectedSalesPro.displayName, registrationType: "registeredParticipantsOnly", sendInvitations: "dontSend", createdAt: now };
     // Deliberate partial-failure behaviour: the external Experience is retained
@@ -135,9 +139,10 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
   }
 }
 
-function toDeliveryInput(input: SessionBody, item: { name: string; project: { id: string }; blueprints: readonly { id: string }[]; policy: { id: string }; regions: readonly { id: string }[]; salesExperienceType: SalesExperienceType }, opportunity: string, externalId: string, mainSalesProEmail: string) {
-  return { name: `${item.name} — ${opportunity}`.slice(0, 100), type: input.type ?? item.salesExperienceType, projectId: item.project.id, blueprintIds: item.blueprints.map((blueprint) => blueprint.id), regionIds: item.regions.map((region) => region.id), policyId: item.policy.id, opportunity, externalId, start: input.start, end: input.end, timeZone: input.timeZone, mainSalesProEmail, registrationType: "registeredParticipantsOnly" as const, sendInvitations: "dontSend" as const };
+function toDeliveryInput(input: SessionBody, item: { name: string; project: { id: string }; blueprints: readonly { id: string }[]; policy: { id: string }; regions: readonly { id: string }[]; salesExperienceType: SalesExperienceType }, opportunity: string, externalId: string, passphrase: string, mainSalesProEmail: string) {
+  return { name: `${item.name} — ${opportunity}`.slice(0, 100), type: input.type ?? item.salesExperienceType, projectId: item.project.id, blueprintIds: item.blueprints.map((blueprint) => blueprint.id), regionIds: item.regions.map((region) => region.id), policyId: item.policy.id, opportunity, externalId, passphrase, start: input.start, end: input.end, timeZone: input.timeZone, mainSalesProEmail, registrationType: "registeredParticipantsOnly" as const, sendInvitations: "dontSend" as const };
 }
+function opaqueCloudShareId(value: string): string { return value.replaceAll("-", ""); }
 function isChronological(input: SessionBody): boolean { return input.end > input.start; }
 const missingClientFactory: Pick<CloudShareClientFactory, "forConnection"> = { forConnection() { throw new Error("Sales Delivery is not configured."); } };
 function cloudShareEvidence(error: unknown): { request: Record<string, unknown>; response: Record<string, unknown> } | undefined {
