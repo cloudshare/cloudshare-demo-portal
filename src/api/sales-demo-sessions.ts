@@ -7,6 +7,7 @@ import type { ItemRepository, SalesExperienceType } from "@/domain/item";
 import type { SalesDemoSession, SalesDemoSessionRepository } from "@/domain/sales-demo-session";
 import type { SalesRecordRepository } from "@/domain/sales-records";
 import { isValidCloudShareWallClock } from "@/domain/cloudshare-wall-clock";
+import { DEFAULT_SALES_SESSION_NAME_TEMPLATE, renderSalesSessionName } from "@/domain/sales-session-name";
 import { createCloudShareSalesDelivery, type SalesDelivery } from "@/integrations/cloudshare/sales-delivery";
 import { SalesItemProvisioningReadError, SalesItemProvisioningValidationError, type SalesItemProvisioningValidator } from "@/integrations/cloudshare/sales-item-provisioning";
 import { createCloudShareProjectMemberSource, type CloudShareProjectMemberSource } from "@/integrations/cloudshare/project-members";
@@ -16,13 +17,13 @@ const bodySchema = z.object({
   start: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, "Start must be ISO local date-time."),
   end: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, "End must be ISO local date-time."),
   salesProEmail: z.string().trim().email("Select an active Project member as the Sales Pro."),
-  timeZone: z.string().trim().min(1).max(100), type: z.enum(["demo", "poc", "pov", "trial"]).optional(),
+  timeZone: z.string().trim().min(1).max(100), type: z.enum(["demo", "poc", "pov", "trial"]).optional(), sessionNameTemplate: z.string().trim().min(1).max(160).optional(),
 });
 type SessionBody = z.infer<typeof bodySchema>;
 const response = (status: number, body: Record<string, unknown>) => ({ status, body });
 
 export interface SalesDemoSessionDeps {
-  readonly records: Pick<SalesRecordRepository, "findOpportunity">;
+  readonly records: Pick<SalesRecordRepository, "findOpportunity"> & Partial<Pick<SalesRecordRepository, "findAccount">>;
   readonly items: Pick<ItemRepository, "findById">;
   readonly sessions: SalesDemoSessionRepository;
   readonly connections: Pick<CloudShareConnectionRepository, "findByCustomerId">;
@@ -74,6 +75,10 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
   if (!connection) return rejected(deps, request, 404, "Save a Certalis CloudShare Connection before provisioning a Sales Enablement Session.", "connection_missing");
 
   const id = (deps.newId ?? randomUUID)();
+  const revision = ((await deps.sessions.listByOpportunity(request.customerId, opportunity.id)) ?? []).length + 1;
+  const account = deps.records.findAccount ? await deps.records.findAccount(request.customerId, opportunity.accountId) : null;
+  const sessionName = renderSalesSessionName(parsed.data.sessionNameTemplate ?? DEFAULT_SALES_SESSION_NAME_TEMPLATE, { account: account?.name ?? "Account", opportunity: opportunity.name, revision, item: item.name });
+  if (!sessionName) return rejected(deps, request, 422, "Session name template must include {revision} and render to at most 100 characters.", "invalid_session_name_template", { opportunityId: opportunity.id });
   // CloudShare's live v4 validator rejects separators even though the OpenAPI
   // describes ExternalId as a generic string. Keep the portal's UUID locally,
   // while sending its 32-character opaque form to CloudShare.
@@ -97,9 +102,9 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     await recordProjectMemberRead(deps, request, correlationId, item.id, item.project.id, memberRead, "success");
     const selectedSalesPro = memberRead.members.find((member) => member.email.toLowerCase() === parsed.data.salesProEmail.toLowerCase());
     if (!selectedSalesPro) throw new SalesProjectMemberSelectionError("The selected Sales Pro is no longer an active member of this Item's CloudShare Project.", memberRead);
-    const created = await delivery.createSession(toDeliveryInput(parsed.data, item, opportunity.name, externalId, passphrase, selectedSalesPro.email));
+    const created = await delivery.createSession(toDeliveryInput(parsed.data, item, opportunity.name, externalId, passphrase, selectedSalesPro.email, sessionName));
     const now = (deps.now ?? (() => new Date()))();
-    const session: SalesDemoSession = { id, customerId: request.customerId, opportunityId: opportunity.id, itemId: item.id, cloudShareSalesExperienceId: created.salesExperienceId, externalId, type: parsed.data.type ?? item.salesExperienceType, start: parsed.data.start, end: parsed.data.end, timeZone: parsed.data.timeZone, salesProEmail: selectedSalesPro.email, salesProDisplayName: selectedSalesPro.displayName, registrationType: "registeredParticipantsOnly", sendInvitations: "dontSend", createdAt: now };
+    const session: SalesDemoSession = { id, customerId: request.customerId, opportunityId: opportunity.id, itemId: item.id, cloudShareSalesExperienceId: created.salesExperienceId, externalId, type: parsed.data.type ?? item.salesExperienceType, start: parsed.data.start, end: parsed.data.end, timeZone: parsed.data.timeZone, salesProEmail: selectedSalesPro.email, salesProDisplayName: selectedSalesPro.displayName, registrationType: "registeredParticipantsOnly", sendInvitations: "dontSend", sessionName, revision, createdAt: now };
     // Deliberate partial-failure behaviour: the external Experience is retained
     // when local persistence fails; support evidence identifies its immutable ID.
     try { await deps.sessions.save(session); } catch (error) {
@@ -141,13 +146,8 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
   }
 }
 
-function toDeliveryInput(input: SessionBody, item: { name: string; project: { id: string }; blueprints: readonly { id: string }[]; policy: { id: string }; regions: readonly { id: string }[]; salesExperienceType: SalesExperienceType }, opportunity: string, externalId: string, passphrase: string, mainSalesProEmail: string) {
-  return { name: salesExperienceName(item.name, opportunity, externalId), type: input.type ?? item.salesExperienceType, projectId: item.project.id, blueprintIds: item.blueprints.map((blueprint) => blueprint.id), regionIds: item.regions.map((region) => region.id), policyId: item.policy.id, opportunity, externalId, passphrase, start: input.start, end: input.end, timeZone: input.timeZone, mainSalesProEmail, registrationType: "registeredParticipantsOnly" as const, sendInvitations: "dontSend" as const };
-}
-function salesExperienceName(itemName: string, opportunity: string, externalId: string): string {
-  const suffix = externalId.slice(-8);
-  const prefix = `${itemName} — ${opportunity}`.slice(0, 100 - suffix.length - 3);
-  return `${prefix} — ${suffix}`;
+function toDeliveryInput(input: SessionBody, item: { name: string; project: { id: string }; blueprints: readonly { id: string }[]; policy: { id: string }; regions: readonly { id: string }[]; salesExperienceType: SalesExperienceType }, opportunity: string, externalId: string, passphrase: string, mainSalesProEmail: string, sessionName: string) {
+  return { name: sessionName, type: input.type ?? item.salesExperienceType, projectId: item.project.id, blueprintIds: item.blueprints.map((blueprint) => blueprint.id), regionIds: item.regions.map((region) => region.id), policyId: item.policy.id, opportunity, externalId, passphrase, start: input.start, end: input.end, timeZone: input.timeZone, mainSalesProEmail, registrationType: "registeredParticipantsOnly" as const, sendInvitations: "dontSend" as const };
 }
 function opaqueCloudShareId(value: string): string { return value.replaceAll("-", ""); }
 function isChronological(input: SessionBody): boolean { return input.end > input.start; }

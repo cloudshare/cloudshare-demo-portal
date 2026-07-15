@@ -17,6 +17,10 @@ export interface SalesDemoSession {
   readonly salesProDisplayName: string;
   readonly registrationType: "registeredParticipantsOnly";
   readonly sendInvitations: "dontSend";
+  /** Provider-facing display name, bounded to CloudShare's documented limit. */
+  readonly sessionName?: string;
+  /** Monotonic within the Customer + Opportunity delivery history. */
+  readonly revision?: number;
   readonly createdAt: Date;
 }
 

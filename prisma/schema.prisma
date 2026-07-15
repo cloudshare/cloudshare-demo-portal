@@ -128,12 +128,15 @@ model SalesDemoSession {
   salesProDisplayName         String
   registrationType            String
   sendInvitations             String
+  sessionName                 String   @default("")
+  revision                    Int      @default(1)
   createdAt                   DateTime
   customer                    Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
   opportunity                 SalesOpportunity @relation(fields: [customerId, opportunityId], references: [customerId, id], onDelete: Restrict)
   item                        Item             @relation(fields: [customerId, itemId], references: [customerId, id], onDelete: Restrict)
 
   @@index([customerId, opportunityId, createdAt])
+  @@unique([customerId, opportunityId, revision])
   @@index([customerId, itemId])
   @@index([customerId, externalId])
 }

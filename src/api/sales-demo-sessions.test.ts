@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { handleCreateSalesDemoSession } from "./sales-demo-sessions";
+import type { SalesDemoSession } from "@/domain/sales-demo-session";
 import { createInMemorySalesRecordRepository } from "@/domain/sales-records";
 import { CloudShareRequestError } from "@/integrations/cloudshare/errors";
 import { SalesItemProvisioningReadError } from "@/integrations/cloudshare/sales-item-provisioning";
@@ -18,7 +19,8 @@ describe("Sales Enablement Session API handler", () => {
     const records = createInMemorySalesRecordRepository();
     await records.saveOpportunity({ id: "opp-1", customerId: "certalis", accountId: "account-1", name: "Acme evaluation", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
     const items = { findById: vi.fn().mockResolvedValue({ id: "item-1", customerId: "certalis", name: "Accelerate Demo", description: "", project: { id: "project-1", name: "Certalis project" }, blueprints: [{ id: "bp-1", name: "Foundation" }], policy: { id: "policy-1", name: "Sales policy" }, regions: [{ id: "region-1", name: "US West" }], salesExperienceType: "demo", defaultDurationMinutes: 1440, status: "active" }) };
-    const sessions = { save: vi.fn(), listByOpportunity: vi.fn().mockResolvedValue([]) };
+    const saved: SalesDemoSession[] = [];
+    const sessions = { save: vi.fn(async (session) => { saved.push(session); }), listByOpportunity: vi.fn(async () => saved) };
     const delivery = { createSession: vi.fn().mockResolvedValue({ salesExperienceId: "sales-1", request: { method: "POST", path: "/sales", body: {} }, response: { status: 201, body: { id: "sales-1" } } }) };
     const diagnostics = { record: vi.fn().mockResolvedValue(undefined) };
     const audit = { write: vi.fn().mockResolvedValue(undefined) };
@@ -29,7 +31,7 @@ describe("Sales Enablement Session API handler", () => {
     expect(result).toMatchObject({ status: 201, body: { session: { id: "session-1", opportunityId: "opp-1", itemId: "item-1", salesProDisplayName: "Sales Admin" } } });
     expect(JSON.stringify(result.body)).not.toContain("cloudShareSalesExperienceId");
     expect(JSON.stringify(result.body)).not.toContain("sales-1");
-    expect(delivery.createSession).toHaveBeenCalledWith(expect.objectContaining({ name: "Accelerate Demo — Acme evaluation — session1", opportunity: "Acme evaluation", externalId: "session1", passphrase: expect.stringMatching(/^[A-Za-z0-9]{32}$/), registrationType: "registeredParticipantsOnly", sendInvitations: "dontSend", mainSalesProEmail: admin.email, type: "poc" }));
+    expect(delivery.createSession).toHaveBeenCalledWith(expect.objectContaining({ name: "Account - Acme evaluation (1) - Accelerate Demo", opportunity: "Acme evaluation", externalId: "session1", passphrase: expect.stringMatching(/^[A-Za-z0-9]{32}$/), registrationType: "registeredParticipantsOnly", sendInvitations: "dontSend", mainSalesProEmail: admin.email, type: "poc" }));
     expect(sessions.save).toHaveBeenCalledWith(expect.objectContaining({ opportunityId: "opp-1", itemId: "item-1" }));
     expect(itemProvisioningValidator.revalidate).toHaveBeenCalledWith(expect.objectContaining({ id: "item-1" }));
     expect(audit.write).toHaveBeenCalledWith(expect.objectContaining({ action: "sales.demo_session.created", correlationId: expect.any(String), outcome: "success" }));
@@ -39,8 +41,8 @@ describe("Sales Enablement Session API handler", () => {
 
     const [first, second] = delivery.createSession.mock.calls.map(([input]) => input);
     expect(first.name).not.toBe(second.name);
-    expect(first.name).toMatch(/session1$/);
-    expect(second.name).toMatch(/session2$/);
+    expect(first.name).toMatch(/\(1\) - Accelerate Demo$/);
+    expect(second.name).toMatch(/\(2\) - Accelerate Demo$/);
     expect(first.name.length).toBeLessThanOrEqual(100);
     expect(second.name.length).toBeLessThanOrEqual(100);
   });
