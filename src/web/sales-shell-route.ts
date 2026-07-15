@@ -33,7 +33,7 @@ export function getSalesTabLabel(tab: SalesTab): string {
   switch (tab) {
     case "items": return "Items";
     case "records": return "Accounts and opportunities";
-    case "sessions": return "Demo sessions";
+    case "sessions": return "Sales Enablement Sessions";
     case "support": return "Support";
     case "configuration": return "Configuration";
   }

@@ -4,7 +4,7 @@ import { SALES_TABS, buildSalesWorkspaceHref, getSalesTabLabel, parseSalesWorksp
 describe("Sales workspace shell routes", () => {
   it("keeps Items first and uses the canonical Item route", () => {
     expect(SALES_TABS).toEqual(["items", "records", "sessions", "support", "configuration"]);
-    expect(SALES_TABS.map(getSalesTabLabel)).toEqual(["Items", "Accounts and opportunities", "Demo sessions", "Support", "Configuration"]);
+    expect(SALES_TABS.map(getSalesTabLabel)).toEqual(["Items", "Accounts and opportunities", "Sales Enablement Sessions", "Support", "Configuration"]);
     expect(parseSalesWorkspaceRouteState({})).toMatchObject({ tab: "items", itemView: "catalog" });
   });
 
