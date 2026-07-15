@@ -30,9 +30,11 @@ export interface CreateSalesDemoSessionInput {
 }
 export interface SalesDelivery {
   createSession(input: CreateSalesDemoSessionInput): Promise<{ readonly salesExperienceId: string } & SalesDeliveryEvidence>;
+  /** Documented v4 read used only for reconciliation; the ID remains server-side. */
+  readSession(salesExperienceId: string): Promise<{ readonly id: string; readonly status?: string } & SalesDeliveryEvidence>;
 }
 
-const salesExperienceSchema = z.object({ id: z.string().min(1), name: z.string().min(1).optional(), start: z.string().optional(), end: z.string().optional(), timeZone: z.string().optional() });
+const salesExperienceSchema = z.object({ id: z.string().min(1), name: z.string().min(1).optional(), status: z.string().optional(), start: z.string().optional(), end: z.string().optional(), timeZone: z.string().optional() });
 
 /** The deep CloudShare Sales Delivery module. Callers never learn v4 paths,
  * wire keys, or response parsing; they only validate an owner and create a
@@ -49,6 +51,10 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
       const body = { name: input.name, type: input.type, projectId: input.projectId, blueprintIds: input.blueprintIds, cloudshareRegionIds: input.regionIds, policyId: input.policyId, opportunity: input.opportunity, externalId: input.externalId, passphrase: input.passphrase, start: input.start, end: input.end, timeZone: input.timeZone, mainSalesPro: { email: input.mainSalesProEmail }, registrationType: input.registrationType, sendInvitations: input.sendInvitations };
       const { data, evidence } = await detailed({ method: "POST", path: "/sales", body, schema: salesExperienceSchema });
       return { salesExperienceId: data.id, ...evidence };
+    },
+    async readSession(salesExperienceId) {
+      const { data, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceSchema });
+      return { id: data.id, ...(typeof (data as { status?: unknown }).status === "string" ? { status: (data as { status: string }).status } : {}), ...evidence };
     },
   };
 }

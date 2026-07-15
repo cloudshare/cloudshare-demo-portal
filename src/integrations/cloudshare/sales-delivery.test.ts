@@ -2,6 +2,12 @@ import { describe, expect, it, vi } from "vitest";
 import { createCloudShareSalesDelivery } from "./sales-delivery";
 
 describe("CloudShare Sales Delivery", () => {
+  it("uses documented v4 GET /sales/{id} only for reconciliation", async () => {
+    const requestV4 = vi.fn().mockResolvedValue({ id: "sales-1", status: "active" });
+    const delivery = createCloudShareSalesDelivery({ requestV4, requestV3: vi.fn(), requestV3Text: vi.fn() });
+    await expect(delivery.readSession("sales-1")).resolves.toMatchObject({ id: "sales-1", status: "active" });
+    expect(requestV4).toHaveBeenCalledWith(expect.objectContaining({ method: "GET", path: "/sales/sales-1" }));
+  });
   it("uses the documented direct v4 Sales Experience contract with registered admission and no invitations", async () => {
     const requestV4Detailed = vi.fn()
       .mockResolvedValueOnce({ data: { id: "sales-1" }, request: { method: "POST", path: "/sales", query: { trace: "safe" }, headers: { "x-request-id": "req-1" }, body: {} }, response: { status: 201, headers: { "x-correlation-id": "cloud-1" }, body: { id: "sales-1" }, network: { remoteAddress: "203.0.113.1", transport: "tcp" }, tls: { protocol: "TLSv1.3", authorized: true } } });
