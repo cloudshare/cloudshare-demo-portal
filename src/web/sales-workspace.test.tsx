@@ -23,7 +23,7 @@ describe("Sales Item authoring", () => {
       if (url === "/api/sales/items" && init?.method === "POST") return json({ item: { id: "item-1" } }, 201);
       return json({});
     });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" />);
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "items", itemView: "catalog" }} />);
     await user.click(await screen.findByRole("button", { name: "Create Item" }));
     await user.selectOptions(screen.getByRole("combobox", { name: "Project" }), "project-1");
     await screen.findByText("Foundation");
@@ -60,7 +60,7 @@ describe("Sales Item authoring", () => {
       }
       return json({});
     });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" />);
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "items", itemView: "catalog" }} />);
 
     await user.click(await screen.findByRole("button", { name: "Create Item" }));
     await user.selectOptions(screen.getByRole("combobox", { name: "Project" }), "project-1");
@@ -83,7 +83,7 @@ describe("Sales Item authoring", () => {
       if (url === "/api/sales/item-authoring?refresh=true") return json({ projects: [], regions: [] });
       return json({});
     });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" />);
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "items", itemView: "catalog" }} />);
 
     await user.click(await screen.findByRole("button", { name: "Create Item" }));
     await user.type(screen.getByRole("textbox", { name: "Item name" }), "Unsaved Item");
@@ -105,7 +105,7 @@ describe("Sales Item authoring", () => {
       if (url === "/api/sales/items" && init?.method === "POST") return saveResponse.promise;
       return json({});
     });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" />);
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "items", itemView: "catalog" }} />);
 
     await user.click(await screen.findByRole("button", { name: "Create Item" }));
     await user.type(screen.getByRole("textbox", { name: "Item name" }), "Saving Item");
@@ -127,7 +127,7 @@ describe("Sales Item authoring", () => {
       if (url === "/api/sales/item-authoring?refresh=true") return json({ error: "CloudShare is temporarily rate limited.", correlationId: "corr-sales-429", diagnostic: { integrationSurface: "cloudshare.v3.projects", responseStatus: 429 } }, 429);
       return json({});
     });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" />);
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "items", itemView: "catalog" }} />);
 
     await user.click(await screen.findByRole("button", { name: "Create Item" }));
 
