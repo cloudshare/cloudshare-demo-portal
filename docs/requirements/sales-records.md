@@ -5,7 +5,7 @@ Issue #345 adds local, Certalis Customer-scoped commercial records to the Sales 
 - An Account is classified as a `prospect` or `current_customer`.
 - An Opportunity belongs to an Account and has independent commercial status: `open`, `won`, or `lost`.
 - Accounts, Opportunities, and Opportunity Contacts are archive-only. The API exposes no hard-delete operation, and archive only preserves local history; it cannot affect a CloudShare Experience. Every record retains `createdAt` and nullable `archivedAt` timestamps.
-- Opportunity Contacts retain first name, last name, and email for later Sales Demo Session selection.
+- Opportunity Contacts retain first name, last name, and email for later Sales Enablement Session selection.
 - All Sales routes require an authenticated admin whose Customer workspace is `sales`; handlers always use that session's Customer ID for reads and writes. Mutations append Customer-scoped audit and diagnostic evidence using the `local_sales_records` integration surface.
 
 The UI calls these typed, framework-agnostic handler-backed routes:

@@ -63,7 +63,7 @@ export async function handleArchiveSalesAccount(deps: SalesRecordsDeps, request:
 
 export async function handleCreateSalesOpportunity(deps: SalesRecordsDeps, request: SalesRequest & { readonly body: unknown }): Promise<SalesResponse> {
   const input = parseOpportunity(request.body);
-  if (!input) return badRequest("Opportunity accountId, name, and status (open, won, or lost) are required.");
+  if (!input) return badRequest("Opportunity accountId, name (up to 100 characters), and status (open, won, or lost) are required.");
   const account = await deps.records.findAccount(request.customerId, input.accountId);
   if (!account) return notFound("account");
   const now = currentTime(deps);
@@ -78,7 +78,7 @@ export async function handleUpdateSalesOpportunity(deps: SalesRecordsDeps, reque
   const existing = await deps.records.findOpportunity(request.customerId, request.opportunityId);
   if (!existing) return notFound("opportunity");
   const input = parseOpportunity(request.body);
-  if (!input) return badRequest("Opportunity accountId, name, and status (open, won, or lost) are required.");
+  if (!input) return badRequest("Opportunity accountId, name (up to 100 characters), and status (open, won, or lost) are required.");
   const account = await deps.records.findAccount(request.customerId, input.accountId);
   if (!account) return notFound("account");
   const opportunity = { ...existing, ...input, updatedAt: currentTime(deps) };
@@ -141,7 +141,7 @@ function parseAccount(body: unknown): { name: string; kind: AccountKind } | null
 }
 function parseOpportunity(body: unknown): { accountId: string; name: string; status: OpportunityStatus } | null {
   const record = asRecord(body); const accountId = stringField(record?.accountId); const name = stringField(record?.name); const status = record?.status;
-  return accountId && name && (status === "open" || status === "won" || status === "lost") ? { accountId, name, status } : null;
+  return accountId && name && name.length <= 100 && (status === "open" || status === "won" || status === "lost") ? { accountId, name, status } : null;
 }
 function parseContact(body: unknown): { opportunityId: string; firstName: string; lastName: string; email: string } | null {
   const record = asRecord(body); const opportunityId = stringField(record?.opportunityId); const firstName = stringField(record?.firstName); const lastName = stringField(record?.lastName); const email = stringField(record?.email)?.toLowerCase();

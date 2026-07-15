@@ -46,7 +46,7 @@ describe("redactCloudShareAdminSupportValue", () => {
     ).toEqual({
       token: "cloudshare-body-token-evidence",
       authorization: "body-level-authorization-evidence",
-      passphrase: "candidate-support-passphrase",
+      passphrase: "[REDACTED]",
       loginUrl: "https://use.cloudshare.com/Ent/Login.aspx?token=admin-evidence",
       apiKey: "[REDACTED]",
       accessToken: "[REDACTED]",

@@ -64,6 +64,13 @@ function createDeps(): SalesRecordsDeps & { audit: ReturnType<typeof createInMem
 const admin = { type: "admin", id: "sales-admin", email: "sales-admin@certalis.demo" };
 
 describe("Customer-scoped Sales record API handlers", () => {
+  it("rejects Opportunity names beyond CloudShare's 100-character limit at authoring time", async () => {
+    const deps = createDeps();
+    const account = await handleCreateSalesAccount(deps, { customerId: "certalis", actor: admin, body: { name: "Acme Labs", kind: "prospect" } });
+    const result = await handleCreateSalesOpportunity(deps, { customerId: "certalis", actor: admin, body: { accountId: (account.body.account as { id: string }).id, name: "x".repeat(101), status: "open" } });
+    expect(result).toEqual({ status: 400, body: { error: "Opportunity accountId, name (up to 100 characters), and status (open, won, or lost) are required." } });
+  });
+
   it("creates an Account, moves its Opportunity through Won and archives it without deleting its Contact history", async () => {
     const deps = createDeps();
     const account = await handleCreateSalesAccount(deps, { customerId: "certalis", actor: admin, body: { name: "Acme Labs", kind: "prospect" } });

@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -42,6 +42,73 @@ describe("SalesWorkspace interaction", () => {
     expect(screen.queryByText("Helios renewal")).toBeNull();
     expect(screen.getByRole("region", { name: "Opportunities" }).textContent).toContain("Selected Account: Acme Labs");
     expect(consoleError).not.toHaveBeenCalled();
+  });
+
+  it("creates a time-bound Sales Enablement Session with a Sales Admin end-time override through the browser API flow without console errors", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const path = String(input);
+      if (path === "/api/sales/accounts") return json({ accounts: [], opportunities: [{ id: "opp-1", accountId: "account-1", name: "Acme evaluation", status: "open", archivedAt: null, createdAt: "2026-07-14T15:00:00.000Z" }], contacts: [] });
+      if (path === "/api/sales/items") return json({ activeItems: [{ id: "item-1", name: "Accelerate Demo", description: "", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" }] });
+      if (path.startsWith("/api/sales/enablement-sessions/project-members?")) return json({ members: [{ email: "rep@certalis.demo", displayName: "Sales Rep" }] });
+      if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: [] });
+      if (path === "/api/sales/enablement-sessions" && init?.method === "POST") return json({ session: { id: "session-1", opportunityId: "opp-1", itemId: "item-1", type: "demo", start: "2026-07-15T09:00", end: "2026-07-17T10:15", timeZone: "UTC", salesProDisplayName: "Sales Rep", createdAt: "2026-07-14T15:00:00.000Z" } }, 201);
+      return json({ error: `Unexpected request ${path}` }, 500);
+    });
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    await screen.findByRole("combobox", { name: "Opportunity" });
+    await user.selectOptions(screen.getByRole("combobox", { name: "Opportunity" }), "opp-1");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Catalogue Item" }), "item-1");
+    const end = screen.getByLabelText("End") as HTMLInputElement;
+    await waitFor(() => expect(end.value).not.toBe(""));
+    fireEvent.change(end, { target: { value: "2026-07-17T10:15" } });
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Sales Pro" }), "rep@certalis.demo");
+    await user.click(screen.getByRole("button", { name: "Create Sales Enablement Session" }));
+    await screen.findByText("Sales Enablement Session created. No invitations were sent.");
+    expect(fetchMock).toHaveBeenCalledWith("/api/sales/enablement-sessions", expect.objectContaining({ method: "POST", body: expect.stringContaining('"end":"2026-07-17T10:15"') }));
+    expect(consoleError).not.toHaveBeenCalled();
+  });
+
+  it("links a Sales Enablement Session failure correlation to Sales Support", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const path = String(input);
+      if (path === "/api/sales/accounts") return json({ accounts: [], opportunities: [{ id: "opp-1", accountId: "account-1", name: "Acme evaluation", status: "open", archivedAt: null, createdAt: "2026-07-14T15:00:00.000Z" }], contacts: [] });
+      if (path === "/api/sales/items") return json({ activeItems: [{ id: "item-1", name: "Accelerate Demo", description: "", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" }] });
+      if (path.startsWith("/api/sales/enablement-sessions/project-members?")) return json({ members: [{ email: "rep@certalis.demo", displayName: "Sales Rep" }] });
+      if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: [] });
+      if (path === "/api/sales/enablement-sessions" && init?.method === "POST") return json({ error: "CloudShare failed", correlationId: "corr-sales-1" }, 502);
+      return json({ error: "unexpected" }, 500);
+    });
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    await screen.findByRole("combobox", { name: "Opportunity" });
+    await user.selectOptions(screen.getByRole("combobox", { name: "Opportunity" }), "opp-1"); await user.selectOptions(screen.getByRole("combobox", { name: "Catalogue Item" }), "item-1"); await user.selectOptions(await screen.findByRole("combobox", { name: "Sales Pro" }), "rep@certalis.demo");
+    await user.click(screen.getByRole("button", { name: "Create Sales Enablement Session" }));
+    const support = await screen.findByRole("button", { name: /Open support diagnostics/ }); await user.click(support);
+    expect(mockRouter.push).toHaveBeenLastCalledWith("/sales?tab=support&correlationId=corr-sales-1");
+  });
+
+  it("keeps a successfully-created needs-attention Session non-retryable and linked to Sales Support", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const path = String(input);
+      if (path === "/api/sales/accounts") return json({ accounts: [], opportunities: [{ id: "opp-1", accountId: "account-1", name: "Acme evaluation", status: "open", archivedAt: null, createdAt: "2026-07-14T15:00:00.000Z" }], contacts: [] });
+      if (path === "/api/sales/items") return json({ activeItems: [{ id: "item-1", name: "Accelerate Demo", description: "", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" }] });
+      if (path.startsWith("/api/sales/enablement-sessions/project-members?")) return json({ members: [{ email: "rep@certalis.demo", displayName: "Sales Rep" }] });
+      if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: [] });
+      if (path === "/api/sales/enablement-sessions" && init?.method === "POST") return json({ session: { id: "session-1", opportunityId: "opp-1", itemId: "item-1", type: "demo", start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC", salesProDisplayName: "Sales Rep", createdAt: "2026-07-14T15:00:00.000Z" }, needsAttention: true, correlationId: "corr-sales-created", warning: "The support audit could not be completed." }, 201);
+      return json({ error: "unexpected" }, 500);
+    });
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    await screen.findByRole("combobox", { name: "Opportunity" });
+    await user.selectOptions(screen.getByRole("combobox", { name: "Opportunity" }), "opp-1"); await user.selectOptions(screen.getByRole("combobox", { name: "Catalogue Item" }), "item-1"); await user.selectOptions(await screen.findByRole("combobox", { name: "Sales Pro" }), "rep@certalis.demo");
+    await user.click(screen.getByRole("button", { name: "Create Sales Enablement Session" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Needs attention: The support audit could not be completed.");
+    expect(alert.textContent).toContain("Do not retry creation.");
+    const support = screen.getByRole("button", { name: /Open support diagnostics \(corr-sales-created\)/ }); await user.click(support);
+    expect(mockRouter.push).toHaveBeenLastCalledWith("/sales?tab=support&correlationId=corr-sales-created");
   });
 
   it("returns Item authoring to the catalogue URL so reload does not reopen the form", async () => {

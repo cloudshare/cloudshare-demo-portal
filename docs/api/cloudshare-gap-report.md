@@ -1552,8 +1552,9 @@ diagnostics, and resource diagnostics:
 
 - **Always redact:** API keys, bearer tokens, authorization headers, webhook secrets,
   HMAC/signature values, passwords, and actual credentials.
-- **Admin-only server evidence:** sponsored-link `loginUrl` values and training `passphrase`
-  values remain visible in admin-only `DiagnosticLogEntry` evidence.
+- **Admin-only server evidence:** sponsored-link `loginUrl` values may remain visible in admin-only
+  `DiagnosticLogEntry` evidence. Training and Sales Experience `passphrase` values are credentials
+  and are always redacted.
 - **Ordinary support evidence:** CloudShare request bodies, response bodies, and parsed webhook
   event payloads remain visible by default, including auth-adjacent body field names such as
   `token` or `authorization` when they are payload evidence rather than actual credentials.
@@ -1610,6 +1611,155 @@ An Enablement Session must repeat this validation immediately before CloudShare 
 because a default Snapshot can move after an Item has been authored.
 
 **Code reference:** `src/api/sales-items.ts`, `src/integrations/cloudshare/resources.ts`
+
+---
+
+## GAP-26 — Sales Experience main Sales Pro preflight remains a live-tenant verification point
+
+| Field | Detail |
+|---|---|
+| **Status** | Confirmed blocker |
+| **Verified live** | Partial — read-only Certalis v4 probe on 2026-07-14 |
+
+**Observed contract**
+
+The local v4 OpenAPI export documents `POST /sales`, including `mainSalesPro`, required
+`opportunity`, `registrationType`, explicit `start`/`timeZone`, and optional `end`/
+`sendInvitations`. It also documents `GET /sales/{id}/salespros`, which is scoped to an
+already-created Sales Experience. The export does not unambiguously identify a Project-scoped
+pre-creation Sales-Pro eligibility path. A read-only direct probe of the inferred
+`GET /v4/salespros` path against the Certalis Sales Connection returned HTTP 404 (request
+completed in 3.6 seconds); the inferred path has been removed and must not be used.
+
+**Portal mitigation**
+
+The #347 Sales Delivery module makes the documented atomic `POST /sales` request and maps a
+CloudShare main-Sales-Pro rejection to a supportable 422 result. It revalidates Demo Item
+resources before the mutation and retains redacted evidence, but it cannot honestly claim a
+separate pre-create eligibility check. The portal must not rely on a guessed endpoint.
+
+**Action required:**
+
+CloudShare must provide or document a legitimate Project-scoped eligibility endpoint, or the
+issue acceptance criterion must explicitly waive a separate preflight in favour of atomic create
+validation. Separately, run a safe disposable Certalis Sales Experience through the Sales UI to
+confirm the direct request/response, field casing, and the resulting main Sales Pro behaviour.
+
+**Code reference:** `src/integrations/cloudshare/sales-delivery.ts`, `src/api/sales-demo-sessions.ts`
+
+---
+
+## GAP-27 — Sales operator Instructor Console link needs a supported Experience-to-legacy mapping
+
+| Field | Detail |
+|---|---|
+| **Status** | Product/API dependency — not implemented or used by the portal |
+| **Verified live** | No — do not probe or rely on the unproductized endpoint in Issue #347 verification |
+| **CloudShare R&D ticket** | [BAC-25223](https://cloudshare.atlassian.net/browse/BAC-25223) — productize a supported Experience ID → legacy/class ID mapping for the operator Instructor Console URL |
+
+**Required future capability**
+
+An authorized Certalis sales operator (initially a Sales Admin; later potentially a Sales Rep or
+Sales Engineer) may need an operator-only outbound link to the CloudShare Instructor Console for a
+Sales Enablement Session, so they can monitor and manage participant environments in real time. The
+desired external destination has the form:
+
+`https://accelerate.cloudshare.com/instructor-console/<legacyClassId>`
+
+This is a future optional navigation capability only. It must not embed the Instructor Console,
+and its portal authorization, audit evidence, and outbound-link treatment must be designed in the
+delivery/monitoring slice that introduces it.
+
+**Why the current Sales Experience contract is insufficient**
+
+The v4 Sales Experience creation response can include `accessLink`, but that is a participant
+invitation/login URL. It is not an operator console URL and must remain distinct from any future
+operator navigation; it must not be repurposed for Instructor Console access.
+
+The Accelerate Sales Experience ID retained by a `SalesDemoSession` is also not directly usable in
+the Instructor Console URL. Discovery identified an undocumented, unproductized read at
+`GET https://accelerate-api.cloudshare.com/api/v1/Experiences/<experience-id>` that appears to
+return a Classic `legacyId` / class ID. Certalis must not call, test, or make a runtime dependency
+on that endpoint, including during Issue #347 live verification.
+
+**Action required**
+
+CloudShare must provide one of the following supported contracts before Certalis builds this link:
+
+1. a documented, authorized mapping from Accelerate Experience ID to the legacy Classic class ID; or
+2. a documented, authorized Instructor Console URL for an Accelerate Sales Experience.
+
+The future slice should preserve the existing local Sales Experience correlation, avoid exposing
+bearer credentials or participant `accessLink` values, apply role/Customer scoping, and write
+redacted audit/diagnostic evidence for operator-link use.
+
+**Code reference:** `src/domain/sales-demo-session.ts`, `src/api/sales-demo-sessions.ts`
+
+---
+
+## GAP-28 — Project-scoped Sales Pro eligibility is available only through an undocumented GUI member read
+
+| Field | Detail |
+|---|---|
+| **Status** | Implemented behind a typed, isolated Sales Enablement Session adapter pending productization |
+| **Verified live** | Yes — safe read-only Certalis probe passed on 2026-07-14 |
+| **Documentation defect** | [SUP-5002](https://cloudshare.atlassian.net/browse/SUP-5002) — the v4 Sales-Pro description refers to an undefined `Get/salespros` endpoint |
+| **Productization path** | [BAC-24702 — Productise Project User Management APIs](https://cloudshare.atlassian.net/browse/BAC-24702) |
+
+**Why the earlier `/salespros` assumption was wrong**
+
+The local v4 export's `POST /sales/{id}/salespros` description says to use a `Get/salespros`
+endpoint to list Sales Pros assigned to a Project. It does not define that endpoint in the OpenAPI
+bundle. Treating prose in that description as a v4 `GET /salespros` path was an inference, not a
+documented contract; the safe Certalis probe returned 404 and the inferred adapter call was removed.
+
+**GUI discovery**
+
+CloudShare's own GUI appears to list active Project members through the undocumented classic-v3
+surface:
+
+`GET https://use.cloudshare.com/api/v3/users?projectUsers=true&status=active&projectId=<project-id>&getRows=true`
+
+Live verification on 2026-07-14 confirmed HTTP 200 for a Certalis Project using exactly
+`projectUsers=true`, `status=active`, `projectId`, and `getRows=true`. The GUI response exposed a
+row collection (observed as `Rows`) with member identity fields including email and name parts;
+Certalis normalizes only email plus a display name and never returns raw CloudShare member IDs to
+the browser. Both `projectUsers=true` and `getRows=true` remain required by the implemented typed
+adapter; additional GUI parameters remain undocumented.
+
+SUP-5002 tracks the misleading API documentation. BAC-24702 is the requested path to productize
+the Project User Management APIs so a future Sales Delivery adapter can replace this unsupported
+GUI surface with a documented contract.
+
+**Prior-art check: Exam instructor seam**
+
+The Exam authoring/delivery seam does **not** retrieve Project members or dynamically list
+Instructors. It requires the explicitly configured, seeded Helios service-account instructor and
+passes that configured email as `MainInstructor` when creating the Training/Cohort Experience. The
+v4 export documents list/add instructor operations only for an already-created Training Experience;
+its add-instructor description separately points to legacy v3 documentation for available Project
+instructors. It is therefore not a supported precedent for a Sales pre-create eligibility lookup.
+
+**Current Certalis containment**
+
+The Sales Enablement Session form performs this live lookup only after the Sales Admin selects an
+Item (thereby inferring its Project), does not cache it, and re-fetches/revalidates the selected
+Sales Pro immediately before `POST /sales`. A failed lookup or removed/inactive selection blocks
+creation with correlated, redacted diagnostics. The narrow race after the revalidation and before
+CloudShare processes the create request is accepted as an extreme edge case; CloudShare remains the
+final authority. The selected email and display name are persisted on the immutable Session
+correlation, not on the catalogue Item.
+
+**Action required**
+
+CloudShare should document and support a Project-scoped membership/eligibility read with the
+minimum fields necessary to select and verify a Sales Pro as the requested `mainSalesPro`, including
+authorization and stable response semantics. BAC-24702 is the requested productization path that
+will replace this isolated GUI adapter with a supported contract.
+
+**Code reference:** `src/integrations/cloudshare/project-members.ts`,
+`src/api/sales-project-members.ts`, `src/api/sales-demo-sessions.ts`,
+`docs/api/assets/cloudshare-public-api-v4-2026-07-10.json`
 
 ---
 

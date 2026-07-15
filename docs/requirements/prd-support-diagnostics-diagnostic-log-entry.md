@@ -39,7 +39,7 @@ Existing prototype support-log rows are development data and do not need migrati
 16. As a Helios admin, I want missing-signature and invalid-signature webhook attempts to expose safe metadata but not arbitrary raw untrusted request bodies during normal logging, so that public webhook traffic cannot become a sensitive data sink.
 17. As a Helios admin, I want DiagnosticLogEntry rows to be append-only, so that the log remains a record of what was known at the time.
 18. As a Helios admin, I want later correlation discoveries to emit new linked entries rather than rewrite old rows, so that the diagnostic timeline remains truthful.
-19. As a future Certalis builder, I want DiagnosticLogEntry to be a generic platform trace with nullable domain anchors, so that future LMS, sales-demo, or Salesforce-like flows can reuse the same support model.
+19. As a future Certalis builder, I want DiagnosticLogEntry to be a generic platform trace with nullable domain anchors, so that future LMS, Sales Enablement, or Salesforce-like flows can reuse the same support model.
 20. As a reviewer, I want tests to prove diagnostic entries are emitted on success and failure paths, so that supportability does not regress.
 21. As a reviewer, I want tests to prove filtering works on first-class correlation fields, so that the Support UI is not dependent on brittle JSON-string searches.
 
@@ -64,7 +64,7 @@ Existing prototype support-log rows are development data and do not need migrati
 - Existing prototype support-log rows are disposable development data and should not constrain the new model.
 - Normal DiagnosticLogEntry output follows a three-way taxonomy:
   - **Always redact:** secrets, API keys, bearer tokens, authorization headers, webhook secrets, HMAC/signature values, passwords, and other actual credentials.
-  - **Admin-only support evidence:** CloudShare sponsored-link `loginUrl` values and training `passphrase` values may be retained in DiagnosticLogEntry data for admin-only support workflows, but they remain server-only and must never be returned to Candidate/client-facing responses, Candidate/client-facing UI, or non-admin APIs.
+  - **Admin-only support evidence:** CloudShare sponsored-link `loginUrl` values may be retained in DiagnosticLogEntry data for admin-only support workflows. Training and Sales Experience `passphrase` values are credentials and must be redacted, including in admin diagnostics; neither may be returned to Candidate/client-facing responses, Candidate/client-facing UI, or non-admin APIs.
   - **Ordinary request/response evidence:** CloudShare request bodies, response bodies, parsed webhook event payloads, and other non-credential CloudShare fields remain visible so support can verify what CloudShare accepted, rejected, returned, or emitted.
   Admin-only DiagnosticLogEntry and Support Diagnostics surfaces may display the admin-only evidence above as support evidence.
 - Sensitive diagnostic capture may exist, but only as an explicit debug mode with strong guardrails: disabled by default, admin/operator visible, audited when enabled/disabled, time-boxed with automatic expiry, restricted to a specific Customer or diagnostic scope where possible, and clearly marked in the UI. It exists for replicable issues where normal redaction prevents diagnosis, not for routine logging.
@@ -76,7 +76,7 @@ Existing prototype support-log rows are development data and do not need migrati
 Diagnostic body redaction is classified by where evidence is exposed:
 
 - **True secrets, always redacted:** CloudShare API keys, OAuth bearer tokens, v3 `cs_sha1` nonces and HMAC values, authorization headers, webhook secrets, webhook signatures, raw credentials, passwords, cookies, ciphertext, and known literal secret values configured in the recorder/logger.
-- **Server-only admin-support evidence, retained in DiagnosticLogEntry/support diagnostics:** CloudShare sponsored-link `loginUrl` values returned by sponsored-link endpoints, CloudShare create-training `Passphrase`/`passphrase` values, request/response status and headers after true-secret redaction, CloudShare request paths and query values after true-secret redaction, CloudShare request/response bodies after true-secret redaction, and parsed webhook event payloads after true-secret redaction. These values are support evidence for Helios admins and operators; they must not appear in Candidate/client-facing responses or Candidate/client-facing UI.
+- **Server-only admin-support evidence, retained in DiagnosticLogEntry/support diagnostics:** CloudShare sponsored-link `loginUrl` values returned by sponsored-link endpoints; request/response status and headers after true-secret redaction; request paths and query values after true-secret redaction; request/response bodies after true-secret redaction; and parsed webhook event payloads after true-secret redaction. CloudShare create-training or Sales Experience `Passphrase`/`passphrase` values are always redacted. This evidence must not appear in Candidate/client-facing responses or Candidate/client-facing UI.
 - **Ordinary request/response evidence, retained:** CloudShare IDs, project/blueprint/policy/region/team/instructor IDs, training/experience/participant/environment IDs, Guided Journey progress fields, validation errors, transport details, response status codes, safe metadata such as `signaturePresent`/`signatureMatched`, body fields named `token` or `authorization` when they are CloudShare payload evidence rather than actual credentials, and correlation IDs.
 
 The same taxonomy applies to client traces, request/response error contexts, scheduling diagnostics, suspend/resume and heartbeat diagnostics, Guided Journey score diagnostics, resource diagnostics, and webhook diagnostics. Redaction utilities should prefer narrow key/value rules over broad substring bans when CloudShare uses support-evidence field names such as `Passphrase`, `loginUrl`, `token`, or `authorization` inside request/response bodies or parsed webhook payloads. Header values remain conservative and may stay redacted until a guarded sensitive diagnostic flag exists.
@@ -86,7 +86,7 @@ The same taxonomy applies to client traces, request/response error contexts, sch
 - Test through the highest stable seams: framework-agnostic API/domain handlers for write-path emission and the Support diagnostic read API for search/filter behavior.
 - Repository tests should prove DiagnosticLogEntry persists first-class correlation fields and structured request/response/details safely.
 - API/domain tests should prove success and failure paths emit diagnostic entries with the expected anchors.
-- Redaction tests should prove secrets, auth headers, API keys, bearer tokens, webhook secrets, HMAC/signature values, and untrusted webhook raw bodies do not leak, while admin-only DiagnosticLogEntry data may retain CloudShare sponsored-link `loginUrl` values and training `passphrase` values.
+- Redaction tests should prove secrets, auth headers, API keys, bearer tokens, webhook secrets, HMAC/signature values, training/Sales Experience passphrases, and untrusted webhook raw bodies do not leak. Admin-only DiagnosticLogEntry data may retain CloudShare sponsored-link `loginUrl` values.
 - Sensitive diagnostic mode tests should prove sensitive capture is disabled by default, expires automatically, emits audit/diagnostic records when toggled, and changes captured fields only within the intended scope.
 - Support read-model tests should prove filtering by Candidate email, Exam ID, ExamAttempt ID, operation, outcome, correlation ID, CloudShare external IDs, and time range.
 - UI tests or browser smoke tests should prove the Support page filters the diagnostic log itself, not unrelated monitoring widgets.
@@ -99,7 +99,7 @@ The same taxonomy applies to client traces, request/response error contexts, sch
 - Rebuilding Session Monitoring.
 - Replacing Audit Trail.
 - Adding production retention, archival, or role-based access controls beyond the current admin-only support surface.
-- Completing every possible future LMS, sales-demo, or Salesforce diagnostic anchor.
+- Completing every possible future LMS, Sales Enablement, or Salesforce diagnostic anchor.
 - Building sensitive diagnostic mode in the first write-path slice unless that slice explicitly scopes it; the first slice may define the configuration seam without exposing a full UI.
 
 ## Further Notes

@@ -15,6 +15,7 @@ function isAlwaysRedactedKey(
   if (options.redactTokenLikeKeys) {
     return (
       /api[-_]?key/i.test(key) ||
+      /passphrase/i.test(key) ||
       /webhook[-_]?secret/i.test(key) ||
       /secret/i.test(key) ||
       /password/i.test(key) ||
@@ -30,6 +31,7 @@ function isAlwaysRedactedKey(
 
   return (
     /api[-_]?key/i.test(key) ||
+    /passphrase/i.test(key) ||
     /webhook[-_]?secret/i.test(key) ||
     /secret/i.test(key) ||
     /password/i.test(key) ||
