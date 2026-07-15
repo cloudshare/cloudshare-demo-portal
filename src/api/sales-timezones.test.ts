@@ -14,7 +14,7 @@ describe("Sales timezone API", () => {
     const result = await handleGetSalesTimezones({ cache, preferences, diagnostics, audit, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, timezoneSourceFactory: { forConnection: () => ({ list: vi.fn().mockRejectedValue(offline) }) }, now: () => new Date("2026-07-15T10:00:00Z") }, { customerId: "certalis", userId: "admin", actor: { type: "admin", id: "admin", email: "admin@certalis.demo" } });
     expect(result).toMatchObject({ status: 200, body: { freshness: "stale", warning: expect.any(String), correlationId: expect.any(String) } });
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ correlationId: expect.any(String), request: expect.objectContaining({ path: "/timezones" }), response: expect.objectContaining({ status: 503 }), details: expect.objectContaining({ integrationSurface: "cloudshare.v3.timezones" }) }));
-    await expect(handleSaveSalesPreference({ cache, preferences, connections: { findByCustomerId: vi.fn() } }, { userId: "admin", body: { timeZone: "UTC", experienceType: "poc" } })).resolves.toMatchObject({ status: 204 });
+    await expect(handleSaveSalesPreference({ cache, preferences, connections: { findByCustomerId: vi.fn() } }, { customerId: "certalis", userId: "admin", body: { timeZone: "UTC", experienceType: "poc" } })).resolves.toMatchObject({ status: 204 });
     expect(preferences.save).toHaveBeenCalledWith("admin", { timeZone: "UTC", experienceType: "poc" });
   });
 });

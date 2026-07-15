@@ -26,8 +26,8 @@ export async function GET(request: Request) {
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const query = new URL(request.url).searchParams;
   const result = await handleListSalesSessionOperations(
-    { sessions: createPrismaSalesDemoSessionRepository(services.prisma) },
-    { customerId: session.customerId, actor: { type: "admin", id: session.userId, email: session.email }, lifecycle: query.get("lifecycle"), opportunityId: query.get("opportunityId") },
+    { sessions: createPrismaSalesDemoSessionRepository(services.prisma), records: createPrismaSalesRecordRepository(services.prisma) },
+    { customerId: session.customerId, actor: { type: "admin", id: session.userId, email: session.email }, lifecycle: query.get("lifecycle"), accountId: query.get("accountId"), opportunityId: query.get("opportunityId") },
   );
   return NextResponse.json(result.body, { status: result.status });
 }

@@ -3,6 +3,7 @@ const cloudShareTimeZones: Record<string, string> = {
   "Eastern Standard Time": "America/New_York",
   "Mountain Standard Time": "America/Denver",
   "Pacific Standard Time": "America/Los_Angeles",
+  "Central America Standard Time": "America/Guatemala",
 };
 
 /** Converts CloudShare's timezone-less ISO wall-clock values without silently

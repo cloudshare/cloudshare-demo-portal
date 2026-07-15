@@ -26,6 +26,11 @@ export async function handleGetSalesTimezones(deps: SalesTimezonesDeps, request:
     const source = deps.timezoneSourceFactory?.forConnection(connection) ?? createCloudShareTimezoneSource((deps.cloudshare ?? missingClientFactory).forConnection(connection));
     const live = await source.list();
     await deps.cache.save({ customerId: request.customerId, timezones: live.timezones, fetchedAt: now });
+    const correlationId = randomUUID();
+    await Promise.allSettled([
+      deps.diagnostics?.record({ source: "sales-timezones", operation: "sales.timezones.refreshed", outcome: "success", level: "info", customerId: request.customerId, actor: request.actor, message: "CloudShare timezone catalogue refreshed", correlationId, request: live.request as Record<string, unknown>, response: live.response as Record<string, unknown>, details: { integrationSurface: "cloudshare.v3.timezones", timezoneCount: live.timezones.length } }),
+      deps.audit?.write({ id: randomUUID(), occurredAt: now, customerId: request.customerId, actorType: request.actor?.type, actorId: request.actor?.id, actorEmail: request.actor?.email, action: "sales.timezones.refreshed", subjectType: "sales_timezone_cache", subjectId: request.customerId, outcome: "success", correlationId, details: { integrationSurface: "cloudshare.v3.timezones", timezoneCount: live.timezones.length } }),
+    ]);
     return { status: 200, body: { timezones: live.timezones, fetchedAt: now.toISOString(), freshness: "live", preference } };
   } catch (error) {
     const correlationId = randomUUID();
@@ -44,11 +49,13 @@ function cloudShareExchange(error: unknown): { request?: Record<string, unknown>
   return context ? { request: { method: context.method, path: context.path, headers: context.requestHeaders, query: context.requestQuery }, response: { status: context.responseStatus ?? context.status, headers: context.responseHeaders, body: context.responseBody, transport: context.cause } } : undefined;
 }
 
-export async function handleSaveSalesPreference(deps: SalesTimezonesDeps, request: { userId: string; body: unknown }) {
+export async function handleSaveSalesPreference(deps: SalesTimezonesDeps, request: { customerId: string; userId: string; body: unknown }) {
   const body = typeof request.body === "object" && request.body !== null ? request.body as Record<string, unknown> : null;
   const timeZone = typeof body?.timeZone === "string" && body.timeZone.trim() ? body.timeZone.trim() : null;
   const experienceType = body?.experienceType;
   if (!timeZone || !isSalesExperienceType(experienceType)) return { status: 400, body: { error: "timeZone and a valid Sales Experience type are required." } };
+  const cached = await deps.cache.find(request.customerId);
+  if (!cached || !cached.timezones.some((zone) => zone.id === timeZone)) return { status: 422, body: { error: "Select a timezone from the documented CloudShare catalogue." } };
   await deps.preferences.save(request.userId, { timeZone, experienceType });
   return { status: 204, body: {} };
 }
