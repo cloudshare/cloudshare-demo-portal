@@ -30,15 +30,19 @@ export interface CreateSalesDemoSessionInput {
 }
 export interface SalesDelivery {
   createSession(input: CreateSalesDemoSessionInput): Promise<{ readonly salesExperienceId: string } & SalesDeliveryEvidence>;
+  /** Documented v4 GET /sales/{id}; server-side IDs never leave this adapter. */
+  readSession(salesExperienceId: string): Promise<{ readonly name: string; readonly start?: string; readonly end?: string; readonly timeZone?: string } & SalesDeliveryEvidence>;
+  /** Controlled edit surface: only name and schedule values accepted by the portal. */
+  updateSession(salesExperienceId: string, input: { readonly name: string; readonly start?: string; readonly end?: string; readonly timeZone?: string }): Promise<SalesDeliveryEvidence>;
 }
 
-const salesExperienceSchema = z.object({ id: z.string().min(1) });
+const salesExperienceSchema = z.object({ id: z.string().min(1), name: z.string().min(1).optional(), start: z.string().optional(), end: z.string().optional(), timeZone: z.string().optional() });
 
 /** The deep CloudShare Sales Delivery module. Callers never learn v4 paths,
  * wire keys, or response parsing; they only validate an owner and create a
  * time-bounded registered-only delivery. */
 export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDelivery {
-  async function detailed<T>(spec: { method: "GET" | "POST"; path: string; body?: unknown; schema: z.ZodType<T> }): Promise<{ data: T; evidence: SalesDeliveryEvidence }> {
+  async function detailed<T>(spec: { method: "GET" | "POST" | "PUT"; path: string; body?: unknown; schema: z.ZodType<T> }): Promise<{ data: T; evidence: SalesDeliveryEvidence }> {
     const result = client.requestV4Detailed
       ? await client.requestV4Detailed(spec)
       : await client.requestV4(spec).then((data) => ({ data, request: { method: spec.method, path: spec.path, ...(spec.body === undefined ? {} : { body: spec.body }) }, response: { status: 200, body: data } } as CloudShareDetailedResult<T>));
@@ -49,6 +53,14 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
       const body = { name: input.name, type: input.type, projectId: input.projectId, blueprintIds: input.blueprintIds, cloudshareRegionIds: input.regionIds, policyId: input.policyId, opportunity: input.opportunity, externalId: input.externalId, passphrase: input.passphrase, start: input.start, end: input.end, timeZone: input.timeZone, mainSalesPro: { email: input.mainSalesProEmail }, registrationType: input.registrationType, sendInvitations: input.sendInvitations };
       const { data, evidence } = await detailed({ method: "POST", path: "/sales", body, schema: salesExperienceSchema });
       return { salesExperienceId: data.id, ...evidence };
+    },
+    async readSession(salesExperienceId) {
+      const { data, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceSchema });
+      return { name: data.name ?? "", start: data.start, end: data.end, timeZone: data.timeZone, ...evidence };
+    },
+    async updateSession(salesExperienceId, input) {
+      const { evidence } = await detailed({ method: "PUT", path: `/sales/${encodeURIComponent(salesExperienceId)}`, body: input, schema: salesExperienceSchema });
+      return evidence;
     },
   };
 }

@@ -11,6 +11,30 @@ PR that surfaced the gap.
 
 ---
 
+## GAP-16 — Sales timezone catalogue and edit semantics require live confirmation
+
+| Field | Detail |
+|---|---|
+| **Status** | Documented contract implemented; live validation pending #356 QA |
+| **Verified live** | No |
+
+**Observed behaviour**
+
+The documented v3 timezone catalogue is `GET /api/v3/timezones` (implemented at the
+CloudShare adapter seam as `GET /timezones` against the configured v3 base URL). The
+v4 OpenAPI export dated 2026-07-10 documents `GET /sales/{id}` and `PUT /sales/{id}`.
+Certalis limits its future edit surface to the provider-visible name and explicit
+schedule/timezone values; it does not infer lifecycle operations or invoke any
+undocumented Sales endpoint.
+
+**Follow-up live evidence required**
+
+Verify the exact returned timezone shape and the PUT validation/lifecycle matrix in
+the Helios CX tenant before exposing live editing controls. The browser never receives
+the CloudShare Sales Experience ID; support diagnostics retain the redacted exchange.
+
+---
+
 ## GAP-1 — Dual, inconsistent authentication schemes
 
 | Field | Detail |
