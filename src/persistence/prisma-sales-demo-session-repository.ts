@@ -5,6 +5,7 @@ export function createPrismaSalesDemoSessionRepository(prisma: PrismaClient): Sa
   return {
     async save(session) { await prisma.salesDemoSession.create({ data: { ...session } }); },
     async list(customerId) { return (await prisma.salesDemoSession.findMany({ where: { customerId }, orderBy: { createdAt: "desc" } })).map(toDomain); },
+    async findById(customerId, id) { const row = await prisma.salesDemoSession.findFirst({ where: { customerId, id } }); return row ? toDomain(row) : null; },
     async listByOpportunity(customerId, opportunityId) { return (await prisma.salesDemoSession.findMany({ where: { customerId, opportunityId }, orderBy: { createdAt: "desc" } })).map(toDomain); },
     async updateOperationalState(id, state) { await prisma.salesDemoSession.update({ where: { id }, data: state }); },
   };

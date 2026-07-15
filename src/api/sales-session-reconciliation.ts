@@ -1,0 +1,15 @@
+import { randomUUID } from "node:crypto";
+import type { AuditRepository } from "@/domain/audit-trail";
+import type { CloudShareConnectionRepository, CloudShareClientFactory } from "@/domain/cloudshare-connection";
+import type { DiagnosticActor, DiagnosticRecorder } from "@/domain/diagnostic-log";
+import type { SalesDemoSessionRepository } from "@/domain/sales-demo-session";
+import { createCloudShareSalesDelivery, type SalesDelivery } from "@/integrations/cloudshare/sales-delivery";
+
+export async function handleReconcileSalesSession(deps: { sessions: Pick<SalesDemoSessionRepository, "findById" | "updateOperationalState">; connections: Pick<CloudShareConnectionRepository, "findByCustomerId">; cloudshare?: Pick<CloudShareClientFactory, "forConnection">; deliveryFactory?: { forConnection(connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>): SalesDelivery }; diagnostics?: DiagnosticRecorder; audit?: Pick<AuditRepository, "write"> }, request: { customerId: string; sessionId: string; actor: DiagnosticActor }) {
+  if (!deps.sessions.findById || !deps.sessions.updateOperationalState) return { status: 503, body: { error: "Sales reconciliation is unavailable." } };
+  const [session, connection] = await Promise.all([deps.sessions.findById(request.customerId, request.sessionId), deps.connections.findByCustomerId(request.customerId)]);
+  if (!session || !connection) return { status: 404, body: { error: "Sales Session or CloudShare Connection was not found." } };
+  const correlationId = randomUUID();
+  try { const delivery = deps.deliveryFactory?.forConnection(connection) ?? createCloudShareSalesDelivery((deps.cloudshare as NonNullable<typeof deps.cloudshare>).forConnection(connection)); const remote = await delivery.readSession(session.cloudShareSalesExperienceId); await deps.sessions.updateOperationalState(session.id, { operationalStatus: "active", attentionReason: null }); await Promise.allSettled([deps.diagnostics?.record({ source: "sales-session-reconciliation", operation: "sales.demo_session.reconciled", outcome: "success", level: "info", customerId: request.customerId, actor: request.actor, message: "Sales Session reconciled with CloudShare", correlationId, details: { integrationSurface: "cloudshare.v4.sales", remoteStatus: remote.status } }), deps.audit?.write({ id: randomUUID(), occurredAt: new Date(), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.reconciled", subjectType: "sales_demo_session", subjectId: session.id, outcome: "success", correlationId, details: { integrationSurface: "cloudshare.v4.sales", remoteStatus: remote.status } })]); return { status: 200, body: { correlationId, operationalStatus: "active" } }; }
+  catch (error) { await deps.sessions.updateOperationalState(session.id, { operationalStatus: "needs_attention", attentionReason: "CloudShare reconciliation failed" }); return { status: 502, body: { error: "CloudShare could not reconcile this Sales Session.", correlationId } }; }
+}
