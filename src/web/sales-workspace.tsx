@@ -122,7 +122,7 @@ function SalesDemoSessionsFeature({ onNavigate }: { readonly onNavigate: (intent
     const itemBody = await itemResponse.json() as { activeItems?: Item[]; error?: string };
     const sessionBody = await sessionResponse.json() as { sessions?: EnablementSession[]; error?: string };
     if (!recordResponse.ok || !itemResponse.ok || !sessionResponse.ok) throw new Error(recordBody.error ?? itemBody.error ?? sessionBody.error ?? "Could not load Sales Enablement Session choices.");
-    setRecords(recordBody); setItems(itemBody.activeItems ?? []); setSessions(sessionBody.sessions ?? []);
+    setRecords({ accounts: recordBody.accounts ?? [], opportunities: recordBody.opportunities ?? [], contacts: recordBody.contacts ?? [] }); setItems(itemBody.activeItems ?? []); setSessions(sessionBody.sessions ?? []);
   }, [fetchSales]);
   useEffect(() => { void load().catch((error) => setMessage(error instanceof Error ? error.message : "Could not load Sales Enablement Session choices.")); }, [load]);
   useEffect(() => {
