@@ -118,7 +118,7 @@ describe("SalesWorkspace interaction", () => {
         ? json({ activeItems: [], archivedItems: [] })
         : json({ projects: [], regions: [] });
     });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" />);
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "items", itemView: "catalog" }} />);
 
     await user.click(screen.getByRole("button", { name: "Create Item" }));
     expect(await screen.findByRole("heading", { name: "Create Item" })).not.toBeNull();
