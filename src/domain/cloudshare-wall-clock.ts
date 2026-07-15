@@ -40,7 +40,13 @@ export function formatCloudShareWallClock(value: Date, timeZone: string): string
 }
 
 function resolveTimeZone(value: string): string | null {
-  const resolved = cloudShareTimeZones[value];
-  if (!resolved) return null;
-  try { new Intl.DateTimeFormat("en-CA", { timeZone: resolved }).format(); return resolved; } catch { return null; }
+  // CloudShare's documented catalogue is the authority for selectable IDs. An
+  // ID can already be an IANA value, while Windows IDs need only this narrow
+  // rendering bridge on Node/ICU; callers never synthesize a timezone list.
+  try { new Intl.DateTimeFormat("en-CA", { timeZone: value }).format(); return value; }
+  catch {
+    const resolved = cloudShareTimeZones[value];
+    if (!resolved) return null;
+    try { new Intl.DateTimeFormat("en-CA", { timeZone: resolved }).format(); return resolved; } catch { return null; }
+  }
 }

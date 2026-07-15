@@ -11,8 +11,10 @@ export interface OperationalSalesSession {
   readonly end: string;
   readonly timeZone: string;
   readonly salesProDisplayName: string;
+  readonly sessionName: string;
+  readonly revision: number;
   readonly createdAt: string;
-  readonly lifecycle: Exclude<SalesSessionLifecycle, "all" | "needs_attention">;
+  readonly lifecycle: Exclude<SalesSessionLifecycle, "all">;
   readonly needsAttention: boolean;
 }
 
@@ -25,18 +27,22 @@ export function buildOperationalSalesSessions(
   filter: SalesSessionLifecycle = "all",
 ): readonly OperationalSalesSession[] {
   const views = sessions.map((session) => {
-    const lifecycle = session.operationalStatus === "provisioning" || session.operationalStatus === "needs_attention" || session.cloudShareSalesExperienceId === "unprovisioned"
+    const lifecycle = session.operationalStatus === "needs_attention"
+      ? "needs_attention" as const
+      : session.operationalStatus === "provisioning" || session.cloudShareSalesExperienceId === "unprovisioned"
       ? "provisioning" as const
       : session.start > wallClock(now, session.timeZone)
         ? "upcoming" as const
         : session.end <= wallClock(now, session.timeZone) ? "ended" as const : "in_progress" as const;
-    return { id: session.id, opportunityId: session.opportunityId, itemId: session.itemId, type: session.type, start: session.start, end: session.end, timeZone: session.timeZone, salesProDisplayName: session.salesProDisplayName, createdAt: session.createdAt.toISOString(), lifecycle, needsAttention: session.operationalStatus === "needs_attention" || lifecycle === "provisioning" };
+    return { id: session.id, opportunityId: session.opportunityId, itemId: session.itemId, type: session.type, start: session.start, end: session.end, timeZone: session.timeZone, salesProDisplayName: session.salesProDisplayName, sessionName: session.sessionName ?? "Sales Enablement Session", revision: session.revision ?? 1, createdAt: session.createdAt.toISOString(), lifecycle, needsAttention: lifecycle === "needs_attention" };
   });
-  return views.filter((session) => filter === "all" || (filter === "needs_attention" ? session.needsAttention : session.lifecycle === filter));
+  return views.filter((session) => filter === "all" || session.lifecycle === filter);
 }
 
 function wallClock(now: Date, timeZone: string): string {
-  const parts = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now);
+  let parts: Intl.DateTimeFormatPart[];
+  try { parts = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).formatToParts(now); }
+  catch { return now.toISOString().slice(0, 16); }
   const value = (name: string) => parts.find((part) => part.type === name)?.value ?? "00";
   return `${value("year")}-${value("month")}-${value("day")}T${value("hour")}:${value("minute")}`;
 }

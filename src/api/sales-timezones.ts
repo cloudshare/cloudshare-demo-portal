@@ -29,12 +29,19 @@ export async function handleGetSalesTimezones(deps: SalesTimezonesDeps, request:
     return { status: 200, body: { timezones: live.timezones, fetchedAt: now.toISOString(), freshness: "live", preference } };
   } catch (error) {
     const correlationId = randomUUID();
+    const exchange = cloudShareExchange(error);
     await Promise.allSettled([
-      deps.diagnostics?.record({ source: "sales-timezones", operation: "sales.timezones.refreshed", outcome: "failure", level: "warn", customerId: request.customerId, actor: request.actor, message: "CloudShare timezone catalogue refresh failed", correlationId, details: { integrationSurface: "cloudshare.v3.timezones", failureMode: "timezone_catalogue_read", error: error instanceof Error ? error.message : String(error) } }),
+      deps.diagnostics?.record({ source: "sales-timezones", operation: "sales.timezones.refreshed", outcome: "failure", level: "warn", customerId: request.customerId, actor: request.actor, message: "CloudShare timezone catalogue refresh failed", correlationId, request: exchange?.request, response: exchange?.response, details: { integrationSurface: "cloudshare.v3.timezones", failureMode: "timezone_catalogue_read", error: error instanceof Error ? error.message : String(error) } }),
       deps.audit?.write({ id: randomUUID(), occurredAt: now, customerId: request.customerId, actorType: request.actor?.type, actorId: request.actor?.id, actorEmail: request.actor?.email, action: "sales.timezones.refreshed", subjectType: "sales_timezone_cache", subjectId: request.customerId, outcome: "failure", correlationId, details: { integrationSurface: "cloudshare.v3.timezones", failureMode: "timezone_catalogue_read" }, error: error instanceof Error ? error.message : String(error) }),
     ]);
     return cached ? { status: 200, body: { timezones: cached.timezones, fetchedAt: cached.fetchedAt.toISOString(), freshness: "stale", correlationId, warning: "CloudShare could not refresh timezones; showing the last verified catalogue." } } : { status: 502, body: { error: "CloudShare could not retrieve supported timezones.", correlationId } };
   }
+}
+
+function cloudShareExchange(error: unknown): { request?: Record<string, unknown>; response?: Record<string, unknown> } | undefined {
+  if (!(error instanceof Error) || !("context" in error)) return undefined;
+  const context = (error as { context?: Record<string, unknown> }).context;
+  return context ? { request: { method: context.method, path: context.path, headers: context.requestHeaders, query: context.requestQuery }, response: { status: context.responseStatus ?? context.status, headers: context.responseHeaders, body: context.responseBody, transport: context.cause } } : undefined;
 }
 
 export async function handleSaveSalesPreference(deps: SalesTimezonesDeps, request: { userId: string; body: unknown }) {

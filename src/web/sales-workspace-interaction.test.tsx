@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -13,7 +13,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => mockRouter, useSearchParams
 const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 
 describe("SalesWorkspace interaction", () => {
-  afterEach(() => { vi.restoreAllMocks(); mockSearchParams.delete("accountId"); mockSearchParams.delete("opportunityId"); mockRouter.push.mockClear(); mockRouter.replace.mockClear(); window.history.replaceState({}, "", "/sales"); });
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); mockSearchParams.delete("accountId"); mockSearchParams.delete("opportunityId"); mockRouter.push.mockClear(); mockRouter.replace.mockClear(); window.history.replaceState({}, "", "/sales"); });
 
   it("selects an Account into the URL and limits the next grid to its Opportunities without console errors", async () => {
     const user = userEvent.setup();
@@ -48,7 +48,7 @@ describe("SalesWorkspace interaction", () => {
     const user = userEvent.setup();
     const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
       const path = String(input);
-      if (path === "/api/sales/accounts") return json({ accounts: [], opportunities: [{ id: "opp-1", accountId: "account-1", name: "Acme evaluation", status: "open", archivedAt: null, createdAt: "2026-07-14T15:00:00.000Z" }], contacts: [] });
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [{ id: "account-1", name: "Acme" }], opportunities: [{ id: "opp-1", accountId: "account-1", label: "Acme - Acme evaluation" }], total: 1 });
       if (path === "/api/sales/items") return json({ activeItems: [{ id: "item-1", name: "Accelerate Demo", description: "", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" }] });
       if (path.startsWith("/api/sales/enablement-sessions/project-members?")) return json({ members: [{ email: "rep@certalis.demo", displayName: "Sales Rep" }] });
       if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: [] });
@@ -74,7 +74,7 @@ describe("SalesWorkspace interaction", () => {
     const user = userEvent.setup();
     vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
       const path = String(input);
-      if (path === "/api/sales/accounts") return json({ accounts: [], opportunities: [{ id: "opp-1", accountId: "account-1", name: "Acme evaluation", status: "open", archivedAt: null, createdAt: "2026-07-14T15:00:00.000Z" }], contacts: [] });
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [{ id: "account-1", name: "Acme" }], opportunities: [{ id: "opp-1", accountId: "account-1", label: "Acme - Acme evaluation" }], total: 1 });
       if (path === "/api/sales/items") return json({ activeItems: [{ id: "item-1", name: "Accelerate Demo", description: "", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" }] });
       if (path.startsWith("/api/sales/enablement-sessions/project-members?")) return json({ members: [{ email: "rep@certalis.demo", displayName: "Sales Rep" }] });
       if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: [] });
@@ -93,7 +93,7 @@ describe("SalesWorkspace interaction", () => {
     const user = userEvent.setup();
     vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
       const path = String(input);
-      if (path === "/api/sales/accounts") return json({ accounts: [], opportunities: [{ id: "opp-1", accountId: "account-1", name: "Acme evaluation", status: "open", archivedAt: null, createdAt: "2026-07-14T15:00:00.000Z" }], contacts: [] });
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [{ id: "account-1", name: "Acme" }], opportunities: [{ id: "opp-1", accountId: "account-1", label: "Acme - Acme evaluation" }], total: 1 });
       if (path === "/api/sales/items") return json({ activeItems: [{ id: "item-1", name: "Accelerate Demo", description: "", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" }] });
       if (path.startsWith("/api/sales/enablement-sessions/project-members?")) return json({ members: [{ email: "rep@certalis.demo", displayName: "Sales Rep" }] });
       if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: [] });
@@ -304,5 +304,23 @@ describe("SalesWorkspace interaction", () => {
     const timezone = await screen.findByRole("combobox", { name: "CloudShare time zone" });
     await user.clear(timezone); await user.type(timezone, "Europe/London");
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/sales/timezones", expect.objectContaining({ method: "PUT", body: expect.stringContaining("Europe/London") })));
+  });
+
+  it("restores the Sessions Account and Opportunity from the route without loading the records catalogue", async () => {
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const path = String(input);
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [{ id: "account-1", name: "Acme" }], opportunities: [{ id: "opp-1", accountId: "account-1", label: "Acme - Proof" }], total: 1, nextRevision: 3 });
+      if (path === "/api/sales/items") return json({ activeItems: [{ id: "item-1", name: "Demo", description: "", project: { id: "project-1", name: "Project" }, blueprints: [], policy: { id: "policy-1", name: "Policy" }, regions: [], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" }] });
+      if (path.startsWith("/api/sales/enablement-sessions?")) return json({ sessions: [] });
+      if (path === "/api/sales/timezones") return json({ timezones: [{ id: "UTC", name: "UTC" }], preference: {} });
+      if (path === "/api/sales/timezones" && init?.method === "PUT") return new Response(null, { status: 204 });
+      return json({});
+    });
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", accountId: "account-1", opportunityId: "opp-1" }} />);
+    expect((await screen.findByRole("combobox", { name: "Session Account" }) as HTMLSelectElement).value).toBe("account-1");
+    expect((screen.getByRole("combobox", { name: "Opportunity" }) as HTMLSelectElement).value).toBe("opp-1");
+    expect(screen.getByRole("status", { name: "Session name preview" }).textContent).toContain("Acme - Proof (3) - Item");
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/sales/accounts", expect.anything());
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("selectedOpportunityId=opp-1"), { cache: "no-store" });
   });
 });

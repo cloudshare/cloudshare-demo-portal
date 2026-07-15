@@ -9,6 +9,7 @@ import type { SalesRecordRepository } from "@/domain/sales-records";
 import { isValidCloudShareWallClock } from "@/domain/cloudshare-wall-clock";
 import { DEFAULT_SALES_SESSION_NAME_TEMPLATE, renderSalesSessionName } from "@/domain/sales-session-name";
 import type { SalesSessionConfigurationRepository } from "@/domain/sales-session-configuration";
+import type { SalesTimezoneCacheRepository } from "@/domain/sales-timezones";
 import { createCloudShareSalesDelivery, type SalesDelivery } from "@/integrations/cloudshare/sales-delivery";
 import { SalesItemProvisioningReadError, SalesItemProvisioningValidationError, type SalesItemProvisioningValidator } from "@/integrations/cloudshare/sales-item-provisioning";
 import { createCloudShareProjectMemberSource, type CloudShareProjectMemberSource } from "@/integrations/cloudshare/project-members";
@@ -37,6 +38,8 @@ export interface SalesDemoSessionDeps {
   readonly diagnostics?: DiagnosticRecorder;
   readonly audit?: Pick<AuditRepository, "write">;
   readonly settings?: SalesSessionConfigurationRepository;
+  /** Cached documented v3 catalogue validates the submitted CloudShare ID. */
+  readonly timezones?: Pick<SalesTimezoneCacheRepository, "find">;
   readonly now?: () => Date;
   readonly newId?: () => string;
 }
@@ -51,11 +54,13 @@ export interface PortalSalesEnablementSession {
   readonly end: string;
   readonly timeZone: string;
   readonly salesProDisplayName: string;
+  readonly sessionName: string;
+  readonly revision: number;
   readonly createdAt: string;
 }
 
 export function toPortalSalesEnablementSession(session: SalesDemoSession): PortalSalesEnablementSession {
-  return { id: session.id, opportunityId: session.opportunityId, itemId: session.itemId, type: session.type, start: session.start, end: session.end, timeZone: session.timeZone, salesProDisplayName: session.salesProDisplayName, createdAt: session.createdAt.toISOString() };
+  return { id: session.id, opportunityId: session.opportunityId, itemId: session.itemId, type: session.type, start: session.start, end: session.end, timeZone: session.timeZone, salesProDisplayName: session.salesProDisplayName, sessionName: session.sessionName ?? "Sales Enablement Session", revision: session.revision ?? 1, createdAt: session.createdAt.toISOString() };
 }
 
 /** API-first orchestration for a single Customer-scoped Sales Enablement Session.
@@ -66,6 +71,8 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
   const parsed = bodySchema.safeParse(request.body);
   if (!parsed.success) return rejected(deps, request, 400, "Invalid Sales Enablement Session request.", "invalid_request");
   if (!isChronological(parsed.data)) return rejected(deps, request, 400, "End must be after start.", "end_before_start");
+  const cachedTimezones = await deps.timezones?.find(request.customerId);
+  if (cachedTimezones && !cachedTimezones.timezones.some((zone) => zone.id === parsed.data.timeZone)) return rejected(deps, request, 422, "Select a timezone from the documented CloudShare catalogue.", "unsupported_cloudshare_timezone");
   if (!isValidCloudShareWallClock(parsed.data.start, parsed.data.timeZone) || !isValidCloudShareWallClock(parsed.data.end, parsed.data.timeZone)) return rejected(deps, request, 400, "Start and end must be unambiguous CloudShare wall-clock values in the selected time zone.", "invalid_wall_clock");
   const [opportunity, item, connection] = await Promise.all([
     deps.records.findOpportunity(request.customerId, parsed.data.opportunityId), deps.items.findById(parsed.data.itemId), deps.connections.findByCustomerId(request.customerId),
