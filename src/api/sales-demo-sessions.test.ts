@@ -101,6 +101,17 @@ describe("Sales Enablement Session API handler", () => {
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ operation: "sales.demo_session.created", details: expect.objectContaining({ integrationSurface: "cloudshare.v3.sales_item_resources", failureMode: "item_resource_read" }), request: expect.objectContaining({ query: { page: "1" }, headers: { "x-request-id": "req-v3" } }), response: expect.objectContaining({ status: 504, headers: { "x-cloud": "slow" }, network: { remoteAddress: "203.0.113.9" }, tls: { protocol: "TLSv1.3" } }) }));
   });
 
+  it("preserves the item-resource failure response when diagnostics cannot record completed reads", async () => {
+    const records = createInMemorySalesRecordRepository();
+    await records.saveOpportunity({ id: "opp-1", customerId: "certalis", accountId: "account-1", name: "Acme", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
+    const item = { id: "item-1", customerId: "certalis", name: "Demo", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" };
+    const cause = new CloudShareRequestError("CloudShare timed out", 504, { method: "GET", path: "/projects/project-1/policies" });
+    const revalidate = vi.fn().mockRejectedValue(new SalesItemProvisioningReadError("Could not read Item", [{ data: {}, request: { method: "GET", path: "/projects/project-1/blueprints" }, response: { status: 200 }, integrationSurface: "cloudshare.v3.projects.blueprints" }], cause));
+    const result = await handleCreateSalesDemoSession({ records, items: { findById: vi.fn().mockResolvedValue(item) }, sessions: { save: vi.fn(), listByOpportunity: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSession: vi.fn() }) }, projectMembers, itemProvisioningValidator: { revalidate }, diagnostics: { record: vi.fn().mockRejectedValue(new Error("diagnostics unavailable")) }, audit: { write: vi.fn().mockRejectedValue(new Error("audit unavailable")) } }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-1", itemId: "item-1", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
+
+    expect(result).toMatchObject({ status: 502, body: { error: "CloudShare could not fully revalidate this Demo Item. Review support diagnostics before retrying.", correlationId: expect.any(String) } });
+  });
+
   it("returns a created needs-attention response if evidence fails after local persistence", async () => {
     const records = createInMemorySalesRecordRepository(); await records.saveOpportunity({ id: "opp-1", customerId: "certalis", accountId: "account-1", name: "Acme", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
     const item = { id: "item-1", customerId: "certalis", name: "Demo", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" };
