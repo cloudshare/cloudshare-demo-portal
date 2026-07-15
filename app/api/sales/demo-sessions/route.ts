@@ -3,7 +3,8 @@ import { cookies } from "next/headers";
 import { getServices } from "@/composition";
 import { getPortalAdminSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
-import { handleCreateSalesDemoSession, toPortalSalesEnablementSession } from "@/api/sales-demo-sessions";
+import { handleCreateSalesDemoSession } from "@/api/sales-demo-sessions";
+import { handleListSalesSessionOperations } from "@/api/sales-session-operations";
 import { createPrismaSalesRecordRepository } from "@/persistence/prisma-sales-record-repository";
 import { createPrismaItemRepository } from "@/persistence/prisma-item-repository";
 import { createPrismaSalesDemoSessionRepository } from "@/persistence/prisma-sales-demo-session-repository";
@@ -21,10 +22,12 @@ async function context() {
 export async function GET(request: Request) {
   const { services, session } = await context();
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  const opportunityId = new URL(request.url).searchParams.get("opportunityId");
-  if (!opportunityId) return NextResponse.json({ sessions: [] });
-  const sessions = await createPrismaSalesDemoSessionRepository(services.prisma).listByOpportunity(session.customerId, opportunityId);
-  return NextResponse.json({ sessions: sessions.map(toPortalSalesEnablementSession) });
+  const query = new URL(request.url).searchParams;
+  const result = await handleListSalesSessionOperations(
+    { sessions: createPrismaSalesDemoSessionRepository(services.prisma) },
+    { customerId: session.customerId, actor: { type: "admin", id: session.userId, email: session.email }, lifecycle: query.get("lifecycle"), opportunityId: query.get("opportunityId") },
+  );
+  return NextResponse.json(result.body, { status: result.status });
 }
 
 export async function POST(request: Request) {

@@ -22,6 +22,9 @@ export interface SalesDemoSession {
 
 export interface SalesDemoSessionRepository {
   save(session: SalesDemoSession): Promise<void>;
+  /** Optional during the #347 create-only compatibility period. #356's
+   * operational read module requires this capability explicitly. */
+  list?(customerId: string): Promise<readonly SalesDemoSession[]>;
   listByOpportunity(customerId: string, opportunityId: string): Promise<readonly SalesDemoSession[]>;
 }
 
@@ -29,6 +32,7 @@ export function createInMemorySalesDemoSessionRepository(): SalesDemoSessionRepo
   const sessions = new Map<string, SalesDemoSession>();
   return {
     async save(session) { sessions.set(session.id, session); },
+    async list(customerId) { return [...sessions.values()].filter((session) => session.customerId === customerId); },
     async listByOpportunity(customerId, opportunityId) {
       return [...sessions.values()].filter((session) => session.customerId === customerId && session.opportunityId === opportunityId);
     },

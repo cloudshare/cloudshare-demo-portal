@@ -25,7 +25,7 @@ type Named = { id: string; name: string; friendlyName?: string };
 type BlueprintOption = Named & { defaultSnapshotRegionIds?: readonly string[] };
 type Policy = Named & { storageLeaseMinutes: number | null };
 type Item = { id: string; name: string; description: string; project: Named; blueprints: Named[]; policy: Named; regions: Named[]; salesExperienceType: "demo" | "poc" | "pov" | "trial"; defaultDurationMinutes: number; status: "active" | "archived" };
-type EnablementSession = { id: string; opportunityId: string; itemId: string; type: "demo" | "poc" | "pov" | "trial"; start: string; end: string; timeZone: string; salesProDisplayName: string; createdAt: string };
+type EnablementSession = { id: string; opportunityId: string; itemId: string; type: "demo" | "poc" | "pov" | "trial"; start: string; end: string; timeZone: string; salesProDisplayName: string; createdAt: string; lifecycle?: "upcoming" | "in_progress" | "ended" | "provisioning"; needsAttention?: boolean };
 type ProjectMember = { email: string; displayName: string };
 
 const blank: SalesData = { accounts: [], opportunities: [], contacts: [] };
@@ -82,6 +82,7 @@ function SalesDemoSessionsFeature({ onNavigate }: { readonly onNavigate: (intent
   const [records, setRecords] = useState<SalesData>(blank);
   const [items, setItems] = useState<Item[]>([]);
   const [sessions, setSessions] = useState<EnablementSession[]>([]);
+  const [sessionLifecycle, setSessionLifecycle] = useState("all");
   const [opportunityId, setOpportunityId] = useState("");
   const [itemId, setItemId] = useState("");
   const [projectMembers, setProjectMembers] = useState<ProjectMember[]>([]);
@@ -106,11 +107,12 @@ function SalesDemoSessionsFeature({ onNavigate }: { readonly onNavigate: (intent
   useEffect(() => { currentStart.current = start; currentTimeZone.current = timeZone; }, [start, timeZone]);
 
   const load = useCallback(async () => {
-    const [recordResponse, itemResponse] = await Promise.all([fetchSales("/api/sales/accounts", { cache: "no-store" }), fetchSales("/api/sales/items", { cache: "no-store" })]);
+    const [recordResponse, itemResponse, sessionResponse] = await Promise.all([fetchSales("/api/sales/accounts", { cache: "no-store" }), fetchSales("/api/sales/items", { cache: "no-store" }), fetchSales("/api/sales/enablement-sessions?lifecycle=all", { cache: "no-store" })]);
     const recordBody = await recordResponse.json() as SalesData & { error?: string };
     const itemBody = await itemResponse.json() as { activeItems?: Item[]; error?: string };
-    if (!recordResponse.ok || !itemResponse.ok) throw new Error(recordBody.error ?? itemBody.error ?? "Could not load Sales Enablement Session choices.");
-    setRecords(recordBody); setItems(itemBody.activeItems ?? []);
+    const sessionBody = await sessionResponse.json() as { sessions?: EnablementSession[]; error?: string };
+    if (!recordResponse.ok || !itemResponse.ok || !sessionResponse.ok) throw new Error(recordBody.error ?? itemBody.error ?? sessionBody.error ?? "Could not load Sales Enablement Session choices.");
+    setRecords(recordBody); setItems(itemBody.activeItems ?? []); setSessions(sessionBody.sessions ?? []);
   }, [fetchSales]);
   useEffect(() => { void load().catch((error) => setMessage(error instanceof Error ? error.message : "Could not load Sales Enablement Session choices.")); }, [load]);
   useEffect(() => {
@@ -121,7 +123,7 @@ function SalesDemoSessionsFeature({ onNavigate }: { readonly onNavigate: (intent
   }, [itemId, selectedItemType, selectedItemDuration]);
   useEffect(() => { if (selectedItemDuration && startMode === "now") setStart(formatCloudShareWallClock(new Date(), timeZone) ?? ""); }, [startMode, selectedItemDuration, timeZone]);
   useEffect(() => { if (selectedItemDuration && !endHasManualOverride) setEnd(addCloudShareWallClockMinutes(start, timeZone, selectedItemDuration) ?? ""); }, [start, selectedItemDuration, timeZone, endHasManualOverride]);
-  useEffect(() => { if (!opportunityId) { setSessions([]); return; } void fetchSales(`/api/sales/enablement-sessions?opportunityId=${encodeURIComponent(opportunityId)}`, { cache: "no-store" }).then(async (response) => { const body = await response.json() as { sessions?: EnablementSession[] }; if (response.ok) setSessions(body.sessions ?? []); }); }, [fetchSales, opportunityId]);
+  useEffect(() => { void fetchSales(`/api/sales/enablement-sessions?lifecycle=${encodeURIComponent(sessionLifecycle)}`, { cache: "no-store" }).then(async (response) => { const body = await response.json() as { sessions?: EnablementSession[] }; if (response.ok) setSessions(body.sessions ?? []); }); }, [fetchSales, sessionLifecycle]);
   useEffect(() => {
     setProjectMembers([]); setSalesProEmail("");
     if (!itemId) return;
@@ -146,11 +148,12 @@ function SalesDemoSessionsFeature({ onNavigate }: { readonly onNavigate: (intent
     } catch (error) { setMessage(error instanceof Error ? error.message : "Could not provision the Sales Enablement Session."); } finally { setLoading(false); }
   };
   const opportunities = records.opportunities.filter((opportunity) => !opportunity.archivedAt);
+  const accountById = new Map(records.accounts.map((account) => [account.id, account.name]));
   return <section aria-label="Sales Enablement Sessions">
     <PortalSectionIntro title="Provision a Sales Enablement Session" description="Creates one time-bound CloudShare Sales Experience. Registered participants only; invitations stay suppressed until the later enrollment and invitation slices." />
     <form onSubmit={submit} style={{ ...cardStyle, padding: "1.25rem", display: "grid", gap: "1rem" }}>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(16rem, 1fr))", gap: "1rem" }}>
-        <label style={{ display: "grid", gap: "0.35rem" }}>Opportunity<select aria-label="Opportunity" required value={opportunityId} onChange={(event) => setOpportunityId(event.target.value)} style={fullControlStyle}><option value="">Select an Opportunity</option>{opportunities.map((opportunity) => <option key={opportunity.id} value={opportunity.id}>{opportunity.name}</option>)}</select></label>
+        <label style={{ display: "grid", gap: "0.35rem" }}>Opportunity<select aria-label="Opportunity" required value={opportunityId} onChange={(event) => setOpportunityId(event.target.value)} style={fullControlStyle}><option value="">Select an Opportunity</option>{opportunities.map((opportunity) => <option key={opportunity.id} value={opportunity.id}>{accountById.get(opportunity.accountId) ?? "Unknown Account"} — {opportunity.name}</option>)}</select></label>
         <label style={{ display: "grid", gap: "0.35rem" }}>Catalogue Item<select aria-label="Catalogue Item" required value={itemId} onChange={(event) => setItemId(event.target.value)} style={fullControlStyle}><option value="">Select a Catalogue Item</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <label style={{ display: "grid", gap: "0.35rem" }}>Sales Pro<select aria-label="Sales Pro" required value={salesProEmail} onChange={(event) => setSalesProEmail(event.target.value)} disabled={!itemId || projectMemberLoading} style={fullControlStyle}><option value="">{projectMemberLoading ? "Loading active Project members…" : "Select an active Project member"}</option>{projectMembers.map((member) => <option key={member.email} value={member.email}>{member.displayName} ({member.email})</option>)}</select></label>
         <label style={{ display: "grid", gap: "0.35rem" }}>Sales Experience type<select aria-label="Sales Experience type" value={type} onChange={(event) => setType(event.target.value as Item["salesExperienceType"])} style={fullControlStyle}><option value="demo">Demo</option><option value="poc">POC</option><option value="pov">POV</option><option value="trial">Trial</option></select></label>
@@ -160,7 +163,7 @@ function SalesDemoSessionsFeature({ onNavigate }: { readonly onNavigate: (intent
       <div style={{ display: "flex", justifyContent: "end", gap: "0.75rem", alignItems: "center" }}><button style={primaryButtonStyle} disabled={loading || projectMemberLoading || !opportunityId || !itemId || !salesProEmail}>{loading ? "Provisioning…" : "Create Sales Enablement Session"}</button></div>
       {message ? <div role={correlationId ? "alert" : "status"} style={correlationId ? alertPanelStyle.danger : alertPanelStyle.success}>{message}{needsAttention ? <strong> Do not retry creation.</strong> : null}{correlationId ? <> <button type="button" onClick={() => onNavigate({ tab: "support", correlationId })} style={{ border: 0, background: "transparent", color: colors.info, textDecoration: "underline", cursor: "pointer" }}>Open support diagnostics ({correlationId})</button></> : null}</div> : null}
     </form>
-    {opportunityId ? <section style={{ ...cardStyle, marginTop: "1rem", padding: "1.25rem" }} aria-label="Opportunity Sales Enablement Session history"><h2 style={{ marginTop: 0 }}>Session history</h2>{sessions.length === 0 ? <p>No Sales Enablement Sessions have been created for this Opportunity.</p> : <ul>{sessions.map((session) => <li key={session.id}>{session.type.toUpperCase()} · {session.start} to {session.end} ({session.timeZone})</li>)}</ul>}</section> : null}
+    <section style={{ ...cardStyle, marginTop: "1rem", padding: "1.25rem" }} aria-label="Sales Enablement Session operations"><div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}><h2 style={{ margin: 0 }}>Session operations</h2><label>Lifecycle <select aria-label="Session lifecycle" value={sessionLifecycle} onChange={(event) => setSessionLifecycle(event.target.value)} style={controlStyle}><option value="all">All</option><option value="upcoming">Upcoming</option><option value="in_progress">In progress</option><option value="ended">Ended</option><option value="provisioning">Provisioning</option><option value="needs_attention">Needs attention</option></select></label></div>{sessions.length === 0 ? <p>No persisted Sales Enablement Sessions match this operational view.</p> : <ul>{sessions.map((session) => <li key={session.id}>{session.type.toUpperCase()} · {session.start} to {session.end} ({session.timeZone}) · {session.lifecycle?.replace("_", " ") ?? "recorded"}{session.needsAttention ? " · needs attention" : ""}</li>)}</ul>}</section>
   </section>;
 }
 

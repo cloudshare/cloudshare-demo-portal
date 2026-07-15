@@ -4,6 +4,7 @@ import type { SalesDemoSession, SalesDemoSessionRepository } from "@/domain/sale
 export function createPrismaSalesDemoSessionRepository(prisma: PrismaClient): SalesDemoSessionRepository {
   return {
     async save(session) { await prisma.salesDemoSession.create({ data: { ...session } }); },
+    async list(customerId) { return (await prisma.salesDemoSession.findMany({ where: { customerId }, orderBy: { createdAt: "desc" } })).map(toDomain); },
     async listByOpportunity(customerId, opportunityId) { return (await prisma.salesDemoSession.findMany({ where: { customerId, opportunityId }, orderBy: { createdAt: "desc" } })).map(toDomain); },
   };
 }

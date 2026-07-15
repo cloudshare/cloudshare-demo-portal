@@ -1,9 +1,9 @@
 export type SalesTab = "items" | "records" | "sessions" | "support" | "configuration";
 
 export const SALES_TABS: readonly SalesTab[] = [
+  "sessions",
   "items",
   "records",
-  "sessions",
   "support",
   "configuration",
 ];
@@ -89,7 +89,7 @@ function readValue(value: string | readonly string[] | undefined): string | unde
 
 function parseTab(value: string | undefined): SalesTab {
   if (value === "records" || value === "sessions" || value === "support" || value === "configuration") return value;
-  return "items";
+  return "sessions";
 }
 
 function parseItemView(value: string | undefined): SalesItemView {
