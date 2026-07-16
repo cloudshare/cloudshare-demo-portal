@@ -31,6 +31,9 @@ export interface SalesDemoSessionRepository {
   /** Optional during the #347 create-only compatibility period. #356's
    * operational read module requires this capability explicitly. */
   list?(customerId: string): Promise<readonly SalesDemoSession[]>;
+  /** Uses the persisted Opportunity relation so Account-filtered history does
+   * not expand into a Customer-wide Session scan plus per-row lookups. */
+  listByAccount?(customerId: string, accountId: string): Promise<readonly SalesDemoSession[]>;
   listByOpportunity(customerId: string, opportunityId: string): Promise<readonly SalesDemoSession[]>;
   findById?(customerId: string, id: string): Promise<SalesDemoSession | null>;
   updateOperationalState?(id: string, state: { cloudShareSalesExperienceId?: string; operationalStatus: "active" | "needs_attention"; attentionReason?: string | null }): Promise<void>;

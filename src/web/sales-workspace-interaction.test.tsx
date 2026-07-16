@@ -60,12 +60,15 @@ describe("SalesWorkspace interaction", () => {
     await screen.findByRole("combobox", { name: "Opportunity" });
     await user.selectOptions(screen.getByRole("combobox", { name: "Opportunity" }), "opp-1");
     await user.selectOptions(screen.getByRole("combobox", { name: "Catalogue Item" }), "item-1");
+    await user.click(screen.getByRole("radio", { name: "Schedule start" }));
+    fireEvent.change(screen.getByLabelText("Start"), { target: { value: "2026-07-17T09:15" } });
     const end = screen.getByLabelText("End") as HTMLInputElement;
     await waitFor(() => expect(end.value).not.toBe(""));
     fireEvent.change(end, { target: { value: "2026-07-17T10:15" } });
     await user.selectOptions(await screen.findByRole("combobox", { name: "Sales Pro" }), "rep@certalis.demo");
     await user.click(screen.getByRole("button", { name: "Create Sales Enablement Session" }));
     await screen.findByText("Sales Enablement Session created. No invitations were sent.");
+    expect(fetchMock).toHaveBeenCalledWith("/api/sales/enablement-sessions", expect.objectContaining({ method: "POST", body: expect.stringContaining('"start":"2026-07-17T09:15"') }));
     expect(fetchMock).toHaveBeenCalledWith("/api/sales/enablement-sessions", expect.objectContaining({ method: "POST", body: expect.stringContaining('"end":"2026-07-17T10:15"') }));
     expect(consoleError).not.toHaveBeenCalled();
   });
