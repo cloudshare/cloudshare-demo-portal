@@ -309,7 +309,7 @@ describe("SalesWorkspace interaction", () => {
   it("restores the Sessions Account and Opportunity from the route without loading the records catalogue", async () => {
     const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
       const path = String(input);
-      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [{ id: "account-1", name: "Acme" }], opportunities: [{ id: "opp-1", accountId: "account-1", label: "Acme - Proof" }], total: 1, nextRevision: 3 });
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [{ id: "account-1", name: "Acme - International" }], opportunities: [{ id: "opp-1", accountId: "account-1", accountName: "Acme - International", name: "Proof - Phase 1", label: "Acme - International - Proof - Phase 1" }], total: 1, nextRevision: 3 });
       if (path === "/api/sales/items") return json({ activeItems: [{ id: "item-1", name: "Demo", description: "", project: { id: "project-1", name: "Project" }, blueprints: [], policy: { id: "policy-1", name: "Policy" }, regions: [], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" }] });
       if (path.startsWith("/api/sales/enablement-sessions?")) return json({ sessions: [] });
       if (path === "/api/sales/timezones") return json({ timezones: [{ id: "UTC", name: "UTC" }], preference: {} });
@@ -319,7 +319,10 @@ describe("SalesWorkspace interaction", () => {
     render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", accountId: "account-1", opportunityId: "opp-1" }} />);
     expect((await screen.findByRole("combobox", { name: "Session Account" }) as HTMLSelectElement).value).toBe("account-1");
     expect((screen.getByRole("combobox", { name: "Opportunity" }) as HTMLSelectElement).value).toBe("opp-1");
-    expect(screen.getByRole("status", { name: "Session name preview" }).textContent).toContain("Acme - Proof (3) - Item");
+    await waitFor(() => expect(screen.getByRole("status", { name: "Session name preview" }).textContent).toContain("Acme - International - Proof - Phase 1 (3) - Item"));
+    const template = screen.getByRole("textbox", { name: "Session name template" });
+    fireEvent.change(template, { target: { value: "{opportunity} :: {account}" } });
+    expect(screen.getByRole("status", { name: "Session name preview" }).textContent).toContain("Proof - Phase 1 :: Acme - International");
     expect(fetchMock).not.toHaveBeenCalledWith("/api/sales/accounts", expect.anything());
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("selectedOpportunityId=opp-1"), { cache: "no-store" });
   });

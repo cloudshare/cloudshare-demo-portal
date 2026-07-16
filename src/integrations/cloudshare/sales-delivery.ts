@@ -32,12 +32,13 @@ export interface SalesDelivery {
   createSession(input: CreateSalesDemoSessionInput): Promise<{ readonly salesExperienceId: string } & SalesDeliveryEvidence>;
   /** Documented v4 read used only for reconciliation; the ID remains server-side. */
   readSession(salesExperienceId: string): Promise<{ readonly id: string; readonly status?: string } & SalesDeliveryEvidence>;
-  /** PUT always starts from a documented full GET representation; callers may
-   * alter only provider-visible name and schedule/timezone fields. */
-  updateSession?(salesExperienceId: string, changes: { readonly name?: string; readonly start?: string; readonly end?: string | null; readonly timeZone?: string }): Promise<{ readonly id: string } & SalesDeliveryEvidence>;
+  /** PUT always starts from a documented full GET representation. Certalis
+   * changes only the provider-visible name: schedule edits need their own
+   * lifecycle policy before they can be exposed. */
+  updateSession?(salesExperienceId: string, changes: { readonly name: string }): Promise<{ readonly id: string } & SalesDeliveryEvidence>;
 }
 
-const salesExperienceSchema = z.object({ id: z.string().min(1), name: z.string().min(1).optional(), status: z.string().optional(), type: z.enum(["demo", "poc", "pov", "trial"]).optional(), projectId: z.string().min(1).optional(), blueprintIds: z.array(z.string()).min(1).optional(), cloudshareRegionIds: z.array(z.string()).min(1).optional(), policyId: z.string().min(1).optional(), opportunity: z.string().min(1).optional(), mainSalesPro: z.object({ email: z.string().email(), teamId: z.string().optional() }).optional(), registrationType: z.enum(["registeredParticipantsOnly", "anyParticipants"]).optional(), start: z.string().optional(), end: z.string().nullable().optional(), timeZone: z.string().optional() }).passthrough();
+const salesExperienceSchema = z.object({ id: z.string().min(1), name: z.string().min(1).optional(), status: z.string().optional(), type: z.enum(["demo", "poc", "pov", "trial"]).optional(), projectId: z.string().min(1).optional(), blueprintIds: z.array(z.string()).min(1).optional(), cloudshareRegionIds: z.array(z.string()).min(1).optional(), policyId: z.string().min(1).optional(), opportunity: z.string().min(1).optional(), mainSalesPro: z.object({ email: z.string().email(), teamId: z.string().optional() }).optional(), registrationType: z.enum(["registeredParticipantsOnly", "anyParticipants"]).optional(), sendInvitations: z.enum(["salesProsOnly", "salesParticipantsOnly", "participantsOnly", "dontSend", "salesProsAndParticipants"]).optional(), start: z.string().optional(), end: z.string().nullable().optional(), timeZone: z.string().optional() }).passthrough();
 
 /** The deep CloudShare Sales Delivery module. Callers never learn v4 paths,
  * wire keys, or response parsing; they only validate an owner and create a
@@ -63,22 +64,52 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
       const { data: current } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceSchema });
       const required = [current.name, current.type, current.projectId, current.blueprintIds, current.cloudshareRegionIds, current.policyId, current.opportunity, current.mainSalesPro, current.registrationType, current.start, current.timeZone];
       if (required.some((value) => value === undefined || value === null)) throw new Error("CloudShare did not return the complete documented Sales Experience required for a safe update.");
-      const body = {
-        name: changes.name ?? current.name,
+      // Sales_Experience declares many defaults. Copy every documented mutable
+      // value that CloudShare returned, rather than permitting a full PUT to
+      // silently reset settings outside Certalis' edit scope. Invitations are
+      // deliberately pinned to the portal's no-invitation safety invariant.
+      const body = withoutUndefined({
+        name: changes.name,
         type: current.type,
         projectId: current.projectId,
+        teamId: current.teamId,
         blueprintIds: current.blueprintIds,
+        allowParticipantsSwitchSteps: current.allowParticipantsSwitchSteps,
         cloudshareRegionIds: current.cloudshareRegionIds,
+        awsCloudRegion: current.awsCloudRegion,
+        azureCloudRegion: current.azureCloudRegion,
+        googleCloudProviderRegion: current.googleCloudProviderRegion,
+        googleCloudProviderZone: current.googleCloudProviderZone,
         policyId: current.policyId,
         opportunity: current.opportunity,
         mainSalesPro: current.mainSalesPro,
+        additionalSalesPros: current.additionalSalesPros,
         registrationType: current.registrationType,
-        start: changes.start ?? current.start,
-        end: changes.end === undefined ? current.end : changes.end,
-        timeZone: changes.timeZone ?? current.timeZone,
-      };
+        passphrase: current.passphrase,
+        description: current.description,
+        labels: current.labels,
+        externalId: current.externalId,
+        allowMultipleEnvironmentActivations: current.allowMultipleEnvironmentActivations,
+        sendInvitations: "dontSend" as const,
+        emailDomainBlocklist: current.emailDomainBlocklist,
+        blockFreeEmailDomains: current.blockFreeEmailDomains,
+        customFields: current.customFields,
+        useCustomInvitationEmail: current.useCustomInvitationEmail,
+        preConfigureParticipantEnvironments: current.preConfigureParticipantEnvironments,
+        sharedEnvBlueprintId: current.sharedEnvBlueprintId,
+        sharedEnvPolicyId: current.sharedEnvPolicyId,
+        isSharedLabViewAccessEnabled: current.isSharedLabViewAccessEnabled,
+        allowAudioVideo: current.allowAudioVideo,
+        start: current.start,
+        end: current.end,
+        timeZone: current.timeZone,
+      });
       const { data, evidence } = await detailed({ method: "PUT", path: `/sales/${encodeURIComponent(salesExperienceId)}`, body, schema: salesExperienceSchema });
       return { id: data.id, ...evidence };
     },
   };
+}
+
+function withoutUndefined(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(value).filter(([, field]) => field !== undefined));
 }

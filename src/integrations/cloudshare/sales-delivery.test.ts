@@ -8,12 +8,12 @@ describe("CloudShare Sales Delivery", () => {
     await expect(delivery.readSession("sales-1")).resolves.toMatchObject({ id: "sales-1", status: "active" });
     expect(requestV4).toHaveBeenCalledWith(expect.objectContaining({ method: "GET", path: "/sales/sales-1" }));
   });
-  it("reads the documented full model before sending a full PUT /sales/{id}", async () => {
-    const full = { id: "sales-1", accessLink: "bearer-secret", name: "Original", type: "demo", projectId: "project-1", blueprintIds: ["bp-1"], cloudshareRegionIds: ["region-1"], policyId: "policy-1", opportunity: "Acme", mainSalesPro: { email: "sales@certalis.demo" }, registrationType: "registeredParticipantsOnly", start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" };
+  it("reads the documented full model before sending a full PUT /sales/{id} that keeps invitations suppressed", async () => {
+    const full = { id: "sales-1", accessLink: "bearer-secret", name: "Original", type: "demo", projectId: "project-1", blueprintIds: ["bp-1"], cloudshareRegionIds: ["region-1"], policyId: "policy-1", opportunity: "Acme", externalId: "portal-correlation", mainSalesPro: { email: "sales@certalis.demo" }, registrationType: "registeredParticipantsOnly", sendInvitations: "dontSend", start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" };
     const requestV4Detailed = vi.fn().mockResolvedValueOnce({ data: full, request: { method: "GET", path: "/sales/sales-1" }, response: { status: 200, body: full } }).mockResolvedValueOnce({ data: { ...full, name: "Renamed" }, request: { method: "PUT", path: "/sales/sales-1", body: { ...full, name: "Renamed" } }, response: { status: 200, body: { ...full, name: "Renamed" } } });
     const delivery = createCloudShareSalesDelivery({ requestV4Detailed } as never);
     await expect(delivery.updateSession!("sales-1", { name: "Renamed" })).resolves.toMatchObject({ id: "sales-1", request: { method: "PUT" } });
-    expect(requestV4Detailed).toHaveBeenLastCalledWith(expect.objectContaining({ method: "PUT", path: "/sales/sales-1", body: expect.objectContaining({ name: "Renamed", projectId: "project-1", blueprintIds: ["bp-1"], mainSalesPro: { email: "sales@certalis.demo" } }) }));
+    expect(requestV4Detailed).toHaveBeenLastCalledWith(expect.objectContaining({ method: "PUT", path: "/sales/sales-1", body: expect.objectContaining({ name: "Renamed", projectId: "project-1", blueprintIds: ["bp-1"], mainSalesPro: { email: "sales@certalis.demo" }, externalId: "portal-correlation", registrationType: "registeredParticipantsOnly", sendInvitations: "dontSend" }) }));
     expect(requestV4Detailed.mock.calls[1][0].body).not.toHaveProperty("accessLink");
   });
   it("uses the documented direct v4 Sales Experience contract with registered admission and no invitations", async () => {

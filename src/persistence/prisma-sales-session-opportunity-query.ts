@@ -13,6 +13,6 @@ export function createPrismaSalesSessionOpportunityQuery(prisma: PrismaClient): 
       prisma.salesOpportunity.findMany({ where, select: { id: true, accountId: true, name: true, account: { select: { name: true } } }, orderBy: [{ account: { name: "asc" } }, { name: "asc" }], skip: (query.page - 1) * query.pageSize, take: query.pageSize }),
       query.selectedOpportunityId ? prisma.salesDemoSession.aggregate({ where: { customerId, opportunityId: query.selectedOpportunityId }, _max: { revision: true } }) : Promise.resolve(null),
     ]);
-    return { accounts, accountPage: query.accountPage, accountPageSize: query.accountPageSize, accountTotal, opportunities: opportunities.map((opportunity) => ({ id: opportunity.id, accountId: opportunity.accountId, label: `${opportunity.account.name} - ${opportunity.name}` })), page: query.page, pageSize: query.pageSize, total, ...(highestRevision ? { nextRevision: (highestRevision._max.revision ?? 0) + 1 } : {}) };
+    return { accounts, accountPage: query.accountPage, accountPageSize: query.accountPageSize, accountTotal, opportunities: opportunities.map((opportunity) => ({ id: opportunity.id, accountId: opportunity.accountId, accountName: opportunity.account.name, name: opportunity.name, label: `${opportunity.account.name} - ${opportunity.name}` })), page: query.page, pageSize: query.pageSize, total, ...(highestRevision ? { nextRevision: (highestRevision._max.revision ?? 0) + 1 } : {}) };
   } };
 }
