@@ -214,7 +214,10 @@ describe("SalesWorkspace interaction", () => {
     await user.click(await screen.findByRole("combobox", { name: "Opportunity" }));
     await screen.findByRole("option", { name: "Acme - Opportunity 20" });
     expect(screen.queryByRole("option", { name: "Acme - Opportunity 21" })).toBeNull();
-    await user.click(screen.getByRole("button", { name: "Load more opportunity" }));
+    const loadMore = screen.getByRole("button", { name: "Load more opportunity" });
+    await user.tab();
+    expect(document.activeElement).toBe(loadMore);
+    await user.keyboard("{Enter}");
     expect(await screen.findByRole("option", { name: "Acme - Opportunity 21" })).not.toBeNull();
   });
 
