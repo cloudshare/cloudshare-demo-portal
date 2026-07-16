@@ -130,6 +130,28 @@ describe("SalesWorkspace interaction", () => {
     expect((screen.getByRole("combobox", { name: "Opportunity" }) as HTMLInputElement).value).toBe("");
   });
 
+  it("selects an Account from the combined selector entirely by keyboard", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const path = String(input);
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [{ id: "account-1", name: "Acme" }, { id: "account-2", name: "Brio" }], opportunities: [], total: 0 });
+      if (path === "/api/sales/items") return json({ activeItems: [] });
+      if (path === "/api/sales/timezones" && !init?.method) return json({ timezones: [{ id: "UTC", name: "UTC" }], preference: {} });
+      if (path === "/api/sales/timezones" && init?.method === "PUT") return new Response(null, { status: 204 });
+      if (path.startsWith("/api/sales/enablement-sessions?")) return json({ sessions: [] });
+      return json({});
+    });
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+
+    const account = await screen.findByRole("combobox", { name: "Account" });
+    await user.click(account);
+    await screen.findByRole("option", { name: "Acme" });
+    await user.keyboard("{ArrowDown}{Enter}");
+
+    expect(mockRouter.push).toHaveBeenLastCalledWith("/sales?tab=sessions&accountId=account-1", { scroll: false });
+    expect((account as HTMLInputElement).value).toBe("Acme");
+  });
+
   it("does not replace a newer Opportunity search result with an aborted stale response", async () => {
     const user = userEvent.setup();
     let resolveInitial: ((response: Response) => void) | undefined;
