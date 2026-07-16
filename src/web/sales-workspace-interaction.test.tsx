@@ -104,6 +104,32 @@ describe("SalesWorkspace interaction", () => {
     expect(mockRouter.push).toHaveBeenLastCalledWith("/sales?tab=sessions&opportunityId=opp-north", { scroll: false });
   });
 
+  it("closes a Sales selector on blur and clears both Account and Opportunity filters", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const path = String(input);
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [{ id: "account-1", name: "Acme" }], opportunities: [{ id: "opp-1", accountId: "account-1", accountName: "Acme", name: "North renewal", label: "Acme - North renewal" }], total: 1 });
+      if (path === "/api/sales/items") return json({ activeItems: [] });
+      if (path === "/api/sales/timezones" && !init?.method) return json({ timezones: [{ id: "UTC", name: "UTC" }], freshness: "fresh", preference: {} });
+      if (path === "/api/sales/timezones" && init?.method === "PUT") return new Response(null, { status: 204 });
+      if (path.startsWith("/api/sales/enablement-sessions?")) return json({ sessions: [] });
+      return json({});
+    });
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+
+    await user.click(await screen.findByRole("combobox", { name: "Account" }));
+    expect(await screen.findByRole("listbox", { name: "Account results" })).not.toBeNull();
+    await user.click(screen.getByText("Timezone catalogue: fresh"));
+    expect(screen.queryByRole("listbox", { name: "Account results" })).toBeNull();
+
+    await chooseSearchableOption(user, "Account", "Acme");
+    expect((screen.getByRole("button", { name: "Clear Account and Opportunity filters" }) as HTMLButtonElement).disabled).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Clear Account and Opportunity filters" }));
+    expect(mockRouter.push).toHaveBeenLastCalledWith("/sales?tab=sessions", { scroll: false });
+    expect((screen.getByRole("combobox", { name: "Account" }) as HTMLInputElement).value).toBe("");
+    expect((screen.getByRole("combobox", { name: "Opportunity" }) as HTMLInputElement).value).toBe("");
+  });
+
   it("does not replace a newer Opportunity search result with an aborted stale response", async () => {
     const user = userEvent.setup();
     let resolveInitial: ((response: Response) => void) | undefined;
