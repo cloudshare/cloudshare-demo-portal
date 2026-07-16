@@ -4,7 +4,7 @@ import type { SalesSessionOpportunityQuery } from "@/domain/sales-session-opport
 export function createPrismaSalesSessionOpportunityQuery(prisma: PrismaClient): SalesSessionOpportunityQuery {
   return { async list(customerId, query) {
     const search = query.search?.trim(); const accountSearch = query.accountSearch?.trim();
-    const where = { customerId, archivedAt: null, ...(query.accountId ? { accountId: query.accountId } : {}), ...(query.selectedOpportunityId ? { id: query.selectedOpportunityId } : {}), ...(search ? { OR: [{ name: { contains: search } }, { account: { name: { contains: search } } }] } : {}) };
+    const where = { customerId, archivedAt: null, account: { archivedAt: null }, ...(query.accountId ? { accountId: query.accountId } : {}), ...(query.selectedOpportunityId ? { id: query.selectedOpportunityId } : {}), ...(search ? { OR: [{ name: { contains: search } }, { account: { name: { contains: search }, archivedAt: null } }] } : {}) };
     const accountWhere = { customerId, archivedAt: null, ...(query.accountId ? { id: query.accountId } : {}), ...(accountSearch ? { name: { contains: accountSearch } } : {}) };
     const [accounts, accountTotal, total, opportunities, highestRevision] = await Promise.all([
       prisma.salesAccount.findMany({ where: accountWhere, select: { id: true, name: true }, orderBy: { name: "asc" }, skip: (query.accountPage - 1) * query.accountPageSize, take: query.accountPageSize }),

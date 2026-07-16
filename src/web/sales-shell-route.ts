@@ -27,6 +27,8 @@ export interface SalesNavigationIntent {
   readonly accountId?: string | null;
   readonly opportunityId?: string | null;
   readonly correlationId?: string | null;
+  /** Keep a selection change in browser history without moving the user's viewport. */
+  readonly preserveScroll?: boolean;
 }
 
 export function getSalesTabLabel(tab: SalesTab): string {
