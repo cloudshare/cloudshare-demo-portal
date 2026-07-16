@@ -54,7 +54,7 @@ const salesExperienceSchema = z.object({
   googleCloudProviderZone: z.string().nullable().optional(),
   policyId: z.string().min(1).optional(),
   opportunity: z.string().min(1).optional(),
-  mainSalesPro: z.object({ email: z.string().email(), teamId: z.string().optional() }).passthrough().optional(),
+  mainSalesPro: z.object({ email: z.string().email(), teamId: z.string().nullable().optional() }).passthrough().optional(),
   additionalSalesPros: z.array(z.unknown()).nullable().optional(),
   registrationType: z.enum(["registeredParticipantsOnly", "anyParticipants"]).optional(),
   passphrase: z.string().optional(),

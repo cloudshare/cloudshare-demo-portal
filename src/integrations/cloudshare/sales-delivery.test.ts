@@ -33,4 +33,11 @@ describe("CloudShare Sales Delivery", () => {
     expect(result).toMatchObject({ request: { query: { trace: "safe" }, headers: { "x-request-id": "req-1" } }, response: { headers: { "x-correlation-id": "cloud-1" }, network: { remoteAddress: "203.0.113.1" }, tls: { protocol: "TLSv1.3" } } });
     expect(requestV4Detailed).toHaveBeenCalledWith(expect.objectContaining({ method: "POST", path: "/sales", body: expect.objectContaining({ opportunity: "Acme evaluation", externalId: "a3d9df53a55e4c748c3acb4dd89ae51c", passphrase: "k9X3pL8vQ2mR7sT4wY6zA1bC5dE0fG", registrationType: "registeredParticipantsOnly", sendInvitations: "dontSend", mainSalesPro: { email: "sales-admin@certalis.demo" } }) }));
   });
+  it("accepts the nullable main Sales Pro team identifier returned by the live v4 Sales API", async () => {
+    const liveResponse = { id: "sales-1", mainSalesPro: { email: "sales-admin@certalis.demo", teamId: null } };
+    const requestV4Detailed = vi.fn().mockImplementation(async (spec) => ({ data: spec.schema.parse(liveResponse), request: { method: "POST", path: "/sales", body: {} }, response: { status: 201, body: liveResponse } }));
+    const delivery = createCloudShareSalesDelivery({ requestV4Detailed } as never);
+
+    await expect(delivery.createSession({ name: "Acme Demo", type: "demo", projectId: "project-1", blueprintIds: ["bp-1"], regionIds: ["region-1"], policyId: "policy-1", opportunity: "Acme evaluation", externalId: "a3d9df53a55e4c748c3acb4dd89ae51c", passphrase: "k9X3pL8vQ2mR7sT4wY6zA1bC5dE0fG", start: "2026-07-15T09:00", end: "2026-07-16T09:00", timeZone: "UTC", mainSalesProEmail: "sales-admin@certalis.demo", registrationType: "registeredParticipantsOnly", sendInvitations: "dontSend" })).resolves.toMatchObject({ salesExperienceId: "sales-1" });
+  });
 });
