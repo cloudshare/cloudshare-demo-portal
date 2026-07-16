@@ -13,6 +13,16 @@ describe("controlled Sales Session edit", () => {
     const updateSession = vi.fn(); const result = await handleUpdateSalesSession({ sessions: { findById: vi.fn().mockResolvedValue({ ...session, operationalStatus: "needs_attention" }) }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), updateSession }) } }, { customerId: "certalis", sessionId: "s1", actor, body: { name: "Renamed Session" } });
     expect(result.status).toBe(409); expect(updateSession).not.toHaveBeenCalled();
   });
+  it("rejects a provisioning reservation before constructing a CloudShare delivery", async () => {
+    const forConnection = vi.fn();
+    const result = await handleUpdateSalesSession({ sessions: { findById: vi.fn().mockResolvedValue({ ...session, operationalStatus: "provisioning", cloudShareSalesExperienceId: "pending:session-uuid" }) }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, deliveryFactory: { forConnection } }, { customerId: "certalis", sessionId: "s1", actor, body: { name: "Renamed Session" } });
+    expect(result).toMatchObject({ status: 409 }); expect(forConnection).not.toHaveBeenCalled();
+  });
+  it("rejects a pending remote identifier even if an inconsistent record says active", async () => {
+    const forConnection = vi.fn();
+    const result = await handleUpdateSalesSession({ sessions: { findById: vi.fn().mockResolvedValue({ ...session, cloudShareSalesExperienceId: "pending:session-uuid" }) }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, deliveryFactory: { forConnection } }, { customerId: "certalis", sessionId: "s1", actor, body: { name: "Renamed Session" } });
+    expect(result).toMatchObject({ status: 409 }); expect(forConnection).not.toHaveBeenCalled();
+  });
   it("accepts only the name field, leaving schedule and timezone changes outside this controlled edit", async () => {
     const updateSession = vi.fn(); const result = await handleUpdateSalesSession({ sessions: { findById: vi.fn(), updateDisplayName: vi.fn() }, connections: { findByCustomerId: vi.fn() }, deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), updateSession }) } }, { customerId: "certalis", sessionId: "s1", actor, body: { start: "2026-08-16T09:00" } });
     expect(result).toMatchObject({ status: 400 }); expect(updateSession).not.toHaveBeenCalled();

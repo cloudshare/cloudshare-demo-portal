@@ -9,6 +9,7 @@ export async function handleReconcileSalesSession(deps: { sessions: Pick<SalesDe
   if (!deps.sessions.findById || !deps.sessions.updateOperationalState) return { status: 503, body: { error: "Sales reconciliation is unavailable." } };
   const [session, connection] = await Promise.all([deps.sessions.findById(request.customerId, request.sessionId), deps.connections.findByCustomerId(request.customerId)]);
   if (!session || !connection) return { status: 404, body: { error: "Sales Session or CloudShare Connection was not found." } };
+  if (session.operationalStatus !== "active" || session.cloudShareSalesExperienceId.startsWith("pending:")) return { status: 409, body: { error: "Only active Sales Sessions with a provisioned CloudShare Experience can be reconciled." } };
   const correlationId = randomUUID();
   try {
     const delivery = deps.deliveryFactory?.forConnection(connection) ?? createCloudShareSalesDelivery((deps.cloudshare as NonNullable<typeof deps.cloudshare>).forConnection(connection));
