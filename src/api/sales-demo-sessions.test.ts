@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { handleCreateSalesDemoSession } from "./sales-demo-sessions";
+import { handleCreateSalesDemoSession as createSalesDemoSession, type SalesDemoSessionDeps, type SalesDemoSessionRequest } from "./sales-demo-sessions";
 import type { SalesDemoSession } from "@/domain/sales-demo-session";
 import { createInMemorySalesRecordRepository } from "@/domain/sales-records";
 import { CloudShareRequestError } from "@/integrations/cloudshare/errors";
@@ -13,8 +13,18 @@ const projectMembers = {
     response: { status: 200, body: { Rows: [] } }, integrationSurface: "cloudshare.v3.project_members_gui",
   }),
 };
+const documentedTimezones = { find: vi.fn().mockResolvedValue({ customerId: "certalis", timezones: [{ id: "UTC", name: "UTC" }, { id: "Mountain Standard Time", name: "Mountain" }], fetchedAt: new Date("2026-07-15T00:00:00.000Z") }) };
+const handleCreateSalesDemoSession = (deps: SalesDemoSessionDeps, request: SalesDemoSessionRequest) => createSalesDemoSession({ ...deps, timezones: deps.timezones ?? documentedTimezones }, request);
 
 describe("Sales Enablement Session API handler", () => {
+  it("fails closed when the Customer has no verified CloudShare timezone catalogue", async () => {
+    const delivery = { createSession: vi.fn() };
+    const result = await createSalesDemoSession({ records: { findOpportunity: vi.fn() }, items: { findById: vi.fn() }, sessions: { save: vi.fn(), listByOpportunity: vi.fn() }, connections: { findByCustomerId: vi.fn() }, deliveryFactory: { forConnection: vi.fn().mockReturnValue(delivery) }, timezones: { find: vi.fn().mockResolvedValue(null) } }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-1", itemId: "item-1", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "Line Islands Standard Time" } });
+
+    expect(result).toMatchObject({ status: 422, body: { error: "Refresh the documented CloudShare timezone catalogue before creating a Sales Enablement Session." } });
+    expect(delivery.createSession).not.toHaveBeenCalled();
+  });
+
   it("reserves the revision before CloudShare and never calls CloudShare if that reservation collides", async () => {
     const records = createInMemorySalesRecordRepository(); await records.saveOpportunity({ id: "opp-1", customerId: "certalis", accountId: "account-1", name: "Acme", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
     const delivery = { createSession: vi.fn() };

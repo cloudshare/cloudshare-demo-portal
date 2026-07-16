@@ -72,7 +72,7 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
   if (!parsed.success) return rejected(deps, request, 400, "Invalid Sales Enablement Session request.", "invalid_request");
   if (!isChronological(parsed.data)) return rejected(deps, request, 400, "End must be after start.", "end_before_start");
   const cachedTimezones = await deps.timezones?.find(request.customerId);
-  if (cachedTimezones && !cachedTimezones.timezones.some((zone) => zone.id === parsed.data.timeZone)) return rejected(deps, request, 422, "Select a timezone from the documented CloudShare catalogue.", "unsupported_cloudshare_timezone");
+  if (!cachedTimezones || !cachedTimezones.timezones.some((zone) => zone.id === parsed.data.timeZone)) return rejected(deps, request, 422, "Refresh the documented CloudShare timezone catalogue before creating a Sales Enablement Session.", "unsupported_cloudshare_timezone");
   if (!isValidCloudShareWallClock(parsed.data.start, parsed.data.timeZone) || !isValidCloudShareWallClock(parsed.data.end, parsed.data.timeZone)) return rejected(deps, request, 400, "Start and end must be unambiguous CloudShare wall-clock values in the selected time zone.", "invalid_wall_clock");
   const [opportunity, item, connection] = await Promise.all([
     deps.records.findOpportunity(request.customerId, parsed.data.opportunityId), deps.items.findById(parsed.data.itemId), deps.connections.findByCustomerId(request.customerId),
