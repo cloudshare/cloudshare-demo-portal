@@ -322,7 +322,11 @@ describe("SalesWorkspace interaction", () => {
     await waitFor(() => expect(screen.getByRole("status", { name: "Session name preview" }).textContent).toContain("Acme - International - Proof - Phase 1 (3) - Item"));
     const template = screen.getByRole("textbox", { name: "Session name template" });
     fireEvent.change(template, { target: { value: "{opportunity} :: {account}" } });
-    expect(screen.getByRole("status", { name: "Session name preview" }).textContent).toContain("Proof - Phase 1 :: Acme - International");
+    expect(screen.getByRole("status", { name: "Session name preview" }).textContent).toContain("Template must include {revision}");
+    expect((screen.getByRole("button", { name: "Save template" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(template, { target: { value: "{opportunity} :: {owner} ({revision})" } });
+    expect(screen.getByRole("status", { name: "Session name preview" }).textContent).toContain("supported placeholders");
+    expect((screen.getByRole("button", { name: "Create Sales Enablement Session" }) as HTMLButtonElement).disabled).toBe(true);
     expect(fetchMock).not.toHaveBeenCalledWith("/api/sales/accounts", expect.anything());
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("selectedOpportunityId=opp-1"), { cache: "no-store" });
   });

@@ -8,4 +8,8 @@ describe("Sales Session name template", () => {
   it("rejects unbounded or revision-free templates", () => {
     expect(renderSalesSessionName("{account} {item}", { account: "A", opportunity: "O", revision: 1, item: "I" })).toBeNull();
   });
+  it("rejects placeholders that the shared renderer cannot resolve", () => {
+    expect(renderSalesSessionName("{account} - {opportunity} ({revision}) - {owner}", { account: "A", opportunity: "O", revision: 1, item: "I" })).toBeNull();
+    expect(renderSalesSessionName("{account} - {opportunity} ({revision}) - {item", { account: "A", opportunity: "O", revision: 1, item: "I" })).toBeNull();
+  });
 });

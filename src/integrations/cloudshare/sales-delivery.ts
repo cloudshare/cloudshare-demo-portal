@@ -38,7 +38,46 @@ export interface SalesDelivery {
   updateSession?(salesExperienceId: string, changes: { readonly name: string }): Promise<{ readonly id: string } & SalesDeliveryEvidence>;
 }
 
-const salesExperienceSchema = z.object({ id: z.string().min(1), name: z.string().min(1).optional(), status: z.string().optional(), type: z.enum(["demo", "poc", "pov", "trial"]).optional(), projectId: z.string().min(1).optional(), blueprintIds: z.array(z.string()).min(1).optional(), cloudshareRegionIds: z.array(z.string()).min(1).optional(), policyId: z.string().min(1).optional(), opportunity: z.string().min(1).optional(), mainSalesPro: z.object({ email: z.string().email(), teamId: z.string().optional() }).optional(), registrationType: z.enum(["registeredParticipantsOnly", "anyParticipants"]).optional(), sendInvitations: z.enum(["salesProsOnly", "salesParticipantsOnly", "participantsOnly", "dontSend", "salesProsAndParticipants"]).optional(), start: z.string().optional(), end: z.string().nullable().optional(), timeZone: z.string().optional() }).passthrough();
+const salesExperienceSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1).optional(),
+  status: z.string().optional(),
+  type: z.enum(["demo", "poc", "pov", "trial"]).optional(),
+  projectId: z.string().min(1).optional(),
+  teamId: z.string().optional(),
+  blueprintIds: z.array(z.string()).min(1).optional(),
+  allowParticipantsSwitchSteps: z.boolean().nullable().optional(),
+  cloudshareRegionIds: z.array(z.string()).min(1).optional(),
+  awsCloudRegion: z.string().nullable().optional(),
+  azureCloudRegion: z.string().nullable().optional(),
+  googleCloudProviderRegion: z.string().nullable().optional(),
+  googleCloudProviderZone: z.string().nullable().optional(),
+  policyId: z.string().min(1).optional(),
+  opportunity: z.string().min(1).optional(),
+  mainSalesPro: z.object({ email: z.string().email(), teamId: z.string().optional() }).passthrough().optional(),
+  additionalSalesPros: z.array(z.unknown()).nullable().optional(),
+  registrationType: z.enum(["registeredParticipantsOnly", "anyParticipants"]).optional(),
+  passphrase: z.string().optional(),
+  description: z.string().nullable().optional(),
+  labels: z.array(z.unknown()).nullable().optional(),
+  externalId: z.string().nullable().optional(),
+  allowMultipleEnvironmentActivations: z.boolean().optional(),
+  sendInvitations: z.enum(["salesProsOnly", "salesParticipantsOnly", "participantsOnly", "dontSend", "salesProsAndParticipants"]).optional(),
+  emailDomainBlocklist: z.array(z.unknown()).nullable().optional(),
+  blockFreeEmailDomains: z.boolean().optional(),
+  customFields: z.array(z.unknown()).nullable().optional(),
+  useCustomInvitationEmail: z.boolean().optional(),
+  preConfigureParticipantEnvironments: z.boolean().nullable().optional(),
+  sharedEnvBlueprintId: z.string().nullable().optional(),
+  sharedEnvPolicyId: z.string().nullable().optional(),
+  isSharedLabViewAccessEnabled: z.boolean().nullable().optional(),
+  allowAudioVideo: z.boolean().optional(),
+  start: z.string().optional(),
+  end: z.string().nullable().optional(),
+  timeZone: z.string().optional(),
+}).passthrough();
+
+const mutableSalesExperienceFields = ["name", "type", "projectId", "teamId", "blueprintIds", "allowParticipantsSwitchSteps", "cloudshareRegionIds", "awsCloudRegion", "azureCloudRegion", "googleCloudProviderRegion", "googleCloudProviderZone", "policyId", "opportunity", "mainSalesPro", "additionalSalesPros", "start", "end", "timeZone", "registrationType", "passphrase", "description", "labels", "externalId", "allowMultipleEnvironmentActivations", "sendInvitations", "emailDomainBlocklist", "blockFreeEmailDomains", "customFields", "useCustomInvitationEmail", "preConfigureParticipantEnvironments", "sharedEnvBlueprintId", "sharedEnvPolicyId", "isSharedLabViewAccessEnabled", "allowAudioVideo"] as const;
 
 /** The deep CloudShare Sales Delivery module. Callers never learn v4 paths,
  * wire keys, or response parsing; they only validate an owner and create a
@@ -62,13 +101,12 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
     },
     async updateSession(salesExperienceId, changes) {
       const { data: current } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceSchema });
-      const required = [current.name, current.type, current.projectId, current.blueprintIds, current.cloudshareRegionIds, current.policyId, current.opportunity, current.mainSalesPro, current.registrationType, current.start, current.timeZone];
-      if (required.some((value) => value === undefined || value === null)) throw new Error("CloudShare did not return the complete documented Sales Experience required for a safe update.");
+      if (!hasEveryMutableSalesExperienceField(current) || current.sendInvitations !== "dontSend") throw new Error("CloudShare did not return the complete documented Sales Experience required for a safe update.");
       // Sales_Experience declares many defaults. Copy every documented mutable
       // value that CloudShare returned, rather than permitting a full PUT to
       // silently reset settings outside Certalis' edit scope. Invitations are
       // deliberately pinned to the portal's no-invitation safety invariant.
-      const body = withoutUndefined({
+      const body = {
         name: changes.name,
         type: current.type,
         projectId: current.projectId,
@@ -90,7 +128,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
         labels: current.labels,
         externalId: current.externalId,
         allowMultipleEnvironmentActivations: current.allowMultipleEnvironmentActivations,
-        sendInvitations: "dontSend" as const,
+        sendInvitations: current.sendInvitations,
         emailDomainBlocklist: current.emailDomainBlocklist,
         blockFreeEmailDomains: current.blockFreeEmailDomains,
         customFields: current.customFields,
@@ -103,13 +141,14 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
         start: current.start,
         end: current.end,
         timeZone: current.timeZone,
-      });
+      };
       const { data, evidence } = await detailed({ method: "PUT", path: `/sales/${encodeURIComponent(salesExperienceId)}`, body, schema: salesExperienceSchema });
       return { id: data.id, ...evidence };
     },
   };
 }
 
-function withoutUndefined(value: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(value).filter(([, field]) => field !== undefined));
+function hasEveryMutableSalesExperienceField(value: z.infer<typeof salesExperienceSchema>): boolean {
+  const record = value as Record<string, unknown>;
+  return mutableSalesExperienceFields.every((field) => Object.hasOwn(record, field) && record[field] !== undefined);
 }
