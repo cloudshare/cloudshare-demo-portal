@@ -1,6 +1,6 @@
 # CloudShare v4 Sales GET-to-PUT contract finding
 
-**Date:** 2026-07-16  
+**Date:** 2026-07-16
 **Scope:** whether the documented v4 Sales `GET /sales/{id}` response can safely be replayed as a full `PUT /sales/{id}` request. This is a contract finding, not a live-tenant observation.
 
 ## Conclusion
@@ -41,4 +41,3 @@ controlled portal edit may proceed only when the current GET response has been v
 specific supported PUT model being sent; otherwise return a supportable, correlated failure and do
 not call CloudShare. A live response can establish that a particular tenant exposes the required
 subset, but it cannot expand the documented contract to partial updates.
-
