@@ -578,6 +578,7 @@ describe("SalesWorkspace interaction", () => {
     expect(screen.getByRole("status", { name: "Session name preview" }).textContent).toContain("Template must include {revision}");
     expect(screen.getByText(/Use \{account\}, \{opportunity\}, \{revision\}, and \{item\}/)).not.toBeNull();
     expect((screen.getByRole("button", { name: "Save as default template" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Save as default template" }) as HTMLButtonElement).style.justifySelf).toBe("start");
     fireEvent.change(template, { target: { value: "{opportunity} :: {owner} ({revision})" } });
     expect(screen.getByRole("status", { name: "Session name preview" }).textContent).toContain("supported placeholders");
     expect((screen.getByRole("button", { name: "Create Sales Enablement Session" }) as HTMLButtonElement).disabled).toBe(true);
