@@ -119,8 +119,12 @@ describe("SalesWorkspace interaction", () => {
     });
     render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
 
+    const accountSelector = screen.getByTestId("account-results-selector");
+    expect(accountSelector.children).toHaveLength(3);
     await user.click(await screen.findByRole("combobox", { name: "Account" }));
-    expect(await screen.findByRole("listbox", { name: "Account results" })).not.toBeNull();
+    const accountResults = await screen.findByRole("listbox", { name: "Account results" });
+    expect(accountSelector.children).toHaveLength(3);
+    expect(accountResults.parentElement?.style.position).toBe("absolute");
     await user.click(screen.getByLabelText("Time zone"));
     expect(screen.queryByRole("listbox", { name: "Account results" })).toBeNull();
 
