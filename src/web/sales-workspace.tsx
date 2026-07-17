@@ -29,6 +29,7 @@ type BlueprintOption = Named & { defaultSnapshotRegionIds?: readonly string[] };
 type Policy = Named & { storageLeaseMinutes: number | null };
 type Item = { id: string; name: string; description: string; project: Named; blueprints: Named[]; policy: Named; regions: Named[]; defaultDurationMinutes: number; status: "active" | "archived" };
 type EnablementSession = { id: string; opportunityId: string; itemId: string; type: SalesExperienceType; start: string; end: string; timeZone: string; salesProDisplayName: string; sessionName?: string; revision?: number; createdAt: string; lifecycle?: "upcoming" | "in_progress" | "ended" | "provisioning" | "needs_attention"; needsAttention?: boolean; verificationEligible: boolean; /** Only a server-side live GET contract check may enable a full-PUT name edit. */ editEligible?: boolean };
+type SalesParticipant = { id: string; firstName: string; lastName: string; invitationStatus: "sent" | "notSent"; invitedBy: string | null; participationStatus: "pending" | "inProgress" | "concluded"; firstJoined: string | null; envStatus: string | null };
 type ProjectMember = { email: string; displayName: string };
 
 const blank: SalesData = { accounts: [], opportunities: [], contacts: [] };
@@ -153,6 +154,7 @@ function SalesDemoSessionsFeature({ initialSelection, onNavigate }: { readonly i
   const [sessionOperationCorrelationId, setSessionOperationCorrelationId] = useState<string | null>(null);
   const [sessionOperationFailed, setSessionOperationFailed] = useState(false);
   const [verifyingSessionId, setVerifyingSessionId] = useState<string | null>(null);
+  const [participantSessionId, setParticipantSessionId] = useState<string | null>(null);
   const [selectionLoading, setSelectionLoading] = useState(false);
   const [selectionError, setSelectionError] = useState<string | null>(null);
   const [templateSaveMessage, setTemplateSaveMessage] = useState<string | null>(null);
@@ -292,9 +294,49 @@ function SalesDemoSessionsFeature({ initialSelection, onNavigate }: { readonly i
         {editingSessionId === session.id ? <><input aria-label="Session name" value={editedSessionName} onChange={(event) => setEditedSessionName(event.target.value)} style={controlStyle} /><button type="button" style={compactButtonStyle} onClick={() => void runSessionOperation(() => fetchSales(`/api/sales/enablement-sessions/${encodeURIComponent(session.id)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: editedSessionName }) }), "CloudShare could not update this Sales Session.", "Sales Session name updated.", () => setEditingSessionId(null))}>Save edit</button></> : <>{session.sessionName ?? session.type.toUpperCase()} (revision {session.revision ?? 1})</>} · {session.start} to {session.end} ({session.timeZone}) · {session.lifecycle?.replace("_", " ") ?? "recorded"}
         {session.lifecycle === "upcoming" && session.editEligible === true ? <button type="button" style={compactButtonStyle} onClick={() => { setEditingSessionId(session.id); setEditedSessionName(session.sessionName ?? ""); }}>Edit name</button> : null}
         {session.verificationEligible === true ? <button type="button" disabled={verifyingSessionId === session.id} style={verifyingSessionId === session.id ? { ...compactButtonStyle, ...disabledButtonStyle, margin: "0.4rem 0 0.4rem 0.75rem", verticalAlign: "middle" } : { ...compactButtonStyle, margin: "0.4rem 0 0.4rem 0.75rem", verticalAlign: "middle" }} onClick={() => { setVerifyingSessionId(session.id); void runSessionOperation(() => fetchSales(`/api/sales/enablement-sessions/${encodeURIComponent(session.id)}/reconcile`, { method: "POST" }), "CloudShare could not verify this Sales Session's status.", "CloudShare status verified. The scheduled lifecycle is unchanged.").finally(() => setVerifyingSessionId(null)); }}>{verifyingSessionId === session.id ? "Verifying CloudShare status…" : "Verify CloudShare status"}</button> : <small style={{ color: "#52606d" }}>CloudShare verification is unavailable while this session is provisioning or needs attention.</small>}
+        <button type="button" style={{ ...compactButtonStyle, marginLeft: "0.75rem" }} onClick={() => setParticipantSessionId((current) => current === session.id ? null : session.id)}>{participantSessionId === session.id ? "Hide participants" : "Manage participants"}</button>
+        {participantSessionId === session.id ? <SalesSessionParticipants session={session} fetchSales={fetchSales} onOpenSupport={(id) => onNavigate({ tab: "support", correlationId: id })} /> : null}
       </li>)}</ul>}
       {sessionOperationMessage ? <div role={sessionOperationFailed ? "alert" : "status"} style={sessionOperationFailed ? alertPanelStyle.danger : alertPanelStyle.success}>{sessionOperationMessage}{sessionOperationCorrelationId ? <> <button type="button" onClick={() => onNavigate({ tab: "support", correlationId: sessionOperationCorrelationId })} style={{ border: 0, background: "transparent", color: colors.info, textDecoration: "underline", cursor: "pointer" }}>Open support diagnostics ({sessionOperationCorrelationId})</button></> : null}</div> : null}
     </section>
+  </section>;
+}
+
+function SalesSessionParticipants({ session, fetchSales, onOpenSupport }: { readonly session: EnablementSession; readonly fetchSales: typeof fetch; readonly onOpenSupport: (correlationId: string) => void }) {
+  const [contacts, setContacts] = useState<Contact[]>([]);
+  const [participants, setParticipants] = useState<SalesParticipant[]>([]);
+  const [selectedContacts, setSelectedContacts] = useState<string[]>([]);
+  const [selectedParticipants, setSelectedParticipants] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [correlationId, setCorrelationId] = useState<string | null>(null);
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [recordsResponse, participantsResponse] = await Promise.all([fetchSales("/api/sales/accounts", { cache: "no-store" }), fetchSales(`/api/sales/enablement-sessions/${encodeURIComponent(session.id)}/participants`, { cache: "no-store" })]);
+      const recordsBody = await recordsResponse.json() as { contacts?: Contact[]; error?: string };
+      const participantsBody = await participantsResponse.json() as { participants?: SalesParticipant[]; error?: string; correlationId?: string };
+      if (!recordsResponse.ok || !participantsResponse.ok) { setCorrelationId(participantsBody.correlationId ?? null); throw new Error(recordsBody.error ?? participantsBody.error ?? "Could not load Sales Participant monitoring."); }
+      setContacts((recordsBody.contacts ?? []).filter((contact) => contact.opportunityId === session.opportunityId && !contact.archivedAt));
+      setParticipants(participantsBody.participants ?? []); setCorrelationId(participantsBody.correlationId ?? null); setMessage(null);
+    } catch (error) { setMessage(error instanceof Error ? error.message : "Could not load Sales Participant monitoring."); } finally { setLoading(false); }
+  }, [fetchSales, session.id, session.opportunityId]);
+  useEffect(() => { void refresh(); }, [refresh]);
+  const register = async () => {
+    setSaving(true); setMessage(null); setCorrelationId(null);
+    try { const response = await fetchSales(`/api/sales/enablement-sessions/${encodeURIComponent(session.id)}/participants`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ contactIds: selectedContacts }) }); const body = await response.json() as { participants?: SalesParticipant[]; error?: string; correlationId?: string }; if (!response.ok) { setCorrelationId(body.correlationId ?? null); throw new Error(body.error ?? "Could not register selected Sales Participants."); } setParticipants((current) => [...current, ...(body.participants ?? []).filter((value) => !current.some((existing) => existing.id === value.id))]); setSelectedContacts([]); setCorrelationId(body.correlationId ?? null); setMessage("Sales Participants registered. No native invitations were sent."); } catch (error) { setMessage(error instanceof Error ? error.message : "Could not register selected Sales Participants."); } finally { setSaving(false); }
+  };
+  const invite = async () => {
+    setSaving(true); setMessage(null); setCorrelationId(null);
+    try { const response = await fetchSales(`/api/sales/enablement-sessions/${encodeURIComponent(session.id)}/participants/invite`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ participantIds: selectedParticipants }) }); const body = await response.json() as { error?: string; correlationId?: string }; if (!response.ok) { setCorrelationId(body.correlationId ?? null); throw new Error(body.error ?? "CloudShare could not send the selected native invitations."); } setSelectedParticipants([]); setCorrelationId(body.correlationId ?? null); setMessage("Native CloudShare invitations requested for selected Sales Participants."); await refresh(); } catch (error) { setMessage(error instanceof Error ? error.message : "CloudShare could not send the selected native invitations."); } finally { setSaving(false); }
+  };
+  const availableContacts = contacts.filter((contact) => !participants.some((participant) => participant.firstName === contact.firstName && participant.lastName === contact.lastName));
+  return <section aria-label={`Participants for ${session.sessionName ?? session.type.toUpperCase()}`} style={{ ...mutedPanelStyle, marginTop: "0.65rem", display: "grid", gap: "0.75rem" }}>
+    <h3 style={{ margin: 0 }}>Sales Participants and engagement</h3><p style={{ margin: 0, color: "#52606d" }}>Register named Opportunity Contacts before access is available. Registration does not send email. Select registered participants to request native CloudShare invitations or resends; no invitation URL is shown in Certalis.</p>
+    {loading ? <p>Refreshing CloudShare participant monitoring…</p> : <><fieldset><legend>Register Opportunity Contacts</legend>{availableContacts.length === 0 ? <p>All active Opportunity Contacts are already registered, or no active Contacts are available.</p> : availableContacts.map((contact) => <label key={contact.id} style={{ display: "block" }}><input type="checkbox" checked={selectedContacts.includes(contact.id)} onChange={() => setSelectedContacts((current) => current.includes(contact.id) ? current.filter((id) => id !== contact.id) : [...current, contact.id])} /> {contact.firstName} {contact.lastName}</label>)}<button type="button" style={compactButtonStyle} disabled={saving || selectedContacts.length === 0} onClick={() => void register()}>Register selected participants</button></fieldset>
+    <fieldset><legend>Registered participant monitoring</legend>{participants.length === 0 ? <p>No Sales Participants are registered yet.</p> : <table style={{ ...tableStyle, minWidth: "48rem" }}><thead><tr><th style={cellStyle}>Participant</th><th style={cellStyle}>Invite</th><th style={cellStyle}>First joined</th><th style={cellStyle}>Participation</th><th style={cellStyle}>Environment</th><th style={cellStyle}>Select</th></tr></thead><tbody>{participants.map((participant) => <tr key={participant.id}><td style={cellStyle}>{participant.firstName} {participant.lastName}</td><td style={cellStyle}>{participant.invitationStatus === "sent" ? "Sent" : "Not sent"}</td><td style={cellStyle}>{formatUtc(participant.firstJoined)}</td><td style={cellStyle}>{participant.participationStatus}</td><td style={cellStyle}>{participant.envStatus ?? "—"}</td><td style={cellStyle}><input aria-label={`Select ${participant.firstName} ${participant.lastName} for native invite`} type="checkbox" checked={selectedParticipants.includes(participant.id)} onChange={() => setSelectedParticipants((current) => current.includes(participant.id) ? current.filter((id) => id !== participant.id) : [...current, participant.id])} /></td></tr>)}</tbody></table>}<button type="button" style={compactButtonStyle} disabled={saving || selectedParticipants.length === 0} onClick={() => void invite()}>Send or resend native invites</button><button type="button" style={{ ...compactButtonStyle, marginLeft: "0.5rem" }} disabled={saving} onClick={() => void refresh()}>Refresh engagement</button></fieldset></>}
+    {message ? <div role={correlationId ? "alert" : "status"} style={correlationId ? alertPanelStyle.danger : alertPanelStyle.success}>{message}{correlationId ? <> <button type="button" onClick={() => onOpenSupport(correlationId)} style={{ border: 0, background: "transparent", color: colors.info, textDecoration: "underline", cursor: "pointer" }}>Open support diagnostics ({correlationId})</button></> : null}</div> : null}
   </section>;
 }
 

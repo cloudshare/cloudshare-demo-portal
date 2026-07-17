@@ -2,6 +2,20 @@ import { describe, expect, it, vi } from "vitest";
 import { createCloudShareSalesDelivery } from "./sales-delivery";
 
 describe("CloudShare Sales Delivery", () => {
+  it("uses only documented participant registration, reconciliation, and explicit native-invite contracts", async () => {
+    const participant = { id: "participant-1", firstName: "Casey", lastName: "Example", email: "casey@example.test", invitationStatus: "notSent", invitedBy: null, participationStatus: "pending", firstJoined: null, envStatus: "Ready" };
+    const requestV4Detailed = vi.fn()
+      .mockResolvedValueOnce({ data: [participant], request: { method: "POST", path: "/sales/sales-1/participants", body: [] }, response: { status: 200, body: [participant] } })
+      .mockResolvedValueOnce({ data: { participants: [participant] }, request: { method: "GET", path: "/sales/sales-1/participants" }, response: { status: 200, body: { participants: [participant] } } })
+      .mockResolvedValueOnce({ data: undefined, request: { method: "POST", path: "/sales/sales-1/participants/invite", body: ["participant-1"] }, response: { status: 200 } });
+    const delivery = createCloudShareSalesDelivery({ requestV4Detailed } as never);
+    await expect(delivery.registerParticipants("sales-1", [{ firstName: "Casey", lastName: "Example", email: "casey@example.test" }])).resolves.toMatchObject({ participants: [expect.objectContaining({ id: "participant-1", invitationStatus: "notSent" })] });
+    await expect(delivery.listParticipants("sales-1")).resolves.toMatchObject({ participants: [expect.objectContaining({ participationStatus: "pending", envStatus: "Ready" })] });
+    await delivery.inviteParticipants("sales-1", ["participant-1"]);
+    expect(requestV4Detailed).toHaveBeenNthCalledWith(1, expect.objectContaining({ method: "POST", path: "/sales/sales-1/participants", body: [{ firstName: "Casey", lastName: "Example", email: "casey@example.test" }] }));
+    expect(requestV4Detailed).toHaveBeenNthCalledWith(2, expect.objectContaining({ method: "GET", path: "/sales/sales-1/participants" }));
+    expect(requestV4Detailed).toHaveBeenNthCalledWith(3, expect.objectContaining({ method: "POST", path: "/sales/sales-1/participants/invite", body: ["participant-1"] }));
+  });
   it("uses documented v4 GET /sales/{id} only for reconciliation", async () => {
     const requestV4 = vi.fn().mockResolvedValue({ id: "sales-1", status: "active" });
     const delivery = createCloudShareSalesDelivery({ requestV4, requestV3: vi.fn(), requestV3Text: vi.fn() });

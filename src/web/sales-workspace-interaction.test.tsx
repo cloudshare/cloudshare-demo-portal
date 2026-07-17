@@ -615,4 +615,31 @@ describe("SalesWorkspace interaction", () => {
     expect(template.value).toBe("Draft {account} - {opportunity} ({revision})");
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("selectedOpportunityId=opp-2"), expect.objectContaining({ cache: "no-store", signal: expect.any(AbortSignal) }));
   });
+
+  it("registers named Opportunity Contacts without sending mail, then sends a selected native invite without exposing provider identifiers", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const path = String(input);
+      if (path === "/api/sales/items") return json({ activeItems: [] });
+      if (path === "/api/sales/timezones" && !init?.method) return json({ timezones: [{ id: "UTC", name: "UTC" }], preference: {} });
+      if (path === "/api/sales/timezones" && init?.method === "PUT") return new Response(null, { status: 204 });
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [], total: 0 });
+      if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: [{ id: "session-1", opportunityId: "opp-1", itemId: "item-1", type: "demo", start: "2026-07-17T09:00", end: "2026-07-17T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-17T00:00:00Z", lifecycle: "upcoming", verificationEligible: true }] });
+      if (path === "/api/sales/accounts") return json({ contacts: [{ id: "contact-1", opportunityId: "opp-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", archivedAt: null, createdAt: "2026-07-17T00:00:00Z" }] });
+      if (path === "/api/sales/enablement-sessions/session-1/participants" && !init?.method) return json({ participants: [], correlationId: "corr-read-1" });
+      if (path === "/api/sales/enablement-sessions/session-1/participants" && init?.method === "POST") return json({ participants: [{ id: "portal-participant-1", firstName: "Ada", lastName: "Lovelace", invitationStatus: "notSent", invitedBy: null, participationStatus: "pending", firstJoined: null, envStatus: null }], correlationId: "corr-register-1" }, 201);
+      if (path === "/api/sales/enablement-sessions/session-1/participants/invite" && init?.method === "POST") return json({ correlationId: "corr-invite-1" });
+      return json({ error: `Unexpected request ${path}` }, 500);
+    });
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    await user.click(await screen.findByRole("button", { name: "Manage participants" }));
+    await user.click(await screen.findByLabelText(/Ada Lovelace$/));
+    await user.click(screen.getByRole("button", { name: "Register selected participants" }));
+    expect(await screen.findByText("Sales Participants registered. No native invitations were sent.")).not.toBeNull();
+    expect(fetchMock).toHaveBeenCalledWith("/api/sales/enablement-sessions/session-1/participants", expect.objectContaining({ method: "POST", body: JSON.stringify({ contactIds: ["contact-1"] }) }));
+    expect(screen.queryByText("cloudshare-participant-1")).toBeNull();
+    await user.click(screen.getByLabelText("Select Ada Lovelace for native invite"));
+    await user.click(screen.getByRole("button", { name: "Send or resend native invites" }));
+    expect(fetchMock).toHaveBeenCalledWith("/api/sales/enablement-sessions/session-1/participants/invite", expect.objectContaining({ method: "POST", body: JSON.stringify({ participantIds: ["portal-participant-1"] }) }));
+  });
 });

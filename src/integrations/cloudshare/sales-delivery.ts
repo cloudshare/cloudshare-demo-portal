@@ -36,6 +36,17 @@ export interface SalesDelivery {
    * changes only the provider-visible name: schedule edits need their own
    * lifecycle policy before they can be exposed. */
   updateSession?(salesExperienceId: string, changes: { readonly name: string }): Promise<{ readonly id: string } & SalesDeliveryEvidence>;
+  registerParticipants(salesExperienceId: string, participants: readonly SalesParticipantInput[]): Promise<{ readonly participants: readonly SalesParticipant[] } & SalesDeliveryEvidence>;
+  listParticipants(salesExperienceId: string): Promise<{ readonly participants: readonly SalesParticipant[] } & SalesDeliveryEvidence>;
+  inviteParticipants(salesExperienceId: string, participantIds: readonly string[]): Promise<SalesDeliveryEvidence>;
+}
+
+export interface SalesParticipantInput { readonly firstName: string; readonly lastName: string; readonly email: string; }
+/** Browser-safe monitoring read model. Invite URLs are not part of this documented response. */
+export interface SalesParticipant extends SalesParticipantInput {
+  readonly id: string; readonly invitationStatus: "sent" | "notSent"; readonly invitedBy: string | null;
+  readonly participationStatus: "pending" | "inProgress" | "concluded"; readonly firstJoined: string | null;
+  readonly envStatus?: string;
 }
 
 const salesExperienceSchema = z.object({
@@ -76,6 +87,12 @@ const salesExperienceSchema = z.object({
   end: z.string().nullable().optional(),
   timeZone: z.string().optional(),
 }).passthrough();
+const salesParticipantSchema = z.object({
+  id: z.string().min(1), firstName: z.string(), lastName: z.string(), email: z.string().email(),
+  invitationStatus: z.enum(["sent", "notSent"]).default("notSent"), invitedBy: z.string().email().nullable().optional().default(null),
+  participationStatus: z.enum(["pending", "inProgress", "concluded"]).default("pending"), firstJoined: z.string().nullable().optional().default(null), envStatus: z.string().optional(),
+}).passthrough();
+const participantsEnvelopeSchema = z.object({ participants: z.array(salesParticipantSchema) });
 
 const mutableSalesExperienceFields = ["name", "type", "projectId", "teamId", "blueprintIds", "allowParticipantsSwitchSteps", "cloudshareRegionIds", "awsCloudRegion", "azureCloudRegion", "googleCloudProviderRegion", "googleCloudProviderZone", "policyId", "opportunity", "mainSalesPro", "additionalSalesPros", "start", "end", "timeZone", "registrationType", "passphrase", "description", "labels", "externalId", "allowMultipleEnvironmentActivations", "sendInvitations", "emailDomainBlocklist", "blockFreeEmailDomains", "customFields", "useCustomInvitationEmail", "preConfigureParticipantEnvironments", "sharedEnvBlueprintId", "sharedEnvPolicyId", "isSharedLabViewAccessEnabled", "allowAudioVideo"] as const;
 
@@ -144,6 +161,18 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
       };
       const { data, evidence } = await detailed({ method: "PUT", path: `/sales/${encodeURIComponent(salesExperienceId)}`, body, schema: salesExperienceSchema });
       return { id: data.id, ...evidence };
+    },
+    async registerParticipants(salesExperienceId, participants) {
+      const { data, evidence } = await detailed({ method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants`, body: participants, schema: z.array(salesParticipantSchema) });
+      return { participants: data as SalesParticipant[], ...evidence };
+    },
+    async listParticipants(salesExperienceId) {
+      const { data, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants`, schema: participantsEnvelopeSchema });
+      return { participants: data.participants as SalesParticipant[], ...evidence };
+    },
+    async inviteParticipants(salesExperienceId, participantIds) {
+      const { evidence } = await detailed({ method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants/invite`, body: participantIds, schema: z.unknown() });
+      return evidence;
     },
   };
 }
