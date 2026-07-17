@@ -22,9 +22,9 @@ export const primaryButtonStyle: CSSProperties = {
 
 export const secondaryButtonStyle: CSSProperties = {
   ...baseButtonStyle,
-  border: `1px solid ${colors.borderStrong}`,
-  background: colors.surface,
-  color: colors.textPrimary,
+  border: `1px solid #b7d9d3`,
+  background: colors.accentSoft,
+  color: colors.accentStrong,
 };
 
 export const accountLogoutButtonStyle: CSSProperties = {

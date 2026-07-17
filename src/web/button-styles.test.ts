@@ -26,7 +26,7 @@ describe("button styles", () => {
     expect(accountLogoutButtonStyle.padding).toBe(secondaryButtonStyle.padding);
     expect(accountLogoutButtonStyle.background).not.toBe(secondaryButtonStyle.background);
     expect(accountLogoutButtonStyle.background).not.toBe(primaryButtonStyle.background);
-    expect(accountLogoutButtonStyle.color).toBe(secondaryButtonStyle.color);
+    expect(accountLogoutButtonStyle.color).not.toBe(secondaryButtonStyle.color);
   });
 
   it("keeps the compact button visibly smaller than the standard secondary button", () => {

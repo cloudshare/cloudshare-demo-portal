@@ -37,6 +37,18 @@ describe("Sales diagnostics handler", () => {
     expect(response).toMatchObject({ status: 200, body: { entries: [expect.objectContaining({ source: "sales-project-members", correlationId: "corr-members-failed", outcome: "failure" })] } });
   });
 
+  it("returns a correlated CloudShare status verification through the aggregate Sales Support feed", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    await diagnostics.append({ source: "sales-session-reconciliation", operation: "sales.enablement_session.status.read", outcome: "success", customerId: "customer-certalis", correlationId: "corr-verified-1", message: "CloudShare Sales Experience status verified", occurredAt: new Date("2026-07-17T00:00:00.000Z") });
+
+    const response = await handleGetSalesDiagnosticLog(
+      { diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } },
+      { customerId: "customer-certalis", query: { correlationId: "corr-verified-1" } },
+    );
+
+    expect(response).toMatchObject({ status: 200, body: { entries: [expect.objectContaining({ source: "sales-session-reconciliation", correlationId: "corr-verified-1", outcome: "success" })] } });
+  });
+
   it("combines Sales record and Item evidence when no source is selected", async () => {
     const diagnostics = { append: vi.fn(), query: vi.fn().mockResolvedValue([]) };
 
@@ -47,6 +59,7 @@ describe("Sales diagnostics handler", () => {
 
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-records" }));
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-items" }));
+    expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-session-reconciliation" }));
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-project-members" }));
   });
 

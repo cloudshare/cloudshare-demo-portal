@@ -17,5 +17,6 @@ export default async function SalesPage({ searchParams }: SalesPageProps) {
   if (session.role !== "admin") redirect("/candidate");
   if (session.workspace !== "sales") redirect("/admin");
   const params = await searchParams ?? {};
-  return <SalesWorkspace email={session.email} initialRoute={parseSalesWorkspaceRouteState(params)} />;
+  const routeState = parseSalesWorkspaceRouteState(params);
+  return <SalesWorkspace key={`${routeState.tab}:${routeState.itemView ?? ""}:${routeState.itemId ?? ""}:${routeState.accountId ?? ""}:${routeState.opportunityId ?? ""}:${routeState.correlationId ?? ""}`} email={session.email} initialRoute={routeState} />;
 }
