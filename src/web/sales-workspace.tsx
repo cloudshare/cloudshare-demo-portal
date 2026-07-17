@@ -44,6 +44,9 @@ const selectableRowStyle = { cursor: "pointer" };
 export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemView: "catalog" } }: { readonly email: string; readonly initialRoute?: SalesWorkspaceRouteState }) {
   const router = useRouter();
   const [route, setRoute] = useState<SalesWorkspaceRouteState>(initialRoute);
+  useEffect(() => {
+    setRoute((current) => salesRoutesMatch(current, initialRoute) ? current : initialRoute);
+  }, [initialRoute]);
   const browserFetch = useCallback<typeof fetch>((input, init) => window.fetch(input, init), []);
   const fetchAdmin = useMemo(() => createAdminAuthenticatedRequest({ fetchImpl: browserFetch, onSessionExpired: () => { router.replace("/login"); router.refresh(); } }), [browserFetch, router]);
   const logout = useCallback(async () => { await fetch("/api/auth/logout", { method: "POST" }); router.push("/login"); router.refresh(); }, [router]);
@@ -74,6 +77,10 @@ export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemVi
     {route.tab === "support" ? <section aria-label="Sales support"><PortalSectionIntro title="Sales support" description="Append-only support evidence for Sales records and live Item resource curation in the Certalis Customer workspace." /><AdminSupportFeature active view="diagnostics" diagnosticFilters={route.correlationId ? { correlationId: route.correlationId } : {}} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={(intent) => navigate({ tab: "support", correlationId: intent.diagnosticFilters?.correlationId })} /></section> : null}
     {route.tab === "configuration" ? <section aria-label="Sales configuration"><PortalSectionIntro title="CloudShare Connection" description="Manage the encrypted CloudShare Connection for the isolated Certalis Sales Customer." /><CloudShareConnectionFeature active fetchAdmin={fetchAdmin} getNavigationHref={() => buildSalesWorkspaceHref({ tab: "configuration" })} onNavigate={() => undefined} /></section> : null}
   </main>;
+}
+
+function salesRoutesMatch(left: SalesWorkspaceRouteState, right: SalesWorkspaceRouteState): boolean {
+  return left.tab === right.tab && left.itemView === right.itemView && left.itemId === right.itemId && left.accountId === right.accountId && left.opportunityId === right.opportunityId && left.correlationId === right.correlationId;
 }
 
 function PortalSectionIntro({ title, description }: { title: string; description: string }) {
@@ -154,8 +161,20 @@ function SalesDemoSessionsFeature({ initialSelection, onNavigate }: { readonly i
   const [loading, setLoading] = useState(false);
   const currentStart = useRef(start);
   const currentTimeZone = useRef(timeZone);
+  const currentSessionSelection = useRef(initialSelection);
   const selectedItem = items.find((item) => item.id === itemId) ?? null;
   const selectedItemDuration = selectedItem?.defaultDurationMinutes;
+
+  useEffect(() => { currentSessionSelection.current = { accountId: sessionAccountId, opportunityId }; }, [sessionAccountId, opportunityId]);
+  // Browser Back/Forward may update only the filter query. Restore those choices without remounting the in-progress form.
+  useEffect(() => {
+    if (initialSelection.accountId !== currentSessionSelection.current.accountId) {
+      setSessionAccountId(initialSelection.accountId); setAccountInput(""); setAccountSearch(""); setAccountPage(1);
+    }
+    if (initialSelection.opportunityId !== currentSessionSelection.current.opportunityId) {
+      setOpportunityId(initialSelection.opportunityId); setOpportunityInput(""); setOpportunitySearch(""); setOpportunityPage(1);
+    }
+  }, [initialSelection.accountId, initialSelection.opportunityId]);
 
   useEffect(() => { currentStart.current = start; currentTimeZone.current = timeZone; }, [start, timeZone]);
   useEffect(() => { void fetchSales("/api/sales/session-configuration", { cache: "no-store" }).then(async (response) => { const body = await response.json() as { template?: string }; if (response.ok && body.template) setSessionNameTemplate(body.template); }); }, [fetchSales]);

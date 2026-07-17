@@ -587,4 +587,27 @@ describe("SalesWorkspace interaction", () => {
       expect.objectContaining({ cache: "no-store", signal: expect.any(AbortSignal) }),
     );
   });
+
+  it("restores same-tab history filters without discarding an unfinished Session form", async () => {
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const path = String(input);
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [{ id: "account-1", name: "Acme" }, { id: "account-2", name: "Brio" }], opportunities: [{ id: "opp-1", accountId: "account-1", accountName: "Acme", name: "North", label: "Acme - North" }, { id: "opp-2", accountId: "account-2", accountName: "Brio", name: "South", label: "Brio - South" }], total: 2, nextRevision: 2 });
+      if (path === "/api/sales/items") return json({ activeItems: [] });
+      if (path === "/api/sales/timezones" && !init?.method) return json({ timezones: [{ id: "UTC", name: "UTC" }], preference: {} });
+      if (path === "/api/sales/timezones" && init?.method === "PUT") return new Response(null, { status: 204 });
+      if (path.startsWith("/api/sales/enablement-sessions?")) return json({ sessions: [] });
+      return json({});
+    });
+    const view = render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", accountId: "account-1", opportunityId: "opp-1" }} />);
+    await waitFor(() => expect((screen.getByRole("combobox", { name: "Account" }) as HTMLInputElement).value).toBe("Acme"));
+    const template = screen.getByRole("textbox", { name: "Session name template" }) as HTMLInputElement;
+    fireEvent.change(template, { target: { value: "Draft {account} - {opportunity} ({revision})" } });
+
+    view.rerender(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", accountId: "account-2", opportunityId: "opp-2" }} />);
+
+    await waitFor(() => expect((screen.getByRole("combobox", { name: "Account" }) as HTMLInputElement).value).toBe("Brio"));
+    await waitFor(() => expect((screen.getByRole("combobox", { name: "Opportunity" }) as HTMLInputElement).value).toBe("Brio - South"));
+    expect(template.value).toBe("Draft {account} - {opportunity} ({revision})");
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("selectedOpportunityId=opp-2"), expect.objectContaining({ cache: "no-store", signal: expect.any(AbortSignal) }));
+  });
 });
