@@ -46,6 +46,8 @@ export interface SalesParticipantInput { readonly firstName: string; readonly la
 export interface SalesParticipant extends SalesParticipantInput {
   readonly id: string; readonly invitationStatus: "sent" | "notSent"; readonly invitedBy: string | null;
   readonly participationStatus: "pending" | "inProgress" | "concluded"; readonly firstJoined: string | null;
+  /** Server-only CloudShare correlation; never include it in portal projections. */
+  readonly environmentId: string | null;
   readonly envStatus?: string;
 }
 
@@ -90,7 +92,7 @@ const salesExperienceSchema = z.object({
 const salesParticipantSchema = z.object({
   id: z.string().min(1), firstName: z.string(), lastName: z.string(), email: z.string().email(),
   invitationStatus: z.enum(["sent", "notSent"]).default("notSent"), invitedBy: z.string().email().nullable().optional().default(null),
-  participationStatus: z.enum(["pending", "inProgress", "concluded"]).default("pending"), firstJoined: z.string().nullable().optional().default(null), envStatus: z.string().optional(),
+  participationStatus: z.enum(["pending", "inProgress", "concluded"]).default("pending"), firstJoined: z.string().nullable().optional().default(null), envStatus: z.string().optional(), envId: z.string().nullable().optional().default(null),
 }).passthrough();
 const participantsEnvelopeSchema = z.object({ participants: z.array(salesParticipantSchema) });
 
@@ -100,7 +102,7 @@ const mutableSalesExperienceFields = ["name", "type", "projectId", "teamId", "bl
  * wire keys, or response parsing; they only validate an owner and create a
  * time-bounded registered-only delivery. */
 export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDelivery {
-  async function detailed<T>(spec: { method: "GET" | "POST" | "PUT"; path: string; body?: unknown; schema: z.ZodType<T> }): Promise<{ data: T; evidence: SalesDeliveryEvidence }> {
+  async function detailed<T>(spec: { method: "GET" | "POST" | "PUT"; path: string; body?: unknown; allowEmptyResponse?: boolean; schema: z.ZodType<T> }): Promise<{ data: T; evidence: SalesDeliveryEvidence }> {
     const result = client.requestV4Detailed
       ? await client.requestV4Detailed(spec)
       : await client.requestV4(spec).then((data) => ({ data, request: { method: spec.method, path: spec.path, ...(spec.body === undefined ? {} : { body: spec.body }) }, response: { status: 200, body: data } } as CloudShareDetailedResult<T>));
@@ -164,14 +166,14 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
     },
     async registerParticipants(salesExperienceId, participants) {
       const { data, evidence } = await detailed({ method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants`, body: participants, schema: z.array(salesParticipantSchema) });
-      return { participants: data as SalesParticipant[], ...evidence };
+      return { participants: data.map((participant) => ({ ...participant, environmentId: participant.envId })) as SalesParticipant[], ...evidence };
     },
     async listParticipants(salesExperienceId) {
       const { data, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants`, schema: participantsEnvelopeSchema });
-      return { participants: data.participants as SalesParticipant[], ...evidence };
+      return { participants: data.participants.map((participant) => ({ ...participant, environmentId: participant.envId })) as SalesParticipant[], ...evidence };
     },
     async inviteParticipants(salesExperienceId, participantIds) {
-      const { evidence } = await detailed({ method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants/invite`, body: participantIds, schema: z.unknown() });
+      const { evidence } = await detailed({ method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants/invite`, body: participantIds, allowEmptyResponse: true, schema: z.void() });
       return evidence;
     },
   };

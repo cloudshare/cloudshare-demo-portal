@@ -158,6 +158,8 @@ model SalesSessionParticipant {
   invitedBy                   String?
   participationStatus         String
   firstJoined                 String?
+  /// Server-only CloudShare environment correlation. It is never projected to portal clients.
+  cloudShareEnvironmentId     String?
   environmentStatus           String?
   lastReconciledAt            DateTime
   createdAt                   DateTime

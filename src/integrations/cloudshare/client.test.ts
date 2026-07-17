@@ -101,6 +101,30 @@ describe("createCloudShareClient — v4", () => {
     expect(last()?.headers?.authorization).toBe("Bearer test-bearer");
   });
 
+  it("accepts an explicitly documented empty v4 success response while retaining request evidence", async () => {
+    const { http, last } = capturingHttp({
+      status: 200,
+      headers: { "x-correlation-id": "cloud-1" },
+      body: "",
+    });
+    const client = clientWith(http);
+
+    const result = await client.requestV4Detailed!({
+      method: "POST",
+      path: "/sales/sales-1/participants/invite",
+      body: ["participant-1"],
+      allowEmptyResponse: true,
+      schema: z.void(),
+    });
+
+    expect(result).toMatchObject({
+      data: undefined,
+      request: { method: "POST", path: "/v4/sales/sales-1/participants/invite", body: ["participant-1"] },
+      response: { status: 200, headers: { "x-correlation-id": "cloud-1" }, body: "" },
+    });
+    expect(last()?.headers?.authorization).toBe("Bearer test-bearer");
+  });
+
   it("redacts training and Sales Experience passphrases from trace request bodies", async () => {
     const trace = vi.fn();
     const { http } = capturingHttp(ok({ id: "training-1" }));

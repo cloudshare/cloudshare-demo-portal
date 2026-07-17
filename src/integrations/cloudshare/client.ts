@@ -38,6 +38,8 @@ export interface V4RequestSpec<T> {
   readonly path: string;
   readonly query?: Record<string, string>;
   readonly body?: unknown;
+  /** Opt in only for documented v4 operations whose successful response has no body. */
+  readonly allowEmptyResponse?: boolean;
   readonly schema: ZodType<T, ZodType["_def"], unknown>;
 }
 
@@ -493,6 +495,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
   async function executeDetailed<T>(
     request: HttpRequest,
     schema: ZodType<T, ZodType["_def"], unknown>,
+    allowEmptyResponse = false,
   ): Promise<CloudShareDetailedResult<T>> {
     const requestInfo = describeRequest(request.url);
     for (let attempt = 0; ; attempt += 1) {
@@ -581,7 +584,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
 
       let json: unknown;
       try {
-        json = JSON.parse(response.body);
+        json = response.body.trim() === "" && allowEmptyResponse ? undefined : JSON.parse(response.body);
       } catch {
         throw new CloudShareResponseError(
           `CloudShare response from ${request.url} was not valid JSON`,
@@ -690,6 +693,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
         body,
       },
       spec.schema,
+      spec.allowEmptyResponse,
     );
   }
 
