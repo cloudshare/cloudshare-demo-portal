@@ -37,24 +37,42 @@ export interface SalesDelivery {
    * changes only the provider-visible name: schedule edits need their own
    * lifecycle policy before they can be exposed. */
   updateSession?(salesExperienceId: string, changes: { readonly name: string }): Promise<{ readonly id: string } & SalesDeliveryEvidence>;
+  /** Ensures the documented Sales user-property definitions used for durable
+   * Certalis-to-CloudShare participant correlation. */
+  ensureParticipantCorrelationProperties(salesExperienceId: string): Promise<{
+    readonly requiredKeys: readonly SalesParticipantCorrelationPropertyKey[];
+    readonly availableKeys: readonly string[];
+    readonly requests: readonly SalesDeliveryRequestEvidence[];
+    readonly responses: readonly SalesDeliveryResponseEvidence[];
+  } & SalesDeliveryEvidence>;
   /** A successful add acknowledgement is deliberately not used for identity
    * correlation. CloudShare has returned partial and empty 201 bodies here;
    * callers must reconcile through the roster read after this mutation. */
   registerParticipants(salesExperienceId: string, participants: readonly SalesParticipantInput[]): Promise<SalesDeliveryEvidence>;
+  /** Controlled migration of a Contact explicitly selected by a Sales Admin
+   * from the pre-correlation roster. */
+  updateParticipantCorrelation(salesExperienceId: string, participantId: string, input: Pick<SalesParticipantInput, "firstName" | "lastName" | "customProperties">): Promise<SalesDeliveryEvidence>;
   listParticipants(salesExperienceId: string): Promise<{ readonly participants: readonly SalesParticipant[] } & SalesDeliveryEvidence>;
   inviteParticipants(salesExperienceId: string, participantIds: readonly string[]): Promise<SalesDeliveryEvidence>;
 }
 
-export interface SalesParticipantInput { readonly firstName: string; readonly lastName: string; readonly email: string; }
+export const SALES_PARTICIPANT_CORRELATION_PROPERTY_KEYS = [
+  "certalisSalesParticipantId",
+  "certalisOpportunityContactId",
+] as const;
+export type SalesParticipantCorrelationPropertyKey = (typeof SALES_PARTICIPANT_CORRELATION_PROPERTY_KEYS)[number];
+export interface SalesParticipantInput { readonly firstName: string; readonly lastName: string; readonly email: string; readonly customProperties?: readonly { readonly name: string; readonly value: string }[]; }
 /** Browser-safe monitoring read model. Invite URLs are not part of this documented response. */
-export interface SalesParticipant extends SalesParticipantInput {
+export type SalesParticipant = Omit<SalesParticipantInput, "customProperties"> & {
   readonly id: string; readonly invitationStatus: "sent" | "notSent"; readonly invitedBy: string | null;
   readonly participationStatus: "pending" | "inProgress" | "concluded"; readonly firstJoined: string | null;
   /** Server-only CloudShare correlation; never include it in portal projections. */
   readonly environmentId: string | null;
   /** Null before CloudShare has assigned a runnable environment. */
   readonly envStatus: string | null;
-}
+  /** Server-only Certalis correlation values returned by the documented roster. */
+  readonly customProperties: Readonly<Record<string, string>>;
+};
 
 const salesExperienceSchema = z.object({
   id: z.string().min(1),
@@ -111,7 +129,10 @@ const salesParticipantSchema = z.object({
   // returns null until a registered participant has an environment.
   envStatus: salesEnvironmentStatusSchema.nullable(),
   envId: z.string().min(1).nullable(),
+  customProperties: z.preprocess((value) => value ?? [], z.array(z.object({ name: z.string(), value: z.string().max(1024) }))),
 });
+const salesUserPropertyDefinitionSchema = z.object({ id: z.string().min(1), name: z.string().min(1), order: z.number().int().optional() });
+const salesUserPropertyDefinitionsSchema = z.array(salesUserPropertyDefinitionSchema);
 
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -204,11 +225,45 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
       const { data, evidence } = await detailed({ method: "PUT", path: `/sales/${encodeURIComponent(salesExperienceId)}`, body, schema: salesExperienceSchema });
       return { id: data.id, ...evidence };
     },
+    async ensureParticipantCorrelationProperties(salesExperienceId) {
+      const path = `/sales/${encodeURIComponent(salesExperienceId)}/users/properties`;
+      const existing = await detailed({ method: "GET", path, schema: salesUserPropertyDefinitionsSchema });
+      const existingKeys = existing.data.map((definition) => definition.name);
+      const missingKeys = SALES_PARTICIPANT_CORRELATION_PROPERTY_KEYS.filter((key) => !existingKeys.includes(key));
+      if (missingKeys.length === 0) return { requiredKeys: SALES_PARTICIPANT_CORRELATION_PROPERTY_KEYS, availableKeys: existingKeys, requests: [existing.evidence.request], responses: [existing.evidence.response], ...existing.evidence };
+      let created: Awaited<ReturnType<typeof detailed<z.output<typeof salesUserPropertyDefinitionsSchema>>>>;
+      try {
+        created = await detailed({ method: "POST", path, body: missingKeys.map((name) => ({ name })), schema: salesUserPropertyDefinitionsSchema });
+      } catch (error) {
+        if (error instanceof Error && "context" in error) (error as Error & { context?: Record<string, unknown> }).context = { ...(error as Error & { context?: Record<string, unknown> }).context, priorHttpExchanges: [{ request: existing.evidence.request, response: existing.evidence.response }] };
+        throw error;
+      }
+      const availableKeys = [...existingKeys, ...created.data.map((definition) => definition.name)];
+      const stillMissingKeys = SALES_PARTICIPANT_CORRELATION_PROPERTY_KEYS.filter((key) => !availableKeys.includes(key));
+      if (stillMissingKeys.length > 0) {
+        throw new CloudShareResponseError("CloudShare Sales user-property provisioning did not return all required correlation keys.", {
+          method: created.evidence.request.method, path: created.evidence.request.path,
+          ...(created.evidence.request.query ? { requestQuery: created.evidence.request.query } : {}),
+          ...(created.evidence.request.headers ? { requestHeaders: created.evidence.request.headers } : {}),
+          ...(created.evidence.request.body !== undefined ? { requestBody: created.evidence.request.body } : {}),
+          status: created.evidence.response.status, responseStatus: created.evidence.response.status,
+          ...(created.evidence.response.headers ? { responseHeaders: created.evidence.response.headers } : {}),
+          responseBody: created.evidence.response.body, priorHttpExchanges: [{ request: existing.evidence.request, response: existing.evidence.response }], failureMode: "sales_participant_correlation_properties_missing",
+        });
+      }
+      return { requiredKeys: SALES_PARTICIPANT_CORRELATION_PROPERTY_KEYS, availableKeys, requests: [existing.evidence.request, created.evidence.request], responses: [existing.evidence.response, created.evidence.response], ...created.evidence };
+    },
     async registerParticipants(salesExperienceId, participants) {
       // A 201 means CloudShare accepted the registration even when the body is
       // empty, partial, or shaped differently from the documented array.
       // The following GET roster, not this acknowledgement, is authoritative.
       const { evidence } = await detailed({ method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants`, body: participants, allowEmptyResponse: true, schema: z.unknown() });
+      return participantEvidence(evidence);
+    },
+    async updateParticipantCorrelation(salesExperienceId, participantId, input) {
+      // The documented PUT acknowledgement can omit roster monitoring fields.
+      // The handler always follows this mutation with an authoritative GET.
+      const { evidence } = await detailed({ method: "PUT", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants/${encodeURIComponent(participantId)}`, body: input, schema: z.unknown() });
       return participantEvidence(evidence);
     },
     async listParticipants(salesExperienceId) {
@@ -246,12 +301,13 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
   };
 }
 
-function mapSalesParticipant(participant: z.input<typeof salesParticipantSchema>): SalesParticipant {
+function mapSalesParticipant(participant: z.output<typeof salesParticipantSchema>): SalesParticipant {
   return {
     id: participant.id,
     firstName: participant.firstName,
     lastName: participant.lastName,
     email: participant.email,
+    customProperties: Object.fromEntries(participant.customProperties.map((property) => [property.name, property.value])),
     invitationStatus: participant.invitationStatus,
     invitedBy: participant.invitedBy,
     participationStatus: participant.participationStatus,
@@ -267,11 +323,11 @@ function participantEvidence(evidence: SalesDeliveryEvidence): SalesDeliveryEvid
   return evidence;
 }
 
-function participantPage(data: z.output<typeof participantsEnvelopeSchema>): { readonly count?: number; readonly participants: readonly z.input<typeof salesParticipantSchema>[] } {
+function participantPage(data: z.output<typeof participantsEnvelopeSchema>): { readonly count?: number; readonly participants: readonly z.output<typeof salesParticipantSchema>[] } {
   return participantsEnvelopeSchema.parse(data);
 }
 
-function hasDuplicateParticipantIds(participants: readonly z.input<typeof salesParticipantSchema>[]): boolean {
+function hasDuplicateParticipantIds(participants: readonly z.output<typeof salesParticipantSchema>[]): boolean {
   return new Set(participants.map((participant) => participant.id)).size !== participants.length;
 }
 

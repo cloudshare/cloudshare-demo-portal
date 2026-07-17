@@ -24,6 +24,37 @@ function documentedParticipant(overrides: Record<string, unknown> = {}) {
 }
 
 describe("CloudShare Sales Delivery", () => {
+  it("ensures the documented Sales correlation properties before participant registration and reads their values back", async () => {
+    const roster = documentedParticipant({
+      customProperties: [
+        { name: "certalisSalesParticipantId", value: "portal-participant-1" },
+        { name: "certalisOpportunityContactId", value: "contact-1" },
+      ],
+    });
+    const requestV4Detailed = vi.fn()
+      .mockResolvedValueOnce({ data: [], request: { method: "GET", path: "/sales/sales-1/users/properties" }, response: { status: 200, body: [] } })
+      .mockResolvedValueOnce({ data: [{ id: "property-1", name: "certalisSalesParticipantId", order: 0 }, { id: "property-2", name: "certalisOpportunityContactId", order: 1 }], request: { method: "POST", path: "/sales/sales-1/users/properties" }, response: { status: 201, body: [] } })
+      .mockResolvedValueOnce({ data: undefined, request: { method: "POST", path: "/sales/sales-1/participants" }, response: { status: 201, body: [] } })
+      .mockResolvedValueOnce({ data: { count: 1, items: [roster] }, request: { method: "GET", path: "/sales/sales-1/participants", query: { offset: "0", limit: "100" } }, response: { status: 200, body: { count: 1, items: [roster] } } });
+    const delivery = createCloudShareSalesDelivery({ requestV4Detailed } as never);
+
+    await expect(delivery.ensureParticipantCorrelationProperties!("sales-1")).resolves.toMatchObject({
+      requiredKeys: ["certalisSalesParticipantId", "certalisOpportunityContactId"],
+      availableKeys: ["certalisSalesParticipantId", "certalisOpportunityContactId"],
+    });
+    await delivery.registerParticipants("sales-1", [{ firstName: "Casey", lastName: "Example", email: "casey@example.test", customProperties: [{ name: "certalisSalesParticipantId", value: "portal-participant-1" }, { name: "certalisOpportunityContactId", value: "contact-1" }] }]);
+    await expect(delivery.listParticipants("sales-1")).resolves.toMatchObject({ participants: [expect.objectContaining({ customProperties: { certalisSalesParticipantId: "portal-participant-1", certalisOpportunityContactId: "contact-1" } })] });
+    expect(requestV4Detailed).toHaveBeenNthCalledWith(1, expect.objectContaining({ method: "GET", path: "/sales/sales-1/users/properties" }));
+    expect(requestV4Detailed).toHaveBeenNthCalledWith(2, expect.objectContaining({ method: "POST", path: "/sales/sales-1/users/properties", body: [{ name: "certalisSalesParticipantId" }, { name: "certalisOpportunityContactId" }] }));
+    expect(requestV4Detailed).toHaveBeenNthCalledWith(3, expect.objectContaining({ method: "POST", path: "/sales/sales-1/participants", body: [expect.objectContaining({ customProperties: [{ name: "certalisSalesParticipantId", value: "portal-participant-1" }, { name: "certalisOpportunityContactId", value: "contact-1" }] })] }));
+  });
+  it("accepts a partial documented PUT acknowledgement because the handler rereads the authoritative roster", async () => {
+    const requestV4Detailed = vi.fn().mockImplementation(async (spec) => ({ data: spec.schema.parse({}), request: { method: "PUT", path: "/sales/sales-1/participants/participant-1", body: spec.body }, response: { status: 200, body: {} } }));
+    const delivery = createCloudShareSalesDelivery({ requestV4Detailed } as never);
+
+    await expect(delivery.updateParticipantCorrelation("sales-1", "participant-1", { firstName: "Casey", lastName: "Example", customProperties: [{ name: "certalisSalesParticipantId", value: "portal-1" }] })).resolves.toMatchObject({ response: { status: 200, body: {} } });
+    expect(requestV4Detailed).toHaveBeenCalledWith(expect.objectContaining({ method: "PUT", path: "/sales/sales-1/participants/participant-1" }));
+  });
   it("uses only documented participant registration, reconciliation, and explicit native-invite contracts", async () => {
     const participant = { id: "participant-1", firstName: "Casey", lastName: "Example", email: "casey@example.test", invitationStatus: "notSent", invitedBy: null, participationStatus: "pending", firstJoined: null, envStatus: "Ready", envId: "server-only-environment-1" };
     const requestV4Detailed = vi.fn()
@@ -87,6 +118,9 @@ describe("CloudShare Sales Delivery", () => {
         { id: "participant-2", envStatus: null, environmentId: null },
       ],
     });
+  });
+  it("accepts a documented empty unrelated custom-property value so correlation can fail closed later", async () => {
+    await expect(deliveryForRoster({ count: 1, items: [documentedParticipant({ customProperties: [{ name: "unrelated", value: "" }] })] }).listParticipants("sales-1")).resolves.toMatchObject({ participants: [expect.objectContaining({ customProperties: { unrelated: "" } })] });
   });
   it("retains an undocumented PascalCase Sales roster as full, safely-redacted evidence", async () => {
     const rawRoster = { Count: 1, Items: [{ Id: "participant-1", FirstName: "Casey", LastName: "Example", Email: "casey@example.test", InvitationStatus: "sent", ParticipationStatus: "inProgress", FirstJoined: "2026-07-17T09:05:00Z", EnvironmentId: "server-only-environment-1", EnvironmentStatus: "Ready", accessLink: "https://bearer.example.test/should-not-leak" }] };

@@ -3,7 +3,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { SalesWorkspace } from "./sales-workspace";
+import { SalesSessionParticipants, SalesWorkspace } from "./sales-workspace";
 
 const router = { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() };
 vi.mock("next/navigation", () => ({ useRouter: () => router, useSearchParams: () => new URLSearchParams() }));
@@ -135,5 +135,19 @@ describe("Sales Item authoring", () => {
     expect(screen.queryByLabelText("Support diagnostics")).toBeNull();
     await user.click(screen.getByRole("button", { name: "corr-sales-429" }));
     expect(router.push).toHaveBeenLastCalledWith("/sales?tab=support&correlationId=corr-sales-429");
+  });
+});
+
+describe("Sales Participant monitoring", () => {
+  it("keeps the invitation Select control as the first monitoring column", async () => {
+    const fetchSales = vi.fn().mockImplementation(async (input: string) => {
+      if (input === "/api/sales/accounts") return json({ contacts: [{ id: "contact-1", opportunityId: "opportunity-1", firstName: "Ada", lastName: "Lovelace", archivedAt: null }] });
+      if (input === "/api/sales/enablement-sessions/session-1/participants") return json({ participants: [{ id: "portal-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Lovelace", invitationStatus: "notSent", participationStatus: "pending", firstJoined: null, envStatus: null }] });
+      return json({});
+    });
+    render(<SalesSessionParticipants session={{ id: "session-1", opportunityId: "opportunity-1", itemId: "item-1", type: "demo", start: "2026-07-17T09:00", end: "2026-07-17T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-17T08:00:00Z", verificationEligible: true }} fetchSales={fetchSales as typeof fetch} onOpenSupport={vi.fn()} />);
+
+    await screen.findByRole("checkbox", { name: "Select Ada Lovelace for native invite" });
+    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual(["Select", "Participant", "Invite", "First joined", "Participation", "Environment"]);
   });
 });

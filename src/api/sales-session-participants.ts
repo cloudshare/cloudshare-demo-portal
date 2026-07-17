@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { AuditRepository } from "@/domain/audit-trail";
 import type { CloudShareConnectionRepository, CloudShareClientFactory } from "@/domain/cloudshare-connection";
@@ -24,46 +24,79 @@ export async function handleRegisterSalesSessionParticipants(deps: Deps, request
   if (resolvedContacts.some((contact) => !contact || contact.opportunityId !== prepared.session.opportunityId || contact.archivedAt)) return denied(deps, request, prepared.session, 404, "Selected Opportunity Contact was not found for this Session.", "contact_not_found");
   const contacts = resolvedContacts.filter((contact): contact is NonNullable<typeof contact> => contact !== null);
   const correlationId = randomUUID();
+  let completedRemote: SalesDeliveryEvidence | undefined;
+  const completedExchanges: Array<{ readonly request: unknown; readonly response: unknown }> = [];
   try {
-    // Recover a prior accepted CloudShare registration before issuing another
-    // mutation. This makes a retry after a local persistence outage repair the
-    // Contact-to-participant mapping instead of creating a second remote user.
-    const [persisted, remoteBeforeRegistration] = await Promise.all([
-      deps.participants.list(request.customerId, prepared.session.id),
-      prepared.delivery.listParticipants!(prepared.session.cloudShareSalesExperienceId),
+    // Read the provider roster first so a subsequent local read failure still
+    // leaves support with the authoritative CloudShare exchange that completed.
+    const remoteBeforeRegistration = await prepared.delivery.listParticipants!(prepared.session.cloudShareSalesExperienceId);
+    completedRemote = remoteBeforeRegistration;
+    completedExchanges.push(remoteBeforeRegistration);
+    const persisted = await deps.participants.list(request.customerId, prepared.session.id);
+    const persistedByContactId = new Map(persisted.map((participant) => [participant.opportunityContactId, participant]));
+    const contactsNeedingMapping = contacts.filter((contact) => !persistedByContactId.has(contact.id));
+    const contactsByEmail = groupByNormalizedEmail(contactsNeedingMapping);
+    const legacyByEmail = groupByNormalizedEmail(remoteBeforeRegistration.participants.filter((participant) => !participantProperties(participant).certalisSalesParticipantId && !participantProperties(participant).certalisOpportunityContactId));
+    const correlatedByContactId = new Map(contactsNeedingMapping.map((contact) => [contact.id, remoteBeforeRegistration.participants.filter((participant) => participantProperties(participant).certalisOpportunityContactId === contact.id)]));
+    const hasIncompleteCorrelation = remoteBeforeRegistration.participants.some((participant) => {
+      const properties = participantProperties(participant);
+      return Boolean(properties.certalisSalesParticipantId) !== Boolean(properties.certalisOpportunityContactId);
+    });
+    const hasAmbiguousExistingCorrelation = [...correlatedByContactId.values()].some((matches) => matches.length > 1 || matches.some((participant) => !participantProperties(participant).certalisSalesParticipantId));
+    const hasAmbiguousLegacyBackfill = contactsNeedingMapping.some((contact) => {
+      const legacyMatches = legacyByEmail.get(contact.email.toLowerCase()) ?? [];
+      return legacyMatches.length > 0 && (legacyMatches.length !== 1 || (contactsByEmail.get(contact.email.toLowerCase()) ?? []).length !== 1);
+    });
+    if (hasIncompleteCorrelation || hasAmbiguousExistingCorrelation || hasAmbiguousLegacyBackfill) throw participantLegacyBackfillAmbiguous(remoteBeforeRegistration, contactsNeedingMapping.length);
+    const planned = new Map(contactsNeedingMapping.map((contact) => [contact.id, {
+      id: participantProperties(correlatedByContactId.get(contact.id)?.[0]).certalisSalesParticipantId ?? stablePortalParticipantId(request.customerId, prepared.session.id, contact.id),
+      contact,
+    }]));
+    const correlationFor = (value: { readonly id: string; readonly contact: { readonly id: string } }, existing: Readonly<Record<string, string>> = {}) => ([
+      ...Object.entries(existing).filter(([name]) => name !== "certalisSalesParticipantId" && name !== "certalisOpportunityContactId").map(([name, propertyValue]) => ({ name, value: propertyValue })),
+      { name: "certalisSalesParticipantId", value: value.id },
+      { name: "certalisOpportunityContactId", value: value.contact.id },
     ]);
-    const persistedContactIds = new Set(persisted.map((participant) => participant.opportunityContactId));
-    const remoteByEmail = new Map(remoteBeforeRegistration.participants.map((participant) => [participant.email.toLowerCase(), participant]));
-    const contactsNeedingRemoteRegistration = contacts.filter((contact) => !persistedContactIds.has(contact!.id) && !remoteByEmail.has(contact!.email.toLowerCase()));
+    const legacyByContactId = new Map(contactsNeedingMapping.flatMap((contact) => {
+      const participant = legacyByEmail.get(contact.email.toLowerCase())?.[0];
+      return participant ? [[contact.id, participant] as const] : [];
+    }));
+    const properties = await prepared.delivery.ensureParticipantCorrelationProperties!(prepared.session.cloudShareSalesExperienceId);
+    completedExchanges.push(...properties.requests.map((propertyRequest, index) => ({ request: propertyRequest, response: properties.responses[index]! })));
+    await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participant_properties.ensured", "success", "CloudShare Sales Participant correlation properties confirmed", properties, {
+      requiredKeys: properties.requiredKeys,
+      availableKeys: properties.availableKeys,
+      httpExchanges: properties.requests.map((propertyRequest, index) => ({ request: propertyRequest, response: properties.responses[index] })),
+    });
+    const legacyUpdates = await Promise.all([...legacyByContactId.entries()].map(async ([contactId, participant]) => {
+      const value = planned.get(contactId)!;
+      const remote = await prepared.delivery.updateParticipantCorrelation!(prepared.session.cloudShareSalesExperienceId, participant.id, { firstName: value.contact.firstName, lastName: value.contact.lastName, customProperties: correlationFor(value, participantProperties(participant)) });
+      completedExchanges.push(remote);
+      await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participant_correlation.backfilled", "success", "Existing Sales Participant correlation properties backfilled after explicit admin selection", remote, { portalParticipantId: value.id, opportunityContactId: contactId }, { cloudShareParticipantId: participant.id });
+      return remote;
+    }));
+    const contactsNeedingRemoteRegistration = contactsNeedingMapping.filter((contact) => !legacyByContactId.has(contact.id) && !(correlatedByContactId.get(contact.id)?.length));
     const created = contactsNeedingRemoteRegistration.length
-      ? await prepared.delivery.registerParticipants!(prepared.session.cloudShareSalesExperienceId, contactsNeedingRemoteRegistration.map((contact) => ({ firstName: contact!.firstName, lastName: contact!.lastName, email: contact!.email })))
+      ? await prepared.delivery.registerParticipants!(prepared.session.cloudShareSalesExperienceId, contactsNeedingRemoteRegistration.map((contact) => {
+        const value = planned.get(contact.id)!;
+        return { firstName: contact.firstName, lastName: contact.lastName, email: contact.email, customProperties: correlationFor(value) };
+      }))
       : undefined;
-    // A successful Sales registration acknowledgement can be empty or omit
-    // monitoring fields. Re-read the normalized roster after mutation and use
-    // that provider-owned state, never the POST body, for durable mappings.
-    const remoteAfterRegistration = created
+    if (created) completedExchanges.push(created);
+    const remoteAfterRegistration = contactsNeedingMapping.length > 0
       ? await prepared.delivery.listParticipants!(prepared.session.cloudShareSalesExperienceId)
       : remoteBeforeRegistration;
-    const remoteParticipants = remoteAfterRegistration.participants;
-    const contactsNeedingMapping = contacts.filter((contact) => !persistedContactIds.has(contact!.id));
-    const contactEmailCounts = countByNormalizedEmail(contacts);
-    const persistedParticipantIds = new Set(persisted.map((participant) => participant.cloudShareParticipantId));
-    const remoteParticipantsByEmail = groupByNormalizedEmail(remoteParticipants);
-    const participantByContactId = new Map(contactsNeedingMapping.flatMap((contact) => {
-      const email = contact!.email.toLowerCase();
-      const candidates = remoteParticipantsByEmail.get(email) ?? [];
-      return contactEmailCounts.get(email) === 1 && candidates.length === 1 && !persistedParticipantIds.has(candidates[0]!.id) ? [[contact!.id, candidates[0]!] as const] : [];
-    }));
-    if (participantByContactId.size !== contactsNeedingMapping.length) {
-      const selectedEmails = new Set(contactsNeedingMapping.map((contact) => contact!.email.toLowerCase()));
-      const returnedCount = remoteParticipants.filter((participant) => selectedEmails.has(participant.email.toLowerCase())).length;
-      throw participantRegistrationNotReconciled(remoteAfterRegistration, contactsNeedingMapping.length, returnedCount);
-    }
+    completedRemote = remoteAfterRegistration;
+    if (remoteAfterRegistration !== remoteBeforeRegistration) completedExchanges.push(remoteAfterRegistration);
+    const participantByPortalId = new Map([...planned.values()].map((value) => [value.id, remoteAfterRegistration.participants.filter((participant) => participantProperties(participant).certalisSalesParticipantId === value.id && participantProperties(participant).certalisOpportunityContactId === value.contact.id)]));
+    const remoteContactCounts = new Map<string, number>();
+    for (const participant of remoteAfterRegistration.participants) { const contactId = participantProperties(participant).certalisOpportunityContactId; if (contactId) remoteContactCounts.set(contactId, (remoteContactCounts.get(contactId) ?? 0) + 1); }
+    if (new Set([...planned.values()].map((value) => value.id)).size !== planned.size || [...participantByPortalId.values()].some((matches) => matches.length !== 1) || [...planned.values()].some((value) => remoteContactCounts.get(value.contact.id) !== 1)) throw participantRegistrationNotReconciled(remoteAfterRegistration, planned.size, 0);
     const now = new Date();
-    const saved = await Promise.all(contacts.map(async (contact) => { const existing = persisted.find((participant) => participant.opportunityContactId === contact!.id); if (existing) return { value: existing, contact: contact! }; const participant = participantByContactId.get(contact!.id)!; const value = { id: randomUUID(), customerId: request.customerId, salesDemoSessionId: prepared.session.id, opportunityContactId: contact!.id, cloudShareParticipantId: participant.id, invitationStatus: participant.invitationStatus, invitedBy: participant.invitedBy, participationStatus: participant.participationStatus, firstJoined: participant.firstJoined, cloudShareEnvironmentId: participant.environmentId, environmentStatus: participant.envStatus ?? null, lastReconciledAt: now, createdAt: now, updatedAt: now } as const; await deps.participants.save(value); return { value, contact: contact! }; }));
-    await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.registered", "success", "Sales Participants registered with CloudShare", created ?? remoteAfterRegistration, { contactIds: parsed.data.contactIds, registeredParticipantCount: contactsNeedingRemoteRegistration.length, recoveredParticipantCount: remoteBeforeRegistration.participants.filter((participant) => contacts.some((contact) => contact!.email.toLowerCase() === participant.email.toLowerCase())).length }, saved.length === 1 && saved[0]!.value.cloudShareEnvironmentId ? { environmentId: saved[0]!.value.cloudShareEnvironmentId } : {});
+    const saved = await Promise.all(contacts.map(async (contact) => { const existing = persistedByContactId.get(contact.id); if (existing) return { value: existing, contact }; const plan = planned.get(contact.id)!; const participant = participantByPortalId.get(plan.id)![0]!; const value = { id: plan.id, customerId: request.customerId, salesDemoSessionId: prepared.session.id, opportunityContactId: contact.id, cloudShareParticipantId: participant.id, invitationStatus: participant.invitationStatus, invitedBy: participant.invitedBy, participationStatus: participant.participationStatus, firstJoined: participant.firstJoined, cloudShareEnvironmentId: participant.environmentId, environmentStatus: participant.envStatus ?? null, lastReconciledAt: now, createdAt: now, updatedAt: now } as const; await deps.participants.save(value); return { value, contact }; }));
+    await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.registered", "success", "Sales Participants registered with CloudShare", remoteAfterRegistration, { contactIds: parsed.data.contactIds, registeredParticipantCount: contactsNeedingRemoteRegistration.length, adoptedLegacyParticipantCount: legacyByContactId.size, httpExchanges: completedExchanges }, saved.length === 1 && saved[0]!.value.cloudShareEnvironmentId ? { environmentId: saved[0]!.value.cloudShareEnvironmentId } : {});
     return { status: 201, body: { participants: saved.map(({ value, contact }) => portalParticipant(value, contact)), correlationId } };
-  } catch (error) { return failed(deps, request, prepared.session, correlationId, "sales.demo_session.participants.registered", "CloudShare could not register selected Sales Participants.", error); }
+  } catch (error) { const classifiedError = completedRemote && !hasParticipantFailureContext(error) ? participantMappingPersistenceFailed(error) : error; const failedExchange = exchange(error); return failed(deps, request, prepared.session, correlationId, "sales.demo_session.participants.registered", "CloudShare could not register selected Sales Participants.", classifiedError, completedRemote, [...completedExchanges, ...priorHttpExchanges(error), ...(failedExchange ? [failedExchange] : [])]); }
 }
 
 export async function handleInviteSalesSessionParticipants(deps: Deps, request: Request): Promise<{ status: number; body: Record<string, unknown> }> {
@@ -77,9 +110,12 @@ export async function handleInviteSalesSessionParticipants(deps: Deps, request: 
     // A persisted mapping alone is not sufficient authority to resend an invite:
     // reconciliation may have already established that CloudShare no longer knows it.
     const current = await prepared.delivery.listParticipants!(prepared.session.cloudShareSalesExperienceId);
-    const currentIds = new Set(current.participants.map((participant) => participant.id));
-    if (selected.some((participant) => !currentIds.has(participant!.cloudShareParticipantId))) {
-      await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "failure", "One or more selected Sales Participants are no longer returned by CloudShare. Refresh monitoring and investigate the correlated diagnostics before inviting.", current, { failureMode: "participant_mapping_missing_from_cloudshare", participantIds: parsed.data.participantIds });
+    const currentByProviderId = new Map(current.participants.map((participant) => [participant.id, participant]));
+    if (selected.some((participant) => {
+      const remote = currentByProviderId.get(participant!.cloudShareParticipantId);
+      return !remote || participantProperties(remote).certalisSalesParticipantId !== participant!.id || participantProperties(remote).certalisOpportunityContactId !== participant!.opportunityContactId;
+    })) {
+      await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "failure", "One or more selected Sales Participants no longer has its Certalis correlation values in CloudShare. Refresh monitoring and investigate the correlated diagnostics before inviting.", current, { failureMode: "participant_mapping_missing_from_cloudshare", participantIds: parsed.data.participantIds });
       return { status: 409, body: { error: "One or more selected Sales Participants need attention and cannot be invited. Refresh monitoring and investigate the correlated diagnostics.", correlationId } };
     }
     const remote = await prepared.delivery.inviteParticipants!(prepared.session.cloudShareSalesExperienceId, selected.map((participant) => participant!.cloudShareParticipantId));
@@ -110,9 +146,10 @@ export async function handleListSalesSessionParticipants(deps: Deps, request: Om
     }
     let missingCloudShareParticipantCount = 0;
     const reconciled = await Promise.all(mappedParticipants.map(async (stored) => {
-      const participant = remote.participants.find((value) => value.id === stored.cloudShareParticipantId);
+      const participant = remote.participants.find((value) => participantProperties(value).certalisSalesParticipantId === stored.id && participantProperties(value).certalisOpportunityContactId === stored.opportunityContactId);
       const current = participant ? {
         ...stored,
+        cloudShareParticipantId: participant.id,
         invitationStatus: participant.invitationStatus,
         invitedBy: participant.invitedBy,
         participationStatus: participant.participationStatus,
@@ -150,11 +187,15 @@ type RemoteSalesParticipant = {
   readonly firstJoined: string | null;
   readonly environmentId: string | null;
   readonly envStatus: string | null;
+  readonly customProperties?: Readonly<Record<string, string>>;
 };
 
-/** Repairs a local mapping only when the provider roster and active Opportunity
- * Contacts make the email association one-to-one. This is recovery for an
- * acknowledged earlier registration, not a way to import arbitrary provider users. */
+function participantProperties(participant: RemoteSalesParticipant | undefined): Readonly<Record<string, string>> { return participant?.customProperties ?? {}; }
+function stablePortalParticipantId(customerId: string, sessionId: string, contactId: string): string { const hash = createHash("sha256").update(`${customerId}:${sessionId}:${contactId}`).digest("hex"); return `${hash.slice(0, 8)}-${hash.slice(8, 12)}-5${hash.slice(13, 16)}-${hash.slice(16, 20)}-${hash.slice(20, 32)}`; }
+
+/** Repairs mappings only from the immutable Certalis identifiers stored in the
+ * provider participant. Email is deliberately not a recovery key: it is mutable
+ * and cannot distinguish otherwise identical Opportunity Contacts. */
 async function recoverMissingParticipantMappings(
   deps: Deps,
   customerId: string,
@@ -167,27 +208,27 @@ async function recoverMissingParticipantMappings(
   readonly recoveredParticipantCount: number;
   readonly unmatchedCloudShareParticipantCount: number;
 }> {
-  if (!deps.records.listContacts) return { participants: local, recoveredParticipantCount: 0, unmatchedCloudShareParticipantCount: remote.filter((participant) => !local.some((stored) => stored.cloudShareParticipantId === participant.id)).length };
-
-  const contacts = (await deps.records.listContacts(customerId, session.opportunityId))
-    .filter((contact) => contact.archivedAt === null);
+  const remoteByPortalId = new Map<string, RemoteSalesParticipant[]>();
+  const remoteByContactId = new Map<string, RemoteSalesParticipant[]>();
+  for (const participant of remote) {
+    const portalId = participantProperties(participant).certalisSalesParticipantId;
+    const contactId = participantProperties(participant).certalisOpportunityContactId;
+    if (portalId) remoteByPortalId.set(portalId, [...(remoteByPortalId.get(portalId) ?? []), participant]);
+    if (contactId) remoteByContactId.set(contactId, [...(remoteByContactId.get(contactId) ?? []), participant]);
+  }
+  const localByPortalId = new Map(local.map((participant) => [participant.id, participant]));
   const localContactIds = new Set(local.map((participant) => participant.opportunityContactId));
-  const localProviderIds = new Set(local.map((participant) => participant.cloudShareParticipantId));
-  const contactsByEmail = groupByNormalizedEmail(contacts);
-  const remoteByEmail = groupByNormalizedEmail(remote);
-  const recovered = remote.flatMap((participant) => {
-    if (localProviderIds.has(participant.id)) return [];
-    const email = participant.email.toLowerCase();
-    const contactCandidates = (contactsByEmail.get(email) ?? [])
-      .filter((contact) => !localContactIds.has(contact.id));
-    const remoteCandidates = remoteByEmail.get(email) ?? [];
-    if (contactCandidates.length !== 1 || remoteCandidates.length !== 1) return [];
-    const contact = contactCandidates[0]!;
-    return [{
-      id: randomUUID(),
+  const recovered = (await Promise.all(remote.map(async (participant) => {
+    const portalId = participantProperties(participant).certalisSalesParticipantId;
+    const contactId = participantProperties(participant).certalisOpportunityContactId;
+    if (!portalId || !contactId || localByPortalId.has(portalId) || localContactIds.has(contactId) || remoteByPortalId.get(portalId)?.length !== 1 || remoteByContactId.get(contactId)?.length !== 1) return undefined;
+    const contact = await deps.records.findContact(customerId, contactId);
+    if (!contact || contact.opportunityId !== session.opportunityId || contact.archivedAt) return undefined;
+    return {
+      id: portalId,
       customerId,
       salesDemoSessionId: session.id,
-      opportunityContactId: contact.id,
+      opportunityContactId: contactId,
       cloudShareParticipantId: participant.id,
       invitationStatus: participant.invitationStatus,
       invitedBy: participant.invitedBy,
@@ -198,29 +239,38 @@ async function recoverMissingParticipantMappings(
       lastReconciledAt: now,
       createdAt: now,
       updatedAt: now,
-    } as const];
-  });
+    } as const;
+  }))).filter((participant): participant is NonNullable<typeof participant> => Boolean(participant));
   try {
     await Promise.all(recovered.map((participant) => deps.participants.save(participant)));
   } catch (error) {
     throw participantMappingPersistenceFailed(error);
   }
-  const knownProviderIds = new Set([...localProviderIds, ...recovered.map((participant) => participant.cloudShareParticipantId)]);
+  const knownProviderIds = new Set([
+    ...local.map((participant) => participant.cloudShareParticipantId),
+    ...recovered.map((participant) => participant.cloudShareParticipantId),
+    ...remote.filter((participant) => {
+      const portalId = participantProperties(participant).certalisSalesParticipantId;
+      const contactId = participantProperties(participant).certalisOpportunityContactId;
+      return Boolean(portalId && contactId && localByPortalId.get(portalId)?.opportunityContactId === contactId);
+    }).map((participant) => participant.id),
+  ]);
   return { participants: [...local, ...recovered], recoveredParticipantCount: recovered.length, unmatchedCloudShareParticipantCount: remote.filter((participant) => !knownProviderIds.has(participant.id)).length };
 }
 
 function portalParticipant(value: import("@/domain/sales-session-participant").SalesSessionParticipant, contact: { readonly firstName: string; readonly lastName: string }, reconciliation?: { readonly needsAttention: true; readonly monitoringMessage: string }) { return { id: value.id, opportunityContactId: value.opportunityContactId, firstName: contact.firstName, lastName: contact.lastName, invitationStatus: value.invitationStatus, invitedBy: value.invitedBy, participationStatus: value.participationStatus, firstJoined: value.firstJoined, envStatus: value.environmentStatus, ...reconciliation }; }
 async function resolve(deps: Deps, request: Omit<Request, "body">) { if (!deps.sessions.findById) return { response: { status: 503, body: { error: "Sales Participant monitoring is unavailable." } } }; const [session, connection] = await Promise.all([deps.sessions.findById(request.customerId, request.sessionId), deps.connections.findByCustomerId(request.customerId)]); if (!session || !connection) return { response: { status: 404, body: { error: "Sales Session or CloudShare Connection was not found." } } }; if (session.operationalStatus !== "active" || session.cloudShareSalesExperienceId.startsWith("pending:")) return { response: { status: 409, body: { error: "Participants are available only after this Sales Session is provisioned." } } }; const delivery = deps.deliveryFactory?.forConnection(connection) ?? createCloudShareSalesDelivery(deps.cloudshare!.forConnection(connection)); return { session, delivery }; }
 async function denied(deps: Deps, request: Request, session: NonNullable<Awaited<ReturnType<NonNullable<Deps["sessions"]["findById"]>>>>, status: number, error: string, failureMode: string) { const correlationId = randomUUID(); await evidence(deps, request, session, correlationId, "sales.demo_session.participants.registered", "failure", error, undefined, { failureMode }); return { status, body: { error, correlationId } }; }
-async function failed(deps: Deps, request: Request, session: NonNullable<Awaited<ReturnType<NonNullable<Deps["sessions"]["findById"]>>>>, correlationId: string, operation: string, message: string, error: unknown, completedRemote?: { request: unknown; response: unknown }) { await evidence(deps, request, session, correlationId, operation, "failure", message, completedRemote ?? exchange(error), { ...participantFailureDetails(error), error: error instanceof Error ? error.message : String(error) }); return { status: 502, body: { error: message, correlationId } }; }
+async function failed(deps: Deps, request: Request, session: NonNullable<Awaited<ReturnType<NonNullable<Deps["sessions"]["findById"]>>>>, correlationId: string, operation: string, message: string, error: unknown, completedRemote?: { request: unknown; response: unknown }, httpExchanges: readonly { readonly request: unknown; readonly response: unknown }[] = []) { await evidence(deps, request, session, correlationId, operation, "failure", message, exchange(error) ?? completedRemote, { ...participantFailureDetails(error), error: error instanceof Error ? error.message : String(error), ...(httpExchanges.length > 0 ? { httpExchanges } : {}) }); return { status: 502, body: { error: message, correlationId } }; }
 async function evidence(deps: Deps, request: Omit<Request, "body">, session: NonNullable<Awaited<ReturnType<NonNullable<Deps["sessions"]["findById"]>>>>, correlationId: string, operation: string, outcome: "success" | "failure", message: string, remote: { request: unknown; response: unknown } | undefined, details: Record<string, unknown>, externalIds: Record<string, string> = {}) { const correlatedExternalIds = { opportunityId: session.opportunityId, cloudShareSalesExperienceId: session.cloudShareSalesExperienceId, ...externalIds }; await Promise.allSettled([deps.diagnostics?.record({ source: "sales-session-participants", operation, outcome, level: outcome === "success" ? "info" : "warn", customerId: request.customerId, actor: request.actor, subject: { type: "sales_demo_session", id: session.id }, correlationId, message, externalIds: correlatedExternalIds, request: remote?.request as Record<string, unknown>, response: remote?.response as Record<string, unknown>, details: { integrationSurface: "cloudshare.v4.sales.participants", ...details } }), deps.audit?.write({ id: randomUUID(), occurredAt: new Date(), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: operation, subjectType: "sales_demo_session", subjectId: session.id, outcome, correlationId, details: { ...correlatedExternalIds, ...details }, ...(outcome === "failure" ? { error: message } : {}) })]); }
-function exchange(error: unknown) { if (!(error instanceof Error) || !("context" in error)) return undefined; const c = (error as { context?: Record<string, unknown> }).context; return c ? { request: { method: c.method, path: c.path, query: c.requestQuery, headers: c.requestHeaders, body: c.requestBody }, response: { status: c.responseStatus ?? c.status, headers: c.responseHeaders, body: c.responseBody, transport: c.cause } } : undefined; }
-type ParticipantFailureMode = "cloudshare_participants" | "participant_page_count_contradiction" | "participant_page_duplicate_id" | "participant_registration_not_reconciled" | "participant_roster_mapping_unresolved" | "participant_mapping_persistence";
-function participantFailureDetails(error: unknown): { readonly failureMode: ParticipantFailureMode; readonly expectedCount?: number; readonly returnedCount?: number; readonly localParticipantCount?: number; readonly cloudShareParticipantCount?: number; readonly recoveredParticipantCount?: number; readonly unmatchedCloudShareParticipantCount?: number } { const context = error instanceof Error && "context" in error ? (error as { context?: Record<string, unknown> }).context : undefined; const failureMode: ParticipantFailureMode = context?.failureMode === "participant_page_count_contradiction" || context?.failureMode === "participant_page_duplicate_id" || context?.failureMode === "participant_registration_not_reconciled" || context?.failureMode === "participant_roster_mapping_unresolved" || context?.failureMode === "participant_mapping_persistence" ? context.failureMode : "cloudshare_participants"; const expectedCount = nonnegativeInteger(context?.expectedCount); const returnedCount = nonnegativeInteger(context?.returnedCount); const localParticipantCount = nonnegativeInteger(context?.localParticipantCount); const cloudShareParticipantCount = nonnegativeInteger(context?.cloudShareParticipantCount); const recoveredParticipantCount = nonnegativeInteger(context?.recoveredParticipantCount); const unmatchedCloudShareParticipantCount = nonnegativeInteger(context?.unmatchedCloudShareParticipantCount); return { failureMode, ...(expectedCount === undefined ? {} : { expectedCount }), ...(returnedCount === undefined ? {} : { returnedCount }), ...(localParticipantCount === undefined ? {} : { localParticipantCount }), ...(cloudShareParticipantCount === undefined ? {} : { cloudShareParticipantCount }), ...(recoveredParticipantCount === undefined ? {} : { recoveredParticipantCount }), ...(unmatchedCloudShareParticipantCount === undefined ? {} : { unmatchedCloudShareParticipantCount }) }; }
+function exchange(error: unknown) { if (!(error instanceof Error) || !("context" in error)) return undefined; const c = (error as { context?: Record<string, unknown> }).context; if (!c || typeof c.method !== "string" || typeof c.path !== "string") return undefined; return { request: { method: c.method, path: c.path, query: c.requestQuery, headers: c.requestHeaders, body: c.requestBody }, response: { status: c.responseStatus ?? c.status, headers: c.responseHeaders, body: c.responseBody, transport: c.cause } }; }
+function priorHttpExchanges(error: unknown): readonly { readonly request: unknown; readonly response: unknown }[] { if (!(error instanceof Error) || !("context" in error)) return []; const exchanges = (error as { context?: { priorHttpExchanges?: unknown } }).context?.priorHttpExchanges; return Array.isArray(exchanges) ? exchanges.filter((value): value is { readonly request: unknown; readonly response: unknown } => Boolean(value && typeof value === "object" && "request" in value && "response" in value)) : []; }
+type ParticipantFailureMode = "cloudshare_participants" | "participant_page_count_contradiction" | "participant_page_duplicate_id" | "participant_registration_not_reconciled" | "participant_roster_mapping_unresolved" | "participant_mapping_persistence" | "sales_participant_correlation_properties_missing" | "participant_legacy_backfill_ambiguous";
+function participantFailureDetails(error: unknown): { readonly failureMode: ParticipantFailureMode; readonly expectedCount?: number; readonly returnedCount?: number; readonly localParticipantCount?: number; readonly cloudShareParticipantCount?: number; readonly recoveredParticipantCount?: number; readonly unmatchedCloudShareParticipantCount?: number } { const context = error instanceof Error && "context" in error ? (error as { context?: Record<string, unknown> }).context : undefined; const failureMode: ParticipantFailureMode = context?.failureMode === "participant_page_count_contradiction" || context?.failureMode === "participant_page_duplicate_id" || context?.failureMode === "participant_registration_not_reconciled" || context?.failureMode === "participant_roster_mapping_unresolved" || context?.failureMode === "participant_mapping_persistence" || context?.failureMode === "sales_participant_correlation_properties_missing" || context?.failureMode === "participant_legacy_backfill_ambiguous" ? context.failureMode : "cloudshare_participants"; const expectedCount = nonnegativeInteger(context?.expectedCount); const returnedCount = nonnegativeInteger(context?.returnedCount); const localParticipantCount = nonnegativeInteger(context?.localParticipantCount); const cloudShareParticipantCount = nonnegativeInteger(context?.cloudShareParticipantCount); const recoveredParticipantCount = nonnegativeInteger(context?.recoveredParticipantCount); const unmatchedCloudShareParticipantCount = nonnegativeInteger(context?.unmatchedCloudShareParticipantCount); return { failureMode, ...(expectedCount === undefined ? {} : { expectedCount }), ...(returnedCount === undefined ? {} : { returnedCount }), ...(localParticipantCount === undefined ? {} : { localParticipantCount }), ...(cloudShareParticipantCount === undefined ? {} : { cloudShareParticipantCount }), ...(recoveredParticipantCount === undefined ? {} : { recoveredParticipantCount }), ...(unmatchedCloudShareParticipantCount === undefined ? {} : { unmatchedCloudShareParticipantCount }) }; }
 function nonnegativeInteger(value: unknown): number | undefined { return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined; }
 function participantRegistrationNotReconciled(remote: SalesDeliveryEvidence, expectedCount: number, returnedCount: number): CloudShareResponseError { return new CloudShareResponseError("CloudShare accepted the participant registration but its authoritative roster did not return every selected Opportunity Contact.", { method: remote.request.method, path: remote.request.path, ...(remote.request.query ? { requestQuery: remote.request.query } : {}), ...(remote.request.headers ? { requestHeaders: remote.request.headers } : {}), ...(remote.request.body !== undefined ? { requestBody: remote.request.body } : {}), status: remote.response.status, responseStatus: remote.response.status, ...(remote.response.headers ? { responseHeaders: remote.response.headers } : {}), responseBody: remote.response.body, expectedCount, returnedCount, failureMode: "participant_registration_not_reconciled" }); }
+function participantLegacyBackfillAmbiguous(remote: SalesDeliveryEvidence, selectedContactCount: number): CloudShareResponseError { return new CloudShareResponseError("CloudShare has legacy Sales Participants that cannot be backfilled without an unambiguous one-to-one selected Opportunity Contact mapping.", { method: remote.request.method, path: remote.request.path, ...(remote.request.query ? { requestQuery: remote.request.query } : {}), ...(remote.request.headers ? { requestHeaders: remote.request.headers } : {}), ...(remote.request.body !== undefined ? { requestBody: remote.request.body } : {}), status: remote.response.status, responseStatus: remote.response.status, ...(remote.response.headers ? { responseHeaders: remote.response.headers } : {}), responseBody: remote.response.body, expectedCount: selectedContactCount, returnedCount: 0, failureMode: "participant_legacy_backfill_ambiguous" }); }
 function participantRosterMappingUnresolved(remote: SalesDeliveryEvidence, cloudShareParticipantCount: number, localParticipantCount: number, recoveredParticipantCount: number, unmatchedCloudShareParticipantCount: number): CloudShareResponseError { return new CloudShareResponseError("CloudShare returned Sales Participants that Certalis cannot safely associate with exactly one active Opportunity Contact.", { method: remote.request.method, path: remote.request.path, ...(remote.request.query ? { requestQuery: remote.request.query } : {}), ...(remote.request.headers ? { requestHeaders: remote.request.headers } : {}), ...(remote.request.body !== undefined ? { requestBody: remote.request.body } : {}), status: remote.response.status, responseStatus: remote.response.status, ...(remote.response.headers ? { responseHeaders: remote.response.headers } : {}), responseBody: remote.response.body, localParticipantCount, cloudShareParticipantCount, recoveredParticipantCount, unmatchedCloudShareParticipantCount, failureMode: "participant_roster_mapping_unresolved" }); }
 function hasParticipantFailureContext(error: unknown): boolean { return error instanceof Error && "context" in error && Boolean((error as { context?: unknown }).context); }
 function participantMappingPersistenceFailed(error: unknown): Error & { readonly context: { readonly failureMode: "participant_mapping_persistence" } } { const failure = new Error(`Certalis could not persist or reconcile Sales Participant monitoring after CloudShare returned the roster: ${error instanceof Error ? error.message : String(error)}`) as Error & { context: { readonly failureMode: "participant_mapping_persistence" } }; failure.context = { failureMode: "participant_mapping_persistence" }; return failure; }
-function countByNormalizedEmail(values: readonly { readonly email: string }[]): Map<string, number> { const counts = new Map<string, number>(); for (const value of values) { const email = value.email.toLowerCase(); counts.set(email, (counts.get(email) ?? 0) + 1); } return counts; }
 function groupByNormalizedEmail<T extends { readonly email: string }>(values: readonly T[]): Map<string, T[]> { const groups = new Map<string, T[]>(); for (const value of values) { const email = value.email.toLowerCase(); groups.set(email, [...(groups.get(email) ?? []), value]); } return groups; }
