@@ -119,11 +119,15 @@ function nullableStringAt(value: Record<string, unknown>, keys: readonly string[
 }
 function normalizeSalesParticipant(row: unknown): z.input<typeof salesParticipantSchema> | null {
   const source = record(row); if (!source) return null;
-  const id = stringAt(source, ["id", "Id", "participantId", "ParticipantId"]);
+  const id = stringAt(source, ["id", "Id"]);
   const email = stringAt(source, ["email", "Email"]);
   if (!id || !email || !z.string().email().safeParse(email).success) return null;
   const invitationStatus = stringAt(source, ["invitationStatus", "InvitationStatus"]);
   const participationStatus = stringAt(source, ["participationStatus", "ParticipationStatus"]);
+  const hasInvitationStatus = ["invitationStatus", "InvitationStatus"].some((key) => Object.hasOwn(source, key));
+  const hasParticipationStatus = ["participationStatus", "ParticipationStatus"].some((key) => Object.hasOwn(source, key));
+  if (hasInvitationStatus && invitationStatus !== "sent" && invitationStatus !== "notSent") return null;
+  if (hasParticipationStatus && participationStatus !== "pending" && participationStatus !== "inProgress" && participationStatus !== "concluded") return null;
   const invitedBy = nullableStringAt(source, ["invitedBy", "InvitedBy"]);
   return {
     id,
@@ -134,19 +138,29 @@ function normalizeSalesParticipant(row: unknown): z.input<typeof salesParticipan
     invitedBy: invitedBy && z.string().email().safeParse(invitedBy).success ? invitedBy : null,
     participationStatus: participationStatus === "inProgress" || participationStatus === "concluded" ? participationStatus : "pending",
     firstJoined: nullableStringAt(source, ["firstJoined", "FirstJoined"]) ?? null,
-    envStatus: stringAt(source, ["envStatus", "EnvStatus", "environmentStatus", "EnvironmentStatus"]),
-    envId: nullableStringAt(source, ["envId", "EnvId", "environmentId", "EnvironmentId"]) ?? null,
+    envStatus: stringAt(source, ["envStatus", "EnvironmentStatus"]),
+    envId: nullableStringAt(source, ["envId", "EnvironmentId"]) ?? null,
   };
 }
 /** Normalize only the small participant roster contract Certalis needs.  The
  * live Sales API has varied its collection and field casing, so never expose
  * or retain an arbitrary provider object (which can contain invite URLs). */
-export function normalizeSalesParticipantPage(payload: unknown): { readonly count?: number; readonly participants: readonly z.input<typeof salesParticipantSchema>[] } {
+export function normalizeSalesParticipantPage(payload: unknown): unknown {
   const envelope = record(payload);
-  const rows = Array.isArray(payload) ? payload : envelope && ["participants", "Participants", "items", "Items", "rows", "Rows", "data", "Data"].map((key) => envelope[key]).find(Array.isArray);
-  const rawCount = envelope?.count ?? envelope?.Count;
-  const count = typeof rawCount === "number" && Number.isInteger(rawCount) && rawCount >= 0 ? rawCount : undefined;
-  return { ...(count === undefined ? {} : { count }), participants: (Array.isArray(rows) ? rows : []).flatMap((row) => { const participant = normalizeSalesParticipant(row); return participant ? [participant] : []; }) };
+  if (!envelope) return payload;
+  const camelParticipants = Array.isArray(envelope.participants);
+  const camelItems = Array.isArray(envelope.items) && Object.hasOwn(envelope, "count");
+  const pascalItems = Array.isArray(envelope.Items) && Object.hasOwn(envelope, "Count");
+  const recognizedEnvelopeCount = [camelParticipants, camelItems, pascalItems].filter(Boolean).length;
+  if (recognizedEnvelopeCount !== 1) return payload;
+  const rows = camelParticipants ? envelope.participants : camelItems ? envelope.items : envelope.Items;
+  const hasCount = camelParticipants || camelItems ? Object.hasOwn(envelope, "count") : Object.hasOwn(envelope, "Count");
+  const rawCount = camelParticipants || camelItems ? envelope.count : envelope.Count;
+  const count = !hasCount ? undefined : typeof rawCount === "number" && Number.isInteger(rawCount) && rawCount >= 0 ? rawCount : null;
+  if (count === null) return payload;
+  const participants = (Array.isArray(rows) ? rows : []).map(normalizeSalesParticipant);
+  if (participants.some((participant) => participant === null)) return payload;
+  return { ...(count === undefined ? {} : { count }), participants };
 }
 const participantsEnvelopeSchema = z.preprocess(normalizeSalesParticipantPage, z.object({ count: z.number().int().nonnegative().optional(), participants: z.array(salesParticipantSchema) }));
 const PARTICIPANT_PAGE_LIMIT = 100;
@@ -157,7 +171,7 @@ const mutableSalesExperienceFields = ["name", "type", "projectId", "teamId", "bl
  * wire keys, or response parsing; they only validate an owner and create a
  * time-bounded registered-only delivery. */
 export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDelivery {
-  async function detailed<T>(spec: { method: "GET" | "POST" | "PUT"; path: string; query?: Record<string, string>; body?: unknown; allowEmptyResponse?: boolean; schema: z.ZodType<T> }): Promise<{ data: T; evidence: SalesDeliveryEvidence }> {
+  async function detailed<T>(spec: { method: "GET" | "POST" | "PUT"; path: string; query?: Record<string, string>; body?: unknown; allowEmptyResponse?: boolean; schema: z.ZodType<T, z.ZodTypeDef, unknown> }): Promise<{ data: T; evidence: SalesDeliveryEvidence }> {
     const result = client.requestV4Detailed
       ? await client.requestV4Detailed(spec)
       : await client.requestV4(spec).then((data) => ({ data, request: { method: spec.method, path: spec.path, ...(spec.body === undefined ? {} : { body: spec.body }) }, response: { status: 200, body: data } } as CloudShareDetailedResult<T>));
@@ -228,7 +242,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
     },
     async listParticipants(salesExperienceId) {
       const path = `/sales/${encodeURIComponent(salesExperienceId)}/participants`;
-      const first = await detailed({ method: "GET", path, query: { offset: "0", limit: String(PARTICIPANT_PAGE_LIMIT) }, schema: participantsEnvelopeSchema });
+      const first = await detailed<z.output<typeof participantsEnvelopeSchema>>({ method: "GET", path, query: { offset: "0", limit: String(PARTICIPANT_PAGE_LIMIT) }, schema: participantsEnvelopeSchema });
       const firstPage = participantPage(first.data);
       if (firstPage.count === undefined) {
         return { participants: firstPage.participants.map(mapSalesParticipant), ...participantEvidence(first.evidence, firstPage.participants.length, [0]) };
@@ -242,7 +256,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
       let evidence = first.evidence;
       while (rows.length < expectedCount) {
         const offset = rows.length;
-        const page = await detailed({ method: "GET", path, query: { offset: String(offset), limit: String(PARTICIPANT_PAGE_LIMIT) }, schema: participantsEnvelopeSchema });
+        const page = await detailed<z.output<typeof participantsEnvelopeSchema>>({ method: "GET", path, query: { offset: String(offset), limit: String(PARTICIPANT_PAGE_LIMIT) }, schema: participantsEnvelopeSchema });
         const normalizedPage = participantPage(page.data);
         offsets.push(offset);
         const returnedCount = rows.length + normalizedPage.participants.length;
@@ -288,8 +302,8 @@ function participantEvidence(evidence: SalesDeliveryEvidence, participantCount: 
   };
 }
 
-function participantPage(data: z.input<typeof participantsEnvelopeSchema>): { readonly count?: number; readonly participants: readonly z.input<typeof salesParticipantSchema>[] } {
-  return normalizeSalesParticipantPage(data);
+function participantPage(data: z.output<typeof participantsEnvelopeSchema>): { readonly count?: number; readonly participants: readonly z.input<typeof salesParticipantSchema>[] } {
+  return participantsEnvelopeSchema.parse(data);
 }
 
 function hasDuplicateParticipantIds(participants: readonly z.input<typeof salesParticipantSchema>[]): boolean {

@@ -53,6 +53,32 @@ describe("Sales Session participant invitation", () => {
     expect(JSON.stringify(result.body)).not.toContain("remote-participant-1");
   });
 
+  it("records the authoritative roster evidence when an accepted registration cannot be correlated", async () => {
+    const diagnostics = { record: vi.fn() };
+    const registerParticipants = vi.fn().mockResolvedValue({ request: { method: "POST", path: "/sales/remote-sales-1/participants", body: { participantCount: 1 } }, response: { status: 201, body: { participantCount: 1 } } });
+    const listParticipants = vi.fn()
+      .mockResolvedValueOnce({ participants: [], request: { method: "GET", path: "/sales/remote-sales-1/participants", query: { offset: "0", limit: "100" } }, response: { status: 200, body: { participantCount: 0, pageCount: 1, pageOffsets: [0] } } })
+      .mockResolvedValueOnce({ participants: [], request: { method: "GET", path: "/sales/remote-sales-1/participants", query: { offset: "0", limit: "100" } }, response: { status: 200, body: { participantCount: 0, pageCount: 1, pageOffsets: [0] } } });
+    const result = await handleRegisterSalesSessionParticipants({
+      sessions: { findById: vi.fn().mockResolvedValue({ id: "session-1", opportunityId: "opportunity-1", cloudShareSalesExperienceId: "remote-sales-1", operationalStatus: "active" }) },
+      records: { findContact: vi.fn().mockResolvedValue({ id: "contact-1", opportunityId: "opportunity-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", archivedAt: null }) },
+      participants: { save: vi.fn(), list: vi.fn().mockResolvedValue([]) },
+      connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), registerParticipants, listParticipants, inviteParticipants: vi.fn() }) },
+      diagnostics,
+    }, { customerId: "customer-1", sessionId: "session-1", actor: { type: "admin", id: "admin-1", email: "sales-admin@certalis.demo" }, body: { contactIds: ["contact-1"] } });
+
+    expect(result).toMatchObject({ status: 502, body: { error: "CloudShare could not register selected Sales Participants.", correlationId: expect.any(String) } });
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: "failure",
+      request: { method: "GET", path: "/sales/remote-sales-1/participants", query: { offset: "0", limit: "100" }, headers: undefined, body: undefined },
+      response: { status: 200, headers: undefined, body: { participantCount: 0, pageCount: 1, pageOffsets: [0] }, transport: undefined },
+      details: expect.objectContaining({ failureMode: "participant_registration_not_reconciled", expectedCount: 1, returnedCount: 0 }),
+    }));
+    expect(JSON.stringify(diagnostics.record.mock.calls)).not.toContain("ada@example.test");
+    expect(JSON.stringify(diagnostics.record.mock.calls)).not.toContain("invite");
+  });
+
   it("repairs a failed local registration save from the existing CloudShare participant on retry without registering twice", async () => {
     const remoteParticipant = { id: "remote-participant-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", invitationStatus: "notSent" as const, invitedBy: null, participationStatus: "pending" as const, firstJoined: null };
     const registerParticipants = vi.fn().mockResolvedValue({ request: {}, response: { status: 201, body: { participantCount: 1 } } });

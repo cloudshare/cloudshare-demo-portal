@@ -65,6 +65,31 @@ describe("CloudShare Sales Delivery", () => {
     expect(JSON.stringify(roster)).not.toContain("accessLink");
     expect(JSON.stringify(roster)).not.toContain("bearer.example.test");
   });
+  it("rejects an unrecognized participant-list envelope instead of treating it as an empty roster", async () => {
+    const participant = { id: "participant-1", firstName: "Casey", lastName: "Example", email: "casey@example.test", invitationStatus: "notSent", invitedBy: null, participationStatus: "pending", firstJoined: null };
+    const unrecognizedEnvelope = { count: 1, data: [participant] };
+    const requestV4Detailed = vi.fn().mockImplementation(async (spec) => ({
+      data: spec.schema.parse(unrecognizedEnvelope),
+      request: { method: "GET", path: "/sales/sales-1/participants" },
+      response: { status: 200, body: unrecognizedEnvelope },
+    }));
+
+    await expect(createCloudShareSalesDelivery({ requestV4Detailed } as never).listParticipants("sales-1")).rejects.toThrow();
+  });
+  it.each([
+    ["invitationStatus", "queued"],
+    ["participationStatus", "joining"],
+  ])("rejects unsupported %s values instead of inventing a safe-looking default", async (field, value) => {
+    const participant = { id: "participant-1", firstName: "Casey", lastName: "Example", email: "casey@example.test", invitationStatus: "notSent", invitedBy: null, participationStatus: "pending", firstJoined: null, [field]: value };
+    const envelope = { count: 1, items: [participant] };
+    const requestV4Detailed = vi.fn().mockImplementation(async (spec) => ({
+      data: spec.schema.parse(envelope),
+      request: { method: "GET", path: "/sales/sales-1/participants" },
+      response: { status: 200, body: envelope },
+    }));
+
+    await expect(createCloudShareSalesDelivery({ requestV4Detailed } as never).listParticipants("sales-1")).rejects.toThrow();
+  });
   it("reads every documented participant page and fails closed when count contradicts the pages", async () => {
     const first = { id: "participant-1", firstName: "Casey", lastName: "Example", email: "casey@example.test" };
     const second = { id: "participant-2", firstName: "Sam", lastName: "Example", email: "sam@example.test" };
