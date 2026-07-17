@@ -37,7 +37,10 @@ export interface SalesDelivery {
    * changes only the provider-visible name: schedule edits need their own
    * lifecycle policy before they can be exposed. */
   updateSession?(salesExperienceId: string, changes: { readonly name: string }): Promise<{ readonly id: string } & SalesDeliveryEvidence>;
-  registerParticipants(salesExperienceId: string, participants: readonly SalesParticipantInput[]): Promise<{ readonly participants: readonly SalesParticipant[] } & SalesDeliveryEvidence>;
+  /** A successful add acknowledgement is deliberately not used for identity
+   * correlation. CloudShare has returned partial and empty 201 bodies here;
+   * callers must reconcile through the roster read after this mutation. */
+  registerParticipants(salesExperienceId: string, participants: readonly SalesParticipantInput[]): Promise<SalesDeliveryEvidence>;
   listParticipants(salesExperienceId: string): Promise<{ readonly participants: readonly SalesParticipant[] } & SalesDeliveryEvidence>;
   inviteParticipants(salesExperienceId: string, participantIds: readonly string[]): Promise<SalesDeliveryEvidence>;
 }
@@ -92,17 +95,60 @@ const salesExperienceSchema = z.object({
 }).passthrough();
 const salesParticipantSchema = z.object({
   id: z.string().min(1), firstName: z.string(), lastName: z.string(), email: z.string().email(),
-  invitationStatus: z.enum(["sent", "notSent"]).default("notSent"), invitedBy: z.string().email().nullable().optional().default(null),
-  participationStatus: z.enum(["pending", "inProgress", "concluded"]).default("pending"), firstJoined: z.string().nullable().optional().default(null), envStatus: z.string().optional(), envId: z.string().nullable().optional().default(null),
-}).passthrough();
-/** The initial v4 export describes `participants`; live Sales reads return
- * the normal paged collection `{ count, items }`. Accept both during the
- * product documentation transition and normalize before leaving this adapter. */
-const participantsEnvelopeSchema = z.union([
-  z.object({ count: z.number().int().nonnegative(), participants: z.array(salesParticipantSchema) }),
-  z.object({ count: z.number().int().nonnegative(), items: z.array(salesParticipantSchema) }),
-  z.object({ participants: z.array(salesParticipantSchema) }),
-]);
+  invitationStatus: z.enum(["sent", "notSent"]), invitedBy: z.string().email().nullable(),
+  participationStatus: z.enum(["pending", "inProgress", "concluded"]), firstJoined: z.string().nullable(), envStatus: z.string().optional(), envId: z.string().nullable(),
+});
+
+function record(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+function stringAt(value: Record<string, unknown>, keys: readonly string[]): string | undefined {
+  for (const key of keys) {
+    const candidate = value[key];
+    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
+  }
+  return undefined;
+}
+function nullableStringAt(value: Record<string, unknown>, keys: readonly string[]): string | null | undefined {
+  for (const key of keys) {
+    if (value[key] === null) return null;
+    const candidate = value[key];
+    if (typeof candidate === "string") return candidate.trim() || null;
+  }
+  return undefined;
+}
+function normalizeSalesParticipant(row: unknown): z.input<typeof salesParticipantSchema> | null {
+  const source = record(row); if (!source) return null;
+  const id = stringAt(source, ["id", "Id", "participantId", "ParticipantId"]);
+  const email = stringAt(source, ["email", "Email"]);
+  if (!id || !email || !z.string().email().safeParse(email).success) return null;
+  const invitationStatus = stringAt(source, ["invitationStatus", "InvitationStatus"]);
+  const participationStatus = stringAt(source, ["participationStatus", "ParticipationStatus"]);
+  const invitedBy = nullableStringAt(source, ["invitedBy", "InvitedBy"]);
+  return {
+    id,
+    email,
+    firstName: stringAt(source, ["firstName", "FirstName"]) ?? "",
+    lastName: stringAt(source, ["lastName", "LastName"]) ?? "",
+    invitationStatus: invitationStatus === "sent" ? "sent" : "notSent",
+    invitedBy: invitedBy && z.string().email().safeParse(invitedBy).success ? invitedBy : null,
+    participationStatus: participationStatus === "inProgress" || participationStatus === "concluded" ? participationStatus : "pending",
+    firstJoined: nullableStringAt(source, ["firstJoined", "FirstJoined"]) ?? null,
+    envStatus: stringAt(source, ["envStatus", "EnvStatus", "environmentStatus", "EnvironmentStatus"]),
+    envId: nullableStringAt(source, ["envId", "EnvId", "environmentId", "EnvironmentId"]) ?? null,
+  };
+}
+/** Normalize only the small participant roster contract Certalis needs.  The
+ * live Sales API has varied its collection and field casing, so never expose
+ * or retain an arbitrary provider object (which can contain invite URLs). */
+export function normalizeSalesParticipantPage(payload: unknown): { readonly count?: number; readonly participants: readonly z.input<typeof salesParticipantSchema>[] } {
+  const envelope = record(payload);
+  const rows = Array.isArray(payload) ? payload : envelope && ["participants", "Participants", "items", "Items", "rows", "Rows", "data", "Data"].map((key) => envelope[key]).find(Array.isArray);
+  const rawCount = envelope?.count ?? envelope?.Count;
+  const count = typeof rawCount === "number" && Number.isInteger(rawCount) && rawCount >= 0 ? rawCount : undefined;
+  return { ...(count === undefined ? {} : { count }), participants: (Array.isArray(rows) ? rows : []).flatMap((row) => { const participant = normalizeSalesParticipant(row); return participant ? [participant] : []; }) };
+}
+const participantsEnvelopeSchema = z.preprocess(normalizeSalesParticipantPage, z.object({ count: z.number().int().nonnegative().optional(), participants: z.array(salesParticipantSchema) }));
 const PARTICIPANT_PAGE_LIMIT = 100;
 
 const mutableSalesExperienceFields = ["name", "type", "projectId", "teamId", "blueprintIds", "allowParticipantsSwitchSteps", "cloudshareRegionIds", "awsCloudRegion", "azureCloudRegion", "googleCloudProviderRegion", "googleCloudProviderZone", "policyId", "opportunity", "mainSalesPro", "additionalSalesPros", "start", "end", "timeZone", "registrationType", "passphrase", "description", "labels", "externalId", "allowMultipleEnvironmentActivations", "sendInvitations", "emailDomainBlocklist", "blockFreeEmailDomains", "customFields", "useCustomInvitationEmail", "preConfigureParticipantEnvironments", "sharedEnvBlueprintId", "sharedEnvPolicyId", "isSharedLabViewAccessEnabled", "allowAudioVideo"] as const;
@@ -174,8 +220,11 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
       return { id: data.id, ...evidence };
     },
     async registerParticipants(salesExperienceId, participants) {
-      const { data, evidence } = await detailed({ method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants`, body: participants, schema: z.array(salesParticipantSchema) });
-      return { participants: data.map(mapSalesParticipant), ...participantEvidence(evidence, data.length) };
+      // A 201 means CloudShare accepted the registration even when the body is
+      // empty, partial, or shaped differently from the documented array.
+      // The following GET roster, not this acknowledgement, is authoritative.
+      const { evidence } = await detailed({ method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants`, body: participants, allowEmptyResponse: true, schema: z.unknown() });
+      return participantEvidence(evidence, participants.length);
     },
     async listParticipants(salesExperienceId) {
       const path = `/sales/${encodeURIComponent(salesExperienceId)}/participants`;
@@ -240,9 +289,7 @@ function participantEvidence(evidence: SalesDeliveryEvidence, participantCount: 
 }
 
 function participantPage(data: z.input<typeof participantsEnvelopeSchema>): { readonly count?: number; readonly participants: readonly z.input<typeof salesParticipantSchema>[] } {
-  if ("items" in data) return { count: data.count, participants: data.items };
-  if ("count" in data) return { count: data.count, participants: data.participants };
-  return { participants: data.participants };
+  return normalizeSalesParticipantPage(data);
 }
 
 function hasDuplicateParticipantIds(participants: readonly z.input<typeof salesParticipantSchema>[]): boolean {

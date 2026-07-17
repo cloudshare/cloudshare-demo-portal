@@ -36,24 +36,27 @@ describe("Sales Session participant invitation", () => {
 
   it("persists the Contact-to-CloudShare participant mapping after registration", async () => {
     const save = vi.fn();
-    const registerParticipants = vi.fn().mockResolvedValue({ participants: [{ id: "remote-participant-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", invitationStatus: "notSent", invitedBy: null, participationStatus: "pending", firstJoined: null }], request: {}, response: {} });
+    const remoteParticipant = { id: "remote-participant-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", invitationStatus: "notSent", invitedBy: null, participationStatus: "pending", firstJoined: null };
+    const registerParticipants = vi.fn().mockResolvedValue({ request: {}, response: { status: 201, body: { participantCount: 1 } } });
+    const listParticipants = vi.fn().mockResolvedValueOnce({ participants: [], request: {}, response: {} }).mockResolvedValue({ participants: [remoteParticipant], request: {}, response: {} });
     const result = await handleRegisterSalesSessionParticipants({
       sessions: { findById: vi.fn().mockResolvedValue({ id: "session-1", opportunityId: "opportunity-1", cloudShareSalesExperienceId: "remote-sales-1", operationalStatus: "active" }) },
       records: { findContact: vi.fn().mockResolvedValue({ id: "contact-1", opportunityId: "opportunity-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", archivedAt: null }) },
       participants: { save, list: vi.fn().mockResolvedValue([]) }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
-      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), registerParticipants, listParticipants: vi.fn().mockResolvedValue({ participants: [], request: {}, response: {} }), inviteParticipants: vi.fn() }) },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), registerParticipants, listParticipants, inviteParticipants: vi.fn() }) },
     }, { customerId: "customer-1", sessionId: "session-1", actor: { type: "admin", id: "admin-1", email: "sales-admin@certalis.demo" }, body: { contactIds: ["contact-1"] } });
 
     expect(result.status).toBe(201);
     expect(registerParticipants).toHaveBeenCalledWith("remote-sales-1", [{ firstName: "Ada", lastName: "Lovelace", email: "ada@example.test" }]);
+    expect(listParticipants).toHaveBeenCalledTimes(2);
     expect(save).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-1", salesDemoSessionId: "session-1", opportunityContactId: "contact-1", cloudShareParticipantId: "remote-participant-1" }));
     expect(JSON.stringify(result.body)).not.toContain("remote-participant-1");
   });
 
   it("repairs a failed local registration save from the existing CloudShare participant on retry without registering twice", async () => {
     const remoteParticipant = { id: "remote-participant-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", invitationStatus: "notSent" as const, invitedBy: null, participationStatus: "pending" as const, firstJoined: null };
-    const registerParticipants = vi.fn().mockResolvedValue({ participants: [remoteParticipant], request: {}, response: {} });
-    const listParticipants = vi.fn().mockResolvedValueOnce({ participants: [], request: {}, response: {} }).mockResolvedValueOnce({ participants: [remoteParticipant], request: {}, response: {} });
+    const registerParticipants = vi.fn().mockResolvedValue({ request: {}, response: { status: 201, body: { participantCount: 1 } } });
+    const listParticipants = vi.fn().mockResolvedValueOnce({ participants: [], request: {}, response: {} }).mockResolvedValue({ participants: [remoteParticipant], request: {}, response: {} });
     const save = vi.fn().mockRejectedValueOnce(new Error("database unavailable")).mockResolvedValue(undefined);
     const deps = {
       sessions: { findById: vi.fn().mockResolvedValue({ id: "session-1", opportunityId: "opportunity-1", cloudShareSalesExperienceId: "remote-sales-1", operationalStatus: "active" }) },

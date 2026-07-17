@@ -5,11 +5,11 @@ describe("CloudShare Sales Delivery", () => {
   it("uses only documented participant registration, reconciliation, and explicit native-invite contracts", async () => {
     const participant = { id: "participant-1", firstName: "Casey", lastName: "Example", email: "casey@example.test", invitationStatus: "notSent", invitedBy: null, participationStatus: "pending", firstJoined: null, envStatus: "Ready", envId: "server-only-environment-1" };
     const requestV4Detailed = vi.fn()
-      .mockResolvedValueOnce({ data: [participant], request: { method: "POST", path: "/sales/sales-1/participants", body: [] }, response: { status: 200, body: [participant] } })
+      .mockResolvedValueOnce({ data: undefined, request: { method: "POST", path: "/sales/sales-1/participants", body: [] }, response: { status: 201, body: "" } })
       .mockResolvedValueOnce({ data: { participants: [participant] }, request: { method: "GET", path: "/sales/sales-1/participants" }, response: { status: 200, body: { participants: [participant] } } })
       .mockResolvedValueOnce({ data: undefined, request: { method: "POST", path: "/sales/sales-1/participants/invite", body: ["participant-1"] }, response: { status: 200 } });
     const delivery = createCloudShareSalesDelivery({ requestV4Detailed } as never);
-    await expect(delivery.registerParticipants("sales-1", [{ firstName: "Casey", lastName: "Example", email: "casey@example.test" }])).resolves.toMatchObject({ participants: [expect.objectContaining({ id: "participant-1", invitationStatus: "notSent" })] });
+    await expect(delivery.registerParticipants("sales-1", [{ firstName: "Casey", lastName: "Example", email: "casey@example.test" }])).resolves.toMatchObject({ response: { status: 201, body: { participantCount: 1 } } });
     await expect(delivery.listParticipants("sales-1")).resolves.toMatchObject({ participants: [expect.objectContaining({ participationStatus: "pending", envStatus: "Ready", environmentId: "server-only-environment-1" })] });
     await delivery.inviteParticipants("sales-1", ["participant-1"]);
     expect(requestV4Detailed).toHaveBeenNthCalledWith(1, expect.objectContaining({ method: "POST", path: "/sales/sales-1/participants", body: [{ firstName: "Casey", lastName: "Example", email: "casey@example.test" }] }));
@@ -49,6 +49,21 @@ describe("CloudShare Sales Delivery", () => {
     });
     expect(JSON.stringify(result)).not.toContain("https://bearer.example.test/invite");
     expect(JSON.stringify(result)).not.toContain("accessLink");
+  });
+  it("normalizes a variant Sales roster while treating an empty 201 add acknowledgement as accepted", async () => {
+    const rawAcknowledgement = { created: 2, accessLink: "https://bearer.example.test/should-not-leak" };
+    const rawRoster = { Count: 1, Items: [{ Id: "participant-1", FirstName: "Casey", LastName: "Example", Email: "casey@example.test", InvitationStatus: "sent", ParticipationStatus: "inProgress", FirstJoined: "2026-07-17T09:05:00Z", EnvironmentId: "server-only-environment-1", EnvironmentStatus: "Ready", accessLink: "https://bearer.example.test/should-not-leak" }] };
+    const requestV4Detailed = vi.fn().mockImplementation(async (spec) => {
+      const raw = spec.method === "POST" ? rawAcknowledgement : rawRoster;
+      return { data: spec.schema.parse(raw), request: { method: spec.method, path: spec.path }, response: { status: spec.method === "POST" ? 201 : 200, body: raw } };
+    });
+    const delivery = createCloudShareSalesDelivery({ requestV4Detailed } as never);
+
+    await expect(delivery.registerParticipants("sales-1", [{ firstName: "Casey", lastName: "Example", email: "casey@example.test" }])).resolves.toMatchObject({ response: { status: 201, body: { participantCount: 1 } } });
+    const roster = await delivery.listParticipants("sales-1");
+    expect(roster.participants).toEqual([expect.objectContaining({ id: "participant-1", email: "casey@example.test", environmentId: "server-only-environment-1", envStatus: "Ready" })]);
+    expect(JSON.stringify(roster)).not.toContain("accessLink");
+    expect(JSON.stringify(roster)).not.toContain("bearer.example.test");
   });
   it("reads every documented participant page and fails closed when count contradicts the pages", async () => {
     const first = { id: "participant-1", firstName: "Casey", lastName: "Example", email: "casey@example.test" };

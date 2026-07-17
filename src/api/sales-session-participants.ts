@@ -35,11 +35,17 @@ export async function handleRegisterSalesSessionParticipants(deps: Deps, request
     const contactsNeedingRemoteRegistration = contacts.filter((contact) => !persistedContactIds.has(contact!.id) && !remoteByEmail.has(contact!.email.toLowerCase()));
     const created = contactsNeedingRemoteRegistration.length
       ? await prepared.delivery.registerParticipants!(prepared.session.cloudShareSalesExperienceId, contactsNeedingRemoteRegistration.map((contact) => ({ firstName: contact!.firstName, lastName: contact!.lastName, email: contact!.email })))
-      : { participants: [], request: remoteBeforeRegistration.request, response: remoteBeforeRegistration.response };
-    const remoteParticipants = [...remoteBeforeRegistration.participants, ...created.participants];
+      : undefined;
+    // A successful Sales registration acknowledgement can be empty or omit
+    // monitoring fields. Re-read the normalized roster after mutation and use
+    // that provider-owned state, never the POST body, for durable mappings.
+    const remoteAfterRegistration = created
+      ? await prepared.delivery.listParticipants!(prepared.session.cloudShareSalesExperienceId)
+      : remoteBeforeRegistration;
+    const remoteParticipants = remoteAfterRegistration.participants;
     const now = new Date();
     const saved = await Promise.all(contacts.map(async (contact) => { const existing = persisted.find((participant) => participant.opportunityContactId === contact!.id); if (existing) return { value: existing, contact: contact! }; const participant = remoteParticipants.find((candidate) => candidate.email.toLowerCase() === contact!.email.toLowerCase()); if (!participant) throw new Error("CloudShare did not return a participant that can be correlated to the selected Opportunity Contact."); const value = { id: randomUUID(), customerId: request.customerId, salesDemoSessionId: prepared.session.id, opportunityContactId: contact!.id, cloudShareParticipantId: participant.id, invitationStatus: participant.invitationStatus, invitedBy: participant.invitedBy, participationStatus: participant.participationStatus, firstJoined: participant.firstJoined, cloudShareEnvironmentId: participant.environmentId, environmentStatus: participant.envStatus ?? null, lastReconciledAt: now, createdAt: now, updatedAt: now } as const; await deps.participants.save(value); return { value, contact: contact! }; }));
-    await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.registered", "success", "Sales Participants registered with CloudShare", created, { contactIds: parsed.data.contactIds, cloudShareParticipantIds: created.participants.map((participant) => participant.id), recoveredParticipantCount: remoteBeforeRegistration.participants.filter((participant) => contacts.some((contact) => contact!.email.toLowerCase() === participant.email.toLowerCase())).length }, saved.length === 1 && saved[0]!.value.cloudShareEnvironmentId ? { environmentId: saved[0]!.value.cloudShareEnvironmentId } : {});
+    await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.registered", "success", "Sales Participants registered with CloudShare", created ?? remoteAfterRegistration, { contactIds: parsed.data.contactIds, registeredParticipantCount: contactsNeedingRemoteRegistration.length, recoveredParticipantCount: remoteBeforeRegistration.participants.filter((participant) => contacts.some((contact) => contact!.email.toLowerCase() === participant.email.toLowerCase())).length }, saved.length === 1 && saved[0]!.value.cloudShareEnvironmentId ? { environmentId: saved[0]!.value.cloudShareEnvironmentId } : {});
     return { status: 201, body: { participants: saved.map(({ value, contact }) => portalParticipant(value, contact)), correlationId } };
   } catch (error) { return failed(deps, request, prepared.session, correlationId, "sales.demo_session.participants.registered", "CloudShare could not register selected Sales Participants.", error); }
 }
