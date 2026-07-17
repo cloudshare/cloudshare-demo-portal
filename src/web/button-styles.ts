@@ -22,7 +22,7 @@ export const primaryButtonStyle: CSSProperties = {
 
 export const secondaryButtonStyle: CSSProperties = {
   ...baseButtonStyle,
-  border: `1px solid #b7d9d3`,
+  border: `1px solid ${colors.accentBorder}`,
   background: colors.accentSoft,
   color: colors.accentStrong,
 };
