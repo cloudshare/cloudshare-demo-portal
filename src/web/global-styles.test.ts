@@ -8,4 +8,13 @@ describe("global styles", () => {
 
     expect(css).toContain("scrollbar-gutter: stable");
   });
+
+  it("keeps every disabled button visually distinct from the shared secondary treatment", () => {
+    const css = readFileSync(join(process.cwd(), "app", "globals.css"), "utf8");
+
+    expect(css).toContain("button:disabled");
+    expect(css).toContain("background: #dbe3ec !important");
+    expect(css).toContain("border-color: #64748b !important");
+    expect(css).toContain("color: #475569 !important");
+  });
 });

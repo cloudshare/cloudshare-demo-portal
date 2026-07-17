@@ -13,7 +13,7 @@ export const colors = {
   accentStrong: "#0b544f",
   accentSoft: "#effaf7",
   accentSecondary: "#d9eee8",
-  accentSecondaryBorder: "#5c9e92",
+  accentSecondaryBorder: "#4b7f75",
   danger: "#b91c1c",
   dangerSoft: "#fef2f2",
   warning: "#b45309",

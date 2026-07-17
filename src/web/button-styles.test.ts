@@ -16,7 +16,7 @@ describe("button styles", () => {
     expect(primaryButtonStyle.color).toBe("#ffffff");
     expect(secondaryButtonStyle.color).not.toBe("#ffffff");
     expect(secondaryButtonStyle.background).toBe("#d9eee8");
-    expect(secondaryButtonStyle.border).toBe("1px solid #5c9e92");
+    expect(secondaryButtonStyle.border).toBe("1px solid #4b7f75");
   });
 
   it("marks danger actions distinctly from primary", () => {
@@ -38,5 +38,7 @@ describe("button styles", () => {
   it("visually communicates disabled state via color, not just the disabled attribute", () => {
     expect(disabledButtonStyle.cursor).toBe("not-allowed");
     expect(disabledButtonStyle.background).not.toBe(primaryButtonStyle.background);
+    expect(disabledButtonStyle.background).toBe("#dbe3ec");
+    expect(disabledButtonStyle.border).toBe("1px solid #64748b");
   });
 });
