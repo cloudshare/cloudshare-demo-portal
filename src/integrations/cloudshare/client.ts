@@ -286,18 +286,31 @@ function salesParticipantTraceSummary(value: unknown): { readonly participantCou
   return { participantCount: 0 };
 }
 
-function salesParticipantErrorSummary(value: unknown): { readonly errorFields: readonly string[]; readonly errorMessageCount: number } {
+const salesParticipantSafeErrorFields = new Set([
+  "customProperties",
+  "email",
+  "firstName",
+  "id",
+  "lastName",
+  "limit",
+  "offset",
+  "participants",
+]);
+
+function salesParticipantErrorSummary(value: unknown): { readonly errorFields: readonly string[]; readonly unknownErrorFieldCount: number; readonly errorMessageCount: number } {
   let decoded = value;
   if (typeof decoded === "string") {
     const raw = decoded;
-    try { decoded = JSON.parse(raw); } catch { return { errorFields: [], errorMessageCount: raw.trim() ? 1 : 0 }; }
+    try { decoded = JSON.parse(raw); } catch { return { errorFields: [], unknownErrorFieldCount: 0, errorMessageCount: raw.trim() ? 1 : 0 }; }
   }
   if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) {
-    return { errorFields: [], errorMessageCount: decoded === undefined || decoded === null ? 0 : 1 };
+    return { errorFields: [], unknownErrorFieldCount: 0, errorMessageCount: decoded === undefined || decoded === null ? 0 : 1 };
   }
   const entries = Object.entries(decoded as Record<string, unknown>);
+  const errorFields = entries.map(([field]) => field).filter((field) => salesParticipantSafeErrorFields.has(field)).sort();
   return {
-    errorFields: entries.map(([field]) => field).sort(),
+    errorFields,
+    unknownErrorFieldCount: entries.length - errorFields.length,
     errorMessageCount: entries.reduce((count, [, messages]) => count + (Array.isArray(messages) ? messages.length : messages === undefined || messages === null ? 0 : 1), 0),
   };
 }

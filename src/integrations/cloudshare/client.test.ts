@@ -166,6 +166,9 @@ describe("createCloudShareClient — v4", () => {
       body: JSON.stringify({
         email: [`${participantEmail} is not accepted.`],
         participants: [`${providerParticipantId} cannot use ${providerInviteUrl}.`],
+        [participantEmail]: ["Participant email was used as an error key."],
+        [providerParticipantId]: ["Provider participant ID was used as an error key."],
+        [providerInviteUrl]: ["Provider invite URL was used as an error key."],
       }),
     });
     const client = clientWith(http);
@@ -183,7 +186,8 @@ describe("createCloudShareClient — v4", () => {
       context: {
         responseBody: {
           errorFields: ["email", "participants"],
-          errorMessageCount: 2,
+          unknownErrorFieldCount: 3,
+          errorMessageCount: 5,
         },
       },
     });
