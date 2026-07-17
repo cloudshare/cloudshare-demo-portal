@@ -22,8 +22,8 @@ export const primaryButtonStyle: CSSProperties = {
 
 export const secondaryButtonStyle: CSSProperties = {
   ...baseButtonStyle,
-  border: `1px solid ${colors.accentBorder}`,
-  background: colors.accentSoft,
+  border: `1px solid ${colors.accentSecondaryBorder}`,
+  background: colors.accentSecondary,
   color: colors.accentStrong,
 };
 

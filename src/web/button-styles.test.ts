@@ -15,6 +15,8 @@ describe("button styles", () => {
     expect(primaryButtonStyle.background).not.toBe(secondaryButtonStyle.background);
     expect(primaryButtonStyle.color).toBe("#ffffff");
     expect(secondaryButtonStyle.color).not.toBe("#ffffff");
+    expect(secondaryButtonStyle.background).toBe("#d9eee8");
+    expect(secondaryButtonStyle.border).toBe("1px solid #5c9e92");
   });
 
   it("marks danger actions distinctly from primary", () => {
