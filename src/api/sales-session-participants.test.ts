@@ -224,9 +224,10 @@ describe("Sales Session participant invitation", () => {
         listParticipants: vi.fn().mockRejectedValue(new CloudShareResponseError("CloudShare participant page contains duplicate IDs.", {
           method: "GET",
           path: "/v4/sales/remote-sales-1/participants",
+          requestQuery: { offset: "0", limit: "100" },
           status: 200,
           responseStatus: 200,
-          responseBody: { participantCount: 2, pageCount: 1, pageOffsets: [0] },
+          responseBody: { count: 2, items: [{ id: "remote-1", email: "participant@example.test" }, { id: "remote-1", email: "participant@example.test" }] },
           expectedCount: 2,
           returnedCount: 2,
           failureMode: "participant_page_duplicate_id",
@@ -242,7 +243,8 @@ describe("Sales Session participant invitation", () => {
         expectedCount: 2,
         returnedCount: 2,
       }),
-      response: expect.objectContaining({ status: 200 }),
+      request: expect.objectContaining({ query: { offset: "0", limit: "100" } }),
+      response: expect.objectContaining({ status: 200, body: { count: 2, items: [{ id: "remote-1", email: "participant@example.test" }, { id: "remote-1", email: "participant@example.test" }] } }),
     }));
   });
 });

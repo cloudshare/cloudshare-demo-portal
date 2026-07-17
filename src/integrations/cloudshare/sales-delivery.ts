@@ -206,14 +206,14 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
       // empty, partial, or shaped differently from the documented array.
       // The following GET roster, not this acknowledgement, is authoritative.
       const { evidence } = await detailed({ method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants`, body: participants, allowEmptyResponse: true, schema: z.unknown() });
-      return participantEvidence(evidence, participants.length);
+      return participantEvidence(evidence);
     },
     async listParticipants(salesExperienceId) {
       const path = `/sales/${encodeURIComponent(salesExperienceId)}/participants`;
       const first = await detailed<z.output<typeof participantsEnvelopeSchema>>({ method: "GET", path, query: { offset: "0", limit: String(PARTICIPANT_PAGE_LIMIT) }, schema: participantsEnvelopeSchema });
       const firstPage = participantPage(first.data);
       if (firstPage.count === undefined) {
-        return { participants: firstPage.participants.map(mapSalesParticipant), ...participantEvidence(first.evidence, firstPage.participants.length, [0]) };
+        return { participants: firstPage.participants.map(mapSalesParticipant), ...participantEvidence(first.evidence) };
       }
       const expectedCount = firstPage.count;
       const rows = [...firstPage.participants];
@@ -234,11 +234,11 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
         rows.push(...normalizedPage.participants);
         evidence = page.evidence;
       }
-      return { participants: rows.map(mapSalesParticipant), ...participantEvidence(evidence, expectedCount, offsets) };
+      return { participants: rows.map(mapSalesParticipant), ...participantEvidence(evidence) };
     },
     async inviteParticipants(salesExperienceId, participantIds) {
       const { evidence } = await detailed({ method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants/invite`, body: participantIds, allowEmptyResponse: true, schema: z.void() });
-      return participantEvidence(evidence, participantIds.length);
+      return participantEvidence(evidence);
     },
   };
 }
@@ -258,16 +258,8 @@ function mapSalesParticipant(participant: z.input<typeof salesParticipantSchema>
   };
 }
 
-/** Participant e-mail and native invitation credentials are never diagnostic
- * payload data. Keep transport facts, page query, and a count for support. */
-function participantEvidence(evidence: SalesDeliveryEvidence, participantCount: number, pageOffsets?: readonly number[]): SalesDeliveryEvidence {
-  return {
-    request: {
-      ...evidence.request,
-      ...(evidence.request.body === undefined ? {} : { body: { participantCount } }),
-    },
-    response: { ...evidence.response, body: { participantCount, ...(pageOffsets ? { pageCount: pageOffsets.length, pageOffsets } : {}) } },
-  };
+function participantEvidence(evidence: SalesDeliveryEvidence): SalesDeliveryEvidence {
+  return evidence;
 }
 
 function participantPage(data: z.output<typeof participantsEnvelopeSchema>): { readonly count?: number; readonly participants: readonly z.input<typeof salesParticipantSchema>[] } {
@@ -281,7 +273,7 @@ function hasDuplicateParticipantIds(participants: readonly z.input<typeof salesP
 type ParticipantPageFailureMode = "participant_page_count_contradiction" | "participant_page_duplicate_id";
 
 function throwParticipantPageFailure(evidence: SalesDeliveryEvidence, expectedCount: number, returnedCount: number, pageOffsets: readonly number[], failureMode: ParticipantPageFailureMode): never {
-  const safeEvidence = participantEvidence(evidence, returnedCount, pageOffsets);
+  const safeEvidence = participantEvidence(evidence);
   throw new CloudShareResponseError(failureMode === "participant_page_duplicate_id" ? "CloudShare participant page contains duplicate IDs." : "CloudShare participant page count contradicts the returned items.", {
     method: safeEvidence.request.method,
     path: safeEvidence.request.path,

@@ -264,68 +264,12 @@ function isSponsoredLinkPath(path: string): boolean {
   return /\/(?:sponsored-link|sponsoredLinks)$/i.test(path);
 }
 
-/** Sales participant rosters contain contact e-mail and may carry provider
- * invitation fields. Trace only the number of rows for these exact endpoints;
- * other CloudShare diagnostics keep their established, field-level evidence. */
-function isSalesParticipantPath(path: string): boolean {
-  return /^\/v4\/sales\/[^/]+\/participants(?:\/invite)?$/i.test(path);
+function sanitizeRequestEvidenceBody(body: string | undefined): unknown {
+  return sanitizeBody(body);
 }
 
-function salesParticipantTraceSummary(value: unknown): { readonly participantCount: number } {
-  let decoded = value;
-  if (typeof decoded === "string") {
-    try { decoded = JSON.parse(decoded); } catch { return { participantCount: 0 }; }
-  }
-  if (Array.isArray(decoded)) return { participantCount: decoded.length };
-  if (decoded && typeof decoded === "object") {
-    const record = decoded as Record<string, unknown>;
-    if (typeof record.count === "number" && Number.isFinite(record.count) && record.count >= 0) return { participantCount: record.count };
-    if (Array.isArray(record.items)) return { participantCount: record.items.length };
-    if (Array.isArray(record.participants)) return { participantCount: record.participants.length };
-  }
-  return { participantCount: 0 };
-}
-
-const salesParticipantSafeErrorFields = new Set([
-  "customProperties",
-  "email",
-  "firstName",
-  "id",
-  "lastName",
-  "limit",
-  "offset",
-  "participants",
-]);
-
-function salesParticipantErrorSummary(value: unknown): { readonly errorFields: readonly string[]; readonly unknownErrorFieldCount: number; readonly errorMessageCount: number } {
-  let decoded = value;
-  if (typeof decoded === "string") {
-    const raw = decoded;
-    try { decoded = JSON.parse(raw); } catch { return { errorFields: [], unknownErrorFieldCount: 0, errorMessageCount: raw.trim() ? 1 : 0 }; }
-  }
-  if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) {
-    return { errorFields: [], unknownErrorFieldCount: 0, errorMessageCount: decoded === undefined || decoded === null ? 0 : 1 };
-  }
-  const entries = Object.entries(decoded as Record<string, unknown>);
-  const errorFields = entries.map(([field]) => field).filter((field) => salesParticipantSafeErrorFields.has(field)).sort();
-  return {
-    errorFields,
-    unknownErrorFieldCount: entries.length - errorFields.length,
-    errorMessageCount: entries.reduce((count, [, messages]) => count + (Array.isArray(messages) ? messages.length : messages === undefined || messages === null ? 0 : 1), 0),
-  };
-}
-
-function sanitizeRequestEvidenceBody(body: string | undefined, requestPath: string): unknown {
-  const sanitized = sanitizeBody(body);
-  return isSalesParticipantPath(requestPath) ? salesParticipantTraceSummary(sanitized) : sanitized;
-}
-
-function sanitizeResponseEvidenceBody(body: string, requestPath: string, responseStatus: number): unknown {
-  const sanitized = sanitizeResponseBodyValue(body, requestPath);
-  if (!isSalesParticipantPath(requestPath)) return sanitized;
-  return responseStatus >= 200 && responseStatus < 300
-    ? salesParticipantTraceSummary(sanitized)
-    : salesParticipantErrorSummary(sanitized);
+function sanitizeResponseEvidenceBody(body: string, requestPath: string): unknown {
+  return sanitizeResponseBodyValue(body, requestPath);
 }
 
 function describeRequest(urlText: string): {
@@ -359,7 +303,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
     fields?: Record<string, unknown>,
   ): void {
     const requestInfo = describeRequest(request.url);
-    const requestBody = sanitizeRequestEvidenceBody(request.body, requestInfo.path);
+    const requestBody = sanitizeRequestEvidenceBody(request.body);
     const requestQuery = sanitizeQuery(extractQuery(request.url));
     opts.trace?.({
       level,
@@ -374,9 +318,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
         ...(requestQuery ? { requestQuery } : {}),
         requestHeaders: sanitizeHeaders(request.headers),
         ...(requestBody !== undefined ? { requestBody } : {}),
-        ...(isSalesParticipantPath(requestInfo.path) && fields?.responseBody !== undefined && typeof fields.responseStatus === "number"
-          ? { ...fields, responseBody: fields.responseStatus >= 200 && fields.responseStatus < 300 ? salesParticipantTraceSummary(fields.responseBody) : salesParticipantErrorSummary(fields.responseBody) }
-          : fields),
+        ...fields,
       },
     });
   }
@@ -588,7 +530,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
             integrationSurface: requestInfo.integrationSurface,
             requestQuery: sanitizeQuery(extractQuery(request.url)),
             requestHeaders: sanitizeHeaders(request.headers),
-            requestBody: sanitizeRequestEvidenceBody(request.body, requestInfo.path),
+            requestBody: sanitizeRequestEvidenceBody(request.body),
             ...transportContext(cause),
           },
         );
@@ -610,9 +552,9 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           integrationSurface: requestInfo.integrationSurface,
           requestQuery: sanitizeQuery(extractQuery(request.url)),
           requestHeaders: sanitizeHeaders(request.headers),
-          requestBody: sanitizeRequestEvidenceBody(request.body, requestInfo.path),
+          requestBody: sanitizeRequestEvidenceBody(request.body),
           responseHeaders: sanitizeResponseHeaders(response.headers),
-          responseBody: sanitizeResponseEvidenceBody(response.body, requestInfo.path, response.status),
+          responseBody: sanitizeResponseEvidenceBody(response.body, requestInfo.path),
           network: response.network,
           tls: response.tls,
         };
@@ -662,9 +604,9 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
             integrationSurface: requestInfo.integrationSurface,
             requestQuery: sanitizeQuery(extractQuery(request.url)),
             requestHeaders: sanitizeHeaders(request.headers),
-            requestBody: sanitizeRequestEvidenceBody(request.body, requestInfo.path),
+            requestBody: sanitizeRequestEvidenceBody(request.body),
             responseHeaders: sanitizeResponseHeaders(response.headers),
-            responseBody: sanitizeResponseEvidenceBody(response.body, requestInfo.path, response.status),
+            responseBody: sanitizeResponseEvidenceBody(response.body, requestInfo.path),
             network: response.network,
             tls: response.tls,
           },
@@ -681,10 +623,11 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
             host: requestInfo.host,
             path: requestInfo.path,
             integrationSurface: requestInfo.integrationSurface,
+            requestQuery: sanitizeQuery(extractQuery(request.url)),
             requestHeaders: sanitizeHeaders(request.headers),
-            requestBody: sanitizeRequestEvidenceBody(request.body, requestInfo.path),
+            requestBody: sanitizeRequestEvidenceBody(request.body),
             responseHeaders: sanitizeResponseHeaders(response.headers),
-            responseBody: sanitizeResponseEvidenceBody(response.body, requestInfo.path, response.status),
+            responseBody: sanitizeResponseEvidenceBody(response.body, requestInfo.path),
             network: response.network,
             tls: response.tls,
             issues: parsed.error.issues.map((i) => i.message),

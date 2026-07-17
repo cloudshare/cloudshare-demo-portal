@@ -100,17 +100,18 @@ export function redactCloudShareAdminSupportValue(
 
   const redacted: Record<string, unknown> = {};
   for (const [key, fieldValue] of Object.entries(value)) {
+    const redactedKey = redactCloudShareAdminSupportText(key, options);
     if (isAlwaysRedactedKey(key, options)) {
-      redacted[key] = REDACTED;
+      redacted[redactedKey] = REDACTED;
       continue;
     }
 
     if (/login[-_]?url/i.test(key) && !options.preserveSponsoredLinkLoginUrl) {
-      redacted[key] = REDACTED;
+      redacted[redactedKey] = REDACTED;
       continue;
     }
 
-    redacted[key] =
+    redacted[redactedKey] =
       typeof fieldValue === "string"
         ? redactCloudShareAdminSupportText(fieldValue, options)
         : redactCloudShareAdminSupportValue(fieldValue, options);

@@ -125,7 +125,7 @@ describe("createCloudShareClient — v4", () => {
     expect(last()?.headers?.authorization).toBe("Bearer test-bearer");
   });
 
-  it("suppresses Sales Participant emails from path-scoped request and response traces", async () => {
+  it("retains complete Sales Participant request and response bodies in authorised support traces", async () => {
     const trace = vi.fn();
     const participantEmail = "participant-private@example.test";
     const { http } = sequentialHttp(
@@ -136,28 +136,30 @@ describe("createCloudShareClient — v4", () => {
     const client = createCloudShareClient({ http, endpoints, tokenProvider: stubTokenProvider, v3: { apiId: "api-id", apiKey: "api-key" }, trace });
 
     await client.requestV4({ method: "POST", path: "/sales/sales-1/participants", body: [{ firstName: "Private", lastName: "Person", email: participantEmail }], schema: z.array(z.object({ id: z.string(), email: z.string().email() })) });
-    await client.requestV4({ method: "GET", path: "/sales/sales-1/participants", schema: z.object({ count: z.number(), items: z.array(z.object({ id: z.string(), email: z.string().email() })) }) });
+    await client.requestV4({ method: "GET", path: "/sales/sales-1/participants", query: { offset: "0", limit: "100" }, schema: z.object({ count: z.number(), items: z.array(z.object({ id: z.string(), email: z.string().email() })) }) });
     await client.requestV4({ method: "POST", path: "/sales/sales-1/participants/invite", body: ["participant-1"], allowEmptyResponse: true, schema: z.void() });
 
-    expect(JSON.stringify(trace.mock.calls)).not.toContain(participantEmail);
+    const evidence = JSON.stringify(trace.mock.calls);
+    expect(evidence).toContain(participantEmail);
+    expect(evidence).toContain('\\"count\\":1');
     expect(trace.mock.calls.filter(([event]) => event.message === "cloudshare request sent")).toHaveLength(3);
     expect(trace.mock.calls.filter(([event]) => event.message === "cloudshare response received")).toHaveLength(3);
   });
 
-  it("suppresses Sales Participant emails from schema-failure error evidence", async () => {
+  it("retains the full Sales Participant body when a schema check fails", async () => {
     const participantEmail = "participant-private@example.test";
     const { http } = capturingHttp(ok({ count: 1, items: [{ email: participantEmail }] }));
     const client = clientWith(http);
 
-    const error = await client.requestV4({ method: "GET", path: "/sales/sales-1/participants", schema: z.object({ count: z.number(), items: z.array(z.object({ id: z.string(), email: z.string().email() })) }) }).catch((failure) => failure);
+    const error = await client.requestV4({ method: "GET", path: "/sales/sales-1/participants", query: { offset: "0", limit: "100" }, schema: z.object({ count: z.number(), items: z.array(z.object({ id: z.string(), email: z.string().email() })) }) }).catch((failure) => failure);
     expect(error).toMatchObject({
       name: "CloudShareResponseError",
-      context: { status: 200, responseBody: { participantCount: 1 } },
+      context: { status: 200, requestQuery: { offset: "0", limit: "100" }, responseBody: { count: 1, items: [{ email: participantEmail }] } },
     });
-    expect(JSON.stringify((error as { context?: unknown }).context)).not.toContain(participantEmail);
+    expect(JSON.stringify((error as { context?: unknown }).context)).toContain(participantEmail);
   });
 
-  it("retains actionable Sales Participant Error_Object fields without participant-sensitive values", async () => {
+  it("retains Sales Participant provider errors while redacting bearer invitation URLs", async () => {
     const participantEmail = "participant-private@example.test";
     const providerParticipantId = "PTYieGdBA4HfAyfI2LhbcxhQ2";
     const providerInviteUrl = "https://use.cloudshare.com/Ent/Login.aspx?token=private-invite";
@@ -184,16 +186,15 @@ describe("createCloudShareClient — v4", () => {
       name: "CloudShareRequestError",
       status: 400,
       context: {
-        responseBody: {
-          errorFields: ["email", "participants"],
-          unknownErrorFieldCount: 3,
-          errorMessageCount: 5,
-        },
+        responseBody: expect.objectContaining({
+          email: [`${participantEmail} is not accepted.`],
+          participants: [expect.stringContaining(providerParticipantId)],
+        }),
       },
     });
     const evidence = JSON.stringify((error as { context?: unknown }).context);
-    expect(evidence).not.toContain(participantEmail);
-    expect(evidence).not.toContain(providerParticipantId);
+    expect(evidence).toContain(participantEmail);
+    expect(evidence).toContain(providerParticipantId);
     expect(evidence).not.toContain(providerInviteUrl);
   });
 

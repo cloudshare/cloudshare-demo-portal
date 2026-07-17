@@ -31,7 +31,7 @@ describe("CloudShare Sales Delivery", () => {
       .mockResolvedValueOnce({ data: { participants: [participant] }, request: { method: "GET", path: "/sales/sales-1/participants" }, response: { status: 200, body: { participants: [participant] } } })
       .mockResolvedValueOnce({ data: undefined, request: { method: "POST", path: "/sales/sales-1/participants/invite", body: ["participant-1"] }, response: { status: 200 } });
     const delivery = createCloudShareSalesDelivery({ requestV4Detailed } as never);
-    await expect(delivery.registerParticipants("sales-1", [{ firstName: "Casey", lastName: "Example", email: "casey@example.test" }])).resolves.toMatchObject({ response: { status: 201, body: { participantCount: 1 } } });
+    await expect(delivery.registerParticipants("sales-1", [{ firstName: "Casey", lastName: "Example", email: "casey@example.test" }])).resolves.toMatchObject({ response: { status: 201, body: "" } });
     await expect(delivery.listParticipants("sales-1")).resolves.toMatchObject({ participants: [expect.objectContaining({ participationStatus: "pending", envStatus: "Ready", environmentId: "server-only-environment-1" })] });
     await delivery.inviteParticipants("sales-1", ["participant-1"]);
     expect(requestV4Detailed).toHaveBeenNthCalledWith(1, expect.objectContaining({ method: "POST", path: "/sales/sales-1/participants", body: [{ firstName: "Casey", lastName: "Example", email: "casey@example.test" }] }));
@@ -47,7 +47,7 @@ describe("CloudShare Sales Delivery", () => {
     const delivery = createCloudShareSalesDelivery({ requestV4Detailed } as never);
 
     await expect(delivery.inviteParticipants("sales-1", ["participant-1"])).resolves.toMatchObject({
-      response: { status: 200, body: { participantCount: 1 } },
+      response: { status: 200, body: "" },
     });
     expect(requestV4Detailed).toHaveBeenCalledWith(expect.objectContaining({
       method: "POST",
@@ -69,16 +69,16 @@ describe("CloudShare Sales Delivery", () => {
     expect(result).toMatchObject({
       participants: [expect.objectContaining({ id: "participant-1", environmentId: "server-only-environment-1" })],
     });
-    expect(JSON.stringify(result)).not.toContain("https://bearer.example.test/invite");
-    expect(JSON.stringify(result)).not.toContain("accessLink");
+    expect(JSON.stringify(result.participants)).not.toContain("https://bearer.example.test/invite");
+    expect(JSON.stringify(result.participants)).not.toContain("accessLink");
   });
-  it("rejects an undocumented PascalCase Sales roster with typed count-only evidence", async () => {
+  it("retains an undocumented PascalCase Sales roster as full, safely-redacted evidence", async () => {
     const rawRoster = { Count: 1, Items: [{ Id: "participant-1", FirstName: "Casey", LastName: "Example", Email: "casey@example.test", InvitationStatus: "sent", ParticipationStatus: "inProgress", FirstJoined: "2026-07-17T09:05:00Z", EnvironmentId: "server-only-environment-1", EnvironmentStatus: "Ready", accessLink: "https://bearer.example.test/should-not-leak" }] };
     const delivery = deliveryForRoster(rawRoster);
 
     const error = await delivery.listParticipants("sales-1").catch((failure) => failure);
-    expect(error).toMatchObject({ name: "CloudShareResponseError", context: { responseBody: { participantCount: 0 } } });
-    expect(JSON.stringify((error as { context?: unknown }).context)).not.toContain("casey@example.test");
+    expect(error).toMatchObject({ name: "CloudShareResponseError", context: { responseBody: { Count: 1, Items: [expect.objectContaining({ Email: "casey@example.test", accessLink: "[REDACTED]" })] } } });
+    expect(JSON.stringify((error as { context?: unknown }).context)).toContain("casey@example.test");
     expect(JSON.stringify((error as { context?: unknown }).context)).not.toContain("bearer.example.test");
   });
   it("rejects an unrecognized participant-list envelope instead of treating it as an empty roster", async () => {
@@ -92,7 +92,7 @@ describe("CloudShare Sales Delivery", () => {
 
     await expect(createCloudShareSalesDelivery({ requestV4Detailed } as never).listParticipants("sales-1")).rejects.toThrow();
   });
-  it.each(["id", "firstName", "lastName", "email", "invitationStatus", "invitedBy", "participationStatus", "firstJoined", "envStatus", "envId"])("rejects a roster row missing required %s with typed count-only evidence", async (field) => {
+  it.each(["id", "firstName", "lastName", "email", "invitationStatus", "invitedBy", "participationStatus", "firstJoined", "envStatus", "envId"])("retains a roster row missing required %s as full evidence", async (field) => {
     const participant = Object.fromEntries(Object.entries(documentedParticipant()).filter(([key]) => key !== field));
 
     const error = await deliveryForRoster({ count: 1, items: [participant] }).listParticipants("sales-1").catch((failure) => failure);
@@ -102,10 +102,12 @@ describe("CloudShare Sales Delivery", () => {
       context: {
         method: "GET",
         path: "/v4/sales/sales-1/participants",
-        responseBody: { participantCount: 1 },
+        responseBody: { count: 1, items: [participant] },
       },
     });
-    expect(JSON.stringify((error as { context?: unknown }).context)).not.toContain("casey@example.test");
+    if (field !== "email") {
+      expect(JSON.stringify((error as { context?: unknown }).context)).toContain("casey@example.test");
+    }
   });
   it.each([
     ["invitationStatus", "queued"],
@@ -142,8 +144,8 @@ describe("CloudShare Sales Delivery", () => {
     const delivery = createCloudShareSalesDelivery({ requestV4Detailed: vi.fn().mockResolvedValue({ data: { count: 2, items: [repeated, repeated] }, request: { method: "GET", path: "/sales/sales-1/participants", query: { offset: "0", limit: "100" } }, response: { status: 200, body: { count: 2, items: [repeated, repeated] } } }) } as never);
 
     const error = await delivery.listParticipants("sales-1").catch((failure) => failure);
-    expect(error).toMatchObject({ name: "CloudShareResponseError", context: { status: 200, requestQuery: { offset: "0", limit: "100" }, responseBody: { participantCount: 2, pageCount: 1, pageOffsets: [0] }, expectedCount: 2, returnedCount: 2, failureMode: "participant_page_duplicate_id" } });
-    expect(JSON.stringify((error as { context?: unknown }).context)).not.toContain("casey@example.test");
+    expect(error).toMatchObject({ name: "CloudShareResponseError", context: { status: 200, requestQuery: { offset: "0", limit: "100" }, responseBody: { count: 2, items: [repeated, repeated] }, expectedCount: 2, returnedCount: 2, failureMode: "participant_page_duplicate_id" } });
+    expect(JSON.stringify((error as { context?: unknown }).context)).toContain("casey@example.test");
   });
   it("paginates the documented count/participants envelope", async () => {
     const first = documentedParticipant();
