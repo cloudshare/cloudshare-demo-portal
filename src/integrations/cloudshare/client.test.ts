@@ -125,6 +125,38 @@ describe("createCloudShareClient — v4", () => {
     expect(last()?.headers?.authorization).toBe("Bearer test-bearer");
   });
 
+  it("suppresses Sales Participant emails from path-scoped request and response traces", async () => {
+    const trace = vi.fn();
+    const participantEmail = "participant-private@example.test";
+    const { http } = sequentialHttp(
+      ok([{ id: "participant-1", email: participantEmail }]),
+      ok({ count: 1, items: [{ id: "participant-1", email: participantEmail }] }),
+      { status: 200, body: "" },
+    );
+    const client = createCloudShareClient({ http, endpoints, tokenProvider: stubTokenProvider, v3: { apiId: "api-id", apiKey: "api-key" }, trace });
+
+    await client.requestV4({ method: "POST", path: "/sales/sales-1/participants", body: [{ firstName: "Private", lastName: "Person", email: participantEmail }], schema: z.array(z.object({ id: z.string(), email: z.string().email() })) });
+    await client.requestV4({ method: "GET", path: "/sales/sales-1/participants", schema: z.object({ count: z.number(), items: z.array(z.object({ id: z.string(), email: z.string().email() })) }) });
+    await client.requestV4({ method: "POST", path: "/sales/sales-1/participants/invite", body: ["participant-1"], allowEmptyResponse: true, schema: z.void() });
+
+    expect(JSON.stringify(trace.mock.calls)).not.toContain(participantEmail);
+    expect(trace.mock.calls.filter(([event]) => event.message === "cloudshare request sent")).toHaveLength(3);
+    expect(trace.mock.calls.filter(([event]) => event.message === "cloudshare response received")).toHaveLength(3);
+  });
+
+  it("suppresses Sales Participant emails from schema-failure error evidence", async () => {
+    const participantEmail = "participant-private@example.test";
+    const { http } = capturingHttp(ok({ count: 1, items: [{ email: participantEmail }] }));
+    const client = clientWith(http);
+
+    const error = await client.requestV4({ method: "GET", path: "/sales/sales-1/participants", schema: z.object({ count: z.number(), items: z.array(z.object({ id: z.string(), email: z.string().email() })) }) }).catch((failure) => failure);
+    expect(error).toMatchObject({
+      name: "CloudShareResponseError",
+      context: { status: 200, responseBody: { participantCount: 1 } },
+    });
+    expect(JSON.stringify((error as { context?: unknown }).context)).not.toContain(participantEmail);
+  });
+
   it("redacts training and Sales Experience passphrases from trace request bodies", async () => {
     const trace = vi.fn();
     const { http } = capturingHttp(ok({ id: "training-1" }));

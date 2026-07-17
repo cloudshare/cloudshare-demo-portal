@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { SalesExperienceType } from "@/domain/sales-experience-type";
 import type { CloudShareClient, CloudShareDetailedResult, CloudShareRequestDiagnostics, CloudShareResponseDiagnostics } from "./client";
+import { CloudShareResponseError } from "./errors";
 
 /** Already-sanitized data returned by the client boundary. Keep the complete
  * exchange because Sales support needs headers and transport facts as well as
@@ -98,8 +99,9 @@ const salesParticipantSchema = z.object({
  * the normal paged collection `{ count, items }`. Accept both during the
  * product documentation transition and normalize before leaving this adapter. */
 const participantsEnvelopeSchema = z.union([
-  z.object({ participants: z.array(salesParticipantSchema) }),
+  z.object({ count: z.number().int().nonnegative(), participants: z.array(salesParticipantSchema) }),
   z.object({ count: z.number().int().nonnegative(), items: z.array(salesParticipantSchema) }),
+  z.object({ participants: z.array(salesParticipantSchema) }),
 ]);
 const PARTICIPANT_PAGE_LIMIT = 100;
 
@@ -178,24 +180,29 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
     async listParticipants(salesExperienceId) {
       const path = `/sales/${encodeURIComponent(salesExperienceId)}/participants`;
       const first = await detailed({ method: "GET", path, query: { offset: "0", limit: String(PARTICIPANT_PAGE_LIMIT) }, schema: participantsEnvelopeSchema });
-      if ("participants" in first.data) {
-        return { participants: first.data.participants.map(mapSalesParticipant), ...participantEvidence(first.evidence, first.data.participants.length) };
+      const firstPage = participantPage(first.data);
+      if (firstPage.count === undefined) {
+        return { participants: firstPage.participants.map(mapSalesParticipant), ...participantEvidence(first.evidence, firstPage.participants.length, [0]) };
       }
-      const expectedCount = first.data.count;
-      const rows = [...first.data.items];
-      if (rows.length > expectedCount) throw new Error("CloudShare participant page count contradicts the returned items.");
+      const expectedCount = firstPage.count;
+      const rows = [...firstPage.participants];
+      const offsets = [0];
+      if (rows.length > expectedCount || hasDuplicateParticipantIds(rows)) throwParticipantPageContradiction(first.evidence, expectedCount, rows.length, offsets);
       const participantIds = new Set(rows.map((participant) => participant.id));
       let evidence = first.evidence;
       while (rows.length < expectedCount) {
-        const page = await detailed({ method: "GET", path, query: { offset: String(rows.length), limit: String(PARTICIPANT_PAGE_LIMIT) }, schema: participantsEnvelopeSchema });
-        if (!("count" in page.data) || page.data.count !== expectedCount || page.data.items.length === 0 || rows.length + page.data.items.length > expectedCount || page.data.items.some((participant) => participantIds.has(participant.id))) {
-          throw new Error("CloudShare participant page count contradicts the returned items.");
+        const offset = rows.length;
+        const page = await detailed({ method: "GET", path, query: { offset: String(offset), limit: String(PARTICIPANT_PAGE_LIMIT) }, schema: participantsEnvelopeSchema });
+        const normalizedPage = participantPage(page.data);
+        offsets.push(offset);
+        if (normalizedPage.count !== expectedCount || normalizedPage.participants.length === 0 || rows.length + normalizedPage.participants.length > expectedCount || hasDuplicateParticipantIds(normalizedPage.participants) || normalizedPage.participants.some((participant) => participantIds.has(participant.id))) {
+          throwParticipantPageContradiction(page.evidence, expectedCount, rows.length + normalizedPage.participants.length, offsets);
         }
-        page.data.items.forEach((participant) => participantIds.add(participant.id));
-        rows.push(...page.data.items);
+        normalizedPage.participants.forEach((participant) => participantIds.add(participant.id));
+        rows.push(...normalizedPage.participants);
         evidence = page.evidence;
       }
-      return { participants: rows.map(mapSalesParticipant), ...participantEvidence(evidence, expectedCount) };
+      return { participants: rows.map(mapSalesParticipant), ...participantEvidence(evidence, expectedCount, offsets) };
     },
     async inviteParticipants(salesExperienceId, participantIds) {
       const { evidence } = await detailed({ method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants/invite`, body: participantIds, allowEmptyResponse: true, schema: z.void() });
@@ -221,14 +228,42 @@ function mapSalesParticipant(participant: z.input<typeof salesParticipantSchema>
 
 /** Participant e-mail and native invitation credentials are never diagnostic
  * payload data. Keep transport facts, page query, and a count for support. */
-function participantEvidence(evidence: SalesDeliveryEvidence, participantCount: number): SalesDeliveryEvidence {
+function participantEvidence(evidence: SalesDeliveryEvidence, participantCount: number, pageOffsets?: readonly number[]): SalesDeliveryEvidence {
   return {
     request: {
       ...evidence.request,
       ...(evidence.request.body === undefined ? {} : { body: { participantCount } }),
     },
-    response: { ...evidence.response, body: { participantCount } },
+    response: { ...evidence.response, body: { participantCount, ...(pageOffsets ? { pageCount: pageOffsets.length, pageOffsets } : {}) } },
   };
+}
+
+function participantPage(data: z.input<typeof participantsEnvelopeSchema>): { readonly count?: number; readonly participants: readonly z.input<typeof salesParticipantSchema>[] } {
+  if ("items" in data) return { count: data.count, participants: data.items };
+  if ("count" in data) return { count: data.count, participants: data.participants };
+  return { participants: data.participants };
+}
+
+function hasDuplicateParticipantIds(participants: readonly z.input<typeof salesParticipantSchema>[]): boolean {
+  return new Set(participants.map((participant) => participant.id)).size !== participants.length;
+}
+
+function throwParticipantPageContradiction(evidence: SalesDeliveryEvidence, expectedCount: number, returnedCount: number, pageOffsets: readonly number[]): never {
+  const safeEvidence = participantEvidence(evidence, returnedCount, pageOffsets);
+  throw new CloudShareResponseError("CloudShare participant page count contradicts the returned items.", {
+    method: safeEvidence.request.method,
+    path: safeEvidence.request.path,
+    ...(safeEvidence.request.query ? { requestQuery: safeEvidence.request.query } : {}),
+    ...(safeEvidence.request.headers ? { requestHeaders: safeEvidence.request.headers } : {}),
+    ...(safeEvidence.request.body !== undefined ? { requestBody: safeEvidence.request.body } : {}),
+    status: safeEvidence.response.status,
+    responseStatus: safeEvidence.response.status,
+    ...(safeEvidence.response.headers ? { responseHeaders: safeEvidence.response.headers } : {}),
+    responseBody: safeEvidence.response.body,
+    expectedCount,
+    returnedCount,
+    failureMode: "participant_page_count_contradiction",
+  });
 }
 
 function hasEveryMutableSalesExperienceField(value: z.infer<typeof salesExperienceSchema>): boolean {

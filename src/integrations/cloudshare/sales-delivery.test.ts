@@ -65,6 +65,24 @@ describe("CloudShare Sales Delivery", () => {
     const contradictory = createCloudShareSalesDelivery({ requestV4Detailed: vi.fn().mockResolvedValue({ data: { count: 2, items: [first] }, request: { method: "GET", path: "/sales/sales-1/participants" }, response: { status: 200, body: { count: 2, items: [first] } } }) } as never);
     await expect(contradictory.listParticipants("sales-1")).rejects.toThrow("participant page count");
   });
+  it("fails closed when a single documented participant page repeats an ID", async () => {
+    const repeated = { id: "participant-1", firstName: "Casey", lastName: "Example", email: "casey@example.test" };
+    const delivery = createCloudShareSalesDelivery({ requestV4Detailed: vi.fn().mockResolvedValue({ data: { count: 2, items: [repeated, repeated] }, request: { method: "GET", path: "/sales/sales-1/participants", query: { offset: "0", limit: "100" } }, response: { status: 200, body: { count: 2, items: [repeated, repeated] } } }) } as never);
+
+    const error = await delivery.listParticipants("sales-1").catch((failure) => failure);
+    expect(error).toMatchObject({ name: "CloudShareResponseError", context: { status: 200, requestQuery: { offset: "0", limit: "100" }, responseBody: { participantCount: 2, pageCount: 1, pageOffsets: [0] } } });
+    expect(JSON.stringify((error as { context?: unknown }).context)).not.toContain("casey@example.test");
+  });
+  it("paginates the documented count/participants envelope", async () => {
+    const first = { id: "participant-1", firstName: "Casey", lastName: "Example", email: "casey@example.test" };
+    const second = { id: "participant-2", firstName: "Sam", lastName: "Example", email: "sam@example.test" };
+    const requestV4Detailed = vi.fn()
+      .mockResolvedValueOnce({ data: { count: 2, participants: [first] }, request: { method: "GET", path: "/sales/sales-1/participants", query: { offset: "0", limit: "100" } }, response: { status: 200, body: { count: 2, participants: [first] } } })
+      .mockResolvedValueOnce({ data: { count: 2, participants: [second] }, request: { method: "GET", path: "/sales/sales-1/participants", query: { offset: "1", limit: "100" } }, response: { status: 200, body: { count: 2, participants: [second] } } });
+
+    await expect(createCloudShareSalesDelivery({ requestV4Detailed } as never).listParticipants("sales-1")).resolves.toMatchObject({ participants: [expect.objectContaining({ id: "participant-1" }), expect.objectContaining({ id: "participant-2" })] });
+    expect(requestV4Detailed).toHaveBeenCalledTimes(2);
+  });
   it("uses documented v4 GET /sales/{id} only for reconciliation", async () => {
     const requestV4 = vi.fn().mockResolvedValue({ id: "sales-1", status: "active" });
     const delivery = createCloudShareSalesDelivery({ requestV4, requestV3: vi.fn(), requestV3Text: vi.fn() });
