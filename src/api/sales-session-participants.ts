@@ -12,7 +12,7 @@ import { CloudShareResponseError } from "@/integrations/cloudshare/errors";
 const contactsSchema = z.object({ contactIds: z.array(z.string().trim().min(1)).min(1).max(100) });
 const participantIdsSchema = z.object({ participantIds: z.array(z.string().trim().min(1)).min(1).max(100) });
 type Request = { readonly customerId: string; readonly sessionId: string; readonly actor: DiagnosticActor; readonly body?: unknown };
-type Deps = { sessions: Pick<SalesDemoSessionRepository, "findById">; records: Pick<SalesRecordRepository, "findContact">; participants: SalesSessionParticipantRepository; connections: Pick<CloudShareConnectionRepository, "findByCustomerId">; cloudshare?: Pick<CloudShareClientFactory, "forConnection">; deliveryFactory?: { forConnection(connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>): Pick<SalesDelivery, "createSession" | "readSession"> & Partial<SalesDelivery> }; diagnostics?: DiagnosticRecorder; audit?: Pick<AuditRepository, "write"> };
+type Deps = { sessions: Pick<SalesDemoSessionRepository, "findById">; records: Pick<SalesRecordRepository, "findContact"> & Partial<Pick<SalesRecordRepository, "listContacts">>; participants: SalesSessionParticipantRepository; connections: Pick<CloudShareConnectionRepository, "findByCustomerId">; cloudshare?: Pick<CloudShareClientFactory, "forConnection">; deliveryFactory?: { forConnection(connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>): Pick<SalesDelivery, "createSession" | "readSession"> & Partial<SalesDelivery> }; diagnostics?: DiagnosticRecorder; audit?: Pick<AuditRepository, "write"> };
 
 /** Deep handler interface: contacts are resolved server-side before the typed
  * CloudShare adapter is crossed. Browser-provided emails and provider URLs are
@@ -92,22 +92,135 @@ export async function handleInviteSalesSessionParticipants(deps: Deps, request: 
 export async function handleListSalesSessionParticipants(deps: Deps, request: Omit<Request, "body">): Promise<{ status: number; body: Record<string, unknown> }> {
   const prepared = await resolve(deps, request); if ("response" in prepared) return prepared.response!;
   const correlationId = randomUUID();
-  try { const remote = await prepared.delivery.listParticipants!(prepared.session.cloudShareSalesExperienceId); const local = await deps.participants.list(request.customerId, prepared.session.id); const now = new Date(); let missingCloudShareParticipantCount = 0; const reconciled = await Promise.all(local.map(async (stored) => { const participant = remote.participants.find((value) => value.id === stored.cloudShareParticipantId); const current = participant ? { ...stored, invitationStatus: participant.invitationStatus, invitedBy: participant.invitedBy, participationStatus: participant.participationStatus, firstJoined: participant.firstJoined, cloudShareEnvironmentId: participant.environmentId, environmentStatus: participant.envStatus ?? null, lastReconciledAt: now, updatedAt: now } : stored; if (participant) await deps.participants.save(current); else missingCloudShareParticipantCount += 1; const contact = await deps.records.findContact(request.customerId, current.opportunityContactId); return { current, participant, contact }; })); const projected = reconciled.map(({ current, participant, contact }) => contact ? portalParticipant(current, contact, participant ? undefined : { needsAttention: true, monitoringMessage: "CloudShare no longer returned this registered participant. Do not resend; investigate the correlated diagnostics." }) : null); const reconciliationFailed = missingCloudShareParticipantCount > 0; await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.reconciled", reconciliationFailed ? "failure" : "success", reconciliationFailed ? "CloudShare did not return one or more registered Sales Participants; those mappings need attention." : "Sales Participant monitoring state reconciled from CloudShare", remote, { participantCount: local.length, ...(reconciliationFailed ? { missingCloudShareParticipantCount } : {}) });
+  let completedRemote: Awaited<ReturnType<NonNullable<SalesDelivery["listParticipants"]>>> | undefined;
+  try {
+    const remote = await prepared.delivery.listParticipants!(prepared.session.cloudShareSalesExperienceId);
+    completedRemote = remote;
+    const local = await deps.participants.list(request.customerId, prepared.session.id);
+    const now = new Date();
+    const recovery = await recoverMissingParticipantMappings(deps, request.customerId, prepared.session, local, remote.participants, now);
+    // `save` is an upsert on the Contact mapping. Re-read after recovery so a
+    // concurrent refresh returns the canonical persisted portal ID, not the
+    // losing request's provisional random ID.
+    const mappedParticipants = recovery.recoveredParticipantCount > 0
+      ? await deps.participants.list(request.customerId, prepared.session.id)
+      : recovery.participants;
+    if (recovery.unmatchedCloudShareParticipantCount > 0) {
+      throw participantRosterMappingUnresolved(remote, remote.participants.length, local.length, recovery.recoveredParticipantCount, recovery.unmatchedCloudShareParticipantCount);
+    }
+    let missingCloudShareParticipantCount = 0;
+    const reconciled = await Promise.all(mappedParticipants.map(async (stored) => {
+      const participant = remote.participants.find((value) => value.id === stored.cloudShareParticipantId);
+      const current = participant ? {
+        ...stored,
+        invitationStatus: participant.invitationStatus,
+        invitedBy: participant.invitedBy,
+        participationStatus: participant.participationStatus,
+        firstJoined: participant.firstJoined,
+        cloudShareEnvironmentId: participant.environmentId,
+        environmentStatus: participant.envStatus ?? null,
+        lastReconciledAt: now,
+        updatedAt: now,
+      } : stored;
+      if (participant) await deps.participants.save(current); else missingCloudShareParticipantCount += 1;
+      const contact = await deps.records.findContact(request.customerId, current.opportunityContactId);
+      return { current, participant, contact };
+    }));
+    const projected = reconciled.map(({ current, participant, contact }) => contact ? portalParticipant(current, contact, participant ? undefined : { needsAttention: true, monitoringMessage: "CloudShare no longer returned this registered participant. Do not resend; investigate the correlated diagnostics." }) : null);
+    const reconciliationFailed = missingCloudShareParticipantCount > 0;
+    await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.reconciled", reconciliationFailed ? "failure" : "success", reconciliationFailed ? "CloudShare did not return one or more registered Sales Participants; those mappings need attention." : "Sales Participant monitoring state reconciled from CloudShare", remote, { localParticipantCount: local.length, cloudShareParticipantCount: remote.participants.length, recoveredParticipantCount: recovery.recoveredParticipantCount, participantCount: reconciled.length, ...(reconciliationFailed ? { missingCloudShareParticipantCount } : {}) });
     // Keep each mapping independently searchable. `externalIds` is deliberately a
     // string map, so a multi-participant reconciliation cannot be represented by
     // putting an array there without breaking diagnostics lookup semantics.
     await Promise.all(reconciled.map(({ current, participant }) => evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participant.reconciled", participant ? "success" : "failure", participant ? "Sales Participant monitoring mapping reconciled from CloudShare" : "CloudShare no longer returned this registered Sales Participant mapping.", undefined, { portalParticipantId: current.id, opportunityContactId: current.opportunityContactId, ...(participant ? {} : { failureMode: "participant_mapping_missing_from_cloudshare" }) }, { cloudShareParticipantId: current.cloudShareParticipantId, ...(current.cloudShareEnvironmentId ? { environmentId: current.cloudShareEnvironmentId } : {}) }))); return { status: 200, body: { session: { id: prepared.session.id, start: prepared.session.start, end: prepared.session.end, timeZone: prepared.session.timeZone }, participants: projected.filter((participant): participant is NonNullable<typeof participant> => participant !== null), correlationId } }; }
-  catch (error) { return failed(deps, request, prepared.session, correlationId, "sales.demo_session.participants.reconciled", "CloudShare could not reconcile Sales Participant monitoring.", error); }
+  catch (error) {
+    const classifiedError = completedRemote && !hasParticipantFailureContext(error)
+      ? participantMappingPersistenceFailed(error)
+      : error;
+    return failed(deps, request, prepared.session, correlationId, "sales.demo_session.participants.reconciled", "CloudShare could not reconcile Sales Participant monitoring.", classifiedError, completedRemote);
+  }
 }
+
+type RemoteSalesParticipant = {
+  readonly id: string;
+  readonly email: string;
+  readonly invitationStatus: "sent" | "notSent";
+  readonly invitedBy: string | null;
+  readonly participationStatus: "pending" | "inProgress" | "concluded";
+  readonly firstJoined: string | null;
+  readonly environmentId: string | null;
+  readonly envStatus: string | null;
+};
+
+/** Repairs a local mapping only when the provider roster and active Opportunity
+ * Contacts make the email association one-to-one. This is recovery for an
+ * acknowledged earlier registration, not a way to import arbitrary provider users. */
+async function recoverMissingParticipantMappings(
+  deps: Deps,
+  customerId: string,
+  session: { readonly id: string; readonly opportunityId: string },
+  local: readonly import("@/domain/sales-session-participant").SalesSessionParticipant[],
+  remote: readonly RemoteSalesParticipant[],
+  now: Date,
+): Promise<{
+  readonly participants: readonly import("@/domain/sales-session-participant").SalesSessionParticipant[];
+  readonly recoveredParticipantCount: number;
+  readonly unmatchedCloudShareParticipantCount: number;
+}> {
+  if (!deps.records.listContacts) return { participants: local, recoveredParticipantCount: 0, unmatchedCloudShareParticipantCount: remote.filter((participant) => !local.some((stored) => stored.cloudShareParticipantId === participant.id)).length };
+
+  const contacts = (await deps.records.listContacts(customerId, session.opportunityId))
+    .filter((contact) => contact.archivedAt === null);
+  const localContactIds = new Set(local.map((participant) => participant.opportunityContactId));
+  const localProviderIds = new Set(local.map((participant) => participant.cloudShareParticipantId));
+  const contactsByEmail = groupByNormalizedEmail(contacts);
+  const remoteByEmail = groupByNormalizedEmail(remote);
+  const recovered = remote.flatMap((participant) => {
+    if (localProviderIds.has(participant.id)) return [];
+    const email = participant.email.toLowerCase();
+    const contactCandidates = (contactsByEmail.get(email) ?? [])
+      .filter((contact) => !localContactIds.has(contact.id));
+    const remoteCandidates = remoteByEmail.get(email) ?? [];
+    if (contactCandidates.length !== 1 || remoteCandidates.length !== 1) return [];
+    const contact = contactCandidates[0]!;
+    return [{
+      id: randomUUID(),
+      customerId,
+      salesDemoSessionId: session.id,
+      opportunityContactId: contact.id,
+      cloudShareParticipantId: participant.id,
+      invitationStatus: participant.invitationStatus,
+      invitedBy: participant.invitedBy,
+      participationStatus: participant.participationStatus,
+      firstJoined: participant.firstJoined,
+      cloudShareEnvironmentId: participant.environmentId,
+      environmentStatus: participant.envStatus,
+      lastReconciledAt: now,
+      createdAt: now,
+      updatedAt: now,
+    } as const];
+  });
+  try {
+    await Promise.all(recovered.map((participant) => deps.participants.save(participant)));
+  } catch (error) {
+    throw participantMappingPersistenceFailed(error);
+  }
+  const knownProviderIds = new Set([...localProviderIds, ...recovered.map((participant) => participant.cloudShareParticipantId)]);
+  return { participants: [...local, ...recovered], recoveredParticipantCount: recovered.length, unmatchedCloudShareParticipantCount: remote.filter((participant) => !knownProviderIds.has(participant.id)).length };
+}
+
 function portalParticipant(value: import("@/domain/sales-session-participant").SalesSessionParticipant, contact: { readonly firstName: string; readonly lastName: string }, reconciliation?: { readonly needsAttention: true; readonly monitoringMessage: string }) { return { id: value.id, opportunityContactId: value.opportunityContactId, firstName: contact.firstName, lastName: contact.lastName, invitationStatus: value.invitationStatus, invitedBy: value.invitedBy, participationStatus: value.participationStatus, firstJoined: value.firstJoined, envStatus: value.environmentStatus, ...reconciliation }; }
 async function resolve(deps: Deps, request: Omit<Request, "body">) { if (!deps.sessions.findById) return { response: { status: 503, body: { error: "Sales Participant monitoring is unavailable." } } }; const [session, connection] = await Promise.all([deps.sessions.findById(request.customerId, request.sessionId), deps.connections.findByCustomerId(request.customerId)]); if (!session || !connection) return { response: { status: 404, body: { error: "Sales Session or CloudShare Connection was not found." } } }; if (session.operationalStatus !== "active" || session.cloudShareSalesExperienceId.startsWith("pending:")) return { response: { status: 409, body: { error: "Participants are available only after this Sales Session is provisioned." } } }; const delivery = deps.deliveryFactory?.forConnection(connection) ?? createCloudShareSalesDelivery(deps.cloudshare!.forConnection(connection)); return { session, delivery }; }
 async function denied(deps: Deps, request: Request, session: NonNullable<Awaited<ReturnType<NonNullable<Deps["sessions"]["findById"]>>>>, status: number, error: string, failureMode: string) { const correlationId = randomUUID(); await evidence(deps, request, session, correlationId, "sales.demo_session.participants.registered", "failure", error, undefined, { failureMode }); return { status, body: { error, correlationId } }; }
-async function failed(deps: Deps, request: Request, session: NonNullable<Awaited<ReturnType<NonNullable<Deps["sessions"]["findById"]>>>>, correlationId: string, operation: string, message: string, error: unknown) { await evidence(deps, request, session, correlationId, operation, "failure", message, exchange(error), { ...participantFailureDetails(error), error: error instanceof Error ? error.message : String(error) }); return { status: 502, body: { error: message, correlationId } }; }
+async function failed(deps: Deps, request: Request, session: NonNullable<Awaited<ReturnType<NonNullable<Deps["sessions"]["findById"]>>>>, correlationId: string, operation: string, message: string, error: unknown, completedRemote?: { request: unknown; response: unknown }) { await evidence(deps, request, session, correlationId, operation, "failure", message, completedRemote ?? exchange(error), { ...participantFailureDetails(error), error: error instanceof Error ? error.message : String(error) }); return { status: 502, body: { error: message, correlationId } }; }
 async function evidence(deps: Deps, request: Omit<Request, "body">, session: NonNullable<Awaited<ReturnType<NonNullable<Deps["sessions"]["findById"]>>>>, correlationId: string, operation: string, outcome: "success" | "failure", message: string, remote: { request: unknown; response: unknown } | undefined, details: Record<string, unknown>, externalIds: Record<string, string> = {}) { const correlatedExternalIds = { opportunityId: session.opportunityId, cloudShareSalesExperienceId: session.cloudShareSalesExperienceId, ...externalIds }; await Promise.allSettled([deps.diagnostics?.record({ source: "sales-session-participants", operation, outcome, level: outcome === "success" ? "info" : "warn", customerId: request.customerId, actor: request.actor, subject: { type: "sales_demo_session", id: session.id }, correlationId, message, externalIds: correlatedExternalIds, request: remote?.request as Record<string, unknown>, response: remote?.response as Record<string, unknown>, details: { integrationSurface: "cloudshare.v4.sales.participants", ...details } }), deps.audit?.write({ id: randomUUID(), occurredAt: new Date(), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: operation, subjectType: "sales_demo_session", subjectId: session.id, outcome, correlationId, details: { ...correlatedExternalIds, ...details }, ...(outcome === "failure" ? { error: message } : {}) })]); }
 function exchange(error: unknown) { if (!(error instanceof Error) || !("context" in error)) return undefined; const c = (error as { context?: Record<string, unknown> }).context; return c ? { request: { method: c.method, path: c.path, query: c.requestQuery, headers: c.requestHeaders, body: c.requestBody }, response: { status: c.responseStatus ?? c.status, headers: c.responseHeaders, body: c.responseBody, transport: c.cause } } : undefined; }
-type ParticipantFailureMode = "cloudshare_participants" | "participant_page_count_contradiction" | "participant_page_duplicate_id" | "participant_registration_not_reconciled";
-function participantFailureDetails(error: unknown): { readonly failureMode: ParticipantFailureMode; readonly expectedCount?: number; readonly returnedCount?: number } { const context = error instanceof Error && "context" in error ? (error as { context?: Record<string, unknown> }).context : undefined; const failureMode: ParticipantFailureMode = context?.failureMode === "participant_page_count_contradiction" || context?.failureMode === "participant_page_duplicate_id" || context?.failureMode === "participant_registration_not_reconciled" ? context.failureMode : "cloudshare_participants"; const expectedCount = nonnegativeInteger(context?.expectedCount); const returnedCount = nonnegativeInteger(context?.returnedCount); return { failureMode, ...(expectedCount === undefined ? {} : { expectedCount }), ...(returnedCount === undefined ? {} : { returnedCount }) }; }
+type ParticipantFailureMode = "cloudshare_participants" | "participant_page_count_contradiction" | "participant_page_duplicate_id" | "participant_registration_not_reconciled" | "participant_roster_mapping_unresolved" | "participant_mapping_persistence";
+function participantFailureDetails(error: unknown): { readonly failureMode: ParticipantFailureMode; readonly expectedCount?: number; readonly returnedCount?: number; readonly localParticipantCount?: number; readonly cloudShareParticipantCount?: number; readonly recoveredParticipantCount?: number; readonly unmatchedCloudShareParticipantCount?: number } { const context = error instanceof Error && "context" in error ? (error as { context?: Record<string, unknown> }).context : undefined; const failureMode: ParticipantFailureMode = context?.failureMode === "participant_page_count_contradiction" || context?.failureMode === "participant_page_duplicate_id" || context?.failureMode === "participant_registration_not_reconciled" || context?.failureMode === "participant_roster_mapping_unresolved" || context?.failureMode === "participant_mapping_persistence" ? context.failureMode : "cloudshare_participants"; const expectedCount = nonnegativeInteger(context?.expectedCount); const returnedCount = nonnegativeInteger(context?.returnedCount); const localParticipantCount = nonnegativeInteger(context?.localParticipantCount); const cloudShareParticipantCount = nonnegativeInteger(context?.cloudShareParticipantCount); const recoveredParticipantCount = nonnegativeInteger(context?.recoveredParticipantCount); const unmatchedCloudShareParticipantCount = nonnegativeInteger(context?.unmatchedCloudShareParticipantCount); return { failureMode, ...(expectedCount === undefined ? {} : { expectedCount }), ...(returnedCount === undefined ? {} : { returnedCount }), ...(localParticipantCount === undefined ? {} : { localParticipantCount }), ...(cloudShareParticipantCount === undefined ? {} : { cloudShareParticipantCount }), ...(recoveredParticipantCount === undefined ? {} : { recoveredParticipantCount }), ...(unmatchedCloudShareParticipantCount === undefined ? {} : { unmatchedCloudShareParticipantCount }) }; }
 function nonnegativeInteger(value: unknown): number | undefined { return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined; }
 function participantRegistrationNotReconciled(remote: SalesDeliveryEvidence, expectedCount: number, returnedCount: number): CloudShareResponseError { return new CloudShareResponseError("CloudShare accepted the participant registration but its authoritative roster did not return every selected Opportunity Contact.", { method: remote.request.method, path: remote.request.path, ...(remote.request.query ? { requestQuery: remote.request.query } : {}), ...(remote.request.headers ? { requestHeaders: remote.request.headers } : {}), ...(remote.request.body !== undefined ? { requestBody: remote.request.body } : {}), status: remote.response.status, responseStatus: remote.response.status, ...(remote.response.headers ? { responseHeaders: remote.response.headers } : {}), responseBody: remote.response.body, expectedCount, returnedCount, failureMode: "participant_registration_not_reconciled" }); }
+function participantRosterMappingUnresolved(remote: SalesDeliveryEvidence, cloudShareParticipantCount: number, localParticipantCount: number, recoveredParticipantCount: number, unmatchedCloudShareParticipantCount: number): CloudShareResponseError { return new CloudShareResponseError("CloudShare returned Sales Participants that Certalis cannot safely associate with exactly one active Opportunity Contact.", { method: remote.request.method, path: remote.request.path, ...(remote.request.query ? { requestQuery: remote.request.query } : {}), ...(remote.request.headers ? { requestHeaders: remote.request.headers } : {}), ...(remote.request.body !== undefined ? { requestBody: remote.request.body } : {}), status: remote.response.status, responseStatus: remote.response.status, ...(remote.response.headers ? { responseHeaders: remote.response.headers } : {}), responseBody: remote.response.body, localParticipantCount, cloudShareParticipantCount, recoveredParticipantCount, unmatchedCloudShareParticipantCount, failureMode: "participant_roster_mapping_unresolved" }); }
+function hasParticipantFailureContext(error: unknown): boolean { return error instanceof Error && "context" in error && Boolean((error as { context?: unknown }).context); }
+function participantMappingPersistenceFailed(error: unknown): Error & { readonly context: { readonly failureMode: "participant_mapping_persistence" } } { const failure = new Error(`Certalis could not persist or reconcile Sales Participant monitoring after CloudShare returned the roster: ${error instanceof Error ? error.message : String(error)}`) as Error & { context: { readonly failureMode: "participant_mapping_persistence" } }; failure.context = { failureMode: "participant_mapping_persistence" }; return failure; }
 function countByNormalizedEmail(values: readonly { readonly email: string }[]): Map<string, number> { const counts = new Map<string, number>(); for (const value of values) { const email = value.email.toLowerCase(); counts.set(email, (counts.get(email) ?? 0) + 1); } return counts; }
 function groupByNormalizedEmail<T extends { readonly email: string }>(values: readonly T[]): Map<string, T[]> { const groups = new Map<string, T[]>(); for (const value of values) { const email = value.email.toLowerCase(); groups.set(email, [...(groups.get(email) ?? []), value]); } return groups; }

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { CloudShareResponseError } from "@/integrations/cloudshare/errors";
+import type { SalesSessionParticipant } from "@/domain/sales-session-participant";
 import { handleInviteSalesSessionParticipants, handleListSalesSessionParticipants, handleRegisterSalesSessionParticipants } from "./sales-session-participants";
 
 describe("Sales Session participant invitation", () => {
@@ -173,6 +174,107 @@ describe("Sales Session participant invitation", () => {
     const participant = { id: "portal-participant-1", customerId: "customer-1", salesDemoSessionId: "session-1", opportunityContactId: "contact-1", cloudShareParticipantId: "remote-participant-1", invitationStatus: "notSent" as const, invitedBy: null, participationStatus: "pending" as const, firstJoined: null, cloudShareEnvironmentId: null, environmentStatus: null, lastReconciledAt: new Date(), createdAt: new Date(), updatedAt: new Date() };
     const listed = await handleListSalesSessionParticipants({ sessions: { findById: vi.fn().mockResolvedValue({ id: "session-1", opportunityId: "opportunity-1", cloudShareSalesExperienceId: "remote-sales-1", operationalStatus: "active", start: "2026-07-17T09:00", end: "2026-07-17T10:00", timeZone: "UTC" }) }, records: { findContact: vi.fn().mockResolvedValue({ firstName: "Ada", lastName: "Lovelace" }) }, participants: { save, list: vi.fn().mockResolvedValue([participant]) }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), registerParticipants: vi.fn(), inviteParticipants: vi.fn(), listParticipants: vi.fn().mockResolvedValue({ participants: [{ id: "remote-participant-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", invitationStatus: "sent", invitedBy: null, participationStatus: "inProgress", firstJoined: "2026-07-17T09:05:00Z", envStatus: "running", environmentId: "server-only-environment-1" }], request: {}, response: {} }) }) }, diagnostics }, { customerId: "customer-1", sessionId: "session-1", actor: { type: "admin", id: "admin-1", email: "sales-admin@certalis.demo" } });
     expect(listed).toMatchObject({ status: 200, body: { participants: [{ id: "portal-participant-1", firstName: "Ada", invitationStatus: "sent" }] } }); expect(save).toHaveBeenCalledWith(expect.objectContaining({ cloudShareEnvironmentId: "server-only-environment-1" })); expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ externalIds: expect.objectContaining({ environmentId: "server-only-environment-1" }) })); expect(JSON.stringify(listed.body)).not.toContain("remote-participant-1"); expect(JSON.stringify(listed.body)).not.toContain("server-only-environment-1");
+  });
+
+  it("recovers missing local mappings from an unambiguous authoritative Sales roster", async () => {
+    const canonical: SalesSessionParticipant[] = [];
+    const save = vi.fn(async (value: SalesSessionParticipant) => {
+      const existingIndex = canonical.findIndex((participant) => participant.opportunityContactId === value.opportunityContactId);
+      if (existingIndex >= 0) canonical[existingIndex] = { ...value, id: canonical[existingIndex]!.id };
+      else canonical.push({ ...value, id: `canonical-${canonical.length + 1}` });
+    });
+    const diagnostics = { record: vi.fn() };
+    const contacts = [
+      { id: "contact-1", customerId: "customer-1", opportunityId: "opportunity-1", firstName: "Test2", lastName: "Op1", email: "test2op1@demo.com", archivedAt: null, createdAt: new Date(), updatedAt: new Date() },
+      { id: "contact-2", customerId: "customer-1", opportunityId: "opportunity-1", firstName: "Test1", lastName: "Op1", email: "testop1@demo.com", archivedAt: null, createdAt: new Date(), updatedAt: new Date() },
+    ];
+    const roster = [
+      { id: "PTEHcwVlHTMb_2ZO72vhD25Q2", firstName: "Test2", lastName: "Op1", email: "test2op1@demo.com", invitationStatus: "notSent" as const, invitedBy: null, participationStatus: "pending" as const, firstJoined: null, envStatus: null, environmentId: null },
+      { id: "PTGLIVzvtnY1hVvzKzUmPezA2", firstName: "Test1", lastName: "Op1", email: "testop1@demo.com", invitationStatus: "notSent" as const, invitedBy: null, participationStatus: "pending" as const, firstJoined: null, envStatus: null, environmentId: null },
+    ];
+
+    const result = await handleListSalesSessionParticipants({
+      sessions: { findById: vi.fn().mockResolvedValue({ id: "session-1", opportunityId: "opportunity-1", cloudShareSalesExperienceId: "EXNv_r787dzjCiV3W3JRpz2w2", operationalStatus: "active", start: "2026-07-17T09:00", end: "2026-07-17T10:00", timeZone: "UTC" }) },
+      records: { listContacts: vi.fn().mockResolvedValue(contacts), findContact: vi.fn((_, id) => Promise.resolve(contacts.find((contact) => contact.id === id) ?? null)) },
+      participants: { save, list: vi.fn().mockImplementation(async () => canonical) },
+      connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: vi.fn().mockResolvedValue({ participants: roster, request: { method: "GET", path: "/v4/sales/EXNv_r787dzjCiV3W3JRpz2w2/participants", query: { offset: "0", limit: "100" } }, response: { status: 200, body: { count: 2, items: roster } } }) }) },
+      diagnostics,
+    }, { customerId: "customer-1", sessionId: "session-1", actor: { type: "admin", id: "admin-1", email: "sales-admin@certalis.demo" } });
+
+    expect(result).toMatchObject({ status: 200, body: { participants: [
+      { id: "canonical-1", opportunityContactId: "contact-1", firstName: "Test2", invitationStatus: "notSent" },
+      { id: "canonical-2", opportunityContactId: "contact-2", firstName: "Test1", invitationStatus: "notSent" },
+    ] } });
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ opportunityContactId: "contact-1", cloudShareParticipantId: "PTEHcwVlHTMb_2ZO72vhD25Q2" }));
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ opportunityContactId: "contact-2", cloudShareParticipantId: "PTGLIVzvtnY1hVvzKzUmPezA2" }));
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({
+      operation: "sales.demo_session.participants.reconciled",
+      details: expect.objectContaining({ participantCount: 2, cloudShareParticipantCount: 2, recoveredParticipantCount: 2 }),
+    }));
+  });
+
+  it("fails with the full roster evidence instead of silently hiding an ambiguous provider participant", async () => {
+    const diagnostics = { record: vi.fn() };
+    const contacts = ["contact-1", "contact-2"].map((id) => ({ id, customerId: "customer-1", opportunityId: "opportunity-1", firstName: "Ada", lastName: "Lovelace", email: "shared@example.test", archivedAt: null, createdAt: new Date(), updatedAt: new Date() }));
+    const roster = [{ id: "remote-participant-1", firstName: "Ada", lastName: "Lovelace", email: "shared@example.test", invitationStatus: "notSent" as const, invitedBy: null, participationStatus: "pending" as const, firstJoined: null, envStatus: null, environmentId: null }];
+    const result = await handleListSalesSessionParticipants({
+      sessions: { findById: vi.fn().mockResolvedValue({ id: "session-1", opportunityId: "opportunity-1", cloudShareSalesExperienceId: "remote-sales-1", operationalStatus: "active", start: "2026-07-17T09:00", end: "2026-07-17T10:00", timeZone: "UTC" }) },
+      records: { listContacts: vi.fn().mockResolvedValue(contacts), findContact: vi.fn() },
+      participants: { save: vi.fn(), list: vi.fn().mockResolvedValue([]) },
+      connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: vi.fn().mockResolvedValue({ participants: roster, request: { method: "GET", path: "/v4/sales/remote-sales-1/participants", query: { offset: "0", limit: "100" } }, response: { status: 200, body: { count: 1, items: roster } } }) }) },
+      diagnostics,
+    }, { customerId: "customer-1", sessionId: "session-1", actor: { type: "admin", id: "admin-1", email: "sales-admin@certalis.demo" } });
+
+    expect(result).toMatchObject({ status: 502, body: { error: "CloudShare could not reconcile Sales Participant monitoring.", correlationId: expect.any(String) } });
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: "failure",
+      request: { method: "GET", path: "/v4/sales/remote-sales-1/participants", query: { offset: "0", limit: "100" }, headers: undefined, body: undefined },
+      response: expect.objectContaining({ status: 200, body: { count: 1, items: roster } }),
+      details: expect.objectContaining({ failureMode: "participant_roster_mapping_unresolved", localParticipantCount: 0, cloudShareParticipantCount: 1, recoveredParticipantCount: 0, unmatchedCloudShareParticipantCount: 1 }),
+    }));
+  });
+
+  it("retains the completed CloudShare roster exchange when mapping recovery persistence fails", async () => {
+    const diagnostics = { record: vi.fn() };
+    const contact = { id: "contact-1", customerId: "customer-1", opportunityId: "opportunity-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", archivedAt: null, createdAt: new Date(), updatedAt: new Date() };
+    const roster = [{ id: "remote-participant-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", invitationStatus: "notSent" as const, invitedBy: null, participationStatus: "pending" as const, firstJoined: null, envStatus: null, environmentId: null }];
+    const result = await handleListSalesSessionParticipants({
+      sessions: { findById: vi.fn().mockResolvedValue({ id: "session-1", opportunityId: "opportunity-1", cloudShareSalesExperienceId: "remote-sales-1", operationalStatus: "active", start: "2026-07-17T09:00", end: "2026-07-17T10:00", timeZone: "UTC" }) },
+      records: { listContacts: vi.fn().mockResolvedValue([contact]), findContact: vi.fn() },
+      participants: { save: vi.fn().mockRejectedValue(new Error("database unavailable")), list: vi.fn().mockResolvedValue([]) },
+      connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: vi.fn().mockResolvedValue({ participants: roster, request: { method: "GET", path: "/v4/sales/remote-sales-1/participants", query: { offset: "0", limit: "100" } }, response: { status: 200, body: { count: 1, items: roster } } }) }) },
+      diagnostics,
+    }, { customerId: "customer-1", sessionId: "session-1", actor: { type: "admin", id: "admin-1", email: "sales-admin@certalis.demo" } });
+
+    expect(result.status).toBe(502);
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: "failure",
+      request: { method: "GET", path: "/v4/sales/remote-sales-1/participants", query: { offset: "0", limit: "100" }, headers: undefined, body: undefined },
+      response: expect.objectContaining({ status: 200, body: { count: 1, items: roster } }),
+      details: expect.objectContaining({ failureMode: "participant_mapping_persistence", error: expect.stringContaining("database unavailable") }),
+    }));
+  });
+
+  it("labels a local mapping read failure after a CloudShare 200 as local persistence", async () => {
+    const diagnostics = { record: vi.fn() };
+    const roster = [{ id: "remote-participant-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", invitationStatus: "notSent" as const, invitedBy: null, participationStatus: "pending" as const, firstJoined: null, envStatus: null, environmentId: null }];
+    const result = await handleListSalesSessionParticipants({
+      sessions: { findById: vi.fn().mockResolvedValue({ id: "session-1", opportunityId: "opportunity-1", cloudShareSalesExperienceId: "remote-sales-1", operationalStatus: "active", start: "2026-07-17T09:00", end: "2026-07-17T10:00", timeZone: "UTC" }) },
+      records: { findContact: vi.fn() },
+      participants: { save: vi.fn(), list: vi.fn().mockRejectedValue(new Error("mapping database unavailable")) },
+      connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: vi.fn().mockResolvedValue({ participants: roster, request: { method: "GET", path: "/v4/sales/remote-sales-1/participants", query: { offset: "0", limit: "100" } }, response: { status: 200, body: { count: 1, items: roster } } }) }) },
+      diagnostics,
+    }, { customerId: "customer-1", sessionId: "session-1", actor: { type: "admin", id: "admin-1", email: "sales-admin@certalis.demo" } });
+
+    expect(result.status).toBe(502);
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({
+      response: expect.objectContaining({ status: 200, body: { count: 1, items: roster } }),
+      details: expect.objectContaining({ failureMode: "participant_mapping_persistence", error: expect.stringContaining("mapping database unavailable") }),
+    }));
   });
 
   it("marks a persisted participant as needing attention when CloudShare no longer returns its mapped participant", async () => {

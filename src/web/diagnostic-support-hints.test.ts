@@ -174,6 +174,24 @@ describe("deriveDiagnosticSupportHints", () => {
     expect(JSON.stringify(hints)).not.toContain("admin-evidence");
     expect(JSON.stringify(hints)).not.toContain("loginUrl");
   });
+
+  it("does not label a local participant-mapping persistence failure as a CloudShare request failure", () => {
+    const hints = deriveDiagnosticSupportHints(
+      makeEntry({
+        operation: "sales.demo_session.participants.reconciled",
+        details: {
+          integrationSurface: "cloudshare.v4.sales.participants",
+          failureMode: "participant_mapping_persistence",
+        },
+        response: { status: 200, body: { count: 1 } },
+      }),
+    );
+
+    expect(hints).toEqual([
+      expect.objectContaining({ title: "Sales Participant monitoring could not be persisted" }),
+    ]);
+    expect(hints[0]?.title).not.toBe("CloudShare request failed");
+  });
 });
 
 describe("deriveDiagnosticQuickFacts", () => {
