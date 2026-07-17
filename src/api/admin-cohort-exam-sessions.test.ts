@@ -919,7 +919,7 @@ describe("admin Cohort Exam Session runtime", () => {
         query: expect.objectContaining({ projectId: "project-1" }),
       },
       response: {
-        body: { teamCount: 0 },
+        body: [],
       },
       details: {
         integrationSurface: "cloudshare.v3.teams",

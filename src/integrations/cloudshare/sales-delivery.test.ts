@@ -72,6 +72,22 @@ describe("CloudShare Sales Delivery", () => {
     expect(JSON.stringify(result.participants)).not.toContain("https://bearer.example.test/invite");
     expect(JSON.stringify(result.participants)).not.toContain("accessLink");
   });
+  it("accepts the observed pre-join Sales roster with a null environment status", async () => {
+    const roster = {
+      count: 2,
+      items: [
+        documentedParticipant({ id: "participant-1", firstName: "Test2", lastName: "Op1", email: "test2op1@example.test", envStatus: null, envId: "0", customProperties: [], markedAsComplete: null }),
+        documentedParticipant({ id: "participant-2", firstName: "Test1", lastName: "Op1", email: "test1op1@example.test", envStatus: null, envId: "0", customProperties: [], markedAsComplete: null }),
+      ],
+    };
+
+    await expect(deliveryForRoster(roster).listParticipants("sales-1")).resolves.toMatchObject({
+      participants: [
+        { id: "participant-1", envStatus: null, environmentId: "0" },
+        { id: "participant-2", envStatus: null, environmentId: "0" },
+      ],
+    });
+  });
   it("retains an undocumented PascalCase Sales roster as full, safely-redacted evidence", async () => {
     const rawRoster = { Count: 1, Items: [{ Id: "participant-1", FirstName: "Casey", LastName: "Example", Email: "casey@example.test", InvitationStatus: "sent", ParticipationStatus: "inProgress", FirstJoined: "2026-07-17T09:05:00Z", EnvironmentId: "server-only-environment-1", EnvironmentStatus: "Ready", accessLink: "https://bearer.example.test/should-not-leak" }] };
     const delivery = deliveryForRoster(rawRoster);

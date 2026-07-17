@@ -159,6 +159,27 @@ describe("createCloudShareClient — v4", () => {
     expect(JSON.stringify((error as { context?: unknown }).context)).toContain(participantEmail);
   });
 
+  it("retains full sanitized evidence for a non-Sales CloudShare response mismatch", async () => {
+    const body = { count: 1, items: [{ id: "student-1", email: "student@example.test", providerDetail: { code: "unexpected-shape" } }] };
+    const { http } = capturingHttp(ok(body));
+    const client = clientWith(http);
+
+    const error = await client.requestV4({
+      method: "GET",
+      path: "/trainings/training-1/students",
+      query: { offset: "0", limit: "100" },
+      schema: z.object({ students: z.array(z.object({ id: z.string() })) }),
+    }).catch((failure) => failure);
+
+    expect(error).toMatchObject({
+      name: "CloudShareResponseError",
+      context: {
+        requestQuery: { offset: "0", limit: "100" },
+        responseBody: body,
+      },
+    });
+  });
+
   it("retains Sales Participant provider errors while redacting bearer invitation URLs", async () => {
     const participantEmail = "participant-private@example.test";
     const providerParticipantId = "PTYieGdBA4HfAyfI2LhbcxhQ2";

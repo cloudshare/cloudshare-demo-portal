@@ -1797,10 +1797,11 @@ will replace this isolated GUI adapter with a supported contract.
 **Observed behaviour**
 
 The published v4 export describes `GET /sales/{id}/participants` as an object
-containing `participants`. During #348 human QA, the live Certalis Sales API instead
-returned the paged collection envelope `{ count, items }`. The previous strict adapter
-schema rejected that otherwise valid response before participant monitoring could be
-reconciled.
+containing `participants`, and declares `envStatus` as a string enum. During #348
+human QA, the live Certalis Sales API instead returned the paged collection envelope
+`{ count, items }`; registered, pre-environment participants had `envStatus: null`
+and the provider placeholder `envId: "0"`. The previous strict adapter schema
+rejected that otherwise valid roster before participant monitoring could be reconciled.
 
 **Impact on sales enablement**
 
@@ -1814,13 +1815,15 @@ from its supplied correlation link.
 `SalesDelivery.listParticipants` now accepts either the published `{ participants }`
 shape or the observed `{ count, items }` shape. For the latter it uses documented
 `offset` and `limit` query parameters, reads until the declared count is satisfied,
-and fails closed when a later page contradicts that count or makes no progress.
-The typed boundary allowlists participant fields and reduces participant diagnostic
-evidence to a count, so native-invite URLs and participant e-mail are not retained
-in those exchanges. Participant and environment correlation values remain
-server-only; browser projections still exclude them. Sales Support includes the
-participant reconciliation source in both direct, Customer-scoped filtered reads and
-the aggregate correlation feed.
+and fails closed when a later page contradicts that count or makes no progress. A
+null `envStatus` is preserved as the authoritative pre-environment state; the portal
+does not infer a runnable environment from the placeholder `envId`. Every CloudShare
+diagnostic now retains the full sanitised request body, response body, and query
+parameters at the shared client boundary. Only credentials, tokens, and bearer-style
+invitation or sponsored-login URLs are redacted. Participant and environment
+correlation values remain server-only in browser projections. Sales Support includes
+the participant reconciliation source in both direct, Customer-scoped filtered reads
+and the aggregate correlation feed.
 
 **Action required**
 

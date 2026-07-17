@@ -73,6 +73,7 @@ export function createCloudShareOnDemandExperienceCreator(
   client: CloudShareClient,
 ): CloudShareOnDemandExperienceCreator {
   const requestV4Detailed = requireDetailedV4Client(client);
+  const requestV3Detailed = client.requestV3Detailed?.bind(client);
 
   async function requestV4WithDiagnostics<T>(spec: {
     readonly method: "GET" | "POST" | "PUT" | "DELETE";
@@ -85,7 +86,7 @@ export function createCloudShareOnDemandExperienceCreator(
 
   return {
     async createOnDemandExperience(input: CreateOnDemandExperienceRequest): Promise<CreateOnDemandExperienceResult> {
-      const teams = (await client.requestV3({
+      const teamRequest = {
         method: "GET",
         path: "/teams",
         query: {
@@ -97,22 +98,28 @@ export function createCloudShareOnDemandExperienceCreator(
           take: "20",
         },
         schema: projectTeamsSchema,
-      })) as ProjectTeam[];
+      } as const;
+      const teamLookup = requestV3Detailed
+        ? await requestV3Detailed(teamRequest)
+        : await client.requestV3(teamRequest).then((data) => ({
+          data,
+          integrationSurface: "cloudshare.v3.teams",
+          request: { method: teamRequest.method, path: teamRequest.path, query: teamRequest.query },
+          response: { status: 200, body: data },
+        })) as CloudShareDetailedResult<ProjectTeam[]>;
+      const teams = teamLookup.data as ProjectTeam[];
       const teamId = teams[0]?.id;
       if (!teamId) {
         throw new CloudShareResponseError(`No CloudShare Team was returned for Project ${input.projectId}.`, {
-          method: "GET",
-          path: "/teams",
-          integrationSurface: "cloudshare.v3.teams",
-          requestQuery: {
-            getRows: "true",
-            projectId: input.projectId,
-            sortBy: "name",
-            sortAscending: "true",
-            skip: "0",
-            take: "20",
-          },
-          responseBody: { teamCount: teams.length },
+          method: teamLookup.request.method,
+          path: teamLookup.request.path,
+          integrationSurface: teamLookup.integrationSurface,
+          ...(teamLookup.request.query ? { requestQuery: teamLookup.request.query } : {}),
+          ...(teamLookup.request.headers ? { requestHeaders: teamLookup.request.headers } : {}),
+          ...(teamLookup.request.body !== undefined ? { requestBody: teamLookup.request.body } : {}),
+          status: teamLookup.response.status,
+          ...(teamLookup.response.headers ? { responseHeaders: teamLookup.response.headers } : {}),
+          responseBody: teamLookup.response.body,
           issues: [`No CloudShare Team was returned for Project ${input.projectId}.`],
         });
       }

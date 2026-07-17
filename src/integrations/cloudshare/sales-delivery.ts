@@ -52,7 +52,8 @@ export interface SalesParticipant extends SalesParticipantInput {
   readonly participationStatus: "pending" | "inProgress" | "concluded"; readonly firstJoined: string | null;
   /** Server-only CloudShare correlation; never include it in portal projections. */
   readonly environmentId: string | null;
-  readonly envStatus: string;
+  /** Null before CloudShare has assigned a runnable environment. */
+  readonly envStatus: string | null;
 }
 
 const salesExperienceSchema = z.object({
@@ -106,16 +107,18 @@ const salesParticipantSchema = z.object({
   invitedBy: z.string().email().nullable(),
   participationStatus: z.enum(["pending", "inProgress", "concluded"]),
   firstJoined: z.string().datetime({ offset: true }).nullable(),
-  envStatus: salesEnvironmentStatusSchema,
+  // The published schema lists environment states, but the live Sales roster
+  // returns null until a registered participant has an environment.
+  envStatus: salesEnvironmentStatusSchema.nullable(),
   envId: z.string().min(1).nullable(),
 });
 
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
-/** Normalize only the small participant roster contract Certalis needs.  The
- * live Sales API has varied its collection envelope, so never expose
- * or retain an arbitrary provider object (which can contain invite URLs). */
+/** Normalize only the small participant roster contract Certalis needs for
+ * browser projections. The shared client retains the full, sanitised provider
+ * exchange separately as authorised Support evidence. */
 export function normalizeSalesParticipantPage(payload: unknown): unknown {
   const envelope = record(payload);
   if (!envelope) return payload;
