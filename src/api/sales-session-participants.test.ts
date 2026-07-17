@@ -125,6 +125,27 @@ describe("Sales Session participant invitation", () => {
     expect(JSON.stringify(result.body)).not.toContain("remote-participant");
   });
 
+  it("does not reuse an existing Contact mapping for a new Contact with the same email", async () => {
+    const diagnostics = { record: vi.fn() };
+    const save = vi.fn();
+    const existing = { id: "portal-participant-1", customerId: "customer-1", salesDemoSessionId: "session-1", opportunityContactId: "contact-1", cloudShareParticipantId: "remote-participant-1", invitationStatus: "notSent" as const, invitedBy: null, participationStatus: "pending" as const, firstJoined: null, cloudShareEnvironmentId: null, environmentStatus: "Ready", lastReconciledAt: new Date(), createdAt: new Date(), updatedAt: new Date() };
+    const remote = { id: "remote-participant-1", firstName: "Ada", lastName: "Lovelace", email: "shared@example.test", invitationStatus: "notSent" as const, invitedBy: null, participationStatus: "pending" as const, firstJoined: null, envStatus: "Ready", environmentId: null };
+    const listParticipants = vi.fn().mockResolvedValue({ participants: [remote], request: { method: "GET", path: "/sales/remote-sales-1/participants" }, response: { status: 200, body: { participantCount: 1 } } });
+    const result = await handleRegisterSalesSessionParticipants({
+      sessions: { findById: vi.fn().mockResolvedValue({ id: "session-1", opportunityId: "opportunity-1", cloudShareSalesExperienceId: "remote-sales-1", operationalStatus: "active" }) },
+      records: { findContact: vi.fn().mockImplementation(async (_customerId, contactId) => ({ id: contactId, opportunityId: "opportunity-1", firstName: "Ada", lastName: "Lovelace", email: "shared@example.test", archivedAt: null })) },
+      participants: { save, list: vi.fn().mockResolvedValue([existing]) },
+      connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), registerParticipants: vi.fn(), listParticipants, inviteParticipants: vi.fn() }) },
+      diagnostics,
+    }, { customerId: "customer-1", sessionId: "session-1", actor: { type: "admin", id: "admin-1", email: "sales-admin@certalis.demo" }, body: { contactIds: ["contact-1", "contact-2"] } });
+
+    expect(result.status).toBe(502);
+    expect(save).not.toHaveBeenCalled();
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ details: expect.objectContaining({ failureMode: "participant_registration_not_reconciled", expectedCount: 1, returnedCount: 1 }) }));
+    expect(JSON.stringify(diagnostics.record.mock.calls)).not.toContain("shared@example.test");
+  });
+
   it("repairs a failed local registration save from the existing CloudShare participant on retry without registering twice", async () => {
     const remoteParticipant = { id: "remote-participant-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", invitationStatus: "notSent" as const, invitedBy: null, participationStatus: "pending" as const, firstJoined: null };
     const registerParticipants = vi.fn().mockResolvedValue({ request: {}, response: { status: 201, body: { participantCount: 1 } } });

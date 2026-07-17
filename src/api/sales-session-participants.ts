@@ -46,12 +46,13 @@ export async function handleRegisterSalesSessionParticipants(deps: Deps, request
       : remoteBeforeRegistration;
     const remoteParticipants = remoteAfterRegistration.participants;
     const contactsNeedingMapping = contacts.filter((contact) => !persistedContactIds.has(contact!.id));
-    const contactEmailCounts = countByNormalizedEmail(contactsNeedingMapping);
+    const contactEmailCounts = countByNormalizedEmail(contacts);
+    const persistedParticipantIds = new Set(persisted.map((participant) => participant.cloudShareParticipantId));
     const remoteParticipantsByEmail = groupByNormalizedEmail(remoteParticipants);
     const participantByContactId = new Map(contactsNeedingMapping.flatMap((contact) => {
       const email = contact!.email.toLowerCase();
       const candidates = remoteParticipantsByEmail.get(email) ?? [];
-      return contactEmailCounts.get(email) === 1 && candidates.length === 1 ? [[contact!.id, candidates[0]!] as const] : [];
+      return contactEmailCounts.get(email) === 1 && candidates.length === 1 && !persistedParticipantIds.has(candidates[0]!.id) ? [[contact!.id, candidates[0]!] as const] : [];
     }));
     if (participantByContactId.size !== contactsNeedingMapping.length) {
       const selectedEmails = new Set(contactsNeedingMapping.map((contact) => contact!.email.toLowerCase()));
