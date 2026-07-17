@@ -1,4 +1,4 @@
-import type { SalesExperienceType } from "./item";
+import type { SalesExperienceType } from "./sales-experience-type";
 
 /** Durable portal correlation for one direct CloudShare Sales Experience. */
 export interface SalesDemoSession {

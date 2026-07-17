@@ -100,7 +100,6 @@ model Item {
   policyId               String
   policyName             String
   regionsJson            String
-  salesExperienceType    String
   defaultDurationMinutes Int
   status                 String
   archivedAt             DateTime?

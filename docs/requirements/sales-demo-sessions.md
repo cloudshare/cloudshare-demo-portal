@@ -2,7 +2,7 @@
 
 Issue #347 adds the first direct Sales Enablement delivery operation. An authenticated
 Certalis Sales Admin creates one immutable local Sales Enablement Session for one active
-Customer-scoped Opportunity and one active Demo Item. It maps one-to-one to a direct
+Customer-scoped Opportunity and one active reusable Item. It maps one-to-one to a direct
 CloudShare v4 Sales Experience; it does not add participants or send invitations.
 
 ## Portal contract
@@ -11,9 +11,10 @@ CloudShare v4 Sales Experience; it does not add participants or send invitations
   `/api/sales/demo-sessions` remains a legacy-compatible alias while existing persisted history is
   migrated safely.
 - Request: `opportunityId`, `itemId`, timezone-less ISO `start` and mandatory `end`, an
-  explicit CloudShare `timeZone`, and optional editable `type` (`demo`, `poc`, `pov`,
-  `trial`). The UI starts at now or a scheduled local CloudShare date-time and pre-fills
-  `end` from the selected Item Policy storage lease.
+  explicit CloudShare `timeZone`, and the Session-level `type` (`demo`, `poc`, `pov`,
+  `trial`, defaulting to `demo` for legacy callers). An Item does not own a delivery type;
+  the UI starts at now or a scheduled local CloudShare date-time and pre-fills `end` from
+  the selected Item Policy storage lease.
 - Selecting an Item infers its Project and performs a fresh, non-cached active Project-member
   read. The Sales Admin selects the Main Sales Pro for this Session; the handler repeats that
   lookup immediately before `POST /sales` and blocks creation if the selection is absent or inactive.
@@ -36,6 +37,16 @@ CloudShare v4 Sales Experience; it does not add participants or send invitations
   correlated Customer-scoped audit and redacted diagnostic evidence. If CloudShare
   creates an Experience but the portal cannot persist its correlation, the operation is
   reported as needing support rather than silently retrying and risking a duplicate.
+- The Sessions operational read model remains visible after refresh and supports all,
+  account-filtered, Opportunity-filtered, upcoming, in-progress, ended, provisioning, and
+  needs-attention views. `Verify CloudShare status` is a non-mutating documented
+  `GET /sales/{id}` check for an active persisted provider correlation: it records a
+  redacted diagnostic and confirms the provider record, but deliberately does not alter
+  the schedule-derived lifecycle. Provisioning and needs-attention records state why this
+  verification is unavailable.
+- The documented CloudShare v3 timezone list is cached. Normal UI does not expose cache
+  freshness jargon; a warning appears only for a stale fallback. The Sales Admin's last
+  selected timezone and Session-level experience type are retained as preferences.
 
 ## Deliberately deferred
 

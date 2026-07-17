@@ -3,13 +3,14 @@ import type { AuditRepository } from "@/domain/audit-trail";
 import type { CloudShareConnectionRepository, CloudShareClientFactory } from "@/domain/cloudshare-connection";
 import type { DiagnosticActor, DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { SalesDemoSessionRepository } from "@/domain/sales-demo-session";
+import { isSalesSessionVerificationEligible } from "@/domain/sales-session-verification";
 import { createCloudShareSalesDelivery, type SalesDelivery } from "@/integrations/cloudshare/sales-delivery";
 
 export async function handleReconcileSalesSession(deps: { sessions: Pick<SalesDemoSessionRepository, "findById" | "updateOperationalState">; connections: Pick<CloudShareConnectionRepository, "findByCustomerId">; cloudshare?: Pick<CloudShareClientFactory, "forConnection">; deliveryFactory?: { forConnection(connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>): SalesDelivery }; diagnostics?: DiagnosticRecorder; audit?: Pick<AuditRepository, "write"> }, request: { customerId: string; sessionId: string; actor: DiagnosticActor }) {
   if (!deps.sessions.findById || !deps.sessions.updateOperationalState) return { status: 503, body: { error: "Sales reconciliation is unavailable." } };
   const [session, connection] = await Promise.all([deps.sessions.findById(request.customerId, request.sessionId), deps.connections.findByCustomerId(request.customerId)]);
   if (!session || !connection) return { status: 404, body: { error: "Sales Session or CloudShare Connection was not found." } };
-  if (session.operationalStatus !== "active" || session.cloudShareSalesExperienceId.startsWith("pending:")) return { status: 409, body: { error: "Only active Sales Sessions with a provisioned CloudShare Experience can be reconciled." } };
+  if (!isSalesSessionVerificationEligible(session)) return { status: 409, body: { error: "Only active Sales Sessions with a provisioned CloudShare Experience can be reconciled." } };
   const correlationId = randomUUID();
   let remote: Awaited<ReturnType<SalesDelivery["readSession"]>> | undefined;
   try {

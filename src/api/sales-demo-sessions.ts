@@ -3,10 +3,12 @@ import { z } from "zod";
 import type { AuditRepository } from "@/domain/audit-trail";
 import type { CloudShareClientFactory, CloudShareConnectionRepository } from "@/domain/cloudshare-connection";
 import type { DiagnosticActor, DiagnosticRecorder } from "@/domain/diagnostic-log";
-import type { ItemRepository, SalesExperienceType } from "@/domain/item";
+import type { ItemRepository } from "@/domain/item";
+import type { SalesExperienceType } from "@/domain/sales-experience-type";
 import type { SalesDemoSession, SalesDemoSessionRepository } from "@/domain/sales-demo-session";
 import type { SalesRecordRepository } from "@/domain/sales-records";
 import { isValidCloudShareWallClock } from "@/domain/cloudshare-wall-clock";
+import { isSalesSessionVerificationEligible } from "@/domain/sales-session-verification";
 import { DEFAULT_SALES_SESSION_NAME_TEMPLATE, renderSalesSessionName } from "@/domain/sales-session-name";
 import type { SalesSessionConfigurationRepository } from "@/domain/sales-session-configuration";
 import type { SalesTimezoneCacheRepository } from "@/domain/sales-timezones";
@@ -19,7 +21,7 @@ const bodySchema = z.object({
   start: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, "Start must be ISO local date-time."),
   end: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, "End must be ISO local date-time."),
   salesProEmail: z.string().trim().email("Select an active Project member as the Sales Pro."),
-  timeZone: z.string().trim().min(1).max(100), type: z.enum(["demo", "poc", "pov", "trial"]).optional(), sessionNameTemplate: z.string().trim().min(1).max(160).optional(),
+  timeZone: z.string().trim().min(1).max(100), type: z.enum(["demo", "poc", "pov", "trial"]).default("demo"), sessionNameTemplate: z.string().trim().min(1).max(160).optional(),
 });
 type SessionBody = z.infer<typeof bodySchema>;
 const response = (status: number, body: Record<string, unknown>) => ({ status, body });
@@ -56,11 +58,12 @@ export interface PortalSalesEnablementSession {
   readonly salesProDisplayName: string;
   readonly sessionName: string;
   readonly revision: number;
+  readonly verificationEligible: boolean;
   readonly createdAt: string;
 }
 
 export function toPortalSalesEnablementSession(session: SalesDemoSession): PortalSalesEnablementSession {
-  return { id: session.id, opportunityId: session.opportunityId, itemId: session.itemId, type: session.type, start: session.start, end: session.end, timeZone: session.timeZone, salesProDisplayName: session.salesProDisplayName, sessionName: session.sessionName ?? "Sales Enablement Session", revision: session.revision ?? 1, createdAt: session.createdAt.toISOString() };
+  return { id: session.id, opportunityId: session.opportunityId, itemId: session.itemId, type: session.type, start: session.start, end: session.end, timeZone: session.timeZone, salesProDisplayName: session.salesProDisplayName, sessionName: session.sessionName ?? "Sales Enablement Session", revision: session.revision ?? 1, verificationEligible: isSalesSessionVerificationEligible(session), createdAt: session.createdAt.toISOString() };
 }
 
 /** API-first orchestration for a single Customer-scoped Sales Enablement Session.
@@ -113,7 +116,7 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     const selectedSalesPro = memberRead.members.find((member) => member.email.toLowerCase() === parsed.data.salesProEmail.toLowerCase());
     if (!selectedSalesPro) throw new SalesProjectMemberSelectionError("The selected Sales Pro is no longer an active member of this Item's CloudShare Project.", memberRead);
     const now = (deps.now ?? (() => new Date()))();
-    const reservation: SalesDemoSession = { id, customerId: request.customerId, opportunityId: opportunity.id, itemId: item.id, cloudShareSalesExperienceId: `pending:${id}`, externalId, type: parsed.data.type ?? item.salesExperienceType, start: parsed.data.start, end: parsed.data.end, timeZone: parsed.data.timeZone, salesProEmail: selectedSalesPro.email, salesProDisplayName: selectedSalesPro.displayName, registrationType: "registeredParticipantsOnly", sendInvitations: "dontSend", sessionName, revision, operationalStatus: "provisioning", createdAt: now };
+    const reservation: SalesDemoSession = { id, customerId: request.customerId, opportunityId: opportunity.id, itemId: item.id, cloudShareSalesExperienceId: `pending:${id}`, externalId, type: parsed.data.type, start: parsed.data.start, end: parsed.data.end, timeZone: parsed.data.timeZone, salesProEmail: selectedSalesPro.email, salesProDisplayName: selectedSalesPro.displayName, registrationType: "registeredParticipantsOnly", sendInvitations: "dontSend", sessionName, revision, operationalStatus: "provisioning", createdAt: now };
     // Prisma-backed repositories reserve the unique revision before CloudShare.
     // A collision therefore returns before any external Experience is created.
     if (deps.sessions.updateOperationalState) {
@@ -157,15 +160,15 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     const integrationSurface = memberSelectionFailure || memberReadFailure ? "cloudshare.v3.project_members_gui" : itemValidationFailure || itemReadFailure ? "cloudshare.v3.sales_item_resources" : "cloudshare.v4.sales";
     const failureMode = memberReadFailure ? "project_member_read" : memberSelectionFailure ? "selected_sales_pro_inactive" : validationFailure ? "main_sales_pro_validation" : itemValidationFailure ? "item_resource_drift" : itemReadFailure ? "item_resource_read" : "cloudshare_create";
     await Promise.allSettled([
-      evidence(deps, request, correlationId, { id, customerId: request.customerId, opportunityId: opportunity.id, itemId: item.id, cloudShareSalesExperienceId: "unprovisioned", externalId, type: parsed.data.type ?? item.salesExperienceType, start: parsed.data.start, end: parsed.data.end, timeZone: parsed.data.timeZone, salesProEmail: parsed.data.salesProEmail, salesProDisplayName: "unresolved", registrationType: "registeredParticipantsOnly", sendInvitations: "dontSend", createdAt: new Date() }, "failure", memberReadFailure ? "CloudShare could not read active Project members for the selected Sales Pro" : memberSelectionFailure ? "Selected Sales Pro is not active in this CloudShare Project" : validationFailure ? "CloudShare main Sales Pro validation failed" : itemValidationFailure ? "Catalogue Item is stale against CloudShare resources" : itemReadFailure ? "CloudShare could not fully revalidate this Catalogue Item" : "CloudShare Sales Experience creation failed", causeEvidence, { integrationSurface, failureMode, error: error instanceof Error ? error.message : String(error) }),
+      evidence(deps, request, correlationId, { id, customerId: request.customerId, opportunityId: opportunity.id, itemId: item.id, cloudShareSalesExperienceId: "unprovisioned", externalId, type: parsed.data.type, start: parsed.data.start, end: parsed.data.end, timeZone: parsed.data.timeZone, salesProEmail: parsed.data.salesProEmail, salesProDisplayName: "unresolved", registrationType: "registeredParticipantsOnly", sendInvitations: "dontSend", createdAt: new Date() }, "failure", memberReadFailure ? "CloudShare could not read active Project members for the selected Sales Pro" : memberSelectionFailure ? "Selected Sales Pro is not active in this CloudShare Project" : validationFailure ? "CloudShare main Sales Pro validation failed" : itemValidationFailure ? "Catalogue Item is stale against CloudShare resources" : itemReadFailure ? "CloudShare could not fully revalidate this Catalogue Item" : "CloudShare Sales Experience creation failed", causeEvidence, { integrationSurface, failureMode, error: error instanceof Error ? error.message : String(error) }),
       deps.audit?.write({ id: randomUUID(), occurredAt: (deps.now ?? (() => new Date()))(), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.created", subjectType: "sales_demo_session", subjectId: id, outcome: "failure", correlationId, details: { externalId, opportunityId: opportunity.id, itemId: item.id, failureMode, integrationSurface }, error: error instanceof Error ? error.message : "Unknown CloudShare failure" }),
     ]);
-    return response(memberSelectionFailure || validationFailure || itemValidationFailure ? 422 : 502, { error: memberReadFailure ? "CloudShare could not retrieve active Project members. Review support diagnostics before retrying." : memberSelectionFailure ? "The selected Sales Pro is no longer an active Project member. Select a current Sales Pro and try again." : validationFailure ? "CloudShare rejected the selected Sales Pro. Review support diagnostics." : itemValidationFailure ? "This Demo Item no longer matches its CloudShare resources. Refresh the Item before provisioning." : itemReadFailure ? "CloudShare could not fully revalidate this Demo Item. Review support diagnostics before retrying." : "CloudShare could not create the Sales Experience. Review support diagnostics.", correlationId });
+    return response(memberSelectionFailure || validationFailure || itemValidationFailure ? 422 : 502, { error: memberReadFailure ? "CloudShare could not retrieve active Project members. Review support diagnostics before retrying." : memberSelectionFailure ? "The selected Sales Pro is no longer an active Project member. Select a current Sales Pro and try again." : validationFailure ? "CloudShare rejected the selected Sales Pro. Review support diagnostics." : itemValidationFailure ? "This Item no longer matches its CloudShare resources. Refresh the Item before provisioning." : itemReadFailure ? "CloudShare could not fully revalidate this Item. Review support diagnostics before retrying." : "CloudShare could not create the Sales Experience. Review support diagnostics.", correlationId });
   }
 }
 
-function toDeliveryInput(input: SessionBody, item: { name: string; project: { id: string }; blueprints: readonly { id: string }[]; policy: { id: string }; regions: readonly { id: string }[]; salesExperienceType: SalesExperienceType }, opportunity: string, externalId: string, passphrase: string, mainSalesProEmail: string, sessionName: string) {
-  return { name: sessionName, type: input.type ?? item.salesExperienceType, projectId: item.project.id, blueprintIds: item.blueprints.map((blueprint) => blueprint.id), regionIds: item.regions.map((region) => region.id), policyId: item.policy.id, opportunity, externalId, passphrase, start: input.start, end: input.end, timeZone: input.timeZone, mainSalesProEmail, registrationType: "registeredParticipantsOnly" as const, sendInvitations: "dontSend" as const };
+function toDeliveryInput(input: SessionBody, item: { name: string; project: { id: string }; blueprints: readonly { id: string }[]; policy: { id: string }; regions: readonly { id: string }[] }, opportunity: string, externalId: string, passphrase: string, mainSalesProEmail: string, sessionName: string) {
+  return { name: sessionName, type: input.type, projectId: item.project.id, blueprintIds: item.blueprints.map((blueprint) => blueprint.id), regionIds: item.regions.map((region) => region.id), policyId: item.policy.id, opportunity, externalId, passphrase, start: input.start, end: input.end, timeZone: input.timeZone, mainSalesProEmail, registrationType: "registeredParticipantsOnly" as const, sendInvitations: "dontSend" as const };
 }
 function opaqueCloudShareId(value: string): string { return value.replaceAll("-", ""); }
 function isChronological(input: SessionBody): boolean { return input.end > input.start; }

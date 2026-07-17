@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { SalesExperienceType } from "@/domain/item";
+import type { SalesExperienceType } from "@/domain/sales-experience-type";
 import type { CloudShareClient, CloudShareDetailedResult, CloudShareRequestDiagnostics, CloudShareResponseDiagnostics } from "./client";
 
 /** Already-sanitized data returned by the client boundary. Keep the complete

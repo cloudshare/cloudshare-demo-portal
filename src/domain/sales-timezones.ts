@@ -1,4 +1,4 @@
-import type { SalesExperienceType } from "./item";
+import { isSalesExperienceType, type SalesExperienceType } from "./sales-experience-type";
 
 export interface SalesTimezone { readonly id: string; readonly name: string; }
 export interface SalesTimezoneCacheEntry { readonly customerId: string; readonly timezones: readonly SalesTimezone[]; readonly fetchedAt: Date; }
@@ -8,4 +8,4 @@ export interface SalesAdminPreferenceRepository { find(userId: string): Promise<
 
 export const SALES_TIMEZONE_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 export function isSalesTimezoneCacheFresh(entry: SalesTimezoneCacheEntry, now: Date): boolean { return now.getTime() - entry.fetchedAt.getTime() < SALES_TIMEZONE_CACHE_TTL_MS; }
-export function isSalesExperienceType(value: unknown): value is SalesExperienceType { return value === "demo" || value === "poc" || value === "pov" || value === "trial"; }
+export { isSalesExperienceType };

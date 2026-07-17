@@ -127,7 +127,7 @@ describe("Sales Enablement Session API handler", () => {
     const revalidate = vi.fn().mockRejectedValue(new SalesItemProvisioningReadError("Could not read Item", [{ data: {}, request: { method: "GET", path: "/projects/project-1/blueprints" }, response: { status: 200 }, integrationSurface: "cloudshare.v3.projects.blueprints" }], cause));
     const result = await handleCreateSalesDemoSession({ records, items: { findById: vi.fn().mockResolvedValue(item) }, sessions: { save: vi.fn(), listByOpportunity: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSession: vi.fn() }) }, projectMembers, itemProvisioningValidator: { revalidate }, diagnostics: { record: vi.fn().mockRejectedValue(new Error("diagnostics unavailable")) }, audit: { write: vi.fn().mockRejectedValue(new Error("audit unavailable")) } }, { customerId: "certalis", actor: admin, body: { opportunityId: "opp-1", itemId: "item-1", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } });
 
-    expect(result).toMatchObject({ status: 502, body: { error: "CloudShare could not fully revalidate this Demo Item. Review support diagnostics before retrying.", correlationId: expect.any(String) } });
+    expect(result).toMatchObject({ status: 502, body: { error: "CloudShare could not fully revalidate this Item. Review support diagnostics before retrying.", correlationId: expect.any(String) } });
   });
 
   it("returns a created needs-attention response if evidence fails after local persistence", async () => {

@@ -1,5 +1,6 @@
 import type { SalesDemoSession } from "./sales-demo-session";
 import { cloudShareWallClockToInstant } from "./cloudshare-wall-clock";
+import { isSalesSessionVerificationEligible } from "./sales-session-verification";
 
 export type SalesSessionLifecycle = "all" | "upcoming" | "in_progress" | "ended" | "provisioning" | "needs_attention";
 
@@ -17,6 +18,8 @@ export interface OperationalSalesSession {
   readonly createdAt: string;
   readonly lifecycle: Exclude<SalesSessionLifecycle, "all">;
   readonly needsAttention: boolean;
+  /** Verification is a safe read only for a persisted, active provider correlation. */
+  readonly verificationEligible: boolean;
 }
 
 /** The Operations read-model seam. It deliberately derives lifecycle from the
@@ -38,7 +41,7 @@ export function buildOperationalSalesSessions(
       : start > now
         ? "upcoming" as const
         : end <= now ? "ended" as const : "in_progress" as const;
-    return { id: session.id, opportunityId: session.opportunityId, itemId: session.itemId, type: session.type, start: session.start, end: session.end, timeZone: session.timeZone, salesProDisplayName: session.salesProDisplayName, sessionName: session.sessionName ?? "Sales Enablement Session", revision: session.revision ?? 1, createdAt: session.createdAt.toISOString(), lifecycle, needsAttention: lifecycle === "needs_attention" };
+    return { id: session.id, opportunityId: session.opportunityId, itemId: session.itemId, type: session.type, start: session.start, end: session.end, timeZone: session.timeZone, salesProDisplayName: session.salesProDisplayName, sessionName: session.sessionName ?? "Sales Enablement Session", revision: session.revision ?? 1, createdAt: session.createdAt.toISOString(), lifecycle, needsAttention: lifecycle === "needs_attention", verificationEligible: isSalesSessionVerificationEligible(session) };
   });
   return views.filter((session) => filter === "all" || session.lifecycle === filter);
 }

@@ -102,6 +102,8 @@ describe("SalesWorkspace interaction", () => {
     expect(screen.queryByRole("button", { name: /Previous opportunities|Next opportunities/ })).toBeNull();
     await user.click(screen.getByRole("option", { name: "Acme - North renewal" }));
     expect(mockRouter.push).toHaveBeenLastCalledWith("/sales?tab=sessions&opportunityId=opp-north", { scroll: false });
+    await waitFor(() => expect(screen.getByRole("status", { name: "Session name preview" }).textContent).toContain("Acme - North renewal (1) - Item"));
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("search=Acme+-+North+renewal"))).toBe(false);
   });
 
   it("closes a Sales selector on blur and clears both Account and Opportunity filters", async () => {
@@ -119,7 +121,7 @@ describe("SalesWorkspace interaction", () => {
 
     await user.click(await screen.findByRole("combobox", { name: "Account" }));
     expect(await screen.findByRole("listbox", { name: "Account results" })).not.toBeNull();
-    await user.click(screen.getByText("Timezone catalogue: fresh"));
+    await user.click(screen.getByLabelText("Time zone"));
     expect(screen.queryByRole("listbox", { name: "Account results" })).toBeNull();
 
     await chooseSearchableOption(user, "Account", "Acme");
@@ -472,7 +474,7 @@ describe("SalesWorkspace interaction", () => {
     });
     render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
     expect((await screen.findByRole("region", { name: "Sales Enablement Session operations" })).textContent).toContain("in progress");
-    const timezone = await screen.findByRole("combobox", { name: "CloudShare time zone" });
+    const timezone = await screen.findByRole("combobox", { name: "Time zone" });
     await user.clear(timezone); await user.type(timezone, "Europe/London");
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/sales/timezones", expect.objectContaining({ method: "PUT", body: expect.stringContaining("Europe/London") })));
   });
@@ -484,7 +486,7 @@ describe("SalesWorkspace interaction", () => {
       if (path === "/api/sales/items") return json({ activeItems: [] });
       if (path === "/api/sales/timezones" && !init?.method) return json({ timezones: [{ id: "UTC", name: "UTC" }], preference: {} });
       if (path === "/api/sales/timezones" && init?.method === "PUT") return new Response(null, { status: 204 });
-      if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: [{ id: "persisted-1", opportunityId: "opp-1", itemId: "item-1", type: "demo", start: "2026-08-15T08:00", end: "2026-08-15T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-15T00:00:00Z", lifecycle: "needs_attention", needsAttention: true }] });
+      if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: [{ id: "persisted-1", opportunityId: "opp-1", itemId: "item-1", type: "demo", start: "2026-08-15T08:00", end: "2026-08-15T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-15T00:00:00Z", lifecycle: "ended", verificationEligible: true }] });
       if (path === "/api/sales/enablement-sessions/persisted-1/reconcile" && init?.method === "POST") return json({ error: "CloudShare could not reconcile this Sales Session.", correlationId: "corr-reconcile-1" }, 502);
       if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [], total: 0 });
       return json({ error: `Unexpected request ${path}` }, 500);
@@ -493,13 +495,47 @@ describe("SalesWorkspace interaction", () => {
     await screen.findByText(/persisted-1|DEMO/);
     expect(screen.queryByRole("button", { name: "Edit name" })).toBeNull();
 
-    expect(screen.getByText(/Check CloudShare status reads the persisted Sales Experience/)).not.toBeNull();
-    await user.click(screen.getByRole("button", { name: "Check CloudShare status" }));
+    expect(screen.getByText(/Verify CloudShare status reads the persisted Sales Experience/)).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: "Verify CloudShare status" }));
 
     expect((await screen.findByRole("alert")).textContent).toContain("CloudShare could not reconcile this Sales Session.");
     const support = screen.getByRole("button", { name: "Open support diagnostics (corr-reconcile-1)" });
     await user.click(support);
     expect(mockRouter.push).toHaveBeenLastCalledWith("/sales?tab=support&correlationId=corr-reconcile-1");
+  });
+
+  it("explains why CloudShare verification is unavailable for provisioning and needs-attention Sessions", async () => {
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const path = String(input);
+      if (path === "/api/sales/items") return json({ activeItems: [] });
+      if (path === "/api/sales/timezones" && !init?.method) return json({ timezones: [{ id: "UTC", name: "UTC" }], preference: {} });
+      if (path === "/api/sales/timezones" && init?.method === "PUT") return new Response(null, { status: 204 });
+      if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: [{ id: "provisioning-1", opportunityId: "opp-1", itemId: "item-1", type: "demo", start: "2026-07-15T08:00", end: "2026-07-15T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-15T00:00:00Z", lifecycle: "provisioning", verificationEligible: false }, { id: "attention-1", opportunityId: "opp-2", itemId: "item-1", type: "demo", start: "2026-07-15T08:00", end: "2026-07-15T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-15T00:00:00Z", lifecycle: "needs_attention", verificationEligible: false }] });
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [], total: 0 });
+      return json({ error: `Unexpected request ${path}` }, 500);
+    });
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    expect(await screen.findAllByText("CloudShare verification is unavailable while this session is provisioning or needs attention.")).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: "Verify CloudShare status" })).toBeNull();
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/reconcile"))).toBe(false);
+  });
+
+  it("confirms a CloudShare status verification without claiming that the scheduled lifecycle changed", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const path = String(input);
+      if (path === "/api/sales/items") return json({ activeItems: [] });
+      if (path === "/api/sales/timezones" && !init?.method) return json({ timezones: [{ id: "UTC", name: "UTC" }], preference: {} });
+      if (path === "/api/sales/timezones" && init?.method === "PUT") return new Response(null, { status: 204 });
+      if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: [{ id: "persisted-verified", opportunityId: "opp-1", itemId: "item-1", type: "demo", start: "2026-07-15T08:00", end: "2026-07-15T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-15T00:00:00Z", lifecycle: "ended", verificationEligible: true }] });
+      if (path === "/api/sales/enablement-sessions/persisted-verified/reconcile" && init?.method === "POST") return json({ correlationId: "corr-verified-1", operationalStatus: "active" });
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [], total: 0 });
+      return json({ error: `Unexpected request ${path}` }, 500);
+    });
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    await user.click(await screen.findByRole("button", { name: "Verify CloudShare status" }));
+    expect((await screen.findByText("CloudShare status verified. The scheduled lifecycle is unchanged.")).textContent).toContain("CloudShare status verified. The scheduled lifecycle is unchanged.");
+    expect(screen.getByRole("button", { name: "Open support diagnostics (corr-verified-1)" })).not.toBeNull();
   });
 
   it("parses a failed eligible name edit and links its correlation to Sales Support", async () => {
