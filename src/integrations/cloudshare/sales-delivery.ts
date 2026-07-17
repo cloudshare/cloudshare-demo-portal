@@ -94,7 +94,13 @@ const salesParticipantSchema = z.object({
   invitationStatus: z.enum(["sent", "notSent"]).default("notSent"), invitedBy: z.string().email().nullable().optional().default(null),
   participationStatus: z.enum(["pending", "inProgress", "concluded"]).default("pending"), firstJoined: z.string().nullable().optional().default(null), envStatus: z.string().optional(), envId: z.string().nullable().optional().default(null),
 }).passthrough();
-const participantsEnvelopeSchema = z.object({ participants: z.array(salesParticipantSchema) });
+/** The initial v4 export describes `participants`; live Sales reads return
+ * the normal paged collection `{ count, items }`. Accept both during the
+ * product documentation transition and normalize before leaving this adapter. */
+const participantsEnvelopeSchema = z.union([
+  z.object({ participants: z.array(salesParticipantSchema) }),
+  z.object({ count: z.number().int().nonnegative(), items: z.array(salesParticipantSchema) }),
+]);
 
 const mutableSalesExperienceFields = ["name", "type", "projectId", "teamId", "blueprintIds", "allowParticipantsSwitchSteps", "cloudshareRegionIds", "awsCloudRegion", "azureCloudRegion", "googleCloudProviderRegion", "googleCloudProviderZone", "policyId", "opportunity", "mainSalesPro", "additionalSalesPros", "start", "end", "timeZone", "registrationType", "passphrase", "description", "labels", "externalId", "allowMultipleEnvironmentActivations", "sendInvitations", "emailDomainBlocklist", "blockFreeEmailDomains", "customFields", "useCustomInvitationEmail", "preConfigureParticipantEnvironments", "sharedEnvBlueprintId", "sharedEnvPolicyId", "isSharedLabViewAccessEnabled", "allowAudioVideo"] as const;
 
@@ -170,7 +176,8 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
     },
     async listParticipants(salesExperienceId) {
       const { data, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants`, schema: participantsEnvelopeSchema });
-      return { participants: data.participants.map((participant) => ({ ...participant, environmentId: participant.envId })) as SalesParticipant[], ...evidence };
+      const participants = "participants" in data ? data.participants : data.items;
+      return { participants: participants.map((participant) => ({ ...participant, environmentId: participant.envId })) as SalesParticipant[], ...evidence };
     },
     async inviteParticipants(salesExperienceId, participantIds) {
       const { evidence } = await detailed({ method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants/invite`, body: participantIds, allowEmptyResponse: true, schema: z.void() });

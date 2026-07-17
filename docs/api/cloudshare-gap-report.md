@@ -1787,6 +1787,49 @@ will replace this isolated GUI adapter with a supported contract.
 
 ---
 
+## GAP-29 — Sales participant-list response envelope differs from the published v4 export
+
+| Field | Detail |
+|---|---|
+| **Status** | Confirmed — portal adapter normalized both representations |
+| **Verified live** | Yes — Certalis Sales participant-monitoring read, 2026-07-17 |
+
+**Observed behaviour**
+
+The published v4 export describes `GET /sales/{id}/participants` as an object
+containing `participants`. During #348 human QA, the live Certalis Sales API instead
+returned the paged collection envelope `{ count, items }`. The previous strict adapter
+schema rejected that otherwise valid response before participant monitoring could be
+reconciled.
+
+**Impact on sales enablement**
+
+The portal could not display invitation or participation monitoring and emitted a
+correlated reconciliation failure. The Sales Support aggregate also initially omitted
+the `sales-session-participants` diagnostic source, making that failure inaccessible
+from its supplied correlation link.
+
+**Portal mitigation**
+
+`SalesDelivery.listParticipants` now accepts either the published `{ participants }`
+shape or the observed `{ count, items }` shape and normalizes it at the typed
+CloudShare boundary. Participant and environment correlation values remain
+server-only; browser projections still exclude them. Sales Support includes the
+participant reconciliation source in both direct, Customer-scoped filtered reads and
+the aggregate correlation feed.
+
+**Action required**
+
+CloudShare should reconcile the v4 OpenAPI definition for
+`GET /sales/{id}/participants` with the live paged response, including pagination
+semantics and the role of `count`.
+
+**Code reference:** `src/integrations/cloudshare/sales-delivery.ts`,
+`src/api/sales-diagnostics.ts`,
+`docs/api/assets/cloudshare-public-api-v4-2026-07-10.json`
+
+---
+
 ## GAP-N — Short descriptive title
 
 | Field | Detail |

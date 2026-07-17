@@ -33,6 +33,20 @@ describe("CloudShare Sales Delivery", () => {
       allowEmptyResponse: true,
     }));
   });
+  it("accepts the live count/items participant-list envelope without exposing a participant URL", async () => {
+    const participant = { id: "participant-1", firstName: "Casey", lastName: "Example", email: "casey@example.test", invitationStatus: "sent", invitedBy: null, participationStatus: "inProgress", firstJoined: "2026-07-17T09:05:00Z", envStatus: "Running", envId: "server-only-environment-1", accessLink: "https://bearer.example.test/invite" };
+    const liveEnvelope = { count: 1, items: [participant] };
+    const requestV4Detailed = vi.fn().mockImplementation(async (spec) => ({
+      data: spec.schema.parse(liveEnvelope),
+      request: { method: "GET", path: "/sales/sales-1/participants" },
+      response: { status: 200, body: liveEnvelope },
+    }));
+    const delivery = createCloudShareSalesDelivery({ requestV4Detailed } as never);
+
+    await expect(delivery.listParticipants("sales-1")).resolves.toMatchObject({
+      participants: [expect.objectContaining({ id: "participant-1", environmentId: "server-only-environment-1" })],
+    });
+  });
   it("uses documented v4 GET /sales/{id} only for reconciliation", async () => {
     const requestV4 = vi.fn().mockResolvedValue({ id: "sales-1", status: "active" });
     const delivery = createCloudShareSalesDelivery({ requestV4, requestV3: vi.fn(), requestV3Text: vi.fn() });
