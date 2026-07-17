@@ -157,6 +157,42 @@ describe("createCloudShareClient — v4", () => {
     expect(JSON.stringify((error as { context?: unknown }).context)).not.toContain(participantEmail);
   });
 
+  it("retains actionable Sales Participant Error_Object fields without participant-sensitive values", async () => {
+    const participantEmail = "participant-private@example.test";
+    const providerParticipantId = "PTYieGdBA4HfAyfI2LhbcxhQ2";
+    const providerInviteUrl = "https://use.cloudshare.com/Ent/Login.aspx?token=private-invite";
+    const { http } = capturingHttp({
+      status: 400,
+      body: JSON.stringify({
+        email: [`${participantEmail} is not accepted.`],
+        participants: [`${providerParticipantId} cannot use ${providerInviteUrl}.`],
+      }),
+    });
+    const client = clientWith(http);
+
+    const error = await client.requestV4({
+      method: "POST",
+      path: "/sales/sales-1/participants/invite",
+      body: [providerParticipantId],
+      schema: z.void(),
+    }).catch((failure) => failure);
+
+    expect(error).toMatchObject({
+      name: "CloudShareRequestError",
+      status: 400,
+      context: {
+        responseBody: {
+          errorFields: ["email", "participants"],
+          errorMessageCount: 2,
+        },
+      },
+    });
+    const evidence = JSON.stringify((error as { context?: unknown }).context);
+    expect(evidence).not.toContain(participantEmail);
+    expect(evidence).not.toContain(providerParticipantId);
+    expect(evidence).not.toContain(providerInviteUrl);
+  });
+
   it("redacts training and Sales Experience passphrases from trace request bodies", async () => {
     const trace = vi.fn();
     const { http } = capturingHttp(ok({ id: "training-1" }));

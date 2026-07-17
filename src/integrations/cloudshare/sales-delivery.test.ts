@@ -62,7 +62,7 @@ describe("CloudShare Sales Delivery", () => {
     expect(requestV4Detailed).toHaveBeenNthCalledWith(1, expect.objectContaining({ query: { offset: "0", limit: "100" } }));
     expect(requestV4Detailed).toHaveBeenNthCalledWith(2, expect.objectContaining({ query: { offset: "1", limit: "100" } }));
 
-    const contradictory = createCloudShareSalesDelivery({ requestV4Detailed: vi.fn().mockResolvedValue({ data: { count: 2, items: [first] }, request: { method: "GET", path: "/sales/sales-1/participants" }, response: { status: 200, body: { count: 2, items: [first] } } }) } as never);
+    const contradictory = createCloudShareSalesDelivery({ requestV4Detailed: vi.fn().mockResolvedValue({ data: { count: 0, items: [first] }, request: { method: "GET", path: "/sales/sales-1/participants" }, response: { status: 200, body: { count: 0, items: [first] } } }) } as never);
     await expect(contradictory.listParticipants("sales-1")).rejects.toThrow("participant page count");
   });
   it("fails closed when a single documented participant page repeats an ID", async () => {
@@ -70,7 +70,7 @@ describe("CloudShare Sales Delivery", () => {
     const delivery = createCloudShareSalesDelivery({ requestV4Detailed: vi.fn().mockResolvedValue({ data: { count: 2, items: [repeated, repeated] }, request: { method: "GET", path: "/sales/sales-1/participants", query: { offset: "0", limit: "100" } }, response: { status: 200, body: { count: 2, items: [repeated, repeated] } } }) } as never);
 
     const error = await delivery.listParticipants("sales-1").catch((failure) => failure);
-    expect(error).toMatchObject({ name: "CloudShareResponseError", context: { status: 200, requestQuery: { offset: "0", limit: "100" }, responseBody: { participantCount: 2, pageCount: 1, pageOffsets: [0] } } });
+    expect(error).toMatchObject({ name: "CloudShareResponseError", context: { status: 200, requestQuery: { offset: "0", limit: "100" }, responseBody: { participantCount: 2, pageCount: 1, pageOffsets: [0] }, expectedCount: 2, returnedCount: 2, failureMode: "participant_page_duplicate_id" } });
     expect(JSON.stringify((error as { context?: unknown }).context)).not.toContain("casey@example.test");
   });
   it("paginates the documented count/participants envelope", async () => {

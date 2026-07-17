@@ -286,14 +286,33 @@ function salesParticipantTraceSummary(value: unknown): { readonly participantCou
   return { participantCount: 0 };
 }
 
+function salesParticipantErrorSummary(value: unknown): { readonly errorFields: readonly string[]; readonly errorMessageCount: number } {
+  let decoded = value;
+  if (typeof decoded === "string") {
+    const raw = decoded;
+    try { decoded = JSON.parse(raw); } catch { return { errorFields: [], errorMessageCount: raw.trim() ? 1 : 0 }; }
+  }
+  if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) {
+    return { errorFields: [], errorMessageCount: decoded === undefined || decoded === null ? 0 : 1 };
+  }
+  const entries = Object.entries(decoded as Record<string, unknown>);
+  return {
+    errorFields: entries.map(([field]) => field).sort(),
+    errorMessageCount: entries.reduce((count, [, messages]) => count + (Array.isArray(messages) ? messages.length : messages === undefined || messages === null ? 0 : 1), 0),
+  };
+}
+
 function sanitizeRequestEvidenceBody(body: string | undefined, requestPath: string): unknown {
   const sanitized = sanitizeBody(body);
   return isSalesParticipantPath(requestPath) ? salesParticipantTraceSummary(sanitized) : sanitized;
 }
 
-function sanitizeResponseEvidenceBody(body: string, requestPath: string): unknown {
+function sanitizeResponseEvidenceBody(body: string, requestPath: string, responseStatus: number): unknown {
   const sanitized = sanitizeResponseBodyValue(body, requestPath);
-  return isSalesParticipantPath(requestPath) ? salesParticipantTraceSummary(sanitized) : sanitized;
+  if (!isSalesParticipantPath(requestPath)) return sanitized;
+  return responseStatus >= 200 && responseStatus < 300
+    ? salesParticipantTraceSummary(sanitized)
+    : salesParticipantErrorSummary(sanitized);
 }
 
 function describeRequest(urlText: string): {
@@ -342,8 +361,8 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
         ...(requestQuery ? { requestQuery } : {}),
         requestHeaders: sanitizeHeaders(request.headers),
         ...(requestBody !== undefined ? { requestBody } : {}),
-        ...(isSalesParticipantPath(requestInfo.path) && fields?.responseBody !== undefined
-          ? { ...fields, responseBody: salesParticipantTraceSummary(fields.responseBody) }
+        ...(isSalesParticipantPath(requestInfo.path) && fields?.responseBody !== undefined && typeof fields.responseStatus === "number"
+          ? { ...fields, responseBody: fields.responseStatus >= 200 && fields.responseStatus < 300 ? salesParticipantTraceSummary(fields.responseBody) : salesParticipantErrorSummary(fields.responseBody) }
           : fields),
       },
     });
@@ -580,7 +599,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           requestHeaders: sanitizeHeaders(request.headers),
           requestBody: sanitizeRequestEvidenceBody(request.body, requestInfo.path),
           responseHeaders: sanitizeResponseHeaders(response.headers),
-          responseBody: sanitizeResponseEvidenceBody(response.body, requestInfo.path),
+          responseBody: sanitizeResponseEvidenceBody(response.body, requestInfo.path, response.status),
           network: response.network,
           tls: response.tls,
         };
@@ -632,7 +651,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
             requestHeaders: sanitizeHeaders(request.headers),
             requestBody: sanitizeRequestEvidenceBody(request.body, requestInfo.path),
             responseHeaders: sanitizeResponseHeaders(response.headers),
-            responseBody: sanitizeResponseEvidenceBody(response.body, requestInfo.path),
+            responseBody: sanitizeResponseEvidenceBody(response.body, requestInfo.path, response.status),
             network: response.network,
             tls: response.tls,
           },
@@ -652,7 +671,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
             requestHeaders: sanitizeHeaders(request.headers),
             requestBody: sanitizeRequestEvidenceBody(request.body, requestInfo.path),
             responseHeaders: sanitizeResponseHeaders(response.headers),
-            responseBody: sanitizeResponseEvidenceBody(response.body, requestInfo.path),
+            responseBody: sanitizeResponseEvidenceBody(response.body, requestInfo.path, response.status),
             network: response.network,
             tls: response.tls,
             issues: parsed.error.issues.map((i) => i.message),

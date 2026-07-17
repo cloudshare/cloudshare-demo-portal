@@ -187,7 +187,8 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
       const expectedCount = firstPage.count;
       const rows = [...firstPage.participants];
       const offsets = [0];
-      if (rows.length > expectedCount || hasDuplicateParticipantIds(rows)) throwParticipantPageContradiction(first.evidence, expectedCount, rows.length, offsets);
+      if (rows.length > expectedCount) throwParticipantPageFailure(first.evidence, expectedCount, rows.length, offsets, "participant_page_count_contradiction");
+      if (hasDuplicateParticipantIds(rows)) throwParticipantPageFailure(first.evidence, expectedCount, rows.length, offsets, "participant_page_duplicate_id");
       const participantIds = new Set(rows.map((participant) => participant.id));
       let evidence = first.evidence;
       while (rows.length < expectedCount) {
@@ -195,9 +196,9 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
         const page = await detailed({ method: "GET", path, query: { offset: String(offset), limit: String(PARTICIPANT_PAGE_LIMIT) }, schema: participantsEnvelopeSchema });
         const normalizedPage = participantPage(page.data);
         offsets.push(offset);
-        if (normalizedPage.count !== expectedCount || normalizedPage.participants.length === 0 || rows.length + normalizedPage.participants.length > expectedCount || hasDuplicateParticipantIds(normalizedPage.participants) || normalizedPage.participants.some((participant) => participantIds.has(participant.id))) {
-          throwParticipantPageContradiction(page.evidence, expectedCount, rows.length + normalizedPage.participants.length, offsets);
-        }
+        const returnedCount = rows.length + normalizedPage.participants.length;
+        if (hasDuplicateParticipantIds(normalizedPage.participants) || normalizedPage.participants.some((participant) => participantIds.has(participant.id))) throwParticipantPageFailure(page.evidence, expectedCount, returnedCount, offsets, "participant_page_duplicate_id");
+        if (normalizedPage.count !== expectedCount || normalizedPage.participants.length === 0 || returnedCount > expectedCount) throwParticipantPageFailure(page.evidence, expectedCount, returnedCount, offsets, "participant_page_count_contradiction");
         normalizedPage.participants.forEach((participant) => participantIds.add(participant.id));
         rows.push(...normalizedPage.participants);
         evidence = page.evidence;
@@ -248,9 +249,11 @@ function hasDuplicateParticipantIds(participants: readonly z.input<typeof salesP
   return new Set(participants.map((participant) => participant.id)).size !== participants.length;
 }
 
-function throwParticipantPageContradiction(evidence: SalesDeliveryEvidence, expectedCount: number, returnedCount: number, pageOffsets: readonly number[]): never {
+type ParticipantPageFailureMode = "participant_page_count_contradiction" | "participant_page_duplicate_id";
+
+function throwParticipantPageFailure(evidence: SalesDeliveryEvidence, expectedCount: number, returnedCount: number, pageOffsets: readonly number[], failureMode: ParticipantPageFailureMode): never {
   const safeEvidence = participantEvidence(evidence, returnedCount, pageOffsets);
-  throw new CloudShareResponseError("CloudShare participant page count contradicts the returned items.", {
+  throw new CloudShareResponseError(failureMode === "participant_page_duplicate_id" ? "CloudShare participant page contains duplicate IDs." : "CloudShare participant page count contradicts the returned items.", {
     method: safeEvidence.request.method,
     path: safeEvidence.request.path,
     ...(safeEvidence.request.query ? { requestQuery: safeEvidence.request.query } : {}),
@@ -262,7 +265,7 @@ function throwParticipantPageContradiction(evidence: SalesDeliveryEvidence, expe
     responseBody: safeEvidence.response.body,
     expectedCount,
     returnedCount,
-    failureMode: "participant_page_count_contradiction",
+    failureMode,
   });
 }
 

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { CloudShareResponseError } from "@/integrations/cloudshare/errors";
 import { handleInviteSalesSessionParticipants, handleListSalesSessionParticipants, handleRegisterSalesSessionParticipants } from "./sales-session-participants";
 
 describe("Sales Session participant invitation", () => {
@@ -112,5 +113,40 @@ describe("Sales Session participant invitation", () => {
     expect(result.status).toBe(200);
     for (const suffix of ["1", "2"]) { expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ operation: "sales.demo_session.participant.reconciled", externalIds: expect.objectContaining({ cloudShareParticipantId: `remote-${suffix}`, environmentId: `environment-${suffix}` }) })); expect(audit.write).toHaveBeenCalledWith(expect.objectContaining({ action: "sales.demo_session.participant.reconciled", details: expect.objectContaining({ cloudShareParticipantId: `remote-${suffix}`, environmentId: `environment-${suffix}` }) })); }
     expect(JSON.stringify(result.body)).not.toContain("remote-1"); expect(JSON.stringify(result.body)).not.toContain("environment-1");
+  });
+
+  it("retains typed participant pagination failure facts in Support diagnostics", async () => {
+    const diagnostics = { record: vi.fn() };
+    const result = await handleListSalesSessionParticipants({
+      sessions: { findById: vi.fn().mockResolvedValue({ id: "session-1", opportunityId: "opportunity-1", cloudShareSalesExperienceId: "remote-sales-1", operationalStatus: "active" }) },
+      records: { findContact: vi.fn() },
+      participants: { save: vi.fn(), list: vi.fn() },
+      connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
+      deliveryFactory: { forConnection: () => ({
+        createSession: vi.fn(),
+        readSession: vi.fn(),
+        listParticipants: vi.fn().mockRejectedValue(new CloudShareResponseError("CloudShare participant page contains duplicate IDs.", {
+          method: "GET",
+          path: "/v4/sales/remote-sales-1/participants",
+          status: 200,
+          responseStatus: 200,
+          responseBody: { participantCount: 2, pageCount: 1, pageOffsets: [0] },
+          expectedCount: 2,
+          returnedCount: 2,
+          failureMode: "participant_page_duplicate_id",
+        })),
+      }) },
+      diagnostics,
+    }, { customerId: "customer-1", sessionId: "session-1", actor: { type: "admin", id: "admin-1", email: "sales-admin@certalis.demo" } });
+
+    expect(result.status).toBe(502);
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({
+      details: expect.objectContaining({
+        failureMode: "participant_page_duplicate_id",
+        expectedCount: 2,
+        returnedCount: 2,
+      }),
+      response: expect.objectContaining({ status: 200 }),
+    }));
   });
 });
