@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 
 export type ItemStatus = "active" | "archived";
-export type SalesExperienceType = "demo" | "poc" | "pov" | "trial";
 
 export interface ItemBlueprint {
   readonly id: string;
@@ -18,7 +17,6 @@ export interface Item {
   readonly policy: { readonly id: string; readonly name: string };
   /** Regions shared by every selected Blueprint's current default Snapshot. */
   readonly regions: readonly { readonly id: string; readonly name: string }[];
-  readonly salesExperienceType: SalesExperienceType;
   readonly defaultDurationMinutes: number;
   readonly status: ItemStatus;
   readonly archivedAt: Date | null;
@@ -48,7 +46,6 @@ export interface SaveItemInput {
   readonly blueprints: readonly ItemBlueprint[];
   readonly policy: { readonly id: string; readonly name: string };
   readonly regions: readonly { readonly id: string; readonly name: string }[];
-  readonly salesExperienceType: SalesExperienceType;
   readonly defaultDurationMinutes: number;
 }
 
@@ -59,7 +56,6 @@ export function validateItemInput(input: SaveItemInput): void {
   if (input.blueprints.length === 0 || input.blueprints.some((blueprint) => !blueprint.id.trim() || !blueprint.name.trim())) throw new ItemValidationError("Select one or more ordered Blueprints from CloudShare.");
   if (new Set(input.blueprints.map((blueprint) => blueprint.id)).size !== input.blueprints.length) throw new ItemValidationError("A Blueprint can only appear once in an Item.");
   if (!Number.isInteger(input.defaultDurationMinutes) || input.defaultDurationMinutes <= 0) throw new ItemValidationError("The selected Policy must provide a positive storage lease for the default duration.");
-  if (!["demo", "poc", "pov", "trial"].includes(input.salesExperienceType)) throw new ItemValidationError("Select Demo, POC, POV, or Trial as the Sales Experience type.");
 }
 
 export async function createItem(deps: { readonly repository: ItemRepository; readonly now?: () => Date; readonly newId?: () => string }, input: SaveItemInput): Promise<Item> {

@@ -15,6 +15,8 @@ describe("button styles", () => {
     expect(primaryButtonStyle.background).not.toBe(secondaryButtonStyle.background);
     expect(primaryButtonStyle.color).toBe("#ffffff");
     expect(secondaryButtonStyle.color).not.toBe("#ffffff");
+    expect(secondaryButtonStyle.background).toBe("#d9eee8");
+    expect(secondaryButtonStyle.border).toBe("1px solid #4b7f75");
   });
 
   it("marks danger actions distinctly from primary", () => {
@@ -26,7 +28,7 @@ describe("button styles", () => {
     expect(accountLogoutButtonStyle.padding).toBe(secondaryButtonStyle.padding);
     expect(accountLogoutButtonStyle.background).not.toBe(secondaryButtonStyle.background);
     expect(accountLogoutButtonStyle.background).not.toBe(primaryButtonStyle.background);
-    expect(accountLogoutButtonStyle.color).toBe(secondaryButtonStyle.color);
+    expect(accountLogoutButtonStyle.color).not.toBe(secondaryButtonStyle.color);
   });
 
   it("keeps the compact button visibly smaller than the standard secondary button", () => {
@@ -36,5 +38,7 @@ describe("button styles", () => {
   it("visually communicates disabled state via color, not just the disabled attribute", () => {
     expect(disabledButtonStyle.cursor).toBe("not-allowed");
     expect(disabledButtonStyle.background).not.toBe(primaryButtonStyle.background);
+    expect(disabledButtonStyle.background).toBe("#dbe3ec");
+    expect(disabledButtonStyle.border).toBe("1px solid #64748b");
   });
 });

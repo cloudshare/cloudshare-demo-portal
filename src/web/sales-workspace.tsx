@@ -5,13 +5,16 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { CloudShareConnectionFeature } from "./admin-cloudshare-connection";
 import { AdminSupportFeature } from "./admin-support";
 import { createAdminAuthenticatedRequest } from "./admin-authenticated-request";
-import { accountLogoutButtonStyle, compactButtonStyle, dangerButtonStyle, disabledButtonStyle, primaryButtonStyle } from "./button-styles";
+import { accountLogoutButtonStyle, compactButtonStyle, dangerButtonStyle, disabledButtonStyle, primaryButtonStyle, secondaryButtonStyle } from "./button-styles";
 import { alertPanelStyle, cardStyle, mutedPanelStyle } from "./card-styles";
 import { pageShellStyle } from "./page-shell";
 import { PortalPageHeader } from "./portal-page-header";
 import { SALES_TABS, buildSalesWorkspaceHref, getSalesTabLabel, type SalesItemView, type SalesNavigationIntent, type SalesWorkspaceRouteState } from "./sales-shell-route";
 import { colors } from "./design-tokens";
 import { addCloudShareWallClockMinutes, formatCloudShareWallClock } from "@/domain/cloudshare-wall-clock";
+import { renderSalesSessionName } from "@/domain/sales-session-name";
+import type { SalesExperienceType } from "@/domain/sales-experience-type";
+import { workspaceTabButtonStyle, workspaceTabNavStyle } from "./workspace-tab-styles";
 
 type Account = { id: string; name: string; kind: "prospect" | "current_customer"; archivedAt: string | null; createdAt: string; updatedAt?: string };
 type Opportunity = { id: string; accountId: string; name: string; status: "open" | "won" | "lost"; archivedAt: string | null; createdAt: string; updatedAt?: string };
@@ -24,8 +27,8 @@ type Dialog = { kind: "account"; record?: Account } | { kind: "opportunity"; rec
 type Named = { id: string; name: string; friendlyName?: string };
 type BlueprintOption = Named & { defaultSnapshotRegionIds?: readonly string[] };
 type Policy = Named & { storageLeaseMinutes: number | null };
-type Item = { id: string; name: string; description: string; project: Named; blueprints: Named[]; policy: Named; regions: Named[]; salesExperienceType: "demo" | "poc" | "pov" | "trial"; defaultDurationMinutes: number; status: "active" | "archived" };
-type EnablementSession = { id: string; opportunityId: string; itemId: string; type: "demo" | "poc" | "pov" | "trial"; start: string; end: string; timeZone: string; salesProDisplayName: string; createdAt: string };
+type Item = { id: string; name: string; description: string; project: Named; blueprints: Named[]; policy: Named; regions: Named[]; defaultDurationMinutes: number; status: "active" | "archived" };
+type EnablementSession = { id: string; opportunityId: string; itemId: string; type: SalesExperienceType; start: string; end: string; timeZone: string; salesProDisplayName: string; sessionName?: string; revision?: number; createdAt: string; lifecycle?: "upcoming" | "in_progress" | "ended" | "provisioning" | "needs_attention"; needsAttention?: boolean; verificationEligible: boolean; /** Only a server-side live GET contract check may enable a full-PUT name edit. */ editEligible?: boolean };
 type ProjectMember = { email: string; displayName: string };
 
 const blank: SalesData = { accounts: [], opportunities: [], contacts: [] };
@@ -38,9 +41,12 @@ const actionCellStyle = { ...cellStyle, width: "9.5rem", textAlign: "right" as c
 const selectedRowStyle = { background: "#e8f5f3", boxShadow: "inset 4px 0 0 #0f6d66" };
 const selectableRowStyle = { cursor: "pointer" };
 
-export function SalesWorkspace({ email, initialRoute = { tab: "items", itemView: "catalog" } }: { readonly email: string; readonly initialRoute?: SalesWorkspaceRouteState }) {
+export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemView: "catalog" } }: { readonly email: string; readonly initialRoute?: SalesWorkspaceRouteState }) {
   const router = useRouter();
   const [route, setRoute] = useState<SalesWorkspaceRouteState>(initialRoute);
+  useEffect(() => {
+    setRoute((current) => salesRoutesMatch(current, initialRoute) ? current : initialRoute);
+  }, [initialRoute]);
   const browserFetch = useCallback<typeof fetch>((input, init) => window.fetch(input, init), []);
   const fetchAdmin = useMemo(() => createAdminAuthenticatedRequest({ fetchImpl: browserFetch, onSessionExpired: () => { router.replace("/login"); router.refresh(); } }), [browserFetch, router]);
   const logout = useCallback(async () => { await fetch("/api/auth/logout", { method: "POST" }); router.push("/login"); router.refresh(); }, [router]);
@@ -53,36 +59,79 @@ export function SalesWorkspace({ email, initialRoute = { tab: "items", itemView:
       ...((intent.tab === "records" || intent.tab === "sessions") && intent.opportunityId ? { opportunityId: intent.opportunityId } : {}),
       ...(intent.tab === "support" && intent.correlationId ? { correlationId: intent.correlationId } : {}),
     };
-    router.push(buildSalesWorkspaceHref(intent));
+    const href = buildSalesWorkspaceHref(intent);
+    if (intent.preserveScroll) router.push(href, { scroll: false });
+    else router.push(href);
     setRoute(next);
   }, [router]);
 
   return <main style={salesWorkspaceStyle}>
-    <PortalPageHeader eyebrow="Certalis Sales Portal" title="Sales Workspace" description="Curate reusable Demo Items, commercial records, and time-bound CloudShare Sales Experiences in the isolated Certalis Customer workspace." email={email} actions={<button onClick={() => void logout()} style={accountLogoutButtonStyle}>Log out</button>} />
-    <nav aria-label="Sales workspace sections" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(12rem, 1fr))", gap: "0.5rem", marginBottom: "1rem", borderBottom: `1px solid ${colors.border}`, paddingBottom: "0.5rem" }}>{SALES_TABS.map((tab) => {
+    <PortalPageHeader eyebrow="Certalis Sales Portal" title="Sales Workspace" description="Curate reusable Items, commercial records, and time-bound CloudShare Sales Experiences in the isolated Certalis Customer workspace." email={email} actions={<button onClick={() => void logout()} style={accountLogoutButtonStyle}>Log out</button>} />
+    <nav aria-label="Sales workspace sections" style={workspaceTabNavStyle}>{SALES_TABS.map((tab) => {
       const active = route.tab === tab;
-      return <button key={tab} type="button" aria-current={active ? "page" : undefined} onClick={() => navigate({ tab })} style={{ padding: "0.65rem 0.9rem", border: "1px solid", borderRadius: "8px", background: active ? colors.textPrimary : "#ffffff", color: active ? "#ffffff" : colors.textPrimary, borderColor: active ? colors.textPrimary : colors.border, cursor: "pointer", fontWeight: active ? 700 : 600 }}>{getSalesTabLabel(tab)}</button>;
+      return <button key={tab} type="button" aria-current={active ? "page" : undefined} onClick={() => navigate({ tab })} style={workspaceTabButtonStyle(active, tab === "support")}>{getSalesTabLabel(tab)}</button>;
     })}</nav>
     {route.tab === "items" ? <ItemCatalog fetchAdmin={fetchAdmin} view={route.itemView ?? "catalog"} focusedItemId={route.itemId} onNavigate={navigate} /> : null}
     {route.tab === "records" ? <SalesRecordsFeature initialSelection={{ accountId: route.accountId ?? null, opportunityId: route.opportunityId ?? null }} onNavigate={navigate} /> : null}
-    {route.tab === "sessions" ? <SalesDemoSessionsFeature onNavigate={navigate} /> : null}
+    {route.tab === "sessions" ? <SalesDemoSessionsFeature initialSelection={{ accountId: route.accountId ?? "", opportunityId: route.opportunityId ?? "" }} onNavigate={navigate} /> : null}
     {route.tab === "support" ? <section aria-label="Sales support"><PortalSectionIntro title="Sales support" description="Append-only support evidence for Sales records and live Item resource curation in the Certalis Customer workspace." /><AdminSupportFeature active view="diagnostics" diagnosticFilters={route.correlationId ? { correlationId: route.correlationId } : {}} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={(intent) => navigate({ tab: "support", correlationId: intent.diagnosticFilters?.correlationId })} /></section> : null}
     {route.tab === "configuration" ? <section aria-label="Sales configuration"><PortalSectionIntro title="CloudShare Connection" description="Manage the encrypted CloudShare Connection for the isolated Certalis Sales Customer." /><CloudShareConnectionFeature active fetchAdmin={fetchAdmin} getNavigationHref={() => buildSalesWorkspaceHref({ tab: "configuration" })} onNavigate={() => undefined} /></section> : null}
   </main>;
+}
+
+function salesRoutesMatch(left: SalesWorkspaceRouteState, right: SalesWorkspaceRouteState): boolean {
+  return left.tab === right.tab && left.itemView === right.itemView && left.itemId === right.itemId && left.accountId === right.accountId && left.opportunityId === right.opportunityId && left.correlationId === right.correlationId;
 }
 
 function PortalSectionIntro({ title, description }: { title: string; description: string }) {
   return <section style={{ ...mutedPanelStyle, display: "grid", gap: "0.4rem", marginBottom: "1rem" }}><h2 style={{ margin: 0 }}>{title}</h2><p style={{ margin: 0 }}>{description}</p></section>;
 }
 
-function SalesDemoSessionsFeature({ onNavigate }: { readonly onNavigate: (intent: SalesNavigationIntent) => void }) {
+type SearchableSalesSelectorOption = { readonly id: string; readonly label: string };
+
+interface SearchableSalesSelectorProps {
+  readonly label: string; readonly value: string; readonly placeholder: string; readonly options: readonly SearchableSalesSelectorOption[]; readonly helperText: string; readonly loading: boolean; readonly error: string | null; readonly canLoadMore: boolean; readonly onQueryChange: (value: string) => void; readonly onSelect: (option: SearchableSalesSelectorOption) => void; readonly onLoadMore: () => void;
+}
+
+function SearchableSalesSelector({ label, value, placeholder, options, helperText, loading, error, canLoadMore, onQueryChange, onSelect, onLoadMore }: SearchableSalesSelectorProps) {
+  const [open, setOpen] = useState(false);
+  const [activeOptionIndex, setActiveOptionIndex] = useState(-1);
+  const selectorRef = useRef<HTMLDivElement>(null);
+  const listId = `${label.toLowerCase().replaceAll(/[^a-z0-9]+/g, "-")}-results`;
+  const inputId = `${listId}-input`;
+  const activeOption = options[activeOptionIndex];
+  const selectOption = (option: SearchableSalesSelectorOption) => { onSelect(option); setOpen(false); setActiveOptionIndex(-1); };
+  const results = open ? <div style={{ position: "absolute", top: "calc(100% + 0.35rem)", zIndex: 2, width: "100%", border: "1px solid #b7bdc8", borderRadius: "6px", background: "#ffffff", boxShadow: "0 0.5rem 1rem rgba(15, 23, 42, 0.15)" }}><div id={listId} role="listbox" aria-label={`${label} results`} style={{ maxHeight: "14rem", overflowY: "auto" }}>{loading ? <p role="status" style={{ margin: 0, padding: "0.65rem" }}>Loading active {label.toLowerCase()}…</p> : error ? <p role="alert" style={{ margin: 0, padding: "0.65rem" }}>{error}</p> : options.length === 0 ? <p style={{ margin: 0, padding: "0.65rem" }}>No active {label.toLowerCase()} match.</p> : options.map((option, index) => <button key={option.id} id={`${listId}-option-${index}`} type="button" role="option" tabIndex={-1} aria-selected={value === option.label} onMouseDown={(event) => event.preventDefault()} onClick={() => selectOption(option)} style={{ display: "block", width: "100%", border: 0, borderBottom: "1px solid #eef2f7", background: index === activeOptionIndex ? "#e8f5f3" : "#ffffff", padding: "0.65rem", textAlign: "left", cursor: "pointer" }}>{option.label}</button>)}</div>{canLoadMore && !loading && !error ? <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={onLoadMore} style={{ ...compactButtonStyle, margin: "0.65rem" }}>Load more {label.toLowerCase()}</button> : null}</div> : null;
+  return <div ref={selectorRef} data-testid={`${listId}-selector`} style={{ display: "grid", gap: "0.35rem", minWidth: 0 }}>
+    <label htmlFor={inputId}>{label}</label>
+    <div style={{ position: "relative" }}><input id={inputId} aria-label={label} role="combobox" aria-autocomplete="list" aria-controls={listId} aria-activedescendant={open && activeOption ? `${listId}-option-${activeOptionIndex}` : undefined} aria-expanded={open} autoComplete="off" value={value} placeholder={placeholder} onFocus={() => setOpen(true)} onBlur={(event) => { if (event.relatedTarget instanceof Node && selectorRef.current?.contains(event.relatedTarget)) return; setOpen(false); setActiveOptionIndex(-1); }} onChange={(event) => { onQueryChange(event.target.value); setOpen(true); setActiveOptionIndex(-1); }} onKeyDown={(event) => { if (event.key === "Escape") { setOpen(false); setActiveOptionIndex(-1); return; } if (event.key === "ArrowDown") { event.preventDefault(); setOpen(true); setActiveOptionIndex((current) => Math.min(options.length - 1, current + 1)); return; } if (event.key === "ArrowUp") { event.preventDefault(); setOpen(true); setActiveOptionIndex((current) => Math.max(0, current - 1)); return; } if (event.key === "Home") { event.preventDefault(); setOpen(true); setActiveOptionIndex(0); return; } if (event.key === "End") { event.preventDefault(); setOpen(true); setActiveOptionIndex(options.length - 1); return; } if (event.key === "Enter" && open && activeOption) { event.preventDefault(); selectOption(activeOption); } }} style={fullControlStyle} />{results}</div>
+    <small style={{ color: "#52606d" }}>{helperText}</small>
+  </div>;
+}
+
+function SalesDemoSessionsFeature({ initialSelection, onNavigate }: { readonly initialSelection: { accountId: string; opportunityId: string }; readonly onNavigate: (intent: SalesNavigationIntent) => void }) {
   const router = useRouter();
   const browserFetch = useCallback<typeof fetch>((input, init) => window.fetch(input, init), []);
   const fetchSales = useMemo(() => createAdminAuthenticatedRequest({ fetchImpl: browserFetch, onSessionExpired: () => { router.replace("/login"); router.refresh(); } }), [browserFetch, router]);
-  const [records, setRecords] = useState<SalesData>(blank);
   const [items, setItems] = useState<Item[]>([]);
   const [sessions, setSessions] = useState<EnablementSession[]>([]);
-  const [opportunityId, setOpportunityId] = useState("");
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editedSessionName, setEditedSessionName] = useState("");
+  const [sessionRefresh, setSessionRefresh] = useState(0);
+  const [sessionLifecycle, setSessionLifecycle] = useState("all");
+  const [sessionAccountId, setSessionAccountId] = useState(initialSelection.accountId);
+  const [accountSearch, setAccountSearch] = useState("");
+  const [accountInput, setAccountInput] = useState("");
+  const [accountPage, setAccountPage] = useState(1);
+  const [accountTotal, setAccountTotal] = useState(0);
+  const [opportunitySearch, setOpportunitySearch] = useState("");
+  const [opportunityInput, setOpportunityInput] = useState("");
+  const [opportunityPage, setOpportunityPage] = useState(1);
+  const [sessionAccounts, setSessionAccounts] = useState<{ id: string; name: string }[]>([]);
+  const [sessionOpportunityOptions, setSessionOpportunityOptions] = useState<{ id: string; accountId: string; accountName: string; name: string; label: string }[]>([]);
+  const [opportunityTotal, setOpportunityTotal] = useState(0);
+  const [nextRevision, setNextRevision] = useState(1);
+  const [opportunityId, setOpportunityId] = useState(initialSelection.opportunityId);
   const [itemId, setItemId] = useState("");
   const [projectMembers, setProjectMembers] = useState<ProjectMember[]>([]);
   const [salesProEmail, setSalesProEmail] = useState("");
@@ -92,36 +141,79 @@ function SalesDemoSessionsFeature({ onNavigate }: { readonly onNavigate: (intent
   const [end, setEnd] = useState("");
   const [endHasManualOverride, setEndHasManualOverride] = useState(false);
   const [timeZone, setTimeZone] = useState("UTC");
-  const [type, setType] = useState<Item["salesExperienceType"]>("demo");
+  const [type, setType] = useState<SalesExperienceType>("demo");
+  const [timezones, setTimezones] = useState<{ id: string; name: string }[]>([]);
+  const [timezoneFreshness, setTimezoneFreshness] = useState<string | null>(null);
+  const [timezoneCorrelationId, setTimezoneCorrelationId] = useState<string | null>(null);
+  const [sessionNameTemplate, setSessionNameTemplate] = useState("{account} - {opportunity} ({revision}) - {item}");
   const [message, setMessage] = useState<string | null>(null);
   const [correlationId, setCorrelationId] = useState<string | null>(null);
   const [needsAttention, setNeedsAttention] = useState(false);
+  const [sessionOperationMessage, setSessionOperationMessage] = useState<string | null>(null);
+  const [sessionOperationCorrelationId, setSessionOperationCorrelationId] = useState<string | null>(null);
+  const [sessionOperationFailed, setSessionOperationFailed] = useState(false);
+  const [verifyingSessionId, setVerifyingSessionId] = useState<string | null>(null);
+  const [selectionLoading, setSelectionLoading] = useState(false);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
+  const [templateSaveMessage, setTemplateSaveMessage] = useState<string | null>(null);
+  const [templateSaveCorrelationId, setTemplateSaveCorrelationId] = useState<string | null>(null);
+  const [templateSaving, setTemplateSaving] = useState(false);
   const [loading, setLoading] = useState(false);
   const currentStart = useRef(start);
   const currentTimeZone = useRef(timeZone);
+  const currentSessionSelection = useRef(initialSelection);
   const selectedItem = items.find((item) => item.id === itemId) ?? null;
-  const selectedItemType = selectedItem?.salesExperienceType;
   const selectedItemDuration = selectedItem?.defaultDurationMinutes;
 
+  useEffect(() => { currentSessionSelection.current = { accountId: sessionAccountId, opportunityId }; }, [sessionAccountId, opportunityId]);
+  // Browser Back/Forward may update only the filter query. Restore those choices without remounting the in-progress form.
+  useEffect(() => {
+    if (initialSelection.accountId !== currentSessionSelection.current.accountId) {
+      setSessionAccountId(initialSelection.accountId); setAccountInput(""); setAccountSearch(""); setAccountPage(1);
+    }
+    if (initialSelection.opportunityId !== currentSessionSelection.current.opportunityId) {
+      setOpportunityId(initialSelection.opportunityId); setOpportunityInput(""); setOpportunitySearch(""); setOpportunityPage(1);
+    }
+  }, [initialSelection.accountId, initialSelection.opportunityId]);
+
   useEffect(() => { currentStart.current = start; currentTimeZone.current = timeZone; }, [start, timeZone]);
+  useEffect(() => { void fetchSales("/api/sales/session-configuration", { cache: "no-store" }).then(async (response) => { const body = await response.json() as { template?: string }; if (response.ok && body.template) setSessionNameTemplate(body.template); }); }, [fetchSales]);
+  useEffect(() => { let active = true; void fetchSales("/api/sales/timezones", { cache: "no-store" }).then(async (response) => { const body = await response.json() as { timezones?: { id: string; name: string }[]; freshness?: string; correlationId?: string; preference?: { timeZone?: string | null; experienceType?: SalesExperienceType | null } }; if (!active) return; if (!response.ok) { setMessage("CloudShare timezones could not be loaded."); setTimezoneCorrelationId(body.correlationId ?? null); return; } setTimezones(body.timezones ?? []); setTimezoneFreshness(body.freshness ?? null); setTimezoneCorrelationId(body.correlationId ?? null); if (body.preference?.timeZone) setTimeZone(body.preference.timeZone); if (body.preference?.experienceType) setType(body.preference.experienceType); }).catch(() => { if (active) setMessage("CloudShare timezones could not be loaded."); }); return () => { active = false; }; }, [fetchSales]);
+  useEffect(() => { if (timezones.length === 0) return; void fetchSales("/api/sales/timezones", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ timeZone, experienceType: type }) }); }, [fetchSales, timeZone, type, timezones.length]);
 
   const load = useCallback(async () => {
-    const [recordResponse, itemResponse] = await Promise.all([fetchSales("/api/sales/accounts", { cache: "no-store" }), fetchSales("/api/sales/items", { cache: "no-store" })]);
-    const recordBody = await recordResponse.json() as SalesData & { error?: string };
+    const [itemResponse, sessionResponse] = await Promise.all([fetchSales("/api/sales/items", { cache: "no-store" }), fetchSales("/api/sales/enablement-sessions?lifecycle=all", { cache: "no-store" })]);
     const itemBody = await itemResponse.json() as { activeItems?: Item[]; error?: string };
-    if (!recordResponse.ok || !itemResponse.ok) throw new Error(recordBody.error ?? itemBody.error ?? "Could not load Sales Enablement Session choices.");
-    setRecords(recordBody); setItems(itemBody.activeItems ?? []);
+    const sessionBody = await sessionResponse.json() as { sessions?: EnablementSession[]; error?: string };
+    if (!itemResponse.ok || !sessionResponse.ok) throw new Error(itemBody.error ?? sessionBody.error ?? "Could not load Sales Enablement Session choices.");
+    setItems(itemBody.activeItems ?? []); setSessions(sessionBody.sessions ?? []);
   }, [fetchSales]);
   useEffect(() => { void load().catch((error) => setMessage(error instanceof Error ? error.message : "Could not load Sales Enablement Session choices.")); }, [load]);
   useEffect(() => {
-    if (!selectedItemType || !selectedItemDuration) return;
-    setType(selectedItemType);
+    if (!selectedItemDuration) return;
     setEndHasManualOverride(false);
     setEnd(addCloudShareWallClockMinutes(currentStart.current, currentTimeZone.current, selectedItemDuration) ?? "");
-  }, [itemId, selectedItemType, selectedItemDuration]);
+  }, [itemId, selectedItemDuration]);
   useEffect(() => { if (selectedItemDuration && startMode === "now") setStart(formatCloudShareWallClock(new Date(), timeZone) ?? ""); }, [startMode, selectedItemDuration, timeZone]);
   useEffect(() => { if (selectedItemDuration && !endHasManualOverride) setEnd(addCloudShareWallClockMinutes(start, timeZone, selectedItemDuration) ?? ""); }, [start, selectedItemDuration, timeZone, endHasManualOverride]);
-  useEffect(() => { if (!opportunityId) { setSessions([]); return; } void fetchSales(`/api/sales/enablement-sessions?opportunityId=${encodeURIComponent(opportunityId)}`, { cache: "no-store" }).then(async (response) => { const body = await response.json() as { sessions?: EnablementSession[] }; if (response.ok) setSessions(body.sessions ?? []); }); }, [fetchSales, opportunityId]);
+  useEffect(() => {
+    const controller = new AbortController();
+    const query = new URLSearchParams({ accountPage: String(accountPage), accountPageSize: "20", page: String(opportunityPage), pageSize: "20" });
+    if (accountSearch.trim()) query.set("accountSearch", accountSearch.trim()); if (sessionAccountId) query.set("accountId", sessionAccountId); if (opportunityId) query.set("selectedOpportunityId", opportunityId); if (opportunitySearch.trim()) query.set("search", opportunitySearch.trim());
+    setSelectionLoading(true); setSelectionError(null);
+    if (accountPage === 1) setSessionAccounts([]); if (opportunityPage === 1) setSessionOpportunityOptions([]);
+    void fetchSales(`/api/sales/session-opportunities?${query.toString()}`, { cache: "no-store", signal: controller.signal }).then(async (response) => {
+      const body = await response.json() as { accounts?: { id: string; name: string }[]; accountTotal?: number; opportunities?: { id: string; accountId: string; accountName: string; name: string; label: string }[]; total?: number; nextRevision?: number; error?: string };
+      if (controller.signal.aborted) return;
+      if (!response.ok) throw new Error(body.error ?? "Could not load active Account and Opportunity choices.");
+      setSessionAccounts((current) => accountPage === 1 ? body.accounts ?? [] : [...current, ...(body.accounts ?? []).filter((account) => !current.some((existing) => existing.id === account.id))]);
+      setAccountTotal(body.accountTotal ?? 0);
+      setSessionOpportunityOptions((current) => opportunityPage === 1 ? body.opportunities ?? [] : [...current, ...(body.opportunities ?? []).filter((opportunity) => !current.some((existing) => existing.id === opportunity.id))]);
+      setOpportunityTotal(body.total ?? 0); setNextRevision(body.nextRevision ?? 1);
+    }).catch((error) => { if (!controller.signal.aborted) setSelectionError(error instanceof Error ? error.message : "Could not load active Account and Opportunity choices."); }).finally(() => { if (!controller.signal.aborted) setSelectionLoading(false); });
+    return () => controller.abort();
+  }, [accountPage, accountSearch, fetchSales, opportunityId, opportunityPage, opportunitySearch, sessionAccountId]);
+  useEffect(() => { let active = true; const refresh = () => { const query = new URLSearchParams({ lifecycle: sessionLifecycle }); if (sessionAccountId) query.set("accountId", sessionAccountId); if (opportunityId) query.set("opportunityId", opportunityId); return void fetchSales(`/api/sales/enablement-sessions?${query.toString()}`, { cache: "no-store" }).then(async (response) => { const body = await response.json() as { sessions?: EnablementSession[] }; if (active && response.ok) setSessions(body.sessions ?? []); }).catch(() => undefined); }; refresh(); const interval = window.setInterval(refresh, 30_000); return () => { active = false; window.clearInterval(interval); }; }, [fetchSales, opportunityId, sessionAccountId, sessionLifecycle, sessionRefresh]);
   useEffect(() => {
     setProjectMembers([]); setSalesProEmail("");
     if (!itemId) return;
@@ -135,7 +227,7 @@ function SalesDemoSessionsFeature({ onNavigate }: { readonly onNavigate: (intent
   const submit = async (event: React.FormEvent) => {
     event.preventDefault(); setMessage(null); setCorrelationId(null); setNeedsAttention(false); setLoading(true);
     try {
-      const response = await fetchSales("/api/sales/enablement-sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ opportunityId, itemId, salesProEmail, start, end, timeZone, type }) });
+      const response = await fetchSales("/api/sales/enablement-sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ opportunityId, itemId, salesProEmail, start, end, timeZone, type, sessionNameTemplate }) });
       const body = await response.json() as { error?: string; correlationId?: string; session?: EnablementSession; needsAttention?: boolean; warning?: string };
       if (!response.ok) { setCorrelationId(body.correlationId ?? null); throw new Error(body.error ?? "Could not provision the Sales Enablement Session."); }
       setSessions((current) => body.session ? [body.session, ...current] : current);
@@ -145,22 +237,64 @@ function SalesDemoSessionsFeature({ onNavigate }: { readonly onNavigate: (intent
       } else setMessage("Sales Enablement Session created. No invitations were sent.");
     } catch (error) { setMessage(error instanceof Error ? error.message : "Could not provision the Sales Enablement Session."); } finally { setLoading(false); }
   };
-  const opportunities = records.opportunities.filter((opportunity) => !opportunity.archivedAt);
+  const runSessionOperation = async (request: () => Promise<Response>, fallback: string, success?: string, onSuccess?: () => void) => {
+    setSessionOperationMessage(null); setSessionOperationCorrelationId(null); setSessionOperationFailed(false);
+    try {
+      const response = await request();
+      let body: { error?: string; correlationId?: string } = {};
+      try { body = await response.json() as { error?: string; correlationId?: string }; } catch { /* A successful operation may intentionally have no JSON body. */ }
+      if (!response.ok) { setSessionOperationMessage(body.error ?? fallback); setSessionOperationCorrelationId(body.correlationId ?? null); setSessionOperationFailed(true); return; }
+      setSessionOperationMessage(success ?? "Sales Session updated."); setSessionOperationCorrelationId(body.correlationId ?? null); onSuccess?.(); setSessionRefresh((value) => value + 1);
+    } catch { setSessionOperationMessage(fallback); setSessionOperationFailed(true); }
+  };
+  const saveSessionNameTemplate = async () => {
+    setTemplateSaveMessage(null); setTemplateSaveCorrelationId(null); setTemplateSaving(true);
+    try {
+      const response = await fetchSales("/api/sales/session-configuration", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ template: sessionNameTemplate }) });
+      const body = await response.json() as { error?: string; correlationId?: string };
+      if (!response.ok) { setTemplateSaveCorrelationId(body.correlationId ?? null); throw new Error(body.error ?? "Could not save the default Session name template."); }
+      setTemplateSaveMessage("Default Session name template saved for future Sales Enablement Sessions.");
+    } catch (error) { setTemplateSaveMessage(error instanceof Error ? error.message : "Could not save the default Session name template."); } finally { setTemplateSaving(false); }
+  };
+  const selectedOpportunity = sessionOpportunityOptions.find((opportunity) => opportunity.id === opportunityId);
+  useEffect(() => { const account = sessionAccounts.find((candidate) => candidate.id === sessionAccountId); if (account) setAccountInput(account.name); }, [sessionAccountId, sessionAccounts]);
+  useEffect(() => { if (selectedOpportunity) setOpportunityInput(selectedOpportunity.label); }, [selectedOpportunity]);
+  const previewAccount = selectedOpportunity?.accountName ?? "Account";
+  const previewOpportunity = selectedOpportunity?.name ?? "Opportunity";
+  const previewName = renderSalesSessionName(sessionNameTemplate, { account: previewAccount, opportunity: previewOpportunity, revision: nextRevision, item: selectedItem?.name ?? "Item" });
+  const templateError = previewName ? null : "Template must include {revision}, use supported placeholders, and render to at most 100 characters.";
   return <section aria-label="Sales Enablement Sessions">
+    <style>{`
+      .sales-session-provisioning-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(14rem, 1fr) minmax(14rem, 1fr); gap: 1rem; align-items: start; }
+      .sales-session-selector-group { display: grid; gap: 0.65rem; min-width: 0; }
+      .sales-session-selector-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+      .sales-session-template-controls { display: grid; grid-template-columns: minmax(0, 40rem) auto; gap: 0.75rem; align-items: start; }
+      .sales-session-template-action { align-self: start; margin-top: calc(1.2em + 0.35rem); }
+      @media (max-width: 72rem) { .sales-session-provisioning-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .sales-session-selector-group { grid-column: span 2; } }
+      @media (max-width: 42rem) { .sales-session-provisioning-grid, .sales-session-selector-fields, .sales-session-template-controls { grid-template-columns: minmax(0, 1fr); } .sales-session-selector-group { grid-column: auto; } .sales-session-template-action { margin-top: 0; } }
+    `}</style>
     <PortalSectionIntro title="Provision a Sales Enablement Session" description="Creates one time-bound CloudShare Sales Experience. Registered participants only; invitations stay suppressed until the later enrollment and invitation slices." />
     <form onSubmit={submit} style={{ ...cardStyle, padding: "1.25rem", display: "grid", gap: "1rem" }}>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(16rem, 1fr))", gap: "1rem" }}>
-        <label style={{ display: "grid", gap: "0.35rem" }}>Opportunity<select aria-label="Opportunity" required value={opportunityId} onChange={(event) => setOpportunityId(event.target.value)} style={fullControlStyle}><option value="">Select an Opportunity</option>{opportunities.map((opportunity) => <option key={opportunity.id} value={opportunity.id}>{opportunity.name}</option>)}</select></label>
-        <label style={{ display: "grid", gap: "0.35rem" }}>Catalogue Item<select aria-label="Catalogue Item" required value={itemId} onChange={(event) => setItemId(event.target.value)} style={fullControlStyle}><option value="">Select a Catalogue Item</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-        <label style={{ display: "grid", gap: "0.35rem" }}>Sales Pro<select aria-label="Sales Pro" required value={salesProEmail} onChange={(event) => setSalesProEmail(event.target.value)} disabled={!itemId || projectMemberLoading} style={fullControlStyle}><option value="">{projectMemberLoading ? "Loading active Project members…" : "Select an active Project member"}</option>{projectMembers.map((member) => <option key={member.email} value={member.email}>{member.displayName} ({member.email})</option>)}</select></label>
-        <label style={{ display: "grid", gap: "0.35rem" }}>Sales Experience type<select aria-label="Sales Experience type" value={type} onChange={(event) => setType(event.target.value as Item["salesExperienceType"])} style={fullControlStyle}><option value="demo">Demo</option><option value="poc">POC</option><option value="pov">POV</option><option value="trial">Trial</option></select></label>
-        <label style={{ display: "grid", gap: "0.35rem" }}>CloudShare time zone<select aria-label="CloudShare time zone" value={timeZone} onChange={(event) => setTimeZone(event.target.value)} style={fullControlStyle}><option value="UTC">UTC</option><option value="Eastern Standard Time">Eastern Standard Time</option><option value="Mountain Standard Time">Mountain Standard Time</option><option value="Pacific Standard Time">Pacific Standard Time</option></select></label>
+      <div className="sales-session-provisioning-grid">
+        <div className="sales-session-selector-group"><div className="sales-session-selector-fields"><SearchableSalesSelector label="Account" value={accountInput} placeholder="Search active Accounts" options={sessionAccounts.map((account) => ({ id: account.id, label: account.name }))} helperText="Only active Accounts are available for new Sales Enablement Sessions." loading={selectionLoading} error={selectionError} canLoadMore={accountTotal > sessionAccounts.length} onQueryChange={(value) => { setAccountInput(value); setAccountSearch(value); setAccountPage(1); setOpportunityPage(1); if (sessionAccountId) { setSessionAccountId(""); setOpportunityId(""); setOpportunityInput(""); } }} onSelect={(account) => { setSessionAccountId(account.id); setAccountInput(account.label); setAccountSearch(account.label); setAccountPage(1); setOpportunityId(""); setOpportunityInput(""); setOpportunitySearch(""); setOpportunityPage(1); onNavigate({ tab: "sessions", accountId: account.id, preserveScroll: true }); }} onLoadMore={() => setAccountPage((page) => page + 1)} /><SearchableSalesSelector label="Opportunity" value={opportunityInput} placeholder="Search active Opportunities" options={sessionOpportunityOptions.map((opportunity) => ({ id: opportunity.id, label: opportunity.label }))} helperText={sessionAccountId ? "Only active Opportunities for the selected active Account are available." : `Showing ${opportunityTotal} active Opportunities across active Accounts. Select an Account to narrow the list.`} loading={selectionLoading} error={selectionError} canLoadMore={opportunityTotal > sessionOpportunityOptions.length} onQueryChange={(value) => { setOpportunityInput(value); setOpportunitySearch(value); setOpportunityPage(1); if (opportunityId) setOpportunityId(""); }} onSelect={(opportunity) => { setOpportunityId(opportunity.id); setOpportunityInput(opportunity.label); setOpportunitySearch(""); setOpportunityPage(1); onNavigate({ tab: "sessions", accountId: sessionAccountId, opportunityId: opportunity.id, preserveScroll: true }); }} onLoadMore={() => setOpportunityPage((page) => page + 1)} /></div><div><button type="button" style={!sessionAccountId && !opportunityId && !accountInput && !opportunityInput ? { ...secondaryButtonStyle, ...disabledButtonStyle } : secondaryButtonStyle} disabled={!sessionAccountId && !opportunityId && !accountInput && !opportunityInput} onClick={() => { setSessionAccountId(""); setOpportunityId(""); setAccountInput(""); setAccountSearch(""); setAccountPage(1); setOpportunityInput(""); setOpportunitySearch(""); setOpportunityPage(1); onNavigate({ tab: "sessions", preserveScroll: true }); }}>Clear Account and Opportunity filters</button></div></div>
+        <div style={{ display: "grid", gap: "0.75rem", minWidth: 0 }}><label style={{ display: "grid", gap: "0.35rem" }}>Catalogue Item<select aria-label="Catalogue Item" required value={itemId} onChange={(event) => setItemId(event.target.value)} style={fullControlStyle}><option value="">Select a Catalogue Item</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><label style={{ display: "grid", gap: "0.35rem" }}>Sales Experience type<select aria-label="Sales Experience type" value={type} onChange={(event) => setType(event.target.value as SalesExperienceType)} style={fullControlStyle}><option value="demo">Demo</option><option value="poc">POC</option><option value="pov">POV</option><option value="trial">Trial</option></select></label></div>
+        <div style={{ display: "grid", gap: "0.75rem", minWidth: 0 }}><label style={{ display: "grid", gap: "0.35rem" }}>Sales Pro<select aria-label="Sales Pro" required value={salesProEmail} onChange={(event) => setSalesProEmail(event.target.value)} disabled={!itemId || projectMemberLoading} style={fullControlStyle}><option value="">{projectMemberLoading ? "Loading active Project members…" : "Select an active Project member"}</option>{projectMembers.map((member) => <option key={member.email} value={member.email}>{member.displayName} ({member.email})</option>)}</select></label><label style={{ display: "grid", gap: "0.35rem" }}>Time zone<input aria-label="Time zone" list="cloudshare-timezones" required value={timeZone} onChange={(event) => setTimeZone(event.target.value)} style={fullControlStyle} /><datalist id="cloudshare-timezones">{timezones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}</datalist>{timezoneFreshness === "stale" ? <small role="status" style={{ color: colors.warning }}>CloudShare time-zone list is temporarily cached. Review the selected value before creating a session.</small> : null}{timezoneCorrelationId ? <button type="button" onClick={() => onNavigate({ tab: "support", correlationId: timezoneCorrelationId })} style={compactButtonStyle}>Timezone support diagnostics</button> : null}</label></div>
       </div>
       <fieldset style={{ border: "1px solid #d8dee8", borderRadius: "8px", padding: "0.85rem", display: "grid", gap: "0.7rem" }}><legend>Time window</legend><div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}><label><input type="radio" checked={startMode === "now"} onChange={() => setStartMode("now")} /> Start now</label><label><input type="radio" checked={startMode === "scheduled"} onChange={() => setStartMode("scheduled")} /> Schedule start</label></div><div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(16rem, 1fr))", gap: "1rem" }}><label style={{ display: "grid", gap: "0.35rem" }}>Start <input aria-label="Start" type="datetime-local" required value={start} disabled={startMode === "now"} onChange={(event) => setStart(event.target.value)} style={fullControlStyle} /></label><label style={{ display: "grid", gap: "0.35rem" }}>End <input aria-label="End" type="datetime-local" required value={end} onChange={(event) => { setEndHasManualOverride(true); setEnd(event.target.value); }} style={fullControlStyle} /></label></div><p style={{ margin: 0, color: "#52606d" }}>End is required and initially prefilled from the selected Item Policy storage lease; the Sales Admin may override it. All displayed values are local CloudShare date-times in the selected explicit time zone.</p></fieldset>
-      <div style={{ display: "flex", justifyContent: "end", gap: "0.75rem", alignItems: "center" }}><button style={primaryButtonStyle} disabled={loading || projectMemberLoading || !opportunityId || !itemId || !salesProEmail}>{loading ? "Provisioning…" : "Create Sales Enablement Session"}</button></div>
+      <fieldset style={{ border: "1px solid #d8dee8", borderRadius: "8px", padding: "0.85rem", display: "grid", gap: "0.5rem" }}><legend>Session name template</legend><p style={{ margin: 0, color: "#52606d" }}>Use {"{account}"}, {"{opportunity}"}, {"{revision}"}, and {"{item}"}. {"{revision}"} is required and the rendered name must be 100 characters or fewer. Saving changes the default used for future Sales Enablement Sessions.</p><div className="sales-session-template-controls"><label style={{ display: "grid", gap: "0.35rem", minWidth: 0 }}>Template <input aria-label="Session name template" value={sessionNameTemplate} onChange={(event) => setSessionNameTemplate(event.target.value)} style={fullControlStyle} /></label><button className="sales-session-template-action" type="button" disabled={!previewName || templateSaving} onClick={() => void saveSessionNameTemplate()} style={!previewName || templateSaving ? { ...secondaryButtonStyle, ...disabledButtonStyle, justifySelf: "start" } : { ...secondaryButtonStyle, justifySelf: "start" }}>{templateSaving ? "Saving default template…" : "Save as default template"}</button></div><output aria-label="Session name preview">{previewName ? `Preview: ${previewName}` : templateError}</output>{templateSaveMessage ? <div role={templateSaveCorrelationId ? "alert" : "status"}>{templateSaveMessage}{templateSaveCorrelationId ? <> <button type="button" onClick={() => onNavigate({ tab: "support", correlationId: templateSaveCorrelationId })} style={{ border: 0, background: "transparent", color: colors.info, textDecoration: "underline", cursor: "pointer" }}>Open support diagnostics ({templateSaveCorrelationId})</button></> : null}</div> : null}</fieldset>
+      <div style={{ display: "flex", justifyContent: "end", gap: "0.75rem", alignItems: "center" }}><button style={primaryButtonStyle} disabled={loading || projectMemberLoading || !previewName || !opportunityId || !itemId || !salesProEmail}>{loading ? "Provisioning…" : "Create Sales Enablement Session"}</button></div>
       {message ? <div role={correlationId ? "alert" : "status"} style={correlationId ? alertPanelStyle.danger : alertPanelStyle.success}>{message}{needsAttention ? <strong> Do not retry creation.</strong> : null}{correlationId ? <> <button type="button" onClick={() => onNavigate({ tab: "support", correlationId })} style={{ border: 0, background: "transparent", color: colors.info, textDecoration: "underline", cursor: "pointer" }}>Open support diagnostics ({correlationId})</button></> : null}</div> : null}
     </form>
-    {opportunityId ? <section style={{ ...cardStyle, marginTop: "1rem", padding: "1.25rem" }} aria-label="Opportunity Sales Enablement Session history"><h2 style={{ marginTop: 0 }}>Session history</h2>{sessions.length === 0 ? <p>No Sales Enablement Sessions have been created for this Opportunity.</p> : <ul>{sessions.map((session) => <li key={session.id}>{session.type.toUpperCase()} · {session.start} to {session.end} ({session.timeZone})</li>)}</ul>}</section> : null}
+    <section style={{ ...cardStyle, marginTop: "1rem", padding: "1.25rem" }} aria-label="Sales Enablement Session operations">
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}><h2 style={{ margin: 0 }}>Session operations</h2><label>Lifecycle <select aria-label="Session lifecycle" value={sessionLifecycle} onChange={(event) => setSessionLifecycle(event.target.value)} style={controlStyle}><option value="all">All</option><option value="upcoming">Upcoming</option><option value="in_progress">In progress</option><option value="ended">Ended</option><option value="provisioning">Provisioning</option><option value="needs_attention">Needs attention</option></select></label></div>
+      <p style={{ margin: "0.65rem 0", color: "#52606d" }}>Verify CloudShare status reads the persisted Sales Experience from CloudShare and records a redacted diagnostic. It verifies the provider record only; it does not change the scheduled lifecycle or create, edit, invite, extend, or cancel a session.</p>
+      {sessions.length === 0 ? <p>No persisted Sales Enablement Sessions match this operational view.</p> : <ul>{sessions.map((session) => <li key={session.id}>
+        {editingSessionId === session.id ? <><input aria-label="Session name" value={editedSessionName} onChange={(event) => setEditedSessionName(event.target.value)} style={controlStyle} /><button type="button" style={compactButtonStyle} onClick={() => void runSessionOperation(() => fetchSales(`/api/sales/enablement-sessions/${encodeURIComponent(session.id)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: editedSessionName }) }), "CloudShare could not update this Sales Session.", "Sales Session name updated.", () => setEditingSessionId(null))}>Save edit</button></> : <>{session.sessionName ?? session.type.toUpperCase()} (revision {session.revision ?? 1})</>} · {session.start} to {session.end} ({session.timeZone}) · {session.lifecycle?.replace("_", " ") ?? "recorded"}
+        {session.lifecycle === "upcoming" && session.editEligible === true ? <button type="button" style={compactButtonStyle} onClick={() => { setEditingSessionId(session.id); setEditedSessionName(session.sessionName ?? ""); }}>Edit name</button> : null}
+        {session.verificationEligible === true ? <button type="button" disabled={verifyingSessionId === session.id} style={verifyingSessionId === session.id ? { ...compactButtonStyle, ...disabledButtonStyle, margin: "0.4rem 0 0.4rem 0.75rem", verticalAlign: "middle" } : { ...compactButtonStyle, margin: "0.4rem 0 0.4rem 0.75rem", verticalAlign: "middle" }} onClick={() => { setVerifyingSessionId(session.id); void runSessionOperation(() => fetchSales(`/api/sales/enablement-sessions/${encodeURIComponent(session.id)}/reconcile`, { method: "POST" }), "CloudShare could not verify this Sales Session's status.", "CloudShare status verified. The scheduled lifecycle is unchanged.").finally(() => setVerifyingSessionId(null)); }}>{verifyingSessionId === session.id ? "Verifying CloudShare status…" : "Verify CloudShare status"}</button> : <small style={{ color: "#52606d" }}>CloudShare verification is unavailable while this session is provisioning or needs attention.</small>}
+      </li>)}</ul>}
+      {sessionOperationMessage ? <div role={sessionOperationFailed ? "alert" : "status"} style={sessionOperationFailed ? alertPanelStyle.danger : alertPanelStyle.success}>{sessionOperationMessage}{sessionOperationCorrelationId ? <> <button type="button" onClick={() => onNavigate({ tab: "support", correlationId: sessionOperationCorrelationId })} style={{ border: 0, background: "transparent", color: colors.info, textDecoration: "underline", cursor: "pointer" }}>Open support diagnostics ({sessionOperationCorrelationId})</button></> : null}</div> : null}
+    </section>
   </section>;
 }
 
@@ -206,7 +340,7 @@ function SalesRecordsFeature({ initialSelection, onNavigate }: { readonly initia
 
   const updateSelection = useCallback((accountId: string | null, opportunityId: string | null) => {
     setSelection({ accountId, opportunityId });
-    onNavigate({ tab: "records", accountId, opportunityId });
+    onNavigate({ tab: "records", accountId, opportunityId, preserveScroll: true });
   }, [onNavigate]);
   const openDialog = useCallback((nextDialog: Exclude<Dialog, null>, opener: HTMLElement) => { dialogOpenerRef.current = opener; setDialog(nextDialog); }, []);
   const closeDialog = useCallback(() => { setDialog(null); }, []);
@@ -297,7 +431,6 @@ function ItemCatalog({ fetchAdmin, view, focusedItemId, onNavigate }: { readonly
   const [regionIds, setRegionIds] = useState<string[]>([]);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [salesExperienceType, setSalesExperienceType] = useState<Item["salesExperienceType"]>("demo");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [inspected, setInspected] = useState<Item | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -345,14 +478,14 @@ function ItemCatalog({ fetchAdmin, view, focusedItemId, onNavigate }: { readonly
   const save = async () => {
     setLoading(true); setError(null); setErrorCorrelationId(null);
     try {
-      const response = await fetchAdmin(editingId ? `/api/sales/items/${encodeURIComponent(editingId)}` : "/api/sales/items", { method: editingId ? "PUT" : "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, description, projectId, blueprintIds, policyId, regionIds, salesExperienceType }) });
+      const response = await fetchAdmin(editingId ? `/api/sales/items/${encodeURIComponent(editingId)}` : "/api/sales/items", { method: editingId ? "PUT" : "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, description, projectId, blueprintIds, policyId, regionIds }) });
       const body = await response.json() as { error?: string; correlationId?: string | null };
       if (!response.ok) { setError(body.error ?? "Unable to save Item"); setErrorCorrelationId(body.correlationId ?? null); return; }
       setName(""); setDescription(""); setBlueprintIds([]); setRegionIds([]); setEditingId(null); await loadItems(); onNavigate({ tab: "items", itemView: "catalog" });
     } finally { setLoading(false); }
   };
   const cancelAuthoring = () => {
-    setName(""); setDescription(""); setProjectId(""); setBlueprintIds([]); setPolicyId(""); setRegionIds([]); setSalesExperienceType("demo"); setEditingId(null); setError(null); setErrorCorrelationId(null);
+    setName(""); setDescription(""); setProjectId(""); setBlueprintIds([]); setPolicyId(""); setRegionIds([]); setEditingId(null); setError(null); setErrorCorrelationId(null);
     onNavigate({ tab: "items", itemView: "catalog" });
   };
   const inspect = useCallback(async (id: string) => {
@@ -363,7 +496,7 @@ function ItemCatalog({ fetchAdmin, view, focusedItemId, onNavigate }: { readonly
   }, [fetchAdmin]);
   const edit = useCallback(async (item: Item) => {
     await loadBootstrap(); await selectProject(item.project.id);
-    setEditingId(item.id); setName(item.name); setDescription(item.description); setBlueprintIds(item.blueprints.map((blueprint) => blueprint.id)); setPolicyId(item.policy.id); setRegionIds(item.regions.map((region) => region.id)); setSalesExperienceType(item.salesExperienceType);
+    setEditingId(item.id); setName(item.name); setDescription(item.description); setBlueprintIds(item.blueprints.map((blueprint) => blueprint.id)); setPolicyId(item.policy.id); setRegionIds(item.regions.map((region) => region.id));
   }, [loadBootstrap, selectProject]);
   const archive = async (id: string) => {
     setError(null); setErrorCorrelationId(null);
@@ -383,7 +516,7 @@ function ItemCatalog({ fetchAdmin, view, focusedItemId, onNavigate }: { readonly
   }, [edit, focusedItemId, items, view]);
 
   return <section style={{ display: "grid", gap: "1rem", marginTop: "1rem" }} aria-label="Item catalogue">
-    {view === "catalog" ? <><section style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem" }}><h2 style={{ margin: 0 }}>Item catalogue</h2><p style={{ margin: 0 }}>Choose a reusable, archive-only Item. It does not provision an Enablement Session or share an environment.</p><div><button type="button" style={primaryButtonStyle} onClick={() => onNavigate({ tab: "items", itemView: "create" })}>Create Item</button></div></section><section aria-label="Active Items" style={{ ...cardStyle, padding: "1.1rem" }}><h2 style={{ margin: 0 }}>Active Items</h2>{items.length === 0 ? <p>No active Items yet.</p> : <div style={{ display: "grid", gap: "0.75rem", marginTop: "0.75rem" }}>{items.map((item) => <article key={item.id} style={{ border: "1px solid #d6dbe3", borderRadius: "8px", padding: "0.9rem" }}><strong>{item.name}</strong><p style={{ margin: "0.35rem 0" }}>{item.blueprints.map((blueprint) => blueprint.name).join(" → ")} · {item.policy.name} · {item.regions.map((region) => region.name).join(", ")}</p><p style={{ margin: "0.35rem 0" }}>{item.defaultDurationMinutes} min · {item.salesExperienceType.toUpperCase()}</p><button type="button" onClick={() => onNavigate({ tab: "items", itemView: "detail", itemId: item.id })}>View details</button></article>)}</div>}</section><section aria-label="Archived Items" style={{ ...mutedPanelStyle }}><h2 style={{ margin: 0 }}>Archived history</h2>{archived.length === 0 ? <p>No archived Items.</p> : <ul>{archived.map((item) => <li key={item.id}>{item.name} (archived; cannot start an Enablement Session)</li>)}</ul>}</section></> : null}
+    {view === "catalog" ? <><section style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem" }}><h2 style={{ margin: 0 }}>Item catalogue</h2><p style={{ margin: 0 }}>Choose a reusable, archive-only Item. The Sales Experience type is chosen when creating an Enablement Session, so this Item can support more than one delivery purpose.</p><div><button type="button" style={primaryButtonStyle} onClick={() => onNavigate({ tab: "items", itemView: "create" })}>Create Item</button></div></section><section aria-label="Active Items" style={{ ...cardStyle, padding: "1.1rem" }}><h2 style={{ margin: 0 }}>Active Items</h2>{items.length === 0 ? <p>No active Items yet.</p> : <div style={{ display: "grid", gap: "0.75rem", marginTop: "0.75rem" }}>{items.map((item) => <article key={item.id} style={{ border: "1px solid #d6dbe3", borderRadius: "8px", padding: "0.9rem" }}><strong>{item.name}</strong><p style={{ margin: "0.35rem 0" }}>{item.blueprints.map((blueprint) => blueprint.name).join(" → ")} · {item.policy.name} · {item.regions.map((region) => region.name).join(", ")}</p><p style={{ margin: "0.35rem 0" }}>{item.defaultDurationMinutes} min</p><button type="button" style={compactButtonStyle} onClick={() => onNavigate({ tab: "items", itemView: "detail", itemId: item.id })}>View details</button></article>)}</div>}</section><section aria-label="Archived Items" style={{ ...mutedPanelStyle }}><h2 style={{ margin: 0 }}>Archived history</h2>{archived.length === 0 ? <p>No archived Items yet.</p> : <ul>{archived.map((item) => <li key={item.id}>{item.name} (archived; cannot start an Enablement Session)</li>)}</ul>}</section></> : null}
     {view === "create" || view === "edit" ? <>
       <style>{`
         .item-authoring-shell { max-width: 66rem; }
@@ -421,14 +554,13 @@ function ItemCatalog({ fetchAdmin, view, focusedItemId, onNavigate }: { readonly
               <div className="item-authoring-field"><label className="item-authoring-label" htmlFor="item-policy">Policy</label><div style={{ display: "grid", gap: "0.45rem", minWidth: 0 }}><select id="item-policy" className="item-authoring-control" aria-label="Policy" value={policyId} onChange={(event) => setPolicyId(event.target.value)}><option value="">Select a Policy</option>{policies.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select><p className="item-policy-help">{selectedPolicy?.storageLeaseMinutes ? `Default duration: ${selectedPolicy.storageLeaseMinutes} minutes (Policy storage lease)` : "Choose a Policy with a storage lease."}</p></div></div>
               <div className="item-authoring-field"><span className="item-authoring-label">Eligible Regions</span><div className="item-blueprint-options" role="group" aria-label="Eligible Regions">{blueprintIds.length === 0 ? <p className="item-policy-help">Select Blueprint steps to calculate eligible Regions.</p> : eligibleRegions.length === 0 ? <p className="item-policy-help">These Blueprint steps have no shared default-Snapshot Region and cannot be saved together.</p> : eligibleRegions.map((region) => <label key={region.id} className="item-blueprint-option"><input type="checkbox" checked={regionIds.includes(region.id)} onChange={() => setRegionIds((current) => current.includes(region.id) ? current.filter((id) => id !== region.id) : [...current, region.id])} /> <span>{region.friendlyName ?? region.name}</span></label>)}<p className="item-policy-help">Every selected Region must have the default Snapshot for every selected Blueprint.</p></div></div>
             </fieldset>
-            <div className="item-authoring-field"><label className="item-authoring-label" htmlFor="item-sales-experience-type">Item type</label><select id="item-sales-experience-type" className="item-authoring-control" aria-label="Item type" value={salesExperienceType} onChange={(event) => setSalesExperienceType(event.target.value as Item["salesExperienceType"])}><option value="demo">Demo</option><option value="poc">POC</option><option value="pov">POV</option><option value="trial">Trial</option></select></div>
           </div>
           <div className="item-authoring-actions"><button type="button" style={compactButtonStyle} onClick={cancelAuthoring} disabled={loading}>Cancel</button><button type="button" style={primaryButtonStyle} onClick={() => void save()} disabled={loading}>{view === "edit" ? "Save Item changes" : "Save Item"}</button></div>
           {error ? <ItemFailureAlert message={error} correlationId={errorCorrelationId} onDismiss={() => { setError(null); setErrorCorrelationId(null); }} onOpenSupport={() => errorCorrelationId && onNavigate({ tab: "support", correlationId: errorCorrelationId })} /> : null}
         </form>
       </section>
     </> : null}
-    {view === "detail" ? <section aria-label="Item inspection" style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem" }}><button type="button" style={compactButtonStyle} onClick={() => onNavigate({ tab: "items", itemView: "catalog" })}>Back to catalogue</button>{inspected ? <><h2 style={{ margin: 0 }}>{inspected.name}</h2><p style={{ margin: 0 }}>{inspected.description}</p><p style={{ margin: 0 }}>{inspected.blueprints.map((blueprint) => blueprint.name).join(" → ")} · {inspected.policy.name} · {inspected.regions.map((region) => region.name).join(", ")} · {inspected.defaultDurationMinutes} min · {inspected.salesExperienceType.toUpperCase()}</p><div style={{ display: "flex", gap: "0.5rem" }}><button type="button" onClick={() => onNavigate({ tab: "items", itemView: "edit", itemId: inspected.id })}>Edit</button><button type="button" style={dangerButtonStyle} onClick={() => void archive(inspected.id)}>Archive</button></div></> : <p>Loading Item details…</p>}{error ? <ItemFailureAlert message={error} correlationId={errorCorrelationId} onDismiss={() => { setError(null); setErrorCorrelationId(null); }} onOpenSupport={() => errorCorrelationId && onNavigate({ tab: "support", correlationId: errorCorrelationId })} /> : null}</section> : null}
+    {view === "detail" ? <section aria-label="Item inspection" style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem" }}><button type="button" style={compactButtonStyle} onClick={() => onNavigate({ tab: "items", itemView: "catalog" })}>Back to catalogue</button>{inspected ? <><h2 style={{ margin: 0 }}>{inspected.name}</h2><p style={{ margin: 0 }}>{inspected.description}</p><p style={{ margin: 0 }}>{inspected.blueprints.map((blueprint) => blueprint.name).join(" → ")} · {inspected.policy.name} · {inspected.regions.map((region) => region.name).join(", ")} · {inspected.defaultDurationMinutes} min</p><div style={{ display: "flex", gap: "0.5rem" }}><button type="button" style={compactButtonStyle} onClick={() => onNavigate({ tab: "items", itemView: "edit", itemId: inspected.id })}>Edit</button><button type="button" style={dangerButtonStyle} onClick={() => void archive(inspected.id)}>Archive</button></div></> : <p>Loading Item details…</p>}{error ? <ItemFailureAlert message={error} correlationId={errorCorrelationId} onDismiss={() => { setError(null); setErrorCorrelationId(null); }} onOpenSupport={() => errorCorrelationId && onNavigate({ tab: "support", correlationId: errorCorrelationId })} /> : null}</section> : null}
   </section>;
 }
 

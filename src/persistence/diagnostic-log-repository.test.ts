@@ -13,7 +13,9 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
-  await prisma.diagnosticLogEntry.deleteMany();
+  // This suite shares SQLite with parallel persistence tests. Restrict cleanup
+  // to its fixed fixture Customers so it cannot erase another test's evidence.
+  await prisma.diagnosticLogEntry.deleteMany({ where: { customerId: { in: ["cust_1", "cust_a", "cust_b"] } } });
 });
 
 describe("createPrismaDiagnosticLogRepository", () => {

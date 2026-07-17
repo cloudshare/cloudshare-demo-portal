@@ -1,9 +1,4 @@
-const cloudShareTimeZones: Record<string, string> = {
-  UTC: "UTC",
-  "Eastern Standard Time": "America/New_York",
-  "Mountain Standard Time": "America/Denver",
-  "Pacific Standard Time": "America/Los_Angeles",
-};
+import { findIana } from "windows-iana";
 
 /** Converts CloudShare's timezone-less ISO wall-clock values without silently
  * applying the browser's local timezone. Ambiguous and skipped DST wall times
@@ -40,7 +35,22 @@ export function formatCloudShareWallClock(value: Date, timeZone: string): string
 }
 
 function resolveTimeZone(value: string): string | null {
-  const resolved = cloudShareTimeZones[value];
-  if (!resolved) return null;
-  try { new Intl.DateTimeFormat("en-CA", { timeZone: resolved }).format(); return resolved; } catch { return null; }
+  // CloudShare's documented catalogue is the authority for selectable IDs. The
+  // CLDR-backed dependency resolves its complete Windows catalogue to IANA.
+  if (isSupportedIanaTimeZone(value)) return value;
+
+  for (const candidate of findIana(value)) {
+    if (isSupportedIanaTimeZone(candidate)) return candidate;
+  }
+
+  return null;
+}
+
+function isSupportedIanaTimeZone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-CA", { timeZone: value }).format();
+    return true;
+  } catch {
+    return false;
+  }
 }

@@ -33,6 +33,8 @@ model Customer {
   salesOpportunities   SalesOpportunity[]
   opportunityContacts  OpportunityContact[]
   salesDemoSessions    SalesDemoSession[]
+  salesTimezoneCache   SalesTimezoneCache?
+  salesSessionNameTemplate String @default("{account} - {opportunity} ({revision}) - {item}")
 }
 
 model SalesAccount {
@@ -98,7 +100,6 @@ model Item {
   policyId               String
   policyName             String
   regionsJson            String
-  salesExperienceType    String
   defaultDurationMinutes Int
   status                 String
   archivedAt             DateTime?
@@ -128,12 +129,17 @@ model SalesDemoSession {
   salesProDisplayName         String
   registrationType            String
   sendInvitations             String
+  sessionName                 String   @default("")
+  revision                    Int      @default(1)
+  operationalStatus           String   @default("active")
+  attentionReason             String?
   createdAt                   DateTime
   customer                    Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
   opportunity                 SalesOpportunity @relation(fields: [customerId, opportunityId], references: [customerId, id], onDelete: Restrict)
   item                        Item             @relation(fields: [customerId, itemId], references: [customerId, id], onDelete: Restrict)
 
   @@index([customerId, opportunityId, createdAt])
+  @@unique([customerId, opportunityId, revision])
   @@index([customerId, itemId])
   @@index([customerId, externalId])
 }
@@ -147,8 +153,20 @@ model User {
   passwordHash String
   role         String
   createdAt    DateTime        @default(now())
+  lastSalesTimeZone String?
+  lastSalesExperienceType String?
   customer     Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
   sessions     PortalSession[]
+}
+
+/** Per-Customer cache of the documented v3 timezone catalogue. It is a cache,
+ * never a source of truth: the reader records freshness and can report a
+ * fallback instead of silently inventing timezones. */
+model SalesTimezoneCache {
+  customerId String @id
+  valuesJson String
+  fetchedAt DateTime
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 }
 
 model PortalSession {

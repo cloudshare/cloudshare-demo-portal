@@ -1,9 +1,9 @@
 export type SalesTab = "items" | "records" | "sessions" | "support" | "configuration";
 
 export const SALES_TABS: readonly SalesTab[] = [
+  "sessions",
   "items",
   "records",
-  "sessions",
   "support",
   "configuration",
 ];
@@ -27,6 +27,8 @@ export interface SalesNavigationIntent {
   readonly accountId?: string | null;
   readonly opportunityId?: string | null;
   readonly correlationId?: string | null;
+  /** Keep a selection change in browser history without moving the user's viewport. */
+  readonly preserveScroll?: boolean;
 }
 
 export function getSalesTabLabel(tab: SalesTab): string {
@@ -88,8 +90,8 @@ function readValue(value: string | readonly string[] | undefined): string | unde
 }
 
 function parseTab(value: string | undefined): SalesTab {
-  if (value === "records" || value === "sessions" || value === "support" || value === "configuration") return value;
-  return "items";
+  if (value === "items" || value === "records" || value === "sessions" || value === "support" || value === "configuration") return value;
+  return "sessions";
 }
 
 function parseItemView(value: string | undefined): SalesItemView {

@@ -42,6 +42,19 @@ describe("Sales workspace page", () => {
     expect(page).toMatchObject({ props: { initialRoute: { tab: "records", accountId: "account-1", opportunityId: "opportunity-1" } } });
   });
 
+  it("gives distinct history routes distinct workspace identities so Back restores the matching Sales tab", async () => {
+    mockGetPortalSession.mockResolvedValue({
+      sessionId: "session-certalis", userId: "admin-certalis", customerId: "customer-certalis",
+      email: "sales-admin@certalis.demo", role: "admin", workspace: "sales",
+    });
+
+    const sessions = await SalesPage({ searchParams: Promise.resolve({ tab: "sessions", accountId: "account-1", opportunityId: "opportunity-1" }) });
+    const support = await SalesPage({ searchParams: Promise.resolve({ tab: "support", correlationId: "corr-verified-1" }) });
+
+    expect(sessions.key).toBe("sessions:catalog::");
+    expect(support.key).toBe("support:catalog::corr-verified-1");
+  });
+
   it("does not let a Helios certification admin use the Sales workspace", async () => {
     mockGetPortalSession.mockResolvedValue({
       sessionId: "session-helios", userId: "admin-helios", customerId: "customer-helios",

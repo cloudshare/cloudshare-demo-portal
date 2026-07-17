@@ -22,9 +22,9 @@ export const primaryButtonStyle: CSSProperties = {
 
 export const secondaryButtonStyle: CSSProperties = {
   ...baseButtonStyle,
-  border: `1px solid ${colors.borderStrong}`,
-  background: colors.surface,
-  color: colors.textPrimary,
+  border: `1px solid ${colors.accentSecondaryBorder}`,
+  background: colors.accentSecondary,
+  color: colors.accentStrong,
 };
 
 export const accountLogoutButtonStyle: CSSProperties = {
@@ -48,8 +48,8 @@ export const compactButtonStyle: CSSProperties = {
 };
 
 export const disabledButtonStyle: CSSProperties = {
-  background: colors.surfaceSubtle,
-  border: `1px solid ${colors.border}`,
-  color: colors.textMuted,
+  background: "#dbe3ec",
+  border: "1px solid #64748b",
+  color: "#475569",
   cursor: "not-allowed",
 };
