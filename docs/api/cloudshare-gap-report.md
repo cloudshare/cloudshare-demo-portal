@@ -1791,7 +1791,7 @@ will replace this isolated GUI adapter with a supported contract.
 
 | Field | Detail |
 |---|---|
-| **Status** | Confirmed — portal adapter normalized both representations |
+| **Status** | Confirmed — portal adapter pages the observed collection safely and normalizes it |
 | **Verified live** | Yes — Certalis Sales participant-monitoring read, 2026-07-17 |
 
 **Observed behaviour**
@@ -1812,8 +1812,12 @@ from its supplied correlation link.
 **Portal mitigation**
 
 `SalesDelivery.listParticipants` now accepts either the published `{ participants }`
-shape or the observed `{ count, items }` shape and normalizes it at the typed
-CloudShare boundary. Participant and environment correlation values remain
+shape or the observed `{ count, items }` shape. For the latter it uses documented
+`offset` and `limit` query parameters, reads until the declared count is satisfied,
+and fails closed when a later page contradicts that count or makes no progress.
+The typed boundary allowlists participant fields and reduces participant diagnostic
+evidence to a count, so native-invite URLs and participant e-mail are not retained
+in those exchanges. Participant and environment correlation values remain
 server-only; browser projections still exclude them. Sales Support includes the
 participant reconciliation source in both direct, Customer-scoped filtered reads and
 the aggregate correlation feed.

@@ -101,6 +101,7 @@ const participantsEnvelopeSchema = z.union([
   z.object({ participants: z.array(salesParticipantSchema) }),
   z.object({ count: z.number().int().nonnegative(), items: z.array(salesParticipantSchema) }),
 ]);
+const PARTICIPANT_PAGE_LIMIT = 100;
 
 const mutableSalesExperienceFields = ["name", "type", "projectId", "teamId", "blueprintIds", "allowParticipantsSwitchSteps", "cloudshareRegionIds", "awsCloudRegion", "azureCloudRegion", "googleCloudProviderRegion", "googleCloudProviderZone", "policyId", "opportunity", "mainSalesPro", "additionalSalesPros", "start", "end", "timeZone", "registrationType", "passphrase", "description", "labels", "externalId", "allowMultipleEnvironmentActivations", "sendInvitations", "emailDomainBlocklist", "blockFreeEmailDomains", "customFields", "useCustomInvitationEmail", "preConfigureParticipantEnvironments", "sharedEnvBlueprintId", "sharedEnvPolicyId", "isSharedLabViewAccessEnabled", "allowAudioVideo"] as const;
 
@@ -108,7 +109,7 @@ const mutableSalesExperienceFields = ["name", "type", "projectId", "teamId", "bl
  * wire keys, or response parsing; they only validate an owner and create a
  * time-bounded registered-only delivery. */
 export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDelivery {
-  async function detailed<T>(spec: { method: "GET" | "POST" | "PUT"; path: string; body?: unknown; allowEmptyResponse?: boolean; schema: z.ZodType<T> }): Promise<{ data: T; evidence: SalesDeliveryEvidence }> {
+  async function detailed<T>(spec: { method: "GET" | "POST" | "PUT"; path: string; query?: Record<string, string>; body?: unknown; allowEmptyResponse?: boolean; schema: z.ZodType<T> }): Promise<{ data: T; evidence: SalesDeliveryEvidence }> {
     const result = client.requestV4Detailed
       ? await client.requestV4Detailed(spec)
       : await client.requestV4(spec).then((data) => ({ data, request: { method: spec.method, path: spec.path, ...(spec.body === undefined ? {} : { body: spec.body }) }, response: { status: 200, body: data } } as CloudShareDetailedResult<T>));
@@ -172,17 +173,61 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
     },
     async registerParticipants(salesExperienceId, participants) {
       const { data, evidence } = await detailed({ method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants`, body: participants, schema: z.array(salesParticipantSchema) });
-      return { participants: data.map((participant) => ({ ...participant, environmentId: participant.envId })) as SalesParticipant[], ...evidence };
+      return { participants: data.map(mapSalesParticipant), ...participantEvidence(evidence, data.length) };
     },
     async listParticipants(salesExperienceId) {
-      const { data, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants`, schema: participantsEnvelopeSchema });
-      const participants = "participants" in data ? data.participants : data.items;
-      return { participants: participants.map((participant) => ({ ...participant, environmentId: participant.envId })) as SalesParticipant[], ...evidence };
+      const path = `/sales/${encodeURIComponent(salesExperienceId)}/participants`;
+      const first = await detailed({ method: "GET", path, query: { offset: "0", limit: String(PARTICIPANT_PAGE_LIMIT) }, schema: participantsEnvelopeSchema });
+      if ("participants" in first.data) {
+        return { participants: first.data.participants.map(mapSalesParticipant), ...participantEvidence(first.evidence, first.data.participants.length) };
+      }
+      const expectedCount = first.data.count;
+      const rows = [...first.data.items];
+      if (rows.length > expectedCount) throw new Error("CloudShare participant page count contradicts the returned items.");
+      const participantIds = new Set(rows.map((participant) => participant.id));
+      let evidence = first.evidence;
+      while (rows.length < expectedCount) {
+        const page = await detailed({ method: "GET", path, query: { offset: String(rows.length), limit: String(PARTICIPANT_PAGE_LIMIT) }, schema: participantsEnvelopeSchema });
+        if (!("count" in page.data) || page.data.count !== expectedCount || page.data.items.length === 0 || rows.length + page.data.items.length > expectedCount || page.data.items.some((participant) => participantIds.has(participant.id))) {
+          throw new Error("CloudShare participant page count contradicts the returned items.");
+        }
+        page.data.items.forEach((participant) => participantIds.add(participant.id));
+        rows.push(...page.data.items);
+        evidence = page.evidence;
+      }
+      return { participants: rows.map(mapSalesParticipant), ...participantEvidence(evidence, expectedCount) };
     },
     async inviteParticipants(salesExperienceId, participantIds) {
       const { evidence } = await detailed({ method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants/invite`, body: participantIds, allowEmptyResponse: true, schema: z.void() });
-      return evidence;
+      return participantEvidence(evidence, participantIds.length);
     },
+  };
+}
+
+function mapSalesParticipant(participant: z.input<typeof salesParticipantSchema>): SalesParticipant {
+  return {
+    id: participant.id,
+    firstName: participant.firstName,
+    lastName: participant.lastName,
+    email: participant.email,
+    invitationStatus: participant.invitationStatus ?? "notSent",
+    invitedBy: participant.invitedBy ?? null,
+    participationStatus: participant.participationStatus ?? "pending",
+    firstJoined: participant.firstJoined ?? null,
+    environmentId: participant.envId ?? null,
+    ...(participant.envStatus === undefined ? {} : { envStatus: participant.envStatus }),
+  };
+}
+
+/** Participant e-mail and native invitation credentials are never diagnostic
+ * payload data. Keep transport facts, page query, and a count for support. */
+function participantEvidence(evidence: SalesDeliveryEvidence, participantCount: number): SalesDeliveryEvidence {
+  return {
+    request: {
+      ...evidence.request,
+      ...(evidence.request.body === undefined ? {} : { body: { participantCount } }),
+    },
+    response: { ...evidence.response, body: { participantCount } },
   };
 }
 

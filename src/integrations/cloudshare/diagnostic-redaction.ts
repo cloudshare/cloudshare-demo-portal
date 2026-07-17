@@ -23,6 +23,8 @@ function isAlwaysRedactedKey(
       /bearer/i.test(key) ||
       /signature/i.test(key) ||
       /hmac/i.test(key) ||
+      /access[-_ ]?link/i.test(key) ||
+      /(?:invitation|invite|sponsored)[-_ ]?(?:url|link)/i.test(key) ||
       /token/i.test(key) ||
       /^authorization$/i.test(key) ||
       /auth(?:orization)?[-_ ]?(?:header|token|secret|key|value)?$/i.test(key)
@@ -39,6 +41,8 @@ function isAlwaysRedactedKey(
     /bearer/i.test(key) ||
     /signature/i.test(key) ||
     /hmac/i.test(key) ||
+    /access[-_ ]?link/i.test(key) ||
+    /(?:invitation|invite|sponsored)[-_ ]?(?:url|link)/i.test(key) ||
     /access[-_ ]?token/i.test(key) ||
     /auth(?:orization)?[-_ ]?(?:header|token|secret|key|value)$/i.test(key)
   );
