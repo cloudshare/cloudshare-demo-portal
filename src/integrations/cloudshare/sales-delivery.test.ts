@@ -1,5 +1,27 @@
 import { describe, expect, it, vi } from "vitest";
+import { createCloudShareClient } from "./client";
+import type { HttpClient } from "./http";
 import { createCloudShareSalesDelivery } from "./sales-delivery";
+
+function deliveryForRoster(body: unknown) {
+  const http: HttpClient = { async send() { return { status: 200, body: JSON.stringify(body) }; } };
+  return createCloudShareSalesDelivery(createCloudShareClient({
+    http,
+    endpoints: { v4BaseUrl: "https://api.accelerate.cloudshare.com/v4", v3BaseUrl: "https://use.cloudshare.com/api/v3" },
+    tokenProvider: { getToken: async () => "test-bearer" },
+    v3: { apiId: "api-id", apiKey: "api-key" },
+    newToken: () => "tokfixed01",
+    now: () => 1_700_000_000_000,
+  }));
+}
+
+function documentedParticipant(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "participant-1", firstName: "Casey", lastName: "Example", email: "casey@example.test",
+    invitationStatus: "notSent", invitedBy: null, participationStatus: "pending", firstJoined: null,
+    envStatus: "Ready", envId: null, ...overrides,
+  };
+}
 
 describe("CloudShare Sales Delivery", () => {
   it("uses only documented participant registration, reconciliation, and explicit native-invite contracts", async () => {
@@ -34,7 +56,7 @@ describe("CloudShare Sales Delivery", () => {
     }));
   });
   it("accepts the live count/items participant-list envelope without exposing a participant URL", async () => {
-    const participant = { id: "participant-1", firstName: "Casey", lastName: "Example", email: "casey@example.test", invitationStatus: "sent", invitedBy: null, participationStatus: "inProgress", firstJoined: "2026-07-17T09:05:00Z", envStatus: "Running", envId: "server-only-environment-1", accessLink: "https://bearer.example.test/invite" };
+    const participant = documentedParticipant({ invitationStatus: "sent", participationStatus: "inProgress", firstJoined: "2026-07-17T09:05:00Z", envId: "server-only-environment-1", accessLink: "https://bearer.example.test/invite" });
     const liveEnvelope = { count: 1, items: [participant] };
     const requestV4Detailed = vi.fn().mockImplementation(async (spec) => ({
       data: spec.schema.parse(liveEnvelope),
@@ -50,20 +72,14 @@ describe("CloudShare Sales Delivery", () => {
     expect(JSON.stringify(result)).not.toContain("https://bearer.example.test/invite");
     expect(JSON.stringify(result)).not.toContain("accessLink");
   });
-  it("normalizes a variant Sales roster while treating an empty 201 add acknowledgement as accepted", async () => {
-    const rawAcknowledgement = { created: 2, accessLink: "https://bearer.example.test/should-not-leak" };
+  it("rejects an undocumented PascalCase Sales roster with typed count-only evidence", async () => {
     const rawRoster = { Count: 1, Items: [{ Id: "participant-1", FirstName: "Casey", LastName: "Example", Email: "casey@example.test", InvitationStatus: "sent", ParticipationStatus: "inProgress", FirstJoined: "2026-07-17T09:05:00Z", EnvironmentId: "server-only-environment-1", EnvironmentStatus: "Ready", accessLink: "https://bearer.example.test/should-not-leak" }] };
-    const requestV4Detailed = vi.fn().mockImplementation(async (spec) => {
-      const raw = spec.method === "POST" ? rawAcknowledgement : rawRoster;
-      return { data: spec.schema.parse(raw), request: { method: spec.method, path: spec.path }, response: { status: spec.method === "POST" ? 201 : 200, body: raw } };
-    });
-    const delivery = createCloudShareSalesDelivery({ requestV4Detailed } as never);
+    const delivery = deliveryForRoster(rawRoster);
 
-    await expect(delivery.registerParticipants("sales-1", [{ firstName: "Casey", lastName: "Example", email: "casey@example.test" }])).resolves.toMatchObject({ response: { status: 201, body: { participantCount: 1 } } });
-    const roster = await delivery.listParticipants("sales-1");
-    expect(roster.participants).toEqual([expect.objectContaining({ id: "participant-1", email: "casey@example.test", environmentId: "server-only-environment-1", envStatus: "Ready" })]);
-    expect(JSON.stringify(roster)).not.toContain("accessLink");
-    expect(JSON.stringify(roster)).not.toContain("bearer.example.test");
+    const error = await delivery.listParticipants("sales-1").catch((failure) => failure);
+    expect(error).toMatchObject({ name: "CloudShareResponseError", context: { responseBody: { participantCount: 0 } } });
+    expect(JSON.stringify((error as { context?: unknown }).context)).not.toContain("casey@example.test");
+    expect(JSON.stringify((error as { context?: unknown }).context)).not.toContain("bearer.example.test");
   });
   it("rejects an unrecognized participant-list envelope instead of treating it as an empty roster", async () => {
     const participant = { id: "participant-1", firstName: "Casey", lastName: "Example", email: "casey@example.test", invitationStatus: "notSent", invitedBy: null, participationStatus: "pending", firstJoined: null };
@@ -76,11 +92,27 @@ describe("CloudShare Sales Delivery", () => {
 
     await expect(createCloudShareSalesDelivery({ requestV4Detailed } as never).listParticipants("sales-1")).rejects.toThrow();
   });
+  it.each(["id", "firstName", "lastName", "email", "invitationStatus", "invitedBy", "participationStatus", "firstJoined", "envStatus", "envId"])("rejects a roster row missing required %s with typed count-only evidence", async (field) => {
+    const participant = Object.fromEntries(Object.entries(documentedParticipant()).filter(([key]) => key !== field));
+
+    const error = await deliveryForRoster({ count: 1, items: [participant] }).listParticipants("sales-1").catch((failure) => failure);
+
+    expect(error).toMatchObject({
+      name: "CloudShareResponseError",
+      context: {
+        method: "GET",
+        path: "/v4/sales/sales-1/participants",
+        responseBody: { participantCount: 1 },
+      },
+    });
+    expect(JSON.stringify((error as { context?: unknown }).context)).not.toContain("casey@example.test");
+  });
   it.each([
     ["invitationStatus", "queued"],
     ["participationStatus", "joining"],
+    ["envStatus", "Running"],
   ])("rejects unsupported %s values instead of inventing a safe-looking default", async (field, value) => {
-    const participant = { id: "participant-1", firstName: "Casey", lastName: "Example", email: "casey@example.test", invitationStatus: "notSent", invitedBy: null, participationStatus: "pending", firstJoined: null, [field]: value };
+    const participant = documentedParticipant({ [field]: value });
     const envelope = { count: 1, items: [participant] };
     const requestV4Detailed = vi.fn().mockImplementation(async (spec) => ({
       data: spec.schema.parse(envelope),
@@ -91,8 +123,8 @@ describe("CloudShare Sales Delivery", () => {
     await expect(createCloudShareSalesDelivery({ requestV4Detailed } as never).listParticipants("sales-1")).rejects.toThrow();
   });
   it("reads every documented participant page and fails closed when count contradicts the pages", async () => {
-    const first = { id: "participant-1", firstName: "Casey", lastName: "Example", email: "casey@example.test" };
-    const second = { id: "participant-2", firstName: "Sam", lastName: "Example", email: "sam@example.test" };
+    const first = documentedParticipant();
+    const second = documentedParticipant({ id: "participant-2", firstName: "Sam", email: "sam@example.test" });
     const requestV4Detailed = vi.fn()
       .mockResolvedValueOnce({ data: { count: 2, items: [first] }, request: { method: "GET", path: "/sales/sales-1/participants", query: { offset: "0", limit: "100" } }, response: { status: 200, body: { count: 2, items: [first] } } })
       .mockResolvedValueOnce({ data: { count: 2, items: [second] }, request: { method: "GET", path: "/sales/sales-1/participants", query: { offset: "1", limit: "100" } }, response: { status: 200, body: { count: 2, items: [second] } } });
@@ -106,7 +138,7 @@ describe("CloudShare Sales Delivery", () => {
     await expect(contradictory.listParticipants("sales-1")).rejects.toThrow("participant page count");
   });
   it("fails closed when a single documented participant page repeats an ID", async () => {
-    const repeated = { id: "participant-1", firstName: "Casey", lastName: "Example", email: "casey@example.test" };
+    const repeated = documentedParticipant();
     const delivery = createCloudShareSalesDelivery({ requestV4Detailed: vi.fn().mockResolvedValue({ data: { count: 2, items: [repeated, repeated] }, request: { method: "GET", path: "/sales/sales-1/participants", query: { offset: "0", limit: "100" } }, response: { status: 200, body: { count: 2, items: [repeated, repeated] } } }) } as never);
 
     const error = await delivery.listParticipants("sales-1").catch((failure) => failure);
@@ -114,8 +146,8 @@ describe("CloudShare Sales Delivery", () => {
     expect(JSON.stringify((error as { context?: unknown }).context)).not.toContain("casey@example.test");
   });
   it("paginates the documented count/participants envelope", async () => {
-    const first = { id: "participant-1", firstName: "Casey", lastName: "Example", email: "casey@example.test" };
-    const second = { id: "participant-2", firstName: "Sam", lastName: "Example", email: "sam@example.test" };
+    const first = documentedParticipant();
+    const second = documentedParticipant({ id: "participant-2", firstName: "Sam", email: "sam@example.test" });
     const requestV4Detailed = vi.fn()
       .mockResolvedValueOnce({ data: { count: 2, participants: [first] }, request: { method: "GET", path: "/sales/sales-1/participants", query: { offset: "0", limit: "100" } }, response: { status: 200, body: { count: 2, participants: [first] } } })
       .mockResolvedValueOnce({ data: { count: 2, participants: [second] }, request: { method: "GET", path: "/sales/sales-1/participants", query: { offset: "1", limit: "100" } }, response: { status: 200, body: { count: 2, participants: [second] } } });

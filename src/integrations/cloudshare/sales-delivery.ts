@@ -52,7 +52,7 @@ export interface SalesParticipant extends SalesParticipantInput {
   readonly participationStatus: "pending" | "inProgress" | "concluded"; readonly firstJoined: string | null;
   /** Server-only CloudShare correlation; never include it in portal projections. */
   readonly environmentId: string | null;
-  readonly envStatus?: string;
+  readonly envStatus: string;
 }
 
 const salesExperienceSchema = z.object({
@@ -93,74 +93,42 @@ const salesExperienceSchema = z.object({
   end: z.string().nullable().optional(),
   timeZone: z.string().optional(),
 }).passthrough();
+const salesEnvironmentStatusSchema = z.enum([
+  "FutureAllocationScheduled", "AllocationScheduledNoRun", "Ready", "Suspended", "Archived", "Deleted",
+  "Publishing", "Preparing", "CreationFailed", "InGrace", "Stopping", "EditingNetworks",
+]);
 const salesParticipantSchema = z.object({
-  id: z.string().min(1), firstName: z.string(), lastName: z.string(), email: z.string().email(),
-  invitationStatus: z.enum(["sent", "notSent"]), invitedBy: z.string().email().nullable(),
-  participationStatus: z.enum(["pending", "inProgress", "concluded"]), firstJoined: z.string().nullable(), envStatus: z.string().optional(), envId: z.string().nullable(),
+  id: z.string().min(1),
+  firstName: z.string().min(2).max(64),
+  lastName: z.string().min(2).max(64),
+  email: z.string().email().max(100),
+  invitationStatus: z.enum(["sent", "notSent"]),
+  invitedBy: z.string().email().nullable(),
+  participationStatus: z.enum(["pending", "inProgress", "concluded"]),
+  firstJoined: z.string().datetime({ offset: true }).nullable(),
+  envStatus: salesEnvironmentStatusSchema,
+  envId: z.string().min(1).nullable(),
 });
 
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
-function stringAt(value: Record<string, unknown>, keys: readonly string[]): string | undefined {
-  for (const key of keys) {
-    const candidate = value[key];
-    if (typeof candidate === "string" && candidate.trim()) return candidate.trim();
-  }
-  return undefined;
-}
-function nullableStringAt(value: Record<string, unknown>, keys: readonly string[]): string | null | undefined {
-  for (const key of keys) {
-    if (value[key] === null) return null;
-    const candidate = value[key];
-    if (typeof candidate === "string") return candidate.trim() || null;
-  }
-  return undefined;
-}
-function normalizeSalesParticipant(row: unknown): z.input<typeof salesParticipantSchema> | null {
-  const source = record(row); if (!source) return null;
-  const id = stringAt(source, ["id", "Id"]);
-  const email = stringAt(source, ["email", "Email"]);
-  if (!id || !email || !z.string().email().safeParse(email).success) return null;
-  const invitationStatus = stringAt(source, ["invitationStatus", "InvitationStatus"]);
-  const participationStatus = stringAt(source, ["participationStatus", "ParticipationStatus"]);
-  const hasInvitationStatus = ["invitationStatus", "InvitationStatus"].some((key) => Object.hasOwn(source, key));
-  const hasParticipationStatus = ["participationStatus", "ParticipationStatus"].some((key) => Object.hasOwn(source, key));
-  if (hasInvitationStatus && invitationStatus !== "sent" && invitationStatus !== "notSent") return null;
-  if (hasParticipationStatus && participationStatus !== "pending" && participationStatus !== "inProgress" && participationStatus !== "concluded") return null;
-  const invitedBy = nullableStringAt(source, ["invitedBy", "InvitedBy"]);
-  return {
-    id,
-    email,
-    firstName: stringAt(source, ["firstName", "FirstName"]) ?? "",
-    lastName: stringAt(source, ["lastName", "LastName"]) ?? "",
-    invitationStatus: invitationStatus === "sent" ? "sent" : "notSent",
-    invitedBy: invitedBy && z.string().email().safeParse(invitedBy).success ? invitedBy : null,
-    participationStatus: participationStatus === "inProgress" || participationStatus === "concluded" ? participationStatus : "pending",
-    firstJoined: nullableStringAt(source, ["firstJoined", "FirstJoined"]) ?? null,
-    envStatus: stringAt(source, ["envStatus", "EnvironmentStatus"]),
-    envId: nullableStringAt(source, ["envId", "EnvironmentId"]) ?? null,
-  };
-}
 /** Normalize only the small participant roster contract Certalis needs.  The
- * live Sales API has varied its collection and field casing, so never expose
+ * live Sales API has varied its collection envelope, so never expose
  * or retain an arbitrary provider object (which can contain invite URLs). */
 export function normalizeSalesParticipantPage(payload: unknown): unknown {
   const envelope = record(payload);
   if (!envelope) return payload;
   const camelParticipants = Array.isArray(envelope.participants);
   const camelItems = Array.isArray(envelope.items) && Object.hasOwn(envelope, "count");
-  const pascalItems = Array.isArray(envelope.Items) && Object.hasOwn(envelope, "Count");
-  const recognizedEnvelopeCount = [camelParticipants, camelItems, pascalItems].filter(Boolean).length;
+  const recognizedEnvelopeCount = [camelParticipants, camelItems].filter(Boolean).length;
   if (recognizedEnvelopeCount !== 1) return payload;
-  const rows = camelParticipants ? envelope.participants : camelItems ? envelope.items : envelope.Items;
-  const hasCount = camelParticipants || camelItems ? Object.hasOwn(envelope, "count") : Object.hasOwn(envelope, "Count");
-  const rawCount = camelParticipants || camelItems ? envelope.count : envelope.Count;
+  const rows = camelParticipants ? envelope.participants : envelope.items;
+  const hasCount = Object.hasOwn(envelope, "count");
+  const rawCount = envelope.count;
   const count = !hasCount ? undefined : typeof rawCount === "number" && Number.isInteger(rawCount) && rawCount >= 0 ? rawCount : null;
   if (count === null) return payload;
-  const participants = (Array.isArray(rows) ? rows : []).map(normalizeSalesParticipant);
-  if (participants.some((participant) => participant === null)) return payload;
-  return { ...(count === undefined ? {} : { count }), participants };
+  return { ...(count === undefined ? {} : { count }), participants: rows };
 }
 const participantsEnvelopeSchema = z.preprocess(normalizeSalesParticipantPage, z.object({ count: z.number().int().nonnegative().optional(), participants: z.array(salesParticipantSchema) }));
 const PARTICIPANT_PAGE_LIMIT = 100;
@@ -281,12 +249,12 @@ function mapSalesParticipant(participant: z.input<typeof salesParticipantSchema>
     firstName: participant.firstName,
     lastName: participant.lastName,
     email: participant.email,
-    invitationStatus: participant.invitationStatus ?? "notSent",
-    invitedBy: participant.invitedBy ?? null,
-    participationStatus: participant.participationStatus ?? "pending",
-    firstJoined: participant.firstJoined ?? null,
-    environmentId: participant.envId ?? null,
-    ...(participant.envStatus === undefined ? {} : { envStatus: participant.envStatus }),
+    invitationStatus: participant.invitationStatus,
+    invitedBy: participant.invitedBy,
+    participationStatus: participant.participationStatus,
+    firstJoined: participant.firstJoined,
+    environmentId: participant.envId,
+    envStatus: participant.envStatus,
   };
 }
 
