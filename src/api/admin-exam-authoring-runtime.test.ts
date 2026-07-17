@@ -6,6 +6,7 @@ import type {
 } from "@/domain/cloudshare-connection";
 import { createDiagnosticRecorder, type DiagnosticRecorder } from "@/domain/diagnostic-log";
 import { CloudShareRateLimitError, CloudShareRequestError } from "@/integrations/cloudshare";
+import type { CloudShareClient } from "@/integrations/cloudshare";
 import type { CloudShareExamAuthoringSource } from "@/integrations/cloudshare/resources";
 import type { Logger } from "@/observability/logger";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
@@ -99,6 +100,53 @@ function makeDiagnostics(): {
 }
 
 describe("admin Exam authoring resource runtime", () => {
+  it("persists complete provider exchanges when it builds the authoring adapter", async () => {
+    const client = {
+      requestV3Detailed: vi.fn(async (spec: { path: string }) => {
+        const data = spec.path === "/projects"
+          ? [{ id: "project-1", name: "Helios CX Project" }]
+          : [{ id: "region-1", name: "eu-west", friendlyName: "EU West" }];
+        return {
+          data,
+          request: { method: "GET", path: spec.path, query: { tenant: "helios" } },
+          response: {
+            status: 200,
+            headers: { "x-cloudshare-request": `request-${spec.path}` },
+            body: data.map((item) => ({ ...item, providerField: "retained" })),
+          },
+        };
+      }),
+    } as unknown as CloudShareClient;
+    const diagnostics = makeDiagnostics();
+
+    const result = await getExamAuthoringBootstrapRuntime(
+      {
+        connections: makeConnections(),
+        cloudshare: { forConnection: vi.fn().mockReturnValue(client) } as unknown as CloudShareClientFactory,
+        cache: createInMemoryExamAuthoringCacheRepository(),
+        diagnostics: diagnostics.recorder,
+        logger: makeLogger(),
+      },
+      { customerId: "customer-1", refresh: true },
+    );
+
+    expect(result.status).toBe(200);
+    await expect(diagnostics.repository.query({ customerId: "customer-1" })).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        request: { method: "GET", path: "/projects", query: { tenant: "helios" } },
+        response: expect.objectContaining({
+          body: [{ id: "project-1", name: "Helios CX Project", providerField: "retained" }],
+        }),
+      }),
+      expect.objectContaining({
+        request: { method: "GET", path: "/regions", query: { tenant: "helios" } },
+        response: expect.objectContaining({
+          body: [{ id: "region-1", name: "eu-west", friendlyName: "EU West", providerField: "retained" }],
+        }),
+      }),
+    ]));
+  });
+
   it("reads Projects and Regions, records diagnostics, and serves the cached bootstrap", async () => {
     const source = makeAuthoringSource();
     const cache = createInMemoryExamAuthoringCacheRepository();

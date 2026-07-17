@@ -76,11 +76,15 @@ export async function getExamAuthoringBootstrapRuntime(
     }
   }
 
-  const source = resolveAuthoringSource(deps.cloudshare, connection);
+  const { source, capturesDetailedReads } = resolveAuthoringSource(
+    deps,
+    request.customerId,
+    connection,
+  );
   let projects;
   try {
     projects = await source.listProjects();
-    await recordResourceRead(deps, {
+    if (!capturesDetailedReads) await recordResourceRead(deps, {
       customerId: request.customerId,
       operation: "cloudshare.resource_sync.projects.read",
       integrationSurface: "cloudshare.v3.projects",
@@ -105,7 +109,7 @@ export async function getExamAuthoringBootstrapRuntime(
   let regions;
   try {
     regions = await source.listRegions();
-    await recordResourceRead(deps, {
+    if (!capturesDetailedReads) await recordResourceRead(deps, {
       customerId: request.customerId,
       operation: "cloudshare.resource_sync.regions.read",
       integrationSurface: "cloudshare.v3.regions",
@@ -154,11 +158,15 @@ export async function getProjectResourcesRuntime(
     }
   }
 
-  const source = resolveAuthoringSource(deps.cloudshare, connection);
+  const { source, capturesDetailedReads } = resolveAuthoringSource(
+    deps,
+    request.customerId,
+    connection,
+  );
   let blueprints;
   try {
     blueprints = await source.listProjectBlueprints(request.projectId);
-    await recordResourceRead(deps, {
+    if (!capturesDetailedReads) await recordResourceRead(deps, {
       customerId: request.customerId,
       operation: "cloudshare.resource_sync.blueprints.read",
       integrationSurface: "cloudshare.v3.projects.blueprints",
@@ -185,7 +193,7 @@ export async function getProjectResourcesRuntime(
   let policies;
   try {
     policies = await source.listProjectPolicies(request.projectId);
-    await recordResourceRead(deps, {
+    if (!capturesDetailedReads) await recordResourceRead(deps, {
       customerId: request.customerId,
       operation: "cloudshare.resource_sync.policies.read",
       integrationSurface: "cloudshare.v3.projects.policies",
@@ -197,7 +205,7 @@ export async function getProjectResourcesRuntime(
         resourceIds: policies.map((policy) => policy.id),
       },
     });
-    await Promise.all(
+    if (!capturesDetailedReads) await Promise.all(
       policies.map((policy) =>
         recordResourceRead(deps, {
           customerId: request.customerId,
@@ -268,11 +276,15 @@ export async function getBlueprintDetailRuntime(
     }
   }
 
-  const source = resolveAuthoringSource(deps.cloudshare, connection);
+  const { source, capturesDetailedReads } = resolveAuthoringSource(
+    deps,
+    request.customerId,
+    connection,
+  );
   try {
     const blueprint = await source.getBlueprintDetail(request.projectId, request.blueprintId);
     const blueprintForClient = stripBlueprintDiagnosticSummary(blueprint);
-    await recordResourceRead(deps, {
+    if (!capturesDetailedReads) await recordResourceRead(deps, {
       customerId: request.customerId,
       operation: "cloudshare.resource_sync.blueprint_detail.read",
       integrationSurface: "cloudshare.v3.projects.blueprint_detail",
@@ -305,21 +317,29 @@ export async function getBlueprintDetailRuntime(
 }
 
 function resolveAuthoringSource(
-  factory: CloudShareClientFactory,
+  deps: AdminExamAuthoringRuntimeDeps,
+  customerId: string,
   connection: Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>> extends infer T
     ? Exclude<T, null>
     : never,
-): CloudShareExamAuthoringSource {
-  const candidate = factory.forConnection(connection) as unknown;
+): { source: CloudShareExamAuthoringSource; capturesDetailedReads: boolean } {
+  const candidate = deps.cloudshare.forConnection(connection) as unknown;
   if (
     typeof candidate === "object" &&
     candidate !== null &&
     "listProjects" in candidate &&
     typeof (candidate as CloudShareExamAuthoringSource).listProjects === "function"
   ) {
-    return candidate as CloudShareExamAuthoringSource;
+    return { source: candidate as CloudShareExamAuthoringSource, capturesDetailedReads: false };
   }
-  return createCloudShareExamAuthoringSource(candidate as CloudShareClient);
+  return {
+    source: createCloudShareExamAuthoringSource(candidate as CloudShareClient, {
+      onReadSuccess: async (read) => {
+        await recordResourceRead(deps, { customerId, ...read });
+      },
+    }),
+    capturesDetailedReads: true,
+  };
 }
 
 async function recordResourceRead(
@@ -521,6 +541,9 @@ async function handleCloudShareFailure(
       request: {
         method: (cloudShareError.context?.method as string | undefined) ?? "GET",
         path: spec.path,
+        ...(cloudShareError.context?.requestQuery
+          ? { query: normalizeDiagnosticPayload(cloudShareError.context.requestQuery) }
+          : {}),
         ...(cloudShareError.context?.requestHeaders
           ? { headers: cloudShareError.context.requestHeaders }
           : {}),

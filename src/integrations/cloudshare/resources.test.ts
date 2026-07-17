@@ -90,6 +90,32 @@ describe("createCloudShareResourceLister", () => {
     expect(result).toEqual([{ id: "p-1", name: "Helios CX" }]);
   });
 
+  it("forwards the complete detailed exchange to an authoring read observer", async () => {
+    const onReadSuccess = vi.fn();
+    const client = makeClient({ "v3:/projects": [{ id: "p-1", name: "Helios CX" }] });
+    (client.requestV3Detailed as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      data: [{ id: "p-1", name: "Helios CX" }],
+      request: { method: "GET", path: "/projects", query: { include: "all" } },
+      response: {
+        status: 200,
+        headers: { "x-cloudshare-request": "provider-request-1" },
+        body: [{ id: "p-1", name: "Helios CX", providerField: "retained" }],
+      },
+    });
+
+    const source = createCloudShareExamAuthoringSource(client, { onReadSuccess });
+    await source.listProjects();
+
+    expect(onReadSuccess).toHaveBeenCalledWith(expect.objectContaining({
+      request: { method: "GET", path: "/projects", query: { include: "all" } },
+      response: {
+        status: 200,
+        headers: { "x-cloudshare-request": "provider-request-1" },
+        body: [{ id: "p-1", name: "Helios CX", providerField: "retained" }],
+      },
+    }));
+  });
+
   it("lists regions via v3", async () => {
     const lister = createCloudShareResourceLister(mockClient);
     const result = await lister.listRegions();

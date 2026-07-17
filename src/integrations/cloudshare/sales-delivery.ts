@@ -256,7 +256,9 @@ function mapSalesParticipant(participant: z.input<typeof salesParticipantSchema>
     invitedBy: participant.invitedBy,
     participationStatus: participant.participationStatus,
     firstJoined: participant.firstJoined,
-    environmentId: participant.envId,
+    // CloudShare uses "0" as a pre-registration placeholder before an
+    // environment exists. Do not persist it as an environment correlation.
+    environmentId: participant.envId === "0" ? null : participant.envId,
     envStatus: participant.envStatus,
   };
 }

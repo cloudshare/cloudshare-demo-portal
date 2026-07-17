@@ -367,8 +367,8 @@ function createTeamReadDiagnosticObserver(input: {
           projectId: event.projectId,
           teamId: event.selectedTeamId,
         },
-        request: { method: "GET", path: "/teams", query: { projectId: event.projectId } },
-        response: { itemCount: event.itemCount, resourceIds: [...event.teamIds] },
+        request: { ...event.request },
+        response: { ...event.response },
         details: { integrationSurface: "cloudshare.v3.teams" },
       });
     },
@@ -390,8 +390,8 @@ function createTeamReadDiagnosticObserver(input: {
         outcome: "failure",
         message: "CloudShare team resource read failed",
         externalIds: { resourceType: "team", projectId: event.projectId },
-        request: { method: "GET", path: "/teams", query: { projectId: event.projectId } },
-        response: {
+        request: { ...event.request },
+        response: event.response ? { ...event.response } : {
           ...(event.responseStatus !== undefined ? { status: event.responseStatus } : {}),
         },
         details: {

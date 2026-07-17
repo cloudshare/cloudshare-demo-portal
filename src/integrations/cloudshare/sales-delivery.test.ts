@@ -83,8 +83,8 @@ describe("CloudShare Sales Delivery", () => {
 
     await expect(deliveryForRoster(roster).listParticipants("sales-1")).resolves.toMatchObject({
       participants: [
-        { id: "participant-1", envStatus: null, environmentId: "0" },
-        { id: "participant-2", envStatus: null, environmentId: "0" },
+        { id: "participant-1", envStatus: null, environmentId: null },
+        { id: "participant-2", envStatus: null, environmentId: null },
       ],
     });
   });

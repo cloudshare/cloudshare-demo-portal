@@ -620,6 +620,74 @@ describe("cloudShareLabProvisioner — request shape", () => {
     );
   });
 
+  it("propagates the complete sanitized v3 team exchange to its observer", async () => {
+    const requestV3Detailed = vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) => {
+      const body = {
+        rows: [{ id: "TM-team-1", name: "Helios Team", description: "Exam delivery" }],
+        total: 1,
+      };
+      return {
+        data: spec.schema.parse(body),
+        host: "use.cloudshare.com",
+        integrationSurface: "cloudshare.v3.teams",
+        request: {
+          method: "GET",
+          path: "/teams",
+          query: { projectId: "project-1", getRows: "true", take: "20" },
+          headers: { authorization: "[REDACTED]" },
+        },
+        response: {
+          status: 200,
+          headers: { "x-request-id": "req-team-1" },
+          body,
+        },
+      };
+    });
+    const observer = { onTeamReadSuccess: vi.fn() };
+    const client = {
+      requestV3: vi.fn(),
+      requestV3Detailed,
+      requestV4Detailed: vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) => ({
+        data: spec.schema.parse({ id: "exp-1" }),
+        host: "api.accelerate.cloudshare.com",
+        integrationSurface: "cloudshare.v4.training",
+        request: { method: "POST", path: "/trainings" },
+        response: { status: 200, body: { id: "exp-1" } },
+      })),
+    } as unknown as CloudShareClient;
+
+    await createCloudShareLabProvisioner(client, observer).createTraining!({
+      title: "Exam GCP-ASSOC",
+      scheduledFor: new Date("2026-06-15T16:00:00.000Z"),
+      endsAt: new Date("2026-06-15T17:30:00.000Z"),
+      projectId: "project-1",
+      blueprintId: "bp-1",
+      policyId: "policy-1",
+      regionIds: ["region-1"],
+      instructorId: "instructor@example.com",
+      passphrase: "certalis-attempt-1",
+      timeZoneId: "UTC",
+    });
+
+    expect(requestV3Detailed).toHaveBeenCalledWith(expect.objectContaining({
+      method: "GET",
+      path: "/teams",
+      query: expect.objectContaining({ projectId: "project-1" }),
+    }));
+    expect(observer.onTeamReadSuccess).toHaveBeenCalledWith(expect.objectContaining({
+      request: expect.objectContaining({
+        query: { projectId: "project-1", getRows: "true", take: "20" },
+      }),
+      response: expect.objectContaining({
+        headers: { "x-request-id": "req-team-1" },
+        body: {
+          rows: [{ id: "TM-team-1", name: "Helios Team", description: "Exam delivery" }],
+          total: 1,
+        },
+      }),
+    }));
+  });
+
   it("accepts documented all-teams array casing while resolving a Team ID", async () => {
     const requestV3 = vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) =>
       spec.schema.parse([{ Id: "TM-team-2", Name: "Helios Team" }]),

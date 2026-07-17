@@ -1,5 +1,10 @@
 import { z } from "zod";
-import type { CloudShareClient, CloudShareDetailedResult } from "./client";
+import type {
+  CloudShareClient,
+  CloudShareDetailedResult,
+  CloudShareRequestDiagnostics,
+  CloudShareResponseDiagnostics,
+} from "./client";
 import { CloudShareResponseError } from "./errors";
 import { toCloudShareExternalId } from "./external-id";
 import type {
@@ -126,6 +131,9 @@ export interface CloudShareTeamReadSuccessEvent {
   readonly selectedTeamId: string;
   readonly teamIds: readonly string[];
   readonly itemCount: number;
+  /** Complete, adapter-sanitized exchange from the live v3 team lookup. */
+  readonly request: CloudShareRequestDiagnostics;
+  readonly response: CloudShareResponseDiagnostics;
 }
 
 export interface CloudShareTeamReadFailureEvent {
@@ -133,6 +141,10 @@ export interface CloudShareTeamReadFailureEvent {
   readonly integrationSurface: string;
   readonly failureMode: "http_status" | "transport" | "unexpected_response" | "cloudshare_error";
   readonly responseStatus?: number;
+  /** Request evidence is available even when CloudShare did not respond. */
+  readonly request: CloudShareRequestDiagnostics;
+  /** Complete, adapter-sanitized response evidence, when CloudShare responded. */
+  readonly response?: CloudShareResponseDiagnostics;
 }
 
 export interface CloudShareLabProvisionerObserver {
@@ -153,6 +165,50 @@ function inferFailureMode(error: unknown): CloudShareTeamReadFailureEvent["failu
   if (name === "CloudShareTransportError") return "transport";
   if (name === "CloudShareResponseError") return "unexpected_response";
   return "cloudshare_error";
+}
+
+const teamLookupQuery = {
+  getRows: "true",
+  sortBy: "name",
+  sortAscending: "true",
+  skip: "0",
+  take: "20",
+} as const;
+
+function isStringMap(value: unknown): value is Record<string, string> {
+  return Boolean(value) && typeof value === "object" && Object.values(value as Record<string, unknown>).every((item) => typeof item === "string");
+}
+
+function isHeaderMap(value: unknown): value is Record<string, string | string[]> {
+  return Boolean(value) && typeof value === "object" && Object.values(value as Record<string, unknown>).every(
+    (item) => typeof item === "string" || (Array.isArray(item) && item.every((entry) => typeof entry === "string")),
+  );
+}
+
+function teamReadFailureEvidence(
+  error: unknown,
+  fallbackRequest: CloudShareRequestDiagnostics,
+): Pick<CloudShareTeamReadFailureEvent, "request" | "response"> {
+  const context = (error as { context?: unknown } | undefined)?.context;
+  const fields = context && typeof context === "object" ? context as Record<string, unknown> : {};
+  const request: CloudShareRequestDiagnostics = {
+    method: "GET",
+    path: typeof fields.path === "string" ? fields.path : fallbackRequest.path,
+    ...(isStringMap(fields.requestQuery) ? { query: fields.requestQuery } : fallbackRequest.query ? { query: fallbackRequest.query } : {}),
+    ...(isStringMap(fields.requestHeaders) ? { headers: fields.requestHeaders } : {}),
+    ...(fields.requestBody !== undefined ? { body: fields.requestBody } : {}),
+  };
+  const status = typeof (error as { status?: unknown } | undefined)?.status === "number"
+    ? (error as { status: number }).status
+    : typeof fields.status === "number" ? fields.status : undefined;
+  const response: CloudShareResponseDiagnostics | undefined = status === undefined && fields.responseBody === undefined && !isHeaderMap(fields.responseHeaders)
+    ? undefined
+    : {
+      status: status ?? 0,
+      ...(isHeaderMap(fields.responseHeaders) ? { headers: fields.responseHeaders } : {}),
+      ...(fields.responseBody !== undefined ? { body: fields.responseBody } : { body: null }),
+    };
+  return { request, ...(response ? { response } : {}) };
 }
 
 /** @internal TrainingDelivery implementation detail; active runtimes use training-delivery.ts. */
@@ -176,21 +232,32 @@ export function createCloudShareLabProvisioner(
   return {
     async createTraining(input: CreateTrainingInput): Promise<CreateTrainingResult> {
       let teams: ProjectTeam[];
+      const teamRequest = {
+        method: "GET" as const,
+        path: "/teams",
+        query: { ...teamLookupQuery, projectId: input.projectId },
+        schema: projectTeamsSchema,
+      };
+      let teamEvidence: Pick<CloudShareTeamReadSuccessEvent, "request" | "response">;
       try {
-        teams = (await client.requestV3({
+        if (typeof client.requestV3Detailed === "function") {
+          const result = await client.requestV3Detailed(teamRequest) as CloudShareDetailedResult<ProjectTeam[]>;
+          teams = result.data;
+          teamEvidence = { request: result.request, response: result.response };
+        } else {
+          teams = (await client.requestV3(teamRequest)) as ProjectTeam[];
+          // Compatibility for narrow legacy test doubles. Production clients always expose detailed evidence.
+          teamEvidence = {
+            request: { method: "GET", path: "/teams", query: teamRequest.query },
+            response: { status: 200, body: teams },
+          };
+        }
+      } catch (error) {
+        const evidence = teamReadFailureEvidence(error, {
           method: "GET",
           path: "/teams",
-          query: {
-            getRows: "true",
-            projectId: input.projectId,
-            sortBy: "name",
-            sortAscending: "true",
-            skip: "0",
-            take: "20",
-          },
-          schema: projectTeamsSchema,
-        })) as ProjectTeam[];
-      } catch (error) {
+          query: teamRequest.query,
+        });
         await observer?.onTeamReadFailure?.({
           projectId: input.projectId,
           integrationSurface:
@@ -201,6 +268,7 @@ export function createCloudShareLabProvisioner(
             typeof (error as { status?: unknown }).status === "number"
               ? ((error as { status: number }).status)
               : undefined,
+          ...evidence,
         });
         throw error;
       }
@@ -213,6 +281,7 @@ export function createCloudShareLabProvisioner(
         selectedTeamId: teamId,
         teamIds: teams.map((team) => team.id),
         itemCount: teams.length,
+        ...teamEvidence,
       });
 
       const training = await requestV4WithDiagnostics({
