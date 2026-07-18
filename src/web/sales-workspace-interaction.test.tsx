@@ -550,6 +550,31 @@ describe("SalesWorkspace interaction", () => {
     expect((screen.getByRole("combobox", { name: "Sales Experience type" }) as HTMLSelectElement).value).toBe("pov");
   });
 
+  it.each([
+    { editedControl: "Time zone", editedValue: "America/New_York", expected: { timeZone: "America/New_York", experienceType: "poc" } },
+    { editedControl: "Sales Experience type", editedValue: "pov", expected: { timeZone: "Europe/London", experienceType: "pov" } },
+  ])("merges a late saved preference with an in-flight $editedControl edit", async ({ editedControl, editedValue, expected }) => {
+    const preferenceWrites: string[] = [];
+    let resolveTimezones: ((response: Response) => void) | undefined;
+    vi.spyOn(window, "fetch").mockImplementation((input, init) => {
+      const path = String(input);
+      if (path === "/api/sales/timezones" && !init?.method) return new Promise<Response>((resolve) => { resolveTimezones = resolve; });
+      if (path === "/api/sales/timezones" && init?.method === "PUT") { preferenceWrites.push(String(init.body)); return Promise.resolve(new Response(null, { status: 204 })); }
+      if (path === "/api/sales/items") return Promise.resolve(json({ activeItems: [] }));
+      if (path.startsWith("/api/sales/enablement-sessions?")) return Promise.resolve(json({ sessions: [] }));
+      if (path.startsWith("/api/sales/session-opportunities?")) return Promise.resolve(json({ accounts: [], opportunities: [], total: 0 }));
+      if (path === "/api/sales/session-configuration") return Promise.resolve(json({}));
+      return Promise.resolve(json({ error: `Unexpected request ${path}` }, 500));
+    });
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    await waitFor(() => expect(resolveTimezones).toBeDefined());
+    fireEvent.change(screen.getByRole("combobox", { name: editedControl }), { target: { value: editedValue } });
+    resolveTimezones?.(json({ timezones: [{ id: "UTC", name: "UTC" }, { id: "Europe/London", name: "London" }, { id: "America/New_York", name: "New York" }], freshness: "live", preference: { timeZone: "Europe/London", experienceType: "poc" } }));
+    await waitFor(() => expect(preferenceWrites).toEqual([JSON.stringify(expected)]));
+    expect((screen.getByRole("combobox", { name: "Time zone" }) as HTMLInputElement).value).toBe(expected.timeZone);
+    expect((screen.getByRole("combobox", { name: "Sales Experience type" }) as HTMLSelectElement).value).toBe(expected.experienceType);
+  });
+
   it("surfaces a failed reconciliation with its support correlation and defers name edits until live full-PUT compatibility is proven", async () => {
     const user = userEvent.setup();
     vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
