@@ -150,4 +150,22 @@ describe("Sales Participant monitoring", () => {
     await screen.findByRole("checkbox", { name: "Select Ada Lovelace for native invite" });
     expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual(["Select", "Participant", "Invite", "First joined", "Participation", "Environment"]);
   });
+
+  it("keeps a repairable legacy participant available for explicit correlation repair", async () => {
+    const user = userEvent.setup();
+    const fetchSales = vi.fn().mockImplementation(async (input: string, init?: RequestInit) => {
+      if (input === "/api/sales/accounts") return json({ contacts: [{ id: "contact-1", opportunityId: "opportunity-1", firstName: "Ada", lastName: "Lovelace", archivedAt: null }] });
+      if (input === "/api/sales/enablement-sessions/session-1/participants" && !init?.method) return json({ participants: [{ id: "portal-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Lovelace", invitationStatus: "notSent", participationStatus: "pending", firstJoined: null, envStatus: null, needsAttention: true, requiresCorrelationRepair: true, monitoringMessage: "CloudShare returned this participant without its Certalis correlation properties." }] });
+      if (input === "/api/sales/enablement-sessions/session-1/participants") return json({ participants: [{ id: "portal-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Lovelace", invitationStatus: "notSent", participationStatus: "pending", firstJoined: null, envStatus: null }], correlationId: "corr-repair-1" }, 201);
+      return json({});
+    });
+    render(<SalesSessionParticipants session={{ id: "session-1", opportunityId: "opportunity-1", itemId: "item-1", type: "demo", start: "2026-07-17T09:00", end: "2026-07-17T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-17T08:00:00Z", verificationEligible: true }} fetchSales={fetchSales as typeof fetch} onOpenSupport={vi.fn()} />);
+
+    expect(await screen.findByLabelText("Ada Lovelace (repair CloudShare correlation)")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Register or repair selected participants" })).not.toBeNull();
+    await user.click(screen.getByLabelText("Ada Lovelace (repair CloudShare correlation)"));
+    await user.click(screen.getByRole("button", { name: "Register or repair selected participants" }));
+    await waitFor(() => expect(screen.queryByLabelText("Ada Lovelace (repair CloudShare correlation)")).toBeNull());
+    expect((screen.getByRole("checkbox", { name: "Select Ada Lovelace for native invite" }) as HTMLInputElement).disabled).toBe(false);
+  });
 });

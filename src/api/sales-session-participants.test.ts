@@ -71,6 +71,55 @@ describe("Sales Session participant invitation", () => {
     expect(updateParticipantCorrelation).toHaveBeenCalledWith("remote-sales-1", "remote-legacy", expect.objectContaining({ customProperties: expect.arrayContaining([{ name: "unrelated", value: "preserve-me" }, { name: "certalisOpportunityContactId", value: contact.id }]) }));
   });
 
+  it("repairs a selected persisted legacy mapping instead of creating a duplicate participant", async () => {
+    let repaired = false;
+    const updateParticipantCorrelation = vi.fn().mockImplementation(async () => {
+      repaired = true;
+      return { request: { method: "PUT", path: "/v4/sales/remote-sales-1/participants/remote-1" }, response: { status: 200 } };
+    });
+    const listParticipants = vi.fn().mockImplementation(async () => rosterEvidence([repaired ? remoteParticipant("remote-1", "portal-1", contact.id) : remoteParticipant("remote-1")]));
+    const registerParticipants = vi.fn();
+    const diagnostics = { record: vi.fn() };
+    const result = await handleRegisterSalesSessionParticipants({
+      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn().mockResolvedValue(contact) }, participants: { list: vi.fn().mockResolvedValue([storedParticipant("portal-1", contact.id, "remote-1")]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), ensureParticipantCorrelationProperties: vi.fn().mockResolvedValue(correlationProperties()), updateParticipantCorrelation, registerParticipants, listParticipants, inviteParticipants: vi.fn() }) }, diagnostics,
+    }, { customerId: "customer-1", sessionId: session.id, actor, body: { contactIds: [contact.id] } });
+
+    expect(result.status).toBe(201);
+    expect(updateParticipantCorrelation).toHaveBeenCalledWith("remote-sales-1", "remote-1", expect.objectContaining({ customProperties: expect.arrayContaining([{ name: "certalisSalesParticipantId", value: "portal-1" }, { name: "certalisOpportunityContactId", value: contact.id }]) }));
+    expect(registerParticipants).not.toHaveBeenCalled();
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ details: expect.objectContaining({ adoptedLegacyParticipantCount: 0, repairedPersistedParticipantCount: 1 }) }));
+  });
+
+  it("fails closed before repair when another provider row already owns the persisted identity", async () => {
+    const ensureParticipantCorrelationProperties = vi.fn().mockResolvedValue(correlationProperties());
+    const updateParticipantCorrelation = vi.fn();
+    const registerParticipants = vi.fn();
+    const result = await handleRegisterSalesSessionParticipants({
+      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn().mockResolvedValue(contact) }, participants: { list: vi.fn().mockResolvedValue([storedParticipant("portal-1", contact.id, "remote-legacy")]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), ensureParticipantCorrelationProperties, updateParticipantCorrelation, registerParticipants, listParticipants: vi.fn().mockResolvedValue(rosterEvidence([remoteParticipant("remote-legacy"), remoteParticipant("remote-already-correlated", "portal-1", contact.id)])), inviteParticipants: vi.fn() }) },
+    }, { customerId: "customer-1", sessionId: session.id, actor, body: { contactIds: [contact.id] } });
+
+    expect(result.status).toBe(502);
+    expect(ensureParticipantCorrelationProperties).not.toHaveBeenCalled();
+    expect(updateParticipantCorrelation).not.toHaveBeenCalled();
+    expect(registerParticipants).not.toHaveBeenCalled();
+  });
+
+  it("does not let a different same-email Contact adopt a provider row already persisted to another Contact", async () => {
+    const secondContact = { ...contact, id: "contact-2" };
+    const updateParticipantCorrelation = vi.fn();
+    const registerParticipants = vi.fn();
+    const result = await handleRegisterSalesSessionParticipants({
+      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn().mockResolvedValue(secondContact) }, participants: { list: vi.fn().mockResolvedValue([storedParticipant("portal-1", contact.id, "remote-legacy")]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), ensureParticipantCorrelationProperties: vi.fn(), updateParticipantCorrelation, registerParticipants, listParticipants: vi.fn().mockResolvedValue(rosterEvidence([remoteParticipant("remote-legacy")])), inviteParticipants: vi.fn() }) },
+    }, { customerId: "customer-1", sessionId: session.id, actor, body: { contactIds: [secondContact.id] } });
+
+    expect(result.status).toBe(502);
+    expect(updateParticipantCorrelation).not.toHaveBeenCalled();
+    expect(registerParticipants).not.toHaveBeenCalled();
+  });
+
   it("uses a stable portal identity and rejects duplicate provider rows from concurrent registration", async () => {
     const registrations: Array<{ readonly customProperties: readonly { readonly name: string; readonly value: string }[] }> = [];
     let reads = 0;
@@ -183,6 +232,17 @@ describe("Sales Session participant invitation", () => {
 
     expect(result.status).toBe(502);
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ details: expect.objectContaining({ failureMode: "participant_roster_mapping_unresolved", unmatchedCloudShareParticipantCount: 1 }) }));
+  });
+
+  it("labels a returned legacy provider row as repairable rather than missing", async () => {
+    const diagnostics = { record: vi.fn() };
+    const result = await handleListSalesSessionParticipants({
+      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn().mockResolvedValue(contact) }, participants: { list: vi.fn().mockResolvedValue([storedParticipant("portal-1", contact.id, "remote-1")]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([remoteParticipant("remote-1")])) }) }, diagnostics,
+    }, { customerId: "customer-1", sessionId: session.id, actor });
+
+    expect(result).toMatchObject({ status: 200, body: { participants: [{ id: "portal-1", needsAttention: true, requiresCorrelationRepair: true }] } });
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ message: "CloudShare returned one or more Sales Participants without their Certalis correlation properties; select those Contacts to repair the mappings.", details: expect.objectContaining({ correlationRepairRequiredCount: 1 }) }));
   });
 
   it("refuses property correlation when its Contact is outside the Session Opportunity", async () => {

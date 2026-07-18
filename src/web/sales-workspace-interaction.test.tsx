@@ -635,7 +635,7 @@ describe("SalesWorkspace interaction", () => {
     render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
     await user.click(await screen.findByRole("button", { name: "Manage participants" }));
     await user.click(await screen.findByLabelText(/Ada Lovelace$/));
-    await user.click(screen.getByRole("button", { name: "Register selected participants" }));
+    await user.click(screen.getByRole("button", { name: "Register or repair selected participants" }));
     expect(await screen.findByText("Sales Participants registered. No native invitations were sent.")).not.toBeNull();
     expect(screen.queryByLabelText(/^Ada Lovelace$/)).toBeNull();
     expect(fetchMock).toHaveBeenCalledWith("/api/sales/enablement-sessions/session-1/participants", expect.objectContaining({ method: "POST", body: JSON.stringify({ contactIds: ["contact-1"] }) }));
