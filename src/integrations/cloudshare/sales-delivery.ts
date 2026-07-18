@@ -133,7 +133,10 @@ const salesParticipantSchema = z.object({
   firstJoined: z.string().datetime({ offset: true }).nullable(),
   // The published schema lists environment states, but the live Sales roster
   // returns null until a registered participant has an environment.
-  envStatus: salesEnvironmentStatusSchema.nullable(),
+  // Live Sales roster evidence returned lowercase `preparing` despite the
+  // exported schema's PascalCase `Preparing`; normalize only that observed
+  // variant at the adapter seam.
+  envStatus: z.preprocess((value) => value === "preparing" ? "Preparing" : value, salesEnvironmentStatusSchema.nullable()),
   envId: z.string().min(1).nullable(),
   customProperties: z.preprocess((value) => value ?? [], z.array(z.object({ name: z.string(), value: z.string().max(1024) }))),
 });
