@@ -122,6 +122,25 @@ admin URL, and the reserved fixture Cohort Session participant read always throw
 redacted 429 (`0x42901`) evidence before any CloudShare request is made — including after a server
 restart without the scenario flag.
 
+### Local Sales reservation persistence QA fixture
+
+To exercise the real Sales Admin HTTP/browser error path without breaking the database or contacting
+CloudShare, add these non-secret values to `.env.local` for a disposable Sales Opportunity, then
+restart `next dev`:
+
+```text
+PORTAL_LOCAL_QA_SCENARIO=sales-reservation-persistence-failure
+PORTAL_LOCAL_QA_SALES_CUSTOMER_ID=<exact disposable Customer ID>
+PORTAL_LOCAL_QA_SALES_OPPORTUNITY_ID=<exact disposable Opportunity ID>
+```
+
+The first matching Session creation returns the normal correlated 503, Support diagnostic, and audit
+evidence before any CloudShare client/read/mutation and leaves no reservation row. It fires once per
+server process and has no effect on any other Customer or Opportunity. A retry follows the ordinary
+provisioning path, so use only an approved disposable target when live CloudShare credentials are
+configured. Remove all three values and restart the server to disable it. Production builds ignore
+the scenario even if all values are present.
+
 `npm test` uses a dedicated SQLite database at `prisma/test.db`. It does not run against the
 local development `DATABASE_URL` from `.env`, so running the suite should not delete QA data from
 the dev portal database.
