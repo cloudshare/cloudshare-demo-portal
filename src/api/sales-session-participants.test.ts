@@ -323,6 +323,56 @@ describe("Sales Session participant invitation", () => {
     }));
   });
 
+  it("does not treat an already-sent participant as confirmation that a resend was dispatched", async () => {
+    const sent = { ...remoteParticipant("remote-1", "portal-1", "contact-1"), invitationStatus: "sent" as const };
+    const listParticipants = vi.fn().mockResolvedValue(rosterEvidence([sent]));
+
+    const result = await handleInviteSalesSessionParticipants({
+      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([{ ...storedParticipant(), invitationStatus: "sent" }]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants, inviteParticipants: vi.fn().mockResolvedValue({ request: { method: "POST", path: "/v4/sales/remote-sales-1/participants/invite" }, response: { status: 200 } }) }) },
+    }, { customerId: "customer-1", sessionId: session.id, actor, body: { participantIds: ["portal-1"] } });
+
+    expect(result).toMatchObject({ status: 200, body: { invitationConfirmation: "pending", confirmedParticipantCount: 0, pendingConfirmationParticipantCount: 1 } });
+  });
+
+  it("retains the acknowledged invite and roster exchanges when post-acknowledgement persistence fails", async () => {
+    const current = rosterEvidence([remoteParticipant("remote-1", "portal-1", "contact-1")]);
+    const afterRequest = rosterEvidence([{ ...remoteParticipant("remote-1", "portal-1", "contact-1"), invitationStatus: "sent" as const }]);
+    const requested = { request: { method: "POST", path: "/v4/sales/remote-sales-1/participants/invite", body: ["remote-1"] }, response: { status: 200, body: "" } };
+    const diagnostics = { record: vi.fn() };
+
+    const result = await handleInviteSalesSessionParticipants({
+      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save: vi.fn().mockRejectedValue(new Error("database unavailable")) }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: vi.fn().mockResolvedValueOnce(current).mockResolvedValueOnce(afterRequest), inviteParticipants: vi.fn().mockResolvedValue(requested) }) }, diagnostics,
+    }, { customerId: "customer-1", sessionId: session.id, actor, body: { participantIds: ["portal-1"] } });
+
+    expect(result).toMatchObject({ status: 502, body: { error: "CloudShare accepted the native invitation request, but Certalis could not confirm or save its result. Do not retry until support diagnostics are reviewed." } });
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({
+      request: requested.request,
+      response: requested.response,
+      details: expect.objectContaining({ failureMode: "participant_invitation_confirmation", httpExchanges: expect.arrayContaining([current, requested, afterRequest]) }),
+    }));
+  });
+
+  it("retains the acknowledged invite and failing confirmation read when CloudShare cannot confirm it", async () => {
+    const current = rosterEvidence([remoteParticipant("remote-1", "portal-1", "contact-1")]);
+    const requested = { request: { method: "POST", path: "/v4/sales/remote-sales-1/participants/invite", body: ["remote-1"] }, response: { status: 200, body: "" } };
+    const confirmationFailure = new CloudShareResponseError("roster unavailable", { method: "GET", path: "/v4/sales/remote-sales-1/participants", status: 503, responseStatus: 503, responseBody: { error: "unavailable" } });
+    const diagnostics = { record: vi.fn() };
+
+    const result = await handleInviteSalesSessionParticipants({
+      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: vi.fn().mockResolvedValueOnce(current).mockRejectedValueOnce(confirmationFailure), inviteParticipants: vi.fn().mockResolvedValue(requested) }) }, diagnostics,
+    }, { customerId: "customer-1", sessionId: session.id, actor, body: { participantIds: ["portal-1"] } });
+
+    expect(result).toMatchObject({ status: 502, body: { error: "CloudShare accepted the native invitation request, but Certalis could not confirm or save its result. Do not retry until support diagnostics are reviewed." } });
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({
+      request: requested.request,
+      response: requested.response,
+      details: expect.objectContaining({ failureMode: "participant_invitation_confirmation", httpExchanges: expect.arrayContaining([current, requested, expect.objectContaining({ request: expect.objectContaining({ method: "GET" }), response: expect.objectContaining({ status: 503 }) })]) }),
+    }));
+  });
+
   it("refuses an invite when the provider row no longer carries its exact Certalis identity pair", async () => {
     const inviteParticipants = vi.fn();
     const result = await handleInviteSalesSessionParticipants({
