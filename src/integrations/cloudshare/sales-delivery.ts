@@ -38,6 +38,7 @@ export interface SalesDelivery {
   /** Maps CloudShare's versioned invitation-setting wire values to the one fact
    * invite callers need, and preserves the original value for diagnostics. */
   readParticipantInvitationCapability(salesExperienceId: string): Promise<{ readonly participantInvitationsEnabled: boolean; readonly sendInvitations: "salesProsOnly" | "salesParticipantsOnly" | "participantsOnly" | "dontSend" | "salesProsAndParticipants" | "unknown" } & SalesDeliveryEvidence>;
+  listSalesPros(salesExperienceId: string): Promise<{ readonly salesPros: readonly SalesProContact[] } & SalesDeliveryEvidence>;
   /** PUT always starts from a documented full GET representation. Certalis
    * changes only the provider-visible name: schedule edits need their own
    * lifecycle policy before they can be exposed. */
@@ -61,6 +62,7 @@ export interface SalesDelivery {
   inviteParticipants(salesExperienceId: string, participantIds: readonly string[]): Promise<SalesDeliveryEvidence>;
   createSponsoredLink(salesExperienceId: string, participant: Pick<SalesParticipantInput, "firstName" | "lastName" | "email">): Promise<{ readonly loginUrl: string } & SalesDeliveryEvidence>;
 }
+export interface SalesProContact { readonly name: string; readonly email: string; readonly type: "mainSalesPro" | "salesPro"; }
 
 export const SALES_PARTICIPANT_CORRELATION_PROPERTY_KEYS = [
   "certalisSalesParticipantId",
@@ -145,6 +147,7 @@ const salesParticipantSchema = z.object({
 const salesUserPropertyDefinitionSchema = z.object({ id: z.string().min(1), name: z.string().min(1), order: z.number().int().optional() });
 const salesUserPropertyDefinitionsSchema = z.array(salesUserPropertyDefinitionSchema);
 const sponsoredLinkSchema = z.object({ id: z.string().min(1), loginUrl: z.string().url() });
+const salesProsSchema = z.object({ count: z.number().int().nonnegative().optional(), salesPros: z.array(z.object({ name: z.string().min(1), email: z.string().email().max(100), type: z.enum(["mainSalesPro", "salesPro"]) })) });
 
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -195,6 +198,11 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
       const { data, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceSchema });
       const sendInvitations = data.sendInvitations ?? "unknown";
       return { participantInvitationsEnabled: sendInvitations === "salesParticipantsOnly" || sendInvitations === "participantsOnly" || sendInvitations === "salesProsAndParticipants", sendInvitations, ...evidence };
+    },
+    async listSalesPros(salesExperienceId) {
+      const { data, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}/salespros`, schema: salesProsSchema });
+      const seen = new Set<string>();
+      return { salesPros: data.salesPros.filter((salesPro) => { const key = salesPro.email.toLowerCase(); if (seen.has(key)) return false; seen.add(key); return true; }), ...evidence };
     },
     async updateSession(salesExperienceId, changes) {
       const { data: current } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceSchema });

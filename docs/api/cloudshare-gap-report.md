@@ -699,6 +699,8 @@ field in the response shape, even when no custom keys are populated yet. On the 
 adapter now normalizes both object and key/value-array bags. The observed row keys on this tenant
 included: `id`, `email`, `firstName`, `lastName`, `participationStatus`, `firstJoined`,
 `envStatus`, `envId`, `role`, `invitationStatus`, `markedAsComplete`, and `customProperties`.
+
+The documented Sales Participant roster exposes `invitationStatus` and `invitedBy`, but no invitation-sent timestamp. Certalis therefore records nullable `invitedAt` only when its explicit invite flow observes the authoritative `notSent` to `sent` transition; legacy/already-sent rows remain null rather than deriving a fictitious time from `updatedAt`.
 Both verified training IDs were `selfPaced`; an `instructorLed` read was not available to confirm on
 2026-07-06. This means Cohort Exam Session monitoring can safely read explicit Certalis
 participant-correlation values back from `customProperties` on this endpoint when later joins write

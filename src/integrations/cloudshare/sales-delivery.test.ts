@@ -24,6 +24,12 @@ function documentedParticipant(overrides: Record<string, unknown> = {}) {
 }
 
 describe("CloudShare Sales Delivery", () => {
+  it("reads and deduplicates the documented Sales Pros recovery contacts", async () => {
+    const requestV4Detailed = vi.fn().mockResolvedValue({ data: { count: 3, salesPros: [{ name: "Main <Owner>", email: "main@example.test", type: "mainSalesPro" }, { name: "Additional", email: "extra@example.test", type: "salesPro" }, { name: "Duplicate", email: "MAIN@example.test", type: "salesPro" }] }, request: { method: "GET", path: "/sales/sales-1/salespros" }, response: { status: 200 } });
+    const result = await createCloudShareSalesDelivery({ requestV4Detailed } as never).listSalesPros("sales-1");
+    expect(requestV4Detailed).toHaveBeenCalledWith(expect.objectContaining({ method: "GET", path: "/sales/sales-1/salespros" }));
+    expect(result.salesPros).toEqual([{ name: "Main <Owner>", email: "main@example.test", type: "mainSalesPro" }, { name: "Additional", email: "extra@example.test", type: "salesPro" }]);
+  });
   it("canonicalizes documented Sales environment statuses case-insensitively and rejects unsupported values", async () => {
     await expect(deliveryForRoster({ count: 1, items: [documentedParticipant({ envStatus: "preparing" })] }).listParticipants("sales-1")).resolves.toMatchObject({ participants: [expect.objectContaining({ envStatus: "Preparing" })] });
     await expect(deliveryForRoster({ count: 1, items: [documentedParticipant({ envStatus: "ready" })] }).listParticipants("sales-1")).resolves.toMatchObject({ participants: [expect.objectContaining({ envStatus: "Ready" })] });

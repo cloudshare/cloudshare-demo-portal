@@ -350,6 +350,14 @@ describe("Sales Session participant invitation", () => {
     }));
   });
 
+  it("sets invitedAt once on the authoritative notSent to sent transition", async () => {
+    const save = vi.fn();
+    const before = rosterEvidence([remoteParticipant("remote-1", "portal-1", "contact-1")]);
+    const after = rosterEvidence([{ ...remoteParticipant("remote-1", "portal-1", "contact-1"), invitationStatus: "sent" as const, invitedBy: "sender@example.test" }]);
+    await handleInviteSalesSessionParticipants({ sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn().mockResolvedValue(invitationEnabledEvidence()), listParticipants: vi.fn().mockResolvedValueOnce(before).mockResolvedValueOnce(after), inviteParticipants: vi.fn().mockResolvedValue({ request: { method: "POST", path: "/sales/sales-1/participants/invite" }, response: { status: 200 } }) }) } }, { customerId: "customer-1", sessionId: session.id, actor, body: { participantIds: ["portal-1"] } });
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ invitationStatus: "sent", invitedAt: expect.any(Date), invitedBy: "sender@example.test" }));
+  });
+
   it("does not treat an already-sent participant as confirmation that a resend was dispatched", async () => {
     const sent = { ...remoteParticipant("remote-1", "portal-1", "contact-1"), invitationStatus: "sent" as const };
     const listParticipants = vi.fn().mockResolvedValue(rosterEvidence([sent]));

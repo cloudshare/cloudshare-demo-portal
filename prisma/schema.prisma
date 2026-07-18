@@ -155,6 +155,7 @@ model SalesSessionParticipant {
   opportunityContactId        String
   cloudShareParticipantId     String   @unique
   invitationStatus            String
+  invitedAt                   DateTime?
   invitedBy                   String?
   participationStatus         String
   firstJoined                 String?
