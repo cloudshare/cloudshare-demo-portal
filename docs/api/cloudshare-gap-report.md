@@ -1841,7 +1841,7 @@ semantics and the role of `count`.
 
 | Field | Detail |
 |---|---|
-| **Status** | Observed live — provider cause or prerequisite unconfirmed |
+| **Status** | Confirmed live prerequisite; provider acknowledgement defect remains |
 | **Verified live** | Yes — Certalis Sales Admin UI, 2026-07-18 |
 
 **Observed behaviour**
@@ -1852,28 +1852,36 @@ QA, Certalis sent the exact documented request for two registered, property-corr
 Sales Participants. The immediate authoritative roster read still returned
 `invitationStatus: "notSent"` for both participants.
 
-The 200 is therefore an acknowledgement that CloudShare accepted the request; it is
-not proof that the native email was dispatched. The published endpoint does not return
-per-participant delivery results, errors, or a job identifier. Certalis has no
-documented alternate native-invite endpoint to call. In particular, it must not expose
-or fall back to participant invitation URLs.
+CloudShare GUI verification then identified the prerequisite: the Experience was created
+with both “Don't send Invitation to Participants” and “Don't send Invitation to Sales
+Pros” enabled, corresponding to `sendInvitations: "dontSend"`. The GUI blocks the same
+operation with “Sending invitations to participants was disabled for this experience.”
+The REST endpoint instead returns HTTP 200 with an empty body and does not report that
+precondition. The published endpoint does not return per-participant delivery results,
+errors, or a job identifier. Certalis has no documented alternate native-invite endpoint
+to call; it must not expose or fall back to participant invitation URLs.
 
 **Portal mitigation**
 
-The native-invite handler now performs a roster read immediately after the POST and
-uses that returned `invitationStatus` as the only delivery authority. It records both
-exchanges under the same correlation ID, persists the returned monitoring state, and
-shows either confirmed delivery or "accepted, not yet confirmed as sent" in the Sales
-Admin UI. It never labels the empty-body acknowledgement as a sent email.
+New Sales Experiences use the documented `sendInvitations: "salesProsAndParticipants"`
+capability setting. Creation remains email-free because no participant or Sales Pro is
+explicitly invited during creation or registration. Before calling the native participant
+invite endpoint, Certalis reads the Experience configuration and returns an actionable
+409 if participant invitations are disabled. For enabled Experiences it performs a roster
+read immediately after the POST and uses the returned `invitationStatus` as the only
+delivery authority. It records the configuration read, POST, and roster exchanges under
+the same correlation ID, persists the returned monitoring state, and never labels the
+empty-body acknowledgement as a sent email.
 
 **Action required**
 
-CloudShare must confirm whether a Sales Experience created with
-`sendInvitations: "dontSend"` has an additional documented prerequisite for the
-explicit invite endpoint, and why the endpoint can acknowledge with HTTP 200 while
-the roster remains `notSent`. Until that is resolved, #348 cannot claim verified
-native email delivery; it can only claim a correctly issued and correlated provider
-request plus authoritative state monitoring.
+CloudShare R&D should correct `POST /sales/{id}/participants/invite` so a disabled
+Experience yields a machine-actionable non-success response (or a structured per-row
+outcome), consistent with the GUI message. Existing `dontSend` Experiences must be
+amended in CloudShare or recreated before their native invitations can be sent. Until
+the enabled configuration is exercised through a safe live native-email flow, #348 cannot
+claim verified native email delivery; it can only claim a correctly issued and correlated
+provider request plus authoritative state monitoring.
 
 **Code reference:** `src/api/sales-session-participants.ts`,
 `src/integrations/cloudshare/sales-delivery.ts`,

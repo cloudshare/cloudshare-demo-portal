@@ -47,7 +47,7 @@ describe("Sales Enablement Session API handler", () => {
     expect(result).toMatchObject({ status: 201, body: { session: { id: "session-1", opportunityId: "opp-1", itemId: "item-1", salesProDisplayName: "Sales Admin" } } });
     expect(JSON.stringify(result.body)).not.toContain("cloudShareSalesExperienceId");
     expect(JSON.stringify(result.body)).not.toContain("sales-1");
-    expect(delivery.createSession).toHaveBeenCalledWith(expect.objectContaining({ name: "Account - Acme evaluation (1) - Accelerate Demo", opportunity: "Acme evaluation", externalId: "session1", passphrase: expect.stringMatching(/^[A-Za-z0-9]{32}$/), registrationType: "registeredParticipantsOnly", sendInvitations: "dontSend", mainSalesProEmail: admin.email, type: "poc" }));
+    expect(delivery.createSession).toHaveBeenCalledWith(expect.objectContaining({ name: "Account - Acme evaluation (1) - Accelerate Demo", opportunity: "Acme evaluation", externalId: "session1", passphrase: expect.stringMatching(/^[A-Za-z0-9]{32}$/), registrationType: "registeredParticipantsOnly", sendInvitations: "salesProsAndParticipants", mainSalesProEmail: admin.email, type: "poc" }));
     expect(sessions.save).toHaveBeenCalledWith(expect.objectContaining({ opportunityId: "opp-1", itemId: "item-1" }));
     expect(itemProvisioningValidator.revalidate).toHaveBeenCalledWith(expect.objectContaining({ id: "item-1" }));
     expect(audit.write).toHaveBeenCalledWith(expect.objectContaining({ action: "sales.demo_session.created", correlationId: expect.any(String), outcome: "success" }));

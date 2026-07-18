@@ -27,12 +27,15 @@ export interface CreateSalesDemoSessionInput {
   readonly timeZone: string;
   readonly mainSalesProEmail: string;
   readonly registrationType: "registeredParticipantsOnly";
-  readonly sendInvitations: "dontSend";
+  /** Enables future explicit native invitations for Sales Participants and Sales Pros;
+   * creating the Experience itself never sends an email. */
+  readonly sendInvitations: "salesProsAndParticipants";
 }
 export interface SalesDelivery {
   createSession(input: CreateSalesDemoSessionInput): Promise<{ readonly salesExperienceId: string } & SalesDeliveryEvidence>;
-  /** Documented v4 read used only for reconciliation; the ID remains server-side. */
-  readSession(salesExperienceId: string): Promise<{ readonly id: string; readonly status?: string } & SalesDeliveryEvidence>;
+  /** Documented v4 read used only for reconciliation and invitation capability;
+   * the provider ID remains server-side. */
+  readSession(salesExperienceId: string): Promise<{ readonly id: string; readonly status?: string; readonly sendInvitations?: "salesProsOnly" | "salesParticipantsOnly" | "participantsOnly" | "dontSend" | "salesProsAndParticipants" } & SalesDeliveryEvidence>;
   /** PUT always starts from a documented full GET representation. Certalis
    * changes only the provider-visible name: schedule edits need their own
    * lifecycle policy before they can be exposed. */
@@ -177,15 +180,15 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
     },
     async readSession(salesExperienceId) {
       const { data, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceSchema });
-      return { id: data.id, ...(typeof (data as { status?: unknown }).status === "string" ? { status: (data as { status: string }).status } : {}), ...evidence };
+      return { id: data.id, ...(typeof data.status === "string" ? { status: data.status } : {}), ...(data.sendInvitations ? { sendInvitations: data.sendInvitations } : {}), ...evidence };
     },
     async updateSession(salesExperienceId, changes) {
       const { data: current } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceSchema });
-      if (!hasEveryMutableSalesExperienceField(current) || current.sendInvitations !== "dontSend") throw new Error("CloudShare did not return the complete documented Sales Experience required for a safe update.");
+      if (!hasEveryMutableSalesExperienceField(current)) throw new Error("CloudShare did not return the complete documented Sales Experience required for a safe update.");
       // Sales_Experience declares many defaults. Copy every documented mutable
       // value that CloudShare returned, rather than permitting a full PUT to
-      // silently reset settings outside Certalis' edit scope. Invitations are
-      // deliberately pinned to the portal's no-invitation safety invariant.
+      // silently reset settings outside Certalis' edit scope, including the
+      // explicit-native-invite capability chosen at creation.
       const body = {
         name: changes.name,
         type: current.type,

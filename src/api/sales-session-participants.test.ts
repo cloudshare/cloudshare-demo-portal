@@ -13,6 +13,12 @@ const correlationProperties = () => ({
   request: { method: "GET", path: "/v4/sales/remote-sales-1/users/properties" },
   response: { status: 200, body: [] },
 });
+const invitationEnabledEvidence = () => ({
+  id: "remote-sales-1",
+  sendInvitations: "salesProsAndParticipants" as const,
+  request: { method: "GET", path: "/v4/sales/remote-sales-1" },
+  response: { status: 200, body: { id: "remote-sales-1", sendInvitations: "salesProsAndParticipants" } },
+});
 const rosterEvidence = (participants: readonly unknown[]) => ({ participants, request: { method: "GET", path: "/v4/sales/remote-sales-1/participants", query: { offset: "0", limit: "100" } }, response: { status: 200, body: { count: participants.length, items: participants } } });
 const remoteParticipant = (id: string, portalId?: string, contactId?: string, email = "ada@example.test") => ({
   id, firstName: "Ada", lastName: "Lovelace", email, invitationStatus: "notSent" as const, invitedBy: null, participationStatus: "pending" as const, firstJoined: null, environmentId: null, envStatus: null,
@@ -301,6 +307,26 @@ describe("Sales Session participant invitation", () => {
     expect(result.status).toBe(200);
     expect(inviteParticipants).toHaveBeenCalledWith("remote-sales-1", ["remote-1"]);
     expect(JSON.stringify(result.body)).not.toContain("remote-1");
+  });
+
+  it("refuses native invitations before mutation when the Sales Experience disables participant invitation email", async () => {
+    const experience = { id: "remote-sales-1", sendInvitations: "dontSend" as const, request: { method: "GET", path: "/v4/sales/remote-sales-1" }, response: { status: 200, body: { id: "remote-sales-1", sendInvitations: "dontSend" } } };
+    const readSession = vi.fn().mockResolvedValue(experience);
+    const inviteParticipants = vi.fn();
+    const diagnostics = { record: vi.fn() };
+    const result = await handleInviteSalesSessionParticipants({
+      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession, listParticipants: vi.fn(), inviteParticipants }) }, diagnostics,
+    }, { customerId: "customer-1", sessionId: session.id, actor, body: { participantIds: ["portal-1"] } });
+
+    expect(result).toMatchObject({ status: 409, body: { error: "CloudShare has native invitations disabled for this Sales Experience. Enable invitations in CloudShare before sending or resending." } });
+    expect(inviteParticipants).not.toHaveBeenCalled();
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({
+      message: "CloudShare native invitations are disabled for this Sales Experience.",
+      request: experience.request,
+      response: experience.response,
+      details: expect.objectContaining({ failureMode: "native_invitations_disabled", sendInvitations: "dontSend" }),
+    }));
   });
 
   it("does not report a native invitation as sent until CloudShare's roster confirms it", async () => {
