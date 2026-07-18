@@ -28,6 +28,15 @@ export async function handleRegisterSalesSessionParticipants(deps: Deps, request
     await evidence(deps, request, sessionResult.session, correlationId, "sales.demo_session.participants.registered", "failure", error, undefined, { failureMode: "sales_session_ended", contactIds: parsed.data.contactIds }, {}, false);
     return { status: 409, body: { code: "sales_session_ended", error, correlationId } };
   }
+  let persistedParticipants: Awaited<ReturnType<SalesSessionParticipantRepository["list"]>>;
+  try { persistedParticipants = await deps.participants.list(request.customerId, sessionResult.session.id); }
+  catch { return denied(deps, request, sessionResult.session, 502, "Could not verify the persisted Sales Participant mapping.", "participant_mapping_persistence"); }
+  const concludedContactIds = new Set(persistedParticipants.filter((participant) => participant.participationStatus === "concluded").map((participant) => participant.opportunityContactId));
+  if (parsed.data.contactIds.some((contactId) => concludedContactIds.has(contactId))) {
+    const correlationId = randomUUID(); const error = "Concluded Sales Participants cannot be registered or repaired.";
+    await evidence(deps, request, sessionResult.session, correlationId, "sales.demo_session.participants.registered", "failure", error, undefined, { failureMode: "sales_participant_concluded", contactIds: parsed.data.contactIds }, {}, false);
+    return { status: 409, body: { code: "sales_participant_concluded", error, correlationId } };
+  }
   const deliveryResult = await resolveDelivery(deps, request); if ("response" in deliveryResult) return deliveryResult.response!;
   const prepared = { session: sessionResult.session, delivery: deliveryResult.delivery };
   const resolvedContacts = await Promise.all(parsed.data.contactIds.map((id) => deps.records.findContact(request.customerId, id)));
@@ -42,7 +51,7 @@ export async function handleRegisterSalesSessionParticipants(deps: Deps, request
     const remoteBeforeRegistration = await prepared.delivery.listParticipants!(prepared.session.cloudShareSalesExperienceId);
     completedRemote = remoteBeforeRegistration;
     completedExchanges.push(remoteBeforeRegistration);
-    const persisted = await deps.participants.list(request.customerId, prepared.session.id);
+    const persisted = persistedParticipants;
     const persistedByContactId = new Map(persisted.map((participant) => [participant.opportunityContactId, participant]));
     const persistedByProviderId = new Map(persisted.map((participant) => [participant.cloudShareParticipantId, participant]));
     const contactsNeedingMapping = contacts.filter((contact) => !persistedByContactId.has(contact.id));

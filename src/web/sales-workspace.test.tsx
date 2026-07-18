@@ -175,7 +175,7 @@ describe("Sales Participant monitoring", () => {
   it("keeps the invitation Select control as the first monitoring column", async () => {
     const fetchSales = vi.fn().mockImplementation(async (input: string) => {
       if (input === "/api/sales/accounts") return json({ contacts: [{ id: "contact-1", opportunityId: "opportunity-1", firstName: "Ada", lastName: "Lovelace", archivedAt: null }] });
-      if (input === "/api/sales/enablement-sessions/session-1/participants") return json({ session: { lifecycle: "in_progress", nativeInvitationsAvailable: true }, participants: [{ id: "portal-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", invitationStatus: "notSent", lastInvitedAt: "2026-07-18T09:15:00.000Z", participationStatus: "pending", firstJoined: "2026-07-18T09:20:00.000Z", envStatus: null }] });
+      if (input === "/api/sales/enablement-sessions/session-1/participants") return json({ session: { lifecycle: "in_progress", nativeInvitationsAvailable: true }, participants: [{ id: "portal-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", invitationStatus: "notSent", lastInvitedAt: "2026-07-18T09:15:00.000Z", participationStatus: "pending", firstJoined: "2026-07-18T10:00:00+01:00", envStatus: null }] });
       return json({});
     });
     render(<SalesSessionParticipants session={{ id: "session-1", opportunityId: "opportunity-1", itemId: "item-1", type: "demo", start: "2026-07-17T09:00", end: "2026-07-17T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-17T08:00:00Z", lifecycle: "ended", verificationEligible: true }} fetchSales={fetchSales as typeof fetch} onOpenSupport={vi.fn()} />);
@@ -189,6 +189,9 @@ describe("Sales Participant monitoring", () => {
     expect(times).toHaveLength(2);
     expect(times[0]?.getAttribute("datetime")).toBe("2026-07-18T09:15:00.000Z");
     expect(times[0]?.getAttribute("title")).toContain("2026-07-18 09:15:00 UTC");
+    expect(times[1]?.getAttribute("datetime")).toBe("2026-07-18T09:00:00.000Z");
+    expect(times[1]?.getAttribute("title")).toContain("2026-07-18 09:00:00 UTC");
+    expect(times[1]?.textContent).toContain("2026-07-1809:00:00 UTC");
     expect(times[0]?.closest("td")?.getAttribute("style")).toContain("overflow: visible");
     expect(times[0]?.closest("td")?.getAttribute("style")).not.toContain("text-overflow: ellipsis");
     expect(screen.getByRole("button", { name: "Copy launch link" })).not.toBeNull();
@@ -273,5 +276,17 @@ describe("Sales Participant monitoring", () => {
     await user.click(screen.getByRole("button", { name: "Register or repair selected participants" }));
     await waitFor(() => expect(screen.queryByLabelText("Ada Lovelace (repair CloudShare correlation)")).toBeNull());
     expect((screen.getByRole("checkbox", { name: "Select Ada Lovelace for native invite" }) as HTMLInputElement).disabled).toBe(false);
+  });
+
+  it("excludes a concluded repair mapping from registration selection", async () => {
+    const fetchSales = vi.fn().mockImplementation(async (input: string) => input === "/api/sales/accounts"
+      ? json({ contacts: [{ id: "contact-1", opportunityId: "opportunity-1", firstName: "Grace", lastName: "Concluded", archivedAt: null }, { id: "contact-2", opportunityId: "opportunity-1", firstName: "New", lastName: "Contact", archivedAt: null }] })
+      : json({ session: { lifecycle: "in_progress", nativeInvitationsAvailable: true }, participants: [{ id: "concluded", opportunityContactId: "contact-1", firstName: "Grace", lastName: "Concluded", invitationStatus: "sent", participationStatus: "concluded", requiresCorrelationRepair: true, needsAttention: true, firstJoined: null, envStatus: null }] }));
+    render(<SalesSessionParticipants session={{ id: "session-1", opportunityId: "opportunity-1", itemId: "item-1", type: "demo", start: "2026-07-17T09:00", end: "2026-07-17T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-17T08:00:00Z", lifecycle: "in_progress", verificationEligible: true }} fetchSales={fetchSales as typeof fetch} onOpenSupport={vi.fn()} />);
+    expect(await screen.findByLabelText("New Contact")).not.toBeNull();
+    expect(screen.queryByLabelText("Grace Concluded (repair CloudShare correlation)")).toBeNull();
+    const selectAll = screen.getByRole("checkbox", { name: "Select all participants to register or repair" });
+    await userEvent.setup().click(selectAll);
+    expect((screen.getByLabelText("New Contact") as HTMLInputElement).checked).toBe(true);
   });
 });

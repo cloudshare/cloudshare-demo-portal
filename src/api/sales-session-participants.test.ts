@@ -37,6 +37,21 @@ describe("Sales Session participant invitation", () => {
     expect(findByCustomerId).not.toHaveBeenCalled(); expect(forConnection).not.toHaveBeenCalled();
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ operation: "sales.demo_session.participants.registered", details: expect.objectContaining({ failureMode: "sales_session_ended", contactIds: ["contact-1"] }) }));
   });
+  it("rejects mixed new and concluded repair contacts atomically before integration setup", async () => {
+    const findByCustomerId = vi.fn(() => { throw new Error("connection lookup must not run"); });
+    const forConnection = vi.fn(() => { throw new Error("adapter construction must not run"); });
+    const findContact = vi.fn(() => { throw new Error("contact lookup must not run"); });
+    const diagnostics = { record: vi.fn() };
+    const result = await handleRegisterSalesSessionParticipants({
+      now: () => new Date("2026-07-19T09:30:00.000Z"), sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact },
+      participants: { list: vi.fn().mockResolvedValue([{ ...storedParticipant("concluded", "contact-concluded", "provider-secret"), participationStatus: "concluded" }]), save: vi.fn() },
+      connections: { findByCustomerId }, deliveryFactory: { forConnection }, diagnostics,
+    }, { customerId: "customer-1", sessionId: session.id, actor, body: { contactIds: ["contact-new", "contact-concluded"] } });
+    expect(result).toMatchObject({ status: 409, body: { code: "sales_participant_concluded", error: "Concluded Sales Participants cannot be registered or repaired.", correlationId: expect.any(String) } });
+    expect(findContact).not.toHaveBeenCalled(); expect(findByCustomerId).not.toHaveBeenCalled(); expect(forConnection).not.toHaveBeenCalled();
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-1", subject: { type: "sales_demo_session", id: "session-1" }, details: expect.objectContaining({ failureMode: "sales_participant_concluded", contactIds: ["contact-new", "contact-concluded"] }) }));
+    expect(JSON.stringify(diagnostics.record.mock.calls)).not.toContain("provider-secret");
+  });
   it("blocks an invite at the exact persisted session end without calling CloudShare", async () => {
     const readParticipantInvitationCapability = vi.fn();
     const listParticipants = vi.fn();
@@ -260,15 +275,19 @@ describe("Sales Session participant invitation", () => {
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ request: expect.objectContaining({ method: "POST", path: "/v4/sales/remote-sales-1/participants" }), details: expect.objectContaining({ httpExchanges: expect.arrayContaining([expect.objectContaining({ request: expect.objectContaining({ method: "GET" }) }), expect.objectContaining({ request: expect.objectContaining({ method: "POST", path: "/v4/sales/remote-sales-1/participants" }) })]) }) }));
   });
 
-  it("retains the completed roster exchange when its local participant read fails", async () => {
+  it("fails before CloudShare when the persisted participant mapping cannot be read", async () => {
     const diagnostics = { record: vi.fn() };
+    const listParticipants = vi.fn();
+    const findByCustomerId = vi.fn();
     const result = await handleRegisterSalesSessionParticipants({
-      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn().mockResolvedValue(contact) }, participants: { list: vi.fn().mockRejectedValue(new Error("database unavailable")), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
-      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), ensureParticipantCorrelationProperties: vi.fn(), registerParticipants: vi.fn(), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([])), inviteParticipants: vi.fn() }) }, diagnostics,
+      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn().mockResolvedValue(contact) }, participants: { list: vi.fn().mockRejectedValue(new Error("database unavailable")), save: vi.fn() }, connections: { findByCustomerId },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), ensureParticipantCorrelationProperties: vi.fn(), registerParticipants: vi.fn(), listParticipants, inviteParticipants: vi.fn() }) }, diagnostics,
     }, { customerId: "customer-1", sessionId: session.id, actor, body: { contactIds: [contact.id] } });
 
     expect(result.status).toBe(502);
-    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ response: expect.objectContaining({ status: 200, body: expect.objectContaining({ items: [] }) }), details: expect.objectContaining({ failureMode: "participant_mapping_persistence", httpExchanges: expect.arrayContaining([expect.objectContaining({ request: expect.objectContaining({ method: "GET" }) })]) }) }));
+    expect(result.body).toMatchObject({ error: "Could not verify the persisted Sales Participant mapping.", correlationId: expect.any(String) });
+    expect(findByCustomerId).not.toHaveBeenCalled(); expect(listParticipants).not.toHaveBeenCalled();
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ details: expect.objectContaining({ failureMode: "participant_mapping_persistence" }) }));
   });
 
   it("recovers a missing local mapping only from the two CloudShare property values", async () => {
