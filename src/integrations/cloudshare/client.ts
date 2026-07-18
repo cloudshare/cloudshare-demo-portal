@@ -38,6 +38,8 @@ export interface V4RequestSpec<T> {
   readonly path: string;
   readonly query?: Record<string, string>;
   readonly body?: unknown;
+  /** Opt in only for documented v4 operations whose successful response has no body. */
+  readonly allowEmptyResponse?: boolean;
   readonly schema: ZodType<T, ZodType["_def"], unknown>;
 }
 
@@ -262,6 +264,14 @@ function isSponsoredLinkPath(path: string): boolean {
   return /\/(?:sponsored-link|sponsoredLinks)$/i.test(path);
 }
 
+function sanitizeRequestEvidenceBody(body: string | undefined): unknown {
+  return sanitizeBody(body);
+}
+
+function sanitizeResponseEvidenceBody(body: string, requestPath: string): unknown {
+  return sanitizeResponseBodyValue(body, requestPath);
+}
+
 function describeRequest(urlText: string): {
   readonly host: string;
   readonly path: string;
@@ -293,7 +303,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
     fields?: Record<string, unknown>,
   ): void {
     const requestInfo = describeRequest(request.url);
-    const requestBody = sanitizeBody(request.body);
+    const requestBody = sanitizeRequestEvidenceBody(request.body);
     const requestQuery = sanitizeQuery(extractQuery(request.url));
     opts.trace?.({
       level,
@@ -493,6 +503,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
   async function executeDetailed<T>(
     request: HttpRequest,
     schema: ZodType<T, ZodType["_def"], unknown>,
+    allowEmptyResponse = false,
   ): Promise<CloudShareDetailedResult<T>> {
     const requestInfo = describeRequest(request.url);
     for (let attempt = 0; ; attempt += 1) {
@@ -519,7 +530,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
             integrationSurface: requestInfo.integrationSurface,
             requestQuery: sanitizeQuery(extractQuery(request.url)),
             requestHeaders: sanitizeHeaders(request.headers),
-            requestBody: sanitizeBody(request.body),
+            requestBody: sanitizeRequestEvidenceBody(request.body),
             ...transportContext(cause),
           },
         );
@@ -541,9 +552,9 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
           integrationSurface: requestInfo.integrationSurface,
           requestQuery: sanitizeQuery(extractQuery(request.url)),
           requestHeaders: sanitizeHeaders(request.headers),
-          requestBody: sanitizeBody(request.body),
+          requestBody: sanitizeRequestEvidenceBody(request.body),
           responseHeaders: sanitizeResponseHeaders(response.headers),
-          responseBody: sanitizeResponseBodyValue(response.body, requestInfo.path),
+          responseBody: sanitizeResponseEvidenceBody(response.body, requestInfo.path),
           network: response.network,
           tls: response.tls,
         };
@@ -581,7 +592,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
 
       let json: unknown;
       try {
-        json = JSON.parse(response.body);
+        json = response.body.trim() === "" && allowEmptyResponse ? undefined : JSON.parse(response.body);
       } catch {
         throw new CloudShareResponseError(
           `CloudShare response from ${request.url} was not valid JSON`,
@@ -593,9 +604,9 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
             integrationSurface: requestInfo.integrationSurface,
             requestQuery: sanitizeQuery(extractQuery(request.url)),
             requestHeaders: sanitizeHeaders(request.headers),
-            requestBody: sanitizeBody(request.body),
+            requestBody: sanitizeRequestEvidenceBody(request.body),
             responseHeaders: sanitizeResponseHeaders(response.headers),
-            responseBody: sanitizeResponseBodyValue(response.body, requestInfo.path),
+            responseBody: sanitizeResponseEvidenceBody(response.body, requestInfo.path),
             network: response.network,
             tls: response.tls,
           },
@@ -612,10 +623,11 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
             host: requestInfo.host,
             path: requestInfo.path,
             integrationSurface: requestInfo.integrationSurface,
+            requestQuery: sanitizeQuery(extractQuery(request.url)),
             requestHeaders: sanitizeHeaders(request.headers),
-            requestBody: sanitizeBody(request.body),
+            requestBody: sanitizeRequestEvidenceBody(request.body),
             responseHeaders: sanitizeResponseHeaders(response.headers),
-            responseBody: sanitizeResponseBodyValue(response.body, requestInfo.path),
+            responseBody: sanitizeResponseEvidenceBody(response.body, requestInfo.path),
             network: response.network,
             tls: response.tls,
             issues: parsed.error.issues.map((i) => i.message),
@@ -690,6 +702,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
         body,
       },
       spec.schema,
+      spec.allowEmptyResponse,
     );
   }
 

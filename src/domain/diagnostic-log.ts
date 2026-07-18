@@ -153,6 +153,10 @@ const SENSITIVE_KEY_PATTERNS = [
   "bearer",
   "hmac",
   "ciphertext",
+  "accesslink",
+  "invitationurl",
+  "inviteurl",
+  "sponsoredlink",
 ];
 
 const NON_SENSITIVE_KEYS = new Set([
@@ -185,6 +189,10 @@ function isSensitiveKey(key: string, context: DiagnosticRedactionContext): boole
       "ciphertext",
       "accesstoken",
       "access_token",
+      "accesslink",
+      "invitationurl",
+      "inviteurl",
+      "sponsoredlink",
     ].some((pattern) => k.includes(pattern));
   }
   return SENSITIVE_KEY_PATTERNS.some((pattern) => k.includes(pattern));

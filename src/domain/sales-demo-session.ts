@@ -16,7 +16,9 @@ export interface SalesDemoSession {
   readonly salesProEmail: string;
   readonly salesProDisplayName: string;
   readonly registrationType: "registeredParticipantsOnly";
-  readonly sendInvitations: "dontSend";
+  /** Persisted CloudShare invitation capability for this Experience. Legacy
+   * sessions may still have the disabled value until recreated or amended. */
+  readonly sendInvitations: "dontSend" | "salesProsAndParticipants";
   /** Provider-facing display name, bounded to CloudShare's documented limit. */
   readonly sessionName?: string;
   /** Monotonic within the Customer + Opportunity delivery history. */

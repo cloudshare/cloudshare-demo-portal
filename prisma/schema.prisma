@@ -137,11 +137,37 @@ model SalesDemoSession {
   customer                    Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
   opportunity                 SalesOpportunity @relation(fields: [customerId, opportunityId], references: [customerId, id], onDelete: Restrict)
   item                        Item             @relation(fields: [customerId, itemId], references: [customerId, id], onDelete: Restrict)
+  participants                SalesSessionParticipant[]
 
   @@index([customerId, opportunityId, createdAt])
   @@unique([customerId, opportunityId, revision])
   @@index([customerId, itemId])
   @@index([customerId, externalId])
+}
+
+/// Durable Certalis correlation for a named Opportunity Contact admitted to a
+/// Sales Experience. Invite and monitoring fields are reconciled from
+/// CloudShare; no invitation URL is retained.
+model SalesSessionParticipant {
+  id                          String   @id
+  customerId                  String
+  salesDemoSessionId          String
+  opportunityContactId        String
+  cloudShareParticipantId     String   @unique
+  invitationStatus            String
+  invitedBy                   String?
+  participationStatus         String
+  firstJoined                 String?
+  /// Server-only CloudShare environment correlation. It is never projected to portal clients.
+  cloudShareEnvironmentId     String?
+  environmentStatus           String?
+  lastReconciledAt            DateTime
+  createdAt                   DateTime
+  updatedAt                   DateTime
+  session                     SalesDemoSession @relation(fields: [salesDemoSessionId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, salesDemoSessionId, opportunityContactId])
+  @@index([customerId, salesDemoSessionId, updatedAt])
 }
 
 model User {

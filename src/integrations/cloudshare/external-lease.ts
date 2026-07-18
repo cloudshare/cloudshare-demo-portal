@@ -430,7 +430,6 @@ function sanitizeRehydratedRequestQuery(value: unknown): Record<string, unknown>
 function sanitizeRehydratedBody(value: unknown): unknown {
   return redactCloudShareAdminSupportValue(value, {
     preserveSponsoredLinkLoginUrl: false,
-    redactTokenLikeKeys: true,
   });
 }
 

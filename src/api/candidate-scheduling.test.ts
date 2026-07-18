@@ -790,6 +790,28 @@ describe("candidate scheduling handlers", () => {
         eventLog,
         connections: makeConnectionRepository(),
         cloudshare: makeCloudShareFactory({
+          requestV3Detailed: vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) => {
+            const body = {
+              rows: [{ id: "TM-team-1", name: "Helios Team", description: "Exam delivery" }],
+              total: 1,
+            };
+            return {
+              data: spec.schema.parse(body),
+              host: "use.cloudshare.com",
+              integrationSurface: "cloudshare.v3.teams",
+              request: {
+                method: "GET",
+                path: "/teams",
+                query: { getRows: "true", projectId: "project-1", sortBy: "name", sortAscending: "true", skip: "0", take: "20" },
+                headers: { authorization: "[REDACTED]" },
+              },
+              response: {
+                status: 200,
+                headers: { "x-request-id": "req-team-1" },
+                body,
+              },
+            };
+          }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>["requestV3Detailed"],
           requestV4: vi.fn(async (spec: { path: string }) => {
             if (spec.path === "/trainings") {
               throw new CloudShareRequestError("forbidden", 403, {
@@ -831,8 +853,20 @@ describe("candidate scheduling handlers", () => {
       outcome: "success",
       source: "candidate-portal",
       externalIds: { resourceType: "team", projectId: "project-1", teamId: "TM-team-1" },
-      request: { method: "GET", path: "/teams", query: { projectId: "project-1" } },
-      response: { itemCount: 1, resourceIds: ["TM-team-1"] },
+      request: {
+        method: "GET",
+        path: "/teams",
+        query: { getRows: "true", projectId: "project-1", sortBy: "name", sortAscending: "true", skip: "0", take: "20" },
+        headers: { authorization: "[REDACTED]" },
+      },
+      response: {
+        status: 200,
+        headers: { "x-request-id": "req-team-1" },
+        body: {
+          rows: [{ id: "TM-team-1", name: "Helios Team", description: "Exam delivery" }],
+          total: 1,
+        },
+      },
     });
   });
 
@@ -855,13 +889,17 @@ describe("candidate scheduling handlers", () => {
         eventLog,
         connections: makeConnectionRepository(),
         cloudshare: makeCloudShareFactory({
-          requestV3: vi.fn(async (_spec: { path: string }) => {
+          requestV3Detailed: vi.fn(async (_spec: { path: string }) => {
             throw new CloudShareRequestError("forbidden", 403, {
               method: "GET",
               path: "/teams",
               integrationSurface: "cloudshare.v3.teams",
+              requestQuery: { getRows: "true", projectId: "project-1", sortBy: "name", sortAscending: "true", skip: "0", take: "20" },
+              requestHeaders: { authorization: "[REDACTED]" },
+              responseHeaders: { "x-request-id": "req-team-denied" },
+              responseBody: { message: "Team access denied", detail: "Project membership is required." },
             });
-          }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>["requestV3"],
+          }) as unknown as ReturnType<CloudShareClientFactory["forConnection"]>["requestV3Detailed"],
         }),
         diagnostics,
         logger,
@@ -893,8 +931,17 @@ describe("candidate scheduling handlers", () => {
       outcome: "failure",
       source: "candidate-portal",
       externalIds: { resourceType: "team", projectId: "project-1" },
-      request: { method: "GET", path: "/teams", query: { projectId: "project-1" } },
-      response: { status: 403 },
+      request: {
+        method: "GET",
+        path: "/teams",
+        query: { getRows: "true", projectId: "project-1", sortBy: "name", sortAscending: "true", skip: "0", take: "20" },
+        headers: { authorization: "[REDACTED]" },
+      },
+      response: {
+        status: 403,
+        headers: { "x-request-id": "req-team-denied" },
+        body: { message: "Team access denied", detail: "Project membership is required." },
+      },
       details: {
         integrationSurface: "cloudshare.v3.teams",
         failureMode: "http_status",

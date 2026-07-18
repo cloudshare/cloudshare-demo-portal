@@ -1787,6 +1787,124 @@ will replace this isolated GUI adapter with a supported contract.
 
 ---
 
+## GAP-29 — Sales participant-list response envelope differs from the published v4 export
+
+| Field | Detail |
+|---|---|
+| **Status** | Confirmed — portal adapter pages the observed collection safely and normalizes it |
+| **Verified live** | Yes — Certalis Sales participant-monitoring read, 2026-07-17 |
+
+**Observed behaviour**
+
+The published v4 export describes `GET /sales/{id}/participants` as an object
+containing `participants`, and declares `envStatus` as a string enum. During #348
+human QA, the live Certalis Sales API instead returned the paged collection envelope
+`{ count, items }`; registered, pre-environment participants had `envStatus: null`
+and the provider placeholder `envId: "0"`. The previous strict adapter schema
+rejected that otherwise valid roster before participant monitoring could be reconciled.
+
+**Impact on sales enablement**
+
+The portal could not display invitation or participation monitoring and emitted a
+correlated reconciliation failure. The Sales Support aggregate also initially omitted
+the `sales-session-participants` diagnostic source, making that failure inaccessible
+from its supplied correlation link.
+
+**Portal mitigation**
+
+`SalesDelivery.listParticipants` now accepts either the published `{ participants }`
+shape or the observed `{ count, items }` shape. For the latter it uses documented
+`offset` and `limit` query parameters, reads until the declared count is satisfied,
+and fails closed when a later page contradicts that count or makes no progress. A
+null `envStatus` is preserved as the authoritative pre-environment state; the portal
+does not infer a runnable environment from the placeholder `envId`. Every CloudShare
+diagnostic now retains the full sanitised request body, response body, and query
+parameters at the shared client boundary. Only credentials, tokens, and bearer-style
+invitation or sponsored-login URLs are redacted. Participant and environment
+correlation values remain server-only in browser projections. Sales Support includes
+the participant reconciliation source in both direct, Customer-scoped filtered reads
+and the aggregate correlation feed.
+
+**Action required**
+
+CloudShare should reconcile the v4 OpenAPI definition for
+`GET /sales/{id}/participants` with the live paged response, including pagination
+semantics and the role of `count`.
+
+**Code reference:** `src/integrations/cloudshare/sales-delivery.ts`,
+`src/api/sales-diagnostics.ts`,
+`docs/api/assets/cloudshare-public-api-v4-2026-07-10.json`
+
+---
+
+## GAP-30 — Sales participant invite acknowledgement does not confirm invitation dispatch
+
+| Field | Detail |
+|---|---|
+| **Status** | Confirmed live prerequisite; provider acknowledgement defect escalated to CloudShare |
+| **Verified live** | Yes — Certalis Sales Admin UI, a disposable v4 Sales Experience, no automatic Main Sales Pro invitation, and a received native participant invitation, 2026-07-18 |
+| **Provider ticket** | [SUP-5011](https://cloudshare.atlassian.net/browse/SUP-5011) |
+| **Provider ticket title** | APIv4: invoking the send invitation endpoint for sales (and likley training) results in a 200 OK, even if the option to NOT send invites to either party has been enabled. This should be a 409 Conflict error |
+
+**Observed behaviour**
+
+The documented `POST /sales/{id}/participants/invite` endpoint accepts the documented
+array of Sales Participant IDs and returns HTTP 200 with an empty body. In #348 human
+QA, Certalis sent the exact documented request for two registered, property-correlated
+Sales Participants. The immediate authoritative roster read still returned
+`invitationStatus: "notSent"` for both participants.
+
+CloudShare GUI verification then identified the prerequisite: the Experience was created
+with both “Don't send Invitation to Participants” and “Don't send Invitation to Sales
+Pros” enabled, corresponding to `sendInvitations: "dontSend"`. The GUI blocks the same
+operation with “Sending invitations to participants was disabled for this experience.”
+The REST endpoint instead returns HTTP 200 with an empty body and does not report that
+precondition. The published endpoint does not return per-participant delivery results,
+errors, or a job identifier. Certalis has no documented alternate native-invite endpoint
+to call; it must not expose or fall back to participant invitation URLs.
+
+A disposable live Sales Experience was subsequently created with
+`sendInvitations: "salesProsAndParticipants"`. CloudShare returned HTTP 201, persisted
+that setting, and returned one Sales Pro and zero participants. The documented Sales Pro
+roster does not expose an invitation-status field. CloudShare GUI human QA then confirmed
+that the sole Main Sales Pro was `Not sent` (`0 of 1 invited`): enabling the capability at
+creation does not itself issue an invitation email.
+
+**Portal mitigation**
+
+New Sales Experiences use the documented `sendInvitations: "salesProsAndParticipants"`
+capability setting. Certalis makes no participant or Sales Pro invite request during
+creation or registration; the GUI evidence above confirms CloudShare does not send an
+automatic Main Sales Pro email merely because the capability is enabled. Before calling
+the native participant invite endpoint,
+Certalis reads the Experience configuration and returns an actionable 409 if participant
+invitations are disabled. For enabled Experiences it performs a roster read immediately
+after the POST and uses the returned `invitationStatus` as the only delivery authority.
+It records the configuration read, POST, and roster exchanges under the same correlation
+ID, persists the returned monitoring state, and never labels the empty-body
+acknowledgement as a sent email.
+
+**Action required**
+
+CloudShare R&D should correct `POST /sales/{id}/participants/invite` so a disabled
+Experience yields a machine-actionable non-success response (or a structured per-row
+outcome), consistent with the GUI message. Existing `dontSend` Experiences must be
+amended in CloudShare or recreated before their native invitations can be sent. With
+both invitation settings enabled, #348 human QA selected a Sales Participant, requested
+the native invitation, observed the portal roster change to `sent`, and received the
+native email. That confirms the explicit participant-delivery path. The separate
+creation-time Main Sales Pro check also passed in the CloudShare GUI: `Not sent` / `0 of
+1 invited`.
+
+CloudShare support ticket [SUP-5011](https://cloudshare.atlassian.net/browse/SUP-5011)
+tracks the provider acknowledgement defect.
+
+**Code reference:** `src/api/sales-session-participants.ts`,
+`src/integrations/cloudshare/sales-delivery.ts`,
+`docs/api/assets/cloudshare-public-api-v4-2026-07-10.json`
+
+---
+
 ## GAP-N — Short descriptive title
 
 | Field | Detail |
@@ -1814,5 +1932,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-07-09 (updated GAP-24 with live `0x42901` evidence and CloudShare public-IP allow-list / abuse-list operator context).
+*Last updated: 2026-07-18 (added GAP-30 live Sales invitation acknowledgement evidence).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*

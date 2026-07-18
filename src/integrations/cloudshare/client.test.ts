@@ -101,6 +101,124 @@ describe("createCloudShareClient — v4", () => {
     expect(last()?.headers?.authorization).toBe("Bearer test-bearer");
   });
 
+  it("accepts an explicitly documented empty v4 success response while retaining request evidence", async () => {
+    const { http, last } = capturingHttp({
+      status: 200,
+      headers: { "x-correlation-id": "cloud-1" },
+      body: "",
+    });
+    const client = clientWith(http);
+
+    const result = await client.requestV4Detailed!({
+      method: "POST",
+      path: "/sales/sales-1/participants/invite",
+      body: ["participant-1"],
+      allowEmptyResponse: true,
+      schema: z.void(),
+    });
+
+    expect(result).toMatchObject({
+      data: undefined,
+      request: { method: "POST", path: "/v4/sales/sales-1/participants/invite", body: ["participant-1"] },
+      response: { status: 200, headers: { "x-correlation-id": "cloud-1" }, body: "" },
+    });
+    expect(last()?.headers?.authorization).toBe("Bearer test-bearer");
+  });
+
+  it("retains complete Sales Participant request and response bodies in authorised support traces", async () => {
+    const trace = vi.fn();
+    const participantEmail = "participant-private@example.test";
+    const { http } = sequentialHttp(
+      ok([{ id: "participant-1", email: participantEmail }]),
+      ok({ count: 1, items: [{ id: "participant-1", email: participantEmail }] }),
+      { status: 200, body: "" },
+    );
+    const client = createCloudShareClient({ http, endpoints, tokenProvider: stubTokenProvider, v3: { apiId: "api-id", apiKey: "api-key" }, trace });
+
+    await client.requestV4({ method: "POST", path: "/sales/sales-1/participants", body: [{ firstName: "Private", lastName: "Person", email: participantEmail }], schema: z.array(z.object({ id: z.string(), email: z.string().email() })) });
+    await client.requestV4({ method: "GET", path: "/sales/sales-1/participants", query: { offset: "0", limit: "100" }, schema: z.object({ count: z.number(), items: z.array(z.object({ id: z.string(), email: z.string().email() })) }) });
+    await client.requestV4({ method: "POST", path: "/sales/sales-1/participants/invite", body: ["participant-1"], allowEmptyResponse: true, schema: z.void() });
+
+    const evidence = JSON.stringify(trace.mock.calls);
+    expect(evidence).toContain(participantEmail);
+    expect(evidence).toContain('\\"count\\":1');
+    expect(trace.mock.calls.filter(([event]) => event.message === "cloudshare request sent")).toHaveLength(3);
+    expect(trace.mock.calls.filter(([event]) => event.message === "cloudshare response received")).toHaveLength(3);
+  });
+
+  it("retains the full Sales Participant body when a schema check fails", async () => {
+    const participantEmail = "participant-private@example.test";
+    const { http } = capturingHttp(ok({ count: 1, items: [{ email: participantEmail }] }));
+    const client = clientWith(http);
+
+    const error = await client.requestV4({ method: "GET", path: "/sales/sales-1/participants", query: { offset: "0", limit: "100" }, schema: z.object({ count: z.number(), items: z.array(z.object({ id: z.string(), email: z.string().email() })) }) }).catch((failure) => failure);
+    expect(error).toMatchObject({
+      name: "CloudShareResponseError",
+      context: { status: 200, requestQuery: { offset: "0", limit: "100" }, responseBody: { count: 1, items: [{ email: participantEmail }] } },
+    });
+    expect(JSON.stringify((error as { context?: unknown }).context)).toContain(participantEmail);
+  });
+
+  it("retains full sanitized evidence for a non-Sales CloudShare response mismatch", async () => {
+    const body = { count: 1, items: [{ id: "student-1", email: "student@example.test", providerDetail: { code: "unexpected-shape" } }] };
+    const { http } = capturingHttp(ok(body));
+    const client = clientWith(http);
+
+    const error = await client.requestV4({
+      method: "GET",
+      path: "/trainings/training-1/students",
+      query: { offset: "0", limit: "100" },
+      schema: z.object({ students: z.array(z.object({ id: z.string() })) }),
+    }).catch((failure) => failure);
+
+    expect(error).toMatchObject({
+      name: "CloudShareResponseError",
+      context: {
+        requestQuery: { offset: "0", limit: "100" },
+        responseBody: body,
+      },
+    });
+  });
+
+  it("retains Sales Participant provider errors while redacting bearer invitation URLs", async () => {
+    const participantEmail = "participant-private@example.test";
+    const providerParticipantId = "PTYieGdBA4HfAyfI2LhbcxhQ2";
+    const providerInviteUrl = "https://use.cloudshare.com/Ent/Login.aspx?token=private-invite";
+    const { http } = capturingHttp({
+      status: 400,
+      body: JSON.stringify({
+        email: [`${participantEmail} is not accepted.`],
+        participants: [`${providerParticipantId} cannot use ${providerInviteUrl}.`],
+        [participantEmail]: ["Participant email was used as an error key."],
+        [providerParticipantId]: ["Provider participant ID was used as an error key."],
+        [providerInviteUrl]: ["Provider invite URL was used as an error key."],
+      }),
+    });
+    const client = clientWith(http);
+
+    const error = await client.requestV4({
+      method: "POST",
+      path: "/sales/sales-1/participants/invite",
+      body: [providerParticipantId],
+      schema: z.void(),
+    }).catch((failure) => failure);
+
+    expect(error).toMatchObject({
+      name: "CloudShareRequestError",
+      status: 400,
+      context: {
+        responseBody: expect.objectContaining({
+          email: [`${participantEmail} is not accepted.`],
+          participants: [expect.stringContaining(providerParticipantId)],
+        }),
+      },
+    });
+    const evidence = JSON.stringify((error as { context?: unknown }).context);
+    expect(evidence).toContain(participantEmail);
+    expect(evidence).toContain(providerParticipantId);
+    expect(evidence).not.toContain(providerInviteUrl);
+  });
+
   it("redacts training and Sales Experience passphrases from trace request bodies", async () => {
     const trace = vi.fn();
     const { http } = capturingHttp(ok({ id: "training-1" }));

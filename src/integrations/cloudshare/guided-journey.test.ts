@@ -250,6 +250,31 @@ describe("createCloudShareGuidedJourneyProvider", () => {
     expect(result).toBeNull();
   });
 
+  it("retains the provider's 404 exchange for participant support diagnostics", async () => {
+    const client: CloudShareClient = {
+      requestV4: vi.fn().mockRejectedValue(new CloudShareRequestError("not found", 404, {
+        method: "GET",
+        path: "/guided-journey/progress/exp-1/student-1",
+        requestQuery: { include: "sections" },
+        responseHeaders: { "x-cloudshare-request": "provider-request-404" },
+        responseBody: { error: "not configured", code: "GUIDED_JOURNEY_NOT_FOUND" },
+      })),
+      requestV3: vi.fn(),
+    } as unknown as CloudShareClient;
+
+    await expect(
+      createCloudShareGuidedJourneyProvider(client)
+        .getParticipantProgressForDiagnostics("exp-1", "student-1"),
+    ).resolves.toMatchObject({
+      request: { query: { include: "sections" } },
+      response: {
+        status: 404,
+        headers: { "x-cloudshare-request": "provider-request-404" },
+        body: { error: "not configured", code: "GUIDED_JOURNEY_NOT_FOUND" },
+      },
+    });
+  });
+
   it("propagates CloudShare errors (Zod validation or request failures)", async () => {
     const client: CloudShareClient = {
       requestV4: vi.fn().mockRejectedValue(new Error("upstream failure")),

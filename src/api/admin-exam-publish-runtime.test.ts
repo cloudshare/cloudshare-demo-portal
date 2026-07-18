@@ -10,7 +10,7 @@ import type {
   CloudShareBlueprintDetail,
   CloudShareExamAuthoringSource,
 } from "@/integrations/cloudshare/resources";
-import { CloudShareRateLimitError } from "@/integrations/cloudshare";
+import { CloudShareRateLimitError, type CloudShareClient } from "@/integrations/cloudshare";
 import type { Logger } from "@/observability/logger";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import { createInMemoryExamAuthoringCacheRepository } from "@/persistence/exam-authoring-cache-repository";
@@ -126,6 +126,66 @@ function makeExamInput(overrides: Partial<CreateDraftExamInput> = {}): CreateDra
 }
 
 describe("admin Exam publish runtime", () => {
+  it("persists the full Blueprint provider exchange when publishing through a client", async () => {
+    const repository = createInMemoryExamCatalogRepository();
+    const diagnostics = makeDiagnostics();
+    await createDraftExam(
+      { repository, now: () => new Date("2026-06-14T12:00:00.000Z"), newId: () => "exam-1" },
+      makeExamInput(),
+    );
+    const providerBody = {
+      id: "bp-1",
+      name: "Helios Exam Blueprint",
+      description: "Blueprint-backed description",
+      createFromVersions: [{
+        id: "snap-1", name: "Default Snapshot", isDefault: true,
+        regions: [{ id: "region-1" }, { id: "region-2" }],
+      }],
+      providerField: "retained",
+    };
+    const client = {
+      requestV3Detailed: vi.fn().mockResolvedValue({
+        data: providerBody,
+        request: {
+          method: "GET", path: "/projects/project-1/blueprints/bp-1", query: { include: "versions" },
+        },
+        response: {
+          status: 200,
+          headers: { "x-cloudshare-request": "provider-publish-read" },
+          body: providerBody,
+        },
+      }),
+    } as unknown as CloudShareClient;
+
+    const response = await publishAdminExamRuntime(
+      {
+        repository,
+        connections: makeConnections(),
+        cloudshare: { forConnection: vi.fn().mockReturnValue(client) } as unknown as CloudShareClientFactory,
+        cache: createInMemoryExamAuthoringCacheRepository(),
+        diagnostics: diagnostics.recorder,
+        logger: makeLogger(),
+      },
+      { customerId: "customer-1", examId: "exam-1" },
+    );
+
+    expect(response.status).toBe(200);
+    await expect(diagnostics.repository.query({
+      customerId: "customer-1", operation: "cloudshare.resource_sync.blueprint_detail.read",
+    })).resolves.toEqual([
+      expect.objectContaining({
+        request: {
+          method: "GET", path: "/projects/project-1/blueprints/bp-1", query: { include: "versions" },
+        },
+        response: {
+          status: 200,
+          headers: { "x-cloudshare-request": "provider-publish-read" },
+          body: providerBody,
+        },
+      }),
+    ]);
+  });
+
   it("refreshes Blueprint detail, strips diagnostic-only cache metadata, and publishes a draft Exam", async () => {
     const repository = createInMemoryExamCatalogRepository();
     const cache = createInMemoryExamAuthoringCacheRepository();

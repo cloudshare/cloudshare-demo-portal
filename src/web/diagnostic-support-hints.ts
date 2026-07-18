@@ -158,6 +158,16 @@ export function deriveDiagnosticSupportHints(
     ];
   }
 
+  if (readString(entry.details, "failureMode") === "participant_mapping_persistence") {
+    return [
+      {
+        title: "Sales Participant monitoring could not be persisted",
+        body:
+          "CloudShare returned the roster successfully, but Certalis could not persist the local Sales Participant monitoring state. Review the complete request/response evidence below and the local persistence error before retrying the refresh.",
+      },
+    ];
+  }
+
   if (
     entry.operation === "exam_attempt.suspend" ||
     entry.operation === "exam_attempt.resume" ||

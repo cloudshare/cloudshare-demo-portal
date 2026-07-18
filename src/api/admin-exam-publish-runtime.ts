@@ -126,11 +126,15 @@ async function validateCurrentDefaultSnapshotRegions(
     return { status: 404, body: { error: "Save a CloudShare Connection before publishing Exams." } };
   }
 
-  const source = resolveAuthoringSource(deps.cloudshare, connection);
+  const { source, capturesDetailedReads } = resolveAuthoringSource(
+    deps,
+    exam.customerId,
+    connection,
+  );
   let blueprint;
   try {
     blueprint = await source.getBlueprintDetail(exam.projectId, exam.blueprintId);
-    await recordResourceRead(deps, {
+    if (!capturesDetailedReads) await recordResourceRead(deps, {
       customerId: exam.customerId,
       operation: "cloudshare.resource_sync.blueprint_detail.read",
       integrationSurface: "cloudshare.v3.projects.blueprint_detail",
@@ -202,21 +206,29 @@ async function validateCurrentDefaultSnapshotRegions(
 }
 
 function resolveAuthoringSource(
-  factory: CloudShareClientFactory,
+  deps: AdminExamPublishRuntimeDeps,
+  customerId: string,
   connection: Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>> extends infer T
     ? Exclude<T, null>
     : never,
-): CloudShareExamAuthoringSource {
-  const candidate = factory.forConnection(connection) as unknown;
+): { source: CloudShareExamAuthoringSource; capturesDetailedReads: boolean } {
+  const candidate = deps.cloudshare.forConnection(connection) as unknown;
   if (
     typeof candidate === "object" &&
     candidate !== null &&
     "listProjects" in candidate &&
     typeof (candidate as CloudShareExamAuthoringSource).listProjects === "function"
   ) {
-    return candidate as CloudShareExamAuthoringSource;
+    return { source: candidate as CloudShareExamAuthoringSource, capturesDetailedReads: false };
   }
-  return createCloudShareExamAuthoringSource(candidate as CloudShareClient);
+  return {
+    source: createCloudShareExamAuthoringSource(candidate as CloudShareClient, {
+      onReadSuccess: async (read) => {
+        await recordResourceRead(deps, { customerId, ...read });
+      },
+    }),
+    capturesDetailedReads: true,
+  };
 }
 
 async function recordResourceRead(
@@ -361,6 +373,9 @@ async function handleCloudShareFailure(
       request: {
         method: (cloudShareError.context?.method as string | undefined) ?? "GET",
         path: spec.path,
+        ...(cloudShareError.context?.requestQuery
+          ? { query: normalizeDiagnosticPayload(cloudShareError.context.requestQuery) }
+          : {}),
         ...(cloudShareError.context?.requestHeaders
           ? { headers: cloudShareError.context.requestHeaders }
           : {}),

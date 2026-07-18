@@ -158,6 +158,21 @@ export interface CloudShareExamAuthoringSource {
   getBlueprintDetail(projectId: string, blueprintId: string): Promise<CloudShareBlueprintDetail>;
 }
 
+/** The authoring adapter owns the provider exchange. Its observer lets the
+ * runtime persist that complete, sanitized exchange without adding CloudShare
+ * wire models to its public resource values. */
+export interface CloudShareExamAuthoringSourceOptions {
+  readonly onReadSuccess?: (spec: {
+    readonly operation: string;
+    readonly integrationSurface: string;
+    readonly path: string;
+    readonly resourceType: string;
+    readonly resourceIds?: Record<string, string>;
+    readonly request: Record<string, unknown>;
+    readonly response: Record<string, unknown>;
+  }) => Promise<void> | void;
+}
+
 /** Detailed resource reads used by Sales Item authoring. Keeping the raw
  * HTTP exchange at this adapter boundary lets API handlers persist redacted,
  * supportable evidence without coupling domain code to CloudShare wire models. */
@@ -288,6 +303,7 @@ function toDiagnosticExchange(
     request: {
       method: detailed.request.method,
       path: detailed.request.path,
+      ...(detailed.request.query ? { query: detailed.request.query } : {}),
       ...(detailed.request.headers ? { headers: detailed.request.headers } : {}),
       ...(detailed.request.body !== undefined ? { body: detailed.request.body } : {}),
     },
@@ -491,17 +507,36 @@ export function createCloudShareResourceLister(
 
 export function createCloudShareExamAuthoringSource(
   client: CloudShareClient,
+  options: CloudShareExamAuthoringSourceOptions = {},
 ): CloudShareExamAuthoringSource {
   return {
     async listProjects() {
-      return client.requestV3({ method: "GET", path: "/projects", schema: projectListSchema });
+      const detailed = await requestV3WithDiagnostics(client, {
+        method: "GET", path: "/projects", schema: projectListSchema,
+      });
+      await options.onReadSuccess?.({
+        operation: "cloudshare.resource_sync.projects.read",
+        integrationSurface: "cloudshare.v3.projects",
+        path: "/projects",
+        resourceType: "project",
+        ...toDiagnosticExchange(detailed),
+      });
+      return detailed.data;
     },
     async listRegions() {
-      const regions = await client.requestV3({
+      const detailed = await requestV3WithDiagnostics(client, {
         method: "GET",
         path: "/regions",
         schema: regionListSchema,
       });
+      await options.onReadSuccess?.({
+        operation: "cloudshare.resource_sync.regions.read",
+        integrationSurface: "cloudshare.v3.regions",
+        path: "/regions",
+        resourceType: "region",
+        ...toDiagnosticExchange(detailed),
+      });
+      const regions = detailed.data;
       return regions.map((region) => ({
         id: region.id,
         name: region.name,
@@ -509,11 +544,20 @@ export function createCloudShareExamAuthoringSource(
       }));
     },
     async listProjectBlueprints(projectId) {
-      const blueprints = await client.requestV3({
+      const detailed = await requestV3WithDiagnostics(client, {
         method: "GET",
         path: `/projects/${projectId}/blueprints`,
         schema: blueprintListSchema,
       });
+      await options.onReadSuccess?.({
+        operation: "cloudshare.resource_sync.blueprints.read",
+        integrationSurface: "cloudshare.v3.projects.blueprints",
+        path: `/projects/${projectId}/blueprints`,
+        resourceType: "blueprint",
+        resourceIds: { projectId },
+        ...toDiagnosticExchange(detailed),
+      });
+      const blueprints = detailed.data;
       return blueprints.map((blueprint) => ({
         id: blueprint.id,
         name: blueprint.name,
@@ -521,11 +565,20 @@ export function createCloudShareExamAuthoringSource(
       }));
     },
     async listProjectPolicies(projectId) {
-      const policies = await client.requestV3({
+      const list = await requestV3WithDiagnostics(client, {
         method: "GET",
         path: `/projects/${projectId}/policies`,
         schema: policyListSchema,
       });
+      await options.onReadSuccess?.({
+        operation: "cloudshare.resource_sync.policies.read",
+        integrationSurface: "cloudshare.v3.projects.policies",
+        path: `/projects/${projectId}/policies`,
+        resourceType: "policy",
+        resourceIds: { projectId },
+        ...toDiagnosticExchange(list),
+      });
+      const policies = list.data;
       return Promise.all(
         policies.map(async (policy) => {
           const detailed = await requestV3WithDiagnostics(client, {
@@ -535,6 +588,14 @@ export function createCloudShareExamAuthoringSource(
           });
           const detail = detailed.data;
           const exchange = toDiagnosticExchange(detailed);
+          await options.onReadSuccess?.({
+            operation: "cloudshare.resource_sync.policy_detail.read",
+            integrationSurface: "cloudshare.v3.projects.policy_detail",
+            path: `/projects/${projectId}/policies/${policy.id}`,
+            resourceType: "policy_detail",
+            resourceIds: { projectId, policyId: policy.id },
+            ...exchange,
+          });
           return {
             id: policy.id,
             name: policy.name,
@@ -556,6 +617,14 @@ export function createCloudShareExamAuthoringSource(
         ),
       });
       const detail = detailed.data;
+      await options.onReadSuccess?.({
+        operation: "cloudshare.resource_sync.blueprint_detail.read",
+        integrationSurface: "cloudshare.v3.projects.blueprint_detail",
+        path: `/projects/${projectId}/blueprints/${blueprintId}`,
+        resourceType: "blueprint_detail",
+        resourceIds: { projectId, blueprintId },
+        ...toDiagnosticExchange(detailed),
+      });
 
       return {
         id: detail.id,

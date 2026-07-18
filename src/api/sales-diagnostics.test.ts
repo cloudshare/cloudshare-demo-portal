@@ -30,6 +30,24 @@ describe("Sales diagnostics handler", () => {
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-project-members", correlationId: "corr-members-failed" }));
   });
 
+  it("allows participant reconciliation evidence to be correlated from Sales Support", async () => {
+    const diagnostics = { append: vi.fn(), query: vi.fn().mockResolvedValue([]) };
+    await handleGetSalesDiagnosticLog({ diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } }, { customerId: "customer-certalis", query: { source: "sales-session-participants", correlationId: "corr-participants-failed" } });
+    expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-session-participants", correlationId: "corr-participants-failed" }));
+  });
+
+  it("returns correlated participant reconciliation evidence through the aggregate Sales Support feed", async () => {
+    const diagnostics = createInMemoryDiagnosticLogRepository();
+    await diagnostics.append({ source: "sales-session-participants", operation: "sales.demo_session.participants.reconciled", outcome: "failure", customerId: "customer-certalis", correlationId: "corr-participants-failed", message: "CloudShare could not reconcile Sales Participant monitoring", occurredAt: new Date("2026-07-17T00:00:00.000Z") });
+
+    const response = await handleGetSalesDiagnosticLog(
+      { diagnostics, logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() } },
+      { customerId: "customer-certalis", query: { correlationId: "corr-participants-failed" } },
+    );
+
+    expect(response).toMatchObject({ status: 200, body: { entries: [expect.objectContaining({ source: "sales-session-participants", correlationId: "corr-participants-failed", outcome: "failure" })] } });
+  });
+
   it("returns a correlated Project-member lookup failure through the aggregate Sales Support feed", async () => {
     const diagnostics = createInMemoryDiagnosticLogRepository();
     await diagnostics.append({ source: "sales-project-members", operation: "sales.enablement_session.project_members.read", outcome: "failure", customerId: "customer-certalis", correlationId: "corr-members-failed", message: "CloudShare could not read active Project members", occurredAt: new Date("2026-07-15T00:00:00.000Z") });
@@ -61,6 +79,7 @@ describe("Sales diagnostics handler", () => {
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-items" }));
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-session-reconciliation" }));
     expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-project-members" }));
+    expect(diagnostics.query).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-certalis", source: "sales-session-participants" }));
   });
 
   it("rejects an arbitrary source instead of widening Sales support", async () => {

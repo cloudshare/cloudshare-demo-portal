@@ -242,13 +242,18 @@ async function fetchAggregateProgressForDiagnostics(
           ...(error.context?.requestHeaders
             ? { headers: error.context.requestHeaders as Record<string, string> }
             : {}),
+          ...(error.context?.requestQuery
+            ? { query: error.context.requestQuery as Record<string, string> }
+            : {}),
           ...(error.context?.requestBody !== undefined
             ? { body: error.context.requestBody }
             : {}),
         },
         response: {
           status: 404,
-          body: null,
+          ...(error.context?.responseBody !== undefined
+            ? { body: error.context.responseBody }
+            : { body: null }),
           ...(error.context?.responseHeaders
             ? { headers: error.context.responseHeaders as Record<string, string | string[]> }
             : {}),
@@ -319,13 +324,18 @@ async function fetchParticipantProgressForDiagnostics(
           ...(error.context?.requestHeaders
             ? { headers: error.context.requestHeaders as Record<string, string> }
             : {}),
+          ...(error.context?.requestQuery
+            ? { query: error.context.requestQuery as Record<string, string> }
+            : {}),
           ...(error.context?.requestBody !== undefined
             ? { body: error.context.requestBody }
             : {}),
         },
         response: {
           status: 404,
-          body: null,
+          ...(error.context?.responseBody !== undefined
+            ? { body: error.context.responseBody }
+            : { body: null }),
           ...(error.context?.responseHeaders
             ? { headers: error.context.responseHeaders as Record<string, string | string[]> }
             : {}),

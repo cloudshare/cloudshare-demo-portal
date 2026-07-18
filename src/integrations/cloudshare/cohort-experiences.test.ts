@@ -5,11 +5,12 @@ import { CloudShareResponseError } from "./errors";
 
 describe("cloudShareOnDemandExperienceCreator", () => {
   it("creates a self-paced training with inherited Exam resource tuple", async () => {
-    const requestV3 = vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) =>
-      spec.schema.parse({
-        rows: [{ id: "TM-team-1", name: "Helios Team" }],
-      }),
-    );
+    const requestV3Detailed = vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) => ({
+      data: spec.schema.parse({ rows: [{ id: "TM-team-1", name: "Helios Team" }] }),
+      integrationSurface: "cloudshare.v3.teams",
+      request: { method: "GET", path: "/teams", query: { projectId: "project-1" } },
+      response: { status: 200, body: { rows: [{ id: "TM-team-1", name: "Helios Team" }] } },
+    }));
     const requestV4Detailed = vi.fn(
       async (spec: { method: string; path: string; body: Record<string, unknown>; schema: { parse(value: unknown): unknown } }) => ({
         data: spec.schema.parse({ id: "EXcohort-1" }),
@@ -20,7 +21,7 @@ describe("cloudShareOnDemandExperienceCreator", () => {
       }),
     );
     const creator = createCloudShareOnDemandExperienceCreator({
-      requestV3,
+      requestV3Detailed,
       requestV4Detailed,
     } as unknown as CloudShareClient);
 
@@ -38,7 +39,7 @@ describe("cloudShareOnDemandExperienceCreator", () => {
       externalId: "0d379db9-6b08-4457-b863-eb5f45323d24",
     });
 
-    expect(requestV3).toHaveBeenCalledWith({
+    expect(requestV3Detailed).toHaveBeenCalledWith({
       method: "GET",
       path: "/teams",
       query: {
@@ -83,9 +84,12 @@ describe("cloudShareOnDemandExperienceCreator", () => {
   });
 
   it("omits End when the Cohort Exam Session has no admission close", async () => {
-    const requestV3 = vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) =>
-      spec.schema.parse({ rows: [{ id: "TM-team-1", name: "Helios Team" }] }),
-    );
+    const requestV3Detailed = vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) => ({
+      data: spec.schema.parse({ rows: [{ id: "TM-team-1", name: "Helios Team" }] }),
+      integrationSurface: "cloudshare.v3.teams",
+      request: { method: "GET", path: "/teams", query: { projectId: "project-1" } },
+      response: { status: 200, body: { rows: [{ id: "TM-team-1", name: "Helios Team" }] } },
+    }));
     const requestV4Detailed = vi.fn(
       async (spec: { method: string; path: string; body: Record<string, unknown>; schema: { parse(value: unknown): unknown } }) => ({
         data: spec.schema.parse({ id: "EXcohort-1" }),
@@ -96,7 +100,7 @@ describe("cloudShareOnDemandExperienceCreator", () => {
       }),
     );
     const creator = createCloudShareOnDemandExperienceCreator({
-      requestV3,
+      requestV3Detailed,
       requestV4Detailed,
     } as unknown as CloudShareClient);
 
@@ -117,12 +121,15 @@ describe("cloudShareOnDemandExperienceCreator", () => {
   });
 
   it("raises a typed response error when no Project Team can be resolved", async () => {
-    const requestV3 = vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) =>
-      spec.schema.parse({ rows: [] }),
-    );
+    const requestV3Detailed = vi.fn(async (spec: { schema: { parse(value: unknown): unknown } }) => ({
+      data: spec.schema.parse({ rows: [] }),
+      integrationSurface: "cloudshare.v3.teams",
+      request: { method: "GET", path: "/teams", query: { projectId: "project-1" } },
+      response: { status: 200, body: { rows: [] } },
+    }));
     const requestV4Detailed = vi.fn();
     const creator = createCloudShareOnDemandExperienceCreator({
-      requestV3,
+      requestV3Detailed,
       requestV4Detailed,
     } as unknown as CloudShareClient);
 
@@ -146,7 +153,7 @@ describe("cloudShareOnDemandExperienceCreator", () => {
         path: "/teams",
         integrationSurface: "cloudshare.v3.teams",
         requestQuery: { projectId: "project-1" },
-        responseBody: { teamCount: 0 },
+        responseBody: { rows: [] },
       },
     });
     await expect(create).rejects.toBeInstanceOf(CloudShareResponseError);

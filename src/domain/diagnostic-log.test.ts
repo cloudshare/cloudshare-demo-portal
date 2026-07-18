@@ -116,6 +116,19 @@ describe("redactDiagnosticInput", () => {
     expect(redacted.request).toEqual({ body: { passphrase: "[REDACTED]" } });
   });
 
+  it("redacts Sales participant invitation URLs from diagnostic evidence", () => {
+    const redacted = redactDiagnosticInput({
+      source: "sales-session-participants",
+      operation: "sales.demo_session.participants.reconciled",
+      outcome: "success",
+      message: "CloudShare reconciliation completed",
+      response: { body: { accessLink: "https://bearer.example.test/native-invite", invitationUrl: "https://bearer.example.test/resend" } },
+    });
+
+    expect(JSON.stringify(redacted)).not.toContain("https://bearer.example.test");
+    expect(redacted.response).toEqual({ body: { accessLink: "[REDACTED]", invitationUrl: "[REDACTED]" } });
+  });
+
   it("retains sponsored-link loginUrl values in admin diagnostic payloads", () => {
     const redacted = redactDiagnosticInput({
       source: "integration",
