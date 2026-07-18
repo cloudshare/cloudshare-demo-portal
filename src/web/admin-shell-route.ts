@@ -7,6 +7,7 @@ export interface DiagnosticLogFilters {
   readonly source?: string;
   readonly integrationSurface?: string;
   readonly correlationId?: string;
+  readonly subjectId?: string;
   readonly externalId?: string;
   readonly from?: string;
   readonly to?: string;
