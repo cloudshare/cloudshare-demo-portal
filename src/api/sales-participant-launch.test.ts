@@ -28,8 +28,13 @@ describe("Sales participant instant launch", () => {
     expect(closed.body).toMatchObject({ error: "This Certalis launch link is unavailable." }); expect(JSON.stringify(closed.body)).not.toContain("cloudshare.example");
   });
   it("blocks malformed and revoked capabilities without calling CloudShare", async () => {
-    const d = deps(); const malformed = await handleSalesParticipantLaunch(d, "bad"); expect(malformed.status).toBe(404); expect(d.deliveryFactory.forConnection).not.toHaveBeenCalled();
+    const d = deps(); const malformed = await handleSalesParticipantLaunch(d, "bad"); expect(malformed.status).toBe(404); expect(malformed.body?.correlationId).toBeTruthy(); expect(d.diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ correlationId: malformed.body?.correlationId, customerId: null })); expect(d.audit.write).toHaveBeenCalledWith(expect.objectContaining({ correlationId: malformed.body?.correlationId, customerId: null })); expect(d.deliveryFactory.forConnection).not.toHaveBeenCalled();
     d.links.findByTokenHash.mockResolvedValue({ id: "link", customerId: "certalis", salesDemoSessionId: "session-1", salesSessionParticipantId: "participant-1", tokenHash: "hash", revokedAt: now, createdAt: now });
     const revoked = await handleSalesParticipantLaunch(d, "a".repeat(43)); expect(revoked.status).toBe(404); expect(d.deliveryFactory.forConnection).not.toHaveBeenCalled();
+  });
+  it("uses the persisted Windows timezone rather than the host timezone", async () => {
+    const d = deps({ sessions: { findById: vi.fn().mockResolvedValue({ ...(session as any), start: "2026-07-18T10:00", end: "2026-07-18T11:00", timeZone: "GMT Standard Time" }) }, now: () => new Date("2026-07-18T09:30:00.000Z") });
+    d.links.findByTokenHash.mockResolvedValue({ id: "link-1", customerId: "certalis", salesDemoSessionId: "session-1", salesSessionParticipantId: "participant-1", tokenHash: "hash", revokedAt: null, createdAt: now });
+    await expect(handleSalesParticipantLaunch(d, "a".repeat(43))).resolves.toMatchObject({ status: 302 });
   });
 });

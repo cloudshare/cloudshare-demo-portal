@@ -24,6 +24,12 @@ function documentedParticipant(overrides: Record<string, unknown> = {}) {
 }
 
 describe("CloudShare Sales Delivery", () => {
+  it("uses the documented Sales sponsored-link contract and preserves provider evidence", async () => {
+    const requestV4Detailed = vi.fn().mockResolvedValue({ data: { id: "sponsored-1", loginUrl: "https://cloudshare.example.test/bearer" }, request: { method: "POST", path: "/sales/sales-1/sponsored-link", body: { firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", preRegisteredStudent: false } }, response: { status: 200, body: { id: "sponsored-1", loginUrl: "https://cloudshare.example.test/bearer" } } });
+    const result = await createCloudShareSalesDelivery({ requestV4Detailed } as never).createSponsoredLink("sales-1", { firstName: "Ada", lastName: "Lovelace", email: "ada@example.test" });
+    expect(result.loginUrl).toBe("https://cloudshare.example.test/bearer");
+    expect(requestV4Detailed).toHaveBeenCalledWith(expect.objectContaining({ method: "POST", path: "/sales/sales-1/sponsored-link", body: { firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", preRegisteredStudent: false } }));
+  });
   it("ensures the documented Sales correlation properties before participant registration and reads their values back", async () => {
     const roster = documentedParticipant({
       customProperties: [
