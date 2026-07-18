@@ -44,4 +44,11 @@ describe("Sales participant instant launch", () => {
     expect(result.body).toMatchObject({ error: "This Certalis launch link is unavailable." }); expect(JSON.stringify(result.body)).not.toContain("provider unavailable");
     expect(http.diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ details: expect.objectContaining({ integrationSurface: "cloudshare.v4.sales.sponsored_link", failureMode: "http_failure" }), request: expect.objectContaining({ path: "/sales/sales-1/sponsored-link" }), response: expect.objectContaining({ responseStatus: 503 }) }));
   });
+  it("records TLS or network transport cause without exposing it to the launch caller", async () => {
+    const transport = deps({ deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSponsoredLink: vi.fn().mockRejectedValue(Object.assign(new Error("transport"), { context: { method: "POST", path: "/sales/sales-1/sponsored-link", network: "ECONNRESET", tls: "certificate verify failed", cause: "connection reset" } })) }) } });
+    transport.links.findByTokenHash.mockResolvedValue({ id: "link-1", customerId: "certalis", salesDemoSessionId: "session-1", salesSessionParticipantId: "participant-1", tokenHash: "hash", revokedAt: null, createdAt: now });
+    const result = await handleSalesParticipantLaunch(transport, "a".repeat(43));
+    expect(result.body).toMatchObject({ error: "This Certalis launch link is unavailable." });
+    expect(transport.diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ details: expect.objectContaining({ failureMode: "transport_failure", reason: "connection reset", http: expect.objectContaining({ transport: "ECONNRESET" }) }) }));
+  });
 });

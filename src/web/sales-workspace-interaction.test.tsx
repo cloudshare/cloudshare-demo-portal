@@ -21,6 +21,8 @@ describe("SalesWorkspace interaction", () => {
 
   it("selects an Account into the URL and limits the next grid to its Opportunities without console errors", async () => {
     const user = userEvent.setup();
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (_input, init) => {
       if (init?.method === "POST") return json({ account: { id: "account-1" } }, 201);
       return json({
@@ -34,8 +36,6 @@ describe("SalesWorkspace interaction", () => {
         ], contacts: [],
       });
     });
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
-
     render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "records", itemView: "catalog" }} />);
     const acmeRow = await screen.findByRole("row", { name: /Acme Labs/ });
     await user.click(acmeRow);
@@ -642,6 +642,8 @@ describe("SalesWorkspace interaction", () => {
   it("registers named Opportunity Contacts without sending mail, then sends a selected native invite without exposing provider identifiers", async () => {
     const user = userEvent.setup();
     const writeText = vi.fn().mockResolvedValue(undefined);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
     let participantReads = 0;
     const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
@@ -674,8 +676,12 @@ describe("SalesWorkspace interaction", () => {
     expect(screen.getByRole("button", { name: "Open support diagnostics for latest participant operation (corr-invite-1)" })).not.toBeNull();
     await user.click(screen.getByRole("button", { name: "Copy launch link" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining("/sales/launch/opaque-certalis-token")));
+    await user.click(screen.getByRole("button", { name: "Regenerate and copy" }));
+    expect(writeText).toHaveBeenCalledTimes(2);
     expect(screen.queryByText("cloudshare.example")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Revoke" }));
     expect(fetchMock).toHaveBeenCalledWith("/api/sales/enablement-sessions/session-1/participants/portal-participant-1/launch-link", expect.objectContaining({ method: "DELETE" }));
+    expect(consoleError).not.toHaveBeenCalled();
+    expect(consoleWarn).not.toHaveBeenCalled();
   });
 });
