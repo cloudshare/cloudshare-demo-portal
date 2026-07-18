@@ -325,6 +325,7 @@ export function SalesSessionParticipants({ session, fetchSales, onOpenSupport }:
   // only the selected row through its handler state.
   const refresh = useCallback(async (preserveOperationEvidence = false) => {
     setLoading(true);
+    if (!preserveOperationEvidence) setOperationFailed(false);
     try {
       const [recordsResponse, participantsResponse] = await Promise.all([fetchSales("/api/sales/accounts", { cache: "no-store" }), fetchSales(`/api/sales/enablement-sessions/${encodeURIComponent(session.id)}/participants`, { cache: "no-store" })]);
       const recordsBody = await recordsResponse.json() as { contacts?: Contact[]; error?: string };
@@ -334,16 +335,16 @@ export function SalesSessionParticipants({ session, fetchSales, onOpenSupport }:
       const refreshedParticipants = participantsBody.participants ?? [];
       setParticipants(refreshedParticipants);
       setSelectedParticipants((current) => current.filter((id) => refreshedParticipants.some((participant) => participant.id === id && !participant.needsAttention)));
-      if (!preserveOperationEvidence) { setCorrelationId(participantsBody.correlationId ?? null); setMessage(null); }
-    } catch (error) { if (preserveOperationEvidence) setMessage("Native CloudShare invitations were requested. Participant monitoring could not refresh; investigate the invite evidence before retrying."); else setMessage(error instanceof Error ? error.message : "Could not load Sales Participant monitoring."); } finally { setLoading(false); }
+      if (!preserveOperationEvidence) { setCorrelationId(participantsBody.correlationId ?? null); setMessage(null); setOperationFailed(false); }
+    } catch (error) { setOperationFailed(true); if (preserveOperationEvidence) setMessage("Native CloudShare invitations were requested. Participant monitoring could not refresh; investigate the invite evidence before retrying."); else setMessage(error instanceof Error ? error.message : "Could not load Sales Participant monitoring."); } finally { setLoading(false); }
   }, [fetchSales, session.id, session.opportunityId]);
   useEffect(() => { void refresh(); }, [refresh]);
   const register = async () => {
-    setSaving(true); setMessage(null); setCorrelationId(null);
-    try { const response = await fetchSales(`/api/sales/enablement-sessions/${encodeURIComponent(session.id)}/participants`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ contactIds: selectedContacts }) }); const body = await response.json() as { participants?: SalesParticipant[]; error?: string; correlationId?: string }; if (!response.ok) { setCorrelationId(body.correlationId ?? null); throw new Error(body.error ?? "Could not register selected Sales Participants."); } const returnedParticipants = body.participants ?? []; setParticipants((current) => [...current.filter((existing) => !returnedParticipants.some((value) => value.id === existing.id)), ...returnedParticipants]); setSelectedContacts([]); setCorrelationId(body.correlationId ?? null); setMessage("Sales Participants registered. No native invitations were sent."); } catch (error) { setMessage(error instanceof Error ? error.message : "Could not register selected Sales Participants."); } finally { setSaving(false); }
+    setSaving(true); setMessage(null); setCorrelationId(null); setOperationFailed(false);
+    try { const response = await fetchSales(`/api/sales/enablement-sessions/${encodeURIComponent(session.id)}/participants`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ contactIds: selectedContacts }) }); const body = await response.json() as { participants?: SalesParticipant[]; error?: string; correlationId?: string }; if (!response.ok) { setCorrelationId(body.correlationId ?? null); throw new Error(body.error ?? "Could not register selected Sales Participants."); } const returnedParticipants = body.participants ?? []; setParticipants((current) => [...current.filter((existing) => !returnedParticipants.some((value) => value.id === existing.id)), ...returnedParticipants]); setSelectedContacts([]); setCorrelationId(body.correlationId ?? null); setMessage("Sales Participants registered. No native invitations were sent."); } catch (error) { setOperationFailed(true); setMessage(error instanceof Error ? error.message : "Could not register selected Sales Participants."); } finally { setSaving(false); }
   };
   const invite = async () => {
-    setSaving(true); setMessage(null); setCorrelationId(null);
+    setSaving(true); setMessage(null); setCorrelationId(null); setOperationFailed(false);
     try {
       const response = await fetchSales(`/api/sales/enablement-sessions/${encodeURIComponent(session.id)}/participants/invite`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ participantIds: selectedParticipants }) });
       const body = await response.json() as { error?: string; correlationId?: string; invitationConfirmation?: "confirmed" | "pending"; confirmedParticipantCount?: number; pendingConfirmationParticipantCount?: number };
@@ -356,7 +357,7 @@ export function SalesSessionParticipants({ session, fetchSales, onOpenSupport }:
           ? "CloudShare accepted the native invitation request, but has not yet confirmed it as sent. Refresh engagement before resending."
           : "Native CloudShare invitations requested for selected Sales Participants. Refresh engagement to confirm their state.");
       await refresh(true);
-    } catch (error) { setMessage(error instanceof Error ? error.message : "CloudShare could not send the selected native invitations."); } finally { setSaving(false); }
+    } catch (error) { setOperationFailed(true); setMessage(error instanceof Error ? error.message : "CloudShare could not send the selected native invitations."); } finally { setSaving(false); }
   };
   const createLaunchLink = async (participantId: string) => {
     setSaving(true); setMessage(null); setCorrelationId(null); setOperationFailed(false);
