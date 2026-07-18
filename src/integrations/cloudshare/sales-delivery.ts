@@ -118,10 +118,12 @@ const salesExperienceSchema = z.object({
   end: z.string().nullable().optional(),
   timeZone: z.string().optional(),
 }).passthrough();
-const salesEnvironmentStatusSchema = z.enum([
+const SALES_ENVIRONMENT_STATUSES = [
   "FutureAllocationScheduled", "AllocationScheduledNoRun", "Ready", "Suspended", "Archived", "Deleted",
   "Publishing", "Preparing", "CreationFailed", "InGrace", "Stopping", "EditingNetworks",
-]);
+] as const;
+const salesEnvironmentStatusSchema = z.enum(SALES_ENVIRONMENT_STATUSES);
+const canonicalSalesEnvironmentStatus = new Map(SALES_ENVIRONMENT_STATUSES.map((status) => [status.toLowerCase(), status]));
 const salesParticipantSchema = z.object({
   id: z.string().min(1),
   firstName: z.string().min(2).max(64),
@@ -133,10 +135,10 @@ const salesParticipantSchema = z.object({
   firstJoined: z.string().datetime({ offset: true }).nullable(),
   // The published schema lists environment states, but the live Sales roster
   // returns null until a registered participant has an environment.
-  // Live Sales roster evidence returned lowercase `preparing` despite the
-  // exported schema's PascalCase `Preparing`; normalize only that observed
-  // variant at the adapter seam.
-  envStatus: z.preprocess((value) => value === "preparing" ? "Preparing" : value, salesEnvironmentStatusSchema.nullable()),
+  // Live Sales roster evidence returns documented values with inconsistent
+  // casing. Canonicalize only exact case-insensitive matches from the exported
+  // enum; unsupported strings still fail strict validation.
+  envStatus: z.preprocess((value) => typeof value === "string" ? canonicalSalesEnvironmentStatus.get(value.toLowerCase()) ?? value : value, salesEnvironmentStatusSchema.nullable()),
   envId: z.string().min(1).nullable(),
   customProperties: z.preprocess((value) => value ?? [], z.array(z.object({ name: z.string(), value: z.string().max(1024) }))),
 });

@@ -24,9 +24,11 @@ function documentedParticipant(overrides: Record<string, unknown> = {}) {
 }
 
 describe("CloudShare Sales Delivery", () => {
-  it("normalizes the live lowercase preparing environment status to the documented typed value", async () => {
-    const requestV4Detailed = vi.fn().mockResolvedValue({ data: { count: 1, items: [documentedParticipant({ envStatus: "preparing" })] }, request: { method: "GET", path: "/sales/sales-1/participants", query: { offset: "0", limit: "100" } }, response: { status: 200, body: {} } });
-    await expect(createCloudShareSalesDelivery({ requestV4Detailed } as never).listParticipants("sales-1")).resolves.toMatchObject({ participants: [expect.objectContaining({ envStatus: "Preparing" })] });
+  it("canonicalizes documented Sales environment statuses case-insensitively and rejects unsupported values", async () => {
+    await expect(deliveryForRoster({ count: 1, items: [documentedParticipant({ envStatus: "preparing" })] }).listParticipants("sales-1")).resolves.toMatchObject({ participants: [expect.objectContaining({ envStatus: "Preparing" })] });
+    await expect(deliveryForRoster({ count: 1, items: [documentedParticipant({ envStatus: "ready" })] }).listParticipants("sales-1")).resolves.toMatchObject({ participants: [expect.objectContaining({ envStatus: "Ready" })] });
+    await expect(deliveryForRoster({ count: 1, items: [documentedParticipant({ envStatus: "Suspended" })] }).listParticipants("sales-1")).resolves.toMatchObject({ participants: [expect.objectContaining({ envStatus: "Suspended" })] });
+    await expect(deliveryForRoster({ count: 1, items: [documentedParticipant({ envStatus: "unknown-live-state" })] }).listParticipants("sales-1")).rejects.toThrow();
   });
   it("uses the documented Sales sponsored-link contract and preserves provider evidence", async () => {
     const requestV4Detailed = vi.fn().mockResolvedValue({ data: { id: "sponsored-1", loginUrl: "https://cloudshare.example.test/bearer" }, request: { method: "POST", path: "/sales/sales-1/sponsored-link", body: { firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", preRegisteredStudent: false } }, response: { status: 200, body: { id: "sponsored-1", loginUrl: "https://cloudshare.example.test/bearer" } } });

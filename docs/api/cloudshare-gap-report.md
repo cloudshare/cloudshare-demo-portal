@@ -1843,11 +1843,11 @@ semantics and the role of `count`.
 | --- | --- |
 | **Verified live** | Yes — Certalis Sales instant-launch QA, 2026-07-18 |
 | **Exported contract** | `envStatus` enumerates PascalCase `Preparing` |
-| **Live observation** | `GET /v4/sales/{id}/participants` returned HTTP 200 with `envStatus: "preparing"` for a registered participant after sponsored-link launch. IDs, URLs, and credentials are intentionally omitted. |
+| **Live observation** | `GET /v4/sales/{id}/participants` returned HTTP 200 with `envStatus: "preparing"` after sponsored-link launch, then lowercase `envStatus: "ready"` as the same participant progressed. IDs, URLs, and credentials are intentionally omitted. |
 
 **Impact:** Strict enum parsing rejected an otherwise valid roster and hid the participant from Certalis monitoring.
 
-**Portal behavior:** `SalesDelivery` normalizes only the observed lowercase `preparing` wire value to typed `Preparing` at the CloudShare adapter seam. Other values remain strictly validated.
+**Portal behavior:** `SalesDelivery` case-insensitively normalizes only values in the exact documented Sales environment-status enum to their canonical typed spelling. Unknown strings remain strictly rejected.
 
 ## GAP-30 — Sales participant invite acknowledgement does not confirm invitation dispatch
 
