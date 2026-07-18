@@ -676,10 +676,10 @@ describe("SalesWorkspace interaction", () => {
     expect(screen.getByRole("button", { name: "Open support diagnostics for latest participant operation (corr-invite-1)" })).not.toBeNull();
     await user.click(screen.getByRole("button", { name: "Copy launch link" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining("/sales/launch/opaque-certalis-token")));
-    await user.click(screen.getByRole("button", { name: "Regenerate and copy" }));
+    await user.click(screen.getByRole("button", { name: "Copy launch link" }));
     expect(writeText).toHaveBeenCalledTimes(2);
     expect(screen.queryByText("cloudshare.example")).toBeNull();
-    await user.click(screen.getByRole("button", { name: "Revoke" }));
+    await user.click(screen.getByRole("button", { name: "Revoke link" }));
     expect(fetchMock).toHaveBeenCalledWith("/api/sales/enablement-sessions/session-1/participants/portal-participant-1/launch-link", expect.objectContaining({ method: "DELETE" }));
     expect(consoleError).not.toHaveBeenCalled();
     expect(consoleWarn).not.toHaveBeenCalled();
