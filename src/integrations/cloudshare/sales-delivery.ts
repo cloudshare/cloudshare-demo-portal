@@ -59,6 +59,7 @@ export interface SalesDelivery {
   updateParticipantCorrelation(salesExperienceId: string, participantId: string, input: Pick<SalesParticipantInput, "firstName" | "lastName" | "customProperties">): Promise<SalesDeliveryEvidence>;
   listParticipants(salesExperienceId: string): Promise<{ readonly participants: readonly SalesParticipant[] } & SalesDeliveryEvidence>;
   inviteParticipants(salesExperienceId: string, participantIds: readonly string[]): Promise<SalesDeliveryEvidence>;
+  createSponsoredLink(salesExperienceId: string, participant: Pick<SalesParticipantInput, "firstName" | "lastName" | "email">): Promise<{ readonly loginUrl: string } & SalesDeliveryEvidence>;
 }
 
 export const SALES_PARTICIPANT_CORRELATION_PROPERTY_KEYS = [
@@ -138,6 +139,7 @@ const salesParticipantSchema = z.object({
 });
 const salesUserPropertyDefinitionSchema = z.object({ id: z.string().min(1), name: z.string().min(1), order: z.number().int().optional() });
 const salesUserPropertyDefinitionsSchema = z.array(salesUserPropertyDefinitionSchema);
+const sponsoredLinkSchema = z.object({ id: z.string().min(1), loginUrl: z.string().url() });
 
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -307,6 +309,10 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
     async inviteParticipants(salesExperienceId, participantIds) {
       const { evidence } = await detailed({ method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants/invite`, body: participantIds, allowEmptyResponse: true, schema: z.void() });
       return participantEvidence(evidence);
+    },
+    async createSponsoredLink(salesExperienceId, participant) {
+      const { data, evidence } = await detailed({ method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/sponsored-link`, body: { ...participant, preRegisteredStudent: false }, schema: sponsoredLinkSchema });
+      return { loginUrl: data.loginUrl, ...evidence };
     },
   };
 }

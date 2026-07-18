@@ -12,3 +12,13 @@ criteria remain in that issue and the Sales Enablement requirements linked from 
 
 Tests exercise observable behaviour through these interfaces. CloudShare is mocked only at the
 integration seam; live verification remains separate.
+
+## Deep-module design
+
+`sales-participant-launch` is the deep module at the launch-capability seam. Its small interface
+creates, revokes, and resolves an opaque capability; callers never learn hashing, token generation,
+ownership joins, timing checks, or CloudShare wire paths. The public redirect handler returns only a
+generic denial for every invalid capability state. The sole CloudShare adapter call is the confirmed
+`POST /v4/sales/{id}/sponsored-link` contract, with the registered participant's server-resolved
+name and email and `preRegisteredStudent: false`; the v4 export states the link is valid for five
+minutes. The adapter response remains server-only and the handler turns it into a redirect.
