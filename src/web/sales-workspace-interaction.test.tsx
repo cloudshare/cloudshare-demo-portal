@@ -673,7 +673,7 @@ describe("SalesWorkspace interaction", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/sales/enablement-sessions/session-1/participants", expect.objectContaining({ method: "POST", body: JSON.stringify({ contactIds: ["contact-1"] }) }));
     expect(screen.queryByText("cloudshare-participant-1")).toBeNull();
     expect(screen.getByText("ada@example.test")).not.toBeNull();
-    expect(screen.getByText("2026-07-18 09:15:00 UTC")).not.toBeNull();
+    expect(document.querySelector('time[datetime="2026-07-18T09:15:00.000Z"]')?.getAttribute("title")).toContain("2026-07-18 09:15:00 UTC");
     await user.click(screen.getByLabelText("Select Ada Lovelace for native invite"));
     await user.click(screen.getByRole("button", { name: "Send or resend native invites" }));
     expect(fetchMock).toHaveBeenCalledWith("/api/sales/enablement-sessions/session-1/participants/invite", expect.objectContaining({ method: "POST", body: JSON.stringify({ participantIds: ["portal-participant-1"] }) }));
@@ -694,7 +694,7 @@ describe("SalesWorkspace interaction", () => {
     await user.click(screen.getByLabelText("Select Ada Lovelace for native invite"));
     await user.click(screen.getByRole("button", { name: "Send or resend native invites" }));
     expect((await screen.findByText("Native CloudShare invitations requested for selected Sales Participants. Refresh engagement to confirm their state.")).closest("[role]")?.getAttribute("role")).toBe("status");
-    expect(screen.getByText("2026-07-18 09:45:00 UTC")).not.toBeNull();
+    expect(document.querySelector('time[datetime="2026-07-18T09:45:00.000Z"]')?.getAttribute("title")).toContain("2026-07-18 09:45:00 UTC");
     await user.click(screen.getByLabelText("Select Ada Lovelace for native invite"));
     await user.click(screen.getByRole("button", { name: "Send or resend native invites" }));
     expect((await screen.findByText("Native invitation failed.")).closest("[role]")?.getAttribute("role")).toBe("alert");

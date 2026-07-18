@@ -22,7 +22,14 @@ type Deps = { sessions: Pick<SalesDemoSessionRepository, "findById">; records: P
  * never accepted or returned. */
 export async function handleRegisterSalesSessionParticipants(deps: Deps, request: Request): Promise<{ status: number; body: Record<string, unknown> }> {
   const parsed = contactsSchema.safeParse(request.body); if (!parsed.success) return { status: 400, body: { error: "Select one or more Opportunity Contacts." } };
-  const prepared = await resolve(deps, request); if ("response" in prepared) return prepared.response!;
+  const sessionResult = await resolveSession(deps, request); if ("response" in sessionResult) return sessionResult.response!;
+  if (!participantInvitationWindow(sessionResult.session, (deps.now ?? (() => new Date()))()).nativeInvitationsAvailable) {
+    const correlationId = randomUUID(); const error = "Participant registration and repair are unavailable after this Sales Session has ended.";
+    await evidence(deps, request, sessionResult.session, correlationId, "sales.demo_session.participants.registered", "failure", error, undefined, { failureMode: "sales_session_ended", contactIds: parsed.data.contactIds }, {}, false);
+    return { status: 409, body: { code: "sales_session_ended", error, correlationId } };
+  }
+  const deliveryResult = await resolveDelivery(deps, request); if ("response" in deliveryResult) return deliveryResult.response!;
+  const prepared = { session: sessionResult.session, delivery: deliveryResult.delivery };
   const resolvedContacts = await Promise.all(parsed.data.contactIds.map((id) => deps.records.findContact(request.customerId, id)));
   if (resolvedContacts.some((contact) => !contact || contact.opportunityId !== prepared.session.opportunityId || contact.archivedAt)) return denied(deps, request, prepared.session, 404, "Selected Opportunity Contact was not found for this Session.", "contact_not_found");
   const contacts = resolvedContacts.filter((contact): contact is NonNullable<typeof contact> => contact !== null);
@@ -135,11 +142,16 @@ export async function handleInviteSalesSessionParticipants(deps: Deps, request: 
     await evidence(deps, request, sessionResult.session, correlationId, "sales.demo_session.participants.invited", "failure", error, undefined, { failureMode: "sales_session_ended", participantIds: parsed.data.participantIds }, {}, false);
     return { status: 409, body: { code: "sales_session_ended", error, correlationId } };
   }
+  const registered = await deps.participants.list(request.customerId, sessionResult.session.id);
+  const selected = parsed.data.participantIds.map((id) => registered.find((participant) => participant.id === id));
+  if (selected.some((participant) => !participant)) return denied(deps, request, sessionResult.session, 404, "Selected registered Sales Participant was not found for this Session.", "participant_not_found");
+  if (selected.some((participant) => participant!.participationStatus === "concluded")) {
+    const correlationId = randomUUID(); const error = "Concluded Sales Participants cannot receive native invitations.";
+    await evidence(deps, request, sessionResult.session, correlationId, "sales.demo_session.participants.invited", "failure", error, undefined, { failureMode: "sales_participant_concluded", participantIds: parsed.data.participantIds }, {}, false);
+    return { status: 409, body: { code: "sales_participant_concluded", error, correlationId } };
+  }
   const deliveryResult = await resolveDelivery(deps, request); if ("response" in deliveryResult) return deliveryResult.response!;
   const prepared = { session: sessionResult.session, delivery: deliveryResult.delivery };
-  const registered = await deps.participants.list(request.customerId, prepared.session.id);
-  const selected = parsed.data.participantIds.map((id) => registered.find((participant) => participant.id === id));
-  if (selected.some((participant) => !participant)) return denied(deps, request, prepared.session, 404, "Selected registered Sales Participant was not found for this Session.", "participant_not_found");
   const correlationId = randomUUID();
   let acknowledgedInvite: SalesDeliveryEvidence | undefined;
   const completedExchanges: Array<{ readonly request: unknown; readonly response: unknown }> = [];

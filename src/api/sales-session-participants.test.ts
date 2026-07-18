@@ -28,6 +28,15 @@ const remoteParticipant = (id: string, portalId?: string, contactId?: string, em
 const storedParticipant = (id = "portal-1", contactId = "contact-1", cloudShareParticipantId = "remote-1") => ({ id, customerId: "customer-1", salesDemoSessionId: "session-1", opportunityContactId: contactId, cloudShareParticipantId, invitationStatus: "notSent" as const, lastInvitedAt: null as Date | null, invitedBy: null, participationStatus: "pending" as const, firstJoined: null, cloudShareEnvironmentId: null, environmentStatus: null, lastReconciledAt: new Date(), createdAt: new Date(), updatedAt: new Date() });
 
 describe("Sales Session participant invitation", () => {
+  it("blocks participant registration at the exact session end before integration setup", async () => {
+    const findByCustomerId = vi.fn(() => { throw new Error("connection lookup must not run"); });
+    const forConnection = vi.fn(() => { throw new Error("adapter construction must not run"); });
+    const diagnostics = { record: vi.fn() };
+    const result = await handleRegisterSalesSessionParticipants({ now: () => new Date("2026-07-17T10:00:00.000Z"), sessions: { findById: vi.fn().mockResolvedValue({ ...session, start: "2026-07-17T10:00", end: "2026-07-17T11:00", timeZone: "GMT Standard Time" }) }, records: { findContact: vi.fn() }, participants: { list: vi.fn(), save: vi.fn() }, connections: { findByCustomerId }, deliveryFactory: { forConnection }, diagnostics }, { customerId: "customer-1", sessionId: session.id, actor, body: { contactIds: ["contact-1"] } });
+    expect(result).toMatchObject({ status: 409, body: { code: "sales_session_ended", error: "Participant registration and repair are unavailable after this Sales Session has ended.", correlationId: expect.any(String) } });
+    expect(findByCustomerId).not.toHaveBeenCalled(); expect(forConnection).not.toHaveBeenCalled();
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ operation: "sales.demo_session.participants.registered", details: expect.objectContaining({ failureMode: "sales_session_ended", contactIds: ["contact-1"] }) }));
+  });
   it("blocks an invite at the exact persisted session end without calling CloudShare", async () => {
     const readParticipantInvitationCapability = vi.fn();
     const listParticipants = vi.fn();
@@ -66,6 +75,12 @@ describe("Sales Session participant invitation", () => {
 
     expect(result.status).toBe(200);
     expect(readParticipantInvitationCapability).toHaveBeenCalledOnce();
+  });
+  it("rejects a mixed concluded and eligible invite atomically before CloudShare", async () => {
+    const readParticipantInvitationCapability = vi.fn(); const listParticipants = vi.fn(); const inviteParticipants = vi.fn(); const forConnection = vi.fn();
+    const result = await handleInviteSalesSessionParticipants({ now: () => new Date("2026-07-19T09:30:00.000Z"), sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([storedParticipant("eligible"), { ...storedParticipant("concluded", "contact-2", "remote-2"), participationStatus: "concluded" }]), save: vi.fn() }, connections: { findByCustomerId: vi.fn() }, deliveryFactory: { forConnection }, diagnostics: { record: vi.fn() } }, { customerId: "customer-1", sessionId: session.id, actor, body: { participantIds: ["eligible", "concluded"] } });
+    expect(result).toMatchObject({ status: 409, body: { code: "sales_participant_concluded", error: "Concluded Sales Participants cannot receive native invitations.", correlationId: expect.any(String) } });
+    expect(forConnection).not.toHaveBeenCalled(); expect(readParticipantInvitationCapability).not.toHaveBeenCalled(); expect(listParticipants).not.toHaveBeenCalled(); expect(inviteParticipants).not.toHaveBeenCalled();
   });
   it("creates the documented property definitions and persists the authoritative property-bearing roster", async () => {
     const registered: Array<{ readonly customProperties: readonly { readonly name: string; readonly value: string }[] }> = [];

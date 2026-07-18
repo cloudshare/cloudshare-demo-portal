@@ -8,6 +8,16 @@ const actor = { type: "admin", id: "admin-1", email: "admin@certalis.demo" };
 function deps(overrides: Record<string, unknown> = {}): any { return { sessions: { findById: vi.fn().mockResolvedValue(session) }, participants: { list: vi.fn().mockResolvedValue([participant]) }, records: { findContact: vi.fn().mockResolvedValue({ id: "contact-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test" }) }, links: { create: vi.fn(), regenerate: vi.fn(), revokeActive: vi.fn(), findByTokenHash: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ id: "connection-1" }) }, cloudshare: { forConnection: vi.fn() }, deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSponsoredLink: vi.fn().mockResolvedValue({ loginUrl: "https://cloudshare.example.test/sensitive", request: { method: "POST", path: "/sales/sales-1/sponsored-link" }, response: { status: 200, body: { loginUrl: "https://cloudshare.example.test/sensitive" } } }), listSalesPros: vi.fn().mockResolvedValue({ salesPros: [{ name: "Main Owner", email: "main@example.test", type: "mainSalesPro" }, { name: "Extra Owner", email: "extra@example.test", type: "salesPro" }] }) }) }, diagnostics: { record: vi.fn() }, audit: { write: vi.fn() }, now: () => now, ...overrides }; }
 
 describe("Sales participant instant launch", () => {
+  it("blocks create at session end and for concluded participants before token mutation, while revoke remains available", async () => {
+    const ended = deps({ now: () => new Date("2026-07-18T10:00:00.000Z") });
+    const endedResult = await handleCreateSalesParticipantLaunchLink(ended, { customerId: "certalis", sessionId: "session-1", participantId: "participant-1", actor });
+    expect(endedResult).toMatchObject({ status: 409, body: { code: "sales_session_ended", correlationId: expect.any(String) } }); expect(ended.links.regenerate).not.toHaveBeenCalled();
+    const concluded = deps({ participants: { list: vi.fn().mockResolvedValue([{ ...(participant as any), participationStatus: "concluded" }]) } });
+    const concludedResult = await handleCreateSalesParticipantLaunchLink(concluded, { customerId: "certalis", sessionId: "session-1", participantId: "participant-1", actor });
+    expect(concludedResult).toMatchObject({ status: 409, body: { code: "sales_participant_concluded", correlationId: expect.any(String) } }); expect(concluded.links.regenerate).not.toHaveBeenCalled();
+    const revoked = await handleRevokeSalesParticipantLaunchLink(concluded, { customerId: "certalis", sessionId: "session-1", participantId: "participant-1", actor });
+    expect(revoked.status).toBe(200); expect(concluded.links.revokeActive).toHaveBeenCalledOnce();
+  });
   it("persists only a hash and returns the Certalis capability once", async () => {
     const d = deps(); const result = await handleCreateSalesParticipantLaunchLink(d, { customerId: "certalis", sessionId: "session-1", participantId: "participant-1", actor });
     expect(result.status).toBe(201); expect(result.body.launchUrl).toMatch(/^\/sales\/launch\//);
