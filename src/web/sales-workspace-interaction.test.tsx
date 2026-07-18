@@ -497,13 +497,34 @@ describe("SalesWorkspace interaction", () => {
       return json({ error: `Unexpected request ${path}` }, 500);
     });
     render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
-    await waitFor(() => expect(preferenceWrites).toContain(JSON.stringify({ timeZone: "Europe/London", experienceType: "poc" })));
-    expect(preferenceWrites).not.toContain(JSON.stringify({ timeZone: "UTC", experienceType: "demo" }));
+    await waitFor(() => expect((screen.getByRole("combobox", { name: "Time zone" }) as HTMLInputElement).value).toBe("Europe/London"));
+    expect(preferenceWrites).toEqual([]);
     expect((screen.getByRole("combobox", { name: "Time zone" }) as HTMLInputElement).value).toBe("Europe/London");
     expect((screen.getByRole("combobox", { name: "Sales Experience type" }) as HTMLSelectElement).value).toBe("poc");
     expect(screen.getByText(/time-zone list is temporarily cached/).textContent).toContain("temporarily cached");
     expect(fetchMock).toHaveBeenCalledWith("/api/sales/timezones", expect.objectContaining({ cache: "no-store" }));
+    fireEvent.change(screen.getByRole("combobox", { name: "Sales Experience type" }), { target: { value: "pov" } });
+    await waitFor(() => expect(preferenceWrites).toEqual([JSON.stringify({ timeZone: "Europe/London", experienceType: "pov" })]));
     expect(consoleError).not.toHaveBeenCalled();
+  });
+
+  it("does not persist defaults while a stale timezone response has no saved preference", async () => {
+    const preferenceWrites: string[] = [];
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const path = String(input);
+      if (path === "/api/sales/timezones" && !init?.method) return json({ timezones: [{ id: "UTC", name: "UTC" }], freshness: "stale", warning: "CloudShare could not refresh timezones; showing the last verified catalogue.", preference: { timeZone: null, experienceType: null } });
+      if (path === "/api/sales/timezones" && init?.method === "PUT") { preferenceWrites.push(String(init.body)); return new Response(null, { status: 204 }); }
+      if (path === "/api/sales/items") return json({ activeItems: [] });
+      if (path.startsWith("/api/sales/enablement-sessions?")) return json({ sessions: [] });
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [], total: 0 });
+      if (path === "/api/sales/session-configuration") return json({});
+      return json({ error: `Unexpected request ${path}` }, 500);
+    });
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    await waitFor(() => expect(screen.getByText(/time-zone list is temporarily cached/)).not.toBeNull());
+    expect(preferenceWrites).toEqual([]);
+    fireEvent.change(screen.getByRole("combobox", { name: "Sales Experience type" }), { target: { value: "poc" } });
+    await waitFor(() => expect(preferenceWrites).toEqual([JSON.stringify({ timeZone: "UTC", experienceType: "poc" })]));
   });
 
   it("surfaces a failed reconciliation with its support correlation and defers name edits until live full-PUT compatibility is proven", async () => {
