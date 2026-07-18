@@ -520,7 +520,7 @@ describe("SalesWorkspace interaction", () => {
     });
     render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
 
-    const actions = await screen.findByRole("group", { name: "Session actions" });
+    const actions = await screen.findByRole("group", { name: "Session actions for Aligned Session, revision 1" });
     const description = screen.getByText(/Aligned Session.*2026-08-15T08:00/);
     expect(actions.compareDocumentPosition(description) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(actions.textContent).toContain("Verify CloudShare status");
@@ -576,7 +576,11 @@ describe("SalesWorkspace interaction", () => {
     render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
     await screen.findByRole("button", { name: "Edit name" });
     await user.click(screen.getByRole("button", { name: "Edit name" }));
-    await user.click(screen.getByRole("button", { name: "Save edit" }));
+    const nameInput = screen.getByRole("textbox", { name: "Session name" });
+    const saveEdit = screen.getByRole("button", { name: "Save edit" });
+    expect(nameInput.compareDocumentPosition(saveEdit) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Edit name" })).toBeNull();
+    await user.click(saveEdit);
     expect((await screen.findByRole("alert")).textContent).toContain("CloudShare rejected the Sales Session update.");
     await user.click(screen.getByRole("button", { name: "Open support diagnostics (corr-edit-1)" }));
     expect(mockRouter.push).toHaveBeenLastCalledWith("/sales?tab=support&correlationId=corr-edit-1");

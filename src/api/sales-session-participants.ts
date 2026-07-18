@@ -150,7 +150,7 @@ export async function handleInviteSalesSessionParticipants(deps: Deps, request: 
       const remote = currentByProviderId.get(participant!.cloudShareParticipantId);
       return !remote || participantProperties(remote).certalisSalesParticipantId !== participant!.id || participantProperties(remote).certalisOpportunityContactId !== participant!.opportunityContactId;
     })) {
-      await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "failure", "One or more selected Sales Participants no longer has its Certalis correlation values in CloudShare. Refresh monitoring and investigate the correlated diagnostics before inviting.", current, { failureMode: "participant_mapping_missing_from_cloudshare", participantIds: parsed.data.participantIds });
+      await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "failure", "One or more selected Sales Participants no longer has its Certalis correlation values in CloudShare. Refresh monitoring and investigate the correlated diagnostics before inviting.", current, { failureMode: "participant_mapping_missing_from_cloudshare", participantIds: parsed.data.participantIds, httpExchanges: completedExchanges });
       return { status: 409, body: { error: "One or more selected Sales Participants need attention and cannot be invited. Refresh monitoring and investigate the correlated diagnostics.", correlationId } };
     }
     const requested = await prepared.delivery.inviteParticipants!(prepared.session.cloudShareSalesExperienceId, selected.map((participant) => participant!.cloudShareParticipantId));

@@ -402,13 +402,17 @@ describe("Sales Session participant invitation", () => {
 
   it("refuses an invite when the provider row no longer carries its exact Certalis identity pair", async () => {
     const inviteParticipants = vi.fn();
+    const diagnostics = { record: vi.fn() };
+    const capability = invitationEnabledEvidence();
+    const roster = rosterEvidence([remoteParticipant("remote-1")]);
     const result = await handleInviteSalesSessionParticipants({
       sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
-      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn().mockResolvedValue(invitationEnabledEvidence()), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([remoteParticipant("remote-1")])), inviteParticipants }) },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn().mockResolvedValue(capability), listParticipants: vi.fn().mockResolvedValue(roster), inviteParticipants }) }, diagnostics,
     }, { customerId: "customer-1", sessionId: session.id, actor, body: { participantIds: ["portal-1"] } });
 
     expect(result.status).toBe(409);
     expect(inviteParticipants).not.toHaveBeenCalled();
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ details: expect.objectContaining({ failureMode: "participant_mapping_missing_from_cloudshare", httpExchanges: [capability, roster] }) }));
   });
 
   it("retains typed CloudShare pagination failure facts in support diagnostics", async () => {
