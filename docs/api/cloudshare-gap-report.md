@@ -1841,8 +1841,9 @@ semantics and the role of `count`.
 
 | Field | Detail |
 |---|---|
-| **Status** | Confirmed live prerequisite; provider acknowledgement defect remains |
+| **Status** | Confirmed live prerequisite; provider acknowledgement defect escalated to CloudShare |
 | **Verified live** | Yes — Certalis Sales Admin UI, 2026-07-18 |
+| **Provider ticket** | [SUP-5011](https://cloudshare.atlassian.net/browse/SUP-5011) |
 
 **Observed behaviour**
 
@@ -1882,6 +1883,9 @@ amended in CloudShare or recreated before their native invitations can be sent. 
 the enabled configuration is exercised through a safe live native-email flow, #348 cannot
 claim verified native email delivery; it can only claim a correctly issued and correlated
 provider request plus authoritative state monitoring.
+
+CloudShare support ticket [SUP-5011](https://cloudshare.atlassian.net/browse/SUP-5011)
+tracks the provider acknowledgement defect.
 
 **Code reference:** `src/api/sales-session-participants.ts`,
 `src/integrations/cloudshare/sales-delivery.ts`,
