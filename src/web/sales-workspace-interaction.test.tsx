@@ -508,6 +508,25 @@ describe("SalesWorkspace interaction", () => {
     expect(mockRouter.push).toHaveBeenLastCalledWith("/sales?tab=support&correlationId=corr-reconcile-1");
   });
 
+  it("places each Session action group before its descriptive session text", async () => {
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const path = String(input);
+      if (path === "/api/sales/items") return json({ activeItems: [] });
+      if (path === "/api/sales/timezones" && !init?.method) return json({ timezones: [{ id: "UTC", name: "UTC" }], preference: {} });
+      if (path === "/api/sales/timezones" && init?.method === "PUT") return new Response(null, { status: 204 });
+      if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: [{ id: "aligned-session", opportunityId: "opp-1", itemId: "item-1", type: "demo", sessionName: "Aligned Session", start: "2026-08-15T08:00", end: "2026-08-15T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-15T00:00:00Z", lifecycle: "upcoming", verificationEligible: true }] });
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [], total: 0 });
+      return json({ error: `Unexpected request ${path}` }, 500);
+    });
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+
+    const actions = await screen.findByRole("group", { name: "Session actions" });
+    const description = screen.getByText(/Aligned Session.*2026-08-15T08:00/);
+    expect(actions.compareDocumentPosition(description) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(actions.textContent).toContain("Verify CloudShare status");
+    expect(actions.textContent).toContain("Manage participants");
+  });
+
   it("explains why CloudShare verification is unavailable for provisioning and needs-attention Sessions", async () => {
     const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
       const path = String(input);

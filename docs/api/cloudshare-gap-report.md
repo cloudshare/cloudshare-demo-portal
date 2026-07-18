@@ -1842,7 +1842,7 @@ semantics and the role of `count`.
 | Field | Detail |
 |---|---|
 | **Status** | Confirmed live prerequisite; provider acknowledgement defect escalated to CloudShare |
-| **Verified live** | Yes — Certalis Sales Admin UI and disposable v4 Sales Experience, 2026-07-18 |
+| **Verified live** | Yes — Certalis Sales Admin UI, a disposable v4 Sales Experience, and a received native participant invitation, 2026-07-18 |
 | **Provider ticket** | [SUP-5011](https://cloudshare.atlassian.net/browse/SUP-5011) |
 | **Provider ticket title** | APIv4: invoking the send invitation endpoint for sales (and likley training) results in a 200 OK, even if the option to NOT send invites to either party has been enabled. This should be a 409 Conflict error |
 
@@ -1888,10 +1888,12 @@ acknowledgement as a sent email.
 CloudShare R&D should correct `POST /sales/{id}/participants/invite` so a disabled
 Experience yields a machine-actionable non-success response (or a structured per-row
 outcome), consistent with the GUI message. Existing `dontSend` Experiences must be
-amended in CloudShare or recreated before their native invitations can be sent. Until
-the enabled configuration is exercised through a safe live native-email flow, #348 cannot
-claim verified native email delivery; it can only claim a correctly issued and correlated
-provider request plus authoritative state monitoring.
+amended in CloudShare or recreated before their native invitations can be sent. With
+both invitation settings enabled, #348 human QA selected a Sales Participant, requested
+the native invitation, observed the portal roster change to `sent`, and received the
+native email. That confirms the explicit participant-delivery path. The narrower
+creation-time automatic Sales Pro email observation remains pending because the roster
+does not expose it.
 
 CloudShare support ticket [SUP-5011](https://cloudshare.atlassian.net/browse/SUP-5011)
 tracks the provider acknowledgement defect.
@@ -1929,5 +1931,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-07-09 (updated GAP-24 with live `0x42901` evidence and CloudShare public-IP allow-list / abuse-list operator context).
+*Last updated: 2026-07-18 (added GAP-30 live Sales invitation acknowledgement evidence).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*
