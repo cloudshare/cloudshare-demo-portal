@@ -320,7 +320,10 @@ export function SalesSessionParticipants({ session, fetchSales, onOpenSupport }:
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [correlationId, setCorrelationId] = useState<string | null>(null);
-  const [launchUrl, setLaunchUrl] = useState<string | null>(null);
+  const [launchParticipantId, setLaunchParticipantId] = useState<string | null>(null);
+  // Kept local to this roster; the next render after a per-row operation labels
+  // only the selected row through its handler state.
+  const launchUrl = launchParticipantId;
   const refresh = useCallback(async (preserveOperationEvidence = false) => {
     setLoading(true);
     try {
@@ -364,12 +367,12 @@ export function SalesSessionParticipants({ session, fetchSales, onOpenSupport }:
       if (!response.ok || !body.launchUrl) throw new Error(body.error ?? "Could not generate a Certalis launch link.");
       const absolute = new URL(body.launchUrl, window.location.origin).toString();
       await navigator.clipboard.writeText(absolute);
-      setLaunchUrl(absolute); setCorrelationId(body.correlationId ?? null); setMessage("Personalised Certalis launch link copied. Generating another link revokes this one.");
+      setLaunchParticipantId(participantId); setCorrelationId(body.correlationId ?? null); setMessage("Personalised Certalis launch link copied. Generating another link revokes this one.");
     } catch (error) { setMessage(error instanceof Error ? error.message : "Could not generate a Certalis launch link."); } finally { setSaving(false); }
   };
   const revokeLaunchLink = async (participantId: string) => {
     setSaving(true); setMessage(null); setCorrelationId(null);
-    try { const response = await fetchSales(`/api/sales/enablement-sessions/${encodeURIComponent(session.id)}/participants/${encodeURIComponent(participantId)}/launch-link`, { method: "DELETE" }); const body = await response.json() as { error?: string; correlationId?: string }; if (!response.ok) throw new Error(body.error ?? "Could not revoke the Certalis launch link."); setLaunchUrl(null); setCorrelationId(body.correlationId ?? null); setMessage("Personalised Certalis launch link revoked."); } catch (error) { setMessage(error instanceof Error ? error.message : "Could not revoke the Certalis launch link."); } finally { setSaving(false); }
+    try { const response = await fetchSales(`/api/sales/enablement-sessions/${encodeURIComponent(session.id)}/participants/${encodeURIComponent(participantId)}/launch-link`, { method: "DELETE" }); const body = await response.json() as { error?: string; correlationId?: string }; if (!response.ok) throw new Error(body.error ?? "Could not revoke the Certalis launch link."); setLaunchParticipantId((current) => current === participantId ? null : current); setCorrelationId(body.correlationId ?? null); setMessage("Personalised Certalis launch link revoked."); } catch (error) { setMessage(error instanceof Error ? error.message : "Could not revoke the Certalis launch link."); } finally { setSaving(false); }
   };
   const availableContacts = contacts.filter((contact) => { const participant = participants.find((value) => value.opportunityContactId === contact.id); return !participant || participant.requiresCorrelationRepair; });
   return <section aria-label={`Participants for ${session.sessionName ?? session.type.toUpperCase()}`} style={{ ...mutedPanelStyle, marginTop: "0.65rem", display: "grid", gap: "0.75rem" }}>

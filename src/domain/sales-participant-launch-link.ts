@@ -4,6 +4,8 @@ export interface SalesParticipantLaunchLink {
 }
 export interface SalesParticipantLaunchLinkRepository {
   create(link: SalesParticipantLaunchLink): Promise<void>;
+  /** Atomically revokes a previous active capability and persists its replacement. */
+  regenerate(link: SalesParticipantLaunchLink, at: Date): Promise<void>;
   revokeActive(customerId: string, salesDemoSessionId: string, participantId: string, at: Date): Promise<void>;
   findByTokenHash(tokenHash: string): Promise<SalesParticipantLaunchLink | null>;
 }

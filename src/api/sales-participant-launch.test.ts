@@ -2,21 +2,21 @@ import { describe, expect, it, vi } from "vitest";
 import { handleCreateSalesParticipantLaunchLink, handleRevokeSalesParticipantLaunchLink, handleSalesParticipantLaunch } from "./sales-participant-launch";
 
 const now = new Date("2026-07-18T09:30:00.000Z");
-const session = { id: "session-1", customerId: "certalis", opportunityId: "opp-1", cloudShareSalesExperienceId: "sales-1", start: "2026-07-18T09:00:00.000Z", end: "2026-07-18T10:00:00.000Z", timeZone: "UTC" } as never;
+const session = { id: "session-1", customerId: "certalis", opportunityId: "opp-1", cloudShareSalesExperienceId: "sales-1", start: "2026-07-18T09:00", end: "2026-07-18T10:00", timeZone: "UTC" } as never;
 const participant = { id: "participant-1", customerId: "certalis", salesDemoSessionId: "session-1", opportunityContactId: "contact-1", cloudShareParticipantId: "remote-1" } as never;
 const actor = { type: "admin", id: "admin-1", email: "admin@certalis.demo" };
-function deps(overrides: Record<string, unknown> = {}): any { return { sessions: { findById: vi.fn().mockResolvedValue(session) }, participants: { list: vi.fn().mockResolvedValue([participant]) }, records: { findContact: vi.fn().mockResolvedValue({ id: "contact-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test" }) }, links: { create: vi.fn(), revokeActive: vi.fn(), findByTokenHash: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ id: "connection-1" }) }, cloudshare: { forConnection: vi.fn() }, deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSponsoredLink: vi.fn().mockResolvedValue({ loginUrl: "https://cloudshare.example.test/sensitive", request: { method: "POST", path: "/sales/sales-1/sponsored-link" }, response: { status: 200, body: { loginUrl: "https://cloudshare.example.test/sensitive" } } }) }) }, diagnostics: { record: vi.fn() }, audit: { write: vi.fn() }, now: () => now, ...overrides }; }
+function deps(overrides: Record<string, unknown> = {}): any { return { sessions: { findById: vi.fn().mockResolvedValue(session) }, participants: { list: vi.fn().mockResolvedValue([participant]) }, records: { findContact: vi.fn().mockResolvedValue({ id: "contact-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test" }) }, links: { create: vi.fn(), regenerate: vi.fn(), revokeActive: vi.fn(), findByTokenHash: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ id: "connection-1" }) }, cloudshare: { forConnection: vi.fn() }, deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSponsoredLink: vi.fn().mockResolvedValue({ loginUrl: "https://cloudshare.example.test/sensitive", request: { method: "POST", path: "/sales/sales-1/sponsored-link" }, response: { status: 200, body: { loginUrl: "https://cloudshare.example.test/sensitive" } } }) }) }, diagnostics: { record: vi.fn() }, audit: { write: vi.fn() }, now: () => now, ...overrides }; }
 
 describe("Sales participant instant launch", () => {
   it("persists only a hash and returns the Certalis capability once", async () => {
     const d = deps(); const result = await handleCreateSalesParticipantLaunchLink(d, { customerId: "certalis", sessionId: "session-1", participantId: "participant-1", actor });
     expect(result.status).toBe(201); expect(result.body.launchUrl).toMatch(/^\/sales\/launch\//);
-    expect(d.links.create).toHaveBeenCalledWith(expect.objectContaining({ tokenHash: expect.not.stringContaining(result.body.launchUrl.replace("/sales/launch/", "")) }));
-    expect(JSON.stringify(d.links.create.mock.calls)).not.toContain("/sales/launch/");
+    expect(d.links.regenerate).toHaveBeenCalledWith(expect.objectContaining({ tokenHash: expect.not.stringContaining(result.body.launchUrl.replace("/sales/launch/", "")) }), now);
+    expect(JSON.stringify(d.links.regenerate.mock.calls)).not.toContain("/sales/launch/");
   });
   it("regeneration revokes prior capability and cross-customer ownership is not disclosed", async () => {
     const d = deps(); await handleCreateSalesParticipantLaunchLink(d, { customerId: "certalis", sessionId: "session-1", participantId: "participant-1", actor });
-    expect(d.links.revokeActive).toHaveBeenCalledWith("certalis", "session-1", "participant-1", now);
+    expect(d.links.regenerate).toHaveBeenCalledTimes(1);
     const denied = await handleRevokeSalesParticipantLaunchLink(deps({ sessions: { findById: vi.fn().mockResolvedValue(null) } }), { customerId: "other", sessionId: "session-1", participantId: "participant-1", actor });
     expect(denied).toEqual({ status: 404, body: { error: "This Certalis launch link is unavailable." } });
   });
