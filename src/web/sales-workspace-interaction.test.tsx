@@ -641,6 +641,8 @@ describe("SalesWorkspace interaction", () => {
 
   it("registers named Opportunity Contacts without sending mail, then sends a selected native invite without exposing provider identifiers", async () => {
     const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
     let participantReads = 0;
     const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
       const path = String(input);
@@ -653,6 +655,8 @@ describe("SalesWorkspace interaction", () => {
       if (path === "/api/sales/enablement-sessions/session-1/participants" && !init?.method) { participantReads += 1; return participantReads === 2 ? json({ error: "Monitoring temporarily unavailable" }, 502) : json({ participants: [], correlationId: "corr-read-1" }); }
       if (path === "/api/sales/enablement-sessions/session-1/participants" && init?.method === "POST") return json({ participants: [{ id: "portal-participant-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Lovelace", invitationStatus: "notSent", invitedBy: null, participationStatus: "pending", firstJoined: null, envStatus: null }], correlationId: "corr-register-1" }, 201);
       if (path === "/api/sales/enablement-sessions/session-1/participants/invite" && init?.method === "POST") return json({ correlationId: "corr-invite-1" });
+      if (path === "/api/sales/enablement-sessions/session-1/participants/portal-participant-1/launch-link" && init?.method === "POST") return json({ launchUrl: "/sales/launch/opaque-certalis-token", correlationId: "corr-launch-1" }, 201);
+      if (path === "/api/sales/enablement-sessions/session-1/participants/portal-participant-1/launch-link" && init?.method === "DELETE") return json({ correlationId: "corr-revoke-1" });
       return json({ error: `Unexpected request ${path}` }, 500);
     });
     render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
@@ -668,5 +672,10 @@ describe("SalesWorkspace interaction", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/sales/enablement-sessions/session-1/participants/invite", expect.objectContaining({ method: "POST", body: JSON.stringify({ participantIds: ["portal-participant-1"] }) }));
     expect(await screen.findByText("Native CloudShare invitations were requested. Participant monitoring could not refresh; investigate the invite evidence before retrying.")).not.toBeNull();
     expect(screen.getByRole("button", { name: "Open support diagnostics for latest participant operation (corr-invite-1)" })).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: "Copy launch link" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining("/sales/launch/opaque-certalis-token")));
+    expect(screen.queryByText("cloudshare.example")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Revoke" }));
+    expect(fetchMock).toHaveBeenCalledWith("/api/sales/enablement-sessions/session-1/participants/portal-participant-1/launch-link", expect.objectContaining({ method: "DELETE" }));
   });
 });

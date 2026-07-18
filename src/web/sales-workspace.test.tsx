@@ -149,7 +149,7 @@ describe("Sales Participant monitoring", () => {
 
     await screen.findByRole("checkbox", { name: "Select Ada Lovelace for native invite" });
     const headers = screen.getAllByRole("columnheader");
-    expect(headers.map((header) => header.textContent)).toEqual(["Select", "Participant", "Invite", "First joined", "Participation", "Environment"]);
+    expect(headers.map((header) => header.textContent)).toEqual(["Select", "Participant", "Invite", "First joined", "Participation", "Environment", "Instant launch"]);
     expect(headers[0]?.getAttribute("style")).toContain("width: 3.5rem");
   });
 
