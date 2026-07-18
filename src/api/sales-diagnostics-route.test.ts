@@ -67,8 +67,24 @@ describe("Sales diagnostics HTTP isolation", () => {
     });
     expect(mockHandleGetDiagnosticLog).toHaveBeenNthCalledWith(7, expect.anything(), {
       customerId: "customer-certalis",
+      query: { operation: "account.created", source: "sales-participant-launch", limit: "101", offset: "0" },
+    });
+    expect(mockHandleGetDiagnosticLog).toHaveBeenNthCalledWith(8, expect.anything(), {
+      customerId: "customer-certalis",
       query: { source: "sales-items", operation: "item.resource_read" },
     });
+  });
+
+  it("retrieves Customer-scoped launch correlations through the Sales diagnostics source", async () => {
+    mockGetPortalAdminSession.mockResolvedValue({ customerId: "customer-certalis", role: "admin", workspace: "sales" });
+    mockHandleGetDiagnosticLog.mockResolvedValueOnce({ status: 200, body: { entries: [{ source: "sales-participant-launch", operation: "sales.demo_session.participant_launch.opened", correlationId: "corr-launch-1", subject: { type: "sales_session_participant", id: "participant-1" } }], page: { hasMore: false, nextOffset: null } } });
+    const response = await getSalesDiagnostics(new Request("http://localhost:3000/api/sales/diagnostics?source=sales-participant-launch&correlationId=corr-launch-1"));
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.entries[0]).toMatchObject({ source: "sales-participant-launch", correlationId: "corr-launch-1" });
+    expect(JSON.stringify(body)).not.toContain("/sales/launch/");
+    expect(JSON.stringify(body)).not.toContain("loginUrl");
+    expect(mockHandleGetDiagnosticLog).toHaveBeenCalledWith(expect.anything(), { customerId: "customer-certalis", query: { source: "sales-participant-launch", correlationId: "corr-launch-1" } });
   });
 
   it("does not let a Sales route caller widen support to an arbitrary source", async () => {
