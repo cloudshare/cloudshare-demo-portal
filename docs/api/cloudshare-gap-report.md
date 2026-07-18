@@ -1842,7 +1842,7 @@ semantics and the role of `count`.
 | Field | Detail |
 |---|---|
 | **Status** | Confirmed live prerequisite; provider acknowledgement defect escalated to CloudShare |
-| **Verified live** | Yes — Certalis Sales Admin UI, 2026-07-18 |
+| **Verified live** | Yes — Certalis Sales Admin UI and disposable v4 Sales Experience, 2026-07-18 |
 | **Provider ticket** | [SUP-5011](https://cloudshare.atlassian.net/browse/SUP-5011) |
 | **Provider ticket title** | APIv4: invoking the send invitation endpoint for sales (and likley training) results in a 200 OK, even if the option to NOT send invites to either party has been enabled. This should be a 409 Conflict error |
 
@@ -1863,17 +1863,25 @@ precondition. The published endpoint does not return per-participant delivery re
 errors, or a job identifier. Certalis has no documented alternate native-invite endpoint
 to call; it must not expose or fall back to participant invitation URLs.
 
+A disposable live Sales Experience was subsequently created with
+`sendInvitations: "salesProsAndParticipants"`. CloudShare returned HTTP 201, persisted
+that setting, and returned one Sales Pro and zero participants. The documented Sales Pro
+roster does not expose an invitation-status field, so the API alone cannot establish
+whether creation itself emailed the Main Sales Pro; the CloudShare GUI/email observation
+remains the authoritative verification for that no-implicit-email question.
+
 **Portal mitigation**
 
 New Sales Experiences use the documented `sendInvitations: "salesProsAndParticipants"`
-capability setting. Creation remains email-free because no participant or Sales Pro is
-explicitly invited during creation or registration. Before calling the native participant
-invite endpoint, Certalis reads the Experience configuration and returns an actionable
-409 if participant invitations are disabled. For enabled Experiences it performs a roster
-read immediately after the POST and uses the returned `invitationStatus` as the only
-delivery authority. It records the configuration read, POST, and roster exchanges under
-the same correlation ID, persists the returned monitoring state, and never labels the
-empty-body acknowledgement as a sent email.
+capability setting. Certalis makes no participant or Sales Pro invite request during
+creation or registration; the pending GUI/email check above verifies CloudShare's
+automatic-email behaviour. Before calling the native participant invite endpoint,
+Certalis reads the Experience configuration and returns an actionable 409 if participant
+invitations are disabled. For enabled Experiences it performs a roster read immediately
+after the POST and uses the returned `invitationStatus` as the only delivery authority.
+It records the configuration read, POST, and roster exchanges under the same correlation
+ID, persists the returned monitoring state, and never labels the empty-body
+acknowledgement as a sent email.
 
 **Action required**
 
