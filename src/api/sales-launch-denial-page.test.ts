@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { denialPage } from "../../app/sales/launch/[token]/route";
+import { denialPage } from "@/web/sales-launch-denial-page";
 
 describe("Certalis public launch denial page", () => {
   it("renders generic branded guidance and a sanitized support reference without bearer material", () => {
