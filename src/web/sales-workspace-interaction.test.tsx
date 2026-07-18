@@ -648,7 +648,7 @@ describe("SalesWorkspace interaction", () => {
     let participantReads = 0;
     let launchLinkCreates = 0;
     let invitationRequests = 0;
-    const registeredParticipant = { id: "portal-participant-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Lovelace", invitationStatus: "notSent", invitedBy: null, participationStatus: "pending", firstJoined: null, envStatus: null };
+    const registeredParticipant = { id: "portal-participant-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", invitationStatus: "notSent", lastInvitedAt: "2026-07-18T09:15:00.000Z", invitedBy: null, participationStatus: "pending", firstJoined: null, envStatus: null };
     const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
       const path = String(input);
       if (path === "/api/sales/items") return json({ activeItems: [] });
@@ -657,7 +657,7 @@ describe("SalesWorkspace interaction", () => {
       if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [], total: 0 });
       if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: [{ id: "session-1", opportunityId: "opp-1", itemId: "item-1", type: "demo", start: "2026-07-17T09:00", end: "2026-07-17T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-17T00:00:00Z", lifecycle: "upcoming", verificationEligible: true }] });
       if (path === "/api/sales/accounts") return json({ contacts: [{ id: "contact-1", opportunityId: "opp-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", archivedAt: null, createdAt: "2026-07-17T00:00:00Z" }] });
-      if (path === "/api/sales/enablement-sessions/session-1/participants" && !init?.method) { participantReads += 1; return participantReads === 2 ? json({ error: "Monitoring temporarily unavailable" }, 502) : json({ participants: participantReads >= 3 ? [registeredParticipant] : [], correlationId: "corr-read-1" }); }
+      if (path === "/api/sales/enablement-sessions/session-1/participants" && !init?.method) { participantReads += 1; return participantReads === 2 ? json({ error: "Monitoring temporarily unavailable" }, 502) : json({ participants: participantReads >= 3 ? [{ ...registeredParticipant, invitationStatus: "sent", lastInvitedAt: "2026-07-18T09:45:00.000Z" }] : [], correlationId: "corr-read-1" }); }
       if (path === "/api/sales/enablement-sessions/session-1/participants" && init?.method === "POST") return json({ participants: [registeredParticipant], correlationId: "corr-register-1" }, 201);
       if (path === "/api/sales/enablement-sessions/session-1/participants/invite" && init?.method === "POST") { invitationRequests += 1; return invitationRequests === 3 ? json({ error: "Native invitation failed.", correlationId: "corr-invite-fail" }, 502) : json({ correlationId: "corr-invite-1" }); }
       if (path === "/api/sales/enablement-sessions/session-1/participants/portal-participant-1/launch-link" && init?.method === "POST") { launchLinkCreates += 1; return launchLinkCreates === 3 ? json({ error: "Launch link generation failed.", correlationId: "corr-launch-fail" }, 502) : json({ launchUrl: "/sales/launch/opaque-certalis-token", correlationId: "corr-launch-1" }, 201); }
@@ -672,6 +672,8 @@ describe("SalesWorkspace interaction", () => {
     expect(screen.queryByLabelText(/^Ada Lovelace$/)).toBeNull();
     expect(fetchMock).toHaveBeenCalledWith("/api/sales/enablement-sessions/session-1/participants", expect.objectContaining({ method: "POST", body: JSON.stringify({ contactIds: ["contact-1"] }) }));
     expect(screen.queryByText("cloudshare-participant-1")).toBeNull();
+    expect(screen.getByText("ada@example.test")).not.toBeNull();
+    expect(screen.getByText("2026-07-18 09:15:00 UTC")).not.toBeNull();
     await user.click(screen.getByLabelText("Select Ada Lovelace for native invite"));
     await user.click(screen.getByRole("button", { name: "Send or resend native invites" }));
     expect(fetchMock).toHaveBeenCalledWith("/api/sales/enablement-sessions/session-1/participants/invite", expect.objectContaining({ method: "POST", body: JSON.stringify({ participantIds: ["portal-participant-1"] }) }));
@@ -692,6 +694,7 @@ describe("SalesWorkspace interaction", () => {
     await user.click(screen.getByLabelText("Select Ada Lovelace for native invite"));
     await user.click(screen.getByRole("button", { name: "Send or resend native invites" }));
     expect((await screen.findByText("Native CloudShare invitations requested for selected Sales Participants. Refresh engagement to confirm their state.")).closest("[role]")?.getAttribute("role")).toBe("status");
+    expect(screen.getByText("2026-07-18 09:45:00 UTC")).not.toBeNull();
     await user.click(screen.getByLabelText("Select Ada Lovelace for native invite"));
     await user.click(screen.getByRole("button", { name: "Send or resend native invites" }));
     expect((await screen.findByText("Native invitation failed.")).closest("[role]")?.getAttribute("role")).toBe("alert");

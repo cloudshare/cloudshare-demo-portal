@@ -700,7 +700,7 @@ adapter now normalizes both object and key/value-array bags. The observed row ke
 included: `id`, `email`, `firstName`, `lastName`, `participationStatus`, `firstJoined`,
 `envStatus`, `envId`, `role`, `invitationStatus`, `markedAsComplete`, and `customProperties`.
 
-The documented Sales Participant roster exposes `invitationStatus` and `invitedBy`, but no invitation-sent timestamp. Certalis therefore records nullable `invitedAt` only when its explicit invite flow observes the authoritative `notSent` to `sent` transition; legacy/already-sent rows remain null rather than deriving a fictitious time from `updatedAt`.
+The documented Sales Participant roster exposes `invitationStatus` and `invitedBy`, but no invitation-sent timestamp. Certalis therefore records nullable `lastInvitedAt` whenever its explicit invite or resend receives provider acknowledgement and an authoritative `sent` confirmation. Passive reconciliation never changes it; legacy sent rows remain null rather than deriving a fictitious time from `updatedAt`.
 Both verified training IDs were `selfPaced`; an `instructorLed` read was not available to confirm on
 2026-07-06. This means Cohort Exam Session monitoring can safely read explicit Certalis
 participant-correlation values back from `customProperties` on this endpoint when later joins write

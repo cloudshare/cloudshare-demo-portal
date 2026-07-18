@@ -3,7 +3,7 @@ import { createSalesLaunchDenialContextResolver } from "./sales-launch-denial-co
 
 const link = { id: "link-1", customerId: "customer-1", salesDemoSessionId: "session-1", salesSessionParticipantId: "participant-1", tokenHash: "hash", revokedAt: new Date(), createdAt: new Date() };
 const session = { id: "session-1", customerId: "customer-1", cloudShareSalesExperienceId: "sales-1", salesProDisplayName: "Persisted Owner", salesProEmail: "owner@example.test" };
-const participant = { id: "participant-1", invitationStatus: "sent", invitedAt: null, invitedBy: "sender@example.test" };
+const participant = { id: "participant-1", invitationStatus: "sent", lastInvitedAt: null, invitedBy: "sender@example.test" };
 function deps(overrides: Record<string, unknown> = {}): any { return { sessions: { findById: vi.fn().mockResolvedValue(session) }, participants: { list: vi.fn().mockResolvedValue([participant]) }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, cloudshare: { forConnection: vi.fn() }, deliveryFactory: { forConnection: vi.fn().mockReturnValue({ listSalesPros: vi.fn().mockResolvedValue({ salesPros: [{ name: "Live Owner", email: "live@example.test", type: "mainSalesPro" }] }) }) }, diagnostics: { record: vi.fn() }, ...overrides }; }
 
 describe("Sales launch denial context resolver", () => {

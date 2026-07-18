@@ -7,7 +7,7 @@ import { createCloudShareSalesDelivery, type SalesDelivery, type SalesProContact
 
 export interface SalesLaunchDenialContext {
   readonly salesPros: readonly SalesProContact[];
-  readonly invitation: { readonly status: "sent" | "notSent"; readonly invitedAt: string | null; readonly invitedBy: string | null };
+  readonly invitation: { readonly status: "sent" | "notSent"; readonly lastInvitedAt: string | null; readonly invitedBy: string | null };
 }
 export interface SalesLaunchDenialContextResolver { resolve(link: SalesParticipantLaunchLink, correlationId: string): Promise<SalesLaunchDenialContext | null>; }
 
@@ -35,6 +35,6 @@ export function createSalesLaunchDenialContextResolver(deps: {
       const provider = error && typeof error === "object" && "context" in error ? (error as { context?: Record<string, unknown> }).context : undefined;
       await deps.diagnostics?.record({ source: "sales-participant-launch", operation: "sales.demo_session.participant_launch.recovery_contacts", outcome: "failure", customerId: link.customerId, actor: { type: "anonymous" }, subject: { type: "sales_session_participant", id: participant.id }, message: "Sales launch recovery contacts fell back to the persisted main Sales Pro.", correlationId, ...(provider ? { request: { method: provider.method, path: provider.path, headers: provider.requestHeaders, body: provider.requestBody }, response: { status: provider.responseStatus ?? provider.status, headers: provider.responseHeaders, body: provider.responseBody } } : {}), details: { integrationSurface: "cloudshare.v4.sales.sales_pros", failureMode: provider?.failureMode ?? (provider?.responseStatus ? "http_failure" : error instanceof Error ? error.name : "provider_failure") } });
     }
-    return { salesPros, invitation: { status: participant.invitationStatus, invitedAt: participant.invitedAt?.toISOString() ?? null, invitedBy: participant.invitedBy } };
+    return { salesPros, invitation: { status: participant.invitationStatus, lastInvitedAt: participant.lastInvitedAt?.toISOString() ?? null, invitedBy: participant.invitedBy } };
   } };
 }
