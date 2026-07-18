@@ -139,6 +139,24 @@ describe("Sales Item authoring", () => {
 });
 
 describe("Sales Participant monitoring", () => {
+  it("disables only native invitations after the Sales Session has ended", async () => {
+    const user = userEvent.setup();
+    const fetchSales = vi.fn().mockImplementation(async (input: string, init?: RequestInit) => {
+      if (input === "/api/sales/accounts") return json({ contacts: [] });
+      if (input === "/api/sales/enablement-sessions/session-1/participants" && !init?.method) return json({ session: { lifecycle: "ended", nativeInvitationsAvailable: false }, participants: [{ id: "portal-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", invitationStatus: "notSent", lastInvitedAt: null, participationStatus: "pending", firstJoined: null, envStatus: null }] });
+      return json({});
+    });
+    render(<SalesSessionParticipants session={{ id: "session-1", opportunityId: "opportunity-1", itemId: "item-1", type: "demo", start: "2026-07-17T09:00", end: "2026-07-17T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-17T08:00:00Z", lifecycle: "ended", verificationEligible: true }} fetchSales={fetchSales as typeof fetch} onOpenSupport={vi.fn()} />);
+
+    expect(await screen.findByText("Native invitations are unavailable after this Sales Session has ended.")).not.toBeNull();
+    expect((screen.getByRole("checkbox", { name: "Select Ada Lovelace for native invite" }) as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Send or resend native invites" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Copy launch link" }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole("button", { name: "Revoke link" }) as HTMLButtonElement).disabled).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Send or resend native invites" }));
+    expect(fetchSales).not.toHaveBeenCalledWith(expect.stringContaining("/participants/invite"), expect.anything());
+  });
+
   it("keeps the invitation Select control as the first monitoring column", async () => {
     const fetchSales = vi.fn().mockImplementation(async (input: string) => {
       if (input === "/api/sales/accounts") return json({ contacts: [{ id: "contact-1", opportunityId: "opportunity-1", firstName: "Ada", lastName: "Lovelace", archivedAt: null }] });
