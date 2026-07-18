@@ -15,6 +15,7 @@ const correlationProperties = () => ({
 });
 const invitationEnabledEvidence = () => ({
   id: "remote-sales-1",
+  participantInvitationsEnabled: true,
   sendInvitations: "salesProsAndParticipants" as const,
   request: { method: "GET", path: "/v4/sales/remote-sales-1" },
   response: { status: 200, body: { id: "remote-sales-1", sendInvitations: "salesProsAndParticipants" } },
@@ -301,7 +302,7 @@ describe("Sales Session participant invitation", () => {
     const inviteParticipants = vi.fn().mockResolvedValue({ request: {}, response: { status: 200 } });
     const result = await handleInviteSalesSessionParticipants({
       sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
-      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([remoteParticipant("remote-1", "portal-1", "contact-1")])), inviteParticipants }) },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn().mockResolvedValue(invitationEnabledEvidence()), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([remoteParticipant("remote-1", "portal-1", "contact-1")])), inviteParticipants }) },
     }, { customerId: "customer-1", sessionId: session.id, actor, body: { participantIds: ["portal-1"] } });
 
     expect(result.status).toBe(200);
@@ -316,10 +317,10 @@ describe("Sales Session participant invitation", () => {
     const diagnostics = { record: vi.fn() };
     const result = await handleInviteSalesSessionParticipants({
       sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
-      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession, listParticipants: vi.fn(), inviteParticipants }) }, diagnostics,
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: readSession, listParticipants: vi.fn(), inviteParticipants }) }, diagnostics,
     }, { customerId: "customer-1", sessionId: session.id, actor, body: { participantIds: ["portal-1"] } });
 
-    expect(result).toMatchObject({ status: 409, body: { error: "CloudShare has native invitations disabled for this Sales Experience. Enable invitations in CloudShare before sending or resending." } });
+    expect(result).toMatchObject({ status: 409, body: { code: "native_invitations_disabled", error: "CloudShare has native invitations disabled for this Sales Experience. Enable invitations in CloudShare before sending or resending." } });
     expect(inviteParticipants).not.toHaveBeenCalled();
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({
       message: "CloudShare native invitations are disabled for this Sales Experience.",
@@ -338,7 +339,7 @@ describe("Sales Session participant invitation", () => {
 
     const result = await handleInviteSalesSessionParticipants({
       sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
-      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants, inviteParticipants }) }, diagnostics,
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn().mockResolvedValue(invitationEnabledEvidence()), listParticipants, inviteParticipants }) }, diagnostics,
     }, { customerId: "customer-1", sessionId: session.id, actor, body: { participantIds: ["portal-1"] } });
 
     expect(result).toMatchObject({ status: 200, body: { invitationConfirmation: "pending", confirmedParticipantCount: 0, pendingConfirmationParticipantCount: 1 } });
@@ -355,7 +356,7 @@ describe("Sales Session participant invitation", () => {
 
     const result = await handleInviteSalesSessionParticipants({
       sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([{ ...storedParticipant(), invitationStatus: "sent" }]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
-      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants, inviteParticipants: vi.fn().mockResolvedValue({ request: { method: "POST", path: "/v4/sales/remote-sales-1/participants/invite" }, response: { status: 200 } }) }) },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn().mockResolvedValue(invitationEnabledEvidence()), listParticipants, inviteParticipants: vi.fn().mockResolvedValue({ request: { method: "POST", path: "/v4/sales/remote-sales-1/participants/invite" }, response: { status: 200 } }) }) },
     }, { customerId: "customer-1", sessionId: session.id, actor, body: { participantIds: ["portal-1"] } });
 
     expect(result).toMatchObject({ status: 200, body: { invitationConfirmation: "pending", confirmedParticipantCount: 0, pendingConfirmationParticipantCount: 1 } });
@@ -369,7 +370,7 @@ describe("Sales Session participant invitation", () => {
 
     const result = await handleInviteSalesSessionParticipants({
       sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save: vi.fn().mockRejectedValue(new Error("database unavailable")) }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
-      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: vi.fn().mockResolvedValueOnce(current).mockResolvedValueOnce(afterRequest), inviteParticipants: vi.fn().mockResolvedValue(requested) }) }, diagnostics,
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn().mockResolvedValue(invitationEnabledEvidence()), listParticipants: vi.fn().mockResolvedValueOnce(current).mockResolvedValueOnce(afterRequest), inviteParticipants: vi.fn().mockResolvedValue(requested) }) }, diagnostics,
     }, { customerId: "customer-1", sessionId: session.id, actor, body: { participantIds: ["portal-1"] } });
 
     expect(result).toMatchObject({ status: 502, body: { error: "CloudShare accepted the native invitation request, but Certalis could not confirm or save its result. Do not retry until support diagnostics are reviewed." } });
@@ -388,7 +389,7 @@ describe("Sales Session participant invitation", () => {
 
     const result = await handleInviteSalesSessionParticipants({
       sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
-      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: vi.fn().mockResolvedValueOnce(current).mockRejectedValueOnce(confirmationFailure), inviteParticipants: vi.fn().mockResolvedValue(requested) }) }, diagnostics,
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn().mockResolvedValue(invitationEnabledEvidence()), listParticipants: vi.fn().mockResolvedValueOnce(current).mockRejectedValueOnce(confirmationFailure), inviteParticipants: vi.fn().mockResolvedValue(requested) }) }, diagnostics,
     }, { customerId: "customer-1", sessionId: session.id, actor, body: { participantIds: ["portal-1"] } });
 
     expect(result).toMatchObject({ status: 502, body: { error: "CloudShare accepted the native invitation request, but Certalis could not confirm or save its result. Do not retry until support diagnostics are reviewed." } });
@@ -403,7 +404,7 @@ describe("Sales Session participant invitation", () => {
     const inviteParticipants = vi.fn();
     const result = await handleInviteSalesSessionParticipants({
       sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
-      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([remoteParticipant("remote-1")])), inviteParticipants }) },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability: vi.fn().mockResolvedValue(invitationEnabledEvidence()), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([remoteParticipant("remote-1")])), inviteParticipants }) },
     }, { customerId: "customer-1", sessionId: session.id, actor, body: { participantIds: ["portal-1"] } });
 
     expect(result.status).toBe(409);

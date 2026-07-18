@@ -135,12 +135,11 @@ export async function handleInviteSalesSessionParticipants(deps: Deps, request: 
     // CloudShare's invite endpoint acknowledges disabled invitations with an
     // empty 200. Read the documented Experience configuration first so
     // Certalis can return the actual prerequisite rather than a false success.
-    const experience = await prepared.delivery.readSession(prepared.session.cloudShareSalesExperienceId);
-    if (experience) completedExchanges.push(experience);
-    const invitationsEnabled = experience?.sendInvitations === "salesParticipantsOnly" || experience?.sendInvitations === "salesProsAndParticipants";
-    if (experience?.sendInvitations && !invitationsEnabled) {
-      await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "failure", "CloudShare native invitations are disabled for this Sales Experience.", experience, { failureMode: "native_invitations_disabled", sendInvitations: experience.sendInvitations, participantIds: parsed.data.participantIds, httpExchanges: completedExchanges });
-      return { status: 409, body: { error: "CloudShare has native invitations disabled for this Sales Experience. Enable invitations in CloudShare before sending or resending.", correlationId } };
+    const capability = await prepared.delivery.readParticipantInvitationCapability!(prepared.session.cloudShareSalesExperienceId);
+    completedExchanges.push(capability);
+    if (!capability.participantInvitationsEnabled) {
+      await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "failure", "CloudShare native invitations are disabled for this Sales Experience.", capability, { failureMode: "native_invitations_disabled", sendInvitations: capability.sendInvitations, participantIds: parsed.data.participantIds, httpExchanges: completedExchanges });
+      return { status: 409, body: { code: "native_invitations_disabled", error: "CloudShare has native invitations disabled for this Sales Experience. Enable invitations in CloudShare before sending or resending.", correlationId } };
     }
     // A persisted mapping alone is not sufficient authority to resend an invite:
     // reconciliation may have already established that CloudShare no longer knows it.

@@ -33,9 +33,11 @@ export interface CreateSalesDemoSessionInput {
 }
 export interface SalesDelivery {
   createSession(input: CreateSalesDemoSessionInput): Promise<{ readonly salesExperienceId: string } & SalesDeliveryEvidence>;
-  /** Documented v4 read used only for reconciliation and invitation capability;
-   * the provider ID remains server-side. */
-  readSession(salesExperienceId: string): Promise<{ readonly id: string; readonly status?: string; readonly sendInvitations?: "salesProsOnly" | "salesParticipantsOnly" | "participantsOnly" | "dontSend" | "salesProsAndParticipants" } & SalesDeliveryEvidence>;
+  /** Documented v4 read used only for reconciliation; the provider ID remains server-side. */
+  readSession(salesExperienceId: string): Promise<{ readonly id: string; readonly status?: string } & SalesDeliveryEvidence>;
+  /** Maps CloudShare's versioned invitation-setting wire values to the one fact
+   * invite callers need, and preserves the original value for diagnostics. */
+  readParticipantInvitationCapability(salesExperienceId: string): Promise<{ readonly participantInvitationsEnabled: boolean; readonly sendInvitations: "salesProsOnly" | "salesParticipantsOnly" | "participantsOnly" | "dontSend" | "salesProsAndParticipants" | "unknown" } & SalesDeliveryEvidence>;
   /** PUT always starts from a documented full GET representation. Certalis
    * changes only the provider-visible name: schedule edits need their own
    * lifecycle policy before they can be exposed. */
@@ -180,7 +182,12 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
     },
     async readSession(salesExperienceId) {
       const { data, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceSchema });
-      return { id: data.id, ...(typeof data.status === "string" ? { status: data.status } : {}), ...(data.sendInvitations ? { sendInvitations: data.sendInvitations } : {}), ...evidence };
+      return { id: data.id, ...(typeof data.status === "string" ? { status: data.status } : {}), ...evidence };
+    },
+    async readParticipantInvitationCapability(salesExperienceId) {
+      const { data, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceSchema });
+      const sendInvitations = data.sendInvitations ?? "unknown";
+      return { participantInvitationsEnabled: sendInvitations === "salesParticipantsOnly" || sendInvitations === "participantsOnly" || sendInvitations === "salesProsAndParticipants", sendInvitations, ...evidence };
     },
     async updateSession(salesExperienceId, changes) {
       const { data: current } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceSchema });

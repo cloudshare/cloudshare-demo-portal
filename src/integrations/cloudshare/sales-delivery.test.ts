@@ -207,11 +207,20 @@ describe("CloudShare Sales Delivery", () => {
     await expect(createCloudShareSalesDelivery({ requestV4Detailed } as never).listParticipants("sales-1")).resolves.toMatchObject({ participants: [expect.objectContaining({ id: "participant-1" }), expect.objectContaining({ id: "participant-2" })] });
     expect(requestV4Detailed).toHaveBeenCalledTimes(2);
   });
-  it("uses documented v4 GET /sales/{id} for reconciliation and native-invitation capability", async () => {
+  it("uses documented v4 GET /sales/{id} for reconciliation", async () => {
     const requestV4 = vi.fn().mockResolvedValue({ id: "sales-1", status: "active", sendInvitations: "salesProsAndParticipants" });
     const delivery = createCloudShareSalesDelivery({ requestV4, requestV3: vi.fn(), requestV3Text: vi.fn() });
-    await expect(delivery.readSession("sales-1")).resolves.toMatchObject({ id: "sales-1", status: "active", sendInvitations: "salesProsAndParticipants" });
+    await expect(delivery.readSession("sales-1")).resolves.toMatchObject({ id: "sales-1", status: "active" });
     expect(requestV4).toHaveBeenCalledWith(expect.objectContaining({ method: "GET", path: "/sales/sales-1" }));
+  });
+  it("normalizes the documented Sales invitation-setting wire variants and fails closed when absent", async () => {
+    const requestV4Detailed = vi.fn()
+      .mockResolvedValueOnce({ data: { id: "sales-1", sendInvitations: "participantsOnly" }, request: { method: "GET", path: "/sales/sales-1" }, response: { status: 200, body: { id: "sales-1", sendInvitations: "participantsOnly" } } })
+      .mockResolvedValueOnce({ data: { id: "sales-1" }, request: { method: "GET", path: "/sales/sales-1" }, response: { status: 200, body: { id: "sales-1" } } });
+    const delivery = createCloudShareSalesDelivery({ requestV4Detailed } as never);
+
+    await expect(delivery.readParticipantInvitationCapability("sales-1")).resolves.toMatchObject({ participantInvitationsEnabled: true, sendInvitations: "participantsOnly" });
+    await expect(delivery.readParticipantInvitationCapability("sales-1")).resolves.toMatchObject({ participantInvitationsEnabled: false, sendInvitations: "unknown" });
   });
   it("reads the documented full model before sending a full PUT /sales/{id} that preserves explicit-native-invite capability", async () => {
     const full = { id: "sales-1", accessLink: "bearer-secret", name: "Original", type: "demo", projectId: "project-1", teamId: "team-1", blueprintIds: ["bp-1"], allowParticipantsSwitchSteps: null, cloudshareRegionIds: ["region-1"], awsCloudRegion: null, azureCloudRegion: null, googleCloudProviderRegion: null, googleCloudProviderZone: null, policyId: "policy-1", opportunity: "Acme", externalId: "portal-correlation", mainSalesPro: { email: "sales@certalis.demo" }, additionalSalesPros: null, registrationType: "registeredParticipantsOnly", passphrase: "server-only", description: null, labels: null, allowMultipleEnvironmentActivations: false, sendInvitations: "salesProsAndParticipants", emailDomainBlocklist: null, blockFreeEmailDomains: false, customFields: null, useCustomInvitationEmail: false, preConfigureParticipantEnvironments: null, sharedEnvBlueprintId: null, sharedEnvPolicyId: null, isSharedLabViewAccessEnabled: null, allowAudioVideo: false, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" };
