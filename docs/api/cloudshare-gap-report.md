@@ -1842,7 +1842,7 @@ semantics and the role of `count`.
 | Field | Detail |
 |---|---|
 | **Status** | Confirmed live prerequisite; provider acknowledgement defect escalated to CloudShare |
-| **Verified live** | Yes — Certalis Sales Admin UI, a disposable v4 Sales Experience, and a received native participant invitation, 2026-07-18 |
+| **Verified live** | Yes — Certalis Sales Admin UI, a disposable v4 Sales Experience, no automatic Main Sales Pro invitation, and a received native participant invitation, 2026-07-18 |
 | **Provider ticket** | [SUP-5011](https://cloudshare.atlassian.net/browse/SUP-5011) |
 | **Provider ticket title** | APIv4: invoking the send invitation endpoint for sales (and likley training) results in a 200 OK, even if the option to NOT send invites to either party has been enabled. This should be a 409 Conflict error |
 
@@ -1866,16 +1866,17 @@ to call; it must not expose or fall back to participant invitation URLs.
 A disposable live Sales Experience was subsequently created with
 `sendInvitations: "salesProsAndParticipants"`. CloudShare returned HTTP 201, persisted
 that setting, and returned one Sales Pro and zero participants. The documented Sales Pro
-roster does not expose an invitation-status field, so the API alone cannot establish
-whether creation itself emailed the Main Sales Pro; the CloudShare GUI/email observation
-remains the authoritative verification for that no-implicit-email question.
+roster does not expose an invitation-status field. CloudShare GUI human QA then confirmed
+that the sole Main Sales Pro was `Not sent` (`0 of 1 invited`): enabling the capability at
+creation does not itself issue an invitation email.
 
 **Portal mitigation**
 
 New Sales Experiences use the documented `sendInvitations: "salesProsAndParticipants"`
 capability setting. Certalis makes no participant or Sales Pro invite request during
-creation or registration; the pending GUI/email check above verifies CloudShare's
-automatic-email behaviour. Before calling the native participant invite endpoint,
+creation or registration; the GUI evidence above confirms CloudShare does not send an
+automatic Main Sales Pro email merely because the capability is enabled. Before calling
+the native participant invite endpoint,
 Certalis reads the Experience configuration and returns an actionable 409 if participant
 invitations are disabled. For enabled Experiences it performs a roster read immediately
 after the POST and uses the returned `invitationStatus` as the only delivery authority.
@@ -1891,9 +1892,9 @@ outcome), consistent with the GUI message. Existing `dontSend` Experiences must 
 amended in CloudShare or recreated before their native invitations can be sent. With
 both invitation settings enabled, #348 human QA selected a Sales Participant, requested
 the native invitation, observed the portal roster change to `sent`, and received the
-native email. That confirms the explicit participant-delivery path. The narrower
-creation-time automatic Sales Pro email observation remains pending because the roster
-does not expose it.
+native email. That confirms the explicit participant-delivery path. The separate
+creation-time Main Sales Pro check also passed in the CloudShare GUI: `Not sent` / `0 of
+1 invited`.
 
 CloudShare support ticket [SUP-5011](https://cloudshare.atlassian.net/browse/SUP-5011)
 tracks the provider acknowledgement defect.
