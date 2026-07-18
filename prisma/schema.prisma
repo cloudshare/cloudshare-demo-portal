@@ -155,6 +155,7 @@ model SalesSessionParticipant {
   opportunityContactId        String
   cloudShareParticipantId     String   @unique
   invitationStatus            String
+  lastInvitedAt               DateTime?
   invitedBy                   String?
   participationStatus         String
   firstJoined                 String?
@@ -165,9 +166,25 @@ model SalesSessionParticipant {
   createdAt                   DateTime
   updatedAt                   DateTime
   session                     SalesDemoSession @relation(fields: [salesDemoSessionId], references: [id], onDelete: Cascade)
+  launchLinks                 SalesParticipantLaunchLink[]
 
   @@unique([customerId, salesDemoSessionId, opportunityContactId])
   @@index([customerId, salesDemoSessionId, updatedAt])
+}
+
+/// Opaque public launch capability. Only a SHA-256 digest is persisted; the
+/// browser-visible plaintext exists once, in the Sales Admin copy response.
+model SalesParticipantLaunchLink {
+  id                    String @id
+  customerId            String
+  salesDemoSessionId    String
+  salesSessionParticipantId String
+  tokenHash             String @unique
+  revokedAt             DateTime?
+  createdAt             DateTime
+  participant           SalesSessionParticipant @relation(fields: [salesSessionParticipantId], references: [id], onDelete: Cascade)
+
+  @@index([customerId, salesDemoSessionId, salesSessionParticipantId])
 }
 
 model User {

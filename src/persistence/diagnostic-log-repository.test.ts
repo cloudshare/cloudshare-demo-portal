@@ -136,6 +136,7 @@ describe("createPrismaDiagnosticLogRepository", () => {
       customerId: "cust_1",
       candidateEmail: "candidate@helioscx.demo",
       correlationId: "corr-1",
+      subject: { type: "sales_session_participant", id: "participant-1" },
       externalIds: { environmentId: "env-1" },
       details: { integrationSurface: "cloudshare.v4.environment" },
     });
@@ -148,6 +149,7 @@ describe("createPrismaDiagnosticLogRepository", () => {
       customerId: "cust_1",
       candidateEmail: "other@helioscx.demo",
       correlationId: "corr-2",
+      subject: { type: "sales_session_participant", id: "participant-2" },
       externalIds: { environmentId: "env-2" },
       details: { integrationSurface: "cloudshare.v4.environment" },
     });
@@ -157,12 +159,28 @@ describe("createPrismaDiagnosticLogRepository", () => {
       candidateEmail: "candidate@helioscx.demo",
       outcome: "failure",
       correlationId: "corr-1",
+      subjectId: "participant-1",
       integrationSurface: "cloudshare.v4.environment",
       externalId: "env-1",
     });
 
     expect(matched).toHaveLength(1);
     expect(matched[0].message).toBe("match");
+  });
+
+  it("scopes participant diagnostics by both Customer and subject ID", async () => {
+    const repo = createPrismaDiagnosticLogRepository(prisma);
+    for (const [customerId, subjectId, message] of [
+      ["cust_1", "participant-1", "selected-first"],
+      ["cust_1", "participant-1", "selected-second"],
+      ["cust_1", "participant-2", "other-participant"],
+      ["cust_2", "participant-1", "wrong-customer"],
+    ] as const) {
+      await repo.append({ source: "sales-participant-launch", operation: "sales.demo_session.participant_launch.opened", outcome: "success", message, customerId, subject: { type: "sales_session_participant", id: subjectId } });
+    }
+
+    const matched = await repo.query({ customerId: "cust_1", subjectId: "participant-1" });
+    expect(matched.map((entry) => entry.message)).toEqual(["selected-second", "selected-first"]);
   });
 
   it("supports offset pagination", async () => {

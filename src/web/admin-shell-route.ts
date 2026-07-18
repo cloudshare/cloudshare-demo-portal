@@ -7,6 +7,7 @@ export interface DiagnosticLogFilters {
   readonly source?: string;
   readonly integrationSurface?: string;
   readonly correlationId?: string;
+  readonly subjectId?: string;
   readonly externalId?: string;
   readonly from?: string;
   readonly to?: string;
@@ -117,6 +118,7 @@ export function normaliseDiagnosticLogFilters(
     ...(normaliseOptionalText(filters.correlationId)
       ? { correlationId: normaliseOptionalText(filters.correlationId) }
       : {}),
+    ...(normaliseOptionalText(filters.subjectId) ? { subjectId: normaliseOptionalText(filters.subjectId) } : {}),
     ...(normaliseOptionalText(filters.externalId)
       ? { externalId: normaliseOptionalText(filters.externalId) }
       : {}),

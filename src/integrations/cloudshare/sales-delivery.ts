@@ -38,6 +38,7 @@ export interface SalesDelivery {
   /** Maps CloudShare's versioned invitation-setting wire values to the one fact
    * invite callers need, and preserves the original value for diagnostics. */
   readParticipantInvitationCapability(salesExperienceId: string): Promise<{ readonly participantInvitationsEnabled: boolean; readonly sendInvitations: "salesProsOnly" | "salesParticipantsOnly" | "participantsOnly" | "dontSend" | "salesProsAndParticipants" | "unknown" } & SalesDeliveryEvidence>;
+  listSalesPros(salesExperienceId: string): Promise<{ readonly salesPros: readonly SalesProContact[] } & SalesDeliveryEvidence>;
   /** PUT always starts from a documented full GET representation. Certalis
    * changes only the provider-visible name: schedule edits need their own
    * lifecycle policy before they can be exposed. */
@@ -59,7 +60,9 @@ export interface SalesDelivery {
   updateParticipantCorrelation(salesExperienceId: string, participantId: string, input: Pick<SalesParticipantInput, "firstName" | "lastName" | "customProperties">): Promise<SalesDeliveryEvidence>;
   listParticipants(salesExperienceId: string): Promise<{ readonly participants: readonly SalesParticipant[] } & SalesDeliveryEvidence>;
   inviteParticipants(salesExperienceId: string, participantIds: readonly string[]): Promise<SalesDeliveryEvidence>;
+  createSponsoredLink(salesExperienceId: string, participant: Pick<SalesParticipantInput, "firstName" | "lastName" | "email">): Promise<{ readonly loginUrl: string } & SalesDeliveryEvidence>;
 }
+export interface SalesProContact { readonly name?: string; readonly email: string; readonly type: "mainSalesPro" | "salesPro"; }
 
 export const SALES_PARTICIPANT_CORRELATION_PROPERTY_KEYS = [
   "certalisSalesParticipantId",
@@ -117,10 +120,12 @@ const salesExperienceSchema = z.object({
   end: z.string().nullable().optional(),
   timeZone: z.string().optional(),
 }).passthrough();
-const salesEnvironmentStatusSchema = z.enum([
+const SALES_ENVIRONMENT_STATUSES = [
   "FutureAllocationScheduled", "AllocationScheduledNoRun", "Ready", "Suspended", "Archived", "Deleted",
   "Publishing", "Preparing", "CreationFailed", "InGrace", "Stopping", "EditingNetworks",
-]);
+] as const;
+const salesEnvironmentStatusSchema = z.enum(SALES_ENVIRONMENT_STATUSES);
+const canonicalSalesEnvironmentStatus = new Map(SALES_ENVIRONMENT_STATUSES.map((status) => [status.toLowerCase(), status]));
 const salesParticipantSchema = z.object({
   id: z.string().min(1),
   firstName: z.string().min(2).max(64),
@@ -132,12 +137,19 @@ const salesParticipantSchema = z.object({
   firstJoined: z.string().datetime({ offset: true }).nullable(),
   // The published schema lists environment states, but the live Sales roster
   // returns null until a registered participant has an environment.
-  envStatus: salesEnvironmentStatusSchema.nullable(),
+  // Live Sales roster evidence returns documented values with inconsistent
+  // casing. Canonicalize only exact case-insensitive matches from the exported
+  // enum; unsupported strings still fail strict validation.
+  envStatus: z.preprocess((value) => typeof value === "string" ? canonicalSalesEnvironmentStatus.get(value.toLowerCase()) ?? value : value, salesEnvironmentStatusSchema.nullable()),
   envId: z.string().min(1).nullable(),
   customProperties: z.preprocess((value) => value ?? [], z.array(z.object({ name: z.string(), value: z.string().max(1024) }))),
 });
 const salesUserPropertyDefinitionSchema = z.object({ id: z.string().min(1), name: z.string().min(1), order: z.number().int().optional() });
 const salesUserPropertyDefinitionsSchema = z.array(salesUserPropertyDefinitionSchema);
+const sponsoredLinkSchema = z.object({ id: z.string().min(1), loginUrl: z.string().url() });
+const salesProsSchema = z.object({ count: z.number().int().nonnegative().optional(), salesPros: z.array(z.object({ name: z.string().min(1).optional(), email: z.string().email().max(100), type: z.enum(["mainSalesPro", "salesPro"]) })) });
+const SALES_PRO_PAGE_LIMIT = 100;
+const SALES_PRO_MAX_PAGES = 10;
 
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -188,6 +200,22 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
       const { data, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceSchema });
       const sendInvitations = data.sendInvitations ?? "unknown";
       return { participantInvitationsEnabled: sendInvitations === "salesParticipantsOnly" || sendInvitations === "participantsOnly" || sendInvitations === "salesProsAndParticipants", sendInvitations, ...evidence };
+    },
+    async listSalesPros(salesExperienceId) {
+      const path = `/sales/${encodeURIComponent(salesExperienceId)}/salespros`;
+      const seen = new Set<string>();
+      const salesPros: SalesProContact[] = [];
+      let offset = 0;
+      let evidence: SalesDeliveryEvidence | undefined;
+      for (let page = 0; page < SALES_PRO_MAX_PAGES; page += 1) {
+        const result = await detailed({ method: "GET", path, query: { offset: String(offset), limit: String(SALES_PRO_PAGE_LIMIT) }, schema: salesProsSchema });
+        evidence = result.evidence;
+        for (const salesPro of result.data.salesPros) { const key = salesPro.email.toLowerCase(); if (!seen.has(key)) { seen.add(key); salesPros.push(salesPro); } }
+        offset += result.data.salesPros.length;
+        if (result.data.count !== undefined && result.data.count > SALES_PRO_PAGE_LIMIT * SALES_PRO_MAX_PAGES) throw new Error("CloudShare Sales Pro count exceeds the bounded recovery-contact read limit.");
+        if (result.data.salesPros.length === 0 || result.data.salesPros.length < SALES_PRO_PAGE_LIMIT || (result.data.count !== undefined && offset >= result.data.count)) return { salesPros, ...evidence };
+      }
+      throw new Error("CloudShare Sales Pro pagination exceeded the bounded page limit.");
     },
     async updateSession(salesExperienceId, changes) {
       const { data: current } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceSchema });
@@ -307,6 +335,10 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
     async inviteParticipants(salesExperienceId, participantIds) {
       const { evidence } = await detailed({ method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/participants/invite`, body: participantIds, allowEmptyResponse: true, schema: z.void() });
       return participantEvidence(evidence);
+    },
+    async createSponsoredLink(salesExperienceId, participant) {
+      const { data, evidence } = await detailed({ method: "POST", path: `/sales/${encodeURIComponent(salesExperienceId)}/sponsored-link`, body: { ...participant, preRegisteredStudent: false }, schema: sponsoredLinkSchema });
+      return { loginUrl: data.loginUrl, ...evidence };
     },
   };
 }

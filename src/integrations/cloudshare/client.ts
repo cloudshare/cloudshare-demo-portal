@@ -238,12 +238,12 @@ function sanitizeResponseBody(body: string, requestPath: string): string {
   try {
     return JSON.stringify(
       redactCloudShareAdminSupportValue(JSON.parse(body), {
-        preserveSponsoredLinkLoginUrl: isSponsoredLinkPath(requestPath),
+        preserveSponsoredLinkLoginUrl: false,
       }),
     );
   } catch {
     return redactCloudShareAdminSupportValue(body, {
-      preserveSponsoredLinkLoginUrl: isSponsoredLinkPath(requestPath),
+      preserveSponsoredLinkLoginUrl: false,
     }) as string;
   }
 }

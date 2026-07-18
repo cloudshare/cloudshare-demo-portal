@@ -416,4 +416,25 @@ describe("handleGetDiagnosticLog", () => {
       }),
     ]);
   });
+
+  it("returns only the authenticated Customer's selected participant diagnostics", async () => {
+    const diagnostics = makeDiagnostics();
+    for (const [customerId, subjectId, correlationId, message] of [
+      ["customer-1", "participant-1", "corr-1", "selected first"],
+      ["customer-1", "participant-1", "corr-2", "selected second"],
+      ["customer-1", "participant-2", "corr-3", "other participant"],
+      ["customer-2", "participant-1", "corr-4", "wrong Customer"],
+    ] as const) {
+      await diagnostics.recorder.record({ source: "sales-participant-launch", operation: "sales.demo_session.participant_launch.opened", outcome: "success", message, customerId, correlationId, subject: { type: "sales_session_participant", id: subjectId } });
+    }
+
+    const result = await handleGetDiagnosticLog(
+      { diagnostics: diagnostics.repository, logger: makeLogger() },
+      { customerId: "customer-1", query: { source: "sales-participant-launch", subjectId: "participant-1" } },
+    );
+
+    expect(result.status).toBe(200);
+    const body = result.body as { entries: Array<{ message: string }> };
+    expect(body.entries.map((entry) => entry.message).sort()).toEqual(["selected first", "selected second"]);
+  });
 });

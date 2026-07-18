@@ -5,7 +5,7 @@ import {
   type DiagnosticLogHandlerDeps,
 } from "./admin";
 
-const SALES_DIAGNOSTIC_SOURCES = ["sales-records", "sales-items", "sales-demo-sessions", "sales-session-reconciliation", "sales-session-participants", "sales-project-members"] as const;
+const SALES_DIAGNOSTIC_SOURCES = ["sales-records", "sales-items", "sales-demo-sessions", "sales-session-reconciliation", "sales-session-participants", "sales-project-members", "sales-participant-launch"] as const;
 const SALES_DIAGNOSTIC_SOURCE_PAGE_LIMIT = 500;
 const SALES_DIAGNOSTIC_MAX_PAGE_LIMIT = 500;
 const SALES_DIAGNOSTIC_MAX_AGGREGATE_OFFSET = 5_000;
@@ -31,7 +31,8 @@ export async function handleGetSalesDiagnosticLog(
   }
 
   if (requestedSource) {
-    return handleGetDiagnosticLog(deps, { customerId: request.customerId, query: request.query });
+    const response = await handleGetDiagnosticLog(deps, { customerId: request.customerId, query: request.query });
+    return { ...response, body: salesBearerSafeProjection(response.body) as Record<string, unknown> };
   }
 
   const requestedLimit = parseLimit(request.query.limit);
@@ -62,7 +63,7 @@ export async function handleGetSalesDiagnosticLog(
   return {
     status: 200,
     body: {
-      entries: pageEntries,
+      entries: pageEntries.map((entry) => salesBearerSafeProjection(entry)),
       page: {
         limit: requestedLimit,
         offset: requestedOffset,
@@ -72,6 +73,20 @@ export async function handleGetSalesDiagnosticLog(
       },
     },
   };
+}
+
+/** Sales Support is an ordinary API projection. Protected DiagnosticLogEntry
+ * storage remains unchanged, but bearer credentials never cross this seam. */
+function salesBearerSafeProjection(value: unknown, key = ""): unknown {
+  if (/^(?:authorization|loginurl|token|tokenhash|bearer)$/i.test(key)) return "[REDACTED]";
+  if (typeof value === "string") {
+    return value
+      .replace(/\/sales\/launch\/[^\s?"']+/gi, "/sales/launch/[REDACTED]")
+      .replace(/\bBearer\s+[^\s,;"']+/gi, "Bearer [REDACTED]");
+  }
+  if (Array.isArray(value)) return value.map((item) => salesBearerSafeProjection(item));
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([childKey, childValue]) => [childKey, salesBearerSafeProjection(childValue, childKey)]));
+  return value;
 }
 
 function isSalesDiagnosticSource(value: string): value is SalesDiagnosticSource {

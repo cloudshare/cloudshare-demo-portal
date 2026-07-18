@@ -88,13 +88,13 @@ describe("admin shell diagnostic routes", () => {
     const filters: DiagnosticLogFilters = normaliseDiagnosticLogFilters({
       examAttemptId: "  attempt-1  ", examId: " exam-1 ", candidateEmail: " Candidate@HeliosCX.demo ",
       operation: " exam_attempt.resume ", outcome: "failure", source: " runtime ",
-      integrationSurface: " cloudshare.v4.environment ", correlationId: " corr-1 ", externalId: " env-123 ",
+      integrationSurface: " cloudshare.v4.environment ", correlationId: " corr-1 ", subjectId: " participant-1 ", externalId: " env-123 ",
       from: " 2026-06-21T10:00 ", to: " 2026-06-21T11:00 ",
     });
     expect(filters).toEqual({
       examAttemptId: "attempt-1", examId: "exam-1", candidateEmail: "candidate@helioscx.demo",
       operation: "exam_attempt.resume", outcome: "failure", source: "runtime",
-      integrationSurface: "cloudshare.v4.environment", correlationId: "corr-1", externalId: "env-123",
+      integrationSurface: "cloudshare.v4.environment", correlationId: "corr-1", subjectId: "participant-1", externalId: "env-123",
       from: "2026-06-21T10:00", to: "2026-06-21T11:00",
     });
   });

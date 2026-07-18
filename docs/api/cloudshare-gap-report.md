@@ -699,6 +699,10 @@ field in the response shape, even when no custom keys are populated yet. On the 
 adapter now normalizes both object and key/value-array bags. The observed row keys on this tenant
 included: `id`, `email`, `firstName`, `lastName`, `participationStatus`, `firstJoined`,
 `envStatus`, `envId`, `role`, `invitationStatus`, `markedAsComplete`, and `customProperties`.
+
+The documented Sales Participant roster exposes `invitationStatus` and `invitedBy`, but no invitation-sent timestamp. Certalis therefore records nullable `lastInvitedAt` whenever its explicit invite or resend receives provider acknowledgement and an authoritative `sent` confirmation. Passive reconciliation never changes it; legacy sent rows remain null rather than deriving a fictitious time from `updatedAt`.
+
+Certalis enforces lifecycle capability boundaries before provider or token mutation: ended Sales Sessions cannot register or repair participants, send invitations, or create/regenerate instant-launch links, and concluded participants cannot be invited or receive a new launch link. Revocation and read-only monitoring remain available for containment and support.
 Both verified training IDs were `selfPaced`; an `instructorLed` read was not available to confirm on
 2026-07-06. This means Cohort Exam Session monitoring can safely read explicit Certalis
 participant-correlation values back from `customProperties` on this endpoint when later joins write
@@ -1837,6 +1841,18 @@ semantics and the role of `count`.
 
 ---
 
+## GAP-31 — Live Sales roster uses lowercase `preparing` environment status
+
+| Field | Evidence |
+| --- | --- |
+| **Verified live** | Yes — Certalis Sales instant-launch QA, 2026-07-18 |
+| **Exported contract** | `envStatus` enumerates PascalCase `Preparing` |
+| **Live observation** | `GET /v4/sales/{id}/participants` returned HTTP 200 with `envStatus: "preparing"` after sponsored-link launch, then lowercase `envStatus: "ready"` as the same participant progressed. IDs, URLs, and credentials are intentionally omitted. |
+
+**Impact:** Strict enum parsing rejected an otherwise valid roster and hid the participant from Certalis monitoring.
+
+**Portal behavior:** `SalesDelivery` case-insensitively normalizes only values in the exact documented Sales environment-status enum to their canonical typed spelling. Unknown strings remain strictly rejected.
+
 ## GAP-30 — Sales participant invite acknowledgement does not confirm invitation dispatch
 
 | Field | Detail |
@@ -1932,5 +1948,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-07-18 (added GAP-30 live Sales invitation acknowledgement evidence).
+*Last updated: 2026-07-18 (added GAP-31 live Sales roster environment-status evidence).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*

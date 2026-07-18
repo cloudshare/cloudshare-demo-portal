@@ -139,18 +139,109 @@ describe("Sales Item authoring", () => {
 });
 
 describe("Sales Participant monitoring", () => {
+  it("disables only native invitations after the Sales Session has ended", async () => {
+    const user = userEvent.setup();
+    const fetchSales = vi.fn().mockImplementation(async (input: string, init?: RequestInit) => {
+      if (input === "/api/sales/accounts") return json({ contacts: [] });
+      if (input === "/api/sales/enablement-sessions/session-1/participants" && !init?.method) return json({ session: { lifecycle: "ended", nativeInvitationsAvailable: false }, participants: [{ id: "portal-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", invitationStatus: "notSent", lastInvitedAt: null, participationStatus: "pending", firstJoined: null, envStatus: null }] });
+      return json({});
+    });
+    render(<SalesSessionParticipants session={{ id: "session-1", opportunityId: "opportunity-1", itemId: "item-1", type: "demo", start: "2026-07-17T09:00", end: "2026-07-17T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-17T08:00:00Z", lifecycle: "upcoming", verificationEligible: true }} fetchSales={fetchSales as typeof fetch} onOpenSupport={vi.fn()} />);
+
+    expect(await screen.findByText("Native invitations are unavailable after this Sales Session has ended.")).not.toBeNull();
+    expect((screen.getByRole("checkbox", { name: "Select all participants to register or repair" }) as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole("checkbox", { name: "Select all eligible participants for native invite" }) as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole("checkbox", { name: "Select Ada Lovelace for native invite" }) as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Send or resend native invites" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Register or repair selected participants" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Copy launch link" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Revoke link" }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole("button", { name: "Refresh engagement" }) as HTMLButtonElement).disabled).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Send or resend native invites" }));
+    expect(fetchSales).not.toHaveBeenCalledWith(expect.stringContaining("/participants/invite"), expect.anything());
+  });
+
+  it("disables invite and create launch only for concluded participants in an active Session", async () => {
+    const fetchSales = vi.fn().mockImplementation(async (input: string) => input === "/api/sales/accounts" ? json({ contacts: [] }) : json({ session: { lifecycle: "in_progress", nativeInvitationsAvailable: true }, participants: [{ id: "pending", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Pending", email: "pending@example.test", invitationStatus: "notSent", lastInvitedAt: null, participationStatus: "pending", firstJoined: null, envStatus: null }, { id: "concluded", opportunityContactId: "contact-2", firstName: "Grace", lastName: "Concluded", email: "concluded@example.test", invitationStatus: "sent", lastInvitedAt: null, participationStatus: "concluded", firstJoined: null, envStatus: null }] }));
+    render(<SalesSessionParticipants session={{ id: "session-1", opportunityId: "opportunity-1", itemId: "item-1", type: "demo", start: "2026-07-17T09:00", end: "2026-07-17T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-17T08:00:00Z", lifecycle: "in_progress", verificationEligible: true }} fetchSales={fetchSales as typeof fetch} onOpenSupport={vi.fn()} />);
+    expect((await screen.findByRole("checkbox", { name: "Select Ada Pending for native invite" }) as HTMLInputElement).disabled).toBe(false);
+    const concludedSelect = screen.getByRole("checkbox", { name: "Select Grace Concluded for native invite" }) as HTMLInputElement;
+    expect(concludedSelect.disabled).toBe(true); expect(concludedSelect.title).toContain("concluded");
+    const copyButtons = screen.getAllByRole("button", { name: "Copy launch link" }) as HTMLButtonElement[];
+    expect(copyButtons[0]!.disabled).toBe(false); expect(copyButtons[1]!.disabled).toBe(true); expect(copyButtons[1]!.title).toContain("concluded");
+    expect(screen.getAllByRole("button", { name: "Revoke link" }).every((button) => !(button as HTMLButtonElement).disabled)).toBe(true);
+  });
+
   it("keeps the invitation Select control as the first monitoring column", async () => {
     const fetchSales = vi.fn().mockImplementation(async (input: string) => {
       if (input === "/api/sales/accounts") return json({ contacts: [{ id: "contact-1", opportunityId: "opportunity-1", firstName: "Ada", lastName: "Lovelace", archivedAt: null }] });
-      if (input === "/api/sales/enablement-sessions/session-1/participants") return json({ participants: [{ id: "portal-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Lovelace", invitationStatus: "notSent", participationStatus: "pending", firstJoined: null, envStatus: null }] });
+      if (input === "/api/sales/enablement-sessions/session-1/participants") return json({ session: { lifecycle: "in_progress", nativeInvitationsAvailable: true }, participants: [{ id: "portal-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", invitationStatus: "notSent", lastInvitedAt: "2026-07-18T09:15:00.000Z", participationStatus: "pending", firstJoined: "2026-07-18T10:00:00+01:00", envStatus: null }] });
       return json({});
     });
-    render(<SalesSessionParticipants session={{ id: "session-1", opportunityId: "opportunity-1", itemId: "item-1", type: "demo", start: "2026-07-17T09:00", end: "2026-07-17T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-17T08:00:00Z", verificationEligible: true }} fetchSales={fetchSales as typeof fetch} onOpenSupport={vi.fn()} />);
+    render(<SalesSessionParticipants session={{ id: "session-1", opportunityId: "opportunity-1", itemId: "item-1", type: "demo", start: "2026-07-17T09:00", end: "2026-07-17T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-17T08:00:00Z", lifecycle: "ended", verificationEligible: true }} fetchSales={fetchSales as typeof fetch} onOpenSupport={vi.fn()} />);
 
     await screen.findByRole("checkbox", { name: "Select Ada Lovelace for native invite" });
     const headers = screen.getAllByRole("columnheader");
-    expect(headers.map((header) => header.textContent)).toEqual(["Select", "Participant", "Invite", "First joined", "Participation", "Environment"]);
+    expect(headers.map((header) => header.textContent)).toEqual(["", "Participant", "Invite", "Last invite sent", "First joined", "Participation", "Environment", "Instant launch"]);
     expect(headers[0]?.getAttribute("style")).toContain("width: 3.5rem");
+    expect((screen.getByRole("checkbox", { name: "Select Ada Lovelace for native invite" }) as HTMLInputElement).disabled).toBe(false);
+    const times = document.querySelectorAll("time");
+    expect(times).toHaveLength(2);
+    expect(times[0]?.getAttribute("datetime")).toBe("2026-07-18T09:15:00.000Z");
+    expect(times[0]?.getAttribute("title")).toContain("2026-07-18 09:15:00 UTC");
+    expect(times[1]?.getAttribute("datetime")).toBe("2026-07-18T09:00:00.000Z");
+    expect(times[1]?.getAttribute("title")).toContain("2026-07-18 09:00:00 UTC");
+    expect(times[1]?.textContent).toContain("2026-07-1809:00:00 UTC");
+    expect(times[0]?.closest("td")?.getAttribute("style")).toContain("overflow: visible");
+    expect(times[0]?.closest("td")?.getAttribute("style")).not.toContain("text-overflow: ellipsis");
+    expect(screen.getByRole("button", { name: "Copy launch link" })).not.toBeNull();
+    expect(screen.getByText("ada@example.test")).not.toBeNull();
+  });
+
+  it("selects only eligible rows, reflects partial selection, and prunes stale selections on refresh", async () => {
+    const user = userEvent.setup();
+    let refreshed = false;
+    const inviteBodies: string[] = [];
+    const fetchSales = vi.fn().mockImplementation(async (input: string, init?: RequestInit) => {
+      if (input === "/api/sales/accounts") return json({ contacts: [
+        { id: "contact-1", opportunityId: "opportunity-1", firstName: "Ada", lastName: "Pending", archivedAt: null },
+        { id: "contact-2", opportunityId: "opportunity-1", firstName: "Linus", lastName: "Pending", archivedAt: null },
+        { id: "contact-3", opportunityId: "opportunity-1", firstName: "Grace", lastName: "Concluded", archivedAt: null },
+        { id: "contact-4", opportunityId: "opportunity-1", firstName: "New", lastName: "One", archivedAt: null },
+        { id: "contact-5", opportunityId: "opportunity-1", firstName: "New", lastName: "Two", archivedAt: null },
+      ] });
+      if (input.endsWith("/participants/invite") && init?.method === "POST") { inviteBodies.push(String(init.body)); return json({ invitationConfirmation: "confirmed", correlationId: "corr-invite" }); }
+      if (input.endsWith("/participants") && !init?.method) return json({ session: { lifecycle: "in_progress", nativeInvitationsAvailable: true }, participants: [
+        { id: "pending-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Pending", invitationStatus: "notSent", participationStatus: refreshed ? "concluded" : "pending", firstJoined: null, envStatus: null },
+        { id: "pending-2", opportunityContactId: "contact-2", firstName: "Linus", lastName: "Pending", invitationStatus: "notSent", participationStatus: "pending", firstJoined: null, envStatus: null },
+        { id: "concluded", opportunityContactId: "contact-3", firstName: "Grace", lastName: "Concluded", invitationStatus: "sent", participationStatus: "concluded", firstJoined: null, envStatus: null },
+      ] });
+      return json({});
+    });
+    render(<SalesSessionParticipants session={{ id: "session-1", opportunityId: "opportunity-1", itemId: "item-1", type: "demo", start: "2026-07-17T09:00", end: "2026-07-17T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-17T08:00:00Z", lifecycle: "in_progress", verificationEligible: true }} fetchSales={fetchSales as typeof fetch} onOpenSupport={vi.fn()} />);
+
+    const registerAll = await screen.findByRole("checkbox", { name: "Select all participants to register or repair" }) as HTMLInputElement;
+    await user.click(registerAll);
+    expect((screen.getByLabelText("New One") as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText("New Two") as HTMLInputElement).checked).toBe(true);
+    await user.click(registerAll);
+    expect((screen.getByLabelText("New One") as HTMLInputElement).checked).toBe(false);
+
+    const inviteAll = screen.getByRole("checkbox", { name: "Select all eligible participants for native invite" }) as HTMLInputElement;
+    await user.click(screen.getByLabelText("Select Ada Pending for native invite"));
+    expect(inviteAll.indeterminate).toBe(true);
+    await user.click(inviteAll);
+    expect((screen.getByLabelText("Select Ada Pending for native invite") as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText("Select Linus Pending for native invite") as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText("Select Grace Concluded for native invite") as HTMLInputElement).checked).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Send or resend native invites" }));
+    expect(JSON.parse(inviteBodies[0]!)).toEqual({ participantIds: ["pending-1", "pending-2"] });
+
+    await user.click(screen.getByLabelText("Select Ada Pending for native invite"));
+    refreshed = true;
+    await user.click(screen.getByRole("button", { name: "Refresh engagement" }));
+    await waitFor(() => expect((screen.getByLabelText("Select Ada Pending for native invite") as HTMLInputElement).disabled).toBe(true));
+    expect((screen.getByLabelText("Select Ada Pending for native invite") as HTMLInputElement).checked).toBe(false);
   });
 
   it("shows an accepted native invitation as pending until CloudShare confirms it as sent", async () => {
@@ -185,5 +276,17 @@ describe("Sales Participant monitoring", () => {
     await user.click(screen.getByRole("button", { name: "Register or repair selected participants" }));
     await waitFor(() => expect(screen.queryByLabelText("Ada Lovelace (repair CloudShare correlation)")).toBeNull());
     expect((screen.getByRole("checkbox", { name: "Select Ada Lovelace for native invite" }) as HTMLInputElement).disabled).toBe(false);
+  });
+
+  it("excludes a concluded repair mapping from registration selection", async () => {
+    const fetchSales = vi.fn().mockImplementation(async (input: string) => input === "/api/sales/accounts"
+      ? json({ contacts: [{ id: "contact-1", opportunityId: "opportunity-1", firstName: "Grace", lastName: "Concluded", archivedAt: null }, { id: "contact-2", opportunityId: "opportunity-1", firstName: "New", lastName: "Contact", archivedAt: null }] })
+      : json({ session: { lifecycle: "in_progress", nativeInvitationsAvailable: true }, participants: [{ id: "concluded", opportunityContactId: "contact-1", firstName: "Grace", lastName: "Concluded", invitationStatus: "sent", participationStatus: "concluded", requiresCorrelationRepair: true, needsAttention: true, firstJoined: null, envStatus: null }] }));
+    render(<SalesSessionParticipants session={{ id: "session-1", opportunityId: "opportunity-1", itemId: "item-1", type: "demo", start: "2026-07-17T09:00", end: "2026-07-17T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-17T08:00:00Z", lifecycle: "in_progress", verificationEligible: true }} fetchSales={fetchSales as typeof fetch} onOpenSupport={vi.fn()} />);
+    expect(await screen.findByLabelText("New Contact")).not.toBeNull();
+    expect(screen.queryByLabelText("Grace Concluded (repair CloudShare correlation)")).toBeNull();
+    const selectAll = screen.getByRole("checkbox", { name: "Select all participants to register or repair" });
+    await userEvent.setup().click(selectAll);
+    expect((screen.getByLabelText("New Contact") as HTMLInputElement).checked).toBe(true);
   });
 });

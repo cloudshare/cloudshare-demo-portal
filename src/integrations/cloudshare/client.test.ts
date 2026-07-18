@@ -358,7 +358,7 @@ describe("createCloudShareClient — v4", () => {
     });
   });
 
-  it("retains sponsored-link login URLs in response diagnostics for admin support evidence", async () => {
+  it("redacts sponsored-link login URLs from ordinary traces while retaining protected detailed evidence", async () => {
     const trace = vi.fn();
     const { http } = capturingHttp(
       ok({ loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret-token" }),
@@ -371,7 +371,7 @@ describe("createCloudShareClient — v4", () => {
       trace,
     });
 
-    await client.requestV4({
+    const detailed = await client.requestV4Detailed!({
       method: "POST",
       path: "/trainings/training-1/sponsored-link",
       schema: z.object({ loginUrl: z.string() }),
@@ -380,13 +380,13 @@ describe("createCloudShareClient — v4", () => {
     const responseTrace = trace.mock.calls[1]?.[0].fields;
     expect(responseTrace).toEqual(
       expect.objectContaining({
-        responseBody:
-          "{\"loginUrl\":\"https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret-token\"}",
+        responseBody: "{\"loginUrl\":\"[REDACTED]\"}",
       }),
     );
+    expect(detailed.response.body).toEqual({ loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret-token" });
   });
 
-  it("retains sponsored-link login URLs in legacy sponsoredLinks response diagnostics for admin support evidence", async () => {
+  it("redacts legacy sponsoredLinks URLs from ordinary traces", async () => {
     const trace = vi.fn();
     const { http } = capturingHttp(
       ok({ loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/legacy-token" }),
@@ -408,8 +408,7 @@ describe("createCloudShareClient — v4", () => {
     const responseTrace = trace.mock.calls[1]?.[0].fields;
     expect(responseTrace).toEqual(
       expect.objectContaining({
-        responseBody:
-          "{\"loginUrl\":\"https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/legacy-token\"}",
+        responseBody: "{\"loginUrl\":\"[REDACTED]\"}",
       }),
     );
   });

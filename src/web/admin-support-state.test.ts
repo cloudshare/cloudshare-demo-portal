@@ -9,11 +9,12 @@ describe("Support Diagnostics query state", () => {
         candidateEmail: "candidate@helioscx.demo",
         outcome: "failure",
         source: "runtime",
+        subjectId: "participant-1",
         externalId: "env-123",
       },
       { limit: 50, offset: 100 },
     )).toBe(
-      "?examAttemptId=attempt-1&candidateEmail=candidate%40helioscx.demo&outcome=failure&source=runtime&externalId=env-123&limit=50&offset=100",
+      "?examAttemptId=attempt-1&candidateEmail=candidate%40helioscx.demo&outcome=failure&source=runtime&subjectId=participant-1&externalId=env-123&limit=50&offset=100",
     );
   });
 });

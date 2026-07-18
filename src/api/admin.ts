@@ -432,6 +432,7 @@ export async function handleGetDiagnosticLog(
   const outcome = parseDiagnosticOutcome(request.query.outcome);
   const source = request.query.source?.trim();
   const correlationId = request.query.correlationId?.trim();
+  const subjectId = request.query.subjectId?.trim();
   const integrationSurface = request.query.integrationSurface?.trim();
   const externalId = request.query.externalId?.trim();
   const limitParam = request.query.limit;
@@ -453,6 +454,7 @@ export async function handleGetDiagnosticLog(
     ...(outcome ? { outcome } : {}),
     ...(source ? { source } : {}),
     ...(correlationId ? { correlationId } : {}),
+    ...(subjectId ? { subjectId } : {}),
     ...(integrationSurface ? { integrationSurface } : {}),
     ...(externalId ? { externalId } : {}),
     ...(from ? { from } : {}),
