@@ -1844,6 +1844,7 @@ semantics and the role of `count`.
 | **Status** | Confirmed live prerequisite; provider acknowledgement defect escalated to CloudShare |
 | **Verified live** | Yes — Certalis Sales Admin UI, 2026-07-18 |
 | **Provider ticket** | [SUP-5011](https://cloudshare.atlassian.net/browse/SUP-5011) |
+| **Provider ticket title** | APIv4: invoking the send invitation endpoint for sales (and likley training) results in a 200 OK, even if the option to NOT send invites to either party has been enabled. This should be a 409 Conflict error |
 
 **Observed behaviour**
 
