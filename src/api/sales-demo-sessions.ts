@@ -107,7 +107,10 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
   const reservation: SalesDemoSession = { id, customerId: request.customerId, opportunityId: opportunity.id, itemId: item.id, cloudShareSalesExperienceId: `pending:${id}`, externalId, type: parsed.data.type, start: parsed.data.start, end: parsed.data.end, timeZone: parsed.data.timeZone, salesProEmail: parsed.data.salesProEmail, salesProDisplayName: "Pending CloudShare validation", registrationType: "registeredParticipantsOnly", sendInvitations: "salesProsAndParticipants", sessionName, revision, operationalStatus: "provisioning", createdAt: now };
   if (deps.sessions.updateOperationalState) {
     try { await deps.sessions.save(reservation); }
-    catch (error) { return reservationPersistenceFailure(deps, request, reservation, correlationId, now, error); }
+    catch (error) {
+      const clearedAmbiguousReservation = await clearAmbiguousReservation(deps.sessions, reservation, error);
+      return reservationPersistenceFailure(deps, request, reservation, correlationId, now, error, clearedAmbiguousReservation);
+    }
   }
   const delivery = deps.deliveryFactory?.forConnection(connection) ?? createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection));
   try {
@@ -194,18 +197,26 @@ async function rejected(deps: SalesDemoSessionDeps, request: SalesDemoSessionReq
   ]);
   return response(status, { error, correlationId });
 }
-async function reservationPersistenceFailure(deps: SalesDemoSessionDeps, request: SalesDemoSessionRequest, reservation: SalesDemoSession, correlationId: string, occurredAt: Date, error: unknown) {
+async function reservationPersistenceFailure(deps: SalesDemoSessionDeps, request: SalesDemoSessionRequest, reservation: SalesDemoSession, correlationId: string, occurredAt: Date, error: unknown, clearedAmbiguousReservation = false) {
   const conflict = error instanceof SalesDemoSessionRevisionConflictError;
   const failureMode = conflict ? "revision_collision" : "local_reservation_persistence";
   const message = conflict
     ? "A Sales Enablement Session is already being provisioned for this Opportunity revision. Refresh the Session operations view before retrying."
     : "Certalis could not reserve the Sales Enablement Session locally. No CloudShare operation was attempted; review support diagnostics and retry.";
-  const details = { integrationSurface: "portal.sales_demo_sessions", failureMode, cloudShareAttempted: false, opportunityId: reservation.opportunityId, itemId: reservation.itemId };
+  const details = { integrationSurface: "portal.sales_demo_sessions", failureMode, cloudShareAttempted: false, clearedAmbiguousReservation, opportunityId: reservation.opportunityId, itemId: reservation.itemId };
   await Promise.allSettled([
     evidence(deps, request, correlationId, reservation, "failure", message, undefined, details),
     deps.audit?.write({ id: randomUUID(), occurredAt, customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.created", subjectType: "sales_demo_session", subjectId: reservation.id, outcome: "failure", correlationId, details, error: error instanceof Error ? error.message : "Local reservation persistence failed" }),
   ]);
   return response(conflict ? 409 : 503, { error: message, correlationId, needsAttention: true });
+}
+async function clearAmbiguousReservation(sessions: SalesDemoSessionRepository, reservation: SalesDemoSession, error: unknown): Promise<boolean> {
+  if (error instanceof SalesDemoSessionRevisionConflictError || !sessions.findById || !sessions.discardReservation) return false;
+  try {
+    const persisted = await sessions.findById(reservation.customerId, reservation.id);
+    const isOwnPendingReservation = persisted?.id === reservation.id && persisted.customerId === reservation.customerId && persisted.opportunityId === reservation.opportunityId && persisted.revision === reservation.revision && persisted.cloudShareSalesExperienceId === reservation.cloudShareSalesExperienceId && persisted.operationalStatus === "provisioning";
+    return isOwnPendingReservation ? await sessions.discardReservation(reservation) : false;
+  } catch { return false; }
 }
 async function evidence(deps: SalesDemoSessionDeps, request: SalesDemoSessionRequest, correlationId: string, session: SalesDemoSession, outcome: "success" | "failure", message: string, cloudshare: { request: unknown; response: unknown } | undefined, details: Record<string, unknown>) {
   await deps.diagnostics?.record({ source: "sales-demo-sessions", operation: "sales.demo_session.created", outcome, level: outcome === "failure" ? "warn" : "info", customerId: request.customerId, actor: request.actor, subject: { type: "sales_demo_session", id: session.id }, correlationId, message, externalIds: { cloudShareSalesExperienceId: session.cloudShareSalesExperienceId, externalId: session.externalId, opportunityId: session.opportunityId, itemId: session.itemId }, request: cloudshare?.request as Record<string, unknown> | undefined, response: cloudshare?.response as Record<string, unknown> | undefined, details });
