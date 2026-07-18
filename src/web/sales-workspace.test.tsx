@@ -146,7 +146,7 @@ describe("Sales Participant monitoring", () => {
       if (input === "/api/sales/enablement-sessions/session-1/participants" && !init?.method) return json({ session: { lifecycle: "ended", nativeInvitationsAvailable: false }, participants: [{ id: "portal-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", invitationStatus: "notSent", lastInvitedAt: null, participationStatus: "pending", firstJoined: null, envStatus: null }] });
       return json({});
     });
-    render(<SalesSessionParticipants session={{ id: "session-1", opportunityId: "opportunity-1", itemId: "item-1", type: "demo", start: "2026-07-17T09:00", end: "2026-07-17T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-17T08:00:00Z", lifecycle: "ended", verificationEligible: true }} fetchSales={fetchSales as typeof fetch} onOpenSupport={vi.fn()} />);
+    render(<SalesSessionParticipants session={{ id: "session-1", opportunityId: "opportunity-1", itemId: "item-1", type: "demo", start: "2026-07-17T09:00", end: "2026-07-17T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-17T08:00:00Z", lifecycle: "upcoming", verificationEligible: true }} fetchSales={fetchSales as typeof fetch} onOpenSupport={vi.fn()} />);
 
     expect(await screen.findByText("Native invitations are unavailable after this Sales Session has ended.")).not.toBeNull();
     expect((screen.getByRole("checkbox", { name: "Select Ada Lovelace for native invite" }) as HTMLInputElement).disabled).toBe(true);
@@ -160,15 +160,16 @@ describe("Sales Participant monitoring", () => {
   it("keeps the invitation Select control as the first monitoring column", async () => {
     const fetchSales = vi.fn().mockImplementation(async (input: string) => {
       if (input === "/api/sales/accounts") return json({ contacts: [{ id: "contact-1", opportunityId: "opportunity-1", firstName: "Ada", lastName: "Lovelace", archivedAt: null }] });
-      if (input === "/api/sales/enablement-sessions/session-1/participants") return json({ participants: [{ id: "portal-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Lovelace", invitationStatus: "notSent", participationStatus: "pending", firstJoined: null, envStatus: null }] });
+      if (input === "/api/sales/enablement-sessions/session-1/participants") return json({ session: { lifecycle: "in_progress", nativeInvitationsAvailable: true }, participants: [{ id: "portal-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Lovelace", invitationStatus: "notSent", participationStatus: "pending", firstJoined: null, envStatus: null }] });
       return json({});
     });
-    render(<SalesSessionParticipants session={{ id: "session-1", opportunityId: "opportunity-1", itemId: "item-1", type: "demo", start: "2026-07-17T09:00", end: "2026-07-17T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-17T08:00:00Z", verificationEligible: true }} fetchSales={fetchSales as typeof fetch} onOpenSupport={vi.fn()} />);
+    render(<SalesSessionParticipants session={{ id: "session-1", opportunityId: "opportunity-1", itemId: "item-1", type: "demo", start: "2026-07-17T09:00", end: "2026-07-17T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-17T08:00:00Z", lifecycle: "ended", verificationEligible: true }} fetchSales={fetchSales as typeof fetch} onOpenSupport={vi.fn()} />);
 
     await screen.findByRole("checkbox", { name: "Select Ada Lovelace for native invite" });
     const headers = screen.getAllByRole("columnheader");
     expect(headers.map((header) => header.textContent)).toEqual(["Select", "Participant", "Invite", "Last invite sent", "First joined", "Participation", "Environment", "Instant launch"]);
     expect(headers[0]?.getAttribute("style")).toContain("width: 3.5rem");
+    expect((screen.getByRole("checkbox", { name: "Select Ada Lovelace for native invite" }) as HTMLInputElement).disabled).toBe(false);
   });
 
   it("shows an accepted native invitation as pending until CloudShare confirms it as sent", async () => {

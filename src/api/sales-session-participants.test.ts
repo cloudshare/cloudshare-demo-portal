@@ -32,19 +32,23 @@ describe("Sales Session participant invitation", () => {
     const readParticipantInvitationCapability = vi.fn();
     const listParticipants = vi.fn();
     const inviteParticipants = vi.fn();
+    const findByCustomerId = vi.fn(() => { throw new Error("connection lookup must not run"); });
+    const forConnection = vi.fn(() => { throw new Error("adapter construction must not run"); });
     const diagnostics = { record: vi.fn() };
     const audit = { write: vi.fn() };
 
     const result = await handleInviteSalesSessionParticipants({
       now: () => new Date("2026-07-17T10:00:00.000Z"),
-      sessions: { findById: vi.fn().mockResolvedValue({ ...session, start: "2026-07-17T09:00", end: "2026-07-17T10:00" }) }, records: { findContact: vi.fn() }, participants: { list: vi.fn(), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
-      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), readParticipantInvitationCapability, listParticipants, inviteParticipants }) }, diagnostics, audit,
+      sessions: { findById: vi.fn().mockResolvedValue({ ...session, start: "2026-07-17T09:00", end: "2026-07-17T10:00" }) }, records: { findContact: vi.fn() }, participants: { list: vi.fn(), save: vi.fn() }, connections: { findByCustomerId },
+      deliveryFactory: { forConnection }, diagnostics, audit,
     }, { customerId: "customer-1", sessionId: session.id, actor, body: { participantIds: ["portal-1"] } });
 
     expect(result).toMatchObject({ status: 409, body: { code: "sales_session_ended", error: "Native invitations are unavailable after this Sales Session has ended.", correlationId: expect.any(String) } });
     expect(readParticipantInvitationCapability).not.toHaveBeenCalled();
     expect(listParticipants).not.toHaveBeenCalled();
     expect(inviteParticipants).not.toHaveBeenCalled();
+    expect(findByCustomerId).not.toHaveBeenCalled();
+    expect(forConnection).not.toHaveBeenCalled();
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ operation: "sales.demo_session.participants.invited", customerId: "customer-1", subject: { type: "sales_demo_session", id: "session-1" }, details: expect.objectContaining({ failureMode: "sales_session_ended", participantIds: ["portal-1"] }) }));
     expect(JSON.stringify(diagnostics.record.mock.calls)).not.toContain("remote-sales-1");
     expect(audit.write).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-1", subjectId: "session-1", outcome: "failure", details: expect.objectContaining({ participantIds: ["portal-1"] }) }));

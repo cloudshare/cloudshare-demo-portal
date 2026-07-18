@@ -321,6 +321,7 @@ export function SalesSessionParticipants({ session, fetchSales, onOpenSupport }:
   const [message, setMessage] = useState<string | null>(null);
   const [correlationId, setCorrelationId] = useState<string | null>(null);
   const [operationFailed, setOperationFailed] = useState(false);
+  const [monitoringSession, setMonitoringSession] = useState<{ lifecycle: "upcoming" | "in_progress" | "ended" | "provisioning" | "needs_attention"; nativeInvitationsAvailable: boolean } | null>(null);
   // Kept local to this roster; the next render after a per-row operation labels
   // only the selected row through its handler state.
   const refresh = useCallback(async (preserveOperationEvidence = false) => {
@@ -329,12 +330,13 @@ export function SalesSessionParticipants({ session, fetchSales, onOpenSupport }:
     try {
       const [recordsResponse, participantsResponse] = await Promise.all([fetchSales("/api/sales/accounts", { cache: "no-store" }), fetchSales(`/api/sales/enablement-sessions/${encodeURIComponent(session.id)}/participants`, { cache: "no-store" })]);
       const recordsBody = await recordsResponse.json() as { contacts?: Contact[]; error?: string };
-      const participantsBody = await participantsResponse.json() as { participants?: SalesParticipant[]; error?: string; correlationId?: string };
+      const participantsBody = await participantsResponse.json() as { session?: { lifecycle: "upcoming" | "in_progress" | "ended" | "provisioning" | "needs_attention"; nativeInvitationsAvailable: boolean }; participants?: SalesParticipant[]; error?: string; correlationId?: string };
       if (!recordsResponse.ok || !participantsResponse.ok) { if (!preserveOperationEvidence) setCorrelationId(participantsBody.correlationId ?? null); throw new Error(recordsBody.error ?? participantsBody.error ?? "Could not load Sales Participant monitoring."); }
       setContacts((recordsBody.contacts ?? []).filter((contact) => contact.opportunityId === session.opportunityId && !contact.archivedAt));
       const refreshedParticipants = participantsBody.participants ?? [];
       setParticipants(refreshedParticipants);
-      setSelectedParticipants((current) => current.filter((id) => refreshedParticipants.some((participant) => participant.id === id && !participant.needsAttention)));
+      if (participantsBody.session) setMonitoringSession(participantsBody.session);
+      setSelectedParticipants((current) => participantsBody.session?.nativeInvitationsAvailable === false ? [] : current.filter((id) => refreshedParticipants.some((participant) => participant.id === id && !participant.needsAttention)));
       if (!preserveOperationEvidence) { setCorrelationId(participantsBody.correlationId ?? null); setMessage(null); setOperationFailed(false); }
     } catch (error) { setOperationFailed(true); if (preserveOperationEvidence) setMessage("Native CloudShare invitations were requested. Participant monitoring could not refresh; investigate the invite evidence before retrying."); else setMessage(error instanceof Error ? error.message : "Could not load Sales Participant monitoring."); } finally { setLoading(false); }
   }, [fetchSales, session.id, session.opportunityId]);
@@ -376,7 +378,7 @@ export function SalesSessionParticipants({ session, fetchSales, onOpenSupport }:
     try { const response = await fetchSales(`/api/sales/enablement-sessions/${encodeURIComponent(session.id)}/participants/${encodeURIComponent(participantId)}/launch-link`, { method: "DELETE" }); const body = await response.json() as { error?: string; correlationId?: string }; if (!response.ok) { setCorrelationId(body.correlationId ?? null); throw new Error(body.error ?? "Could not revoke the Certalis launch link."); } setCorrelationId(body.correlationId ?? null); setMessage("Personalised Certalis launch link revoked."); } catch (error) { setOperationFailed(true); setMessage(error instanceof Error ? error.message : "Could not revoke the Certalis launch link."); } finally { setSaving(false); }
   };
   const availableContacts = contacts.filter((contact) => { const participant = participants.find((value) => value.opportunityContactId === contact.id); return !participant || participant.requiresCorrelationRepair; });
-  const nativeInvitationsAvailable = session.lifecycle !== "ended";
+  const nativeInvitationsAvailable = monitoringSession?.nativeInvitationsAvailable ?? session.lifecycle !== "ended";
   return <section aria-label={`Participants for ${session.sessionName ?? session.type.toUpperCase()}`} style={{ ...mutedPanelStyle, marginTop: "0.65rem", display: "grid", gap: "0.75rem" }}>
     <h3 style={{ margin: 0 }}>Sales Participants and engagement</h3><p style={{ margin: 0, color: "#52606d" }}>Register named Opportunity Contacts before access is available. Registration does not send email. Select registered participants to request native CloudShare invitations or resends; no invitation URL is shown in Certalis.</p>
     {loading ? <p>Refreshing CloudShare participant monitoring…</p> : <><fieldset><legend>Register or repair Opportunity Contacts</legend>{availableContacts.length === 0 ? <p>All active Opportunity Contacts are already registered, or no active Contacts are available.</p> : availableContacts.map((contact) => { const repairable = participants.some((participant) => participant.opportunityContactId === contact.id && participant.requiresCorrelationRepair); return <label key={contact.id} style={{ display: "block" }}><input type="checkbox" aria-label={`${contact.firstName} ${contact.lastName}${repairable ? " (repair CloudShare correlation)" : ""}`} checked={selectedContacts.includes(contact.id)} onChange={() => setSelectedContacts((current) => current.includes(contact.id) ? current.filter((id) => id !== contact.id) : [...current, contact.id])} /> {contact.firstName} {contact.lastName}{repairable ? " (repair CloudShare correlation)" : ""}</label>; })}<button type="button" style={compactButtonStyle} disabled={saving || selectedContacts.length === 0} onClick={() => void register()}>Register or repair selected participants</button></fieldset>
