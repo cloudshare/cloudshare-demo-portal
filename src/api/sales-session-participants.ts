@@ -141,9 +141,33 @@ export async function handleInviteSalesSessionParticipants(deps: Deps, request: 
       await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "failure", "One or more selected Sales Participants no longer has its Certalis correlation values in CloudShare. Refresh monitoring and investigate the correlated diagnostics before inviting.", current, { failureMode: "participant_mapping_missing_from_cloudshare", participantIds: parsed.data.participantIds });
       return { status: 409, body: { error: "One or more selected Sales Participants need attention and cannot be invited. Refresh monitoring and investigate the correlated diagnostics.", correlationId } };
     }
-    const remote = await prepared.delivery.inviteParticipants!(prepared.session.cloudShareSalesExperienceId, selected.map((participant) => participant!.cloudShareParticipantId));
-    await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "success", "Native CloudShare invitation requested for selected Sales Participants", remote, { participantIds: parsed.data.participantIds });
-    return { status: 200, body: { correlationId } };
+    const requested = await prepared.delivery.inviteParticipants!(prepared.session.cloudShareSalesExperienceId, selected.map((participant) => participant!.cloudShareParticipantId));
+    // The documented endpoint acknowledges with an empty 200 response. Treat a
+    // subsequent roster read as the only authority for the participant's
+    // invitation state, rather than claiming that acknowledgement is delivery.
+    const afterRequest = await prepared.delivery.listParticipants!(prepared.session.cloudShareSalesExperienceId);
+    const afterByProviderId = new Map(afterRequest.participants.map((participant) => [participant.id, participant]));
+    const confirmed = selected.map((stored) => {
+      const participant = afterByProviderId.get(stored!.cloudShareParticipantId);
+      return participant && participantProperties(participant).certalisSalesParticipantId === stored!.id && participantProperties(participant).certalisOpportunityContactId === stored!.opportunityContactId
+        ? { stored: stored!, participant }
+        : undefined;
+    });
+    if (confirmed.some((value) => !value)) {
+      await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "failure", "CloudShare accepted the native invitation request but did not return one or more selected Sales Participant mappings during confirmation.", requested, { failureMode: "participant_mapping_missing_from_cloudshare", participantIds: parsed.data.participantIds, httpExchanges: [current, afterRequest] });
+      return { status: 409, body: { error: "CloudShare could not confirm one or more selected Sales Participants after the invitation request. Refresh monitoring and investigate the correlated diagnostics before retrying.", correlationId } };
+    }
+    const confirmedParticipants = confirmed.filter((value): value is NonNullable<typeof value> => value !== undefined);
+    const now = new Date();
+    await Promise.all(confirmedParticipants.map(({ stored, participant }) => deps.participants.save({ ...stored, cloudShareParticipantId: participant.id, invitationStatus: participant.invitationStatus, invitedBy: participant.invitedBy, participationStatus: participant.participationStatus, firstJoined: participant.firstJoined, cloudShareEnvironmentId: participant.environmentId, environmentStatus: participant.envStatus ?? null, lastReconciledAt: now, updatedAt: now })));
+    const confirmedParticipantCount = confirmedParticipants.filter(({ participant }) => participant.invitationStatus === "sent").length;
+    const pendingConfirmationParticipantCount = confirmedParticipants.length - confirmedParticipantCount;
+    const invitationConfirmation = pendingConfirmationParticipantCount === 0 ? "confirmed" : "pending";
+    const message = invitationConfirmation === "confirmed"
+      ? "CloudShare confirmed native invitations for selected Sales Participants."
+      : "CloudShare accepted the native invitation request, but has not yet confirmed the invitation as sent.";
+    await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "success", message, requested, { participantIds: parsed.data.participantIds, confirmedParticipantCount, pendingConfirmationParticipantCount, httpExchanges: [current, afterRequest] });
+    return { status: 200, body: { correlationId, invitationConfirmation, confirmedParticipantCount, pendingConfirmationParticipantCount } };
   }
   catch (error) { return failed(deps, request, prepared.session, correlationId, "sales.demo_session.participants.invited", "CloudShare could not send the selected native invitations.", error); }
 }

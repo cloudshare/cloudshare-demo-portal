@@ -1837,6 +1837,50 @@ semantics and the role of `count`.
 
 ---
 
+## GAP-30 — Sales participant invite acknowledgement does not confirm invitation dispatch
+
+| Field | Detail |
+|---|---|
+| **Status** | Observed live — provider cause or prerequisite unconfirmed |
+| **Verified live** | Yes — Certalis Sales Admin UI, 2026-07-18 |
+
+**Observed behaviour**
+
+The documented `POST /sales/{id}/participants/invite` endpoint accepts the documented
+array of Sales Participant IDs and returns HTTP 200 with an empty body. In #348 human
+QA, Certalis sent the exact documented request for two registered, property-correlated
+Sales Participants. The immediate authoritative roster read still returned
+`invitationStatus: "notSent"` for both participants.
+
+The 200 is therefore an acknowledgement that CloudShare accepted the request; it is
+not proof that the native email was dispatched. The published endpoint does not return
+per-participant delivery results, errors, or a job identifier. Certalis has no
+documented alternate native-invite endpoint to call. In particular, it must not expose
+or fall back to participant invitation URLs.
+
+**Portal mitigation**
+
+The native-invite handler now performs a roster read immediately after the POST and
+uses that returned `invitationStatus` as the only delivery authority. It records both
+exchanges under the same correlation ID, persists the returned monitoring state, and
+shows either confirmed delivery or "accepted, not yet confirmed as sent" in the Sales
+Admin UI. It never labels the empty-body acknowledgement as a sent email.
+
+**Action required**
+
+CloudShare must confirm whether a Sales Experience created with
+`sendInvitations: "dontSend"` has an additional documented prerequisite for the
+explicit invite endpoint, and why the endpoint can acknowledge with HTTP 200 while
+the roster remains `notSent`. Until that is resolved, #348 cannot claim verified
+native email delivery; it can only claim a correctly issued and correlated provider
+request plus authoritative state monitoring.
+
+**Code reference:** `src/api/sales-session-participants.ts`,
+`src/integrations/cloudshare/sales-delivery.ts`,
+`docs/api/assets/cloudshare-public-api-v4-2026-07-10.json`
+
+---
+
 ## GAP-N — Short descriptive title
 
 | Field | Detail |

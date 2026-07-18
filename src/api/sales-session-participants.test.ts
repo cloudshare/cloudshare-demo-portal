@@ -303,6 +303,26 @@ describe("Sales Session participant invitation", () => {
     expect(JSON.stringify(result.body)).not.toContain("remote-1");
   });
 
+  it("does not report a native invitation as sent until CloudShare's roster confirms it", async () => {
+    const inviteParticipants = vi.fn().mockResolvedValue({ request: { method: "POST", path: "/v4/sales/remote-sales-1/participants/invite", body: ["remote-1"] }, response: { status: 200, body: "" } });
+    const listParticipants = vi.fn()
+      .mockResolvedValueOnce(rosterEvidence([remoteParticipant("remote-1", "portal-1", "contact-1")]))
+      .mockResolvedValueOnce(rosterEvidence([remoteParticipant("remote-1", "portal-1", "contact-1")]));
+    const diagnostics = { record: vi.fn() };
+
+    const result = await handleInviteSalesSessionParticipants({
+      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn() }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
+      deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants, inviteParticipants }) }, diagnostics,
+    }, { customerId: "customer-1", sessionId: session.id, actor, body: { participantIds: ["portal-1"] } });
+
+    expect(result).toMatchObject({ status: 200, body: { invitationConfirmation: "pending", confirmedParticipantCount: 0, pendingConfirmationParticipantCount: 1 } });
+    expect(listParticipants).toHaveBeenCalledTimes(2);
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({
+      message: "CloudShare accepted the native invitation request, but has not yet confirmed the invitation as sent.",
+      details: expect.objectContaining({ confirmedParticipantCount: 0, pendingConfirmationParticipantCount: 1, httpExchanges: expect.arrayContaining([expect.objectContaining({ request: expect.objectContaining({ method: "GET" }) })]) }),
+    }));
+  });
+
   it("refuses an invite when the provider row no longer carries its exact Certalis identity pair", async () => {
     const inviteParticipants = vi.fn();
     const result = await handleInviteSalesSessionParticipants({

@@ -148,7 +148,25 @@ describe("Sales Participant monitoring", () => {
     render(<SalesSessionParticipants session={{ id: "session-1", opportunityId: "opportunity-1", itemId: "item-1", type: "demo", start: "2026-07-17T09:00", end: "2026-07-17T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-17T08:00:00Z", verificationEligible: true }} fetchSales={fetchSales as typeof fetch} onOpenSupport={vi.fn()} />);
 
     await screen.findByRole("checkbox", { name: "Select Ada Lovelace for native invite" });
-    expect(screen.getAllByRole("columnheader").map((header) => header.textContent)).toEqual(["Select", "Participant", "Invite", "First joined", "Participation", "Environment"]);
+    const headers = screen.getAllByRole("columnheader");
+    expect(headers.map((header) => header.textContent)).toEqual(["Select", "Participant", "Invite", "First joined", "Participation", "Environment"]);
+    expect(headers[0]?.getAttribute("style")).toContain("width: 3.5rem");
+  });
+
+  it("shows an accepted native invitation as pending until CloudShare confirms it as sent", async () => {
+    const user = userEvent.setup();
+    const fetchSales = vi.fn().mockImplementation(async (input: string, init?: RequestInit) => {
+      if (input === "/api/sales/accounts") return json({ contacts: [{ id: "contact-1", opportunityId: "opportunity-1", firstName: "Ada", lastName: "Lovelace", archivedAt: null }] });
+      if (input === "/api/sales/enablement-sessions/session-1/participants" && !init?.method) return json({ participants: [{ id: "portal-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Lovelace", invitationStatus: "notSent", participationStatus: "pending", firstJoined: null, envStatus: null }] });
+      if (input === "/api/sales/enablement-sessions/session-1/participants/invite") return json({ correlationId: "corr-invite-1", invitationConfirmation: "pending", confirmedParticipantCount: 0, pendingConfirmationParticipantCount: 1 });
+      return json({});
+    });
+    render(<SalesSessionParticipants session={{ id: "session-1", opportunityId: "opportunity-1", itemId: "item-1", type: "demo", start: "2026-07-17T09:00", end: "2026-07-17T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-17T08:00:00Z", verificationEligible: true }} fetchSales={fetchSales as typeof fetch} onOpenSupport={vi.fn()} />);
+
+    await user.click(await screen.findByRole("checkbox", { name: "Select Ada Lovelace for native invite" }));
+    await user.click(screen.getByRole("button", { name: "Send or resend native invites" }));
+
+    expect(await screen.findByText("CloudShare accepted the native invitation request, but has not yet confirmed it as sent. Refresh engagement before resending.")).not.toBeNull();
   });
 
   it("keeps a repairable legacy participant available for explicit correlation repair", async () => {
