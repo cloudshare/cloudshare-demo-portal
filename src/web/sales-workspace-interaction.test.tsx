@@ -483,6 +483,29 @@ describe("SalesWorkspace interaction", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/sales/timezones", expect.objectContaining({ method: "PUT", body: expect.stringContaining("Europe/London") })));
   });
 
+  it("keeps a stale timezone response's saved preferences and never persists the UTC/demo defaults", async () => {
+    const preferenceWrites: string[] = [];
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const path = String(input);
+      if (path === "/api/sales/timezones" && !init?.method) return json({ timezones: [{ id: "UTC", name: "UTC" }, { id: "Europe/London", name: "London" }], freshness: "stale", warning: "CloudShare could not refresh timezones; showing the last verified catalogue.", correlationId: "corr-stale-timezones", preference: { timeZone: "Europe/London", experienceType: "poc" } });
+      if (path === "/api/sales/timezones" && init?.method === "PUT") { preferenceWrites.push(String(init.body)); return new Response(null, { status: 204 }); }
+      if (path === "/api/sales/items") return json({ activeItems: [] });
+      if (path.startsWith("/api/sales/enablement-sessions?")) return json({ sessions: [] });
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [], total: 0 });
+      if (path === "/api/sales/session-configuration") return json({});
+      return json({ error: `Unexpected request ${path}` }, 500);
+    });
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    await waitFor(() => expect(preferenceWrites).toContain(JSON.stringify({ timeZone: "Europe/London", experienceType: "poc" })));
+    expect(preferenceWrites).not.toContain(JSON.stringify({ timeZone: "UTC", experienceType: "demo" }));
+    expect((screen.getByRole("combobox", { name: "Time zone" }) as HTMLInputElement).value).toBe("Europe/London");
+    expect((screen.getByRole("combobox", { name: "Sales Experience type" }) as HTMLSelectElement).value).toBe("poc");
+    expect(screen.getByText(/time-zone list is temporarily cached/).textContent).toContain("temporarily cached");
+    expect(fetchMock).toHaveBeenCalledWith("/api/sales/timezones", expect.objectContaining({ cache: "no-store" }));
+    expect(consoleError).not.toHaveBeenCalled();
+  });
+
   it("surfaces a failed reconciliation with its support correlation and defers name edits until live full-PUT compatibility is proven", async () => {
     const user = userEvent.setup();
     vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
