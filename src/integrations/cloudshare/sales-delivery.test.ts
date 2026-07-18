@@ -27,8 +27,25 @@ describe("CloudShare Sales Delivery", () => {
   it("reads and deduplicates the documented Sales Pros recovery contacts", async () => {
     const requestV4Detailed = vi.fn().mockResolvedValue({ data: { count: 3, salesPros: [{ name: "Main <Owner>", email: "main@example.test", type: "mainSalesPro" }, { name: "Additional", email: "extra@example.test", type: "salesPro" }, { name: "Duplicate", email: "MAIN@example.test", type: "salesPro" }] }, request: { method: "GET", path: "/sales/sales-1/salespros" }, response: { status: 200 } });
     const result = await createCloudShareSalesDelivery({ requestV4Detailed } as never).listSalesPros("sales-1");
-    expect(requestV4Detailed).toHaveBeenCalledWith(expect.objectContaining({ method: "GET", path: "/sales/sales-1/salespros" }));
+    expect(requestV4Detailed).toHaveBeenCalledWith(expect.objectContaining({ method: "GET", path: "/sales/sales-1/salespros", query: { offset: "0", limit: "100" } }));
     expect(result.salesPros).toEqual([{ name: "Main <Owner>", email: "main@example.test", type: "mainSalesPro" }, { name: "Additional", email: "extra@example.test", type: "salesPro" }]);
+  });
+  it("accepts an omitted Sales Pro name and paginates by documented count while preserving order and deduping", async () => {
+    const first = Array.from({ length: 100 }, (_, index) => ({ ...(index === 0 ? {} : { name: `Pro ${index}` }), email: `pro-${index}@example.test`, type: index === 0 ? "mainSalesPro" : "salesPro" }));
+    const requestV4Detailed = vi.fn()
+      .mockResolvedValueOnce({ data: { count: 102, salesPros: first }, request: { method: "GET", path: "/sales/sales-1/salespros", query: { offset: "0", limit: "100" } }, response: { status: 200, body: {} } })
+      .mockResolvedValueOnce({ data: { count: 102, salesPros: [first[0], { name: "Last", email: "last@example.test", type: "salesPro" }] }, request: { method: "GET", path: "/sales/sales-1/salespros", query: { offset: "100", limit: "100" } }, response: { status: 200, body: {} } });
+    const result = await createCloudShareSalesDelivery({ requestV4Detailed } as never).listSalesPros("sales-1");
+    expect(requestV4Detailed.mock.calls.map(([spec]) => spec.query)).toEqual([{ offset: "0", limit: "100" }, { offset: "100", limit: "100" }]);
+    expect(result.salesPros).toHaveLength(101); expect(result.salesPros[0]).toEqual({ email: "pro-0@example.test", type: "mainSalesPro" }); expect(result.salesPros.at(-1)?.email).toBe("last@example.test"); expect(result.response.status).toBe(200);
+  });
+  it("stops safely on a short or empty Sales Pro page and rejects counts beyond the bounded read budget", async () => {
+    const short = vi.fn().mockResolvedValue({ data: { count: 50, salesPros: [{ email: "owner@example.test", type: "mainSalesPro" }] }, request: { method: "GET", path: "/sales/sales-1/salespros" }, response: { status: 200 } });
+    await expect(createCloudShareSalesDelivery({ requestV4Detailed: short } as never).listSalesPros("sales-1")).resolves.toMatchObject({ salesPros: [{ email: "owner@example.test" }] }); expect(short).toHaveBeenCalledTimes(1);
+    const empty = vi.fn().mockResolvedValue({ data: { count: 100, salesPros: [] }, request: { method: "GET", path: "/sales/sales-1/salespros" }, response: { status: 200 } });
+    await expect(createCloudShareSalesDelivery({ requestV4Detailed: empty } as never).listSalesPros("sales-1")).resolves.toMatchObject({ salesPros: [] }); expect(empty).toHaveBeenCalledTimes(1);
+    const excessive = vi.fn().mockResolvedValue({ data: { count: 1001, salesPros: [{ email: "owner@example.test", type: "mainSalesPro" }] }, request: { method: "GET", path: "/sales/sales-1/salespros" }, response: { status: 200 } });
+    await expect(createCloudShareSalesDelivery({ requestV4Detailed: excessive } as never).listSalesPros("sales-1")).rejects.toThrow("bounded recovery-contact read limit"); expect(excessive).toHaveBeenCalledTimes(1);
   });
   it("canonicalizes documented Sales environment statuses case-insensitively and rejects unsupported values", async () => {
     await expect(deliveryForRoster({ count: 1, items: [documentedParticipant({ envStatus: "preparing" })] }).listParticipants("sales-1")).resolves.toMatchObject({ participants: [expect.objectContaining({ envStatus: "Preparing" })] });

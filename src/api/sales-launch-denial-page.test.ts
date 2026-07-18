@@ -18,4 +18,8 @@ describe("Certalis public launch denial page", () => {
     expect(denialPage("corr-2", { salesPros: [], invitation: { status: "sent", invitedAt: null, invitedBy: null } })).toContain("Invitation sent; sent time unavailable.");
     expect(denialPage("corr-3", { salesPros: [], invitation: { status: "notSent", invitedAt: null, invitedBy: null } })).toContain("No CloudShare invitation has been recorded as sent.");
   });
+  it("renders an unnamed Sales Pro as a useful role-labelled email without inventing a name", () => {
+    const html = denialPage("corr-4", { salesPros: [{ email: "owner@example.test", type: "mainSalesPro" }], invitation: { status: "notSent", invitedAt: null, invitedBy: null } });
+    expect(html).toContain("owner@example.test"); expect(html).toContain("Main Sales Pro"); expect(html).not.toContain("undefined");
+  });
 });

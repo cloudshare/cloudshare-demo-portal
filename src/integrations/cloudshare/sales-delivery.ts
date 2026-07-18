@@ -62,7 +62,7 @@ export interface SalesDelivery {
   inviteParticipants(salesExperienceId: string, participantIds: readonly string[]): Promise<SalesDeliveryEvidence>;
   createSponsoredLink(salesExperienceId: string, participant: Pick<SalesParticipantInput, "firstName" | "lastName" | "email">): Promise<{ readonly loginUrl: string } & SalesDeliveryEvidence>;
 }
-export interface SalesProContact { readonly name: string; readonly email: string; readonly type: "mainSalesPro" | "salesPro"; }
+export interface SalesProContact { readonly name?: string; readonly email: string; readonly type: "mainSalesPro" | "salesPro"; }
 
 export const SALES_PARTICIPANT_CORRELATION_PROPERTY_KEYS = [
   "certalisSalesParticipantId",
@@ -147,7 +147,9 @@ const salesParticipantSchema = z.object({
 const salesUserPropertyDefinitionSchema = z.object({ id: z.string().min(1), name: z.string().min(1), order: z.number().int().optional() });
 const salesUserPropertyDefinitionsSchema = z.array(salesUserPropertyDefinitionSchema);
 const sponsoredLinkSchema = z.object({ id: z.string().min(1), loginUrl: z.string().url() });
-const salesProsSchema = z.object({ count: z.number().int().nonnegative().optional(), salesPros: z.array(z.object({ name: z.string().min(1), email: z.string().email().max(100), type: z.enum(["mainSalesPro", "salesPro"]) })) });
+const salesProsSchema = z.object({ count: z.number().int().nonnegative().optional(), salesPros: z.array(z.object({ name: z.string().min(1).optional(), email: z.string().email().max(100), type: z.enum(["mainSalesPro", "salesPro"]) })) });
+const SALES_PRO_PAGE_LIMIT = 100;
+const SALES_PRO_MAX_PAGES = 10;
 
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -200,9 +202,20 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
       return { participantInvitationsEnabled: sendInvitations === "salesParticipantsOnly" || sendInvitations === "participantsOnly" || sendInvitations === "salesProsAndParticipants", sendInvitations, ...evidence };
     },
     async listSalesPros(salesExperienceId) {
-      const { data, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}/salespros`, schema: salesProsSchema });
+      const path = `/sales/${encodeURIComponent(salesExperienceId)}/salespros`;
       const seen = new Set<string>();
-      return { salesPros: data.salesPros.filter((salesPro) => { const key = salesPro.email.toLowerCase(); if (seen.has(key)) return false; seen.add(key); return true; }), ...evidence };
+      const salesPros: SalesProContact[] = [];
+      let offset = 0;
+      let evidence: SalesDeliveryEvidence | undefined;
+      for (let page = 0; page < SALES_PRO_MAX_PAGES; page += 1) {
+        const result = await detailed({ method: "GET", path, query: { offset: String(offset), limit: String(SALES_PRO_PAGE_LIMIT) }, schema: salesProsSchema });
+        evidence = result.evidence;
+        for (const salesPro of result.data.salesPros) { const key = salesPro.email.toLowerCase(); if (!seen.has(key)) { seen.add(key); salesPros.push(salesPro); } }
+        offset += result.data.salesPros.length;
+        if (result.data.count !== undefined && result.data.count > SALES_PRO_PAGE_LIMIT * SALES_PRO_MAX_PAGES) throw new Error("CloudShare Sales Pro count exceeds the bounded recovery-contact read limit.");
+        if (result.data.salesPros.length === 0 || result.data.salesPros.length < SALES_PRO_PAGE_LIMIT || (result.data.count !== undefined && offset >= result.data.count)) return { salesPros, ...evidence };
+      }
+      throw new Error("CloudShare Sales Pro pagination exceeded the bounded page limit.");
     },
     async updateSession(salesExperienceId, changes) {
       const { data: current } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceSchema });

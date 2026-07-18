@@ -51,4 +51,12 @@ describe("Sales participant instant launch", () => {
     expect(result.body).toMatchObject({ error: "This Certalis launch link is unavailable." });
     expect(transport.diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ details: expect.objectContaining({ failureMode: "transport_failure", cause: "connection reset", network: "ECONNRESET", tls: "certificate verify failed" }), response: expect.objectContaining({ network: "ECONNRESET", tls: "certificate verify failed" }) }));
   });
+  it.each([
+    ["Session repository", { sessions: { findById: vi.fn().mockRejectedValue(new Error("session database secret")) } }],
+    ["Participant repository", { participants: { list: vi.fn().mockRejectedValue(new Error("participant database secret")) } }],
+  ])("keeps a known denial generic when the %s fails", async (_label, override) => {
+    const d = deps(override); d.links.findByTokenHash.mockResolvedValue({ id: "link-1", customerId: "certalis", salesDemoSessionId: "session-1", salesSessionParticipantId: "participant-1", tokenHash: "hash", revokedAt: null, createdAt: now });
+    const result = await handleSalesParticipantLaunch(d, "a".repeat(43));
+    expect(result.status).toBe(404); expect(result.body).toMatchObject({ error: "This Certalis launch link is unavailable.", correlationId: expect.any(String) }); expect(result.body?.denialContext).toBeUndefined(); expect(JSON.stringify(result.body)).not.toMatch(/database secret|owner@example|participant-1|sales-1|a{20}/);
+  });
 });
