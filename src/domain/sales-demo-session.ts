@@ -38,8 +38,15 @@ export interface SalesDemoSessionRepository {
   listByAccount?(customerId: string, accountId: string): Promise<readonly SalesDemoSession[]>;
   listByOpportunity(customerId: string, opportunityId: string): Promise<readonly SalesDemoSession[]>;
   findById?(customerId: string, id: string): Promise<SalesDemoSession | null>;
-  updateOperationalState?(id: string, state: { cloudShareSalesExperienceId?: string; operationalStatus: "active" | "needs_attention"; attentionReason?: string | null }): Promise<void>;
+  updateOperationalState?(id: string, state: { cloudShareSalesExperienceId?: string; salesProEmail?: string; salesProDisplayName?: string; operationalStatus: "active" | "needs_attention"; attentionReason?: string | null }): Promise<void>;
   updateDisplayName?(id: string, sessionName: string): Promise<void>;
+}
+
+/** A repository-normalized conflict for the one reservation key used before
+ * any CloudShare interaction. Other persistence errors remain retryable local
+ * failures rather than being misreported as revision collisions. */
+export class SalesDemoSessionRevisionConflictError extends Error {
+  constructor() { super("Sales Enablement Session revision is already reserved."); this.name = "SalesDemoSessionRevisionConflictError"; }
 }
 
 export function createInMemorySalesDemoSessionRepository(): SalesDemoSessionRepository {

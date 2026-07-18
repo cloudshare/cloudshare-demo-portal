@@ -1,9 +1,15 @@
 import type { PrismaClient } from "@prisma/client";
-import type { SalesDemoSession, SalesDemoSessionRepository } from "@/domain/sales-demo-session";
+import { SalesDemoSessionRevisionConflictError, type SalesDemoSession, type SalesDemoSessionRepository } from "@/domain/sales-demo-session";
 
 export function createPrismaSalesDemoSessionRepository(prisma: PrismaClient): SalesDemoSessionRepository {
   return {
-    async save(session) { await prisma.salesDemoSession.create({ data: { ...session } }); },
+    async save(session) {
+      try { await prisma.salesDemoSession.create({ data: { ...session } }); }
+      catch (error) {
+        if (isSalesSessionRevisionConflict(error)) throw new SalesDemoSessionRevisionConflictError();
+        throw error;
+      }
+    },
     async list(customerId) { return (await prisma.salesDemoSession.findMany({ where: { customerId }, orderBy: { createdAt: "desc" } })).map(toDomain); },
     async listByAccount(customerId, accountId) { return (await prisma.salesDemoSession.findMany({ where: { customerId, opportunity: { accountId } }, orderBy: { createdAt: "desc" } })).map(toDomain); },
     async findById(customerId, id) { const row = await prisma.salesDemoSession.findFirst({ where: { customerId, id } }); return row ? toDomain(row) : null; },
@@ -11,6 +17,12 @@ export function createPrismaSalesDemoSessionRepository(prisma: PrismaClient): Sa
     async updateOperationalState(id, state) { await prisma.salesDemoSession.update({ where: { id }, data: state }); },
     async updateDisplayName(id, sessionName) { await prisma.salesDemoSession.update({ where: { id }, data: { sessionName } }); },
   };
+}
+
+function isSalesSessionRevisionConflict(error: unknown): boolean {
+  if (typeof error !== "object" || error === null || !("code" in error) || (error as { code?: unknown }).code !== "P2002") return false;
+  const target = (error as { meta?: { target?: unknown } }).meta?.target;
+  return Array.isArray(target) && target.length === 3 && target.includes("customerId") && target.includes("opportunityId") && target.includes("revision");
 }
 
 function toDomain(row: { id: string; customerId: string; opportunityId: string; itemId: string; cloudShareSalesExperienceId: string; externalId: string; type: string; start: string; end: string; timeZone: string; salesProEmail: string; salesProDisplayName: string; registrationType: string; sendInvitations: string; sessionName: string; revision: number; operationalStatus: string; attentionReason: string | null; createdAt: Date }): SalesDemoSession {

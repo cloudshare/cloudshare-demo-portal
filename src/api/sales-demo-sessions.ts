@@ -5,7 +5,7 @@ import type { CloudShareClientFactory, CloudShareConnectionRepository } from "@/
 import type { DiagnosticActor, DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { ItemRepository } from "@/domain/item";
 import type { SalesExperienceType } from "@/domain/sales-experience-type";
-import type { SalesDemoSession, SalesDemoSessionRepository } from "@/domain/sales-demo-session";
+import { SalesDemoSessionRevisionConflictError, type SalesDemoSession, type SalesDemoSessionRepository } from "@/domain/sales-demo-session";
 import type { SalesRecordRepository } from "@/domain/sales-records";
 import { isValidCloudShareWallClock } from "@/domain/cloudshare-wall-clock";
 import { isSalesSessionVerificationEligible } from "@/domain/sales-session-verification";
@@ -101,6 +101,14 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
   // It is never returned to the browser or persisted as a portal credential.
   const passphrase = opaqueCloudShareId(randomUUID());
   const correlationId = randomUUID();
+  const now = (deps.now ?? (() => new Date()))();
+  // Reserve before *any* CloudShare read. A rejected reservation is a wholly
+  // local event, so retry safety must not depend on external preflight calls.
+  const reservation: SalesDemoSession = { id, customerId: request.customerId, opportunityId: opportunity.id, itemId: item.id, cloudShareSalesExperienceId: `pending:${id}`, externalId, type: parsed.data.type, start: parsed.data.start, end: parsed.data.end, timeZone: parsed.data.timeZone, salesProEmail: parsed.data.salesProEmail, salesProDisplayName: "Pending CloudShare validation", registrationType: "registeredParticipantsOnly", sendInvitations: "salesProsAndParticipants", sessionName, revision, operationalStatus: "provisioning", createdAt: now };
+  if (deps.sessions.updateOperationalState) {
+    try { await deps.sessions.save(reservation); }
+    catch (error) { return reservationPersistenceFailure(deps, request, reservation, correlationId, now, error); }
+  }
   const delivery = deps.deliveryFactory?.forConnection(connection) ?? createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection));
   try {
     const validator = deps.itemProvisioningValidator ?? deps.itemProvisioningValidatorFactory?.forConnection(connection);
@@ -115,19 +123,11 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     await recordProjectMemberRead(deps, request, correlationId, item.id, item.project.id, memberRead, "success");
     const selectedSalesPro = memberRead.members.find((member) => member.email.toLowerCase() === parsed.data.salesProEmail.toLowerCase());
     if (!selectedSalesPro) throw new SalesProjectMemberSelectionError("The selected Sales Pro is no longer an active member of this Item's CloudShare Project.", memberRead);
-    const now = (deps.now ?? (() => new Date()))();
-    const reservation: SalesDemoSession = { id, customerId: request.customerId, opportunityId: opportunity.id, itemId: item.id, cloudShareSalesExperienceId: `pending:${id}`, externalId, type: parsed.data.type, start: parsed.data.start, end: parsed.data.end, timeZone: parsed.data.timeZone, salesProEmail: selectedSalesPro.email, salesProDisplayName: selectedSalesPro.displayName, registrationType: "registeredParticipantsOnly", sendInvitations: "salesProsAndParticipants", sessionName, revision, operationalStatus: "provisioning", createdAt: now };
-    // Prisma-backed repositories reserve the unique revision before CloudShare.
-    // A collision therefore returns before any external Experience is created.
-    if (deps.sessions.updateOperationalState) {
-      try { await deps.sessions.save(reservation); }
-      catch { return response(409, { error: "A Sales Enablement Session is already being provisioned for this Opportunity revision. Refresh the Session operations view before retrying.", needsAttention: true }); }
-    }
     const created = await delivery.createSession(toDeliveryInput(parsed.data, item, opportunity.name, externalId, passphrase, selectedSalesPro.email, sessionName));
-    const session: SalesDemoSession = { ...reservation, cloudShareSalesExperienceId: created.salesExperienceId, operationalStatus: "active" };
+    const session: SalesDemoSession = { ...reservation, salesProEmail: selectedSalesPro.email, salesProDisplayName: selectedSalesPro.displayName, cloudShareSalesExperienceId: created.salesExperienceId, operationalStatus: "active" };
     // Deliberate partial-failure behaviour: the external Experience is retained
     // when local persistence fails; support evidence identifies its immutable ID.
-    try { if (deps.sessions.updateOperationalState) await deps.sessions.updateOperationalState(id, { cloudShareSalesExperienceId: created.salesExperienceId, operationalStatus: "active", attentionReason: null }); else await deps.sessions.save(session); } catch (error) {
+    try { if (deps.sessions.updateOperationalState) await deps.sessions.updateOperationalState(id, { cloudShareSalesExperienceId: created.salesExperienceId, salesProEmail: selectedSalesPro.email, salesProDisplayName: selectedSalesPro.displayName, operationalStatus: "active", attentionReason: null }); else await deps.sessions.save(session); } catch (error) {
       // Neither evidence store may erase the already-created remote ID from the
       // response: the admin must be told not to retry even during a secondary
       // observability outage.
@@ -193,6 +193,19 @@ async function rejected(deps: SalesDemoSessionDeps, request: SalesDemoSessionReq
     deps.audit?.write({ id: randomUUID(), occurredAt: now, customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.created", subjectType: "sales_demo_session", subjectId, outcome: "denied", correlationId, details: { reason, ...externalIds }, error }),
   ]);
   return response(status, { error, correlationId });
+}
+async function reservationPersistenceFailure(deps: SalesDemoSessionDeps, request: SalesDemoSessionRequest, reservation: SalesDemoSession, correlationId: string, occurredAt: Date, error: unknown) {
+  const conflict = error instanceof SalesDemoSessionRevisionConflictError;
+  const failureMode = conflict ? "revision_collision" : "local_reservation_persistence";
+  const message = conflict
+    ? "A Sales Enablement Session is already being provisioned for this Opportunity revision. Refresh the Session operations view before retrying."
+    : "Certalis could not reserve the Sales Enablement Session locally. No CloudShare operation was attempted; review support diagnostics and retry.";
+  const details = { integrationSurface: "portal.sales_demo_sessions", failureMode, cloudShareAttempted: false, opportunityId: reservation.opportunityId, itemId: reservation.itemId };
+  await Promise.allSettled([
+    evidence(deps, request, correlationId, reservation, "failure", message, undefined, details),
+    deps.audit?.write({ id: randomUUID(), occurredAt, customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.created", subjectType: "sales_demo_session", subjectId: reservation.id, outcome: "failure", correlationId, details, error: error instanceof Error ? error.message : "Local reservation persistence failed" }),
+  ]);
+  return response(conflict ? 409 : 503, { error: message, correlationId, needsAttention: true });
 }
 async function evidence(deps: SalesDemoSessionDeps, request: SalesDemoSessionRequest, correlationId: string, session: SalesDemoSession, outcome: "success" | "failure", message: string, cloudshare: { request: unknown; response: unknown } | undefined, details: Record<string, unknown>) {
   await deps.diagnostics?.record({ source: "sales-demo-sessions", operation: "sales.demo_session.created", outcome, level: outcome === "failure" ? "warn" : "info", customerId: request.customerId, actor: request.actor, subject: { type: "sales_demo_session", id: session.id }, correlationId, message, externalIds: { cloudShareSalesExperienceId: session.cloudShareSalesExperienceId, externalId: session.externalId, opportunityId: session.opportunityId, itemId: session.itemId }, request: cloudshare?.request as Record<string, unknown> | undefined, response: cloudshare?.response as Record<string, unknown> | undefined, details });
