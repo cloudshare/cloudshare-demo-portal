@@ -1837,7 +1837,7 @@ semantics and the role of `count`.
 
 ---
 
-## GAP-30 — Live Sales roster uses lowercase `preparing` environment status
+## GAP-31 — Live Sales roster uses lowercase `preparing` environment status
 
 | Field | Evidence |
 | --- | --- |
@@ -1849,7 +1849,7 @@ semantics and the role of `count`.
 
 **Portal behavior:** `SalesDelivery` normalizes only the observed lowercase `preparing` wire value to typed `Preparing` at the CloudShare adapter seam. Other values remain strictly validated.
 
-## GAP-31 — Sales participant invite acknowledgement does not confirm invitation dispatch
+## GAP-30 — Sales participant invite acknowledgement does not confirm invitation dispatch
 
 | Field | Detail |
 |---|---|
@@ -1944,5 +1944,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-07-18 (added GAP-30 live Sales invitation acknowledgement evidence).
+*Last updated: 2026-07-18 (added GAP-31 live Sales roster environment-status evidence).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*
