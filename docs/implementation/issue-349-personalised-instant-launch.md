@@ -15,6 +15,8 @@ integration seam; live verification remains separate.
 
 ## Deep-module design
 
+`SalesSessionParticipant.id` is the participant row's global primary key and every row belongs to exactly one `SalesDemoSession`. Diagnostic `subjectId` therefore identifies the session participant without a redundant `sessionId`; every read remains independently Customer-scoped.
+
 `sales-participant-launch` is the deep module at the launch-capability seam. Its small interface
 creates, revokes, and resolves an opaque capability; callers never learn hashing, token generation,
 ownership joins, timing checks, or CloudShare wire paths. The public redirect handler returns only a

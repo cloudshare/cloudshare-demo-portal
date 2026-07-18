@@ -52,6 +52,7 @@ function matchesQuery(entry: DiagnosticLogEntry, query: DiagnosticLogQuery): boo
   if (query.examAttemptId !== undefined && entry.examAttemptId !== query.examAttemptId) {
     return false;
   }
+  if (query.subjectId !== undefined && entry.subject?.id !== query.subjectId) return false;
   if (
     query.candidateEmail !== undefined &&
     entry.candidateEmail?.toLowerCase() !== query.candidateEmail.toLowerCase()
@@ -236,6 +237,7 @@ export function createPrismaDiagnosticLogRepository(
         ...(query.outcome !== undefined ? { outcome: query.outcome } : {}),
         ...(query.source !== undefined ? { source: query.source } : {}),
         ...(query.correlationId !== undefined ? { correlationId: query.correlationId } : {}),
+        ...(query.subjectId !== undefined ? { subjectId: query.subjectId } : {}),
         ...(occurredAt ? { occurredAt } : {}),
       };
 

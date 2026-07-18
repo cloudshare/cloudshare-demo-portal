@@ -646,6 +646,7 @@ describe("SalesWorkspace interaction", () => {
     const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText } });
     let participantReads = 0;
+    let launchLinkCreates = 0;
     const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
       const path = String(input);
       if (path === "/api/sales/items") return json({ activeItems: [] });
@@ -657,7 +658,7 @@ describe("SalesWorkspace interaction", () => {
       if (path === "/api/sales/enablement-sessions/session-1/participants" && !init?.method) { participantReads += 1; return participantReads === 2 ? json({ error: "Monitoring temporarily unavailable" }, 502) : json({ participants: [], correlationId: "corr-read-1" }); }
       if (path === "/api/sales/enablement-sessions/session-1/participants" && init?.method === "POST") return json({ participants: [{ id: "portal-participant-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Lovelace", invitationStatus: "notSent", invitedBy: null, participationStatus: "pending", firstJoined: null, envStatus: null }], correlationId: "corr-register-1" }, 201);
       if (path === "/api/sales/enablement-sessions/session-1/participants/invite" && init?.method === "POST") return json({ correlationId: "corr-invite-1" });
-      if (path === "/api/sales/enablement-sessions/session-1/participants/portal-participant-1/launch-link" && init?.method === "POST") return json({ launchUrl: "/sales/launch/opaque-certalis-token", correlationId: "corr-launch-1" }, 201);
+      if (path === "/api/sales/enablement-sessions/session-1/participants/portal-participant-1/launch-link" && init?.method === "POST") { launchLinkCreates += 1; return launchLinkCreates === 3 ? json({ error: "Launch link generation failed.", correlationId: "corr-launch-fail" }, 502) : json({ launchUrl: "/sales/launch/opaque-certalis-token", correlationId: "corr-launch-1" }, 201); }
       if (path === "/api/sales/enablement-sessions/session-1/participants/portal-participant-1/launch-link" && init?.method === "DELETE") return json({ correlationId: "corr-revoke-1" });
       return json({ error: `Unexpected request ${path}` }, 500);
     });
@@ -676,11 +677,16 @@ describe("SalesWorkspace interaction", () => {
     expect(screen.getByRole("button", { name: "Open support diagnostics for latest participant operation (corr-invite-1)" })).not.toBeNull();
     await user.click(screen.getByRole("button", { name: "Copy launch link" }));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith(expect.stringContaining("/sales/launch/opaque-certalis-token")));
+    expect((await screen.findByText("Personalised Certalis launch link copied. Any prior link for this participant is now revoked.")).closest("[role]")?.getAttribute("role")).toBe("status");
     await user.click(screen.getByRole("button", { name: "Copy launch link" }));
     expect(writeText).toHaveBeenCalledTimes(2);
     expect(screen.queryByText("cloudshare.example")).toBeNull();
     await user.click(screen.getByRole("button", { name: "Revoke link" }));
     expect(fetchMock).toHaveBeenCalledWith("/api/sales/enablement-sessions/session-1/participants/portal-participant-1/launch-link", expect.objectContaining({ method: "DELETE" }));
+    expect((await screen.findByText("Personalised Certalis launch link revoked.")).closest("[role]")?.getAttribute("role")).toBe("status");
+    await user.click(screen.getByRole("button", { name: "Copy launch link" }));
+    expect((await screen.findByText("Launch link generation failed.")).closest("[role]")?.getAttribute("role")).toBe("alert");
+    expect(screen.getByRole("button", { name: "Open support diagnostics (corr-launch-fail)" })).not.toBeNull();
     expect(consoleError).not.toHaveBeenCalled();
     expect(consoleWarn).not.toHaveBeenCalled();
   });

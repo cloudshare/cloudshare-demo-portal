@@ -118,6 +118,7 @@ export function normaliseDiagnosticLogFilters(
     ...(normaliseOptionalText(filters.correlationId)
       ? { correlationId: normaliseOptionalText(filters.correlationId) }
       : {}),
+    ...(normaliseOptionalText(filters.subjectId) ? { subjectId: normaliseOptionalText(filters.subjectId) } : {}),
     ...(normaliseOptionalText(filters.externalId)
       ? { externalId: normaliseOptionalText(filters.externalId) }
       : {}),

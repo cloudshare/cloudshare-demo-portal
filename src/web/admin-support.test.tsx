@@ -143,4 +143,14 @@ describe("AdminSupportFeature", () => {
     await user.click(screen.getByRole("button", { name: "Clear Filters" }));
     await waitFor(() => expect(fetchAdmin).toHaveBeenLastCalledWith("/api/sales/diagnostics?source=sales-records&limit=50&offset=0"));
   });
+
+  it("requests launch activity for only the selected participant subject", async () => {
+    const fetchAdmin = vi.fn<AdminAuthenticatedRequest>().mockResolvedValue(
+      json({ entries: [], page: { limit: 50, offset: 0, returned: 0, hasMore: false, nextOffset: null } }),
+    );
+
+    render(<AdminSupportFeature active view="diagnostics" diagnosticFilters={{ source: "sales-participant-launch", subjectId: "participant-1" }} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={vi.fn()} />);
+
+    await waitFor(() => expect(fetchAdmin).toHaveBeenCalledWith("/api/sales/diagnostics?source=sales-participant-launch&subjectId=participant-1&limit=50&offset=0"));
+  });
 });
