@@ -192,6 +192,28 @@ describe("deriveDiagnosticSupportHints", () => {
     ]);
     expect(hints[0]?.title).not.toBe("CloudShare request failed");
   });
+
+  it("describes a Sales reservation persistence failure as local and retryable", () => {
+    const hints = deriveDiagnosticSupportHints(makeEntry({
+      source: "sales-demo-sessions",
+      operation: "sales.demo_session.created",
+      details: { integrationSurface: "portal.sales_demo_sessions", failureMode: "local_reservation_persistence", cloudShareAttempted: false },
+    }));
+
+    expect(hints).toEqual([expect.objectContaining({
+      title: "Sales Enablement Session reservation could not be saved",
+      body: expect.stringContaining("No CloudShare operation was attempted"),
+    })]);
+    expect(hints[0]?.body).toContain("retry");
+    expect(hints[0]?.body).toContain("Sales Enablement Session creation");
+    expect(hints[0]?.title).not.toBe("CloudShare request failed");
+  });
+
+  it("describes a confirmed Sales Enablement Session revision collision as local", () => {
+    const hints = deriveDiagnosticSupportHints(makeEntry({ operation: "sales.demo_session.created", details: { integrationSurface: "portal.sales_demo_sessions", failureMode: "revision_collision", cloudShareAttempted: false } }));
+    expect(hints).toEqual([expect.objectContaining({ title: "Sales Enablement Session revision is already reserved", body: expect.stringContaining("No CloudShare operation was attempted") })]);
+    expect(hints[0]?.body).toMatch(/refresh/i); expect(hints[0]?.body).toContain("retry"); expect(hints[0]?.title).not.toBe("CloudShare request failed");
+  });
 });
 
 describe("deriveDiagnosticQuickFacts", () => {
