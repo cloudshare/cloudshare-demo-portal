@@ -1,3 +1,5 @@
+import { CLOUDSHARE_429_ADMIN_SUPPORT_GUIDANCE } from "@/domain/cloudshare-rate-limit-message";
+
 export interface SupportDiagnosticEntry {
   readonly id: string;
   readonly occurredAt: string;
@@ -34,6 +36,15 @@ export function deriveDiagnosticSupportHints(
 ): readonly DiagnosticSupportHint[] {
   if (entry.outcome !== "failure") {
     return [];
+  }
+
+  if (isCloudShareRateLimitFailure(entry)) {
+    return [
+      {
+        title: "CloudShare may have rate-limited the requester IP",
+        body: CLOUDSHARE_429_ADMIN_SUPPORT_GUIDANCE,
+      },
+    ];
   }
 
   if (isMissingWebhookSignature(entry)) {
@@ -293,6 +304,13 @@ function hasCloudShareFailureShape(entry: SupportDiagnosticEntry): boolean {
       readString(entry.details, "path") ||
       readNumber(entry.details, "responseStatus") !== null,
   );
+}
+
+function isCloudShareRateLimitFailure(entry: SupportDiagnosticEntry): boolean {
+  const failureMode = readString(entry.details, "failureMode");
+  const responseStatus =
+    readNumber(entry.response, "status") ?? readNumber(entry.details, "responseStatus");
+  return responseStatus === 429 || failureMode === "rate_limit" || failureMode === "abuse_protection";
 }
 
 function isMissingWebhookSignature(entry: SupportDiagnosticEntry): boolean {
