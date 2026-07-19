@@ -17,6 +17,7 @@ export type AuditAction =
   | string;
 
 export const REDACTED_AUDIT_VALUE = "[REDACTED]";
+export const ORDINARY_AUDIT_FAILURE_MESSAGE = "Operation failed; inspect correlated diagnostics.";
 
 export interface AuditRecord {
   readonly id: string;
@@ -62,6 +63,10 @@ export function redactAuditDetails(
     return null;
   }
   return redactAuditValue(value) as Record<string, unknown>;
+}
+
+export function projectAuditError(value: string | null | undefined): string | null {
+  return value ? ORDINARY_AUDIT_FAILURE_MESSAGE : null;
 }
 
 function redactAuditValue(value: unknown, key = ""): unknown {

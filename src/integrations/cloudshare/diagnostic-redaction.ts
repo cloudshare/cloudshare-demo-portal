@@ -31,6 +31,7 @@ function projectGeneric(value: unknown, inRequest: boolean): unknown {
   if (!value || typeof value !== "object") return value;
   const record = value as Record<string, unknown>;
   return Object.fromEntries(Object.entries(record).flatMap(([key, child]) => {
+    if (/^(?:error|errorMessage|message|reason|cause|issues|stack)$/i.test(key)) return [];
     if (/^(?:body|requestBody|responseBody|query|requestQuery|payload|webhookPayload|requestBodySummary|webhookEnvelope)$/i.test(key)) return [];
     if (/^response$/i.test(key)) return [[key, projectGenericResponse(child)]];
     const nextInRequest = inRequest || /^request$/i.test(key);

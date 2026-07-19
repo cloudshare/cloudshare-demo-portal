@@ -24,6 +24,7 @@ import { createCloudShareTrainingDelivery } from "@/integrations/cloudshare/trai
 import { projectCloudShareGenericLogValue } from "@/integrations/cloudshare/diagnostic-redaction";
 import type { Logger } from "@/observability/logger";
 import { recordExamAttemptCompletionDiagnostic } from "./exam-attempt-completion-diagnostics";
+import { projectProtectedCloudShareExchange } from "./protected-cloudshare-exchange";
 import {
   inspectExamAttemptExternalLease,
   reconcileExpiredExamAttemptExternalLease,
@@ -351,7 +352,7 @@ async function correlateCandidateAttemptEnvironments(
         { examAttemptId },
       );
     } catch (error) {
-      const diagnostic = {
+      const diagnostic: Record<string, unknown> = {
         correlationId,
         customerId,
         examAttemptId,
@@ -382,6 +383,27 @@ async function correlateCandidateAttemptEnvironments(
             ...(trainingId ? { trainingId } : {}),
           },
         }),
+      });
+      const protectedExchange = projectProtectedCloudShareExchange(diagnostic);
+      await deps.diagnostics?.record({
+        level: "warn",
+        source: "exam-attempt-dashboard-runtime",
+        operation: "candidate_dashboard_environment_correlation",
+        outcome: "failure",
+        customerId,
+        actor: { type: "candidate" },
+        subject: { type: "exam_attempt", id: examAttemptId },
+        message: "CloudShare environment correlation failed during candidate dashboard reconciliation",
+        correlationId,
+        examAttemptId,
+        externalIds: trainingId ? { trainingId } : null,
+        request: protectedExchange.request,
+        response: protectedExchange.response,
+        details: {
+          attemptedOperation: "list_training_participants",
+          integrationSurface: "cloudshare.v4.training.participant_list",
+          failureMode: diagnostic["failureMode"],
+        },
       });
       deps.logger.warn("candidate dashboard environment correlation failed", projectCloudShareGenericLogValue(diagnostic) as Record<string, unknown>);
     }
@@ -414,6 +436,7 @@ function toCloudShareFailureDiagnostic(input: {
       responseStatus:
         cause instanceof CloudShareRequestError ? cause.status : cause?.context?.status,
       requestHeaders: cause?.context?.requestHeaders,
+      requestQuery: cause?.context?.requestQuery,
       requestBody: cause?.context?.requestBody,
       responseHeaders: cause?.context?.responseHeaders,
       responseBody: cause?.context?.responseBody,
@@ -430,6 +453,7 @@ function toCloudShareFailureDiagnostic(input: {
       integrationSurface: cause?.context?.integrationSurface ?? base.integrationSurface,
       failureMode: "transport",
       requestHeaders: cause?.context?.requestHeaders,
+      requestQuery: cause?.context?.requestQuery,
       requestBody: cause?.context?.requestBody,
       cause: cause?.context?.cause,
     };
@@ -443,6 +467,7 @@ function toCloudShareFailureDiagnostic(input: {
       integrationSurface: cause?.context?.integrationSurface ?? base.integrationSurface,
       failureMode: "unexpected_response",
       requestHeaders: cause?.context?.requestHeaders,
+      requestQuery: cause?.context?.requestQuery,
       requestBody: cause?.context?.requestBody,
       responseHeaders: cause?.context?.responseHeaders,
       responseBody: cause?.context?.responseBody,

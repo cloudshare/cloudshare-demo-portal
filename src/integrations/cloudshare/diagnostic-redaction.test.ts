@@ -41,4 +41,18 @@ describe("projectCloudShareGenericLogValue", () => {
     expect(JSON.stringify(projected)).not.toContain("private");
     expect(JSON.stringify(projected)).not.toContain("cookie");
   });
+
+  it("drops provider free-text error fields while retaining correlation metadata", () => {
+    const protectedMarker = "synthetic-provider-error-marker";
+    const projected = projectCloudShareGenericLogValue({
+      correlationId: "correlation-1",
+      failureMode: "http_status",
+      error: protectedMarker,
+      errorMessage: protectedMarker,
+      reason: protectedMarker,
+    });
+
+    expect(JSON.stringify(projected).includes(protectedMarker)).toBe(false);
+    expect(projected).toEqual({ correlationId: "correlation-1", failureMode: "http_status" });
+  });
 });

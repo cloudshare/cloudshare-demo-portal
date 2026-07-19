@@ -4,6 +4,7 @@ import type {
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
+import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import { projectEventLogMetadata, type EventLogRepository } from "@/domain/event-log";
 import type { LabLaunchRepository } from "@/domain/lab-launch";
 import { correlateEnvironmentForExamAttempt } from "@/domain/environment-correlation";
@@ -16,6 +17,7 @@ import {
 } from "@/integrations/cloudshare";
 import { createCloudShareTrainingDelivery } from "@/integrations/cloudshare/training-delivery";
 import { projectCloudShareGenericLogValue } from "@/integrations/cloudshare/diagnostic-redaction";
+import { projectProtectedCloudShareExchange } from "./protected-cloudshare-exchange";
 
 export interface EnsureExamAttemptEnvironmentCorrelationDeps {
   readonly attempts: ExamAttemptRepository;
@@ -24,6 +26,7 @@ export interface EnsureExamAttemptEnvironmentCorrelationDeps {
   readonly cloudshare: CloudShareClientFactory;
   readonly logger: Logger;
   readonly eventLog?: EventLogRepository;
+  readonly diagnostics?: DiagnosticRecorder;
   readonly now?: () => Date;
   readonly newCorrelationId?: () => string;
 }
@@ -71,7 +74,7 @@ export async function ensureExamAttemptEnvironmentCorrelation(
     };
   } catch (error) {
     const correlationId = (deps.newCorrelationId ?? randomUUID)();
-    const diagnostic = {
+    const diagnostic: Record<string, unknown> = {
       correlationId,
       customerId: attempt.customerId,
       examAttemptId: input.examAttemptId,
@@ -104,6 +107,28 @@ export async function ensureExamAttemptEnvironmentCorrelation(
         },
       }),
     });
+    const protectedExchange = projectProtectedCloudShareExchange(diagnostic);
+    await deps.diagnostics?.record({
+      level: "warn",
+      source: "exam-attempt-environment-correlation",
+      operation: input.operation,
+      outcome: "failure",
+      customerId: attempt.customerId,
+      actor: { type: "candidate", id: attempt.candidateId },
+      subject: { type: "exam_attempt", id: input.examAttemptId },
+      message: "CloudShare environment correlation failed",
+      correlationId,
+      examId: attempt.examId,
+      examAttemptId: input.examAttemptId,
+      externalIds: { trainingId: launch.trainingId },
+      request: protectedExchange.request,
+      response: protectedExchange.response,
+      details: {
+        attemptedOperation: "list_training_participants",
+        integrationSurface: "cloudshare.v4.training.participant_list",
+        failureMode: diagnostic["failureMode"],
+      },
+    });
     deps.logger.warn(`${input.operation} environment correlation failed`, projectCloudShareGenericLogValue(diagnostic) as Record<string, unknown>);
     return { actionableEnvironmentId: null };
   }
@@ -133,6 +158,7 @@ function toCloudShareFailureDiagnostic(input: {
       responseStatus:
         cause instanceof CloudShareRequestError ? cause.status : cause?.context?.status,
       requestHeaders: cause?.context?.requestHeaders,
+      requestQuery: cause?.context?.requestQuery,
       requestBody: cause?.context?.requestBody,
       responseHeaders: cause?.context?.responseHeaders,
       responseBody: cause?.context?.responseBody,
@@ -150,6 +176,7 @@ function toCloudShareFailureDiagnostic(input: {
       integrationSurface: cause?.context?.integrationSurface ?? base.integrationSurface,
       failureMode: "transport",
       requestHeaders: cause?.context?.requestHeaders,
+      requestQuery: cause?.context?.requestQuery,
       requestBody: cause?.context?.requestBody,
       cause: cause?.context?.cause,
     };
@@ -164,6 +191,7 @@ function toCloudShareFailureDiagnostic(input: {
       integrationSurface: cause?.context?.integrationSurface ?? base.integrationSurface,
       failureMode: "unexpected_response",
       requestHeaders: cause?.context?.requestHeaders,
+      requestQuery: cause?.context?.requestQuery,
       requestBody: cause?.context?.requestBody,
       responseHeaders: cause?.context?.responseHeaders,
       responseBody: cause?.context?.responseBody,

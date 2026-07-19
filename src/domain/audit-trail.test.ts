@@ -41,6 +41,22 @@ describe("AuditRepository", () => {
     });
   });
 
+  it("does not retain provider free text in the ordinary audit error field", async () => {
+    const protectedMarker = "synthetic-audit-error-marker";
+    const repo = createInMemoryAuditRepository();
+
+    await repo.write(makeRecord({
+      customerId: "customer-1",
+      correlationId: "correlation-1",
+      outcome: "failure",
+      error: protectedMarker,
+    }));
+
+    const [record] = await repo.listAll();
+    expect(record.error?.includes(protectedMarker)).toBe(false);
+    expect(record.correlationId).toBe("correlation-1");
+  });
+
   it("writes and retrieves records by examAttemptId", async () => {
     const repo = createInMemoryAuditRepository();
     await repo.write(makeRecord({ examAttemptId: "a-1", id: "r-1" }));

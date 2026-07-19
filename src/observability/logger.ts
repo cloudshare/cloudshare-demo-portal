@@ -42,6 +42,7 @@ function projectGenericLogFields(value: unknown, inRequest = false): unknown {
   if (Array.isArray(value)) return value.map((item) => projectGenericLogFields(item, inRequest));
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(Object.entries(value as Record<string, unknown>).flatMap(([key, child]) => {
+    if (/^(?:error|errorMessage|message|reason|cause|issues|stack)$/i.test(key)) return [];
     if (/^(?:body|requestBody|responseBody|query|requestQuery|payload|webhookPayload|requestBodySummary|webhookEnvelope)$/i.test(key)) return [];
     if (/^response$/i.test(key)) return [[key, projectGenericLogResponse(child)]];
     const nextInRequest = inRequest || /^request$/i.test(key);

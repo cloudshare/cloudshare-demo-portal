@@ -582,6 +582,8 @@ describe("getExamAttemptDashboardRuntime", () => {
     const attempts = createInMemoryExamAttemptRepository();
     const launches = createInMemoryLabLaunchRepository();
     const eventLog = createInMemoryEventLogRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
     const logger = makeLogger();
 
     await attempts.save({
@@ -617,13 +619,20 @@ describe("getExamAttemptDashboardRuntime", () => {
                 method: "GET",
                 path: "/v4/trainings/EXtraining-1/students",
                 integrationSurface: "cloudshare.v4.training.participant_list",
-                responseBody: "{\"error\":\"forbidden\"}",
+                requestHeaders: {
+                  Accept: "application/json",
+                  Authorization: "Bearer synthetic-dashboard-request-marker",
+                },
+                requestBody: { queryMarker: "synthetic-dashboard-query-marker" },
+                responseHeaders: { "x-provider-trace": "synthetic-dashboard-trace" },
+                responseBody: { accessLink: "synthetic-dashboard-response-marker" },
               });
             }
             throw new Error(`unexpected path ${spec.path}`);
           }) as never,
         }),
         eventLog,
+        diagnostics,
         logger,
         now: () => new Date("2026-06-15T10:05:00.000Z"),
         newCorrelationId: () => "corr-list-1",
@@ -649,6 +658,9 @@ describe("getExamAttemptDashboardRuntime", () => {
       }),
     );
     expect(JSON.stringify((logger.warn as ReturnType<typeof vi.fn>).mock.calls)).not.toContain("forbidden");
+    expect(JSON.stringify((logger.warn as ReturnType<typeof vi.fn>).mock.calls)).not.toContain(
+      "synthetic-dashboard",
+    );
     await expect(eventLog.listByCustomerId("customer-helios")).resolves.toEqual([
       expect.objectContaining({
         eventId: "corr-list-1",
@@ -667,6 +679,37 @@ describe("getExamAttemptDashboardRuntime", () => {
             trainingId: "EXtraining-1",
           }),
         }),
+      }),
+    ]);
+    expect(JSON.stringify(await eventLog.listByCustomerId("customer-helios"))).not.toContain(
+      "synthetic-dashboard",
+    );
+    await expect(
+      diagnosticsRepository.query({
+        customerId: "customer-helios",
+        correlationId: "corr-list-1",
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        customerId: "customer-helios",
+        correlationId: "corr-list-1",
+        operation: "candidate_dashboard_environment_correlation",
+        outcome: "failure",
+        examAttemptId: "attempt-ready",
+        request: {
+          method: "GET",
+          path: "/v4/trainings/EXtraining-1/students",
+          headers: {
+            Accept: "application/json",
+            Authorization: "[REDACTED]",
+          },
+          body: { queryMarker: "synthetic-dashboard-query-marker" },
+        },
+        response: {
+          status: 403,
+          headers: { "x-provider-trace": "synthetic-dashboard-trace" },
+          body: { accessLink: "synthetic-dashboard-response-marker" },
+        },
       }),
     ]);
   });
@@ -1042,9 +1085,9 @@ describe("getExamAttemptDashboardRuntime", () => {
         host: "api.accelerate.cloudshare.com",
         path: "/v4/trainings/EXtraining-1/students",
         integrationSurface: "cloudshare.v4.training.participant_list",
-        issues: ["Required"],
       }),
     );
+    expect(JSON.stringify((logger.warn as ReturnType<typeof vi.fn>).mock.calls)).not.toContain("Required");
     expect(JSON.stringify((logger.warn as ReturnType<typeof vi.fn>).mock.calls)).not.toContain("student-1");
     await expect(eventLog.listByCustomerId("customer-helios")).resolves.toEqual([
       expect.objectContaining({

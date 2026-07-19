@@ -27,6 +27,8 @@ import {
 } from "@/integrations/cloudshare";
 import type { CloudShareClient } from "@/integrations/cloudshare";
 import type { EnvironmentCommandResult } from "@/domain/environment";
+import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
+import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 
 const noSleep = () => Promise.resolve();
 
@@ -692,15 +694,23 @@ describe("suspendExamAttemptRuntime", () => {
           integrationSurface: "cloudshare.v4.training.participant_list",
           method: "GET",
           path: "/v4/trainings/EXtraining-1/students",
-          responseBody: "{\"error\":\"forbidden\"}",
+          requestHeaders: {
+            Accept: "application/json",
+            Authorization: "Bearer synthetic-reusable-request-marker",
+          },
+          requestBody: { queryMarker: "synthetic-reusable-query-marker" },
+          responseHeaders: { "x-provider-trace": "synthetic-reusable-trace" },
+          responseBody: { loginUrl: "synthetic-reusable-response-marker" },
         });
       }) as unknown as CloudShareClient["requestV4"],
     });
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
     const deps = await makeSuspendDeps({
       launches,
       cloudshare: {
         forConnection: vi.fn().mockReturnValue(customerClient),
       },
+      diagnostics: createDiagnosticRecorder({ repository: diagnosticsRepository }),
     });
 
     const resp = await suspendExamAttemptRuntime(deps, { examAttemptId: "ea-1" });
@@ -731,6 +741,41 @@ describe("suspendExamAttemptRuntime", () => {
         }),
       }),
     );
+    expect(JSON.stringify((deps.eventLog.append as ReturnType<typeof vi.fn>).mock.calls)).not.toContain(
+      "synthetic-reusable",
+    );
+    expect(JSON.stringify((deps.logger.warn as ReturnType<typeof vi.fn>).mock.calls)).not.toContain(
+      "synthetic-reusable",
+    );
+    await expect(
+      diagnosticsRepository.query({
+        customerId: "customer-1",
+        correlationId: "corr-suspend",
+        operation: "exam_suspend",
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        customerId: "customer-1",
+        correlationId: "corr-suspend",
+        operation: "exam_suspend",
+        outcome: "failure",
+        examAttemptId: "ea-1",
+        request: {
+          method: "GET",
+          path: "/v4/trainings/EXtraining-1/students",
+          headers: {
+            Accept: "application/json",
+            Authorization: "[REDACTED]",
+          },
+          body: { queryMarker: "synthetic-reusable-query-marker" },
+        },
+        response: {
+          status: 403,
+          headers: { "x-provider-trace": "synthetic-reusable-trace" },
+          body: { loginUrl: "synthetic-reusable-response-marker" },
+        },
+      }),
+    ]);
     expect(deps.eventLog.append).toHaveBeenCalledWith(
       expect.objectContaining({
         eventId: "corr-suspend",

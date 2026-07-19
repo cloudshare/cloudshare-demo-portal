@@ -61,4 +61,22 @@ describe("createLogger", () => {
     expect(raw).not.toContain("private");
     expect(raw).not.toContain("cookie");
   });
+
+  it("drops provider free-text fields from generic log output", () => {
+    const sink = vi.fn();
+    const logger = createLogger({ secrets: [], sink });
+    const protectedMarker = "synthetic-generic-log-marker";
+
+    logger.warn("provider operation failed", {
+      operation: "provider.read",
+      correlationId: "correlation-1",
+      error: protectedMarker,
+      errorMessage: protectedMarker,
+      reason: protectedMarker,
+    });
+
+    const raw = sink.mock.calls[0][0] as string;
+    expect(raw.includes(protectedMarker)).toBe(false);
+    expect(raw).toContain('"correlationId":"correlation-1"');
+  });
 });

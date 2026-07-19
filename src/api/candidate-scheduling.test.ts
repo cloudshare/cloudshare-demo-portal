@@ -1307,9 +1307,9 @@ describe("candidate scheduling handlers", () => {
         host: "api.accelerate.cloudshare.com",
         path: "/v4/trainings/EXtraining-1/students",
         integrationSurface: "cloudshare.v4.training.participant_list",
-        issues: ["Required"],
       }),
     );
+    expect(JSON.stringify((logger.warn as ReturnType<typeof vi.fn>).mock.calls)).not.toContain("Required");
     expect(JSON.stringify((logger.warn as ReturnType<typeof vi.fn>).mock.calls)).not.toContain("student-1");
     await expect(eventLog.listByCustomerId("customer-helios")).resolves.toEqual([
       expect.objectContaining({
