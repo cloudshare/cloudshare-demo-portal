@@ -1,13 +1,24 @@
 const REDACTED = "[REDACTED]";
 
 const SAFE_OPERATIONAL_HEADERS = new Set([
-  "accept", "acceptencoding", "contentlength", "contenttype",
-  "correlationid", "requestid", "traceparent", "tracestate", "useragent",
-  "xcorrelationid", "xrequestid",
+  "accept", "accept-encoding", "content-length", "content-type",
+  "correlation-id", "request-id", "traceparent", "tracestate", "user-agent",
+  "x-correlation-id", "x-request-id",
 ]);
 
-function compactHeaderName(name: string): string {
-  return name.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+function canonicalHeaderName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function isSupportedHeaderValue(value: unknown): value is string | string[] {
+  return typeof value === "string"
+    || (Array.isArray(value) && value.every((item) => typeof item === "string"));
+}
+
+function projectHeaderValue(name: string, value: unknown): unknown {
+  return !isCredentialBearingRequestHeader(name) && isSupportedHeaderValue(value)
+    ? value
+    : REDACTED;
 }
 
 /**
@@ -15,8 +26,7 @@ function compactHeaderName(name: string): string {
  * diagnostics. Only the explicit operational allowlist is non-credential data.
  */
 export function isCredentialBearingRequestHeader(name: string): boolean {
-  const compact = compactHeaderName(name);
-  return !SAFE_OPERATIONAL_HEADERS.has(compact);
+  return !SAFE_OPERATIONAL_HEADERS.has(canonicalHeaderName(name));
 }
 
 /**
@@ -35,12 +45,12 @@ export function projectProtectedRequestHeaders<T>(value: T): T {
   }
   if (Array.isArray(value)) {
     return value.map((entry) => Array.isArray(entry) && entry.length === 2
-      ? [entry[0], isCredentialBearingRequestHeader(String(entry[0])) ? REDACTED : entry[1]]
+      ? [entry[0], projectHeaderValue(String(entry[0]), entry[1])]
       : projectProtectedRequestHeaders(entry)) as T;
   }
   if (!value || typeof value !== "object") return REDACTED as T;
   return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([name, child]) => [
     name,
-    isCredentialBearingRequestHeader(name) ? REDACTED : child,
+    projectHeaderValue(name, child),
   ])) as T;
 }

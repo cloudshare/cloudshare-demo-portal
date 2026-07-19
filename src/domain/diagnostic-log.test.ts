@@ -111,6 +111,11 @@ describe("redactDiagnosticInput", () => {
     expect(redacted.details).toEqual({ httpExchanges: [{ request: { headers: { XAuthToken: "[REDACTED]", "X-Signature256": "[REDACTED]", Accept: "application/json" }, body }, response: { body } }] });
   });
 
+  it("fails closed on malformed allowlist names and non-string values in nested HTTP exchanges", () => {
+    const redacted = redactDiagnosticInput({ source: "x", operation: "x", outcome: "success", message: "x", details: { httpExchanges: [{ request: { headers: { ContentType: "bypass", "Content-Type": { authorization: "Bearer secret" }, Accept: { token: "secret" }, "X-Request-ID": "request-1" } } }] } });
+    expect(redacted.details).toEqual({ httpExchanges: [{ request: { headers: { ContentType: "[REDACTED]", "Content-Type": "[REDACTED]", Accept: "[REDACTED]", "X-Request-ID": "request-1" } } }] });
+  });
+
   it("preserves first-class correlation anchors (they are identifiers, not secrets)", () => {
     const redacted = redactDiagnosticInput({
       source: "candidate-portal",

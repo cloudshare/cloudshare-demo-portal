@@ -75,4 +75,45 @@ describe("projectProtectedRequestHeaders", () => {
     expect(projectProtectedRequestHeaders("Content-Type: application/json")).toBe("Content-Type: application/json");
     expect(projectProtectedRequestHeaders("Authorization: Bearer secret")).toBe("Authorization: [REDACTED]");
   });
+
+  it("requires exact canonical header punctuation and valid allowlisted value shapes", () => {
+    expect(projectProtectedRequestHeaders({
+      "content-TYPE": "application/json",
+      ContentType: "bypass",
+      Content_Type: "bypass",
+      "Content@Type": "bypass",
+      "Con!tent-Type": "bypass",
+      "Accept!": "bypass",
+      UserAgent: "bypass",
+      XRequestID: "bypass",
+      "Trace-Parent": "bypass",
+      Accept: ["application/json", "text/plain"],
+      "Content-Type": { authorization: "Bearer secret" },
+      "Content-Length": 42,
+      "User-Agent": true,
+      "X-Correlation-ID": null,
+      "X-Request-ID": ["valid", 42],
+      traceparent: { token: "secret" },
+    })).toEqual({
+      "content-TYPE": "application/json",
+      ContentType: "[REDACTED]",
+      Content_Type: "[REDACTED]",
+      "Content@Type": "[REDACTED]",
+      "Con!tent-Type": "[REDACTED]",
+      "Accept!": "[REDACTED]",
+      UserAgent: "[REDACTED]",
+      XRequestID: "[REDACTED]",
+      "Trace-Parent": "[REDACTED]",
+      Accept: ["application/json", "text/plain"],
+      "Content-Type": "[REDACTED]",
+      "Content-Length": "[REDACTED]",
+      "User-Agent": "[REDACTED]",
+      "X-Correlation-ID": "[REDACTED]",
+      "X-Request-ID": "[REDACTED]",
+      traceparent: "[REDACTED]",
+    });
+    expect(projectProtectedRequestHeaders([["Content-Type", { authorization: "secret" }], ["Accept", ["application/json"]]])).toEqual([["Content-Type", "[REDACTED]"], ["Accept", ["application/json"]]]);
+    expect(projectProtectedRequestHeaders("ContentType: application/json")).toBe("ContentType: [REDACTED]");
+    expect(projectProtectedRequestHeaders("Content-Type: application/json\nAuthorization: secret")).toBe("[REDACTED]");
+  });
 });
