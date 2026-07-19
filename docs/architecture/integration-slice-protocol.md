@@ -19,7 +19,7 @@ It exists because Slice 1 exposed that "tests exist" is not enough for integrati
   delete the generated env file.
 - Add support diagnostics with the feature, not after the failure. Every CloudShare API diagnostic
   must include the attempted operation, integration surface, correlation ID where useful, and
-  structured HTTP evidence: request method, path, query parameters, masked request headers,
+  structured HTTP evidence: request method, path, query parameters, credential-masked request headers with safe operational headers visible,
   verbatim request body when present, response status, response headers, verbatim provider response
   body, and transport failure details when no response was received. Body fields are never scrubbed
   by name or value pattern; this protected evidence is Customer-scoped admin-only data.
@@ -35,7 +35,7 @@ It exists because Slice 1 exposed that "tests exist" is not enough for integrati
    For v4 Accelerate endpoints, verify paths in `docs/api/cloudshare-api-reference.md` and the
    corresponding export under `docs/api/assets/`; do not infer paths from adjacent endpoint names.
 4. For any uncertain CloudShare behavior, write or run the smallest live probe at the integration seam before building UI or domain behavior around it.
-5. Decide the support diagnostic payload before implementation, so failures are supportable from the first live run. For CloudShare API calls, retain request/query and provider-response bodies verbatim in protected Customer-scoped admin diagnostics, redact actual request-header values, and keep bodies out of generic traces and ordinary client surfaces.
+5. Decide the support diagnostic payload before implementation, so failures are supportable from the first live run. For CloudShare API calls, retain request/query and provider-response bodies verbatim in protected Customer-scoped admin diagnostics, mask credential-bearing request headers while preserving safe operational headers, and keep bodies out of generic traces and ordinary client surfaces.
 
 ## During implementation
 

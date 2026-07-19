@@ -164,7 +164,9 @@ be first-class so support filtering and tracing are reliable.
 Existing prototype support-log rows are not product data and should not constrain the new model.
 They may be discarded, reset, or archived during development; do not preserve a legacy shape if it
 weakens the DiagnosticLogEntry design.
-Protected diagnostics use a direction-aware contract: redact actual request-header values, but retain
+Protected diagnostics use a direction-aware contract: redact credential-bearing request-header values
+(Authorization, cookies, API-key/token/signature/authentication headers), preserve safe operational
+headers such as Content-Type, Accept, lengths, agents, and request/correlation IDs, and retain
 all request/query and provider-response body data verbatim. Body evidence includes API keys, bearer
 tokens, webhook secrets, passphrases, access links, sponsored-link `loginUrl` values, and analogous
 fields, without field-name or value-pattern scrubbing. This Customer-scoped evidence remains

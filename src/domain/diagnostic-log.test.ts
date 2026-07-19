@@ -38,6 +38,9 @@ describe("redactDiagnosticInput", () => {
         headers: {
           authorization: "Bearer abc.def",
           "x-cloudshare-signature": "raw-signature-value",
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "X-Request-ID": "req-1",
         },
       },
       response: { body: { token: "sek-123", passphrase: "response-passphrase", accessLink: "https://response.test/link", loginUrl: "https://response.test/login", nested: [{ authorization: "body-data" }] }, status: 200 },
@@ -49,6 +52,9 @@ describe("redactDiagnosticInput", () => {
       headers: {
         authorization: "[REDACTED]",
         "x-cloudshare-signature": "[REDACTED]",
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "X-Request-ID": "req-1",
       },
     });
     expect(redacted.response).toEqual({ body: { token: "sek-123", passphrase: "response-passphrase", accessLink: "https://response.test/link", loginUrl: "https://response.test/login", nested: [{ authorization: "body-data" }] }, status: 200 });
@@ -92,6 +98,11 @@ describe("redactDiagnosticInput", () => {
     const response = { request: { headers: "provider-response-collision" } };
     const redacted = redactDiagnosticInput({ source: "x", operation: "x", outcome: "success", message: "x", details: { httpExchanges: [{ request: { headers: [["Authorization", "Bearer tuple"]], requestHeaders: "Bearer scalar", body, query: body }, response }] } });
     expect(redacted.details).toEqual({ httpExchanges: [{ request: { headers: [["Authorization", "[REDACTED]"]], requestHeaders: "[REDACTED]", body, query: body }, response }] });
+  });
+
+  it("masks credential headers case-insensitively while preserving operational map and tuple headers", () => {
+    const redacted = redactDiagnosticInput({ source: "x", operation: "x", outcome: "success", message: "x", request: { headers: { "CONTENT-TYPE": "application/json", "x-api-key": "key", "X-Auth-Token": "token", "x-cloudshare-signature": "sig", Cookie: "cookie", "User-Agent": "agent", "Content-Length": "42", "X-Correlation-ID": "corr" }, requestHeaders: [["Accept", "application/json"], ["Proxy-Authorization", "Basic secret"]] } });
+    expect(redacted.request).toEqual({ headers: { "CONTENT-TYPE": "application/json", "x-api-key": "[REDACTED]", "X-Auth-Token": "[REDACTED]", "x-cloudshare-signature": "[REDACTED]", Cookie: "[REDACTED]", "User-Agent": "agent", "Content-Length": "42", "X-Correlation-ID": "corr" }, requestHeaders: [["Accept", "application/json"], ["Proxy-Authorization", "[REDACTED]"]] });
   });
 
   it("preserves first-class correlation anchors (they are identifiers, not secrets)", () => {

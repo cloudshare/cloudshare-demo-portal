@@ -77,7 +77,7 @@ describe("Sales diagnostics HTTP isolation", () => {
 
   it("retrieves Customer-scoped launch correlations through the Sales diagnostics source", async () => {
     mockGetPortalAdminSession.mockResolvedValue({ customerId: "customer-certalis", role: "admin", workspace: "sales" });
-    const protectedEntry = { source: "sales-participant-launch", operation: "sales.demo_session.participant_launch.opened", outcome: "success", correlationId: "corr-launch-1", subject: { type: "sales_session_participant", id: "participant-1" }, request: { path: "/sales/launch/private-capability", headers: { authorization: "Bearer private-auth" } }, response: { status: 200, body: { loginUrl: "https://cloudshare.example.test/private-provider-url" } }, details: { nested: { token: "private-token", path: "/sales/launch/another-capability" } } };
+    const protectedEntry = { source: "sales-participant-launch", operation: "sales.demo_session.participant_launch.opened", outcome: "success", correlationId: "corr-launch-1", subject: { type: "sales_session_participant", id: "participant-1" }, request: { path: "/sales/launch/private-capability", headers: { authorization: "Bearer private-auth", "Content-Type": "application/json" }, body: { sponsoredLinkRequest: true } }, response: { status: 200, body: { loginUrl: "https://cloudshare.example.test/private-provider-url", passphrase: "provider-passphrase" } }, details: { nested: { token: "private-token", path: "/sales/launch/another-capability" } } };
     mockHandleGetDiagnosticLog.mockResolvedValueOnce({ status: 200, body: { entries: [protectedEntry], page: { hasMore: false, nextOffset: null } } });
     const response = await getSalesDiagnostics(new Request("http://localhost:3000/api/sales/diagnostics?source=sales-participant-launch&correlationId=corr-launch-1&subjectId=participant-1"));
     expect(response.status).toBe(200);
@@ -89,6 +89,9 @@ describe("Sales diagnostics HTTP isolation", () => {
     expect(serialized).toContain("private-token");
     expect(serialized).not.toContain("private-auth");
     expect(body.entries[0].request.headers.authorization).toBe("[REDACTED]");
+    expect(body.entries[0].request.headers["Content-Type"]).toBe("application/json");
+    expect(body.entries[0].request.body).toEqual({ sponsoredLinkRequest: true });
+    expect(body.entries[0].response.body).toEqual({ loginUrl: "https://cloudshare.example.test/private-provider-url", passphrase: "provider-passphrase" });
     expect(body.entries[0]).toMatchObject({ correlationId: "corr-launch-1", outcome: "success", response: { status: 200, body: { loginUrl: "https://cloudshare.example.test/private-provider-url" } } });
     expect(mockHandleGetDiagnosticLog).toHaveBeenCalledWith(expect.anything(), { customerId: "customer-certalis", query: { source: "sales-participant-launch", correlationId: "corr-launch-1", subjectId: "participant-1" } });
   });

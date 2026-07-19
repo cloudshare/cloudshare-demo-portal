@@ -179,7 +179,7 @@ an optional, polling-backed enhancement (ADR-003).
 
 High-integrity software.
 
-- Never expose raw API keys, bearer auth headers, webhook secrets, or similar credentials in generic logs or client responses. Protected Customer-scoped admin diagnostics are the explicit direction-aware exception: retain all request/query and provider-response body data verbatim, including API keys, tokens, webhook secrets, passphrases, access links, and sponsored-link `loginUrl` values, while redacting actual request-header values. This evidence must never appear in candidate/client-facing responses, ordinary APIs, browser state/console, non-admin surfaces, or another Customer's diagnostics.
+- Never expose raw API keys, bearer auth headers, webhook secrets, or similar credentials in generic logs or client responses. Protected Customer-scoped admin diagnostics are the explicit direction-aware exception: retain all request/query and provider-response body data verbatim, including API keys, tokens, webhook secrets, passphrases, access links, and sponsored-link `loginUrl` values. In request headers, redact credential-bearing values such as Authorization, cookies, API-key/token/signature/authentication headers, while retaining safe operational values such as Content-Type, Accept, Content-Length, User-Agent, and correlation/request IDs. This evidence must never appear in candidate/client-facing responses, ordinary APIs, browser state/console, non-admin surfaces, or another Customer's diagnostics.
 - Store CloudShare credentials per-Customer, **encrypted at rest**; decrypt only at call time.
 - Treat the sponsored-link `loginUrl` as a bearer credential — server-only; reach it via a 302 (ADR-002).
 - Never trust client-side state for entitlement; recompute it server-side.

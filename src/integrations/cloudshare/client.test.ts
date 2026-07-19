@@ -252,7 +252,7 @@ describe("createCloudShareClient — v4", () => {
         customerId: "customer-helios",
         requestHeaders: {
           authorization: "[REDACTED]",
-          "content-type": "[REDACTED]",
+          "content-type": "application/json",
         },
       }),
     });

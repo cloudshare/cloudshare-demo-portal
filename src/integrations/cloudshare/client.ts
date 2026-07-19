@@ -169,7 +169,19 @@ function sanitizeHeaders(headers: Record<string, string> | undefined): Record<st
     return undefined;
   }
 
-  return Object.fromEntries(Object.keys(headers).map((key) => [key, "[REDACTED]"]));
+  return Object.fromEntries(Object.entries(headers).map(([key, value]) => [
+    key,
+    isCredentialBearingRequestHeader(key) ? "[REDACTED]" : value,
+  ]));
+}
+
+function isCredentialBearingRequestHeader(name: string): boolean {
+  const normalized = name.trim().toLowerCase().replaceAll("_", "-");
+  return normalized === "authorization"
+    || normalized === "proxy-authorization"
+    || normalized === "cookie"
+    || normalized === "set-cookie"
+    || /(?:^|-)(?:api-?key|auth|authentication|token|signature|secret|credential)(?:-|$)/.test(normalized);
 }
 
 function sanitizeQuery(query: Record<string, string> | undefined): Record<string, string> | undefined {

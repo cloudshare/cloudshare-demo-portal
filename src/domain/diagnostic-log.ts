@@ -145,11 +145,24 @@ const REDACTED = "[REDACTED]";
 function redactRequestHeaders(value: unknown): unknown {
   if (Array.isArray(value)) {
     return value.map((entry) => Array.isArray(entry) && entry.length === 2
-      ? [entry[0], REDACTED]
+      ? [entry[0], redactRequestHeaderValue(String(entry[0]), entry[1])]
       : redactRequestHeaders(entry));
   }
   if (!value || typeof value !== "object") return REDACTED;
-  return Object.fromEntries(Object.keys(value as Record<string, unknown>).map((key) => [key, REDACTED]));
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, child]) => [key, redactRequestHeaderValue(key, child)]));
+}
+
+function redactRequestHeaderValue(name: string, value: unknown): unknown {
+  return isCredentialBearingRequestHeader(name) ? REDACTED : value;
+}
+
+function isCredentialBearingRequestHeader(name: string): boolean {
+  const normalized = name.trim().toLowerCase().replaceAll("_", "-");
+  return normalized === "authorization"
+    || normalized === "proxy-authorization"
+    || normalized === "cookie"
+    || normalized === "set-cookie"
+    || /(?:^|-)(?:api-?key|auth|authentication|token|signature|secret|credential)(?:-|$)/.test(normalized);
 }
 
 function projectProtectedRequest(request: Record<string, unknown>): Record<string, unknown> {
@@ -177,7 +190,7 @@ export interface RedactionOptions {
 /**
  * Apply the protected-diagnostic evidence contract at the recorder seam. No
  * field-name/value-pattern scrubbing is permitted for request or response body
- * evidence; only request-header values are masked.
+ * evidence; only credential-bearing request-header values are masked.
  */
 export function redactDiagnosticInput(
   input: DiagnosticLogEntryInput,
