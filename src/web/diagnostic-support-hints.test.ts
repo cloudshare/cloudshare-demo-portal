@@ -285,6 +285,32 @@ describe("deriveDiagnosticSupportHints", () => {
     expect(hints[0]?.title).not.toBe("CloudShare request failed");
   });
 
+  it.each([
+    ["environment_not_found_for_project", "zero"],
+    ["environment_ambiguous_for_project", "multiple"],
+  ] as const)("explains the completed v3 Environment lookup when %s matches %s Session Item Project Environments", (attentionReason, matchCount) => {
+    const hints = deriveDiagnosticSupportHints(makeEntry({
+      operation: "sales.demo_session.participant.environment_observed",
+      message: "CloudShare returned no Environment for this participant in the Session Item project.",
+      request: { method: "GET", path: "/api/v3/envs" },
+      response: { status: 200, body: [] },
+      details: {
+        integrationSurface: "cloudshare.v3.environments",
+        observation: "needs_attention",
+        attentionReason,
+        attentionSource: "cloudshare_v3_owner_email_item_project",
+      },
+    }));
+
+    expect(hints).toEqual([expect.objectContaining({
+      title: "CloudShare Environment correlation needs attention",
+      body: expect.stringContaining("documented CloudShare v3 Environment list completed"),
+    })]);
+    expect(hints[0]?.body).toContain(`${matchCount} Environment`);
+    expect(hints[0]?.body).toContain("Session Item Project");
+    expect(hints[0]?.title).not.toBe("CloudShare request failed");
+  });
+
   it("describes a Sales reservation persistence failure as local and retryable", () => {
     const hints = deriveDiagnosticSupportHints(makeEntry({
       source: "sales-demo-sessions",

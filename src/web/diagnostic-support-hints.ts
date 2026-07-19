@@ -179,6 +179,24 @@ export function deriveDiagnosticSupportHints(
     ];
   }
 
+  if (entry.operation === "sales.demo_session.participant.environment_observed") {
+    const attentionReason = readString(entry.details, "attentionReason");
+    if (
+      attentionReason === "environment_not_found_for_project" ||
+      attentionReason === "environment_ambiguous_for_project"
+    ) {
+      const matchCount = attentionReason === "environment_not_found_for_project" ? "zero" : "multiple";
+      return [
+        {
+          title: "CloudShare Environment correlation needs attention",
+          body:
+            `The documented CloudShare v3 Environment list completed, but ${matchCount} Environments matched this participant in the Session Item Project. ` +
+            "This is a Certalis correlation exception, not a failed CloudShare request. Review the protected list evidence and the Session Item Project before deciding whether participant or Environment data needs correction.",
+        },
+      ];
+    }
+  }
+
   if (
     readString(entry.details, "integrationSurface") === "portal.sales_demo_sessions" &&
     readString(entry.details, "failureMode") === "local_reservation_persistence" &&
