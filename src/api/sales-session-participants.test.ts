@@ -384,7 +384,11 @@ describe("Sales Session participant invitation", () => {
     expect(observe).toHaveBeenCalledWith({ ownerEmail: contact.email, projectId: "project-1" });
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ request: expect.objectContaining({ path: "/api/v3/envs/actions/getextended" }), response: expect.objectContaining({ body: { statusCode: 2 } }), details: expect.objectContaining({ resolutionSource: "owner_email_and_item_project" }) }));
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ details: expect.objectContaining({ httpExchanges: expect.arrayContaining([expect.objectContaining({ request: expect.objectContaining({ path: "/api/v3/envs" }) }), expect.objectContaining({ request: expect.objectContaining({ path: "/api/v3/envs/actions/getextended" }) })]) }) }));
-    expect(JSON.stringify(audit.write.mock.calls)).not.toContain("opaque-v3-id");
+    const auditEvidence = JSON.stringify(audit.write.mock.calls);
+    expect(auditEvidence).not.toContain("opaque-v3-id");
+    expect(auditEvidence).not.toContain("1234567890123456789");
+    expect(auditEvidence).not.toContain("provider-1");
+    expect(auditEvidence).not.toContain(session.cloudShareSalesExperienceId);
     expect(JSON.stringify(result.body)).not.toContain("opaque-v3-id");
     expect(JSON.stringify(result.body)).not.toContain("1234567890123456789");
   });

@@ -11,11 +11,12 @@ const environmentListSchema = z.union([
   z.object({ items: z.array(environmentSchema) }).transform(({ items }) => items),
 ]);
 export const cloudShareV3SalesEnvironmentStatusCodeSchema = z.union([z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(7), z.literal(8), z.literal(9)]);
+export type CloudShareV3SalesEnvironmentStatusCode = z.infer<typeof cloudShareV3SalesEnvironmentStatusCodeSchema>;
 const extendedSchema = z.object({ statusCode: cloudShareV3SalesEnvironmentStatusCodeSchema }).passthrough();
 
 export interface SalesEnvironmentObservation {
   readonly environmentId: string;
-  readonly statusCode: number;
+  readonly statusCode: CloudShareV3SalesEnvironmentStatusCode;
   readonly exchanges: readonly { readonly request: CloudShareRequestDiagnostics; readonly response: CloudShareResponseDiagnostics }[];
 }
 
