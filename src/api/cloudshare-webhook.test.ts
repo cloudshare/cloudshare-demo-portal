@@ -97,8 +97,9 @@ describe("handleCloudShareWebhook", () => {
     });
 
     expect(res.status).toBe(500);
-    expect(lines.some((line) => line.includes("cloudshare webhook received"))).toBe(false);
-    expect(lines.some((line) => line.includes("cloudshare webhook handler misconfigured"))).toBe(true);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain('"operation":"receive_webhook"');
+    expect(lines[0]).not.toContain("connections.findByWebhookPathToken is unavailable");
   });
 
   it("logs safe request summary and parsed fields for known webhook targets without persisting raw bodies", async () => {
@@ -126,7 +127,7 @@ describe("handleCloudShareWebhook", () => {
       },
     );
 
-    const receivedLine = lines.find((line) => line.includes("cloudshare webhook received"));
+    const receivedLine = lines.find((line) => line.includes('"eventType":"environment.created"'));
     expect(receivedLine).toBeDefined();
     expect(receivedLine).not.toContain("rawRequestBody");
     expect(receivedLine).not.toContain('"x-cloudshare-signature"');
@@ -164,14 +165,14 @@ describe("handleCloudShareWebhook", () => {
       },
     );
 
-    const receivedLine = lines.find((line) => line.includes("cloudshare webhook received"));
-    const diagnosticLine = lines.find((line) => line.includes("cloudshare webhook signature diagnostic"));
+    const receivedLine = lines.find((line) => line.includes('"eventType":"environment.created"'));
+    const diagnosticLine = lines.find((line) => line.includes('"signatureScheme"'));
     expect(receivedLine).not.toContain("rawRequestBody");
     expect(diagnosticLine).not.toContain('"receivedSignature"');
     expect(diagnosticLine).not.toContain('"expectedSignature"');
     expect(diagnosticLine).toContain(`"storedWebhookSecretLength":${HELIOS_SECRET.length}`);
     expect(diagnosticLine).toContain('"signatureMatched":false');
-    expect(diagnosticLine).toContain("update the stored CloudShare Connection webhook secret");
+    expect(diagnosticLine).not.toContain("update the stored CloudShare Connection webhook secret");
     expect(diagnosticLine).toContain("rawBodySha256");
   });
 
@@ -205,15 +206,14 @@ describe("handleCloudShareWebhook", () => {
     expect(reconcile).not.toHaveBeenCalled();
 
     const serialized = lines.join("\n");
-    expect(serialized).toContain("cloudshare webhook rejected: missing signature");
+    expect(serialized).toContain('"message":"ordinary log event"');
     expect(serialized).toContain('"signaturePresent":false');
     expect(serialized).not.toContain("rawRequestBody");
-    expect(serialized).not.toContain("cloudshare webhook received");
     expect(serialized).not.toContain('"webhookEnvelope"');
     expect(serialized).not.toContain('"webhookPayload"');
     expect(serialized).not.toContain('"webhookEvent"');
 
-    await expect(eventLog.listAll()).resolves.toEqual(
+    await expect(eventLog.listByCustomerId("customer-helios")).resolves.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           type: "cloudshare.webhook.missing_signature",
@@ -244,7 +244,8 @@ describe("handleCloudShareWebhook", () => {
     );
 
     const serialized = lines.join("\n");
-    expect(serialized).toContain("cloudshare webhook rejected: unknown webhook target");
+    expect(serialized).toContain('"message":"ordinary log event"');
+    expect(serialized).toContain('"webhookPathFingerprint"');
     expect(serialized).not.toContain("rawRequestBody");
     expect(serialized).not.toContain("must-not-be-logged");
   });
@@ -271,7 +272,8 @@ describe("handleCloudShareWebhook", () => {
     );
 
     const serialized = lines.join("\n");
-    expect(serialized).toContain("cloudshare webhook rejected: unknown webhook target");
+    expect(serialized).toContain('"message":"ordinary log event"');
+    expect(serialized).toContain('"webhookPathFingerprint"');
     expect(serialized).toContain('"signaturePresent":false');
     expect(serialized).toContain('"requestBodyBytes"');
     expect(serialized).toContain('"rawBodySha256"');
@@ -423,7 +425,7 @@ describe("handleCloudShareWebhook", () => {
   });
 
   it("records webhook dispositions in the event log without secrets", async () => {
-    const { helios, eventLog, deps } = setup();
+    const { helios, eventLog, diagnostics, deps } = setup();
     const signed = helios.emit({ environmentExternalId: "env-ext-1", event: "environment.created", at });
 
     await handleCloudShareWebhook(deps, {
@@ -436,19 +438,24 @@ describe("handleCloudShareWebhook", () => {
       ...signed,
     });
 
-    const events = await eventLog.listAll();
+    const events = await eventLog.listByCustomerId("customer-helios");
     expect(events).toHaveLength(2);
     expect(events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           type: "cloudshare.webhook.accepted",
+          customerId: "customer-helios",
           payload: expect.objectContaining({
-            customerId: "customer-helios",
-            environmentExternalId: "env-ext-1",
+            outcome: "success",
+            externalIds: expect.objectContaining({ environmentExternalId: "env-ext-1" }),
           }),
         }),
       ]),
     );
+    const protectedEntries = await diagnostics.query({ customerId: "customer-helios" });
+    expect(events.every((event) =>
+      protectedEntries.some((entry) => entry.correlationId === event.correlationId),
+    )).toBe(true);
   });
 
   it("records safe typed diagnostics for receipt, signature verification, and later reconcile correlation", async () => {
@@ -713,6 +720,7 @@ describe("handleCloudShareWebhook", () => {
 
   it("records the full typed failure diagnostic matrix without raw body leakage", async () => {
     const { helios, diagnostics, deps } = setup();
+    const appendEvent = vi.spyOn(deps.eventLog, "append");
     const invalidSignatureRawBody = JSON.stringify({
       Event: "environment.created",
       CreatedAt: at.toISOString(),
@@ -728,6 +736,7 @@ describe("handleCloudShareWebhook", () => {
       rawBody: unknownRawBody,
       signature: "invalid",
     });
+    expect(appendEvent).not.toHaveBeenCalled();
 
     const missingSignatureRawBody = JSON.stringify({
       Event: "environment.created",

@@ -172,7 +172,7 @@ function activeParentGuard(
     type: parentType,
     id: parentId,
     customerId: request.customerId,
-    deniedAudit: { id: newId(deps), occurredAt: currentTime(deps), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action, subjectType, subjectId, outcome: "denied", correlationId, details: { integrationSurface: "local_sales_records", reason: "parent_archived", parentType } },
+    deniedAudit: { id: newId(deps), occurredAt: currentTime(deps), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action, subjectType, subjectId, outcome: "denied", correlationId, details: { integrationSurface: "local_sales_records", failureMode: "parent_archived", parentType } },
     deniedDiagnostic: deps.redactDiagnostic({ source: "sales-records", operation: action, outcome: "failure", level: "warn", customerId: request.customerId, actor: request.actor, subject: { type: subjectType, id: subjectId }, message: `Sales ${action} denied because its ${parentType} is archived`, correlationId, details: { integrationSurface: "local_sales_records", reason: "parent_archived", parentType } }),
   };
 }
@@ -190,7 +190,7 @@ function activeRecordGuard(
     type: recordType,
     id: recordId,
     customerId: request.customerId,
-    deniedAudit: { id: newId(deps), occurredAt: currentTime(deps), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action, subjectType: recordType, subjectId: recordId, outcome: "denied", correlationId, details: { integrationSurface: "local_sales_records", reason: "record_archived" } },
+    deniedAudit: { id: newId(deps), occurredAt: currentTime(deps), customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action, subjectType: recordType, subjectId: recordId, outcome: "denied", correlationId, details: { integrationSurface: "local_sales_records", failureMode: "record_archived" } },
     deniedDiagnostic: deps.redactDiagnostic({ source: "sales-records", operation: action, outcome: "failure", level: "warn", customerId: request.customerId, actor: request.actor, subject: { type: recordType, id: recordId }, message: `Sales ${action} denied because the ${label} was archived`, correlationId, details: { integrationSurface: "local_sales_records", reason: "record_archived" } }),
   };
 }

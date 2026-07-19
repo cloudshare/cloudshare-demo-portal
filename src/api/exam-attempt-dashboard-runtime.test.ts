@@ -577,11 +577,13 @@ describe("getExamAttemptDashboardRuntime", () => {
     expect(JSON.stringify(dashboard.body)).not.toContain("loginUrl");
   });
 
-  it("records supportable diagnostics when CloudShare environment correlation fails", async () => {
+  it("retains protected response evidence for a cross-realm CloudShare rate-limit failure", async () => {
     const exams = await makeExamRepository();
     const attempts = createInMemoryExamAttemptRepository();
     const launches = createInMemoryLabLaunchRepository();
     const eventLog = createInMemoryEventLogRepository();
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
     const logger = makeLogger();
 
     await attempts.save({
@@ -613,17 +615,31 @@ describe("getExamAttemptDashboardRuntime", () => {
         cloudshare: makeCloudShareFactory({
           requestV4: vi.fn(async (spec: { path: string }) => {
             if (spec.path === "/trainings/EXtraining-1/students") {
-              throw new CloudShareRequestError("forbidden", 403, {
-                method: "GET",
-                path: "/v4/trainings/EXtraining-1/students",
-                integrationSurface: "cloudshare.v4.training.participant_list",
-                responseBody: "{\"error\":\"forbidden\"}",
-              });
+              throw {
+                name: "CloudShareRateLimitError",
+                cloudShareErrorDiscriminant: "cloudshare.rate-limit-error.v1",
+                status: 429,
+                classification: "rate_limit",
+                context: {
+                  status: 429,
+                  method: "GET",
+                  path: "/v4/trainings/EXtraining-1/students",
+                  integrationSurface: "cloudshare.v4.training.participant_list",
+                  requestHeaders: {
+                    Accept: "application/json",
+                    Authorization: "Bearer synthetic-dashboard-request-marker",
+                  },
+                  requestBody: { queryMarker: "synthetic-dashboard-query-marker" },
+                  responseHeaders: { "x-provider-trace": "synthetic-dashboard-trace" },
+                  responseBody: { accessLink: "synthetic-dashboard-response-marker" },
+                },
+              };
             }
             throw new Error(`unexpected path ${spec.path}`);
           }) as never,
         }),
         eventLog,
+        diagnostics,
         logger,
         now: () => new Date("2026-06-15T10:05:00.000Z"),
         newCorrelationId: () => "corr-list-1",
@@ -644,29 +660,63 @@ describe("getExamAttemptDashboardRuntime", () => {
         integrationSurface: "cloudshare.v4.training.participant_list",
         method: "GET",
         path: "/v4/trainings/EXtraining-1/students",
-        failureMode: "http_status",
-        responseStatus: 403,
+        failureMode: "rate_limit",
+        responseStatus: 429,
       }),
     );
     expect(JSON.stringify((logger.warn as ReturnType<typeof vi.fn>).mock.calls)).not.toContain("forbidden");
-    await expect(eventLog.listAll()).resolves.toEqual([
+    expect(JSON.stringify((logger.warn as ReturnType<typeof vi.fn>).mock.calls)).not.toContain(
+      "synthetic-dashboard",
+    );
+    await expect(eventLog.listByCustomerId("customer-helios")).resolves.toEqual([
       expect.objectContaining({
         eventId: "corr-list-1",
+        customerId: "customer-helios",
+        correlationId: "corr-list-1",
         type: "cloudshare.candidate_dashboard_environment_correlation.failed",
         payload: expect.objectContaining({
-          correlationId: "corr-list-1",
-          customerId: "customer-helios",
-          examAttemptId: "attempt-ready",
-          trainingId: "EXtraining-1",
           operation: "candidate_dashboard_environment_correlation",
+          outcome: "failure",
           attemptedOperation: "list_training_participants",
           integrationSurface: "cloudshare.v4.training.participant_list",
+          failureMode: "rate_limit",
+          responseStatus: 429,
+          externalIds: expect.objectContaining({
+            examAttemptId: "attempt-ready",
+            trainingId: "EXtraining-1",
+          }),
+        }),
+      }),
+    ]);
+    expect(JSON.stringify(await eventLog.listByCustomerId("customer-helios"))).not.toContain(
+      "synthetic-dashboard",
+    );
+    await expect(
+      diagnosticsRepository.query({
+        customerId: "customer-helios",
+        correlationId: "corr-list-1",
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        customerId: "customer-helios",
+        correlationId: "corr-list-1",
+        operation: "candidate_dashboard_environment_correlation",
+        outcome: "failure",
+        examAttemptId: "attempt-ready",
+        request: {
           method: "GET",
           path: "/v4/trainings/EXtraining-1/students",
-          failureMode: "http_status",
-          responseStatus: 403,
-          responseBody: "{\"error\":\"forbidden\"}",
-        }),
+          headers: {
+            Accept: "application/json",
+            Authorization: "[REDACTED]",
+          },
+          body: { queryMarker: "synthetic-dashboard-query-marker" },
+        },
+        response: {
+          status: 429,
+          headers: { "x-provider-trace": "synthetic-dashboard-trace" },
+          body: { accessLink: "synthetic-dashboard-response-marker" },
+        },
       }),
     ]);
   });
@@ -1042,21 +1092,20 @@ describe("getExamAttemptDashboardRuntime", () => {
         host: "api.accelerate.cloudshare.com",
         path: "/v4/trainings/EXtraining-1/students",
         integrationSurface: "cloudshare.v4.training.participant_list",
-        issues: ["Required"],
       }),
     );
+    expect(JSON.stringify((logger.warn as ReturnType<typeof vi.fn>).mock.calls)).not.toContain("Required");
     expect(JSON.stringify((logger.warn as ReturnType<typeof vi.fn>).mock.calls)).not.toContain("student-1");
-    await expect(eventLog.listAll()).resolves.toEqual([
+    await expect(eventLog.listByCustomerId("customer-helios")).resolves.toEqual([
       expect.objectContaining({
         eventId: "corr-list-2",
+        customerId: "customer-helios",
+        correlationId: "corr-list-2",
         payload: expect.objectContaining({
-          correlationId: "corr-list-2",
+          outcome: "failure",
           failureMode: "unexpected_response",
-          host: "api.accelerate.cloudshare.com",
-          path: "/v4/trainings/EXtraining-1/students",
           integrationSurface: "cloudshare.v4.training.participant_list",
-          responseBody: '{"Students":[{"Id":"student-1"}]}',
-          issues: ["Required"],
+          externalIds: expect.objectContaining({ examAttemptId: "attempt-ready" }),
         }),
       }),
     ]);

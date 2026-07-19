@@ -35,9 +35,11 @@ export class CloudShareRequestError extends CloudShareError {
 }
 
 export type CloudShareRateLimitClassification = "rate_limit" | "abuse_protection";
+export const CLOUDSHARE_RATE_LIMIT_ERROR_DISCRIMINANT = "cloudshare.rate-limit-error.v1";
 
 /** A CloudShare request was throttled or blocked by abuse protection. */
 export class CloudShareRateLimitError extends CloudShareRequestError {
+  readonly cloudShareErrorDiscriminant = CLOUDSHARE_RATE_LIMIT_ERROR_DISCRIMINANT;
   readonly retryAfterSeconds?: number;
   readonly rateLimitHeaders?: Record<string, string | string[]>;
 
@@ -90,12 +92,14 @@ export class CloudShareFixtureError extends CloudShareError {
 }
 
 export function isCloudShareRateLimitError(error: unknown): error is CloudShareRateLimitError {
-  return (
-    error instanceof CloudShareRateLimitError ||
-    (typeof error === "object" &&
-      error !== null &&
-      (error as { name?: unknown }).name === "CloudShareRateLimitError")
-  );
+  if (!error || typeof error !== "object" || Array.isArray(error)) return false;
+  const value = error as Record<string, unknown>;
+  return value.name === "CloudShareRateLimitError" &&
+    value.cloudShareErrorDiscriminant === CLOUDSHARE_RATE_LIMIT_ERROR_DISCRIMINANT &&
+    typeof value.status === "number" && Number.isFinite(value.status) &&
+    (value.classification === "rate_limit" || value.classification === "abuse_protection") &&
+    (value.context === undefined ||
+      (typeof value.context === "object" && value.context !== null && !Array.isArray(value.context)));
 }
 
 function isRateLimitHeaderMap(

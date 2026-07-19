@@ -17,6 +17,9 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const query = Object.fromEntries(url.searchParams.entries());
 
-  const resp = await handleGetEventLog(buildAdminEventLogDeps(services), { query });
+  const resp = await handleGetEventLog(buildAdminEventLogDeps(services), {
+    customerId: session.customerId,
+    query,
+  });
   return NextResponse.json(resp.body, { status: resp.status });
 }

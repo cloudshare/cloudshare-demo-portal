@@ -175,6 +175,98 @@ describe("deriveDiagnosticSupportHints", () => {
     expect(JSON.stringify(hints)).not.toContain("loginUrl");
   });
 
+  it("guides support when the local 429 fixture indicates likely requester-IP abuse protection", () => {
+    const hints = deriveDiagnosticSupportHints(
+      makeEntry({
+        operation: "candidate_dashboard_environment_correlation",
+        request: {
+          method: "GET",
+          path: "/v4/trainings/EXlocalRateLimit429/students",
+        },
+        response: {
+          status: 429,
+          headers: { "content-type": "application/json; charset=utf-8" },
+          body: { code: "synthetic-429-code" },
+        },
+        details: {
+          integrationSurface: "cloudshare.v4.training.participant_list",
+          failureMode: "abuse_protection",
+          responseStatus: 429,
+        },
+      }),
+    );
+
+    expect(hints).toEqual([
+      expect.objectContaining({
+        title: "CloudShare may have rate-limited the requester IP",
+        body: "An error has occurred processing your request. It is possible that this request failed because the requester's IP address was placed on an abuse list and rate-limited. Please contact support@cloudshare.com for confirmation and assistance.",
+      }),
+    ]);
+    expect(JSON.stringify(hints)).not.toContain("synthetic-429-code");
+  });
+
+  it.each([
+    {
+      label: "Guided Journey with a rate-limit classification",
+      operation: "exam_attempt.score.retrieve",
+      source: "guided-journey",
+      surface: "cloudshare.v4.guided_journey.progress",
+      failureMode: "rate_limit",
+    },
+    {
+      label: "webhook verification with an unrelated classification",
+      operation: "cloudshare.webhook.verify_signature",
+      source: "cloudshare-webhook",
+      surface: "cloudshare.webhook",
+      failureMode: "signature_mismatch",
+    },
+    {
+      label: "candidate correlation with an unknown classification",
+      operation: "candidate_dashboard_environment_correlation",
+      source: "runtime",
+      surface: "cloudshare.v4.training.participant_list",
+      failureMode: "unknown",
+    },
+    {
+      label: "unclassified operation on an unfamiliar surface",
+      operation: "cloudshare.future.operation",
+      source: "future-runtime",
+      surface: "cloudshare.v4.future_surface",
+      failureMode: undefined,
+    },
+  ])("prioritizes authoritative HTTP 429 guidance for $label", ({ operation, source, surface, failureMode }) => {
+    const hints = deriveDiagnosticSupportHints(makeEntry({
+      operation,
+      source,
+      response: { status: 429 },
+      details: {
+        integrationSurface: surface,
+        ...(failureMode ? { failureMode } : {}),
+      },
+    }));
+
+    expect(hints).toEqual([expect.objectContaining({
+      title: "CloudShare may have rate-limited the requester IP",
+      body: "An error has occurred processing your request. It is possible that this request failed because the requester's IP address was placed on an abuse list and rate-limited. Please contact support@cloudshare.com for confirmation and assistance.",
+    })]);
+  });
+
+  it("does not infer abuse-list rate limiting from an unrelated non-429 failure", () => {
+    const hints = deriveDiagnosticSupportHints(makeEntry({
+      operation: "exam_attempt.score.retrieve",
+      response: { status: 502 },
+      details: {
+        integrationSurface: "cloudshare.v4.guided_journey.progress",
+        failureMode: "unexpected_response",
+      },
+    }));
+
+    expect(hints).toEqual([expect.objectContaining({
+      title: "Guided Journey returned an unexpected payload",
+    })]);
+    expect(hints[0]?.body).not.toContain("abuse list");
+  });
+
   it("does not label a local participant-mapping persistence failure as a CloudShare request failure", () => {
     const hints = deriveDiagnosticSupportHints(
       makeEntry({

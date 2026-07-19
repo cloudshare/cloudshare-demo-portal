@@ -4,6 +4,7 @@ import type { ExamAttemptCreatedEvent } from "./integration-event";
 
 const event: ExamAttemptCreatedEvent = {
   id: "evt-1",
+  customerId: "customer-helios",
   occurredAt: new Date(0),
   type: "exam_attempt.created",
   examAttemptId: "ea-1",

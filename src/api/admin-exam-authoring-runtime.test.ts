@@ -312,7 +312,7 @@ describe("admin Exam authoring resource runtime", () => {
 
     expect(result.status).toBe(429);
     expect(result.body).toMatchObject({
-      error: "CloudShare is returning a 429 error for the current request. This is likely CloudShare rate limiting or abuse protection blocking the request. Check whether this public IP needs CloudShare allow-list or abuse-list review before retrying by contacting support@cloudshare.com.",
+      error: "An error has occurred processing your request. It is possible that this request failed because the requester's IP address was placed on an abuse list and rate-limited. Please contact support@cloudshare.com for confirmation and assistance.",
       correlationId: "corr-rate-limit",
       diagnostic: {
         operation: "cloudshare.resource_sync.policies.read",

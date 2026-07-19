@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import {
   redactAuditDetails,
+  projectAuditError,
   type AuditQuery,
   type AuditRecord,
   type AuditRepository,
@@ -24,7 +25,7 @@ function materialiseAuditRecord(record: AuditRecord): AuditRecord {
     examAttemptId: record.examAttemptId ?? null,
     correlationId: record.correlationId ?? null,
     details: redactAuditDetails(record.details),
-    error: record.error ?? null,
+    error: projectAuditError(record.error),
   };
 }
 
@@ -129,8 +130,8 @@ function rowToAuditRecord(row: AuditTrailEntryRow): AuditRecord {
     examId: row.examId,
     examAttemptId: row.examAttemptId,
     correlationId: row.correlationId,
-    details: parseJson<Record<string, unknown>>(row.detailsJson),
-    error: row.error,
+    details: redactAuditDetails(parseJson<Record<string, unknown>>(row.detailsJson)),
+    error: projectAuditError(row.error),
   };
 }
 

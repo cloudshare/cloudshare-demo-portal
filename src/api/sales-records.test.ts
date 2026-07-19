@@ -157,7 +157,7 @@ describe("Customer-scoped Sales record API handlers", () => {
 
     expect(response).toEqual({ status: 409, body: { error: "Archived account cannot be updated." } });
     expect(account).toMatchObject({ name: "Acme Labs", archivedAt: new Date("2026-07-12T17:01:00.000Z") });
-    expect(denied.at(-1)).toMatchObject({ action: "account.updated", outcome: "denied", subjectId: accountId, details: expect.objectContaining({ reason: "record_archived" }) });
+    expect(denied.at(-1)).toMatchObject({ action: "account.updated", outcome: "denied", subjectId: accountId, details: expect.objectContaining({ failureMode: "record_archived" }) });
   });
 
   it("does not let stale Opportunity or Contact patches reactivate history after a concurrent archive", async () => {

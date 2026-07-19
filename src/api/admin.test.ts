@@ -45,7 +45,7 @@ function makeEventLog(records: unknown[] = []): EventLogRepository {
   return {
     append: vi.fn(),
     listFailureEventsByExamAttemptIds: vi.fn().mockResolvedValue([]),
-    listAll: vi.fn().mockResolvedValue(records),
+    listByCustomerId: vi.fn().mockResolvedValue(records),
   };
 }
 
@@ -228,6 +228,30 @@ describe("handleGetAuditTrail", () => {
       }),
     ]);
   });
+
+  it("projects legacy audit material again at the ordinary API boundary", async () => {
+    const protectedMarker = "synthetic-admin-audit-marker";
+    const audit = createInMemoryAuditRepository();
+    audit.query = async () => [makeRecord({
+      id: "legacy-1",
+      customerId: "customer-1",
+      correlationId: "corr-legacy-1",
+      outcome: "failure",
+      details: { integrationSurface: "cloudshare.v4.environment", providerEvidence: { accessLink: protectedMarker } },
+      error: protectedMarker,
+    })];
+
+    const result = await handleGetAuditTrail(
+      { audit, logger: makeLogger() },
+      { customerId: "customer-1", query: {} },
+    );
+
+    expect(JSON.stringify(result.body).includes(protectedMarker)).toBe(false);
+    expect(result.body).toMatchObject({ records: [expect.objectContaining({
+      details: { integrationSurface: "cloudshare.v4.environment" },
+      error: "Operation failed; inspect correlated diagnostics.",
+    })] });
+  });
 });
 
 describe("handleSyncResources", () => {
@@ -341,12 +365,19 @@ describe("handleGetEventLog", () => {
 
   it("returns 200 with event log entries", async () => {
     const eventLog = makeEventLog([
-      { eventId: "e-1", type: "exam_attempt.created", occurredAt: new Date(), payload: {} },
+      {
+        eventId: "e-1",
+        customerId: "customer-1",
+        correlationId: "e-1",
+        type: "exam_attempt.created",
+        occurredAt: new Date(),
+        payload: { operation: "exam_attempt.create", outcome: "success" },
+      },
     ]);
 
     const result = await handleGetEventLog(
       { eventLog, logger: makeLogger() },
-      { query: {} },
+      { customerId: "customer-1", query: {} },
     );
 
     expect(result.status).toBe(200);

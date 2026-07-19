@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { createInMemoryAuditRepository } from "@/persistence/audit-repository";
-import type { AuditRecord } from "./audit-trail";
+import { redactAuditDetails, type AuditRecord } from "./audit-trail";
 
 function makeRecord(partial: Partial<AuditRecord> = {}): AuditRecord {
   return {
@@ -14,6 +14,55 @@ function makeRecord(partial: Partial<AuditRecord> = {}): AuditRecord {
 }
 
 describe("AuditRepository", () => {
+  it("projects protected integration contexts out of ordinary audit details", () => {
+    const protectedMarker = "synthetic-protected-marker";
+    const projected = redactAuditDetails({
+      operation: "candidate_admission",
+      integrationSurface: "cloudshare.v4.training.participant",
+      status: 502,
+      request: {
+        query: { marker: protectedMarker },
+        headers: { marker: protectedMarker },
+        body: { marker: protectedMarker },
+      },
+      response: {
+        headers: { marker: protectedMarker },
+        body: { marker: protectedMarker },
+      },
+      context: { marker: protectedMarker },
+      cause: { marker: protectedMarker },
+      providerMessage: protectedMarker,
+      providerEvidence: { accessLink: protectedMarker },
+      reason: protectedMarker,
+      transport: protectedMarker,
+      path: `/provider/resource?token=${protectedMarker}`,
+    });
+
+    expect(JSON.stringify(projected).includes(protectedMarker)).toBe(false);
+    expect(projected).toMatchObject({
+      operation: "candidate_admission",
+      integrationSurface: "cloudshare.v4.training.participant",
+      status: 502,
+      path: "/provider/resource",
+    });
+  });
+
+  it("does not retain provider free text in the ordinary audit error field", async () => {
+    const protectedMarker = "synthetic-audit-error-marker";
+    const repo = createInMemoryAuditRepository();
+
+    await repo.write(makeRecord({
+      customerId: "customer-1",
+      correlationId: "correlation-1",
+      outcome: "failure",
+      error: protectedMarker,
+    }));
+
+    const [record] = await repo.listAll();
+    expect(record.error?.includes(protectedMarker)).toBe(false);
+    expect(record.correlationId).toBe("correlation-1");
+  });
+
   it("writes and retrieves records by examAttemptId", async () => {
     const repo = createInMemoryAuditRepository();
     await repo.write(makeRecord({ examAttemptId: "a-1", id: "r-1" }));

@@ -539,9 +539,20 @@ export function getServices(): Services {
   events.subscribe("exam_attempt.created", async (event) => {
     await eventLog.append({
       eventId: event.id,
+      customerId: event.customerId,
+      correlationId: event.id,
       type: event.type,
       occurredAt: event.occurredAt,
-      payload: event as unknown as Record<string, unknown>,
+      payload: {
+        operation: "exam_attempt.create",
+        outcome: "success",
+        actor: { type: "system" },
+        externalIds: {
+          examAttemptId: event.examAttemptId,
+          candidateId: event.candidateId,
+          examId: event.examId,
+        },
+      },
     });
   });
 

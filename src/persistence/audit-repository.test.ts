@@ -34,7 +34,10 @@ describe("createPrismaAuditRepository", () => {
     });
 
     const reader = createPrismaAuditRepository(prisma);
-    const [entry] = await reader.listAll();
+    const [entry] = await reader.query({
+      customerId: "customer-helios",
+      correlationId: "corr-admin-1",
+    });
 
     expect(entry).toMatchObject({
       id: "audit-admin-1",
@@ -87,7 +90,7 @@ describe("createPrismaAuditRepository", () => {
     await expect(repo.listByExamAttemptIds(["attempt-1", "attempt-2"])).resolves.toHaveLength(2);
   });
 
-  it("filters durable audit entries and redacts secret-shaped detail fields", async () => {
+  it("filters durable audit entries and omits non-metadata detail fields", async () => {
     const repo = createPrismaAuditRepository(prisma);
     await repo.write({
       id: "audit-admin-1",
@@ -128,11 +131,32 @@ describe("createPrismaAuditRepository", () => {
         id: "audit-admin-1",
         details: {
           changedFields: ["apiKey"],
-          apiKey: "[REDACTED]",
-          nested: { webhookSecret: "[REDACTED]" },
         },
       },
     ]);
+  });
+
+  it("fails closed when rehydrating a legacy durable row written before confinement", async () => {
+    const protectedMarker = "synthetic-legacy-audit-marker";
+    await prisma.auditTrailEntry.create({
+      data: {
+        id: "audit-legacy-1",
+        occurredAt: new Date("2026-07-04T10:00:00.000Z"),
+        customerId: "customer-helios",
+        action: "cloudshare.read.failed",
+        outcome: "failure",
+        correlationId: "corr-legacy-1",
+        detailsJson: JSON.stringify({ integrationSurface: "cloudshare.v4.environment", providerEvidence: { accessLink: protectedMarker } }),
+        error: protectedMarker,
+      },
+    });
+
+    const [entry] = await createPrismaAuditRepository(prisma).query({ customerId: "customer-helios" });
+    expect(JSON.stringify(entry).includes(protectedMarker)).toBe(false);
+    expect(entry).toMatchObject({
+      details: { integrationSurface: "cloudshare.v4.environment" },
+      error: "Operation failed; inspect correlated diagnostics.",
+    });
   });
 });
 
@@ -160,7 +184,7 @@ describe("createInMemoryAuditRepository", () => {
     ]);
   });
 
-  it("filters and redacts with the same contract as the durable repository", async () => {
+  it("filters and projects with the same contract as the durable repository", async () => {
     const repo = createInMemoryAuditRepository();
     await repo.write({
       id: "audit-admin-1",
@@ -189,7 +213,7 @@ describe("createInMemoryAuditRepository", () => {
     await expect(repo.query({ customerId: "customer-helios", action: "exam.published" })).resolves.toMatchObject([
       {
         id: "audit-admin-1",
-        details: { loginUrl: "[REDACTED]" },
+        details: {},
       },
     ]);
   });

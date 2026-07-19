@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { redactAuditDetails, type AuditRecord } from "@/domain/audit-trail";
+import { projectAuditError, redactAuditDetails, type AuditRecord } from "@/domain/audit-trail";
 import type { DiagnosticLogEntryInput } from "@/domain/diagnostic-log";
 import type { SalesMutationWriter } from "@/domain/sales-mutation-writer";
 
@@ -60,7 +60,7 @@ async function reserveActiveParent(
 
 function toAuditRow(record: AuditRecord) {
   const details = redactAuditDetails(record.details);
-  return { id: record.id, occurredAt: record.occurredAt, customerId: record.customerId ?? null, actorType: record.actorType ?? null, actorId: record.actorId ?? null, actorEmail: record.actorEmail?.toLowerCase() ?? null, action: record.action, subjectType: record.subjectType ?? null, subjectId: record.subjectId ?? null, outcome: record.outcome, candidateId: record.candidateId ?? null, candidateEmail: record.candidateEmail?.toLowerCase() ?? null, examId: record.examId ?? null, examAttemptId: record.examAttemptId ?? null, correlationId: record.correlationId ?? null, detailsJson: details ? JSON.stringify(details) : null, error: record.error ?? null };
+  return { id: record.id, occurredAt: record.occurredAt, customerId: record.customerId ?? null, actorType: record.actorType ?? null, actorId: record.actorId ?? null, actorEmail: record.actorEmail?.toLowerCase() ?? null, action: record.action, subjectType: record.subjectType ?? null, subjectId: record.subjectId ?? null, outcome: record.outcome, candidateId: record.candidateId ?? null, candidateEmail: record.candidateEmail?.toLowerCase() ?? null, examId: record.examId ?? null, examAttemptId: record.examAttemptId ?? null, correlationId: record.correlationId ?? null, detailsJson: details ? JSON.stringify(details) : null, error: projectAuditError(record.error) };
 }
 
 function toDiagnosticRow(input: DiagnosticLogEntryInput) {

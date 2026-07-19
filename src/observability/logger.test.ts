@@ -11,7 +11,7 @@ describe("createLogger", () => {
     expect(sink).toHaveBeenCalledOnce();
     const line = JSON.parse(sink.mock.calls[0][0] as string);
     expect(line.level).toBe("info");
-    expect(line.message).toBe("lab launched");
+    expect(line.message).toBe("ordinary log event");
     expect(line.examAttemptId).toBe("ea_1");
   });
 
@@ -22,8 +22,7 @@ describe("createLogger", () => {
     logger.error("call failed", { authHeader: "Bearer super-secret-token" });
 
     const line = JSON.parse(sink.mock.calls[0][0] as string);
-    expect(line.authHeader).not.toContain("super-secret-token");
-    expect(line.authHeader).toContain("[REDACTED]");
+    expect(line).not.toHaveProperty("authHeader");
   });
 
   it("never lets a raw secret reach the sink even as a bare field value", () => {
@@ -60,5 +59,40 @@ describe("createLogger", () => {
     expect(raw).toContain('"authorization":"[REDACTED]"');
     expect(raw).not.toContain("private");
     expect(raw).not.toContain("cookie");
+  });
+
+  it("drops provider free-text fields from generic log output", () => {
+    const sink = vi.fn();
+    const logger = createLogger({ secrets: [], sink });
+    const protectedMarker = "synthetic-generic-log-marker";
+
+    logger.warn("provider operation failed", {
+      operation: "provider.read",
+      correlationId: "correlation-1",
+      error: protectedMarker,
+      errorMessage: protectedMarker,
+      reason: protectedMarker,
+      providerMessage: protectedMarker,
+      providerEvidence: { accessLink: protectedMarker },
+      response: { status: 503, transport: protectedMarker },
+      path: `/provider/resource?token=${protectedMarker}`,
+    });
+
+    const raw = sink.mock.calls[0][0] as string;
+    expect(raw.includes(protectedMarker)).toBe(false);
+    expect(raw).toContain('"correlationId":"correlation-1"');
+    expect(raw).toContain('"path":"/provider/resource"');
+  });
+
+  it("does not emit untrusted free text supplied as the ordinary log message", () => {
+    const sink = vi.fn();
+    const logger = createLogger({ secrets: [], sink });
+    const protectedMarker = "synthetic-message-marker";
+
+    logger.warn(protectedMarker, { operation: "provider.read" });
+
+    const raw = sink.mock.calls[0][0] as string;
+    expect(raw.includes(protectedMarker)).toBe(false);
+    expect(JSON.parse(raw)).toMatchObject({ message: "ordinary log event", operation: "provider.read" });
   });
 });

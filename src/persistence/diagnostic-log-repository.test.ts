@@ -314,6 +314,29 @@ describe("createPrismaDiagnosticLogRepository", () => {
   });
 });
 
+describe("createInMemoryDiagnosticLogRepository protected evidence contract", () => {
+  it("retains authorized request and provider-response bodies exactly", async () => {
+    const repository = createInMemoryDiagnosticLogRepository();
+    const requestBody = { marker: "synthetic-request-marker", nested: ["exact"] };
+    const responseBody = { marker: "synthetic-response-marker", nested: ["exact"] };
+
+    await repository.append({
+      source: "cloudshare",
+      operation: "cloudshare.contract_probe",
+      outcome: "failure",
+      customerId: "cust_1",
+      message: "contract probe",
+      correlationId: "corr-contract-probe",
+      request: { body: requestBody },
+      response: { body: responseBody },
+    });
+
+    const [entry] = await repository.query({ customerId: "cust_1" });
+    expect(entry.request?.body).toEqual(requestBody);
+    expect(entry.response?.body).toEqual(responseBody);
+  });
+});
+
 describe("createInMemoryDiagnosticLogRepository", () => {
   it("matches the Prisma repository contract for query filtering", async () => {
     const repo = createInMemoryDiagnosticLogRepository();

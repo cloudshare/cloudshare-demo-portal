@@ -27,6 +27,8 @@ import {
 } from "@/integrations/cloudshare";
 import type { CloudShareClient } from "@/integrations/cloudshare";
 import type { EnvironmentCommandResult } from "@/domain/environment";
+import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
+import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 
 const noSleep = () => Promise.resolve();
 
@@ -354,7 +356,7 @@ async function makeSuspendDeps(overrides: Partial<SuspendHandlerDeps> = {}): Pro
     eventLog: {
       append: vi.fn().mockResolvedValue(undefined),
       listFailureEventsByExamAttemptIds: vi.fn().mockResolvedValue([]),
-      listAll: vi.fn(),
+      listByCustomerId: vi.fn(),
     },
     connections: makeConnections(),
     cloudshare: makeSuspendCloudShareFactory(),
@@ -380,7 +382,7 @@ async function makeResumeDeps(overrides: Partial<ResumeHandlerDeps> = {}): Promi
     eventLog: {
       append: vi.fn().mockResolvedValue(undefined),
       listFailureEventsByExamAttemptIds: vi.fn().mockResolvedValue([]),
-      listAll: vi.fn(),
+      listByCustomerId: vi.fn(),
     },
     connections: makeConnections(),
     cloudshare: makeResumeCloudShareFactory(),
@@ -657,16 +659,15 @@ describe("suspendExamAttemptRuntime", () => {
     expect(deps.eventLog.append).toHaveBeenCalledWith(
       expect.objectContaining({
         eventId: "corr-suspend",
+        customerId: "customer-1",
+        correlationId: "corr-suspend",
         type: "cloudshare.exam_suspend.failed",
         payload: expect.objectContaining({
-          correlationId: "corr-suspend",
           operation: "exam_suspend",
+          outcome: "failure",
           attemptedOperation: "resolve_environment_correlation",
           integrationSurface: "cloudshare.v4.training.participant_list",
-          method: "GET",
-          path: "/v4/trainings/EXtraining-1/students",
           failureMode: "not_correlated_yet",
-          currentEnvironmentExternalId: null,
         }),
       }),
     );
@@ -693,15 +694,23 @@ describe("suspendExamAttemptRuntime", () => {
           integrationSurface: "cloudshare.v4.training.participant_list",
           method: "GET",
           path: "/v4/trainings/EXtraining-1/students",
-          responseBody: "{\"error\":\"forbidden\"}",
+          requestHeaders: {
+            Accept: "application/json",
+            Authorization: "Bearer synthetic-reusable-request-marker",
+          },
+          requestBody: { queryMarker: "synthetic-reusable-query-marker" },
+          responseHeaders: { "x-provider-trace": "synthetic-reusable-trace" },
+          responseBody: { loginUrl: "synthetic-reusable-response-marker" },
         });
       }) as unknown as CloudShareClient["requestV4"],
     });
+    const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
     const deps = await makeSuspendDeps({
       launches,
       cloudshare: {
         forConnection: vi.fn().mockReturnValue(customerClient),
       },
+      diagnostics: createDiagnosticRecorder({ repository: diagnosticsRepository }),
     });
 
     const resp = await suspendExamAttemptRuntime(deps, { examAttemptId: "ea-1" });
@@ -719,10 +728,12 @@ describe("suspendExamAttemptRuntime", () => {
     expect(deps.eventLog.append).toHaveBeenCalledWith(
       expect.objectContaining({
         eventId: "corr-suspend",
+        customerId: "customer-1",
+        correlationId: "corr-suspend",
         type: "cloudshare.exam_suspend.environment_correlation.failed",
         payload: expect.objectContaining({
-          correlationId: "corr-suspend",
           operation: "exam_suspend",
+          outcome: "failure",
           attemptedOperation: "list_training_participants",
           integrationSurface: "cloudshare.v4.training.participant_list",
           failureMode: "http_status",
@@ -730,16 +741,52 @@ describe("suspendExamAttemptRuntime", () => {
         }),
       }),
     );
+    expect(JSON.stringify((deps.eventLog.append as ReturnType<typeof vi.fn>).mock.calls)).not.toContain(
+      "synthetic-reusable",
+    );
+    expect(JSON.stringify((deps.logger.warn as ReturnType<typeof vi.fn>).mock.calls)).not.toContain(
+      "synthetic-reusable",
+    );
+    await expect(
+      diagnosticsRepository.query({
+        customerId: "customer-1",
+        correlationId: "corr-suspend",
+        operation: "exam_suspend",
+      }),
+    ).resolves.toEqual([
+      expect.objectContaining({
+        customerId: "customer-1",
+        correlationId: "corr-suspend",
+        operation: "exam_suspend",
+        outcome: "failure",
+        examAttemptId: "ea-1",
+        request: {
+          method: "GET",
+          path: "/v4/trainings/EXtraining-1/students",
+          headers: {
+            Accept: "application/json",
+            Authorization: "[REDACTED]",
+          },
+          body: { queryMarker: "synthetic-reusable-query-marker" },
+        },
+        response: {
+          status: 403,
+          headers: { "x-provider-trace": "synthetic-reusable-trace" },
+          body: { loginUrl: "synthetic-reusable-response-marker" },
+        },
+      }),
+    ]);
     expect(deps.eventLog.append).toHaveBeenCalledWith(
       expect.objectContaining({
         eventId: "corr-suspend",
+        customerId: "customer-1",
+        correlationId: "corr-suspend",
         type: "cloudshare.exam_suspend.failed",
         payload: expect.objectContaining({
-          correlationId: "corr-suspend",
           operation: "exam_suspend",
+          outcome: "failure",
           attemptedOperation: "resolve_environment_correlation",
           failureMode: "not_correlated_yet",
-          currentEnvironmentExternalId: "ENKolD1-ab84YIxODeMGob9A2",
         }),
       }),
     );
@@ -786,13 +833,14 @@ describe("suspendExamAttemptRuntime", () => {
     expect(deps.eventLog.append).toHaveBeenCalledWith(
       expect.objectContaining({
         eventId: "corr-suspend",
+        customerId: "customer-1",
+        correlationId: "corr-suspend",
         type: "cloudshare.exam_suspend.failed",
         payload: expect.objectContaining({
-          correlationId: "corr-suspend",
           operation: "exam_suspend",
+          outcome: "failure",
           attemptedOperation: "poll_environment_status",
           integrationSurface: "cloudshare.v3.env",
-          method: "GET",
           failureMode: "confirmation_timeout",
         }),
       }),
@@ -843,14 +891,15 @@ describe("suspendExamAttemptRuntime", () => {
     expect(deps.eventLog.append).toHaveBeenCalledWith(
       expect.objectContaining({
         eventId: "corr-suspend",
+        customerId: "customer-1",
+        correlationId: "corr-suspend",
         type: "cloudshare.exam_suspend.failed",
         payload: expect.objectContaining({
-          correlationId: "corr-suspend",
           operation: "exam_suspend",
+          outcome: "failure",
           attemptedOperation: "load_customer_cloudshare_connection",
           integrationSurface: "cloudshare.connection",
           failureMode: "missing_customer_connection",
-          customerId: "customer-1",
         }),
       }),
     );
@@ -881,15 +930,15 @@ describe("suspendExamAttemptRuntime", () => {
     expect(deps.eventLog.append).toHaveBeenCalledWith(
       expect.objectContaining({
         eventId: "corr-suspend",
+        customerId: "customer-1",
+        correlationId: "corr-suspend",
         payload: expect.objectContaining({
-          correlationId: "corr-suspend",
+          operation: "exam_suspend",
+          outcome: "failure",
           attemptedOperation: "suspend_environment",
           integrationSurface: "cloudshare.v3.env.action.suspend",
-          method: "PUT",
-          path: "/api/v3/envs/actions/suspend",
           failureMode: "http_status",
           responseStatus: 403,
-          responseBody: "{\"error\":\"forbidden\"}",
         }),
       }),
     );
@@ -923,13 +972,15 @@ describe("suspendExamAttemptRuntime", () => {
     expect(deps.eventLog.append).toHaveBeenCalledWith(
       expect.objectContaining({
         eventId: "corr-suspend",
+        customerId: "customer-1",
+        correlationId: "corr-suspend",
         payload: expect.objectContaining({
-          correlationId: "corr-suspend",
+          operation: "exam_suspend",
+          outcome: "failure",
           attemptedOperation: "suspend_environment",
           integrationSurface: "cloudshare.v3.env.action.suspend",
           failureMode: "rate_limit",
           responseStatus: 429,
-          responseHeaders: { "retry-after": "30" },
         }),
       }),
     );
@@ -1168,8 +1219,11 @@ describe("resumeExamAttemptRuntime", () => {
     expect(deps.eventLog.append).toHaveBeenCalledWith(
       expect.objectContaining({
         eventId: "corr-resume",
+        customerId: "customer-1",
+        correlationId: "corr-resume",
         payload: expect.objectContaining({
-          correlationId: "corr-resume",
+          operation: "exam_resume",
+          outcome: "failure",
           attemptedOperation: "poll_environment_status",
           integrationSurface: "cloudshare.v3.env",
           failureMode: "confirmation_timeout",
@@ -1523,18 +1577,17 @@ describe("resumeExamAttemptRuntime", () => {
     expect(deps.eventLog.append).toHaveBeenCalledWith(
       expect.objectContaining({
         eventId: "corr-resume",
+        customerId: "customer-1",
+        correlationId: "corr-resume",
         type: "cloudshare.exam_resume.failed",
         payload: expect.objectContaining({
-          correlationId: "corr-resume",
-          examAttemptId: "ea-1",
           operation: "exam_resume",
+          outcome: "failure",
           attemptedOperation: "resume_environment",
           integrationSurface: "cloudshare.v3.env.action.resume",
-          method: "PUT",
-          path: "/api/v3/envs/actions/resume",
           failureMode: "http_status",
           responseStatus: 500,
-          responseBody: "{\"error\":\"state settling\"}",
+          externalIds: expect.objectContaining({ examAttemptId: "ea-1" }),
         }),
       }),
     );
@@ -1601,17 +1654,16 @@ describe("resumeExamAttemptRuntime", () => {
     expect(deps.eventLog.append).toHaveBeenCalledWith(
       expect.objectContaining({
         eventId: "corr-resume",
+        customerId: "customer-1",
+        correlationId: "corr-resume",
         type: "cloudshare.exam_resume.failed",
         payload: expect.objectContaining({
-          correlationId: "corr-resume",
           operation: "exam_resume",
+          outcome: "failure",
           attemptedOperation: "resume_environment",
           integrationSurface: "cloudshare.v3.env.action.resume",
-          method: "PUT",
-          path: "/api/v3/envs/actions/resume",
           failureMode: "http_status",
           responseStatus: 409,
-          responseBody: "{\"error\":\"already running\"}",
         }),
       }),
     );
@@ -1672,13 +1724,14 @@ describe("resumeExamAttemptRuntime", () => {
     expect(deps.eventLog.append).toHaveBeenCalledWith(
       expect.objectContaining({
         eventId: "corr-resume",
+        customerId: "customer-1",
+        correlationId: "corr-resume",
         type: "cloudshare.exam_resume.failed",
         payload: expect.objectContaining({
-          correlationId: "corr-resume",
           operation: "exam_resume",
+          outcome: "failure",
           attemptedOperation: "resolve_environment_correlation",
           failureMode: "not_correlated_yet",
-          currentEnvironmentExternalId: "ENKolD1-ab84YIxODeMGob9A2",
         }),
       }),
     );
@@ -1710,19 +1763,7 @@ describe("resumeExamAttemptRuntime", () => {
     expect(cloudshare.forConnection).not.toHaveBeenCalled();
     expect(globalController.resumeEnvironment).not.toHaveBeenCalled();
     expect(globalSource.getEnvironmentState).not.toHaveBeenCalled();
-    expect(deps.eventLog.append).toHaveBeenCalledWith(
-      expect.objectContaining({
-        eventId: "corr-resume",
-        type: "cloudshare.exam_resume.failed",
-        payload: expect.objectContaining({
-          correlationId: "corr-resume",
-          operation: "exam_resume",
-          attemptedOperation: "load_customer_cloudshare_connection",
-          integrationSurface: "cloudshare.connection",
-          failureMode: "missing_customer_connection",
-        }),
-      }),
-    );
+    expect(deps.eventLog.append).not.toHaveBeenCalled();
   });
 
   it("returns 502 with transport diagnostics when CloudShare resume transport fails", async () => {
@@ -1749,13 +1790,15 @@ describe("resumeExamAttemptRuntime", () => {
     expect(resp.body).toEqual({ error: "exam resume failed", correlationId: "corr-resume" });
     expect(deps.eventLog.append).toHaveBeenCalledWith(
       expect.objectContaining({
+        eventId: "corr-resume",
+        customerId: "customer-1",
+        correlationId: "corr-resume",
         payload: expect.objectContaining({
+          operation: "exam_resume",
+          outcome: "failure",
           attemptedOperation: "resume_environment",
           integrationSurface: "cloudshare.v3.env.action.resume",
-          method: "POST",
-          path: "/api/v3/envs/actions/resume",
           failureMode: "transport",
-          cause: "ECONNRESET",
         }),
       }),
     );
@@ -1786,12 +1829,15 @@ describe("resumeExamAttemptRuntime", () => {
     expect(resp.body).toEqual({ error: "exam resume failed", correlationId: "corr-resume" });
     expect(deps.eventLog.append).toHaveBeenCalledWith(
       expect.objectContaining({
+        eventId: "corr-resume",
+        customerId: "customer-1",
+        correlationId: "corr-resume",
         payload: expect.objectContaining({
+          operation: "exam_resume",
+          outcome: "failure",
           attemptedOperation: "resume_environment",
           integrationSurface: "cloudshare.v3.env.action.resume",
           failureMode: "unexpected_response",
-          responseBody: "{\"bad\":true}",
-          issues: ["Required"],
         }),
       }),
     );
@@ -1923,16 +1969,15 @@ describe("runHeartbeatAutoSuspendRuntime", () => {
     expect(deps.eventLog.append).toHaveBeenCalledWith(
       expect.objectContaining({
         eventId: "corr-suspend",
+        customerId: "customer-1",
+        correlationId: "corr-suspend",
         type: "cloudshare.heartbeat_auto_suspend.failed",
         payload: expect.objectContaining({
-          correlationId: "corr-suspend",
           operation: "heartbeat_auto_suspend",
+          outcome: "failure",
           attemptedOperation: "resolve_environment_correlation",
           integrationSurface: "cloudshare.v4.training.participant_list",
-          method: "GET",
-          path: "/v4/trainings/EXtraining-1/students",
           failureMode: "not_correlated_yet",
-          currentEnvironmentExternalId: null,
         }),
       }),
     );
@@ -1985,13 +2030,14 @@ describe("runHeartbeatAutoSuspendRuntime", () => {
     expect(deps.eventLog.append).toHaveBeenCalledWith(
       expect.objectContaining({
         eventId: "corr-suspend",
+        customerId: "customer-1",
+        correlationId: "corr-suspend",
         type: "cloudshare.heartbeat_auto_suspend.failed",
         payload: expect.objectContaining({
-          correlationId: "corr-suspend",
           operation: "heartbeat_auto_suspend",
+          outcome: "failure",
           attemptedOperation: "resolve_environment_correlation",
           failureMode: "not_correlated_yet",
-          currentEnvironmentExternalId: "ENKolD1-ab84YIxODeMGob9A2",
         }),
       }),
     );
@@ -2008,13 +2054,11 @@ describe("runHeartbeatAutoSuspendRuntime", () => {
       }),
       expect.objectContaining({
         operation: "heartbeat_auto_suspend",
+        outcome: "failure",
         attemptedOperation: "suspend_environment",
         integrationSurface: "cloudshare.v3.env.action.suspend",
-        method: "PUT",
-        path: "/api/v3/envs/actions/suspend",
         failureMode: "http_status",
         responseStatus: 403,
-        responseBody: "{\"error\":\"forbidden\"}",
       }),
     ],
     [
@@ -2028,13 +2072,10 @@ describe("runHeartbeatAutoSuspendRuntime", () => {
       }),
       expect.objectContaining({
         operation: "heartbeat_auto_suspend",
+        outcome: "failure",
         attemptedOperation: "suspend_environment",
         integrationSurface: "cloudshare.v3.env.action.suspend",
-        method: "PUT",
-        path: "/api/v3/envs/actions/suspend",
         failureMode: "unexpected_response",
-        responseBody: "{\"bad\":true}",
-        issues: ["Required"],
       }),
     ],
   ])(
@@ -2055,6 +2096,8 @@ describe("runHeartbeatAutoSuspendRuntime", () => {
       expect(deps.eventLog.append).toHaveBeenCalledWith(
         expect.objectContaining({
           eventId: "corr-suspend",
+          customerId: "customer-1",
+          correlationId: "corr-suspend",
           type: "cloudshare.heartbeat_auto_suspend.failed",
           payload: expectedPayload,
         }),
@@ -2098,14 +2141,15 @@ describe("runHeartbeatAutoSuspendRuntime", () => {
     expect(deps.eventLog.append).toHaveBeenCalledWith(
       expect.objectContaining({
         eventId: "corr-suspend",
+        customerId: "customer-1",
+        correlationId: "corr-suspend",
         type: "cloudshare.heartbeat_auto_suspend.failed",
         payload: expect.objectContaining({
-          correlationId: "corr-suspend",
           operation: "heartbeat_auto_suspend",
+          outcome: "failure",
           attemptedOperation: "load_customer_cloudshare_connection",
           integrationSurface: "cloudshare.connection",
           failureMode: "missing_customer_connection",
-          customerId: "customer-1",
         }),
       }),
     );
@@ -2141,13 +2185,14 @@ describe("runHeartbeatAutoSuspendRuntime", () => {
     expect(deps.eventLog.append).toHaveBeenCalledWith(
       expect.objectContaining({
         eventId: "corr-suspend",
+        customerId: "customer-1",
+        correlationId: "corr-suspend",
         type: "cloudshare.heartbeat_auto_suspend.failed",
         payload: expect.objectContaining({
-          correlationId: "corr-suspend",
           operation: "heartbeat_auto_suspend",
+          outcome: "failure",
           attemptedOperation: "poll_environment_status",
           integrationSurface: "cloudshare.v3.env",
-          method: "GET",
           failureMode: "confirmation_timeout",
         }),
       }),

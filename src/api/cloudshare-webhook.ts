@@ -11,6 +11,7 @@ import {
 import { redactCloudShareAdminSupportValue } from "@/integrations/cloudshare/diagnostic-redaction";
 import type { WebhookIdempotencyStore } from "@/domain/webhook";
 import type { EventLogRepository } from "@/domain/event-log";
+import { projectEventLogMetadata } from "@/domain/event-log";
 import type { DiagnosticRecorder, DiagnosticLogEntryInput } from "@/domain/diagnostic-log";
 import type {
   CloudShareConnectionRecord,
@@ -73,6 +74,15 @@ export async function handleCloudShareWebhook(
   deps: CloudShareWebhookDeps,
   request: RawWebhookRequest & { readonly webhookPathToken: string },
 ): Promise<CloudShareWebhookResponse> {
+  const correlationId = deps.newEventId?.() ?? `cloudshare.webhook:${Date.now()}`;
+  const protectedDiagnostics = deps.diagnostics;
+  deps = {
+    ...deps,
+    newEventId: () => correlationId,
+    diagnostics: protectedDiagnostics
+      ? { record: (entry) => protectedDiagnostics.record({ ...entry, correlationId }) }
+      : undefined,
+  };
   const path = "/api/webhooks/cloudshare/{webhookPathToken}";
   const requestBodyBytes = Buffer.byteLength(request.rawBody, "utf8");
   const rawBodySha256 = hashRawBody(request.rawBody);
@@ -766,10 +776,35 @@ async function appendWebhookEvent(
   deps: Pick<CloudShareWebhookDeps, "eventLog" | "newEventId" | "now">,
   input: { readonly type: string; readonly payload: Record<string, unknown> },
 ): Promise<void> {
+  const customerId = typeof input.payload.customerId === "string"
+    ? input.payload.customerId
+    : null;
+  if (!customerId) return;
+  const correlationId = deps.newEventId?.() ?? `${input.type}:${Date.now()}`;
+  const outcome = input.type === "cloudshare.webhook.accepted" ? "success" : "failure";
   await deps.eventLog.append({
-    eventId: deps.newEventId?.() ?? `${input.type}:${Date.now()}`,
+    eventId: `${correlationId}:${input.type}`,
+    customerId,
+    correlationId,
     type: input.type,
     occurredAt: deps.now?.() ?? new Date(),
-    payload: input.payload,
+    payload: projectEventLogMetadata({
+      operation: input.type,
+      integrationSurface: "cloudshare.v3.webhook",
+      outcome,
+      ...(outcome === "failure" ? { failureMode: input.type.split(".").at(-1) } : {}),
+      actor: { type: "webhook" },
+      externalIds: {
+        ...(typeof input.payload.webhookPathFingerprint === "string"
+          ? { webhookPathFingerprint: input.payload.webhookPathFingerprint }
+          : {}),
+        ...(typeof input.payload.environmentExternalId === "string"
+          ? { environmentExternalId: input.payload.environmentExternalId }
+          : {}),
+        ...(typeof input.payload.idempotencyKey === "string"
+          ? { idempotencyKey: input.payload.idempotencyKey }
+          : {}),
+      },
+    }),
   });
 }
