@@ -10,7 +10,8 @@ const environmentListSchema = z.union([
   z.array(environmentSchema),
   z.object({ items: z.array(environmentSchema) }).transform(({ items }) => items),
 ]);
-const extendedSchema = z.object({ statusCode: z.number().int() }).passthrough();
+export const cloudShareV3SalesEnvironmentStatusCodeSchema = z.union([z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(7), z.literal(8), z.literal(9)]);
+const extendedSchema = z.object({ statusCode: cloudShareV3SalesEnvironmentStatusCodeSchema }).passthrough();
 
 export interface SalesEnvironmentObservation {
   readonly environmentId: string;

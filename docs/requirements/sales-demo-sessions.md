@@ -63,7 +63,8 @@ CloudShare v4 Sales Experience; it does not add participants or send invitations
   `GET /envs?ownerEmail=<participant>&brief=false`, requires exactly one Environment in the
   Session Item's Project, then reads its numeric status through documented
   `GET /envs/actions/getextended?envId=<opaque-v3-id>`. Zero or multiple same-Project matches
-  fail closed with an explicit resolution reason and protected evidence from the actual v3
+  fail closed by persisting and projecting a participant-level Needs attention reason and
+  `cloudshare_v3_owner_email_item_project` source, with protected evidence from the actual v3
   exchange. The UI labels successful observations `cloudshare_v3_environment`; the v4 roster's
   free-text environment field remains supporting context only.
 - The documented CloudShare v3 timezone list is cached. Normal UI does not expose cache

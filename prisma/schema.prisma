@@ -169,6 +169,8 @@ model SalesSessionParticipant {
   environmentStatus           String?
   environmentStatusCode       Int?
   environmentObservedAt       DateTime?
+  environmentAttentionReason  String?
+  environmentAttentionSource  String?
   lastReconciledAt            DateTime
   createdAt                   DateTime
   updatedAt                   DateTime

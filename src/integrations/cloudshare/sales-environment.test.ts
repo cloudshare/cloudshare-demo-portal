@@ -1,9 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
-import { createCloudShareSalesEnvironmentSource, SalesEnvironmentResolutionError } from "./sales-environment";
+import { cloudShareV3SalesEnvironmentStatusCodeSchema, createCloudShareSalesEnvironmentSource, SalesEnvironmentResolutionError } from "./sales-environment";
 
 const detailed = (data: unknown, path: string) => ({ data, host: "use.cloudshare.com", integrationSurface: "cloudshare.v3", request: { method: "GET" as const, path }, response: { status: 200, body: data } });
 
 describe("CloudShare Sales Environment observation", () => {
+  it("accepts only the documented numeric Environment status namespace", () => {
+    expect([2, 3, 4, 5, 7, 8, 9].map((value) => cloudShareV3SalesEnvironmentStatusCodeSchema.parse(value))).toEqual([2, 3, 4, 5, 7, 8, 9]);
+    expect(() => cloudShareV3SalesEnvironmentStatusCodeSchema.parse(6)).toThrow();
+  });
   it("resolves exactly one owner Environment in the Item project before reading numeric status", async () => {
     const requestV3Detailed = vi.fn()
       .mockResolvedValueOnce(detailed([{ id: "opaque-a", projectId: "other" }, { id: "opaque-b", projectId: "project-1" }], "/api/v3/envs"))

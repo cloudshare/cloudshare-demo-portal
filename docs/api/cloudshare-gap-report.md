@@ -1919,6 +1919,33 @@ tracks the provider acknowledgement defect.
 
 ---
 
+## GAP-32 — Sales roster `envId` is not the v3 Environment ID
+
+| Field | Detail |
+|---|---|
+| **Status** | Confirmed and mitigated in issue #370 |
+| **Verified live** | Yes |
+
+**Observed behaviour**
+
+The v4 Sales participant roster returns a 19-character numeric `envId`; it is not the
+opaque identifier accepted by v3 Environment actions. The verified resolution chain is
+Customer-credential-scoped `GET /api/v3/envs?ownerEmail=<participant>&brief=false`, an
+exact server-side match to the Session Item Project, then
+`GET /api/v3/envs/actions/getextended?envId=<opaque-v3-id>`.
+
+**Impact on certification use**
+
+Exactly one same-Project match is required. Zero or multiple matches are persisted and
+projected as an explicit needs-attention reason/source. Actual v3 exchanges and opaque IDs
+remain confined to protected Customer-scoped diagnostics; the roster reference is stored
+under a name that does not claim it is a v3 Environment ID.
+
+**Code reference:** `src/integrations/cloudshare/sales-environment.ts`,
+`src/api/sales-session-participants.ts`
+
+---
+
 ## GAP-N — Short descriptive title
 
 | Field | Detail |
@@ -1946,16 +1973,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-07-18 (added GAP-31 live Sales roster environment-status evidence).
+*Last updated: 2026-07-19 (added GAP-32 Sales roster/v3 Environment ID resolution evidence).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*
-## GAP-32 — Sales roster `envId` is not the v3 Environment ID
-
-Live issue #370 verification found that the v4 Sales participant roster returns a 19-character
-numeric `envId`. Passing that value to the v3 by-ID Environment route does not identify the
-participant's v3 Environment. The documented, verified resolution chain is Customer-credential
-scoped `GET /api/v3/envs?ownerEmail=<participant>&brief=false`, followed by a server-side exact
-match to the Session Item Project. Exactly one match is required. Its opaque `id` is passed to
-`GET /api/v3/envs/actions/getextended?envId=<id>`, whose numeric `statusCode` is the authoritative
-Environment state. Zero or multiple same-Project matches fail closed and retain the actual list
-exchange as protected diagnostics. The roster reference remains server-only and is persisted under
-a name that does not claim it is a v3 Environment ID.
