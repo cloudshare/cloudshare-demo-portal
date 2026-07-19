@@ -164,12 +164,13 @@ be first-class so support filtering and tracing are reliable.
 Existing prototype support-log rows are not product data and should not constrain the new model.
 They may be discarded, reset, or archived during development; do not preserve a legacy shape if it
 weakens the DiagnosticLogEntry design.
-Normal diagnostics must redact secrets, API keys, bearer tokens, authorization headers, webhook
-secrets, and similar sensitive values. CloudShare sponsored-link `loginUrl` values are an explicit
-admin-diagnostic exception: they may be retained in Diagnostic Log Entries as support evidence, but
-remain server-only and must never appear in candidate/client-facing responses, candidate/client-facing
-Portal UI, or non-admin APIs. Admin-only DiagnosticLogEntry and Support Diagnostics surfaces may
-display them as support evidence. A
+Protected diagnostics use a direction-aware contract: redact actual request-header values, but retain
+all request/query and provider-response body data verbatim. Body evidence includes API keys, bearer
+tokens, webhook secrets, passphrases, access links, sponsored-link `loginUrl` values, and analogous
+fields, without field-name or value-pattern scrubbing. This Customer-scoped evidence remains
+server-only and must never appear in generic logs, candidate/client-facing responses or Portal UI,
+browser state/console, non-admin APIs, or another Customer's diagnostics. Admin-only
+DiagnosticLogEntry and Support Diagnostics surfaces may display it as support evidence. A
 sensitive diagnostic mode may exist for replicable issues where redaction prevents diagnosis, but it
 must be explicit, audited, time-boxed with automatic expiry, disabled by default, scoped as narrowly
 as possible, and clearly visible to operators while enabled.

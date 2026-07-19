@@ -143,19 +143,25 @@ const REDACTED = "[REDACTED]";
  * must not pre-scrub provider evidence based on field names.
  */
 function redactRequestHeaders(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(redactRequestHeaders);
-  if (!value || typeof value !== "object") return value;
+  if (Array.isArray(value)) {
+    return value.map((entry) => Array.isArray(entry) && entry.length === 2
+      ? [entry[0], REDACTED]
+      : redactRequestHeaders(entry));
+  }
+  if (!value || typeof value !== "object") return REDACTED;
   return Object.fromEntries(Object.keys(value as Record<string, unknown>).map((key) => [key, REDACTED]));
 }
 
-function preserveBodiesAndRedactRequestHeaders(value: unknown, inRequest = false): unknown {
+function preserveBodiesAndRedactRequestHeaders(value: unknown, inRequest = false, opaqueBody = false): unknown {
+  if (opaqueBody) return value;
   if (Array.isArray(value)) return value.map((item) => preserveBodiesAndRedactRequestHeaders(item, inRequest));
   if (!value || typeof value !== "object") return value;
   const record = value as Record<string, unknown>;
   return Object.fromEntries(Object.entries(record).map(([key, child]) => {
     const isRequest = inRequest || key === "request";
     const isRequestHeader = /^requestHeaders$/i.test(key) || (isRequest && /^headers$/i.test(key));
-    return [key, isRequestHeader ? redactRequestHeaders(child) : preserveBodiesAndRedactRequestHeaders(child, isRequest)];
+    const isBodySlot = /^(?:body|requestBody|responseBody)$/i.test(key);
+    return [key, isRequestHeader ? redactRequestHeaders(child) : preserveBodiesAndRedactRequestHeaders(child, isRequest, isBodySlot)];
   }));
 }
 

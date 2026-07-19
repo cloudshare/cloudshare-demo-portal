@@ -140,8 +140,8 @@ describe("createCloudShareClient — v4", () => {
     await client.requestV4({ method: "POST", path: "/sales/sales-1/participants/invite", body: ["participant-1"], allowEmptyResponse: true, schema: z.void() });
 
     const evidence = JSON.stringify(trace.mock.calls);
-    expect(evidence).toContain(participantEmail);
-    expect(evidence).toContain('\\"count\\":1');
+    expect(evidence).not.toContain(participantEmail);
+    expect(evidence).not.toContain('\\"count\\":1');
     expect(trace.mock.calls.filter(([event]) => event.message === "cloudshare request sent")).toHaveLength(3);
     expect(trace.mock.calls.filter(([event]) => event.message === "cloudshare response received")).toHaveLength(3);
   });
@@ -159,7 +159,7 @@ describe("createCloudShareClient — v4", () => {
     expect(JSON.stringify((error as { context?: unknown }).context)).toContain(participantEmail);
   });
 
-  it("retains full sanitized evidence for a non-Sales CloudShare response mismatch", async () => {
+  it("retains full protected evidence for a non-Sales CloudShare response mismatch", async () => {
     const body = { count: 1, items: [{ id: "student-1", email: "student@example.test", providerDetail: { code: "unexpected-shape" } }] };
     const { http } = capturingHttp(ok(body));
     const client = clientWith(http);
@@ -254,13 +254,9 @@ describe("createCloudShareClient — v4", () => {
           authorization: "[REDACTED]",
           "content-type": "[REDACTED]",
         },
-        requestBody: {
-          Name: "Exam GCP-ASSOC",
-          Passphrase: "certalis-attempt-1",
-          MainInstructor: { Email: "instructor@example.com" },
-        },
       }),
     });
+    expect(JSON.stringify(trace.mock.calls)).not.toContain("certalis-attempt-1");
   });
 
   it("retains request body fields regardless of their names", async () => {
@@ -298,20 +294,12 @@ describe("createCloudShareClient — v4", () => {
       level: "info",
       message: "cloudshare request sent",
       fields: expect.objectContaining({
-        requestBody: {
-          Name: "Exam GCP-ASSOC",
-          Passphrase: "certalis-attempt-1",
-          ApiKey: "cloudshare-api-key",
-          WebhookSecret: "webhook-secret",
-          Password: "actual-password",
-          Signature: "signed-value",
-          Authorization: "Bearer embedded-secret",
-          Credential: "credential-secret",
-          BearerToken: "token-secret",
-          diagnosticNote: "Bearer embedded-secret cs_sha1 userapiid:api-id;timestamp:1700000000;token:tokfixed01;hmac:abc123",
-        },
+        method: "POST",
+        path: "/v4/trainings",
       }),
     });
+    expect(JSON.stringify(trace.mock.calls)).not.toContain("certalis-attempt-1");
+    expect(JSON.stringify(trace.mock.calls)).not.toContain("embedded-secret");
   });
 
   it("retains training response bodies in diagnostics", async () => {
@@ -348,14 +336,10 @@ describe("createCloudShareClient — v4", () => {
       level: "info",
       message: "cloudshare response received",
       fields: expect.objectContaining({
-        responseBody: JSON.stringify({
-          id: "training-1",
-          Passphrase: "certalis-attempt-1",
-          passphrase: "candidate-visible-passphrase",
-          ApiKey: "cloudshare-api-key",
-        }),
+        responseStatus: 200,
       }),
     });
+    expect(JSON.stringify(trace.mock.calls)).not.toContain("candidate-visible-passphrase");
   });
 
   it("retains sponsored-link login URLs in protected traces and detailed evidence", async () => {
@@ -380,9 +364,10 @@ describe("createCloudShareClient — v4", () => {
     const responseTrace = trace.mock.calls[1]?.[0].fields;
     expect(responseTrace).toEqual(
       expect.objectContaining({
-        responseBody: "{\"loginUrl\":\"https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret-token\"}",
+        responseStatus: 200,
       }),
     );
+    expect(JSON.stringify(responseTrace)).not.toContain("secret-token");
     expect(detailed.response.body).toEqual({ loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret-token" });
   });
 
@@ -408,9 +393,10 @@ describe("createCloudShareClient — v4", () => {
     const responseTrace = trace.mock.calls[1]?.[0].fields;
     expect(responseTrace).toEqual(
       expect.objectContaining({
-        responseBody: "{\"loginUrl\":\"https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/legacy-token\"}",
+        responseStatus: 200,
       }),
     );
+    expect(JSON.stringify(responseTrace)).not.toContain("legacy-token");
   });
 
   it("retains loginUrl in every provider response diagnostic", async () => {
@@ -433,10 +419,10 @@ describe("createCloudShareClient — v4", () => {
     });
 
     const responseTrace = trace.mock.calls[1]?.[0].fields;
-    expect(JSON.stringify(responseTrace)).toContain("should-redact");
+    expect(JSON.stringify(responseTrace)).not.toContain("should-redact");
     expect(responseTrace).toEqual(
       expect.objectContaining({
-        responseBody: "{\"loginUrl\":\"https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/should-redact\"}",
+        responseStatus: 200,
       }),
     );
   });
@@ -643,7 +629,8 @@ describe("createCloudShareClient — v3", () => {
           authorization: "[REDACTED]",
         },
         responseStatus: 200,
-        responseBody: "{\"result\":\"Pong\"}",
+        network: undefined,
+        tls: undefined,
       },
     });
   });

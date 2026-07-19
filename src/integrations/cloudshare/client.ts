@@ -269,8 +269,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
     fields?: Record<string, unknown>,
   ): void {
     const requestInfo = describeRequest(request.url);
-    const requestBody = sanitizeRequestEvidenceBody(request.body);
-    const requestQuery = sanitizeQuery(extractQuery(request.url));
+    const { responseBody: _responseBody, responseHeaders: _responseHeaders, ...safeFields } = fields ?? {};
     opts.trace?.({
       level,
       message,
@@ -281,10 +280,8 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
         path: requestInfo.path,
         integrationSurface: requestInfo.integrationSurface,
         ...(opts.customerId ? { customerId: opts.customerId } : {}),
-        ...(requestQuery ? { requestQuery } : {}),
         requestHeaders: sanitizeHeaders(request.headers),
-        ...(requestBody !== undefined ? { requestBody } : {}),
-        ...fields,
+        ...safeFields,
       },
     });
   }

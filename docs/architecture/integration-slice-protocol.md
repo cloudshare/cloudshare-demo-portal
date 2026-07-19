@@ -35,7 +35,7 @@ It exists because Slice 1 exposed that "tests exist" is not enough for integrati
    For v4 Accelerate endpoints, verify paths in `docs/api/cloudshare-api-reference.md` and the
    corresponding export under `docs/api/assets/`; do not infer paths from adjacent endpoint names.
 4. For any uncertain CloudShare behavior, write or run the smallest live probe at the integration seam before building UI or domain behavior around it.
-5. Decide the support diagnostic payload before implementation, so failures are supportable from the first live run. For CloudShare API calls, this payload must include redacted request and response evidence, not only a derived status or summary.
+5. Decide the support diagnostic payload before implementation, so failures are supportable from the first live run. For CloudShare API calls, retain request/query and provider-response bodies verbatim in protected Customer-scoped admin diagnostics, redact actual request-header values, and keep bodies out of generic traces and ordinary client surfaces.
 
 ## During implementation
 

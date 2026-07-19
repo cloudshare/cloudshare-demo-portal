@@ -65,6 +65,11 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
       });
     } catch (cause) {
       throw new CloudShareAuthError("v4 token request failed to send", {
+        method: "POST",
+        path: "/oauth/token",
+        integrationSurface: "cloudshare.v4.oauth.token",
+        requestHeaders: { "content-type": "application/x-www-form-urlencoded" },
+        requestBody: body,
         cause: cause instanceof Error ? cause.message : String(cause),
       });
     }
@@ -95,7 +100,14 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
         );
       }
       throw new CloudShareAuthError("v4 token endpoint returned a non-200 status", {
+        method: "POST",
+        path: "/oauth/token",
+        integrationSurface: "cloudshare.v4.oauth.token",
+        requestHeaders: { "content-type": "application/x-www-form-urlencoded" },
+        requestBody: body,
         status: response.status,
+        responseHeaders: response.headers,
+        responseBody: response.body,
       });
     }
 
@@ -103,12 +115,19 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
     try {
       json = JSON.parse(response.body);
     } catch {
-      throw new CloudShareAuthError("v4 token response was not valid JSON");
+      throw new CloudShareAuthError("v4 token response was not valid JSON", {
+        method: "POST", path: "/oauth/token", integrationSurface: "cloudshare.v4.oauth.token",
+        requestHeaders: { "content-type": "application/x-www-form-urlencoded" }, requestBody: body,
+        status: response.status, responseHeaders: response.headers, responseBody: response.body,
+      });
     }
 
     const parsed = tokenResponseSchema.safeParse(json);
     if (!parsed.success) {
       throw new CloudShareAuthError("v4 token response did not match the expected schema", {
+        method: "POST", path: "/oauth/token", integrationSurface: "cloudshare.v4.oauth.token",
+        requestHeaders: { "content-type": "application/x-www-form-urlencoded" }, requestBody: body,
+        status: response.status, responseHeaders: response.headers, responseBody: response.body,
         issues: parsed.error.issues.map((i) => i.message),
       });
     }

@@ -84,11 +84,10 @@ describe("Sales diagnostics HTTP isolation", () => {
     const body = await response.json();
     expect(body.entries[0]).toMatchObject({ source: "sales-participant-launch", correlationId: "corr-launch-1" });
     const serialized = JSON.stringify(body);
-    expect(serialized).not.toContain("private-capability");
-    expect(serialized).not.toContain("private-provider-url");
-    expect(serialized).not.toContain("private-auth");
-    expect(serialized).not.toContain("private-token");
-    expect(body.entries[0]).toMatchObject({ correlationId: "corr-launch-1", outcome: "success", response: { status: 200, body: { loginUrl: "[REDACTED]" } } });
+    expect(serialized).toContain("private-capability");
+    expect(serialized).toContain("private-provider-url");
+    expect(serialized).toContain("private-token");
+    expect(body.entries[0]).toMatchObject({ correlationId: "corr-launch-1", outcome: "success", response: { status: 200, body: { loginUrl: "https://cloudshare.example.test/private-provider-url" } } });
     expect(mockHandleGetDiagnosticLog).toHaveBeenCalledWith(expect.anything(), { customerId: "customer-certalis", query: { source: "sales-participant-launch", correlationId: "corr-launch-1", subjectId: "participant-1" } });
   });
 
@@ -98,7 +97,7 @@ describe("Sales diagnostics HTTP isolation", () => {
     const response = await getSalesDiagnostics(new Request("http://localhost:3000/api/sales/diagnostics"));
     const body = await response.json(); const serialized = JSON.stringify(body);
     expect(serialized).toContain("corr-aggregate"); expect(serialized).toContain('"status":200');
-    expect(serialized).not.toContain("https://provider/private"); expect(serialized).not.toContain("private-capability");
+    expect(serialized).toContain("https://provider/private"); expect(serialized).toContain("private-capability");
   });
 
   it("does not let a Sales route caller widen support to an arbitrary source", async () => {
@@ -130,6 +129,41 @@ describe("Sales diagnostics HTTP isolation", () => {
     expect(mockHandleGetDiagnosticLog).toHaveBeenCalledWith(expect.anything(), {
       customerId: "customer-helios",
       query: { source: "runtime" },
+    });
+  });
+
+  it.each([
+    ["generic", getGenericDiagnostics, "http://localhost:3000/api/admin/diagnostics"],
+    ["Sales", getSalesDiagnostics, "http://localhost:3000/api/sales/diagnostics"],
+  ])("denies unauthenticated access to %s diagnostics", async (_name, route, url) => {
+    mockGetPortalAdminSession.mockResolvedValue(null);
+
+    const response = await route(new Request(url));
+
+    expect(response.status).toBe(401);
+    expect(mockHandleGetDiagnosticLog).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["generic", getGenericDiagnostics, "http://localhost:3000/api/admin/diagnostics", "certification"],
+    ["Sales", getSalesDiagnostics, "http://localhost:3000/api/sales/diagnostics", "sales"],
+  ])("denies non-admin access to %s diagnostics", async (_name, route, url, workspace) => {
+    mockGetPortalAdminSession.mockResolvedValue({ customerId: "customer-helios", role: "candidate", workspace });
+
+    const response = await route(new Request(url));
+
+    expect(response.status).toBe(403);
+    expect(mockHandleGetDiagnosticLog).not.toHaveBeenCalled();
+  });
+
+  it("ignores caller-supplied Customer IDs and enforces the Helios session scope", async () => {
+    mockGetPortalAdminSession.mockResolvedValue({ customerId: "customer-helios", role: "admin", workspace: "certification" });
+
+    await getGenericDiagnostics(new Request("http://localhost:3000/api/admin/diagnostics?customerId=customer-certalis&source=runtime"));
+
+    expect(mockHandleGetDiagnosticLog).toHaveBeenCalledWith(expect.anything(), {
+      customerId: "customer-helios",
+      query: { customerId: "customer-certalis", source: "runtime" },
     });
   });
 });

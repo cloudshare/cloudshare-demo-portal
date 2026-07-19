@@ -71,6 +71,14 @@ describe("redactDiagnosticInput", () => {
     expect(redacted.details).toEqual({ trace: "used sk-live-9999 here" });
   });
 
+  it("treats body collision keys as opaque and masks scalar and tuple request-header shapes", () => {
+    const body = { headers: "body-headers", requestHeaders: [["body", "value"]], request: { headers: "nested-body" } };
+    const scalar = redactDiagnosticInput({ source: "x", operation: "x", outcome: "success", message: "x", request: { headers: "Bearer scalar", body } });
+    const tuples = redactDiagnosticInput({ source: "x", operation: "x", outcome: "success", message: "x", request: { requestHeaders: [["Authorization", "Bearer tuple"], ["Cookie", "cookie"]], body } });
+    expect(scalar.request).toEqual({ headers: "[REDACTED]", body });
+    expect(tuples.request).toEqual({ requestHeaders: [["Authorization", "[REDACTED]"], ["Cookie", "[REDACTED]"]], body });
+  });
+
   it("preserves first-class correlation anchors (they are identifiers, not secrets)", () => {
     const redacted = redactDiagnosticInput({
       source: "candidate-portal",

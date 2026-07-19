@@ -408,11 +408,6 @@ function sanitizeRehydratedRequestQuery(value: unknown): Record<string, unknown>
     return redacted;
   }
 
-  for (const key of Object.keys(redacted)) {
-    if (/cookie/i.test(key)) {
-      redacted[key] = "[REDACTED]";
-    }
-  }
   return redacted;
 }
 

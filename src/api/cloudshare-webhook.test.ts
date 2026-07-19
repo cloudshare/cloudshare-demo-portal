@@ -827,9 +827,12 @@ describe("handleCloudShareWebhook", () => {
         }),
       ]),
     );
-    expect(JSON.stringify(allEntries)).not.toContain("must-not-be-logged");
-    expect(JSON.stringify(allEntries)).not.toContain(unknownRawBody);
-    expect(JSON.stringify(allEntries)).not.toContain("wrong");
+    const serializedEntries = JSON.stringify(allEntries);
+    expect(serializedEntries).toContain("must-not-be-logged");
+    expect(
+      allEntries.some((entry) => entry.request?.body === unknownRawBody),
+    ).toBe(true);
+    expect(serializedEntries).not.toContain("wrong");
     expect(JSON.stringify(allEntries)).not.toContain("whk-helios");
     expect(JSON.stringify(allEntries)).not.toContain("unknown-token");
   });

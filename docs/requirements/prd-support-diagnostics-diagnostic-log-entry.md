@@ -86,7 +86,7 @@ The same direction-aware contract applies to client traces, request/response err
 - Test through the highest stable seams: framework-agnostic API/domain handlers for write-path emission and the Support diagnostic read API for search/filter behavior.
 - Repository tests should prove DiagnosticLogEntry persists first-class correlation fields and structured request/response/details safely.
 - API/domain tests should prove success and failure paths emit diagnostic entries with the expected anchors.
-- Redaction tests should prove secrets, auth headers, API keys, bearer tokens, webhook secrets, HMAC/signature values, training/Sales Experience passphrases, and untrusted webhook raw bodies do not leak. Admin-only DiagnosticLogEntry data may retain CloudShare sponsored-link `loginUrl` values.
+- Direction-aware tests must prove actual request-header slots are masked while complete request/query and provider-response bodies, including valid or rejected webhook raw bodies, passphrases, access links, sponsored URLs, tokens, nested arrays, and collision keys, remain exact in Customer-scoped admin diagnostics and never reach non-admin or ordinary client projections.
 - Sensitive diagnostic mode tests should prove sensitive capture is disabled by default, expires automatically, emits audit/diagnostic records when toggled, and changes captured fields only within the intended scope.
 - Support read-model tests should prove filtering by Candidate email, Exam ID, ExamAttempt ID, operation, outcome, correlation ID, CloudShare external IDs, and time range.
 - UI tests or browser smoke tests should prove the Support page filters the diagnostic log itself, not unrelated monitoring widgets.
