@@ -169,6 +169,20 @@ export function deriveDiagnosticSupportHints(
   }
 
   if (
+    readString(entry.details, "integrationSurface") === "portal.sales_demo_sessions" &&
+    readString(entry.details, "failureMode") === "local_reservation_persistence" &&
+    readBoolean(entry.details, "cloudShareAttempted") === false
+  ) {
+    return [
+      {
+        title: "Sales Session reservation could not be saved",
+        body:
+          "Certalis could not save the local pre-provision reservation. No CloudShare operation was attempted, so review the correlation and local persistence evidence below, then retry the Session creation.",
+      },
+    ];
+  }
+
+  if (
     entry.operation === "exam_attempt.suspend" ||
     entry.operation === "exam_attempt.resume" ||
     entry.operation === "exam_attempt.heartbeat_auto_suspend"
