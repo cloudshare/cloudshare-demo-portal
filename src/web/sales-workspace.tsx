@@ -45,7 +45,9 @@ const actionCellStyle = { ...cellStyle, width: "9.5rem", textAlign: "right" as c
 const selectedRowStyle = { background: "#e8f5f3", boxShadow: "inset 4px 0 0 #0f6d66" };
 const selectableRowStyle = { cursor: "pointer" };
 
-export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemView: "catalog" } }: { readonly email: string; readonly initialRoute?: SalesWorkspaceRouteState }) {
+/** Standalone callers historically exercise the creation workflow; the routed
+ * Sales page always supplies an explicit `sessionView=manage` default. */
+export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemView: "catalog", sessionView: "provision" } }: { readonly email: string; readonly initialRoute?: SalesWorkspaceRouteState }) {
   const router = useRouter();
   const [route, setRoute] = useState<SalesWorkspaceRouteState>(initialRoute);
   useEffect(() => {
@@ -79,7 +81,7 @@ export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemVi
     })}</nav>
     {route.tab === "items" ? <ItemCatalog fetchAdmin={fetchAdmin} view={route.itemView ?? "catalog"} focusedItemId={route.itemId} onNavigate={navigate} /> : null}
     {route.tab === "records" ? <SalesRecordsFeature initialSelection={{ accountId: route.accountId ?? null, opportunityId: route.opportunityId ?? null }} onNavigate={navigate} /> : null}
-    {route.tab === "sessions" ? <SalesDemoSessionsFeature initialSelection={{ accountId: route.accountId ?? "", opportunityId: route.opportunityId ?? "", view: route.sessionView ?? "manage", focusSessionId: route.sessionId ?? "" }} onNavigate={navigate} /> : null}
+    {route.tab === "sessions" ? <SalesDemoSessionsFeature initialSelection={{ accountId: route.accountId ?? "", opportunityId: route.opportunityId ?? "", view: route.sessionView ?? "provision", focusSessionId: route.sessionId ?? "" }} onNavigate={navigate} /> : null}
     {route.tab === "support" ? <section aria-label="Sales support"><PortalSectionIntro title="Sales support" description="Append-only support evidence for Sales records and live Item resource curation in the Certalis Customer workspace." /><AdminSupportFeature active view="diagnostics" diagnosticFilters={{ ...(route.correlationId ? { correlationId: route.correlationId } : {}), ...(route.source ? { source: route.source } : {}), ...(route.subjectId ? { subjectId: route.subjectId } : {}) }} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={(intent) => navigate({ tab: "support", correlationId: intent.diagnosticFilters?.correlationId, source: intent.diagnosticFilters?.source, subjectId: intent.diagnosticFilters?.subjectId })} /></section> : null}
     {route.tab === "configuration" ? <section aria-label="Sales configuration"><PortalSectionIntro title="CloudShare Connection" description="Manage the encrypted CloudShare Connection for the isolated Certalis Sales Customer." /><CloudShareConnectionFeature active fetchAdmin={fetchAdmin} getNavigationHref={() => buildSalesWorkspaceHref({ tab: "configuration" })} onNavigate={() => undefined} /></section> : null}
   </main>;
