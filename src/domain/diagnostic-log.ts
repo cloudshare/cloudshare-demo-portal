@@ -153,10 +153,18 @@ function redactRequestHeaders(value: unknown): unknown {
 }
 
 function projectProtectedRequest(request: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(request).map(([key, child]) => [
-    key,
-    /^(?:headers|requestHeaders)$/i.test(key) ? redactRequestHeaders(child) : child,
-  ]));
+  return projectProtectedMetadata(request, true) as Record<string, unknown>;
+}
+
+function projectProtectedMetadata(value: unknown, inRequest = false): unknown {
+  if (Array.isArray(value)) return value.map((item) => projectProtectedMetadata(item, inRequest));
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, child]) => {
+    if (/^(?:body|requestBody|query|requestQuery|response|responseBody)$/i.test(key)) return [key, child];
+    const nextInRequest = inRequest || /^request$/i.test(key);
+    if (/^requestHeaders$/i.test(key) || (nextInRequest && /^headers$/i.test(key))) return [key, redactRequestHeaders(child)];
+    return [key, projectProtectedMetadata(child, nextInRequest)];
+  }));
 }
 
 export interface RedactionOptions {
@@ -179,7 +187,7 @@ export function redactDiagnosticInput(
     ...input,
     request: input.request ? projectProtectedRequest(input.request) : input.request,
     response: input.response,
-    details: input.details,
+    details: input.details ? (projectProtectedMetadata(input.details) as Record<string, unknown>) : input.details,
   };
 }
 

@@ -32,11 +32,21 @@ function projectGeneric(value: unknown, inRequest: boolean): unknown {
   const record = value as Record<string, unknown>;
   return Object.fromEntries(Object.entries(record).flatMap(([key, child]) => {
     if (/^(?:body|requestBody|responseBody|query|requestQuery|payload|webhookPayload|requestBodySummary|webhookEnvelope)$/i.test(key)) return [];
+    if (/^response$/i.test(key)) return [[key, projectGenericResponse(child)]];
     const nextInRequest = inRequest || /^request$/i.test(key);
-    if (/^requestHeaders$/i.test(key) || (nextInRequest && /^headers$/i.test(key))) {
+    if (/^(?:requestHeaders|responseHeaders)$/i.test(key) || (nextInRequest && /^headers$/i.test(key))) {
       return [[key, maskHeaderValues(child)]];
     }
     return [[key, projectGeneric(child, nextInRequest)]];
+  }));
+}
+
+function projectGenericResponse(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const safe = /^(?:status|statusCode|network|tls|transport|failureMode)$/i;
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).flatMap(([key, child]) => {
+    if (/^(?:headers|responseHeaders)$/i.test(key)) return [[key, maskHeaderValues(child)]];
+    return safe.test(key) ? [[key, projectGeneric(child, false)]] : [];
   }));
 }
 

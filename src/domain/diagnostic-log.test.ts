@@ -52,7 +52,7 @@ describe("redactDiagnosticInput", () => {
       },
     });
     expect(redacted.response).toEqual({ body: { token: "sek-123", passphrase: "response-passphrase", accessLink: "https://response.test/link", loginUrl: "https://response.test/login", nested: [{ authorization: "body-data" }] }, status: 200 });
-    expect(redacted.details).toEqual({ request: { headers: { Authorization: "Bearer nested", cookie: "nested-cookie" }, body: { token: "nested-token" } }, note: "fine" });
+    expect(redacted.details).toEqual({ request: { headers: { Authorization: "[REDACTED]", cookie: "[REDACTED]" }, body: { token: "nested-token" } }, note: "fine" });
   });
 
   it("does not scrub protected body evidence based on literal values", () => {
@@ -85,6 +85,13 @@ describe("redactDiagnosticInput", () => {
     const redacted = redactDiagnosticInput({ source: "x", operation: "x", outcome: "success", message: "x", request: { headers: { Authorization: "Bearer actual" }, query, requestQuery: query }, response });
     expect(redacted.request).toEqual({ headers: { Authorization: "[REDACTED]" }, query, requestQuery: query });
     expect(redacted.response).toBe(response);
+  });
+
+  it("masks request headers in nested exchange arrays without traversing opaque evidence", () => {
+    const body = { request: { headers: "body-collision" } };
+    const response = { request: { headers: "provider-response-collision" } };
+    const redacted = redactDiagnosticInput({ source: "x", operation: "x", outcome: "success", message: "x", details: { httpExchanges: [{ request: { headers: [["Authorization", "Bearer tuple"]], requestHeaders: "Bearer scalar", body, query: body }, response }] } });
+    expect(redacted.details).toEqual({ httpExchanges: [{ request: { headers: [["Authorization", "[REDACTED]"]], requestHeaders: "[REDACTED]", body, query: body }, response }] });
   });
 
   it("preserves first-class correlation anchors (they are identifiers, not secrets)", () => {

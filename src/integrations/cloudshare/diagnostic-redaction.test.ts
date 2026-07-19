@@ -27,11 +27,18 @@ describe("projectCloudShareGenericLogValue", () => {
     });
     expect(projected).toEqual({
       request: { headers: [["Authorization", "[REDACTED]"]] },
-      response: { status: 500, headers: { retryAfter: "10" } },
+      response: { status: 500, headers: { retryAfter: "[REDACTED]" } },
       eventType: "environment.created",
     });
     expect(JSON.stringify(projected)).not.toContain("body-secret");
     expect(JSON.stringify(projected)).not.toContain("payload-secret");
     expect(JSON.stringify(projected)).not.toContain("private-url");
+  });
+
+  it("drops direct provider response fields and masks every response-header shape", () => {
+    const projected = projectCloudShareGenericLogValue({ response: { status: 200, loginUrl: "private", passphrase: "private-pass", token: "private-token", headers: [["Set-Cookie", "cookie"]] }, responseHeaders: "Bearer flat" });
+    expect(projected).toEqual({ response: { status: 200, headers: [["Set-Cookie", "[REDACTED]"]] }, responseHeaders: "[REDACTED]" });
+    expect(JSON.stringify(projected)).not.toContain("private");
+    expect(JSON.stringify(projected)).not.toContain("cookie");
   });
 });

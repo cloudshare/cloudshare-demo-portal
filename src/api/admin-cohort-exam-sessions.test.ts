@@ -474,7 +474,7 @@ describe("admin Cohort Exam Session runtime", () => {
         ],
       },
     });
-    expect(JSON.stringify(ensureEntry)).toContain("secret-api-key");
+    expect(JSON.stringify(ensureEntry)).not.toContain("secret-api-key");
     expect(audit.write).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "audit-parent-exam-published",
