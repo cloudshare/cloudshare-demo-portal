@@ -14,6 +14,8 @@ import { createCloudShareProjectMemberSource } from "@/integrations/cloudshare/p
 import { createPrismaSalesSessionConfigurationRepository } from "@/persistence/prisma-sales-session-configuration-repository";
 import { createPrismaSalesTimezoneCacheRepository } from "@/persistence/prisma-sales-timezone-repository";
 import { withLocalSalesReservationFailureQaFixture } from "@/persistence/local-sales-reservation-qa-fixture";
+import { handleSearchSalesSessionParticipants } from "@/api/sales-session-participant-search";
+import { createPrismaSalesSessionParticipantSearch } from "@/persistence/prisma-sales-session-participant-search";
 
 async function context() {
   const services = getServices();
@@ -26,6 +28,10 @@ export async function GET(request: Request) {
   const { services, session } = await context();
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const query = new URL(request.url).searchParams;
+  if (query.get("participantSearch")) {
+    const result = await handleSearchSalesSessionParticipants({ search: createPrismaSalesSessionParticipantSearch(services.prisma) }, { customerId: session.customerId, term: query.get("participantSearch"), offset: query.get("offset"), limit: query.get("limit") });
+    return NextResponse.json(result.body, { status: result.status });
+  }
   const result = await handleListSalesSessionOperations(
     { sessions: createPrismaSalesDemoSessionRepository(services.prisma), records: createPrismaSalesRecordRepository(services.prisma) },
     { customerId: session.customerId, actor: { type: "admin", id: session.userId, email: session.email }, lifecycle: query.get("lifecycle"), accountId: query.get("accountId"), opportunityId: query.get("opportunityId") },
