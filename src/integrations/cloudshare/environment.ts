@@ -75,7 +75,7 @@ export function createCloudShareEnvironmentSource(
         return {
           environmentExternalId,
           status: mapCloudShareEnvironmentStatus(env.envStatus ?? env.status ?? "unknown"),
-          statusCode: cloudShareV3EnvironmentStatusCode(env.statusCode),
+          ...(cloudShareV3EnvironmentStatusCode(env.statusCode) !== null ? { statusCode: cloudShareV3EnvironmentStatusCode(env.statusCode)! } : {}),
           request: detailed?.request ? { ...detailed.request } : null,
           response: detailed?.response ? { ...detailed.response } : null,
         };
