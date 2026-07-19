@@ -27,37 +27,35 @@ function fakeRepository(): DiagnosticLogRepository & {
 }
 
 describe("redactDiagnosticInput", () => {
-  it("redacts sensitive keys in request/response/details by default", () => {
+  it("masks all request headers while retaining request and response body evidence verbatim", () => {
     const redacted = redactDiagnosticInput({
       source: "auth",
       operation: "portal.login",
       outcome: "success",
       message: "ok",
       request: {
-        email: "candidate@example.com",
-        password: "hunter2",
+        body: { email: "candidate@example.com", password: "hunter2", nested: [{ passphrase: "request-passphrase", accessLink: "https://request.test/link" }] },
         headers: {
           authorization: "Bearer abc.def",
           "x-cloudshare-signature": "raw-signature-value",
         },
       },
-      response: { token: "sek-123", status: 200 },
-      details: { apiKey: "key-xyz", note: "fine" },
+      response: { body: { token: "sek-123", passphrase: "response-passphrase", accessLink: "https://response.test/link", loginUrl: "https://response.test/login", nested: [{ authorization: "body-data" }] }, status: 200 },
+      details: { request: { headers: { Authorization: "Bearer nested", cookie: "nested-cookie" }, body: { token: "nested-token" } }, note: "fine" },
     });
 
     expect(redacted.request).toEqual({
-      email: "candidate@example.com",
-      password: "[REDACTED]",
+      body: { email: "candidate@example.com", password: "hunter2", nested: [{ passphrase: "request-passphrase", accessLink: "https://request.test/link" }] },
       headers: {
         authorization: "[REDACTED]",
         "x-cloudshare-signature": "[REDACTED]",
       },
     });
-    expect(redacted.response).toEqual({ token: "[REDACTED]", status: 200 });
-    expect(redacted.details).toEqual({ apiKey: "[REDACTED]", note: "fine" });
+    expect(redacted.response).toEqual({ body: { token: "sek-123", passphrase: "response-passphrase", accessLink: "https://response.test/link", loginUrl: "https://response.test/login", nested: [{ authorization: "body-data" }] }, status: 200 });
+    expect(redacted.details).toEqual({ request: { headers: { Authorization: "[REDACTED]", cookie: "[REDACTED]" }, body: { token: "nested-token" } }, note: "fine" });
   });
 
-  it("scrubs known secret values embedded in strings and messages", () => {
+  it("does not scrub protected body evidence based on literal values", () => {
     const redacted = redactDiagnosticInput(
       {
         source: "auth",
@@ -69,8 +67,8 @@ describe("redactDiagnosticInput", () => {
       { secrets: ["sk-live-9999"] },
     );
 
-    expect(redacted.message).toBe("failed with secret [REDACTED]");
-    expect(redacted.details).toEqual({ trace: "used [REDACTED] here" });
+    expect(redacted.message).toBe("failed with secret sk-live-9999");
+    expect(redacted.details).toEqual({ trace: "used sk-live-9999 here" });
   });
 
   it("preserves first-class correlation anchors (they are identifiers, not secrets)", () => {
@@ -93,7 +91,7 @@ describe("redactDiagnosticInput", () => {
     expect(redacted.correlationId).toBe("corr_1");
   });
 
-  it("redacts sensitive keys nested in externalIds", () => {
+  it("does not field-name scrub opaque diagnostic metadata", () => {
     const redacted = redactDiagnosticInput({
       source: "integration",
       operation: "cloudshare.read",
@@ -101,10 +99,10 @@ describe("redactDiagnosticInput", () => {
       message: "ok",
       externalIds: { environmentId: "env_1", apiKey: "leak" },
     });
-    expect(redacted.externalIds).toEqual({ environmentId: "env_1", apiKey: "[REDACTED]" });
+    expect(redacted.externalIds).toEqual({ environmentId: "env_1", apiKey: "leak" });
   });
 
-  it("redacts a Sales Experience passphrase from persisted diagnostic evidence", () => {
+  it("retains Sales Experience passphrases from request bodies", () => {
     const redacted = redactDiagnosticInput({
       source: "integration",
       operation: "sales.enablement_session.created",
@@ -112,11 +110,11 @@ describe("redactDiagnosticInput", () => {
       message: "CloudShare rejected a Sales Experience",
       request: { body: { passphrase: "ephemeral-sales-passphrase" } },
     });
-    expect(JSON.stringify(redacted)).not.toContain("ephemeral-sales-passphrase");
-    expect(redacted.request).toEqual({ body: { passphrase: "[REDACTED]" } });
+    expect(JSON.stringify(redacted)).toContain("ephemeral-sales-passphrase");
+    expect(redacted.request).toEqual({ body: { passphrase: "ephemeral-sales-passphrase" } });
   });
 
-  it("redacts Sales participant invitation URLs from diagnostic evidence", () => {
+  it("retains Sales participant access links from response bodies", () => {
     const redacted = redactDiagnosticInput({
       source: "sales-session-participants",
       operation: "sales.demo_session.participants.reconciled",
@@ -125,8 +123,8 @@ describe("redactDiagnosticInput", () => {
       response: { body: { accessLink: "https://bearer.example.test/native-invite", invitationUrl: "https://bearer.example.test/resend" } },
     });
 
-    expect(JSON.stringify(redacted)).not.toContain("https://bearer.example.test");
-    expect(redacted.response).toEqual({ body: { accessLink: "[REDACTED]", invitationUrl: "[REDACTED]" } });
+    expect(JSON.stringify(redacted)).toContain("https://bearer.example.test");
+    expect(redacted.response).toEqual({ body: { accessLink: "https://bearer.example.test/native-invite", invitationUrl: "https://bearer.example.test/resend" } });
   });
 
   it("retains sponsored-link loginUrl values in admin diagnostic payloads", () => {
@@ -192,7 +190,7 @@ describe("boundDiagnosticLimit", () => {
 });
 
 describe("createDiagnosticRecorder", () => {
-  it("applies redaction before persisting", async () => {
+  it("masks request headers before persisting without altering bodies", async () => {
     const repo = fakeRepository();
     const recorder = createDiagnosticRecorder({ repository: repo, secrets: ["topsecret"] });
 
@@ -201,12 +199,12 @@ describe("createDiagnosticRecorder", () => {
       operation: "portal.login",
       outcome: "success",
       message: "logged in topsecret",
-      details: { password: "p" },
+      request: { headers: { Authorization: "Bearer p" }, body: { password: "p" } },
     });
 
     expect(repo.appended).toHaveLength(1);
-    expect(repo.appended[0].message).toBe("logged in [REDACTED]");
-    expect(repo.appended[0].details).toEqual({ password: "[REDACTED]" });
+    expect(repo.appended[0].message).toBe("logged in topsecret");
+    expect(repo.appended[0].request).toEqual({ headers: { Authorization: "[REDACTED]" }, body: { password: "p" } });
   });
 
   it("never throws when persistence fails, and reports via onError", async () => {
@@ -234,7 +232,7 @@ describe("createDiagnosticRecorder", () => {
     expect(onError).toHaveBeenCalledOnce();
   });
 
-  it("does not redact when sensitive mode is explicitly enabled (guarded seam)", async () => {
+  it("does not allow sensitiveMode to bypass request-header masking", async () => {
     const repo = fakeRepository();
     const recorder = createDiagnosticRecorder({ repository: repo, sensitiveMode: true });
     await recorder.record({
@@ -242,8 +240,8 @@ describe("createDiagnosticRecorder", () => {
       operation: "portal.login",
       outcome: "success",
       message: "ok",
-      details: { password: "p" },
+      request: { headers: { Authorization: "Bearer p" }, body: { password: "p" } },
     });
-    expect(repo.appended[0].details).toEqual({ password: "p" });
+    expect(repo.appended[0].request).toEqual({ headers: { Authorization: "[REDACTED]" }, body: { password: "p" } });
   });
 });

@@ -137,155 +137,49 @@ export function boundDiagnosticOffset(offset?: number): number {
 const REDACTED = "[REDACTED]";
 
 /**
- * Field names whose values are always scrubbed in normal mode. Matched
- * case-insensitively as a substring so `apiKey`, `webhookSecret`,
- * `authorization`, etc. are all covered.
+ * The protected-diagnostic evidence contract is structural, not name-based:
+ * request headers are masked, while request/query and provider-response bodies
+ * are retained verbatim. This must remain the single redaction seam; callers
+ * must not pre-scrub provider evidence based on field names.
  */
-const SENSITIVE_KEY_PATTERNS = [
-  "password",
-  "passphrase",
-  "secret",
-  "token",
-  "apikey",
-  "api_key",
-  "authorization",
-  "signature",
-  "credential",
-  "bearer",
-  "hmac",
-  "ciphertext",
-  "accesslink",
-  "invitationurl",
-  "inviteurl",
-  "sponsoredlink",
-];
-
-const NON_SENSITIVE_KEYS = new Set([
-  "idempotencyKey",
-  "storedWebhookSecretLength",
-  "signaturePresent",
-  "signatureMatched",
-  "signatureScheme",
-  "signatureHeader",
-]);
-
-type DiagnosticRedactionContext = "default" | "headers" | "bodyEvidence";
-
-function isSensitiveKey(key: string, context: DiagnosticRedactionContext): boolean {
-  if (NON_SENSITIVE_KEYS.has(key)) {
-    return false;
-  }
-  const k = key.toLowerCase();
-  if (context === "bodyEvidence") {
-    return [
-      "password",
-      "passphrase",
-      "secret",
-      "apikey",
-      "api_key",
-      "signature",
-      "credential",
-      "bearer",
-      "hmac",
-      "ciphertext",
-      "accesstoken",
-      "access_token",
-      "accesslink",
-      "invitationurl",
-      "inviteurl",
-      "sponsoredlink",
-    ].some((pattern) => k.includes(pattern));
-  }
-  return SENSITIVE_KEY_PATTERNS.some((pattern) => k.includes(pattern));
+function redactRequestHeaders(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactRequestHeaders);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.keys(value as Record<string, unknown>).map((key) => [key, REDACTED]));
 }
 
-function scrubSecretsFromString(value: string, secrets: string[]): string {
-  let out = value;
-  for (const secret of secrets) {
-    if (secret) out = out.split(secret).join(REDACTED);
-  }
-  return out;
-}
-
-function redactValue(
-  value: unknown,
-  secrets: string[],
-  context: DiagnosticRedactionContext = "default",
-): unknown {
-  if (typeof value === "string") {
-    return scrubSecretsFromString(value, secrets);
-  }
-  if (Array.isArray(value)) {
-    return value.map((item) => redactValue(item, secrets, context));
-  }
-  if (value && typeof value === "object") {
-    return redactRecord(value as Record<string, unknown>, secrets, context);
-  }
-  return value;
-}
-
-function childRedactionContext(key: string, parent: DiagnosticRedactionContext): DiagnosticRedactionContext {
-  if (/^(?:headers|requestHeaders|responseHeaders)$/i.test(key)) {
-    return "headers";
-  }
-  if (/^(?:body|requestBody|responseBody|webhookSummary|payload|envelope)$/i.test(key)) {
-    return "bodyEvidence";
-  }
-  return parent;
-}
-
-function redactRecord(
-  record: Record<string, unknown>,
-  secrets: string[],
-  context: DiagnosticRedactionContext = "default",
-): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(record)) {
-    const childContext = childRedactionContext(key, context);
-    out[key] = isSensitiveKey(key, context) ? REDACTED : redactValue(value, secrets, childContext);
-  }
-  return out;
+function preserveBodiesAndRedactRequestHeaders(value: unknown, inRequest = false): unknown {
+  if (Array.isArray(value)) return value.map((item) => preserveBodiesAndRedactRequestHeaders(item, inRequest));
+  if (!value || typeof value !== "object") return value;
+  const record = value as Record<string, unknown>;
+  return Object.fromEntries(Object.entries(record).map(([key, child]) => {
+    const isRequest = inRequest || key === "request";
+    const isRequestHeader = isRequest && /^(?:headers|requestHeaders)$/i.test(key);
+    return [key, isRequestHeader ? redactRequestHeaders(child) : preserveBodiesAndRedactRequestHeaders(child, isRequest)];
+  }));
 }
 
 export interface RedactionOptions {
-  /** Literal secret values (API keys, tokens, login URLs) to scrub from strings. */
+  /** Retained for source compatibility. Bodies are never scrubbed by this seam. */
   readonly secrets?: string[];
-  /**
-   * Sensitive diagnostic capture. MUST stay disabled in normal operation. When
-   * false (the default), all sensitive keys and known secret values are scrubbed
-   * before persistence, so secrets can never leak via normal logging. Enabling it
-   * is a deliberate, audited, time-boxed follow-up (see ADR-004) and there is
-   * intentionally no production path that sets this to true in this slice.
-   */
+  /** Retained for source compatibility. Request-header masking is never bypassed. */
   readonly sensitiveMode?: boolean;
 }
 
 /**
- * Redact an entry's free-form structures and scrub secret values from its
- * message. In normal mode (sensitiveMode !== true) sensitive keys are replaced
- * with [REDACTED]. First-class anchor fields (customer, candidate email, exam
- * IDs, correlation ID) are deliberately preserved — they are identifiers, not
- * credentials.
+ * Apply the protected-diagnostic evidence contract at the recorder seam. No
+ * field-name/value-pattern scrubbing is permitted for request or response body
+ * evidence; only request-header values are masked.
  */
 export function redactDiagnosticInput(
   input: DiagnosticLogEntryInput,
   options: RedactionOptions = {},
 ): DiagnosticLogEntryInput {
-  const secrets = (options.secrets ?? []).filter((s) => s.length > 0);
-  if (options.sensitiveMode === true) {
-    // Sensitive mode bypasses key-based redaction but is never enabled here.
-    return input;
-  }
-
   return {
     ...input,
-    message: scrubSecretsFromString(input.message, secrets),
-    externalIds: input.externalIds
-      ? (redactRecord(input.externalIds, secrets) as Record<string, string>)
-      : input.externalIds,
-    request: input.request ? redactRecord(input.request, secrets) : input.request,
-    response: input.response ? redactRecord(input.response, secrets) : input.response,
-    details: input.details ? redactRecord(input.details, secrets) : input.details,
+    request: input.request ? (preserveBodiesAndRedactRequestHeaders(input.request, true) as Record<string, unknown>) : input.request,
+    response: input.response ? (preserveBodiesAndRedactRequestHeaders(input.response) as Record<string, unknown>) : input.response,
+    details: input.details ? (preserveBodiesAndRedactRequestHeaders(input.details) as Record<string, unknown>) : input.details,
   };
 }
 

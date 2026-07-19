@@ -19,9 +19,10 @@ It exists because Slice 1 exposed that "tests exist" is not enough for integrati
   delete the generated env file.
 - Add support diagnostics with the feature, not after the failure. Every CloudShare API diagnostic
   must include the attempted operation, integration surface, correlation ID where useful, and
-  redacted structured HTTP evidence: request method, path, query parameters, request headers,
-  request body when present, response status, response headers, response body, and transport
-  failure details when no response was received.
+  structured HTTP evidence: request method, path, query parameters, masked request headers,
+  verbatim request body when present, response status, response headers, verbatim provider response
+  body, and transport failure details when no response was received. Body fields are never scrubbed
+  by name or value pattern; this protected evidence is Customer-scoped admin-only data.
 - Update `docs/api/cloudshare-gap-report.md` immediately when CloudShare behavior confirms or contradicts an assumption.
 - Keep fixture tests and live E2E tests separate: `npm test` must stay deterministic and offline; `npm run test:e2e:live` may call CloudShare.
 

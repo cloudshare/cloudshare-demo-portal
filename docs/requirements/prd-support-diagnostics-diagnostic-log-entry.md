@@ -33,8 +33,8 @@ Existing prototype support-log rows are development data and do not need migrati
 10. As a Helios admin, I want admin login/logout attempts to appear in the diagnostic log, so that operator access can be diagnosed.
 11. As a Helios admin, I want ExamAttempt scheduling, CloudShare training creation, student add, and sponsored-link creation to appear in one correlated thread, so that provisioning issues can be diagnosed end to end.
 12. As a Helios admin, I want Candidate enter, suspend, resume, heartbeat auto-suspend, and score retrieval to appear in one correlated thread, so that runtime issues can be diagnosed end to end.
-13. As a Helios admin, I want CloudShare API diagnostic entries to include redacted raw HTTP evidence — request method, path, query parameters, headers, request body when present, response status, response headers, and response body — so that CloudShare issues can be verified without external tooling.
-14. As a Helios admin, I want secrets, API keys, bearer tokens, authorization headers, and webhook secrets redacted while CloudShare sponsored-link `loginUrl` values remain available in admin-only diagnostics, so that diagnostics preserve support evidence without leaking non-diagnostic credentials.
+13. As a Helios admin, I want CloudShare API diagnostic entries to include protected HTTP evidence — request method, path, query parameters, masked request headers, request body when present, response status, response headers, and provider response body — so that CloudShare issues can be verified without external tooling.
+14. As a Helios admin, I want every request/query and provider-response body value retained verbatim, including `passphrase`, `accessLink`, `loginUrl`, tokens, and nested values, while request headers remain masked and the evidence remains admin-only, so that diagnostics preserve complete support evidence without client leakage.
 15. As a Helios admin, I want an explicitly enabled, time-boxed sensitive diagnostic mode, so that replicable integration issues can be diagnosed when normal redaction hides material needed to prove the problem.
 16. As a Helios admin, I want missing-signature and invalid-signature webhook attempts to expose safe metadata but not arbitrary raw untrusted request bodies during normal logging, so that public webhook traffic cannot become a sensitive data sink.
 17. As a Helios admin, I want DiagnosticLogEntry rows to be append-only, so that the log remains a record of what was known at the time.
@@ -62,10 +62,10 @@ Existing prototype support-log rows are development data and do not need migrati
 - Audit Trail remains separate. Audit answers who changed what and whether it was allowed; Support diagnostics answer what the platform did and how to trace behavior. Some actions emit both.
 - Event Log is not a primary support workflow. Events that matter to support should appear as DiagnosticLogEntries or correlated timeline rows.
 - Existing prototype support-log rows are disposable development data and should not constrain the new model.
-- Normal DiagnosticLogEntry output follows a three-way taxonomy:
-  - **Always redact:** secrets, API keys, bearer tokens, authorization headers, webhook secrets, HMAC/signature values, passwords, and other actual credentials.
-  - **Admin-only support evidence:** CloudShare sponsored-link `loginUrl` values may be retained in DiagnosticLogEntry data for admin-only support workflows. Training and Sales Experience `passphrase` values are credentials and must be redacted, including in admin diagnostics; neither may be returned to Candidate/client-facing responses, Candidate/client-facing UI, or non-admin APIs.
-  - **Ordinary request/response evidence:** CloudShare request bodies, response bodies, parsed webhook event payloads, and other non-credential CloudShare fields remain visible so support can verify what CloudShare accepted, rejected, returned, or emitted.
+- Normal DiagnosticLogEntry output follows a direction-aware contract:
+  - **Always mask request headers:** all request-header values, including authorization/authentication material.
+  - **Admin-only protected body evidence:** retain every request/query and provider-response body value verbatim, including API-looking values, passphrases, access links, sponsored login URLs, tokens, nested objects, and arrays. Do not field-name scrub or value-pattern scrub bodies.
+  - **Access control:** protected body evidence is Customer-scoped and returned only through server-enforced admin diagnostic routes. It never appears in participant/candidate views, ordinary client APIs, browser state, or browser console.
   Admin-only DiagnosticLogEntry and Support Diagnostics surfaces may display the admin-only evidence above as support evidence.
 - Sensitive diagnostic capture may exist, but only as an explicit debug mode with strong guardrails: disabled by default, admin/operator visible, audited when enabled/disabled, time-boxed with automatic expiry, restricted to a specific Customer or diagnostic scope where possible, and clearly marked in the UI. It exists for replicable issues where normal redaction prevents diagnosis, not for routine logging.
 - First write-path instrumentation should cover Candidate account creation; Candidate login/logout attempts; Customer admin login/logout attempts; Candidate ExamAttempt scheduling; CloudShare training creation; Candidate participant/student add; sponsored-link creation; Candidate enter/resume/suspend; CloudShare webhook receive/verify/reconcile; Guided Journey score retrieval; and CloudShare resource-sync reads.
@@ -73,13 +73,13 @@ Existing prototype support-log rows are development data and do not need migrati
 
 ### Diagnostic body redaction taxonomy
 
-Diagnostic body redaction is classified by where evidence is exposed:
+Diagnostic evidence is classified by direction and exposure:
 
-- **True secrets, always redacted:** CloudShare API keys, OAuth bearer tokens, v3 `cs_sha1` nonces and HMAC values, authorization headers, webhook secrets, webhook signatures, raw credentials, passwords, cookies, ciphertext, and known literal secret values configured in the recorder/logger.
-- **Server-only admin-support evidence, retained in DiagnosticLogEntry/support diagnostics:** CloudShare sponsored-link `loginUrl` values returned by sponsored-link endpoints; request/response status and headers after true-secret redaction; request paths and query values after true-secret redaction; request/response bodies after true-secret redaction; and parsed webhook event payloads after true-secret redaction. CloudShare create-training or Sales Experience `Passphrase`/`passphrase` values are always redacted. This evidence must not appear in Candidate/client-facing responses or Candidate/client-facing UI.
-- **Ordinary request/response evidence, retained:** CloudShare IDs, project/blueprint/policy/region/team/instructor IDs, training/experience/participant/environment IDs, Guided Journey progress fields, validation errors, transport details, response status codes, safe metadata such as `signaturePresent`/`signatureMatched`, body fields named `token` or `authorization` when they are CloudShare payload evidence rather than actual credentials, and correlation IDs.
+- **Request headers:** always mask their values. This includes `Authorization` and all authentication headers in persisted rows, rendered admin output, and logs.
+- **Request/query and provider response bodies:** retain their complete original data verbatim in protected admin diagnostics. This includes passphrases, access links, sponsored URLs, tokens, credentials-looking names, nested objects, arrays, and raw parsed webhook payloads. There are no endpoint allowlists and no field-name/value-pattern scrubbing.
+- **Exposure:** the above bodies remain server-only Customer-scoped admin-support evidence and must never reach candidate/participant UI, ordinary client APIs, browser state, browser console, or non-admin users.
 
-The same taxonomy applies to client traces, request/response error contexts, scheduling diagnostics, suspend/resume and heartbeat diagnostics, Guided Journey score diagnostics, resource diagnostics, and webhook diagnostics. Redaction utilities should prefer narrow key/value rules over broad substring bans when CloudShare uses support-evidence field names such as `Passphrase`, `loginUrl`, `token`, or `authorization` inside request/response bodies or parsed webhook payloads. Header values remain conservative and may stay redacted until a guarded sensitive diagnostic flag exists.
+The same direction-aware contract applies to client traces, request/response error contexts, scheduling diagnostics, suspend/resume and heartbeat diagnostics, Guided Journey score diagnostics, resource diagnostics, and webhook diagnostics. The recorder owns header masking; upstream adapters must not pre-scrub bodies.
 
 ## Testing Decisions
 
