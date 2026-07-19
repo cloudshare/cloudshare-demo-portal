@@ -1,4 +1,5 @@
 import type { LogLevel } from "@/observability/logger";
+import { projectProtectedRequestHeaders } from "@/observability/protected-request-headers";
 
 /**
  * DiagnosticLogEntry — the typed, append-only support source of truth (ADR-004).
@@ -134,37 +135,12 @@ export function boundDiagnosticOffset(offset?: number): number {
 
 // --- Redaction -------------------------------------------------------------
 
-const REDACTED = "[REDACTED]";
-
 /**
  * The protected-diagnostic evidence contract is structural, not name-based:
  * request headers are masked, while request/query and provider-response bodies
  * are retained verbatim. This must remain the single redaction seam; callers
  * must not pre-scrub provider evidence based on field names.
  */
-function redactRequestHeaders(value: unknown): unknown {
-  if (Array.isArray(value)) {
-    return value.map((entry) => Array.isArray(entry) && entry.length === 2
-      ? [entry[0], redactRequestHeaderValue(String(entry[0]), entry[1])]
-      : redactRequestHeaders(entry));
-  }
-  if (!value || typeof value !== "object") return REDACTED;
-  return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, child]) => [key, redactRequestHeaderValue(key, child)]));
-}
-
-function redactRequestHeaderValue(name: string, value: unknown): unknown {
-  return isCredentialBearingRequestHeader(name) ? REDACTED : value;
-}
-
-function isCredentialBearingRequestHeader(name: string): boolean {
-  const normalized = name.trim().toLowerCase().replaceAll("_", "-");
-  return normalized === "authorization"
-    || normalized === "proxy-authorization"
-    || normalized === "cookie"
-    || normalized === "set-cookie"
-    || /(?:^|-)(?:api-?key|auth|authentication|token|signature|secret|credential)(?:-|$)/.test(normalized);
-}
-
 function projectProtectedRequest(request: Record<string, unknown>): Record<string, unknown> {
   return projectProtectedMetadata(request, true) as Record<string, unknown>;
 }
@@ -175,7 +151,7 @@ function projectProtectedMetadata(value: unknown, inRequest = false): unknown {
   return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, child]) => {
     if (/^(?:body|requestBody|query|requestQuery|response|responseBody)$/i.test(key)) return [key, child];
     const nextInRequest = inRequest || /^request$/i.test(key);
-    if (/^requestHeaders$/i.test(key) || (nextInRequest && /^headers$/i.test(key))) return [key, redactRequestHeaders(child)];
+    if (/^requestHeaders$/i.test(key) || (nextInRequest && /^headers$/i.test(key))) return [key, projectProtectedRequestHeaders(child)];
     return [key, projectProtectedMetadata(child, nextInRequest)];
   }));
 }

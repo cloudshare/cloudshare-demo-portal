@@ -1,4 +1,5 @@
 import type { ZodType } from "zod";
+import { projectProtectedRequestHeaders as sanitizeHeaders } from "@/observability/protected-request-headers";
 import {
   CloudShareRateLimitError,
   CloudShareRequestError,
@@ -162,26 +163,6 @@ function buildUrl(base: string, path: string, query?: Record<string, string>): s
     url.searchParams.set(k, v);
   }
   return url.toString();
-}
-
-function sanitizeHeaders(headers: Record<string, string> | undefined): Record<string, string> | undefined {
-  if (!headers) {
-    return undefined;
-  }
-
-  return Object.fromEntries(Object.entries(headers).map(([key, value]) => [
-    key,
-    isCredentialBearingRequestHeader(key) ? "[REDACTED]" : value,
-  ]));
-}
-
-function isCredentialBearingRequestHeader(name: string): boolean {
-  const normalized = name.trim().toLowerCase().replaceAll("_", "-");
-  return normalized === "authorization"
-    || normalized === "proxy-authorization"
-    || normalized === "cookie"
-    || normalized === "set-cookie"
-    || /(?:^|-)(?:api-?key|auth|authentication|token|signature|secret|credential)(?:-|$)/.test(normalized);
 }
 
 function sanitizeQuery(query: Record<string, string> | undefined): Record<string, string> | undefined {

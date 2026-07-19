@@ -75,7 +75,7 @@ Existing prototype support-log rows are development data and do not need migrati
 
 Diagnostic evidence is classified by direction and exposure:
 
-- **Request headers:** always mask their values. This includes `Authorization` and all authentication headers in persisted rows, rendered admin output, and logs.
+- **Request headers:** mask credential-bearing values in persisted rows, rendered admin output, and logs, including Authorization, cookies, API-key/token/signature/authentication headers, and analogous credentials. Preserve safe operational values such as Content-Type, Accept, Content-Length, User-Agent, and correlation/request IDs.
 - **Request/query and provider response bodies:** retain their complete original data verbatim in protected admin diagnostics. This includes passphrases, access links, sponsored URLs, tokens, credentials-looking names, nested objects, arrays, and raw parsed webhook payloads. There are no endpoint allowlists and no field-name/value-pattern scrubbing.
 - **Exposure:** the above bodies remain server-only Customer-scoped admin-support evidence and must never reach candidate/participant UI, ordinary client APIs, browser state, browser console, or non-admin users.
 

@@ -101,8 +101,14 @@ describe("redactDiagnosticInput", () => {
   });
 
   it("masks credential headers case-insensitively while preserving operational map and tuple headers", () => {
-    const redacted = redactDiagnosticInput({ source: "x", operation: "x", outcome: "success", message: "x", request: { headers: { "CONTENT-TYPE": "application/json", "x-api-key": "key", "X-Auth-Token": "token", "x-cloudshare-signature": "sig", Cookie: "cookie", "User-Agent": "agent", "Content-Length": "42", "X-Correlation-ID": "corr" }, requestHeaders: [["Accept", "application/json"], ["Proxy-Authorization", "Basic secret"]] } });
-    expect(redacted.request).toEqual({ headers: { "CONTENT-TYPE": "application/json", "x-api-key": "[REDACTED]", "X-Auth-Token": "[REDACTED]", "x-cloudshare-signature": "[REDACTED]", Cookie: "[REDACTED]", "User-Agent": "agent", "Content-Length": "42", "X-Correlation-ID": "corr" }, requestHeaders: [["Accept", "application/json"], ["Proxy-Authorization", "[REDACTED]"]] });
+    const redacted = redactDiagnosticInput({ source: "x", operation: "x", outcome: "success", message: "x", request: { headers: { "CONTENT-TYPE": "application/json", "X-Authorization": "one", "CloudShare-Authorization": "two", "X-AuthToken": "three", XAuthToken: "four", "X-AccessToken": "five", "X-CloudShareApiKey": "six", "Ocp-Apim-Subscription-Key": "seven", "X-Access-Key": "eight", "X-Signature256": "nine", Cookie2: "ten", "User-Agent": "agent", "Content-Length": "42", "X-Correlation-ID": "corr", "X-Request-ID": "req", "X-Retry-Count": "2" }, requestHeaders: [["Accept", "application/json"], ["Proxy-Authorization", "Basic secret"]] } });
+    expect(redacted.request).toEqual({ headers: { "CONTENT-TYPE": "application/json", "X-Authorization": "[REDACTED]", "CloudShare-Authorization": "[REDACTED]", "X-AuthToken": "[REDACTED]", XAuthToken: "[REDACTED]", "X-AccessToken": "[REDACTED]", "X-CloudShareApiKey": "[REDACTED]", "Ocp-Apim-Subscription-Key": "[REDACTED]", "X-Access-Key": "[REDACTED]", "X-Signature256": "[REDACTED]", Cookie2: "[REDACTED]", "User-Agent": "agent", "Content-Length": "42", "X-Correlation-ID": "corr", "X-Request-ID": "req", "X-Retry-Count": "2" }, requestHeaders: [["Accept", "application/json"], ["Proxy-Authorization", "[REDACTED]"]] });
+  });
+
+  it("applies the same credential-header aliases inside nested HTTP exchanges while retaining bodies exactly", () => {
+    const body = { accessLink: "https://example.invalid/access", passphrase: "exact-passphrase", loginUrl: "https://example.invalid/sponsored" };
+    const redacted = redactDiagnosticInput({ source: "x", operation: "x", outcome: "success", message: "x", details: { httpExchanges: [{ request: { headers: { XAuthToken: "secret", "X-Signature256": "sig", Accept: "application/json" }, body }, response: { body } }] } });
+    expect(redacted.details).toEqual({ httpExchanges: [{ request: { headers: { XAuthToken: "[REDACTED]", "X-Signature256": "[REDACTED]", Accept: "application/json" }, body }, response: { body } }] });
   });
 
   it("preserves first-class correlation anchors (they are identifiers, not secrets)", () => {
