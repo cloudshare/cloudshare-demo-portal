@@ -34,7 +34,10 @@ describe("createPrismaAuditRepository", () => {
     });
 
     const reader = createPrismaAuditRepository(prisma);
-    const [entry] = await reader.listAll();
+    const [entry] = await reader.query({
+      customerId: "customer-helios",
+      correlationId: "corr-admin-1",
+    });
 
     expect(entry).toMatchObject({
       id: "audit-admin-1",
