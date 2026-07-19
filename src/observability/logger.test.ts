@@ -22,8 +22,7 @@ describe("createLogger", () => {
     logger.error("call failed", { authHeader: "Bearer super-secret-token" });
 
     const line = JSON.parse(sink.mock.calls[0][0] as string);
-    expect(line.authHeader).not.toContain("super-secret-token");
-    expect(line.authHeader).toContain("[REDACTED]");
+    expect(line).not.toHaveProperty("authHeader");
   });
 
   it("never lets a raw secret reach the sink even as a bare field value", () => {
@@ -73,10 +72,15 @@ describe("createLogger", () => {
       error: protectedMarker,
       errorMessage: protectedMarker,
       reason: protectedMarker,
+      providerMessage: protectedMarker,
+      providerEvidence: { accessLink: protectedMarker },
+      response: { status: 503, transport: protectedMarker },
+      path: `/provider/resource?token=${protectedMarker}`,
     });
 
     const raw = sink.mock.calls[0][0] as string;
     expect(raw.includes(protectedMarker)).toBe(false);
     expect(raw).toContain('"correlationId":"correlation-1"');
+    expect(raw).toContain('"path":"/provider/resource"');
   });
 });

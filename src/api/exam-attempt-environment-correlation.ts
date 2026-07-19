@@ -127,6 +127,7 @@ export async function ensureExamAttemptEnvironmentCorrelation(
         attemptedOperation: "list_training_participants",
         integrationSurface: "cloudshare.v4.training.participant_list",
         failureMode: diagnostic["failureMode"],
+        ...(protectedExchange.transport ? { transport: protectedExchange.transport } : {}),
       },
     });
     deps.logger.warn(`${input.operation} environment correlation failed`, projectCloudShareGenericLogValue(diagnostic) as Record<string, unknown>);
@@ -179,6 +180,8 @@ function toCloudShareFailureDiagnostic(input: {
       requestQuery: cause?.context?.requestQuery,
       requestBody: cause?.context?.requestBody,
       cause: cause?.context?.cause,
+      network: cause?.context?.network,
+      tls: cause?.context?.tls,
     };
   }
 

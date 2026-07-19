@@ -50,9 +50,18 @@ describe("projectCloudShareGenericLogValue", () => {
       error: protectedMarker,
       errorMessage: protectedMarker,
       reason: protectedMarker,
+      providerMessage: protectedMarker,
+      providerEvidence: { accessLink: protectedMarker },
+      response: { status: 503, transport: protectedMarker },
+      path: `/provider/resource?token=${protectedMarker}`,
     });
 
     expect(JSON.stringify(projected).includes(protectedMarker)).toBe(false);
-    expect(projected).toEqual({ correlationId: "correlation-1", failureMode: "http_status" });
+    expect(projected).toEqual({
+      correlationId: "correlation-1",
+      failureMode: "http_status",
+      response: { status: 503 },
+      path: "/provider/resource",
+    });
   });
 });

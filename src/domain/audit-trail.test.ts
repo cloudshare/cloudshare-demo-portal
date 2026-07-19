@@ -31,6 +31,11 @@ describe("AuditRepository", () => {
       },
       context: { marker: protectedMarker },
       cause: { marker: protectedMarker },
+      providerMessage: protectedMarker,
+      providerEvidence: { accessLink: protectedMarker },
+      reason: protectedMarker,
+      transport: protectedMarker,
+      path: `/provider/resource?token=${protectedMarker}`,
     });
 
     expect(JSON.stringify(projected).includes(protectedMarker)).toBe(false);
@@ -38,6 +43,7 @@ describe("AuditRepository", () => {
       operation: "candidate_admission",
       integrationSurface: "cloudshare.v4.training.participant",
       status: 502,
+      path: "/provider/resource",
     });
   });
 

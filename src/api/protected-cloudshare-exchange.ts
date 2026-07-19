@@ -1,6 +1,7 @@
 export interface ProtectedCloudShareExchange {
   readonly request: Record<string, unknown>;
   readonly response: Record<string, unknown> | null;
+  readonly transport: Record<string, unknown> | null;
 }
 
 /**
@@ -27,13 +28,22 @@ export function projectProtectedCloudShareExchange(
           ...(diagnostic.tls !== undefined ? { tls: diagnostic.tls } : {}),
         }
       : null,
+    transport: hasTransportEvidence(diagnostic)
+      ? {
+          ...(diagnostic.cause !== undefined ? { cause: diagnostic.cause } : {}),
+          ...(diagnostic.network !== undefined ? { network: diagnostic.network } : {}),
+          ...(diagnostic.tls !== undefined ? { tls: diagnostic.tls } : {}),
+        }
+      : null,
   };
 }
 
 function hasResponseEvidence(diagnostic: Record<string, unknown>): boolean {
   return diagnostic.responseStatus !== undefined ||
     diagnostic.responseHeaders !== undefined ||
-    diagnostic.responseBody !== undefined ||
-    diagnostic.network !== undefined ||
-    diagnostic.tls !== undefined;
+    diagnostic.responseBody !== undefined;
+}
+
+function hasTransportEvidence(diagnostic: Record<string, unknown>): boolean {
+  return diagnostic.cause !== undefined || diagnostic.network !== undefined || diagnostic.tls !== undefined;
 }

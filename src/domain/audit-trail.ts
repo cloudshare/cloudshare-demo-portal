@@ -53,8 +53,37 @@ export interface AuditQuery {
   readonly limit?: number;
 }
 
-const SECRET_KEY_PATTERN = /(api[-_]?key|api[-_]?id|secret|token|password|authorization|bearer|hmac|login[-_]?url|signature)/i;
-const PROTECTED_CONTEXT_KEY_PATTERN = /^(?:request|response)?(?:body|headers)$|^(?:rawBody|query|queryParameters|payload|context|cause)$/i;
+const SAFE_AUDIT_DETAIL_KEYS = new Set([
+  "operation",
+  "attemptedOperation",
+  "integrationSurface",
+  "outcome",
+  "failureMode",
+  "responseStatus",
+  "status",
+  "method",
+  "path",
+  "source",
+  "resourceType",
+  "deliveryMode",
+  "lifecycle",
+  "action",
+  "scheduledFor",
+  "previousStatus",
+  "newStatus",
+  "changedFields",
+  "confirmationRequired",
+  "activeParticipantCount",
+  "nonTerminalEnvironmentCount",
+  "participantCount",
+  "sectionCount",
+  "capacity",
+  "parentExamStatusChanged",
+  "failedStage",
+  "requiredKeys",
+  "availableKeys",
+]);
+const SAFE_AUDIT_ID_KEY = /^(?:customer|candidate|exam|examAttempt|environment|environmentExternal|training|participant|project|blueprint|policy|region|webhook|cohortExamSession|session|experience|team|opportunity|contact|salesSession|idempotency)Ids?$/;
 
 export function redactAuditDetails(
   value: Record<string, unknown> | null | undefined,
@@ -62,31 +91,28 @@ export function redactAuditDetails(
   if (!value) {
     return null;
   }
-  return redactAuditValue(value) as Record<string, unknown>;
+  return Object.fromEntries(
+    Object.entries(value).flatMap(([key, child]) => {
+      if (!SAFE_AUDIT_DETAIL_KEYS.has(key) && !SAFE_AUDIT_ID_KEY.test(key)) return [];
+      const projected = key === "path" ? projectAuditPath(child) : projectAuditMetadataValue(child);
+      return projected === undefined ? [] : [[key, projected]];
+    }),
+  );
 }
 
 export function projectAuditError(value: string | null | undefined): string | null {
   return value ? ORDINARY_AUDIT_FAILURE_MESSAGE : null;
 }
 
-function redactAuditValue(value: unknown, key = ""): unknown {
-  if (SECRET_KEY_PATTERN.test(key)) {
-    return REDACTED_AUDIT_VALUE;
-  }
-  if (Array.isArray(value)) {
-    return value.map((item) => redactAuditValue(item));
-  }
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>)
-        .filter(([childKey]) => !PROTECTED_CONTEXT_KEY_PATTERN.test(childKey))
-        .map(([childKey, childValue]) => [
-          childKey,
-          redactAuditValue(childValue, childKey),
-        ]),
-    );
-  }
-  return value;
+function projectAuditMetadataValue(value: unknown): unknown {
+  if (value === null || ["string", "number", "boolean"].includes(typeof value)) return value;
+  if (Array.isArray(value) && value.every((item) => item === null || ["string", "number", "boolean"].includes(typeof item))) return value;
+  return undefined;
+}
+
+function projectAuditPath(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  return value.split(/[?#]/, 1)[0];
 }
 
 export interface AuditRepository {

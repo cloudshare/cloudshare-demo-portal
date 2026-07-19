@@ -171,7 +171,7 @@ describe("handleCloudShareWebhook", () => {
     expect(diagnosticLine).not.toContain('"expectedSignature"');
     expect(diagnosticLine).toContain(`"storedWebhookSecretLength":${HELIOS_SECRET.length}`);
     expect(diagnosticLine).toContain('"signatureMatched":false');
-    expect(diagnosticLine).toContain("update the stored CloudShare Connection webhook secret");
+    expect(diagnosticLine).not.toContain("update the stored CloudShare Connection webhook secret");
     expect(diagnosticLine).toContain("rawBodySha256");
   });
 
