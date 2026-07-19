@@ -4,6 +4,7 @@ import userEvent from "@testing-library/user-event";
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SalesWorkspace } from "./sales-workspace";
+import { salesSessionProvisionDraftKey } from "./sales-session-provision-draft";
 
 const { mockRouter, mockSearchParams } = vi.hoisted(() => ({
   mockRouter: { push: vi.fn(), replace: vi.fn(), refresh: vi.fn() },
@@ -17,7 +18,7 @@ const chooseSearchableOption = async (user: ReturnType<typeof userEvent.setup>, 
 };
 
 describe("SalesWorkspace interaction", () => {
-  afterEach(() => { cleanup(); vi.restoreAllMocks(); mockSearchParams.delete("accountId"); mockSearchParams.delete("opportunityId"); mockRouter.push.mockClear(); mockRouter.replace.mockClear(); window.history.replaceState({}, "", "/sales"); });
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); window.sessionStorage.clear(); mockSearchParams.delete("accountId"); mockSearchParams.delete("opportunityId"); mockRouter.push.mockClear(); mockRouter.replace.mockClear(); window.history.replaceState({}, "", "/sales"); });
 
   it("selects an Account into the URL and limits the next grid to its Opportunities without console errors", async () => {
     const user = userEvent.setup();
@@ -730,6 +731,68 @@ describe("SalesWorkspace interaction", () => {
     await waitFor(() => expect((screen.getByRole("combobox", { name: "Opportunity" }) as HTMLInputElement).value).toBe("Brio - South"));
     expect(template.value).toBe("Draft {account} - {opportunity} ({revision})");
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("selectedOpportunityId=opp-2"), expect.objectContaining({ cache: "no-store", signal: expect.any(AbortSignal) }));
+  });
+
+  it("routes a start-now create to the in-progress Manage view and visibly focuses the returned Session", async () => {
+    const user = userEvent.setup(); let created = false;
+    const createdSession = { id: "session-now", opportunityId: "opp-1", itemId: "item-1", type: "demo" as const, sessionName: "Acme live demo", start: "2026-07-19T18:00", end: "2026-07-19T19:00", timeZone: "UTC", salesProDisplayName: "Sales Rep", createdAt: "2026-07-19T18:00:00.000Z", operation: { dimension: "certalis_operation", value: "correlated", source: "certalis_persistence", retry: "not_applicable" }, experience: { dimension: "cloudshare_sales_experience", value: "inProgress", source: "schedule_prediction", freshness: "predicted" }, verificationEligible: true };
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const path = String(input);
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [{ id: "account-1", name: "Acme" }], opportunities: [{ id: "opp-1", accountId: "account-1", accountName: "Acme", name: "Live demo", label: "Acme - Live demo" }], total: 1 });
+      if (path === "/api/sales/items") return json({ activeItems: [{ id: "item-1", name: "Accelerate Demo", description: "", project: { id: "project-1", name: "Project" }, blueprints: [], policy: { id: "policy-1", name: "Policy" }, regions: [], defaultDurationMinutes: 60, status: "active" }] });
+      if (path.startsWith("/api/sales/enablement-sessions/project-members?")) return json({ members: [{ email: "rep@certalis.demo", displayName: "Sales Rep" }] });
+      if (path === "/api/sales/timezones" && !init?.method) return json({ timezones: [{ id: "UTC", name: "UTC" }], preference: {} });
+      if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: created && path.includes("experienceStatus=inProgress") ? [createdSession] : [] });
+      if (path === "/api/sales/enablement-sessions" && init?.method === "POST") { created = true; return json({ session: createdSession }, 201); }
+      if (path === "/api/sales/session-configuration") return json({});
+      return json({ error: `Unexpected request ${path}` }, 500);
+    });
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "provision" }} />);
+    await chooseSearchableOption(user, "Opportunity", "Acme - Live demo");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Catalogue Item" }), "item-1");
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Sales Pro" }), "rep@certalis.demo");
+    await waitFor(() => expect(window.sessionStorage.getItem(salesSessionProvisionDraftKey("sales-admin@certalis.demo"))).not.toBeNull());
+    await user.click(screen.getByRole("button", { name: "Create Sales Enablement Session" }));
+
+    await waitFor(() => expect(mockRouter.push).toHaveBeenCalledWith("/sales?tab=sessions&opportunityId=opp-1&sessionId=session-now&status=in_progress"));
+    expect((screen.getByRole("combobox", { name: "Operational view" }) as HTMLSelectElement).value).toBe("in_progress");
+    const focused = await waitFor(() => { const row = document.getElementById("sales-session-session-now"); expect(row).not.toBeNull(); return row!; });
+    expect(focused.style.boxShadow).toContain("inset");
+    expect(window.sessionStorage.getItem(salesSessionProvisionDraftKey("sales-admin@certalis.demo"))).toBeNull();
+  });
+
+  it("restores a versioned Provision draft after remount without retaining protected evidence", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const path = String(input);
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [{ id: "account-1", name: "Acme" }], opportunities: [{ id: "opp-1", accountId: "account-1", accountName: "Acme", name: "Evaluation", label: "Acme - Evaluation" }], total: 1 });
+      if (path === "/api/sales/items") return json({ activeItems: [{ id: "item-1", name: "Accelerate Demo", description: "", project: { id: "project-1", name: "Project" }, blueprints: [], policy: { id: "policy-1", name: "Policy" }, regions: [], defaultDurationMinutes: 60, status: "active" }] });
+      if (path.startsWith("/api/sales/enablement-sessions/project-members?")) return json({ members: [{ email: "rep@certalis.demo", displayName: "Sales Rep" }] });
+      if (path === "/api/sales/timezones" && !init?.method) return json({ timezones: [{ id: "UTC", name: "UTC" }], preference: { timeZone: "UTC", experienceType: "demo" } });
+      if (path === "/api/sales/session-configuration") return json({ template: "Server {opportunity} ({revision})" });
+      if (path.startsWith("/api/sales/enablement-sessions?")) return json({ sessions: [] });
+      return json({});
+    });
+    const first = render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "provision" }} />);
+    await chooseSearchableOption(user, "Opportunity", "Acme - Evaluation");
+    await user.selectOptions(screen.getByRole("combobox", { name: "Catalogue Item" }), "item-1");
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Sales Pro" }), "rep@certalis.demo");
+    await user.click(screen.getByRole("radio", { name: "Schedule start" }));
+    fireEvent.change(screen.getByLabelText("Start"), { target: { value: "2026-07-20T09:00" } });
+    fireEvent.change(screen.getByLabelText("End"), { target: { value: "2026-07-20T11:30" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Session name template" }), { target: { value: "Draft {opportunity} ({revision})" } });
+    const storageKey = salesSessionProvisionDraftKey("sales-admin@certalis.demo");
+    await waitFor(() => expect(window.sessionStorage.getItem(storageKey)).toContain("Draft {opportunity}"));
+    expect(window.sessionStorage.getItem(storageKey)).not.toContain("diagnostic");
+    expect(window.sessionStorage.getItem(storageKey)).not.toContain("loginUrl");
+
+    first.unmount();
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "provision" }} />);
+    await waitFor(() => expect((screen.getByRole("combobox", { name: "Catalogue Item" }) as HTMLSelectElement).value).toBe("item-1"));
+    await waitFor(() => expect((screen.getByRole("combobox", { name: "Sales Pro" }) as HTMLSelectElement).value).toBe("rep@certalis.demo"));
+    expect((screen.getByLabelText("Start") as HTMLInputElement).value).toBe("2026-07-20T09:00");
+    expect((screen.getByLabelText("End") as HTMLInputElement).value).toBe("2026-07-20T11:30");
+    expect((screen.getByRole("textbox", { name: "Session name template" }) as HTMLInputElement).value).toBe("Draft {opportunity} ({revision})");
   });
 
   it("restores route-backed Manage filters and requests separate status dimensions", async () => {

@@ -77,15 +77,17 @@ describe("createCloudShareEnvironmentSource", () => {
       }),
     );
     expect(requestV3).not.toHaveBeenCalled();
+    await expect(source.readEnvironmentState("ENVS2n38LTNdcC4sHsqnjRzg2")).resolves.toMatchObject({ snapshot: { status: "running" }, request: { method: "GET", path: "/api/v3/envs/ENVS2n38LTNdcC4sHsqnjRzg2" }, response: { status: 200, body: { envStatus: "Ready" } } });
   });
 
   it("returns null when CloudShare reports the environment does not exist (404)", async () => {
     const requestV3 = vi.fn().mockRejectedValue(
-      new CloudShareRequestError("not found", 404, {}),
+      new CloudShareRequestError("not found", 404, { method: "GET", path: "/envs/ghost", responseStatus: 404, responseBody: { message: "not found" } }),
     );
     const source = createCloudShareEnvironmentSource(client({ requestV3 }));
 
     expect(await source.getEnvironmentState("ghost")).toBeNull();
+    await expect(source.readEnvironmentState("ghost")).resolves.toMatchObject({ snapshot: null, request: { method: "GET", path: "/envs/ghost" }, response: { status: 404, body: { message: "not found" } } });
   });
 
   it("propagates non-404 CloudShare errors (they are not 'no such environment')", async () => {

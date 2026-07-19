@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import { CloudShareResponseError } from "@/integrations/cloudshare/errors";
-import { handleInviteSalesSessionParticipants, handleListSalesSessionParticipants, handleRegisterSalesSessionParticipants } from "./sales-session-participants";
+import { handleInviteSalesSessionParticipants as inviteSalesSessionParticipants, handleListSalesSessionParticipants as listSalesSessionParticipants, handleRegisterSalesSessionParticipants as registerSalesSessionParticipants } from "./sales-session-participants";
+
+const fixedNow = () => new Date("2026-07-19T08:00:00.000Z");
+const handleRegisterSalesSessionParticipants: typeof registerSalesSessionParticipants = (deps, request) => registerSalesSessionParticipants({ now: fixedNow, ...deps }, request);
+const handleListSalesSessionParticipants: typeof listSalesSessionParticipants = (deps, request) => listSalesSessionParticipants({ now: fixedNow, ...deps }, request);
+const handleInviteSalesSessionParticipants: typeof inviteSalesSessionParticipants = (deps, request) => inviteSalesSessionParticipants({ now: fixedNow, ...deps }, request);
 
 const actor = { type: "admin" as const, id: "admin-1", email: "sales-admin@certalis.demo" };
-// Keep the default fixture future-dated relative to the real test clock. Tests
-// that exercise an ended window explicitly override these values below.
-const session = { id: "session-1", opportunityId: "opportunity-1", cloudShareSalesExperienceId: "remote-sales-1", operationalStatus: "active" as const, start: "2026-07-21T09:00", end: "2026-07-21T10:00", timeZone: "UTC" };
+const session = { id: "session-1", opportunityId: "opportunity-1", cloudShareSalesExperienceId: "remote-sales-1", operationalStatus: "active" as const, start: "2026-07-19T09:00", end: "2026-07-19T10:00", timeZone: "UTC" };
 const contact = { id: "contact-1", opportunityId: "opportunity-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", archivedAt: null };
 const correlationProperties = () => ({
   requiredKeys: ["certalisSalesParticipantId", "certalisOpportunityContactId"] as const,
@@ -350,17 +353,46 @@ describe("Sales Session participant invitation", () => {
   it("updates a persisted mapping from the property-correlated roster and keeps environment IDs server-only", async () => {
     const remote = { ...remoteParticipant("provider-changed", "portal-1", contact.id), invitationStatus: "sent" as const, participationStatus: "inProgress" as const, environmentId: "environment-1", envStatus: "running" };
     const save = vi.fn();
+    const recordEnvironmentObservation = vi.fn();
+    const diagnostics = { record: vi.fn() };
+    const environmentRead = { snapshot: { environmentExternalId: "environment-1", status: "running" as const, statusCode: 2 }, request: { method: "GET", path: "/api/v3/envs/environment-1" }, response: { status: 200, body: { statusCode: 2 } } };
     const result = await handleListSalesSessionParticipants({
       now: () => new Date("2026-07-19T08:00:00.000Z"),
-      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn().mockResolvedValue(contact) }, participants: { list: vi.fn().mockResolvedValue([{ ...storedParticipant("portal-1", contact.id, "provider-old"), lastInvitedAt: new Date("2026-07-17T08:00:00.000Z") }]), save }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
+      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn().mockResolvedValue(contact) }, participants: { list: vi.fn().mockResolvedValue([{ ...storedParticipant("portal-1", contact.id, "provider-old"), lastInvitedAt: new Date("2026-07-17T08:00:00.000Z") }]), save, recordEnvironmentObservation }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) },
       deliveryFactory: { forConnection: () => ({ createSession: vi.fn(), readSession: vi.fn(), listParticipants: vi.fn().mockResolvedValue(rosterEvidence([remote])) }) },
-      environmentFactory: { forConnection: () => ({ getEnvironmentState: vi.fn().mockResolvedValue({ environmentExternalId: "environment-1", status: "running", statusCode: 2 }) }) },
+      environmentFactory: { forConnection: () => ({ getEnvironmentState: vi.fn().mockResolvedValue(environmentRead.snapshot), readEnvironmentState: vi.fn().mockResolvedValue(environmentRead) }) }, diagnostics,
     }, { customerId: "customer-1", sessionId: session.id, actor });
 
     expect(result).toMatchObject({ status: 200, body: { session: { lifecycle: "upcoming", nativeInvitationsAvailable: true }, participants: [{ id: "portal-1", email: "ada@example.test", invitationStatus: "sent", lastInvitedAt: "2026-07-17T08:00:00.000Z", envStatus: "running", environment: { dimension: "cloudshare_environment", value: "Ready", source: "cloudshare_v3_environment", observedAt: "2026-07-19T08:00:00.000Z" } }] } });
-    expect(save).toHaveBeenCalledWith(expect.objectContaining({ cloudShareParticipantId: "provider-changed", cloudShareEnvironmentId: "environment-1", environmentStatusCode: 2, lastInvitedAt: new Date("2026-07-17T08:00:00.000Z") }));
+    expect(save).toHaveBeenCalledWith(expect.objectContaining({ cloudShareParticipantId: "provider-changed", cloudShareEnvironmentId: "environment-1", lastInvitedAt: new Date("2026-07-17T08:00:00.000Z") }));
+    expect(recordEnvironmentObservation).toHaveBeenCalledWith("customer-1", "portal-1", { statusCode: 2, observedAt: new Date("2026-07-19T08:00:00.000Z") });
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ operation: "sales.demo_session.participant.environment_observed", outcome: "success", customerId: "customer-1", request: environmentRead.request, response: environmentRead.response, details: expect.objectContaining({ integrationSurface: "cloudshare.v3.environments", observation: "observed" }) }));
     expect(JSON.stringify(result.body)).not.toContain("provider-changed");
     expect(JSON.stringify(result.body)).not.toContain("environment-1");
+  });
+
+  it("clears a prior Environment observation after a completed v3 404 and records its protected exchange", async () => {
+    const remote = { ...remoteParticipant("provider-1", "portal-1", contact.id), environmentId: "environment-1", envStatus: "Ready" };
+    const recordEnvironmentObservation = vi.fn(); const diagnostics = { record: vi.fn() };
+    const result = await handleListSalesSessionParticipants({
+      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn().mockResolvedValue(contact) }, participants: { list: vi.fn().mockResolvedValue([{ ...storedParticipant(), cloudShareEnvironmentId: "environment-1", environmentStatusCode: 2, environmentObservedAt: new Date("2026-07-18T08:00:00Z") }]), save: vi.fn(), recordEnvironmentObservation }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ listParticipants: vi.fn().mockResolvedValue(rosterEvidence([remote])) } as never) }, environmentFactory: { forConnection: () => ({ getEnvironmentState: vi.fn().mockResolvedValue(null), readEnvironmentState: vi.fn().mockResolvedValue({ snapshot: null, request: { method: "GET", path: "/api/v3/envs/environment-1" }, response: { status: 404, body: { message: "not found" } } }) }) }, diagnostics,
+    }, { customerId: "customer-1", sessionId: session.id, actor });
+
+    expect(result).toMatchObject({ status: 200, body: { participants: [{ environment: { value: null, source: "not_observed" } }] } });
+    expect(recordEnvironmentObservation).toHaveBeenCalledWith("customer-1", "portal-1", { statusCode: null, observedAt: null });
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ outcome: "success", response: expect.objectContaining({ status: 404 }), details: expect.objectContaining({ integrationSurface: "cloudshare.v3.environments", observation: "not_found" }) }));
+  });
+
+  it("clears stale Environment state and fails with accurately-labelled v3 diagnostics for an unrecognized completed observation", async () => {
+    const remote = { ...remoteParticipant("provider-1", "portal-1", contact.id), environmentId: "environment-1", envStatus: "Ready" };
+    const recordEnvironmentObservation = vi.fn(); const diagnostics = { record: vi.fn() };
+    const result = await handleListSalesSessionParticipants({
+      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn().mockResolvedValue(contact) }, participants: { list: vi.fn().mockResolvedValue([{ ...storedParticipant(), cloudShareEnvironmentId: "environment-1", environmentStatusCode: 2, environmentObservedAt: new Date("2026-07-18T08:00:00Z") }]), save: vi.fn(), recordEnvironmentObservation }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ listParticipants: vi.fn().mockResolvedValue(rosterEvidence([remote])) } as never) }, environmentFactory: { forConnection: () => ({ getEnvironmentState: vi.fn(), readEnvironmentState: vi.fn().mockResolvedValue({ snapshot: { environmentExternalId: "environment-1", status: "unknown" }, request: { method: "GET", path: "/api/v3/envs/environment-1" }, response: { status: 200, body: { statusCode: 99 } } }) }) }, diagnostics,
+    }, { customerId: "customer-1", sessionId: session.id, actor });
+
+    expect(result.status).toBe(502);
+    expect(recordEnvironmentObservation).toHaveBeenCalledWith("customer-1", "portal-1", { statusCode: null, observedAt: null });
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ outcome: "failure", request: expect.objectContaining({ method: "GET", path: "/api/v3/envs/environment-1" }), response: expect.objectContaining({ status: 200, body: { statusCode: 99 } }), details: expect.objectContaining({ integrationSurface: "cloudshare.v3.environments", failureMode: "environment_status_observation" }) }));
   });
 
   it("keeps the completed roster exchange when property-based mapping persistence fails", async () => {

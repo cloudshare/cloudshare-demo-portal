@@ -16,4 +16,10 @@ describe("Prisma Sales Enablement Session repository", () => {
     await expect(repository.save(session)).rejects.toMatchObject({ code: "P2002" });
     await expect(repository.save(session)).rejects.toThrow("database transport unavailable");
   });
+  it("scopes Experience-status observation writes to the authenticated Customer", async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const repository = createPrismaSalesDemoSessionRepository({ salesDemoSession: { updateMany } } as never);
+    await repository.updateOperationalState!("customer-a", "session-1", { operationalStatus: "active", experienceStatus: "inProgress", experienceStatusObservedAt: new Date("2026-07-19T18:00:00Z") });
+    expect(updateMany).toHaveBeenCalledWith({ where: { customerId: "customer-a", id: "session-1" }, data: expect.objectContaining({ experienceStatus: "inProgress" }) });
+  });
 });

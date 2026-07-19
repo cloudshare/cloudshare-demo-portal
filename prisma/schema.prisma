@@ -85,6 +85,7 @@ model OpportunityContact {
   salesSessionParticipants SalesSessionParticipant[]
 
   @@index([customerId, opportunityId, updatedAt])
+  @@unique([customerId, id])
 }
 
 // A Sales-owned, archive-only reusable CloudShare delivery template.  Resource
@@ -171,7 +172,7 @@ model SalesSessionParticipant {
   createdAt                   DateTime
   updatedAt                   DateTime
   session                     SalesDemoSession @relation(fields: [salesDemoSessionId], references: [id], onDelete: Cascade)
-  contact                     OpportunityContact @relation(fields: [opportunityContactId], references: [id], onDelete: Restrict)
+  contact                     OpportunityContact @relation(fields: [customerId, opportunityContactId], references: [customerId, id], onDelete: Restrict)
   launchLinks                 SalesParticipantLaunchLink[]
 
   @@unique([customerId, salesDemoSessionId, opportunityContactId])

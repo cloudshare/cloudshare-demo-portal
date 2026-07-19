@@ -130,7 +130,7 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     const session: SalesDemoSession = { ...reservation, salesProEmail: selectedSalesPro.email, salesProDisplayName: selectedSalesPro.displayName, cloudShareSalesExperienceId: created.salesExperienceId, operationalStatus: "active" };
     // Deliberate partial-failure behaviour: the external Experience is retained
     // when local persistence fails; support evidence identifies its immutable ID.
-    try { if (deps.sessions.updateOperationalState) await deps.sessions.updateOperationalState(id, { cloudShareSalesExperienceId: created.salesExperienceId, salesProEmail: selectedSalesPro.email, salesProDisplayName: selectedSalesPro.displayName, operationalStatus: "active", attentionReason: null }); else await deps.sessions.save(session); } catch (error) {
+    try { if (deps.sessions.updateOperationalState) await deps.sessions.updateOperationalState(request.customerId, id, { cloudShareSalesExperienceId: created.salesExperienceId, salesProEmail: selectedSalesPro.email, salesProDisplayName: selectedSalesPro.displayName, operationalStatus: "active", attentionReason: null }); else await deps.sessions.save(session); } catch (error) {
       // Neither evidence store may erase the already-created remote ID from the
       // response: the admin must be told not to retry even during a secondary
       // observability outage.
@@ -154,7 +154,7 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
     const memberReadFailure = error instanceof SalesProjectMemberReadError;
     const itemValidationFailure = error instanceof SalesItemProvisioningValidationError;
     const itemReadFailure = error instanceof SalesItemProvisioningReadError;
-    if (deps.sessions.updateOperationalState) await Promise.allSettled([deps.sessions.updateOperationalState(id, { operationalStatus: "needs_attention", attentionReason: "CloudShare Sales Experience creation failed" })]);
+    if (deps.sessions.updateOperationalState) await Promise.allSettled([deps.sessions.updateOperationalState(request.customerId, id, { operationalStatus: "needs_attention", attentionReason: "CloudShare Sales Experience creation failed" })]);
     if (itemValidationFailure || itemReadFailure) {
       await recordResourceReads(deps, request, correlationId, item.id, item.project.id, error.completedReads, "failure");
     }

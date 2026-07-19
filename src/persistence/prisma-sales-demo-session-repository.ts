@@ -18,7 +18,7 @@ export function createPrismaSalesDemoSessionRepository(prisma: PrismaClient): Sa
       return deleted.count === 1;
     },
     async listByOpportunity(customerId, opportunityId) { return (await prisma.salesDemoSession.findMany({ where: { customerId, opportunityId }, orderBy: { createdAt: "desc" } })).map(toDomain); },
-    async updateOperationalState(id, state) { await prisma.salesDemoSession.update({ where: { id }, data: state }); },
+    async updateOperationalState(customerId, id, state) { await prisma.salesDemoSession.updateMany({ where: { customerId, id }, data: state }); },
     async updateDisplayName(id, sessionName) { await prisma.salesDemoSession.update({ where: { id }, data: { sessionName } }); },
   };
 }

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { SalesExperienceType } from "@/domain/sales-experience-type";
+import type { CloudShareSalesExperienceStatus } from "@/domain/sales-session-status";
 import type { CloudShareClient, CloudShareDetailedResult, CloudShareRequestDiagnostics, CloudShareResponseDiagnostics } from "./client";
 import { CloudShareResponseError } from "./errors";
 
@@ -34,7 +35,7 @@ export interface CreateSalesDemoSessionInput {
 export interface SalesDelivery {
   createSession(input: CreateSalesDemoSessionInput): Promise<{ readonly salesExperienceId: string } & SalesDeliveryEvidence>;
   /** Documented v4 read used only for reconciliation; the provider ID remains server-side. */
-  readSession(salesExperienceId: string): Promise<{ readonly id: string; readonly status?: string } & SalesDeliveryEvidence>;
+  readSession(salesExperienceId: string): Promise<{ readonly id: string; readonly status: CloudShareSalesExperienceStatus } & SalesDeliveryEvidence>;
   /** Maps CloudShare's versioned invitation-setting wire values to the one fact
    * invite callers need, and preserves the original value for diagnostics. */
   readParticipantInvitationCapability(salesExperienceId: string): Promise<{ readonly participantInvitationsEnabled: boolean; readonly sendInvitations: "salesProsOnly" | "salesParticipantsOnly" | "participantsOnly" | "dontSend" | "salesProsAndParticipants" | "unknown" } & SalesDeliveryEvidence>;
@@ -120,6 +121,7 @@ const salesExperienceSchema = z.object({
   end: z.string().nullable().optional(),
   timeZone: z.string().optional(),
 }).passthrough();
+const salesExperienceReadSchema = salesExperienceSchema.extend({ status: z.enum(["notStarted", "inProgress", "ended"]) });
 const SALES_ENVIRONMENT_STATUSES = [
   "FutureAllocationScheduled", "AllocationScheduledNoRun", "Ready", "Suspended", "Archived", "Deleted",
   "Publishing", "Preparing", "CreationFailed", "InGrace", "Stopping", "EditingNetworks",
@@ -193,8 +195,8 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
       return { salesExperienceId: data.id, ...evidence };
     },
     async readSession(salesExperienceId) {
-      const { data, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceSchema });
-      return { id: data.id, ...(typeof data.status === "string" ? { status: data.status } : {}), ...evidence };
+      const { data, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceReadSchema });
+      return { id: data.id, status: data.status, ...evidence };
     },
     async readParticipantInvitationCapability(salesExperienceId) {
       const { data, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceSchema });

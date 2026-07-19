@@ -67,6 +67,18 @@ export interface EnvironmentStateSource {
   ): Promise<EnvironmentStateSnapshot | null>;
 }
 
+/** Full protected exchange for supportable reads. Browser projections consume
+ * only `snapshot`; Customer-scoped diagnostics retain request/response. */
+export interface EnvironmentStateReadEvidence {
+  readonly snapshot: EnvironmentStateSnapshot | null;
+  readonly request: Readonly<Record<string, unknown>>;
+  readonly response: Readonly<Record<string, unknown>>;
+}
+
+export interface EnvironmentStateEvidenceSource extends EnvironmentStateSource {
+  readEnvironmentState(environmentExternalId: string): Promise<EnvironmentStateReadEvidence>;
+}
+
 export interface EnvironmentCommandResult {
   readonly attemptedOperation: "suspend_environment" | "resume_environment" | "archive_environment";
   readonly integrationSurface: string;

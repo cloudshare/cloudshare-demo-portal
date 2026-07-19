@@ -15,6 +15,7 @@ import { addCloudShareWallClockMinutes, formatCloudShareWallClock } from "@/doma
 import { renderSalesSessionName } from "@/domain/sales-session-name";
 import type { SalesExperienceType } from "@/domain/sales-experience-type";
 import { workspaceTabButtonStyle, workspaceTabNavStyle } from "./workspace-tab-styles";
+import { parseSalesSessionProvisionDraft, salesSessionProvisionDraftKey, type SalesSessionProvisionDraft } from "./sales-session-provision-draft";
 
 type Account = { id: string; name: string; kind: "prospect" | "current_customer"; archivedAt: string | null; createdAt: string; updatedAt?: string };
 type Opportunity = { id: string; accountId: string; name: string; status: "open" | "won" | "lost"; archivedAt: string | null; createdAt: string; updatedAt?: string };
@@ -63,6 +64,7 @@ export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemVi
       itemView: intent.tab === "items" ? intent.itemView ?? "catalog" : "catalog",
       ...(intent.tab === "sessions" ? { sessionView: intent.sessionView ?? "manage" } : {}),
       ...(intent.tab === "sessions" && intent.sessionId ? { sessionId: intent.sessionId } : {}),
+      ...(intent.tab === "sessions" && intent.sessionStatus ? { sessionStatus: intent.sessionStatus } : {}),
       ...(intent.tab === "items" && intent.itemId ? { itemId: intent.itemId } : {}),
       ...((intent.tab === "records" || intent.tab === "sessions") && intent.accountId ? { accountId: intent.accountId } : {}),
       ...((intent.tab === "records" || intent.tab === "sessions") && intent.opportunityId ? { opportunityId: intent.opportunityId } : {}),
@@ -82,14 +84,14 @@ export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemVi
     })}</nav>
     {route.tab === "items" ? <ItemCatalog fetchAdmin={fetchAdmin} view={route.itemView ?? "catalog"} focusedItemId={route.itemId} onNavigate={navigate} /> : null}
     {route.tab === "records" ? <SalesRecordsFeature initialSelection={{ accountId: route.accountId ?? null, opportunityId: route.opportunityId ?? null }} onNavigate={navigate} /> : null}
-    {route.tab === "sessions" ? <SalesDemoSessionsFeature initialSelection={{ accountId: route.accountId ?? "", opportunityId: route.opportunityId ?? "", view: route.sessionView ?? "provision", focusSessionId: route.sessionId ?? "" }} onNavigate={navigate} /> : null}
+    {route.tab === "sessions" ? <SalesDemoSessionsFeature draftStorageKey={salesSessionProvisionDraftKey(email)} initialSelection={{ accountId: route.accountId ?? "", opportunityId: route.opportunityId ?? "", view: route.sessionView ?? "provision", focusSessionId: route.sessionId ?? "", status: route.sessionStatus ?? "upcoming" }} onNavigate={navigate} /> : null}
     {route.tab === "support" ? <section aria-label="Sales support"><PortalSectionIntro title="Sales support" description="Append-only support evidence for Sales records and live Item resource curation in the Certalis Customer workspace." /><AdminSupportFeature active view="diagnostics" diagnosticFilters={{ ...(route.correlationId ? { correlationId: route.correlationId } : {}), ...(route.source ? { source: route.source } : {}), ...(route.subjectId ? { subjectId: route.subjectId } : {}) }} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={(intent) => navigate({ tab: "support", correlationId: intent.diagnosticFilters?.correlationId, source: intent.diagnosticFilters?.source, subjectId: intent.diagnosticFilters?.subjectId })} /></section> : null}
     {route.tab === "configuration" ? <section aria-label="Sales configuration"><PortalSectionIntro title="CloudShare Connection" description="Manage the encrypted CloudShare Connection for the isolated Certalis Sales Customer." /><CloudShareConnectionFeature active fetchAdmin={fetchAdmin} getNavigationHref={() => buildSalesWorkspaceHref({ tab: "configuration" })} onNavigate={() => undefined} /></section> : null}
   </main>;
 }
 
 function salesRoutesMatch(left: SalesWorkspaceRouteState, right: SalesWorkspaceRouteState): boolean {
-  return left.tab === right.tab && left.itemView === right.itemView && left.sessionView === right.sessionView && left.sessionId === right.sessionId && left.itemId === right.itemId && left.accountId === right.accountId && left.opportunityId === right.opportunityId && left.correlationId === right.correlationId && left.source === right.source && left.subjectId === right.subjectId;
+  return left.tab === right.tab && left.itemView === right.itemView && left.sessionView === right.sessionView && left.sessionId === right.sessionId && left.sessionStatus === right.sessionStatus && left.itemId === right.itemId && left.accountId === right.accountId && left.opportunityId === right.opportunityId && left.correlationId === right.correlationId && left.source === right.source && left.subjectId === right.subjectId;
 }
 
 function PortalSectionIntro({ title, description }: { title: string; description: string }) {
@@ -118,7 +120,7 @@ function SearchableSalesSelector({ label, value, placeholder, options, helperTex
   </div>;
 }
 
-function SalesDemoSessionsFeature({ initialSelection, onNavigate }: { readonly initialSelection: { accountId: string; opportunityId: string; view: "manage" | "provision"; focusSessionId: string }; readonly onNavigate: (intent: SalesNavigationIntent) => void }) {
+function SalesDemoSessionsFeature({ initialSelection, draftStorageKey, onNavigate }: { readonly initialSelection: { accountId: string; opportunityId: string; view: "manage" | "provision"; focusSessionId: string; status: "upcoming" | "in_progress" | "needs_attention" | "ended" }; readonly draftStorageKey: string; readonly onNavigate: (intent: SalesNavigationIntent) => void }) {
   const router = useRouter();
   const browserFetch = useCallback<typeof fetch>((input, init) => window.fetch(input, init), []);
   const fetchSales = useMemo(() => createAdminAuthenticatedRequest({ fetchImpl: browserFetch, onSessionExpired: () => { router.replace("/login"); router.refresh(); } }), [browserFetch, router]);
@@ -127,7 +129,7 @@ function SalesDemoSessionsFeature({ initialSelection, onNavigate }: { readonly i
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editedSessionName, setEditedSessionName] = useState("");
   const [sessionRefresh, setSessionRefresh] = useState(0);
-  const [sessionStatusFilter, setSessionStatusFilter] = useState<"upcoming" | "in_progress" | "needs_attention" | "ended">("upcoming");
+  const [sessionStatusFilter, setSessionStatusFilter] = useState<"upcoming" | "in_progress" | "needs_attention" | "ended">(initialSelection.status);
   const [sessionAccountId, setSessionAccountId] = useState(initialSelection.accountId);
   const [accountSearch, setAccountSearch] = useState("");
   const [accountInput, setAccountInput] = useState("");
@@ -174,14 +176,38 @@ function SalesDemoSessionsFeature({ initialSelection, onNavigate }: { readonly i
   const [participantSearchOffset, setParticipantSearchOffset] = useState(0);
   const [participantSearchTotal, setParticipantSearchTotal] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [draftHydrated, setDraftHydrated] = useState(false);
   const currentStart = useRef(start);
   const currentTimeZone = useRef(timeZone);
   const salesPreferenceDirty = useRef({ timeZone: false, experienceType: false });
+  const restoringDraftItem = useRef(false);
+  const draftHasPreferences = useRef(false);
+  const draftHasTemplate = useRef(false);
   const currentSessionSelection = useRef({ accountId: initialSelection.accountId, opportunityId: initialSelection.opportunityId });
   const selectedItem = items.find((item) => item.id === itemId) ?? null;
   const selectedItemDuration = selectedItem?.defaultDurationMinutes;
 
+  useEffect(() => {
+    const draft = parseSalesSessionProvisionDraft(window.sessionStorage.getItem(draftStorageKey));
+    if (draft) {
+      restoringDraftItem.current = Boolean(draft.itemId);
+      draftHasPreferences.current = true;
+      draftHasTemplate.current = true;
+      setSessionAccountId(currentSessionSelection.current.accountId || draft.accountId);
+      setOpportunityId(currentSessionSelection.current.opportunityId || draft.opportunityId);
+      setItemId(draft.itemId); setSalesProEmail(draft.salesProEmail); setStartMode(draft.startMode); setStart(draft.start); setEnd(draft.end); setEndHasManualOverride(draft.endHasManualOverride); setTimeZone(draft.timeZone); setType(draft.type); setSessionNameTemplate(draft.sessionNameTemplate);
+    }
+    setDraftHydrated(true);
+  }, [draftStorageKey]);
+
+  useEffect(() => {
+    if (!draftHydrated || initialSelection.view !== "provision") return;
+    const draft: SalesSessionProvisionDraft = { version: 1, accountId: sessionAccountId, opportunityId, itemId, salesProEmail, startMode, start, end, endHasManualOverride, timeZone, type, sessionNameTemplate };
+    window.sessionStorage.setItem(draftStorageKey, JSON.stringify(draft));
+  }, [draftHydrated, draftStorageKey, initialSelection.view, sessionAccountId, opportunityId, itemId, salesProEmail, startMode, start, end, endHasManualOverride, timeZone, type, sessionNameTemplate]);
+
   useEffect(() => { currentSessionSelection.current = { accountId: sessionAccountId, opportunityId }; }, [sessionAccountId, opportunityId]);
+  useEffect(() => { setSessionStatusFilter(initialSelection.status); }, [initialSelection.status]);
   // Browser Back/Forward may update only the filter query. Restore those choices without remounting the in-progress form.
   useEffect(() => {
     if (initialSelection.accountId !== currentSessionSelection.current.accountId) {
@@ -193,8 +219,8 @@ function SalesDemoSessionsFeature({ initialSelection, onNavigate }: { readonly i
   }, [initialSelection.accountId, initialSelection.opportunityId]);
 
   useEffect(() => { currentStart.current = start; currentTimeZone.current = timeZone; }, [start, timeZone]);
-  useEffect(() => { void fetchSales("/api/sales/session-configuration", { cache: "no-store" }).then(async (response) => { const body = await response.json() as { template?: string }; if (response.ok && body.template) setSessionNameTemplate(body.template); }); }, [fetchSales]);
-  useEffect(() => { let active = true; void fetchSales("/api/sales/timezones", { cache: "no-store" }).then(async (response) => { const body = await response.json() as { timezones?: { id: string; name: string }[]; freshness?: string; correlationId?: string; preference?: { timeZone?: string | null; experienceType?: SalesExperienceType | null } }; if (!active) return; if (!response.ok) { setMessage("CloudShare timezones could not be loaded."); setTimezoneCorrelationId(body.correlationId ?? null); return; } setTimezones(body.timezones ?? []); setTimezoneFreshness(body.freshness ?? null); setTimezoneCorrelationId(body.correlationId ?? null); if (!salesPreferenceDirty.current.timeZone && body.preference?.timeZone) setTimeZone(body.preference.timeZone); if (!salesPreferenceDirty.current.experienceType && body.preference?.experienceType) setType(body.preference.experienceType); }).catch(() => { if (active) setMessage("CloudShare timezones could not be loaded."); }); return () => { active = false; }; }, [fetchSales]);
+  useEffect(() => { void fetchSales("/api/sales/session-configuration", { cache: "no-store" }).then(async (response) => { const body = await response.json() as { template?: string }; if (response.ok && body.template && !draftHasTemplate.current) setSessionNameTemplate(body.template); }); }, [fetchSales]);
+  useEffect(() => { let active = true; void fetchSales("/api/sales/timezones", { cache: "no-store" }).then(async (response) => { const body = await response.json() as { timezones?: { id: string; name: string }[]; freshness?: string; correlationId?: string; preference?: { timeZone?: string | null; experienceType?: SalesExperienceType | null } }; if (!active) return; if (!response.ok) { setMessage("CloudShare timezones could not be loaded."); setTimezoneCorrelationId(body.correlationId ?? null); return; } setTimezones(body.timezones ?? []); setTimezoneFreshness(body.freshness ?? null); setTimezoneCorrelationId(body.correlationId ?? null); if (!draftHasPreferences.current && !salesPreferenceDirty.current.timeZone && body.preference?.timeZone) setTimeZone(body.preference.timeZone); if (!draftHasPreferences.current && !salesPreferenceDirty.current.experienceType && body.preference?.experienceType) setType(body.preference.experienceType); }).catch(() => { if (active) setMessage("CloudShare timezones could not be loaded."); }); return () => { active = false; }; }, [fetchSales]);
   useEffect(() => { if ((!salesPreferenceDirty.current.timeZone && !salesPreferenceDirty.current.experienceType) || timezones.length === 0) return; void fetchSales("/api/sales/timezones", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ timeZone, experienceType: type }) }); }, [fetchSales, timeZone, type, timezones.length]);
 
   const load = useCallback(async () => {
@@ -207,6 +233,7 @@ function SalesDemoSessionsFeature({ initialSelection, onNavigate }: { readonly i
   useEffect(() => { void load().catch((error) => setMessage(error instanceof Error ? error.message : "Could not load Sales Enablement Session choices.")); }, [load]);
   useEffect(() => {
     if (!selectedItemDuration) return;
+    if (restoringDraftItem.current) { restoringDraftItem.current = false; return; }
     setEndHasManualOverride(false);
     setEnd(addCloudShareWallClockMinutes(currentStart.current, currentTimeZone.current, selectedItemDuration) ?? "");
   }, [itemId, selectedItemDuration]);
@@ -231,11 +258,11 @@ function SalesDemoSessionsFeature({ initialSelection, onNavigate }: { readonly i
   }, [accountPage, accountSearch, fetchSales, opportunityId, opportunityPage, opportunitySearch, sessionAccountId]);
   useEffect(() => { let active = true; const refresh = () => { const query = new URLSearchParams(); if (sessionStatusFilter === "needs_attention") query.set("operationStatus", "needs_attention"); else query.set("experienceStatus", sessionStatusFilter === "upcoming" ? "notStarted" : sessionStatusFilter === "in_progress" ? "inProgress" : "ended"); if (sessionAccountId) query.set("accountId", sessionAccountId); if (opportunityId) query.set("opportunityId", opportunityId); return void fetchSales(`/api/sales/enablement-sessions?${query.toString()}`, { cache: "no-store" }).then(async (response) => { const body = await response.json() as { sessions?: EnablementSession[] }; if (active && response.ok) setSessions(body.sessions ?? []); }).catch(() => undefined); }; refresh(); const interval = window.setInterval(refresh, 30_000); return () => { active = false; window.clearInterval(interval); }; }, [fetchSales, opportunityId, sessionAccountId, sessionStatusFilter, sessionRefresh]);
   useEffect(() => {
-    setProjectMembers([]); setSalesProEmail("");
+    setProjectMembers([]);
     if (!itemId) return;
     setProjectMemberLoading(true);
     void fetchSales(`/api/sales/enablement-sessions/project-members?itemId=${encodeURIComponent(itemId)}`, { cache: "no-store" })
-      .then(async (response) => { const body = await response.json() as { members?: ProjectMember[]; error?: string }; if (!response.ok) throw new Error(body.error ?? "Could not retrieve active Project members."); setProjectMembers(body.members ?? []); })
+      .then(async (response) => { const body = await response.json() as { members?: ProjectMember[]; error?: string }; if (!response.ok) throw new Error(body.error ?? "Could not retrieve active Project members."); const members = body.members ?? []; setProjectMembers(members); setSalesProEmail((current) => current && members.some((member) => member.email === current) ? current : ""); })
       .catch((error) => setMessage(error instanceof Error ? error.message : "Could not retrieve active Project members."))
       .finally(() => setProjectMemberLoading(false));
   }, [fetchSales, itemId]);
@@ -251,7 +278,11 @@ function SalesDemoSessionsFeature({ initialSelection, onNavigate }: { readonly i
         setNeedsAttention(true); setCorrelationId(body.correlationId ?? null);
         setMessage(`Needs attention: ${body.warning ?? "Sales Enablement Session was created. Do not retry creation; review support diagnostics."}`);
       } else if (body.session) {
-        onNavigate({ tab: "sessions", sessionView: "manage", sessionId: body.session.id, accountId: sessionAccountId, opportunityId });
+        window.sessionStorage.removeItem(draftStorageKey);
+        setItemId(""); setSalesProEmail(""); setEnd(""); setEndHasManualOverride(false);
+        const createdStatus = body.session.experience?.value === "ended" ? "ended" : body.session.experience?.value === "inProgress" || startMode === "now" ? "in_progress" : "upcoming";
+        setSessionStatusFilter(createdStatus);
+        onNavigate({ tab: "sessions", sessionView: "manage", sessionId: body.session.id, sessionStatus: createdStatus, accountId: sessionAccountId, opportunityId });
       } else setMessage("Sales Enablement Session created. No invitations were sent.");
     } catch (error) { setMessage(error instanceof Error ? error.message : "Could not provision the Sales Enablement Session."); } finally { setLoading(false); }
   };
@@ -317,7 +348,7 @@ function SalesDemoSessionsFeature({ initialSelection, onNavigate }: { readonly i
     </form>
     </> : null}
     {!isProvision ? <section style={{ ...cardStyle, marginTop: "1rem", padding: "1.25rem" }} aria-label="Sales Enablement Session operations">
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}><h2 style={{ margin: 0 }}>Manage Sales Enablement Sessions</h2><label>Operational view <select aria-label="Operational view" value={sessionStatusFilter} onChange={(event) => setSessionStatusFilter(event.target.value as typeof sessionStatusFilter)} style={controlStyle}><option value="upcoming">Upcoming · CloudShare Experience notStarted</option><option value="in_progress">In progress · CloudShare Experience inProgress</option><option value="needs_attention">Needs attention · Certalis operation exception</option><option value="ended">Ended history · CloudShare Experience ended</option></select></label></div>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}><h2 style={{ margin: 0 }}>Manage Sales Enablement Sessions</h2><label>Operational view <select aria-label="Operational view" value={sessionStatusFilter} onChange={(event) => { const status = event.target.value as typeof sessionStatusFilter; setSessionStatusFilter(status); onNavigate({ tab: "sessions", sessionView: "manage", sessionStatus: status, accountId: sessionAccountId, opportunityId, preserveScroll: true }); }} style={controlStyle}><option value="upcoming">Upcoming · CloudShare Experience notStarted</option><option value="in_progress">In progress · CloudShare Experience inProgress</option><option value="needs_attention">Needs attention · Certalis operation exception</option><option value="ended">Ended history · CloudShare Experience ended</option></select></label></div>
       <p style={{ margin: "0.65rem 0", color: "#52606d" }}>Experience status is CloudShare when a fresh documented read exists; otherwise Certalis labels it as a schedule prediction. Needs attention is a separate Certalis operation exception.</p>
       <fieldset style={{ display: "grid", gap: "0.65rem", marginBottom: "0.75rem" }}><legend>Account-first Session filters</legend><div className="sales-session-selector-fields"><SearchableSalesSelector label="Account" value={accountInput} placeholder="Search active Accounts" options={sessionAccounts.map((account) => ({ id: account.id, label: account.name }))} helperText="Select an Account before narrowing to its Opportunity." loading={selectionLoading} error={selectionError} canLoadMore={accountTotal > sessionAccounts.length} onQueryChange={(value) => { setAccountInput(value); setAccountSearch(value); setAccountPage(1); if (sessionAccountId) { setSessionAccountId(""); setOpportunityId(""); setOpportunityInput(""); } }} onSelect={(account) => { setSessionAccountId(account.id); setAccountInput(account.label); setOpportunityId(""); setOpportunityInput(""); onNavigate({ tab: "sessions", sessionView: "manage", accountId: account.id, preserveScroll: true }); }} onLoadMore={() => setAccountPage((page) => page + 1)} /><SearchableSalesSelector label="Opportunity" value={opportunityInput} placeholder="Search active Opportunities" options={sessionOpportunityOptions.map((opportunity) => ({ id: opportunity.id, label: opportunity.label }))} helperText={sessionAccountId ? "Only Opportunities for the selected Account are shown." : "Select an Account first to narrow the operational view."} loading={selectionLoading} error={selectionError} canLoadMore={opportunityTotal > sessionOpportunityOptions.length} onQueryChange={(value) => { setOpportunityInput(value); setOpportunitySearch(value); setOpportunityPage(1); if (opportunityId) setOpportunityId(""); }} onSelect={(opportunity) => { setOpportunityId(opportunity.id); setOpportunityInput(opportunity.label); onNavigate({ tab: "sessions", sessionView: "manage", accountId: sessionAccountId, opportunityId: opportunity.id, preserveScroll: true }); }} onLoadMore={() => setOpportunityPage((page) => page + 1)} /></div><button type="button" style={secondaryButtonStyle} disabled={!sessionAccountId && !opportunityId} onClick={() => { setSessionAccountId(""); setOpportunityId(""); setAccountInput(""); setAccountSearch(""); setOpportunityInput(""); setOpportunitySearch(""); onNavigate({ tab: "sessions", sessionView: "manage", preserveScroll: true }); }}>Clear Account and Opportunity filters</button></fieldset>
       <form onSubmit={(event) => { event.preventDefault(); void searchParticipants(0); }} style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.75rem" }}><label>Search participant name or email <input aria-label="Search participant name or email" value={participantSearch} onChange={(event) => { setParticipantSearch(event.target.value); setParticipantSearchOffset(0); }} style={controlStyle} /></label><button type="submit" style={secondaryButtonStyle}>Search</button></form>
