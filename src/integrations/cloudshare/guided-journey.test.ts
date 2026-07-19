@@ -307,7 +307,7 @@ describe("createCloudShareGuidedJourneyProvider", () => {
     ).rejects.toBeInstanceOf(CloudShareResponseError);
   });
 
-  it("redacts Guided Journey passphrases in unsupported payload diagnostics", async () => {
+  it("retains Guided Journey response bodies in unsupported payload diagnostics", async () => {
     const payload = {
       exploredRate: 1.2,
       sectionStatuses: [
@@ -339,10 +339,10 @@ describe("createCloudShareGuidedJourneyProvider", () => {
               status: "explored",
             },
           ],
-          passphrase: "[REDACTED]",
+          passphrase: "candidate-visible-passphrase",
           loginUrl: "https://use.cloudshare.com/Ent/Login.aspx?token=admin-evidence",
-          apiKey: "[REDACTED]",
-          authorization: "Bearer [REDACTED]",
+          apiKey: "secret-api-key",
+          authorization: "Bearer secret-bearer-token",
         }),
       }),
     });

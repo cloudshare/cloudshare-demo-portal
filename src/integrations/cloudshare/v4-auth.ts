@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { CloudShareAuthError, CloudShareRateLimitError } from "./errors";
 import type { HttpClient } from "./http";
-import { redactCloudShareAdminSupportValue } from "./diagnostic-redaction";
 
 /**
  * CloudShare v4 (Accelerate) OAuth. Acquires a Bearer JWT via the
@@ -84,11 +83,11 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
             path: "/oauth/token",
             integrationSurface: "cloudshare.v4.oauth.token",
             requestHeaders: { "content-type": "application/x-www-form-urlencoded" },
-            requestBody: redactTokenRequestBody(body),
+            requestBody: body,
             status: response.status,
             responseStatus: response.status,
             ...(rateLimitHeaders ? { responseHeaders: rateLimitHeaders, rateLimitHeaders } : {}),
-            responseBody: redactCloudShareAdminSupportValue(response.body),
+            responseBody: response.body,
             ...(retryAfterSeconds !== undefined
               ? { retryAfterSeconds }
               : {}),
@@ -131,13 +130,6 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
   };
 }
 
-function redactTokenRequestBody(body: string): string {
-  const params = new URLSearchParams(body);
-  if (params.has("client_secret")) {
-    params.set("client_secret", "[REDACTED]");
-  }
-  return params.toString();
-}
 
 function classifyTokenRateLimit(
   status: number,

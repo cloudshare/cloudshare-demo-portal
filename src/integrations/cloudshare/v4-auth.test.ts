@@ -99,7 +99,7 @@ describe("createV4TokenProvider", () => {
         path: "/oauth/token",
         integrationSurface: "cloudshare.v4.oauth.token",
         requestHeaders: { "content-type": "application/x-www-form-urlencoded" },
-        requestBody: expect.not.stringContaining("secret-1"),
+        requestBody: "grant_type=client_credentials&client_id=client-1&client_secret=secret-1",
         responseBody: "too many requests",
       },
     });

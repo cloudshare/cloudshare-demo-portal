@@ -216,10 +216,10 @@ describe("createCloudShareClient — v4", () => {
     const evidence = JSON.stringify((error as { context?: unknown }).context);
     expect(evidence).toContain(participantEmail);
     expect(evidence).toContain(providerParticipantId);
-    expect(evidence).not.toContain(providerInviteUrl);
+    expect(evidence).toContain(providerInviteUrl);
   });
 
-  it("redacts training and Sales Experience passphrases from trace request bodies", async () => {
+  it("retains training request bodies while masking all request headers", async () => {
     const trace = vi.fn();
     const { http } = capturingHttp(ok({ id: "training-1" }));
     const client = createCloudShareClient({
@@ -252,18 +252,18 @@ describe("createCloudShareClient — v4", () => {
         customerId: "customer-helios",
         requestHeaders: {
           authorization: "[REDACTED]",
-          "content-type": "application/json",
+          "content-type": "[REDACTED]",
         },
         requestBody: {
           Name: "Exam GCP-ASSOC",
-          Passphrase: "[REDACTED]",
+          Passphrase: "certalis-attempt-1",
           MainInstructor: { Email: "instructor@example.com" },
         },
       }),
     });
   });
 
-  it("still redacts true credentials from support diagnostic request bodies", async () => {
+  it("retains request body fields regardless of their names", async () => {
     const trace = vi.fn();
     const { http } = capturingHttp(ok({ id: "training-1" }));
     const client = createCloudShareClient({
@@ -300,21 +300,21 @@ describe("createCloudShareClient — v4", () => {
       fields: expect.objectContaining({
         requestBody: {
           Name: "Exam GCP-ASSOC",
-          Passphrase: "[REDACTED]",
-          ApiKey: "[REDACTED]",
-          WebhookSecret: "[REDACTED]",
-          Password: "[REDACTED]",
-          Signature: "[REDACTED]",
-          Authorization: "Bearer [REDACTED]",
-          Credential: "[REDACTED]",
-          BearerToken: "[REDACTED]",
-          diagnosticNote: "Bearer [REDACTED] cs_sha1 [REDACTED]",
+          Passphrase: "certalis-attempt-1",
+          ApiKey: "cloudshare-api-key",
+          WebhookSecret: "webhook-secret",
+          Password: "actual-password",
+          Signature: "signed-value",
+          Authorization: "Bearer embedded-secret",
+          Credential: "credential-secret",
+          BearerToken: "token-secret",
+          diagnosticNote: "Bearer embedded-secret cs_sha1 userapiid:api-id;timestamp:1700000000;token:tokfixed01;hmac:abc123",
         },
       }),
     });
   });
 
-  it("redacts training passphrases in response diagnostics", async () => {
+  it("retains training response bodies in diagnostics", async () => {
     const trace = vi.fn();
     const { http } = capturingHttp(
       ok({
@@ -350,15 +350,15 @@ describe("createCloudShareClient — v4", () => {
       fields: expect.objectContaining({
         responseBody: JSON.stringify({
           id: "training-1",
-          Passphrase: "[REDACTED]",
-          passphrase: "[REDACTED]",
-          ApiKey: "[REDACTED]",
+          Passphrase: "certalis-attempt-1",
+          passphrase: "candidate-visible-passphrase",
+          ApiKey: "cloudshare-api-key",
         }),
       }),
     });
   });
 
-  it("redacts sponsored-link login URLs from ordinary traces while retaining protected detailed evidence", async () => {
+  it("retains sponsored-link login URLs in protected traces and detailed evidence", async () => {
     const trace = vi.fn();
     const { http } = capturingHttp(
       ok({ loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret-token" }),
@@ -380,13 +380,13 @@ describe("createCloudShareClient — v4", () => {
     const responseTrace = trace.mock.calls[1]?.[0].fields;
     expect(responseTrace).toEqual(
       expect.objectContaining({
-        responseBody: "{\"loginUrl\":\"[REDACTED]\"}",
+        responseBody: "{\"loginUrl\":\"https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret-token\"}",
       }),
     );
     expect(detailed.response.body).toEqual({ loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret-token" });
   });
 
-  it("redacts legacy sponsoredLinks URLs from ordinary traces", async () => {
+  it("retains legacy sponsoredLinks URLs in protected traces", async () => {
     const trace = vi.fn();
     const { http } = capturingHttp(
       ok({ loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/legacy-token" }),
@@ -408,12 +408,12 @@ describe("createCloudShareClient — v4", () => {
     const responseTrace = trace.mock.calls[1]?.[0].fields;
     expect(responseTrace).toEqual(
       expect.objectContaining({
-        responseBody: "{\"loginUrl\":\"[REDACTED]\"}",
+        responseBody: "{\"loginUrl\":\"https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/legacy-token\"}",
       }),
     );
   });
 
-  it("keeps loginUrl redacted in non-sponsored-link response diagnostics", async () => {
+  it("retains loginUrl in every provider response diagnostic", async () => {
     const trace = vi.fn();
     const { http } = capturingHttp(
       ok({ loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/should-redact" }),
@@ -433,10 +433,10 @@ describe("createCloudShareClient — v4", () => {
     });
 
     const responseTrace = trace.mock.calls[1]?.[0].fields;
-    expect(JSON.stringify(responseTrace)).not.toContain("should-redact");
+    expect(JSON.stringify(responseTrace)).toContain("should-redact");
     expect(responseTrace).toEqual(
       expect.objectContaining({
-        responseBody: "{\"loginUrl\":\"[REDACTED]\"}",
+        responseBody: "{\"loginUrl\":\"https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/should-redact\"}",
       }),
     );
   });
@@ -483,7 +483,7 @@ describe("createCloudShareClient — v4", () => {
     );
   });
 
-  it("redacts credential-bearing response headers while preserving ordinary TLS support metadata elsewhere", async () => {
+  it("retains response headers and preserves ordinary TLS support metadata", async () => {
     const { http } = capturingHttp({
       status: 200,
       headers: {
@@ -512,11 +512,11 @@ describe("createCloudShareClient — v4", () => {
     expect(result.response).toEqual({
       status: 200,
       headers: {
-        authorization: "[REDACTED]",
-        "x-auth-token": "[REDACTED]",
-        "x-api-key": "[REDACTED]",
-        "x-cloudshare-signature": "[REDACTED]",
-        "x-hmac": "[REDACTED]",
+        authorization: "Bearer upstream-secret",
+        "x-auth-token": "secret-auth-token",
+        "x-api-key": "secret-api-key",
+        "x-cloudshare-signature": "signature-secret",
+        "x-hmac": "hmac-secret",
         "set-cookie": ["[REDACTED]"],
         "content-type": "application/json",
       },
@@ -565,7 +565,7 @@ describe("createCloudShareClient — v3", () => {
     );
   });
 
-  it("includes redacted query parameters in detailed request diagnostics", async () => {
+  it("retains query parameters and masks request headers in detailed diagnostics", async () => {
     const { http } = capturingHttp({
       status: 200,
       headers: { "content-type": "application/json" },
@@ -583,7 +583,7 @@ describe("createCloudShareClient — v3", () => {
     expect(result.request).toEqual({
       method: "GET",
       path: "/api/v3/envs/EN123",
-      query: { include: "status", token: "[REDACTED]" },
+      query: { include: "status", token: "secret-token" },
       headers: {
         authorization: "[REDACTED]",
       },
@@ -595,7 +595,7 @@ describe("createCloudShareClient — v3", () => {
     });
   });
 
-  it("emits redacted request and response trace events", async () => {
+  it("emits request-header-masked trace events", async () => {
     const trace = vi.fn();
     const { http } = capturingHttp({ status: 200, body: "{\"result\":\"Pong\"}" });
     const client = createCloudShareClient({
@@ -700,7 +700,7 @@ describe("createCloudShareClient — error mapping", () => {
     ).rejects.toBeInstanceOf(CloudShareResponseError);
   });
 
-  it("retains parsed redacted JSON error bodies in request-error context", async () => {
+  it("retains parsed provider JSON error bodies in request-error context", async () => {
     const { http } = capturingHttp({
       status: 403,
       body: JSON.stringify({
@@ -721,10 +721,10 @@ describe("createCloudShareClient — error mapping", () => {
       context: expect.objectContaining({
         responseBody: {
           error: "forbidden",
-          apiKey: "[REDACTED]",
-          authorization: "Bearer [REDACTED]",
-          credential: "[REDACTED]",
-          message: "Bearer [REDACTED] cs_sha1 [REDACTED]",
+          apiKey: "secret-key",
+          authorization: "Bearer secret-bearer-token",
+          credential: "credential-secret",
+          message: "Bearer secret-bearer-token cs_sha1 userapiid:api-id;timestamp:1700000000;token:tokfixed01;hmac:abc123",
         },
       }),
     });

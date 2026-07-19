@@ -299,12 +299,12 @@ describe("external lease inspection", () => {
           cookie: "[REDACTED]",
         },
         query: {
-          token: "[REDACTED]",
-          returnUrl: "[REDACTED]",
+          token: "rehydrated-request-secret",
+          returnUrl: "https://use.cloudshare.com/Ent/Login.aspx?token=rehydrated-request-secret",
         },
         body: {
-          bearerHeader: "[REDACTED]",
-          loginUrl: "[REDACTED]",
+          bearerHeader: "Bearer rehydrated-request-secret",
+          loginUrl: "https://use.cloudshare.com/Ent/Login.aspx?token=rehydrated-request-secret",
         },
       },
       response: {
@@ -314,17 +314,16 @@ describe("external lease inspection", () => {
           "set-cookie": "[REDACTED]",
         },
         body: {
-          bearerHeader: "[REDACTED]",
-          loginUrl: "[REDACTED]",
+          bearerHeader: "Bearer rehydrated-secret",
+          loginUrl: "https://use.cloudshare.com/Ent/Login.aspx?token=rehydrated-secret",
         },
       },
     });
-    expect(lease.error).toContain("Bearer [REDACTED]");
-    expect(lease.error).not.toContain("rehydrated-message-secret");
+    expect(lease.error).toContain("rehydrated-message-secret");
     expect(lease.response).not.toHaveProperty("network");
     expect(lease.response).not.toHaveProperty("tls");
-    expect(JSON.stringify(lease)).not.toContain("rehydrated-secret");
-    expect(JSON.stringify(lease)).not.toContain("rehydrated-request-secret");
+    expect(JSON.stringify(lease)).toContain("rehydrated-secret");
+    expect(JSON.stringify(lease)).toContain("rehydrated-request-secret");
     expect(JSON.stringify(lease)).not.toContain("rehydrated-network-secret");
     expect(JSON.stringify(lease)).not.toContain("rehydrated-tls-secret");
   });

@@ -394,27 +394,16 @@ function sanitizeRehydratedErrorMessage(message: unknown): string {
 }
 
 function sanitizeRehydratedHeaders(value: unknown): Record<string, unknown> | unknown {
-  const redacted = redactCloudShareAdminSupportValue(value, {
-    preserveSponsoredLinkLoginUrl: false,
-    redactTokenLikeKeys: true,
-  });
+  const redacted = redactCloudShareAdminSupportValue(value);
   if (!isRecord(redacted)) {
     return redacted;
   }
 
-  for (const key of Object.keys(redacted)) {
-    if (key.toLowerCase() === "set-cookie" || key.toLowerCase() === "cookie") {
-      redacted[key] = "[REDACTED]";
-    }
-  }
-  return redacted;
+  return Object.fromEntries(Object.keys(redacted).map((key) => [key, "[REDACTED]"]));
 }
 
 function sanitizeRehydratedRequestQuery(value: unknown): Record<string, unknown> | unknown {
-  const redacted = redactCloudShareAdminSupportValue(value, {
-    preserveSponsoredLinkLoginUrl: false,
-    redactTokenLikeKeys: true,
-  });
+  const redacted = redactCloudShareAdminSupportValue(value);
   if (!isRecord(redacted)) {
     return redacted;
   }

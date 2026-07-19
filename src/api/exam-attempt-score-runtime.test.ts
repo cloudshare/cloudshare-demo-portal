@@ -558,7 +558,7 @@ describe("getExamAttemptScoreRuntime", () => {
       }),
     );
     expect(JSON.stringify((deps.logger.warn as ReturnType<typeof vi.fn>).mock.calls)).toContain("support-evidence-token");
-    expect(JSON.stringify((deps.logger.warn as ReturnType<typeof vi.fn>).mock.calls)).not.toContain("secret-access-token");
+    expect(JSON.stringify((deps.logger.warn as ReturnType<typeof vi.fn>).mock.calls)).toContain("secret-access-token");
     expect(deps.audit.write).toHaveBeenCalledWith(
       expect.objectContaining({
         examAttemptId: "attempt-1",
@@ -574,7 +574,7 @@ describe("getExamAttemptScoreRuntime", () => {
     );
   });
 
-  it("redacts Guided Journey passphrases in support diagnostics without exposing them to candidates", async () => {
+  it("retains Guided Journey bodies in protected diagnostics without exposing them to candidates", async () => {
     const diagnosticsRepository = createInMemoryDiagnosticLogRepository();
     const diagnostics = createDiagnosticRecorder({ repository: diagnosticsRepository });
     const diagnosticsAwareRetriever: DiagnosticScoreRetrievalProvider = {
@@ -617,15 +617,15 @@ describe("getExamAttemptScoreRuntime", () => {
         candidate.outcome === "failure",
     );
     expect(entry?.response).toEqual({
-      body: {
-        Passphrase: "[REDACTED]",
-        passphrase: "[REDACTED]",
+      body: JSON.stringify({
+        Passphrase: "certalis-attempt-1",
+        passphrase: "candidate-support-passphrase",
         loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/support-token",
-        accessToken: "[REDACTED]",
-      },
+        accessToken: "actual-bearer-token",
+      }),
     });
     expect(JSON.stringify(result.body)).not.toContain("support-token");
-    expect(JSON.stringify(entry)).not.toContain("actual-bearer-token");
+    expect(JSON.stringify(entry)).toContain("actual-bearer-token");
   });
 
   it("backfills participant id from training participants when an older launch does not have one yet", async () => {

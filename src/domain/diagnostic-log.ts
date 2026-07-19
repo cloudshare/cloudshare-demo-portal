@@ -154,7 +154,7 @@ function preserveBodiesAndRedactRequestHeaders(value: unknown, inRequest = false
   const record = value as Record<string, unknown>;
   return Object.fromEntries(Object.entries(record).map(([key, child]) => {
     const isRequest = inRequest || key === "request";
-    const isRequestHeader = isRequest && /^(?:headers|requestHeaders)$/i.test(key);
+    const isRequestHeader = /^requestHeaders$/i.test(key) || (isRequest && /^headers$/i.test(key));
     return [key, isRequestHeader ? redactRequestHeaders(child) : preserveBodiesAndRedactRequestHeaders(child, isRequest)];
   }));
 }
