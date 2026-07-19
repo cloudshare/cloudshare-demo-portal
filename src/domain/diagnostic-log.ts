@@ -136,10 +136,10 @@ export function boundDiagnosticOffset(offset?: number): number {
 // --- Redaction -------------------------------------------------------------
 
 /**
- * The protected-diagnostic evidence contract is structural, not name-based:
- * request headers are masked, while request/query and provider-response bodies
- * are retained verbatim. This must remain the single redaction seam; callers
- * must not pre-scrub provider evidence based on field names.
+ * The protected-diagnostic evidence contract is structural and directional:
+ * request headers retain only an explicit safe operational allowlist, while
+ * request/query and provider-response bodies are retained verbatim. Callers
+ * must not pre-scrub body evidence based on field names.
  */
 function projectProtectedRequest(request: Record<string, unknown>): Record<string, unknown> {
   return projectProtectedMetadata(request, true) as Record<string, unknown>;

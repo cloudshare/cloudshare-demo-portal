@@ -1577,7 +1577,7 @@ data makes the platform significantly harder to support.
 **Superseded by issue #360 (2026-07-19):** CloudShare diagnostic evidence uses one direction-aware
 contract across scheduling/runtime, Guided Journey, resources, Sales, and webhooks:
 
-- **Request headers:** mask credential-bearing values, including Authorization, cookies, API-key/token/signature/authentication headers; preserve safe operational headers such as Content-Type, Accept, lengths, agents, and request/correlation IDs.
+- **Request headers:** preserve only the explicit safe operational allowlist (Content-Type, Accept, Accept-Encoding, Content-Length, User-Agent, request/correlation IDs, and W3C trace headers); mask every other named or unparseable header.
 - **Request/query and provider response bodies:** retain every value verbatim in protected admin
   `DiagnosticLogEntry` evidence, including API keys, bearer tokens, webhook secrets, signatures,
   passwords, passphrases, access links, sponsored-link `loginUrl` values, nested arrays/objects, and
@@ -1587,7 +1587,7 @@ contract across scheduling/runtime, Guided Journey, resources, Sales, and webhoo
 
 Candidate/client-facing APIs remain stricter: admin-only evidence such as `loginUrl` must not
 appear in candidate responses or candidate-facing UI even though it can appear in admin support
-diagnostics. Credential-bearing request-header values remain redacted; safe operational headers remain visible.
+diagnostics. Only explicitly allowlisted operational request-header values remain visible; every other request header remains redacted.
 
 **Action required:**
 
@@ -1820,8 +1820,8 @@ and fails closed when a later page contradicts that count or makes no progress. 
 null `envStatus` is preserved as the authoritative pre-environment state; the portal
 does not infer a runnable environment from the placeholder `envId`. Every CloudShare
 diagnostic now retains the full verbatim request body, response body, and query
-parameters at the shared client boundary. Only credential-bearing request-header values are
-redacted; safe operational request headers remain visible, and body credentials, tokens, invitation links, and sponsored-login URLs remain
+parameters at the shared client boundary. Only the explicit operational request-header allowlist
+remains visible; every other request header is redacted, while body credentials, tokens, invitation links, and sponsored-login URLs remain
 intact in protected Customer-scoped admin evidence. Participant and environment
 correlation values remain server-only in browser projections. Sales Support includes
 the participant reconciliation source in both direct, Customer-scoped filtered reads

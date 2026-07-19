@@ -14,6 +14,16 @@ describe("projectProtectedRequestHeaders", () => {
       "X-Access-Key": "eight",
       "X-Signature256": "nine",
       Cookie2: "ten",
+      "X-Password": "eleven",
+      "X-Auth-Password": "twelve",
+      "X-Api-Secret-Key": "thirteen",
+      "X-Session-ID": "fourteen",
+      "X-Webhook-Signature-SHA256": "fifteen",
+      "X-CloudShare-Signature-V1": "sixteen",
+      "X-HMAC-Signature-V1": "seventeen",
+      "X-Session-Token-ID": "eighteen",
+      "X-Auth-Nonce": "nineteen",
+      "X-Custom-Unknown": "twenty",
     })).toEqual({
       "X-Authorization": "[REDACTED]",
       "CloudShare-Authorization": "[REDACTED]",
@@ -25,6 +35,16 @@ describe("projectProtectedRequestHeaders", () => {
       "X-Access-Key": "[REDACTED]",
       "X-Signature256": "[REDACTED]",
       Cookie2: "[REDACTED]",
+      "X-Password": "[REDACTED]",
+      "X-Auth-Password": "[REDACTED]",
+      "X-Api-Secret-Key": "[REDACTED]",
+      "X-Session-ID": "[REDACTED]",
+      "X-Webhook-Signature-SHA256": "[REDACTED]",
+      "X-CloudShare-Signature-V1": "[REDACTED]",
+      "X-HMAC-Signature-V1": "[REDACTED]",
+      "X-Session-Token-ID": "[REDACTED]",
+      "X-Auth-Nonce": "[REDACTED]",
+      "X-Custom-Unknown": "[REDACTED]",
     });
   });
 
@@ -32,21 +52,27 @@ describe("projectProtectedRequestHeaders", () => {
     expect(projectProtectedRequestHeaders({
       "Content-Type": "application/json",
       Accept: "application/json",
+      "Accept-Encoding": "gzip",
       "Content-Length": "42",
       "User-Agent": "agent",
       "X-Correlation-ID": "corr",
       "X-Request-ID": "req",
-      "X-Retry-Count": "2",
+      traceparent: "00-trace-parent",
+      tracestate: "vendor=value",
     })).toEqual({
       "Content-Type": "application/json",
       Accept: "application/json",
+      "Accept-Encoding": "gzip",
       "Content-Length": "42",
       "User-Agent": "agent",
       "X-Correlation-ID": "corr",
       "X-Request-ID": "req",
-      "X-Retry-Count": "2",
+      traceparent: "00-trace-parent",
+      tracestate: "vendor=value",
     });
     expect(projectProtectedRequestHeaders([["X-Access-Key", "secret"], ["Accept", "text/plain"]])).toEqual([["X-Access-Key", "[REDACTED]"], ["Accept", "text/plain"]]);
     expect(projectProtectedRequestHeaders("unstructured secret headers")).toBe("[REDACTED]");
+    expect(projectProtectedRequestHeaders("Content-Type: application/json")).toBe("Content-Type: application/json");
+    expect(projectProtectedRequestHeaders("Authorization: Bearer secret")).toBe("Authorization: [REDACTED]");
   });
 });

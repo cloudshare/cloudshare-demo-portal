@@ -1,7 +1,7 @@
 const REDACTED = "[REDACTED]";
 
 const SAFE_OPERATIONAL_HEADERS = new Set([
-  "accept", "acceptencoding", "acceptlanguage", "contentlength", "contenttype",
+  "accept", "acceptencoding", "contentlength", "contenttype",
   "correlationid", "requestid", "traceparent", "tracestate", "useragent",
   "xcorrelationid", "xrequestid",
 ]);
@@ -10,20 +10,13 @@ function compactHeaderName(name: string): string {
   return name.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-/** Shared classifier for request-header evidence in protected diagnostics. */
+/**
+ * Shared fail-closed classifier for request-header evidence in protected
+ * diagnostics. Only the explicit operational allowlist is non-credential data.
+ */
 export function isCredentialBearingRequestHeader(name: string): boolean {
   const compact = compactHeaderName(name);
-  if (SAFE_OPERATIONAL_HEADERS.has(compact)) return false;
-
-  return compact.includes("authorization")
-    || compact.includes("authentication")
-    || compact.includes("apikey")
-    || compact.includes("subscriptionkey")
-    || compact.includes("accesskey")
-    || compact.includes("cloudsharekey")
-    || compact.includes("credential")
-    || compact.includes("bearer")
-    || /(?:auth|secret|token|signature\d*|cookie\d*)$/.test(compact);
+  return !SAFE_OPERATIONAL_HEADERS.has(compact);
 }
 
 /**
@@ -32,6 +25,14 @@ export function isCredentialBearingRequestHeader(name: string): boolean {
  */
 export function projectProtectedRequestHeaders<T>(value: T): T {
   if (value === undefined) return value;
+  if (typeof value === "string") {
+    const parsed = /^([^:\r\n]+):(.*)$/.exec(value);
+    if (!parsed) return REDACTED as T;
+    const [, name] = parsed;
+    return (isCredentialBearingRequestHeader(name)
+      ? `${name}: ${REDACTED}`
+      : value) as T;
+  }
   if (Array.isArray(value)) {
     return value.map((entry) => Array.isArray(entry) && entry.length === 2
       ? [entry[0], isCredentialBearingRequestHeader(String(entry[0])) ? REDACTED : entry[1]]
