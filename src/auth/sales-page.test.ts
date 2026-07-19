@@ -52,7 +52,7 @@ describe("Sales workspace page", () => {
     const support = await SalesPage({ searchParams: Promise.resolve({ tab: "support", correlationId: "corr-verified-1" }) });
 
     expect(sessions.key).toBe("sessions:catalog:manage:::");
-    expect(support.key).toBe("support:catalog::corr-verified-1");
+    expect(support.key).toBe("support:catalog::::corr-verified-1");
   });
 
   it("does not let a Helios certification admin use the Sales workspace", async () => {

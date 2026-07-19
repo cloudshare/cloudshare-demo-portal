@@ -136,7 +136,7 @@ export async function handleRegisterSalesSessionParticipants(deps: Deps, request
     const remoteContactCounts = new Map<string, number>();
     for (const participant of remoteAfterRegistration.participants) { const contactId = participantProperties(participant).certalisOpportunityContactId; if (contactId) remoteContactCounts.set(contactId, (remoteContactCounts.get(contactId) ?? 0) + 1); }
     if (new Set([...planned.values()].map((value) => value.id)).size !== planned.size || [...participantByPortalId.values()].some((matches) => matches.length !== 1) || [...planned.values()].some((value) => remoteContactCounts.get(value.contact.id) !== 1)) throw participantRegistrationNotReconciled(remoteAfterRegistration, planned.size, 0);
-    const now = new Date();
+    const now = (deps.now ?? (() => new Date()))();
     const saved = await Promise.all(contacts.map(async (contact) => { const existing = persistedByContactId.get(contact.id); if (existing) return { value: existing, contact }; const plan = planned.get(contact.id)!; const participant = participantByPortalId.get(plan.id)![0]!; const value = { id: plan.id, customerId: request.customerId, salesDemoSessionId: prepared.session.id, opportunityContactId: contact.id, cloudShareParticipantId: participant.id, invitationStatus: participant.invitationStatus, lastInvitedAt: null, invitedBy: participant.invitedBy, participationStatus: participant.participationStatus, firstJoined: participant.firstJoined, cloudShareEnvironmentId: participant.environmentId, environmentStatus: participant.envStatus ?? null, lastReconciledAt: now, createdAt: now, updatedAt: now } as const; await deps.participants.save(value); return { value, contact }; }));
     await evidence(deps, request, prepared.session, correlationId, "sales.demo_session.participants.registered", "success", "Sales Participants registered with CloudShare", remoteAfterRegistration, { contactIds: parsed.data.contactIds, registeredParticipantCount: contactsNeedingRemoteRegistration.length, adoptedLegacyParticipantCount: legacyByContactId.size - persistedLegacyByContactId.size, repairedPersistedParticipantCount: persistedLegacyByContactId.size, httpExchanges: completedExchanges }, saved.length === 1 && saved[0]!.value.cloudShareEnvironmentId ? { environmentId: saved[0]!.value.cloudShareEnvironmentId } : {});
     return { status: 201, body: { participants: saved.map(({ value, contact }) => portalParticipant(value, contact)), correlationId } };
@@ -239,7 +239,7 @@ export async function handleListSalesSessionParticipants(deps: Deps, request: Om
     const remote = await prepared.delivery.listParticipants!(prepared.session.cloudShareSalesExperienceId);
     completedRemote = remote;
     const local = await deps.participants.list(request.customerId, prepared.session.id);
-    const now = new Date();
+    const now = (deps.now ?? (() => new Date()))();
     const recovery = await recoverMissingParticipantMappings(deps, request.customerId, prepared.session, local, remote.participants, now);
     // `save` is an upsert on the Contact mapping. Re-read after recovery so a
     // concurrent refresh returns the canonical persisted portal ID, not the

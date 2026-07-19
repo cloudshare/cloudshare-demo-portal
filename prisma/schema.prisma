@@ -82,6 +82,7 @@ model OpportunityContact {
   updatedAt     DateTime
   customer      Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
   opportunity   SalesOpportunity @relation(fields: [customerId, opportunityId], references: [customerId, id], onDelete: Restrict)
+  salesSessionParticipants SalesSessionParticipant[]
 
   @@index([customerId, opportunityId, updatedAt])
 }
@@ -170,6 +171,7 @@ model SalesSessionParticipant {
   createdAt                   DateTime
   updatedAt                   DateTime
   session                     SalesDemoSession @relation(fields: [salesDemoSessionId], references: [id], onDelete: Cascade)
+  contact                     OpportunityContact @relation(fields: [opportunityContactId], references: [id], onDelete: Restrict)
   launchLinks                 SalesParticipantLaunchLink[]
 
   @@unique([customerId, salesDemoSessionId, opportunityContactId])

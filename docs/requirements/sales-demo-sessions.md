@@ -37,13 +37,30 @@ CloudShare v4 Sales Experience; it does not add participants or send invitations
   correlated Customer-scoped audit and redacted diagnostic evidence. If CloudShare
   creates an Experience but the portal cannot persist its correlation, the operation is
   reported as needing support rather than silently retrying and risking a duplicate.
-- The Sessions operational read model remains visible after refresh and supports all,
-  account-filtered, Opportunity-filtered, upcoming, in-progress, ended, provisioning, and
-  needs-attention views. `Verify CloudShare status` is a non-mutating documented
-  `GET /sales/{id}` check for an active persisted provider correlation: it records a
-  redacted diagnostic and confirms the provider record, but deliberately does not alter
-  the schedule-derived lifecycle. Provisioning and needs-attention records state why this
-  verification is unavailable.
+- The route-backed Sessions workspace has separate `Provision` and `Manage` views. `Manage`
+  is the normal landing view for persisted Sessions; successful provisioning routes there
+  with the new Session focused. Provisioning or ambiguous failures remain in `Provision`
+  with their retry and protected-support guidance intact.
+- The management read model keeps three independent dimensions: Certalis operation
+  (`provisioning`, `correlated`, or `needs_attention` with a reason), CloudShare Sales
+  Experience (`notStarted`, `inProgress`, or `ended`), and each participant's CloudShare
+  Environment state. A fresh documented `GET /sales/{id}` observation is labelled as a
+  CloudShare v4 read and is used for five minutes; otherwise Experience status is an
+  explicitly labelled schedule prediction. These dimensions are never one filter union.
+- `GET /api/sales/enablement-sessions` accepts independent bounded `operationStatus` and
+  `experienceStatus` filters plus route-backed Customer-scoped Account and Opportunity
+  filters. Primary management views are Upcoming (`notStarted`), In progress
+  (`inProgress`), and Certalis Needs attention; Ended is secondary history.
+- Participant name/email search is a local Customer-scoped read at the same route using
+  `participantSearch`, `offset`, and `limit` (maximum 50). It searches the registered
+  participant relation directly, returns a bounded page, and projects only the portal
+  Session/participant identity and the correlated Environment display state. Provider IDs,
+  access links, and protected diagnostic evidence remain server-only.
+- `Verify CloudShare status` performs the documented v4 `GET /sales/{id}`, records protected
+  diagnostic evidence, and persists the observed Experience status. Per-participant
+  Environment display is sourced separately from documented v3 `GET /envs/{id}` numeric
+  status codes and labels the source as `cloudshare_v3_environment`; the v4 participant
+  roster's free-text environment field remains supporting context only.
 - The documented CloudShare v3 timezone list is cached. Normal UI does not expose cache
   freshness jargon; a warning appears only for a stale fallback. The Sales Admin's last
   selected timezone and Session-level experience type are retained as preferences.

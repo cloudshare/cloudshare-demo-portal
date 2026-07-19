@@ -15,8 +15,8 @@ describe("Sales Session operations read model", () => {
 
     expect(rows.map((row) => row.lifecycle)).toEqual(["ended", "in_progress", "upcoming", "provisioning"]);
     expect(rows.map((row) => row.verificationEligible)).toEqual([true, true, true, false]);
-    expect(buildOperationalSalesSessions([{ ...base, id: "live", cloudShareSalesExperienceId: "sales-live", start: "2026-07-15T08:00", end: "2026-07-15T10:00" }], new Date("2026-07-15T09:00:00Z"), "in_progress")).toHaveLength(1);
-    expect(buildOperationalSalesSessions([{ ...base, id: "reconcile", cloudShareSalesExperienceId: "unprovisioned", start: "2026-07-15T08:00", end: "2026-07-15T10:00" }], new Date("2026-07-15T09:00:00Z"), "needs_attention")).toHaveLength(0);
+    expect(buildOperationalSalesSessions([{ ...base, id: "live", cloudShareSalesExperienceId: "sales-live", start: "2026-07-15T08:00", end: "2026-07-15T10:00" }], new Date("2026-07-15T09:00:00Z"), { experience: "inProgress" })).toHaveLength(1);
+    expect(buildOperationalSalesSessions([{ ...base, id: "reconcile", cloudShareSalesExperienceId: "unprovisioned", start: "2026-07-15T08:00", end: "2026-07-15T10:00" }], new Date("2026-07-15T09:00:00Z"), { operation: "needs_attention" })).toHaveLength(0);
   });
 
   it("makes needs-attention exclusive of provisioning and tolerates a Windows timezone ID", () => {
@@ -27,7 +27,16 @@ describe("Sales Session operations read model", () => {
     const rows = buildOperationalSalesSessions(sessions, new Date("2026-07-15T09:00:00Z"));
 
     expect(rows.map((row) => row.lifecycle)).toEqual(["needs_attention", "provisioning"]);
-    expect(buildOperationalSalesSessions(sessions, new Date("2026-07-15T09:00:00Z"), "provisioning")).not.toContainEqual(expect.objectContaining({ id: "attention" }));
+    expect(buildOperationalSalesSessions(sessions, new Date("2026-07-15T09:00:00Z"), { operation: "provisioning" })).not.toContainEqual(expect.objectContaining({ id: "attention" }));
+  });
+
+  it("filters operation and Experience dimensions independently", () => {
+    const attention = { ...base, id: "attention", cloudShareSalesExperienceId: "sales-1", operationalStatus: "needs_attention" as const, start: "2026-07-16T08:00", end: "2026-07-16T10:00" };
+    const now = new Date("2026-07-15T09:00:00Z");
+
+    expect(buildOperationalSalesSessions([attention], now, { operation: "needs_attention" })).toHaveLength(1);
+    expect(buildOperationalSalesSessions([attention], now, { experience: "notStarted" })).toHaveLength(1);
+    expect(buildOperationalSalesSessions([attention], now, { operation: "needs_attention", experience: "inProgress" })).toHaveLength(0);
   });
 
   it("derives lifecycle through the shared Windows wall-clock resolver", () => {

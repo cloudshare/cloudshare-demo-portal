@@ -60,7 +60,7 @@ describe("SalesWorkspace interaction", () => {
       return json({ error: `Unexpected request ${path}` }, 500);
     });
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "provision" }} />);
     await screen.findByRole("combobox", { name: "Opportunity" });
     await chooseSearchableOption(user, "Opportunity", "Acme - Acme evaluation");
     await user.selectOptions(screen.getByRole("combobox", { name: "Catalogue Item" }), "item-1");
@@ -71,7 +71,7 @@ describe("SalesWorkspace interaction", () => {
     fireEvent.change(end, { target: { value: "2026-07-17T10:15" } });
     await user.selectOptions(await screen.findByRole("combobox", { name: "Sales Pro" }), "rep@certalis.demo");
     await user.click(screen.getByRole("button", { name: "Create Sales Enablement Session" }));
-    await screen.findByText("Sales Enablement Session created. No invitations were sent.");
+    await waitFor(() => expect(mockRouter.push).toHaveBeenCalledWith("/sales?tab=sessions&opportunityId=opp-1&sessionId=session-1"));
     expect(fetchMock).toHaveBeenCalledWith("/api/sales/enablement-sessions", expect.objectContaining({ method: "POST", body: expect.stringContaining('"start":"2026-07-17T09:15"') }));
     expect(fetchMock).toHaveBeenCalledWith("/api/sales/enablement-sessions", expect.objectContaining({ method: "POST", body: expect.stringContaining('"end":"2026-07-17T10:15"') }));
     expect(consoleError).not.toHaveBeenCalled();
@@ -88,7 +88,7 @@ describe("SalesWorkspace interaction", () => {
       if (path.startsWith("/api/sales/enablement-sessions?")) return json({ sessions: [] });
       return json({});
     });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "provision" }} />);
     const opportunity = await screen.findByRole("combobox", { name: "Opportunity" });
     await user.type(opportunity, "North");
     await waitFor(() =>
@@ -101,7 +101,7 @@ describe("SalesWorkspace interaction", () => {
     expect(screen.getByRole("option", { name: "Acme - North renewal" })).not.toBeNull();
     expect(screen.queryByRole("button", { name: /Previous opportunities|Next opportunities/ })).toBeNull();
     await user.click(screen.getByRole("option", { name: "Acme - North renewal" }));
-    expect(mockRouter.push).toHaveBeenLastCalledWith("/sales?tab=sessions&opportunityId=opp-north", { scroll: false });
+    expect(mockRouter.push).toHaveBeenLastCalledWith("/sales?tab=sessions&opportunityId=opp-north&view=provision", { scroll: false });
     await waitFor(() => expect(screen.getByRole("status", { name: "Session name preview" }).textContent).toContain("Acme - North renewal (1) - Item"));
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("search=Acme+-+North+renewal"))).toBe(false);
   });
@@ -117,7 +117,7 @@ describe("SalesWorkspace interaction", () => {
       if (path.startsWith("/api/sales/enablement-sessions?")) return json({ sessions: [] });
       return json({});
     });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "provision" }} />);
 
     const accountSelector = screen.getByTestId("account-results-selector");
     expect(accountSelector.children).toHaveLength(3);
@@ -131,7 +131,7 @@ describe("SalesWorkspace interaction", () => {
     await chooseSearchableOption(user, "Account", "Acme");
     expect((screen.getByRole("button", { name: "Clear Account and Opportunity filters" }) as HTMLButtonElement).disabled).toBe(false);
     await user.click(screen.getByRole("button", { name: "Clear Account and Opportunity filters" }));
-    expect(mockRouter.push).toHaveBeenLastCalledWith("/sales?tab=sessions", { scroll: false });
+    expect(mockRouter.push).toHaveBeenLastCalledWith("/sales?tab=sessions&view=provision", { scroll: false });
     expect((screen.getByRole("combobox", { name: "Account" }) as HTMLInputElement).value).toBe("");
     expect((screen.getByRole("combobox", { name: "Opportunity" }) as HTMLInputElement).value).toBe("");
   });
@@ -147,14 +147,14 @@ describe("SalesWorkspace interaction", () => {
       if (path.startsWith("/api/sales/enablement-sessions?")) return json({ sessions: [] });
       return json({});
     });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "provision" }} />);
 
     const account = await screen.findByRole("combobox", { name: "Account" });
     await user.click(account);
     await screen.findByRole("option", { name: "Acme" });
     await user.keyboard("{ArrowDown}{Enter}");
 
-    expect(mockRouter.push).toHaveBeenLastCalledWith("/sales?tab=sessions&accountId=account-1", { scroll: false });
+    expect(mockRouter.push).toHaveBeenLastCalledWith("/sales?tab=sessions&accountId=account-1&view=provision", { scroll: false });
     expect((account as HTMLInputElement).value).toBe("Acme");
   });
 
@@ -174,7 +174,7 @@ describe("SalesWorkspace interaction", () => {
       if (path.startsWith("/api/sales/enablement-sessions?")) return Promise.resolve(json({ sessions: [] }));
       return Promise.resolve(json({}));
     });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "provision" }} />);
     await waitFor(() => expect(resolveInitial).toBeDefined());
     const opportunity = await screen.findByRole("combobox", { name: "Opportunity" });
     await user.type(opportunity, "North");
@@ -197,7 +197,7 @@ describe("SalesWorkspace interaction", () => {
       if (path.startsWith("/api/sales/enablement-sessions?")) return json({ sessions: [] });
       return json({});
     });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "provision" }} />);
     await user.click(await screen.findByRole("combobox", { name: "Opportunity" }));
     expect((await screen.findByRole("alert")).textContent).toContain("Active Sales records are temporarily unavailable.");
   });
@@ -216,7 +216,7 @@ describe("SalesWorkspace interaction", () => {
       if (path.startsWith("/api/sales/enablement-sessions?")) return json({ sessions: [] });
       return json({});
     });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "provision" }} />);
     await user.click(await screen.findByRole("combobox", { name: "Opportunity" }));
     await screen.findByRole("option", { name: "Acme - Opportunity 20" });
     expect(screen.queryByRole("option", { name: "Acme - Opportunity 21" })).toBeNull();
@@ -240,7 +240,7 @@ describe("SalesWorkspace interaction", () => {
       if (path.startsWith("/api/sales/enablement-sessions?")) return json({ sessions: [] });
       return json({});
     });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "provision" }} />);
     await user.click(await screen.findByRole("button", { name: "Save as default template" }));
     expect((await screen.findByRole("alert")).textContent).toContain("The default template could not be saved.");
     await user.click(screen.getByRole("button", { name: "Open support diagnostics (corr-template-1)" }));
@@ -258,7 +258,7 @@ describe("SalesWorkspace interaction", () => {
       if (path === "/api/sales/enablement-sessions" && init?.method === "POST") return json({ error: "CloudShare failed", correlationId: "corr-sales-1" }, 502);
       return json({ error: "unexpected" }, 500);
     });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "provision" }} />);
     await screen.findByRole("combobox", { name: "Opportunity" });
     await chooseSearchableOption(user, "Opportunity", "Acme - Acme evaluation"); await user.selectOptions(screen.getByRole("combobox", { name: "Catalogue Item" }), "item-1"); await user.selectOptions(await screen.findByRole("combobox", { name: "Sales Pro" }), "rep@certalis.demo");
     await user.click(screen.getByRole("button", { name: "Create Sales Enablement Session" }));
@@ -277,7 +277,7 @@ describe("SalesWorkspace interaction", () => {
       if (path === "/api/sales/enablement-sessions" && init?.method === "POST") return json({ session: { id: "session-1", opportunityId: "opp-1", itemId: "item-1", type: "demo", start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC", salesProDisplayName: "Sales Rep", createdAt: "2026-07-14T15:00:00.000Z" }, needsAttention: true, correlationId: "corr-sales-created", warning: "The support audit could not be completed." }, 201);
       return json({ error: "unexpected" }, 500);
     });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "provision" }} />);
     await screen.findByRole("combobox", { name: "Opportunity" });
     await chooseSearchableOption(user, "Opportunity", "Acme - Acme evaluation"); await user.selectOptions(screen.getByRole("combobox", { name: "Catalogue Item" }), "item-1"); await user.selectOptions(await screen.findByRole("combobox", { name: "Sales Pro" }), "rep@certalis.demo");
     await user.click(screen.getByRole("button", { name: "Create Sales Enablement Session" }));
@@ -476,8 +476,9 @@ describe("SalesWorkspace interaction", () => {
       if (path.startsWith("/api/sales/enablement-sessions?")) return json({ sessions: [{ id: "persisted-1", opportunityId: "opp-1", itemId: "item-1", type: "demo", start: "2026-07-15T08:00", end: "2026-07-15T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-15T00:00:00Z", lifecycle: "in_progress" }] });
       return json({});
     });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "manage" }} />);
     expect((await screen.findByRole("region", { name: "Sales Enablement Session operations" })).textContent).toContain("in progress");
+    await user.click(screen.getByRole("button", { name: "Provision" }));
     const timezone = await screen.findByRole("combobox", { name: "Time zone" });
     await user.clear(timezone); await user.type(timezone, "Europe/London");
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/sales/timezones", expect.objectContaining({ method: "PUT", body: expect.stringContaining("Europe/London") })));
@@ -496,7 +497,7 @@ describe("SalesWorkspace interaction", () => {
       if (path === "/api/sales/session-configuration") return json({});
       return json({ error: `Unexpected request ${path}` }, 500);
     });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "provision" }} />);
     await waitFor(() => expect((screen.getByRole("combobox", { name: "Time zone" }) as HTMLInputElement).value).toBe("Europe/London"));
     expect(preferenceWrites).toEqual([]);
     expect((screen.getByRole("combobox", { name: "Time zone" }) as HTMLInputElement).value).toBe("Europe/London");
@@ -520,7 +521,7 @@ describe("SalesWorkspace interaction", () => {
       if (path === "/api/sales/session-configuration") return json({});
       return json({ error: `Unexpected request ${path}` }, 500);
     });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "provision" }} />);
     await waitFor(() => expect(screen.getByText(/time-zone list is temporarily cached/)).not.toBeNull());
     expect(preferenceWrites).toEqual([]);
     fireEvent.change(screen.getByRole("combobox", { name: "Sales Experience type" }), { target: { value: "poc" } });
@@ -540,7 +541,7 @@ describe("SalesWorkspace interaction", () => {
       if (path === "/api/sales/session-configuration") return Promise.resolve(json({}));
       return Promise.resolve(json({ error: `Unexpected request ${path}` }, 500));
     });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "provision" }} />);
     await waitFor(() => expect(resolveTimezones).toBeDefined());
     fireEvent.change(screen.getByRole("combobox", { name: "Time zone" }), { target: { value: "America/New_York" } });
     fireEvent.change(screen.getByRole("combobox", { name: "Sales Experience type" }), { target: { value: "pov" } });
@@ -566,7 +567,7 @@ describe("SalesWorkspace interaction", () => {
       if (path === "/api/sales/session-configuration") return Promise.resolve(json({}));
       return Promise.resolve(json({ error: `Unexpected request ${path}` }, 500));
     });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "provision" }} />);
     await waitFor(() => expect(resolveTimezones).toBeDefined());
     fireEvent.change(screen.getByRole("combobox", { name: editedControl }), { target: { value: editedValue } });
     resolveTimezones?.(json({ timezones: [{ id: "UTC", name: "UTC" }, { id: "Europe/London", name: "London" }, { id: "America/New_York", name: "New York" }], freshness: "live", preference: { timeZone: "Europe/London", experienceType: "poc" } }));
@@ -587,11 +588,11 @@ describe("SalesWorkspace interaction", () => {
       if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [], total: 0 });
       return json({ error: `Unexpected request ${path}` }, 500);
     });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "manage" }} />);
     await screen.findByText(/persisted-1|DEMO/);
     expect(screen.queryByRole("button", { name: "Edit name" })).toBeNull();
 
-    expect(screen.getByText(/Verify CloudShare status reads the persisted Sales Experience/)).not.toBeNull();
+    expect(screen.getByText(/Experience status is CloudShare when a fresh documented read exists/)).not.toBeNull();
     await user.click(screen.getByRole("button", { name: "Verify CloudShare status" }));
 
     expect((await screen.findByRole("alert")).textContent).toContain("CloudShare could not reconcile this Sales Session.");
@@ -610,7 +611,7 @@ describe("SalesWorkspace interaction", () => {
       if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [], total: 0 });
       return json({ error: `Unexpected request ${path}` }, 500);
     });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "manage" }} />);
 
     const actions = await screen.findByRole("group", { name: "Session actions for Aligned Session, revision 1" });
     const description = screen.getByText(/Aligned Session.*2026-08-15T08:00/);
@@ -629,13 +630,13 @@ describe("SalesWorkspace interaction", () => {
       if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [], total: 0 });
       return json({ error: `Unexpected request ${path}` }, 500);
     });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "manage" }} />);
     expect(await screen.findAllByText("CloudShare verification is unavailable while this session is provisioning or needs attention.")).toHaveLength(2);
     expect(screen.queryByRole("button", { name: "Verify CloudShare status" })).toBeNull();
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/reconcile"))).toBe(false);
   });
 
-  it("confirms a CloudShare status verification without claiming that the scheduled lifecycle changed", async () => {
+  it("confirms a CloudShare Experience status verification and keeps its support correlation", async () => {
     const user = userEvent.setup();
     vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
       const path = String(input);
@@ -647,9 +648,9 @@ describe("SalesWorkspace interaction", () => {
       if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [], total: 0 });
       return json({ error: `Unexpected request ${path}` }, 500);
     });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "manage" }} />);
     await user.click(await screen.findByRole("button", { name: "Verify CloudShare status" }));
-    expect((await screen.findByText("CloudShare status verified. The scheduled lifecycle is unchanged.")).textContent).toContain("CloudShare status verified. The scheduled lifecycle is unchanged.");
+    expect((await screen.findByText("CloudShare Experience status verified and saved.")).textContent).toContain("CloudShare Experience status verified and saved.");
     expect(screen.getByRole("button", { name: "Open support diagnostics (corr-verified-1)" })).not.toBeNull();
   });
 
@@ -665,7 +666,7 @@ describe("SalesWorkspace interaction", () => {
       if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [], total: 0 });
       return json({ error: `Unexpected request ${path}` }, 500);
     });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "manage" }} />);
     await screen.findByRole("button", { name: "Edit name" });
     await user.click(screen.getByRole("button", { name: "Edit name" }));
     const nameInput = screen.getByRole("textbox", { name: "Session name" });
@@ -688,7 +689,7 @@ describe("SalesWorkspace interaction", () => {
       if (path === "/api/sales/timezones" && init?.method === "PUT") return new Response(null, { status: 204 });
       return json({});
     });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", accountId: "account-1", opportunityId: "opp-1" }} />);
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "provision", accountId: "account-1", opportunityId: "opp-1" }} />);
     await waitFor(() => expect((screen.getByRole("combobox", { name: "Account" }) as HTMLInputElement).value).toBe("Acme - International"));
     expect((screen.getByRole("combobox", { name: "Opportunity" }) as HTMLInputElement).value).toBe("Acme - International - Proof - Phase 1");
     await waitFor(() => expect(screen.getByRole("status", { name: "Session name preview" }).textContent).toContain("Acme - International - Proof - Phase 1 (3) - Item"));
@@ -718,17 +719,65 @@ describe("SalesWorkspace interaction", () => {
       if (path.startsWith("/api/sales/enablement-sessions?")) return json({ sessions: [] });
       return json({});
     });
-    const view = render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", accountId: "account-1", opportunityId: "opp-1" }} />);
+    const view = render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "provision", accountId: "account-1", opportunityId: "opp-1" }} />);
     await waitFor(() => expect((screen.getByRole("combobox", { name: "Account" }) as HTMLInputElement).value).toBe("Acme"));
     const template = screen.getByRole("textbox", { name: "Session name template" }) as HTMLInputElement;
     fireEvent.change(template, { target: { value: "Draft {account} - {opportunity} ({revision})" } });
 
-    view.rerender(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", accountId: "account-2", opportunityId: "opp-2" }} />);
+    view.rerender(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "provision", accountId: "account-2", opportunityId: "opp-2" }} />);
 
     await waitFor(() => expect((screen.getByRole("combobox", { name: "Account" }) as HTMLInputElement).value).toBe("Brio"));
     await waitFor(() => expect((screen.getByRole("combobox", { name: "Opportunity" }) as HTMLInputElement).value).toBe("Brio - South"));
     expect(template.value).toBe("Draft {account} - {opportunity} ({revision})");
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("selectedOpportunityId=opp-2"), expect.objectContaining({ cache: "no-store", signal: expect.any(AbortSignal) }));
+  });
+
+  it("restores route-backed Manage filters and requests separate status dimensions", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const path = String(input);
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [{ id: "account-1", name: "Acme" }], opportunities: [{ id: "opp-1", accountId: "account-1", accountName: "Acme", name: "Evaluation", label: "Acme - Evaluation" }], total: 1 });
+      if (path === "/api/sales/items") return json({ activeItems: [] });
+      if (path === "/api/sales/timezones" && !init?.method) return json({ timezones: [{ id: "UTC", name: "UTC" }], preference: {} });
+      if (path.startsWith("/api/sales/enablement-sessions?")) return json({ sessions: [{ id: "session-1", opportunityId: "opp-1", itemId: "item-1", type: "demo", sessionName: "Acme evaluation", start: "2026-08-15T08:00", end: "2026-08-15T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-15T00:00:00Z", operation: { dimension: "certalis_operation", value: "correlated", source: "certalis_persistence", retry: "not_applicable" }, experience: { dimension: "cloudshare_sales_experience", value: "notStarted", source: "schedule_prediction", freshness: "predicted" }, verificationEligible: true }] });
+      return json({});
+    });
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "manage", accountId: "account-1", opportunityId: "opp-1" }} />);
+
+    await waitFor(() => expect((screen.getByRole("combobox", { name: "Account" }) as HTMLInputElement).value).toBe("Acme"));
+    expect((screen.getByRole("combobox", { name: "Opportunity" }) as HTMLInputElement).value).toBe("Acme - Evaluation");
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("experienceStatus=notStarted") && String(input).includes("accountId=account-1") && String(input).includes("opportunityId=opp-1"))).toBe(true);
+    expect(await screen.findByText(/CloudShare Sales Experience: notStarted \(schedule prediction; no fresh provider read\)/)).not.toBeNull();
+
+    await user.selectOptions(screen.getByRole("combobox", { name: "Operational view" }), "needs_attention");
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).includes("operationStatus=needs_attention"))).toBe(true));
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("operationStatus=needs_attention") && String(input).includes("experienceStatus="))).toBe(false);
+  });
+
+  it("paginates bounded participant search without exposing provider IDs or diagnostics", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const path = String(input);
+      if (path.startsWith("/api/sales/enablement-sessions?participantSearch=")) return path.includes("offset=20")
+        ? json({ participants: [{ id: "portal-21", sessionId: "session-21", sessionName: "Brio trial", opportunityId: "opp-21", firstName: "Ada", lastName: "Twenty-one", email: "ada21@example.test", environment: { dimension: "cloudshare_environment", value: "Suspended", source: "cloudshare_v3_environment", observedAt: "2026-07-19T09:00:00.000Z" } }], total: 21, offset: 20, limit: 20 })
+        : json({ participants: [{ id: "portal-1", sessionId: "session-1", sessionName: "Acme evaluation", opportunityId: "opp-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", environment: { dimension: "cloudshare_environment", value: "Ready", source: "cloudshare_v3_environment", observedAt: "2026-07-19T09:00:00.000Z" } }], total: 21, offset: 0, limit: 20 });
+      if (path === "/api/sales/items") return json({ activeItems: [] });
+      if (path === "/api/sales/timezones" && !init?.method) return json({ timezones: [{ id: "UTC", name: "UTC" }], preference: {} });
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [], total: 0 });
+      if (path.startsWith("/api/sales/enablement-sessions?")) return json({ sessions: [] });
+      return json({});
+    });
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "manage" }} />);
+
+    await user.type(screen.getByRole("textbox", { name: "Search participant name or email" }), "ada");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    expect(await screen.findByText(/Session: Acme evaluation · Correlated Environment: Ready/)).not.toBeNull();
+    expect(screen.getByRole("status").textContent).toContain("1–1 of 21");
+    await user.click(screen.getByRole("button", { name: "Next participant results" }));
+    expect(await screen.findByText(/Session: Brio trial · Correlated Environment: Suspended/)).not.toBeNull();
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("participantSearch=ada&offset=20&limit=20"), expect.objectContaining({ cache: "no-store" }));
+    expect(document.body.textContent).not.toContain("cloudshare-environment-raw");
+    expect(document.body.textContent).not.toContain("provider response");
   });
 
   it("registers named Opportunity Contacts without sending mail, then sends a selected native invite without exposing provider identifiers", async () => {
@@ -740,7 +789,7 @@ describe("SalesWorkspace interaction", () => {
     let participantReads = 0;
     let launchLinkCreates = 0;
     let invitationRequests = 0;
-    const registeredParticipant = { id: "portal-participant-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", invitationStatus: "notSent", lastInvitedAt: "2026-07-18T09:15:00.000Z", invitedBy: null, participationStatus: "pending", firstJoined: null, envStatus: null };
+    const registeredParticipant = { id: "portal-participant-1", opportunityContactId: "contact-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", invitationStatus: "notSent", lastInvitedAt: "2026-07-18T09:15:00.000Z", invitedBy: null, participationStatus: "pending", firstJoined: null, envStatus: "running", environment: { dimension: "cloudshare_environment", value: "Ready", source: "cloudshare_v3_environment", observedAt: "2026-07-18T09:14:00.000Z" } };
     const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
       const path = String(input);
       if (path === "/api/sales/items") return json({ activeItems: [] });
@@ -756,7 +805,7 @@ describe("SalesWorkspace interaction", () => {
       if (path === "/api/sales/enablement-sessions/session-1/participants/portal-participant-1/launch-link" && init?.method === "DELETE") return json({ correlationId: "corr-revoke-1" });
       return json({ error: `Unexpected request ${path}` }, 500);
     });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions" }} />);
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "manage" }} />);
     await user.click(await screen.findByRole("button", { name: "Manage participants" }));
     await user.click(await screen.findByLabelText(/Ada Lovelace$/));
     await user.click(screen.getByRole("button", { name: "Register or repair selected participants" }));
@@ -765,6 +814,8 @@ describe("SalesWorkspace interaction", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/sales/enablement-sessions/session-1/participants", expect.objectContaining({ method: "POST", body: JSON.stringify({ contactIds: ["contact-1"] }) }));
     expect(screen.queryByText("cloudshare-participant-1")).toBeNull();
     expect(screen.getByText("ada@example.test")).not.toBeNull();
+    expect(screen.getByText("Ready")).not.toBeNull();
+    expect(screen.getByText(/CloudShare Environment · cloudshare_v3_environment/)).not.toBeNull();
     expect(document.querySelector('time[datetime="2026-07-18T09:15:00.000Z"]')?.getAttribute("title")).toContain("2026-07-18 09:15:00 UTC");
     await user.click(screen.getByLabelText("Select Ada Lovelace for native invite"));
     await user.click(screen.getByRole("button", { name: "Send or resend native invites" }));

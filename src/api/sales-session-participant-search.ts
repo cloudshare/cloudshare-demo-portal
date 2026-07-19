@@ -9,5 +9,18 @@ export async function handleSearchSalesSessionParticipants(deps: { readonly sear
   const parsed = querySchema.safeParse({ term: request.term, offset: request.offset ?? undefined, limit: request.limit ?? undefined });
   if (!parsed.success) return { status: 400, body: { error: "Participant search requires 2–100 characters and a bounded page." } };
   const page = await deps.search.search(request.customerId, parsed.data.term, parsed.data.offset, parsed.data.limit);
-  return { status: 200, body: { participants: page.rows, total: page.total, offset: parsed.data.offset, limit: parsed.data.limit } };
+  // Project an explicit browser model. Repository rows remain a server-side
+  // seam and must never become an accidental path for provider identifiers or
+  // protected diagnostic evidence.
+  const participants = page.rows.map((row) => ({
+    id: row.id,
+    sessionId: row.sessionId,
+    sessionName: row.sessionName,
+    opportunityId: row.opportunityId,
+    firstName: row.firstName,
+    lastName: row.lastName,
+    email: row.email,
+    environment: row.environment,
+  }));
+  return { status: 200, body: { participants, total: page.total, offset: parsed.data.offset, limit: parsed.data.limit } };
 }

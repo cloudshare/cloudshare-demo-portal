@@ -28,13 +28,13 @@ export async function GET(request: Request) {
   const { services, session } = await context();
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const query = new URL(request.url).searchParams;
-  if (query.get("participantSearch")) {
+  if (query.has("participantSearch")) {
     const result = await handleSearchSalesSessionParticipants({ search: createPrismaSalesSessionParticipantSearch(services.prisma) }, { customerId: session.customerId, term: query.get("participantSearch"), offset: query.get("offset"), limit: query.get("limit") });
     return NextResponse.json(result.body, { status: result.status });
   }
   const result = await handleListSalesSessionOperations(
     { sessions: createPrismaSalesDemoSessionRepository(services.prisma), records: createPrismaSalesRecordRepository(services.prisma) },
-    { customerId: session.customerId, actor: { type: "admin", id: session.userId, email: session.email }, lifecycle: query.get("lifecycle"), accountId: query.get("accountId"), opportunityId: query.get("opportunityId") },
+    { customerId: session.customerId, actor: { type: "admin", id: session.userId, email: session.email }, experienceStatus: query.get("experienceStatus"), operationStatus: query.get("operationStatus"), lifecycle: query.get("lifecycle"), accountId: query.get("accountId"), opportunityId: query.get("opportunityId") },
   );
   return NextResponse.json(result.body, { status: result.status });
 }

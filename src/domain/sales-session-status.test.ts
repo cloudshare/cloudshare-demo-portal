@@ -15,4 +15,10 @@ describe("Sales Session status projection", () => {
     expect(status.operation).toEqual({ dimension: "certalis_operation", value: "correlated", source: "certalis_persistence", retry: "not_applicable" });
     expect(status.experience).toEqual({ dimension: "cloudshare_sales_experience", value: "inProgress", source: "cloudshare_v4_get_sales", freshness: "fresh", observedAt: "2026-07-19T09:01:00.000Z" });
   });
+
+  it("labels an expired provider observation as a schedule prediction", () => {
+    const status = projectSalesSessionStatus({ operationalStatus: "active", start: "2026-07-20T09:00", end: "2026-07-20T10:00", timeZone: "UTC", experienceStatus: "ended", experienceStatusObservedAt: new Date("2026-07-19T08:00:00Z") }, new Date("2026-07-19T09:00:00Z"));
+
+    expect(status.experience).toEqual({ dimension: "cloudshare_sales_experience", value: "notStarted", source: "schedule_prediction", freshness: "predicted" });
+  });
 });

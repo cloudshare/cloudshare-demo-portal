@@ -19,4 +19,12 @@ describe("Sales Session operations API handler", () => {
     expect(list).not.toHaveBeenCalled();
     expect(findOpportunity).not.toHaveBeenCalled();
   });
+
+  it("accepts separate provider and portal status filters without flattening them", async () => {
+    const session = { id: "session-1", customerId: "certalis", opportunityId: "opp-1", itemId: "item-1", cloudShareSalesExperienceId: "server-only", externalId: "opaque", type: "demo" as const, start: "2026-07-16T08:00", end: "2026-07-16T10:00", timeZone: "UTC", salesProEmail: "admin@certalis.demo", salesProDisplayName: "Sales Admin", registrationType: "registeredParticipantsOnly" as const, sendInvitations: "dontSend" as const, operationalStatus: "needs_attention" as const, createdAt: new Date("2026-07-15T00:00:00Z") };
+    const deps = { sessions: { list: vi.fn().mockResolvedValue([session]), listByAccount: vi.fn() }, now: () => new Date("2026-07-15T09:00:00Z") };
+
+    await expect(handleListSalesSessionOperations(deps, { customerId: "certalis", operationStatus: "needs_attention", actor: { type: "admin", id: "admin", email: "admin@certalis.demo" } })).resolves.toMatchObject({ body: { sessions: [{ operation: { dimension: "certalis_operation", value: "needs_attention" }, experience: { dimension: "cloudshare_sales_experience", value: "notStarted" } }] } });
+    await expect(handleListSalesSessionOperations(deps, { customerId: "certalis", experienceStatus: "notStarted", actor: { type: "admin", id: "admin", email: "admin@certalis.demo" } })).resolves.toMatchObject({ body: { sessions: [{ operation: { value: "needs_attention" }, experience: { value: "notStarted" } }] } });
+  });
 });
