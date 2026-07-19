@@ -16,9 +16,15 @@ describe("DiagnosticLogTable Support hints", () => {
   it("expands local Sales persistence remediation without claiming CloudShare failed", async () => {
     const user = userEvent.setup(); render(<Harness entry={baseEntry} />);
     await user.click(screen.getByRole("button", { name: "Expand diagnostic entry diag-local" }));
-    expect(screen.getByText("Sales Session reservation could not be saved")).toBeTruthy();
+    expect(screen.getByText("Sales Enablement Session reservation could not be saved")).toBeTruthy();
     expect(screen.getByText(/No CloudShare operation was attempted/)).toBeTruthy();
     expect(screen.queryByText("CloudShare request failed")).toBeNull();
+  });
+
+  it("expands a confirmed local revision collision without claiming CloudShare failed", async () => {
+    const user = userEvent.setup(); render(<Harness entry={{ ...baseEntry, id: "diag-collision", details: { integrationSurface: "portal.sales_demo_sessions", failureMode: "revision_collision", cloudShareAttempted: false } }} />);
+    await user.click(screen.getByRole("button", { name: "Expand diagnostic entry diag-collision" }));
+    expect(screen.getByText("Sales Enablement Session revision is already reserved")).toBeTruthy(); expect(screen.getByText(/No CloudShare operation was attempted/)).toBeTruthy(); expect(screen.queryByText("CloudShare request failed")).toBeNull();
   });
 
   it("preserves the external-failure wording for a real CloudShare operation", async () => {

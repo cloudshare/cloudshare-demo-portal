@@ -175,9 +175,23 @@ export function deriveDiagnosticSupportHints(
   ) {
     return [
       {
-        title: "Sales Session reservation could not be saved",
+        title: "Sales Enablement Session reservation could not be saved",
         body:
-          "Certalis could not save the local pre-provision reservation. No CloudShare operation was attempted, so review the correlation and local persistence evidence below, then retry the Session creation.",
+          "Certalis could not save the local pre-provision reservation. No CloudShare operation was attempted, so review the correlation and local persistence evidence below, then retry the Sales Enablement Session creation.",
+      },
+    ];
+  }
+
+  if (
+    readString(entry.details, "integrationSurface") === "portal.sales_demo_sessions" &&
+    readString(entry.details, "failureMode") === "revision_collision" &&
+    readBoolean(entry.details, "cloudShareAttempted") === false
+  ) {
+    return [
+      {
+        title: "Sales Enablement Session revision is already reserved",
+        body:
+          "Certalis confirmed that this Opportunity revision is already reserved locally. No CloudShare operation was attempted. Refresh the Sales Enablement Session operations view to see the current revision before retrying Sales Enablement Session creation.",
       },
     ];
   }

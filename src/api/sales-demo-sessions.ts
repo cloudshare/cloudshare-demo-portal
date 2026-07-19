@@ -201,7 +201,7 @@ async function reservationPersistenceFailure(deps: SalesDemoSessionDeps, request
   const conflict = error instanceof SalesDemoSessionRevisionConflictError;
   const failureMode = conflict ? "revision_collision" : "local_reservation_persistence";
   const message = conflict
-    ? "A Sales Enablement Session is already being provisioned for this Opportunity revision. Refresh the Session operations view before retrying."
+    ? "A Sales Enablement Session is already being provisioned for this Opportunity revision. Refresh the Sales Enablement Session operations view before retrying."
     : "Certalis could not reserve the Sales Enablement Session locally. No CloudShare operation was attempted; review support diagnostics and retry.";
   const details = { integrationSurface: "portal.sales_demo_sessions", failureMode, cloudShareAttempted: false, clearedAmbiguousReservation, opportunityId: reservation.opportunityId, itemId: reservation.itemId };
   await Promise.allSettled([
