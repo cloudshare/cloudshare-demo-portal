@@ -3,7 +3,9 @@ import { CloudShareResponseError } from "@/integrations/cloudshare/errors";
 import { handleInviteSalesSessionParticipants, handleListSalesSessionParticipants, handleRegisterSalesSessionParticipants } from "./sales-session-participants";
 
 const actor = { type: "admin" as const, id: "admin-1", email: "sales-admin@certalis.demo" };
-const session = { id: "session-1", opportunityId: "opportunity-1", cloudShareSalesExperienceId: "remote-sales-1", operationalStatus: "active" as const, start: "2026-07-19T09:00", end: "2026-07-19T10:00", timeZone: "UTC" };
+// Keep the default fixture future-dated relative to the real test clock. Tests
+// that exercise an ended window explicitly override these values below.
+const session = { id: "session-1", opportunityId: "opportunity-1", cloudShareSalesExperienceId: "remote-sales-1", operationalStatus: "active" as const, start: "2026-07-21T09:00", end: "2026-07-21T10:00", timeZone: "UTC" };
 const contact = { id: "contact-1", opportunityId: "opportunity-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", archivedAt: null };
 const correlationProperties = () => ({
   requiredKeys: ["certalisSalesParticipantId", "certalisOpportunityContactId"] as const,
