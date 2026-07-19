@@ -116,6 +116,11 @@ describe("redactDiagnosticInput", () => {
     expect(redacted.details).toEqual({ httpExchanges: [{ request: { headers: { ContentType: "[REDACTED]", "Content-Type": "[REDACTED]", Accept: "[REDACTED]", "X-Request-ID": "request-1" } } }] });
   });
 
+  it("fails closed on padded header names and injected control characters", () => {
+    const redacted = redactDiagnosticInput({ source: "x", operation: "x", outcome: "success", message: "x", request: { headers: { "Content-Type": "application/json", " Content-Type": "bypass", Accept: "application/json\r\nAuthorization: Bearer secret" }, requestHeaders: [["Content-Type ", "application/json"], ["Accept", ["application/json", "text/plain\nsecret"]]] } });
+    expect(redacted.request).toEqual({ headers: { "Content-Type": "application/json", " Content-Type": "[REDACTED]", Accept: "[REDACTED]" }, requestHeaders: [["Content-Type ", "[REDACTED]"], ["Accept", "[REDACTED]"]] });
+  });
+
   it("preserves first-class correlation anchors (they are identifiers, not secrets)", () => {
     const redacted = redactDiagnosticInput({
       source: "candidate-portal",

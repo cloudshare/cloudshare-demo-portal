@@ -116,4 +116,27 @@ describe("projectProtectedRequestHeaders", () => {
     expect(projectProtectedRequestHeaders("ContentType: application/json")).toBe("ContentType: [REDACTED]");
     expect(projectProtectedRequestHeaders("Content-Type: application/json\nAuthorization: secret")).toBe("[REDACTED]");
   });
+
+  it("rejects whitespace-padded names and control characters in allowlisted values", () => {
+    expect(projectProtectedRequestHeaders({
+      "Content-Type": "application/json",
+      " Content-Type": "bypass",
+      "Content-Type ": "bypass",
+      "\tAccept": "bypass",
+      Accept: "application/json\r\nAuthorization: Bearer secret",
+      "Accept-Encoding": ["gzip", "br\r\nX-Secret: value"],
+      "User-Agent": "agent\0secret",
+    })).toEqual({
+      "Content-Type": "application/json",
+      " Content-Type": "[REDACTED]",
+      "Content-Type ": "[REDACTED]",
+      "\tAccept": "[REDACTED]",
+      Accept: "[REDACTED]",
+      "Accept-Encoding": "[REDACTED]",
+      "User-Agent": "[REDACTED]",
+    });
+    expect(projectProtectedRequestHeaders([[" Content-Type", "application/json"], ["Content-Type", "application/json\u0001secret"]])).toEqual([[" Content-Type", "[REDACTED]"], ["Content-Type", "[REDACTED]"]]);
+    expect(projectProtectedRequestHeaders(" Content-Type: application/json")).toBe(" Content-Type: [REDACTED]");
+    expect(projectProtectedRequestHeaders("Content-Type : application/json")).toBe("Content-Type : [REDACTED]");
+  });
 });

@@ -7,12 +7,14 @@ const SAFE_OPERATIONAL_HEADERS = new Set([
 ]);
 
 function canonicalHeaderName(name: string): string {
-  return name.trim().toLowerCase();
+  return name.toLowerCase();
 }
 
 function isSupportedHeaderValue(value: unknown): value is string | string[] {
-  return typeof value === "string"
-    || (Array.isArray(value) && value.every((item) => typeof item === "string"));
+  const isSafeString = (item: unknown): item is string =>
+    typeof item === "string" && !/[\u0000-\u001f\u007f]/.test(item);
+  return isSafeString(value)
+    || (Array.isArray(value) && value.every(isSafeString));
 }
 
 function projectHeaderValue(name: string, value: unknown): unknown {
