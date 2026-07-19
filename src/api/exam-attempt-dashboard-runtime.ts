@@ -19,6 +19,7 @@ import {
   CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
+  isCloudShareRateLimitError,
 } from "@/integrations/cloudshare";
 import { createCloudShareTrainingDelivery } from "@/integrations/cloudshare/training-delivery";
 import { projectCloudShareGenericLogValue } from "@/integrations/cloudshare/diagnostic-redaction";
@@ -426,16 +427,17 @@ function toCloudShareFailureDiagnostic(input: {
   };
 
   const cause = asCloudShareError(input.cause);
-  if (cause instanceof CloudShareRequestError || cause?.name === "CloudShareRequestError") {
+  const rateLimited = isCloudShareRateLimitError(cause);
+  if (rateLimited || cause instanceof CloudShareRequestError || cause?.name === "CloudShareRequestError") {
     return {
       ...base,
       method: cause?.context?.method ?? base.method,
       path: cause?.context?.path ?? base.path,
       host: cause?.context?.host,
       integrationSurface: cause?.context?.integrationSurface ?? base.integrationSurface,
-      failureMode: "http_status",
+      failureMode: rateLimited ? cause.classification ?? "rate_limit" : "http_status",
       responseStatus:
-        cause instanceof CloudShareRequestError ? cause.status : cause?.context?.status,
+        rateLimited || cause instanceof CloudShareRequestError ? cause.status : cause?.context?.status,
       requestHeaders: cause?.context?.requestHeaders,
       requestQuery: cause?.context?.requestQuery,
       requestBody: cause?.context?.requestBody,
@@ -487,6 +489,10 @@ function toCloudShareFailureDiagnostic(input: {
 }
 
 function asCloudShareError(error: unknown): CloudShareError | null {
+  if (isCloudShareRateLimitError(error)) {
+    return error;
+  }
+
   if (
     error instanceof CloudShareError ||
     error instanceof CloudShareRequestError ||

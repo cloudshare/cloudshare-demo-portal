@@ -577,7 +577,7 @@ describe("getExamAttemptDashboardRuntime", () => {
     expect(JSON.stringify(dashboard.body)).not.toContain("loginUrl");
   });
 
-  it("records supportable diagnostics when CloudShare environment correlation fails", async () => {
+  it("retains protected response evidence for a cross-realm CloudShare rate-limit failure", async () => {
     const exams = await makeExamRepository();
     const attempts = createInMemoryExamAttemptRepository();
     const launches = createInMemoryLabLaunchRepository();
@@ -615,18 +615,23 @@ describe("getExamAttemptDashboardRuntime", () => {
         cloudshare: makeCloudShareFactory({
           requestV4: vi.fn(async (spec: { path: string }) => {
             if (spec.path === "/trainings/EXtraining-1/students") {
-              throw new CloudShareRequestError("forbidden", 403, {
-                method: "GET",
-                path: "/v4/trainings/EXtraining-1/students",
-                integrationSurface: "cloudshare.v4.training.participant_list",
-                requestHeaders: {
-                  Accept: "application/json",
-                  Authorization: "Bearer synthetic-dashboard-request-marker",
+              throw {
+                name: "CloudShareRateLimitError",
+                status: 429,
+                context: {
+                  status: 429,
+                  method: "GET",
+                  path: "/v4/trainings/EXtraining-1/students",
+                  integrationSurface: "cloudshare.v4.training.participant_list",
+                  requestHeaders: {
+                    Accept: "application/json",
+                    Authorization: "Bearer synthetic-dashboard-request-marker",
+                  },
+                  requestBody: { queryMarker: "synthetic-dashboard-query-marker" },
+                  responseHeaders: { "x-provider-trace": "synthetic-dashboard-trace" },
+                  responseBody: { accessLink: "synthetic-dashboard-response-marker" },
                 },
-                requestBody: { queryMarker: "synthetic-dashboard-query-marker" },
-                responseHeaders: { "x-provider-trace": "synthetic-dashboard-trace" },
-                responseBody: { accessLink: "synthetic-dashboard-response-marker" },
-              });
+              };
             }
             throw new Error(`unexpected path ${spec.path}`);
           }) as never,
@@ -653,8 +658,8 @@ describe("getExamAttemptDashboardRuntime", () => {
         integrationSurface: "cloudshare.v4.training.participant_list",
         method: "GET",
         path: "/v4/trainings/EXtraining-1/students",
-        failureMode: "http_status",
-        responseStatus: 403,
+        failureMode: "rate_limit",
+        responseStatus: 429,
       }),
     );
     expect(JSON.stringify((logger.warn as ReturnType<typeof vi.fn>).mock.calls)).not.toContain("forbidden");
@@ -672,8 +677,8 @@ describe("getExamAttemptDashboardRuntime", () => {
           outcome: "failure",
           attemptedOperation: "list_training_participants",
           integrationSurface: "cloudshare.v4.training.participant_list",
-          failureMode: "http_status",
-          responseStatus: 403,
+          failureMode: "rate_limit",
+          responseStatus: 429,
           externalIds: expect.objectContaining({
             examAttemptId: "attempt-ready",
             trainingId: "EXtraining-1",
@@ -706,7 +711,7 @@ describe("getExamAttemptDashboardRuntime", () => {
           body: { queryMarker: "synthetic-dashboard-query-marker" },
         },
         response: {
-          status: 403,
+          status: 429,
           headers: { "x-provider-trace": "synthetic-dashboard-trace" },
           body: { accessLink: "synthetic-dashboard-response-marker" },
         },
