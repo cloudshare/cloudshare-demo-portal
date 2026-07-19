@@ -311,6 +311,35 @@ describe("deriveDiagnosticSupportHints", () => {
     expect(hints[0]?.title).not.toBe("CloudShare request failed");
   });
 
+  it.each([
+    {
+      label: "a different correlation source",
+      attentionSource: "cloudshare_v3_unscoped_lookup",
+      response: { status: 200, body: [] },
+    },
+    {
+      label: "a non-successful CloudShare response",
+      attentionSource: "cloudshare_v3_owner_email_item_project",
+      response: { status: 502, body: { error: "upstream failure" } },
+    },
+  ])("keeps generic request-failure guidance for an Environment observation with %s", ({ attentionSource, response }) => {
+    const hints = deriveDiagnosticSupportHints(makeEntry({
+      operation: "sales.demo_session.participant.environment_observed",
+      request: { method: "GET", path: "/api/v3/envs" },
+      response,
+      details: {
+        integrationSurface: "cloudshare.v3.environments",
+        observation: "needs_attention",
+        attentionReason: "environment_not_found_for_project",
+        attentionSource,
+      },
+    }));
+
+    expect(hints).toEqual([expect.objectContaining({
+      title: "CloudShare request failed",
+    })]);
+  });
+
   it("describes a Sales reservation persistence failure as local and retryable", () => {
     const hints = deriveDiagnosticSupportHints(makeEntry({
       source: "sales-demo-sessions",

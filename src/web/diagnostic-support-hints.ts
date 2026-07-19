@@ -179,7 +179,14 @@ export function deriveDiagnosticSupportHints(
     ];
   }
 
-  if (entry.operation === "sales.demo_session.participant.environment_observed") {
+  if (
+    entry.operation === "sales.demo_session.participant.environment_observed" &&
+    readString(entry.details, "integrationSurface") === "cloudshare.v3.environments" &&
+    readString(entry.details, "observation") === "needs_attention" &&
+    readString(entry.details, "attentionSource") === "cloudshare_v3_owner_email_item_project" &&
+    readString(entry.request, "path") === "/api/v3/envs" &&
+    isSuccessfulResponse(entry)
+  ) {
     const attentionReason = readString(entry.details, "attentionReason");
     if (
       attentionReason === "environment_not_found_for_project" ||
@@ -335,6 +342,11 @@ function isMissingWebhookSignature(entry: SupportDiagnosticEntry): boolean {
   const trustGateOutcome = readString(entry.details, "trustGateOutcome");
   const signaturePresent = readBoolean(entry.details, "signaturePresent");
   return trustGateOutcome === "missing_signature" || signaturePresent === false;
+}
+
+function isSuccessfulResponse(entry: SupportDiagnosticEntry): boolean {
+  const responseStatus = readNumber(entry.response, "status") ?? readNumber(entry.details, "responseStatus");
+  return responseStatus !== null && responseStatus >= 200 && responseStatus < 300;
 }
 
 function readString(
