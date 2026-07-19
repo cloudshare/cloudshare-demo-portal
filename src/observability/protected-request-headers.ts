@@ -40,8 +40,8 @@ export function projectProtectedRequestHeaders<T>(value: T): T {
   if (typeof value === "string") {
     const parsed = /^([^:\r\n]+):(.*)$/.exec(value);
     if (!parsed) return REDACTED as T;
-    const [, name] = parsed;
-    return (isCredentialBearingRequestHeader(name)
+    const [, name, headerValue] = parsed;
+    return (projectHeaderValue(name, headerValue) === REDACTED
       ? `${name}: ${REDACTED}`
       : value) as T;
   }

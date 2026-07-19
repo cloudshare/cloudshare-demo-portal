@@ -139,4 +139,13 @@ describe("projectProtectedRequestHeaders", () => {
     expect(projectProtectedRequestHeaders(" Content-Type: application/json")).toBe(" Content-Type: [REDACTED]");
     expect(projectProtectedRequestHeaders("Content-Type : application/json")).toBe("Content-Type : [REDACTED]");
   });
+
+  it("applies supported-value validation to scalar allowlisted header lines", () => {
+    expect(projectProtectedRequestHeaders("Content-Type: application/json")).toBe("Content-Type: application/json");
+    expect(projectProtectedRequestHeaders("Content-Type: ok\0Authorization: secret")).toBe("Content-Type: [REDACTED]");
+    expect(projectProtectedRequestHeaders("Content-Type: ok\u0001secret")).toBe("Content-Type: [REDACTED]");
+    expect(projectProtectedRequestHeaders("Accept: application/json\tsecret")).toBe("Accept: [REDACTED]");
+    expect(projectProtectedRequestHeaders("User-Agent: agent\u007fsecret")).toBe("User-Agent: [REDACTED]");
+    expect(projectProtectedRequestHeaders("Content-Type: ok\r\nAuthorization: Bearer secret")).toBe("[REDACTED]");
+  });
 });
