@@ -228,6 +228,30 @@ describe("handleGetAuditTrail", () => {
       }),
     ]);
   });
+
+  it("projects legacy audit material again at the ordinary API boundary", async () => {
+    const protectedMarker = "synthetic-admin-audit-marker";
+    const audit = createInMemoryAuditRepository();
+    audit.query = async () => [makeRecord({
+      id: "legacy-1",
+      customerId: "customer-1",
+      correlationId: "corr-legacy-1",
+      outcome: "failure",
+      details: { integrationSurface: "cloudshare.v4.environment", providerEvidence: { accessLink: protectedMarker } },
+      error: protectedMarker,
+    })];
+
+    const result = await handleGetAuditTrail(
+      { audit, logger: makeLogger() },
+      { customerId: "customer-1", query: {} },
+    );
+
+    expect(JSON.stringify(result.body).includes(protectedMarker)).toBe(false);
+    expect(result.body).toMatchObject({ records: [expect.objectContaining({
+      details: { integrationSurface: "cloudshare.v4.environment" },
+      error: "Operation failed; inspect correlated diagnostics.",
+    })] });
+  });
 });
 
 describe("handleSyncResources", () => {

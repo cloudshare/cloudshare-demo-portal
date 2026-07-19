@@ -44,10 +44,10 @@ export function createLogger(options: LoggerOptions): Logger {
   const sink = options.sink ?? ((line: string) => process.stdout.write(line + "\n"));
   const secrets = options.secrets.filter((s) => s.length > 0);
 
-  function emit(level: LogLevel, message: string, fields?: LogFields): void {
+  function emit(level: LogLevel, _message: string, fields?: LogFields): void {
     const line = JSON.stringify({
       level,
-      message,
+      message: "ordinary log event",
       timestamp: new Date().toISOString(),
       ...projectOrdinaryLogFields(fields),
     });

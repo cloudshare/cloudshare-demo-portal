@@ -1,6 +1,6 @@
 import type { Logger } from "@/observability/logger";
 import { syncResources, type CloudShareResourceLister, type ResourceRepository } from "@/domain/resource-sync";
-import type { AuditQuery, AuditRecord, AuditRepository } from "@/domain/audit-trail";
+import { projectAuditError, redactAuditDetails, type AuditQuery, type AuditRecord, type AuditRepository } from "@/domain/audit-trail";
 import type { EventLogRepository } from "@/domain/event-log";
 import type {
   DiagnosticLogEntry,
@@ -136,8 +136,8 @@ function serialiseAuditRecord(record: AuditRecord): Record<string, unknown> {
     examId: record.examId,
     examAttemptId: record.examAttemptId,
     correlationId: record.correlationId,
-    details: record.details,
-    error: record.error,
+    details: redactAuditDetails(record.details),
+    error: projectAuditError(record.error),
   };
 }
 

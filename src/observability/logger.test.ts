@@ -11,7 +11,7 @@ describe("createLogger", () => {
     expect(sink).toHaveBeenCalledOnce();
     const line = JSON.parse(sink.mock.calls[0][0] as string);
     expect(line.level).toBe("info");
-    expect(line.message).toBe("lab launched");
+    expect(line.message).toBe("ordinary log event");
     expect(line.examAttemptId).toBe("ea_1");
   });
 
@@ -82,5 +82,17 @@ describe("createLogger", () => {
     expect(raw.includes(protectedMarker)).toBe(false);
     expect(raw).toContain('"correlationId":"correlation-1"');
     expect(raw).toContain('"path":"/provider/resource"');
+  });
+
+  it("does not emit untrusted free text supplied as the ordinary log message", () => {
+    const sink = vi.fn();
+    const logger = createLogger({ secrets: [], sink });
+    const protectedMarker = "synthetic-message-marker";
+
+    logger.warn(protectedMarker, { operation: "provider.read" });
+
+    const raw = sink.mock.calls[0][0] as string;
+    expect(raw.includes(protectedMarker)).toBe(false);
+    expect(JSON.parse(raw)).toMatchObject({ message: "ordinary log event", operation: "provider.read" });
   });
 });

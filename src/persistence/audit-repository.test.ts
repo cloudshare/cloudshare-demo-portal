@@ -132,6 +132,29 @@ describe("createPrismaAuditRepository", () => {
       },
     ]);
   });
+
+  it("fails closed when rehydrating a legacy durable row written before confinement", async () => {
+    const protectedMarker = "synthetic-legacy-audit-marker";
+    await prisma.auditTrailEntry.create({
+      data: {
+        id: "audit-legacy-1",
+        occurredAt: new Date("2026-07-04T10:00:00.000Z"),
+        customerId: "customer-helios",
+        action: "cloudshare.read.failed",
+        outcome: "failure",
+        correlationId: "corr-legacy-1",
+        detailsJson: JSON.stringify({ integrationSurface: "cloudshare.v4.environment", providerEvidence: { accessLink: protectedMarker } }),
+        error: protectedMarker,
+      },
+    });
+
+    const [entry] = await createPrismaAuditRepository(prisma).query({ customerId: "customer-helios" });
+    expect(JSON.stringify(entry).includes(protectedMarker)).toBe(false);
+    expect(entry).toMatchObject({
+      details: { integrationSurface: "cloudshare.v4.environment" },
+      error: "Operation failed; inspect correlated diagnostics.",
+    });
+  });
 });
 
 describe("createInMemoryAuditRepository", () => {

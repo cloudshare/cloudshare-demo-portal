@@ -130,8 +130,8 @@ function rowToAuditRecord(row: AuditTrailEntryRow): AuditRecord {
     examId: row.examId,
     examAttemptId: row.examAttemptId,
     correlationId: row.correlationId,
-    details: parseJson<Record<string, unknown>>(row.detailsJson),
-    error: row.error,
+    details: redactAuditDetails(parseJson<Record<string, unknown>>(row.detailsJson)),
+    error: projectAuditError(row.error),
   };
 }
 

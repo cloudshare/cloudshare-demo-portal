@@ -35,14 +35,14 @@ describe("createPrismaSalesMutationWriter", () => {
         type: "account",
         id: accountId,
         customerId,
-        deniedAudit: { id: `audit-denied-${suffix}`, occurredAt, customerId, actorType: "admin", actorId: "admin-1", action: "opportunity.created", subjectType: "account", subjectId: accountId, outcome: "denied" },
+        deniedAudit: { id: `audit-denied-${suffix}`, occurredAt, customerId, actorType: "admin", actorId: "admin-1", action: "opportunity.created", subjectType: "account", subjectId: accountId, outcome: "denied", error: "synthetic-writer-marker" },
         deniedDiagnostic: { source: "sales-records", operation: "opportunity.created", outcome: "failure", customerId, level: "warn", message: "parent archived" },
       },
     });
 
     expect(result).toEqual({ outcome: "parent_archived" });
     await expect(prisma.salesOpportunity.findUnique({ where: { id: opportunityId } })).resolves.toBeNull();
-    await expect(prisma.auditTrailEntry.findUnique({ where: { id: `audit-denied-${suffix}` } })).resolves.toMatchObject({ outcome: "denied", customerId, subjectId: accountId });
+    await expect(prisma.auditTrailEntry.findUnique({ where: { id: `audit-denied-${suffix}` } })).resolves.toMatchObject({ outcome: "denied", customerId, subjectId: accountId, error: "Operation failed; inspect correlated diagnostics." });
     await expect(prisma.auditTrailEntry.findUnique({ where: { id: `audit-success-${suffix}` } })).resolves.toBeNull();
     await expect(prisma.diagnosticLogEntry.findFirst({ where: { customerId, operation: "opportunity.created" } })).resolves.toMatchObject({ outcome: "failure" });
     await expect(prisma.diagnosticLogEntry.findMany({ where: { customerId, outcome: "success" } })).resolves.toEqual([]);
