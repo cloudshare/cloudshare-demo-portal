@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { CloudShareAuthError, CloudShareRateLimitError } from "./errors";
 import type { HttpClient } from "./http";
-import { redactCloudShareAdminSupportValue } from "./diagnostic-redaction";
 
 /**
  * CloudShare v4 (Accelerate) OAuth. Acquires a Bearer JWT via the
@@ -66,6 +65,11 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
       });
     } catch (cause) {
       throw new CloudShareAuthError("v4 token request failed to send", {
+        method: "POST",
+        path: "/oauth/token",
+        integrationSurface: "cloudshare.v4.oauth.token",
+        requestHeaders: { "content-type": "application/x-www-form-urlencoded" },
+        requestBody: body,
         cause: cause instanceof Error ? cause.message : String(cause),
       });
     }
@@ -84,11 +88,11 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
             path: "/oauth/token",
             integrationSurface: "cloudshare.v4.oauth.token",
             requestHeaders: { "content-type": "application/x-www-form-urlencoded" },
-            requestBody: redactTokenRequestBody(body),
+            requestBody: body,
             status: response.status,
             responseStatus: response.status,
             ...(rateLimitHeaders ? { responseHeaders: rateLimitHeaders, rateLimitHeaders } : {}),
-            responseBody: redactCloudShareAdminSupportValue(response.body),
+            responseBody: response.body,
             ...(retryAfterSeconds !== undefined
               ? { retryAfterSeconds }
               : {}),
@@ -96,7 +100,14 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
         );
       }
       throw new CloudShareAuthError("v4 token endpoint returned a non-200 status", {
+        method: "POST",
+        path: "/oauth/token",
+        integrationSurface: "cloudshare.v4.oauth.token",
+        requestHeaders: { "content-type": "application/x-www-form-urlencoded" },
+        requestBody: body,
         status: response.status,
+        responseHeaders: response.headers,
+        responseBody: response.body,
       });
     }
 
@@ -104,12 +115,19 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
     try {
       json = JSON.parse(response.body);
     } catch {
-      throw new CloudShareAuthError("v4 token response was not valid JSON");
+      throw new CloudShareAuthError("v4 token response was not valid JSON", {
+        method: "POST", path: "/oauth/token", integrationSurface: "cloudshare.v4.oauth.token",
+        requestHeaders: { "content-type": "application/x-www-form-urlencoded" }, requestBody: body,
+        status: response.status, responseHeaders: response.headers, responseBody: response.body,
+      });
     }
 
     const parsed = tokenResponseSchema.safeParse(json);
     if (!parsed.success) {
       throw new CloudShareAuthError("v4 token response did not match the expected schema", {
+        method: "POST", path: "/oauth/token", integrationSurface: "cloudshare.v4.oauth.token",
+        requestHeaders: { "content-type": "application/x-www-form-urlencoded" }, requestBody: body,
+        status: response.status, responseHeaders: response.headers, responseBody: response.body,
         issues: parsed.error.issues.map((i) => i.message),
       });
     }
@@ -131,13 +149,6 @@ export function createV4TokenProvider(opts: V4TokenProviderOptions): V4TokenProv
   };
 }
 
-function redactTokenRequestBody(body: string): string {
-  const params = new URLSearchParams(body);
-  if (params.has("client_secret")) {
-    params.set("client_secret", "[REDACTED]");
-  }
-  return params.toString();
-}
 
 function classifyTokenRateLimit(
   status: number,

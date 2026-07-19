@@ -1,4 +1,5 @@
 import type { ZodType } from "zod";
+import { projectProtectedRequestHeaders as sanitizeHeaders } from "@/observability/protected-request-headers";
 import {
   CloudShareRateLimitError,
   CloudShareRequestError,
@@ -6,7 +7,6 @@ import {
   CloudShareTransportError,
   isCloudShareRateLimitError,
 } from "./errors";
-import { redactCloudShareAdminSupportValue } from "./diagnostic-redaction";
 import { HttpTransportError, type HttpClient, type HttpRequest } from "./http";
 import { buildV3AuthorizationHeader, signV3Request } from "./signing";
 import type { V4TokenProvider } from "./v4-auth";
@@ -165,28 +165,11 @@ function buildUrl(base: string, path: string, query?: Record<string, string>): s
   return url.toString();
 }
 
-function sanitizeHeaders(headers: Record<string, string> | undefined): Record<string, string> | undefined {
-  if (!headers) {
-    return undefined;
-  }
-
-  return redactCloudShareAdminSupportValue(headers, {
-    preserveSponsoredLinkLoginUrl: false,
-    redactTokenLikeKeys: true,
-  }) as Record<string, string>;
-}
-
 function sanitizeQuery(query: Record<string, string> | undefined): Record<string, string> | undefined {
   if (!query) {
     return undefined;
   }
-  const sanitized: Record<string, string> = {};
-  for (const [key, value] of Object.entries(query)) {
-    sanitized[key] = /api[-_]?key|secret|token|hmac|signature|password/i.test(key)
-      ? "[REDACTED]"
-      : value;
-  }
-  return sanitized;
+  return { ...query };
 }
 
 function sanitizeResponseHeaders(
@@ -196,10 +179,7 @@ function sanitizeResponseHeaders(
     return undefined;
   }
 
-  const sanitized = redactCloudShareAdminSupportValue(headers, {
-    preserveSponsoredLinkLoginUrl: false,
-    redactTokenLikeKeys: true,
-  }) as Record<string, string | string[]>;
+  const sanitized = { ...headers };
   const setCookie = headers["set-cookie"] ?? headers["Set-Cookie"];
   if (setCookie) {
     sanitized["set-cookie"] = Array.isArray(setCookie) ? setCookie.map(() => "[REDACTED]") : "[REDACTED]";
@@ -224,45 +204,24 @@ function sanitizeBody(body: string | undefined): unknown {
   }
 
   try {
-    return redactCloudShareAdminSupportValue(JSON.parse(body), {
-      preserveSponsoredLinkLoginUrl: false,
-    });
+    return JSON.parse(body);
   } catch {
-    return redactCloudShareAdminSupportValue(body, {
-      preserveSponsoredLinkLoginUrl: false,
-    });
+    return body;
   }
 }
 
-function sanitizeResponseBody(body: string, requestPath: string): string {
+function sanitizeResponseBody(body: string, _requestPath: string): string {
+  return body;
+}
+
+function sanitizeResponseBodyValue(body: string, _requestPath: string): unknown {
   try {
-    return JSON.stringify(
-      redactCloudShareAdminSupportValue(JSON.parse(body), {
-        preserveSponsoredLinkLoginUrl: false,
-      }),
-    );
+    return JSON.parse(body);
   } catch {
-    return redactCloudShareAdminSupportValue(body, {
-      preserveSponsoredLinkLoginUrl: false,
-    }) as string;
+    return body;
   }
 }
 
-function sanitizeResponseBodyValue(body: string, requestPath: string): unknown {
-  try {
-    return redactCloudShareAdminSupportValue(JSON.parse(body), {
-      preserveSponsoredLinkLoginUrl: isSponsoredLinkPath(requestPath),
-    });
-  } catch {
-    return redactCloudShareAdminSupportValue(body, {
-      preserveSponsoredLinkLoginUrl: isSponsoredLinkPath(requestPath),
-    });
-  }
-}
-
-function isSponsoredLinkPath(path: string): boolean {
-  return /\/(?:sponsored-link|sponsoredLinks)$/i.test(path);
-}
 
 function sanitizeRequestEvidenceBody(body: string | undefined): unknown {
   return sanitizeBody(body);
@@ -303,8 +262,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
     fields?: Record<string, unknown>,
   ): void {
     const requestInfo = describeRequest(request.url);
-    const requestBody = sanitizeRequestEvidenceBody(request.body);
-    const requestQuery = sanitizeQuery(extractQuery(request.url));
+    const { responseBody: _responseBody, responseHeaders: _responseHeaders, ...safeFields } = fields ?? {};
     opts.trace?.({
       level,
       message,
@@ -315,10 +273,8 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
         path: requestInfo.path,
         integrationSurface: requestInfo.integrationSurface,
         ...(opts.customerId ? { customerId: opts.customerId } : {}),
-        ...(requestQuery ? { requestQuery } : {}),
         requestHeaders: sanitizeHeaders(request.headers),
-        ...(requestBody !== undefined ? { requestBody } : {}),
-        ...fields,
+        ...safeFields,
       },
     });
   }

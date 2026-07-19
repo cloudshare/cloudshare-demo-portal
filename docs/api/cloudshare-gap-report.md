@@ -31,7 +31,7 @@ undocumented Sales endpoint.
 
 Verify the exact returned timezone shape and the PUT validation/lifecycle matrix in
 the Helios CX tenant before exposing live editing controls. The browser never receives
-the CloudShare Sales Experience ID; support diagnostics retain the redacted exchange.
+the CloudShare Sales Experience ID; support diagnostics retain the direction-aware exchange.
 
 ---
 
@@ -924,7 +924,7 @@ type binding far enough to validate the rest of the PascalCase model, but return
 `{"UsersEarlyAccess":["'Users Early Access' must not be empty."]}`. The on-demand creation adapter
 therefore sends the same `UsersEarlyAccess: { GrantEarlyAccess: 2 }` field used by
 instructor-led Exam scheduling. The admin UI kept the session in `draft`, displayed the correlation
-ID, and recorded redacted request/response evidence in `DiagnosticLogEntry`.
+ID, and recorded direction-aware request/response evidence in `DiagnosticLogEntry`.
 
 **Follow-up (2026-07-05, same slice):** a second live UI publish with
 `RegistrationType: "registeredStudentsOnly"` and `UsersEarlyAccess: { GrantEarlyAccess: 2 }`
@@ -932,7 +932,7 @@ created self-paced training `EXAmDkfU42vEJJaRWWH0Tg3g2` with HTTP `201`. The Clo
 confirmed `type: "selfPaced"`, `registrationType: "registeredStudentsOnly"`, `end: null` for the
 optional admission close case, and the expected Project, Team, Blueprint, Policy, Region, and
 Instructor identifiers. The admin UI displayed the persisted CloudShare training/Experience ID and
-Team ID, and the success diagnostic retained redacted request/response evidence with correlation
+Team ID, and the success diagnostic retained direction-aware request/response evidence with correlation
 ID `8c260d9e-33cb-4062-8254-29ae3098ad57`.
 
 **Update (2026-07-10, Issue #301 Accelerate user-property correction):** the Classic v3
@@ -1574,23 +1574,20 @@ rejections that return a 2xx with an error payload, soft failures, or unexpected
 The principle is: **both successful and failing responses must be logged** — throwing away response
 data makes the platform significantly harder to support.
 
-**Update (2026-06-29, issue #244 redaction taxonomy audit):** CloudShare diagnostic bodies now use
-an explicit three-way taxonomy across client traces, scheduling/runtime diagnostics, Guided Journey
-diagnostics, and resource diagnostics:
+**Superseded by issue #360 (2026-07-19):** CloudShare diagnostic evidence uses one direction-aware
+contract across scheduling/runtime, Guided Journey, resources, Sales, and webhooks:
 
-- **Always redact:** API keys, bearer tokens, authorization headers, webhook secrets,
-  HMAC/signature values, passwords, and actual credentials.
-- **Admin-only server evidence:** sponsored-link `loginUrl` values may remain visible in admin-only
-  `DiagnosticLogEntry` evidence. Training and Sales Experience `passphrase` values are credentials
-  and are always redacted.
-- **Ordinary support evidence:** CloudShare request bodies, response bodies, and parsed webhook
-  event payloads remain visible by default, including auth-adjacent body field names such as
-  `token` or `authorization` when they are payload evidence rather than actual credentials.
+- **Request headers:** preserve only the explicit safe operational allowlist (Content-Type, Accept, Accept-Encoding, Content-Length, User-Agent, request/correlation IDs, and W3C trace headers); mask every other named or unparseable header.
+- **Request/query and provider response bodies:** retain every value verbatim in protected admin
+  `DiagnosticLogEntry` evidence, including API keys, bearer tokens, webhook secrets, signatures,
+  passwords, passphrases, access links, sponsored-link `loginUrl` values, nested arrays/objects, and
+  keys that resemble header names. Do not scrub bodies by endpoint, field name, or value pattern.
+- **Generic traces and client surfaces:** retain metadata only; body evidence belongs solely in the
+  protected Customer-scoped diagnostic recorder.
 
 Candidate/client-facing APIs remain stricter: admin-only evidence such as `loginUrl` must not
 appear in candidate responses or candidate-facing UI even though it can appear in admin support
-diagnostics. Header values remain conservatively redacted for now; a future guarded sensitive
-diagnostic flag may make selected header values visible when needed.
+diagnostics. Only explicitly allowlisted operational request-header values remain visible; every other request header remains redacted.
 
 **Action required:**
 
@@ -1822,9 +1819,10 @@ shape or the observed `{ count, items }` shape. For the latter it uses documente
 and fails closed when a later page contradicts that count or makes no progress. A
 null `envStatus` is preserved as the authoritative pre-environment state; the portal
 does not infer a runnable environment from the placeholder `envId`. Every CloudShare
-diagnostic now retains the full sanitised request body, response body, and query
-parameters at the shared client boundary. Only credentials, tokens, and bearer-style
-invitation or sponsored-login URLs are redacted. Participant and environment
+diagnostic now retains the full verbatim request body, response body, and query
+parameters at the shared client boundary. Only the explicit operational request-header allowlist
+remains visible; every other request header is redacted, while body credentials, tokens, invitation links, and sponsored-login URLs remain
+intact in protected Customer-scoped admin evidence. Participant and environment
 correlation values remain server-only in browser projections. Sales Support includes
 the participant reconciliation source in both direct, Customer-scoped filtered reads
 and the aggregate correlation feed.

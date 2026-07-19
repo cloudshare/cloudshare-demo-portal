@@ -307,7 +307,7 @@ describe("candidate account creation diagnostics", () => {
 });
 
 describe("recorder → repository redaction (end to end)", () => {
-  it("persists a redacted entry so no secret survives to the read model", async () => {
+  it("persists protected body evidence while masking request headers", async () => {
     const repository = createInMemoryDiagnosticLogRepository();
     const recorder = createDiagnosticRecorder({
       repository,
@@ -325,9 +325,9 @@ describe("recorder → repository redaction (end to end)", () => {
     });
 
     const [entry] = await repository.query({ customerId: "customer-a" });
-    expect(JSON.stringify(entry)).not.toContain("sk-live-supersecret");
-    expect(entry.message).toBe("used [REDACTED]");
-    expect(entry.details).toMatchObject({ apiKey: "[REDACTED]", note: "fine" });
+    expect(JSON.stringify(entry)).toContain("sk-live-supersecret");
+    expect(entry.message).toBe("used sk-live-supersecret");
+    expect(entry.details).toMatchObject({ apiKey: "sk-live-supersecret", note: "fine" });
   });
 });
 

@@ -18,6 +18,9 @@ export async function GET(request: Request) {
   if (!session) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  if (session.role !== "admin") {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
+  }
   if (session.workspace === "sales") {
     return NextResponse.json({ error: "sales_diagnostics_route_required" }, { status: 403 });
   }

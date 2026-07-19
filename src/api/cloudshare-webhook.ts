@@ -101,6 +101,7 @@ export async function handleCloudShareWebhook(
           path,
           requestBodyBytes,
           rawBodySha256,
+          body: request.rawBody,
         },
         details: {
           signaturePresent: signatureHeader.present,
@@ -137,6 +138,7 @@ export async function handleCloudShareWebhook(
           path,
           requestBodyBytes,
           rawBodySha256,
+          body: request.rawBody,
         },
         details: {
           signaturePresent: signatureHeader.present,
@@ -194,6 +196,7 @@ export async function handleCloudShareWebhook(
           path,
           requestBodyBytes,
           rawBodySha256,
+          body: request.rawBody,
         },
         details: {
           signaturePresent: false,
@@ -239,14 +242,9 @@ export async function handleCloudShareWebhook(
       path,
       customerId: connection.customerId,
       webhookPathFingerprint,
-      requestBodySummary,
-      ...webhookFields,
-      ...(isWebhookBodySummary(requestBodySummary)
-        ? {
-            webhookEnvelope: requestBodySummary.envelope,
-            webhookPayload: requestBodySummary.payload,
-          }
-        : {}),
+      eventType: isWebhookBodySummary(requestBodySummary) ? requestBodySummary.envelope.Event : null,
+      environmentId: webhookFields.webhookEnvironmentId ?? null,
+      environmentExternalId: webhookFields.webhookEnvironmentExternalId ?? null,
       requestBodyBytes,
       rawBodySha256,
       signaturePresent: true,
@@ -284,6 +282,7 @@ export async function handleCloudShareWebhook(
             path,
             requestBodyBytes,
             rawBodySha256,
+            body: request.rawBody,
           },
           details: {
             signaturePresent: true,
@@ -307,6 +306,7 @@ export async function handleCloudShareWebhook(
             storedWebhookSecretLength: connection.webhookSecret.length,
             signatureHeader,
             rawBodySha256,
+            body: request.rawBody,
           },
         });
         deps.logger.warn("cloudshare webhook rejected: invalid signature", {
@@ -337,6 +337,7 @@ export async function handleCloudShareWebhook(
             storedWebhookSecretLength: connection.webhookSecret.length,
             signatureHeader,
             rawBodySha256,
+            body: request.rawBody,
           },
         });
         await recordDiagnostic(deps.diagnostics, {
@@ -357,6 +358,7 @@ export async function handleCloudShareWebhook(
             path,
             requestBodyBytes,
             rawBodySha256,
+            body: request.rawBody,
           },
           details: {
             eventType: isWebhookBodySummary(requestBodySummary)
@@ -435,6 +437,7 @@ export async function handleCloudShareWebhook(
             path,
             requestBodyBytes,
             rawBodySha256,
+            body: request.rawBody,
           },
           details: {
             eventType: event.event,
@@ -549,6 +552,7 @@ export async function handleCloudShareWebhook(
         path,
         requestBodyBytes,
         rawBodySha256,
+        body: request.rawBody,
       },
       details: {
         signaturePresent: signatureHeader.present,

@@ -277,7 +277,7 @@ describe("admin Exam authoring resource runtime", () => {
           status: 403,
           body: {
             error: "forbidden",
-            signature: "[REDACTED]",
+          signature: "sig-secret",
           },
         },
       }),

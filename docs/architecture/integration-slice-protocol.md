@@ -19,9 +19,10 @@ It exists because Slice 1 exposed that "tests exist" is not enough for integrati
   delete the generated env file.
 - Add support diagnostics with the feature, not after the failure. Every CloudShare API diagnostic
   must include the attempted operation, integration surface, correlation ID where useful, and
-  redacted structured HTTP evidence: request method, path, query parameters, request headers,
-  request body when present, response status, response headers, response body, and transport
-  failure details when no response was received.
+  structured HTTP evidence: request method, path, query parameters, fail-closed request headers with only the explicit operational allowlist visible,
+  verbatim request body when present, response status, response headers, verbatim provider response
+  body, and transport failure details when no response was received. Body fields are never scrubbed
+  by name or value pattern; this protected evidence is Customer-scoped admin-only data.
 - Update `docs/api/cloudshare-gap-report.md` immediately when CloudShare behavior confirms or contradicts an assumption.
 - Keep fixture tests and live E2E tests separate: `npm test` must stay deterministic and offline; `npm run test:e2e:live` may call CloudShare.
 
@@ -34,7 +35,7 @@ It exists because Slice 1 exposed that "tests exist" is not enough for integrati
    For v4 Accelerate endpoints, verify paths in `docs/api/cloudshare-api-reference.md` and the
    corresponding export under `docs/api/assets/`; do not infer paths from adjacent endpoint names.
 4. For any uncertain CloudShare behavior, write or run the smallest live probe at the integration seam before building UI or domain behavior around it.
-5. Decide the support diagnostic payload before implementation, so failures are supportable from the first live run. For CloudShare API calls, this payload must include redacted request and response evidence, not only a derived status or summary.
+5. Decide the support diagnostic payload before implementation, so failures are supportable from the first live run. For CloudShare API calls, retain request/query and provider-response bodies verbatim in protected Customer-scoped admin diagnostics, preserve only the explicit safe operational request-header allowlist and mask every other header, and keep bodies out of generic traces and ordinary client surfaces.
 
 ## During implementation
 

@@ -130,16 +130,16 @@ describe("handleCloudShareWebhook", () => {
     expect(receivedLine).toBeDefined();
     expect(receivedLine).not.toContain("rawRequestBody");
     expect(receivedLine).not.toContain('"x-cloudshare-signature"');
-    expect(receivedLine).toContain('"webhookEnvelope"');
-    expect(receivedLine).toContain('"webhookPayload"');
-    expect(receivedLine).toContain('"webhookEvent":"environment.created"');
-    expect(receivedLine).toContain('"webhookEnvironmentId":"env-1"');
-    expect(receivedLine).toContain('"webhookEnvironmentName":"Allowed Environment Name"');
-    expect(receivedLine).toContain('"webhookOwnerEmail":"owner@example.test"');
-    expect(receivedLine).toContain("Allowed Environment Name");
+    expect(receivedLine).not.toContain('"webhookEnvelope"');
+    expect(receivedLine).not.toContain('"webhookPayload"');
+    expect(receivedLine).not.toContain('"requestBodySummary"');
+    expect(receivedLine).toContain('"eventType":"environment.created"');
+    expect(receivedLine).toContain('"environmentId":"env-1"');
+    expect(receivedLine).not.toContain('"webhookEnvironmentName"');
+    expect(receivedLine).not.toContain('"webhookOwnerEmail"');
+    expect(receivedLine).not.toContain("Allowed Environment Name");
     expect(receivedLine).toContain("env-1");
-    expect(receivedLine).toContain("owner@example.test");
-    expect(receivedLine).toContain("cloudshare");
+    expect(receivedLine).not.toContain("owner@example.test");
   });
 
   it("logs signature diagnostics for known webhook targets without persisting raw signatures", async () => {
@@ -827,9 +827,12 @@ describe("handleCloudShareWebhook", () => {
         }),
       ]),
     );
-    expect(JSON.stringify(allEntries)).not.toContain("must-not-be-logged");
-    expect(JSON.stringify(allEntries)).not.toContain(unknownRawBody);
-    expect(JSON.stringify(allEntries)).not.toContain("wrong");
+    const serializedEntries = JSON.stringify(allEntries);
+    expect(serializedEntries).toContain("must-not-be-logged");
+    expect(
+      allEntries.some((entry) => entry.request?.body === unknownRawBody),
+    ).toBe(true);
+    expect(serializedEntries).not.toContain("wrong");
     expect(JSON.stringify(allEntries)).not.toContain("whk-helios");
     expect(JSON.stringify(allEntries)).not.toContain("unknown-token");
   });

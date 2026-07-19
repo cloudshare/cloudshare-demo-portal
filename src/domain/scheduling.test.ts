@@ -1084,7 +1084,7 @@ describe("scheduleExam", () => {
       BlueprintIds: ["bp-1"],
       PolicyId: "policy-1",
       End: "2026-06-15T17:30:00.000Z",
-      Passphrase: "[REDACTED]",
+      Passphrase: "certalis-attempt-1",
     });
     expect(training?.response).toMatchObject({
       status: 200,

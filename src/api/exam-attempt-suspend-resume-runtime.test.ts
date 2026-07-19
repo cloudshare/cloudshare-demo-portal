@@ -2061,8 +2061,12 @@ describe("runHeartbeatAutoSuspendRuntime", () => {
       );
       expect(deps.logger.warn).toHaveBeenCalledWith(
         "heartbeat auto-suspend failed",
-        expectedPayload,
+        expect.objectContaining({
+          operation: "heartbeat_auto_suspend",
+        }),
       );
+      expect(JSON.stringify((deps.logger.warn as ReturnType<typeof vi.fn>).mock.calls)).not.toContain("forbidden");
+      expect(JSON.stringify((deps.logger.warn as ReturnType<typeof vi.fn>).mock.calls)).not.toContain('"bad":true');
     },
   );
 

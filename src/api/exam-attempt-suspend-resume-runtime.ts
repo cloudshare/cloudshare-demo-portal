@@ -27,6 +27,7 @@ import {
 } from "@/integrations/cloudshare";
 import { createCloudShareEnvironmentController } from "@/integrations/cloudshare/environment-controller";
 import { createCloudShareEnvironmentSource } from "@/integrations/cloudshare/environment";
+import { projectCloudShareGenericLogValue } from "@/integrations/cloudshare/diagnostic-redaction";
 import { ensureExamAttemptEnvironmentCorrelation } from "./exam-attempt-environment-correlation";
 import type { ExamClock } from "@/domain/exam-clock";
 import type { ExamRepository } from "@/domain/exam-catalog";
@@ -824,7 +825,7 @@ async function handleExamAttemptRuntimeError(
     occurredAt: (deps.now ?? (() => new Date()))(),
     payload: diagnostic,
   });
-  deps.logger.error(`exam ${action} errored`, diagnostic);
+  deps.logger.error(`exam ${action} errored`, projectCloudShareGenericLogValue(diagnostic) as Record<string, unknown>);
   return { status: 500, body: { error: "internal error", correlationId } };
 }
 
@@ -856,7 +857,7 @@ async function reportFailureDiagnostic(
       occurredAt: (deps.now ?? (() => new Date()))(),
       payload: diagnostic,
     });
-    deps.logger.warn(spec.logMessage, diagnostic);
+    deps.logger.warn(spec.logMessage, projectCloudShareGenericLogValue(diagnostic) as Record<string, unknown>);
     return { status: 502, body: { error: `exam ${spec.action} failed`, correlationId } };
   }
 
@@ -876,7 +877,7 @@ async function reportFailureDiagnostic(
       occurredAt: (deps.now ?? (() => new Date()))(),
       payload: diagnostic,
     });
-    deps.logger.warn(spec.logMessage, diagnostic);
+    deps.logger.warn(spec.logMessage, projectCloudShareGenericLogValue(diagnostic) as Record<string, unknown>);
     if (isCloudShareRateLimitError(err.context?.cause)) {
       return {
         status: 429,
@@ -910,7 +911,7 @@ async function reportFailureDiagnostic(
       occurredAt: (deps.now ?? (() => new Date()))(),
       payload: diagnostic,
     });
-    deps.logger.warn(spec.logMessage, diagnostic);
+    deps.logger.warn(spec.logMessage, projectCloudShareGenericLogValue(diagnostic) as Record<string, unknown>);
     return {
       status: isCloudShareRateLimitError(err) ? 429 : 502,
       body: {

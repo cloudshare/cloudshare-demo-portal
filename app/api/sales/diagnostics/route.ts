@@ -11,8 +11,11 @@ export async function GET(request: Request) {
   const services = getServices();
   const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
   const session = await getPortalAdminSession(services, sessionId);
-  if (!session || session.workspace !== "sales") {
+  if (!session) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+  }
+  if (session.role !== "admin" || session.workspace !== "sales") {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 });
   }
 
   const query = Object.fromEntries(new URL(request.url).searchParams.entries());

@@ -31,8 +31,8 @@ const PROVISIONING_SURFACE: Record<ProvisioningOperation, string> = {
 /**
  * Structural (non-CloudShare-coupled) summary of a provisioning failure cause.
  * Reads only plain error properties so the domain stays free of integration
- * imports. The CloudShare adapter already redacts headers/body before placing
- * them in `context`, and the DiagnosticRecorder redacts again on the way out.
+ * imports. The CloudShare adapter retains body evidence in `context`; the
+ * DiagnosticRecorder masks only the actual request-header slot.
  */
 function describeProvisioningCause(cause: unknown): Record<string, unknown> {
   const err = cause as

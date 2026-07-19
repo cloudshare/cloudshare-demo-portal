@@ -4,6 +4,7 @@ import {
   type AdminResponse,
   type DiagnosticLogHandlerDeps,
 } from "./admin";
+import { redactDiagnosticInput, type DiagnosticLogEntryInput } from "@/domain/diagnostic-log";
 
 const SALES_DIAGNOSTIC_SOURCES = ["sales-records", "sales-items", "sales-demo-sessions", "sales-session-reconciliation", "sales-session-participants", "sales-project-members", "sales-participant-launch"] as const;
 const SALES_DIAGNOSTIC_SOURCE_PAGE_LIMIT = 500;
@@ -32,7 +33,7 @@ export async function handleGetSalesDiagnosticLog(
 
   if (requestedSource) {
     const response = await handleGetDiagnosticLog(deps, { customerId: request.customerId, query: request.query });
-    return { ...response, body: salesBearerSafeProjection(response.body) as Record<string, unknown> };
+    return { ...response, body: projectDiagnosticPage(response.body) };
   }
 
   const requestedLimit = parseLimit(request.query.limit);
@@ -75,18 +76,18 @@ export async function handleGetSalesDiagnosticLog(
   };
 }
 
-/** Sales Support is an ordinary API projection. Protected DiagnosticLogEntry
- * storage remains unchanged, but bearer credentials never cross this seam. */
-function salesBearerSafeProjection(value: unknown, key = ""): unknown {
-  if (/^(?:authorization|loginurl|token|tokenhash|bearer)$/i.test(key)) return "[REDACTED]";
-  if (typeof value === "string") {
-    return value
-      .replace(/\/sales\/launch\/[^\s?"']+/gi, "/sales/launch/[REDACTED]")
-      .replace(/\bBearer\s+[^\s,;"']+/gi, "Bearer [REDACTED]");
-  }
-  if (Array.isArray(value)) return value.map((item) => salesBearerSafeProjection(item));
-  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([childKey, childValue]) => [childKey, salesBearerSafeProjection(childValue, childKey)]));
-  return value;
+/** Entries have already crossed the direction-aware recorder seam. This
+ * authorized admin projection must not re-scrub protected body evidence. */
+function salesBearerSafeProjection(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  return redactDiagnosticInput(value as DiagnosticLogEntryInput);
+}
+
+function projectDiagnosticPage(value: Record<string, unknown>): Record<string, unknown> {
+  const entries = Array.isArray(value.entries)
+    ? value.entries.map((entry) => salesBearerSafeProjection(entry))
+    : value.entries;
+  return { ...value, entries };
 }
 
 function isSalesDiagnosticSource(value: string): value is SalesDiagnosticSource {

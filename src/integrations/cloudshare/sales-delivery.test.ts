@@ -157,14 +157,14 @@ describe("CloudShare Sales Delivery", () => {
   it("accepts a documented empty unrelated custom-property value so correlation can fail closed later", async () => {
     await expect(deliveryForRoster({ count: 1, items: [documentedParticipant({ customProperties: [{ name: "unrelated", value: "" }] })] }).listParticipants("sales-1")).resolves.toMatchObject({ participants: [expect.objectContaining({ customProperties: { unrelated: "" } })] });
   });
-  it("retains an undocumented PascalCase Sales roster as full, safely-redacted evidence", async () => {
+  it("retains an undocumented PascalCase Sales roster as full protected evidence", async () => {
     const rawRoster = { Count: 1, Items: [{ Id: "participant-1", FirstName: "Casey", LastName: "Example", Email: "casey@example.test", InvitationStatus: "sent", ParticipationStatus: "inProgress", FirstJoined: "2026-07-17T09:05:00Z", EnvironmentId: "server-only-environment-1", EnvironmentStatus: "Ready", accessLink: "https://bearer.example.test/should-not-leak" }] };
     const delivery = deliveryForRoster(rawRoster);
 
     const error = await delivery.listParticipants("sales-1").catch((failure) => failure);
-    expect(error).toMatchObject({ name: "CloudShareResponseError", context: { responseBody: { Count: 1, Items: [expect.objectContaining({ Email: "casey@example.test", accessLink: "[REDACTED]" })] } } });
+    expect(error).toMatchObject({ name: "CloudShareResponseError", context: { responseBody: { Count: 1, Items: [expect.objectContaining({ Email: "casey@example.test", accessLink: "https://bearer.example.test/should-not-leak" })] } } });
     expect(JSON.stringify((error as { context?: unknown }).context)).toContain("casey@example.test");
-    expect(JSON.stringify((error as { context?: unknown }).context)).not.toContain("bearer.example.test");
+    expect(JSON.stringify((error as { context?: unknown }).context)).toContain("bearer.example.test");
   });
   it("rejects an unrecognized participant-list envelope instead of treating it as an empty roster", async () => {
     const participant = { id: "participant-1", firstName: "Casey", lastName: "Example", email: "casey@example.test", invitationStatus: "notSent", invitedBy: null, participationStatus: "pending", firstJoined: null };
