@@ -58,9 +58,14 @@ CloudShare v4 Sales Experience; it does not add participants or send invitations
   access links, and protected diagnostic evidence remain server-only.
 - `Verify CloudShare status` performs the documented v4 `GET /sales/{id}`, records protected
   diagnostic evidence, and persists the observed Experience status. Per-participant
-  Environment display is sourced separately from documented v3 `GET /envs/{id}` numeric
-  status codes and labels the source as `cloudshare_v3_environment`; the v4 participant
-  roster's free-text environment field remains supporting context only.
+  Environment display is sourced separately. The v4 Sales roster `envId` is retained only as
+  a server-side roster reference; it is not a v3 Environment ID. Certalis lists documented v3
+  `GET /envs?ownerEmail=<participant>&brief=false`, requires exactly one Environment in the
+  Session Item's Project, then reads its numeric status through documented
+  `GET /envs/actions/getextended?envId=<opaque-v3-id>`. Zero or multiple same-Project matches
+  fail closed with an explicit resolution reason and protected evidence from the actual v3
+  exchange. The UI labels successful observations `cloudshare_v3_environment`; the v4 roster's
+  free-text environment field remains supporting context only.
 - The documented CloudShare v3 timezone list is cached. Normal UI does not expose cache
   freshness jargon; a warning appears only for a stale fallback. The Sales Admin's last
   selected timezone and Session-level experience type are retained as preferences.

@@ -60,6 +60,15 @@ These endpoints are v4 Accelerate endpoints and use the same base URL:
 
 ## Guardrails For Future Changes
 
+## Production v3 Sales Environment Observation
+
+Live verification for Sales monitoring confirmed that the v4 roster `envId` is a numeric roster
+reference, not the opaque identifier accepted by v3 Environment actions. The supported observation
+chain is `GET /envs?ownerEmail=<server-side email>&brief=false`, an exact server-side Project match,
+then `GET /envs/actions/getextended?envId=<opaque v3 id>`. Only one same-Project match is accepted;
+zero or multiple matches are an explicit needs-attention condition. Numeric status codes accepted by
+the portal are `2`, `3`, `4`, `5`, `7`, `8`, and `9`.
+
 - Do not use `/api/v3/class/*` endpoints for Accelerate Experience user properties.
 - Do not invent v4 endpoint paths from surrounding naming patterns; verify them in the local export.
 - Preserve typed request/response models at the `integrations/cloudshare` boundary.
