@@ -164,6 +164,8 @@ model SalesSessionParticipant {
   /// Server-only CloudShare environment correlation. It is never projected to portal clients.
   cloudShareEnvironmentId     String?
   environmentStatus           String?
+  environmentStatusCode       Int?
+  environmentObservedAt       DateTime?
   lastReconciledAt            DateTime
   createdAt                   DateTime
   updatedAt                   DateTime

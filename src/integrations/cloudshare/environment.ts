@@ -16,10 +16,11 @@ import { CloudShareRequestError } from "./errors";
 
 const v3EnvironmentSchema = z
   .object({
+    statusCode: z.number().int().optional(),
     status: z.string().min(1).optional(),
     envStatus: z.string().min(1).optional(),
   })
-  .refine((value) => typeof value.status === "string" || typeof value.envStatus === "string", {
+  .refine((value) => typeof value.statusCode === "number" || typeof value.status === "string" || typeof value.envStatus === "string", {
     message: "Expected CloudShare environment status field",
   });
 
@@ -51,6 +52,11 @@ export function mapCloudShareEnvironmentStatus(raw: string): EnvironmentStatus {
   }
 }
 
+/** Exact v3 Environment statusCode; used by Sales read models without reusing v4 roster envStatus. */
+export function cloudShareV3EnvironmentStatusCode(value: unknown): number | null {
+  return value === 2 || value === 3 || value === 4 || value === 5 || value === 7 || value === 8 || value === 9 ? value : null;
+}
+
 export function createCloudShareEnvironmentSource(
   client: CloudShareClient,
 ): EnvironmentStateSource {
@@ -69,6 +75,7 @@ export function createCloudShareEnvironmentSource(
         return {
           environmentExternalId,
           status: mapCloudShareEnvironmentStatus(env.envStatus ?? env.status ?? "unknown"),
+          statusCode: cloudShareV3EnvironmentStatusCode(env.statusCode),
           request: detailed?.request ? { ...detailed.request } : null,
           response: detailed?.response ? { ...detailed.response } : null,
         };
