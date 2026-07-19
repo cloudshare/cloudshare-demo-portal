@@ -889,6 +889,39 @@ describe("SalesWorkspace interaction", () => {
     expect(document.body.textContent).not.toContain("provider response");
   });
 
+  it.each([
+    ["in-progress", "in_progress", { dimension: "certalis_operation", value: "correlated", source: "certalis_persistence", retry: "not_applicable" }, { dimension: "cloudshare_sales_experience", value: "inProgress", source: "schedule_prediction", freshness: "predicted" }],
+    ["ended", "ended", { dimension: "certalis_operation", value: "correlated", source: "certalis_persistence", retry: "not_applicable" }, { dimension: "cloudshare_sales_experience", value: "ended", source: "cloudshare_v4_get_sales", freshness: "fresh", observedAt: "2026-07-19T09:00:00.000Z" }],
+    ["needs-attention", "needs_attention", { dimension: "certalis_operation", value: "needs_attention", source: "certalis_persistence", retry: "unsafe_requires_support", reason: "Provider status needs support" }, { dimension: "cloudshare_sales_experience", value: "inProgress", source: "schedule_prediction", freshness: "predicted" }],
+  ])("opens and visibly focuses a %s Session selected from participant search", async (_label, routeStatus, operation, experience) => {
+    const user = userEvent.setup();
+    const session = { id: `session-${routeStatus}`, opportunityId: "opp-1", itemId: "item-1", type: "demo", sessionName: `Focused ${routeStatus}`, start: "2026-07-19T08:00", end: "2026-07-19T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-19T07:00:00.000Z", operation, experience, verificationEligible: routeStatus !== "needs_attention" };
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const path = String(input);
+      if (path.startsWith("/api/sales/enablement-sessions?participantSearch=")) return json({ participants: [{ id: "portal-1", sessionId: session.id, sessionName: session.sessionName, opportunityId: "opp-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", operation, experience, environment: { dimension: "cloudshare_environment", value: "Ready", source: "cloudshare_v3_environment", observedAt: "2026-07-19T09:00:00.000Z" } }], total: 1, offset: 0, limit: 20 });
+      if (path === "/api/sales/items") return json({ activeItems: [] });
+      if (path === "/api/sales/timezones" && !init?.method) return json({ timezones: [{ id: "UTC", name: "UTC" }], preference: {} });
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [], total: 0 });
+      if (path === `/api/sales/enablement-sessions/${session.id}/participants`) return json({ session: { accessWindow: { dimension: "certalis_session_access_window", value: "open", source: "schedule_calculation", nativeInvitationsAvailable: true } }, participants: [] });
+      if (path.startsWith("/api/sales/enablement-sessions?")) {
+        const expectedDimension = routeStatus === "needs_attention" ? "operationStatus=needs_attention" : `experienceStatus=${routeStatus === "in_progress" ? "inProgress" : "ended"}`;
+        return json({ sessions: path.includes(expectedDimension) ? [session] : [] });
+      }
+      return json({});
+    });
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "manage" }} />);
+
+    await user.type(screen.getByRole("textbox", { name: "Search participant name or email" }), "ada");
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    await user.click(await screen.findByRole("button", { name: "Ada Lovelace (ada@example.test)" }));
+
+    await waitFor(() => expect(mockRouter.push).toHaveBeenLastCalledWith(`/sales?tab=sessions&sessionId=${session.id}&status=${routeStatus}`));
+    await waitFor(() => expect(document.getElementById(`sales-session-${session.id}`)?.textContent).toContain(`Focused ${routeStatus}`));
+    expect(document.getElementById(`sales-session-${session.id}`)?.style.background).toBe("rgb(232, 245, 243)");
+    expect(await screen.findByRole("button", { name: "Hide participants" })).not.toBeNull();
+    expect(mockRouter.push.mock.calls.at(-1)?.[0]).not.toContain("provider");
+  });
+
   it("registers named Opportunity Contacts without sending mail, then sends a selected native invite without exposing provider identifiers", async () => {
     const user = userEvent.setup();
     const writeText = vi.fn().mockResolvedValue(undefined);
