@@ -4,7 +4,7 @@ import type {
   CloudShareDetailedResult,
   V4RequestSpec,
 } from "./client";
-import { CloudShareRateLimitError, CloudShareRequestError } from "./errors";
+import { CLOUDSHARE_RATE_LIMIT_ERROR_DISCRIMINANT, CloudShareRateLimitError, CloudShareRequestError } from "./errors";
 import {
   inspectCloudShareEnvironmentLease,
   inspectCloudShareTrainingLease,
@@ -247,6 +247,8 @@ describe("external lease inspection", () => {
       requestV3Detailed: vi.fn(async () => {
         throw {
           name: "CloudShareRateLimitError",
+          cloudShareErrorDiscriminant: CLOUDSHARE_RATE_LIMIT_ERROR_DISCRIMINANT,
+          status: 429,
           message:
             "requests are cooling down: Bearer rehydrated-message-secret https://use.cloudshare.com/Ent/Login.aspx?token=rehydrated-message-secret",
           classification: "rate_limit",

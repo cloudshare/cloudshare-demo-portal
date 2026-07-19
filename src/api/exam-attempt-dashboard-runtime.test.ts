@@ -617,7 +617,9 @@ describe("getExamAttemptDashboardRuntime", () => {
             if (spec.path === "/trainings/EXtraining-1/students") {
               throw {
                 name: "CloudShareRateLimitError",
+                cloudShareErrorDiscriminant: "cloudshare.rate-limit-error.v1",
                 status: 429,
+                classification: "rate_limit",
                 context: {
                   status: 429,
                   method: "GET",
