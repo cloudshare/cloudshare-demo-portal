@@ -254,7 +254,7 @@ export async function handleListSalesSessionParticipants(deps: Deps, request: Om
     }
     let missingCloudShareParticipantCount = 0;
     let correlationRepairRequiredCount = 0;
-    const reconciled = await Promise.all(mappedParticipants.map(async (stored) => {
+    const reconciled = await mapWithConcurrency(mappedParticipants, 4, async (stored) => {
       const participant = remote.participants.find((value) => participantProperties(value).certalisSalesParticipantId === stored.id && participantProperties(value).certalisOpportunityContactId === stored.opportunityContactId);
       const providerParticipant = participant ?? remote.participants.find((value) => value.id === stored.cloudShareParticipantId);
       const requiresCorrelationRepair = !participant && Boolean(providerParticipant) && !participantProperties(providerParticipant).certalisSalesParticipantId && !participantProperties(providerParticipant).certalisOpportunityContactId;
@@ -303,7 +303,7 @@ export async function handleListSalesSessionParticipants(deps: Deps, request: Om
       } else if (requiresCorrelationRepair) correlationRepairRequiredCount += 1; else missingCloudShareParticipantCount += 1;
       const contact = await deps.records.findContact(request.customerId, current.opportunityContactId);
       return { current, participant, contact, requiresCorrelationRepair };
-    }));
+    });
     const projected = reconciled.map(({ current, participant, contact, requiresCorrelationRepair }) => contact ? portalParticipant(current, contact, participant ? undefined : requiresCorrelationRepair ? { needsAttention: true, requiresCorrelationRepair: true, monitoringMessage: "CloudShare returned this participant without its Certalis correlation properties. Select this Contact above to repair the mapping before inviting." } : { needsAttention: true, monitoringMessage: "CloudShare no longer returned this registered participant. Do not resend; investigate the correlated diagnostics." }) : null);
     const reconciliationFailed = missingCloudShareParticipantCount > 0 || correlationRepairRequiredCount > 0;
     const reconciliationMessage = correlationRepairRequiredCount > 0 && missingCloudShareParticipantCount === 0
@@ -422,6 +422,19 @@ function participantIntegrationSurface(error: unknown): "cloudshare.v3.environme
 function environmentObservationUnrecognized(read: Awaited<ReturnType<EnvironmentStateEvidenceSource["readEnvironmentState"]>>): CloudShareResponseError { return new CloudShareResponseError("CloudShare returned an unrecognized Environment status observation.", { method: typeof read.request.method === "string" ? read.request.method : "GET", path: typeof read.request.path === "string" ? read.request.path : "/envs", status: typeof read.response.status === "number" ? read.response.status : 200, responseStatus: typeof read.response.status === "number" ? read.response.status : 200, responseBody: read.response.body, requestHeaders: read.request.headers, responseHeaders: read.response.headers, failureMode: "environment_status_observation" }); }
 function environmentObservationPersistenceFailed(error: unknown, read: Awaited<ReturnType<EnvironmentStateEvidenceSource["readEnvironmentState"]>>): CloudShareResponseError { return new CloudShareResponseError(`CloudShare Environment state was read but Certalis could not persist its observation: ${error instanceof Error ? error.message : String(error)}`, { method: typeof read.request.method === "string" ? read.request.method : "GET", path: typeof read.request.path === "string" ? read.request.path : "/envs", status: typeof read.response.status === "number" ? read.response.status : 200, responseStatus: typeof read.response.status === "number" ? read.response.status : 200, responseBody: read.response.body, requestHeaders: read.request.headers, responseHeaders: read.response.headers, failureMode: "environment_observation_persistence" }); }
 function nonnegativeInteger(value: unknown): number | undefined { return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : undefined; }
+async function mapWithConcurrency<T, R>(values: readonly T[], limit: number, mapper: (value: T, index: number) => Promise<R>): Promise<R[]> {
+  const results = new Array<R>(values.length);
+  let nextIndex = 0;
+  const workers = Array.from({ length: Math.min(limit, values.length) }, async () => {
+    while (nextIndex < values.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(values[index]!, index);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
 function participantRegistrationNotReconciled(remote: SalesDeliveryEvidence, expectedCount: number, returnedCount: number): CloudShareResponseError { return new CloudShareResponseError("CloudShare accepted the participant registration but its authoritative roster did not return every selected Opportunity Contact.", { method: remote.request.method, path: remote.request.path, ...(remote.request.query ? { requestQuery: remote.request.query } : {}), ...(remote.request.headers ? { requestHeaders: remote.request.headers } : {}), ...(remote.request.body !== undefined ? { requestBody: remote.request.body } : {}), status: remote.response.status, responseStatus: remote.response.status, ...(remote.response.headers ? { responseHeaders: remote.response.headers } : {}), responseBody: remote.response.body, expectedCount, returnedCount, failureMode: "participant_registration_not_reconciled" }); }
 function participantLegacyBackfillAmbiguous(remote: SalesDeliveryEvidence, selectedContactCount: number): CloudShareResponseError { return new CloudShareResponseError("CloudShare has legacy Sales Participants that cannot be backfilled without an unambiguous one-to-one selected Opportunity Contact mapping.", { method: remote.request.method, path: remote.request.path, ...(remote.request.query ? { requestQuery: remote.request.query } : {}), ...(remote.request.headers ? { requestHeaders: remote.request.headers } : {}), ...(remote.request.body !== undefined ? { requestBody: remote.request.body } : {}), status: remote.response.status, responseStatus: remote.response.status, ...(remote.response.headers ? { responseHeaders: remote.response.headers } : {}), responseBody: remote.response.body, expectedCount: selectedContactCount, returnedCount: 0, failureMode: "participant_legacy_backfill_ambiguous" }); }
 function participantRosterMappingUnresolved(remote: SalesDeliveryEvidence, cloudShareParticipantCount: number, localParticipantCount: number, recoveredParticipantCount: number, unmatchedCloudShareParticipantCount: number): CloudShareResponseError { return new CloudShareResponseError("CloudShare returned Sales Participants that Certalis cannot safely associate with exactly one active Opportunity Contact.", { method: remote.request.method, path: remote.request.path, ...(remote.request.query ? { requestQuery: remote.request.query } : {}), ...(remote.request.headers ? { requestHeaders: remote.request.headers } : {}), ...(remote.request.body !== undefined ? { requestBody: remote.request.body } : {}), status: remote.response.status, responseStatus: remote.response.status, ...(remote.response.headers ? { responseHeaders: remote.response.headers } : {}), responseBody: remote.response.body, localParticipantCount, cloudShareParticipantCount, recoveredParticipantCount, unmatchedCloudShareParticipantCount, failureMode: "participant_roster_mapping_unresolved" }); }

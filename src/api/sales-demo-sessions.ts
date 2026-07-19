@@ -92,7 +92,15 @@ export async function handleCreateSalesDemoSession(deps: SalesDemoSessionDeps, r
 
   const opportunitySessions = (await deps.sessions.listByOpportunity(request.customerId, opportunity.id)) ?? [];
   const unresolved = opportunitySessions.find((session) => matchesUnresolvedCreateIntent(session, parsed.data));
-  if (unresolved) return response(409, { error: AMBIGUOUS_CREATE_REASON, correlationId: randomUUID(), needsAttention: true, creationOutcome: unsafeCreationOutcome("cloudshare_v4_post_sales_ambiguous", AMBIGUOUS_CREATE_REASON, unresolved.id) });
+  if (unresolved) {
+    const correlationId = randomUUID();
+    const occurredAt = (deps.now ?? (() => new Date()))();
+    await Promise.allSettled([
+      evidence(deps, request, correlationId, unresolved, "failure", "Certalis blocked a duplicate creation attempt while the prior CloudShare POST outcome remains unresolved", undefined, { integrationSurface: "cloudshare.v4.sales", failureMode: "cloudshare_create_duplicate_blocked", retry: "unsafe_requires_support" }),
+      deps.audit?.write({ id: randomUUID(), occurredAt, customerId: request.customerId, actorType: request.actor.type, actorId: request.actor.id, actorEmail: request.actor.email, action: "sales.demo_session.created", subjectType: "sales_demo_session", subjectId: unresolved.id, outcome: "denied", correlationId, details: { opportunityId: opportunity.id, itemId: item.id, failureMode: "cloudshare_create_duplicate_blocked", integrationSurface: "cloudshare.v4.sales", retry: "unsafe_requires_support" }, error: AMBIGUOUS_CREATE_REASON }),
+    ]);
+    return response(409, { error: AMBIGUOUS_CREATE_REASON, correlationId, needsAttention: true, creationOutcome: unsafeCreationOutcome("cloudshare_v4_post_sales_ambiguous", AMBIGUOUS_CREATE_REASON, unresolved.id) });
+  }
   const id = (deps.newId ?? randomUUID)();
   const revision = opportunitySessions.length + 1;
   const account = deps.records.findAccount ? await deps.records.findAccount(request.customerId, opportunity.accountId) : null;
@@ -247,7 +255,8 @@ function matchesUnresolvedCreateIntent(session: SalesDemoSession, input: Session
   return session.cloudShareSalesExperienceId.startsWith("pending:") && (session.operationalStatus === "provisioning" || session.operationalStatus === "needs_attention") && session.itemId === input.itemId && session.start === input.start && session.end === input.end && session.timeZone === input.timeZone && session.type === input.type && session.salesProEmail.toLowerCase() === input.salesProEmail.toLowerCase();
 }
 function isOutcomeAmbiguousCreateFailure(error: unknown): boolean {
-  return error instanceof CloudShareTransportError || error instanceof CloudShareResponseError || !(error instanceof CloudShareRequestError || error instanceof CloudShareAuthError);
+  if (error instanceof CloudShareRequestError) return error.status >= 500;
+  return error instanceof CloudShareTransportError || error instanceof CloudShareResponseError || !(error instanceof CloudShareAuthError);
 }
 async function clearReservedBeforeDispatch(sessions: SalesDemoSessionRepository, reservation: SalesDemoSession): Promise<void> {
   if (!sessions.discardReservation) return;

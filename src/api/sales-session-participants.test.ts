@@ -372,6 +372,26 @@ describe("Sales Session participant invitation", () => {
     expect(JSON.stringify(result.body)).not.toContain("environment-1");
   });
 
+  it("bounds per-participant CloudShare Environment polling during roster reconciliation", async () => {
+    const contacts = Array.from({ length: 9 }, (_, index) => ({ ...contact, id: `contact-${index}`, customerId: "customer-1", email: `person-${index}@example.test`, archivedAt: null, createdAt: new Date(), updatedAt: new Date() }));
+    const stored = contacts.map((value, index) => ({ ...storedParticipant(`portal-${index}`, value.id, `provider-${index}`), cloudShareEnvironmentId: `environment-${index}` }));
+    const remote = contacts.map((value, index) => ({ ...remoteParticipant(`provider-${index}`, `portal-${index}`, value.id), environmentId: `environment-${index}` }));
+    let active = 0; let maximumActive = 0;
+    const readEnvironmentState = vi.fn(async (environmentId: string) => {
+      active += 1; maximumActive = Math.max(maximumActive, active);
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      active -= 1;
+      return { snapshot: { environmentExternalId: environmentId, status: "running" as const, statusCode: 2 }, request: { method: "GET", path: `/api/v3/envs/${environmentId}` }, response: { status: 200 } };
+    });
+    const result = await handleListSalesSessionParticipants({
+      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn(async (_customerId, id) => contacts.find((value) => value.id === id) ?? null) }, participants: { list: vi.fn().mockResolvedValue(stored), save: vi.fn(), recordEnvironmentObservation: vi.fn() }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ listParticipants: vi.fn().mockResolvedValue(rosterEvidence(remote)) } as never) }, environmentFactory: { forConnection: () => ({ getEnvironmentState: vi.fn(), readEnvironmentState }) }, diagnostics: { record: vi.fn() },
+    }, { customerId: "customer-1", sessionId: session.id, actor });
+
+    expect(result.status).toBe(200);
+    expect(readEnvironmentState).toHaveBeenCalledTimes(9);
+    expect(maximumActive).toBeLessThanOrEqual(4);
+  });
+
   it("clears a prior Environment observation after a completed v3 404 and records its protected exchange", async () => {
     const remote = { ...remoteParticipant("provider-1", "portal-1", contact.id), environmentId: "environment-1", envStatus: "Ready" };
     const recordEnvironmentObservation = vi.fn(); const diagnostics = { record: vi.fn() };

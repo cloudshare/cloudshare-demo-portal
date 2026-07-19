@@ -65,13 +65,17 @@ describe("Sales Enablement Session API handler", () => {
     expect(stored).toEqual([]); expect(delivery.createSession).not.toHaveBeenCalled();
     expect((await handleCreateSalesDemoSession(deps, request)).status).toBe(201); expect(delivery.createSession).toHaveBeenCalledOnce();
   });
-  it("blocks a duplicate attempt after an outcome-ambiguous CloudShare POST", async () => {
+  it.each([
+    ["transport failure", () => new CloudShareTransportError("POST /sales timed out without a response", { method: "POST", path: "/sales", requestBody: { externalId: "server-only" } })],
+    ["HTTP 503 response", () => new CloudShareRequestError("POST /sales returned 503", 503, { method: "POST", path: "/sales", requestBody: { externalId: "server-only" }, responseStatus: 503, responseBody: { error: "unavailable" } })],
+  ])("blocks a duplicate attempt after an outcome-ambiguous CloudShare POST %s", async (_failure, createFailure) => {
     const records = createInMemorySalesRecordRepository(); await records.saveOpportunity({ id: "opp-1", customerId: "certalis", accountId: "account-1", name: "Acme", status: "open", archivedAt: null, createdAt: new Date(), updatedAt: new Date() });
     const item = { id: "item-1", customerId: "certalis", name: "Demo", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" };
     const stored: SalesDemoSession[] = [];
     const sessions = { save: vi.fn(async (session: SalesDemoSession) => { stored.push(session); }), listByOpportunity: vi.fn(async () => stored), updateOperationalState: vi.fn(async (customerId: string, id: string, state: Partial<SalesDemoSession>) => { const index = stored.findIndex((session) => session.customerId === customerId && session.id === id); if (index < 0) throw new Error("missing"); stored[index] = { ...stored[index]!, ...state }; }) };
-    const delivery = { createSession: vi.fn().mockRejectedValue(new CloudShareTransportError("POST /sales timed out without a response", { method: "POST", path: "/sales", requestBody: { externalId: "server-only" } })) };
-    const deps = { records, items: { findById: vi.fn().mockResolvedValue(item) }, sessions, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, deliveryFactory: { forConnection: vi.fn().mockReturnValue(delivery) }, projectMembers, diagnostics: { record: vi.fn() }, audit: { write: vi.fn() }, newId: vi.fn().mockReturnValueOnce("ambiguous-session").mockReturnValueOnce("duplicate-session") };
+    const delivery = { createSession: vi.fn().mockRejectedValue(createFailure()) };
+    const diagnostics = { record: vi.fn() };
+    const deps = { records, items: { findById: vi.fn().mockResolvedValue(item) }, sessions, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "certalis" }) }, deliveryFactory: { forConnection: vi.fn().mockReturnValue(delivery) }, projectMembers, diagnostics, audit: { write: vi.fn() }, newId: vi.fn().mockReturnValueOnce("ambiguous-session").mockReturnValueOnce("duplicate-session") };
     const request = { customerId: "certalis", actor: admin, body: { opportunityId: "opp-1", itemId: "item-1", salesProEmail: admin.email, start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" } };
 
     const first = await handleCreateSalesDemoSession(deps, request);
@@ -82,6 +86,7 @@ describe("Sales Enablement Session API handler", () => {
     expect(delivery.createSession).toHaveBeenCalledOnce();
     expect(sessions.save).toHaveBeenCalledOnce();
     expect(stored[0]).toMatchObject({ id: "ambiguous-session", cloudShareSalesExperienceId: "pending:ambiguous-session", operationalStatus: "needs_attention", attentionReason: expect.stringContaining("cloudshare_v4_post_sales_ambiguous") });
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ correlationId: second.body.correlationId, subject: { type: "sales_demo_session", id: "ambiguous-session" }, details: expect.objectContaining({ failureMode: "cloudshare_create_duplicate_blocked" }) }));
     expect(JSON.stringify(first.body)).not.toContain("server-only");
   });
   it("keeps reservation failure classification scoped to the requesting Customer", async () => {
