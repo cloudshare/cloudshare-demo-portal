@@ -133,6 +133,8 @@ model SalesDemoSession {
   revision                    Int      @default(1)
   operationalStatus           String   @default("active")
   attentionReason             String?
+  experienceStatus            String?
+  experienceStatusObservedAt  DateTime?
   createdAt                   DateTime
   customer                    Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
   opportunity                 SalesOpportunity @relation(fields: [customerId, opportunityId], references: [customerId, id], onDelete: Restrict)

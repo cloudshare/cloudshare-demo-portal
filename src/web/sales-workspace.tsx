@@ -28,7 +28,7 @@ type Named = { id: string; name: string; friendlyName?: string };
 type BlueprintOption = Named & { defaultSnapshotRegionIds?: readonly string[] };
 type Policy = Named & { storageLeaseMinutes: number | null };
 type Item = { id: string; name: string; description: string; project: Named; blueprints: Named[]; policy: Named; regions: Named[]; defaultDurationMinutes: number; status: "active" | "archived" };
-type EnablementSession = { id: string; opportunityId: string; itemId: string; type: SalesExperienceType; start: string; end: string; timeZone: string; salesProDisplayName: string; sessionName?: string; revision?: number; createdAt: string; lifecycle?: "upcoming" | "in_progress" | "ended" | "provisioning" | "needs_attention"; needsAttention?: boolean; verificationEligible: boolean; /** Only a server-side live GET contract check may enable a full-PUT name edit. */ editEligible?: boolean };
+type EnablementSession = { id: string; opportunityId: string; itemId: string; type: SalesExperienceType; start: string; end: string; timeZone: string; salesProDisplayName: string; sessionName?: string; revision?: number; createdAt: string; lifecycle?: "upcoming" | "in_progress" | "ended" | "provisioning" | "needs_attention"; operation?: { dimension: "certalis_operation"; value: "provisioning" | "correlated" | "needs_attention"; source: "certalis_persistence"; reason?: string; retry: string }; experience?: { dimension: "cloudshare_sales_experience"; value: "notStarted" | "inProgress" | "ended"; source: "cloudshare_v4_get_sales" | "schedule_prediction"; freshness: "fresh" | "predicted"; observedAt?: string }; verificationEligible: boolean; /** Only a server-side live GET contract check may enable a full-PUT name edit. */ editEligible?: boolean };
 type SalesParticipant = { id: string; opportunityContactId: string; firstName: string; lastName: string; email: string; invitationStatus: "sent" | "notSent"; lastInvitedAt: string | null; invitedBy: string | null; participationStatus: "pending" | "inProgress" | "concluded"; firstJoined: string | null; envStatus: string | null; needsAttention?: boolean; requiresCorrelationRepair?: boolean; monitoringMessage?: string };
 type ProjectMember = { email: string; displayName: string };
 
@@ -58,6 +58,8 @@ export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemVi
     const next: SalesWorkspaceRouteState = {
       tab: intent.tab,
       itemView: intent.tab === "items" ? intent.itemView ?? "catalog" : "catalog",
+      ...(intent.tab === "sessions" ? { sessionView: intent.sessionView ?? "manage" } : {}),
+      ...(intent.tab === "sessions" && intent.sessionId ? { sessionId: intent.sessionId } : {}),
       ...(intent.tab === "items" && intent.itemId ? { itemId: intent.itemId } : {}),
       ...((intent.tab === "records" || intent.tab === "sessions") && intent.accountId ? { accountId: intent.accountId } : {}),
       ...((intent.tab === "records" || intent.tab === "sessions") && intent.opportunityId ? { opportunityId: intent.opportunityId } : {}),
@@ -77,14 +79,14 @@ export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemVi
     })}</nav>
     {route.tab === "items" ? <ItemCatalog fetchAdmin={fetchAdmin} view={route.itemView ?? "catalog"} focusedItemId={route.itemId} onNavigate={navigate} /> : null}
     {route.tab === "records" ? <SalesRecordsFeature initialSelection={{ accountId: route.accountId ?? null, opportunityId: route.opportunityId ?? null }} onNavigate={navigate} /> : null}
-    {route.tab === "sessions" ? <SalesDemoSessionsFeature initialSelection={{ accountId: route.accountId ?? "", opportunityId: route.opportunityId ?? "" }} onNavigate={navigate} /> : null}
+    {route.tab === "sessions" ? <SalesDemoSessionsFeature initialSelection={{ accountId: route.accountId ?? "", opportunityId: route.opportunityId ?? "", view: route.sessionView ?? "manage", focusSessionId: route.sessionId ?? "" }} onNavigate={navigate} /> : null}
     {route.tab === "support" ? <section aria-label="Sales support"><PortalSectionIntro title="Sales support" description="Append-only support evidence for Sales records and live Item resource curation in the Certalis Customer workspace." /><AdminSupportFeature active view="diagnostics" diagnosticFilters={{ ...(route.correlationId ? { correlationId: route.correlationId } : {}), ...(route.source ? { source: route.source } : {}), ...(route.subjectId ? { subjectId: route.subjectId } : {}) }} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={(intent) => navigate({ tab: "support", correlationId: intent.diagnosticFilters?.correlationId, source: intent.diagnosticFilters?.source, subjectId: intent.diagnosticFilters?.subjectId })} /></section> : null}
     {route.tab === "configuration" ? <section aria-label="Sales configuration"><PortalSectionIntro title="CloudShare Connection" description="Manage the encrypted CloudShare Connection for the isolated Certalis Sales Customer." /><CloudShareConnectionFeature active fetchAdmin={fetchAdmin} getNavigationHref={() => buildSalesWorkspaceHref({ tab: "configuration" })} onNavigate={() => undefined} /></section> : null}
   </main>;
 }
 
 function salesRoutesMatch(left: SalesWorkspaceRouteState, right: SalesWorkspaceRouteState): boolean {
-  return left.tab === right.tab && left.itemView === right.itemView && left.itemId === right.itemId && left.accountId === right.accountId && left.opportunityId === right.opportunityId && left.correlationId === right.correlationId && left.source === right.source && left.subjectId === right.subjectId;
+  return left.tab === right.tab && left.itemView === right.itemView && left.sessionView === right.sessionView && left.sessionId === right.sessionId && left.itemId === right.itemId && left.accountId === right.accountId && left.opportunityId === right.opportunityId && left.correlationId === right.correlationId && left.source === right.source && left.subjectId === right.subjectId;
 }
 
 function PortalSectionIntro({ title, description }: { title: string; description: string }) {
@@ -113,7 +115,7 @@ function SearchableSalesSelector({ label, value, placeholder, options, helperTex
   </div>;
 }
 
-function SalesDemoSessionsFeature({ initialSelection, onNavigate }: { readonly initialSelection: { accountId: string; opportunityId: string }; readonly onNavigate: (intent: SalesNavigationIntent) => void }) {
+function SalesDemoSessionsFeature({ initialSelection, onNavigate }: { readonly initialSelection: { accountId: string; opportunityId: string; view: "manage" | "provision"; focusSessionId: string }; readonly onNavigate: (intent: SalesNavigationIntent) => void }) {
   const router = useRouter();
   const browserFetch = useCallback<typeof fetch>((input, init) => window.fetch(input, init), []);
   const fetchSales = useMemo(() => createAdminAuthenticatedRequest({ fetchImpl: browserFetch, onSessionExpired: () => { router.replace("/login"); router.refresh(); } }), [browserFetch, router]);
@@ -167,7 +169,7 @@ function SalesDemoSessionsFeature({ initialSelection, onNavigate }: { readonly i
   const currentStart = useRef(start);
   const currentTimeZone = useRef(timeZone);
   const salesPreferenceDirty = useRef({ timeZone: false, experienceType: false });
-  const currentSessionSelection = useRef(initialSelection);
+  const currentSessionSelection = useRef({ accountId: initialSelection.accountId, opportunityId: initialSelection.opportunityId });
   const selectedItem = items.find((item) => item.id === itemId) ?? null;
   const selectedItemDuration = selectedItem?.defaultDurationMinutes;
 
@@ -240,6 +242,8 @@ function SalesDemoSessionsFeature({ initialSelection, onNavigate }: { readonly i
       if (body.needsAttention) {
         setNeedsAttention(true); setCorrelationId(body.correlationId ?? null);
         setMessage(`Needs attention: ${body.warning ?? "Sales Enablement Session was created. Do not retry creation; review support diagnostics."}`);
+      } else if (body.session) {
+        onNavigate({ tab: "sessions", sessionView: "manage", sessionId: body.session.id, accountId: sessionAccountId, opportunityId });
       } else setMessage("Sales Enablement Session created. No invitations were sent.");
     } catch (error) { setMessage(error instanceof Error ? error.message : "Could not provision the Sales Enablement Session."); } finally { setLoading(false); }
   };
@@ -269,6 +273,7 @@ function SalesDemoSessionsFeature({ initialSelection, onNavigate }: { readonly i
   const previewOpportunity = selectedOpportunity?.name ?? "Opportunity";
   const previewName = renderSalesSessionName(sessionNameTemplate, { account: previewAccount, opportunity: previewOpportunity, revision: nextRevision, item: selectedItem?.name ?? "Item" });
   const templateError = previewName ? null : "Template must include {revision}, use supported placeholders, and render to at most 100 characters.";
+  const isProvision = initialSelection.view === "provision";
   return <section aria-label="Sales Enablement Sessions">
     <style>{`
       .sales-session-provisioning-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(14rem, 1fr) minmax(14rem, 1fr); gap: 1rem; align-items: start; }
@@ -279,6 +284,8 @@ function SalesDemoSessionsFeature({ initialSelection, onNavigate }: { readonly i
       @media (max-width: 72rem) { .sales-session-provisioning-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .sales-session-selector-group { grid-column: span 2; } }
       @media (max-width: 42rem) { .sales-session-provisioning-grid, .sales-session-selector-fields, .sales-session-template-controls { grid-template-columns: minmax(0, 1fr); } .sales-session-selector-group { grid-column: auto; } .sales-session-template-action { margin-top: 0; } }
     `}</style>
+    <nav aria-label="Sales Session workspace views" style={workspaceTabNavStyle}><button type="button" aria-current={!isProvision ? "page" : undefined} onClick={() => onNavigate({ tab: "sessions", accountId: sessionAccountId, opportunityId, sessionView: "manage" })} style={workspaceTabButtonStyle(!isProvision)}>Manage</button><button type="button" aria-current={isProvision ? "page" : undefined} onClick={() => onNavigate({ tab: "sessions", accountId: sessionAccountId, opportunityId, sessionView: "provision" })} style={workspaceTabButtonStyle(isProvision)}>Provision</button></nav>
+    {isProvision ? <>
     <PortalSectionIntro title="Provision a Sales Enablement Session" description="Creates one time-bound CloudShare Sales Experience. Registration does not send email; Sales Admins explicitly request native invitations for selected registered participants afterwards." />
     <form onSubmit={submit} style={{ ...cardStyle, padding: "1.25rem", display: "grid", gap: "1rem" }}>
       <div className="sales-session-provisioning-grid">
@@ -291,25 +298,26 @@ function SalesDemoSessionsFeature({ initialSelection, onNavigate }: { readonly i
       <div style={{ display: "flex", justifyContent: "end", gap: "0.75rem", alignItems: "center" }}><button style={primaryButtonStyle} disabled={loading || projectMemberLoading || !previewName || !opportunityId || !itemId || !salesProEmail}>{loading ? "Provisioning…" : "Create Sales Enablement Session"}</button></div>
       {message ? <div role={correlationId ? "alert" : "status"} style={correlationId ? alertPanelStyle.danger : alertPanelStyle.success}>{message}{needsAttention ? <strong> Do not retry creation.</strong> : null}{correlationId ? <> <button type="button" onClick={() => onNavigate({ tab: "support", correlationId })} style={{ border: 0, background: "transparent", color: colors.info, textDecoration: "underline", cursor: "pointer" }}>Open support diagnostics ({correlationId})</button></> : null}</div> : null}
     </form>
-    <section style={{ ...cardStyle, marginTop: "1rem", padding: "1.25rem" }} aria-label="Sales Enablement Session operations">
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}><h2 style={{ margin: 0 }}>Session operations</h2><label>Lifecycle <select aria-label="Session lifecycle" value={sessionLifecycle} onChange={(event) => setSessionLifecycle(event.target.value)} style={controlStyle}><option value="all">All</option><option value="upcoming">Upcoming</option><option value="in_progress">In progress</option><option value="ended">Ended</option><option value="provisioning">Provisioning</option><option value="needs_attention">Needs attention</option></select></label></div>
-      <p style={{ margin: "0.65rem 0", color: "#52606d" }}>Verify CloudShare status reads the persisted Sales Experience from CloudShare and records a redacted diagnostic. It verifies the provider record only; it does not change the scheduled lifecycle or create, edit, invite, extend, or cancel a session.</p>
-      {sessions.length === 0 ? <p>No persisted Sales Enablement Sessions match this operational view.</p> : <ul>{sessions.map((session) => <li key={session.id}>
+    </> : null}
+    {!isProvision ? <section style={{ ...cardStyle, marginTop: "1rem", padding: "1.25rem" }} aria-label="Sales Enablement Session operations">
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}><h2 style={{ margin: 0 }}>Manage Sales Enablement Sessions</h2><label>Experience status <select aria-label="Experience status" value={sessionLifecycle} onChange={(event) => setSessionLifecycle(event.target.value)} style={controlStyle}><option value="all">All active and history</option><option value="upcoming">Upcoming</option><option value="in_progress">In progress</option><option value="needs_attention">Needs attention</option><option value="ended">Ended history</option></select></label></div>
+      <p style={{ margin: "0.65rem 0", color: "#52606d" }}>Experience status is CloudShare when a fresh documented read exists; otherwise Certalis labels it as a schedule prediction. Needs attention is a separate Certalis operation exception.</p>
+      {sessions.length === 0 ? <p>No persisted Sales Enablement Sessions match this operational view.</p> : <ul>{sessions.map((session) => <li key={session.id} id={`sales-session-${session.id}`} style={initialSelection.focusSessionId === session.id ? { ...selectedRowStyle, padding: "0.4rem" } : undefined}>
         <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap", margin: "0.4rem 0" }}>
           <div role="group" aria-label={`Session actions for ${session.sessionName ?? session.type.toUpperCase()}, revision ${session.revision ?? 1}`} style={{ display: "flex", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
-            {editingSessionId !== session.id && session.lifecycle === "upcoming" && session.editEligible === true ? <button type="button" style={compactButtonStyle} onClick={() => { setEditingSessionId(session.id); setEditedSessionName(session.sessionName ?? ""); }}>Edit name</button> : null}
+            {editingSessionId !== session.id && (session.experience?.value === "notStarted" || session.lifecycle === "upcoming") && session.editEligible === true ? <button type="button" style={compactButtonStyle} onClick={() => { setEditingSessionId(session.id); setEditedSessionName(session.sessionName ?? ""); }}>Edit name</button> : null}
             {session.verificationEligible === true ? <button type="button" disabled={verifyingSessionId === session.id} style={verifyingSessionId === session.id ? { ...compactButtonStyle, ...disabledButtonStyle } : compactButtonStyle} onClick={() => { setVerifyingSessionId(session.id); void runSessionOperation(() => fetchSales(`/api/sales/enablement-sessions/${encodeURIComponent(session.id)}/reconcile`, { method: "POST" }), "CloudShare could not verify this Sales Session's status.", "CloudShare status verified. The scheduled lifecycle is unchanged.").finally(() => setVerifyingSessionId(null)); }}>{verifyingSessionId === session.id ? "Verifying CloudShare status…" : "Verify CloudShare status"}</button> : null}
             <button type="button" style={compactButtonStyle} onClick={() => setParticipantSessionId((current) => current === session.id ? null : session.id)}>{participantSessionId === session.id ? "Hide participants" : "Manage participants"}</button>
           </div>
           <div style={{ minWidth: 0 }}>
-            {editingSessionId === session.id ? <><input aria-label="Session name" value={editedSessionName} onChange={(event) => setEditedSessionName(event.target.value)} style={controlStyle} /><button type="button" style={{ ...compactButtonStyle, marginLeft: "0.5rem" }} onClick={() => void runSessionOperation(() => fetchSales(`/api/sales/enablement-sessions/${encodeURIComponent(session.id)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: editedSessionName }) }), "CloudShare could not update this Sales Session.", "Sales Session name updated.", () => setEditingSessionId(null))}>Save edit</button></> : <>{session.sessionName ?? session.type.toUpperCase()} (revision {session.revision ?? 1})</>} · {session.start} to {session.end} ({session.timeZone}) · {session.lifecycle?.replace("_", " ") ?? "recorded"}
+            {editingSessionId === session.id ? <><input aria-label="Session name" value={editedSessionName} onChange={(event) => setEditedSessionName(event.target.value)} style={controlStyle} /><button type="button" style={{ ...compactButtonStyle, marginLeft: "0.5rem" }} onClick={() => void runSessionOperation(() => fetchSales(`/api/sales/enablement-sessions/${encodeURIComponent(session.id)}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: editedSessionName }) }), "CloudShare could not update this Sales Session.", "Sales Session name updated.", () => setEditingSessionId(null))}>Save edit</button></> : <>{session.sessionName ?? session.type.toUpperCase()} (revision {session.revision ?? 1})</>} · {session.start} to {session.end} ({session.timeZone}) · {session.operation && session.experience ? <>Certalis operation: {session.operation.value} · Experience: {session.experience.value} ({session.experience.source === "cloudshare_v4_get_sales" ? "CloudShare v4 read" : "schedule prediction"})</> : session.lifecycle?.replace("_", " ")}
             {session.verificationEligible !== true ? <small style={{ color: "#52606d", marginLeft: "0.5rem" }}>CloudShare verification is unavailable while this session is provisioning or needs attention.</small> : null}
           </div>
         </div>
         {participantSessionId === session.id ? <SalesSessionParticipants session={session} fetchSales={fetchSales} onOpenSupport={(id) => onNavigate({ tab: "support", correlationId: id })} /> : null}
       </li>)}</ul>}
       {sessionOperationMessage ? <div role={sessionOperationFailed ? "alert" : "status"} style={sessionOperationFailed ? alertPanelStyle.danger : alertPanelStyle.success}>{sessionOperationMessage}{sessionOperationCorrelationId ? <> <button type="button" onClick={() => onNavigate({ tab: "support", correlationId: sessionOperationCorrelationId })} style={{ border: 0, background: "transparent", color: colors.info, textDecoration: "underline", cursor: "pointer" }}>Open support diagnostics ({sessionOperationCorrelationId})</button></> : null}</div> : null}
-    </section>
+    </section> : null}
   </section>;
 }
 

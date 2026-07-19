@@ -13,6 +13,8 @@ describe("Sales workspace shell routes", () => {
     expect(parseSalesWorkspaceRouteState({ tab: "items", view: "detail", itemId: "item-1" })).toMatchObject({ tab: "items", itemView: "detail", itemId: "item-1" });
     expect(buildSalesWorkspaceHref({ tab: "records", accountId: "account-1", opportunityId: "opportunity-1" })).toBe("/sales?tab=records&accountId=account-1&opportunityId=opportunity-1");
     expect(buildSalesWorkspaceHref({ tab: "sessions", opportunityId: "opportunity-1" })).toBe("/sales?tab=sessions&opportunityId=opportunity-1");
+    expect(buildSalesWorkspaceHref({ tab: "sessions", sessionView: "provision", sessionId: "session-1" })).toBe("/sales?tab=sessions&view=provision&sessionId=session-1");
+    expect(parseSalesWorkspaceRouteState({ tab: "sessions", view: "provision", sessionId: "session-1" })).toMatchObject({ tab: "sessions", sessionView: "provision", sessionId: "session-1" });
   });
 
   it("opens Sales Support on the failure correlation thread", () => {
