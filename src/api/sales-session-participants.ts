@@ -9,13 +9,15 @@ import type { SalesSessionParticipantRepository } from "@/domain/sales-session-p
 import { cloudShareWallClockToInstant } from "@/domain/cloudshare-wall-clock";
 import { createCloudShareSalesDelivery, type SalesDelivery, type SalesDeliveryEvidence } from "@/integrations/cloudshare/sales-delivery";
 import { CloudShareResponseError } from "@/integrations/cloudshare/errors";
+import type { EnvironmentStateSource } from "@/domain/environment";
+import { projectSalesParticipantEnvironment } from "@/domain/sales-participant-environment";
 
 const contactsSchema = z.object({ contactIds: z.array(z.string().trim().min(1)).min(1).max(100) });
 const participantIdsSchema = z.object({ participantIds: z.array(z.string().trim().min(1)).min(1).max(100) });
 type Request = { readonly customerId: string; readonly sessionId: string; readonly actor: DiagnosticActor; readonly body?: unknown };
 type ParticipantDelivery = Pick<SalesDelivery, "createSession" | "readSession"> & Partial<SalesDelivery>;
 type ResolutionResponse = { readonly status: number; readonly body: Record<string, unknown> };
-type Deps = { sessions: Pick<SalesDemoSessionRepository, "findById">; records: Pick<SalesRecordRepository, "findContact"> & Partial<Pick<SalesRecordRepository, "listContacts">>; participants: SalesSessionParticipantRepository; connections: Pick<CloudShareConnectionRepository, "findByCustomerId">; cloudshare?: Pick<CloudShareClientFactory, "forConnection">; deliveryFactory?: { forConnection(connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>): ParticipantDelivery }; diagnostics?: DiagnosticRecorder; audit?: Pick<AuditRepository, "write">; now?: () => Date };
+type Deps = { sessions: Pick<SalesDemoSessionRepository, "findById">; records: Pick<SalesRecordRepository, "findContact"> & Partial<Pick<SalesRecordRepository, "listContacts">>; participants: SalesSessionParticipantRepository; connections: Pick<CloudShareConnectionRepository, "findByCustomerId">; cloudshare?: Pick<CloudShareClientFactory, "forConnection">; deliveryFactory?: { forConnection(connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>): ParticipantDelivery }; environmentFactory?: { forConnection(connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>): EnvironmentStateSource }; diagnostics?: DiagnosticRecorder; audit?: Pick<AuditRepository, "write">; now?: () => Date };
 
 /** Deep handler interface: contacts are resolved server-side before the typed
  * CloudShare adapter is crossed. Browser-provided emails and provider URLs are
@@ -266,7 +268,13 @@ export async function handleListSalesSessionParticipants(deps: Deps, request: Om
         lastReconciledAt: now,
         updatedAt: now,
       } : stored;
-      if (participant) await deps.participants.save(current); else if (requiresCorrelationRepair) correlationRepairRequiredCount += 1; else missingCloudShareParticipantCount += 1;
+      if (participant) {
+        const connection = await deps.connections.findByCustomerId(request.customerId);
+        const observation = connection && current.cloudShareEnvironmentId && deps.environmentFactory ? await deps.environmentFactory.forConnection(connection).getEnvironmentState(current.cloudShareEnvironmentId) : null;
+        const observed = observation?.statusCode ? { ...current, environmentStatusCode: observation.statusCode, environmentObservedAt: now } : current;
+        await deps.participants.save(observed);
+        return { current: observed, participant, contact: await deps.records.findContact(request.customerId, observed.opportunityContactId), requiresCorrelationRepair };
+      } else if (requiresCorrelationRepair) correlationRepairRequiredCount += 1; else missingCloudShareParticipantCount += 1;
       const contact = await deps.records.findContact(request.customerId, current.opportunityContactId);
       return { current, participant, contact, requiresCorrelationRepair };
     }));
@@ -373,7 +381,7 @@ async function recoverMissingParticipantMappings(
   return { participants: [...local, ...recovered], recoveredParticipantCount: recovered.length, unmatchedCloudShareParticipantCount: remote.filter((participant) => !knownProviderIds.has(participant.id)).length };
 }
 
-function portalParticipant(value: import("@/domain/sales-session-participant").SalesSessionParticipant, contact: { readonly firstName: string; readonly lastName: string; readonly email: string }, reconciliation?: { readonly needsAttention: true; readonly requiresCorrelationRepair?: true; readonly monitoringMessage: string }) { return { id: value.id, opportunityContactId: value.opportunityContactId, firstName: contact.firstName, lastName: contact.lastName, email: contact.email, invitationStatus: value.invitationStatus, lastInvitedAt: value.lastInvitedAt?.toISOString() ?? null, invitedBy: value.invitedBy, participationStatus: value.participationStatus, firstJoined: value.firstJoined, envStatus: value.environmentStatus, ...reconciliation }; }
+function portalParticipant(value: import("@/domain/sales-session-participant").SalesSessionParticipant, contact: { readonly firstName: string; readonly lastName: string; readonly email: string }, reconciliation?: { readonly needsAttention: true; readonly requiresCorrelationRepair?: true; readonly monitoringMessage: string }) { return { id: value.id, opportunityContactId: value.opportunityContactId, firstName: contact.firstName, lastName: contact.lastName, email: contact.email, invitationStatus: value.invitationStatus, lastInvitedAt: value.lastInvitedAt?.toISOString() ?? null, invitedBy: value.invitedBy, participationStatus: value.participationStatus, firstJoined: value.firstJoined, rosterEnvironmentStatus: value.environmentStatus, environment: value.environmentStatusCode ? projectSalesParticipantEnvironment(value.environmentStatusCode, value.environmentObservedAt ?? undefined) : projectSalesParticipantEnvironment(value.cloudShareEnvironmentId ? 0 : null), ...reconciliation }; }
 function participantInvitationWindow(session: { readonly start: string; readonly end: string; readonly timeZone: string }, now: Date) { const start = cloudShareWallClockToInstant(session.start, session.timeZone); const end = cloudShareWallClockToInstant(session.end, session.timeZone); const lifecycle = !start || !end ? "needs_attention" as const : end <= now ? "ended" as const : start > now ? "upcoming" as const : "in_progress" as const; return { lifecycle, nativeInvitationsAvailable: lifecycle === "upcoming" || lifecycle === "in_progress" }; }
 async function resolveSession(deps: Deps, request: Omit<Request, "body">): Promise<{ readonly session: SalesDemoSession } | { readonly response: ResolutionResponse }> { if (!deps.sessions.findById) return { response: { status: 503, body: { error: "Sales Participant monitoring is unavailable." } } }; const session = await deps.sessions.findById(request.customerId, request.sessionId); if (!session) return { response: { status: 404, body: { error: "Sales Session or CloudShare Connection was not found." } } }; if (session.operationalStatus !== "active" || session.cloudShareSalesExperienceId.startsWith("pending:")) return { response: { status: 409, body: { error: "Participants are available only after this Sales Session is provisioned." } } }; return { session }; }
 async function resolveDelivery(deps: Deps, request: Omit<Request, "body">): Promise<{ readonly delivery: ParticipantDelivery } | { readonly response: ResolutionResponse }> { const connection = await deps.connections.findByCustomerId(request.customerId); if (!connection) return { response: { status: 404, body: { error: "Sales Session or CloudShare Connection was not found." } } }; const delivery = deps.deliveryFactory?.forConnection(connection) ?? createCloudShareSalesDelivery(deps.cloudshare!.forConnection(connection)); return { delivery }; }
