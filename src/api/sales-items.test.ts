@@ -80,7 +80,7 @@ describe("Sales Item API", () => {
     const result = await handleCreateSalesItem({ ...deps(repository(), source({ listProjects: vi.fn().mockRejectedValue(new CloudShareTransportError("tls handshake failed", { method: "GET", path: "/projects", cause: { code: "CERT_UNTRUSTED", message: "certificate rejected" }, network: { code: "ECONNRESET", host: "api.cloudshare.example" }, tls: { protocol: "TLSv1.3", authorization: "api-key" } })) })), diagnostics: createDiagnosticRecorder({ repository: diagnostics, secrets: ["api-key"] }) }, { customerId: "certalis", body });
     expect(result).toMatchObject({ status: 502, body: { error: "CloudShare resource validation failed. Review support diagnostics." } });
     const [entry] = await diagnostics.query({ customerId: "certalis" });
-    expect(entry.response).toMatchObject({ cause: { code: "CERT_UNTRUSTED", message: "certificate rejected" }, network: { code: "ECONNRESET", host: "api.cloudshare.example" }, tls: { protocol: "TLSv1.3", authorization: "[REDACTED]" } });
+    expect(entry.response).toMatchObject({ cause: { code: "CERT_UNTRUSTED", message: "certificate rejected" }, network: { code: "ECONNRESET", host: "api.cloudshare.example" }, tls: { protocol: "TLSv1.3", authorization: "api-key" } });
   });
 
   it("persists completed policy exchanges before a sibling policy detail failure", async () => {

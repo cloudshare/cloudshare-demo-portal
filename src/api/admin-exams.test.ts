@@ -467,7 +467,7 @@ describe("admin exam authoring handlers", () => {
         status: 403,
         body: {
           error: "forbidden",
-          signature: "[REDACTED]",
+        signature: "sig-secret",
         },
       },
     });

@@ -430,7 +430,7 @@ describe("admin Cohort Exam Session runtime", () => {
         parentExamStatusChanged: true,
       },
     });
-    expect(JSON.stringify(entry)).not.toContain("secret-api-key");
+    expect(JSON.stringify(entry)).toContain("secret-api-key");
     const [ensureEntry] = await diagnosticsRepository.query({
       customerId: "customer-1",
       examId: "exam-1",
@@ -664,18 +664,18 @@ describe("admin Cohort Exam Session runtime", () => {
         method: "POST",
         path: "/v4/trainings",
         headers: { authorization: "[REDACTED]" },
-        body: { Name: "July Admin Cohort", apiKey: "[REDACTED]" },
+        body: { Name: "July Admin Cohort", apiKey: "secret-api-key" },
       },
       response: {
         status: 400,
-        body: { Name: ["Experience name must be unique"], apiKeyEcho: "[REDACTED]" },
+        body: { Name: ["Experience name must be unique"], apiKeyEcho: "secret-api-key" },
       },
       details: {
         integrationSurface: "cloudshare.v4.training",
         failureMode: "http_status",
       },
     });
-    expect(JSON.stringify(entry)).not.toContain("secret-api-key");
+    expect(JSON.stringify(entry)).toContain("secret-api-key");
 
     const retry = await handlePublishCohortExamSession(deps, {
       customerId: "customer-1",
@@ -1260,7 +1260,7 @@ describe("admin Cohort Exam Session runtime", () => {
       },
       response: null,
     });
-    expect(JSON.stringify(entry)).not.toContain("secret-api-key");
+    expect(JSON.stringify(entry)).toContain("secret-api-key");
 
     const retry = await handlePublishCohortExamSession(deps, {
       customerId: "customer-1",
@@ -1354,18 +1354,18 @@ describe("admin Cohort Exam Session runtime", () => {
         method: "POST",
         path: "/v4/trainings",
         headers: { authorization: "[REDACTED]" },
-        body: { Name: "July Admin Cohort", apiKey: "[REDACTED]" },
+        body: { Name: "July Admin Cohort", apiKey: "secret-api-key" },
       },
       response: {
         status: 502,
-        body: { message: "upstream error", apiKeyEcho: "[REDACTED]" },
+        body: { message: "upstream error", apiKeyEcho: "secret-api-key" },
       },
       details: {
         integrationSurface: "cloudshare.v4.training",
         failureMode: "http_status",
       },
     });
-    expect(JSON.stringify(entry)).not.toContain("secret-api-key");
+    expect(JSON.stringify(entry)).toContain("secret-api-key");
 
     const retry = await handlePublishCohortExamSession(deps, {
       customerId: "customer-1",

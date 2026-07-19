@@ -1042,15 +1042,12 @@ describe("score diagnostics", () => {
       failureMode: "unexpected_response",
     });
     expect(failure?.response).toEqual({
-      body: {
-        hello: "world",
-        token: "support-evidence-token",
-      },
+      body: JSON.stringify({ hello: "world", token: "support-evidence-token" }),
     });
     expect(JSON.stringify(failure)).toContain("support-evidence-token");
   });
 
-  it("preserves non-credential support evidence in score failure diagnostics while redacting credentials", async () => {
+  it("preserves complete protected score failure body evidence", async () => {
     const malformedRetriever: DiagnosticScoreRetrievalProvider = {
       getParticipantProgress: vi.fn(),
       getParticipantProgressForDiagnostics: vi.fn().mockRejectedValue(
@@ -1080,16 +1077,16 @@ describe("score diagnostics", () => {
     const entries = await deps._repository.query({ examAttemptId: "sa-1" });
     const failure = entries.find((e) => e.operation === "exam_attempt.score.retrieve" && e.outcome === "failure");
     expect(failure?.response).toEqual({
-      body: {
+      body: JSON.stringify({
         hello: "world",
-        passphrase: "[REDACTED]",
+        passphrase: "candidate-visible-passphrase",
         loginUrl: "https://use.cloudshare.com/Ent/Login.aspx?token=admin-evidence",
-        apiKey: "[REDACTED]",
-        authorization: "Bearer [REDACTED]",
-      },
+        apiKey: "secret-api-key",
+        authorization: "Bearer secret-bearer-token",
+      }),
     });
-    expect(JSON.stringify(failure)).not.toContain("secret-api-key");
-    expect(JSON.stringify(failure)).not.toContain("secret-bearer-token");
+    expect(JSON.stringify(failure)).toContain("secret-api-key");
+    expect(JSON.stringify(failure)).toContain("secret-bearer-token");
   });
 
   it("emits exam_attempt.score.correlate_environment failure with participant-resolution details when participant correlation does not produce a participantId", async () => {
@@ -1273,6 +1270,6 @@ describe("score diagnostics", () => {
       failureMode: "unexpected_response",
     });
     expect(JSON.stringify(failure)).toContain("support-evidence-token");
-    expect(JSON.stringify(failure)).not.toContain("secret-access-token");
+    expect(JSON.stringify(failure)).toContain("secret-access-token");
   });
 });

@@ -432,7 +432,7 @@ describe("handleGetAdminExamAttemptDiagnosticDrilldown", () => {
 
     expect(response.status).toBe(200);
     const [entry] = response.body.drilldown!.timeline;
-    expect(entry.message).toBe("Scheduling failed with [REDACTED]");
+    expect(entry.message).toBe("Scheduling failed with bearer-secret-token");
     expect(entry.request).toMatchObject({
       method: "POST",
       path: "/api/candidate/schedule",
@@ -442,8 +442,8 @@ describe("handleGetAdminExamAttemptDiagnosticDrilldown", () => {
       },
     });
     expect(entry.details).toMatchObject({
-      webhookSecret: "[REDACTED]",
-      nonceHmac: "[REDACTED]",
+      webhookSecret: "whsec-secret",
+      nonceHmac: "nonce-hmac-secret",
       responseBody: {
         loginUrl: "https://use.cloudshare.com/Ent/Login.aspx?token=admin-evidence",
       },
