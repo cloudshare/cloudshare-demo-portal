@@ -34,7 +34,7 @@ export async function GET(request: Request) {
   }
   const result = await handleListSalesSessionOperations(
     { sessions: createPrismaSalesDemoSessionRepository(services.prisma), records: createPrismaSalesRecordRepository(services.prisma) },
-    { customerId: session.customerId, actor: { type: "admin", id: session.userId, email: session.email }, experienceStatus: query.get("experienceStatus"), operationStatus: query.get("operationStatus"), lifecycle: query.get("lifecycle"), accountId: query.get("accountId"), opportunityId: query.get("opportunityId") },
+    { customerId: session.customerId, actor: { type: "admin", id: session.userId, email: session.email }, experienceStatus: query.get("experienceStatus"), operationStatus: query.get("operationStatus"), accountId: query.get("accountId"), opportunityId: query.get("opportunityId") },
   );
   return NextResponse.json(result.body, { status: result.status });
 }

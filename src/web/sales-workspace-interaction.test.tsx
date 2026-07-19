@@ -275,18 +275,42 @@ describe("SalesWorkspace interaction", () => {
       if (path === "/api/sales/items") return json({ activeItems: [{ id: "item-1", name: "Accelerate Demo", description: "", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" }] });
       if (path.startsWith("/api/sales/enablement-sessions/project-members?")) return json({ members: [{ email: "rep@certalis.demo", displayName: "Sales Rep" }] });
       if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: [] });
-      if (path === "/api/sales/enablement-sessions" && init?.method === "POST") return json({ session: { id: "session-1", opportunityId: "opp-1", itemId: "item-1", type: "demo", start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC", salesProDisplayName: "Sales Rep", createdAt: "2026-07-14T15:00:00.000Z" }, needsAttention: true, correlationId: "corr-sales-created", warning: "The support audit could not be completed." }, 201);
+      if (path === "/api/sales/enablement-sessions" && init?.method === "POST") return json({ session: { id: "session-1", opportunityId: "opp-1", itemId: "item-1", type: "demo", start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC", salesProDisplayName: "Sales Rep", createdAt: "2026-07-14T15:00:00.000Z" }, needsAttention: true, correlationId: "corr-sales-created", warning: "The support audit could not be completed.", creationOutcome: { dimension: "certalis_creation", value: "needs_attention", source: "certalis_support_persistence", retry: "unsafe_requires_support", reason: "The support audit could not be completed.", sessionId: "session-1" } }, 201);
       return json({ error: "unexpected" }, 500);
     });
     render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "provision" }} />);
     await screen.findByRole("combobox", { name: "Opportunity" });
     await chooseSearchableOption(user, "Opportunity", "Acme - Acme evaluation"); await user.selectOptions(screen.getByRole("combobox", { name: "Catalogue Item" }), "item-1"); await user.selectOptions(await screen.findByRole("combobox", { name: "Sales Pro" }), "rep@certalis.demo");
     await user.click(screen.getByRole("button", { name: "Create Sales Enablement Session" }));
+    await waitFor(() => expect(mockRouter.push).toHaveBeenCalledWith("/sales?tab=sessions&opportunityId=opp-1&sessionId=session-1&status=needs_attention"));
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("Needs attention: The support audit could not be completed.");
     expect(alert.textContent).toContain("Do not retry creation.");
     const support = screen.getByRole("button", { name: /Open support diagnostics \(corr-sales-created\)/ }); await user.click(support);
     expect(mockRouter.push).toHaveBeenLastCalledWith("/sales?tab=support&correlationId=corr-sales-created");
+  });
+
+  it("blocks generic retry when CloudShare creation has an ambiguous POST outcome", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const path = String(input);
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [{ id: "account-1", name: "Acme" }], opportunities: [{ id: "opp-1", accountId: "account-1", label: "Acme - Acme evaluation" }], total: 1 });
+      if (path === "/api/sales/items") return json({ activeItems: [{ id: "item-1", name: "Accelerate Demo", description: "", project: { id: "project-1", name: "Project" }, blueprints: [{ id: "bp-1", name: "Blueprint" }], policy: { id: "policy-1", name: "Policy" }, regions: [{ id: "region-1", name: "Region" }], salesExperienceType: "demo", defaultDurationMinutes: 60, status: "active" }] });
+      if (path.startsWith("/api/sales/enablement-sessions/project-members?")) return json({ members: [{ email: "rep@certalis.demo", displayName: "Sales Rep" }] });
+      if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: [] });
+      if (path === "/api/sales/enablement-sessions" && init?.method === "POST") return json({ error: "CloudShare POST /sales completed without a response, so the creation outcome is unknown. Do not retry creation; review support diagnostics.", needsAttention: true, correlationId: "corr-ambiguous", creationOutcome: { dimension: "certalis_creation", value: "needs_attention", source: "cloudshare_v4_post_sales_ambiguous", retry: "unsafe_requires_support", reason: "CloudShare POST /sales completed without a response, so the creation outcome is unknown.", sessionId: "session-ambiguous" } }, 502);
+      return json({ error: "unexpected" }, 500);
+    });
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "provision" }} />);
+    await chooseSearchableOption(user, "Opportunity", "Acme - Acme evaluation"); await user.selectOptions(screen.getByRole("combobox", { name: "Catalogue Item" }), "item-1"); await user.selectOptions(await screen.findByRole("combobox", { name: "Sales Pro" }), "rep@certalis.demo");
+
+    const create = screen.getByRole("button", { name: "Create Sales Enablement Session" });
+    await user.click(create);
+
+    expect((await screen.findByRole("alert")).textContent).toContain("outcome is unknown");
+    expect((screen.getByRole("button", { name: "Create Sales Enablement Session" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(fetchMock.mock.calls.filter(([input, init]) => String(input) === "/api/sales/enablement-sessions" && init?.method === "POST")).toHaveLength(1);
+    expect(mockRouter.push).not.toHaveBeenCalledWith(expect.stringContaining("view=manage"));
   });
 
   it("returns Item authoring to the catalogue URL so reload does not reopen the form", async () => {
@@ -474,11 +498,11 @@ describe("SalesWorkspace interaction", () => {
       if (path === "/api/sales/items") return json({ activeItems: [] });
       if (path === "/api/sales/timezones" && !init?.method) return json({ timezones: [{ id: "UTC", name: "UTC" }, { id: "Europe/London", name: "London" }], freshness: "fresh", preference: { timeZone: "UTC", experienceType: "demo" } });
       if (path === "/api/sales/timezones" && init?.method === "PUT") return new Response(null, { status: 204 });
-      if (path.startsWith("/api/sales/enablement-sessions?")) return json({ sessions: [{ id: "persisted-1", opportunityId: "opp-1", itemId: "item-1", type: "demo", start: "2026-07-15T08:00", end: "2026-07-15T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-15T00:00:00Z", lifecycle: "in_progress" }] });
+      if (path.startsWith("/api/sales/enablement-sessions?")) return json({ sessions: [{ id: "persisted-1", opportunityId: "opp-1", itemId: "item-1", type: "demo", start: "2026-07-15T08:00", end: "2026-07-15T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-15T00:00:00Z", operation: { dimension: "certalis_operation", value: "correlated", source: "certalis_persistence", retry: "not_applicable" }, experience: { dimension: "cloudshare_sales_experience", value: "inProgress", source: "schedule_prediction", freshness: "predicted" }, verificationEligible: true }] });
       return json({});
     });
     render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "manage" }} />);
-    expect((await screen.findByRole("region", { name: "Sales Enablement Session operations" })).textContent).toContain("in progress");
+    expect((await screen.findByRole("region", { name: "Sales Enablement Session operations" })).textContent).toContain("CloudShare Sales Experience: inProgress");
     await user.click(screen.getByRole("button", { name: "Provision" }));
     const timezone = await screen.findByRole("combobox", { name: "Time zone" });
     await user.clear(timezone); await user.type(timezone, "Europe/London");
@@ -584,7 +608,7 @@ describe("SalesWorkspace interaction", () => {
       if (path === "/api/sales/items") return json({ activeItems: [] });
       if (path === "/api/sales/timezones" && !init?.method) return json({ timezones: [{ id: "UTC", name: "UTC" }], preference: {} });
       if (path === "/api/sales/timezones" && init?.method === "PUT") return new Response(null, { status: 204 });
-      if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: [{ id: "persisted-1", opportunityId: "opp-1", itemId: "item-1", type: "demo", start: "2026-08-15T08:00", end: "2026-08-15T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-15T00:00:00Z", lifecycle: "ended", verificationEligible: true }] });
+      if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: [{ id: "persisted-1", opportunityId: "opp-1", itemId: "item-1", type: "demo", start: "2026-08-15T08:00", end: "2026-08-15T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-15T00:00:00Z", operation: { dimension: "certalis_operation", value: "correlated", source: "certalis_persistence", retry: "not_applicable" }, experience: { dimension: "cloudshare_sales_experience", value: "ended", source: "cloudshare_v4_get_sales", freshness: "fresh" }, verificationEligible: true }] });
       if (path === "/api/sales/enablement-sessions/persisted-1/reconcile" && init?.method === "POST") return json({ error: "CloudShare could not reconcile this Sales Session.", correlationId: "corr-reconcile-1" }, 502);
       if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [], total: 0 });
       return json({ error: `Unexpected request ${path}` }, 500);
@@ -608,7 +632,7 @@ describe("SalesWorkspace interaction", () => {
       if (path === "/api/sales/items") return json({ activeItems: [] });
       if (path === "/api/sales/timezones" && !init?.method) return json({ timezones: [{ id: "UTC", name: "UTC" }], preference: {} });
       if (path === "/api/sales/timezones" && init?.method === "PUT") return new Response(null, { status: 204 });
-      if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: [{ id: "aligned-session", opportunityId: "opp-1", itemId: "item-1", type: "demo", sessionName: "Aligned Session", start: "2026-08-15T08:00", end: "2026-08-15T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-15T00:00:00Z", lifecycle: "upcoming", verificationEligible: true }] });
+      if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: [{ id: "aligned-session", opportunityId: "opp-1", itemId: "item-1", type: "demo", sessionName: "Aligned Session", start: "2026-08-15T08:00", end: "2026-08-15T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-15T00:00:00Z", operation: { dimension: "certalis_operation", value: "correlated", source: "certalis_persistence", retry: "not_applicable" }, experience: { dimension: "cloudshare_sales_experience", value: "notStarted", source: "schedule_prediction", freshness: "predicted" }, verificationEligible: true }] });
       if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [], total: 0 });
       return json({ error: `Unexpected request ${path}` }, 500);
     });
@@ -627,7 +651,7 @@ describe("SalesWorkspace interaction", () => {
       if (path === "/api/sales/items") return json({ activeItems: [] });
       if (path === "/api/sales/timezones" && !init?.method) return json({ timezones: [{ id: "UTC", name: "UTC" }], preference: {} });
       if (path === "/api/sales/timezones" && init?.method === "PUT") return new Response(null, { status: 204 });
-      if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: [{ id: "provisioning-1", opportunityId: "opp-1", itemId: "item-1", type: "demo", start: "2026-07-15T08:00", end: "2026-07-15T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-15T00:00:00Z", lifecycle: "provisioning", verificationEligible: false }, { id: "attention-1", opportunityId: "opp-2", itemId: "item-1", type: "demo", start: "2026-07-15T08:00", end: "2026-07-15T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-15T00:00:00Z", lifecycle: "needs_attention", verificationEligible: false }] });
+      if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: [{ id: "provisioning-1", opportunityId: "opp-1", itemId: "item-1", type: "demo", start: "2026-07-15T08:00", end: "2026-07-15T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-15T00:00:00Z", operation: { dimension: "certalis_operation", value: "provisioning", source: "certalis_persistence", retry: "in_progress" }, experience: { dimension: "cloudshare_sales_experience", value: "inProgress", source: "schedule_prediction", freshness: "predicted" }, verificationEligible: false }, { id: "attention-1", opportunityId: "opp-2", itemId: "item-1", type: "demo", start: "2026-07-15T08:00", end: "2026-07-15T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-15T00:00:00Z", operation: { dimension: "certalis_operation", value: "needs_attention", source: "certalis_persistence", retry: "unsafe_requires_support" }, experience: { dimension: "cloudshare_sales_experience", value: "inProgress", source: "schedule_prediction", freshness: "predicted" }, verificationEligible: false }] });
       if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [], total: 0 });
       return json({ error: `Unexpected request ${path}` }, 500);
     });
@@ -644,7 +668,7 @@ describe("SalesWorkspace interaction", () => {
       if (path === "/api/sales/items") return json({ activeItems: [] });
       if (path === "/api/sales/timezones" && !init?.method) return json({ timezones: [{ id: "UTC", name: "UTC" }], preference: {} });
       if (path === "/api/sales/timezones" && init?.method === "PUT") return new Response(null, { status: 204 });
-      if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: [{ id: "persisted-verified", opportunityId: "opp-1", itemId: "item-1", type: "demo", start: "2026-07-15T08:00", end: "2026-07-15T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-15T00:00:00Z", lifecycle: "ended", verificationEligible: true }] });
+      if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: [{ id: "persisted-verified", opportunityId: "opp-1", itemId: "item-1", type: "demo", start: "2026-07-15T08:00", end: "2026-07-15T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-15T00:00:00Z", operation: { dimension: "certalis_operation", value: "correlated", source: "certalis_persistence", retry: "not_applicable" }, experience: { dimension: "cloudshare_sales_experience", value: "ended", source: "cloudshare_v4_get_sales", freshness: "fresh" }, verificationEligible: true }] });
       if (path === "/api/sales/enablement-sessions/persisted-verified/reconcile" && init?.method === "POST") return json({ correlationId: "corr-verified-1", operationalStatus: "active" });
       if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [], total: 0 });
       return json({ error: `Unexpected request ${path}` }, 500);
@@ -662,7 +686,7 @@ describe("SalesWorkspace interaction", () => {
       if (path === "/api/sales/items") return json({ activeItems: [] });
       if (path === "/api/sales/timezones" && !init?.method) return json({ timezones: [{ id: "UTC", name: "UTC" }], preference: {} });
       if (path === "/api/sales/timezones" && init?.method === "PUT") return new Response(null, { status: 204 });
-      if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: [{ id: "eligible-1", opportunityId: "opp-1", itemId: "item-1", type: "demo", start: "2026-08-15T08:00", end: "2026-08-15T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-15T00:00:00Z", lifecycle: "upcoming", editEligible: true }] });
+      if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: [{ id: "eligible-1", opportunityId: "opp-1", itemId: "item-1", type: "demo", start: "2026-08-15T08:00", end: "2026-08-15T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-15T00:00:00Z", operation: { dimension: "certalis_operation", value: "correlated", source: "certalis_persistence", retry: "not_applicable" }, experience: { dimension: "cloudshare_sales_experience", value: "notStarted", source: "schedule_prediction", freshness: "predicted" }, verificationEligible: true, editEligible: true }] });
       if (path === "/api/sales/enablement-sessions/eligible-1" && init?.method === "PUT") return json({ error: "CloudShare rejected the Sales Session update.", correlationId: "corr-edit-1" }, 502);
       if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [], total: 0 });
       return json({ error: `Unexpected request ${path}` }, 500);
@@ -795,6 +819,28 @@ describe("SalesWorkspace interaction", () => {
     expect((screen.getByRole("textbox", { name: "Session name template" }) as HTMLInputElement).value).toBe("Draft {opportunity} ({revision})");
   });
 
+  it("never hydrates Manage Account or Opportunity filters from a Provision draft", async () => {
+    window.sessionStorage.setItem(salesSessionProvisionDraftKey("sales-admin@certalis.demo"), JSON.stringify({ version: 1, accountId: "draft-account", opportunityId: "draft-opportunity", itemId: "item-1", salesProEmail: "rep@certalis.demo", startMode: "scheduled", start: "2026-07-20T09:00", end: "2026-07-20T10:00", endHasManualOverride: true, timeZone: "UTC", type: "demo", sessionNameTemplate: "Draft {opportunity} ({revision})" }));
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input) => {
+      const path = String(input);
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [{ id: "draft-account", name: "Draft Account" }], opportunities: [{ id: "draft-opportunity", accountId: "draft-account", accountName: "Draft Account", name: "Draft Opportunity", label: "Draft Account - Draft Opportunity" }], total: 1 });
+      if (path === "/api/sales/items") return json({ activeItems: [] });
+      if (path === "/api/sales/timezones") return json({ timezones: [{ id: "UTC", name: "UTC" }], preference: {} });
+      if (path === "/api/sales/session-configuration") return json({});
+      if (path.startsWith("/api/sales/enablement-sessions?")) return json({ sessions: [] });
+      return json({});
+    });
+
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "manage" }} />);
+
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).startsWith("/api/sales/enablement-sessions?experienceStatus=notStarted"))).toBe(true));
+    await new Promise((resolve) => window.setTimeout(resolve, 50));
+    const manageRequests = fetchMock.mock.calls.map(([input]) => String(input)).filter((path) => path.startsWith("/api/sales/enablement-sessions?"));
+    expect(manageRequests.every((path) => !path.includes("accountId=") && !path.includes("opportunityId="))).toBe(true);
+    expect((screen.getByRole("combobox", { name: "Account" }) as HTMLInputElement).value).toBe("");
+    expect((screen.getByRole("combobox", { name: "Opportunity" }) as HTMLInputElement).value).toBe("");
+  });
+
   it("restores route-backed Manage filters and requests separate status dimensions", async () => {
     const user = userEvent.setup();
     const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
@@ -859,9 +905,9 @@ describe("SalesWorkspace interaction", () => {
       if (path === "/api/sales/timezones" && !init?.method) return json({ timezones: [{ id: "UTC", name: "UTC" }], preference: {} });
       if (path === "/api/sales/timezones" && init?.method === "PUT") return new Response(null, { status: 204 });
       if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [], total: 0 });
-      if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: [{ id: "session-1", opportunityId: "opp-1", itemId: "item-1", type: "demo", start: "2026-07-17T09:00", end: "2026-07-17T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-17T00:00:00Z", lifecycle: "upcoming", verificationEligible: true }] });
+      if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: [{ id: "session-1", opportunityId: "opp-1", itemId: "item-1", type: "demo", start: "2026-07-17T09:00", end: "2026-07-17T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-17T00:00:00Z", operation: { dimension: "certalis_operation", value: "correlated", source: "certalis_persistence", retry: "not_applicable" }, experience: { dimension: "cloudshare_sales_experience", value: "notStarted", source: "schedule_prediction", freshness: "predicted" }, verificationEligible: true }] });
       if (path === "/api/sales/accounts") return json({ contacts: [{ id: "contact-1", opportunityId: "opp-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", archivedAt: null, createdAt: "2026-07-17T00:00:00Z" }] });
-      if (path === "/api/sales/enablement-sessions/session-1/participants" && !init?.method) { participantReads += 1; return participantReads === 2 ? json({ error: "Monitoring temporarily unavailable" }, 502) : json({ participants: participantReads >= 3 ? [{ ...registeredParticipant, invitationStatus: "sent", lastInvitedAt: "2026-07-18T09:45:00.000Z" }] : [], correlationId: "corr-read-1" }); }
+      if (path === "/api/sales/enablement-sessions/session-1/participants" && !init?.method) { participantReads += 1; return participantReads === 2 ? json({ error: "Monitoring temporarily unavailable" }, 502) : json({ session: { accessWindow: { dimension: "certalis_session_access_window", value: "open", source: "schedule_calculation", nativeInvitationsAvailable: true } }, participants: participantReads >= 3 ? [{ ...registeredParticipant, invitationStatus: "sent", lastInvitedAt: "2026-07-18T09:45:00.000Z" }] : [], correlationId: "corr-read-1" }); }
       if (path === "/api/sales/enablement-sessions/session-1/participants" && init?.method === "POST") return json({ participants: [registeredParticipant], correlationId: "corr-register-1" }, 201);
       if (path === "/api/sales/enablement-sessions/session-1/participants/invite" && init?.method === "POST") { invitationRequests += 1; return invitationRequests === 3 ? json({ error: "Native invitation failed.", correlationId: "corr-invite-fail" }, 502) : json({ correlationId: "corr-invite-1" }); }
       if (path === "/api/sales/enablement-sessions/session-1/participants/portal-participant-1/launch-link" && init?.method === "POST") { launchLinkCreates += 1; return launchLinkCreates === 3 ? json({ error: "Launch link generation failed.", correlationId: "corr-launch-fail" }, 502) : json({ launchUrl: "/sales/launch/opaque-certalis-token", correlationId: "corr-launch-1" }, 201); }

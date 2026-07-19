@@ -363,7 +363,8 @@ describe("Sales Session participant invitation", () => {
       environmentFactory: { forConnection: () => ({ getEnvironmentState: vi.fn().mockResolvedValue(environmentRead.snapshot), readEnvironmentState: vi.fn().mockResolvedValue(environmentRead) }) }, diagnostics,
     }, { customerId: "customer-1", sessionId: session.id, actor });
 
-    expect(result).toMatchObject({ status: 200, body: { session: { lifecycle: "upcoming", nativeInvitationsAvailable: true }, participants: [{ id: "portal-1", email: "ada@example.test", invitationStatus: "sent", lastInvitedAt: "2026-07-17T08:00:00.000Z", envStatus: "running", environment: { dimension: "cloudshare_environment", value: "Ready", source: "cloudshare_v3_environment", observedAt: "2026-07-19T08:00:00.000Z" } }] } });
+    expect(result).toMatchObject({ status: 200, body: { session: { accessWindow: { dimension: "certalis_session_access_window", value: "before_window", source: "schedule_calculation", nativeInvitationsAvailable: true } }, participants: [{ id: "portal-1", email: "ada@example.test", invitationStatus: "sent", lastInvitedAt: "2026-07-17T08:00:00.000Z", envStatus: "running", environment: { dimension: "cloudshare_environment", value: "Ready", source: "cloudshare_v3_environment", observedAt: "2026-07-19T08:00:00.000Z" } }] } });
+    expect(JSON.stringify(result.body)).not.toContain("lifecycle");
     expect(save).toHaveBeenCalledWith(expect.objectContaining({ cloudShareParticipantId: "provider-changed", cloudShareEnvironmentId: "environment-1", lastInvitedAt: new Date("2026-07-17T08:00:00.000Z") }));
     expect(recordEnvironmentObservation).toHaveBeenCalledWith("customer-1", "portal-1", { statusCode: 2, observedAt: new Date("2026-07-19T08:00:00.000Z") });
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ operation: "sales.demo_session.participant.environment_observed", outcome: "success", customerId: "customer-1", request: environmentRead.request, response: environmentRead.response, details: expect.objectContaining({ integrationSurface: "cloudshare.v3.environments", observation: "observed" }) }));
@@ -381,6 +382,17 @@ describe("Sales Session participant invitation", () => {
     expect(result).toMatchObject({ status: 200, body: { participants: [{ environment: { value: null, source: "not_observed" } }] } });
     expect(recordEnvironmentObservation).toHaveBeenCalledWith("customer-1", "portal-1", { statusCode: null, observedAt: null });
     expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ outcome: "success", response: expect.objectContaining({ status: 404 }), details: expect.objectContaining({ integrationSurface: "cloudshare.v3.environments", observation: "not_found" }) }));
+  });
+
+  it("records protected monitoring failure when the Customer-scoped environment observation row disappears", async () => {
+    const remote = { ...remoteParticipant("provider-1", "portal-1", contact.id), environmentId: "environment-1", envStatus: "Ready" };
+    const diagnostics = { record: vi.fn() };
+    const result = await handleListSalesSessionParticipants({
+      sessions: { findById: vi.fn().mockResolvedValue(session) }, records: { findContact: vi.fn().mockResolvedValue(contact) }, participants: { list: vi.fn().mockResolvedValue([{ ...storedParticipant(), cloudShareEnvironmentId: "environment-1" }]), save: vi.fn(), recordEnvironmentObservation: vi.fn().mockRejectedValue(new Error("Sales Session Participant was not found for this Customer")) }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ listParticipants: vi.fn().mockResolvedValue(rosterEvidence([remote])) } as never) }, environmentFactory: { forConnection: () => ({ getEnvironmentState: vi.fn(), readEnvironmentState: vi.fn().mockResolvedValue({ snapshot: { environmentExternalId: "environment-1", statusCode: 2 }, request: { method: "GET", path: "/api/v3/envs/environment-1" }, response: { status: 200 } }) }) }, diagnostics,
+    }, { customerId: "customer-1", sessionId: session.id, actor });
+
+    expect(result).toMatchObject({ status: 502, body: { correlationId: expect.any(String) } });
+    expect(diagnostics.record).toHaveBeenCalledWith(expect.objectContaining({ outcome: "failure", request: { method: "GET", path: "/api/v3/envs/environment-1", query: undefined, headers: undefined, body: undefined }, response: { status: 200, headers: undefined, body: undefined, transport: undefined }, details: expect.objectContaining({ integrationSurface: "cloudshare.v3.environments", failureMode: "environment_observation_persistence" }) }));
   });
 
   it("clears stale Environment state and fails with accurately-labelled v3 diagnostics for an unrecognized completed observation", async () => {

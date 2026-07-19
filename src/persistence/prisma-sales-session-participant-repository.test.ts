@@ -13,4 +13,9 @@ describe("Prisma Sales session participant repository", () => {
       data: { environmentStatusCode: 2, environmentObservedAt: new Date("2026-07-19T09:00:00Z") },
     });
   });
+  it("fails closed when an environment observation no longer has a Customer-scoped participant", async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 0 });
+    const repository = createPrismaSalesSessionParticipantRepository({ salesSessionParticipant: { updateMany } } as never);
+    await expect(repository.recordEnvironmentObservation("customer-a", "participant-1", { statusCode: 2, observedAt: new Date("2026-07-19T09:00:00Z") })).rejects.toThrow("Sales Session Participant was not found for this Customer");
+  });
 });

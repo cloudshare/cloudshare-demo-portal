@@ -144,6 +144,7 @@ model SalesDemoSession {
   participants                SalesSessionParticipant[]
 
   @@index([customerId, opportunityId, createdAt])
+  @@unique([customerId, id])
   @@unique([customerId, opportunityId, revision])
   @@index([customerId, itemId])
   @@index([customerId, externalId])
@@ -171,7 +172,7 @@ model SalesSessionParticipant {
   lastReconciledAt            DateTime
   createdAt                   DateTime
   updatedAt                   DateTime
-  session                     SalesDemoSession @relation(fields: [salesDemoSessionId], references: [id], onDelete: Cascade)
+  session                     SalesDemoSession @relation(fields: [customerId, salesDemoSessionId], references: [customerId, id], onDelete: Cascade)
   contact                     OpportunityContact @relation(fields: [customerId, opportunityContactId], references: [customerId, id], onDelete: Restrict)
   launchLinks                 SalesParticipantLaunchLink[]
 

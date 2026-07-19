@@ -9,8 +9,8 @@ describe("Prisma Sales participant search", () => {
 
     const result = await repository.search("customer-a", "ada", 20, 10);
 
-    expect(count).toHaveBeenCalledWith({ where: expect.objectContaining({ customerId: "customer-a", contact: expect.objectContaining({ archivedAt: null }) }) });
-    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ customerId: "customer-a" }), skip: 20, take: 10 }));
+    expect(count).toHaveBeenCalledWith({ where: expect.objectContaining({ customerId: "customer-a", session: { customerId: "customer-a" }, contact: expect.objectContaining({ archivedAt: null }) }) });
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ customerId: "customer-a", session: { customerId: "customer-a" } }), skip: 20, take: 10 }));
     expect(result).toMatchObject({ total: 1, rows: [{ sessionId: "session-1", email: "ada@example.test", environment: { dimension: "cloudshare_environment", value: "Ready", source: "cloudshare_v3_environment" } }] });
     expect(JSON.stringify(result)).not.toContain("server-only-environment");
   });
