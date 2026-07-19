@@ -14,4 +14,16 @@ describe("Prisma Sales participant search", () => {
     expect(result).toMatchObject({ total: 1, rows: [{ sessionId: "session-1", email: "ada@example.test", operation: { value: "correlated" }, experience: { value: "inProgress", source: "cloudshare_v4_get_sales" }, environment: { dimension: "cloudshare_environment", value: "Ready", source: "cloudshare_v3_environment" } }] });
     expect(JSON.stringify(result)).not.toContain("server-only-environment");
   });
+
+  it("uses one clock instant for every participant row in a search page", async () => {
+    const session = { id: "session-1", sessionName: "Acme evaluation", opportunityId: "opportunity-1", operationalStatus: "active", attentionReason: null, start: "2026-07-19T08:00", end: "2026-07-19T09:00", timeZone: "UTC", experienceStatus: "inProgress", experienceStatusObservedAt: new Date("2026-07-19T09:00:00Z") };
+    const rows = ["participant-1", "participant-2"].map((id) => ({ id, opportunityContactId: `contact-${id}`, cloudShareEnvironmentId: null, environmentStatusCode: null, environmentObservedAt: null, updatedAt: new Date(), contact: { firstName: "Ada", lastName: id, email: `${id}@example.test` }, session }));
+    const now = vi.fn().mockReturnValueOnce(new Date("2026-07-19T09:04:59Z")).mockReturnValueOnce(new Date("2026-07-19T09:05:01Z"));
+    const repository = createPrismaSalesSessionParticipantSearch({ salesSessionParticipant: { count: vi.fn().mockResolvedValue(2), findMany: vi.fn().mockResolvedValue(rows) } } as never, now);
+
+    const result = await repository.search("customer-a", "ada", 0, 20);
+
+    expect(now).toHaveBeenCalledOnce();
+    expect(result.rows.map((row) => row.experience.value)).toEqual(["inProgress", "inProgress"]);
+  });
 });

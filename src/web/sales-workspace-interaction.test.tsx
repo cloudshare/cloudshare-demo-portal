@@ -896,6 +896,7 @@ describe("SalesWorkspace interaction", () => {
   ])("opens and visibly focuses a %s Session selected from participant search", async (_label, routeStatus, operation, experience) => {
     const user = userEvent.setup();
     const session = { id: `session-${routeStatus}`, opportunityId: "opp-1", itemId: "item-1", type: "demo", sessionName: `Focused ${routeStatus}`, start: "2026-07-19T08:00", end: "2026-07-19T10:00", timeZone: "UTC", salesProDisplayName: "Sales Admin", createdAt: "2026-07-19T07:00:00.000Z", operation, experience, verificationEligible: routeStatus !== "needs_attention" };
+    const expectedDimension = routeStatus === "needs_attention" ? "operationStatus=needs_attention" : `experienceStatus=${routeStatus === "in_progress" ? "inProgress" : "ended"}`;
     const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
       const path = String(input);
       if (path.startsWith("/api/sales/enablement-sessions?participantSearch=")) return json({ participants: [{ id: "portal-1", sessionId: session.id, sessionName: session.sessionName, opportunityId: "opp-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", operation, experience, environment: { dimension: "cloudshare_environment", value: "Ready", source: "cloudshare_v3_environment", observedAt: "2026-07-19T09:00:00.000Z" } }], total: 1, offset: 0, limit: 20 });
@@ -904,19 +905,23 @@ describe("SalesWorkspace interaction", () => {
       if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [], total: 0 });
       if (path === `/api/sales/enablement-sessions/${session.id}/participants`) return json({ session: { accessWindow: { dimension: "certalis_session_access_window", value: "open", source: "schedule_calculation", nativeInvitationsAvailable: true } }, participants: [] });
       if (path.startsWith("/api/sales/enablement-sessions?")) {
-        const expectedDimension = routeStatus === "needs_attention" ? "operationStatus=needs_attention" : `experienceStatus=${routeStatus === "in_progress" ? "inProgress" : "ended"}`;
         return json({ sessions: path.includes(expectedDimension) ? [session] : [] });
       }
       return json({});
     });
-    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "manage" }} />);
+    const rendered = render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "manage" }} />);
 
     await user.type(screen.getByRole("textbox", { name: "Search participant name or email" }), "ada");
     await user.click(screen.getByRole("button", { name: "Search" }));
     await user.click(await screen.findByRole("button", { name: "Ada Lovelace (ada@example.test)" }));
 
-    await waitFor(() => expect(mockRouter.push).toHaveBeenLastCalledWith(`/sales?tab=sessions&sessionId=${session.id}&status=${routeStatus}`));
-    await waitFor(() => expect(document.getElementById(`sales-session-${session.id}`)?.textContent).toContain(`Focused ${routeStatus}`));
+    await waitFor(() => expect(mockRouter.push).toHaveBeenLastCalledWith(`/sales?tab=sessions&sessionId=${session.id}&status=${routeStatus}&participants=open`));
+    rendered.unmount();
+    fetchMock.mockClear();
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "manage", sessionId: session.id, sessionStatus: routeStatus as "in_progress" | "ended" | "needs_attention", participantsOpen: true }} />);
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).includes(expectedDimension))).toBe(true));
+    await waitFor(() => expect(document.getElementById(`sales-session-${session.id}`)).not.toBeNull());
+    expect(document.getElementById(`sales-session-${session.id}`)?.textContent).toContain(`Focused ${routeStatus}`);
     expect(document.getElementById(`sales-session-${session.id}`)?.style.background).toBe("rgb(232, 245, 243)");
     expect(await screen.findByRole("button", { name: "Hide participants" })).not.toBeNull();
     expect(mockRouter.push.mock.calls.at(-1)?.[0]).not.toContain("provider");

@@ -14,9 +14,9 @@ describe("Sales workspace shell routes", () => {
     expect(buildSalesWorkspaceHref({ tab: "records", accountId: "account-1", opportunityId: "opportunity-1" })).toBe("/sales?tab=records&accountId=account-1&opportunityId=opportunity-1");
     expect(buildSalesWorkspaceHref({ tab: "sessions", opportunityId: "opportunity-1" })).toBe("/sales?tab=sessions&opportunityId=opportunity-1");
     expect(buildSalesWorkspaceHref({ tab: "sessions", sessionView: "provision", sessionId: "session-1" })).toBe("/sales?tab=sessions&view=provision&sessionId=session-1");
-    expect(buildSalesWorkspaceHref({ tab: "sessions", sessionView: "manage", sessionId: "session-1", sessionStatus: "in_progress" })).toBe("/sales?tab=sessions&sessionId=session-1&status=in_progress");
+    expect(buildSalesWorkspaceHref({ tab: "sessions", sessionView: "manage", sessionId: "session-1", sessionStatus: "in_progress", participantsOpen: true })).toBe("/sales?tab=sessions&sessionId=session-1&status=in_progress&participants=open");
     expect(parseSalesWorkspaceRouteState({ tab: "sessions", view: "provision", sessionId: "session-1" })).toMatchObject({ tab: "sessions", sessionView: "provision", sessionId: "session-1" });
-    expect(parseSalesWorkspaceRouteState({ tab: "sessions", sessionId: "session-1", status: "in_progress" })).toMatchObject({ tab: "sessions", sessionView: "manage", sessionId: "session-1", sessionStatus: "in_progress" });
+    expect(parseSalesWorkspaceRouteState({ tab: "sessions", sessionId: "session-1", status: "in_progress", participants: "open" })).toMatchObject({ tab: "sessions", sessionView: "manage", sessionId: "session-1", sessionStatus: "in_progress", participantsOpen: true });
   });
 
   it("opens Sales Support on the failure correlation thread", () => {
