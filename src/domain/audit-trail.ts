@@ -53,6 +53,7 @@ export interface AuditQuery {
 }
 
 const SECRET_KEY_PATTERN = /(api[-_]?key|api[-_]?id|secret|token|password|authorization|bearer|hmac|login[-_]?url|signature)/i;
+const PROTECTED_CONTEXT_KEY_PATTERN = /^(?:request|response)?(?:body|headers)$|^(?:rawBody|query|queryParameters|payload|context|cause)$/i;
 
 export function redactAuditDetails(
   value: Record<string, unknown> | null | undefined,
@@ -72,10 +73,12 @@ function redactAuditValue(value: unknown, key = ""): unknown {
   }
   if (value && typeof value === "object") {
     return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>).map(([childKey, childValue]) => [
-        childKey,
-        redactAuditValue(childValue, childKey),
-      ]),
+      Object.entries(value as Record<string, unknown>)
+        .filter(([childKey]) => !PROTECTED_CONTEXT_KEY_PATTERN.test(childKey))
+        .map(([childKey, childValue]) => [
+          childKey,
+          redactAuditValue(childValue, childKey),
+        ]),
     );
   }
   return value;

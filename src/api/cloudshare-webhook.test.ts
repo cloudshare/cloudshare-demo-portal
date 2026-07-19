@@ -213,7 +213,7 @@ describe("handleCloudShareWebhook", () => {
     expect(serialized).not.toContain('"webhookPayload"');
     expect(serialized).not.toContain('"webhookEvent"');
 
-    await expect(eventLog.listAll()).resolves.toEqual(
+    await expect(eventLog.listByCustomerId("customer-helios")).resolves.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           type: "cloudshare.webhook.missing_signature",
@@ -423,7 +423,7 @@ describe("handleCloudShareWebhook", () => {
   });
 
   it("records webhook dispositions in the event log without secrets", async () => {
-    const { helios, eventLog, deps } = setup();
+    const { helios, eventLog, diagnostics, deps } = setup();
     const signed = helios.emit({ environmentExternalId: "env-ext-1", event: "environment.created", at });
 
     await handleCloudShareWebhook(deps, {
@@ -436,19 +436,24 @@ describe("handleCloudShareWebhook", () => {
       ...signed,
     });
 
-    const events = await eventLog.listAll();
+    const events = await eventLog.listByCustomerId("customer-helios");
     expect(events).toHaveLength(2);
     expect(events).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           type: "cloudshare.webhook.accepted",
+          customerId: "customer-helios",
           payload: expect.objectContaining({
-            customerId: "customer-helios",
-            environmentExternalId: "env-ext-1",
+            outcome: "success",
+            externalIds: expect.objectContaining({ environmentExternalId: "env-ext-1" }),
           }),
         }),
       ]),
     );
+    const protectedEntries = await diagnostics.query({ customerId: "customer-helios" });
+    expect(events.every((event) =>
+      protectedEntries.some((entry) => entry.correlationId === event.correlationId),
+    )).toBe(true);
   });
 
   it("records safe typed diagnostics for receipt, signature verification, and later reconcile correlation", async () => {
@@ -713,6 +718,7 @@ describe("handleCloudShareWebhook", () => {
 
   it("records the full typed failure diagnostic matrix without raw body leakage", async () => {
     const { helios, diagnostics, deps } = setup();
+    const appendEvent = vi.spyOn(deps.eventLog, "append");
     const invalidSignatureRawBody = JSON.stringify({
       Event: "environment.created",
       CreatedAt: at.toISOString(),
@@ -728,6 +734,7 @@ describe("handleCloudShareWebhook", () => {
       rawBody: unknownRawBody,
       signature: "invalid",
     });
+    expect(appendEvent).not.toHaveBeenCalled();
 
     const missingSignatureRawBody = JSON.stringify({
       Event: "environment.created",

@@ -8,6 +8,7 @@
 
 interface BaseIntegrationEvent {
   readonly id: string;
+  readonly customerId: string;
   readonly occurredAt: Date;
 }
 

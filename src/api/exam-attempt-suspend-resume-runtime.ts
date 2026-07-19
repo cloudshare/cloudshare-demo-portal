@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Logger } from "@/observability/logger";
-import type { EventLogRepository } from "@/domain/event-log";
+import { projectEventLogMetadata, type EventLogRepository } from "@/domain/event-log";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type {
   CloudShareClientFactory,
@@ -819,12 +819,7 @@ async function handleExamAttemptRuntimeError(
     failureMode: "unexpected_internal_error",
     error: err instanceof Error ? err.message : String(err),
   };
-  await deps.eventLog.append({
-    eventId: correlationId,
-    type: `cloudshare.exam_${action}.failed`,
-    occurredAt: (deps.now ?? (() => new Date()))(),
-    payload: diagnostic,
-  });
+  await appendRuntimeEvent(deps, anchors, correlationId, `cloudshare.exam_${action}.failed`, diagnostic);
   deps.logger.error(`exam ${action} errored`, projectCloudShareGenericLogValue(diagnostic) as Record<string, unknown>);
   return { status: 500, body: { error: "internal error", correlationId } };
 }
@@ -851,12 +846,7 @@ async function reportFailureDiagnostic(
       error: err.message,
       ...err.context,
     };
-    await deps.eventLog.append({
-      eventId: correlationId,
-      type: spec.eventType,
-      occurredAt: (deps.now ?? (() => new Date()))(),
-      payload: diagnostic,
-    });
+    await appendRuntimeEvent(deps, anchors, correlationId, spec.eventType, diagnostic);
     deps.logger.warn(spec.logMessage, projectCloudShareGenericLogValue(diagnostic) as Record<string, unknown>);
     return { status: 502, body: { error: `exam ${spec.action} failed`, correlationId } };
   }
@@ -871,12 +861,7 @@ async function reportFailureDiagnostic(
       err,
       anchors,
     );
-    await deps.eventLog.append({
-      eventId: correlationId,
-      type: spec.eventType,
-      occurredAt: (deps.now ?? (() => new Date()))(),
-      payload: diagnostic,
-    });
+    await appendRuntimeEvent(deps, anchors, correlationId, spec.eventType, diagnostic);
     deps.logger.warn(spec.logMessage, projectCloudShareGenericLogValue(diagnostic) as Record<string, unknown>);
     if (isCloudShareRateLimitError(err.context?.cause)) {
       return {
@@ -905,12 +890,7 @@ async function reportFailureDiagnostic(
       err,
       anchors,
     );
-    await deps.eventLog.append({
-      eventId: correlationId,
-      type: spec.eventType,
-      occurredAt: (deps.now ?? (() => new Date()))(),
-      payload: diagnostic,
-    });
+    await appendRuntimeEvent(deps, anchors, correlationId, spec.eventType, diagnostic);
     deps.logger.warn(spec.logMessage, projectCloudShareGenericLogValue(diagnostic) as Record<string, unknown>);
     return {
       status: isCloudShareRateLimitError(err) ? 429 : 502,
@@ -924,6 +904,46 @@ async function reportFailureDiagnostic(
   }
 
   return null;
+}
+
+async function appendRuntimeEvent(
+  deps: SupportDiagnosticDeps,
+  anchors: Pick<RuntimeDiagnosticAnchors, "customerId" | "candidateEmail" | "examId"> | undefined,
+  correlationId: string,
+  type: string,
+  diagnostic: Record<string, unknown>,
+): Promise<void> {
+  if (!anchors?.customerId) return;
+  const examAttemptId = typeof diagnostic.examAttemptId === "string"
+    ? diagnostic.examAttemptId
+    : undefined;
+  await deps.eventLog.append({
+    eventId: correlationId,
+    customerId: anchors.customerId,
+    correlationId,
+    type,
+    occurredAt: (deps.now ?? (() => new Date()))(),
+    payload: projectEventLogMetadata({
+      ...diagnostic,
+      operation: typeof diagnostic.operation === "string" ? diagnostic.operation : type,
+      outcome: "failure",
+      actor: {
+        type: "candidate",
+        ...(anchors.candidateEmail ? { email: anchors.candidateEmail } : {}),
+      },
+      externalIds: {
+        ...(examAttemptId ? { examAttemptId } : {}),
+        ...(anchors.examId ? { examId: anchors.examId } : {}),
+        ...(typeof diagnostic.environmentId === "string"
+          ? { environmentId: diagnostic.environmentId }
+          : {}),
+        ...(typeof diagnostic.environmentExternalId === "string"
+          ? { environmentExternalId: diagnostic.environmentExternalId }
+          : {}),
+        ...(typeof diagnostic.trainingId === "string" ? { trainingId: diagnostic.trainingId } : {}),
+      },
+    }),
+  });
 }
 
 function buildPendingTransitionResponse(

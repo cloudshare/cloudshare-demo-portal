@@ -167,7 +167,7 @@ async function makeDeps(
     eventLog: {
       append: vi.fn().mockResolvedValue(undefined),
       listFailureEventsByExamAttemptIds: vi.fn().mockResolvedValue([]),
-      listAll: vi.fn(),
+      listByCustomerId: vi.fn(),
     },
     connections: makeConnections(),
     cloudshare,

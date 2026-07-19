@@ -649,23 +649,23 @@ describe("getExamAttemptDashboardRuntime", () => {
       }),
     );
     expect(JSON.stringify((logger.warn as ReturnType<typeof vi.fn>).mock.calls)).not.toContain("forbidden");
-    await expect(eventLog.listAll()).resolves.toEqual([
+    await expect(eventLog.listByCustomerId("customer-helios")).resolves.toEqual([
       expect.objectContaining({
         eventId: "corr-list-1",
+        customerId: "customer-helios",
+        correlationId: "corr-list-1",
         type: "cloudshare.candidate_dashboard_environment_correlation.failed",
         payload: expect.objectContaining({
-          correlationId: "corr-list-1",
-          customerId: "customer-helios",
-          examAttemptId: "attempt-ready",
-          trainingId: "EXtraining-1",
           operation: "candidate_dashboard_environment_correlation",
+          outcome: "failure",
           attemptedOperation: "list_training_participants",
           integrationSurface: "cloudshare.v4.training.participant_list",
-          method: "GET",
-          path: "/v4/trainings/EXtraining-1/students",
           failureMode: "http_status",
           responseStatus: 403,
-          responseBody: "{\"error\":\"forbidden\"}",
+          externalIds: expect.objectContaining({
+            examAttemptId: "attempt-ready",
+            trainingId: "EXtraining-1",
+          }),
         }),
       }),
     ]);
@@ -1046,17 +1046,16 @@ describe("getExamAttemptDashboardRuntime", () => {
       }),
     );
     expect(JSON.stringify((logger.warn as ReturnType<typeof vi.fn>).mock.calls)).not.toContain("student-1");
-    await expect(eventLog.listAll()).resolves.toEqual([
+    await expect(eventLog.listByCustomerId("customer-helios")).resolves.toEqual([
       expect.objectContaining({
         eventId: "corr-list-2",
+        customerId: "customer-helios",
+        correlationId: "corr-list-2",
         payload: expect.objectContaining({
-          correlationId: "corr-list-2",
+          outcome: "failure",
           failureMode: "unexpected_response",
-          host: "api.accelerate.cloudshare.com",
-          path: "/v4/trainings/EXtraining-1/students",
           integrationSurface: "cloudshare.v4.training.participant_list",
-          responseBody: '{"Students":[{"Id":"student-1"}]}',
-          issues: ["Required"],
+          externalIds: expect.objectContaining({ examAttemptId: "attempt-ready" }),
         }),
       }),
     ]);

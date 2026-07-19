@@ -716,7 +716,7 @@ describe("joinCohortExamSessionRuntime", () => {
         }),
       }),
     ]);
-    await expect(eventLog.listAll()).resolves.toEqual([
+    await expect(eventLog.listByCustomerId("customer-helios")).resolves.toEqual([
       expect.objectContaining({
         eventId: "corr-user-properties-fail",
         payload: expect.objectContaining({
@@ -1319,15 +1319,18 @@ describe("joinCohortExamSessionRuntime", () => {
     });
     await expect(attempts.findById("attempt-1")).resolves.toBeNull();
     await expect(launches.findByExamAttemptId("attempt-1")).resolves.toBeNull();
-    await expect(eventLog.listAll()).resolves.toEqual([
+    await expect(eventLog.listByCustomerId("customer-helios")).resolves.toEqual([
       expect.objectContaining({
         eventId: "corr-cohort-join-fail",
+        customerId: "customer-helios",
+        correlationId: "corr-cohort-join-fail",
         type: "cloudshare.cohort_exam_session_join.failed",
         payload: expect.objectContaining({
-          examAttemptId: "attempt-1",
+          outcome: "failure",
           attemptedOperation: "add_participant",
           integrationSurface: "cloudshare.v4.training.participant",
           responseStatus: 403,
+          externalIds: expect.objectContaining({ examAttemptId: "attempt-1" }),
         }),
       }),
     ]);

@@ -58,7 +58,7 @@ function makeEventLog(): EventLogRepository {
   return {
     append: vi.fn().mockResolvedValue(undefined),
     listFailureEventsByExamAttemptIds: vi.fn().mockResolvedValue([]),
-    listAll: vi.fn().mockResolvedValue([]),
+    listByCustomerId: vi.fn().mockResolvedValue([]),
   };
 }
 

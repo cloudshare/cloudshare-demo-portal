@@ -54,7 +54,7 @@ function createRouteServices(
     eventLog: {
       append: vi.fn(),
       listFailureEventsByExamAttemptIds: vi.fn(),
-      listAll: vi.fn(),
+      listByCustomerId: vi.fn(),
     },
     diagnosticRecorder: {
       record: vi.fn(),

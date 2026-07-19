@@ -61,6 +61,9 @@ Existing prototype support-log rows are development data and do not need migrati
 - Admin investigation actions should route into the Diagnostic Log with pre-applied filters such as ExamAttempt ID or correlation ID. The older Support Log remains only as a transitional raw-evidence fallback, not the primary investigation view.
 - Audit Trail remains separate. Audit answers who changed what and whether it was allowed; Support diagnostics answer what the platform did and how to trace behavior. Some actions emit both.
 - Event Log is not a primary support workflow. Events that matter to support should appear as DiagnosticLogEntries or correlated timeline rows.
+- Event Log has one typed metadata-only write projection. Its records require a trusted Customer ID and correlation ID and may contain only operation, integration surface, outcome, status/transport failure mode, explicitly supported scalar external identifiers, actor metadata, and time. Arbitrary request/query/response/error-context payloads are not accepted or stored.
+- Event Log reads are scoped by the Customer ID derived from the authenticated admin session. Client-supplied Customer ownership is not accepted. Legacy or otherwise unscoped events are omitted rather than assigned guessed ownership.
+- Correlation navigation links an ordinary event to the authorized Customer-scoped DiagnosticLogEntry; it does not copy protected diagnostic evidence into Event Log, Audit Trail, or generic logs.
 - Existing prototype support-log rows are disposable development data and should not constrain the new model.
 - Normal DiagnosticLogEntry output follows a direction-aware contract:
   - **Fail-closed request headers:** preserve only the explicit safe operational allowlist (Content-Type, Accept, Accept-Encoding, Content-Length, User-Agent, correlation/request IDs, and W3C trace headers); mask every other named or unparseable request header.
@@ -87,6 +90,7 @@ The same direction-aware contract applies to client traces, request/response err
 - Repository tests should prove DiagnosticLogEntry persists first-class correlation fields and structured request/response/details safely.
 - API/domain tests should prove success and failure paths emit diagnostic entries with the expected anchors.
 - Direction-aware tests must prove actual request-header slots are masked while complete request/query and provider-response bodies, including valid or rejected webhook raw bodies, passphrases, access links, sponsored URLs, tokens, nested arrays, and collision keys, remain exact in Customer-scoped admin diagnostics and never reach non-admin or ordinary client projections.
+- Event Log tests must cross the real authenticated HTTP adapter, handler, and repository seams to prove exact Customer isolation, metadata-only projection, correlation linking, and fail-closed legacy/unscoped behavior. Audit and generic-log tests must prove the same protected evidence is excluded from those ordinary surfaces.
 - Sensitive diagnostic mode tests should prove sensitive capture is disabled by default, expires automatically, emits audit/diagnostic records when toggled, and changes captured fields only within the intended scope.
 - Support read-model tests should prove filtering by Candidate email, Exam ID, ExamAttempt ID, operation, outcome, correlation ID, CloudShare external IDs, and time range.
 - UI tests or browser smoke tests should prove the Support page filters the diagnostic log itself, not unrelated monitoring widgets.

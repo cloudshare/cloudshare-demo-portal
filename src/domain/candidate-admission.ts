@@ -292,9 +292,41 @@ export async function recordCandidateAdmissionFailureEvidence(
 ): Promise<void> {
   await deps.eventLog.append({
     eventId: input.context.correlationId,
+    customerId: input.context.customerId,
+    correlationId: input.context.correlationId,
     type: input.eventType,
     occurredAt: input.context.occurredAt,
-    payload: input.eventPayload,
+    payload: {
+      operation: readString(input.eventPayload.operation) ?? input.auditAction,
+      outcome: "failure",
+      ...(readString(input.eventPayload.integrationSurface)
+        ? { integrationSurface: readString(input.eventPayload.integrationSurface)! }
+        : {}),
+      ...(readString(input.eventPayload.attemptedOperation)
+        ? { attemptedOperation: readString(input.eventPayload.attemptedOperation)! }
+        : {}),
+      ...(readString(input.eventPayload.failureMode)
+        ? { failureMode: readString(input.eventPayload.failureMode)! }
+        : {}),
+      ...(typeof input.eventPayload.responseStatus === "number"
+        ? { responseStatus: input.eventPayload.responseStatus }
+        : {}),
+      actor: { type: "candidate", id: input.context.candidateId },
+      externalIds: {
+        examAttemptId: input.context.examAttemptId,
+        candidateId: input.context.candidateId,
+        ...(input.context.examId ? { examId: input.context.examId } : {}),
+        ...(readString(input.eventPayload.environmentId)
+          ? { environmentId: readString(input.eventPayload.environmentId)! }
+          : {}),
+        ...(readString(input.eventPayload.environmentExternalId)
+          ? { environmentExternalId: readString(input.eventPayload.environmentExternalId)! }
+          : {}),
+        ...(readString(input.eventPayload.trainingId)
+          ? { trainingId: readString(input.eventPayload.trainingId)! }
+          : {}),
+      },
+    },
   });
   await deps.audit.write({
     id: input.auditId,
@@ -313,4 +345,8 @@ export async function recordCandidateAdmissionFailureEvidence(
     error: input.auditError,
     occurredAt: input.context.occurredAt,
   });
+}
+
+function readString(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
 }

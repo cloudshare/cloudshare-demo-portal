@@ -4,7 +4,7 @@ import type {
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
-import type { EventLogRepository } from "@/domain/event-log";
+import { projectEventLogMetadata, type EventLogRepository } from "@/domain/event-log";
 import type { LabLaunchRepository } from "@/domain/lab-launch";
 import { correlateEnvironmentForExamAttempt } from "@/domain/environment-correlation";
 import type { Logger } from "@/observability/logger";
@@ -88,9 +88,21 @@ export async function ensureExamAttemptEnvironmentCorrelation(
 
     await deps.eventLog?.append({
       eventId: correlationId,
+      customerId: attempt.customerId,
+      correlationId,
       type: `cloudshare.${input.operation}.environment_correlation.failed`,
       occurredAt: deps.now?.() ?? new Date(),
-      payload: diagnostic,
+      payload: projectEventLogMetadata({
+        ...diagnostic,
+        operation: input.operation,
+        outcome: "failure",
+        actor: { type: "candidate", id: attempt.candidateId },
+        externalIds: {
+          examAttemptId: input.examAttemptId,
+          examId: attempt.examId,
+          trainingId: launch.trainingId,
+        },
+      }),
     });
     deps.logger.warn(`${input.operation} environment correlation failed`, projectCloudShareGenericLogValue(diagnostic) as Record<string, unknown>);
     return { actionableEnvironmentId: null };

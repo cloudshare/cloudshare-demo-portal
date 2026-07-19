@@ -45,7 +45,7 @@ function makeEventLog(records: unknown[] = []): EventLogRepository {
   return {
     append: vi.fn(),
     listFailureEventsByExamAttemptIds: vi.fn().mockResolvedValue([]),
-    listAll: vi.fn().mockResolvedValue(records),
+    listByCustomerId: vi.fn().mockResolvedValue(records),
   };
 }
 
@@ -341,12 +341,19 @@ describe("handleGetEventLog", () => {
 
   it("returns 200 with event log entries", async () => {
     const eventLog = makeEventLog([
-      { eventId: "e-1", type: "exam_attempt.created", occurredAt: new Date(), payload: {} },
+      {
+        eventId: "e-1",
+        customerId: "customer-1",
+        correlationId: "e-1",
+        type: "exam_attempt.created",
+        occurredAt: new Date(),
+        payload: { operation: "exam_attempt.create", outcome: "success" },
+      },
     ]);
 
     const result = await handleGetEventLog(
       { eventLog, logger: makeLogger() },
-      { query: {} },
+      { customerId: "customer-1", query: {} },
     );
 
     expect(result.status).toBe(200);

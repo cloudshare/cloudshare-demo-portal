@@ -384,11 +384,14 @@ export function buildAdminEventLogDeps(
 
 export async function handleGetEventLog(
   deps: EventLogHandlerDeps,
-  request: AdminRequest,
+  request: AdminRequest & { customerId: string },
 ): Promise<AdminResponse> {
   const limitParam = request.query.limit;
   const limit = limitParam ? parseInt(limitParam, 10) : undefined;
-  const events = await deps.eventLog.listAll(limit !== undefined && !isNaN(limit) ? limit : undefined);
+  const events = await deps.eventLog.listByCustomerId(
+    request.customerId,
+    limit !== undefined && !isNaN(limit) ? limit : undefined,
+  );
   return { status: 200, body: { events } };
 }
 

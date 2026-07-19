@@ -9,7 +9,7 @@ import {
   type ExamRepository,
 } from "@/domain/exam-catalog";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
-import type { EventLogRepository } from "@/domain/event-log";
+import { projectEventLogMetadata, type EventLogRepository } from "@/domain/event-log";
 import type { CohortExamSessionRepository } from "@/domain/cohort-exam-session";
 import { correlateEnvironmentForExamAttempt } from "@/domain/environment-correlation";
 import { reconcileExamAttemptCompletion } from "@/domain/exam-attempt-completion";
@@ -368,9 +368,20 @@ async function correlateCandidateAttemptEnvironments(
       };
       await deps.eventLog?.append({
         eventId: correlationId,
+        customerId,
+        correlationId,
         type: "cloudshare.candidate_dashboard_environment_correlation.failed",
         occurredAt: deps.now?.() ?? new Date(),
-        payload: diagnostic,
+        payload: projectEventLogMetadata({
+          ...diagnostic,
+          operation: "candidate_dashboard_environment_correlation",
+          outcome: "failure",
+          actor: { type: "candidate" },
+          externalIds: {
+            examAttemptId,
+            ...(trainingId ? { trainingId } : {}),
+          },
+        }),
       });
       deps.logger.warn("candidate dashboard environment correlation failed", projectCloudShareGenericLogValue(diagnostic) as Record<string, unknown>);
     }
