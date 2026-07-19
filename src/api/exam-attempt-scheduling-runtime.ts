@@ -31,6 +31,7 @@ import {
   CloudShareTransportError,
   isCloudShareRateLimitError,
 } from "@/integrations/cloudshare";
+import { projectCloudShareGenericLogValue } from "@/integrations/cloudshare/diagnostic-redaction";
 import {
   createCloudShareTrainingDelivery,
   type CloudShareLabProvisionerObserver,
@@ -303,7 +304,7 @@ export async function scheduleExamAttemptRuntime(
           eventPayload: diagnostic,
         },
       );
-      deps.logger.warn("candidate exam scheduling failed", diagnostic);
+      deps.logger.warn("candidate exam scheduling failed", projectCloudShareGenericLogValue(diagnostic) as Record<string, unknown>);
       return {
         status: isCloudShareRateLimitError(error.context.cause) ? 429 : 502,
         body: {

@@ -152,17 +152,11 @@ function redactRequestHeaders(value: unknown): unknown {
   return Object.fromEntries(Object.keys(value as Record<string, unknown>).map((key) => [key, REDACTED]));
 }
 
-function preserveBodiesAndRedactRequestHeaders(value: unknown, inRequest = false, opaqueBody = false): unknown {
-  if (opaqueBody) return value;
-  if (Array.isArray(value)) return value.map((item) => preserveBodiesAndRedactRequestHeaders(item, inRequest));
-  if (!value || typeof value !== "object") return value;
-  const record = value as Record<string, unknown>;
-  return Object.fromEntries(Object.entries(record).map(([key, child]) => {
-    const isRequest = inRequest || key === "request";
-    const isRequestHeader = /^requestHeaders$/i.test(key) || (isRequest && /^headers$/i.test(key));
-    const isBodySlot = /^(?:body|requestBody|responseBody)$/i.test(key);
-    return [key, isRequestHeader ? redactRequestHeaders(child) : preserveBodiesAndRedactRequestHeaders(child, isRequest, isBodySlot)];
-  }));
+function projectProtectedRequest(request: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(request).map(([key, child]) => [
+    key,
+    /^(?:headers|requestHeaders)$/i.test(key) ? redactRequestHeaders(child) : child,
+  ]));
 }
 
 export interface RedactionOptions {
@@ -183,9 +177,9 @@ export function redactDiagnosticInput(
 ): DiagnosticLogEntryInput {
   return {
     ...input,
-    request: input.request ? (preserveBodiesAndRedactRequestHeaders(input.request, true) as Record<string, unknown>) : input.request,
-    response: input.response ? (preserveBodiesAndRedactRequestHeaders(input.response) as Record<string, unknown>) : input.response,
-    details: input.details ? (preserveBodiesAndRedactRequestHeaders(input.details) as Record<string, unknown>) : input.details,
+    request: input.request ? projectProtectedRequest(input.request) : input.request,
+    response: input.response,
+    details: input.details,
   };
 }
 

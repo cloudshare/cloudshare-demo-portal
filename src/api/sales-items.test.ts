@@ -62,7 +62,7 @@ describe("Sales Item API", () => {
     expect(result).toMatchObject({ status: 502, body: { error: "CloudShare Blueprint detail validation failed. Review support diagnostics.", diagnostic: { integrationSurface: "cloudshare.v3.projects.blueprint_detail", responseStatus: 403 } } });
     const [entry] = await diagnostics.query({ source: "sales-items", operation: "sales.item.authoring_resources.read", outcome: "failure" });
     expect(entry).toMatchObject({ request: { path: "/projects/project-1/blueprints/bp-1", headers: { authorization: "[REDACTED]" } }, response: { status: 403, headers: { "x-request-id": "req-1" } }, details: { integrationSurface: "cloudshare.v3.projects.blueprint_detail" } });
-    expect(JSON.stringify(entry)).not.toContain("api-key");
+    expect(JSON.stringify(entry)).toContain("api-key");
   });
 
   it("records a redacted support diagnostic when live authoring resources fail", async () => {

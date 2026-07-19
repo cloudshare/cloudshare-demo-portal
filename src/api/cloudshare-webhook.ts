@@ -242,14 +242,9 @@ export async function handleCloudShareWebhook(
       path,
       customerId: connection.customerId,
       webhookPathFingerprint,
-      requestBodySummary,
-      ...webhookFields,
-      ...(isWebhookBodySummary(requestBodySummary)
-        ? {
-            webhookEnvelope: requestBodySummary.envelope,
-            webhookPayload: requestBodySummary.payload,
-          }
-        : {}),
+      eventType: isWebhookBodySummary(requestBodySummary) ? requestBodySummary.envelope.Event : null,
+      environmentId: webhookFields.webhookEnvironmentId ?? null,
+      environmentExternalId: webhookFields.webhookEnvironmentExternalId ?? null,
       requestBodyBytes,
       rawBodySha256,
       signaturePresent: true,

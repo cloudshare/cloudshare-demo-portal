@@ -21,7 +21,7 @@ import {
   CloudShareTransportError,
   isCloudShareRateLimitError,
 } from "@/integrations/cloudshare";
-import { redactCloudShareAdminSupportValue } from "@/integrations/cloudshare/diagnostic-redaction";
+import { projectCloudShareGenericLogValue, redactCloudShareAdminSupportValue } from "@/integrations/cloudshare/diagnostic-redaction";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 
 export interface ExamAttemptScoreRuntimeDeps {
@@ -828,7 +828,7 @@ function redactDiagnosticSupportValue(value: unknown): unknown {
 function logScoreRetrievalFailure(logger: Logger, diagnostic: Record<string, unknown>): void {
   logger.warn(
     "candidate score retrieval failed",
-    redactDiagnosticSupportValue(diagnostic) as Record<string, unknown>,
+    projectCloudShareGenericLogValue(diagnostic) as Record<string, unknown>,
   );
 }
 

@@ -732,14 +732,10 @@ describe("candidate scheduling handlers", () => {
         path: "/v4/trainings/EXtraining-1/students",
         failureMode: "http_status",
         responseStatus: 403,
-        requestBody: {
-          email: "candidate@helioscx.demo",
-          firstName: "Asha",
-          lastName: "Patel",
-        },
-        responseBody: "{\"error\":\"forbidden\"}",
       }),
     );
+    expect(JSON.stringify((logger.warn as ReturnType<typeof vi.fn>).mock.calls)).not.toContain("candidate@helioscx.demo");
+    expect(JSON.stringify((logger.warn as ReturnType<typeof vi.fn>).mock.calls)).not.toContain("forbidden");
     await expect(eventLog.listAll()).resolves.toEqual([
       expect.objectContaining({
         eventId: "corr-2",
@@ -1225,9 +1221,9 @@ describe("candidate scheduling handlers", () => {
         path: "/v4/trainings/EXtraining-1/students",
         failureMode: "http_status",
         responseStatus: 403,
-        responseBody: "{\"error\":\"forbidden\"}",
       }),
     );
+    expect(JSON.stringify((logger.warn as ReturnType<typeof vi.fn>).mock.calls)).not.toContain("forbidden");
     await expect(eventLog.listAll()).resolves.toEqual([
       expect.objectContaining({
         eventId: "corr-list-1",
@@ -1318,10 +1314,10 @@ describe("candidate scheduling handlers", () => {
         host: "api.accelerate.cloudshare.com",
         path: "/v4/trainings/EXtraining-1/students",
         integrationSurface: "cloudshare.v4.training.participant_list",
-        responseBody: '{"Students":[{"Id":"student-1"}]}',
         issues: ["Required"],
       }),
     );
+    expect(JSON.stringify((logger.warn as ReturnType<typeof vi.fn>).mock.calls)).not.toContain("student-1");
     await expect(eventLog.listAll()).resolves.toEqual([
       expect.objectContaining({
         eventId: "corr-list-2",

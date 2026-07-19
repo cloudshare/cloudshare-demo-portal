@@ -33,7 +33,7 @@ export async function handleGetSalesDiagnosticLog(
 
   if (requestedSource) {
     const response = await handleGetDiagnosticLog(deps, { customerId: request.customerId, query: request.query });
-    return { ...response, body: salesBearerSafeProjection(response.body) as Record<string, unknown> };
+    return { ...response, body: projectDiagnosticPage(response.body) };
   }
 
   const requestedLimit = parseLimit(request.query.limit);
@@ -81,6 +81,13 @@ export async function handleGetSalesDiagnosticLog(
 function salesBearerSafeProjection(value: unknown): unknown {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value;
   return redactDiagnosticInput(value as DiagnosticLogEntryInput);
+}
+
+function projectDiagnosticPage(value: Record<string, unknown>): Record<string, unknown> {
+  const entries = Array.isArray(value.entries)
+    ? value.entries.map((entry) => salesBearerSafeProjection(entry))
+    : value.entries;
+  return { ...value, entries };
 }
 
 function isSalesDiagnosticSource(value: string): value is SalesDiagnosticSource {

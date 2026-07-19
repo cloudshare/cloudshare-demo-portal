@@ -38,6 +38,25 @@ function redact(serialised: string, secrets: string[]): string {
   return out;
 }
 
+function projectGenericLogFields(value: unknown, inRequest = false): unknown {
+  if (Array.isArray(value)) return value.map((item) => projectGenericLogFields(item, inRequest));
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>).flatMap(([key, child]) => {
+    if (/^(?:body|requestBody|responseBody|query|requestQuery|payload|webhookPayload|requestBodySummary|webhookEnvelope)$/i.test(key)) return [];
+    const nextInRequest = inRequest || /^request$/i.test(key);
+    if (/^requestHeaders$/i.test(key) || (nextInRequest && /^headers$/i.test(key))) {
+      return [[key, maskLogHeaderValues(child)]];
+    }
+    return [[key, projectGenericLogFields(child, nextInRequest)]];
+  }));
+}
+
+function maskLogHeaderValues(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map((entry) => Array.isArray(entry) && entry.length === 2 ? [entry[0], REDACTED] : maskLogHeaderValues(entry));
+  if (!value || typeof value !== "object") return REDACTED;
+  return Object.fromEntries(Object.keys(value as Record<string, unknown>).map((key) => [key, REDACTED]));
+}
+
 export function createLogger(options: LoggerOptions): Logger {
   const sink = options.sink ?? ((line: string) => process.stdout.write(line + "\n"));
   const secrets = options.secrets.filter((s) => s.length > 0);
@@ -47,7 +66,7 @@ export function createLogger(options: LoggerOptions): Logger {
       level,
       message,
       timestamp: new Date().toISOString(),
-      ...fields,
+      ...(projectGenericLogFields(fields) as LogFields | undefined),
     });
     sink(redact(line, secrets));
   }

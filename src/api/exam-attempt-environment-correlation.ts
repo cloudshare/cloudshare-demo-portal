@@ -15,6 +15,7 @@ import {
   CloudShareTransportError,
 } from "@/integrations/cloudshare";
 import { createCloudShareTrainingDelivery } from "@/integrations/cloudshare/training-delivery";
+import { projectCloudShareGenericLogValue } from "@/integrations/cloudshare/diagnostic-redaction";
 
 export interface EnsureExamAttemptEnvironmentCorrelationDeps {
   readonly attempts: ExamAttemptRepository;
@@ -91,7 +92,7 @@ export async function ensureExamAttemptEnvironmentCorrelation(
       occurredAt: deps.now?.() ?? new Date(),
       payload: diagnostic,
     });
-    deps.logger.warn(`${input.operation} environment correlation failed`, diagnostic);
+    deps.logger.warn(`${input.operation} environment correlation failed`, projectCloudShareGenericLogValue(diagnostic) as Record<string, unknown>);
     return { actionableEnvironmentId: null };
   }
 }

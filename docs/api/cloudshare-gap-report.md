@@ -1819,9 +1819,10 @@ shape or the observed `{ count, items }` shape. For the latter it uses documente
 and fails closed when a later page contradicts that count or makes no progress. A
 null `envStatus` is preserved as the authoritative pre-environment state; the portal
 does not infer a runnable environment from the placeholder `envId`. Every CloudShare
-diagnostic now retains the full sanitised request body, response body, and query
-parameters at the shared client boundary. Only credentials, tokens, and bearer-style
-invitation or sponsored-login URLs are redacted. Participant and environment
+diagnostic now retains the full verbatim request body, response body, and query
+parameters at the shared client boundary. Only actual request-header values are
+redacted; body credentials, tokens, invitation links, and sponsored-login URLs remain
+intact in protected Customer-scoped admin evidence. Participant and environment
 correlation values remain server-only in browser projections. Sales Support includes
 the participant reconciliation source in both direct, Customer-scoped filtered reads
 and the aggregate correlation feed.

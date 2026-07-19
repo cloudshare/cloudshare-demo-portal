@@ -337,15 +337,11 @@ export function getServices(): Services {
   });
   const diagnosticRecorder = createDiagnosticRecorder({
     repository: diagnostics,
-    // Global/seed secret values for string scrubbing. NOTE: these do NOT include
-    // per-Customer decrypted CloudShare credentials. Key-based redaction still
-    // scrubs sensitive *fields* regardless, but a future slice that records
-    // CloudShare request/response payloads must pass that connection's secrets
-    // (apiId/apiKey/webhookSecret) into a per-call recorder so a secret embedded
-    // mid-string under a non-sensitive key cannot leak. The auth/account flows
-    // instrumented in this slice never touch CloudShare credentials.
+    // Retained for compatibility with non-HTTP diagnostic text. Protected
+    // CloudShare request/query and response bodies are deliberately preserved;
+    // the recorder masks only actual request-header slots.
     secrets: secretValues(config),
-    // Sensitive mode stays disabled: secrets are always redacted in normal mode.
+    // Sensitive mode cannot bypass request-header masking.
     sensitiveMode: false,
     onError: (error) =>
       logger.error("diagnostic log append failed", {

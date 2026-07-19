@@ -557,8 +557,8 @@ describe("getExamAttemptScoreRuntime", () => {
         failureMode: "unexpected_response",
       }),
     );
-    expect(JSON.stringify((deps.logger.warn as ReturnType<typeof vi.fn>).mock.calls)).toContain("support-evidence-token");
-    expect(JSON.stringify((deps.logger.warn as ReturnType<typeof vi.fn>).mock.calls)).toContain("secret-access-token");
+    expect(JSON.stringify((deps.logger.warn as ReturnType<typeof vi.fn>).mock.calls)).not.toContain("support-evidence-token");
+    expect(JSON.stringify((deps.logger.warn as ReturnType<typeof vi.fn>).mock.calls)).not.toContain("secret-access-token");
     expect(deps.audit.write).toHaveBeenCalledWith(
       expect.objectContaining({
         examAttemptId: "attempt-1",

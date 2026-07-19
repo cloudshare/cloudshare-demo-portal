@@ -21,6 +21,7 @@ import {
   CloudShareTransportError,
 } from "@/integrations/cloudshare";
 import { createCloudShareTrainingDelivery } from "@/integrations/cloudshare/training-delivery";
+import { projectCloudShareGenericLogValue } from "@/integrations/cloudshare/diagnostic-redaction";
 import type { Logger } from "@/observability/logger";
 import { recordExamAttemptCompletionDiagnostic } from "./exam-attempt-completion-diagnostics";
 import {
@@ -371,7 +372,7 @@ async function correlateCandidateAttemptEnvironments(
         occurredAt: deps.now?.() ?? new Date(),
         payload: diagnostic,
       });
-      deps.logger.warn("candidate dashboard environment correlation failed", diagnostic);
+      deps.logger.warn("candidate dashboard environment correlation failed", projectCloudShareGenericLogValue(diagnostic) as Record<string, unknown>);
     }
   }
 }

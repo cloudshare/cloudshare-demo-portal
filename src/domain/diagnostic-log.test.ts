@@ -52,7 +52,7 @@ describe("redactDiagnosticInput", () => {
       },
     });
     expect(redacted.response).toEqual({ body: { token: "sek-123", passphrase: "response-passphrase", accessLink: "https://response.test/link", loginUrl: "https://response.test/login", nested: [{ authorization: "body-data" }] }, status: 200 });
-    expect(redacted.details).toEqual({ request: { headers: { Authorization: "[REDACTED]", cookie: "[REDACTED]" }, body: { token: "nested-token" } }, note: "fine" });
+    expect(redacted.details).toEqual({ request: { headers: { Authorization: "Bearer nested", cookie: "nested-cookie" }, body: { token: "nested-token" } }, note: "fine" });
   });
 
   it("does not scrub protected body evidence based on literal values", () => {
@@ -77,6 +77,14 @@ describe("redactDiagnosticInput", () => {
     const tuples = redactDiagnosticInput({ source: "x", operation: "x", outcome: "success", message: "x", request: { requestHeaders: [["Authorization", "Bearer tuple"], ["Cookie", "cookie"]], body } });
     expect(scalar.request).toEqual({ headers: "[REDACTED]", body });
     expect(tuples.request).toEqual({ requestHeaders: [["Authorization", "[REDACTED]"], ["Cookie", "[REDACTED]"]], body });
+  });
+
+  it("preserves direct provider response objects and query collisions as opaque evidence", () => {
+    const response = { request: { headers: { Authorization: "provider-body-value" } }, requestHeaders: "provider-response-value", nested: [{ headers: "response-headers" }] };
+    const query = { headers: { Authorization: "query-value" }, request: { requestHeaders: "query-collision" } };
+    const redacted = redactDiagnosticInput({ source: "x", operation: "x", outcome: "success", message: "x", request: { headers: { Authorization: "Bearer actual" }, query, requestQuery: query }, response });
+    expect(redacted.request).toEqual({ headers: { Authorization: "[REDACTED]" }, query, requestQuery: query });
+    expect(redacted.response).toBe(response);
   });
 
   it("preserves first-class correlation anchors (they are identifiers, not secrets)", () => {

@@ -87,6 +87,8 @@ describe("Sales diagnostics HTTP isolation", () => {
     expect(serialized).toContain("private-capability");
     expect(serialized).toContain("private-provider-url");
     expect(serialized).toContain("private-token");
+    expect(serialized).not.toContain("private-auth");
+    expect(body.entries[0].request.headers.authorization).toBe("[REDACTED]");
     expect(body.entries[0]).toMatchObject({ correlationId: "corr-launch-1", outcome: "success", response: { status: 200, body: { loginUrl: "https://cloudshare.example.test/private-provider-url" } } });
     expect(mockHandleGetDiagnosticLog).toHaveBeenCalledWith(expect.anything(), { customerId: "customer-certalis", query: { source: "sales-participant-launch", correlationId: "corr-launch-1", subjectId: "participant-1" } });
   });
