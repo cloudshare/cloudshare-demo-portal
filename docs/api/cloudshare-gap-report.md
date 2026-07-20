@@ -1946,6 +1946,43 @@ under a name that does not claim it is a v3 Environment ID.
 
 ---
 
+## GAP-33 — No documented per-participant Sales Environment history or count
+
+| Field | Detail |
+|---|---|
+| **Status** | Confirmed contract gap |
+| **Verified live** | Partial — deleted Environment was absent from the Customer's v3 owner-email list on 2026-07-20 |
+
+**Observed behaviour**
+
+The documented v4 `GET /sales/{id}/participants` roster exposes one nullable `envId` and
+an `envStatus` enum that includes terminal values such as `Deleted`. It does not expose an
+array of Environment instances, a per-participant count, timestamps, or a documented guarantee
+that the single reference represents a complete history when the Sales Experience permits
+multiple sequential Environment activations. The documented v3 owner-email list is a
+listable-Environment observation; HTTP `200` with an empty list is a semantic result, not a
+provider request failure and not proof that the participant never consumed an Environment.
+
+**Impact on Certalis Sales Sessions**
+
+Certalis can display a roster-associated Environment state with its v4 source, and can perform the
+separately labelled v3 owner-and-Project listable-Environment observation. It cannot claim a
+complete historical Environment list or count for a participant in a Sales Experience. The
+undocumented `environmentsGrid` route is not an integration path and must not be used to fill this
+gap.
+
+**Action required (CloudShare contract clarification)**
+
+Request a documented Customer-scoped read that returns all Environment instances consumed by a
+named Sales participant in one Sales Experience, including roster-associated and terminal state,
+timestamps,
+and a reliable count when multiple sequential activations are enabled.
+
+**Code reference:** `docs/discovery/2026-07-20-cloudshare-sales-participant-environment-history.md`,
+`src/api/sales-session-participants.ts`
+
+---
+
 ## GAP-N — Short descriptive title
 
 | Field | Detail |
@@ -1973,5 +2010,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-07-19 (added GAP-32 Sales roster/v3 Environment ID resolution evidence).
+*Last updated: 2026-07-20 (added GAP-33 Sales participant Environment-history contract gap).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*

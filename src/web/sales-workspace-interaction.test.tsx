@@ -869,7 +869,7 @@ describe("SalesWorkspace interaction", () => {
       const path = String(input);
       if (path.startsWith("/api/sales/enablement-sessions?participantSearch=")) return path.includes("offset=20")
         ? json({ participants: [{ id: "portal-21", sessionId: "session-21", sessionName: "Brio trial", opportunityId: "opp-21", firstName: "Ada", lastName: "Twenty-one", email: "ada21@example.test", environment: { dimension: "cloudshare_environment", value: "Suspended", source: "cloudshare_v3_environment", observedAt: "2026-07-19T09:00:00.000Z" } }], total: 21, offset: 20, limit: 20 })
-        : json({ participants: [{ id: "portal-1", sessionId: "session-1", sessionName: "Acme evaluation", opportunityId: "opp-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", environment: { dimension: "cloudshare_environment", value: "Ready", source: "cloudshare_v3_environment", observedAt: "2026-07-19T09:00:00.000Z" } }], total: 21, offset: 0, limit: 20 });
+        : json({ participants: [{ id: "portal-1", sessionId: "session-1", sessionName: "Acme evaluation", opportunityId: "opp-1", firstName: "Ada", lastName: "Lovelace", email: "ada@example.test", environment: { dimension: "cloudshare_environment", value: "Deleted", source: "cloudshare_v4_sales_participant_roster", observedAt: "2026-07-19T09:00:00.000Z" } }], total: 21, offset: 0, limit: 20 });
       if (path === "/api/sales/items") return json({ activeItems: [] });
       if (path === "/api/sales/timezones" && !init?.method) return json({ timezones: [{ id: "UTC", name: "UTC" }], preference: {} });
       if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [], total: 0 });
@@ -880,10 +880,10 @@ describe("SalesWorkspace interaction", () => {
 
     await user.type(screen.getByRole("textbox", { name: "Search participant name or email" }), "ada");
     await user.click(screen.getByRole("button", { name: "Search" }));
-    expect(await screen.findByText(/Session: Acme evaluation · Correlated Environment: Ready/)).not.toBeNull();
+    expect(await screen.findByText(/Session: Acme evaluation · Environment state: Deleted \(cloudshare_environment, cloudshare_v4_sales_participant_roster\)/)).not.toBeNull();
     expect(screen.getByRole("status").textContent).toContain("1–1 of 21");
     await user.click(screen.getByRole("button", { name: "Next participant results" }));
-    expect(await screen.findByText(/Session: Brio trial · Correlated Environment: Suspended/)).not.toBeNull();
+    expect(await screen.findByText(/Session: Brio trial · Environment state: Suspended/)).not.toBeNull();
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("participantSearch=ada&offset=20&limit=20"), expect.objectContaining({ cache: "no-store" }));
     expect(document.body.textContent).not.toContain("cloudshare-environment-raw");
     expect(document.body.textContent).not.toContain("provider response");

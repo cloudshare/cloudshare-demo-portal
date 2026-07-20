@@ -58,15 +58,18 @@ CloudShare v4 Sales Experience; it does not add participants or send invitations
   access links, and protected diagnostic evidence remain server-only.
 - `Verify CloudShare status` performs the documented v4 `GET /sales/{id}`, records protected
   diagnostic evidence, and persists the observed Experience status. Per-participant
-  Environment display is sourced separately. The v4 Sales roster `envId` is retained only as
-  a server-side roster reference; it is not a v3 Environment ID. Certalis lists documented v3
+  Environment display is sourced separately. A non-null v4 Sales roster `envStatus` is displayed
+  as the explicit `cloudshare_v4_sales_participant_roster` source (including terminal states such
+  as `Deleted`); its `envId` remains only a server-side roster reference and is not a v3
+  Environment ID. When the roster has no Environment state, Certalis falls back to documented v3
   `GET /envs?ownerEmail=<participant>&brief=false`, requires exactly one Environment in the
   Session Item's Project, then reads its numeric status through documented
-  `GET /envs/actions/getextended?envId=<opaque-v3-id>`. Zero or multiple same-Project matches
-  fail closed by persisting and projecting a participant-level Needs attention reason and
-  `cloudshare_v3_owner_email_item_project` source, with protected evidence from the actual v3
-  exchange. The UI labels successful observations `cloudshare_v3_environment`; the v4 roster's
-  free-text environment field remains supporting context only.
+  `GET /envs/actions/getextended?envId=<opaque-v3-id>`. Zero or multiple same-Project matches in
+  that fallback fail closed by persisting and projecting a participant-level Needs attention reason
+  and `cloudshare_v3_owner_email_item_project` source, with protected evidence from the actual v3
+  exchange. The UI labels successful v3 observations `cloudshare_v3_environment`. Neither
+  documented read supplies a complete per-participant Environment history or count when multiple
+  sequential activations are enabled; see GAP-33.
 - The documented CloudShare v3 timezone list is cached. Normal UI does not expose cache
   freshness jargon; a warning appears only for a stale fallback. The Sales Admin's last
   selected timezone and Session-level experience type are retained as preferences.

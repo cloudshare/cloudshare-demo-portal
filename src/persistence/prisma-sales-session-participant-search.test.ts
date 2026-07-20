@@ -26,4 +26,15 @@ describe("Prisma Sales participant search", () => {
     expect(now).toHaveBeenCalledOnce();
     expect(result.rows.map((row) => row.experience.value)).toEqual(["inProgress", "inProgress"]);
   });
+
+  it("projects a Deleted roster Environment with its v4 source without returning its provider reference", async () => {
+    const session = { id: "session-1", sessionName: "Acme evaluation", opportunityId: "opportunity-1", operationalStatus: "active", attentionReason: null, start: "2026-07-19T08:00", end: "2026-07-19T09:00", timeZone: "UTC", experienceStatus: "inProgress", experienceStatusObservedAt: new Date("2026-07-19T09:00:00Z") };
+    const row = { id: "participant-1", opportunityContactId: "contact-1", cloudShareEnvironmentId: "provider-roster-reference", cloudShareRosterEnvironmentReference: "provider-roster-reference", environmentStatus: "Deleted", environmentStatusCode: null, environmentObservedAt: new Date("2026-07-19T09:00:00Z"), updatedAt: new Date(), contact: { firstName: "Ada", lastName: "Lovelace", email: "ada@example.test" }, session };
+    const repository = createPrismaSalesSessionParticipantSearch({ salesSessionParticipant: { count: vi.fn().mockResolvedValue(1), findMany: vi.fn().mockResolvedValue([row]) } } as never, () => new Date("2026-07-19T09:01:00Z"));
+
+    const result = await repository.search("customer-a", "ada", 0, 20);
+
+    expect(result.rows).toMatchObject([{ environment: { dimension: "cloudshare_environment", value: "Deleted", source: "cloudshare_v4_sales_participant_roster" } }]);
+    expect(JSON.stringify(result)).not.toContain("provider-roster-reference");
+  });
 });

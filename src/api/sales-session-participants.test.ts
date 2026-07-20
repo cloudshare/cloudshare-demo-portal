@@ -393,15 +393,15 @@ describe("Sales Session participant invitation", () => {
     expect(JSON.stringify(result.body)).not.toContain("1234567890123456789");
   });
 
-  it("uses the documented v4 roster terminal Environment state without an active-only v3 resolution", async () => {
-    const remote = { ...remoteParticipant("provider-1", "portal-1", contact.id), environmentId: "roster-reference", envStatus: "Deleted" };
+  it.each([["Deleted", "Deleted"], ["FutureAllocationScheduled", "Future allocation scheduled"]] as const)("uses documented v4 roster Environment state %s without a separate v3 resolution", async (envStatus, expectedValue) => {
+    const remote = { ...remoteParticipant("provider-1", "portal-1", contact.id), environmentId: "roster-reference", envStatus };
     const observe = vi.fn().mockRejectedValue(new Error("v3 resolution must not run for a roster state"));
     const recordEnvironmentObservation = vi.fn();
     const result = await handleListSalesSessionParticipants({
       sessions: { findById: vi.fn().mockResolvedValue({ ...session, itemId: "item-1" }) }, items: { findById: vi.fn().mockResolvedValue({ id: "item-1", customerId: "customer-1", project: { id: "project-1", name: "Project" } }) }, records: { findContact: vi.fn().mockResolvedValue(contact) }, participants: { list: vi.fn().mockResolvedValue([storedParticipant()]), save: vi.fn(), recordEnvironmentObservation }, connections: { findByCustomerId: vi.fn().mockResolvedValue({ customerId: "customer-1" }) }, deliveryFactory: { forConnection: () => ({ listParticipants: vi.fn().mockResolvedValue(rosterEvidence([remote])) } as never) }, salesEnvironmentFactory: { forConnection: () => ({ observe }) }, diagnostics: { record: vi.fn() },
     }, { customerId: "customer-1", sessionId: session.id, actor });
 
-    expect(result).toMatchObject({ status: 200, body: { participants: [{ environment: { dimension: "cloudshare_environment", value: "Deleted", source: "cloudshare_v4_sales_participant_roster", observedAt: "2026-07-19T08:00:00.000Z" } }] } });
+    expect(result).toMatchObject({ status: 200, body: { participants: [{ environment: { dimension: "cloudshare_environment", value: expectedValue, source: "cloudshare_v4_sales_participant_roster", observedAt: "2026-07-19T08:00:00.000Z" } }] } });
     expect(result.body.participants).not.toEqual(expect.arrayContaining([expect.objectContaining({ needsAttention: true, attentionSource: "cloudshare_v3_owner_email_item_project" })]));
     expect(observe).not.toHaveBeenCalled();
     expect(recordEnvironmentObservation).toHaveBeenCalledWith("customer-1", "portal-1", { statusCode: null, observedAt: new Date("2026-07-19T08:00:00.000Z") });
