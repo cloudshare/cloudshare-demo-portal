@@ -1978,6 +1978,10 @@ named Sales participant in one Sales Experience, including roster-associated and
 timestamps,
 and a reliable count when multiple sequential activations are enabled.
 
+CloudShare R&D follow-up: [SUP-5012](https://cloudshare.atlassian.net/browse/SUP-5012),
+“APIv4: When listing the participants within an experience, what does the `envId` mean, and how
+can you get a historical list of environments that might have been consumed?”
+
 **Code reference:** `docs/discovery/2026-07-20-cloudshare-sales-participant-environment-history.md`,
 `src/api/sales-session-participants.ts`
 
