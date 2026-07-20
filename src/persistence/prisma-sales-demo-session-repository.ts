@@ -18,7 +18,10 @@ export function createPrismaSalesDemoSessionRepository(prisma: PrismaClient): Sa
       return deleted.count === 1;
     },
     async listByOpportunity(customerId, opportunityId) { return (await prisma.salesDemoSession.findMany({ where: { customerId, opportunityId }, orderBy: { createdAt: "desc" } })).map(toDomain); },
-    async updateOperationalState(id, state) { await prisma.salesDemoSession.update({ where: { id }, data: state }); },
+    async updateOperationalState(customerId, id, state) {
+      const updated = await prisma.salesDemoSession.updateMany({ where: { customerId, id }, data: state });
+      if (updated.count !== 1) throw new Error("Sales Enablement Session was not found for this Customer");
+    },
     async updateDisplayName(id, sessionName) { await prisma.salesDemoSession.update({ where: { id }, data: { sessionName } }); },
   };
 }
@@ -29,6 +32,6 @@ function isSalesSessionRevisionConflict(error: unknown): boolean {
   return Array.isArray(target) && target.length === 3 && target.includes("customerId") && target.includes("opportunityId") && target.includes("revision");
 }
 
-function toDomain(row: { id: string; customerId: string; opportunityId: string; itemId: string; cloudShareSalesExperienceId: string; externalId: string; type: string; start: string; end: string; timeZone: string; salesProEmail: string; salesProDisplayName: string; registrationType: string; sendInvitations: string; sessionName: string; revision: number; operationalStatus: string; attentionReason: string | null; createdAt: Date }): SalesDemoSession {
-  return { ...row, type: row.type as SalesDemoSession["type"], operationalStatus: row.operationalStatus as NonNullable<SalesDemoSession["operationalStatus"]>, registrationType: "registeredParticipantsOnly", sendInvitations: row.sendInvitations === "salesProsAndParticipants" ? "salesProsAndParticipants" : "dontSend" };
+function toDomain(row: { id: string; customerId: string; opportunityId: string; itemId: string; cloudShareSalesExperienceId: string; externalId: string; type: string; start: string; end: string; timeZone: string; salesProEmail: string; salesProDisplayName: string; registrationType: string; sendInvitations: string; sessionName: string; revision: number; operationalStatus: string; attentionReason: string | null; experienceStatus?: string | null; experienceStatusObservedAt?: Date | null; createdAt: Date }): SalesDemoSession {
+  return { ...row, type: row.type as SalesDemoSession["type"], operationalStatus: row.operationalStatus as NonNullable<SalesDemoSession["operationalStatus"]>, experienceStatus: row.experienceStatus === "notStarted" || row.experienceStatus === "inProgress" || row.experienceStatus === "ended" ? row.experienceStatus : null, registrationType: "registeredParticipantsOnly", sendInvitations: row.sendInvitations === "salesProsAndParticipants" ? "salesProsAndParticipants" : "dontSend" };
 }

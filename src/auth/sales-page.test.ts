@@ -51,8 +51,8 @@ describe("Sales workspace page", () => {
     const sessions = await SalesPage({ searchParams: Promise.resolve({ tab: "sessions", accountId: "account-1", opportunityId: "opportunity-1" }) });
     const support = await SalesPage({ searchParams: Promise.resolve({ tab: "support", correlationId: "corr-verified-1" }) });
 
-    expect(sessions.key).toBe("sessions:catalog::");
-    expect(support.key).toBe("support:catalog::corr-verified-1");
+    expect(sessions.key).toBe("sessions:catalog:manage:::::");
+    expect(support.key).toBe("support:catalog::::::corr-verified-1");
   });
 
   it("does not let a Helios certification admin use the Sales workspace", async () => {

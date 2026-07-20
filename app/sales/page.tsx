@@ -18,5 +18,5 @@ export default async function SalesPage({ searchParams }: SalesPageProps) {
   if (session.workspace !== "sales") redirect("/admin");
   const params = await searchParams ?? {};
   const routeState = parseSalesWorkspaceRouteState(params);
-  return <SalesWorkspace key={`${routeState.tab}:${routeState.itemView ?? ""}:${routeState.itemId ?? ""}:${routeState.correlationId ?? ""}`} email={session.email} initialRoute={routeState} />;
+  return <SalesWorkspace key={`${routeState.tab}:${routeState.itemView ?? ""}:${routeState.sessionView ?? ""}:${routeState.sessionId ?? ""}:${routeState.sessionStatus ?? ""}:${routeState.participantsOpen ? "participants" : ""}:${routeState.itemId ?? ""}:${routeState.correlationId ?? ""}`} email={session.email} initialRoute={routeState} />;
 }

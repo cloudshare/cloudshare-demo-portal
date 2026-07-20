@@ -1919,6 +1919,74 @@ tracks the provider acknowledgement defect.
 
 ---
 
+## GAP-32 — Sales roster `envId` is not the v3 Environment ID
+
+| Field | Detail |
+|---|---|
+| **Status** | Confirmed and mitigated in issue #370 |
+| **Verified live** | Yes |
+
+**Observed behaviour**
+
+The v4 Sales participant roster returns a 19-character numeric `envId`; it is not the
+opaque identifier accepted by v3 Environment actions. The verified resolution chain is
+Customer-credential-scoped `GET /api/v3/envs?ownerEmail=<participant>&brief=false`, an
+exact server-side match to the Session Item Project, then
+`GET /api/v3/envs/actions/getextended?envId=<opaque-v3-id>`.
+
+**Impact on certification use**
+
+Exactly one same-Project match is required. Zero or multiple matches are persisted and
+projected as an explicit needs-attention reason/source. Actual v3 exchanges and opaque IDs
+remain confined to protected Customer-scoped diagnostics; the roster reference is stored
+under a name that does not claim it is a v3 Environment ID.
+
+**Code reference:** `src/integrations/cloudshare/sales-environment.ts`,
+`src/api/sales-session-participants.ts`
+
+---
+
+## GAP-33 — No documented per-participant Sales Environment history or count
+
+| Field | Detail |
+|---|---|
+| **Status** | Confirmed contract gap |
+| **Verified live** | Partial — deleted Environment was absent from the Customer's v3 owner-email list on 2026-07-20 |
+
+**Observed behaviour**
+
+The documented v4 `GET /sales/{id}/participants` roster exposes one nullable `envId` and
+an `envStatus` enum that includes terminal values such as `Deleted`. It does not expose an
+array of Environment instances, a per-participant count, timestamps, or a documented guarantee
+that the single reference represents a complete history when the Sales Experience permits
+multiple sequential Environment activations. The documented v3 owner-email list is a
+listable-Environment observation; HTTP `200` with an empty list is a semantic result, not a
+provider request failure and not proof that the participant never consumed an Environment.
+
+**Impact on Certalis Sales Sessions**
+
+Certalis can display a roster-associated Environment state with its v4 source, and can perform the
+separately labelled v3 owner-and-Project listable-Environment observation. It cannot claim a
+complete historical Environment list or count for a participant in a Sales Experience. The
+undocumented `environmentsGrid` route is not an integration path and must not be used to fill this
+gap.
+
+**Action required (CloudShare contract clarification)**
+
+Request a documented Customer-scoped read that returns all Environment instances consumed by a
+named Sales participant in one Sales Experience, including roster-associated and terminal state,
+timestamps,
+and a reliable count when multiple sequential activations are enabled.
+
+CloudShare R&D follow-up: [SUP-5012](https://cloudshare.atlassian.net/browse/SUP-5012),
+“APIv4: When listing the participants within an experience, what does the `envId` mean, and how
+can you get a historical list of environments that might have been consumed?”
+
+**Code reference:** `docs/discovery/2026-07-20-cloudshare-sales-participant-environment-history.md`,
+`src/api/sales-session-participants.ts`
+
+---
+
 ## GAP-N — Short descriptive title
 
 | Field | Detail |
@@ -1946,5 +2014,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-07-18 (added GAP-31 live Sales roster environment-status evidence).
+*Last updated: 2026-07-20 (added GAP-33 Sales participant Environment-history contract gap).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*

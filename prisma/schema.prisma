@@ -82,8 +82,10 @@ model OpportunityContact {
   updatedAt     DateTime
   customer      Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
   opportunity   SalesOpportunity @relation(fields: [customerId, opportunityId], references: [customerId, id], onDelete: Restrict)
+  salesSessionParticipants SalesSessionParticipant[]
 
   @@index([customerId, opportunityId, updatedAt])
+  @@unique([customerId, id])
 }
 
 // A Sales-owned, archive-only reusable CloudShare delivery template.  Resource
@@ -133,6 +135,8 @@ model SalesDemoSession {
   revision                    Int      @default(1)
   operationalStatus           String   @default("active")
   attentionReason             String?
+  experienceStatus            String?
+  experienceStatusObservedAt  DateTime?
   createdAt                   DateTime
   customer                    Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
   opportunity                 SalesOpportunity @relation(fields: [customerId, opportunityId], references: [customerId, id], onDelete: Restrict)
@@ -140,6 +144,7 @@ model SalesDemoSession {
   participants                SalesSessionParticipant[]
 
   @@index([customerId, opportunityId, createdAt])
+  @@unique([customerId, id])
   @@unique([customerId, opportunityId, revision])
   @@index([customerId, itemId])
   @@index([customerId, externalId])
@@ -159,13 +164,18 @@ model SalesSessionParticipant {
   invitedBy                   String?
   participationStatus         String
   firstJoined                 String?
-  /// Server-only CloudShare environment correlation. It is never projected to portal clients.
-  cloudShareEnvironmentId     String?
+  /// Server-only numeric v4 Sales-roster reference. This is not a v3 Environment ID.
+  cloudShareRosterEnvironmentReference String?
   environmentStatus           String?
+  environmentStatusCode       Int?
+  environmentObservedAt       DateTime?
+  environmentAttentionReason  String?
+  environmentAttentionSource  String?
   lastReconciledAt            DateTime
   createdAt                   DateTime
   updatedAt                   DateTime
-  session                     SalesDemoSession @relation(fields: [salesDemoSessionId], references: [id], onDelete: Cascade)
+  session                     SalesDemoSession @relation(fields: [customerId, salesDemoSessionId], references: [customerId, id], onDelete: Cascade)
+  contact                     OpportunityContact @relation(fields: [customerId, opportunityContactId], references: [customerId, id], onDelete: Restrict)
   launchLinks                 SalesParticipantLaunchLink[]
 
   @@unique([customerId, salesDemoSessionId, opportunityContactId])

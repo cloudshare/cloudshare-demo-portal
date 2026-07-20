@@ -9,10 +9,16 @@ export const SALES_TABS: readonly SalesTab[] = [
 ];
 
 export type SalesItemView = "catalog" | "create" | "detail" | "edit";
+export type SalesSessionView = "manage" | "provision";
+export type SalesSessionStatusView = "upcoming" | "in_progress" | "needs_attention" | "ended";
 
 export interface SalesWorkspaceRouteState {
   readonly tab: SalesTab;
   readonly itemView?: SalesItemView;
+  readonly sessionView?: SalesSessionView;
+  readonly sessionId?: string;
+  readonly sessionStatus?: SalesSessionStatusView;
+  readonly participantsOpen?: boolean;
   readonly itemId?: string;
   readonly accountId?: string;
   readonly opportunityId?: string;
@@ -25,6 +31,10 @@ export interface SalesWorkspaceRouteState {
 export interface SalesNavigationIntent {
   readonly tab: SalesTab;
   readonly itemView?: SalesItemView;
+  readonly sessionView?: SalesSessionView;
+  readonly sessionId?: string | null;
+  readonly sessionStatus?: SalesSessionStatusView | null;
+  readonly participantsOpen?: boolean;
   readonly itemId?: string | null;
   readonly accountId?: string | null;
   readonly opportunityId?: string | null;
@@ -58,6 +68,12 @@ export function buildSalesWorkspaceHref(route: SalesNavigationIntent): string {
     if (route.accountId) params.set("accountId", route.accountId);
     if (route.opportunityId) params.set("opportunityId", route.opportunityId);
   }
+  if (route.tab === "sessions") {
+    if (route.sessionView === "provision") params.set("view", "provision");
+    if (route.sessionId) params.set("sessionId", route.sessionId);
+    if (route.sessionView !== "provision" && route.sessionStatus && route.sessionStatus !== "upcoming") params.set("status", route.sessionStatus);
+    if (route.sessionView !== "provision" && route.sessionId && route.participantsOpen) params.set("participants", "open");
+  }
   if (route.tab === "support") { if (route.correlationId) params.set("correlationId", route.correlationId); if (route.source) params.set("source", route.source); if (route.subjectId) params.set("subjectId", route.subjectId); }
   return `/sales?${params.toString()}`;
 }
@@ -71,6 +87,9 @@ export function parseSalesWorkspaceRouteState(input: {
   readonly correlationId?: string | readonly string[];
   readonly source?: string | readonly string[];
   readonly subjectId?: string | readonly string[];
+  readonly sessionId?: string | readonly string[];
+  readonly status?: string | readonly string[];
+  readonly participants?: string | readonly string[];
 }): SalesWorkspaceRouteState {
   const tab = parseTab(readValue(input.tab));
   const itemId = tab === "items" ? readValue(input.itemId) : undefined;
@@ -80,12 +99,20 @@ export function parseSalesWorkspaceRouteState(input: {
     : parsedItemView;
   const accountId = tab === "records" || tab === "sessions" ? readValue(input.accountId) : undefined;
   const opportunityId = tab === "records" || tab === "sessions" ? readValue(input.opportunityId) : undefined;
+  const sessionView = tab === "sessions" && readValue(input.view) === "provision" ? "provision" as const : tab === "sessions" ? "manage" as const : undefined;
+  const sessionId = tab === "sessions" ? readValue(input.sessionId) : undefined;
+  const sessionStatus = tab === "sessions" ? parseSessionStatus(readValue(input.status)) : undefined;
+  const participantsOpen = tab === "sessions" && sessionView === "manage" && Boolean(sessionId) && readValue(input.participants) === "open";
   const correlationId = tab === "support" ? readValue(input.correlationId) : undefined;
   const source = tab === "support" ? readValue(input.source) : undefined;
   const subjectId = tab === "support" ? readValue(input.subjectId) : undefined;
   return {
     tab,
     itemView,
+    ...(sessionView ? { sessionView } : {}),
+    ...(sessionId ? { sessionId } : {}),
+    ...(sessionStatus ? { sessionStatus } : {}),
+    ...(participantsOpen ? { participantsOpen: true } : {}),
     ...(itemId ? { itemId } : {}),
     ...(accountId ? { accountId } : {}),
     ...(opportunityId ? { opportunityId } : {}),
@@ -105,4 +132,8 @@ function parseTab(value: string | undefined): SalesTab {
 
 function parseItemView(value: string | undefined): SalesItemView {
   return value === "create" || value === "detail" || value === "edit" ? value : "catalog";
+}
+
+function parseSessionStatus(value: string | undefined): SalesSessionStatusView | undefined {
+  return value === "upcoming" || value === "in_progress" || value === "needs_attention" || value === "ended" ? value : undefined;
 }

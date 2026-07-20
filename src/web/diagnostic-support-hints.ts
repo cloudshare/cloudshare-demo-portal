@@ -180,6 +180,31 @@ export function deriveDiagnosticSupportHints(
   }
 
   if (
+    entry.operation === "sales.demo_session.participant.environment_observed" &&
+    readString(entry.details, "integrationSurface") === "cloudshare.v3.environments" &&
+    readString(entry.details, "observation") === "needs_attention" &&
+    readString(entry.details, "attentionSource") === "cloudshare_v3_owner_email_item_project" &&
+    readString(entry.request, "path") === "/api/v3/envs" &&
+    isSuccessfulResponse(entry)
+  ) {
+    const attentionReason = readString(entry.details, "attentionReason");
+    if (
+      attentionReason === "environment_not_found_for_project" ||
+      attentionReason === "environment_ambiguous_for_project"
+    ) {
+      const matchCount = attentionReason === "environment_not_found_for_project" ? "zero" : "multiple";
+      return [
+        {
+          title: "CloudShare Environment correlation needs attention",
+          body:
+            `The documented CloudShare v3 Environment list completed, but ${matchCount} Environments matched this participant in the Session Item Project. ` +
+            "This is a Certalis correlation exception, not a failed CloudShare request. Review the protected list evidence and the Session Item Project before deciding whether participant or Environment data needs correction.",
+        },
+      ];
+    }
+  }
+
+  if (
     readString(entry.details, "integrationSurface") === "portal.sales_demo_sessions" &&
     readString(entry.details, "failureMode") === "local_reservation_persistence" &&
     readBoolean(entry.details, "cloudShareAttempted") === false
@@ -317,6 +342,11 @@ function isMissingWebhookSignature(entry: SupportDiagnosticEntry): boolean {
   const trustGateOutcome = readString(entry.details, "trustGateOutcome");
   const signaturePresent = readBoolean(entry.details, "signaturePresent");
   return trustGateOutcome === "missing_signature" || signaturePresent === false;
+}
+
+function isSuccessfulResponse(entry: SupportDiagnosticEntry): boolean {
+  const responseStatus = readNumber(entry.response, "status") ?? readNumber(entry.details, "responseStatus");
+  return responseStatus !== null && responseStatus >= 200 && responseStatus < 300;
 }
 
 function readString(

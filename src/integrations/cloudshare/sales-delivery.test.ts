@@ -243,10 +243,14 @@ describe("CloudShare Sales Delivery", () => {
     expect(requestV4Detailed).toHaveBeenCalledTimes(2);
   });
   it("uses documented v4 GET /sales/{id} for reconciliation", async () => {
-    const requestV4 = vi.fn().mockResolvedValue({ id: "sales-1", status: "active", sendInvitations: "salesProsAndParticipants" });
+    const requestV4 = vi.fn().mockResolvedValue({ id: "sales-1", status: "inProgress", sendInvitations: "salesProsAndParticipants" });
     const delivery = createCloudShareSalesDelivery({ requestV4, requestV3: vi.fn(), requestV3Text: vi.fn() });
-    await expect(delivery.readSession("sales-1")).resolves.toMatchObject({ id: "sales-1", status: "active" });
+    await expect(delivery.readSession("sales-1")).resolves.toMatchObject({ id: "sales-1", status: "inProgress" });
     expect(requestV4).toHaveBeenCalledWith(expect.objectContaining({ method: "GET", path: "/sales/sales-1" }));
+  });
+  it("fails the Sales read at the adapter boundary when status is missing or unknown", async () => {
+    await expect(deliveryForRoster({ id: "sales-1" }).readSession("sales-1")).rejects.toMatchObject({ name: "CloudShareResponseError", context: expect.objectContaining({ method: "GET", path: "/v4/sales/sales-1", status: 200 }) });
+    await expect(deliveryForRoster({ id: "sales-1", status: "active" }).readSession("sales-1")).rejects.toMatchObject({ name: "CloudShareResponseError", context: expect.objectContaining({ responseBody: { id: "sales-1", status: "active" } }) });
   });
   it("normalizes the documented Sales invitation-setting wire variants and fails closed when absent", async () => {
     const requestV4Detailed = vi.fn()
