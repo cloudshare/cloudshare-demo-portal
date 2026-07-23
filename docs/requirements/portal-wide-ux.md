@@ -204,6 +204,9 @@ visible focus, predictable keyboard behavior, and usable smaller-screen reflow.
 - Automatic stale refresh is bounded, filtered, and paginated behind one local module interface.
   Its CloudShare adapter uses the documented filtered Sales Experience list contract. It must not
   issue one provider read per rendered row or expose provider endpoint/wire details to UI callers.
+- The queue keeps an explicit manual refresh control. It uses the same bounded batch interface,
+  communicates progress and outcome in the queue toolbar, and does not become a per-row provider
+  fan-out.
 - One Session retains an explicit Verify now operation using the documented single-Sales-Experience
   read. The sticky Session toolbar contains source/freshness, automatic refresh progress, Verify now,
   and durable refresh failure feedback.
@@ -342,7 +345,8 @@ visible focus, predictable keyboard behavior, and usable smaller-screen reflow.
 - [ ] Search/filter/sort/page state is URL-backed, Customer-scoped, bounded, and tested at 200–500
   Session scale with multiple Participants.
 - [ ] Queue refresh uses bounded filtered/paginated list behavior and automated tests prove it does
-  not issue a provider call per rendered row.
+  not issue a provider call per rendered row; both automatic stale refresh and the manual queue
+  refresh control use this behavior.
 - [ ] A provider refresh failure retains stored rows and shows one durable page-level Retry/Support
   warning without changing row attention.
 - [ ] Five-minute provider freshness, stale schedule estimate, local polling, refresh progress, and
@@ -379,8 +383,9 @@ visible focus, predictable keyboard behavior, and usable smaller-screen reflow.
 ### Accessibility, responsive behavior, and QA
 
 - [ ] Automated browser interaction covers every changed control, including route navigation,
-  filters, refresh/Verify now, row and bulk selection, inspector/menu/dialog actions, and error
-  recovery; screenshots or DOM-presence assertions alone do not satisfy this criterion.
+  filters, manual queue refresh, single-Session Verify now, row and bulk selection,
+  inspector/menu/dialog actions, and error recovery; screenshots or DOM-presence assertions alone
+  do not satisfy this criterion.
 - [ ] Browser QA records console errors and warnings and accepts no unexplained new output.
 - [ ] Keyboard-only QA completes the queue-to-Participant-action flow with visible focus, semantic
   status/alerts, predictable announcements, and correct focus return.
