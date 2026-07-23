@@ -11,7 +11,7 @@ type QueueResponse = { view: SalesSessionQueueView; offset: number; limit: numbe
 type SalesRecordOptions = { accounts?: { id: string; name: string }[]; opportunities?: { id: string; accountId: string; name: string }[] };
 
 export function SalesSessionsWorkbench({ route, onNavigate }: { readonly route: SalesWorkspaceRouteState; readonly onNavigate: (intent: SalesNavigationIntent) => void }) {
-  const fetchRef = useRef(createAdminAuthenticatedRequest({ fetchImpl: window.fetch.bind(window), onSessionExpired: () => { window.location.assign("/login"); } }));
+  const fetchRef = useRef(createAdminAuthenticatedRequest({ fetchImpl: (input, init) => window.fetch(input, init), onSessionExpired: () => { window.location.assign("/login"); } }));
   const [data, setData] = useState<QueueResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -25,7 +25,7 @@ export function SalesSessionsWorkbench({ route, onNavigate }: { readonly route: 
   useEffect(() => setSearchDraft(search), [search]);
   useEffect(() => {
     let live = true;
-    void fetchRef.current("/api/sales/accounts", { cache: "no-store" })
+    void fetchRef.current("/api/sales/session-opportunities?offset=0&limit=100", { cache: "no-store" })
       .then(async (response) => response.ok ? response.json() as Promise<SalesRecordOptions> : {})
       .then((body) => { if (live) setRecordOptions(body); })
       .catch(() => undefined);

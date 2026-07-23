@@ -20,3 +20,13 @@ describe("Sales Session queue handler", () => {
     expect(result.body).toMatchObject({ view: "history", rows: [{ id: "session-1" }] });
   });
 });
+
+it("fails an archived restoration target closed even when its id appears on the page", async () => {
+  const candidate = { ...session, id: "archived-session" };
+  const queue = {
+    read: vi.fn().mockResolvedValue({ total: 1, rows: [candidate] }),
+    findTarget: vi.fn().mockResolvedValue({ id: "archived-session", archived: true }),
+  };
+  const result = await handleReadSalesSessionQueue({ queue, now: () => new Date("2026-07-23T10:00:00Z") }, { customerId: "customer-a", query: { target: "archived-session" } });
+  expect(result).toMatchObject({ status: 200, body: { target: { state: "archived" } } });
+});

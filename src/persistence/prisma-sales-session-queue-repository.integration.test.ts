@@ -44,6 +44,7 @@ describe("Prisma Sales Session queue repository integration", () => {
       session(`active-1-${suffix}`, customerA, opportunityA, itemA, "2026-07-24T09:00", "2026-07-24T10:00", "Acme A", 1),
       session(`active-2-${suffix}`, customerA, opportunityA, itemA, "2026-07-25T09:00", "2026-07-25T10:00", "Acme B", 2),
       session(`history-${suffix}`, customerA, opportunityA, itemA, "2026-07-20T09:00", "2026-07-20T10:00", "Acme History", 3),
+      { ...session(`pacific-${suffix}`, customerA, opportunityA, itemA, "2026-07-23T14:00", "2026-07-23T15:00", "Acme Pacific", 4), timeZone: "Pacific Standard Time" },
       session(`hidden-${suffix}`, customerB, opportunityB, itemB, "2026-07-24T09:00", "2026-07-24T10:00", "Hidden", 1),
     ] });
     const repository = createPrismaSalesSessionQueueRepository(prisma);
@@ -51,9 +52,9 @@ describe("Prisma Sales Session queue repository integration", () => {
 
     const first = await repository.read({ customerId: customerA, view: "active", accountId: accountA, opportunityId: opportunityA, search: "Acme", sort: "start_asc", offset: 0, limit: 1, now });
     const second = await repository.read({ customerId: customerA, view: "active", sort: "start_asc", offset: 1, limit: 1, now });
-    expect(first.total).toBe(2);
-    expect(first.rows.map((row) => row.sessionName)).toEqual(["Acme A"]);
-    expect(second.rows.map((row) => row.sessionName)).toEqual(["Acme B"]);
+    expect(first.total).toBe(3);
+    expect(first.rows.map((row) => row.sessionName)).toEqual(["Acme Pacific"]);
+    expect(second.rows.map((row) => row.sessionName)).toEqual(["Acme A"]);
     const history = await repository.read({ customerId: customerA, view: "history", sort: "start_desc", offset: 0, limit: 25, now });
     expect(history.rows.map((row) => row.sessionName)).toEqual(["Acme History"]);
     await expect(repository.findTarget(customerA, `hidden-${suffix}`)).resolves.toBeNull();

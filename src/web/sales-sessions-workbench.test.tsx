@@ -26,7 +26,7 @@ describe("Sales Sessions workbench", () => {
     const user = userEvent.setup();
     const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input) => {
       const path = String(input);
-      if (path === "/api/sales/accounts") return json({
+      if (path === "/api/sales/session-opportunities?offset=0&limit=100") return json({
         accounts: [{ id: "account-1", name: "Acme" }],
         opportunities: [{ id: "opportunity-1", accountId: "account-1", name: "Evaluation" }],
       });
@@ -62,7 +62,7 @@ describe("Sales Sessions workbench", () => {
   it("restores controlled search and selected-row focus, and explains an invalid target", async () => {
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
     const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input) => {
-      if (String(input) === "/api/sales/accounts") return json({ accounts: [], opportunities: [] });
+      if (String(input) === "/api/sales/session-opportunities?offset=0&limit=100") return json({ accounts: [], opportunities: [] });
       return json({
         view: "active", offset: 0, limit: 25, total: 1, rows: [row],
         target: { id: "session-1", state: "available" },

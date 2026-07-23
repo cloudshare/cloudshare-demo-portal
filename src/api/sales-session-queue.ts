@@ -18,9 +18,9 @@ export async function handleReadSalesSessionQueue(deps: SalesSessionQueueHandler
 }
 
 async function restoreTarget(queue: SalesSessionQueueRepository, customerId: string, targetId: string, rows: readonly { readonly id: string }[]) {
-  if (rows.some((row) => row.id === targetId)) return { id: targetId, state: "available" as const };
   const target = await queue.findTarget(customerId, targetId);
   if (!target) return { id: targetId, state: "missing" as const, message: "The requested Session is no longer available for this Customer." };
   if (target.archived) return { id: targetId, state: "archived" as const, message: "The requested Session belongs to archived sales records and cannot be restored here." };
+  if (rows.some((row) => row.id === targetId)) return { id: targetId, state: "available" as const };
   return { id: targetId, state: "outside_current_queue" as const, message: "The requested Session is outside the current queue filters." };
 }

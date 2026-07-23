@@ -25,6 +25,24 @@ body {
   color: #0f172a;
 }
 
+.sales-workspace-layout {
+  grid-template-columns: minmax(10rem, 14rem) minmax(0, 1fr);
+}
+
+@media (max-width: 760px) {
+  .sales-workspace-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sales-workspace-layout > aside {
+    position: static !important;
+  }
+
+  .sales-workspace-layout > aside nav {
+    grid-template-columns: repeat(4, minmax(8rem, 1fr));
+  }
+}
+
 h1, h2, h3 {
   font-family: var(--font-display);
   font-weight: 600;

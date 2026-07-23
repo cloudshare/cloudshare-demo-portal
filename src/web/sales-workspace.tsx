@@ -84,7 +84,7 @@ export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemVi
 
   return <main style={salesWorkspaceStyle}>
     <PortalPageHeader eyebrow="Certalis Sales Portal" title="Sales Workspace" description="Curate reusable Items, commercial records, and time-bound CloudShare Sales Experiences in the isolated Certalis Customer workspace." email={email} actions={<button onClick={() => void logout()} style={accountLogoutButtonStyle}>Log out</button>} />
-    <div className="sales-workspace-layout" style={{ display: "grid", gridTemplateColumns: "minmax(10rem, 14rem) minmax(0, 1fr)", gap: "1.25rem", alignItems: "start", overflow: "hidden" }}><aside aria-label="Sales workspace navigation" style={{ position: "sticky", top: "1rem", minWidth: 0, overflowX: "auto" }}><nav aria-label="Sales workspace sections" style={{ ...workspaceTabNavStyle, display: "grid", gap: "0.4rem", minWidth: "9rem" }}>{SALES_TABS.map((tab) => {
+    <div className="sales-workspace-layout" style={{ display: "grid", gap: "1.25rem", alignItems: "start", minWidth: 0 }}><aside aria-label="Sales workspace navigation" style={{ position: "sticky", top: "1rem", minWidth: 0, overflowX: "auto" }}><nav aria-label="Sales workspace sections" style={{ ...workspaceTabNavStyle, display: "grid", gap: "0.4rem", minWidth: "9rem" }}>{SALES_TABS.map((tab) => {
       const active = route.tab === tab;
       return <button key={tab} type="button" aria-current={active ? "page" : undefined} onClick={() => navigate({ tab })} style={workspaceTabButtonStyle(active, tab === "support")}>{getSalesTabLabel(tab)}</button>;
     })}</nav></aside><div style={{ minWidth: 0 }}>

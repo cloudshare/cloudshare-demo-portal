@@ -1,5 +1,5 @@
 import type { Prisma, PrismaClient } from "@prisma/client";
-import { projectQueueParticipantEnvironment, type SalesSessionQueueCandidate, type SalesSessionQueueSort, type SalesSessionQueueView } from "@/domain/sales-session-queue";
+import { belongsInSalesSessionQueue, classifySalesSessionQueueRow, projectQueueParticipantEnvironment, type SalesSessionQueueCandidate, type SalesSessionQueueSort, type SalesSessionQueueView } from "@/domain/sales-session-queue";
 
 export interface SalesSessionQueueRead {
   readonly customerId: string;
@@ -25,13 +25,16 @@ export function createPrismaSalesSessionQueueRepository(prisma: PrismaClient): S
   return {
     async read(input) {
       const where = whereFor(input);
-      const [total, rows] = await Promise.all([
-        prisma.salesDemoSession.count({ where }),
-        prisma.salesDemoSession.findMany({ where, orderBy: orderBy(input.sort), skip: input.offset, take: input.limit, include: { opportunity: { include: { account: true } }, participants: { where: { environmentAttentionReason: { not: null } }, include: { contact: true }, take: 1 } } }),
-      ]);
-      return { total, rows: rows.map((row) => ({
-        id: row.id, customerId: row.customerId, opportunityId: row.opportunityId, itemId: row.itemId, cloudShareSalesExperienceId: row.cloudShareSalesExperienceId, externalId: row.externalId, type: row.type as SalesSessionQueueCandidate["type"], start: row.start, end: row.end, timeZone: row.timeZone, salesProEmail: row.salesProEmail, salesProDisplayName: row.salesProDisplayName, registrationType: "registeredParticipantsOnly", sendInvitations: row.sendInvitations === "salesProsAndParticipants" ? "salesProsAndParticipants" : "dontSend", sessionName: row.sessionName, revision: row.revision, operationalStatus: row.operationalStatus as SalesSessionQueueCandidate["operationalStatus"], attentionReason: row.attentionReason, experienceStatus: row.experienceStatus === "notStarted" || row.experienceStatus === "inProgress" || row.experienceStatus === "ended" ? row.experienceStatus : null, experienceStatusObservedAt: row.experienceStatusObservedAt, createdAt: row.createdAt, accountId: row.opportunity.accountId, accountName: row.opportunity.account.name, opportunityName: row.opportunity.name, participantEnvironment: row.participants[0] ? projectQueueParticipantEnvironment({ participantName: `${row.participants[0].contact.firstName} ${row.participants[0].contact.lastName}`, environmentStatus: row.participants[0].environmentStatus, environmentStatusCode: row.participants[0].environmentStatusCode, environmentObservedAt: row.participants[0].environmentObservedAt, attentionReason: row.participants[0].environmentAttentionReason }) : null,
-      })) };
+      const requiresWallClockClassification = input.view === "active" || input.view === "history";
+      const rows = await prisma.salesDemoSession.findMany({ where, orderBy: orderBy(input.sort), skip: requiresWallClockClassification ? 0 : input.offset, take: requiresWallClockClassification ? 501 : input.limit, include: { opportunity: { include: { account: true } }, participants: { where: { environmentAttentionReason: { not: null } }, include: { contact: true }, take: 1 } } });
+      const candidates: SalesSessionQueueCandidate[] = rows.map((row) => ({
+        id: row.id, customerId: row.customerId, opportunityId: row.opportunityId, itemId: row.itemId, cloudShareSalesExperienceId: row.cloudShareSalesExperienceId, externalId: row.externalId, type: row.type as SalesSessionQueueCandidate["type"], start: row.start, end: row.end, timeZone: row.timeZone, salesProEmail: row.salesProEmail, salesProDisplayName: row.salesProDisplayName, registrationType: "registeredParticipantsOnly" as const, sendInvitations: row.sendInvitations === "salesProsAndParticipants" ? "salesProsAndParticipants" : "dontSend", sessionName: row.sessionName, revision: row.revision, operationalStatus: row.operationalStatus as SalesSessionQueueCandidate["operationalStatus"], attentionReason: row.attentionReason, experienceStatus: row.experienceStatus === "notStarted" || row.experienceStatus === "inProgress" || row.experienceStatus === "ended" ? row.experienceStatus : null, experienceStatusObservedAt: row.experienceStatusObservedAt, createdAt: row.createdAt, accountId: row.opportunity.accountId, accountName: row.opportunity.account.name, opportunityName: row.opportunity.name, participantEnvironment: row.participants[0] ? projectQueueParticipantEnvironment({ participantName: `${row.participants[0].contact.firstName} ${row.participants[0].contact.lastName}`, environmentStatus: row.participants[0].environmentStatus, environmentStatusCode: row.participants[0].environmentStatusCode, environmentObservedAt: row.participants[0].environmentObservedAt, attentionReason: row.participants[0].environmentAttentionReason }) : null,
+      }));
+      if (requiresWallClockClassification) {
+        const matching = candidates.filter((candidate) => belongsInSalesSessionQueue(classifySalesSessionQueueRow(candidate, input.now), input.view));
+        return { total: matching.length, rows: matching.slice(input.offset, input.offset + input.limit) };
+      }
+      return { total: await prisma.salesDemoSession.count({ where }), rows: candidates };
     },
     async findTarget(customerId, id) {
       const row = await prisma.salesDemoSession.findFirst({ where: { customerId, id }, select: { id: true, opportunity: { select: { archivedAt: true, account: { select: { archivedAt: true } } } } } });
@@ -41,15 +44,10 @@ export function createPrismaSalesSessionQueueRepository(prisma: PrismaClient): S
 }
 
 function whereFor(input: SalesSessionQueueRead): Prisma.SalesDemoSessionWhereInput {
-  const terms: Prisma.SalesDemoSessionWhereInput[] = [{ customerId: input.customerId }];
+  const terms: Prisma.SalesDemoSessionWhereInput[] = [{ customerId: input.customerId }, { opportunity: { archivedAt: null, account: { archivedAt: null } } }];
   if (input.accountId) terms.push({ opportunity: { accountId: input.accountId } });
   if (input.opportunityId) terms.push({ opportunityId: input.opportunityId });
   if (input.search) terms.push({ OR: [{ sessionName: { contains: input.search } }, { opportunity: { name: { contains: input.search } } }, { opportunity: { account: { name: { contains: input.search } } } }] });
-  const now = input.now.toISOString().slice(0, 16);
-  const freshSince = new Date(input.now.getTime() - 5 * 60_000);
-  const predicted = input.view === "active" ? { OR: [{ experienceStatusObservedAt: { lt: freshSince }, start: { gt: now } }, { experienceStatus: null, start: { gt: now } }, { experienceStatusObservedAt: { lt: freshSince }, start: { lte: now }, end: { gt: now } }, { experienceStatus: null, start: { lte: now }, end: { gt: now } }] } : input.view === "history" ? { OR: [{ experienceStatusObservedAt: { lt: freshSince }, end: { lte: now } }, { experienceStatus: null, end: { lte: now } }] } : undefined;
-  if (input.view === "active") terms.push({ OR: [{ experienceStatus: { in: ["notStarted", "inProgress"] }, experienceStatusObservedAt: { gte: freshSince } }, predicted!] });
-  if (input.view === "history") terms.push({ OR: [{ experienceStatus: "ended", experienceStatusObservedAt: { gte: freshSince } }, predicted!] });
   if (input.view === "needs_attention") terms.push({ OR: [{ operationalStatus: "needs_attention" }, { participants: { some: { environmentAttentionReason: { not: null } } } }] });
   return { AND: terms };
 }
