@@ -1,6 +1,6 @@
 # Certalis Portal-Wide User Experience
 
-**Status:** Agreed specification  
+**Status:** Agreed specification
 **Source:** Wayfinder map [Discover and simplify the portal-wide Certalis user
 experience](https://github.com/swinster/cloudshare-demo-portal/issues/366), resolved by
 issues
@@ -172,7 +172,7 @@ visible focus, predictable keyboard behavior, and usable smaller-screen reflow.
 - The Session workspace is a dedicated route. Participants is its default full-width local area;
   Activity and Details are sibling local areas. The complete Participant workspace must not be a
   modal, side sheet, or narrow workbench column. Those containers are reserved for bounded tasks.
-- Helios Admin may use persistent left navigation but retains its existing certification
+- Helios Admin uses persistent left navigation but retains its existing certification
   destinations and domain contracts. Candidate retains a lower-density, task-focused shell.
 - Current location and meaningful view state belong in route/query state. Ephemeral visual state
   may remain local, but back/forward navigation must restore valid queue filters, page, scroll,
@@ -270,9 +270,10 @@ visible focus, predictable keyboard behavior, and usable smaller-screen reflow.
 - Authorized Customer-scoped Support Diagnostics retain request/query and provider-response bodies
   verbatim under ADR-004, including credential-like body values and sponsored links. Request headers
   expose only the explicit operational allowlist; all other named or unparseable headers are masked.
-- Ordinary Event Log, Activity, Audit, generic logs, Candidate/Participant UI, ordinary APIs,
-  browser state/console, and other Customers receive metadata-only, fail-closed projections with
-  correlation ID. Unknown or unscoped evidence is not rendered.
+- Same-Customer ordinary Event Log, Activity, Audit, generic logs, Candidate/Participant UI,
+  ordinary APIs, and browser state/console receive metadata-only, fail-closed projections with
+  correlation ID. Another Customer receives no record or projection. Unknown or unscoped evidence
+  is not rendered.
 - Client code must never receive protected evidence merely to decide whether to display it.
   Authorization, Customer scoping, and projection happen at the server-enforced interface.
 
@@ -364,9 +365,10 @@ visible focus, predictable keyboard behavior, and usable smaller-screen reflow.
 
 - [ ] Domain/handler/UI tests independently assert Certalis operation, CloudShare Experience, and
   Participant Environment status/source and prove no union or fallback collapses them.
-- [ ] Activity and ordinary APIs contain controlled metadata and correlation ID only; negative tests
-  prove protected bodies, headers, sponsored links, tokens, and provider identifiers do not reach
-  ordinary browser/client surfaces.
+- [ ] Activity and same-Customer ordinary APIs contain controlled metadata and correlation ID only;
+  negative tests prove protected bodies, disallowed headers, sponsored links, tokens, and unsafe
+  provider references such as roster Environment references do not reach ordinary browser/client
+  surfaces, while cross-Customer reads return no record.
 - [ ] Authorized Customer-scoped Support Diagnostics preserve the ADR-004 body and header contract;
   cross-Customer and non-admin reads fail closed.
 - [ ] UI code has no CloudShare calls or provider endpoint knowledge. Adapter contract tests cover
