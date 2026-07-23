@@ -78,4 +78,18 @@ describe("Sales Sessions workbench", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
     await screen.findByRole("button", { name: "Acme evaluation" });
   });
+
+  it("restores a selected Opportunity outside the first bounded options page", async () => {
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input) => {
+      const path = String(input);
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({
+        accounts: [],
+        opportunities: [{ id: "opportunity-51", accountId: "account-51", name: "Restored opportunity" }],
+      });
+      return json({ view: "active", offset: 0, limit: 25, total: 0, rows: [] });
+    });
+    render(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage", opportunityId: "opportunity-51" }} onNavigate={vi.fn()} />);
+    await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).includes("selectedOpportunityId=opportunity-51"))).toBe(true));
+    expect((screen.getByRole("combobox", { name: "Opportunity filter" }) as HTMLSelectElement).value).toBe("opportunity-51");
+  });
 });

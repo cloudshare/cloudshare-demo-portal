@@ -28,12 +28,13 @@ export function SalesSessionsWorkbench({ route, onNavigate }: { readonly route: 
     const params = new URLSearchParams({ accountPage: "1", accountPageSize: "50", page: "1", pageSize: "50" });
     if (search) { params.set("accountSearch", search); params.set("search", search); }
     if (route.accountId) params.set("accountId", route.accountId);
+    if (route.opportunityId) params.set("selectedOpportunityId", route.opportunityId);
     void fetchRef.current(`/api/sales/session-opportunities?${params}`, { cache: "no-store" })
       .then(async (response) => response.ok ? response.json() as Promise<SalesRecordOptions> : {})
       .then((body) => { if (live) setRecordOptions(body); })
       .catch(() => undefined);
     return () => { live = false; };
-  }, [route.accountId, search]);
+  }, [route.accountId, route.opportunityId, search]);
   useEffect(() => {
     let live = true;
     const load = async () => {

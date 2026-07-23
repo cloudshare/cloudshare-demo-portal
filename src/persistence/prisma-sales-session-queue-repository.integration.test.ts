@@ -47,6 +47,19 @@ describe("Prisma Sales Session queue repository integration", () => {
       { ...session(`pacific-${suffix}`, customerA, opportunityA, itemA, "2026-07-23T14:00", "2026-07-23T15:00", "Acme Pacific", 4), timeZone: "Pacific Standard Time" },
       session(`hidden-${suffix}`, customerB, opportunityB, itemB, "2026-07-24T09:00", "2026-07-24T10:00", "Hidden", 1),
     ] });
+    await prisma.opportunityContact.createMany({ data: [1, 2].map((number) => ({
+      id: `contact-${number}-${suffix}`, customerId: customerA, opportunityId: opportunityA,
+      firstName: `Participant${number}`, lastName: "Queue", email: `participant-${number}-${suffix}@example.test`,
+      createdAt, updatedAt: createdAt,
+    })) });
+    await prisma.salesSessionParticipant.createMany({ data: [1, 2].map((number) => ({
+      id: `participant-${number}-${suffix}`, customerId: customerA, salesDemoSessionId: `active-1-${suffix}`,
+      opportunityContactId: `contact-${number}-${suffix}`, cloudShareParticipantId: `cloudshare-participant-${number}-${suffix}`,
+      invitationStatus: "notSent", participationStatus: "pending", environmentStatus: number === 1 ? "Ready" : null,
+      environmentAttentionReason: number === 2 ? "Participant environment is not correlated." : null,
+      environmentAttentionSource: number === 2 ? "certalis_correlation" : null,
+      lastReconciledAt: createdAt, createdAt, updatedAt: createdAt,
+    })) });
     const repository = createPrismaSalesSessionQueueRepository(prisma);
     const now = new Date("2026-07-23T12:00:00.000Z");
 
@@ -59,5 +72,12 @@ describe("Prisma Sales Session queue repository integration", () => {
     expect(history.rows.map((row) => row.sessionName)).toEqual(["Acme History"]);
     await expect(repository.findTarget(customerA, `hidden-${suffix}`)).resolves.toBeNull();
     await expect(repository.findTarget(customerA, `missing-${suffix}`)).resolves.toBeNull();
+
+    await prisma.salesDemoSession.createMany({ data: Array.from({ length: 197 }, (_, index) =>
+      session(`scale-${index}-${suffix}`, customerA, opportunityA, itemA, `2026-08-${String(1 + Math.floor(index / 20)).padStart(2, "0")}T${String(index % 20).padStart(2, "0")}:00`, "2026-09-01T00:00", `Scale ${String(index).padStart(3, "0")}`, index + 5),
+    ) });
+    const scalePage = await repository.read({ customerId: customerA, view: "active", sort: "name_asc", offset: 175, limit: 25, now });
+    expect(scalePage.total).toBe(200);
+    expect(scalePage.rows).toHaveLength(25);
   });
 });
