@@ -44,7 +44,7 @@ describe("Prisma Sales Session queue repository integration", () => {
       session(`active-1-${suffix}`, customerA, opportunityA, itemA, "2026-07-24T09:00", "2026-07-24T10:00", "Acme A", 1),
       session(`active-2-${suffix}`, customerA, opportunityA, itemA, "2026-07-25T09:00", "2026-07-25T10:00", "Acme B", 2),
       session(`history-${suffix}`, customerA, opportunityA, itemA, "2026-07-20T09:00", "2026-07-20T10:00", "Acme History", 3),
-      { ...session(`pacific-${suffix}`, customerA, opportunityA, itemA, "2026-07-23T14:00", "2026-07-23T15:00", "Acme Pacific", 4), timeZone: "Pacific Standard Time" },
+      { ...session(`pacific-${suffix}`, customerA, opportunityA, itemA, "2026-07-23T05:30", "2026-07-23T06:30", "Acme Pacific", 4), timeZone: "Pacific Standard Time" },
       session(`hidden-${suffix}`, customerB, opportunityB, itemB, "2026-07-24T09:00", "2026-07-24T10:00", "Hidden", 1),
     ] });
     await prisma.opportunityContact.createMany({ data: [1, 2].map((number) => ({
@@ -72,6 +72,9 @@ describe("Prisma Sales Session queue repository integration", () => {
     expect(history.rows.map((row) => row.sessionName)).toEqual(["Acme History"]);
     await expect(repository.findTarget(customerA, `hidden-${suffix}`)).resolves.toBeNull();
     await expect(repository.findTarget(customerA, `missing-${suffix}`)).resolves.toBeNull();
+    await prisma.salesOpportunity.update({ where: { id: opportunityA }, data: { archivedAt: now } });
+    await expect(repository.findTarget(customerA, `active-1-${suffix}`)).resolves.toEqual({ id: `active-1-${suffix}`, archived: true });
+    await prisma.salesOpportunity.update({ where: { id: opportunityA }, data: { archivedAt: null } });
 
     await prisma.salesDemoSession.createMany({ data: Array.from({ length: 197 }, (_, index) =>
       session(`scale-${index}-${suffix}`, customerA, opportunityA, itemA, `2026-08-${String(1 + Math.floor(index / 20)).padStart(2, "0")}T${String(index % 20).padStart(2, "0")}:00`, "2026-09-01T00:00", `Scale ${String(index).padStart(3, "0")}`, index + 5),
