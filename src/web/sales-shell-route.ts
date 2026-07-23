@@ -2,15 +2,15 @@ export type SalesTab = "items" | "records" | "sessions" | "support" | "configura
 
 export const SALES_TABS: readonly SalesTab[] = [
   "sessions",
-  "items",
   "records",
+  "items",
   "support",
-  "configuration",
 ];
 
 export type SalesItemView = "catalog" | "create" | "detail" | "edit";
 export type SalesSessionView = "manage" | "provision";
 export type SalesSessionStatusView = "upcoming" | "in_progress" | "needs_attention" | "ended";
+export type SalesSessionQueueView = "active" | "needs_attention" | "history";
 
 export interface SalesWorkspaceRouteState {
   readonly tab: SalesTab;
@@ -18,6 +18,10 @@ export interface SalesWorkspaceRouteState {
   readonly sessionView?: SalesSessionView;
   readonly sessionId?: string;
   readonly sessionStatus?: SalesSessionStatusView;
+  readonly queueView?: SalesSessionQueueView;
+  readonly queueSearch?: string;
+  readonly queueSort?: "start_desc" | "start_asc" | "name_asc";
+  readonly queueOffset?: number;
   readonly participantsOpen?: boolean;
   readonly itemId?: string;
   readonly accountId?: string;
@@ -34,6 +38,10 @@ export interface SalesNavigationIntent {
   readonly sessionView?: SalesSessionView;
   readonly sessionId?: string | null;
   readonly sessionStatus?: SalesSessionStatusView | null;
+  readonly queueView?: SalesSessionQueueView | null;
+  readonly queueSearch?: string | null;
+  readonly queueSort?: "start_desc" | "start_asc" | "name_asc" | null;
+  readonly queueOffset?: number | null;
   readonly participantsOpen?: boolean;
   readonly itemId?: string | null;
   readonly accountId?: string | null;
@@ -48,8 +56,8 @@ export interface SalesNavigationIntent {
 export function getSalesTabLabel(tab: SalesTab): string {
   switch (tab) {
     case "items": return "Items";
-    case "records": return "Accounts and opportunities";
-    case "sessions": return "Sales Enablement Sessions";
+    case "records": return "Relationships";
+    case "sessions": return "Sessions";
     case "support": return "Support";
     case "configuration": return "Configuration";
   }
@@ -73,6 +81,12 @@ export function buildSalesWorkspaceHref(route: SalesNavigationIntent): string {
     if (route.sessionId) params.set("sessionId", route.sessionId);
     if (route.sessionView !== "provision" && route.sessionStatus && route.sessionStatus !== "upcoming") params.set("status", route.sessionStatus);
     if (route.sessionView !== "provision" && route.sessionId && route.participantsOpen) params.set("participants", "open");
+    if (route.sessionView !== "provision") {
+      if (route.queueView && route.queueView !== "active") params.set("queue", route.queueView);
+      if (route.queueSearch) params.set("q", route.queueSearch);
+      if (route.queueSort && route.queueSort !== "start_desc") params.set("sort", route.queueSort);
+      if (route.queueOffset && route.queueOffset > 0) params.set("offset", String(route.queueOffset));
+    }
   }
   if (route.tab === "support") { if (route.correlationId) params.set("correlationId", route.correlationId); if (route.source) params.set("source", route.source); if (route.subjectId) params.set("subjectId", route.subjectId); }
   return `/sales?${params.toString()}`;
@@ -90,6 +104,10 @@ export function parseSalesWorkspaceRouteState(input: {
   readonly sessionId?: string | readonly string[];
   readonly status?: string | readonly string[];
   readonly participants?: string | readonly string[];
+  readonly queue?: string | readonly string[];
+  readonly q?: string | readonly string[];
+  readonly sort?: string | readonly string[];
+  readonly offset?: string | readonly string[];
 }): SalesWorkspaceRouteState {
   const tab = parseTab(readValue(input.tab));
   const itemId = tab === "items" ? readValue(input.itemId) : undefined;
@@ -103,6 +121,10 @@ export function parseSalesWorkspaceRouteState(input: {
   const sessionId = tab === "sessions" ? readValue(input.sessionId) : undefined;
   const sessionStatus = tab === "sessions" ? parseSessionStatus(readValue(input.status)) : undefined;
   const participantsOpen = tab === "sessions" && sessionView === "manage" && Boolean(sessionId) && readValue(input.participants) === "open";
+  const queueView = tab === "sessions" && sessionView === "manage" ? parseQueueView(readValue(input.queue)) : undefined;
+  const queueSearch = tab === "sessions" && sessionView === "manage" ? readValue(input.q) : undefined;
+  const queueSort = tab === "sessions" && sessionView === "manage" ? parseQueueSort(readValue(input.sort)) : undefined;
+  const queueOffset = tab === "sessions" && sessionView === "manage" ? parseQueueOffset(readValue(input.offset)) : undefined;
   const correlationId = tab === "support" ? readValue(input.correlationId) : undefined;
   const source = tab === "support" ? readValue(input.source) : undefined;
   const subjectId = tab === "support" ? readValue(input.subjectId) : undefined;
@@ -113,6 +135,7 @@ export function parseSalesWorkspaceRouteState(input: {
     ...(sessionId ? { sessionId } : {}),
     ...(sessionStatus ? { sessionStatus } : {}),
     ...(participantsOpen ? { participantsOpen: true } : {}),
+    ...(queueView ? { queueView } : {}), ...(queueSearch ? { queueSearch } : {}), ...(queueSort ? { queueSort } : {}), ...(queueOffset ? { queueOffset } : {}),
     ...(itemId ? { itemId } : {}),
     ...(accountId ? { accountId } : {}),
     ...(opportunityId ? { opportunityId } : {}),
@@ -120,6 +143,10 @@ export function parseSalesWorkspaceRouteState(input: {
     ...(source ? { source } : {}), ...(subjectId ? { subjectId } : {}),
   };
 }
+
+function parseQueueView(value: string | undefined): SalesSessionQueueView { return value === "needs_attention" || value === "history" ? value : "active"; }
+function parseQueueSort(value: string | undefined): SalesWorkspaceRouteState["queueSort"] { return value === "start_asc" || value === "name_asc" ? value : "start_desc"; }
+function parseQueueOffset(value: string | undefined): number { const parsed = Number(value); return Number.isInteger(parsed) && parsed > 0 ? parsed : 0; }
 
 function readValue(value: string | readonly string[] | undefined): string | undefined {
   return typeof value === "string" ? value : value?.[0];

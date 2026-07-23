@@ -3,8 +3,8 @@ import { SALES_TABS, buildSalesWorkspaceHref, getSalesTabLabel, parseSalesWorksp
 
 describe("Sales workspace shell routes", () => {
   it("keeps Sessions first while retaining the canonical Item route", () => {
-    expect(SALES_TABS).toEqual(["sessions", "items", "records", "support", "configuration"]);
-    expect(SALES_TABS.map(getSalesTabLabel)).toEqual(["Sales Enablement Sessions", "Items", "Accounts and opportunities", "Support", "Configuration"]);
+    expect(SALES_TABS).toEqual(["sessions", "records", "items", "support"]);
+    expect(SALES_TABS.map(getSalesTabLabel)).toEqual(["Sessions", "Relationships", "Items", "Support"]);
     expect(parseSalesWorkspaceRouteState({})).toMatchObject({ tab: "sessions", itemView: "catalog" });
   });
 
@@ -13,6 +13,7 @@ describe("Sales workspace shell routes", () => {
     expect(parseSalesWorkspaceRouteState({ tab: "items", view: "detail", itemId: "item-1" })).toMatchObject({ tab: "items", itemView: "detail", itemId: "item-1" });
     expect(buildSalesWorkspaceHref({ tab: "records", accountId: "account-1", opportunityId: "opportunity-1" })).toBe("/sales?tab=records&accountId=account-1&opportunityId=opportunity-1");
     expect(buildSalesWorkspaceHref({ tab: "sessions", opportunityId: "opportunity-1" })).toBe("/sales?tab=sessions&opportunityId=opportunity-1");
+    expect(buildSalesWorkspaceHref({ tab: "sessions", queueView: "history", queueSearch: "Acme", queueSort: "name_asc", queueOffset: 25 })).toBe("/sales?tab=sessions&queue=history&q=Acme&sort=name_asc&offset=25");
     expect(buildSalesWorkspaceHref({ tab: "sessions", sessionView: "provision", sessionId: "session-1" })).toBe("/sales?tab=sessions&view=provision&sessionId=session-1");
     expect(buildSalesWorkspaceHref({ tab: "sessions", sessionView: "manage", sessionId: "session-1", sessionStatus: "in_progress", participantsOpen: true })).toBe("/sales?tab=sessions&sessionId=session-1&status=in_progress&participants=open");
     expect(parseSalesWorkspaceRouteState({ tab: "sessions", view: "provision", sessionId: "session-1" })).toMatchObject({ tab: "sessions", sessionView: "provision", sessionId: "session-1" });

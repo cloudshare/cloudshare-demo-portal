@@ -16,6 +16,7 @@ import { renderSalesSessionName } from "@/domain/sales-session-name";
 import type { SalesExperienceType } from "@/domain/sales-experience-type";
 import { workspaceTabButtonStyle, workspaceTabNavStyle } from "./workspace-tab-styles";
 import { parseSalesSessionProvisionDraft, salesSessionProvisionDraftKey, type SalesSessionProvisionDraft } from "./sales-session-provision-draft";
+import { SalesSessionsWorkbench } from "./sales-sessions-workbench";
 
 type Account = { id: string; name: string; kind: "prospect" | "current_customer"; archivedAt: string | null; createdAt: string; updatedAt?: string };
 type Opportunity = { id: string; accountId: string; name: string; status: "open" | "won" | "lost"; archivedAt: string | null; createdAt: string; updatedAt?: string };
@@ -67,6 +68,8 @@ export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemVi
       ...(intent.tab === "sessions" ? { sessionView: intent.sessionView ?? "manage" } : {}),
       ...(intent.tab === "sessions" && intent.sessionId ? { sessionId: intent.sessionId } : {}),
       ...(intent.tab === "sessions" && intent.sessionStatus ? { sessionStatus: intent.sessionStatus } : {}),
+      ...(intent.tab === "sessions" && (intent.queueView || route.queueView) ? { queueView: intent.queueView ?? route.queueView ?? "active", queueSort: intent.queueSort ?? route.queueSort ?? "start_desc", queueOffset: intent.queueOffset ?? route.queueOffset ?? 0 } : {}),
+      ...(intent.tab === "sessions" && (intent.queueSearch || route.queueSearch) ? { queueSearch: intent.queueSearch ?? route.queueSearch } : {}),
       ...(intent.tab === "sessions" && intent.sessionId && intent.participantsOpen ? { participantsOpen: true } : {}),
       ...(intent.tab === "items" && intent.itemId ? { itemId: intent.itemId } : {}),
       ...((intent.tab === "records" || intent.tab === "sessions") && intent.accountId ? { accountId: intent.accountId } : {}),
@@ -77,7 +80,7 @@ export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemVi
     if (intent.preserveScroll) router.push(href, { scroll: false });
     else router.push(href);
     setRoute(next);
-  }, [router]);
+  }, [route.queueOffset, route.queueSearch, route.queueSort, route.queueView, router]);
 
   return <main style={salesWorkspaceStyle}>
     <PortalPageHeader eyebrow="Certalis Sales Portal" title="Sales Workspace" description="Curate reusable Items, commercial records, and time-bound CloudShare Sales Experiences in the isolated Certalis Customer workspace." email={email} actions={<button onClick={() => void logout()} style={accountLogoutButtonStyle}>Log out</button>} />
@@ -87,14 +90,15 @@ export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemVi
     })}</nav>
     {route.tab === "items" ? <ItemCatalog fetchAdmin={fetchAdmin} view={route.itemView ?? "catalog"} focusedItemId={route.itemId} onNavigate={navigate} /> : null}
     {route.tab === "records" ? <SalesRecordsFeature initialSelection={{ accountId: route.accountId ?? null, opportunityId: route.opportunityId ?? null }} onNavigate={navigate} /> : null}
-    {route.tab === "sessions" ? <SalesDemoSessionsFeature draftStorageKey={salesSessionProvisionDraftKey(email)} initialSelection={{ accountId: route.accountId ?? "", opportunityId: route.opportunityId ?? "", view: route.sessionView ?? "provision", focusSessionId: route.sessionId ?? "", status: route.sessionStatus ?? "upcoming", participantsOpen: route.participantsOpen ?? false }} onNavigate={navigate} /> : null}
+    {route.tab === "sessions" && route.sessionView !== "provision" && route.queueView ? <SalesSessionsWorkbench route={route} onNavigate={navigate} /> : null}
+    {route.tab === "sessions" && (route.sessionView === "provision" || !route.queueView) ? <SalesDemoSessionsFeature draftStorageKey={salesSessionProvisionDraftKey(email)} initialSelection={{ accountId: route.accountId ?? "", opportunityId: route.opportunityId ?? "", view: route.sessionView === "provision" ? "provision" : "manage", focusSessionId: route.sessionId ?? "", status: route.sessionStatus ?? "upcoming", participantsOpen: route.participantsOpen ?? false }} onNavigate={navigate} /> : null}
     {route.tab === "support" ? <section aria-label="Sales support"><PortalSectionIntro title="Sales support" description="Append-only support evidence for Sales records and live Item resource curation in the Certalis Customer workspace." /><AdminSupportFeature active view="diagnostics" diagnosticFilters={{ ...(route.correlationId ? { correlationId: route.correlationId } : {}), ...(route.source ? { source: route.source } : {}), ...(route.subjectId ? { subjectId: route.subjectId } : {}) }} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={(intent) => navigate({ tab: "support", correlationId: intent.diagnosticFilters?.correlationId, source: intent.diagnosticFilters?.source, subjectId: intent.diagnosticFilters?.subjectId })} /></section> : null}
     {route.tab === "configuration" ? <section aria-label="Sales configuration"><PortalSectionIntro title="CloudShare Connection" description="Manage the encrypted CloudShare Connection for the isolated Certalis Sales Customer." /><CloudShareConnectionFeature active fetchAdmin={fetchAdmin} getNavigationHref={() => buildSalesWorkspaceHref({ tab: "configuration" })} onNavigate={() => undefined} /></section> : null}
   </main>;
 }
 
 function salesRoutesMatch(left: SalesWorkspaceRouteState, right: SalesWorkspaceRouteState): boolean {
-  return left.tab === right.tab && left.itemView === right.itemView && left.sessionView === right.sessionView && left.sessionId === right.sessionId && left.sessionStatus === right.sessionStatus && left.participantsOpen === right.participantsOpen && left.itemId === right.itemId && left.accountId === right.accountId && left.opportunityId === right.opportunityId && left.correlationId === right.correlationId && left.source === right.source && left.subjectId === right.subjectId;
+  return left.tab === right.tab && left.itemView === right.itemView && left.sessionView === right.sessionView && left.sessionId === right.sessionId && left.sessionStatus === right.sessionStatus && left.queueView === right.queueView && left.queueSearch === right.queueSearch && left.queueSort === right.queueSort && left.queueOffset === right.queueOffset && left.participantsOpen === right.participantsOpen && left.itemId === right.itemId && left.accountId === right.accountId && left.opportunityId === right.opportunityId && left.correlationId === right.correlationId && left.source === right.source && left.subjectId === right.subjectId;
 }
 
 function PortalSectionIntro({ title, description }: { title: string; description: string }) {
