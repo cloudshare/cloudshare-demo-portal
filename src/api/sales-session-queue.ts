@@ -10,9 +10,9 @@ export async function handleReadSalesSessionQueue(deps: SalesSessionQueueHandler
   const parsed = querySchema.safeParse(request.query);
   if (!parsed.success) return { status: 400, body: { error: "Invalid Sales Sessions queue query." } };
   const view = parseSalesSessionQueueView(parsed.data.view);
-  const page = await deps.queue.read({ customerId: request.customerId, view, accountId: parsed.data.accountId, opportunityId: parsed.data.opportunityId, search: parsed.data.search, sort: parseSalesSessionQueueSort(parsed.data.sort), offset: parsed.data.offset, limit: parsed.data.limit });
   const now = (deps.now ?? (() => new Date()))();
-  const rows = page.rows.map((session) => classifySalesSessionQueueRow(session, now)).filter((row) => belongsInSalesSessionQueue(row, view));
+  const page = await deps.queue.read({ customerId: request.customerId, view, accountId: parsed.data.accountId, opportunityId: parsed.data.opportunityId, search: parsed.data.search, sort: parseSalesSessionQueueSort(parsed.data.sort), offset: parsed.data.offset, limit: parsed.data.limit, now });
+  const rows = page.rows.map((session) => classifySalesSessionQueueRow(session, now));
   const target = parsed.data.target ? await restoreTarget(deps.queue, request.customerId, parsed.data.target, rows) : undefined;
   return { status: 200, body: { view, offset: parsed.data.offset, limit: parsed.data.limit, total: page.total, rows, ...(target ? { target } : {}) } };
 }

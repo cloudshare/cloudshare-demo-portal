@@ -13,7 +13,7 @@ describe("Sales Session queue status classification", () => {
   });
 
   it("surfaces a participant-environment exception with its own affected entity", () => {
-    const row = classifySalesSessionQueueRow(candidate({ participantAttention: { participantName: "Ari Example", reason: "Environment could not be correlated." } }), new Date("2026-07-23T10:00:00Z"));
+    const row = classifySalesSessionQueueRow(candidate({ participantEnvironment: { participantName: "Ari Example", attentionReason: "Environment could not be correlated.", observation: { dimension: "cloudshare_environment", value: "Ready", source: "cloudshare_v4_sales_participant_roster", observedAt: "2026-07-23T09:00:00.000Z" } } }), new Date("2026-07-23T10:00:00Z"));
     expect(row.attention).toEqual({ entity: "Ari Example", dimension: "participant_environment", reason: "Environment could not be correlated." });
     expect(belongsInSalesSessionQueue(row, "needs_attention")).toBe(true);
     expect(belongsInSalesSessionQueue(row, "active")).toBe(true);

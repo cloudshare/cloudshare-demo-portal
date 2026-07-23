@@ -5,7 +5,7 @@ describe("Prisma Sales Session queue repository", () => {
   it("keeps Customer, Account, attention EXISTS, bounded page, and stable order in one query", async () => {
     const count = vi.fn().mockResolvedValue(0); const findMany = vi.fn().mockResolvedValue([]);
     const repository = createPrismaSalesSessionQueueRepository({ salesDemoSession: { count, findMany } } as never);
-    await repository.read({ customerId: "customer-a", view: "needs_attention", accountId: "account-a", search: "acme", sort: "start_desc", offset: 25, limit: 25 });
+    await repository.read({ customerId: "customer-a", view: "needs_attention", accountId: "account-a", search: "acme", sort: "start_desc", offset: 25, limit: 25, now: new Date("2026-07-23T10:00:00Z") });
     const filters = count.mock.calls[0][0].where.AND;
     expect(filters).toContainEqual({ customerId: "customer-a" });
     expect(filters).toContainEqual({ opportunity: { accountId: "account-a" } });
