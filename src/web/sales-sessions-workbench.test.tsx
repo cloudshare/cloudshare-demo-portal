@@ -26,7 +26,7 @@ describe("Sales Sessions workbench", () => {
     const user = userEvent.setup();
     const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input) => {
       const path = String(input);
-      if (path === "/api/sales/session-opportunities?offset=0&limit=100") return json({
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({
         accounts: [{ id: "account-1", name: "Acme" }],
         opportunities: [{ id: "opportunity-1", accountId: "account-1", name: "Evaluation" }],
       });
@@ -62,7 +62,7 @@ describe("Sales Sessions workbench", () => {
   it("restores controlled search and selected-row focus, and explains an invalid target", async () => {
     Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
     const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input) => {
-      if (String(input) === "/api/sales/session-opportunities?offset=0&limit=100") return json({ accounts: [], opportunities: [] });
+      if (String(input).startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [] });
       return json({
         view: "active", offset: 0, limit: 25, total: 1, rows: [row],
         target: { id: "session-1", state: "available" },
@@ -75,7 +75,7 @@ describe("Sales Sessions workbench", () => {
 
     rerender(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage", queueSearch: "restored" }} onNavigate={vi.fn()} />);
     expect((screen.getByRole("textbox", { name: "Search Sessions" }) as HTMLInputElement).value).toBe("restored");
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
     await screen.findByRole("button", { name: "Acme evaluation" });
   });
 });

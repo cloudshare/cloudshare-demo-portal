@@ -25,12 +25,15 @@ export function SalesSessionsWorkbench({ route, onNavigate }: { readonly route: 
   useEffect(() => setSearchDraft(search), [search]);
   useEffect(() => {
     let live = true;
-    void fetchRef.current("/api/sales/session-opportunities?offset=0&limit=100", { cache: "no-store" })
+    const params = new URLSearchParams({ accountPage: "1", accountPageSize: "50", page: "1", pageSize: "50" });
+    if (search) { params.set("accountSearch", search); params.set("search", search); }
+    if (route.accountId) params.set("accountId", route.accountId);
+    void fetchRef.current(`/api/sales/session-opportunities?${params}`, { cache: "no-store" })
       .then(async (response) => response.ok ? response.json() as Promise<SalesRecordOptions> : {})
       .then((body) => { if (live) setRecordOptions(body); })
       .catch(() => undefined);
     return () => { live = false; };
-  }, []);
+  }, [route.accountId, search]);
   useEffect(() => {
     let live = true;
     const load = async () => {
