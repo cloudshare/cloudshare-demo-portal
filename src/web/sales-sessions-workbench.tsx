@@ -17,6 +17,7 @@ export function SalesSessionsWorkbench({ route, onNavigate }: { readonly route: 
   const [loading, setLoading] = useState(false);
   const [searchDraft, setSearchDraft] = useState(route.queueSearch ?? "");
   const [recordOptions, setRecordOptions] = useState<SalesRecordOptions>({});
+  const [optionsError, setOptionsError] = useState<string | null>(null);
   const selectedRef = useRef<HTMLButtonElement | null>(null);
   const view = route.queueView ?? "active";
   const sort = route.queueSort ?? "start_desc";
@@ -29,10 +30,14 @@ export function SalesSessionsWorkbench({ route, onNavigate }: { readonly route: 
     if (search) { params.set("accountSearch", search); params.set("search", search); }
     if (route.accountId) params.set("accountId", route.accountId);
     if (route.opportunityId) params.set("selectedOpportunityId", route.opportunityId);
+    setOptionsError(null);
     void fetchRef.current(`/api/sales/session-opportunities?${params}`, { cache: "no-store" })
-      .then(async (response) => response.ok ? response.json() as Promise<SalesRecordOptions> : {})
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Could not load bounded Account and Opportunity filters.");
+        return response.json() as Promise<SalesRecordOptions>;
+      })
       .then((body) => { if (live) setRecordOptions(body); })
-      .catch(() => undefined);
+      .catch(() => { if (live) setOptionsError("Account and Opportunity filters could not be loaded. Existing choices remain available; retry by changing the search or reloading this page."); });
     return () => { live = false; };
   }, [route.accountId, route.opportunityId, search]);
   useEffect(() => {
@@ -67,6 +72,7 @@ export function SalesSessionsWorkbench({ route, onNavigate }: { readonly route: 
       <label>Sort <select aria-label="Session queue sort" value={sort} onChange={(event) => navigate({ queueSort: event.target.value as typeof sort, queueOffset: 0, sessionId: null })}><option value="start_desc">Start time, newest first</option><option value="start_asc">Start time, oldest first</option><option value="name_asc">Session name</option></select></label><button type="submit" style={secondaryButtonStyle}>Apply</button>
     </form>
     {loading ? <p role="status">Loading the local Sessions queue…</p> : null}{error ? <p role="alert">{error}</p> : null}{data?.target && data.target.state !== "available" ? <p role="status">{data.target.message}</p> : null}
+    {optionsError ? <p role="alert">{optionsError}</p> : null}
     <div tabIndex={0} aria-label="Sales Sessions queue table" style={{ overflowX: "auto" }}><table style={{ width: "100%", minWidth: "56rem", borderCollapse: "collapse" }}><thead><tr><th scope="col">Session</th><th scope="col">Account / Opportunity</th><th scope="col">Time window</th><th scope="col">Certalis operation</th><th scope="col">CloudShare Experience</th><th scope="col">Participant Environment</th><th scope="col">Attention</th></tr></thead><tbody>{(data?.rows ?? []).map((row) => <tr key={row.id} style={route.sessionId === row.id ? { outline: "3px solid #0f6d66", outlineOffset: "-3px" } : undefined}><th scope="row"><button ref={route.sessionId === row.id ? selectedRef : undefined} type="button" aria-current={route.sessionId === row.id ? "true" : undefined} style={compactButtonStyle} onClick={() => navigate({ sessionId: row.id })}>{row.sessionName}</button><br /><small>Revision {row.revision}</small></th><td>{row.accountName}<br /><small>{row.opportunityName}</small></td><td><time dateTime={row.start}>{row.start}</time> to <time dateTime={row.end}>{row.end}</time><br /><small>CloudShare time zone: {row.timeZone}</small></td><td>{row.operation.value}</td><td>{row.experience.value}<br /><small>{row.experience.source === "cloudshare_v4_get_sales" ? `${row.experience.freshness} observation${row.experience.observedAt ? ` · ${row.experience.observedAt}` : ""}` : "Estimated from the Session schedule — not recently confirmed with CloudShare."}</small></td><td>{row.participantEnvironment ? <>{row.participantEnvironment.participantName}: {row.participantEnvironment.observation.value ?? "not observed"}<br /><small>{row.participantEnvironment.observation.source}{row.participantEnvironment.observation.observedAt ? ` · ${row.participantEnvironment.observation.observedAt}` : ""}</small></> : "—"}</td><td>{row.attention ? <>{row.attention.entity}: {row.attention.dimension.replaceAll("_", " ")} — {row.attention.reason}</> : "—"}</td></tr>)}</tbody></table></div>
     {data && data.rows.length === 0 ? <p>No Sessions match this queue view.</p> : null}{data ? <div role="status" style={{ display: "flex", gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}><span>Showing {data.total ? data.offset + 1 : 0}–{Math.min(data.offset + data.rows.length, data.total)} of {data.total}</span><button type="button" disabled={offset === 0} onClick={() => navigate({ queueOffset: Math.max(0, offset - data.limit) })}>Previous page</button><button type="button" disabled={offset + data.rows.length >= data.total} onClick={() => navigate({ queueOffset: offset + data.limit })}>Next page</button></div> : null}
   </section>;

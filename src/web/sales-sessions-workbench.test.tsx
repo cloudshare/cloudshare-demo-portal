@@ -5,8 +5,8 @@ import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SalesSessionsWorkbench } from "./sales-sessions-workbench";
 
-const json = (body: unknown) => new Response(JSON.stringify(body), {
-  status: 200,
+const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), {
+  status,
   headers: { "content-type": "application/json" },
 });
 
@@ -91,5 +91,13 @@ describe("Sales Sessions workbench", () => {
     render(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage", opportunityId: "opportunity-51" }} onNavigate={vi.fn()} />);
     await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).includes("selectedOpportunityId=opportunity-51"))).toBe(true));
     expect((screen.getByRole("combobox", { name: "Opportunity filter" }) as HTMLSelectElement).value).toBe("opportunity-51");
+  });
+
+  it("shows a safe durable alert when bounded relationship options cannot load", async () => {
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => String(input).startsWith("/api/sales/session-opportunities?")
+      ? json({ error: "unavailable" }, 503)
+      : json({ view: "active", offset: 0, limit: 25, total: 0, rows: [] }));
+    render(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage" }} onNavigate={vi.fn()} />);
+    expect((await screen.findByRole("alert")).textContent).toContain("Account and Opportunity filters could not be loaded");
   });
 });
