@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { projectSafeSalesSessionActivity } from "./sales-session-workspace";
+import { projectSafeSalesParticipantEnvironment, projectSafeSalesSessionActivity } from "./sales-session-workspace";
 
 describe("safe Sales Session Activity projection", () => {
   it("creates controlled operational copy without accepting raw diagnostic message or protected evidence", () => {
@@ -11,5 +11,14 @@ describe("safe Sales Session Activity projection", () => {
 
   it("fails closed when a diagnostic is not anchored to this Sales Session", () => {
     expect(projectSafeSalesSessionActivity({ occurredAt: new Date(), operation: "sales.demo_session.created", outcome: "success", actorType: "admin", subjectType: "sales_demo_session", subjectId: "other-session", correlationId: "corr" }, "session-1")).toBeNull();
+  });
+
+  it("omits an unknown diagnostic outcome instead of presenting it as success", () => {
+    expect(projectSafeSalesSessionActivity({ occurredAt: new Date(), operation: "sales.demo_session.created", outcome: "partial", actorType: "admin", subjectType: "sales_demo_session", subjectId: "session-1", correlationId: "corr" }, "session-1")).toBeNull();
+  });
+
+  it("keeps a roster reference without an observation distinct from no Environment assignment", () => {
+    expect(projectSafeSalesParticipantEnvironment({ cloudShareRosterEnvironmentReference: "server-only-reference", environmentStatus: null, environmentStatusCode: null, environmentObservedAt: null })).toMatchObject({ source: "not_observed" });
+    expect(projectSafeSalesParticipantEnvironment({ cloudShareRosterEnvironmentReference: null, environmentStatus: null, environmentStatusCode: null, environmentObservedAt: null })).toMatchObject({ source: "not_assigned" });
   });
 });

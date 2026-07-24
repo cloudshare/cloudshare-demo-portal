@@ -1,11 +1,11 @@
 import type { PrismaClient } from "@prisma/client";
 import { projectSalesSessionStatus } from "@/domain/sales-session-status";
-import { projectSafeSalesParticipantEnvironment, projectSafeSalesSessionActivity } from "@/domain/sales-session-workspace";
+import { projectSafeSalesParticipantEnvironment, projectSafeSalesSessionActivity, type SalesSessionWorkspaceRead } from "@/domain/sales-session-workspace";
 
 export interface SalesSessionWorkspaceRepository {
   /** Returns a single safe, local projection or null. Customer and archived-record
    * predicates are intentionally owned here so ordinary callers cannot weaken them. */
-  read(customerId: string, sessionId: string): Promise<{ readonly state: "available"; readonly workspace: Record<string, unknown> } | { readonly state: "stale" } | null>;
+  read(customerId: string, sessionId: string): Promise<SalesSessionWorkspaceRead | null>;
 }
 
 /**

@@ -31,6 +31,11 @@ describe("Sales Session workspace handler", () => {
     expect(read).toHaveBeenCalledWith("customer-a", "customer-b-session");
   });
 
+  it.each(["missing", "archived", "cross-Customer"])("returns the same safe not-found contract for a %s target", async () => {
+    const result = await handleReadSalesSessionWorkspace({ workspace: { read: vi.fn().mockResolvedValue(null) } }, { customerId: "customer-a", sessionId: "session-unavailable" });
+    expect(result).toEqual({ status: 404, body: { error: "This Sales Session is unavailable for this Customer." } });
+  });
+
   it("fails a pending pre-dispatch reservation closed as stale without a provider read", async () => {
     const result = await handleReadSalesSessionWorkspace({ workspace: { read: vi.fn().mockResolvedValue({ state: "stale" }) } }, { customerId: "customer-a", sessionId: "session-pending" });
     expect(result).toEqual({ status: 409, body: { error: "This Sales Session is an incomplete local reservation and cannot be opened." } });

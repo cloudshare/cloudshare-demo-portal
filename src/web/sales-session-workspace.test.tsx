@@ -36,12 +36,34 @@ describe("Sales Session workspace", () => {
     expect(fetchSpy).toHaveBeenCalledOnce();
   });
 
-  it("moves focus to the selected local-area heading only when its route area changes", async () => {
+  it("renders an understandable safe state for an unavailable Session", async () => {
+    vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify({ error: "This Sales Session is unavailable for this Customer." }), { status: 404 }));
+    render(<SalesSessionWorkspace sessionId="missing" area="activity" queueHref="/sales?tab=sessions" />);
+    expect((await screen.findByRole("alert")).textContent).toContain("This Sales Session is unavailable for this Customer.");
+    expect(screen.getByRole("link", { name: "Back to Sessions" })).not.toBeNull();
+  });
+
+  it.each(["participants", "activity", "details"] as const)("moves focus to the %s heading after a fresh route load", async (area) => {
     vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(data), { status: 200 }));
-    const rendered = render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
-    await screen.findByRole("heading", { name: "Participants" });
+    const rendered = render(<SalesSessionWorkspace sessionId="session-1" area={area} queueHref="/sales?tab=sessions" />);
+    const firstHeading = await screen.findByRole("heading", { name: area[0].toUpperCase() + area.slice(1) });
+    expect(document.activeElement).toBe(firstHeading);
     rendered.rerender(<SalesSessionWorkspace sessionId="session-1" area="activity" queueHref="/sales?tab=sessions" />);
     const heading = await screen.findByRole("heading", { name: "Activity" });
     expect(document.activeElement).toBe(heading);
+  });
+
+  it("does not steal focus again when the loaded workspace rerenders", async () => {
+    vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(data), { status: 200 }));
+    const rendered = render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
+    await screen.findByRole("heading", { name: "Participants" });
+    const laterControl = document.createElement("button");
+    document.body.append(laterControl);
+    laterControl.focus();
+
+    rendered.rerender(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
+
+    expect(document.activeElement).toBe(laterControl);
+    laterControl.remove();
   });
 });
