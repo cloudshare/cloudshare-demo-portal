@@ -16,6 +16,8 @@ import { createPrismaSalesTimezoneCacheRepository } from "@/persistence/prisma-s
 import { withLocalSalesReservationFailureQaFixture } from "@/persistence/local-sales-reservation-qa-fixture";
 import { handleSearchSalesSessionParticipants } from "@/api/sales-session-participant-search";
 import { createPrismaSalesSessionParticipantSearch } from "@/persistence/prisma-sales-session-participant-search";
+import { createPrismaSalesSessionQueueRepository } from "@/persistence/prisma-sales-session-queue-repository";
+import { handleReadSalesSessionQueue } from "@/api/sales-session-queue";
 
 async function context() {
   const services = getServices();
@@ -28,6 +30,13 @@ export async function GET(request: Request) {
   const { services, session } = await context();
   if (!session) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   const query = new URL(request.url).searchParams;
+  if (query.has("queue")) {
+    const result = await handleReadSalesSessionQueue(
+      { queue: createPrismaSalesSessionQueueRepository(services.prisma) },
+      { customerId: session.customerId, query: Object.fromEntries(query.entries()) },
+    );
+    return NextResponse.json(result.body, { status: result.status });
+  }
   if (query.has("participantSearch")) {
     const result = await handleSearchSalesSessionParticipants({ search: createPrismaSalesSessionParticipantSearch(services.prisma) }, { customerId: session.customerId, term: query.get("participantSearch"), offset: query.get("offset"), limit: query.get("limit") });
     return NextResponse.json(result.body, { status: result.status });

@@ -180,6 +180,17 @@ visible focus, predictable keyboard behavior, and usable smaller-screen reflow.
 
 ### Queue, attention, and history
 
+- The accepted workbench is a visual as well as functional destination. Queue identity and triage
+  are the dominant hierarchy: a composed header, compact queue-view control, grouped filter rail,
+  dense readable rows, and a contained result/pagination footer must present one coherent
+  operational surface rather than an unstyled form followed by a browser-default table.
+- Production delivery must preserve the selected prototype's deliberate density, spacing,
+  typography, control treatment, row rhythm, and status hierarchy. Passing route/API tests while
+  reducing the screen to generic controls or flat status strings is not design fidelity.
+- Each status dimension uses a labelled, non-colour-only visual treatment with subordinate
+  source/freshness detail. Session identity, relationship, and deterministic time fields form a
+  stable scan path; genuine attention is visually distinct without making ordinary estimates look
+  exceptional.
 - Active combines CloudShare Sales Experience `notStarted` and `inProgress`; History contains
   `ended`. These are Experience views, not Certalis operation values.
 - Needs attention includes genuine Session-operation or Participant Environment exceptions. Every
