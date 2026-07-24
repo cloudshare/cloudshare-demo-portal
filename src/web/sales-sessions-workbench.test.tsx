@@ -151,6 +151,36 @@ describe("Sales Sessions workbench", () => {
     expect(screen.getByText("26–26 of 51")).not.toBeNull();
   });
 
+  it("keeps the workbench and correctly labelled Active result visible while History is loading", async () => {
+    const user = userEvent.setup();
+    let resolveHistory!: (response: Response) => void;
+    const historyResponse = new Promise<Response>((resolve) => { resolveHistory = resolve; });
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => {
+      const path = String(input);
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [] });
+      if (path.includes("view=history")) return historyResponse;
+      return json({ view: "active", offset: 0, limit: 25, total: 1, rows: [row] });
+    });
+    const route = { tab: "sessions", sessionView: "manage", queueView: "active" } as const;
+    const rendered = render(<SalesSessionsWorkbench route={route} onNavigate={(intent) => {
+      rendered.rerender(<SalesSessionsWorkbench route={{ ...route, queueView: intent.queueView ?? "active" }} onNavigate={() => undefined} />);
+    }} />);
+    expect(await screen.findByRole("button", { name: "Acme evaluation" })).not.toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "History" }));
+
+    expect(screen.getByRole("heading", { name: "Sessions" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "History" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText("Active Sessions")).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Acme evaluation" })).not.toBeNull();
+    const queueFrame = screen.getByLabelText("Sales Sessions result frame");
+    expect(queueFrame.getAttribute("aria-busy")).toBe("true");
+    expect(queueFrame.textContent).toContain("Loading the local Sessions queue");
+
+    resolveHistory(json({ view: "history", offset: 0, limit: 25, total: 0, rows: [] }));
+    expect(await screen.findByText("Session history")).not.toBeNull();
+  });
+
   it("labels an unassigned participant without claiming a CloudShare observation", async () => {
     vi.spyOn(window, "fetch").mockImplementation(async (input) => String(input).startsWith("/api/sales/session-opportunities?")
       ? json({ accounts: [], opportunities: [] })

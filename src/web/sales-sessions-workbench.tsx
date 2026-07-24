@@ -98,14 +98,13 @@ export function SalesSessionsWorkbench({ route, creationNotice, onNavigate }: { 
       </form>
     </section>
 
-    {loading ? <p role="status" className={styles.feedback}>Loading the local Sessions queue…</p> : null}
     {creationNotice ? <div role="alert" className={`${styles.feedback} ${styles.feedbackError}`}><p>{creationNotice.message} <strong>Do not retry creation.</strong></p>{creationNotice.correlationId ? <button type="button" className={styles.pageButton} onClick={() => onNavigate({ tab: "support", correlationId: creationNotice.correlationId })}>Open support diagnostics ({creationNotice.correlationId})</button> : null}</div> : null}
     {error ? <div role="alert" className={`${styles.feedback} ${styles.feedbackError}`}><p>{error} The last successfully loaded queue remains visible.</p><div className={styles.failureActions}><button type="button" className={styles.pageButton} onClick={() => setQueueReload((value) => value + 1)}>Retry queue</button><button type="button" className={styles.pageButton} onClick={() => onNavigate({ tab: "support" })}>Open Sales support</button></div></div> : null}
     {data?.target && data.target.state !== "available" ? <p role="status" className={styles.feedback}>{data.target.message}</p> : null}
     {optionsError ? <p role="alert" className={`${styles.feedback} ${styles.feedbackError}`}>{optionsError}</p> : null}
 
-    <div className={styles.queueFrame}>
-      <div className={styles.queueMeta}><strong>{queueViewPresentation[displayedRequest?.view ?? view].heading}</strong>{range ? <span>{range}</span> : null}</div>
+    <div className={styles.queueFrame} aria-label="Sales Sessions result frame" aria-busy={loading}>
+      <div className={styles.queueMeta}><strong>{queueViewPresentation[displayedRequest?.view ?? view].heading}</strong><span>{loading ? <span role="status" className={styles.inlineLoading}>Loading the local Sessions queue…</span> : null}{range ? <span>{range}</span> : null}</span></div>
       <div tabIndex={0} aria-label="Sales Sessions queue table" className={styles.tableScroller}>
         <table className={styles.table}>
           <thead><tr><th scope="col" className={styles.sessionColumn}>Session</th><th scope="col" className={styles.relationshipColumn}>Relationship</th><th scope="col" className={styles.timeColumn}>Time window</th><th scope="col" className={styles.statusColumn}>Certalis operation</th><th scope="col" className={styles.statusColumn}>CloudShare Experience</th><th scope="col" className={styles.environmentColumn}>Participant Environment</th><th scope="col" className={styles.attentionColumn}>Attention</th></tr></thead>
