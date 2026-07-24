@@ -130,6 +130,27 @@ describe("Sales Sessions workbench", () => {
     await waitFor(() => expect(queueReads).toBe(3));
   });
 
+  it("keeps a failed cross-view transition labelled and paginated as the last successful result", async () => {
+    let queueReads = 0;
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => {
+      if (String(input).startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [] });
+      queueReads += 1;
+      return queueReads === 1
+        ? json({ view: "active", offset: 25, limit: 25, total: 51, rows: [row] })
+        : json({ error: "Needs-attention page unavailable" }, 503);
+    });
+    const rendered = render(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage", queueView: "active", queueOffset: 25 }} onNavigate={vi.fn()} />);
+    expect(await screen.findByText("Active Sessions")).not.toBeNull();
+    expect(screen.getByText("26–26 of 51")).not.toBeNull();
+
+    rendered.rerender(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage", queueView: "needs_attention", queueOffset: 0 }} onNavigate={vi.fn()} />);
+
+    expect(await screen.findByText("Needs-attention page unavailable", { exact: false })).not.toBeNull();
+    expect(screen.getByText("Active Sessions")).not.toBeNull();
+    expect(screen.queryByText("Sessions needing attention")).toBeNull();
+    expect(screen.getByText("26–26 of 51")).not.toBeNull();
+  });
+
   it("labels an unassigned participant without claiming a CloudShare observation", async () => {
     vi.spyOn(window, "fetch").mockImplementation(async (input) => String(input).startsWith("/api/sales/session-opportunities?")
       ? json({ accounts: [], opportunities: [] })

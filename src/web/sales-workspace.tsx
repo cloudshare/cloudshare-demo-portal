@@ -54,6 +54,7 @@ const selectableRowStyle = { cursor: "pointer" };
 export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemView: "catalog", sessionView: "provision" } }: { readonly email: string; readonly initialRoute?: SalesWorkspaceRouteState }) {
   const router = useRouter();
   const [route, setRoute] = useState<SalesWorkspaceRouteState>(initialRoute);
+  const [creationNotice, setCreationNotice] = useState<SalesNavigationIntent["creationNotice"]>();
   useEffect(() => {
     setRoute((current) => salesRoutesMatch(current, initialRoute) ? current : initialRoute);
   }, [initialRoute]);
@@ -61,6 +62,7 @@ export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemVi
   const fetchAdmin = useMemo(() => createAdminAuthenticatedRequest({ fetchImpl: browserFetch, onSessionExpired: () => { router.replace("/login"); router.refresh(); } }), [browserFetch, router]);
   const logout = useCallback(async () => { await fetch("/api/auth/logout", { method: "POST" }); router.push("/login"); router.refresh(); }, [router]);
   const navigate = useCallback((intent: SalesNavigationIntent) => {
+    setCreationNotice(intent.creationNotice);
     const next: SalesWorkspaceRouteState = {
       tab: intent.tab,
       itemView: intent.tab === "items" ? intent.itemView ?? "catalog" : "catalog",
@@ -97,7 +99,7 @@ export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemVi
       <div className={shellStyles.content}>
     {route.tab === "items" ? <ItemCatalog fetchAdmin={fetchAdmin} view={route.itemView ?? "catalog"} focusedItemId={route.itemId} onNavigate={navigate} /> : null}
     {route.tab === "records" ? <SalesRecordsFeature initialSelection={{ accountId: route.accountId ?? null, opportunityId: route.opportunityId ?? null }} onNavigate={navigate} /> : null}
-    {route.tab === "sessions" && route.sessionView !== "provision" && route.queueView ? <SalesSessionsWorkbench route={route} onNavigate={navigate} /> : null}
+    {route.tab === "sessions" && route.sessionView !== "provision" && route.queueView ? <SalesSessionsWorkbench route={route} creationNotice={creationNotice} onNavigate={navigate} /> : null}
     {route.tab === "sessions" && (route.sessionView === "provision" || !route.queueView) ? <SalesDemoSessionsFeature draftStorageKey={salesSessionProvisionDraftKey(email)} initialSelection={{ accountId: route.accountId ?? "", opportunityId: route.opportunityId ?? "", view: route.sessionView === "provision" ? "provision" : "manage", focusSessionId: route.sessionId ?? "", status: route.sessionStatus ?? "upcoming", participantsOpen: route.participantsOpen ?? false }} onNavigate={navigate} /> : null}
     {route.tab === "support" ? <section aria-label="Sales support"><PortalSectionIntro title="Sales support" description="Append-only support evidence for Sales records and live Item resource curation in the Certalis Customer workspace." /><AdminSupportFeature active view="diagnostics" diagnosticFilters={{ ...(route.correlationId ? { correlationId: route.correlationId } : {}), ...(route.source ? { source: route.source } : {}), ...(route.subjectId ? { subjectId: route.subjectId } : {}) }} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={(intent) => navigate({ tab: "support", correlationId: intent.diagnosticFilters?.correlationId, source: intent.diagnosticFilters?.source, subjectId: intent.diagnosticFilters?.subjectId })} /></section> : null}
     {route.tab === "configuration" ? <section aria-label="Sales configuration"><PortalSectionIntro title="CloudShare Connection" description="Manage the encrypted CloudShare Connection for the isolated Certalis Sales Customer." /><CloudShareConnectionFeature active fetchAdmin={fetchAdmin} getNavigationHref={() => buildSalesWorkspaceHref({ tab: "configuration" })} onNavigate={() => undefined} /></section> : null}</div>
@@ -318,7 +320,22 @@ function SalesDemoSessionsFeature({ initialSelection, draftStorageKey, onNavigat
         if (body.needsAttention) { setNeedsAttention(true); setCreationRetryBlocked(true); setCorrelationId(body.correlationId ?? null); setMessage(`Needs attention: ${body.warning ?? body.creationOutcome?.reason ?? "Sales Enablement Session was created. Do not retry creation; review support diagnostics."}`); }
         const createdStatus = body.needsAttention ? "needs_attention" : body.session.experience?.value === "ended" ? "ended" : body.session.experience?.value === "inProgress" || startMode === "now" ? "in_progress" : "upcoming";
         setSessionStatusFilter(createdStatus);
-        onNavigate({ tab: "sessions", sessionView: "manage", ...(body.needsAttention ? {} : { queueView: "active" as const, queueOffset: 0 }), sessionId: body.session.id, sessionStatus: createdStatus, accountId: sessionAccountId, opportunityId });
+        onNavigate({
+          tab: "sessions",
+          sessionView: "manage",
+          queueView: body.needsAttention ? "needs_attention" : "active",
+          queueOffset: 0,
+          sessionId: body.session.id,
+          sessionStatus: createdStatus,
+          accountId: sessionAccountId,
+          opportunityId,
+          ...(body.needsAttention ? {
+            creationNotice: {
+              message: `Needs attention: ${body.warning ?? body.creationOutcome?.reason ?? "Sales Enablement Session was created. Do not retry creation; review support diagnostics."}`,
+              ...(body.correlationId ? { correlationId: body.correlationId } : {}),
+            },
+          } : {}),
+        });
       } else if (body.needsAttention) {
         setNeedsAttention(true); setCreationRetryBlocked(true); setCorrelationId(body.correlationId ?? null);
         setMessage(`Needs attention: ${body.warning ?? body.creationOutcome?.reason ?? "Sales Enablement Session creation needs support. Do not retry creation."}`);
@@ -371,7 +388,7 @@ function SalesDemoSessionsFeature({ initialSelection, draftStorageKey, onNavigat
       @media (max-width: 72rem) { .sales-session-provisioning-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .sales-session-selector-group { grid-column: span 2; } }
       @media (max-width: 42rem) { .sales-session-provisioning-grid, .sales-session-selector-fields, .sales-session-template-controls { grid-template-columns: minmax(0, 1fr); } .sales-session-selector-group { grid-column: auto; } .sales-session-template-action { margin-top: 0; } }
     `}</style>
-    <nav aria-label="Sales Session workspace views" style={workspaceTabNavStyle}><button type="button" aria-current={!isProvision ? "page" : undefined} onClick={() => onNavigate({ tab: "sessions", accountId: sessionAccountId, opportunityId, sessionView: "manage" })} style={workspaceTabButtonStyle(!isProvision)}>Manage</button><button type="button" aria-current={isProvision ? "page" : undefined} onClick={() => onNavigate({ tab: "sessions", accountId: sessionAccountId, opportunityId, sessionView: "provision" })} style={workspaceTabButtonStyle(isProvision)}>Provision</button></nav>
+    <nav aria-label="Sales Session workspace views" style={workspaceTabNavStyle}><button type="button" aria-current={!isProvision ? "page" : undefined} onClick={() => onNavigate({ tab: "sessions", accountId: sessionAccountId, opportunityId, sessionView: "manage", queueView: "active", queueOffset: 0 })} style={workspaceTabButtonStyle(!isProvision)}>Manage</button><button type="button" aria-current={isProvision ? "page" : undefined} onClick={() => onNavigate({ tab: "sessions", accountId: sessionAccountId, opportunityId, sessionView: "provision" })} style={workspaceTabButtonStyle(isProvision)}>Provision</button></nav>
     {isProvision ? <>
     <PortalSectionIntro title="Provision a Sales Enablement Session" description="Creates one time-bound CloudShare Sales Experience. Registration does not send email; Sales Admins explicitly request native invitations for selected registered participants afterwards." />
     <form onSubmit={submit} style={{ ...cardStyle, padding: "1.25rem", display: "grid", gap: "1rem" }}>

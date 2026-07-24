@@ -9,6 +9,8 @@ import styles from "./sales-sessions-workbench.module.css";
 
 type QueueRow = { id: string; accountId: string; accountName: string; opportunityId: string; opportunityName: string; sessionName: string; revision: number; start: string; end: string; timeZone: string; operation: { value: string; source: string }; experience: { value: string; source: string; freshness: string; observedAt?: string }; participantEnvironment?: { participantName: string; observation: { value: string | null; source: string; observedAt?: string } }; attention?: { entity: string; dimension: string; reason: string } };
 type QueueResponse = { view: SalesSessionQueueView; offset: number; limit: number; total: number; rows: QueueRow[]; target?: { id: string; state: string; message?: string } };
+type QueueRequestState = { view: SalesSessionQueueView; sort: NonNullable<SalesWorkspaceRouteState["queueSort"]>; offset: number; search: string; accountId?: string; opportunityId?: string; sessionId?: string };
+type SuccessfulQueueResult = { response: QueueResponse; request: QueueRequestState };
 type SalesRecordOptions = { accounts?: { id: string; name: string }[]; opportunities?: { id: string; accountId: string; name: string }[] };
 const queueViewPresentation: Record<SalesSessionQueueView, { readonly button: string; readonly heading: string }> = {
   active: { button: "Active", heading: "Active Sessions" },
@@ -16,9 +18,9 @@ const queueViewPresentation: Record<SalesSessionQueueView, { readonly button: st
   history: { button: "History", heading: "Session history" },
 };
 
-export function SalesSessionsWorkbench({ route, onNavigate }: { readonly route: SalesWorkspaceRouteState; readonly onNavigate: (intent: SalesNavigationIntent) => void }) {
+export function SalesSessionsWorkbench({ route, creationNotice, onNavigate }: { readonly route: SalesWorkspaceRouteState; readonly creationNotice?: SalesNavigationIntent["creationNotice"]; readonly onNavigate: (intent: SalesNavigationIntent) => void }) {
   const fetchRef = useRef(createAdminAuthenticatedRequest({ fetchImpl: (input, init) => window.fetch(input, init), onSessionExpired: () => { window.location.assign("/login"); } }));
-  const [data, setData] = useState<QueueResponse | null>(null);
+  const [result, setResult] = useState<SuccessfulQueueResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [searchDraft, setSearchDraft] = useState(route.queueSearch ?? "");
@@ -56,19 +58,22 @@ export function SalesSessionsWorkbench({ route, onNavigate }: { readonly route: 
       if (route.accountId) params.set("accountId", route.accountId);
       if (route.opportunityId) params.set("opportunityId", route.opportunityId);
       if (route.sessionId) params.set("target", route.sessionId);
-      try { const response = await fetchRef.current(`/api/sales/enablement-sessions?${params}`, { cache: "no-store" }); const body = await response.json() as QueueResponse & { error?: string }; if (!response.ok) throw new Error(body.error ?? "Could not load the local Sales Sessions queue."); if (live) setData(body); }
+      const requestState: QueueRequestState = { view, sort, offset, search, ...(route.accountId ? { accountId: route.accountId } : {}), ...(route.opportunityId ? { opportunityId: route.opportunityId } : {}), ...(route.sessionId ? { sessionId: route.sessionId } : {}) };
+      try { const response = await fetchRef.current(`/api/sales/enablement-sessions?${params}`, { cache: "no-store" }); const body = await response.json() as QueueResponse & { error?: string }; if (!response.ok) throw new Error(body.error ?? "Could not load the local Sales Sessions queue."); if (live) setResult({ response: body, request: requestState }); }
       catch (cause) { if (live) setError(cause instanceof Error ? cause.message : "Could not load the local Sales Sessions queue."); }
       finally { if (live) setLoading(false); }
     };
     void load(); return () => { live = false; };
   }, [offset, queueReload, route.accountId, route.opportunityId, route.sessionId, search, sort, view]);
   useEffect(() => {
-    if (data?.target?.state === "available" && selectedRef.current) {
+    if (result?.response.target?.state === "available" && selectedRef.current) {
       selectedRef.current.focus({ preventScroll: true });
       selectedRef.current.scrollIntoView({ block: "nearest" });
     }
-  }, [data?.target?.state, route.sessionId]);
+  }, [result?.response.target?.state, route.sessionId]);
   const navigate = (changes: Partial<SalesNavigationIntent>) => onNavigate({ tab: "sessions", sessionView: "manage", queueView: view, queueSearch: search, queueSort: sort, queueOffset: offset, accountId: route.accountId, opportunityId: route.opportunityId, ...changes, preserveScroll: true });
+  const data = result?.response ?? null;
+  const displayedRequest = result?.request;
   const rows = data?.rows ?? [];
   const range = data ? `${data.total ? data.offset + 1 : 0}–${Math.min(data.offset + rows.length, data.total)} of ${data.total}` : null;
   return <section aria-label="Sales Sessions workbench" style={{ ...cardStyle, padding: 0 }} className={styles.workbench}>
@@ -94,12 +99,13 @@ export function SalesSessionsWorkbench({ route, onNavigate }: { readonly route: 
     </section>
 
     {loading ? <p role="status" className={styles.feedback}>Loading the local Sessions queue…</p> : null}
+    {creationNotice ? <div role="alert" className={`${styles.feedback} ${styles.feedbackError}`}><p>{creationNotice.message} <strong>Do not retry creation.</strong></p>{creationNotice.correlationId ? <button type="button" className={styles.pageButton} onClick={() => onNavigate({ tab: "support", correlationId: creationNotice.correlationId })}>Open support diagnostics ({creationNotice.correlationId})</button> : null}</div> : null}
     {error ? <div role="alert" className={`${styles.feedback} ${styles.feedbackError}`}><p>{error} The last successfully loaded queue remains visible.</p><div className={styles.failureActions}><button type="button" className={styles.pageButton} onClick={() => setQueueReload((value) => value + 1)}>Retry queue</button><button type="button" className={styles.pageButton} onClick={() => onNavigate({ tab: "support" })}>Open Sales support</button></div></div> : null}
     {data?.target && data.target.state !== "available" ? <p role="status" className={styles.feedback}>{data.target.message}</p> : null}
     {optionsError ? <p role="alert" className={`${styles.feedback} ${styles.feedbackError}`}>{optionsError}</p> : null}
 
     <div className={styles.queueFrame}>
-      <div className={styles.queueMeta}><strong>{queueViewPresentation[view].heading}</strong>{range ? <span>{range}</span> : null}</div>
+      <div className={styles.queueMeta}><strong>{queueViewPresentation[displayedRequest?.view ?? view].heading}</strong>{range ? <span>{range}</span> : null}</div>
       <div tabIndex={0} aria-label="Sales Sessions queue table" className={styles.tableScroller}>
         <table className={styles.table}>
           <thead><tr><th scope="col" className={styles.sessionColumn}>Session</th><th scope="col" className={styles.relationshipColumn}>Relationship</th><th scope="col" className={styles.timeColumn}>Time window</th><th scope="col" className={styles.statusColumn}>Certalis operation</th><th scope="col" className={styles.statusColumn}>CloudShare Experience</th><th scope="col" className={styles.environmentColumn}>Participant Environment</th><th scope="col" className={styles.attentionColumn}>Attention</th></tr></thead>
@@ -117,7 +123,7 @@ export function SalesSessionsWorkbench({ route, onNavigate }: { readonly route: 
       {data && rows.length === 0 ? <div className={styles.emptyState}><strong>No Sessions in this view</strong><span>Adjust the queue view or filters to broaden the results.</span></div> : null}
     </div>
 
-    {data ? <footer role="status" className={styles.footer}><span>Showing {range}</span><div className={styles.pagination}><button className={styles.pageButton} type="button" disabled={offset === 0} onClick={() => navigate({ queueOffset: Math.max(0, offset - data.limit) })}>Previous page</button><button className={styles.pageButton} type="button" disabled={offset + rows.length >= data.total} onClick={() => navigate({ queueOffset: offset + data.limit })}>Next page</button></div></footer> : null}
+    {data ? <footer role="status" className={styles.footer}><span>Showing {range}</span><div className={styles.pagination}><button className={styles.pageButton} type="button" disabled={(displayedRequest?.offset ?? data.offset) === 0} onClick={() => navigate({ queueView: displayedRequest?.view ?? view, queueOffset: Math.max(0, (displayedRequest?.offset ?? data.offset) - data.limit) })}>Previous page</button><button className={styles.pageButton} type="button" disabled={(displayedRequest?.offset ?? data.offset) + rows.length >= data.total} onClick={() => navigate({ queueView: displayedRequest?.view ?? view, queueOffset: (displayedRequest?.offset ?? data.offset) + data.limit })}>Next page</button></div></footer> : null}
   </section>;
 }
 

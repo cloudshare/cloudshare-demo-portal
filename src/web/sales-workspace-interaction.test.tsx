@@ -296,7 +296,9 @@ describe("SalesWorkspace interaction", () => {
     await screen.findByRole("combobox", { name: "Opportunity" });
     await chooseSearchableOption(user, "Opportunity", "Acme - Acme evaluation"); await user.selectOptions(screen.getByRole("combobox", { name: "Catalogue Item" }), "item-1"); await user.selectOptions(await screen.findByRole("combobox", { name: "Sales Pro" }), "rep@certalis.demo");
     await user.click(screen.getByRole("button", { name: "Create Sales Enablement Session" }));
-    await waitFor(() => expect(mockRouter.push).toHaveBeenCalledWith("/sales?tab=sessions&opportunityId=opp-1&sessionId=session-1&status=needs_attention"));
+    await waitFor(() => expect(mockRouter.push).toHaveBeenCalledWith("/sales?tab=sessions&opportunityId=opp-1&sessionId=session-1&status=needs_attention&queue=needs_attention"));
+    expect(screen.queryByRole("combobox", { name: "Operational view" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Sessions" })).not.toBeNull();
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("Needs attention: The support audit could not be completed.");
     expect(alert.textContent).toContain("Do not retry creation.");
@@ -800,6 +802,22 @@ describe("SalesWorkspace interaction", () => {
     expect(screen.getByRole("heading", { name: "Sessions" })).not.toBeNull();
     expect(await screen.findByRole("button", { name: "Acme live demo" })).not.toBeNull();
     expect(window.sessionStorage.getItem(salesSessionProvisionDraftKey("sales-admin@certalis.demo"))).toBeNull();
+  });
+
+  it("returns from Provision Manage directly to the canonical Active queue", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => String(input).startsWith("/api/sales/session-opportunities?")
+      ? json({ accounts: [], opportunities: [], total: 0 })
+      : String(input).includes("queue=1")
+        ? json({ view: "active", offset: 0, limit: 25, total: 0, rows: [] })
+        : json({ activeItems: [] }));
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "sessions", sessionView: "provision" }} />);
+
+    await user.click(screen.getByRole("button", { name: "Manage" }));
+
+    expect(mockRouter.push).toHaveBeenLastCalledWith("/sales?tab=sessions");
+    expect(screen.queryByRole("combobox", { name: "Operational view" })).toBeNull();
+    expect(await screen.findByRole("heading", { name: "Sessions" })).not.toBeNull();
   });
 
   it("restores a versioned Provision draft after remount without retaining protected evidence", async () => {

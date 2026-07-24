@@ -49,6 +49,11 @@ export interface SalesNavigationIntent {
   readonly correlationId?: string | null;
   readonly source?: string | null;
   readonly subjectId?: string | null;
+  /** Ephemeral creation evidence carried across the Provision-to-queue transition. */
+  readonly creationNotice?: {
+    readonly message: string;
+    readonly correlationId?: string;
+  };
   /** Keep a selection change in browser history without moving the user's viewport. */
   readonly preserveScroll?: boolean;
 }

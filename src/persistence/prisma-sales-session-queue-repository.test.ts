@@ -20,8 +20,24 @@ describe("Prisma Sales Session queue repository", () => {
 
     const page = await repository.read({ customerId: "customer-a", view: "active", sort: "start_desc", offset: 0, limit: 25, now: new Date("2026-07-23T10:00:00Z") });
 
-    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ include: expect.objectContaining({ participants: expect.objectContaining({ orderBy: [{ environmentObservedAt: "desc" }, { id: "asc" }], take: 1 }) }) }));
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ include: expect.objectContaining({ participants: expect.objectContaining({ orderBy: [{ environmentObservedAt: { sort: "desc", nulls: "last" } }, { id: "asc" }], take: 1 }) }) }));
     expect(page.rows[0]?.participantEnvironment?.observation).toMatchObject({ value: "Ready", source: "cloudshare_v4_sales_participant_roster" });
+  });
+
+  it("prefers participant attention but keeps a normal observation for Certalis-level attention", async () => {
+    const observedAt = new Date("2026-07-23T09:00:00Z");
+    const base = { id: "session-1", customerId: "customer-a", opportunityId: "opportunity-a", itemId: "item-a", cloudShareSalesExperienceId: "sales-1", externalId: "external-1", type: "demo", start: "2026-07-24T09:00", end: "2026-07-24T10:00", timeZone: "UTC", salesProEmail: "sales@example.test", salesProDisplayName: "Sales", sendInvitations: "dontSend", sessionName: "Acme", revision: 1, operationalStatus: "needs_attention", attentionReason: "Certalis audit failed", experienceStatus: "notStarted", experienceStatusObservedAt: null, createdAt: observedAt, opportunity: { accountId: "account-a", name: "Evaluation", account: { name: "Acme" } } };
+    const normal = { environmentStatus: "Ready", environmentStatusCode: null, environmentObservedAt: observedAt, environmentAttentionReason: null, contact: { firstName: "Ada", lastName: "Lovelace" } };
+    const findMany = vi.fn().mockResolvedValueOnce([{ ...base, participants: [normal] }]).mockResolvedValueOnce([{ ...base, participants: [{ ...normal, environmentAttentionReason: "Environment failed" }] }]);
+    const count = vi.fn().mockResolvedValue(1);
+    const repository = createPrismaSalesSessionQueueRepository({ salesDemoSession: { findMany, count } } as never);
+
+    const certalisAttention = await repository.read({ customerId: "customer-a", view: "needs_attention", sort: "start_desc", offset: 0, limit: 25, now: new Date("2026-07-23T10:00:00Z") });
+    const participantAttention = await repository.read({ customerId: "customer-a", view: "needs_attention", sort: "start_desc", offset: 0, limit: 25, now: new Date("2026-07-23T10:00:00Z") });
+
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ include: expect.objectContaining({ participants: expect.objectContaining({ orderBy: [{ environmentAttentionReason: { sort: "asc", nulls: "last" } }, { environmentObservedAt: { sort: "desc", nulls: "last" } }, { id: "asc" }], take: 1 }) }) }));
+    expect(certalisAttention.rows[0]?.participantEnvironment?.observation).toMatchObject({ value: "Ready" });
+    expect(participantAttention.rows[0]?.participantEnvironment?.attentionReason).toBe("Environment failed");
   });
 
   it("fails restoration closed for another Customer by querying target with the active Customer", async () => {
