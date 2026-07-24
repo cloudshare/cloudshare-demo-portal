@@ -73,6 +73,15 @@ CloudShare v4 Sales Experience; it does not add participants or send invitations
 - The documented CloudShare v3 timezone list is cached. Normal UI does not expose cache
   freshness jargon; a warning appears only for a stale fallback. The Sales Admin's last
   selected timezone and Session-level experience type are retained as preferences.
+- The dedicated Sales Session workspace is `/sales/sessions/{sessionId}`. Its route-backed
+  local areas are Participants (the default), Activity, and Details. The queue passes its
+  bounded filters, page, selected target, and browser-history context through the return URL so
+  a valid originating row can regain focus after returning.
+- `GET /api/sales/enablement-sessions/{sessionId}/workspace` is a Customer-scoped local read
+  model. It owns active Account/Opportunity predicates, projects the Certalis operation and
+  CloudShare Experience dimensions independently, and returns persisted Participant data only.
+  Activity selects operation metadata and correlation IDs only; protected request/response
+  evidence, provider identifiers, and sponsored links stay exclusively in Sales Support.
 
 ## Deliberately deferred
 
