@@ -20,4 +20,16 @@ describe("Sales Session workspace", () => {
     expect(screen.getByRole("link", { name: "Details" }).getAttribute("href")).toContain("area=details");
     expect(screen.getByRole("link", { name: "Back to Sessions" }).getAttribute("href")).toBe("/sales?tab=sessions&queue=history&offset=25");
   });
+
+  it("invokes the browser fetch interface with its required Window receiver", async () => {
+    const fetchSpy = vi.spyOn(window, "fetch").mockImplementation(function (this: Window) {
+      if (this !== window) throw new TypeError("Illegal invocation");
+      return Promise.resolve(new Response(JSON.stringify(data), { status: 200 }));
+    });
+
+    render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
+
+    expect(await screen.findByRole("heading", { name: "Acme enablement" })).not.toBeNull();
+    expect(fetchSpy).toHaveBeenCalledOnce();
+  });
 });

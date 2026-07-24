@@ -12,7 +12,7 @@ export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let live = true;
-    const request = createAdminAuthenticatedRequest({ fetchImpl: window.fetch, onSessionExpired: () => window.location.assign("/login") });
+    const request = createAdminAuthenticatedRequest({ fetchImpl: window.fetch.bind(window), onSessionExpired: () => window.location.assign("/login") });
     void request(`/api/sales/enablement-sessions/${encodeURIComponent(sessionId)}/workspace`, { cache: "no-store" }).then(async (response) => {
       const body = await response.json() as Workspace & { error?: string };
       if (!response.ok) throw new Error(body.error ?? "The Sales Session could not be loaded.");
