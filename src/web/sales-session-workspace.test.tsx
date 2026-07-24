@@ -66,4 +66,13 @@ describe("Sales Session workspace", () => {
     expect(document.activeElement).toBe(laterControl);
     laterControl.remove();
   });
+
+  it("keeps the actionable Certalis reason in a needs-attention summary", async () => {
+    const needsAttention = { ...data, summary: { ...data.summary, operation: { value: "needs_attention", source: "certalis_persistence", reason: "Participant correlation requires support.", retry: "unsafe_requires_support", dimension: "certalis_operation" } } };
+    vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(needsAttention), { status: 200 }));
+
+    render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
+
+    expect(await screen.findByText("Participant correlation requires support.")).not.toBeNull();
+  });
 });

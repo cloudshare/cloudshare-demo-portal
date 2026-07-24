@@ -1,8 +1,9 @@
 import { isProjectableSalesParticipantRosterEnvironment, projectSalesParticipantEnvironment, projectSalesParticipantRosterEnvironment } from "./sales-participant-environment";
 import type { SalesParticipantEnvironmentObservation } from "./sales-participant-environment";
+import type { projectSalesSessionStatus } from "./sales-session-status";
 
 export interface SalesSessionWorkspaceResponse {
-  readonly summary: { readonly id: string; readonly sessionName: string; readonly revision: number; readonly start: string; readonly end: string; readonly timeZone: string; readonly operation: { readonly value: string; readonly source: string }; readonly experience: { readonly value: string; readonly source: string; readonly freshness: string; readonly observedAt?: string } };
+  readonly summary: { readonly id: string; readonly sessionName: string; readonly revision: number; readonly start: string; readonly end: string; readonly timeZone: string; readonly operation: ReturnType<typeof projectSalesSessionStatus>["operation"]; readonly experience: { readonly value: string; readonly source: string; readonly freshness: string; readonly observedAt?: string } };
   readonly participants: readonly { readonly id: string; readonly name: string; readonly email: string; readonly invitationStatus: "sent" | "notSent"; readonly participationStatus: string; readonly environment: SalesParticipantEnvironmentObservation }[];
   readonly activity: readonly SafeSalesSessionActivity[];
   readonly details: { readonly accountName: string; readonly opportunityName: string; readonly itemName: string; readonly invitationMode: string };
