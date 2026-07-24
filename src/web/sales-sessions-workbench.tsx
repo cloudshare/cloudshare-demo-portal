@@ -103,9 +103,10 @@ export function SalesSessionsWorkbench({ route, creationNotice, onNavigate }: { 
     {data?.target && data.target.state !== "available" ? <p role="status" className={styles.feedback}>{data.target.message}</p> : null}
     {optionsError ? <p role="alert" className={`${styles.feedback} ${styles.feedbackError}`}>{optionsError}</p> : null}
 
-    <div className={styles.queueFrame} aria-label="Sales Sessions result frame" aria-busy={loading}>
-      <div className={styles.queueMeta}><strong>{queueViewPresentation[displayedRequest?.view ?? view].heading}</strong><span>{loading ? <span role="status" className={styles.inlineLoading}>Loading the local Sessions queue…</span> : null}{range ? <span>{range}</span> : null}</span></div>
-      <div tabIndex={0} aria-label="Sales Sessions queue table" className={styles.tableScroller}>
+    <div className={styles.queueFrame}>
+      <div className={styles.queueMeta}><strong id="sales-sessions-result-heading">{queueViewPresentation[displayedRequest?.view ?? view].heading}</strong><span>{loading ? <span role="status" aria-label={`${queueViewPresentation[view].button} queue loading status`} className={styles.inlineLoading}>Loading the local Sessions queue…</span> : null}{range ? <span>{range}</span> : null}</span></div>
+      <div role="region" aria-labelledby="sales-sessions-result-heading" aria-busy={loading}>
+        <div tabIndex={0} aria-label="Sales Sessions queue table" className={styles.tableScroller}>
         <table className={styles.table}>
           <thead><tr><th scope="col" className={styles.sessionColumn}>Session</th><th scope="col" className={styles.relationshipColumn}>Relationship</th><th scope="col" className={styles.timeColumn}>Time window</th><th scope="col" className={styles.statusColumn}>Certalis operation</th><th scope="col" className={styles.statusColumn}>CloudShare Experience</th><th scope="col" className={styles.environmentColumn}>Participant Environment</th><th scope="col" className={styles.attentionColumn}>Attention</th></tr></thead>
           <tbody>{rows.map((row) => <tr key={row.id} data-selected={route.sessionId === row.id ? "true" : undefined}>
@@ -118,8 +119,9 @@ export function SalesSessionsWorkbench({ route, creationNotice, onNavigate }: { 
             <td>{row.attention ? <div className={styles.attention}><span className={styles.attentionEntity}>{row.attention.entity}</span><span>{row.attention.dimension.replaceAll("_", " ")} — {row.attention.reason}</span></div> : <span className={styles.noAttention}>No attention required</span>}</td>
           </tr>)}</tbody>
         </table>
+        </div>
+        {data && rows.length === 0 ? <div className={styles.emptyState}><strong>No Sessions in this view</strong><span>Adjust the queue view or filters to broaden the results.</span></div> : null}
       </div>
-      {data && rows.length === 0 ? <div className={styles.emptyState}><strong>No Sessions in this view</strong><span>Adjust the queue view or filters to broaden the results.</span></div> : null}
     </div>
 
     {data ? <footer role="status" className={styles.footer}><span>Showing {range}</span><div className={styles.pagination}><button className={styles.pageButton} type="button" disabled={(displayedRequest?.offset ?? data.offset) === 0} onClick={() => navigate({ queueView: displayedRequest?.view ?? view, queueOffset: Math.max(0, (displayedRequest?.offset ?? data.offset) - data.limit) })}>Previous page</button><button className={styles.pageButton} type="button" disabled={(displayedRequest?.offset ?? data.offset) + rows.length >= data.total} onClick={() => navigate({ queueView: displayedRequest?.view ?? view, queueOffset: (displayedRequest?.offset ?? data.offset) + data.limit })}>Next page</button></div></footer> : null}

@@ -173,9 +173,13 @@ describe("Sales Sessions workbench", () => {
     expect(screen.getByRole("button", { name: "History" }).getAttribute("aria-pressed")).toBe("true");
     expect(screen.getByText("Active Sessions")).not.toBeNull();
     expect(screen.getByRole("button", { name: "Acme evaluation" })).not.toBeNull();
-    const queueFrame = screen.getByLabelText("Sales Sessions result frame");
+    const queueFrame = screen.getByRole("region", { name: "Active Sessions" });
+    const visibleHeading = screen.getByText("Active Sessions");
+    expect(queueFrame.getAttribute("aria-labelledby")).toBe(visibleHeading.id);
     expect(queueFrame.getAttribute("aria-busy")).toBe("true");
-    expect(queueFrame.textContent).toContain("Loading the local Sessions queue");
+    const loadingStatus = screen.getByRole("status", { name: "History queue loading status" });
+    expect(loadingStatus.textContent).toContain("Loading the local Sessions queue");
+    expect(queueFrame.contains(loadingStatus)).toBe(false);
 
     resolveHistory(json({ view: "history", offset: 0, limit: 25, total: 0, rows: [] }));
     expect(await screen.findByText("Session history")).not.toBeNull();
