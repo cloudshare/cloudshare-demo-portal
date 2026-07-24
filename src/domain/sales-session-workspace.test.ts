@@ -18,6 +18,9 @@ describe("safe Sales Session Activity projection", () => {
     expect(projectSafeSalesSessionActivity({ ...base, operation: "sales.demo_session.participants.registered" }, "session-1")?.summary).toBe("Sales Participants registered.");
     expect(projectSafeSalesSessionActivity({ ...base, operation: "sales.demo_session.participants.invited" }, "session-1")?.summary).toBe("Sales Participant invitations sent.");
     expect(projectSafeSalesSessionActivity({ ...base, operation: "sales.demo_session.participants.reconciled" }, "session-1")?.summary).toBe("Sales Participants reconciled.");
+    expect(projectSafeSalesSessionActivity({ ...base, operation: "sales.demo_session.participants.registered", outcome: "failure" }, "session-1")?.summary).toBe("Sales Participant registration failed.");
+    expect(projectSafeSalesSessionActivity({ ...base, operation: "sales.demo_session.participants.invited", outcome: "failure" }, "session-1")?.summary).toBe("Sales Participant invitations failed.");
+    expect(projectSafeSalesSessionActivity({ ...base, operation: "sales.demo_session.participants.reconciled", outcome: "failure" }, "session-1")?.summary).toBe("Sales Participant reconciliation failed.");
     expect(projectSafeSalesSessionActivity({ ...base, operation: "sales.demo_session.participants.unsafe_unknown" }, "session-1")?.summary).toBe("Sales Participant operation completed.");
   });
 
