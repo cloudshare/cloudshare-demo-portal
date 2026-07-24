@@ -102,8 +102,12 @@ describe("Sales Session workspace", () => {
     expect(screen.getByText("3 equivalent events")).not.toBeNull();
     expect(screen.getAllByRole("time").map((time) => time.getAttribute("dateTime"))).toContain("2026-07-23T09:00:00.000Z");
     expect(screen.getAllByRole("time").map((time) => time.getAttribute("dateTime"))).toContain("2026-07-23T09:04:00.000Z");
-    expect(screen.getByRole("link", { name: "Open Support Diagnostics · correlation corr-1" })).not.toBeNull();
-    expect(screen.getByRole("link", { name: "Open Support Diagnostics · correlation corr-2" })).not.toBeNull();
+    expect(screen.getByText("2 correlation threads")).not.toBeNull();
+    const correlationDisclosure = document.querySelector("details");
+    expect(correlationDisclosure?.open).toBe(false);
+    expect(correlationDisclosure?.querySelectorAll("a")).toHaveLength(2);
+    expect(correlationDisclosure?.querySelector('[href*="corr-1"]')?.textContent).toContain("correlation corr-1");
+    expect(correlationDisclosure?.querySelector('[href*="corr-2"]')?.textContent).toContain("correlation corr-2");
     expect(screen.getByText("Subject: sales_demo_session")).not.toBeNull();
     expect(screen.getByText(/Activity shows ordinary operational metadata only/)).not.toBeNull();
   });
