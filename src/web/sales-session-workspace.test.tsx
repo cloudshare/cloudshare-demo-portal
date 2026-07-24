@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import React from "react";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { SalesSessionWorkspace } from "./sales-session-workspace";
 
@@ -47,10 +47,10 @@ describe("Sales Session workspace", () => {
     vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(data), { status: 200 }));
     const rendered = render(<SalesSessionWorkspace sessionId="session-1" area={area} queueHref="/sales?tab=sessions" />);
     const firstHeading = await screen.findByRole("heading", { name: area[0].toUpperCase() + area.slice(1) });
-    expect(document.activeElement).toBe(firstHeading);
+    await waitFor(() => expect(document.activeElement).toBe(firstHeading));
     rendered.rerender(<SalesSessionWorkspace sessionId="session-1" area="activity" queueHref="/sales?tab=sessions" />);
     const heading = await screen.findByRole("heading", { name: "Activity" });
-    expect(document.activeElement).toBe(heading);
+    await waitFor(() => expect(document.activeElement).toBe(heading));
   });
 
   it("does not steal focus again when the loaded workspace rerenders", async () => {
