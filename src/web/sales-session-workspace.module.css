@@ -30,6 +30,8 @@
 .roster thead th { color: #52606d; font-size: .75rem; letter-spacing: .04em; text-transform: uppercase; }
 .roster tbody th { min-width: 13rem; }
 .roster tbody th span, .muted { display: block; margin-top: .2rem; color: #52606d; font-size: .82rem; font-weight: 400; overflow-wrap: anywhere; }
+.environmentAttention { display: grid; gap: .2rem; margin-top: .45rem; max-width: 20rem; color: #7a2e0e; font-size: .82rem; }
+.environmentAttention strong { width: fit-content; border-radius: 999px; padding: .15rem .45rem; background: #fff0e8; color: #9a3412; font-size: .75rem; }
 .previewNote, .activityExplainer { padding: .75rem; border-left: 3px solid #76b7b2; background: #f3fbfa; font-size: .875rem; }
 .timeline { display: grid; gap: .75rem; margin: 1rem 0 0; padding: 0; list-style: none; }
 .timelineItem { display: grid; grid-template-columns: 1rem minmax(0, 1fr); gap: .75rem; }

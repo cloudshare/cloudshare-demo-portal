@@ -86,6 +86,27 @@ describe("Sales Session workspace", () => {
     expect(screen.getByText(/Detailed participant management follows in a later workspace/)).not.toBeNull();
   });
 
+  it("explains persisted Participant Environment attention without exposing raw evidence", async () => {
+    const attentionData = {
+      ...data,
+      participants: [{
+        ...data.participants[0],
+        environment: { value: null, source: "not_observed" },
+        environmentAttention: {
+          reason: "Multiple matching Participant Environments require support review.",
+          source: "Certalis Environment correlation check",
+        },
+      }],
+    };
+    vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(attentionData), { status: 200 }));
+    render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
+
+    expect(await screen.findByText("Needs attention")).not.toBeNull();
+    expect(screen.getByText("Multiple matching Participant Environments require support review.")).not.toBeNull();
+    expect(screen.getByText("Certalis Environment correlation check")).not.toBeNull();
+    expect(document.body.textContent).not.toMatch(/Bearer|provider response/);
+  });
+
   it("groups equivalent safe Activity while retaining its time range, count, and diagnostic link", async () => {
     const repeatedActivity = {
       ...data,

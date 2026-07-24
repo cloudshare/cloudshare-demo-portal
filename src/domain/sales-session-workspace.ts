@@ -4,11 +4,12 @@ import type { projectSalesSessionStatus } from "./sales-session-status";
 
 export interface SalesSessionWorkspaceResponse {
   readonly summary: { readonly id: string; readonly sessionName: string; readonly revision: number; readonly start: string; readonly end: string; readonly timeZone: string; readonly operation: ReturnType<typeof projectSalesSessionStatus>["operation"]; readonly experience: { readonly value: string; readonly source: string; readonly freshness: string; readonly observedAt?: string } };
-  readonly participants: readonly { readonly id: string; readonly name: string; readonly email: string; readonly invitationStatus: "sent" | "notSent"; readonly participationStatus: string; readonly environment: SalesParticipantEnvironmentObservation }[];
+  readonly participants: readonly { readonly id: string; readonly name: string; readonly email: string; readonly invitationStatus: "sent" | "notSent"; readonly participationStatus: string; readonly environment: SalesParticipantEnvironmentObservation; readonly environmentAttention: SafeSalesParticipantAttention | null }[];
   readonly activity: readonly SafeSalesSessionActivity[];
   readonly details: { readonly accountName: string; readonly opportunityName: string; readonly itemName: string; readonly invitationMode: string };
 }
 export type SalesSessionWorkspaceRead = { readonly state: "available"; readonly workspace: SalesSessionWorkspaceResponse } | { readonly state: "stale" };
+export type SafeSalesParticipantAttention = { readonly reason: string; readonly source: string };
 
 export type SafeSalesSessionActivity = {
   readonly occurredAt: string;
@@ -41,4 +42,19 @@ export function projectSafeSalesParticipantEnvironment(input: { readonly cloudSh
     ? projectSalesParticipantRosterEnvironment(input.environmentStatus, input.environmentObservedAt)
     : input.cloudShareRosterEnvironmentReference ? { dimension: "cloudshare_environment" as const, value: null, source: "not_observed" as const }
       : projectSalesParticipantEnvironment(input.environmentStatusCode, input.environmentObservedAt ?? undefined);
+}
+
+/** Persisted attention values may originate at an integration boundary. The
+ * ordinary workspace exposes controlled operational copy only, never the
+ * stored value itself. Unknown values deliberately collapse to generic copy. */
+export function projectSafeSalesParticipantAttention(input: { readonly environmentAttentionReason: string | null; readonly environmentAttentionSource: string | null }): SafeSalesParticipantAttention | null {
+  if (!input.environmentAttentionReason) return null;
+  return {
+    reason: input.environmentAttentionReason === "environment_ambiguous_for_project"
+      ? "Multiple matching Participant Environments require support review."
+      : "Participant Environment resolution requires support review.",
+    source: input.environmentAttentionSource === "cloudshare_v3_owner_email_item_project"
+      ? "Certalis Environment correlation check"
+      : "Certalis correlation",
+  };
 }

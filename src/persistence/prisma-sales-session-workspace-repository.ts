@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import { projectSalesSessionStatus } from "@/domain/sales-session-status";
-import { projectSafeSalesParticipantEnvironment, projectSafeSalesSessionActivity, type SalesSessionWorkspaceRead } from "@/domain/sales-session-workspace";
+import { projectSafeSalesParticipantAttention, projectSafeSalesParticipantEnvironment, projectSafeSalesSessionActivity, type SalesSessionWorkspaceRead } from "@/domain/sales-session-workspace";
 
 export interface SalesSessionWorkspaceRepository {
   /** Returns a single safe, local projection or null. Customer and archived-record
@@ -38,7 +38,7 @@ export function createPrismaSalesSessionWorkspaceRepository(prisma: PrismaClient
       });
       return { state: "available", workspace: {
         summary: { id: session.id, sessionName: session.sessionName || "Sales Enablement Session", revision: session.revision, start: session.start, end: session.end, timeZone: session.timeZone, operation: status.operation, experience: status.experience },
-        participants: session.participants.map((participant) => ({ id: participant.id, name: `${participant.contact.firstName} ${participant.contact.lastName}`, email: participant.contact.email, invitationStatus: participant.invitationStatus === "sent" ? "sent" : "notSent", participationStatus: participant.participationStatus, environment: projectSafeSalesParticipantEnvironment(participant) })),
+        participants: session.participants.map((participant) => ({ id: participant.id, name: `${participant.contact.firstName} ${participant.contact.lastName}`, email: participant.contact.email, invitationStatus: participant.invitationStatus === "sent" ? "sent" : "notSent", participationStatus: participant.participationStatus, environment: projectSafeSalesParticipantEnvironment(participant), environmentAttention: projectSafeSalesParticipantAttention(participant) })),
         activity: activity.map((entry) => projectSafeSalesSessionActivity(entry, session.id)).filter((entry): entry is NonNullable<typeof entry> => entry !== null),
         details: { accountName: session.opportunity.account.name, opportunityName: session.opportunity.name, itemName: session.item.name, invitationMode: session.sendInvitations === "salesProsAndParticipants" ? "Sales Pros and participants" : "No native invitations" },
       } };
