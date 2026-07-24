@@ -5,6 +5,7 @@ import { getPortalSessionServices } from "@/composition";
 import { getPortalSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { SalesSessionWorkspace } from "@/web/sales-session-workspace";
+import { SalesWorkspaceChrome } from "@/web/sales-workspace-chrome";
 
 type Props = { readonly params: Promise<{ sessionId: string }>; readonly searchParams: Promise<{ area?: string; from?: string }> };
 export default async function SalesSessionPage({ params, searchParams }: Props) {
@@ -15,5 +16,5 @@ export default async function SalesSessionPage({ params, searchParams }: Props) 
   const query = await searchParams;
   const area = query.area === "activity" || query.area === "details" ? query.area : "participants";
   const queueHref = query.from?.startsWith("/sales?") ? query.from : "/sales?tab=sessions";
-  return <SalesSessionWorkspace sessionId={(await params).sessionId} area={area} queueHref={queueHref} />;
+  return <SalesWorkspaceChrome email={session.email} activeTab="sessions"><SalesSessionWorkspace sessionId={(await params).sessionId} area={area} queueHref={queueHref} /></SalesWorkspaceChrome>;
 }

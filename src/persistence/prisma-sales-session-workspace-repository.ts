@@ -1,10 +1,11 @@
 import type { PrismaClient } from "@prisma/client";
 import { projectSalesSessionStatus } from "@/domain/sales-session-status";
+import { projectSafeSalesParticipantEnvironment, projectSafeSalesSessionActivity } from "@/domain/sales-session-workspace";
 
 export interface SalesSessionWorkspaceRepository {
   /** Returns a single safe, local projection or null. Customer and archived-record
    * predicates are intentionally owned here so ordinary callers cannot weaken them. */
-  read(customerId: string, sessionId: string): Promise<Record<string, unknown> | null>;
+  read(customerId: string, sessionId: string): Promise<{ readonly state: "available"; readonly workspace: Record<string, unknown> } | { readonly state: "stale" } | null>;
 }
 
 /**
@@ -21,6 +22,9 @@ export function createPrismaSalesSessionWorkspaceRepository(prisma: PrismaClient
         include: { opportunity: { include: { account: true } }, item: true, participants: { include: { contact: true }, orderBy: { createdAt: "asc" } } },
       });
       if (!session) return null;
+      // A pending reference is a pre-dispatch reservation. It cannot safely be
+      // treated as a real Sales Experience or a valid workspace target.
+      if (session.operationalStatus === "provisioning" && session.cloudShareSalesExperienceId.startsWith("pending:")) return { state: "stale" };
       const status = projectSalesSessionStatus({
         start: session.start, end: session.end, timeZone: session.timeZone,
         operationalStatus: session.operationalStatus === "provisioning" || session.operationalStatus === "needs_attention" ? session.operationalStatus : "active",
@@ -30,14 +34,14 @@ export function createPrismaSalesSessionWorkspaceRepository(prisma: PrismaClient
       }, new Date());
       const activity = await prisma.diagnosticLogEntry.findMany({
         where: { customerId, subjectId: session.id }, orderBy: [{ occurredAt: "desc" }, { id: "desc" }], take: 100,
-        select: { occurredAt: true, operation: true, outcome: true, message: true, actorType: true, actorEmail: true, subjectType: true, subjectId: true, correlationId: true },
+        select: { occurredAt: true, operation: true, outcome: true, actorType: true, subjectType: true, subjectId: true, correlationId: true },
       });
-      return {
+      return { state: "available", workspace: {
         summary: { id: session.id, sessionName: session.sessionName || "Sales Enablement Session", revision: session.revision, start: session.start, end: session.end, timeZone: session.timeZone, operation: status.operation, experience: status.experience },
-        participants: session.participants.map((participant) => ({ id: participant.id, name: `${participant.contact.firstName} ${participant.contact.lastName}`, email: participant.contact.email, invitationStatus: participant.invitationStatus === "sent" ? "sent" : "notSent", participationStatus: participant.participationStatus })),
-        activity: activity.map((entry) => ({ occurredAt: entry.occurredAt.toISOString(), operation: entry.operation, outcome: entry.outcome, message: entry.message, actor: entry.actorType ? { type: entry.actorType, ...(entry.actorEmail ? { email: entry.actorEmail } : {}) } : null, subject: entry.subjectType && entry.subjectId ? { type: entry.subjectType, id: entry.subjectId } : null, ...(entry.correlationId ? { correlationId: entry.correlationId } : {}) })),
+        participants: session.participants.map((participant) => ({ id: participant.id, name: `${participant.contact.firstName} ${participant.contact.lastName}`, email: participant.contact.email, invitationStatus: participant.invitationStatus === "sent" ? "sent" : "notSent", participationStatus: participant.participationStatus, environment: projectSafeSalesParticipantEnvironment(participant) })),
+        activity: activity.map((entry) => projectSafeSalesSessionActivity(entry, session.id)).filter((entry): entry is NonNullable<typeof entry> => entry !== null),
         details: { accountName: session.opportunity.account.name, opportunityName: session.opportunity.name, itemName: session.item.name, invitationMode: session.sendInvitations === "salesProsAndParticipants" ? "Sales Pros and participants" : "No native invitations" },
-      };
+      } };
     },
   };
 }

@@ -82,6 +82,10 @@ CloudShare v4 Sales Experience; it does not add participants or send invitations
   CloudShare Experience dimensions independently, and returns persisted Participant data only.
   Activity selects operation metadata and correlation IDs only; protected request/response
   evidence, provider identifiers, and sponsored links stay exclusively in Sales Support.
+- A `provisioning` Session with a persisted `pending:` Sales Experience reference is a stale
+  pre-dispatch reservation, not a usable Session workspace target. The local read returns a safe
+  conflict state without making any CloudShare call; missing, archived, and cross-Customer IDs
+  remain indistinguishable not-found states.
 
 ## Deliberately deferred
 

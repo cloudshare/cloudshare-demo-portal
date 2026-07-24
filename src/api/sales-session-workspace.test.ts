@@ -15,7 +15,7 @@ const workspace = {
 
 describe("Sales Session workspace handler", () => {
   it("returns one Customer-scoped local workspace with metadata-only Activity", async () => {
-    const read = vi.fn().mockResolvedValue(workspace);
+    const read = vi.fn().mockResolvedValue({ state: "available", workspace });
     const result = await handleReadSalesSessionWorkspace({ workspace: { read } }, { customerId: "customer-a", sessionId: "session-1" });
 
     expect(read).toHaveBeenCalledWith("customer-a", "session-1");
@@ -23,11 +23,16 @@ describe("Sales Session workspace handler", () => {
     expect(JSON.stringify(result.body)).not.toMatch(/loginUrl|bearer|api[_-]?key|authorization|responseJson|requestJson/i);
   });
 
-  it("fails closed for absent, archived, stale, or cross-Customer targets", async () => {
+  it("fails closed for absent, archived, or cross-Customer targets", async () => {
     const read = vi.fn().mockResolvedValue(null);
     const result = await handleReadSalesSessionWorkspace({ workspace: { read } }, { customerId: "customer-a", sessionId: "customer-b-session" });
 
     expect(result).toEqual({ status: 404, body: { error: "This Sales Session is unavailable for this Customer." } });
     expect(read).toHaveBeenCalledWith("customer-a", "customer-b-session");
+  });
+
+  it("fails a pending pre-dispatch reservation closed as stale without a provider read", async () => {
+    const result = await handleReadSalesSessionWorkspace({ workspace: { read: vi.fn().mockResolvedValue({ state: "stale" }) } }, { customerId: "customer-a", sessionId: "session-pending" });
+    expect(result).toEqual({ status: 409, body: { error: "This Sales Session is an incomplete local reservation and cannot be opened." } });
   });
 });
