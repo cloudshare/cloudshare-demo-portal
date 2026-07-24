@@ -92,7 +92,7 @@ describe("Sales Session workspace", () => {
       activity: [
         data.activity[0],
         { ...data.activity[0], occurredAt: "2026-07-23T09:02:00.000Z" },
-        { ...data.activity[0], occurredAt: "2026-07-23T09:04:00.000Z" },
+        { ...data.activity[0], occurredAt: "2026-07-23T09:04:00.000Z", correlationId: "corr-2" },
       ],
     };
     vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(repeatedActivity), { status: 200 }));
@@ -100,8 +100,11 @@ describe("Sales Session workspace", () => {
 
     expect(await screen.findByRole("list", { name: "Sales Session activity timeline" })).not.toBeNull();
     expect(screen.getByText("3 equivalent events")).not.toBeNull();
-    expect(screen.getByText("2026-07-23T09:00:00.000Z to 2026-07-23T09:04:00.000Z")).not.toBeNull();
-    expect(screen.getByRole("link", { name: "Open Support Diagnostics" })).not.toBeNull();
+    expect(screen.getAllByRole("time").map((time) => time.getAttribute("dateTime"))).toContain("2026-07-23T09:00:00.000Z");
+    expect(screen.getAllByRole("time").map((time) => time.getAttribute("dateTime"))).toContain("2026-07-23T09:04:00.000Z");
+    expect(screen.getByRole("link", { name: "Open Support Diagnostics · correlation corr-1" })).not.toBeNull();
+    expect(screen.getByRole("link", { name: "Open Support Diagnostics · correlation corr-2" })).not.toBeNull();
+    expect(screen.getByText("Subject: sales_demo_session")).not.toBeNull();
     expect(screen.getByText(/Activity shows ordinary operational metadata only/)).not.toBeNull();
   });
 
