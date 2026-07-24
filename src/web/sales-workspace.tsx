@@ -17,7 +17,6 @@ import type { SalesExperienceType } from "@/domain/sales-experience-type";
 import { workspaceTabButtonStyle, workspaceTabNavStyle } from "./workspace-tab-styles";
 import { parseSalesSessionProvisionDraft, salesSessionProvisionDraftKey, type SalesSessionProvisionDraft } from "./sales-session-provision-draft";
 import { SalesSessionsWorkbench } from "./sales-sessions-workbench";
-import { parsePrototypeVariant, SalesWorkspaceUiPrototype } from "./sales-workspace-ui-prototype";
 
 type Account = { id: string; name: string; kind: "prospect" | "current_customer"; archivedAt: string | null; createdAt: string; updatedAt?: string };
 type Opportunity = { id: string; accountId: string; name: string; status: "open" | "won" | "lost"; archivedAt: string | null; createdAt: string; updatedAt?: string };
@@ -55,8 +54,6 @@ const selectableRowStyle = { cursor: "pointer" };
  * Sales page always supplies an explicit `sessionView=manage` default. */
 export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemView: "catalog", sessionView: "provision" } }: { readonly email: string; readonly initialRoute?: SalesWorkspaceRouteState }) {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const prototypeVariant = parsePrototypeVariant(searchParams.get("prototype"));
   const [route, setRoute] = useState<SalesWorkspaceRouteState>(initialRoute);
   useEffect(() => {
     setRoute((current) => salesRoutesMatch(current, initialRoute) ? current : initialRoute);
@@ -84,8 +81,6 @@ export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemVi
     else router.push(href);
     setRoute(next);
   }, [route.queueOffset, route.queueSearch, route.queueSort, route.queueView, router]);
-
-  if (prototypeVariant) return <SalesWorkspaceUiPrototype email={email} variant={prototypeVariant} />;
 
   return <main style={salesWorkspaceStyle}>
     <PortalPageHeader eyebrow="Certalis Sales Portal" title="Sales Workspace" description="Curate reusable Items, commercial records, and time-bound CloudShare Sales Experiences in the isolated Certalis Customer workspace." email={email} actions={<button onClick={() => void logout()} style={accountLogoutButtonStyle}>Log out</button>} />
