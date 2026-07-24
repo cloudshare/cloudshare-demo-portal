@@ -56,6 +56,7 @@ describe("Prisma Sales Session queue repository integration", () => {
       id: `participant-${number}-${suffix}`, customerId: customerA, salesDemoSessionId: `active-1-${suffix}`,
       opportunityContactId: `contact-${number}-${suffix}`, cloudShareParticipantId: `cloudshare-participant-${number}-${suffix}`,
       invitationStatus: "notSent", participationStatus: "pending", environmentStatus: number === 1 ? "Ready" : null,
+      environmentObservedAt: number === 1 ? createdAt : null,
       environmentAttentionReason: number === 2 ? "Participant environment is not correlated." : null,
       environmentAttentionSource: number === 2 ? "certalis_correlation" : null,
       lastReconciledAt: createdAt, createdAt, updatedAt: createdAt,
@@ -68,6 +69,7 @@ describe("Prisma Sales Session queue repository integration", () => {
     expect(first.total).toBe(3);
     expect(first.rows.map((row) => row.sessionName)).toEqual(["Acme Pacific"]);
     expect(second.rows.map((row) => row.sessionName)).toEqual(["Acme A"]);
+    expect(second.rows[0]?.participantEnvironment?.observation).toMatchObject({ value: "Ready", source: "cloudshare_v4_sales_participant_roster", observedAt: createdAt.toISOString() });
     const history = await repository.read({ customerId: customerA, view: "history", sort: "start_desc", offset: 0, limit: 25, now });
     expect(history.rows.map((row) => row.sessionName)).toEqual(["Acme History"]);
     await expect(repository.findTarget(customerA, `hidden-${suffix}`)).resolves.toBeNull();

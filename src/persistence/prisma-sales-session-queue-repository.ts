@@ -17,16 +17,17 @@ export interface SalesSessionQueueRepository { read(input: SalesSessionQueueRead
 
 /**
  * One deliberately deep local queue seam. It owns the Customer predicate,
- * bounded ordering, relation filters, and the EXISTS condition for participant
- * environment attention. Browser callers never enumerate sessions or invoke
- * CloudShare to construct the workbench.
+ * bounded ordering, relation filters, the attention EXISTS predicate, and one
+ * deterministic participant-environment projection per Session. Browser
+ * callers never enumerate sessions or invoke CloudShare to construct the
+ * workbench.
  */
 export function createPrismaSalesSessionQueueRepository(prisma: PrismaClient): SalesSessionQueueRepository {
   return {
     async read(input) {
       const where = whereFor(input);
       const requiresWallClockClassification = input.view === "active" || input.view === "history";
-      const rows = await prisma.salesDemoSession.findMany({ where, orderBy: orderBy(input.sort), skip: requiresWallClockClassification ? 0 : input.offset, take: requiresWallClockClassification ? 501 : input.limit, include: { opportunity: { include: { account: true } }, participants: { where: { environmentAttentionReason: { not: null } }, include: { contact: true }, take: 1 } } });
+      const rows = await prisma.salesDemoSession.findMany({ where, orderBy: orderBy(input.sort), skip: requiresWallClockClassification ? 0 : input.offset, take: requiresWallClockClassification ? 501 : input.limit, include: { opportunity: { include: { account: true } }, participants: { ...(input.view === "needs_attention" ? { where: { environmentAttentionReason: { not: null } } } : {}), include: { contact: true }, orderBy: [{ environmentObservedAt: "desc" }, { id: "asc" }], take: 1 } } });
       const candidates: SalesSessionQueueCandidate[] = rows.map((row) => ({
         id: row.id, customerId: row.customerId, opportunityId: row.opportunityId, itemId: row.itemId, cloudShareSalesExperienceId: row.cloudShareSalesExperienceId, externalId: row.externalId, type: row.type as SalesSessionQueueCandidate["type"], start: row.start, end: row.end, timeZone: row.timeZone, salesProEmail: row.salesProEmail, salesProDisplayName: row.salesProDisplayName, registrationType: "registeredParticipantsOnly" as const, sendInvitations: row.sendInvitations === "salesProsAndParticipants" ? "salesProsAndParticipants" : "dontSend", sessionName: row.sessionName, revision: row.revision, operationalStatus: row.operationalStatus as SalesSessionQueueCandidate["operationalStatus"], attentionReason: row.attentionReason, experienceStatus: row.experienceStatus === "notStarted" || row.experienceStatus === "inProgress" || row.experienceStatus === "ended" ? row.experienceStatus : null, experienceStatusObservedAt: row.experienceStatusObservedAt, createdAt: row.createdAt, accountId: row.opportunity.accountId, accountName: row.opportunity.account.name, opportunityName: row.opportunity.name, participantEnvironment: row.participants[0] ? projectQueueParticipantEnvironment({ participantName: `${row.participants[0].contact.firstName} ${row.participants[0].contact.lastName}`, environmentStatus: row.participants[0].environmentStatus, environmentStatusCode: row.participants[0].environmentStatusCode, environmentObservedAt: row.participants[0].environmentObservedAt, attentionReason: row.participants[0].environmentAttentionReason }) : null,
       }));

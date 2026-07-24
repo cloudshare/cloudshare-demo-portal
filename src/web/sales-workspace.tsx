@@ -318,7 +318,7 @@ function SalesDemoSessionsFeature({ initialSelection, draftStorageKey, onNavigat
         if (body.needsAttention) { setNeedsAttention(true); setCreationRetryBlocked(true); setCorrelationId(body.correlationId ?? null); setMessage(`Needs attention: ${body.warning ?? body.creationOutcome?.reason ?? "Sales Enablement Session was created. Do not retry creation; review support diagnostics."}`); }
         const createdStatus = body.needsAttention ? "needs_attention" : body.session.experience?.value === "ended" ? "ended" : body.session.experience?.value === "inProgress" || startMode === "now" ? "in_progress" : "upcoming";
         setSessionStatusFilter(createdStatus);
-        onNavigate({ tab: "sessions", sessionView: "manage", sessionId: body.session.id, sessionStatus: createdStatus, accountId: sessionAccountId, opportunityId });
+        onNavigate({ tab: "sessions", sessionView: "manage", ...(body.needsAttention ? {} : { queueView: "active" as const, queueOffset: 0 }), sessionId: body.session.id, sessionStatus: createdStatus, accountId: sessionAccountId, opportunityId });
       } else if (body.needsAttention) {
         setNeedsAttention(true); setCreationRetryBlocked(true); setCorrelationId(body.correlationId ?? null);
         setMessage(`Needs attention: ${body.warning ?? body.creationOutcome?.reason ?? "Sales Enablement Session creation needs support. Do not retry creation."}`);

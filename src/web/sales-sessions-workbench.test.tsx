@@ -14,7 +14,7 @@ const row = {
   id: "session-1", accountId: "account-1", accountName: "Acme", opportunityId: "opportunity-1",
   opportunityName: "Evaluation", sessionName: "Acme evaluation", revision: 2,
   start: "2026-07-23T09:00:00.000Z", end: "2026-07-23T10:00:00.000Z", timeZone: "UTC",
-  operation: { value: "active" },
+  operation: { value: "active", source: "certalis_persistence" },
   experience: { value: "notStarted", source: "schedule_prediction", freshness: "estimated" },
   participantEnvironment: { participantName: "Ada", observation: { value: "Ready", source: "cloudshare_v4_sales_participant_roster", observedAt: "2026-07-23T08:00:00.000Z" } },
 };
@@ -40,6 +40,8 @@ describe("Sales Sessions workbench", () => {
     expect(screen.getByText("Session queue")).not.toBeNull();
     expect(screen.getByText("Active Sessions")).not.toBeNull();
     expect(screen.getByRole("region", { name: "Session queue controls" })).not.toBeNull();
+    expect(screen.getByText("Recorded by Certalis persistence.")).not.toBeNull();
+    expect(screen.getByText("Observed from CloudShare participant roster · 2026-07-23T08:00:00.000Z")).not.toBeNull();
 
     await user.click(screen.getByRole("button", { name: "Needs attention" }));
     await user.selectOptions(screen.getByRole("combobox", { name: "Account filter" }), "account-1");
@@ -103,5 +105,40 @@ describe("Sales Sessions workbench", () => {
       : json({ view: "active", offset: 0, limit: 25, total: 0, rows: [] }));
     render(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage" }} onNavigate={vi.fn()} />);
     expect((await screen.findByRole("alert")).textContent).toContain("Account and Opportunity filters could not be loaded");
+  });
+
+  it("retains the last safe queue and offers Retry and Support after a queue read fails", async () => {
+    const user = userEvent.setup();
+    let queueReads = 0;
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => {
+      const path = String(input);
+      if (path.startsWith("/api/sales/session-opportunities?")) return json({ accounts: [], opportunities: [] });
+      queueReads += 1;
+      if (queueReads === 2) return json({ error: "Queue temporarily unavailable" }, 503);
+      return json({ view: "active", offset: 0, limit: 25, total: 1, rows: [row] });
+    });
+    const onNavigate = vi.fn();
+    const rendered = render(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage" }} onNavigate={onNavigate} />);
+    expect(await screen.findByRole("button", { name: "Acme evaluation" })).not.toBeNull();
+
+    rendered.rerender(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage", queueSearch: "changed" }} onNavigate={onNavigate} />);
+    expect((await screen.findByRole("alert")).textContent).toContain("Queue temporarily unavailable");
+    expect(screen.getByRole("button", { name: "Acme evaluation" })).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: "Open Sales support" }));
+    expect(onNavigate).toHaveBeenCalledWith({ tab: "support" });
+    await user.click(screen.getByRole("button", { name: "Retry queue" }));
+    await waitFor(() => expect(queueReads).toBe(3));
+  });
+
+  it("labels an unassigned participant without claiming a CloudShare observation", async () => {
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => String(input).startsWith("/api/sales/session-opportunities?")
+      ? json({ accounts: [], opportunities: [] })
+      : json({ view: "active", offset: 0, limit: 25, total: 1, rows: [{ ...row, participantEnvironment: { participantName: "Ada", observation: { value: null, source: "not_assigned" } } }] }));
+
+    render(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage" }} onNavigate={vi.fn()} />);
+
+    expect(await screen.findByText("Ada: Not assigned")).not.toBeNull();
+    expect(screen.getByText("No CloudShare Environment is assigned.")).not.toBeNull();
+    expect(screen.queryByText(/Observed from CloudShare participant roster/)).toBeNull();
   });
 });

@@ -135,6 +135,15 @@
   color: #991b1b;
 }
 
+.feedback p { margin: 0; }
+
+.failureActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+}
+
 .queueFrame {
   min-width: 0;
   padding: 1rem 1.5rem 0;

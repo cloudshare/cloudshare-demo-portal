@@ -771,8 +771,9 @@ describe("SalesWorkspace interaction", () => {
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("selectedOpportunityId=opp-2"), expect.objectContaining({ cache: "no-store", signal: expect.any(AbortSignal) }));
   });
 
-  it("routes a start-now create to the in-progress Manage view and visibly focuses the returned Session", async () => {
+  it("routes a start-now create directly to the canonical Active queue without a legacy Manage render", async () => {
     const user = userEvent.setup(); let created = false;
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", { configurable: true, value: vi.fn() });
     const createdSession = { id: "session-now", opportunityId: "opp-1", itemId: "item-1", type: "demo" as const, sessionName: "Acme live demo", start: "2026-07-19T18:00", end: "2026-07-19T19:00", timeZone: "UTC", salesProDisplayName: "Sales Rep", createdAt: "2026-07-19T18:00:00.000Z", operation: { dimension: "certalis_operation", value: "correlated", source: "certalis_persistence", retry: "not_applicable" }, experience: { dimension: "cloudshare_sales_experience", value: "inProgress", source: "schedule_prediction", freshness: "predicted" }, verificationEligible: true };
     vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
       const path = String(input);
@@ -780,7 +781,9 @@ describe("SalesWorkspace interaction", () => {
       if (path === "/api/sales/items") return json({ activeItems: [{ id: "item-1", name: "Accelerate Demo", description: "", project: { id: "project-1", name: "Project" }, blueprints: [], policy: { id: "policy-1", name: "Policy" }, regions: [], defaultDurationMinutes: 60, status: "active" }] });
       if (path.startsWith("/api/sales/enablement-sessions/project-members?")) return json({ members: [{ email: "rep@certalis.demo", displayName: "Sales Rep" }] });
       if (path === "/api/sales/timezones" && !init?.method) return json({ timezones: [{ id: "UTC", name: "UTC" }], preference: {} });
-      if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return json({ sessions: created && path.includes("experienceStatus=inProgress") ? [createdSession] : [] });
+      if (path.startsWith("/api/sales/enablement-sessions?") && !init?.method) return path.includes("queue=1")
+        ? json({ view: "active", offset: 0, limit: 25, total: created ? 1 : 0, rows: created ? [{ id: createdSession.id, accountId: "account-1", accountName: "Acme", opportunityId: "opp-1", opportunityName: "Live demo", sessionName: createdSession.sessionName, revision: 1, start: createdSession.start, end: createdSession.end, timeZone: "UTC", operation: createdSession.operation, experience: createdSession.experience }] : [], target: created ? { id: createdSession.id, state: "available" } : undefined })
+        : json({ sessions: [] });
       if (path === "/api/sales/enablement-sessions" && init?.method === "POST") { created = true; return json({ session: createdSession }, 201); }
       if (path === "/api/sales/session-configuration") return json({});
       return json({ error: `Unexpected request ${path}` }, 500);
@@ -793,9 +796,9 @@ describe("SalesWorkspace interaction", () => {
     await user.click(screen.getByRole("button", { name: "Create Sales Enablement Session" }));
 
     await waitFor(() => expect(mockRouter.push).toHaveBeenCalledWith("/sales?tab=sessions&opportunityId=opp-1&sessionId=session-now&status=in_progress"));
-    expect((screen.getByRole("combobox", { name: "Operational view" }) as HTMLSelectElement).value).toBe("in_progress");
-    const focused = await waitFor(() => { const row = document.getElementById("sales-session-session-now"); expect(row).not.toBeNull(); return row!; });
-    expect(focused.style.boxShadow).toContain("inset");
+    expect(screen.queryByRole("combobox", { name: "Operational view" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Sessions" })).not.toBeNull();
+    expect(await screen.findByRole("button", { name: "Acme live demo" })).not.toBeNull();
     expect(window.sessionStorage.getItem(salesSessionProvisionDraftKey("sales-admin@certalis.demo"))).toBeNull();
   });
 

@@ -7,7 +7,7 @@ import { cardStyle } from "./card-styles";
 import type { SalesNavigationIntent, SalesSessionQueueView, SalesWorkspaceRouteState } from "./sales-shell-route";
 import styles from "./sales-sessions-workbench.module.css";
 
-type QueueRow = { id: string; accountId: string; accountName: string; opportunityId: string; opportunityName: string; sessionName: string; revision: number; start: string; end: string; timeZone: string; operation: { value: string }; experience: { value: string; source: string; freshness: string; observedAt?: string }; participantEnvironment?: { participantName: string; observation: { value: string | null; source: string; observedAt?: string } }; attention?: { entity: string; dimension: string; reason: string } };
+type QueueRow = { id: string; accountId: string; accountName: string; opportunityId: string; opportunityName: string; sessionName: string; revision: number; start: string; end: string; timeZone: string; operation: { value: string; source: string }; experience: { value: string; source: string; freshness: string; observedAt?: string }; participantEnvironment?: { participantName: string; observation: { value: string | null; source: string; observedAt?: string } }; attention?: { entity: string; dimension: string; reason: string } };
 type QueueResponse = { view: SalesSessionQueueView; offset: number; limit: number; total: number; rows: QueueRow[]; target?: { id: string; state: string; message?: string } };
 type SalesRecordOptions = { accounts?: { id: string; name: string }[]; opportunities?: { id: string; accountId: string; name: string }[] };
 const queueViewPresentation: Record<SalesSessionQueueView, { readonly button: string; readonly heading: string }> = {
@@ -24,6 +24,7 @@ export function SalesSessionsWorkbench({ route, onNavigate }: { readonly route: 
   const [searchDraft, setSearchDraft] = useState(route.queueSearch ?? "");
   const [recordOptions, setRecordOptions] = useState<SalesRecordOptions>({});
   const [optionsError, setOptionsError] = useState<string | null>(null);
+  const [queueReload, setQueueReload] = useState(0);
   const selectedRef = useRef<HTMLButtonElement | null>(null);
   const view = route.queueView ?? "active";
   const sort = route.queueSort ?? "start_desc";
@@ -60,7 +61,7 @@ export function SalesSessionsWorkbench({ route, onNavigate }: { readonly route: 
       finally { if (live) setLoading(false); }
     };
     void load(); return () => { live = false; };
-  }, [offset, route.accountId, route.opportunityId, route.sessionId, search, sort, view]);
+  }, [offset, queueReload, route.accountId, route.opportunityId, route.sessionId, search, sort, view]);
   useEffect(() => {
     if (data?.target?.state === "available" && selectedRef.current) {
       selectedRef.current.focus({ preventScroll: true });
@@ -93,7 +94,7 @@ export function SalesSessionsWorkbench({ route, onNavigate }: { readonly route: 
     </section>
 
     {loading ? <p role="status" className={styles.feedback}>Loading the local Sessions queue…</p> : null}
-    {error ? <p role="alert" className={`${styles.feedback} ${styles.feedbackError}`}>{error}</p> : null}
+    {error ? <div role="alert" className={`${styles.feedback} ${styles.feedbackError}`}><p>{error} The last successfully loaded queue remains visible.</p><div className={styles.failureActions}><button type="button" className={styles.pageButton} onClick={() => setQueueReload((value) => value + 1)}>Retry queue</button><button type="button" className={styles.pageButton} onClick={() => onNavigate({ tab: "support" })}>Open Sales support</button></div></div> : null}
     {data?.target && data.target.state !== "available" ? <p role="status" className={styles.feedback}>{data.target.message}</p> : null}
     {optionsError ? <p role="alert" className={`${styles.feedback} ${styles.feedbackError}`}>{optionsError}</p> : null}
 
@@ -106,9 +107,9 @@ export function SalesSessionsWorkbench({ route, onNavigate }: { readonly route: 
             <th scope="row"><button ref={route.sessionId === row.id ? selectedRef : undefined} type="button" aria-current={route.sessionId === row.id ? "true" : undefined} className={styles.sessionLink} onClick={() => navigate({ sessionId: row.id })}>{row.sessionName}</button><span className={styles.secondaryLine}>Revision {row.revision}</span></th>
             <td><span className={styles.primaryLine}>{row.accountName}</span><span className={styles.secondaryLine}>{row.opportunityName}</span></td>
             <td><span className={styles.timeLine}><span className={styles.timeLabel}>Start</span><time dateTime={row.start}>{row.start}</time></span><span className={styles.timeLine}><span className={styles.timeLabel}>End</span><time dateTime={row.end}>{row.end}</time></span><span className={styles.secondaryLine}>CloudShare time zone: {row.timeZone}</span></td>
-            <td><StatusDimension label="Certalis operation" value={row.operation.value} /></td>
+            <td><StatusDimension label="Certalis operation" value={row.operation.value} detail={row.operation.source === "certalis_persistence" ? "Recorded by Certalis persistence." : `Certalis source: ${formatStatus(row.operation.source)}.`} /></td>
             <td><StatusDimension label="CloudShare Experience" value={row.experience.value} detail={row.experience.source === "cloudshare_v4_get_sales" ? `Observed from CloudShare · ${formatStatus(row.experience.freshness)}${row.experience.observedAt ? ` · ${row.experience.observedAt}` : ""}` : "Estimated from the Session schedule — not recently confirmed with CloudShare."} /></td>
-            <td>{row.participantEnvironment ? <StatusDimension label="Participant Environment" value={`${row.participantEnvironment.participantName}: ${row.participantEnvironment.observation.value ?? "not observed"}`} detail={`Observed from CloudShare participant monitoring${row.participantEnvironment.observation.observedAt ? ` · ${row.participantEnvironment.observation.observedAt}` : ""}`} neutral /> : <span className={styles.noAttention}>No Participant Environment observation available</span>}</td>
+            <td>{row.participantEnvironment ? <StatusDimension label="Participant Environment" {...participantEnvironmentPresentation(row.participantEnvironment)} neutral /> : <span className={styles.noAttention}>No Participant Environment observation available</span>}</td>
             <td>{row.attention ? <div className={styles.attention}><span className={styles.attentionEntity}>{row.attention.entity}</span><span>{row.attention.dimension.replaceAll("_", " ")} — {row.attention.reason}</span></div> : <span className={styles.noAttention}>No attention required</span>}</td>
           </tr>)}</tbody>
         </table>
@@ -126,4 +127,12 @@ function StatusDimension({ label, value, detail, neutral = false }: { readonly l
 
 function formatStatus(value: string): string {
   return value.replace(/([a-z])([A-Z])/g, "$1 $2").replaceAll("_", " ").replace(/^./, (first) => first.toUpperCase());
+}
+
+function participantEnvironmentPresentation(environment: NonNullable<QueueRow["participantEnvironment"]>): { readonly value: string; readonly detail: string } {
+  const { observation, participantName } = environment;
+  if (observation.source === "not_assigned") return { value: `${participantName}: Not assigned`, detail: "No CloudShare Environment is assigned." };
+  if (observation.source === "not_observed") return { value: `${participantName}: Not observed`, detail: "CloudShare Environment state has not been observed." };
+  const surface = observation.source === "cloudshare_v3_environment" ? "CloudShare Environment" : "CloudShare participant roster";
+  return { value: `${participantName}: ${observation.value ?? "Not observed"}`, detail: `Observed from ${surface}${observation.observedAt ? ` · ${observation.observedAt}` : ""}` };
 }
