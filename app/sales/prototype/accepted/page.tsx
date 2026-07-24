@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import styles from "./prototype.module.css";
 
@@ -99,13 +99,25 @@ function SessionWorkbench({ onOpen }: { readonly onOpen: (id: string) => void })
 function SessionWorkspace({ session, onBack }: { readonly session: (typeof sessions)[number]; readonly onBack: () => void }) {
   const [inspected, setInspected] = useState(participants[0]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const toggle = (email: string, additive: boolean) => {
+  const [anchor, setAnchor] = useState<number | null>(null);
+  const rowRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const allPageSelected = selected.size === participants.length;
+  const selectRow = (index: number, options: { readonly additive?: boolean; readonly range?: boolean } = {}) => {
+    const participant = participants[index];
+    setInspected(participant);
     setSelected((current) => {
-      const next = additive ? new Set(current) : new Set<string>();
-      if (next.has(email)) next.delete(email); else next.add(email);
+      if (options.range && anchor !== null) {
+        const next = new Set(current);
+        for (let row = Math.min(anchor, index); row <= Math.max(anchor, index); row += 1) next.add(participants[row].email);
+        return next;
+      }
+      const next = options.additive ? new Set(current) : new Set<string>();
+      if (next.has(participant.email)) next.delete(participant.email); else next.add(participant.email);
       return next;
     });
+    setAnchor(index);
   };
+  const selectCurrentPage = () => setSelected(allPageSelected ? new Set() : new Set(participants.map((participant) => participant.email)));
 
   return <>
     <button className={styles.back} onClick={onBack}>← Back to Sessions</button>
@@ -120,17 +132,30 @@ function SessionWorkspace({ session, onBack }: { readonly session: (typeof sessi
       <div className={styles.participantToolbar}>
         <input aria-label="Search participants" placeholder="Search participant name or email" />
         <select aria-label="Environment filter"><option>All environments</option><option>Needs attention</option></select>
-        <button disabled={!selected.size}>Bulk actions {selected.size ? `(${selected.size})` : ""}</button>
         <span>{participants.length} participants</span>
       </div>
+      {selected.size ? <div className={styles.bulkBar} role="status">
+        <strong>{selected.size} participant{selected.size === 1 ? "" : "s"} selected</strong>
+        <div><button>Send eligible invitations</button><button>Copy eligible launch links</button><button onClick={() => setSelected(new Set())}>Clear selection</button></div>
+      </div> : null}
       <div className={styles.participantLayout}>
         <div className={styles.participantList}>
-          <div className={styles.participantHead}><span>Select</span><span>Participant</span><span>Invitation</span><span>Environment</span><span>Attention</span><span>Primary action</span></div>
-          {participants.map((participant) => <button
+          <div className={styles.participantHead}>
+            <span><input type="checkbox" aria-label="Select all participants on this page" checked={allPageSelected} onChange={selectCurrentPage} /></span>
+            <span>Participant</span><span>Invitation</span><span>Environment</span><span>Attention</span><span>Primary action</span>
+          </div>
+          {participants.map((participant, index) => <button
             key={participant.email}
+            ref={(node) => { rowRefs.current[index] = node; }}
             className={inspected.email === participant.email ? styles.inspectedRow : styles.participantRow}
             aria-pressed={selected.has(participant.email)}
-            onClick={(event) => { setInspected(participant); toggle(participant.email, event.ctrlKey || event.metaKey); }}
+            onClick={(event) => selectRow(index, { additive: event.ctrlKey || event.metaKey, range: event.shiftKey })}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowDown") { event.preventDefault(); rowRefs.current[Math.min(participants.length - 1, index + 1)]?.focus(); }
+              if (event.key === "ArrowUp") { event.preventDefault(); rowRefs.current[Math.max(0, index - 1)]?.focus(); }
+              if (event.key === " ") { event.preventDefault(); selectRow(index, { additive: true, range: event.shiftKey }); }
+              if (event.key === "Enter") setInspected(participant);
+            }}
           >
             <span className={styles.check}>{selected.has(participant.email) ? "☑" : "☐"}</span>
             <span><strong>{participant.name}</strong><small>{participant.email}</small></span>
@@ -139,7 +164,7 @@ function SessionWorkspace({ session, onBack }: { readonly session: (typeof sessi
             <span className={participant.attention === "No attention required" ? styles.muted : styles.attention}>{participant.attention}</span>
             <span className={styles.inlineAction}>{participant.action}</span>
           </button>)}
-          <footer className={styles.participantFooter}><span>{selected.size} selected · Rows 1–6 of 248</span><button>Select all matching participants</button></footer>
+          <footer className={styles.participantFooter}><span>{selected.size} selected · Rows 1–6 of 248</span>{allPageSelected ? <button>Select all 248 matching participants</button> : <span>Shift-click selects a range</span>}</footer>
         </div>
         <aside className={styles.inspector}>
           <p className={styles.eyebrow}>Participant inspector</p>
