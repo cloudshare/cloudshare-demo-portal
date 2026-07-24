@@ -80,7 +80,8 @@ export function SalesSessionsWorkbench({ route, onNavigate }: { readonly route: 
       <button type="button" style={primaryButtonStyle} className={styles.provisionButton} onClick={() => onNavigate({ tab: "sessions", sessionView: "provision" })}>Provision a Session</button>
     </header>
 
-    <div className={styles.commandRail}>
+    <section className={styles.commandRail} aria-label="Session queue controls">
+      <div className={styles.commandRailHeading}>Session queue</div>
       <div aria-label="Session queue views" className={styles.viewSwitcher}>{(["active", "needs_attention", "history"] as const).map((candidate) => <button key={candidate} type="button" aria-pressed={view === candidate} className={styles.viewButton} onClick={() => navigate({ queueView: candidate, queueOffset: 0, sessionId: null })}>{queueViewPresentation[candidate].button}</button>)}</div>
       <form aria-label="Session queue filters" className={styles.filters} onSubmit={(event) => { event.preventDefault(); navigate({ queueSearch: searchDraft, queueOffset: 0, sessionId: null }); }}>
         <label className={styles.field}>Account<select className={styles.control} aria-label="Account filter" value={route.accountId ?? ""} onChange={(event) => navigate({ accountId: event.target.value || null, opportunityId: null, queueOffset: 0, sessionId: null })}><option value="">All Accounts</option>{recordOptions.accounts?.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label>
@@ -89,7 +90,7 @@ export function SalesSessionsWorkbench({ route, onNavigate }: { readonly route: 
         <label className={styles.field}>Sort<select className={styles.control} aria-label="Session queue sort" value={sort} onChange={(event) => navigate({ queueSort: event.target.value as typeof sort, queueOffset: 0, sessionId: null })}><option value="start_desc">Start time, newest first</option><option value="start_asc">Start time, oldest first</option><option value="name_asc">Session name</option></select></label>
         <button type="submit" className={`${styles.pageButton} ${styles.applyButton}`}>Apply</button>
       </form>
-    </div>
+    </section>
 
     {loading ? <p role="status" className={styles.feedback}>Loading the local Sessions queue…</p> : null}
     {error ? <p role="alert" className={`${styles.feedback} ${styles.feedbackError}`}>{error}</p> : null}

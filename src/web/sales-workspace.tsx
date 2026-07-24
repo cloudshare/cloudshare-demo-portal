@@ -5,18 +5,18 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { CloudShareConnectionFeature } from "./admin-cloudshare-connection";
 import { AdminSupportFeature } from "./admin-support";
 import { createAdminAuthenticatedRequest } from "./admin-authenticated-request";
-import { accountLogoutButtonStyle, compactButtonStyle, dangerButtonStyle, disabledButtonStyle, primaryButtonStyle, secondaryButtonStyle } from "./button-styles";
+import { compactButtonStyle, dangerButtonStyle, disabledButtonStyle, primaryButtonStyle, secondaryButtonStyle } from "./button-styles";
 import { alertPanelStyle, cardStyle, mutedPanelStyle } from "./card-styles";
 import { pageShellStyle } from "./page-shell";
-import { PortalPageHeader } from "./portal-page-header";
-import { SALES_TABS, buildSalesWorkspaceHref, getSalesTabLabel, type SalesItemView, type SalesNavigationIntent, type SalesWorkspaceRouteState } from "./sales-shell-route";
+import { SALES_TABS, buildSalesWorkspaceHref, getSalesTabLabel, type SalesItemView, type SalesNavigationIntent, type SalesTab, type SalesWorkspaceRouteState } from "./sales-shell-route";
 import { colors } from "./design-tokens";
 import { addCloudShareWallClockMinutes, formatCloudShareWallClock } from "@/domain/cloudshare-wall-clock";
 import { renderSalesSessionName } from "@/domain/sales-session-name";
 import type { SalesExperienceType } from "@/domain/sales-experience-type";
-import { workspaceTabButtonStyle, workspaceTabNavStyle } from "./workspace-tab-styles";
 import { parseSalesSessionProvisionDraft, salesSessionProvisionDraftKey, type SalesSessionProvisionDraft } from "./sales-session-provision-draft";
 import { SalesSessionsWorkbench } from "./sales-sessions-workbench";
+import shellStyles from "./sales-workspace.module.css";
+import { workspaceTabButtonStyle, workspaceTabNavStyle } from "./workspace-tab-styles";
 
 type Account = { id: string; name: string; kind: "prospect" | "current_customer"; archivedAt: string | null; createdAt: string; updatedAt?: string };
 type Opportunity = { id: string; accountId: string; name: string; status: "open" | "won" | "lost"; archivedAt: string | null; createdAt: string; updatedAt?: string };
@@ -40,7 +40,6 @@ type ProjectMember = { email: string; displayName: string };
 const blank: SalesData = { accounts: [], opportunities: [], contacts: [] };
 const controlStyle = { padding: "0.55rem", border: "1px solid #b7bdc8", borderRadius: "6px", background: "#fff" };
 const fullControlStyle = { ...controlStyle, width: "100%", minWidth: 0, boxSizing: "border-box" as const };
-const salesWorkspaceStyle = { ...pageShellStyle, maxWidth: "96rem", margin: "0 auto", padding: "2rem clamp(1.25rem, 3vw, 3rem) 3rem" };
 const tableStyle = { width: "100%", borderCollapse: "collapse" as const, tableLayout: "fixed" as const, minWidth: "66rem" };
 const cellStyle = { padding: "0.7rem 0.65rem", borderBottom: "1px solid #e2e8f0", textAlign: "left" as const, verticalAlign: "middle" as const, whiteSpace: "nowrap" as const, overflow: "hidden", textOverflow: "ellipsis" };
 const monitoringSelectCellStyle = { ...cellStyle, width: "3.5rem", paddingInline: "0.35rem", textAlign: "center" as const };
@@ -82,19 +81,38 @@ export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemVi
     setRoute(next);
   }, [route.queueOffset, route.queueSearch, route.queueSort, route.queueView, router]);
 
-  return <main style={salesWorkspaceStyle}>
-    <PortalPageHeader eyebrow="Certalis Sales Portal" title="Sales Workspace" description="Curate reusable Items, commercial records, and time-bound CloudShare Sales Experiences in the isolated Certalis Customer workspace." email={email} actions={<button onClick={() => void logout()} style={accountLogoutButtonStyle}>Log out</button>} />
-    <div className="sales-workspace-layout" style={{ display: "grid", gap: "1.25rem", alignItems: "start", minWidth: 0 }}><aside aria-label="Sales workspace navigation" style={{ position: "sticky", top: "1rem", minWidth: 0, overflowX: "auto" }}><nav aria-label="Sales workspace sections" style={{ ...workspaceTabNavStyle, display: "grid", gap: "0.4rem", minWidth: "9rem" }}>{SALES_TABS.map((tab) => {
+  return <div className={shellStyles.appShell}>
+    <aside className={shellStyles.leftNav} aria-label="Sales workspace navigation">
+      <div className={shellStyles.brand}><span className={shellStyles.brandMark} aria-hidden="true">C</span><div className={shellStyles.brandText}><strong>Certalis</strong><small>Sales workspace</small></div></div>
+      <nav className={shellStyles.nav} aria-label="Sales workspace sections">{SALES_TABS.map((tab) => {
       const active = route.tab === tab;
-      return <button key={tab} type="button" aria-current={active ? "page" : undefined} onClick={() => navigate(tab === "sessions" ? { tab, queueView: "active" } : { tab })} style={workspaceTabButtonStyle(active, tab === "support")}>{getSalesTabLabel(tab)}</button>;
-    })}</nav></aside><div style={{ minWidth: 0 }}>
+      return <button key={tab} className={shellStyles.navButton} data-active={active ? "true" : undefined} type="button" aria-current={active ? "page" : undefined} onClick={() => navigate(tab === "sessions" ? { tab, queueView: "active" } : { tab })}><span className={shellStyles.navIcon} aria-hidden="true">{salesTabIcon(tab)}</span>{getSalesTabLabel(tab)}</button>;
+    })}</nav>
+      <div className={shellStyles.navSpacer} />
+      <div className={shellStyles.account}><span className={shellStyles.accountMark} aria-hidden="true">SA</span><div className={shellStyles.accountText}><strong>Sales admin</strong><small>{email}</small></div></div>
+      <button type="button" className={shellStyles.logoutButton} onClick={() => void logout()}>Log out</button>
+    </aside>
+    <main className={shellStyles.main}>
+      <header className={shellStyles.topbar}><div><p>Certalis</p><span>Sales workspace</span></div></header>
+      <div className={shellStyles.content}>
     {route.tab === "items" ? <ItemCatalog fetchAdmin={fetchAdmin} view={route.itemView ?? "catalog"} focusedItemId={route.itemId} onNavigate={navigate} /> : null}
     {route.tab === "records" ? <SalesRecordsFeature initialSelection={{ accountId: route.accountId ?? null, opportunityId: route.opportunityId ?? null }} onNavigate={navigate} /> : null}
     {route.tab === "sessions" && route.sessionView !== "provision" && route.queueView ? <SalesSessionsWorkbench route={route} onNavigate={navigate} /> : null}
     {route.tab === "sessions" && (route.sessionView === "provision" || !route.queueView) ? <SalesDemoSessionsFeature draftStorageKey={salesSessionProvisionDraftKey(email)} initialSelection={{ accountId: route.accountId ?? "", opportunityId: route.opportunityId ?? "", view: route.sessionView === "provision" ? "provision" : "manage", focusSessionId: route.sessionId ?? "", status: route.sessionStatus ?? "upcoming", participantsOpen: route.participantsOpen ?? false }} onNavigate={navigate} /> : null}
     {route.tab === "support" ? <section aria-label="Sales support"><PortalSectionIntro title="Sales support" description="Append-only support evidence for Sales records and live Item resource curation in the Certalis Customer workspace." /><AdminSupportFeature active view="diagnostics" diagnosticFilters={{ ...(route.correlationId ? { correlationId: route.correlationId } : {}), ...(route.source ? { source: route.source } : {}), ...(route.subjectId ? { subjectId: route.subjectId } : {}) }} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={(intent) => navigate({ tab: "support", correlationId: intent.diagnosticFilters?.correlationId, source: intent.diagnosticFilters?.source, subjectId: intent.diagnosticFilters?.subjectId })} /></section> : null}
-    {route.tab === "configuration" ? <section aria-label="Sales configuration"><PortalSectionIntro title="CloudShare Connection" description="Manage the encrypted CloudShare Connection for the isolated Certalis Sales Customer." /><CloudShareConnectionFeature active fetchAdmin={fetchAdmin} getNavigationHref={() => buildSalesWorkspaceHref({ tab: "configuration" })} onNavigate={() => undefined} /></section> : null}</div></div>
-  </main>;
+    {route.tab === "configuration" ? <section aria-label="Sales configuration"><PortalSectionIntro title="CloudShare Connection" description="Manage the encrypted CloudShare Connection for the isolated Certalis Sales Customer." /><CloudShareConnectionFeature active fetchAdmin={fetchAdmin} getNavigationHref={() => buildSalesWorkspaceHref({ tab: "configuration" })} onNavigate={() => undefined} /></section> : null}</div>
+    </main>
+  </div>;
+}
+
+function salesTabIcon(tab: SalesTab): string {
+  switch (tab) {
+    case "sessions": return "▣";
+    case "records": return "◇";
+    case "items": return "□";
+    case "support": return "?";
+    case "configuration": return "⚙";
+  }
 }
 
 function salesRoutesMatch(left: SalesWorkspaceRouteState, right: SalesWorkspaceRouteState): boolean {

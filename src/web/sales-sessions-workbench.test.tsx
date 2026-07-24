@@ -37,6 +37,10 @@ describe("Sales Sessions workbench", () => {
     render(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage" }} onNavigate={onNavigate} />);
     await screen.findByRole("button", { name: "Acme evaluation" });
 
+    expect(screen.getByText("Session queue")).not.toBeNull();
+    expect(screen.getByText("Active Sessions")).not.toBeNull();
+    expect(screen.getByRole("region", { name: "Session queue controls" })).not.toBeNull();
+
     await user.click(screen.getByRole("button", { name: "Needs attention" }));
     await user.selectOptions(screen.getByRole("combobox", { name: "Account filter" }), "account-1");
     await user.selectOptions(screen.getByRole("combobox", { name: "Opportunity filter" }), "opportunity-1");

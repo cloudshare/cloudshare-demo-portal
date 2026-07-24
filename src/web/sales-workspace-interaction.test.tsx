@@ -28,6 +28,9 @@ describe("SalesWorkspace interaction", () => {
 
     expect(screen.getByRole("heading", { name: "Sessions" })).not.toBeNull();
     expect(screen.queryByRole("heading", { name: "Manage Sales Enablement Sessions" })).toBeNull();
+    expect(screen.getByRole("complementary", { name: "Sales workspace navigation" })).not.toBeNull();
+    expect(screen.getAllByText("Sales workspace")).toHaveLength(2);
+    expect(screen.getByText("sales-admin@certalis.demo")).not.toBeNull();
     expect(mockRouter.push).toHaveBeenCalledWith("/sales?tab=sessions");
   });
 

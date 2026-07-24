@@ -51,6 +51,14 @@
   background: #f4f8f7;
 }
 
+.commandRailHeading {
+  color: #526174;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
 .viewSwitcher {
   display: inline-flex;
   width: fit-content;
