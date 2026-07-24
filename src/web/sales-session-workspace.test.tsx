@@ -21,7 +21,7 @@ describe("Sales Session workspace", () => {
     expect(screen.getByRole("link", { name: "Activity" }).getAttribute("href")).toContain("area=activity");
     expect(screen.getByRole("link", { name: "Details" }).getAttribute("href")).toContain("area=details");
     expect(screen.getByRole("link", { name: "Back to Sessions" }).getAttribute("href")).toBe("/sales?tab=sessions&queue=history&offset=25");
-    expect(screen.getByText(/Participant Environment: Ready/)).not.toBeNull();
+    expect(screen.getByRole("cell", { name: /Ready/ })).not.toBeNull();
   });
 
   it("invokes the browser fetch interface with its required Window receiver", async () => {
@@ -74,5 +74,43 @@ describe("Sales Session workspace", () => {
     render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
 
     expect(await screen.findByText("Participant correlation requires support.")).not.toBeNull();
+  });
+
+  it("presents Participants as a labelled read-only roster preview", async () => {
+    vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(data), { status: 200 }));
+    render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
+
+    expect(await screen.findByRole("table", { name: "Participant roster preview" })).not.toBeNull();
+    expect(screen.getByRole("columnheader", { name: "Participant" })).not.toBeNull();
+    expect(screen.getByRole("columnheader", { name: "Environment source" })).not.toBeNull();
+    expect(screen.getByText(/Detailed participant management follows in a later workspace/)).not.toBeNull();
+  });
+
+  it("groups equivalent safe Activity while retaining its time range, count, and diagnostic link", async () => {
+    const repeatedActivity = {
+      ...data,
+      activity: [
+        data.activity[0],
+        { ...data.activity[0], occurredAt: "2026-07-23T09:02:00.000Z" },
+        { ...data.activity[0], occurredAt: "2026-07-23T09:04:00.000Z" },
+      ],
+    };
+    vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(repeatedActivity), { status: 200 }));
+    render(<SalesSessionWorkspace sessionId="session-1" area="activity" queueHref="/sales?tab=sessions" />);
+
+    expect(await screen.findByRole("list", { name: "Sales Session activity timeline" })).not.toBeNull();
+    expect(screen.getByText("3 equivalent events")).not.toBeNull();
+    expect(screen.getByText("2026-07-23T09:00:00.000Z to 2026-07-23T09:04:00.000Z")).not.toBeNull();
+    expect(screen.getByRole("link", { name: "Open Support Diagnostics" })).not.toBeNull();
+    expect(screen.getByText(/Activity shows ordinary operational metadata only/)).not.toBeNull();
+  });
+
+  it("presents Details as labelled relationship and configuration groups", async () => {
+    vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(data), { status: 200 }));
+    render(<SalesSessionWorkspace sessionId="session-1" area="details" queueHref="/sales?tab=sessions" />);
+
+    expect(await screen.findByRole("region", { name: "Sales relationship" })).not.toBeNull();
+    expect(screen.getByRole("region", { name: "Session configuration" })).not.toBeNull();
+    expect(screen.getByText("Native invitations")).not.toBeNull();
   });
 });

@@ -1,11 +1,13 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createAdminAuthenticatedRequest } from "./admin-authenticated-request";
-import { cardStyle } from "./card-styles";
-import type { SalesSessionWorkspaceResponse } from "@/domain/sales-session-workspace";
+import { statusBadgeStyle } from "./status-badge";
+import styles from "./sales-session-workspace.module.css";
+import type { SafeSalesSessionActivity, SalesSessionWorkspaceResponse } from "@/domain/sales-session-workspace";
 
 type Area = "participants" | "activity" | "details";
+type ActivityGroup = { readonly summary: string; readonly outcome: SafeSalesSessionActivity["outcome"]; readonly actor: string; readonly firstAt: string; readonly lastAt: string; readonly count: number; readonly correlationIds: readonly string[] };
 
 export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly sessionId: string; readonly area: Area; readonly queueHref: string }) {
   const [workspace, setWorkspace] = useState<SalesSessionWorkspaceResponse | null>(null);
@@ -22,22 +24,46 @@ export function SalesSessionWorkspace({ sessionId, area, queueHref }: { readonly
     return () => { live = false; };
   }, [sessionId]);
   useEffect(() => { areaHeading.current?.focus(); }, [area, workspace?.summary.id]);
-  if (error) return <section role="alert" style={cardStyle}><h1>Sales Session unavailable</h1><p>{error}</p><a href={queueHref}>Back to Sessions</a></section>;
-  if (!workspace) return <section aria-busy="true" aria-label="Sales Session workspace loading" style={cardStyle}>Loading Sales Session…</section>;
+  const activity = useMemo(() => workspace ? groupSalesSessionActivity(workspace.activity) : [], [workspace]);
+  if (error) return <section role="alert" className={styles.error}><h1>Sales Session unavailable</h1><p>{error}</p><a href={queueHref}>Back to Sessions</a></section>;
+  if (!workspace) return <section aria-busy="true" aria-label="Sales Session workspace loading" className={styles.loading}>Loading Sales Session…</section>;
   const areaHref = (next: Area) => `/sales/sessions/${encodeURIComponent(sessionId)}?area=${next}&from=${encodeURIComponent(queueHref)}`;
-  return <section aria-label="Sales Session workspace" style={{ display: "grid", gap: "1rem", minWidth: 0 }}>
-    <header style={{ ...cardStyle, position: "sticky", top: 0, zIndex: 1 }}><a href={queueHref}>Back to Sessions</a><h1>{workspace.summary.sessionName}</h1><p>Revision {workspace.summary.revision}</p><dl style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(13rem, 1fr))", gap: "0.75rem", margin: 0 }}><div><dt>Time window</dt><dd>{workspace.summary.start} · {workspace.summary.timeZone}<br />{workspace.summary.end} · {workspace.summary.timeZone}</dd></div><div><dt>Certalis operation</dt><dd>{humanOperation(workspace.summary.operation.value)}{workspace.summary.operation.value === "needs_attention" ? <><br /><small>{workspace.summary.operation.reason}</small></> : <><br /><small>Recorded by Certalis.</small></>}</dd></div><div><dt>CloudShare Experience</dt><dd>{humanExperience(workspace.summary.experience.value)}<br /><small>{workspace.summary.experience.freshness === "fresh" ? "Recently observed from CloudShare." : "Estimated from the Session schedule — not recently confirmed with CloudShare."}</small></dd></div><div><dt>Configuration</dt><dd>{workspace.details.itemName}<br /><small>{workspace.details.invitationMode}</small></dd></div></dl></header>
-    <nav aria-label="Sales Session areas" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>{(["participants", "activity", "details"] as const).map((candidate) => <a key={candidate} href={areaHref(candidate)} aria-current={area === candidate ? "page" : undefined}>{candidate[0].toUpperCase() + candidate.slice(1)}</a>)}</nav>
-    {area === "participants" ? <section style={cardStyle}><h2 ref={areaHeading} tabIndex={-1}>Participants</h2>{workspace.participants.length ? <ul>{workspace.participants.map((participant) => <li key={participant.id}><strong>{participant.name}</strong> · {participant.email} · {participant.invitationStatus} · {participant.participationStatus}<br /><small>Participant Environment: {participant.environment.value ?? "Not observed"} · {humanEnvironmentSource(participant.environment.source)}{"observedAt" in participant.environment ? ` · ${participant.environment.observedAt}` : ""}</small></li>)}</ul> : <p>No persisted Participants are registered for this Sales Session.</p>}</section> : null}
-    {area === "activity" ? <section style={cardStyle}><h2 ref={areaHeading} tabIndex={-1}>Activity</h2>{workspace.activity.length ? <ul>{workspace.activity.map((entry, index) => <li key={`${entry.occurredAt}-${index}`}><time dateTime={entry.occurredAt}>{entry.occurredAt}</time> · {entry.summary} · Actor: {entry.actor?.type ?? "Not recorded"} · Subject: {entry.subject.type}{entry.correlationId ? <> · <a href={`/sales?tab=support&correlationId=${encodeURIComponent(entry.correlationId)}`}>Open Support Diagnostics</a></> : null}</li>)}</ul> : <p>No safe Activity has been recorded for this Sales Session.</p>}</section> : null}
-    {area === "details" ? <section style={cardStyle}><h2 ref={areaHeading} tabIndex={-1}>Details</h2><dl><dt>Account</dt><dd>{workspace.details.accountName}</dd><dt>Opportunity</dt><dd>{workspace.details.opportunityName}</dd><dt>Item</dt><dd>{workspace.details.itemName}</dd><dt>Native invitations</dt><dd>{workspace.details.invitationMode}</dd></dl></section> : null}
+  return <section aria-label="Sales Session workspace" className={styles.workspace}>
+    <header className={styles.summary}>
+      <div className={styles.summaryTopline}><a href={queueHref}><span aria-hidden="true">← </span>Back to Sessions</a><span>Revision {workspace.summary.revision}</span></div>
+      <div className={styles.summaryTitle}><div><p className={styles.eyebrow}>Sales Enablement Session</p><h1>{workspace.summary.sessionName}</h1></div><span className={styles.statusBadge} style={statusBadgeStyle(operationTone(workspace.summary.operation.value))}>{humanOperation(workspace.summary.operation.value)}</span></div>
+      <dl className={styles.summaryMetrics}>
+        <SummaryMetric label="Time window"><time dateTime={workspace.summary.start}>{workspace.summary.start}</time><span> · {workspace.summary.timeZone}</span><time dateTime={workspace.summary.end}>{workspace.summary.end}</time></SummaryMetric>
+        <SummaryMetric label="Certalis operation"><strong>{humanOperation(workspace.summary.operation.value)}</strong><span>{workspace.summary.operation.value === "needs_attention" ? workspace.summary.operation.reason : "Recorded by Certalis."}</span></SummaryMetric>
+        <SummaryMetric label="CloudShare Experience"><strong>{humanExperience(workspace.summary.experience.value)}</strong><span>{workspace.summary.experience.freshness === "fresh" ? "Recently observed from CloudShare." : "Schedule estimate; not recently confirmed with CloudShare."}</span></SummaryMetric>
+        <SummaryMetric label="Configuration"><strong>{workspace.details.itemName}</strong><span>{workspace.details.invitationMode}</span></SummaryMetric>
+      </dl>
+    </header>
+    <nav aria-label="Sales Session areas" className={styles.areaTabs}>{(["participants", "activity", "details"] as const).map((candidate) => <a key={candidate} className={area === candidate ? styles.areaTabActive : styles.areaTab} href={areaHref(candidate)} aria-current={area === candidate ? "page" : undefined}>{candidate[0].toUpperCase() + candidate.slice(1)}</a>)}</nav>
+    {area === "participants" ? <section className={styles.panel}><div className={styles.panelHeading}><div><h2 ref={areaHeading} tabIndex={-1}>Participants</h2><p>Read-only roster preview for this Sales Session.</p></div><span className={styles.count}>{workspace.participants.length} {workspace.participants.length === 1 ? "participant" : "participants"}</span></div>{workspace.participants.length ? <div className={styles.tableWrap}><table aria-label="Participant roster preview" className={styles.roster}><thead><tr><th>Participant</th><th>Invitation</th><th>Participation</th><th>Participant Environment</th><th>Environment source</th></tr></thead><tbody>{workspace.participants.map((participant) => <tr key={participant.id}><th scope="row"><strong>{participant.name}</strong><span>{participant.email}</span></th><td><span className={styles.inlineBadge}>{humanInvitation(participant.invitationStatus)}</span></td><td><span className={styles.inlineBadge}>{humanParticipation(participant.participationStatus)}</span></td><td><span className={styles.srOnly}>Participant Environment: </span>{participant.environment.value ?? "Not observed"}{"observedAt" in participant.environment ? <span className={styles.muted}>{participant.environment.observedAt}</span> : null}</td><td>{humanEnvironmentSource(participant.environment.source)}</td></tr>)}</tbody></table></div> : <p className={styles.empty}>No persisted Participants are registered for this Sales Session.</p>}<p className={styles.previewNote}>Detailed participant management follows in a later workspace. This preview has no participant actions or drill-downs.</p></section> : null}
+    {area === "activity" ? <section className={styles.panel}><div className={styles.panelHeading}><div><h2 ref={areaHeading} tabIndex={-1}>Activity</h2><p>Grouped operational history for this Sales Session.</p></div></div><p className={styles.activityExplainer}>Activity shows ordinary operational metadata only. Open Support Diagnostics for authorized Customer-scoped evidence when a correlation is available.</p>{activity.length ? <ol aria-label="Sales Session activity timeline" className={styles.timeline}>{activity.map((entry) => <li key={`${entry.summary}-${entry.firstAt}-${entry.actor}`} className={styles.timelineItem}><span className={entry.outcome === "failure" ? styles.failureDot : styles.successDot} aria-hidden="true" /><div className={styles.timelineBody}><div className={styles.timelineTitle}><strong>{entry.summary}</strong><span className={entry.outcome === "failure" ? styles.failureBadge : styles.successBadge}>{entry.outcome === "failure" ? "Failed" : "Completed"}</span></div><div className={styles.timelineMeta}><span>{entry.count === 1 ? "1 event" : `${entry.count} equivalent events`}</span><time dateTime={entry.firstAt}>{entry.firstAt === entry.lastAt ? entry.firstAt : `${entry.firstAt} to ${entry.lastAt}`}</time><span>Actor: {entry.actor}</span></div>{entry.correlationIds.map((correlationId) => <a key={correlationId} href={`/sales?tab=support&correlationId=${encodeURIComponent(correlationId)}`}>Open Support Diagnostics</a>)}</div></li>)}</ol> : <p className={styles.empty}>No safe Activity has been recorded for this Sales Session.</p>}</section> : null}
+    {area === "details" ? <section className={styles.panel}><div className={styles.panelHeading}><div><h2 ref={areaHeading} tabIndex={-1}>Details</h2><p>Relationships and configuration retained by Certalis for this Session.</p></div></div><div className={styles.detailGrid}><DetailGroup label="Sales relationship" values={[["Account", workspace.details.accountName], ["Opportunity", workspace.details.opportunityName]]} /><DetailGroup label="Session configuration" values={[["Item", workspace.details.itemName], ["Native invitations", workspace.details.invitationMode], ["Time zone", workspace.summary.timeZone]]} /></div></section> : null}
   </section>;
 }
+
+export function groupSalesSessionActivity(entries: readonly SafeSalesSessionActivity[]): readonly ActivityGroup[] {
+  const groups = new Map<string, ActivityGroup>();
+  for (const entry of entries) {
+    const actor = entry.actor?.type ?? "Not recorded";
+    const key = `${entry.summary}\u0000${entry.outcome}\u0000${actor}`;
+    const current = groups.get(key);
+    if (!current) { groups.set(key, { summary: entry.summary, outcome: entry.outcome, actor, firstAt: entry.occurredAt, lastAt: entry.occurredAt, count: 1, correlationIds: entry.correlationId ? [entry.correlationId] : [] }); continue; }
+    const correlationIds = entry.correlationId && !current.correlationIds.includes(entry.correlationId) ? [...current.correlationIds, entry.correlationId] : current.correlationIds;
+    groups.set(key, { ...current, firstAt: entry.occurredAt < current.firstAt ? entry.occurredAt : current.firstAt, lastAt: entry.occurredAt > current.lastAt ? entry.occurredAt : current.lastAt, count: current.count + 1, correlationIds });
+  }
+  return [...groups.values()].sort((left, right) => right.lastAt.localeCompare(left.lastAt));
+}
+
+function SummaryMetric({ label, children }: { readonly label: string; readonly children: React.ReactNode }) { return <div><dt>{label}</dt><dd>{children}</dd></div>; }
+function DetailGroup({ label, values }: { readonly label: string; readonly values: readonly (readonly [string, string])[] }) { return <section aria-label={label} className={styles.detailGroup}><h3>{label}</h3><dl>{values.map(([term, value]) => <div key={term}><dt>{term}</dt><dd>{value}</dd></div>)}</dl></section>; }
+function operationTone(value: string): "positive" | "warning" | "info" { return value === "needs_attention" ? "warning" : value === "provisioning" ? "info" : "positive"; }
 function humanOperation(value: string): string { return value === "needs_attention" ? "Needs attention" : value === "provisioning" ? "Provisioning" : "Correlated"; }
 function humanExperience(value: string): string { return value === "notStarted" ? "Not started" : value === "inProgress" ? "In progress" : value === "ended" ? "Ended" : "Not observed"; }
-function humanEnvironmentSource(value: string): string {
-  if (value === "cloudshare_v3_environment") return "Observed from CloudShare Environment";
-  if (value === "cloudshare_v4_sales_participant_roster") return "Observed from CloudShare participant roster";
-  if (value === "not_assigned") return "No CloudShare Environment is assigned";
-  return "CloudShare Environment state has not been observed";
-}
+function humanInvitation(value: string): string { return value === "sent" ? "Sent" : "Not sent"; }
+function humanParticipation(value: string): string { return value === "inProgress" ? "In progress" : value === "concluded" ? "Concluded" : "Pending"; }
+function humanEnvironmentSource(value: string): string { if (value === "cloudshare_v3_environment") return "Observed from CloudShare Environment"; if (value === "cloudshare_v4_sales_participant_roster") return "Observed from CloudShare participant roster"; if (value === "not_assigned") return "No CloudShare Environment is assigned"; return "CloudShare Environment state has not been observed"; }

@@ -1,0 +1,47 @@
+.workspace { display: grid; gap: 1rem; min-width: 0; color: #1f2937; }
+.summary, .panel, .error, .loading { border: 1px solid #dbe4ee; border-radius: 12px; background: #fff; box-shadow: 0 3px 12px rgba(15, 23, 42, .07); }
+.summary { position: sticky; top: .5rem; z-index: 1; padding: 1rem 1.25rem; background: linear-gradient(135deg, #fff 0%, #f6fbfb 100%); }
+.summaryTopline, .summaryTitle, .panelHeading, .timelineTitle, .timelineMeta { display: flex; align-items: center; gap: .75rem; }
+.summaryTopline { justify-content: space-between; color: #52606d; font-size: .875rem; }
+.summaryTopline a { color: #0d5f59; font-weight: 650; text-decoration: none; }
+.summaryTitle { justify-content: space-between; margin-top: .75rem; }
+.summaryTitle h1, .panel h2, .detailGroup h3 { margin: 0; color: #172033; }
+.summaryTitle h1 { font-size: clamp(1.4rem, 3vw, 2rem); }
+.eyebrow { margin: 0 0 .2rem; color: #52606d; font-size: .75rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+.statusBadge { white-space: nowrap; }
+.summaryMetrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .75rem; margin: 1rem 0 0; }
+.summaryMetrics > div, .detailGroup { min-width: 0; padding: .75rem; border: 1px solid #e5edf3; border-radius: 8px; background: rgba(255,255,255,.78); }
+.summaryMetrics dt, .detailGroup dt { color: #52606d; font-size: .75rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.summaryMetrics dd { display: grid; gap: .25rem; margin: .35rem 0 0; font-size: .875rem; overflow-wrap: anywhere; }
+.summaryMetrics dd span { color: #52606d; font-size: .78rem; }
+.areaTabs { display: flex; gap: .35rem; padding: .3rem; border: 1px solid #dbe4ee; border-radius: 10px; background: #f5f8fb; overflow-x: auto; }
+.areaTab, .areaTabActive { flex: 1 0 auto; border-radius: 7px; padding: .6rem .85rem; color: #415166; font-weight: 650; text-align: center; text-decoration: none; }
+.areaTab:hover { background: #eaf3f2; color: #0d5f59; }
+.areaTabActive { background: #0f6d66; color: #fff; box-shadow: 0 1px 3px rgba(15,109,102,.25); }
+.panel, .error { padding: 1.25rem; }
+.loading { padding: 1.5rem; color: #52606d; }
+.panelHeading { justify-content: space-between; margin-bottom: 1rem; }
+.panelHeading p, .previewNote, .activityExplainer { margin: .35rem 0 0; color: #52606d; }
+.count, .inlineBadge, .successBadge, .failureBadge { display: inline-block; border-radius: 999px; padding: .2rem .5rem; font-size: .78rem; font-weight: 700; white-space: nowrap; }
+.count, .inlineBadge { background: #edf3f7; color: #405267; }
+.tableWrap { overflow-x: auto; }
+.roster { width: 100%; min-width: 48rem; border-collapse: collapse; }
+.roster th, .roster td { padding: .75rem; border-bottom: 1px solid #e5edf3; text-align: left; vertical-align: top; }
+.roster thead th { color: #52606d; font-size: .75rem; letter-spacing: .04em; text-transform: uppercase; }
+.roster tbody th { min-width: 13rem; }
+.roster tbody th span, .muted { display: block; margin-top: .2rem; color: #52606d; font-size: .82rem; font-weight: 400; overflow-wrap: anywhere; }
+.previewNote, .activityExplainer { padding: .75rem; border-left: 3px solid #76b7b2; background: #f3fbfa; font-size: .875rem; }
+.timeline { display: grid; gap: .75rem; margin: 1rem 0 0; padding: 0; list-style: none; }
+.timelineItem { display: grid; grid-template-columns: 1rem minmax(0, 1fr); gap: .75rem; }
+.successDot, .failureDot { width: .65rem; height: .65rem; margin-top: .55rem; border-radius: 999px; }
+.successDot { background: #18794e; }.failureDot { background: #b42318; }
+.timelineBody { min-width: 0; padding: .8rem; border: 1px solid #e5edf3; border-radius: 8px; background: #fff; }
+.timelineTitle { justify-content: space-between; }.timelineMeta { flex-wrap: wrap; margin: .45rem 0; color: #52606d; font-size: .82rem; }
+.successBadge { background: #e6f6ed; color: #146c43; }.failureBadge { background: #feeceb; color: #9f1c14; }
+.timelineBody a { color: #0d5f59; font-size: .875rem; font-weight: 650; }
+.detailGrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.detailGroup h3 { margin-bottom: .75rem; font-size: 1rem; }.detailGroup dl { display: grid; gap: .75rem; margin: 0; }.detailGroup dd { margin: .2rem 0 0; overflow-wrap: anywhere; }
+.empty { margin: 0; color: #52606d; }
+.srOnly { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+@media (max-width: 58rem) { .summaryMetrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 40rem) { .summary { position: static; padding: 1rem; }.summaryTitle { align-items: flex-start; flex-direction: column; }.summaryMetrics, .detailGrid { grid-template-columns: minmax(0, 1fr); }.panel, .error { padding: 1rem; }.areaTab, .areaTabActive { flex-basis: 7rem; } }
