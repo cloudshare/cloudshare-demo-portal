@@ -20,6 +20,17 @@ const chooseSearchableOption = async (user: ReturnType<typeof userEvent.setup>, 
 describe("SalesWorkspace interaction", () => {
   afterEach(() => { cleanup(); vi.restoreAllMocks(); window.sessionStorage.clear(); mockSearchParams.delete("accountId"); mockSearchParams.delete("opportunityId"); mockRouter.push.mockClear(); mockRouter.replace.mockClear(); window.history.replaceState({}, "", "/sales"); });
 
+  it("renders the Sessions queue immediately when navigating from another workspace section", () => {
+    vi.spyOn(window, "fetch").mockImplementation(() => new Promise<Response>(() => undefined));
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "support", itemView: "catalog" }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Sessions" }));
+
+    expect(screen.getByRole("heading", { name: "Sessions" })).not.toBeNull();
+    expect(screen.queryByRole("heading", { name: "Manage Sales Enablement Sessions" })).toBeNull();
+    expect(mockRouter.push).toHaveBeenCalledWith("/sales?tab=sessions");
+  });
+
   it("selects an Account into the URL and limits the next grid to its Opportunities without console errors", async () => {
     const user = userEvent.setup();
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
