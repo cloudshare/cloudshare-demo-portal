@@ -30,9 +30,15 @@ export function projectSafeSalesSessionActivity(input: { readonly occurredAt: Da
 
 function activitySummary(operation: string, outcome: string): string {
   const action = operation === "sales.demo_session.created" ? "Sales Session provision"
-    : operation.startsWith("sales.demo_session.participants.") ? "Sales Participant operation"
+    : operation === "sales.demo_session.participants.registered" ? "Sales Participants registered"
+      : operation === "sales.demo_session.participants.invited" ? "Sales Participant invitations sent"
+        : operation === "sales.demo_session.participants.reconciled" ? "Sales Participants reconciled"
+          : operation.startsWith("sales.demo_session.participants.") ? "Sales Participant operation"
       : operation === "sales.demo_session.reconciled" ? "Sales Session reconciliation"
         : "Sales Session operation";
+  if (operation === "sales.demo_session.participants.registered" || operation === "sales.demo_session.participants.invited" || operation === "sales.demo_session.participants.reconciled") {
+    return outcome === "failure" ? `${action} failed.` : `${action}.`;
+  }
   return `${action} ${outcome === "failure" ? "failed" : "completed"}.`;
 }
 function safeActorType(value: string): "admin" | "candidate" | "system" | "unknown" { return value === "admin" || value === "candidate" || value === "system" ? value : "unknown"; }
@@ -52,7 +58,9 @@ export function projectSafeSalesParticipantAttention(input: { readonly environme
   return {
     reason: input.environmentAttentionReason === "environment_ambiguous_for_project"
       ? "Multiple matching Participant Environments require support review."
-      : "Participant Environment resolution requires support review.",
+      : input.environmentAttentionReason === "environment_not_found_for_project"
+        ? "No matching Participant Environment was found; support review is required."
+        : "Participant Environment resolution requires support review.",
     source: input.environmentAttentionSource === "cloudshare_v3_owner_email_item_project"
       ? "Certalis Environment correlation check"
       : "Certalis correlation",

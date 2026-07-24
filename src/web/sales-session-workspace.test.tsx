@@ -103,7 +103,8 @@ describe("Sales Session workspace", () => {
 
     expect(await screen.findByText("Needs attention")).not.toBeNull();
     expect(screen.getByText("Multiple matching Participant Environments require support review.")).not.toBeNull();
-    expect(screen.getByText("Certalis Environment correlation check")).not.toBeNull();
+    expect(screen.getByText(/Attention source: Certalis Environment correlation check/)).not.toBeNull();
+    expect(screen.getByText("CloudShare Environment state has not been observed")).not.toBeNull();
     expect(document.body.textContent).not.toMatch(/Bearer|provider response/);
   });
 

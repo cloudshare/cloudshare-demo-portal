@@ -13,6 +13,14 @@ describe("safe Sales Session Activity projection", () => {
     expect(projectSafeSalesSessionActivity({ occurredAt: new Date(), operation: "sales.demo_session.created", outcome: "success", actorType: "admin", subjectType: "sales_demo_session", subjectId: "other-session", correlationId: "corr" }, "session-1")).toBeNull();
   });
 
+  it("keeps known Participant operations distinct for safe Activity grouping", () => {
+    const base = { occurredAt: new Date("2026-07-24T09:00:00Z"), outcome: "success", actorType: "admin", subjectType: "sales_demo_session", subjectId: "session-1", correlationId: null };
+    expect(projectSafeSalesSessionActivity({ ...base, operation: "sales.demo_session.participants.registered" }, "session-1")?.summary).toBe("Sales Participants registered.");
+    expect(projectSafeSalesSessionActivity({ ...base, operation: "sales.demo_session.participants.invited" }, "session-1")?.summary).toBe("Sales Participant invitations sent.");
+    expect(projectSafeSalesSessionActivity({ ...base, operation: "sales.demo_session.participants.reconciled" }, "session-1")?.summary).toBe("Sales Participants reconciled.");
+    expect(projectSafeSalesSessionActivity({ ...base, operation: "sales.demo_session.participants.unsafe_unknown" }, "session-1")?.summary).toBe("Sales Participant operation completed.");
+  });
+
   it("omits an unknown diagnostic outcome instead of presenting it as success", () => {
     expect(projectSafeSalesSessionActivity({ occurredAt: new Date(), operation: "sales.demo_session.created", outcome: "partial", actorType: "admin", subjectType: "sales_demo_session", subjectId: "session-1", correlationId: "corr" }, "session-1")).toBeNull();
   });
@@ -28,6 +36,13 @@ describe("safe Sales Session Activity projection", () => {
       environmentAttentionSource: "cloudshare_v3_owner_email_item_project",
     })).toEqual({
       reason: "Multiple matching Participant Environments require support review.",
+      source: "Certalis Environment correlation check",
+    });
+    expect(projectSafeSalesParticipantAttention({
+      environmentAttentionReason: "environment_not_found_for_project",
+      environmentAttentionSource: "cloudshare_v3_owner_email_item_project",
+    })).toEqual({
+      reason: "No matching Participant Environment was found; support review is required.",
       source: "Certalis Environment correlation check",
     });
     expect(projectSafeSalesParticipantAttention({
