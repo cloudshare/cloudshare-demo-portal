@@ -43,10 +43,10 @@ describe("safe Sales Session Activity projection", () => {
   });
 
   it.each([
-    ["participant.environment_observed", "Participant Environment observed."],
-    ["participant.reconciled", "Participant reconciled."],
-    ["participant_properties.ensured", "Participant properties confirmed."],
-    ["participant_correlation.backfilled", "Participant correlation backfilled."],
+    ["sales.demo_session.participant.environment_observed", "Participant Environment observed."],
+    ["sales.demo_session.participant.reconciled", "Participant reconciled."],
+    ["sales.demo_session.participant_properties.ensured", "Participant properties confirmed."],
+    ["sales.demo_session.participant_correlation.backfilled", "Participant correlation backfilled."],
   ])("projects %s through controlled human copy", (operation, summary) => {
     const entry = projectSafeSalesSessionActivity({ occurredAt: new Date("2026-07-24T09:00:00Z"), operation, outcome: "success", actorType: "admin", subjectType: "sales_demo_session", subjectId: "session-1", correlationId: null }, "session-1");
     expect(entry?.summary).toBe(summary);

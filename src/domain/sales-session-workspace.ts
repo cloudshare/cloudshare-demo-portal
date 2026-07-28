@@ -35,10 +35,10 @@ function safeActivityKind(operation: string): SafeSalesSessionActivity["kind"] {
   if (operation === "sales.demo_session.participants.registered") return "participants_registered";
   if (operation === "sales.demo_session.participants.invited") return "participants_invited";
   if (operation === "sales.demo_session.participants.reconciled") return "participants_reconciled";
-  if (operation === "participant.environment_observed") return "participant_environment_observed";
-  if (operation === "participant.reconciled") return "participant_reconciled";
-  if (operation === "participant_properties.ensured") return "participant_properties_ensured";
-  if (operation === "participant_correlation.backfilled") return "participant_correlation_backfilled";
+  if (operation === "sales.demo_session.participant.environment_observed") return "participant_environment_observed";
+  if (operation === "sales.demo_session.participant.reconciled") return "participant_reconciled";
+  if (operation === "sales.demo_session.participant_properties.ensured") return "participant_properties_ensured";
+  if (operation === "sales.demo_session.participant_correlation.backfilled") return "participant_correlation_backfilled";
   return "unknown";
 }
 
@@ -46,10 +46,10 @@ function activitySummary(operation: string, outcome: string): string {
   if (operation === "sales.demo_session.participants.registered") return outcome === "failure" ? "Sales Participant registration failed." : "Sales Participants registered.";
   if (operation === "sales.demo_session.participants.invited") return outcome === "failure" ? "Sales Participant invitations failed." : "Sales Participant invitations sent.";
   if (operation === "sales.demo_session.participants.reconciled") return outcome === "failure" ? "Sales Participant reconciliation failed." : "Sales Participants reconciled.";
-  if (operation === "participant.environment_observed") return outcome === "failure" ? "Participant Environment observation failed." : "Participant Environment observed.";
-  if (operation === "participant.reconciled") return outcome === "failure" ? "Participant reconciliation failed." : "Participant reconciled.";
-  if (operation === "participant_properties.ensured") return outcome === "failure" ? "Participant property confirmation failed." : "Participant properties confirmed.";
-  if (operation === "participant_correlation.backfilled") return outcome === "failure" ? "Participant correlation backfill failed." : "Participant correlation backfilled.";
+  if (operation === "sales.demo_session.participant.environment_observed") return outcome === "failure" ? "Participant Environment observation failed." : "Participant Environment observed.";
+  if (operation === "sales.demo_session.participant.reconciled") return outcome === "failure" ? "Participant reconciliation failed." : "Participant reconciled.";
+  if (operation === "sales.demo_session.participant_properties.ensured") return outcome === "failure" ? "Participant property confirmation failed." : "Participant properties confirmed.";
+  if (operation === "sales.demo_session.participant_correlation.backfilled") return outcome === "failure" ? "Participant correlation backfill failed." : "Participant correlation backfilled.";
   const action = operation === "sales.demo_session.created" ? "Sales Session provision"
     : operation.startsWith("sales.demo_session.participants.") ? "Sales Participant operation"
       : operation === "sales.demo_session.reconciled" ? "Sales Session reconciliation"
