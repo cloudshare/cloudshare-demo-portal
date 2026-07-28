@@ -51,7 +51,7 @@ export function groupSalesSessionActivity(entries: readonly SafeSalesSessionActi
   const groups = new Map<string, ActivityGroup>();
   for (const entry of entries) {
     const actor = humanActivityActor(entry.actor?.type);
-    const key = `${entry.kind}\u0000${entry.outcome}\u0000${actor}\u0000${entry.subject.type}`;
+    const key = `${entry.kind}\u0000${entry.kind === "unknown" ? entry.occurredAt : ""}\u0000${entry.outcome}\u0000${actor}\u0000${entry.subject.type}`;
     const current = groups.get(key);
     if (!current) { groups.set(key, { summary: entry.summary, outcome: entry.outcome, actor, subject: "This Sales Session", firstAt: entry.occurredAt, lastAt: entry.occurredAt, count: 1, diagnosticRecords: entry.correlationId ? [{ correlationId: entry.correlationId, occurredAt: entry.occurredAt }] : [] }); continue; }
     const diagnosticRecords = entry.correlationId && !current.diagnosticRecords.some((record) => record.correlationId === entry.correlationId) ? [...current.diagnosticRecords, { correlationId: entry.correlationId, occurredAt: entry.occurredAt }] : current.diagnosticRecords;
