@@ -35,7 +35,7 @@ function activitySummary(operation: string, outcome: string): string {
   const action = operation === "sales.demo_session.created" ? "Sales Session provision"
     : operation.startsWith("sales.demo_session.participants.") ? "Sales Participant operation"
       : operation === "sales.demo_session.reconciled" ? "Sales Session reconciliation"
-        : "Sales Session operation";
+        : "Routine Sales Session update";
   return `${action} ${outcome === "failure" ? "failed" : "completed"}.`;
 }
 function safeActorType(value: string): "admin" | "candidate" | "system" | "unknown" { return value === "admin" || value === "candidate" || value === "system" ? value : "unknown"; }

@@ -124,13 +124,17 @@ describe("Sales Session workspace", () => {
     expect(screen.getByText("3 equivalent events")).not.toBeNull();
     expect(screen.getAllByRole("time").map((time) => time.getAttribute("dateTime"))).toContain("2026-07-23T09:00:00.000Z");
     expect(screen.getAllByRole("time").map((time) => time.getAttribute("dateTime"))).toContain("2026-07-23T09:04:00.000Z");
-    expect(screen.getByText("2 correlation threads")).not.toBeNull();
+    expect(screen.getByText("2 diagnostic records")).not.toBeNull();
     const correlationDisclosure = document.querySelector("details");
     expect(correlationDisclosure?.open).toBe(false);
     expect(correlationDisclosure?.querySelectorAll("a")).toHaveLength(2);
-    expect(correlationDisclosure?.querySelector('[href*="corr-1"]')?.textContent).toContain("correlation corr-1");
-    expect(correlationDisclosure?.querySelector('[href*="corr-2"]')?.textContent).toContain("correlation corr-2");
-    expect(screen.getByText("Subject: sales_demo_session")).not.toBeNull();
+    expect(correlationDisclosure?.textContent).toContain("Diagnostic records connect this Activity to protected Support evidence");
+    expect(correlationDisclosure?.querySelector('[href*="corr-1"]')?.textContent).toBe("Open diagnostic record 1");
+    expect(correlationDisclosure?.querySelector('[href*="corr-2"]')?.textContent).toBe("Open diagnostic record 2");
+    expect(correlationDisclosure?.textContent).not.toContain("corr-1");
+    expect(correlationDisclosure?.textContent).not.toContain("corr-2");
+    expect(screen.getByText("Actor: Sales admin")).not.toBeNull();
+    expect(screen.getByText("Subject: This Sales Session")).not.toBeNull();
     expect(screen.getByText(/Activity shows ordinary operational metadata only/)).not.toBeNull();
   });
 

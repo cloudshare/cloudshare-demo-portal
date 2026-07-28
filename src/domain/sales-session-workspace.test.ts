@@ -28,6 +28,18 @@ describe("safe Sales Session Activity projection", () => {
     expect(projectSafeSalesSessionActivity({ occurredAt: new Date(), operation: "sales.demo_session.created", outcome: "partial", actorType: "admin", subjectType: "sales_demo_session", subjectId: "session-1", correlationId: "corr" }, "session-1")).toBeNull();
   });
 
+  it("uses human-readable safe copy for an unknown Session operation", () => {
+    expect(projectSafeSalesSessionActivity({
+      occurredAt: new Date("2026-07-24T09:00:00Z"),
+      operation: "sales.demo_session.internal_unknown",
+      outcome: "success",
+      actorType: "system",
+      subjectType: "sales_demo_session",
+      subjectId: "session-1",
+      correlationId: null,
+    }, "session-1")?.summary).toBe("Routine Sales Session update completed.");
+  });
+
   it("keeps a roster reference without an observation distinct from no Environment assignment", () => {
     expect(projectSafeSalesParticipantEnvironment({ cloudShareRosterEnvironmentReference: "server-only-reference", environmentStatus: null, environmentStatusCode: null, environmentObservedAt: null })).toMatchObject({ source: "not_observed" });
     expect(projectSafeSalesParticipantEnvironment({ cloudShareRosterEnvironmentReference: null, environmentStatus: null, environmentStatusCode: null, environmentObservedAt: null })).toMatchObject({ source: "not_assigned" });
