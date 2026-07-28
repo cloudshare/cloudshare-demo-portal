@@ -13,6 +13,7 @@ export type SafeSalesParticipantAttention = { readonly reason: string; readonly 
 
 export type SafeSalesSessionActivity = {
   readonly occurredAt: string;
+  readonly kind: string;
   readonly summary: string;
   readonly outcome: "success" | "failure";
   readonly actor: { readonly type: "admin" | "candidate" | "system" | "unknown" } | null;
@@ -25,7 +26,14 @@ export type SafeSalesSessionActivity = {
  * safe copy; raw diagnostic messages and evidence never cross this seam. */
 export function projectSafeSalesSessionActivity(input: { readonly occurredAt: Date; readonly operation: string; readonly outcome: string; readonly actorType: string | null; readonly subjectType: string | null; readonly subjectId: string | null; readonly correlationId: string | null }, sessionId: string): SafeSalesSessionActivity | null {
   if (input.subjectType !== "sales_demo_session" || input.subjectId !== sessionId || (input.outcome !== "success" && input.outcome !== "failure")) return null;
-  return { occurredAt: input.occurredAt.toISOString(), summary: activitySummary(input.operation, input.outcome), outcome: input.outcome === "failure" ? "failure" : "success", actor: input.actorType ? { type: safeActorType(input.actorType) } : null, subject: { type: "sales_demo_session", id: sessionId }, ...(input.correlationId ? { correlationId: input.correlationId } : {}) };
+  return { occurredAt: input.occurredAt.toISOString(), kind: safeActivityKind(input.operation), summary: activitySummary(input.operation, input.outcome), outcome: input.outcome === "failure" ? "failure" : "success", actor: input.actorType ? { type: safeActorType(input.actorType) } : null, subject: { type: "sales_demo_session", id: sessionId }, ...(input.correlationId ? { correlationId: input.correlationId } : {}) };
+}
+
+function safeActivityKind(operation: string): string {
+  if (operation === "sales.demo_session.created" || operation === "sales.demo_session.reconciled"
+    || operation === "sales.demo_session.participants.registered" || operation === "sales.demo_session.participants.invited"
+    || operation === "sales.demo_session.participants.reconciled") return operation;
+  return `unknown:${operation}`;
 }
 
 function activitySummary(operation: string, outcome: string): string {
@@ -35,7 +43,7 @@ function activitySummary(operation: string, outcome: string): string {
   const action = operation === "sales.demo_session.created" ? "Sales Session provision"
     : operation.startsWith("sales.demo_session.participants.") ? "Sales Participant operation"
       : operation === "sales.demo_session.reconciled" ? "Sales Session reconciliation"
-        : "Routine Sales Session update";
+        : "Sales Session update";
   return `${action} ${outcome === "failure" ? "failed" : "completed"}.`;
 }
 function safeActorType(value: string): "admin" | "candidate" | "system" | "unknown" { return value === "admin" || value === "candidate" || value === "system" ? value : "unknown"; }
