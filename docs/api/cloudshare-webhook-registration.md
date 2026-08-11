@@ -3,6 +3,11 @@
 Use this when the optional CloudShare v3 webhook auto-registration path has not been verified on the
 live tenant. This keeps Slice 9 operable without inventing an unproven endpoint contract.
 
+For receiver-side shared-secret verification, see the downloadable Markdown guide:
+[Verifying CloudShare Webhook HMAC Signatures](./webhook-hmac-signature.md). Its
+signature header, optional prefix, and encoding placeholders must be confirmed
+from current CloudShare documentation or an actual delivery before use.
+
 ## What the portal exposes
 
 After a Helios admin saves a CloudShare Connection, `GET /api/admin/cloudshare` returns:
