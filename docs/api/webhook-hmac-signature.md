@@ -57,14 +57,15 @@ secret as the HMAC key, update it with the unchanged raw bytes, and emit a hex
 digest.
 
 ```ts
-return createHmac("sha256", sharedSecret)
+createHmac("sha256", sharedSecret)
   .update(rawBody)
   .digest("hex");
 ```
 
 ## Receiver usage
 
-Capture the raw body with your framework's supported raw-body mechanism, then
+The following is a generic example for a Customer's own backend receiver.
+Capture the raw body with that framework's supported raw-body mechanism, then
 verify it before processing the event:
 
 ```ts
@@ -78,6 +79,11 @@ if (!isAuthentic) {
   // Reject the request before processing the webhook event.
 }
 ```
+
+For Certalis, this generic example is not the portal implementation: Certalis
+must resolve the Customer from the opaque callback path and load/decrypt that
+Customer's stored CloudShare Connection webhook secret at verification time. It
+must never replace this with a global environment-secret lookup.
 
 The header shown above is a placeholder, not a confirmed CloudShare header.
 Confirm its name, whether the value has an optional prefix, and whether hex is
