@@ -610,7 +610,7 @@ Requesting participant progress for an experience without a journey likely retur
 
 ## GAP-14 — Environment webhook payload omits the experience/training reference
 
-**Jira tracking:** [BAC-26456](https://cloudshare.atlassian.net/browse/BAC-26456)
+**Jira tracking:** [BAC-25011](https://cloudshare.atlassian.net/browse/BAC-25011) (authoritative); [BAC-26456](https://cloudshare.atlassian.net/browse/BAC-26456) (duplicate record)
 
 | Field | Detail |
 |---|---|
@@ -1645,7 +1645,7 @@ Until this is resolved, the diagnostic log for provisioning operations is incomp
 
 ## GAP-25 — Accelerate permits an invalid multi-step Region selection
 
-**Jira tracking:** [BAC-26453](https://cloudshare.atlassian.net/browse/BAC-26453)
+**Jira tracking:** [BAC-25976](https://cloudshare.atlassian.net/browse/BAC-25976) (authoritative); [BAC-26453](https://cloudshare.atlassian.net/browse/BAC-26453) (duplicate record)
 
 | Field | Detail |
 |---|---|
@@ -1718,7 +1718,7 @@ confirm the direct request/response, field casing, and the resulting main Sales 
 
 ## GAP-27 — Sales operator Instructor Console link needs a supported Experience-to-legacy mapping
 
-**Jira tracking:** [BAC-26454](https://cloudshare.atlassian.net/browse/BAC-26454)
+**Jira tracking:** [BAC-25223](https://cloudshare.atlassian.net/browse/BAC-25223) (authoritative); [BAC-26454](https://cloudshare.atlassian.net/browse/BAC-26454) (duplicate record)
 
 | Field | Detail |
 |---|---|
@@ -1768,7 +1768,7 @@ redacted audit/diagnostic evidence for operator-link use.
 
 ## GAP-28 — Project-scoped Sales Pro eligibility is available only through an undocumented GUI member read
 
-**Jira tracking:** [BAC-26408](https://cloudshare.atlassian.net/browse/BAC-26408)
+**Jira tracking:** [BAC-24702](https://cloudshare.atlassian.net/browse/BAC-24702) (authoritative); [BAC-26408](https://cloudshare.atlassian.net/browse/BAC-26408) (duplicate record)
 
 | Field | Detail |
 |---|---|
@@ -1903,7 +1903,7 @@ semantics and the role of `count`.
 
 ## GAP-30 — Sales participant invite acknowledgement does not confirm invitation dispatch
 
-**Jira tracking:** [BAC-26411](https://cloudshare.atlassian.net/browse/BAC-26411)
+**Jira tracking:** [BAC-25363](https://cloudshare.atlassian.net/browse/BAC-25363) (authoritative); [BAC-26411](https://cloudshare.atlassian.net/browse/BAC-26411) (duplicate record)
 
 | Field | Detail |
 |---|---|
@@ -1973,7 +1973,7 @@ tracks the provider acknowledgement defect.
 
 ## GAP-32 — Sales roster `envId` is not the v3 Environment ID
 
-**Jira tracking:** [BAC-26455](https://cloudshare.atlassian.net/browse/BAC-26455)
+**Jira tracking:** [BAC-25629](https://cloudshare.atlassian.net/browse/BAC-25629) (authoritative); [BAC-26455](https://cloudshare.atlassian.net/browse/BAC-26455) (duplicate record)
 
 | Field | Detail |
 |---|---|
@@ -2002,7 +2002,7 @@ under a name that does not claim it is a v3 Environment ID.
 
 ## GAP-33 — No documented per-participant Sales Environment history or count
 
-**Jira tracking:** [BAC-26413](https://cloudshare.atlassian.net/browse/BAC-26413)
+**Jira tracking:** [BAC-25629](https://cloudshare.atlassian.net/browse/BAC-25629) (authoritative); [BAC-26413](https://cloudshare.atlassian.net/browse/BAC-26413) (duplicate record)
 
 | Field | Detail |
 |---|---|
