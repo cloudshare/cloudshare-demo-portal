@@ -13,6 +13,8 @@ PR that surfaced the gap.
 
 ## GAP-16 — Sales timezone catalogue and edit semantics require live confirmation
 
+**Jira tracking:** [BAC-26393](https://cloudshare.atlassian.net/browse/BAC-26393)
+
 | Field | Detail |
 |---|---|
 | **Status** | Documented contract implemented; live validation pending #356 QA |
@@ -36,6 +38,8 @@ the CloudShare Sales Experience ID; support diagnostics retain the direction-awa
 ---
 
 ## GAP-1 — Dual, inconsistent authentication schemes
+
+**Jira tracking:** [BAC-26387](https://cloudshare.atlassian.net/browse/BAC-26387)
 
 | Field | Detail |
 |---|---|
@@ -87,6 +91,8 @@ when the API ID/key and HMAC formula are otherwise correct.
 
 ## GAP-2 — Webhook secret is account-level and cannot be rotated
 
+**Jira tracking:** [BAC-26399](https://cloudshare.atlassian.net/browse/BAC-26399)
+
 | Field | Detail |
 |---|---|
 | **Status** | Confirmed — noted in discovery |
@@ -115,6 +121,8 @@ provisioning.
 ---
 
 ## GAP-3 — Webhooks are unreliable: no custom headers, no unique event ID
+
+**Jira tracking:** [BAC-26410](https://cloudshare.atlassian.net/browse/BAC-26410)
 
 | Field | Detail |
 |---|---|
@@ -167,6 +175,8 @@ CloudShare webhook deliveries have four known reliability problems:
 
 ## GAP-4 — Close-tab or browser logout does not suspend the environment
 
+**Jira tracking:** [BAC-26414](https://cloudshare.atlassian.net/browse/BAC-26414)
+
 | Field | Detail |
 |---|---|
 | **Status** | Confirmed — mitigated by heartbeat in Slice 8 |
@@ -197,6 +207,8 @@ portal can rely on to trigger an automatic suspend.
 
 ## GAP-5 — Suspended environments are preserved for approximately 2 hours only
 
+**Jira tracking:** [BAC-26415](https://cloudshare.atlassian.net/browse/BAC-26415)
+
 | Field | Detail |
 |---|---|
 | **Status** | Confirmed — noted in discovery |
@@ -221,6 +233,8 @@ possible.
 ---
 
 ## GAP-6 — Labs cannot be embedded in a third-party portal via `<iframe>`
+
+**Jira tracking:** [BAC-26416](https://cloudshare.atlassian.net/browse/BAC-26416)
 
 | Field | Detail |
 |---|---|
@@ -248,6 +262,8 @@ equivalent `X-Frame-Options: DENY`), preventing the lab from being embedded in a
 ---
 
 ## GAP-7 — Certification scoring is weak: bitmap checkpoints, end-state only
+
+**Jira tracking:** [BAC-26417](https://cloudshare.atlassian.net/browse/BAC-26417)
 
 | Field | Detail |
 |---|---|
@@ -336,6 +352,8 @@ avoid presenting section rows as question-level pass/fail diagnostics.
 
 ## GAP-8 — Documentation is fragmented; pre-provision SLA is ambiguous (UNVERIFIED)
 
+**Jira tracking:** [BAC-26418](https://cloudshare.atlassian.net/browse/BAC-26418)
+
 | Field | Detail |
 |---|---|
 | **Status** | Unverified — conflicting data from discovery |
@@ -393,6 +411,8 @@ Guided-Journey-absent (404) behaviour.
 
 ## GAP-9 — Registration friction: "Registered Students Only" gate blocks direct login
 
+**Jira tracking:** [BAC-26419](https://cloudshare.atlassian.net/browse/BAC-26419)
+
 | Field | Detail |
 |---|---|
 | **Status** | Confirmed — implemented in `src/integrations/cloudshare/labs.ts` |
@@ -424,6 +444,8 @@ link results in a login-denied or access-denied error.
 ---
 
 ## GAP-10 — Resource reads are project-first, with global Regions and Blueprint-owned Snapshots
+
+**Jira tracking:** [BAC-26388](https://cloudshare.atlassian.net/browse/BAC-26388)
 
 | Field | Detail |
 |---|---|
@@ -535,6 +557,8 @@ still the placeholder default.
 
 ## GAP-11 — Project-member RBAC permissions are not retrievable via API
 
+**Jira tracking:** [BAC-26389](https://cloudshare.atlassian.net/browse/BAC-26389)
+
 | Field | Detail |
 |---|---|
 | **Status** | Confirmed — from CloudShare admin |
@@ -556,6 +580,8 @@ permissions, and the same role can carry different permissions in different proj
 
 ## GAP-12 — No v4 health/ping probe
 
+**Jira tracking:** [BAC-26390](https://cloudshare.atlassian.net/browse/BAC-26390)
+
 | Field | Detail |
 |---|---|
 | **Status** | Confirmed — from CloudShare admin |
@@ -569,6 +595,8 @@ not yet shipped). Connection validation must therefore use the **v3 `ping`**.
 ---
 
 ## GAP-13 — No API to detect whether a Guided Journey exists for an experience
+
+**Jira tracking:** [BAC-26391](https://cloudshare.atlassian.net/browse/BAC-26391)
 
 | Field | Detail |
 |---|---|
@@ -589,6 +617,8 @@ Requesting participant progress for an experience without a journey likely retur
 ---
 
 ## GAP-14 — Environment webhook payload omits the experience/training reference
+
+**Jira tracking:** [BAC-26456](https://cloudshare.atlassian.net/browse/BAC-26456)
 
 | Field | Detail |
 |---|---|
@@ -712,6 +742,8 @@ them.
 
 ## GAP-24 — No verified CloudShare API to resolve participant IDs by email across Experiences
 
+**Jira tracking:** [BAC-26404](https://cloudshare.atlassian.net/browse/BAC-26404)
+
 | Field | Detail |
 |---|---|
 | **Status** | Confirmed for current slice scope — training-scoped read exists; cross-Experience email lookup remains unverified/absent |
@@ -755,6 +787,8 @@ correlation anchored to the specific training / Experience.
 
 ## GAP-15 — Per-project webhook registration via the v3 API is unverified
 
+**Jira tracking:** [BAC-26392](https://cloudshare.atlassian.net/browse/BAC-26392)
+
 | Field | Detail |
 |---|---|
 | **Status** | Suspected — documented endpoint, never exercised |
@@ -791,6 +825,8 @@ registration flow and update this entry immediately.
 ---
 
 ## GAP-16 — v4 training scheduling request body requires PascalCase models
+
+**Jira tracking:** [BAC-26394](https://cloudshare.atlassian.net/browse/BAC-26394)
 
 | Field | Detail |
 |---|---|
@@ -1018,6 +1054,8 @@ remaining field names, required fields, enum values, or path semantics differ.
 
 ## GAP-17 — Provisioning responses omit Team ID and student/participant ID
 
+**Jira tracking:** [BAC-26395](https://cloudshare.atlassian.net/browse/BAC-26395)
+
 | Field | Detail |
 |---|---|
 | **Status** | Confirmed from adapter contracts; live confirmation pending |
@@ -1053,6 +1091,8 @@ the diagnostic `externalIds`. Confirm the add-students response shape against th
 ---
 
 ## GAP-18 — Rapid suspend/resume can return transient v3 environment action 500 while CloudShare state settles
+
+**Jira tracking:** [BAC-26397](https://cloudshare.atlassian.net/browse/BAC-26397)
 
 | Field | Detail |
 |---|---|
@@ -1108,6 +1148,8 @@ environment was not left running.
 
 ## GAP-19 — Environment archive action exists but is undocumented
 
+**Jira tracking:** [BAC-26398](https://cloudshare.atlassian.net/browse/BAC-26398)
+
 | Field | Detail |
 |---|---|
 | **Status** | Unverified — endpoint shape identified during issue #250 QA follow-up and isolated behind the CloudShare environment controller |
@@ -1149,6 +1191,8 @@ environments and whether any CloudShare role/RBAC permissions differ from suspen
 ---
 
 ## GAP-20 — Experience cleanup is delete-only; no archive/hide lifecycle
+
+**Jira tracking:** [BAC-26400](https://cloudshare.atlassian.net/browse/BAC-26400)
 
 | Field | Detail |
 |---|---|
@@ -1202,6 +1246,8 @@ states; other observed values such as `Ready`, `Suspended`, `Publishing`, `Prepa
 ---
 
 ## GAP-21 / FUTURE REQUEST — Reusable Guided Journey analytics across Experiences
+
+**Jira tracking:** [BAC-26401](https://cloudshare.atlassian.net/browse/BAC-26401)
 
 | Field | Detail |
 |---|---|
@@ -1290,6 +1336,8 @@ for the current detection gap.
 
 ## GAP-22 — No controlled nth-environment admission workflow inside an Experience
 
+**Jira tracking:** [BAC-26402](https://cloudshare.atlassian.net/browse/BAC-26402)
+
 | Field | Detail |
 |---|---|
 | **Status** | Suspected — product gap surfaced during Cohort Exam Session design |
@@ -1352,6 +1400,8 @@ allocation within an Experience. Confirm:
 ---
 
 ## GAP-23 — Sponsored-link authentication exposes CloudShare's environment landing page after suspend
+
+**Jira tracking:** [BAC-26403](https://cloudshare.atlassian.net/browse/BAC-26403)
 
 | Field | Detail |
 |---|---|
@@ -1424,6 +1474,8 @@ thread, but reconciliation is detection/mitigation rather than prevention.
 ---
 
 ## GAP-24 — Rate limiting and abuse protection need first-class handling and support evidence
+
+**Jira tracking:** [BAC-26405](https://cloudshare.atlassian.net/browse/BAC-26405)
 
 | Field | Detail |
 |---|---|
@@ -1508,6 +1560,8 @@ Confirm with CloudShare support/R&D:
 
 ## GAP-25 — Certalis Sales resource authoring live verification is blocked by local connection authentication
 
+**Jira tracking:** [BAC-26406](https://cloudshare.atlassian.net/browse/BAC-26406)
+
 | Field | Detail |
 |---|---|
 | **Status** | Observed — local verification blocker |
@@ -1547,6 +1601,8 @@ Copy this section when appending a new gap discovered during implementation:
 
 ```markdown
 ## GAP-18 — LabProvisioner interface discards CloudShare response bodies and HTTP status
+
+**Jira tracking:** [BAC-26396](https://cloudshare.atlassian.net/browse/BAC-26396)
 
 | Field | Detail |
 |---|---|
@@ -1605,6 +1661,8 @@ Until this is resolved, the diagnostic log for provisioning operations is incomp
 
 ## GAP-25 — Accelerate permits an invalid multi-step Region selection
 
+**Jira tracking:** [BAC-26453](https://cloudshare.atlassian.net/browse/BAC-26453)
+
 | Field | Detail |
 |---|---|
 | **Status** | Confirmed |
@@ -1641,6 +1699,8 @@ because a default Snapshot can move after an Item has been authored.
 
 ## GAP-26 — Sales Experience main Sales Pro preflight remains a live-tenant verification point
 
+**Jira tracking:** [BAC-26407](https://cloudshare.atlassian.net/browse/BAC-26407)
+
 | Field | Detail |
 |---|---|
 | **Status** | Confirmed blocker |
@@ -1675,6 +1735,8 @@ confirm the direct request/response, field casing, and the resulting main Sales 
 ---
 
 ## GAP-27 — Sales operator Instructor Console link needs a supported Experience-to-legacy mapping
+
+**Jira tracking:** [BAC-26454](https://cloudshare.atlassian.net/browse/BAC-26454)
 
 | Field | Detail |
 |---|---|
@@ -1723,6 +1785,8 @@ redacted audit/diagnostic evidence for operator-link use.
 ---
 
 ## GAP-28 — Project-scoped Sales Pro eligibility is available only through an undocumented GUI member read
+
+**Jira tracking:** [BAC-26408](https://cloudshare.atlassian.net/browse/BAC-26408)
 
 | Field | Detail |
 |---|---|
@@ -1790,6 +1854,8 @@ will replace this isolated GUI adapter with a supported contract.
 
 ## GAP-29 — Sales participant-list response envelope differs from the published v4 export
 
+**Jira tracking:** [BAC-26409](https://cloudshare.atlassian.net/browse/BAC-26409)
+
 | Field | Detail |
 |---|---|
 | **Status** | Confirmed — portal adapter pages the observed collection safely and normalizes it |
@@ -1841,6 +1907,8 @@ semantics and the role of `count`.
 
 ## GAP-31 — Live Sales roster uses lowercase `preparing` environment status
 
+**Jira tracking:** [BAC-26412](https://cloudshare.atlassian.net/browse/BAC-26412)
+
 | Field | Evidence |
 | --- | --- |
 | **Verified live** | Yes — Certalis Sales instant-launch QA, 2026-07-18 |
@@ -1852,6 +1920,8 @@ semantics and the role of `count`.
 **Portal behavior:** `SalesDelivery` case-insensitively normalizes only values in the exact documented Sales environment-status enum to their canonical typed spelling. Unknown strings remain strictly rejected.
 
 ## GAP-30 — Sales participant invite acknowledgement does not confirm invitation dispatch
+
+**Jira tracking:** [BAC-26411](https://cloudshare.atlassian.net/browse/BAC-26411)
 
 | Field | Detail |
 |---|---|
@@ -1921,6 +1991,8 @@ tracks the provider acknowledgement defect.
 
 ## GAP-32 — Sales roster `envId` is not the v3 Environment ID
 
+**Jira tracking:** [BAC-26455](https://cloudshare.atlassian.net/browse/BAC-26455)
+
 | Field | Detail |
 |---|---|
 | **Status** | Confirmed and mitigated in issue #370 |
@@ -1947,6 +2019,8 @@ under a name that does not claim it is a v3 Environment ID.
 ---
 
 ## GAP-33 — No documented per-participant Sales Environment history or count
+
+**Jira tracking:** [BAC-26413](https://cloudshare.atlassian.net/browse/BAC-26413)
 
 | Field | Detail |
 |---|---|
@@ -2014,5 +2088,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-07-20 (added GAP-33 Sales participant Environment-history contract gap).
+*Last updated: 2026-08-19 (linked all 37 GAP entries to their BAC-25362 child work items).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*
