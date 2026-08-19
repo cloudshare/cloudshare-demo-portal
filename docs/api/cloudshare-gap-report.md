@@ -175,8 +175,6 @@ CloudShare webhook deliveries have four known reliability problems:
 
 ## GAP-4 — Close-tab or browser logout does not suspend the environment
 
-**Jira tracking:** [BAC-26414](https://cloudshare.atlassian.net/browse/BAC-26414)
-
 | Field | Detail |
 |---|---|
 | **Status** | Confirmed — mitigated by heartbeat in Slice 8 |
@@ -233,8 +231,6 @@ possible.
 ---
 
 ## GAP-6 — Labs cannot be embedded in a third-party portal via `<iframe>`
-
-**Jira tracking:** [BAC-26416](https://cloudshare.atlassian.net/browse/BAC-26416)
 
 | Field | Detail |
 |---|---|
@@ -1401,8 +1397,6 @@ allocation within an Experience. Confirm:
 
 ## GAP-23 — Sponsored-link authentication exposes CloudShare's environment landing page after suspend
 
-**Jira tracking:** [BAC-26403](https://cloudshare.atlassian.net/browse/BAC-26403)
-
 | Field | Detail |
 |---|---|
 | **Status** | Confirmed — observed after a sponsored-link authenticated Candidate suspended an environment; CloudShare-side controls still unverified |
@@ -1560,8 +1554,6 @@ Confirm with CloudShare support/R&D:
 
 ## GAP-25 — Certalis Sales resource authoring live verification is blocked by local connection authentication
 
-**Jira tracking:** [BAC-26406](https://cloudshare.atlassian.net/browse/BAC-26406)
-
 | Field | Detail |
 |---|---|
 | **Status** | Observed — local verification blocker |
@@ -1601,8 +1593,6 @@ Copy this section when appending a new gap discovered during implementation:
 
 ```markdown
 ## GAP-18 — LabProvisioner interface discards CloudShare response bodies and HTTP status
-
-**Jira tracking:** [BAC-26396](https://cloudshare.atlassian.net/browse/BAC-26396)
 
 | Field | Detail |
 |---|---|
@@ -1698,8 +1688,6 @@ because a default Snapshot can move after an Item has been authored.
 ---
 
 ## GAP-26 — Sales Experience main Sales Pro preflight remains a live-tenant verification point
-
-**Jira tracking:** [BAC-26407](https://cloudshare.atlassian.net/browse/BAC-26407)
 
 | Field | Detail |
 |---|---|
@@ -2088,5 +2076,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-08-19 (linked all 37 GAP entries to their BAC-25362 child work items).
+*Last updated: 2026-08-19 (linked 31 API/webhook GAP entries to their BAC-25362 child work items).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*
