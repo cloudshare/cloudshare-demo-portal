@@ -13,8 +13,6 @@ PR that surfaced the gap.
 
 ## GAP-16 — Sales timezone catalogue and edit semantics require live confirmation
 
-**Jira tracking:** [BAC-26393](https://cloudshare.atlassian.net/browse/BAC-26393)
-
 | Field | Detail |
 |---|---|
 | **Status** | Documented contract implemented; live validation pending #356 QA |
@@ -204,8 +202,6 @@ portal can rely on to trigger an automatic suspend.
 ---
 
 ## GAP-5 — Suspended environments are preserved for approximately 2 hours only
-
-**Jira tracking:** [BAC-26415](https://cloudshare.atlassian.net/browse/BAC-26415)
 
 | Field | Detail |
 |---|---|
@@ -1243,8 +1239,6 @@ states; other observed values such as `Ready`, `Suspended`, `Publishing`, `Prepa
 
 ## GAP-21 / FUTURE REQUEST — Reusable Guided Journey analytics across Experiences
 
-**Jira tracking:** [BAC-26401](https://cloudshare.atlassian.net/browse/BAC-26401)
-
 | Field | Detail |
 |---|---|
 | **Status** | Future request — product/API enhancement and portal delivery-model gap |
@@ -2076,5 +2070,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-08-19 (linked 31 API/webhook GAP entries to their BAC-25362 child work items).
+*Last updated: 2026-08-19 (linked 28 API/webhook GAP entries to their BAC-25362 child work items).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*
