@@ -61,8 +61,8 @@ function safeActorType(value: string): "admin" | "candidate" | "system" | "unkno
 export function projectSafeSalesParticipantEnvironment(input: { readonly cloudShareRosterEnvironmentReference: string | null; readonly environmentStatus: string | null; readonly environmentStatusCode: number | null; readonly environmentObservedAt: Date | null }) {
   return input.environmentStatus && input.environmentObservedAt && isProjectableSalesParticipantRosterEnvironment(input.environmentStatus)
     ? projectSalesParticipantRosterEnvironment(input.environmentStatus, input.environmentObservedAt)
-    : input.environmentStatusCode !== null && input.environmentObservedAt
-      ? projectSalesParticipantEnvironment(input.environmentStatusCode, input.environmentObservedAt)
+    : input.environmentStatusCode !== null
+      ? projectSalesParticipantEnvironment(input.environmentStatusCode, input.environmentObservedAt ?? undefined)
       : input.cloudShareRosterEnvironmentReference ? { dimension: "cloudshare_environment" as const, value: null, source: "not_observed" as const }
         : projectSalesParticipantEnvironment(null);
 }

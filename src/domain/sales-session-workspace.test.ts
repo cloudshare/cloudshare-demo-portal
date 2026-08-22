@@ -54,6 +54,7 @@ describe("safe Sales Session Activity projection", () => {
 
   it("keeps a roster reference without an observation distinct from no Environment assignment", () => {
     expect(projectSafeSalesParticipantEnvironment({ cloudShareRosterEnvironmentReference: "server-only-reference", environmentStatus: null, environmentStatusCode: 2, environmentObservedAt: new Date("2026-07-19T09:00:00Z") })).toMatchObject({ value: "Ready", source: "cloudshare_v3_environment", observedAt: "2026-07-19T09:00:00.000Z" });
+    expect(projectSafeSalesParticipantEnvironment({ cloudShareRosterEnvironmentReference: null, environmentStatus: null, environmentStatusCode: 2, environmentObservedAt: null })).toMatchObject({ value: null, source: "not_observed" });
     expect(projectSafeSalesParticipantEnvironment({ cloudShareRosterEnvironmentReference: "server-only-reference", environmentStatus: null, environmentStatusCode: null, environmentObservedAt: null })).toMatchObject({ source: "not_observed" });
     expect(projectSafeSalesParticipantEnvironment({ cloudShareRosterEnvironmentReference: null, environmentStatus: null, environmentStatusCode: null, environmentObservedAt: null })).toMatchObject({ source: "not_assigned" });
   });
