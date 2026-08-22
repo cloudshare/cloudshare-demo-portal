@@ -1931,12 +1931,18 @@ to call; it must not expose or fall back to participant invitation URLs.
 
 On 2026-08-22, after CloudShare R&D marked BAC-25363 done, a production probe recreated
 the same disabled configuration (`sendInvitations: "dontSend"`) on a disposable Sales
-Experience, registered one disposable participant through the documented endpoint, and
-called `POST /sales/{id}/participants/invite` with that participant. Production rejected
-the request with HTTP 400 and disabled-invitation semantics. This confirms the legacy
-empty HTTP 200 acknowledgement is no longer present in the tested production path, but
-does not confirm the BAC-25363 HTTP 409 Conflict contract. The response body also did not
-provide a dependable structured error shape, so Certalis must not couple behavior to it.
+Experience through the documented v4 Sales endpoints, registered one disposable
+participant through the documented endpoint, and called
+`POST /sales/{id}/participants/invite` with that participant. Production rejected the
+request with HTTP 400 and disabled-invitation semantics. This confirms the legacy empty
+HTTP 200 acknowledgement is no longer present in the tested production path, but does not
+confirm the BAC-25363 HTTP 409 Conflict contract. The response body also did not provide
+a dependable structured error shape, so Certalis must not couple behavior to it.
+Provider object identifiers, participant details, URLs, raw protected bodies, and exact
+correlation values are intentionally omitted here; the Customer-scoped diagnostic record
+retains the correlation metadata under the protected evidence contract. The disposable
+Experience cleanup completed with a successful delete followed by an independent
+not-found readback.
 
 A disposable live Sales Experience was subsequently created with
 `sendInvitations: "salesProsAndParticipants"`. CloudShare returned HTTP 201, persisted
@@ -2086,5 +2092,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-08-19 (linked 28 API/webhook GAP entries to their BAC-25362 child work items).
+*Last updated: 2026-08-22 (recorded BAC-25363 production verification for GAP-30).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*
