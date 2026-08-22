@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, it, expect } from "vitest";
@@ -100,6 +100,34 @@ describe("loadConfig", () => {
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+
+  it("keeps the distributable seed example aligned with the supported file schema", () => {
+    const path = join(process.cwd(), "config", "portal-seed.example.json");
+    const example = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+
+    expect(Object.keys(example).sort()).toEqual([
+      "certalisSalesAdminEmail",
+      "certalisSalesAdminPassword",
+      "certalisSalesShareConnection",
+      "heliosAdminEmail",
+      "heliosAdminPassword",
+      "heliosCloudShareConnection",
+      "heliosInstructor",
+    ]);
+
+    const config = loadConfig({
+      ...validEnv,
+      PORTAL_SEED_SOURCE: "file",
+      PORTAL_SEED_CONFIG_PATH: path,
+    });
+
+    expect(config.seed.heliosCloudShareConnection?.apiId).toBe(
+      "replace-with-helios-cloudshare-api-id",
+    );
+    expect(config.seed.certalisSalesCloudShareConnection?.apiId).toBe(
+      "replace-with-certalis-cloudshare-api-id",
+    );
   });
 
   it("requires an explicit Sales Admin password for environment seeds", () => {
