@@ -15,6 +15,7 @@ import {
   disabledButtonStyle,
   secondaryButtonStyle,
 } from "@/web/button-styles";
+import { buildCandidateTaskHref } from "@/web/candidate-task-route";
 import { eyebrowLabelStyle } from "@/web/design-tokens";
 import { statusBadgeStyle } from "@/web/status-badge";
 import { PortalPageHeader } from "@/web/portal-page-header";
@@ -120,7 +121,15 @@ export function ScoreDisplay({ examAttemptId, email }: ScoreDisplayProps) {
     <ScorePageHeader
       email={email}
       logoutPresentation={logoutPresentation}
-      onBackToCandidateHome={() => router.push("/candidate")}
+      onBackToCandidateHome={() =>
+        router.push(
+          buildCandidateTaskHref({
+            task: "current",
+            attemptId: examAttemptId,
+            examId: null,
+          }),
+        )
+      }
       onLogout={() => void logout()}
     />
   );

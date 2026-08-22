@@ -1,0 +1,264 @@
+import {
+  buildScheduledAttemptViews,
+  type CandidateScheduledAttemptView,
+} from "./candidate-home-state";
+import type { CandidateDashboardData } from "./candidate-scheduling";
+
+export type CandidateTaskView = "current" | "schedule" | "history";
+
+export interface CandidateTaskRoute {
+  readonly task: CandidateTaskView | null;
+  readonly attemptId: string | null;
+  readonly examId: string | null;
+}
+
+export interface CandidateTaskTab {
+  readonly task: CandidateTaskView;
+  readonly label: string;
+  readonly count: number;
+}
+
+export interface ResolvedCandidateTaskRoute {
+  readonly activeTask: CandidateTaskView;
+  readonly attempts: readonly CandidateScheduledAttemptView[];
+  readonly selectedAttempt: CandidateScheduledAttemptView | null;
+  readonly exams: readonly CandidateDashboardData["exams"][number][];
+  readonly selectedExam: CandidateDashboardData["exams"][number] | null;
+  readonly notice: string | null;
+  readonly tasks: readonly CandidateTaskTab[];
+}
+
+const CANDIDATE_TASK_LABELS: Record<CandidateTaskView, string> = {
+  current: "Current exam",
+  schedule: "Schedule exam",
+  history: "Completed history",
+};
+
+export function parseCandidateTaskRoute(input: {
+  readonly task?: string | null;
+  readonly attemptId?: string | null;
+  readonly examId?: string | null;
+}): CandidateTaskRoute {
+  return {
+    task: isCandidateTaskView(input.task) ? input.task : null,
+    attemptId: normalizeCandidateRouteId(input.attemptId),
+    examId: normalizeCandidateRouteId(input.examId),
+  };
+}
+
+export function resolveCandidateTaskRoute(
+  dashboard: CandidateDashboardData,
+  nowMs: number,
+  route: CandidateTaskRoute,
+): ResolvedCandidateTaskRoute {
+  const attempts = buildScheduledAttemptViews(dashboard, nowMs);
+  const liveAttempts = attempts.filter(isLiveCandidateAttempt);
+  const historyAttempts = attempts.filter(isHistoryCandidateAttempt);
+  const tasks: CandidateTaskTab[] = [
+    { task: "current", label: CANDIDATE_TASK_LABELS.current, count: liveAttempts.length },
+    { task: "schedule", label: CANDIDATE_TASK_LABELS.schedule, count: dashboard.exams.length },
+    { task: "history", label: CANDIDATE_TASK_LABELS.history, count: historyAttempts.length },
+  ];
+
+  const desiredTask = route.task ?? getDefaultCandidateTask(liveAttempts, dashboard.exams, historyAttempts);
+
+  if (desiredTask === "current") {
+    if (liveAttempts.length === 0) {
+      return buildFallbackTaskResult(
+        dashboard,
+        nowMs,
+        "No live ExamAttempt is available right now. Choose another published Exam.",
+        tasks,
+      );
+    }
+
+    const selectedAttempt =
+      selectAttemptById(liveAttempts, route.attemptId) ?? liveAttempts[0] ?? null;
+
+    return {
+      activeTask: "current",
+      attempts: liveAttempts,
+      selectedAttempt,
+      exams: orderExamsBySelection(dashboard.exams, route.examId),
+      selectedExam: selectExamById(dashboard.exams, route.examId),
+      notice:
+        route.attemptId && !selectAttemptById(liveAttempts, route.attemptId)
+          ? "The requested ExamAttempt is no longer available in this live task view."
+          : null,
+      tasks,
+    };
+  }
+
+  if (desiredTask === "history") {
+    if (historyAttempts.length === 0) {
+      return buildFallbackTaskResult(
+        dashboard,
+        nowMs,
+        dashboard.exams.length > 0
+          ? "No completed ExamAttempt history is available yet. Choose another published Exam."
+          : "No completed ExamAttempt history is available yet.",
+        tasks,
+      );
+    }
+
+    const selectedAttempt =
+      selectAttemptById(historyAttempts, route.attemptId) ?? historyAttempts[0] ?? null;
+
+    return {
+      activeTask: "history",
+      attempts: historyAttempts,
+      selectedAttempt,
+      exams: orderExamsBySelection(dashboard.exams, route.examId),
+      selectedExam: selectExamById(dashboard.exams, route.examId),
+      notice:
+        route.attemptId && !selectAttemptById(historyAttempts, route.attemptId)
+          ? "The requested ExamAttempt is no longer available in this history view."
+          : null,
+      tasks,
+    };
+  }
+
+  const orderedExams = orderExamsBySelection(dashboard.exams, route.examId);
+  const selectedExam = orderedExams[0] ?? null;
+  if (orderedExams.length === 0) {
+    const fallbackTask =
+      liveAttempts.length > 0
+        ? resolveCandidateTaskRoute(dashboard, nowMs, { task: "current", attemptId: route.attemptId, examId: null })
+        : {
+            activeTask: "history" as const,
+            attempts: historyAttempts,
+            selectedAttempt: historyAttempts[0] ?? null,
+            exams: [],
+            selectedExam: null,
+            notice: "No published Exams are available yet.",
+            tasks,
+          };
+    return fallbackTask;
+  }
+
+  return {
+    activeTask: "schedule",
+    attempts: [],
+    selectedAttempt: null,
+    exams: orderedExams,
+    selectedExam,
+    notice:
+      route.examId && !selectExamById(dashboard.exams, route.examId)
+        ? "That published Exam is no longer available. Choose another published Exam."
+        : null,
+    tasks,
+  };
+}
+
+export function buildCandidateTaskHref(route: CandidateTaskRoute): string {
+  const params = new URLSearchParams();
+  if (route.task) {
+    params.set("task", route.task);
+  }
+  if (route.attemptId) {
+    params.set("attemptId", route.attemptId);
+  }
+  if (route.examId) {
+    params.set("examId", route.examId);
+  }
+  const query = params.toString();
+  return query.length > 0 ? `/candidate?${query}` : "/candidate";
+}
+
+function buildFallbackTaskResult(
+  dashboard: CandidateDashboardData,
+  nowMs: number,
+  notice: string,
+  tasks: readonly CandidateTaskTab[],
+): ResolvedCandidateTaskRoute {
+  if (dashboard.exams.length > 0) {
+    const exams = orderExamsBySelection(dashboard.exams, null);
+    return {
+      activeTask: "schedule",
+      attempts: [],
+      selectedAttempt: null,
+      exams,
+      selectedExam: exams[0] ?? null,
+      notice,
+      tasks,
+    };
+  }
+
+  const historyAttempts = buildScheduledAttemptViews(dashboard, nowMs).filter(isHistoryCandidateAttempt);
+  return {
+    activeTask: "history",
+    attempts: historyAttempts,
+    selectedAttempt: historyAttempts[0] ?? null,
+    exams: [],
+    selectedExam: null,
+    notice,
+    tasks,
+  };
+}
+
+function getDefaultCandidateTask(
+  liveAttempts: readonly CandidateScheduledAttemptView[],
+  exams: readonly CandidateDashboardData["exams"][number][],
+  historyAttempts: readonly CandidateScheduledAttemptView[],
+): CandidateTaskView {
+  if (liveAttempts.length > 0) {
+    return "current";
+  }
+  if (exams.length > 0) {
+    return "schedule";
+  }
+  if (historyAttempts.length > 0) {
+    return "history";
+  }
+  return "schedule";
+}
+
+function isCandidateTaskView(value: string | null | undefined): value is CandidateTaskView {
+  return value === "current" || value === "schedule" || value === "history";
+}
+
+function normalizeCandidateRouteId(value: string | null | undefined): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function isLiveCandidateAttempt(attempt: CandidateScheduledAttemptView): boolean {
+  return (
+    attempt.displayStatus === "scheduled" ||
+    attempt.displayStatus === "ready" ||
+    attempt.displayStatus === "in_progress" ||
+    attempt.displayStatus === "suspended"
+  );
+}
+
+function isHistoryCandidateAttempt(attempt: CandidateScheduledAttemptView): boolean {
+  return attempt.displayStatus === "completed" || attempt.displayStatus === "expired";
+}
+
+function selectAttemptById(
+  attempts: readonly CandidateScheduledAttemptView[],
+  attemptId: string | null,
+): CandidateScheduledAttemptView | null {
+  return attempts.find((attempt) => attempt.attemptId === attemptId) ?? null;
+}
+
+function selectExamById(
+  exams: readonly CandidateDashboardData["exams"][number][],
+  examId: string | null,
+): CandidateDashboardData["exams"][number] | null {
+  return exams.find((exam) => exam.id === examId) ?? null;
+}
+
+function orderExamsBySelection(
+  exams: readonly CandidateDashboardData["exams"][number][],
+  examId: string | null,
+): CandidateDashboardData["exams"][number][] {
+  const selectedExam = selectExamById(exams, examId);
+  if (!selectedExam) {
+    return [...exams];
+  }
+  return [selectedExam, ...exams.filter((exam) => exam.id !== selectedExam.id)];
+}
