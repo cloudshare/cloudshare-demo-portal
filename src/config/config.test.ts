@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, it, expect } from "vitest";
@@ -102,6 +102,145 @@ describe("loadConfig", () => {
     }
   });
 
+  it("keeps the distributable seed example aligned with the supported file schema", () => {
+    const path = join(process.cwd(), "config", "portal-seed.example.json");
+    const example = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+
+    expect(Object.keys(example).sort()).toEqual([
+      "certalisSalesAdminEmail",
+      "certalisSalesAdminPassword",
+      "certalisSalesShareConnection",
+      "heliosAdminEmail",
+      "heliosAdminPassword",
+      "heliosCloudShareConnection",
+      "heliosInstructor",
+    ]);
+
+    const config = loadConfig({
+      ...validEnv,
+      PORTAL_SEED_SOURCE: "file",
+      PORTAL_SEED_CONFIG_PATH: path,
+    });
+
+    expect(config.seed.heliosAdmin).toBeNull();
+    expect(config.seed.heliosCloudShareConnection).toBeNull();
+    expect(config.seed.certalisSalesCloudShareConnection).toBeNull();
+    expect(config.seed.certalisSalesAdmin).toBeNull();
+  });
+
+  it("rejects placeholder admin passwords for environment seeds", () => {
+    expect(() =>
+      loadConfig({
+        ...validEnv,
+        HELIOS_ADMIN_PASSWORD: "replace-with-helios-admin-password",
+      }),
+    ).toThrow("placeholder");
+  });
+
+  it("treats placeholder and partial file-seed connections as absent", () => {
+    const dir = mkdtempSync(join(tmpdir(), "portal-seed-"));
+    const path = join(dir, "portal-seed.local.json");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        heliosAdminEmail: "file-admin@helioscx.demo",
+        heliosAdminPassword: "FileSeed123!",
+        heliosCloudShareConnection: {
+          apiId: "replace-with-helios-cloudshare-api-id",
+          apiKey: "real-api-key",
+        },
+        heliosInstructor: {
+          id: "file-instructor",
+          name: "File Service Account",
+        },
+        certalisSalesAdminEmail: "file-sales-admin@certalis.demo",
+        certalisSalesAdminPassword: "FileCertalisPassword123!",
+        certalisSalesShareConnection: {
+          apiId: "certalis-api-id",
+          apiKey: "replace-with-certalis-cloudshare-api-key",
+          webhookSecret: "certalis-whsec",
+        },
+      }),
+    );
+
+    try {
+      const config = loadConfig({
+        ...validEnv,
+        PORTAL_SEED_SOURCE: "file",
+        PORTAL_SEED_CONFIG_PATH: path,
+      });
+
+      expect(config.seed.heliosCloudShareConnection).toBeNull();
+      expect(config.seed.certalisSalesCloudShareConnection).toBeNull();
+      expect(config.seed.heliosAdmin?.password).toBe("FileSeed123!");
+      expect(config.seed.certalisSalesAdmin?.password).toBe("FileCertalisPassword123!");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a file seed with a short Helios admin password", () => {
+    const dir = mkdtempSync(join(tmpdir(), "portal-seed-"));
+    const path = join(dir, "portal-seed.local.json");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        heliosAdminEmail: "file-admin@helioscx.demo",
+        heliosAdminPassword: "short",
+        heliosCloudShareConnection: null,
+        heliosInstructor: {
+          id: "file-instructor",
+          name: "File Service Account",
+        },
+        certalisSalesAdminEmail: "file-sales-admin@certalis.demo",
+        certalisSalesAdminPassword: "FileCertalisPassword123!",
+      }),
+    );
+
+    try {
+      expect(() =>
+        loadConfig({
+          ...validEnv,
+          PORTAL_SEED_SOURCE: "file",
+          PORTAL_SEED_CONFIG_PATH: path,
+        }),
+      ).toThrow(ConfigError);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a file seed with a short Sales Admin password", () => {
+    const dir = mkdtempSync(join(tmpdir(), "portal-seed-"));
+    const path = join(dir, "portal-seed.local.json");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        heliosAdminEmail: "file-admin@helioscx.demo",
+        heliosAdminPassword: "FileSeed123!",
+        heliosCloudShareConnection: null,
+        heliosInstructor: {
+          id: "file-instructor",
+          name: "File Service Account",
+        },
+        certalisSalesAdminEmail: "file-sales-admin@certalis.demo",
+        certalisSalesAdminPassword: "short",
+      }),
+    );
+
+    try {
+      expect(() =>
+        loadConfig({
+          ...validEnv,
+          PORTAL_SEED_SOURCE: "file",
+          PORTAL_SEED_CONFIG_PATH: path,
+        }),
+      ).toThrow(ConfigError);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("requires an explicit Sales Admin password for environment seeds", () => {
     expect(() =>
       loadConfig({
@@ -175,5 +314,15 @@ describe("secretValues", () => {
     expect(values).toContain("secret");
     expect(values).toContain(validEnv.PORTAL_MASTER_KEY);
     expect(values).toContain("whsecret");
+  });
+
+  it("does not treat public example placeholders as secrets", () => {
+    const config = loadConfig({
+      ...validEnv,
+      PORTAL_SEED_SOURCE: "file",
+      PORTAL_SEED_CONFIG_PATH: join(process.cwd(), "config", "portal-seed.example.json"),
+    });
+
+    expect(secretValues(config).join("\n")).not.toContain("replace-with-");
   });
 });

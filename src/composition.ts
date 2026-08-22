@@ -53,6 +53,7 @@ import {
   type PortalUserRepository,
 } from "@/persistence/portal-auth-repository";
 import { createCloudShareConnectionRepository } from "@/persistence/cloudshare-connection-repository";
+import { applyPortalSeed } from "@/config/portal-seeding";
 import type { ScoreRetrievalProvider } from "@/domain/score-result";
 import type { ExamAttemptRepository } from "@/domain/exam-attempt";
 import type { LabLaunchRepository } from "@/domain/lab-launch";
@@ -486,44 +487,19 @@ export function getServices(): Services {
 
     if (!portalSeedPromise) {
       portalSeedPromise = (async () => {
-        const user = heliosAdmin
-          ? await portalUsers.upsertSeedUser({
-              customerSlug: "helios-cx",
-              customerName: "Helios CX",
-              email: heliosAdmin.email,
-              passwordHash: await hashPassword(heliosAdmin.password),
-              role: "admin",
-              workspace: "certification",
-            })
-          : null;
-
-        if (certalisSalesAdmin) {
-          const certalisUser = await portalUsers.upsertSeedUser({
-            customerSlug: "certalis",
-            customerName: "Certalis",
-            email: certalisSalesAdmin.email,
-            passwordHash: await hashPassword(certalisSalesAdmin.password),
-            role: "admin",
-            workspace: "sales",
-          });
-          if (config.seed.certalisSalesCloudShareConnection) {
-            await cloudshareConnections.save({
-              customerId: certalisUser.customerId,
-              apiId: config.seed.certalisSalesCloudShareConnection.apiId,
-              apiKey: config.seed.certalisSalesCloudShareConnection.apiKey,
-              webhookSecret: config.seed.certalisSalesCloudShareConnection.webhookSecret,
-            });
-          }
-        }
-
-        if (user && config.seed.heliosCloudShareConnection) {
-          await cloudshareConnections.save({
-            customerId: user.customerId,
-            apiId: config.seed.heliosCloudShareConnection.apiId,
-            apiKey: config.seed.heliosCloudShareConnection.apiKey,
-            webhookSecret: config.seed.heliosCloudShareConnection.webhookSecret,
-          });
-        }
+        await applyPortalSeed(
+          {
+            portalUsers,
+            cloudshareConnections,
+            hashPassword,
+          },
+          {
+            heliosAdmin,
+            heliosCloudShareConnection: config.seed.heliosCloudShareConnection,
+            certalisSalesAdmin,
+            certalisSalesCloudShareConnection: config.seed.certalisSalesCloudShareConnection,
+          },
+        );
       })().catch((error) => {
         portalSeedPromise = null;
         throw error;

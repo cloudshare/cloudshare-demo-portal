@@ -69,7 +69,7 @@ All variables are Zod-validated at boot; missing required values cause a fast-fa
 Preferred local setup:
 
 1. Copy `config/portal-seed.example.json` to `config/portal-seed.local.json`.
-2. Fill in the Helios admin login, instructor, optional CloudShare Connection values, and the Certalis Sales Admin login there. To author live Sales Items, set `certalisSalesShareConnection` to the same `{ apiId, apiKey, webhookSecret }` shape; it is encrypted and stored against Certalis, never shared with Helios. Choose non-empty passwords (at least eight characters); the committed template deliberately contains no usable passwords.
+2. Fill in the Helios admin login, instructor, optional CloudShare Connection values, and the Certalis Sales Admin login there. To author live Sales Items, set `certalisSalesShareConnection` to the same `{ apiId, apiKey, webhookSecret }` shape; it is encrypted and stored against Certalis, never shared with Helios. Choose non-empty passwords (at least eight characters); the committed template deliberately contains only unmistakable placeholder values. Candidates register through the portal and are not configured in this seed file.
 3. Set `PORTAL_SEED_SOURCE=file` in `.env`.
 
 If you prefer env-only seeding, set `PORTAL_SEED_SOURCE=env` and fill the `HELIOS_*` and `CERTALIS_SALES_ADMIN_*` variables instead. The Sales Admin password is required and has no fallback.

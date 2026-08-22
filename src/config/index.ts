@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { z } from "zod";
+import { normalizeSeedAdmin, normalizeSeedConnection } from "./portal-seeding";
 
 /**
  * Typed runtime configuration for the portal, organised into two categories:
@@ -58,9 +59,9 @@ export type PortalSeedSource = z.infer<typeof envSchema>["PORTAL_SEED_SOURCE"];
 
 const seedConnectionSchema = z
   .object({
-    apiId: z.string().min(1),
-    apiKey: z.string().min(1),
-    webhookSecret: z.string().min(1),
+    apiId: z.string().optional(),
+    apiKey: z.string().optional(),
+    webhookSecret: z.string().optional(),
   })
   .nullable()
   .default(null);
@@ -168,32 +169,47 @@ function resolveSeedConfig(
       );
     }
 
+    const heliosAdmin = normalizeSeedAdmin({
+      email: env.HELIOS_ADMIN_EMAIL,
+      password: env.HELIOS_ADMIN_PASSWORD,
+    });
+    if (!heliosAdmin) {
+      throw new ConfigError(
+        "Invalid portal configuration:\nHELIOS_ADMIN_PASSWORD must be a non-placeholder seed password",
+      );
+    }
+
+    const certalisSalesAdmin = normalizeSeedAdmin({
+      email: env.CERTALIS_SALES_ADMIN_EMAIL,
+      password: env.CERTALIS_SALES_ADMIN_PASSWORD,
+    });
+    if (!certalisSalesAdmin) {
+      throw new ConfigError(
+        "Invalid portal configuration:\nCERTALIS_SALES_ADMIN_PASSWORD must be a non-placeholder seed password",
+      );
+    }
+
     return {
       source: "env",
       configPath: null,
-      heliosAdmin: {
-        email: env.HELIOS_ADMIN_EMAIL,
-        password: env.HELIOS_ADMIN_PASSWORD,
-      },
-      heliosCloudShareConnection:
-        env.HELIOS_SEED_CLOUDSHARE_API_ID &&
-        env.HELIOS_SEED_CLOUDSHARE_API_KEY &&
-        env.HELIOS_SEED_CLOUDSHARE_WEBHOOK_SECRET
+      heliosAdmin,
+      heliosCloudShareConnection: normalizeSeedConnection(
+        env.HELIOS_SEED_CLOUDSHARE_API_ID ||
+          env.HELIOS_SEED_CLOUDSHARE_API_KEY ||
+          env.HELIOS_SEED_CLOUDSHARE_WEBHOOK_SECRET
           ? {
               apiId: env.HELIOS_SEED_CLOUDSHARE_API_ID,
               apiKey: env.HELIOS_SEED_CLOUDSHARE_API_KEY,
               webhookSecret: env.HELIOS_SEED_CLOUDSHARE_WEBHOOK_SECRET,
             }
           : null,
+      ),
       certalisSalesCloudShareConnection: null,
       heliosInstructor: {
         id: env.HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_ID,
         name: env.HELIOS_SEED_CLOUDSHARE_INSTRUCTOR_NAME,
       },
-      certalisSalesAdmin: {
-        email: env.CERTALIS_SALES_ADMIN_EMAIL,
-        password: env.CERTALIS_SALES_ADMIN_PASSWORD,
-      },
+      certalisSalesAdmin,
     };
   }
 
@@ -218,18 +234,19 @@ function resolveSeedConfig(
   return {
     source: "file",
     configPath,
-    heliosAdmin: {
+    heliosAdmin: normalizeSeedAdmin({
       email: parsed.data.heliosAdminEmail,
       password: parsed.data.heliosAdminPassword,
-    },
-    heliosCloudShareConnection: parsed.data.heliosCloudShareConnection,
-    certalisSalesCloudShareConnection:
+    }),
+    heliosCloudShareConnection: normalizeSeedConnection(parsed.data.heliosCloudShareConnection),
+    certalisSalesCloudShareConnection: normalizeSeedConnection(
       parsed.data.certalisSalesCloudShareConnection ?? parsed.data.certalisSalesShareConnection ?? null,
+    ),
     heliosInstructor: parsed.data.heliosInstructor,
-    certalisSalesAdmin: {
+    certalisSalesAdmin: normalizeSeedAdmin({
       email: parsed.data.certalisSalesAdminEmail,
       password: parsed.data.certalisSalesAdminPassword,
-    },
+    }),
   };
 }
 
