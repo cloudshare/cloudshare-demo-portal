@@ -98,6 +98,20 @@ describe("Sales Sessions workbench", () => {
     expect(replaceState).toHaveBeenCalledWith(window.history.state, "", "/sales?tab=sessions&sessionId=session-1&queue=history&q=Acme&sort=name_asc&offset=25");
   });
 
+  it.each([{ ctrlKey: true }, { metaKey: true }, { shiftKey: true }, { altKey: true }, { button: 1 }])("does not rewrite queue history for a modified or non-primary Session link click: %o", async (clickOptions) => {
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => String(input).startsWith("/api/sales/session-opportunities?")
+      ? json({ accounts: [], opportunities: [] })
+      : json({ view: "history", offset: 0, limit: 25, total: 1, rows: [row] }));
+    const replaceState = vi.spyOn(window.history, "replaceState");
+    render(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage", queueView: "history" }} onNavigate={vi.fn()} />);
+
+    const sessionLink = await screen.findByRole("link", { name: "Acme evaluation" });
+    sessionLink.addEventListener("click", (event) => event.preventDefault());
+    fireEvent.click(sessionLink, clickOptions);
+
+    expect(replaceState).not.toHaveBeenCalled();
+  });
+
   it("restores a selected Opportunity outside the first bounded options page", async () => {
     const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input) => {
       const path = String(input);
