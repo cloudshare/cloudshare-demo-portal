@@ -5,6 +5,7 @@ import {
 import type { CandidateDashboardData } from "./candidate-scheduling";
 
 export type CandidateTaskView = "current" | "schedule" | "history";
+type CandidateAttemptStatus = CandidateDashboardData["attempts"][number]["status"];
 
 export interface CandidateTaskRoute {
   readonly task: CandidateTaskView | null;
@@ -29,9 +30,9 @@ export interface ResolvedCandidateTaskRoute {
 }
 
 const CANDIDATE_TASK_LABELS: Record<CandidateTaskView, string> = {
-  current: "Current exam",
+  current: "Current ExamAttempt",
   schedule: "Schedule exam",
-  history: "Completed history",
+  history: "Attempt history",
 };
 
 export function parseCandidateTaskRoute(input: {
@@ -163,6 +164,12 @@ export function buildCandidateTaskHref(route: CandidateTaskRoute): string {
   }
   const query = params.toString();
   return query.length > 0 ? `/candidate?${query}` : "/candidate";
+}
+
+export function getCandidateTaskForAttemptStatus(
+  status: CandidateAttemptStatus,
+): CandidateTaskView {
+  return status === "completed" || status === "expired" ? "history" : "current";
 }
 
 function buildFallbackTaskResult(

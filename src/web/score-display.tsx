@@ -124,7 +124,7 @@ export function ScoreDisplay({ examAttemptId, email }: ScoreDisplayProps) {
       onBackToCandidateHome={() =>
         router.push(
           buildCandidateTaskHref({
-            task: "current",
+            task: "history",
             attemptId: examAttemptId,
             examId: null,
           }),

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildCandidateTaskHref,
+  getCandidateTaskForAttemptStatus,
   parseCandidateTaskRoute,
   resolveCandidateTaskRoute,
   type CandidateTaskRoute,
@@ -71,6 +73,11 @@ describe("candidate task route", () => {
     expect(resolved.activeTask).toBe("current");
     expect(resolved.selectedAttempt?.attemptId).toBe("attempt-ready");
     expect(resolved.notice).toBeNull();
+    expect(resolved.tasks.map((task) => task.label)).toEqual([
+      "Current ExamAttempt",
+      "Schedule exam",
+      "Attempt history",
+    ]);
   });
 
   it("fails safely when a requested live ExamAttempt is stale and falls back to the current live task", () => {
@@ -129,5 +136,16 @@ describe("candidate task route", () => {
     expect(resolved.activeTask).toBe("schedule");
     expect(resolved.selectedExam?.id).toBe("exam-1");
     expect(resolved.notice).toBe("That published Exam is no longer available. Choose another published Exam.");
+  });
+
+  it("builds attempt return routes from the attempt status without collapsing history into current", () => {
+    expect(getCandidateTaskForAttemptStatus("ready")).toBe("current");
+    expect(getCandidateTaskForAttemptStatus("in_progress")).toBe("current");
+    expect(getCandidateTaskForAttemptStatus("suspended")).toBe("current");
+    expect(getCandidateTaskForAttemptStatus("completed")).toBe("history");
+    expect(getCandidateTaskForAttemptStatus("expired")).toBe("history");
+    expect(buildCandidateTaskHref({ task: "history", attemptId: "attempt-completed", examId: null })).toBe(
+      "/candidate?task=history&attemptId=attempt-completed",
+    );
   });
 });

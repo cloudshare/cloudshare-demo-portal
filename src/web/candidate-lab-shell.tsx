@@ -15,7 +15,7 @@ import { cardStyle, mutedPanelStyle } from "./card-styles";
 import { accountLogoutButtonStyle, disabledButtonStyle, secondaryButtonStyle } from "./button-styles";
 import { statusBadgeStyle, getExamAttemptStatusTone } from "./status-badge";
 import { PortalPageHeader } from "./portal-page-header";
-import { buildCandidateTaskHref } from "./candidate-task-route";
+import { buildCandidateTaskHref, getCandidateTaskForAttemptStatus } from "./candidate-task-route";
 
 type AttemptStatus = "ready" | "in_progress" | "suspended" | "completed";
 
@@ -116,7 +116,7 @@ export function CandidateLabShell({
               onClick={() =>
                 router.push(
                   buildCandidateTaskHref({
-                    task: "current",
+                    task: getCandidateTaskForAttemptStatus(labStatus?.status ?? initialAttemptStatus),
                     attemptId: examAttemptId,
                     examId: null,
                   }),

@@ -1110,12 +1110,12 @@ function buildCandidateTaskAnnouncement(
   switch (resolvedRoute.activeTask) {
     case "current":
       return resolvedRoute.selectedAttempt
-        ? `Now showing Current exam. ${resolvedRoute.selectedAttempt.examTitle} is selected.`
-        : "Now showing Current exam.";
+        ? `Now showing Current ExamAttempt. ${resolvedRoute.selectedAttempt.examTitle} is selected.`
+        : "Now showing Current ExamAttempt.";
     case "history":
       return resolvedRoute.selectedAttempt
-        ? `Now showing Completed history. ${resolvedRoute.selectedAttempt.examTitle} is selected.`
-        : "Now showing Completed history.";
+        ? `Now showing Attempt history. ${resolvedRoute.selectedAttempt.examTitle} is selected.`
+        : "Now showing Attempt history.";
     case "schedule":
       return resolvedRoute.selectedExam
         ? `Now showing Schedule exam. ${resolvedRoute.selectedExam.title} is selected.`
