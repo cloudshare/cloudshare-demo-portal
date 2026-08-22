@@ -87,10 +87,9 @@ reserved for completion, an explicit user-requested pause, or a genuine blocker.
   update the PR notes, and clearly separate simulated QA from live CloudShare E2E verification.
 - Do not pause for a human check after every refactor slice by default. If the slice is
   behavior-preserving, does not change active CloudShare runtime behaviour, and does not change
-  user-facing UI, the orchestration agent may treat targeted automated checks plus a concrete smoke
-  test as sufficient QA. In that case, record why human QA is not required in the PR, merge after a
-  clean implementation review, and continue directly into a new orchestration session/worktree for
-  the next refactor slice.
+  user-facing UI, the ticket task may treat targeted automated checks plus a concrete smoke test as
+  sufficient QA. In that case, record why human QA is not required in the PR, merge after a clean
+  implementation review, and include the decision in the final report.
 - Human QA is still required for user-visible behaviour, UI changes, active CloudShare runtime
   behaviour, live integration changes, or any slice where smoke evidence does not prove the changed
   path.
@@ -241,7 +240,7 @@ accumulate as local-only commits.
 - Human QA is required before merge for user-visible or integration behaviour, especially CloudShare
   flows. For behavior-preserving refactor slices with no UI change and no active CloudShare runtime
   behaviour change, human QA is not required when targeted tests and smoke evidence prove the changed
-  path; the orchestration agent may merge and immediately start the next orchestration worktree.
+  path; the ticket task may merge after recording the evidence and human-QA decision.
 
 For each slice, before implementation starts:
 
