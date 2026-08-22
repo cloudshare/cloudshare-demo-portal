@@ -100,7 +100,9 @@ describe("admin shell tab and URL model", () => {
     expect(parseAdminConsoleRouteState({ tab: "exams", delivery: "individual" }))
       .toMatchObject({ tab: "exams", deliveryView: "individual" });
     expect(parseAdminConsoleRouteState({ tab: "exams", delivery: "stale" }))
-      .toMatchObject({ tab: "exams", deliveryView: null, routeNotice: "That delivery destination is no longer available. Exam catalog is shown instead." });
+      .toMatchObject({ tab: "exams", deliveryView: null, routeNotice: "That delivery destination is no longer available. A safe current view is shown instead." });
+    expect(parseAdminConsoleRouteState({ tab: "support", view: "diagnostics", delivery: "stale" }))
+      .not.toHaveProperty("routeNotice");
   });
 
   it("clears dismissible banners only when changing tabs", () => {

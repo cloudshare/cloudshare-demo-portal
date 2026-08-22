@@ -115,10 +115,10 @@ describe("AdminConsole", () => {
   it("shows durable guidance when stale delivery route state falls back safely", () => {
     const html = renderToStaticMarkup(createElement(AdminConsole, {
       email: "admin@helioscx.demo",
-      initialRouteNotice: "That delivery destination is no longer available. Exam catalog is shown instead.",
+      initialRouteNotice: "That delivery destination is no longer available. A safe current view is shown instead.",
     }));
     expect(html).toContain('role="alert"');
-    expect(html).toContain("That delivery destination is no longer available. Exam catalog is shown instead.");
+    expect(html).toContain("That delivery destination is no longer available. A safe current view is shown instead.");
   });
 
   it("renders an obvious active admin tab without the extra workflow context panel", () => {

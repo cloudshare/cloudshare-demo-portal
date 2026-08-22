@@ -240,8 +240,9 @@ export function parseAdminConsoleRouteState(input: {
   const examView = tab === "exams" ? parseAdminExamView(input.view) : "catalog";
   const deliveryCandidate = readRouteValue(input.delivery);
   const deliveryView = (tab === "exams" || (tab === "support" && supportView === "monitoring")) ? parseAdminDeliveryView(input.delivery) : null;
-  const routeNotice = deliveryCandidate && !deliveryView
-    ? "That delivery destination is no longer available. Exam catalog is shown instead."
+  const acceptsDeliveryRoute = tab === "exams" || (tab === "support" && supportView === "monitoring");
+  const routeNotice = deliveryCandidate && acceptsDeliveryRoute && !deliveryView
+    ? "That delivery destination is no longer available. A safe current view is shown instead."
     : undefined;
   const examId = tab === "exams" || tab === "support" ? readRouteValue(input.examId) : undefined;
   const cohortSessionId = tab === "exams" || tab === "support" ? readRouteValue(input.sessionId) : undefined;
