@@ -34,4 +34,16 @@ describe("Sales Session page route", () => {
       queueHref: "/sales?tab=sessions",
     });
   });
+
+  it("preserves valid single local-area and queue-return parameters", async () => {
+    const page = await SalesSessionPage({
+      params: Promise.resolve({ sessionId: "session-1" }),
+      searchParams: Promise.resolve({ area: "activity", from: "/sales?tab=sessions&queue=history" }),
+    });
+
+    expect(page.props.children.props).toMatchObject({
+      area: "activity",
+      queueHref: "/sales?tab=sessions&queue=history",
+    });
+  });
 });
