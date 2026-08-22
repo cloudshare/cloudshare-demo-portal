@@ -61,8 +61,10 @@ function safeActorType(value: string): "admin" | "candidate" | "system" | "unkno
 export function projectSafeSalesParticipantEnvironment(input: { readonly cloudShareRosterEnvironmentReference: string | null; readonly environmentStatus: string | null; readonly environmentStatusCode: number | null; readonly environmentObservedAt: Date | null }) {
   return input.environmentStatus && input.environmentObservedAt && isProjectableSalesParticipantRosterEnvironment(input.environmentStatus)
     ? projectSalesParticipantRosterEnvironment(input.environmentStatus, input.environmentObservedAt)
-    : input.cloudShareRosterEnvironmentReference ? { dimension: "cloudshare_environment" as const, value: null, source: "not_observed" as const }
-      : projectSalesParticipantEnvironment(input.environmentStatusCode, input.environmentObservedAt ?? undefined);
+    : input.environmentStatusCode !== null && input.environmentObservedAt
+      ? projectSalesParticipantEnvironment(input.environmentStatusCode, input.environmentObservedAt)
+      : input.cloudShareRosterEnvironmentReference ? { dimension: "cloudshare_environment" as const, value: null, source: "not_observed" as const }
+        : projectSalesParticipantEnvironment(null);
 }
 
 /** Persisted attention values may originate at an integration boundary. The
