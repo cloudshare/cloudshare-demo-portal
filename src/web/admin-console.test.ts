@@ -112,6 +112,22 @@ describe("AdminConsole", () => {
     expect(html).toContain('href="/admin?tab=support&amp;view=audit"');
   });
 
+  it("renders delivery destinations as scoped workflow landings instead of cosmetic catalog aliases", () => {
+    const individualHtml = renderToStaticMarkup(createElement(AdminConsole, {
+      email: "admin@helioscx.demo",
+      initialDeliveryView: "individual",
+    }));
+    const cohortHtml = renderToStaticMarkup(createElement(AdminConsole, {
+      email: "admin@helioscx.demo",
+      initialDeliveryView: "cohort",
+    }));
+
+    expect(individualHtml).toContain("Individual delivery Exams");
+    expect(individualHtml).toContain("Only Exams available for Individual delivery are shown");
+    expect(cohortHtml).toContain("Cohort delivery Exams");
+    expect(cohortHtml).toContain("Only Exams available for Cohort delivery are shown");
+  });
+
   it("shows durable guidance when stale delivery route state falls back safely", () => {
     const html = renderToStaticMarkup(createElement(AdminConsole, {
       email: "admin@helioscx.demo",

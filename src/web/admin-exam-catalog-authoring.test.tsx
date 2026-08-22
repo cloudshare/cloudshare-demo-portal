@@ -4,13 +4,29 @@ import userEvent from "@testing-library/user-event";
 import React from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { AdminAuthenticatedRequest } from "./admin-authenticated-request";
-import { AdminExamCatalogAuthoringFeature } from "./admin-exam-catalog-authoring";
+import { AdminExamCatalogAuthoringFeature, filterExamsForDeliveryDestination } from "./admin-exam-catalog-authoring";
 
 function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
 
 describe("AdminExamCatalogAuthoringFeature", () => {
+  it("scopes delivery destinations to Exams that support the selected existing workflow", () => {
+    const exams: ReadonlyArray<{ readonly id: string; readonly deliveryAvailability?: "individual" | "cohort" | "both" }> = [
+      { id: "individual", deliveryAvailability: "individual" },
+      { id: "cohort", deliveryAvailability: "cohort" },
+      { id: "both", deliveryAvailability: "both" },
+      { id: "legacy" },
+    ];
+
+    expect(filterExamsForDeliveryDestination(exams, "individual").map((exam) => exam.id))
+      .toEqual(["individual", "both", "legacy"]);
+    expect(filterExamsForDeliveryDestination(exams, "cohort").map((exam) => exam.id))
+      .toEqual(["cohort", "both"]);
+    expect(filterExamsForDeliveryDestination(exams, null).map((exam) => exam.id))
+      .toEqual(["individual", "cohort", "both", "legacy"]);
+  });
+
   it("keeps the persisted Exam time limit visible while editing an Exam whose Policy is no longer available", async () => {
     const user = userEvent.setup();
     const stalePolicyExam = {

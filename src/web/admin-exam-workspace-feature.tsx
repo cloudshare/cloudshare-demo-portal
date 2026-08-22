@@ -42,6 +42,7 @@ export function AdminExamWorkspaceFeature(props: AdminExamWorkspaceFeatureProps)
       active={catalogActive}
       examView={props.examView}
       focusedExamId={props.focusedExamId}
+      deliveryView={props.examFeatureActive ? props.deliveryView : null}
       fetchAdmin={props.fetchAdmin}
       onNavigate={props.onNavigate}
       onCatalogChange={setCatalog}
