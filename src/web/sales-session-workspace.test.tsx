@@ -56,7 +56,8 @@ describe("Sales Session workspace", () => {
   it("does not steal focus again when the loaded workspace rerenders", async () => {
     vi.spyOn(window, "fetch").mockResolvedValue(new Response(JSON.stringify(data), { status: 200 }));
     const rendered = render(<SalesSessionWorkspace sessionId="session-1" area="participants" queueHref="/sales?tab=sessions" />);
-    await screen.findByRole("heading", { name: "Participants" });
+    const initialHeading = await screen.findByRole("heading", { name: "Participants" });
+    await waitFor(() => expect(document.activeElement).toBe(initialHeading));
     const laterControl = document.createElement("button");
     document.body.append(laterControl);
     laterControl.focus();

@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -82,6 +82,20 @@ describe("Sales Sessions workbench", () => {
     expect((screen.getByRole("textbox", { name: "Search Sessions" }) as HTMLInputElement).value).toBe("restored");
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
     await screen.findByRole("link", { name: "Acme evaluation" });
+  });
+
+  it("records the selected Session in the queue history entry before opening its workspace", async () => {
+    vi.spyOn(window, "fetch").mockImplementation(async (input) => String(input).startsWith("/api/sales/session-opportunities?")
+      ? json({ accounts: [], opportunities: [] })
+      : json({ view: "history", offset: 25, limit: 25, total: 26, rows: [row] }));
+    const replaceState = vi.spyOn(window.history, "replaceState");
+    render(<SalesSessionsWorkbench route={{ tab: "sessions", sessionView: "manage", queueView: "history", queueSearch: "Acme", queueSort: "name_asc", queueOffset: 25 }} onNavigate={vi.fn()} />);
+
+    const sessionLink = await screen.findByRole("link", { name: "Acme evaluation" });
+    sessionLink.addEventListener("click", (event) => event.preventDefault());
+    fireEvent.click(sessionLink);
+
+    expect(replaceState).toHaveBeenCalledWith(window.history.state, "", "/sales?tab=sessions&sessionId=session-1&queue=history&q=Acme&sort=name_asc&offset=25");
   });
 
   it("restores a selected Opportunity outside the first bounded options page", async () => {
