@@ -83,7 +83,7 @@ reserved for completion, an explicit user-requested pause, or a genuine blocker.
 - Prefer delegating simulated failure-path QA to a focused sub-agent when available. The sub-agent
   should create disposable local data, call the real HTTP/API route on the Codex-owned server
   (`localhost:3025` by convention), capture the observable evidence, and clean up its test data.
-- The orchestration agent still owns the QA result: review the sub-agent's evidence, verify cleanup,
+- The ticket task still owns the QA result: review the sub-agent's evidence, verify cleanup,
   update the PR notes, and clearly separate simulated QA from live CloudShare E2E verification.
 - Do not pause for a human check after every refactor slice by default. If the slice is
   behavior-preserving, does not change active CloudShare runtime behaviour, and does not change
@@ -195,26 +195,47 @@ Never commit directly to `main`.
 
 ### Slice orchestration
 
+#### Self-contained ticket lifecycle
+
+The parent orchestration task selects and claims tickets, creates one visible ticket task for each,
+monitors progress, and receives its final report. It does not implement, review, QA, or merge ticket
+changes. The ticket task owns that issue end to end in its isolated worktree, branch, and PR, including
+any internal implementation, independent-review, QA, repair, and merge steps allowed by the existing
+rules below. The parent must not open parallel lifecycle tasks for the same ticket.
+
+The ticket task's first checkpoint, immediately after opening the draft PR and before substantive
+changes, reports the issue, worktree, baseline commit, branch, PR URL, and planned internal roles. It
+keeps review and QA findings inside the ticket: findings return to implementation, then the affected
+checks repeat until clean or a genuine blocker requires parent, user, credential, or QA authority.
+
+While a ticket task is active, the parent monitors its updates and the current GitHub PR head and
+comments at least every two minutes. Parallel ticket tasks are allowed only for unblocked, independent
+tickets with no shared-code or mutable CloudShare/test-asset conflict. If overlap becomes possible,
+the parent records the dependency and coordinates ordering or an explicit rebase before either ticket
+continues through review or merge.
+
+The ticket task's compact final report includes the PR URL; exact reviewed head and merge SHA;
+validation plus browser, live, and human-QA evidence as applicable; unresolved non-outdated review-
+thread count; ticket-worktree and primary-checkout branch/status; cleanup; blockers; and follow-on
+dependency edges. Missing required evidence means the ticket remains active.
+
 Each implementation slice must run through an explicit branch-and-PR workflow. Do not let slice work
 accumulate as local-only commits.
 
-- The orchestration agent owns coordination: issue selection, agent handoff, PR/review loop, and merge
-  readiness.
-- The orchestration agent must explicitly set the requested model/effort when spawning implementation
+- The ticket task owns its PR/review/QA loop and merge readiness.
+- The ticket task must explicitly set the requested model/effort when spawning implementation
   and review agents. Do not rely on inherited defaults. If the active tool cannot select the required
   model, record that limitation on the PR and use the closest available model.
 - The implementation agent should usually use `gpt-5.4`, `gpt-5.4-mini`, `Sonnet 4.6`, or `Haiku 4.5`.
-  The orchestration agent chooses low or medium reasoning based on slice complexity. Its job is to
+  The ticket task chooses low or medium reasoning based on slice complexity. Its job is to
   follow the issue, PRD, ADRs, and this file; it should not redesign the slice unless blocked.
-- The review agent should use `gpt-5.5` or `Opus 4.8`. The orchestration agent chooses medium or high
+- The review agent should use `gpt-5.5` or `Opus 4.8`. The ticket task chooses medium or high
   reasoning based on PR complexity and risk. Live-integration slices or prior P1/P0 review failures
   require high reasoning. Its job is to review the pull request against the issue, PRD, architecture
   rules, tests, supportability, and security requirements.
-- While any implementation or review agent is active, the orchestration agent must poll at least every
-  two minutes and also check the PR head/comments directly on GitHub each cycle. Do not send a final
-  response, merge, or start the next slice while an expected implementation or review result is still
-  pending. If a reviewer exits before implementation is pushed, spawn a fresh reviewer after the PR
-  head changes.
+- While any internal implementation or review agent is active, the ticket task must monitor it and the
+  current PR head/comments. It must not merge or report completion while an expected result is pending.
+  If a reviewer exits before implementation is pushed, spawn a fresh reviewer after the PR head changes.
 - The implementation agent fixes review findings on the same PR branch. Re-review until the review
   agent reports no blocking findings.
 - Human QA is required before merge for user-visible or integration behaviour, especially CloudShare
