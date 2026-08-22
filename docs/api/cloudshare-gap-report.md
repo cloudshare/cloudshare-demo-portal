@@ -1907,8 +1907,8 @@ semantics and the role of `count`.
 
 | Field | Detail |
 |---|---|
-| **Status** | Confirmed live prerequisite; provider acknowledgement defect escalated to CloudShare |
-| **Verified live** | Yes — Certalis Sales Admin UI, a disposable v4 Sales Experience, no automatic Main Sales Pro invitation, and a received native participant invitation, 2026-07-18 |
+| **Status** | Provider now rejects the disabled-invitation request in production, but returns HTTP 400 rather than the BAC-25363 HTTP 409 contract; Certalis preflight retained |
+| **Verified live** | Yes — original enabled/disabled invitation behavior on 2026-07-18; BAC-25363 production deployment probe with a disposable v4 Sales Experience and registered disposable participant on 2026-08-22 |
 | **Provider ticket** | [SUP-5011](https://cloudshare.atlassian.net/browse/SUP-5011) |
 | **Provider ticket title** | APIv4: invoking the send invitation endpoint for sales (and likley training) results in a 200 OK, even if the option to NOT send invites to either party has been enabled. This should be a 409 Conflict error |
 
@@ -1928,6 +1928,21 @@ The REST endpoint instead returns HTTP 200 with an empty body and does not repor
 precondition. The published endpoint does not return per-participant delivery results,
 errors, or a job identifier. Certalis has no documented alternate native-invite endpoint
 to call; it must not expose or fall back to participant invitation URLs.
+
+On 2026-08-22, after CloudShare R&D marked BAC-25363 done, a production probe recreated
+the same disabled configuration (`sendInvitations: "dontSend"`) on a disposable Sales
+Experience through the documented v4 Sales endpoints, registered one disposable
+participant through the documented endpoint, and called
+`POST /sales/{id}/participants/invite` with that participant. Production rejected the
+request with HTTP 400 and disabled-invitation semantics. This confirms the legacy empty
+HTTP 200 acknowledgement is no longer present in the tested production path, but does not
+confirm the BAC-25363 HTTP 409 Conflict contract. The response body also did not provide
+a dependable structured error shape, so Certalis must not couple behavior to it.
+Provider object identifiers, participant details, URLs, raw protected bodies, and exact
+correlation values are intentionally omitted here; the Customer-scoped diagnostic record
+retains the correlation metadata under the protected evidence contract. The disposable
+Experience cleanup completed with a successful delete followed by an independent
+not-found readback.
 
 A disposable live Sales Experience was subsequently created with
 `sendInvitations: "salesProsAndParticipants"`. CloudShare returned HTTP 201, persisted
@@ -1950,11 +1965,18 @@ It records the configuration read, POST, and roster exchanges under the same cor
 ID, persists the returned monitoring state, and never labels the empty-body
 acknowledgement as a sent email.
 
+The 2026-08-22 production verification independently exercised this preflight against the
+same disabled disposable Experience. Certalis returned correlated
+`409 native_invitations_disabled` after the capability read and made zero calls to the
+participant invite endpoint. The provider's partial correction therefore remains defense
+in depth and does not justify weakening the portal mitigation.
+
 **Action required**
 
-CloudShare R&D should correct `POST /sales/{id}/participants/invite` so a disabled
-Experience yields a machine-actionable non-success response (or a structured per-row
-outcome), consistent with the GUI message. Existing `dontSend` Experiences must be
+CloudShare R&D should complete the BAC-25363 contract for
+`POST /sales/{id}/participants/invite`: a disabled Experience now yields a non-success
+response in the tested production path, but it is HTTP 400 rather than HTTP 409 Conflict
+and lacks a dependable structured error shape. Existing `dontSend` Experiences must be
 amended in CloudShare or recreated before their native invitations can be sent. With
 both invitation settings enabled, #348 human QA selected a Sales Participant, requested
 the native invitation, observed the portal roster change to `sent`, and received the
@@ -2070,5 +2092,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-08-19 (linked 28 API/webhook GAP entries to their BAC-25362 child work items).
+*Last updated: 2026-08-22 (recorded BAC-25363 production verification for GAP-30).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*
