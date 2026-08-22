@@ -1,6 +1,6 @@
 "use client";
 
-import React, { type CSSProperties, useCallback, useEffect, useState } from "react";
+import React, { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   joinCandidateCohortSession, loadCandidateDashboard, scheduleCandidateExam, shouldShowNoPublishedExams, shouldShowPublishedExamList, type CandidateDashboardData,
@@ -94,6 +94,9 @@ export function CandidateAttemptStatusFilterButtons({
 export function CandidateHome({ email, initialRoute }: CandidateHomeProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const activeTaskHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const hasLoadedResolvedRouteRef = useRef(false);
+  const previousResolvedRouteKeyRef = useRef<string | null>(null);
   const [dashboard, setDashboard] = useState<CandidateDashboardData>({
     exams: [],
     attempts: [],
@@ -106,6 +109,8 @@ export function CandidateHome({ email, initialRoute }: CandidateHomeProps) {
   const [scheduleFeedback, setScheduleFeedback] = useState<Record<string, ScheduleFeedback>>({});
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [announcedTaskMessage, setAnnouncedTaskMessage] = useState<string | null>(null);
+  const [focusedTaskHeading, setFocusedTaskHeading] = useState<CandidateTaskView | null>(null);
   const { presentation: logoutPresentation, logout } = useCandidateLogout(router);
 
   const handleCandidateSessionExpired = useCallback(() => {
@@ -336,7 +341,9 @@ export function CandidateHome({ email, initialRoute }: CandidateHomeProps) {
   const selectedAttempt = resolvedRoute.selectedAttempt;
   const selectedExam = resolvedRoute.selectedExam;
   const selectedAttemptExam =
-    selectedAttempt ? examsById.get(selectedAttempt.examId) ?? null : null;
+    selectedAttempt
+      ? buildCandidateAttemptExamSnapshot(selectedAttempt, examsById.get(selectedAttempt.examId) ?? null)
+      : null;
   const selectedAttemptPrimaryAction = selectedAttempt
     ? getAttemptPrimaryAction(
         {
@@ -349,6 +356,37 @@ export function CandidateHome({ email, initialRoute }: CandidateHomeProps) {
         selectedAttemptExam,
       )
     : { label: null, disabled: false };
+  const resolvedRouteKey = useMemo(
+    () =>
+      [
+        resolvedRoute.activeTask,
+        selectedAttempt?.attemptId ?? "",
+        selectedExam?.id ?? "",
+        resolvedRoute.notice ?? "",
+      ].join(":"),
+    [resolvedRoute.activeTask, resolvedRoute.notice, selectedAttempt?.attemptId, selectedExam?.id],
+  );
+
+  useEffect(() => {
+    if (loading) {
+      return;
+    }
+
+    if (!hasLoadedResolvedRouteRef.current) {
+      hasLoadedResolvedRouteRef.current = true;
+      previousResolvedRouteKeyRef.current = resolvedRouteKey;
+      return;
+    }
+
+    if (previousResolvedRouteKeyRef.current === resolvedRouteKey) {
+      return;
+    }
+
+    previousResolvedRouteKeyRef.current = resolvedRouteKey;
+    setFocusedTaskHeading(resolvedRoute.activeTask);
+    setAnnouncedTaskMessage(buildCandidateTaskAnnouncement(resolvedRoute));
+    activeTaskHeadingRef.current?.focus({ preventScroll: true });
+  }, [loading, resolvedRoute, resolvedRouteKey]);
 
   return (
     <main style={pageShellStyle}>
@@ -390,6 +428,15 @@ export function CandidateHome({ email, initialRoute }: CandidateHomeProps) {
               window, and environment retention remain separate.
             </p>
           </div>
+          {announcedTaskMessage ? (
+            <p
+              aria-label="Candidate route status"
+              role="status"
+              style={{ ...mutedPanelStyle, margin: 0, padding: "0.85rem 1rem" }}
+            >
+              {announcedTaskMessage}
+            </p>
+          ) : null}
           <div style={taskTabStripStyle}>
             {resolvedRoute.tasks.map((task) => {
               const selected = task.task === resolvedRoute.activeTask;
@@ -429,7 +476,16 @@ export function CandidateHome({ email, initialRoute }: CandidateHomeProps) {
                 <p style={eyebrowLabelStyle}>
                   {resolvedRoute.activeTask === "current" ? "Current task" : "Attempt history"}
                 </p>
-                <h2 style={sectionTitleStyle}>
+                <h2
+                  ref={activeTaskHeadingRef}
+                  tabIndex={-1}
+                  style={{
+                    ...sectionTitleStyle,
+                    ...(focusedTaskHeading === resolvedRoute.activeTask
+                      ? focusedTaskHeadingStyle
+                      : null),
+                  }}
+                >
                   {resolvedRoute.activeTask === "current"
                     ? "Your current ExamAttempt"
                     : "Completed and expired attempts"}
@@ -504,6 +560,30 @@ export function CandidateHome({ email, initialRoute }: CandidateHomeProps) {
                         ) : (
                           "TBD"
                         )}
+                      </span>
+                    </div>
+                    <div style={metaItemStyle}>
+                      <span style={metaLabelStyle}>Runtime limit</span>
+                      <span style={metaValueStyle}>
+                        {selectedAttemptExam?.timeLimitMinutes
+                          ? `${selectedAttemptExam.timeLimitMinutes} minute runtime limit`
+                          : "Unavailable"}
+                      </span>
+                    </div>
+                    <div style={metaItemStyle}>
+                      <span style={metaLabelStyle}>Open window</span>
+                      <span style={metaValueStyle}>
+                        {selectedAttemptExam?.openPeriodMinutes
+                          ? `${selectedAttemptExam.openPeriodMinutes} minute open window`
+                          : "Unavailable"}
+                      </span>
+                    </div>
+                    <div style={metaItemStyle}>
+                      <span style={metaLabelStyle}>Environment retention</span>
+                      <span style={metaValueStyle}>
+                        {selectedAttemptExam?.storageLeaseMinutes
+                          ? `${selectedAttemptExam.storageLeaseMinutes} minute environment retention`
+                          : "Not recorded"}
                       </span>
                     </div>
                     <div style={metaItemStyle}>
@@ -585,7 +665,16 @@ export function CandidateHome({ email, initialRoute }: CandidateHomeProps) {
             <div style={sectionHeaderStyle}>
               <div>
                 <p style={eyebrowLabelStyle}>Scheduling task</p>
-                <h2 style={sectionTitleStyle}>Choose an exam</h2>
+                <h2
+                  ref={activeTaskHeadingRef}
+                  tabIndex={-1}
+                  style={{
+                    ...sectionTitleStyle,
+                    ...(focusedTaskHeading === "schedule" ? focusedTaskHeadingStyle : null),
+                  }}
+                >
+                  Choose an exam
+                </h2>
               </div>
               <p style={sectionCopyStyle}>
                 {dashboard.exams.length} published {dashboard.exams.length === 1 ? "Exam" : "Exams"}
@@ -677,6 +766,12 @@ const sectionTitleStyle: CSSProperties = {
   margin: "0.2rem 0 0",
   fontSize: "1.2rem",
   color: "#0f172a",
+};
+
+const focusedTaskHeadingStyle: CSSProperties = {
+  outline: "3px solid #93c5fd",
+  outlineOffset: "4px",
+  borderRadius: "4px",
 };
 
 const sectionCopyStyle: CSSProperties = {
@@ -972,6 +1067,61 @@ function getTaskNavigationRoute(
       };
     default:
       return { task: null, attemptId: null, examId: null };
+  }
+}
+
+function buildCandidateAttemptExamSnapshot(
+  attempt: {
+    readonly examId: string;
+    readonly examTitle: string;
+    readonly timeLimitMinutes: number | null;
+    readonly openPeriodMinutes: number | null;
+    readonly storageLeaseMinutes: number | null;
+    readonly scoreRetrievalEnabled: boolean;
+  },
+  exam: CandidateDashboardData["exams"][number] | null,
+): CandidateDashboardData["exams"][number] | null {
+  if (exam) {
+    return exam;
+  }
+
+  if (
+    typeof attempt.examTitle !== "string" ||
+    typeof attempt.timeLimitMinutes !== "number" ||
+    typeof attempt.openPeriodMinutes !== "number"
+  ) {
+    return null;
+  }
+
+  return {
+    id: attempt.examId,
+    title: attempt.examTitle,
+    description: "",
+    timeLimitMinutes: attempt.timeLimitMinutes,
+    storageLeaseMinutes: attempt.storageLeaseMinutes,
+    openPeriodMinutes: attempt.openPeriodMinutes,
+    scoreRetrievalEnabled: attempt.scoreRetrievalEnabled,
+  };
+}
+
+function buildCandidateTaskAnnouncement(
+  resolvedRoute: ReturnType<typeof resolveCandidateTaskRoute>,
+): string {
+  switch (resolvedRoute.activeTask) {
+    case "current":
+      return resolvedRoute.selectedAttempt
+        ? `Now showing Current exam. ${resolvedRoute.selectedAttempt.examTitle} is selected.`
+        : "Now showing Current exam.";
+    case "history":
+      return resolvedRoute.selectedAttempt
+        ? `Now showing Completed history. ${resolvedRoute.selectedAttempt.examTitle} is selected.`
+        : "Now showing Completed history.";
+    case "schedule":
+      return resolvedRoute.selectedExam
+        ? `Now showing Schedule exam. ${resolvedRoute.selectedExam.title} is selected.`
+        : "Now showing Schedule exam.";
+    default:
+      return "Candidate task updated.";
   }
 }
 
