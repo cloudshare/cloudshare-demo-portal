@@ -106,10 +106,19 @@ describe("AdminConsole", () => {
     expect(html).toContain("adminNavigation");
     expect(html).toContain("adminContent");
     expect(html).toContain('href="/admin?tab=configuration"');
-    expect(html).toContain('href="/admin?tab=support&amp;delivery=individual"');
-    expect(html).toContain('href="/admin?tab=support&amp;delivery=cohort"');
+    expect(html).toContain('href="/admin?tab=exams&amp;delivery=individual"');
+    expect(html).toContain('href="/admin?tab=exams&amp;delivery=cohort"');
     expect(html).toContain('href="/admin?tab=support&amp;view=diagnostics"');
     expect(html).toContain('href="/admin?tab=support&amp;view=audit"');
+  });
+
+  it("shows durable guidance when stale delivery route state falls back safely", () => {
+    const html = renderToStaticMarkup(createElement(AdminConsole, {
+      email: "admin@helioscx.demo",
+      initialRouteNotice: "That delivery destination is no longer available. Exam catalog is shown instead.",
+    }));
+    expect(html).toContain('role="alert"');
+    expect(html).toContain("That delivery destination is no longer available. Exam catalog is shown instead.");
   });
 
   it("renders an obvious active admin tab without the extra workflow context panel", () => {

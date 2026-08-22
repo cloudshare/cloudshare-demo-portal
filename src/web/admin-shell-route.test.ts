@@ -93,14 +93,14 @@ describe("admin shell tab and URL model", () => {
   });
 
   it("round-trips the meaningful Individual and Cohort delivery branch", () => {
-    expect(buildAdminConsoleHref({ tab: "support", supportView: "monitoring", deliveryView: "individual" }))
-      .toBe("/admin?tab=support&delivery=individual");
-    expect(buildAdminConsoleHref({ tab: "support", supportView: "monitoring", deliveryView: "cohort" }))
-      .toBe("/admin?tab=support&delivery=cohort");
-    expect(parseAdminConsoleRouteState({ tab: "support", delivery: "individual" }))
-      .toMatchObject({ supportView: "monitoring", deliveryView: "individual" });
-    expect(parseAdminConsoleRouteState({ tab: "support", delivery: "stale" }))
-      .toMatchObject({ supportView: "monitoring", deliveryView: null });
+    expect(buildAdminConsoleHref({ tab: "exams", deliveryView: "individual" }))
+      .toBe("/admin?tab=exams&delivery=individual");
+    expect(buildAdminConsoleHref({ tab: "exams", deliveryView: "cohort" }))
+      .toBe("/admin?tab=exams&delivery=cohort");
+    expect(parseAdminConsoleRouteState({ tab: "exams", delivery: "individual" }))
+      .toMatchObject({ tab: "exams", deliveryView: "individual" });
+    expect(parseAdminConsoleRouteState({ tab: "exams", delivery: "stale" }))
+      .toMatchObject({ tab: "exams", deliveryView: null, routeNotice: "That delivery destination is no longer available. Exam catalog is shown instead." });
   });
 
   it("clears dismissible banners only when changing tabs", () => {

@@ -40,6 +40,7 @@ interface AdminConsoleProps {
   readonly initialSupportView?: AdminSupportView;
   readonly initialDeliveryView?: AdminDeliveryView | null;
   readonly initialDiagnosticFilters?: DiagnosticLogFilters;
+  readonly initialRouteNotice?: string;
 }
 
 export function AdminConsole({
@@ -51,6 +52,7 @@ export function AdminConsole({
   initialSupportView = "monitoring",
   initialDeliveryView = null,
   initialDiagnosticFilters = {},
+  initialRouteNotice,
 }: AdminConsoleProps) {
   const router = useRouter();
   const [tab, setTab] = useState<AdminTab>(initialTab);
@@ -103,10 +105,11 @@ export function AdminConsole({
     <PortalPageHeader eyebrow="Helios Admin Portal" title="Certalis Admin Console" description="Manage the Helios CX CloudShare Connection, Exam catalog, Candidate accounts, and active exam attempt support workflows." email={email} actions={<button {...extensionHydrationProps} onClick={logout} disabled={loggingOut} style={loggingOut ? { ...accountLogoutButtonStyle, ...disabledButtonStyle } : accountLogoutButtonStyle}>Log out</button>} />
     <div className={styles.adminWorkspace}>
     <nav aria-label="Helios Admin certification navigation" className={styles.adminNavigation}><ul className={styles.adminNavigationList}>{ADMIN_NAVIGATION_ITEMS.map((item) => {
-      const active = item.intent.tab === tab && (item.intent.supportView ?? "monitoring") === supportView && (item.intent.deliveryView ?? null) === deliveryView && (item.intent.tab !== "exams" || examView === "catalog");
+      const active = item.intent.tab === tab && (item.intent.supportView ?? "monitoring") === supportView && (item.key === "monitoring" || (item.intent.deliveryView ?? null) === deliveryView) && (item.intent.tab !== "exams" || examView === "catalog");
       return <li key={item.key}><Link href={buildAdminNavigationHref(item.intent)} aria-current={active ? "page" : undefined} className={styles.adminNavigationLink}>{item.label}</Link></li>;
     })}</ul></nav>
     <div className={styles.adminContent}>
+    {initialRouteNotice ? <div role="alert" style={{ ...mutedPanelStyle, marginBottom: "1rem", borderColor: colors.warning }}>{initialRouteNotice}</div> : null}
     <AdminCandidateRosterFeature active={tab === "candidates"} fetchAdmin={fetchAdmin} />
     <CloudShareConnectionFeature active={tab === "configuration"} fetchAdmin={fetchAdmin} getNavigationHref={getNavigationHref} onNavigate={navigateAdmin} />
     <React.Fragment key="support-workflow-navigation">{tab === "support" ? <section style={{ display: "grid", gap: "1rem" }}><div style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem" }}><strong>Support workflows</strong><div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>{(["monitoring", "diagnostics", "audit"] as const).map((view) => <button {...extensionHydrationProps} key={view} type="button" aria-current={supportView === view ? "page" : undefined} onClick={() => navigateAdmin({ tab: "support", supportView: view })} style={{ padding: "0.5rem 0.8rem", border: `1px solid ${supportView === view ? colors.textPrimary : colors.border}`, borderRadius: "8px", background: supportView === view ? colors.textPrimary : "#ffffff", color: supportView === view ? "#ffffff" : colors.textPrimary, fontWeight: 600 }}>{getAdminSupportViewLabel(view)}</button>)}</div></div></section> : null}</React.Fragment>

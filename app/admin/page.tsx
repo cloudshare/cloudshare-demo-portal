@@ -40,6 +40,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
       initialSupportView={routeState.supportView}
       initialDeliveryView={routeState.deliveryView}
       initialDiagnosticFilters={routeState.diagnosticFilters}
+      initialRouteNotice={routeState.routeNotice}
     />
   );
 }

@@ -37,8 +37,8 @@ export const ADMIN_NAVIGATION_ITEMS: readonly AdminNavigationItem[] = [
   { key: "connection", label: "CloudShare Connection", intent: { tab: "configuration" } },
   { key: "catalog", label: "Exam catalog", intent: { tab: "exams", examView: "catalog" } },
   { key: "candidates", label: "Candidates", intent: { tab: "candidates" } },
-  { key: "individual-delivery", label: "Individual delivery", intent: { tab: "support", supportView: "monitoring", deliveryView: "individual" } },
-  { key: "cohort-delivery", label: "Cohort delivery", intent: { tab: "support", supportView: "monitoring", deliveryView: "cohort" } },
+  { key: "individual-delivery", label: "Individual delivery", intent: { tab: "exams", examView: "catalog", deliveryView: "individual" } },
+  { key: "cohort-delivery", label: "Cohort delivery", intent: { tab: "exams", examView: "catalog", deliveryView: "cohort" } },
   { key: "monitoring", label: "Session Monitoring", intent: { tab: "support", supportView: "monitoring" } },
   { key: "diagnostics", label: "Support Diagnostics", intent: { tab: "support", supportView: "diagnostics" } },
   { key: "audit", label: "Audit", intent: { tab: "support", supportView: "audit" } },
@@ -52,6 +52,7 @@ export interface AdminConsoleRouteState {
   readonly supportView: AdminSupportView;
   readonly deliveryView: AdminDeliveryView | null;
   readonly diagnosticFilters: DiagnosticLogFilters;
+  readonly routeNotice?: string;
 }
 
 /**
@@ -175,7 +176,7 @@ export function buildAdminConsoleHref(
     }
   }
 
-  if (route.tab === "support" && (route.supportView ?? "monitoring") === "monitoring" && route.deliveryView) {
+  if ((route.tab === "exams" || (route.tab === "support" && (route.supportView ?? "monitoring") === "monitoring")) && route.deliveryView) {
     params.set("delivery", route.deliveryView);
   }
 
@@ -237,7 +238,11 @@ export function parseAdminConsoleRouteState(input: {
 }): AdminConsoleRouteState {
   const { tab, supportView } = parseAdminTabWithSupportView(input.tab, input.view);
   const examView = tab === "exams" ? parseAdminExamView(input.view) : "catalog";
-  const deliveryView = tab === "support" && supportView === "monitoring" ? parseAdminDeliveryView(input.delivery) : null;
+  const deliveryCandidate = readRouteValue(input.delivery);
+  const deliveryView = (tab === "exams" || (tab === "support" && supportView === "monitoring")) ? parseAdminDeliveryView(input.delivery) : null;
+  const routeNotice = deliveryCandidate && !deliveryView
+    ? "That delivery destination is no longer available. Exam catalog is shown instead."
+    : undefined;
   const examId = tab === "exams" || tab === "support" ? readRouteValue(input.examId) : undefined;
   const cohortSessionId = tab === "exams" || tab === "support" ? readRouteValue(input.sessionId) : undefined;
   if (tab !== "support" || supportView !== "diagnostics") {
@@ -249,6 +254,7 @@ export function parseAdminConsoleRouteState(input: {
       supportView,
       deliveryView,
       diagnosticFilters: {},
+      ...(routeNotice ? { routeNotice } : {}),
     };
   }
 
@@ -274,6 +280,7 @@ export function parseAdminConsoleRouteState(input: {
       from: readRouteValue(input.from),
       to: readRouteValue(input.to),
     }),
+    ...(routeNotice ? { routeNotice } : {}),
   };
 }
 

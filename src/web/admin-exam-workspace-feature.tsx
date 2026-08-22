@@ -27,7 +27,7 @@ export interface AdminExamWorkspaceFeatureProps {
 export function AdminExamWorkspaceFeature(props: AdminExamWorkspaceFeatureProps) {
   const [hasActiveCohortSessionsByExamId, setHasActiveCohortSessionsByExamId] = useState<Record<string, boolean>>({});
   const [catalog, setCatalog] = useState<{ activeExams: readonly ExamRecord[]; archivedExams: readonly ExamRecord[] } | null>(null);
-  const monitoringBranch = props.deliveryView;
+  const monitoringBranch = props.supportMonitoringActive ? props.deliveryView : null;
   const catalogActive = props.examFeatureActive && (props.examView === "catalog" || props.examView === "create" || props.examView === "edit");
   const updateCohortActivity = useCallback((activity: Record<string, boolean>) => {
     setHasActiveCohortSessionsByExamId((current) => JSON.stringify(current) === JSON.stringify(activity) ? current : activity);
@@ -37,6 +37,7 @@ export function AdminExamWorkspaceFeature(props: AdminExamWorkspaceFeatureProps)
   const individualMonitoringVisible = props.supportMonitoringActive && !hasFocusedCohort && monitoringBranch === "individual";
 
   return <>
+    {props.examFeatureActive && props.deliveryView ? <div style={{ ...mutedPanelStyle, marginBottom: "1rem" }}><strong>{props.deliveryView === "individual" ? "Individual delivery" : "Cohort delivery"}</strong><p style={{ marginBottom: 0 }}>{props.deliveryView === "individual" ? "Manage Exams available for one-Candidate CloudShare Experiences. Candidate scheduling and ExamAttempt timing remain unchanged." : "Open a Cohort-capable Exam to manage its inherited Cohort Exam Sessions. CloudShare resources continue to come from the parent Exam."}</p></div> : null}
     <AdminExamCatalogAuthoringFeature
       active={catalogActive}
       examView={props.examView}
