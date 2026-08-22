@@ -263,9 +263,8 @@ The PR body must include:
 Closes #<issue-number>
 ```
 
-The implementation agent must report the branch name and PR number before continuing with substantial
-code changes. All commits for the slice go to that PR branch, not to `main` and not to an unreviewed
-local-only branch.
+The ticket task must complete the initial checkpoint above before continuing with substantial changes.
+All commits for the slice go to that PR branch, not to `main` and not to an unreviewed local-only branch.
 
 Before requesting review:
 
