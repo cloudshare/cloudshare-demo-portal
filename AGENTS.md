@@ -245,9 +245,8 @@ accumulate as local-only commits.
 For each slice, before implementation starts:
 
 ```bash
-git checkout main
-git pull
-git checkout -b feature/issue-<number>-<short-description>
+git fetch origin main
+git switch -c feature/issue-<number>-<short-description> origin/main
 ```
 
 Then immediately open a draft PR linked to the issue with a closing keyword:
