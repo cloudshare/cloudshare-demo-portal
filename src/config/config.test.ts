@@ -179,6 +179,68 @@ describe("loadConfig", () => {
     }
   });
 
+  it("rejects a file seed with a short Helios admin password", () => {
+    const dir = mkdtempSync(join(tmpdir(), "portal-seed-"));
+    const path = join(dir, "portal-seed.local.json");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        heliosAdminEmail: "file-admin@helioscx.demo",
+        heliosAdminPassword: "short",
+        heliosCloudShareConnection: null,
+        heliosInstructor: {
+          id: "file-instructor",
+          name: "File Service Account",
+        },
+        certalisSalesAdminEmail: "file-sales-admin@certalis.demo",
+        certalisSalesAdminPassword: "FileCertalisPassword123!",
+      }),
+    );
+
+    try {
+      expect(() =>
+        loadConfig({
+          ...validEnv,
+          PORTAL_SEED_SOURCE: "file",
+          PORTAL_SEED_CONFIG_PATH: path,
+        }),
+      ).toThrow(ConfigError);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a file seed with a short Sales Admin password", () => {
+    const dir = mkdtempSync(join(tmpdir(), "portal-seed-"));
+    const path = join(dir, "portal-seed.local.json");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        heliosAdminEmail: "file-admin@helioscx.demo",
+        heliosAdminPassword: "FileSeed123!",
+        heliosCloudShareConnection: null,
+        heliosInstructor: {
+          id: "file-instructor",
+          name: "File Service Account",
+        },
+        certalisSalesAdminEmail: "file-sales-admin@certalis.demo",
+        certalisSalesAdminPassword: "short",
+      }),
+    );
+
+    try {
+      expect(() =>
+        loadConfig({
+          ...validEnv,
+          PORTAL_SEED_SOURCE: "file",
+          PORTAL_SEED_CONFIG_PATH: path,
+        }),
+      ).toThrow(ConfigError);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("requires an explicit Sales Admin password for environment seeds", () => {
     expect(() =>
       loadConfig({

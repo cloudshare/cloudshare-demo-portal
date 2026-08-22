@@ -68,7 +68,7 @@ const seedConnectionSchema = z
 
 const seedFileSchema = z.object({
   heliosAdminEmail: z.string().email(),
-  heliosAdminPassword: z.string(),
+  heliosAdminPassword: z.string().min(8),
   heliosCloudShareConnection: seedConnectionSchema,
   // Certalis uses the same encrypted, per-Customer connection path as Helios.
   // Accept the original local-seed spelling as an alias during the Sales rollout.
@@ -79,7 +79,7 @@ const seedFileSchema = z.object({
     name: z.string().min(1),
   }),
   certalisSalesAdminEmail: z.string().email().optional().default("sales-admin@certalis.demo"),
-  certalisSalesAdminPassword: z.string(),
+  certalisSalesAdminPassword: z.string().min(8),
 });
 
 export interface Config {

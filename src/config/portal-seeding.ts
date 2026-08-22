@@ -1,4 +1,7 @@
-import type { SaveCloudShareConnectionInput } from "@/domain/cloudshare-connection";
+import type {
+  CloudShareConnectionRecord,
+  SaveCloudShareConnectionInput,
+} from "@/domain/cloudshare-connection";
 import type { PortalUserRecord, PortalUserRole, PortalCustomerWorkspace } from "@/auth";
 import type { PortalUserSeedInput } from "@/persistence/portal-auth-repository";
 
@@ -26,7 +29,7 @@ export interface PortalSeedApplicationDeps {
   };
   readonly cloudshareConnections: {
     save(input: SaveCloudShareConnectionInput): Promise<unknown>;
-    findByCustomerId?(customerId: string): Promise<unknown>;
+    findByCustomerId(customerId: string): Promise<CloudShareConnectionRecord | null>;
   };
   hashPassword(password: string): Promise<string>;
 }
@@ -112,21 +115,11 @@ export async function applyPortalSeed(
     : null;
 
   if (certalisUser && seed.certalisSalesCloudShareConnection) {
-    await deps.cloudshareConnections.save({
-      customerId: certalisUser.customerId,
-      apiId: seed.certalisSalesCloudShareConnection.apiId,
-      apiKey: seed.certalisSalesCloudShareConnection.apiKey,
-      webhookSecret: seed.certalisSalesCloudShareConnection.webhookSecret,
-    });
+    await saveSeedConnectionIfMissing(deps, certalisUser.customerId, seed.certalisSalesCloudShareConnection);
   }
 
   if (heliosUser && seed.heliosCloudShareConnection) {
-    await deps.cloudshareConnections.save({
-      customerId: heliosUser.customerId,
-      apiId: seed.heliosCloudShareConnection.apiId,
-      apiKey: seed.heliosCloudShareConnection.apiKey,
-      webhookSecret: seed.heliosCloudShareConnection.webhookSecret,
-    });
+    await saveSeedConnectionIfMissing(deps, heliosUser.customerId, seed.heliosCloudShareConnection);
   }
 }
 
@@ -147,5 +140,23 @@ async function upsertSeedAdmin(
     passwordHash: await deps.hashPassword(input.admin.password),
     role: input.role,
     workspace: input.workspace,
+  });
+}
+
+async function saveSeedConnectionIfMissing(
+  deps: PortalSeedApplicationDeps,
+  customerId: string,
+  connection: SeedConnection,
+): Promise<void> {
+  const existing = await deps.cloudshareConnections.findByCustomerId(customerId);
+  if (existing) {
+    return;
+  }
+
+  await deps.cloudshareConnections.save({
+    customerId,
+    apiId: connection.apiId,
+    apiKey: connection.apiKey,
+    webhookSecret: connection.webhookSecret,
   });
 }
