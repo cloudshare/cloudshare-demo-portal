@@ -122,19 +122,15 @@ export function resolveCandidateTaskRoute(
   const orderedExams = orderExamsBySelection(dashboard.exams, route.examId);
   const selectedExam = orderedExams[0] ?? null;
   if (orderedExams.length === 0) {
-    const fallbackTask =
-      liveAttempts.length > 0
-        ? resolveCandidateTaskRoute(dashboard, nowMs, { task: "current", attemptId: route.attemptId, examId: null })
-        : {
-            activeTask: "history" as const,
-            attempts: historyAttempts,
-            selectedAttempt: historyAttempts[0] ?? null,
-            exams: [],
-            selectedExam: null,
-            notice: "No published Exams are available yet.",
-            tasks,
-          };
-    return fallbackTask;
+    return {
+      activeTask: "schedule",
+      attempts: [],
+      selectedAttempt: null,
+      exams: [],
+      selectedExam: null,
+      notice: "No published Exams are available yet.",
+      tasks,
+    };
   }
 
   return {

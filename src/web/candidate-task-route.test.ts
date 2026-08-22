@@ -138,6 +138,18 @@ describe("candidate task route", () => {
     expect(resolved.notice).toBe("That published Exam is no longer available. Choose another published Exam.");
   });
 
+  it("keeps the no-published-exams discovery state route-backed", () => {
+    const resolved = resolveCandidateTaskRoute(
+      { exams: [], attempts: [] },
+      new Date("2026-06-16T15:59:00.000Z").getTime(),
+      parseCandidateTaskRoute({ task: "schedule" }),
+    );
+
+    expect(resolved.activeTask).toBe("schedule");
+    expect(resolved.selectedExam).toBeNull();
+    expect(resolved.notice).toBe("No published Exams are available yet.");
+  });
+
   it("builds attempt return routes from the attempt status without collapsing history into current", () => {
     expect(getCandidateTaskForAttemptStatus("ready")).toBe("current");
     expect(getCandidateTaskForAttemptStatus("in_progress")).toBe("current");
