@@ -5,12 +5,72 @@ event. HMAC-SHA256 is calculated over the **exact raw HTTP request body bytes**:
 do not parse and re-serialize JSON, trim the body, or otherwise alter its bytes
 first.
 
-> **Confirm the delivery details before use.** The signature header name,
-> optional signature prefix, and digest encoding must be confirmed from current
-> CloudShare documentation or an actual webhook delivery. The placeholder header
-> in the receiver example is not a CloudShare fact.
+> **Current CloudShare contract evidence:** the official CloudShare article
+> [Creating and Using Webhooks](https://support.cloudshare.com/hc/en-us/articles/6780768178459-Creating-and-Using-Webhooks)
+> currently states that webhook deliveries use the
+> `x-cloudshare-signature` header and that receivers should reproduce the
+> value with **HMAC-SHA256 Base64 output** over the webhook content. The
+> same page does **not** confirm any optional signature prefix, so treat prefix
+> handling as unconfirmed until current docs or a real delivery prove it.
+
+## Current CloudShare Base64 variant
+
+If you are implementing against the currently documented CloudShare contract,
+verify the exact raw request bytes against the `x-cloudshare-signature` header
+using HMAC-SHA256 Base64 output. Keep any optional prefix logic out of the
+implementation unless current docs or an actual webhook delivery confirm it.
+
+```ts
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+export const CLOUDSHARE_WEBHOOK_SIGNATURE_HEADER = "x-cloudshare-signature";
+
+function decodeCanonicalBase64(value: string): Buffer | null {
+  const trimmed = value.trim();
+
+  if (trimmed.length === 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(trimmed)) {
+    return null;
+  }
+
+  const decoded = Buffer.from(trimmed, "base64");
+
+  if (decoded.length === 0 || decoded.toString("base64") !== trimmed) {
+    return null;
+  }
+
+  return decoded;
+}
+
+export function verifyCloudShareWebhookSignatureBase64(
+  rawBody: Buffer,
+  suppliedSignature: string,
+  sharedSecret: string,
+): boolean {
+  const supplied = decodeCanonicalBase64(suppliedSignature);
+
+  if (supplied === null) {
+    return false;
+  }
+
+  const expected = Buffer.from(
+    createHmac("sha256", sharedSecret).update(rawBody).digest("base64"),
+    "base64",
+  );
+
+  return (
+    expected.length === supplied.length &&
+    timingSafeEqual(expected, supplied)
+  );
+}
+```
 
 ## TypeScript / Node.js implementation
+
+The following hex-based implementation is the user-supplied generic reference.
+Keep it only as a generic example. Do **not** copy it unchanged for the
+currently documented CloudShare webhook contract above, because the official
+CloudShare page currently documents `x-cloudshare-signature` with Base64 output
+rather than hex.
 
 ```ts
 import { createHmac, timingSafeEqual } from "node:crypto";
@@ -85,9 +145,11 @@ must resolve the Customer from the opaque callback path and load/decrypt that
 Customer's stored CloudShare Connection webhook secret at verification time. It
 must never replace this with a global environment-secret lookup.
 
-The header shown above is a placeholder, not a confirmed CloudShare header.
-Confirm its name, whether the value has an optional prefix, and whether hex is
-the delivered encoding before configuring a live receiver.
+In that generic hex example, the header is still a placeholder. For the
+currently documented CloudShare contract, the official CloudShare page linked
+above confirms `x-cloudshare-signature` plus Base64 output, while any optional
+prefix remains unconfirmed and must be checked against the latest docs or an
+actual webhook delivery before you add prefix logic.
 
 ## Signature mismatches
 
@@ -98,7 +160,8 @@ Check these common causes before changing the verifier:
 3. One side used Base64 while the other used hex.
 4. The textual shared secret was treated as an encoded key instead of the
    literal secret text.
-5. The supplied signature has a `sha256=` prefix that was not removed.
+5. The receiver assumed a prefix format that current CloudShare docs did not
+   confirm, or a delivered prefix was not handled the same way on both sides.
 6. The receiver used ordinary equality rather than a constant-time comparison.
 
 ## Secret handling
@@ -110,7 +173,8 @@ Use only a Customer's own secret when verifying that Customer's callback.
 ## Safe console example
 
 This synthetic example is safe to run locally. It does not establish any
-unconfirmed CloudShare header, prefix, or encoding detail.
+unconfirmed CloudShare prefix detail and does not override the currently
+documented Base64 contract for `x-cloudshare-signature`.
 
 ```ts
 const body = Buffer.from('{"event":"created","id":123}', "utf8");

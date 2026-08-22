@@ -5,8 +5,11 @@ live tenant. This keeps Slice 9 operable without inventing an unproven endpoint 
 
 For receiver-side shared-secret verification, see the downloadable Markdown guide:
 [Verifying CloudShare Webhook HMAC Signatures](./webhook-hmac-signature.md). Its
-signature header, optional prefix, and encoding placeholders must be confirmed
-from current CloudShare documentation or an actual delivery before use.
+current-contract notes link the official CloudShare primary source directly:
+[Creating and Using Webhooks](https://support.cloudshare.com/hc/en-us/articles/6780768178459-Creating-and-Using-Webhooks).
+That page currently confirms the `x-cloudshare-signature` header and HMAC-SHA256
+Base64 output, while any optional prefix remains unconfirmed and must still be
+checked against current docs or an actual delivery before use.
 
 ## What the portal exposes
 
