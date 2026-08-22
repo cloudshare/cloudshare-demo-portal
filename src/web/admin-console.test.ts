@@ -60,13 +60,13 @@ describe("AdminConsole", () => {
     expect(html).not.toContain("Save CloudShare Connection");
   });
 
-  it("groups primary admin navigation around Exams, Candidates, Support, and Configuration", () => {
+  it("renders persistent semantic navigation for every existing Helios Admin workflow", () => {
     const html = renderToStaticMarkup(createElement(AdminConsole, { email: "admin@helioscx.demo" }));
 
-    expect(html).toContain("Exams");
-    expect(html).toContain("Candidates");
-    expect(html).toContain("Support");
-    expect(html).toContain("Configuration");
+    expect(html).toContain('aria-label="Helios Admin certification navigation"');
+    for (const label of ["CloudShare Connection", "Exam catalog", "Candidates", "Individual delivery", "Cohort delivery", "Session Monitoring", "Support Diagnostics", "Audit"]) {
+      expect(html).toContain(`>${label}</a>`);
+    }
     expect(html).not.toContain("Event Log");
     expect(html).not.toContain("Resources");
   });
@@ -99,12 +99,17 @@ describe("AdminConsole", () => {
     expect(html).toContain("Audit Trail");
   });
 
-  it("renders the admin navigation as a balanced responsive tab grid", () => {
+  it("renders a persistent left navigation and independently operable content region", () => {
     const html = renderToStaticMarkup(createElement(AdminConsole, { email: "admin@helioscx.demo" }));
 
-    expect(html).toContain("grid-template-columns:repeat(auto-fit, minmax(10.5rem, 1fr))");
-    expect(html).toContain("width:100%");
-    expect(html).toContain("text-align:center");
+    expect(html).toContain("adminWorkspace");
+    expect(html).toContain("adminNavigation");
+    expect(html).toContain("adminContent");
+    expect(html).toContain('href="/admin?tab=configuration"');
+    expect(html).toContain('href="/admin?tab=support&amp;delivery=individual"');
+    expect(html).toContain('href="/admin?tab=support&amp;delivery=cohort"');
+    expect(html).toContain('href="/admin?tab=support&amp;view=diagnostics"');
+    expect(html).toContain('href="/admin?tab=support&amp;view=audit"');
   });
 
   it("renders an obvious active admin tab without the extra workflow context panel", () => {

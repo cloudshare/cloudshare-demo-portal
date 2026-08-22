@@ -1,0 +1,67 @@
+.adminWorkspace {
+  display: grid;
+  grid-template-columns: minmax(12rem, 15rem) minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.adminNavigation {
+  position: sticky;
+  top: 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 0.65rem;
+}
+
+.adminNavigationList {
+  display: grid;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.adminNavigationLink {
+  display: block;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #0f172a;
+  font-weight: 600;
+  line-height: 1.25;
+  text-decoration: none;
+}
+
+.adminNavigationLink:hover,
+.adminNavigationLink:focus-visible {
+  border-color: #94a3b8;
+  background: #ffffff;
+  outline: 3px solid rgba(15, 109, 102, 0.25);
+  outline-offset: 1px;
+}
+
+.adminNavigationLink[aria-current="page"] {
+  border-color: #0f172a;
+  background: #0f172a;
+  color: #ffffff;
+}
+
+.adminContent {
+  min-width: 0;
+}
+
+@media (max-width: 760px) {
+  .adminWorkspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .adminNavigation {
+    position: static;
+    overflow-x: auto;
+  }
+
+  .adminNavigationList {
+    grid-template-columns: repeat(8, minmax(10.5rem, 1fr));
+  }
+}

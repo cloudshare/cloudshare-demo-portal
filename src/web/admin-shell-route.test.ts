@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ADMIN_TABS,
+  ADMIN_NAVIGATION_ITEMS,
   buildAdminConsoleHref,
   buildAdminNavigationHref,
   createCorrelationDiagnosticsNavigationIntent,
@@ -44,6 +45,20 @@ describe("admin shell navigation intents", () => {
 });
 
 describe("admin shell tab and URL model", () => {
+  it("defines the eight existing Helios Admin destinations without merging their semantics", () => {
+    expect(ADMIN_NAVIGATION_ITEMS.map((item) => item.label)).toEqual([
+      "CloudShare Connection",
+      "Exam catalog",
+      "Candidates",
+      "Individual delivery",
+      "Cohort delivery",
+      "Session Monitoring",
+      "Support Diagnostics",
+      "Audit",
+    ]);
+    expect(new Set(ADMIN_NAVIGATION_ITEMS.map((item) => item.key)).size).toBe(8);
+  });
+
   it("groups admin work areas around the unchanged four tabs", () => {
     expect(ADMIN_TABS).toEqual(["exams", "candidates", "support", "configuration"]);
     expect(getAdminTabLabel("exams")).toBe("Exams");
@@ -58,7 +73,7 @@ describe("admin shell tab and URL model", () => {
 
   it("defaults to Exams and maps legacy URLs to their current shell routes", () => {
     expect(parseAdminConsoleRouteState({})).toEqual({
-      tab: "exams", examView: "catalog", supportView: "monitoring", diagnosticFilters: {},
+      tab: "exams", examView: "catalog", supportView: "monitoring", deliveryView: null, diagnosticFilters: {},
     });
     expect(parseAdminConsoleRouteState({ tab: "connection" })).toMatchObject({ tab: "configuration" });
     expect(parseAdminConsoleRouteState({ tab: "events" })).toMatchObject({ tab: "exams" });
@@ -75,6 +90,17 @@ describe("admin shell tab and URL model", () => {
     expect(buildAdminConsoleHref({
       tab: "exams", examView: "session", examId: "exam-1", cohortSessionId: "cohort-session-1",
     })).toBe("/admin?tab=exams&view=session&examId=exam-1&sessionId=cohort-session-1");
+  });
+
+  it("round-trips the meaningful Individual and Cohort delivery branch", () => {
+    expect(buildAdminConsoleHref({ tab: "support", supportView: "monitoring", deliveryView: "individual" }))
+      .toBe("/admin?tab=support&delivery=individual");
+    expect(buildAdminConsoleHref({ tab: "support", supportView: "monitoring", deliveryView: "cohort" }))
+      .toBe("/admin?tab=support&delivery=cohort");
+    expect(parseAdminConsoleRouteState({ tab: "support", delivery: "individual" }))
+      .toMatchObject({ supportView: "monitoring", deliveryView: "individual" });
+    expect(parseAdminConsoleRouteState({ tab: "support", delivery: "stale" }))
+      .toMatchObject({ supportView: "monitoring", deliveryView: null });
   });
 
   it("clears dismissible banners only when changing tabs", () => {
@@ -115,10 +141,11 @@ describe("admin shell diagnostic routes", () => {
       correlationId: [" corr-99 "], outcome: "failure",
     })).toEqual({
       tab: "support", examView: "catalog", supportView: "diagnostics",
+      deliveryView: null,
       diagnosticFilters: { examAttemptId: "attempt-9", candidateEmail: "candidate@helioscx.demo", correlationId: "corr-99", outcome: "failure" },
     });
     expect(parseAdminConsoleRouteState({ tab: "monitoring", examAttemptId: "attempt-9" })).toEqual({
-      tab: "support", examView: "catalog", supportView: "monitoring", diagnosticFilters: {},
+      tab: "support", examView: "catalog", supportView: "monitoring", deliveryView: null, diagnosticFilters: {},
     });
   });
 

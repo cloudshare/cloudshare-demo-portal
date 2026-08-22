@@ -25,6 +25,24 @@ export const ADMIN_TABS: readonly AdminTab[] = [
 
 export type AdminExamView = "catalog" | "create" | "edit" | "sessions" | "session";
 export type AdminSupportView = "monitoring" | "diagnostics" | "audit";
+export type AdminDeliveryView = "individual" | "cohort";
+
+export interface AdminNavigationItem {
+  readonly key: string;
+  readonly label: string;
+  readonly intent: AdminNavigationIntent;
+}
+
+export const ADMIN_NAVIGATION_ITEMS: readonly AdminNavigationItem[] = [
+  { key: "connection", label: "CloudShare Connection", intent: { tab: "configuration" } },
+  { key: "catalog", label: "Exam catalog", intent: { tab: "exams", examView: "catalog" } },
+  { key: "candidates", label: "Candidates", intent: { tab: "candidates" } },
+  { key: "individual-delivery", label: "Individual delivery", intent: { tab: "support", supportView: "monitoring", deliveryView: "individual" } },
+  { key: "cohort-delivery", label: "Cohort delivery", intent: { tab: "support", supportView: "monitoring", deliveryView: "cohort" } },
+  { key: "monitoring", label: "Session Monitoring", intent: { tab: "support", supportView: "monitoring" } },
+  { key: "diagnostics", label: "Support Diagnostics", intent: { tab: "support", supportView: "diagnostics" } },
+  { key: "audit", label: "Audit", intent: { tab: "support", supportView: "audit" } },
+];
 
 export interface AdminConsoleRouteState {
   readonly tab: AdminTab;
@@ -32,6 +50,7 @@ export interface AdminConsoleRouteState {
   readonly examId?: string;
   readonly cohortSessionId?: string;
   readonly supportView: AdminSupportView;
+  readonly deliveryView: AdminDeliveryView | null;
   readonly diagnosticFilters: DiagnosticLogFilters;
 }
 
@@ -45,6 +64,7 @@ export interface AdminNavigationIntent {
   readonly examId?: string | null;
   readonly cohortSessionId?: string | null;
   readonly supportView?: AdminSupportView;
+  readonly deliveryView?: AdminDeliveryView | null;
   readonly diagnosticFilters?: DiagnosticLogFilters;
 }
 
@@ -155,6 +175,10 @@ export function buildAdminConsoleHref(
     }
   }
 
+  if (route.tab === "support" && (route.supportView ?? "monitoring") === "monitoring" && route.deliveryView) {
+    params.set("delivery", route.deliveryView);
+  }
+
   if (route.tab === "support" && (route.supportView ?? "monitoring") === "diagnostics") {
     const filters = normaliseDiagnosticLogFilters(route.diagnosticFilters ?? {});
     for (const [key, value] of Object.entries(filters)) {
@@ -175,6 +199,7 @@ export function buildAdminNavigationHref(intent: AdminNavigationIntent): string 
     examId: intent.examId ?? undefined,
     cohortSessionId: intent.cohortSessionId ?? undefined,
     supportView: intent.supportView,
+    deliveryView: intent.deliveryView,
     diagnosticFilters: intent.diagnosticFilters,
   });
 }
@@ -208,9 +233,11 @@ export function parseAdminConsoleRouteState(input: {
   readonly externalId?: string | readonly string[];
   readonly from?: string | readonly string[];
   readonly to?: string | readonly string[];
+  readonly delivery?: string | readonly string[];
 }): AdminConsoleRouteState {
   const { tab, supportView } = parseAdminTabWithSupportView(input.tab, input.view);
   const examView = tab === "exams" ? parseAdminExamView(input.view) : "catalog";
+  const deliveryView = tab === "support" && supportView === "monitoring" ? parseAdminDeliveryView(input.delivery) : null;
   const examId = tab === "exams" || tab === "support" ? readRouteValue(input.examId) : undefined;
   const cohortSessionId = tab === "exams" || tab === "support" ? readRouteValue(input.sessionId) : undefined;
   if (tab !== "support" || supportView !== "diagnostics") {
@@ -220,6 +247,7 @@ export function parseAdminConsoleRouteState(input: {
       ...(examId ? { examId } : {}),
       ...(cohortSessionId ? { cohortSessionId } : {}),
       supportView,
+      deliveryView,
       diagnosticFilters: {},
     };
   }
@@ -230,6 +258,7 @@ export function parseAdminConsoleRouteState(input: {
     ...(examId ? { examId } : {}),
     ...(cohortSessionId ? { cohortSessionId } : {}),
     supportView,
+    deliveryView,
     diagnosticFilters: normaliseDiagnosticLogFilters({
       examAttemptId: readRouteValue(input.examAttemptId),
       examId: readRouteValue(input.examId),
@@ -246,6 +275,11 @@ export function parseAdminConsoleRouteState(input: {
       to: readRouteValue(input.to),
     }),
   };
+}
+
+function parseAdminDeliveryView(value: string | readonly string[] | undefined): AdminDeliveryView | null {
+  const candidate = readRouteValue(value);
+  return candidate === "individual" || candidate === "cohort" ? candidate : null;
 }
 
 function readRouteValue(value: string | readonly string[] | undefined): string | undefined {

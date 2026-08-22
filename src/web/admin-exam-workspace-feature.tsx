@@ -5,7 +5,7 @@ import { AdminCohortExamSessionsFeature } from "./admin-cohort-exam-sessions";
 import { AdminExamCatalogAuthoringFeature, type ExamRecord } from "./admin-exam-catalog-authoring";
 import { AdminSessionMonitoringFeature } from "./admin-session-monitoring";
 import type { AdminAuthenticatedRequest } from "./admin-authenticated-request";
-import type { AdminExamView, AdminNavigationIntent } from "./admin-shell-route";
+import type { AdminDeliveryView, AdminExamView, AdminNavigationIntent } from "./admin-shell-route";
 import { cardStyle, mutedPanelStyle } from "./card-styles";
 import { primaryButtonStyle, secondaryButtonStyle } from "./button-styles";
 import { colors } from "./design-tokens";
@@ -17,6 +17,7 @@ export interface AdminExamWorkspaceFeatureProps {
   readonly focusedExamId: string | null;
   readonly focusedCohortSessionId: string | null;
   readonly supportMonitoringActive: boolean;
+  readonly deliveryView: AdminDeliveryView | null;
   readonly fetchAdmin: AdminAuthenticatedRequest;
   readonly onNavigate: (intent: AdminNavigationIntent) => void;
   readonly getNavigationHref: (intent: AdminNavigationIntent) => string;
@@ -26,7 +27,7 @@ export interface AdminExamWorkspaceFeatureProps {
 export function AdminExamWorkspaceFeature(props: AdminExamWorkspaceFeatureProps) {
   const [hasActiveCohortSessionsByExamId, setHasActiveCohortSessionsByExamId] = useState<Record<string, boolean>>({});
   const [catalog, setCatalog] = useState<{ activeExams: readonly ExamRecord[]; archivedExams: readonly ExamRecord[] } | null>(null);
-  const [monitoringBranch, setMonitoringBranch] = useState<"cohort" | "individual" | null>(null);
+  const monitoringBranch = props.deliveryView;
   const catalogActive = props.examFeatureActive && (props.examView === "catalog" || props.examView === "create" || props.examView === "edit");
   const updateCohortActivity = useCallback((activity: Record<string, boolean>) => {
     setHasActiveCohortSessionsByExamId((current) => JSON.stringify(current) === JSON.stringify(activity) ? current : activity);
@@ -47,8 +48,8 @@ export function AdminExamWorkspaceFeature(props: AdminExamWorkspaceFeatureProps)
     />
     {props.supportMonitoringActive && !hasFocusedCohort ? <>
       <div style={{ ...cardStyle, display: "flex", gap: "0.75rem", flexWrap: "wrap" }} aria-label="Session Monitoring branches">
-        <button type="button" onClick={() => setMonitoringBranch("cohort")} style={monitoringBranch === "cohort" ? primaryButtonStyle : secondaryButtonStyle}>Cohort Exam Sessions</button>
-        <button type="button" onClick={() => setMonitoringBranch("individual")} style={monitoringBranch === "individual" ? primaryButtonStyle : secondaryButtonStyle}>Individual Exam Delivery</button>
+        <button type="button" onClick={() => props.onNavigate({ tab: "support", supportView: "monitoring", deliveryView: "cohort" })} style={monitoringBranch === "cohort" ? primaryButtonStyle : secondaryButtonStyle}>Cohort Exam Sessions</button>
+        <button type="button" onClick={() => props.onNavigate({ tab: "support", supportView: "monitoring", deliveryView: "individual" })} style={monitoringBranch === "individual" ? primaryButtonStyle : secondaryButtonStyle}>Individual Exam Delivery</button>
       </div>
       {monitoringBranch === null ? <div style={{ ...mutedPanelStyle, color: colors.textSecondary }}>Choose a monitoring view. Cohort Exam Sessions monitor a shared CloudShare Experience; Individual Exam Delivery monitors one Candidate attempt at a time.</div> : null}
     </> : null}
