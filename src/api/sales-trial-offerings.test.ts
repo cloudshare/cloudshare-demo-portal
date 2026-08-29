@@ -427,6 +427,116 @@ describe("Sales Trial Offering API", () => {
           status: "needs_attention",
           failureMode: "cloudshare_create_outcome_ambiguous",
           integrationSurface: "cloudshare.v4.sales",
+          outcome: "needs_attention",
+        }),
+      }),
+    );
+  });
+
+  it("persists ambiguous publish needs_attention through fallback and blocks a later replay", async () => {
+    const repository = createOfferingRepository();
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Helios Trial Offering",
+      description: "A shared Sales Trial for evaluators.",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: null,
+      externalId: null,
+      start: "2026-09-01T09:00",
+      end: "2026-09-02T09:00",
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: null,
+      status: "draft",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:00:00Z"),
+      publishedAt: null,
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticRepository });
+    const createSession = vi.fn().mockRejectedValue(
+      new CloudShareTransportError("timeout", {
+        method: "POST",
+        path: "/sales",
+        cause: { code: "ETIMEDOUT" },
+      }),
+    );
+    const save = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        throw new Error("sqlite write failed for ambiguous needs_attention");
+      })
+      .mockImplementation(async (offering: SalesTrialOffering) => {
+        await repository.save(offering);
+      });
+    const deps = createDeps(
+      {
+        ...repository,
+        save,
+      },
+      {
+        diagnostics,
+        deliveryFactory: {
+          forConnection: vi.fn().mockReturnValue({ createSession }),
+        },
+      },
+    );
+
+    const first = await handlePublishSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+    const second = await handlePublishSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+    const [entry] = await diagnosticRepository.query({
+      source: "sales-trial-offerings",
+      operation: "sales.trial_offering.publish",
+    });
+
+    expect(first).toMatchObject({
+      status: 502,
+      body: { needsAttention: true, offering: { status: "needs_attention" } },
+    });
+    expect(second).toMatchObject({
+      status: 409,
+      body: {
+        needsAttention: true,
+        error:
+          "CloudShare POST /sales completed without a response, so the creation outcome is unknown. Do not retry publication; review support diagnostics.",
+      },
+    });
+    expect(createSession).toHaveBeenCalledTimes(1);
+    expect(entry).toMatchObject({
+      outcome: "failure",
+      externalIds: {
+        offeringId: "offering-1",
+        itemId: "item-1",
+        externalId: "offering1",
+      },
+      details: {
+        integrationSurface: "cloudshare.v4.sales",
+        failureMode: "cloudshare_create_outcome_ambiguous",
+        fallbackPersisted: true,
+      },
+    });
+    expect(deps.audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "sales.trial_offering.publish",
+        outcome: "failure",
+        details: expect.objectContaining({
+          itemId: "item-1",
+          lifecycle: "publish",
+          status: "needs_attention",
+          failureMode: "cloudshare_create_outcome_ambiguous",
+          integrationSurface: "cloudshare.v4.sales",
+          outcome: "needs_attention",
         }),
       }),
     );

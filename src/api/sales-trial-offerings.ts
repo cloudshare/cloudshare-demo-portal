@@ -544,7 +544,22 @@ export async function handlePublishSalesTrialOffering(
       updatedAt: (deps.now ?? (() => new Date()))(),
       attentionReason: AMBIGUOUS_CREATE_REASON,
     };
-    await deps.offerings.save(needsAttention);
+    let fallbackPersisted = false;
+    try {
+      await deps.offerings.save(needsAttention);
+      fallbackPersisted = true;
+    } catch {
+      fallbackPersisted =
+        (await deps.offerings.markPublishNeedsAttention?.(request.customerId, offering.id, {
+          cloudShareSalesExperienceId:
+            needsAttention.cloudShareSalesExperienceId ?? "pending-provider-outcome",
+          externalId,
+          salesProDisplayName: needsAttention.salesProDisplayName,
+          updatedAt: needsAttention.updatedAt,
+          publishedAt: needsAttention.publishedAt ?? needsAttention.updatedAt,
+          attentionReason: AMBIGUOUS_CREATE_REASON,
+        })) ?? false;
+    }
     await deps.diagnostics?.record({
       source: "sales-trial-offerings",
       operation: "sales.trial_offering.publish",
@@ -565,6 +580,7 @@ export async function handlePublishSalesTrialOffering(
       details: {
         integrationSurface: "cloudshare.v4.sales",
         failureMode: "cloudshare_create_outcome_ambiguous",
+        fallbackPersisted,
       },
     });
     await auditLifecycle(
@@ -579,6 +595,7 @@ export async function handlePublishSalesTrialOffering(
         status: "needs_attention",
         failureMode: "cloudshare_create_outcome_ambiguous",
         integrationSurface: "cloudshare.v4.sales",
+        outcome: fallbackPersisted ? "needs_attention" : "persistence_failed",
       },
       AMBIGUOUS_CREATE_REASON,
       correlationId,
