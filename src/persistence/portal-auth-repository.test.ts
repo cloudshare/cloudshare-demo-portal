@@ -122,4 +122,49 @@ describe("Prisma portal auth stores", () => {
     });
     await expect(users.findByEmail(candidate.email)).resolves.toEqual(candidate);
   });
+
+  it("uses the configured Customer even when another Sales workspace Customer is unconfigured", async () => {
+    const users = createPortalUserRepository(prisma);
+
+    const suffix = randomUUID();
+    await users.upsertSeedUser({
+      customerSlug: `portal-auth-helios-${suffix}`,
+      customerName: "Helios CX",
+      email: `admin-${suffix}@portal-auth.example`,
+      passwordHash: await hashPassword("admin-password"),
+      role: "admin",
+      workspace: "certification",
+    });
+    await users.upsertSeedUser({
+      customerSlug: `portal-auth-certalis-${suffix}`,
+      customerName: "Certalis",
+      email: `sales-admin-${suffix}@portal-auth.example`,
+      passwordHash: await hashPassword("admin-password"),
+      role: "admin",
+      workspace: "sales",
+    });
+    await users.upsertSeedUser({
+      customerSlug: `portal-auth-unconfigured-sales-${suffix}`,
+      customerName: "Another Sales Customer",
+      email: `other-sales-admin-${suffix}@portal-auth.example`,
+      passwordHash: await hashPassword("admin-password"),
+      role: "admin",
+      workspace: "sales",
+    });
+
+    const configuredCustomer = await users.findCustomerBySlug(`portal-auth-certalis-${suffix}`);
+    await users.upsertSalesTrialConfiguration(configuredCustomer!.id);
+    const salesCustomer = await users.findSalesTrialRegistrationCustomer();
+    expect(salesCustomer).toMatchObject({ id: configuredCustomer!.id });
+    const participant = await users.createUser({
+      customerId: salesCustomer!.id,
+      email: `trial-${suffix}@portal-auth.example`,
+      firstName: "Ari",
+      lastName: "Visitor",
+      passwordHash: await hashPassword("trial-password"),
+      role: "sales_trial_participant",
+    });
+
+    await expect(users.findByEmail(participant.email, { customerId: salesCustomer!.id })).resolves.toEqual(participant);
+  });
 });

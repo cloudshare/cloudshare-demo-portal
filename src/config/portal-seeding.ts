@@ -26,6 +26,7 @@ export interface PortalSeedConfig {
 export interface PortalSeedApplicationDeps {
   readonly portalUsers: {
     upsertSeedUser(input: PortalUserSeedInput): Promise<PortalUserRecord>;
+    upsertSalesTrialConfiguration(customerId: string): Promise<void>;
   };
   readonly cloudshareConnections: {
     save(input: SaveCloudShareConnectionInput): Promise<unknown>;
@@ -113,6 +114,10 @@ export async function applyPortalSeed(
         workspace: "sales",
       })
     : null;
+
+  if (certalisUser) {
+    await deps.portalUsers.upsertSalesTrialConfiguration(certalisUser.customerId);
+  }
 
   if (certalisUser && seed.certalisSalesCloudShareConnection) {
     await saveSeedConnectionIfMissing(deps, certalisUser.customerId, seed.certalisSalesCloudShareConnection);

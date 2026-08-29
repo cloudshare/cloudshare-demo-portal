@@ -83,6 +83,9 @@ function inMemoryProvisioningStore(): PortalUserProvisioningStore {
     async findCustomerBySlug(slug) {
       return customers.find((c) => c.slug === slug) ?? null;
     },
+    async findSalesTrialRegistrationCustomer() {
+      return null;
+    },
     async createUser(input: CreatePortalUserInput) {
       const record: PortalUserRecord = { id: `user-${++seq}`, ...input };
       byEmail.set(record.email.toLowerCase(), record);

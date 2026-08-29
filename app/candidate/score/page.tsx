@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { getPortalSessionServices } from "@/composition";
-import { getPortalSession } from "@/auth/portal-session";
+import { getPortalHomePath, getPortalSession } from "@/auth/portal-session";
 import { ScoreDisplay } from "@/web/score-display";
 import { pageShellStyle } from "@/web/page-shell";
 import { PortalPageHeader } from "@/web/portal-page-header";
@@ -25,7 +25,7 @@ export default async function CandidateScorePage({
     redirect("/login");
   }
   if (session.role !== "candidate") {
-    redirect("/admin");
+    redirect(getPortalHomePath(session));
   }
 
   const { examAttemptId } = await searchParams;

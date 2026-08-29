@@ -25,6 +25,8 @@ vi.mock("@/composition", () => ({
 
 vi.mock("@/auth/portal-session", () => ({
   getPortalSession: mockGetPortalSession,
+  getPortalHomePath: (session: { role: string }) =>
+    session.role === "sales_trial_participant" ? "/sales-trial" : "/admin",
 }));
 
 vi.mock("@/web/score-display", () => ({

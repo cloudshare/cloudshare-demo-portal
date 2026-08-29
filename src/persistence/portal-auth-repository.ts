@@ -2,11 +2,12 @@ import type { PrismaClient } from "@prisma/client";
 import type {
   CreatePortalUserInput,
   PortalCustomerRecord,
+  PortalCustomerWorkspace,
   PortalSession,
   PortalSessionStore,
+  PortalUserLookupScope,
   PortalUserRecord,
   PortalUserRole,
-  PortalCustomerWorkspace,
   PortalUserProvisioningStore,
   PortalUserStore,
 } from "@/auth";
@@ -22,13 +23,17 @@ export interface PortalUserSeedInput {
 
 export interface PortalUserRepository extends PortalUserProvisioningStore {
   upsertSeedUser(input: PortalUserSeedInput): Promise<PortalUserRecord>;
+  upsertSalesTrialConfiguration(customerId: string): Promise<void>;
 }
 
 export function createPortalUserRepository(
   prisma: PrismaClient,
 ): PortalUserRepository {
   return {
-    async findByEmail(email: string): Promise<PortalUserRecord | null> {
+    async findByEmail(
+      email: string,
+      scope?: PortalUserLookupScope,
+    ): Promise<PortalUserRecord | null> {
       const user = await prisma.user.findUnique({
         where: { email: email.trim().toLowerCase() },
         include: { customer: true },
@@ -36,6 +41,8 @@ export function createPortalUserRepository(
       if (!user) {
         return null;
       }
+      if (scope?.customerId && user.customerId !== scope.customerId) return null;
+      if (scope?.role && user.role !== scope.role) return null;
 
       return {
         id: user.id,
@@ -47,6 +54,36 @@ export function createPortalUserRepository(
         role: asPortalUserRole(user.role),
         workspace: asPortalCustomerWorkspace(user.customer.workspace),
       };
+    },
+
+    async findSalesTrialRegistrationCustomer(): Promise<PortalCustomerRecord | null> {
+      const configurations = await prisma.salesTrialPortalConfiguration.findMany({
+        where: {
+          registrationEnabled: true,
+        },
+        orderBy: { createdAt: "asc" },
+        take: 2,
+        include: { customer: true },
+      });
+      if (configurations.length !== 1) {
+        return null;
+      }
+
+      const customer = configurations[0]!.customer;
+      return {
+        id: customer.id,
+        slug: customer.slug,
+        name: customer.name,
+        workspace: asPortalCustomerWorkspace(customer.workspace),
+      };
+    },
+
+    async upsertSalesTrialConfiguration(customerId: string): Promise<void> {
+      await prisma.salesTrialPortalConfiguration.upsert({
+        where: { customerId },
+        update: { registrationEnabled: true },
+        create: { customerId, registrationEnabled: true },
+      });
     },
 
     async findCustomerBySlug(slug: string): Promise<PortalCustomerRecord | null> {
@@ -75,6 +112,7 @@ export function createPortalUserRepository(
           passwordHash: input.passwordHash,
           role: input.role,
         },
+        include: { customer: true },
       });
 
       return {
@@ -85,7 +123,7 @@ export function createPortalUserRepository(
         lastName: user.lastName,
         passwordHash: user.passwordHash,
         role: asPortalUserRole(user.role),
-        workspace: "certification",
+        workspace: asPortalCustomerWorkspace(user.customer.workspace),
       };
     },
 
@@ -117,6 +155,7 @@ export function createPortalUserRepository(
           passwordHash: input.passwordHash,
           role: input.role,
         },
+        include: { customer: true },
       });
 
       return {
@@ -127,7 +166,7 @@ export function createPortalUserRepository(
         lastName: user.lastName,
         passwordHash: user.passwordHash,
         role: asPortalUserRole(user.role),
-        workspace: input.workspace ?? "certification",
+        workspace: asPortalCustomerWorkspace(user.customer.workspace),
       };
     },
   };
@@ -180,7 +219,13 @@ export function createPortalSessionStore(
 }
 
 function asPortalUserRole(role: string): PortalUserRole {
-  return role === "admin" ? "admin" : "candidate";
+  if (role === "admin") {
+    return "admin";
+  }
+  if (role === "sales_trial_participant") {
+    return "sales_trial_participant";
+  }
+  return "candidate";
 }
 
 function asPortalCustomerWorkspace(value: string): PortalCustomerWorkspace {

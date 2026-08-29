@@ -2,7 +2,7 @@ import React from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { getPortalSessionServices } from "@/composition";
-import { getPortalSession } from "@/auth/portal-session";
+import { getPortalHomePath, getPortalSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { AdminConsole } from "@/web/admin-console";
 import { parseAdminConsoleRouteState } from "@/web/admin-shell-route";
@@ -21,7 +21,7 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
     redirect("/login");
   }
   if (session.role !== "admin") {
-    redirect("/candidate");
+    redirect(getPortalHomePath(session));
   }
   if (session.workspace === "sales") {
     redirect("/sales");

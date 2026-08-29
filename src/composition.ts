@@ -9,6 +9,7 @@ import {
   createPortalAuthenticator,
   hashPassword,
   type PortalAuthenticator,
+  type PortalSessionStore,
 } from "@/auth";
 import { createInMemoryEventBus, type IntegrationEventBus } from "@/domain/event-bus";
 import { createCloudShareIntegration } from "@/integrations/cloudshare";
@@ -86,6 +87,7 @@ import type {
   PortalSessionServices,
 } from "@/api/portal-auth";
 import type { PortalSessionDeps } from "@/auth/portal-session";
+import type { SalesTrialPortalLoginDeps } from "@/api/sales-trial-portal";
 
 /**
  * Composition root. The framework-agnostic modules are pure and dependency-free;
@@ -104,13 +106,17 @@ export type FeatureModuleInputs =
   & AdminCandidateServices
   & AdminExamAuthoringServices
   & AdminCohortExamSessionServices
-  & CandidateSuspendResumeServices;
+  & CandidateSuspendResumeServices
+  & { readonly portalSessions: PortalSessionStore };
 
 export interface FeatureModules {
   readonly portal: {
     readonly session: PortalSessionDeps & PortalSessionServices;
     readonly login: PortalLoginServices;
     readonly logout: PortalLogoutServices;
+  };
+  readonly salesTrial: {
+    readonly login: SalesTrialPortalLoginDeps;
   };
   readonly registration: CandidateRegistrationServices;
   readonly adminCandidates: AdminCandidateServices;
@@ -146,6 +152,14 @@ export function createFeatureModules(services: FeatureModuleInputs): FeatureModu
         cloudshareConnections: services.cloudshareConnections,
         cloudshareClientFactory: services.cloudshareClientFactory,
         heartbeatAutoSuspend: services.heartbeatAutoSuspend,
+        audit: services.audit,
+      },
+    },
+    salesTrial: {
+      login: {
+        users: services.portalUsers,
+        sessions: services.portalSessions,
+        diagnostics: services.diagnosticRecorder,
         audit: services.audit,
       },
     },
@@ -218,6 +232,7 @@ export function isReusableFeatureModules(value: unknown): value is FeatureModule
       "heartbeatAutoSuspend",
       "audit",
     ]) &&
+    hasModuleProperties(modules.salesTrial?.login, ["users", "sessions", "diagnostics", "audit"]) &&
     hasModuleProperties(modules.registration, ["portalUsers", "logger", "diagnosticRecorder"]) &&
     hasModuleProperties(modules.adminCandidates, ["adminCandidates", "diagnostics", "logger"]) &&
     hasModuleProperties(modules.adminExamAuthoring, [
@@ -269,6 +284,7 @@ export interface Services {
   heartbeats: HeartbeatRepository;
   portalAuth: PortalAuthenticator;
   portalUsers: PortalUserRepository;
+  portalSessions: PortalSessionStore;
   examClock: ExamClock;
   examAttempts: ExamAttemptRepository;
   events: IntegrationEventBus;
@@ -539,6 +555,7 @@ export function getServices(): Services {
     heartbeats,
     portalAuth,
     portalUsers,
+    portalSessions,
     examClock,
     examAttempts,
     events,
@@ -588,6 +605,10 @@ export function getPortalLoginServices(): PortalLoginServices {
 
 export function getPortalLogoutServices(): PortalLogoutServices {
   return getServices().featureModules.portal.logout;
+}
+
+export function getSalesTrialLoginServices(): SalesTrialPortalLoginDeps {
+  return getServices().featureModules.salesTrial.login;
 }
 
 export function getCandidateRegistrationServices(): CandidateRegistrationServices {
