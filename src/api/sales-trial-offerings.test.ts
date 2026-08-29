@@ -27,6 +27,45 @@ function createOfferingRepository(): SalesTrialOfferingRepository {
     async save(offering) {
       rows.set(offering.id, offering);
     },
+    async reservePublication(customerId, id, update) {
+      const offering = rows.get(id) ?? null;
+      if (
+        !offering ||
+        offering.customerId !== customerId ||
+        offering.status !== "draft" ||
+        offering.cloudShareSalesExperienceId !== null ||
+        offering.externalId !== null
+      ) {
+        return false;
+      }
+      rows.set(id, {
+        ...offering,
+        externalId: update.externalId,
+        status: "provisioning",
+        updatedAt: update.updatedAt,
+        attentionReason: update.attentionReason,
+      });
+      return true;
+    },
+    async releasePublicationReservation(customerId, id, update) {
+      const offering = rows.get(id) ?? null;
+      if (
+        !offering ||
+        offering.customerId !== customerId ||
+        offering.status !== "provisioning" ||
+        offering.cloudShareSalesExperienceId !== null
+      ) {
+        return false;
+      }
+      rows.set(id, {
+        ...offering,
+        externalId: null,
+        status: "draft",
+        updatedAt: update.updatedAt,
+        attentionReason: update.attentionReason,
+      });
+      return true;
+    },
     async markPublishNeedsAttention(customerId, id, update) {
       const offering = rows.get(id) ?? null;
       if (!offering || offering.customerId !== customerId) {
@@ -159,7 +198,9 @@ const body = {
 describe("Sales Trial Offering API", () => {
   it("creates a customer-scoped draft offering and keeps provider correlation server-only", async () => {
     const repository = createOfferingRepository();
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
     const deps = createDeps(repository);
+    deps.diagnostics = createDiagnosticRecorder({ repository: diagnosticRepository });
 
     const result = await handleCreateSalesTrialOffering(deps, {
       customerId: "customer-1",
@@ -187,6 +228,19 @@ describe("Sales Trial Offering API", () => {
         details: { itemId: "item-1", lifecycle: "draft", status: "draft" },
       }),
     );
+    const [entry] = await diagnosticRepository.query({
+      source: "sales-trial-offerings",
+      operation: "sales.trial_offering.created",
+    });
+    expect(entry).toMatchObject({
+      outcome: "success",
+      externalIds: { offeringId: "offering-1", itemId: "item-1" },
+      details: {
+        integrationSurface: "portal.sales_trial_offerings",
+        lifecycle: "draft",
+        status: "draft",
+      },
+    });
   });
 
   it("lists only this customer's offerings and keeps admin responses metadata-only", async () => {
@@ -241,6 +295,52 @@ describe("Sales Trial Offering API", () => {
     });
     expect(JSON.stringify(result.body)).not.toContain("sales-1");
     expect(JSON.stringify(result.body)).not.toContain("opaque-1");
+  });
+
+  it("projects published participant offerings without admin-only metadata", async () => {
+    const repository = createOfferingRepository();
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Customer One",
+      description: "Visible here",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: "sales-1",
+      externalId: "opaque-1",
+      start: "2026-09-01T09:00",
+      end: "2026-09-02T09:00",
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: "Owner Example",
+      status: "published",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:30:00Z"),
+      publishedAt: new Date("2026-08-29T12:30:00Z"),
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+
+    const result = await handleListPublishedSalesTrialOfferings(createDeps(repository), {
+      customerId: "customer-1",
+    });
+
+    expect(result.body).toEqual({
+      offerings: [
+        {
+          id: "offering-1",
+          title: "Customer One",
+          description: "Visible here",
+          start: "2026-09-01T09:00",
+          end: "2026-09-02T09:00",
+          timeZone: "UTC",
+        },
+      ],
+    });
+    expect(JSON.stringify(result.body)).not.toContain("itemId");
+    expect(JSON.stringify(result.body)).not.toContain("salesPro");
+    expect(JSON.stringify(result.body)).not.toContain("createdAt");
+    expect(JSON.stringify(result.body)).not.toContain("publishedAt");
+    expect(JSON.stringify(result.body)).not.toContain("status");
   });
 
   it("publishes a draft offering through POST /sales using type trial and disabled invitations", async () => {
@@ -308,6 +408,145 @@ describe("Sales Trial Offering API", () => {
         }),
       }),
     );
+  });
+
+  it("allows retry after a known provider rejection by restoring the offering to draft", async () => {
+    const repository = createOfferingRepository();
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Helios Trial Offering",
+      description: "A shared Sales Trial for evaluators.",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: null,
+      externalId: null,
+      start: "2026-09-01T09:00",
+      end: "2026-09-02T09:00",
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: null,
+      status: "draft",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:00:00Z"),
+      publishedAt: null,
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    const createSession = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new CloudShareRequestError("forbidden", 403, {
+          method: "POST",
+          path: "/sales",
+          responseStatus: 403,
+          responseBody: { error: "forbidden" },
+        }),
+      )
+      .mockResolvedValueOnce({
+        salesExperienceId: "sales-1",
+        request: { method: "POST", path: "/sales" },
+        response: { status: 201, body: { id: "sales-1" } },
+      });
+    const deps = createDeps(repository, {
+      deliveryFactory: {
+        forConnection: vi.fn().mockReturnValue({ createSession }),
+      },
+    });
+
+    const first = await handlePublishSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+    const persistedAfterFailure = await repository.findById("customer-1", "offering-1");
+    const second = await handlePublishSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+
+    expect(first).toMatchObject({
+      status: 502,
+      body: {
+        error: "CloudShare could not publish the Sales Trial Offering. Review support diagnostics.",
+      },
+    });
+    expect(persistedAfterFailure).toMatchObject({
+      status: "draft",
+      externalId: null,
+      cloudShareSalesExperienceId: null,
+      attentionReason: null,
+    });
+    expect(second).toMatchObject({
+      status: 200,
+      body: { offering: { status: "published" } },
+    });
+    expect(createSession).toHaveBeenCalledTimes(2);
+  });
+
+  it("allows only one concurrent publish request to claim the draft reservation", async () => {
+    const repository = createOfferingRepository();
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Helios Trial Offering",
+      description: "A shared Sales Trial for evaluators.",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: null,
+      externalId: null,
+      start: "2026-09-01T09:00",
+      end: "2026-09-02T09:00",
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: null,
+      status: "draft",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:00:00Z"),
+      publishedAt: null,
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    const createSession = vi.fn().mockImplementation(
+      async () =>
+        await new Promise((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                salesExperienceId: "sales-1",
+                request: { method: "POST", path: "/sales" },
+                response: { status: 201, body: { id: "sales-1" } },
+              }),
+            10,
+          ),
+        ),
+    );
+    const deps = createDeps(repository, {
+      deliveryFactory: {
+        forConnection: vi.fn().mockReturnValue({ createSession }),
+      },
+    });
+
+    const firstPromise = handlePublishSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+    const secondPromise = handlePublishSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+    const [first, second] = await Promise.all([firstPromise, secondPromise]);
+
+    expect(first).toMatchObject({
+      status: 200,
+      body: { offering: { status: "published" } },
+    });
+    expect(second).toMatchObject({
+      status: 409,
+      body: { needsAttention: true },
+    });
+    expect(createSession).toHaveBeenCalledTimes(1);
   });
 
   it("blocks publication when the Trial Offering window no longer starts in the future", async () => {
@@ -383,11 +622,10 @@ describe("Sales Trial Offering API", () => {
       attentionReason: null,
     });
     const createSession = vi.fn();
-    const save = vi.fn().mockRejectedValue(new Error("sqlite reservation failed"));
     const deps = createDeps(
       {
         ...repository,
-        save,
+        reservePublication: vi.fn().mockRejectedValue(new Error("sqlite reservation failed")),
       },
       {
         deliveryFactory: {
@@ -776,6 +1014,7 @@ describe("Sales Trial Offering API", () => {
 
   it("unpublishes without mutating the provider and hides the offering from trial participants", async () => {
     const repository = createOfferingRepository();
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
     await repository.save({
       id: "offering-1",
       customerId: "customer-1",
@@ -796,7 +1035,9 @@ describe("Sales Trial Offering API", () => {
       unpublishedAt: null,
       attentionReason: null,
     });
-    const deps = createDeps(repository);
+    const deps = createDeps(repository, {
+      diagnostics: createDiagnosticRecorder({ repository: diagnosticRepository }),
+    });
 
     const unpublish = await handleUnpublishSalesTrialOffering(deps, {
       customerId: "customer-1",
@@ -827,6 +1068,20 @@ describe("Sales Trial Offering API", () => {
         },
       }),
     );
+    const [entry] = await diagnosticRepository.query({
+      source: "sales-trial-offerings",
+      operation: "sales.trial_offering.unpublish",
+    });
+    expect(entry).toMatchObject({
+      outcome: "success",
+      externalIds: { offeringId: "offering-1", itemId: "item-1" },
+      details: {
+        integrationSurface: "portal.sales_trial_offerings",
+        lifecycle: "unpublish",
+        previousStatus: "published",
+        status: "unpublished",
+      },
+    });
   });
 
   it("does not re-dispatch POST /sales after an offering has been unpublished", async () => {
@@ -954,7 +1209,7 @@ describe("Sales Trial Offering API", () => {
     let saveCalls = 0;
     const save = vi.fn().mockImplementation(async (offering: SalesTrialOffering) => {
       saveCalls += 1;
-      if (saveCalls === 2) {
+      if (saveCalls === 1) {
         throw new Error(`sqlite write failed for status ${offering.status}`);
       }
       await repository.save(offering);
@@ -1047,7 +1302,7 @@ describe("Sales Trial Offering API", () => {
     let saveCalls = 0;
     const save = vi.fn().mockImplementation(async (offering: SalesTrialOffering) => {
       saveCalls += 1;
-      if (saveCalls === 2) {
+      if (saveCalls === 1) {
         throw new Error("sqlite write failed for published");
       }
       await repository.save(offering);
@@ -1120,7 +1375,7 @@ describe("Sales Trial Offering API", () => {
     let saveCalls = 0;
     const save = vi.fn().mockImplementation(async (offering: SalesTrialOffering) => {
       saveCalls += 1;
-      if (saveCalls >= 2) {
+      if (saveCalls >= 1) {
         throw new Error(`sqlite write failed for status ${offering.status}`);
       }
       await repository.save(offering);
@@ -1196,7 +1451,7 @@ describe("Sales Trial Offering API", () => {
     let saveCalls = 0;
     const save = vi.fn().mockImplementation(async (offering: SalesTrialOffering) => {
       saveCalls += 1;
-      if (saveCalls >= 2) {
+      if (saveCalls >= 1) {
         throw new Error(`sqlite write failed for status ${offering.status}`);
       }
       await repository.save(offering);

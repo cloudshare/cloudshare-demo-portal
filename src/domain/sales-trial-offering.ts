@@ -31,6 +31,23 @@ export interface SalesTrialOffering {
 
 export interface SalesTrialOfferingRepository {
   save(offering: SalesTrialOffering): Promise<void>;
+  reservePublication?(
+    customerId: string,
+    id: string,
+    update: {
+      readonly externalId: string;
+      readonly updatedAt: Date;
+      readonly attentionReason: string;
+    },
+  ): Promise<boolean>;
+  releasePublicationReservation?(
+    customerId: string,
+    id: string,
+    update: {
+      readonly updatedAt: Date;
+      readonly attentionReason: string | null;
+    },
+  ): Promise<boolean>;
   markPublishNeedsAttention?(
     customerId: string,
     id: string,

@@ -15,6 +15,41 @@ export function createPrismaSalesTrialOfferingRepository(
         update: serialize(offering),
       });
     },
+    async reservePublication(customerId, id, update) {
+      const result = await prisma.salesTrialOffering.updateMany({
+        where: {
+          customerId,
+          id,
+          status: "draft",
+          cloudShareSalesExperienceId: null,
+          externalId: null,
+        },
+        data: {
+          externalId: update.externalId,
+          status: "provisioning",
+          updatedAt: update.updatedAt,
+          attentionReason: update.attentionReason,
+        },
+      });
+      return result.count === 1;
+    },
+    async releasePublicationReservation(customerId, id, update) {
+      const result = await prisma.salesTrialOffering.updateMany({
+        where: {
+          customerId,
+          id,
+          status: "provisioning",
+          cloudShareSalesExperienceId: null,
+        },
+        data: {
+          externalId: null,
+          status: "draft",
+          updatedAt: update.updatedAt,
+          attentionReason: update.attentionReason,
+        },
+      });
+      return result.count === 1;
+    },
     async markPublishNeedsAttention(customerId, id, update) {
       const result = await prisma.salesTrialOffering.updateMany({
         where: { customerId, id },

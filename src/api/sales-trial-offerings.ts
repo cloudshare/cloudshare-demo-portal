@@ -111,6 +111,11 @@ type PortalSalesTrialOffering = {
   readonly attentionReason: string | null;
 };
 
+type ParticipantSalesTrialOffering = Pick<
+  PortalSalesTrialOffering,
+  "id" | "title" | "description" | "start" | "end" | "timeZone"
+>;
+
 export async function handleCreateSalesTrialOffering(
   deps: SalesTrialOfferingsDeps,
   request: SalesTrialOfferingMutationRequest,
@@ -161,6 +166,21 @@ export async function handleCreateSalesTrialOffering(
       status: "draft",
     },
   );
+  await deps.diagnostics?.record({
+    source: "sales-trial-offerings",
+    operation: "sales.trial_offering.created",
+    outcome: "success",
+    customerId: request.customerId,
+    actor: request.actor,
+    subject: { type: "sales_trial_offering", id: offering.id },
+    message: "Sales Trial Offering draft created",
+    externalIds: { offeringId: offering.id, itemId: offering.itemId },
+    details: {
+      integrationSurface: "portal.sales_trial_offerings",
+      lifecycle: "draft",
+      status: "draft",
+    },
+  });
   return response(201, { offering: toPortalOffering(offering) });
 }
 
@@ -177,7 +197,7 @@ export async function handleListPublishedSalesTrialOfferings(
   request: SalesTrialOfferingReadRequest,
 ) {
   const offerings = await deps.offerings.listPublishedByCustomerId(request.customerId);
-  return response(200, { offerings: offerings.map(toPortalOffering) });
+  return response(200, { offerings: offerings.map(toParticipantOffering) });
 }
 
 export async function handlePublishSalesTrialOffering(
@@ -403,15 +423,40 @@ export async function handlePublishSalesTrialOffering(
   const delivery =
     deps.deliveryFactory?.forConnection(connection) ??
     createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection));
+  const reservationUpdatedAt = (deps.now ?? (() => new Date()))();
   const reservation = {
     ...offering,
     externalId,
     status: "provisioning" as const,
-    updatedAt: (deps.now ?? (() => new Date()))(),
+    updatedAt: reservationUpdatedAt,
     attentionReason: PROVISIONING_RESERVATION_REASON,
   };
   try {
-    await deps.offerings.save(reservation);
+    const reserved =
+      (await deps.offerings.reservePublication?.(request.customerId, offering.id, {
+        externalId,
+        updatedAt: reservationUpdatedAt,
+        attentionReason: PROVISIONING_RESERVATION_REASON,
+      })) ?? false;
+    if (!reserved) {
+      const reloaded = await deps.offerings.findById(request.customerId, offering.id);
+      if (reloaded && reloaded.status !== "draft") {
+        return response(409, {
+          error: reloaded.attentionReason ?? PROVISIONING_RESERVATION_REASON,
+          needsAttention: true,
+          offering: toPortalOffering({
+            ...reloaded,
+            status:
+              reloaded.status === "published" || reloaded.status === "unpublished"
+                ? reloaded.status
+                : "needs_attention",
+            attentionReason:
+              reloaded.attentionReason ?? PROVISIONING_RESERVATION_REASON,
+          }),
+        });
+      }
+      throw new Error("Sales Trial Offering reservation was not claimed.");
+    }
   } catch (error) {
     await Promise.allSettled([
       deps.diagnostics?.record({
@@ -606,6 +651,12 @@ export async function handlePublishSalesTrialOffering(
     return response(200, { offering: toPortalOffering(published) });
   } catch (error) {
     if (!isOutcomeAmbiguousCreateFailure(error)) {
+      await releaseReservationToDraft(
+        deps,
+        request.customerId,
+        offering.id,
+        reservation.updatedAt,
+      );
       return publishFailure(deps, request, offering, correlationId, externalId, error);
     }
     const needsAttention = {
@@ -751,6 +802,22 @@ export async function handleUnpublishSalesTrialOffering(
     attentionReason: null,
   };
   await deps.offerings.save(unpublished);
+  await deps.diagnostics?.record({
+    source: "sales-trial-offerings",
+    operation: "sales.trial_offering.unpublish",
+    outcome: "success",
+    customerId: request.customerId,
+    actor: request.actor,
+    subject: { type: "sales_trial_offering", id: offering.id },
+    message: "Sales Trial Offering unpublished",
+    externalIds: { offeringId: offering.id, itemId: offering.itemId },
+    details: {
+      integrationSurface: "portal.sales_trial_offerings",
+      lifecycle: "unpublish",
+      previousStatus: offering.status,
+      status: "unpublished",
+    },
+  });
   await auditLifecycle(
     deps,
     request,
@@ -784,6 +851,17 @@ function toPortalOffering(offering: SalesTrialOffering): PortalSalesTrialOfferin
     publishedAt: offering.publishedAt?.toISOString() ?? null,
     unpublishedAt: offering.unpublishedAt?.toISOString() ?? null,
     attentionReason: offering.attentionReason,
+  };
+}
+
+function toParticipantOffering(offering: SalesTrialOffering): ParticipantSalesTrialOffering {
+  return {
+    id: offering.id,
+    title: offering.title,
+    description: offering.description,
+    start: offering.start,
+    end: offering.end,
+    timeZone: offering.timeZone,
   };
 }
 
@@ -951,6 +1029,35 @@ async function auditLifecycle(
     details,
     error,
   });
+}
+
+async function releaseReservationToDraft(
+  deps: Pick<SalesTrialOfferingsDeps, "offerings">,
+  customerId: string,
+  id: string,
+  updatedAt: Date,
+) {
+  const released =
+    (await deps.offerings.releasePublicationReservation?.(customerId, id, {
+      updatedAt,
+      attentionReason: null,
+    })) ?? false;
+  if (!released) {
+    const persisted = await deps.offerings.findById(customerId, id);
+    if (
+      persisted &&
+      persisted.status === "provisioning" &&
+      !persisted.cloudShareSalesExperienceId
+    ) {
+      await deps.offerings.save({
+        ...persisted,
+        externalId: null,
+        status: "draft",
+        updatedAt,
+        attentionReason: null,
+      });
+    }
+  }
 }
 
 async function rejectPublishPreflight(
