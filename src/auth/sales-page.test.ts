@@ -11,7 +11,11 @@ const { mockCookies, mockRedirect, mockGetServices, mockGetPortalSession } = vi.
 vi.mock("next/headers", () => ({ cookies: mockCookies }));
 vi.mock("next/navigation", () => ({ redirect: mockRedirect }));
 vi.mock("@/composition", () => ({ getPortalSessionServices: mockGetServices }));
-vi.mock("@/auth/portal-session", () => ({ getPortalSession: mockGetPortalSession }));
+vi.mock("@/auth/portal-session", () => ({
+  getPortalSession: mockGetPortalSession,
+  getPortalHomePath: (session: { role: string }) =>
+    session.role === "sales_trial_participant" ? "/sales-trial" : "/candidate",
+}));
 
 describe("Sales workspace page", () => {
   beforeEach(() => {
@@ -63,5 +67,15 @@ describe("Sales workspace page", () => {
 
     await expect(SalesPage({})).rejects.toThrow("redirect:/admin");
     expect(mockRedirect).toHaveBeenCalledWith("/admin");
+  });
+
+  it("returns Sales Trial participants to their own home", async () => {
+    mockGetPortalSession.mockResolvedValue({
+      sessionId: "session-trial", userId: "trial-user", customerId: "customer-certalis",
+      email: "visitor@example.test", role: "sales_trial_participant", workspace: "sales",
+    });
+
+    await expect(SalesPage({})).rejects.toThrow("redirect:/sales-trial");
+    expect(mockRedirect).toHaveBeenCalledWith("/sales-trial");
   });
 });

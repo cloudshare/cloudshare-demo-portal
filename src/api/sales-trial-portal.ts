@@ -109,7 +109,6 @@ export async function handleSalesTrialSelfRegistration(
     customerId: participant.customerId,
     actor: { type: "sales_trial_participant", id: participant.id, email: participant.email },
     subject: { type: "sales_trial_participant", id: participant.id },
-    candidateEmail: participant.email,
     message: "Sales Trial account created",
     details: { workspace: participant.workspace, registrationKind: "demo_only" },
   });
@@ -123,7 +122,6 @@ export async function handleSalesTrialSelfRegistration(
     subjectType: "sales_trial_participant",
     subjectId: participant.id,
     outcome: "success",
-    candidateEmail: participant.email,
     details: { workspace: participant.workspace, source: SALES_TRIAL_SOURCE },
     occurredAt: new Date(deps.now?.() ?? Date.now()),
   });
@@ -179,7 +177,6 @@ export async function handleSalesTrialLogin(
       customerId: session.customerId,
       actor: { type: "sales_trial_participant", id: session.userId, email: session.email },
       subject: { type: "customer", id: session.customerId },
-      candidateEmail: session.email,
       message: "Sales Trial participant login succeeded",
       details: { workspace: session.workspace },
     });
@@ -193,7 +190,6 @@ export async function handleSalesTrialLogin(
       subjectType: "customer",
       subjectId: session.customerId,
       outcome: "success",
-      candidateEmail: session.email,
       details: { workspace: session.workspace, source: SALES_TRIAL_SOURCE },
       occurredAt: new Date(deps.now?.() ?? Date.now()),
     });
@@ -276,7 +272,6 @@ async function recordFailure(
     customerId: customer?.id ?? null,
     actor: { type: "sales_trial_participant", email },
     subject: { type: "sales_trial_participant" },
-    candidateEmail: email,
     message: "Sales Trial account flow failed",
     details: { reason },
   });
@@ -288,7 +283,6 @@ async function recordFailure(
     action,
     subjectType: "sales_trial_participant",
     outcome: "failure",
-    candidateEmail: email || null,
     details: { source: SALES_TRIAL_SOURCE },
     occurredAt: new Date(deps.now?.() ?? Date.now()),
   });

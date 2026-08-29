@@ -21,6 +21,8 @@ describe("Sales Trial self-registration", () => {
   });
 
   it("creates a Sales Trial participant in the persisted Sales Customer without CloudShare access", async () => {
+    const diagnostics = { record: vi.fn().mockResolvedValue(undefined) };
+    const audit = { write: vi.fn().mockResolvedValue(undefined) };
     const createUser = vi.fn().mockResolvedValue({
       id: "trial-participant-1",
       customerId: "certalis-customer",
@@ -42,6 +44,8 @@ describe("Sales Trial self-registration", () => {
           }),
           createUser,
         }),
+        diagnostics,
+        audit: audit as never,
       },
       {
         body: {
@@ -69,6 +73,12 @@ describe("Sales Trial self-registration", () => {
         customerId: "certalis-customer",
         role: "sales_trial_participant",
       }),
+    );
+    expect(diagnostics.record).toHaveBeenCalledWith(
+      expect.not.objectContaining({ candidateEmail: expect.anything() }),
+    );
+    expect(audit.write).toHaveBeenCalledWith(
+      expect.not.objectContaining({ candidateEmail: expect.anything() }),
     );
   });
 

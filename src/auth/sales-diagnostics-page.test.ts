@@ -11,7 +11,11 @@ const { mockCookies, mockRedirect, mockGetServices, mockGetPortalSession } = vi.
 vi.mock("next/headers", () => ({ cookies: mockCookies }));
 vi.mock("next/navigation", () => ({ redirect: mockRedirect }));
 vi.mock("@/composition", () => ({ getPortalSessionServices: mockGetServices }));
-vi.mock("@/auth/portal-session", () => ({ getPortalSession: mockGetPortalSession }));
+vi.mock("@/auth/portal-session", () => ({
+  getPortalSession: mockGetPortalSession,
+  getPortalHomePath: (session: { role: string }) =>
+    session.role === "sales_trial_participant" ? "/sales-trial" : "/candidate",
+}));
 
 describe("Sales diagnostics page", () => {
   beforeEach(() => {

@@ -157,7 +157,7 @@ export async function handlePortalLogin(
         email: session.email,
       },
       subject: { type: "customer", id: session.customerId },
-      candidateEmail: session.role === "admin" ? null : session.email,
+      candidateEmail: session.role === "candidate" ? session.email : null,
       message: `Portal ${session.role} login succeeded`,
       details: { role: session.role, workspace: session.workspace },
     });
@@ -206,7 +206,7 @@ export async function handlePortalLogin(
       actor: known
         ? { type: actorTypeForRole(known.role), id: known.id, email }
         : { type: "anonymous", email },
-      candidateEmail: known && known.role !== "admin" ? email : null,
+      candidateEmail: known?.role === "candidate" ? email : null,
       message: isInvalidCreds
         ? "Portal login failed: invalid credentials"
         : "Portal login failed: unexpected error",
@@ -306,7 +306,7 @@ export async function handlePortalLogout(
       ? { type: actorTypeForRole(session.role), id: session.userId, email: session.email }
       : { type: "anonymous" },
     subject: session ? { type: "customer", id: session.customerId } : null,
-    candidateEmail: session && session.role !== "admin" ? session.email : null,
+    candidateEmail: session?.role === "candidate" ? session.email : null,
     message: session
       ? `Portal ${session.role} logout`
       : "Portal logout for unknown or expired session",

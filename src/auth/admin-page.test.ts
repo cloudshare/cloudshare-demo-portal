@@ -25,6 +25,8 @@ vi.mock("@/composition", () => ({
 
 vi.mock("@/auth/portal-session", () => ({
   getPortalSession: mockGetPortalSession,
+  getPortalHomePath: (session: { role: string }) =>
+    session.role === "sales_trial_participant" ? "/sales-trial" : "/candidate",
 }));
 
 vi.mock("@/web/admin-console", () => ({
@@ -57,6 +59,19 @@ describe("admin page routing", () => {
 
     await expect(AdminPage({})).rejects.toThrow("redirect:/candidate");
     expect(mockRedirect).toHaveBeenCalledWith("/candidate");
+  });
+
+  it("returns Sales Trial participants to their own home", async () => {
+    mockGetPortalSession.mockResolvedValue({
+      sessionId: "portal-session-1",
+      customerId: "customer-certalis",
+      email: "visitor@example.test",
+      role: "sales_trial_participant",
+      workspace: "sales",
+    });
+
+    await expect(AdminPage({})).rejects.toThrow("redirect:/sales-trial");
+    expect(mockRedirect).toHaveBeenCalledWith("/sales-trial");
   });
 
   it("renders the admin console for admins", async () => {
