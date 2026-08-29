@@ -179,6 +179,12 @@ export async function handlePublishSalesTrialOffering(
   if (offering.status === "published") {
     return response(409, { error: "Sales Trial Offering is already published." });
   }
+  if (offering.status === "unpublished") {
+    return response(409, {
+      error:
+        "Unpublished Sales Trial Offerings cannot be published again because Certalis must not create a second shared CloudShare Sales Experience for the same Offering.",
+    });
+  }
   if (offering.status === "needs_attention") {
     return response(409, {
       error: AMBIGUOUS_CREATE_REASON,

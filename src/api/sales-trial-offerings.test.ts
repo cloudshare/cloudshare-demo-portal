@@ -499,4 +499,44 @@ describe("Sales Trial Offering API", () => {
     expect(published.body).toEqual({ offerings: [] });
     expect(deps.deliveryFactory.forConnection).not.toHaveBeenCalled();
   });
+
+  it("does not re-dispatch POST /sales after an offering has been unpublished", async () => {
+    const repository = createOfferingRepository();
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Helios Trial Offering",
+      description: "A shared Sales Trial for evaluators.",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: "sales-1",
+      externalId: "opaque-1",
+      start: "2026-09-01T09:00",
+      end: "2026-09-02T09:00",
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: "Owner Example",
+      status: "unpublished",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:30:00Z"),
+      publishedAt: new Date("2026-08-29T12:10:00Z"),
+      unpublishedAt: new Date("2026-08-29T12:30:00Z"),
+      attentionReason: null,
+    });
+    const deps = createDeps(repository);
+
+    const result = await handlePublishSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+
+    expect(result).toMatchObject({
+      status: 409,
+      body: {
+        error:
+          "Unpublished Sales Trial Offerings cannot be published again because Certalis must not create a second shared CloudShare Sales Experience for the same Offering.",
+      },
+    });
+    expect(deps.deliveryFactory.forConnection).not.toHaveBeenCalled();
+  });
 });

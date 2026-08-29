@@ -147,7 +147,7 @@ export function SalesTrialOfferingsAdmin({ email }: { readonly email: string }) 
           <p style={{ margin: 0 }}>Sales Pro: {offering.salesProDisplayName ?? offering.salesProEmail}</p>
           {offering.attentionReason ? <p style={{ margin: 0, color: "#9a3412" }}>{offering.attentionReason}</p> : null}
           <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
-            <button type="button" disabled={offering.status === "published" || offering.status === "needs_attention"} onClick={() => void lifecycle(offering.id, "publish")}>Publish</button>
+            <button type="button" disabled={offering.status !== "draft"} onClick={() => void lifecycle(offering.id, "publish")}>Publish</button>
             <button type="button" disabled={offering.status !== "published"} onClick={() => void lifecycle(offering.id, "unpublish")}>Unpublish</button>
           </div>
         </article>)}
