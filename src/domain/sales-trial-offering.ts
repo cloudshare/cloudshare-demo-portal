@@ -1,5 +1,6 @@
 export type SalesTrialOfferingStatus =
   | "draft"
+  | "provisioning"
   | "published"
   | "unpublished"
   | "needs_attention";

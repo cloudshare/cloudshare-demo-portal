@@ -99,6 +99,7 @@ function hydrate(row: {
   return {
     ...row,
     status:
+      row.status === "provisioning" ||
       row.status === "published" ||
       row.status === "unpublished" ||
       row.status === "needs_attention"

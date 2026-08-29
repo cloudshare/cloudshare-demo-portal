@@ -360,6 +360,70 @@ describe("Sales Trial Offering API", () => {
     );
   });
 
+  it("does not call CloudShare when the provisioning reservation cannot be saved", async () => {
+    const repository = createOfferingRepository();
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Helios Trial Offering",
+      description: "A shared Sales Trial for evaluators.",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: null,
+      externalId: null,
+      start: "2026-09-01T09:00",
+      end: "2026-09-02T09:00",
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: null,
+      status: "draft",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:00:00Z"),
+      publishedAt: null,
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    const createSession = vi.fn();
+    const save = vi.fn().mockRejectedValue(new Error("sqlite reservation failed"));
+    const deps = createDeps(
+      {
+        ...repository,
+        save,
+      },
+      {
+        deliveryFactory: {
+          forConnection: vi.fn().mockReturnValue({ createSession }),
+        },
+      },
+    );
+
+    const result = await handlePublishSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+
+    expect(result).toMatchObject({
+      status: 503,
+      body: {
+        error:
+          "Certalis could not reserve the Sales Trial Offering locally. No CloudShare publication was attempted; review support diagnostics and retry.",
+        needsAttention: false,
+      },
+    });
+    expect(createSession).not.toHaveBeenCalled();
+    expect(deps.audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "sales.trial_offering.publish",
+        outcome: "failure",
+        details: expect.objectContaining({
+          itemId: "item-1",
+          failureMode: "local_reservation_persistence",
+          cloudShareAttempted: false,
+        }),
+      }),
+    );
+  });
+
   it("retains an ambiguous publish as needs_attention and blocks a blind replay", async () => {
     const repository = createOfferingRepository();
     await repository.save({
@@ -464,14 +528,14 @@ describe("Sales Trial Offering API", () => {
         cause: { code: "ETIMEDOUT" },
       }),
     );
-    const save = vi
-      .fn()
-      .mockImplementationOnce(async () => {
+    let saveCalls = 0;
+    const save = vi.fn().mockImplementation(async (offering: SalesTrialOffering) => {
+      saveCalls += 1;
+      if (saveCalls === 2) {
         throw new Error("sqlite write failed for ambiguous needs_attention");
-      })
-      .mockImplementation(async (offering: SalesTrialOffering) => {
-        await repository.save(offering);
-      });
+      }
+      await repository.save(offering);
+    });
     const deps = createDeps(
       {
         ...repository,
@@ -887,14 +951,14 @@ describe("Sales Trial Offering API", () => {
       unpublishedAt: null,
       attentionReason: null,
     });
-    const save = vi
-      .fn()
-      .mockImplementationOnce(async (offering: SalesTrialOffering) => {
+    let saveCalls = 0;
+    const save = vi.fn().mockImplementation(async (offering: SalesTrialOffering) => {
+      saveCalls += 1;
+      if (saveCalls === 2) {
         throw new Error(`sqlite write failed for status ${offering.status}`);
-      })
-      .mockImplementation(async (offering: SalesTrialOffering) => {
-        await repository.save(offering);
-      });
+      }
+      await repository.save(offering);
+    });
     const deps = createDeps(
       {
         ...repository,
@@ -980,14 +1044,14 @@ describe("Sales Trial Offering API", () => {
       request: { method: "POST", path: "/sales", body: { id: "provider-body" } },
       response: { status: 201, body: { id: "sales-1" } },
     });
-    const save = vi
-      .fn()
-      .mockImplementationOnce(async () => {
+    let saveCalls = 0;
+    const save = vi.fn().mockImplementation(async (offering: SalesTrialOffering) => {
+      saveCalls += 1;
+      if (saveCalls === 2) {
         throw new Error("sqlite write failed for published");
-      })
-      .mockImplementation(async (offering: SalesTrialOffering) => {
-        await repository.save(offering);
-      });
+      }
+      await repository.save(offering);
+    });
     const deps = createDeps(
       {
         ...repository,
@@ -1021,6 +1085,156 @@ describe("Sales Trial Offering API", () => {
         needsAttention: true,
         error:
           "CloudShare created the shared Sales Trial Experience, but Certalis could not durably save its correlation. Do not retry publication; review support diagnostics.",
+      },
+    });
+    expect(createSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed on a later publish when post-create writes and fallback all fail after the reservation", async () => {
+    const repository = createOfferingRepository();
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Helios Trial Offering",
+      description: "A shared Sales Trial for evaluators.",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: null,
+      externalId: null,
+      start: "2026-09-01T09:00",
+      end: "2026-09-02T09:00",
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: null,
+      status: "draft",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:00:00Z"),
+      publishedAt: null,
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    const createSession = vi.fn().mockResolvedValue({
+      salesExperienceId: "sales-1",
+      request: { method: "POST", path: "/sales", body: { id: "provider-body" } },
+      response: { status: 201, body: { id: "sales-1" } },
+    });
+    let saveCalls = 0;
+    const save = vi.fn().mockImplementation(async (offering: SalesTrialOffering) => {
+      saveCalls += 1;
+      if (saveCalls >= 2) {
+        throw new Error(`sqlite write failed for status ${offering.status}`);
+      }
+      await repository.save(offering);
+    });
+    const deps = createDeps(
+      {
+        ...repository,
+        save,
+        markPublishNeedsAttention: vi.fn().mockResolvedValue(false),
+      },
+      {
+        deliveryFactory: {
+          forConnection: vi.fn().mockReturnValue({ createSession }),
+        },
+      },
+    );
+
+    const first = await handlePublishSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+    const second = await handlePublishSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+
+    expect(first).toMatchObject({
+      status: 503,
+      body: { needsAttention: true },
+    });
+    expect(second).toMatchObject({
+      status: 409,
+      body: {
+        needsAttention: true,
+        error:
+          "Sales Trial Offering publication is already in progress or unresolved. Do not retry publication or unpublish; review support diagnostics.",
+      },
+    });
+    expect(createSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("fails closed on a later publish when ambiguous outcome persistence and fallback both fail after the reservation", async () => {
+    const repository = createOfferingRepository();
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Helios Trial Offering",
+      description: "A shared Sales Trial for evaluators.",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: null,
+      externalId: null,
+      start: "2026-09-01T09:00",
+      end: "2026-09-02T09:00",
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: null,
+      status: "draft",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:00:00Z"),
+      publishedAt: null,
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    const createSession = vi.fn().mockRejectedValue(
+      new CloudShareTransportError("timeout", {
+        method: "POST",
+        path: "/sales",
+        cause: { code: "ETIMEDOUT" },
+      }),
+    );
+    let saveCalls = 0;
+    const save = vi.fn().mockImplementation(async (offering: SalesTrialOffering) => {
+      saveCalls += 1;
+      if (saveCalls >= 2) {
+        throw new Error(`sqlite write failed for status ${offering.status}`);
+      }
+      await repository.save(offering);
+    });
+    const deps = createDeps(
+      {
+        ...repository,
+        save,
+        markPublishNeedsAttention: vi.fn().mockResolvedValue(false),
+      },
+      {
+        deliveryFactory: {
+          forConnection: vi.fn().mockReturnValue({ createSession }),
+        },
+      },
+    );
+
+    const first = await handlePublishSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+    const second = await handlePublishSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+
+    expect(first).toMatchObject({
+      status: 502,
+      body: { needsAttention: true },
+    });
+    expect(second).toMatchObject({
+      status: 409,
+      body: {
+        needsAttention: true,
+        error:
+          "Sales Trial Offering publication is already in progress or unresolved. Do not retry publication or unpublish; review support diagnostics.",
       },
     });
     expect(createSession).toHaveBeenCalledTimes(1);

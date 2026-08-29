@@ -191,6 +191,20 @@ export async function handlePublishSalesTrialOffering(
   if (offering.status === "published") {
     return response(409, { error: "Sales Trial Offering is already published." });
   }
+  if (offering.status === "provisioning") {
+    return response(409, {
+      error:
+        offering.attentionReason ??
+        PROVISIONING_RESERVATION_REASON,
+      needsAttention: true,
+      offering: toPortalOffering({
+        ...offering,
+        status: "needs_attention",
+        attentionReason:
+          offering.attentionReason ?? PROVISIONING_RESERVATION_REASON,
+      }),
+    });
+  }
   if (offering.status === "unpublished") {
     return response(409, {
       error:
@@ -389,27 +403,84 @@ export async function handlePublishSalesTrialOffering(
   const delivery =
     deps.deliveryFactory?.forConnection(connection) ??
     createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection));
+  const reservation = {
+    ...offering,
+    externalId,
+    status: "provisioning" as const,
+    updatedAt: (deps.now ?? (() => new Date()))(),
+    attentionReason: PROVISIONING_RESERVATION_REASON,
+  };
+  try {
+    await deps.offerings.save(reservation);
+  } catch (error) {
+    await Promise.allSettled([
+      deps.diagnostics?.record({
+        source: "sales-trial-offerings",
+        operation: "sales.trial_offering.publish",
+        outcome: "failure",
+        level: "warn",
+        customerId: request.customerId,
+        actor: request.actor,
+        subject: { type: "sales_trial_offering", id: offering.id },
+        correlationId,
+        message:
+          "Certalis could not reserve the Sales Trial Offering locally. No CloudShare publication was attempted.",
+        externalIds: {
+          offeringId: offering.id,
+          itemId: offering.itemId,
+          externalId,
+        },
+        details: {
+          integrationSurface: "portal.sales_trial_offerings",
+          failureMode: "local_reservation_persistence",
+          cloudShareAttempted: false,
+        },
+      }),
+      auditLifecycle(
+        deps,
+        request,
+        offering.id,
+        "sales.trial_offering.publish",
+        "failure",
+        {
+          itemId: offering.itemId,
+          lifecycle: "publish",
+          status: offering.status,
+          failureMode: "local_reservation_persistence",
+          integrationSurface: "portal.sales_trial_offerings",
+          cloudShareAttempted: false,
+        },
+        "Certalis could not reserve the Sales Trial Offering locally. No CloudShare publication was attempted.",
+        correlationId,
+      ),
+    ]);
+    return response(503, {
+      error:
+        "Certalis could not reserve the Sales Trial Offering locally. No CloudShare publication was attempted; review support diagnostics and retry.",
+      needsAttention: false,
+    });
+  }
 
   try {
     const created = await delivery.createSession({
-      name: offering.title,
+      name: reservation.title,
       type: "trial",
       projectId: item.project.id,
       blueprintIds: item.blueprints.map((blueprint) => blueprint.id),
       regionIds: item.regions.map((region) => region.id),
       policyId: item.policy.id,
-      opportunity: offering.title,
+      opportunity: reservation.title,
       externalId,
       passphrase,
-      start: offering.start,
-      end: offering.end,
-      timeZone: offering.timeZone,
+      start: reservation.start,
+      end: reservation.end,
+      timeZone: reservation.timeZone,
       mainSalesProEmail: selectedSalesPro.email,
       registrationType: "registeredParticipantsOnly",
       sendInvitations: "dontSend",
     });
     const published = {
-      ...offering,
+      ...reservation,
       externalId,
       cloudShareSalesExperienceId: created.salesExperienceId,
       salesProDisplayName: selectedSalesPro.displayName,
@@ -441,10 +512,10 @@ export async function handlePublishSalesTrialOffering(
       } catch {
         fallbackPersisted =
           (await deps.offerings.markPublishNeedsAttention?.(
-            request.customerId,
-            offering.id,
-            fallback,
-          )) ?? false;
+          request.customerId,
+          offering.id,
+          fallback,
+        )) ?? false;
       }
       await Promise.allSettled([
         deps.diagnostics?.record({
@@ -538,7 +609,7 @@ export async function handlePublishSalesTrialOffering(
       return publishFailure(deps, request, offering, correlationId, externalId, error);
     }
     const needsAttention = {
-      ...offering,
+      ...reservation,
       externalId,
       status: "needs_attention" as const,
       updatedAt: (deps.now ?? (() => new Date()))(),
@@ -617,6 +688,34 @@ export async function handleUnpublishSalesTrialOffering(
     return response(404, { error: "Sales Trial Offering was not found for this Customer." });
   }
   if (offering.status !== "published") {
+    if (offering.status === "provisioning") {
+      await auditLifecycle(
+        deps,
+        request,
+        offering.id,
+        "sales.trial_offering.unpublish",
+        "denied",
+        {
+          itemId: offering.itemId,
+          lifecycle: "unpublish",
+          previousStatus: offering.status,
+          status: offering.status,
+          failureMode: "provisioning_preserved",
+        },
+        offering.attentionReason ?? PROVISIONING_RESERVATION_REASON,
+      );
+      return response(409, {
+        error:
+          offering.attentionReason ?? PROVISIONING_RESERVATION_REASON,
+        needsAttention: true,
+        offering: toPortalOffering({
+          ...offering,
+          status: "needs_attention",
+          attentionReason:
+            offering.attentionReason ?? PROVISIONING_RESERVATION_REASON,
+        }),
+      });
+    }
     if (offering.status === "needs_attention") {
       await auditLifecycle(
         deps,
@@ -752,6 +851,8 @@ const AMBIGUOUS_CREATE_REASON =
   "CloudShare POST /sales completed without a response, so the creation outcome is unknown. Do not retry publication; review support diagnostics.";
 const LOCAL_CORRELATION_PERSISTENCE_REASON =
   "CloudShare created the shared Sales Trial Experience, but Certalis could not durably save its correlation. Do not retry publication; review support diagnostics.";
+const PROVISIONING_RESERVATION_REASON =
+  "Sales Trial Offering publication is already in progress or unresolved. Do not retry publication or unpublish; review support diagnostics.";
 
 async function publishFailure(
   deps: SalesTrialOfferingsDeps,
