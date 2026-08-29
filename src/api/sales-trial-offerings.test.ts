@@ -983,4 +983,60 @@ describe("Sales Trial Offering API", () => {
       },
     });
   });
+
+  it("blocks unpublish when the offering is already in needs_attention and preserves correlated state", async () => {
+    const repository = createOfferingRepository();
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Helios Trial Offering",
+      description: "A shared Sales Trial for evaluators.",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: "sales-1",
+      externalId: "opaque-1",
+      start: "2026-09-01T09:00",
+      end: "2026-09-02T09:00",
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: "Owner Example",
+      status: "needs_attention",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:30:00Z"),
+      publishedAt: new Date("2026-08-29T12:10:00Z"),
+      unpublishedAt: null,
+      attentionReason:
+        "CloudShare created the shared Sales Trial Experience, but Certalis could not durably save its correlation. Do not retry publication; review support diagnostics.",
+    });
+    const deps = createDeps(repository);
+
+    const result = await handleUnpublishSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+    const persisted = await repository.findById("customer-1", "offering-1");
+
+    expect(result).toMatchObject({
+      status: 409,
+      body: {
+        needsAttention: true,
+        error:
+          "This Sales Trial Offering already has CloudShare publication correlation and needs support follow-up. Unpublish is blocked to preserve the correlated state.",
+        offering: {
+          id: "offering-1",
+          status: "needs_attention",
+          attentionReason:
+            "CloudShare created the shared Sales Trial Experience, but Certalis could not durably save its correlation. Do not retry publication; review support diagnostics.",
+        },
+      },
+    });
+    expect(persisted).toMatchObject({
+      status: "needs_attention",
+      cloudShareSalesExperienceId: "sales-1",
+      externalId: "opaque-1",
+    });
+    expect(deps.audit.write).not.toHaveBeenCalledWith(
+      expect.objectContaining({ action: "sales.trial_offering.unpublish", outcome: "success" }),
+    );
+  });
 });

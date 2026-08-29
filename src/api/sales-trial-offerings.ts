@@ -599,6 +599,34 @@ export async function handleUnpublishSalesTrialOffering(
   if (!offering) {
     return response(404, { error: "Sales Trial Offering was not found for this Customer." });
   }
+  if (offering.status !== "published") {
+    if (offering.status === "needs_attention") {
+      await auditLifecycle(
+        deps,
+        request,
+        offering.id,
+        "sales.trial_offering.unpublish",
+        "denied",
+        {
+          itemId: offering.itemId,
+          lifecycle: "unpublish",
+          previousStatus: offering.status,
+          status: offering.status,
+          failureMode: "needs_attention_preserved",
+        },
+        "This Sales Trial Offering already has CloudShare publication correlation and needs support follow-up. Unpublish is blocked to preserve the correlated state.",
+      );
+      return response(409, {
+        error:
+          "This Sales Trial Offering already has CloudShare publication correlation and needs support follow-up. Unpublish is blocked to preserve the correlated state.",
+        needsAttention: true,
+        offering: toPortalOffering(offering),
+      });
+    }
+    return response(409, {
+      error: "Only published Sales Trial Offerings can be unpublished.",
+    });
+  }
   const unpublished = {
     ...offering,
     status: "unpublished" as const,
