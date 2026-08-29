@@ -20,7 +20,13 @@ const AUTH_SOURCE = "auth";
 
 /** Map a portal role to a diagnostic actor type. */
 function actorTypeForRole(role: string): string {
-  return role === "admin" ? "admin" : "candidate";
+  if (role === "admin") {
+    return "admin";
+  }
+  if (role === "sales_trial_participant") {
+    return "sales_trial_participant";
+  }
+  return "candidate";
 }
 
 export interface PortalAuthRequest {

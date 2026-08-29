@@ -1,4 +1,4 @@
-export type PortalUserRole = "admin" | "candidate";
+export type PortalUserRole = "admin" | "candidate" | "sales_trial_participant";
 export type PortalCustomerWorkspace = "certification" | "sales" | "both";
 
 export interface PortalCustomerRecord {
@@ -31,8 +31,16 @@ export interface PortalSession {
   readonly issuedAtMs: number;
 }
 
+export interface PortalUserLookupScope {
+  readonly customerId?: string;
+  readonly role?: PortalUserRole;
+}
+
 export interface PortalUserStore {
-  findByEmail(email: string): Promise<PortalUserRecord | null>;
+  findByEmail(
+    email: string,
+    scope?: PortalUserLookupScope,
+  ): Promise<PortalUserRecord | null>;
 }
 
 export interface CreatePortalUserInput {
@@ -46,6 +54,7 @@ export interface CreatePortalUserInput {
 
 export interface PortalUserProvisioningStore extends PortalUserStore {
   findCustomerBySlug(slug: string): Promise<PortalCustomerRecord | null>;
+  findSalesTrialCustomer(): Promise<PortalCustomerRecord | null>;
   createUser(input: CreatePortalUserInput): Promise<PortalUserRecord>;
 }
 
@@ -58,12 +67,38 @@ export interface PortalSessionStore {
 export function createInMemoryPortalUserStore(
   users: readonly PortalUserRecord[],
 ): PortalUserStore {
-  const byEmail = new Map(users.map((user) => [user.email.toLowerCase(), user]));
   return {
-    async findByEmail(email: string): Promise<PortalUserRecord | null> {
-      return byEmail.get(email.trim().toLowerCase()) ?? null;
+    async findByEmail(
+      email: string,
+      scope?: PortalUserLookupScope,
+    ): Promise<PortalUserRecord | null> {
+      const normalizedEmail = email.trim().toLowerCase();
+      const matches = users.filter(
+        (user) =>
+          user.email.toLowerCase() === normalizedEmail &&
+          (!scope?.customerId || user.customerId === scope.customerId) &&
+          (!scope?.role || user.role === scope.role),
+      );
+      return selectUserMatch(matches, scope);
     },
   };
+}
+
+function selectUserMatch(
+  matches: readonly PortalUserRecord[],
+  scope?: PortalUserLookupScope,
+): PortalUserRecord | null {
+  if (matches.length === 1) {
+    return matches[0];
+  }
+  if (scope || matches.length === 0) {
+    return null;
+  }
+
+  const nonSalesTrialMatches = matches.filter(
+    (user) => user.role !== "sales_trial_participant",
+  );
+  return nonSalesTrialMatches.length === 1 ? nonSalesTrialMatches[0] : null;
 }
 
 export function createInMemoryPortalSessionStore(): PortalSessionStore & { reset(): void } {

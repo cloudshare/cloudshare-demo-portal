@@ -2,11 +2,12 @@ import type { PrismaClient } from "@prisma/client";
 import type {
   CreatePortalUserInput,
   PortalCustomerRecord,
+  PortalCustomerWorkspace,
   PortalSession,
   PortalSessionStore,
+  PortalUserLookupScope,
   PortalUserRecord,
   PortalUserRole,
-  PortalCustomerWorkspace,
   PortalUserProvisioningStore,
   PortalUserStore,
 } from "@/auth";
@@ -28,11 +29,20 @@ export function createPortalUserRepository(
   prisma: PrismaClient,
 ): PortalUserRepository {
   return {
-    async findByEmail(email: string): Promise<PortalUserRecord | null> {
-      const user = await prisma.user.findUnique({
-        where: { email: email.trim().toLowerCase() },
+    async findByEmail(
+      email: string,
+      scope?: PortalUserLookupScope,
+    ): Promise<PortalUserRecord | null> {
+      const users = await prisma.user.findMany({
+        where: {
+          email: email.trim().toLowerCase(),
+          ...(scope?.customerId ? { customerId: scope.customerId } : {}),
+          ...(scope?.role ? { role: scope.role } : {}),
+        },
+        take: 2,
         include: { customer: true },
       });
+      const user = selectUserMatch(users, scope);
       if (!user) {
         return null;
       }
@@ -46,6 +56,27 @@ export function createPortalUserRepository(
         passwordHash: user.passwordHash,
         role: asPortalUserRole(user.role),
         workspace: asPortalCustomerWorkspace(user.customer.workspace),
+      };
+    },
+
+    async findSalesTrialCustomer(): Promise<PortalCustomerRecord | null> {
+      const customers = await prisma.customer.findMany({
+        where: {
+          workspace: { in: ["sales", "both"] },
+        },
+        orderBy: { createdAt: "asc" },
+        take: 2,
+      });
+      if (customers.length !== 1) {
+        return null;
+      }
+
+      const customer = customers[0];
+      return {
+        id: customer.id,
+        slug: customer.slug,
+        name: customer.name,
+        workspace: asPortalCustomerWorkspace(customer.workspace),
       };
     },
 
@@ -75,6 +106,7 @@ export function createPortalUserRepository(
           passwordHash: input.passwordHash,
           role: input.role,
         },
+        include: { customer: true },
       });
 
       return {
@@ -85,7 +117,7 @@ export function createPortalUserRepository(
         lastName: user.lastName,
         passwordHash: user.passwordHash,
         role: asPortalUserRole(user.role),
-        workspace: "certification",
+        workspace: asPortalCustomerWorkspace(user.customer.workspace),
       };
     },
 
@@ -101,7 +133,12 @@ export function createPortalUserRepository(
       });
 
       const user = await prisma.user.upsert({
-        where: { email: input.email.trim().toLowerCase() },
+        where: {
+          customerId_email: {
+            customerId: customer.id,
+            email: input.email.trim().toLowerCase(),
+          },
+        },
         update: {
           customerId: customer.id,
           passwordHash: input.passwordHash,
@@ -117,6 +154,7 @@ export function createPortalUserRepository(
           passwordHash: input.passwordHash,
           role: input.role,
         },
+        include: { customer: true },
       });
 
       return {
@@ -127,7 +165,7 @@ export function createPortalUserRepository(
         lastName: user.lastName,
         passwordHash: user.passwordHash,
         role: asPortalUserRole(user.role),
-        workspace: input.workspace ?? "certification",
+        workspace: asPortalCustomerWorkspace(user.customer.workspace),
       };
     },
   };
@@ -180,7 +218,39 @@ export function createPortalSessionStore(
 }
 
 function asPortalUserRole(role: string): PortalUserRole {
-  return role === "admin" ? "admin" : "candidate";
+  if (role === "admin") {
+    return "admin";
+  }
+  if (role === "sales_trial_participant") {
+    return "sales_trial_participant";
+  }
+  return "candidate";
+}
+
+function selectUserMatch(
+  users: readonly ({
+    id: string;
+    customerId: string;
+    email: string;
+    firstName: string | null;
+    lastName: string | null;
+    passwordHash: string;
+    role: string;
+    customer: { workspace: string };
+  })[],
+  scope?: PortalUserLookupScope,
+) {
+  if (users.length === 1) {
+    return users[0];
+  }
+  if (scope || users.length === 0) {
+    return null;
+  }
+
+  const nonSalesTrialUsers = users.filter(
+    (user) => user.role !== "sales_trial_participant",
+  );
+  return nonSalesTrialUsers.length === 1 ? nonSalesTrialUsers[0] : null;
 }
 
 function asPortalCustomerWorkspace(value: string): PortalCustomerWorkspace {

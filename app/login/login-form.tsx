@@ -30,14 +30,25 @@ export function LoginForm({ initialError, initialEmail }: LoginFormProps) {
 
       const data = (await response.json()) as {
         error?: string;
-        session?: { role?: "admin" | "candidate"; workspace?: "certification" | "sales" | "both" };
+        session?: {
+          role?: "admin" | "candidate" | "sales_trial_participant";
+          workspace?: "certification" | "sales" | "both";
+        };
       };
       if (!response.ok) {
         setError(data.error ?? "Login failed");
         return;
       }
 
-      window.location.assign(data.session?.role === "admin" ? data.session.workspace === "sales" ? "/sales" : "/admin" : "/candidate");
+      window.location.assign(
+        data.session?.role === "admin"
+          ? data.session.workspace === "sales"
+            ? "/sales"
+            : "/admin"
+          : data.session?.role === "sales_trial_participant"
+            ? "/sales-trial"
+            : "/candidate",
+      );
     } catch {
       setError("Login failed");
     } finally {

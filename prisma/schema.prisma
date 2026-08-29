@@ -200,7 +200,7 @@ model SalesParticipantLaunchLink {
 model User {
   id           String          @id @default(cuid())
   customerId   String
-  email        String          @unique
+  email        String
   firstName    String?
   lastName     String?
   passwordHash String
@@ -210,6 +210,8 @@ model User {
   lastSalesExperienceType String?
   customer     Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
   sessions     PortalSession[]
+
+  @@unique([customerId, email])
 }
 
 /** Per-Customer cache of the documented v3 timezone catalogue. It is a cache,

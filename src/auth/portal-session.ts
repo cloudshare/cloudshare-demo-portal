@@ -30,6 +30,10 @@ export function getPortalHomePath(session: PortalSession | null): string {
     return "/login";
   }
 
+  if (session.role === "sales_trial_participant") {
+    return "/sales-trial";
+  }
+
   if (session.role !== "admin") {
     return "/candidate";
   }
