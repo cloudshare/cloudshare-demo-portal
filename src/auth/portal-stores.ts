@@ -54,7 +54,7 @@ export interface CreatePortalUserInput {
 
 export interface PortalUserProvisioningStore extends PortalUserStore {
   findCustomerBySlug(slug: string): Promise<PortalCustomerRecord | null>;
-  findSalesTrialCustomer(): Promise<PortalCustomerRecord | null>;
+  findSalesTrialRegistrationCustomer(): Promise<PortalCustomerRecord | null>;
   createUser(input: CreatePortalUserInput): Promise<PortalUserRecord>;
 }
 

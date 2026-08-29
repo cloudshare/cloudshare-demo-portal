@@ -23,6 +23,7 @@ export interface PortalUserSeedInput {
 
 export interface PortalUserRepository extends PortalUserProvisioningStore {
   upsertSeedUser(input: PortalUserSeedInput): Promise<PortalUserRecord>;
+  upsertSalesTrialConfiguration(customerId: string): Promise<void>;
 }
 
 export function createPortalUserRepository(
@@ -59,25 +60,34 @@ export function createPortalUserRepository(
       };
     },
 
-    async findSalesTrialCustomer(): Promise<PortalCustomerRecord | null> {
-      const customers = await prisma.customer.findMany({
+    async findSalesTrialRegistrationCustomer(): Promise<PortalCustomerRecord | null> {
+      const configurations = await prisma.salesTrialPortalConfiguration.findMany({
         where: {
-          workspace: { in: ["sales", "both"] },
+          registrationEnabled: true,
         },
         orderBy: { createdAt: "asc" },
         take: 2,
+        include: { customer: true },
       });
-      if (customers.length !== 1) {
+      if (configurations.length !== 1) {
         return null;
       }
 
-      const customer = customers[0];
+      const customer = configurations[0]!.customer;
       return {
         id: customer.id,
         slug: customer.slug,
         name: customer.name,
         workspace: asPortalCustomerWorkspace(customer.workspace),
       };
+    },
+
+    async upsertSalesTrialConfiguration(customerId: string): Promise<void> {
+      await prisma.salesTrialPortalConfiguration.upsert({
+        where: { customerId },
+        update: { registrationEnabled: true },
+        create: { customerId, registrationEnabled: true },
+      });
     },
 
     async findCustomerBySlug(slug: string): Promise<PortalCustomerRecord | null> {

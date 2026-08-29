@@ -70,7 +70,7 @@ export async function handleSalesTrialSelfRegistration(
     };
   }
 
-  const customer = await deps.users.findSalesTrialCustomer();
+  const customer = await deps.users.findSalesTrialRegistrationCustomer();
   if (!customer) {
     await recordFailure(deps, email, null, "sales_trial.account.create", "sales_trial_unavailable");
     return {
@@ -86,7 +86,7 @@ export async function handleSalesTrialSelfRegistration(
     await recordFailure(deps, email, customer, "sales_trial.account.create", "duplicate_email");
     return {
       status: 409,
-      body: { error: "A Sales Trial account with that email already exists." },
+      body: { error: "Registration is unavailable for this email." },
     };
   }
 
@@ -158,12 +158,12 @@ export async function handleSalesTrialLogin(
 
   const email = (body as { email: string }).email.trim().toLowerCase();
   const password = (body as { password: string }).password;
-  const customer = await deps.users.findSalesTrialCustomer();
+  const customer = await deps.users.findSalesTrialRegistrationCustomer();
   if (!customer || !deps.sessions) {
     await recordFailure(deps, email, customer, "sales_trial.login", "sales_trial_unavailable");
     return {
       status: 503,
-      body: { error: "Sales Trial sign in is not available right now." },
+      body: { error: "Invalid email or password" },
     };
   }
 

@@ -83,7 +83,7 @@ function inMemoryProvisioningStore(): PortalUserProvisioningStore {
     async findCustomerBySlug(slug) {
       return customers.find((c) => c.slug === slug) ?? null;
     },
-    async findSalesTrialCustomer() {
+    async findSalesTrialRegistrationCustomer() {
       return null;
     },
     async createUser(input: CreatePortalUserInput) {

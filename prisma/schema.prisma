@@ -34,6 +34,7 @@ model Customer {
   opportunityContacts  OpportunityContact[]
   salesDemoSessions    SalesDemoSession[]
   salesTimezoneCache   SalesTimezoneCache?
+  salesTrialPortalConfiguration SalesTrialPortalConfiguration?
   salesSessionNameTemplate String @default("{account} - {opportunity} ({revision}) - {item}")
 }
 
@@ -212,6 +213,16 @@ model User {
   sessions     PortalSession[]
 
   @@unique([customerId, email])
+}
+
+/// Explicitly enables one Customer-owned Sales Trial participant portal. This
+/// anchors self-registration without making workspace routing a trial selector.
+model SalesTrialPortalConfiguration {
+  customerId          String   @id
+  registrationEnabled Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  customer            Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 }
 
 /** Per-Customer cache of the documented v3 timezone catalogue. It is a cache,

@@ -9,7 +9,7 @@ function makeProvisioningStore(overrides: Partial<PortalUserProvisioningStore>):
   return {
     findByEmail: vi.fn().mockResolvedValue(null),
     findCustomerBySlug: vi.fn().mockResolvedValue(null),
-    findSalesTrialCustomer: vi.fn().mockResolvedValue(null),
+    findSalesTrialRegistrationCustomer: vi.fn().mockResolvedValue(null),
     createUser: vi.fn(),
     ...overrides,
   };
@@ -34,7 +34,7 @@ describe("Sales Trial self-registration", () => {
     const result = await handleSalesTrialSelfRegistration(
       {
         users: makeProvisioningStore({
-          findSalesTrialCustomer: vi.fn().mockResolvedValue({
+          findSalesTrialRegistrationCustomer: vi.fn().mockResolvedValue({
             id: "certalis-customer",
             slug: "certalis-sales",
             name: "Certalis",
@@ -77,7 +77,7 @@ describe("Sales Trial self-registration", () => {
     const result = await handleSalesTrialSelfRegistration(
       {
         users: makeProvisioningStore({
-          findSalesTrialCustomer: vi.fn().mockResolvedValue({
+          findSalesTrialRegistrationCustomer: vi.fn().mockResolvedValue({
             id: "certalis-customer",
             slug: "certalis-sales",
             name: "Certalis",
@@ -99,7 +99,7 @@ describe("Sales Trial self-registration", () => {
 
     expect(result).toEqual({
       status: 409,
-      body: { error: "A Sales Trial account with that email already exists." },
+      body: { error: "Registration is unavailable for this email." },
     });
     expect(createUser).not.toHaveBeenCalled();
   });
@@ -113,7 +113,7 @@ describe("Sales Trial sign in", () => {
     const response = await handleSalesTrialLogin(
       {
         users: makeProvisioningStore({
-          findSalesTrialCustomer: vi.fn().mockResolvedValue({
+          findSalesTrialRegistrationCustomer: vi.fn().mockResolvedValue({
             id: "customer-certalis",
             slug: "certalis",
             name: "Certalis",
@@ -175,7 +175,7 @@ describe("Sales Trial sign in", () => {
     const response = await handleSalesTrialLogin(
       {
         users: makeProvisioningStore({
-          findSalesTrialCustomer: vi.fn().mockResolvedValue({
+          findSalesTrialRegistrationCustomer: vi.fn().mockResolvedValue({
             id: "customer-certalis",
             slug: "certalis",
             name: "Certalis",

@@ -143,8 +143,19 @@ describe("Prisma portal auth stores", () => {
       role: "admin",
       workspace: "sales",
     });
+    await users.upsertSeedUser({
+      customerSlug: `portal-auth-unconfigured-sales-${suffix}`,
+      customerName: "Another Sales Customer",
+      email: `other-sales-admin-${suffix}@portal-auth.example`,
+      passwordHash: await hashPassword("admin-password"),
+      role: "admin",
+      workspace: "sales",
+    });
 
-    const salesCustomer = await users.findSalesTrialCustomer();
+    const configuredCustomer = await users.findCustomerBySlug(`portal-auth-certalis-${suffix}`);
+    await users.upsertSalesTrialConfiguration(configuredCustomer!.id);
+    const salesCustomer = await users.findSalesTrialRegistrationCustomer();
+    expect(salesCustomer).toMatchObject({ id: configuredCustomer!.id });
     const participant = await users.createUser({
       customerId: salesCustomer!.id,
       email: `shared-${suffix}@portal-auth.example`,
