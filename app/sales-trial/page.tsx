@@ -12,7 +12,11 @@ export default async function SalesTrialPage() {
   const session = await getPortalSession(services, sessionId);
 
   if (!session) {
-    redirect("/sales-trial/register");
+    redirect(
+      sessionId
+        ? `/sales-trial/login?error=${encodeURIComponent("Your session has expired. Please sign in again.")}`
+        : "/sales-trial/login",
+    );
   }
   if (session.role !== "sales_trial_participant") {
     redirect(getPortalHomePath(session));

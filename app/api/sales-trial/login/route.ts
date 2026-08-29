@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { DEFAULT_PORTAL_SESSION_TTL_MS } from "@/auth";
-import { getServices } from "@/composition";
+import { getPortalSessionServices, getSalesTrialLoginServices } from "@/composition";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { handleSalesTrialLogin } from "@/api/sales-trial-portal";
-import { createPortalSessionStore } from "@/persistence/portal-auth-repository";
 
 export async function POST(request: Request) {
-  const services = getServices();
-  await services.ensurePortalSeeded();
+  const sessionServices = getPortalSessionServices();
+  await sessionServices.ensurePortalSeeded();
+  const services = getSalesTrialLoginServices();
 
   const contentType = request.headers.get("content-type") ?? "";
   const expectsJson = contentType.includes("application/json");
@@ -29,9 +29,9 @@ export async function POST(request: Request) {
 
   const response = await handleSalesTrialLogin(
     {
-      users: services.portalUsers,
-      sessions: createPortalSessionStore(services.prisma),
-      diagnostics: services.diagnosticRecorder,
+      users: services.users,
+      sessions: services.sessions,
+      diagnostics: services.diagnostics,
       audit: services.audit,
     },
     { body },

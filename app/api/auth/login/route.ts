@@ -6,6 +6,7 @@ import {
   PORTAL_SESSION_COOKIE,
 } from "@/api/portal-auth";
 import { DEFAULT_PORTAL_SESSION_TTL_MS } from "@/auth";
+import { getPortalHomePath } from "@/auth/portal-session";
 
 export async function POST(request: Request) {
   const sessionServices = getPortalSessionServices();
@@ -38,9 +39,7 @@ export async function POST(request: Request) {
   if (!expectsJson) {
     const redirectUrl = new URL(
       response.session
-        ? response.session.role === "admin"
-          ? response.session.workspace === "sales" ? "/sales" : "/admin"
-          : "/candidate"
+        ? getPortalHomePath(response.session)
         : "/login",
       request.url,
     );

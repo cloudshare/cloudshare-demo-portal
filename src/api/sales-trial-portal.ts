@@ -32,6 +32,10 @@ export interface SalesTrialPortalDeps {
   readonly newSessionId?: () => string;
 }
 
+export interface SalesTrialPortalLoginDeps extends Omit<SalesTrialPortalDeps, "sessions"> {
+  readonly sessions: PortalSessionStore;
+}
+
 export async function handleSalesTrialSelfRegistration(
   deps: SalesTrialPortalDeps,
   request: SalesTrialPortalRequest,

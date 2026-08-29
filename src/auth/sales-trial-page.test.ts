@@ -45,11 +45,23 @@ describe("sales trial page routing", () => {
     mockGetServices.mockReturnValue({});
   });
 
-  it("redirects anonymous or expired sessions to Sales Trial registration", async () => {
+  it("redirects an anonymous visitor to Sales Trial sign-in", async () => {
+    mockCookies.mockResolvedValue({ get: () => undefined });
     mockGetPortalSession.mockResolvedValue(null);
 
-    await expect(SalesTrialPage()).rejects.toThrow("redirect:/sales-trial/register");
-    expect(mockRedirect).toHaveBeenCalledWith("/sales-trial/register");
+    await expect(SalesTrialPage()).rejects.toThrow("redirect:/sales-trial/login");
+    expect(mockRedirect).toHaveBeenCalledWith("/sales-trial/login");
+  });
+
+  it("explains an expired Sales Trial session at sign-in", async () => {
+    mockGetPortalSession.mockResolvedValue(null);
+
+    await expect(SalesTrialPage()).rejects.toThrow(
+      "redirect:/sales-trial/login?error=Your%20session%20has%20expired.%20Please%20sign%20in%20again.",
+    );
+    expect(mockRedirect).toHaveBeenCalledWith(
+      "/sales-trial/login?error=Your%20session%20has%20expired.%20Please%20sign%20in%20again.",
+    );
   });
 
   it("renders the Sales Trial participant home", async () => {

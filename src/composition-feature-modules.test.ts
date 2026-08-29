@@ -10,6 +10,7 @@ function createInputs(): FeatureModuleInputs {
   return {
     portalAuth: { resume: vi.fn() },
     portalUsers: { findByEmail: vi.fn() },
+    portalSessions: { save: vi.fn(), findById: vi.fn(), deleteById: vi.fn() },
     ensurePortalSeeded: vi.fn(),
     diagnosticRecorder: { record: vi.fn() },
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -40,6 +41,12 @@ describe("composition feature modules", () => {
     expect(modules.portal.session).toEqual({
       portalAuth: inputs.portalAuth,
       ensurePortalSeeded: inputs.ensurePortalSeeded,
+    });
+    expect(modules.salesTrial.login).toEqual({
+      users: inputs.portalUsers,
+      sessions: inputs.portalSessions,
+      diagnostics: inputs.diagnosticRecorder,
+      audit: inputs.audit,
     });
     expect(modules.registration).toEqual({
       portalUsers: inputs.portalUsers,
