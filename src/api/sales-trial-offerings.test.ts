@@ -142,8 +142,9 @@ const body = {
 describe("Sales Trial Offering API", () => {
   it("creates a customer-scoped draft offering and keeps provider correlation server-only", async () => {
     const repository = createOfferingRepository();
+    const deps = createDeps(repository);
 
-    const result = await handleCreateSalesTrialOffering(createDeps(repository), {
+    const result = await handleCreateSalesTrialOffering(deps, {
       customerId: "customer-1",
       actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
       body,
@@ -160,6 +161,15 @@ describe("Sales Trial Offering API", () => {
     });
     expect(JSON.stringify(result.body)).not.toContain("sales-1");
     expect(JSON.stringify(result.body)).not.toContain("externalId");
+    expect(deps.audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "sales.trial_offering.created",
+        subjectType: "sales_trial_offering",
+        subjectId: "offering-1",
+        outcome: "success",
+        details: { itemId: "item-1", lifecycle: "draft", status: "draft" },
+      }),
+    );
   });
 
   it("lists only this customer's offerings and keeps admin responses metadata-only", async () => {
@@ -266,6 +276,21 @@ describe("Sales Trial Offering API", () => {
       }),
     );
     expect(JSON.stringify(result.body)).not.toContain("sales-1");
+    expect(deps.audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "sales.trial_offering.publish",
+        subjectType: "sales_trial_offering",
+        subjectId: "offering-1",
+        outcome: "success",
+        details: expect.objectContaining({
+          itemId: "item-1",
+          lifecycle: "publish",
+          previousStatus: "draft",
+          status: "published",
+          integrationSurface: "cloudshare.v4.sales",
+        }),
+      }),
+    );
   });
 
   it("retains an ambiguous publish as needs_attention and blocks a blind replay", async () => {
@@ -323,6 +348,21 @@ describe("Sales Trial Offering API", () => {
       status: 409,
       body: { needsAttention: true },
     });
+    expect(deps.audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "sales.trial_offering.publish",
+        subjectType: "sales_trial_offering",
+        subjectId: "offering-1",
+        outcome: "failure",
+        details: expect.objectContaining({
+          itemId: "item-1",
+          lifecycle: "publish",
+          status: "needs_attention",
+          failureMode: "cloudshare_create_outcome_ambiguous",
+          integrationSurface: "cloudshare.v4.sales",
+        }),
+      }),
+    );
   });
 
   it("records protected diagnostics for non-ambiguous provider publish failures", async () => {
@@ -392,6 +432,18 @@ describe("Sales Trial Offering API", () => {
         failureMode: "cloudshare_create",
       },
     });
+    expect(deps.audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "sales.trial_offering.publish",
+        outcome: "failure",
+        details: expect.objectContaining({
+          itemId: "item-1",
+          lifecycle: "publish",
+          failureMode: "cloudshare_create",
+          integrationSurface: "cloudshare.v4.sales",
+        }),
+      }),
+    );
   });
 
   it("records protected diagnostics for item revalidation drift before publish", async () => {
@@ -445,11 +497,15 @@ describe("Sales Trial Offering API", () => {
     });
 
     expect(result).toMatchObject({
-      status: 502,
+      status: 422,
       body: {
         error: "This Item no longer matches its CloudShare resources. Refresh the Item before publishing.",
       },
     });
+    const itemReadEntry = (await diagnosticRepository.query({
+      source: "sales-trial-offerings",
+      operation: "sales.trial_offering.item_resources.revalidated",
+    }))[0];
     expect(entry).toMatchObject({
       outcome: "failure",
       details: {
@@ -457,6 +513,24 @@ describe("Sales Trial Offering API", () => {
         failureMode: "item_resource_drift",
       },
     });
+    expect(itemReadEntry).toMatchObject({
+      outcome: "failure",
+      externalIds: { offeringId: "offering-1", itemId: "item-1", projectId: "project-1" },
+      request: { method: "GET", path: "/projects/project-1/blueprints" },
+      details: { integrationSurface: "cloudshare.v3.projects.blueprints" },
+    });
+    expect(deps.audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "sales.trial_offering.publish",
+        outcome: "failure",
+        details: expect.objectContaining({
+          itemId: "item-1",
+          lifecycle: "publish",
+          failureMode: "item_resource_drift",
+          integrationSurface: "cloudshare.v3.sales_item_resources",
+        }),
+      }),
+    );
   });
 
   it("unpublishes without mutating the provider and hides the offering from trial participants", async () => {
@@ -498,6 +572,20 @@ describe("Sales Trial Offering API", () => {
     });
     expect(published.body).toEqual({ offerings: [] });
     expect(deps.deliveryFactory.forConnection).not.toHaveBeenCalled();
+    expect(deps.audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "sales.trial_offering.unpublish",
+        subjectType: "sales_trial_offering",
+        subjectId: "offering-1",
+        outcome: "success",
+        details: {
+          itemId: "item-1",
+          lifecycle: "unpublish",
+          previousStatus: "published",
+          status: "unpublished",
+        },
+      }),
+    );
   });
 
   it("does not re-dispatch POST /sales after an offering has been unpublished", async () => {
@@ -538,5 +626,212 @@ describe("Sales Trial Offering API", () => {
       },
     });
     expect(deps.deliveryFactory.forConnection).not.toHaveBeenCalled();
+  });
+
+  it("records successful revalidation reads before publishing", async () => {
+    const repository = createOfferingRepository();
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticRepository });
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Helios Trial Offering",
+      description: "A shared Sales Trial for evaluators.",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: null,
+      externalId: null,
+      start: "2026-09-01T09:00",
+      end: "2026-09-02T09:00",
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: null,
+      status: "draft",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:00:00Z"),
+      publishedAt: null,
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    const deps = createDeps(repository, { diagnostics });
+
+    await handlePublishSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+
+    const resourceEntry = (await diagnosticRepository.query({
+      source: "sales-trial-offerings",
+      operation: "sales.trial_offering.item_resources.revalidated",
+    }))[0];
+    const memberEntry = (await diagnosticRepository.query({
+      source: "sales-trial-offerings",
+      operation: "sales.trial_offering.project_members.revalidated",
+    }))[0];
+
+    expect(resourceEntry).toMatchObject({
+      outcome: "success",
+      externalIds: { offeringId: "offering-1", itemId: "item-1", projectId: "project-1" },
+      request: { method: "GET", path: "/projects/project-1/blueprints" },
+    });
+    expect(memberEntry).toMatchObject({
+      outcome: "success",
+      externalIds: { offeringId: "offering-1", itemId: "item-1", projectId: "project-1" },
+      request: { method: "GET", path: "/projects/project-1/members" },
+      details: {
+        integrationSurface: "cloudshare.v3.project_members_gui",
+        memberCount: 1,
+        cached: false,
+      },
+    });
+  });
+
+  it("distinguishes remote-created local-persistence failure from ambiguous provider creation", async () => {
+    const repository = createOfferingRepository();
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticRepository });
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Helios Trial Offering",
+      description: "A shared Sales Trial for evaluators.",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: null,
+      externalId: null,
+      start: "2026-09-01T09:00",
+      end: "2026-09-02T09:00",
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: null,
+      status: "draft",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:00:00Z"),
+      publishedAt: null,
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    const save = vi.fn().mockRejectedValue(new Error("sqlite write failed"));
+    const deps = createDeps(
+      {
+        ...repository,
+        save,
+      },
+      { diagnostics },
+    );
+
+    const result = await handlePublishSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+    const [entry] = await diagnosticRepository.query({
+      source: "sales-trial-offerings",
+      operation: "sales.trial_offering.publish",
+    });
+
+    expect(result).toMatchObject({
+      status: 503,
+      body: {
+        needsAttention: true,
+        error:
+          "CloudShare created the Sales Trial Offering, but Certalis could not save its correlation. Do not retry publication; review support diagnostics.",
+      },
+    });
+    expect(entry).toMatchObject({
+      outcome: "failure",
+      externalIds: {
+        offeringId: "offering-1",
+        itemId: "item-1",
+        cloudShareSalesExperienceId: "sales-1",
+        externalId: "offering1",
+      },
+      request: { method: "POST", path: "/sales" },
+      response: { status: 201, body: { id: "sales-1" } },
+      details: {
+        integrationSurface: "cloudshare.v4.sales",
+        failureMode: "local_correlation_persistence",
+        createdSalesExperienceId: "sales-1",
+      },
+    });
+    expect(deps.audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "sales.trial_offering.publish",
+        outcome: "failure",
+        details: expect.objectContaining({
+          itemId: "item-1",
+          lifecycle: "publish",
+          failureMode: "local_correlation_persistence",
+          integrationSurface: "cloudshare.v4.sales",
+        }),
+      }),
+    );
+  });
+
+  it("records protected diagnostics when the project-member read fails before publish", async () => {
+    const repository = createOfferingRepository();
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticRepository });
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Helios Trial Offering",
+      description: "A shared Sales Trial for evaluators.",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: null,
+      externalId: null,
+      start: "2026-09-01T09:00",
+      end: "2026-09-02T09:00",
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: null,
+      status: "draft",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:00:00Z"),
+      publishedAt: null,
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    const deps = createDeps(repository, {
+      diagnostics,
+      projectMembers: {
+        listActiveProjectMembers: vi.fn().mockRejectedValue(
+          new CloudShareRequestError("member read failed", 503, {
+            method: "GET",
+            path: "/users",
+            requestQuery: { projectUsers: "true", projectId: "project-1" },
+            responseStatus: 503,
+            responseBody: { error: "unavailable" },
+          }),
+        ),
+      },
+    });
+
+    const result = await handlePublishSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+    const [entry] = await diagnosticRepository.query({
+      source: "sales-trial-offerings",
+      operation: "sales.trial_offering.project_members.revalidated",
+    });
+
+    expect(result).toMatchObject({
+      status: 502,
+      body: {
+        error: "CloudShare could not publish the Sales Trial Offering. Review support diagnostics.",
+      },
+    });
+    expect(entry).toMatchObject({
+      outcome: "failure",
+      externalIds: { offeringId: "offering-1", itemId: "item-1", projectId: "project-1" },
+      request: { method: "GET", path: "/users", query: { projectUsers: "true", projectId: "project-1" } },
+      response: { status: 503, body: { error: "unavailable" } },
+      details: {
+        integrationSurface: "cloudshare.v3.project_members_gui",
+        failureMode: "project_member_read",
+        cached: false,
+      },
+    });
   });
 });

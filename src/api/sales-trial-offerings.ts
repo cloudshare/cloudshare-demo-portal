@@ -149,6 +149,18 @@ export async function handleCreateSalesTrialOffering(
     attentionReason: null,
   };
   await deps.offerings.save(offering);
+  await auditLifecycle(
+    deps,
+    request,
+    offering.id,
+    "sales.trial_offering.created",
+    "success",
+    {
+      itemId: offering.itemId,
+      lifecycle: "draft",
+      status: "draft",
+    },
+  );
   return response(201, { offering: toPortalOffering(offering) });
 }
 
@@ -230,17 +242,79 @@ export async function handlePublishSalesTrialOffering(
     const validator =
       deps.itemProvisioningValidator ??
       deps.itemProvisioningValidatorFactory?.forConnection(connection);
-    await validator?.revalidate(item);
+    const reads = (await validator?.revalidate(item)) ?? [];
+    await recordResourceReads(
+      deps,
+      request,
+      correlationId,
+      offering.id,
+      item.id,
+      item.project.id,
+      reads,
+      "success",
+      "Catalogue Item resource revalidated before Sales Trial Offering publication",
+    );
     const memberSource =
       deps.projectMembers ?? deps.projectMemberSourceFactory?.forConnection(connection);
     memberRead = await memberSource?.listActiveProjectMembers(item.project.id);
+    if (memberRead) {
+      await recordProjectMemberRead(
+        deps,
+        request,
+        correlationId,
+        offering.id,
+        item.id,
+        item.project.id,
+        memberRead,
+        "success",
+        "Active Project members revalidated before Sales Trial Offering publication",
+      );
+    }
   } catch (error) {
+    await recordPrePublishFailureEvidence(
+      deps,
+      request,
+      correlationId,
+      offering.id,
+      item.id,
+      item.project.id,
+      error,
+    );
     return publishFailure(deps, request, offering, correlationId, externalId, error);
   }
   const selectedSalesPro = memberRead?.members.find(
     (member) => member.email.toLowerCase() === offering.salesProEmail.toLowerCase(),
   );
   if (!selectedSalesPro) {
+    if (memberRead) {
+      await recordProjectMemberRead(
+        deps,
+        request,
+        correlationId,
+        offering.id,
+        item.id,
+        item.project.id,
+        memberRead,
+        "failure",
+        "Selected Sales Pro was not active in the revalidated Project members",
+      );
+    }
+    await auditLifecycle(
+      deps,
+      request,
+      offering.id,
+      "sales.trial_offering.publish",
+      "failure",
+      {
+        itemId: offering.itemId,
+        lifecycle: "publish",
+        status: offering.status,
+        failureMode: "selected_sales_pro_inactive",
+        integrationSurface: "cloudshare.v3.project_members_gui",
+      },
+      "The selected Sales Pro is no longer an active Project member.",
+      correlationId,
+    );
     return response(422, {
       error: "The selected Sales Pro is no longer an active Project member.",
     });
@@ -278,7 +352,58 @@ export async function handlePublishSalesTrialOffering(
       publishedAt: (deps.now ?? (() => new Date()))(),
       attentionReason: null,
     };
-    await deps.offerings.save(published);
+    try {
+      await deps.offerings.save(published);
+    } catch (error) {
+      await Promise.allSettled([
+        deps.diagnostics?.record({
+          source: "sales-trial-offerings",
+          operation: "sales.trial_offering.publish",
+          outcome: "failure",
+          level: "warn",
+          customerId: request.customerId,
+          actor: request.actor,
+          subject: { type: "sales_trial_offering", id: offering.id },
+          correlationId,
+          message:
+            "CloudShare created the shared Sales Trial Experience, but Certalis could not save its correlation.",
+          externalIds: {
+            offeringId: offering.id,
+            itemId: offering.itemId,
+            cloudShareSalesExperienceId: created.salesExperienceId,
+            externalId,
+          },
+          request: created.request as unknown as Record<string, unknown>,
+          response: created.response as unknown as Record<string, unknown>,
+          details: {
+            integrationSurface: "cloudshare.v4.sales",
+            failureMode: "local_correlation_persistence",
+            createdSalesExperienceId: created.salesExperienceId,
+          },
+        }),
+        auditLifecycle(
+          deps,
+          request,
+          offering.id,
+          "sales.trial_offering.publish",
+          "failure",
+          {
+            itemId: offering.itemId,
+            lifecycle: "publish",
+            status: offering.status,
+            failureMode: "local_correlation_persistence",
+            integrationSurface: "cloudshare.v4.sales",
+          },
+          "CloudShare created the shared Sales Trial Experience, but Certalis could not save its correlation.",
+          correlationId,
+        ),
+      ]);
+      return response(503, {
+        error:
+          "CloudShare created the Sales Trial Offering, but Certalis could not save its correlation. Do not retry publication; review support diagnostics.",
+        needsAttention: true,
+      });
+    }
     await deps.diagnostics?.record({
       source: "sales-trial-offerings",
       operation: "sales.trial_offering.publish",
@@ -298,6 +423,22 @@ export async function handlePublishSalesTrialOffering(
       response: created.response as unknown as Record<string, unknown>,
       details: { integrationSurface: "cloudshare.v4.sales", status: "published" },
     });
+    await auditLifecycle(
+      deps,
+      request,
+      offering.id,
+      "sales.trial_offering.publish",
+      "success",
+      {
+        itemId: offering.itemId,
+        lifecycle: "publish",
+        previousStatus: offering.status,
+        status: "published",
+        integrationSurface: "cloudshare.v4.sales",
+      },
+      undefined,
+      correlationId,
+    );
     return response(200, { offering: toPortalOffering(published) });
   } catch (error) {
     if (!isOutcomeAmbiguousCreateFailure(error)) {
@@ -333,6 +474,22 @@ export async function handlePublishSalesTrialOffering(
         failureMode: "cloudshare_create_outcome_ambiguous",
       },
     });
+    await auditLifecycle(
+      deps,
+      request,
+      offering.id,
+      "sales.trial_offering.publish",
+      "failure",
+      {
+        itemId: offering.itemId,
+        lifecycle: "publish",
+        status: "needs_attention",
+        failureMode: "cloudshare_create_outcome_ambiguous",
+        integrationSurface: "cloudshare.v4.sales",
+      },
+      AMBIGUOUS_CREATE_REASON,
+      correlationId,
+    );
     return response(502, {
       error: AMBIGUOUS_CREATE_REASON,
       needsAttention: true,
@@ -357,6 +514,19 @@ export async function handleUnpublishSalesTrialOffering(
     attentionReason: null,
   };
   await deps.offerings.save(unpublished);
+  await auditLifecycle(
+    deps,
+    request,
+    offering.id,
+    "sales.trial_offering.unpublish",
+    "success",
+    {
+      itemId: offering.itemId,
+      lifecycle: "unpublish",
+      previousStatus: offering.status,
+      status: "unpublished",
+    },
+  );
   return response(200, { offering: toPortalOffering(unpublished) });
 }
 
@@ -482,11 +652,185 @@ async function publishFailure(
       error: error instanceof Error ? error.message : String(error),
     },
   });
-  return response(502, {
-    error: itemValidationFailure
-      ? "This Item no longer matches its CloudShare resources. Refresh the Item before publishing."
-      : itemReadFailure
-        ? "CloudShare could not fully revalidate this Item. Review support diagnostics before retrying."
-        : "CloudShare could not publish the Sales Trial Offering. Review support diagnostics.",
+  const errorMessage = itemValidationFailure
+    ? "This Item no longer matches its CloudShare resources. Refresh the Item before publishing."
+    : itemReadFailure
+      ? "CloudShare could not fully revalidate this Item. Review support diagnostics before retrying."
+      : "CloudShare could not publish the Sales Trial Offering. Review support diagnostics.";
+  await auditLifecycle(
+    deps,
+    request,
+    offering.id,
+    "sales.trial_offering.publish",
+    "failure",
+    {
+      itemId: offering.itemId,
+      lifecycle: "publish",
+      status: offering.status,
+      failureMode,
+      integrationSurface,
+    },
+    errorMessage,
+    correlationId,
+  );
+  return response(itemValidationFailure ? 422 : 502, {
+    error: errorMessage,
+  });
+}
+
+async function auditLifecycle(
+  deps: Pick<SalesTrialOfferingsDeps, "audit" | "now">,
+  request: Pick<SalesTrialOfferingMutationRequest, "customerId" | "actor">,
+  subjectId: string,
+  action: string,
+  outcome: "success" | "failure" | "denied",
+  details: Record<string, unknown>,
+  error?: string,
+  correlationId?: string,
+) {
+  await deps.audit?.write({
+    id: randomUUID(),
+    occurredAt: (deps.now ?? (() => new Date()))(),
+    customerId: request.customerId,
+    actorType: request.actor.type,
+    actorId: request.actor.id,
+    actorEmail: request.actor.email,
+    action,
+    subjectType: "sales_trial_offering",
+    subjectId,
+    outcome,
+    correlationId,
+    details,
+    error,
+  });
+}
+
+async function recordResourceReads(
+  deps: SalesTrialOfferingsDeps,
+  request: Pick<SalesTrialOfferingMutationRequest, "customerId" | "actor">,
+  correlationId: string,
+  offeringId: string,
+  itemId: string,
+  projectId: string,
+  reads: readonly {
+    request: Record<string, unknown>;
+    response: Record<string, unknown>;
+    integrationSurface: string;
+  }[],
+  outcome: "success" | "failure",
+  message: string,
+) {
+  await Promise.allSettled(
+    reads.map((read) =>
+      deps.diagnostics?.record({
+        source: "sales-trial-offerings",
+        operation: "sales.trial_offering.item_resources.revalidated",
+        outcome,
+        level: outcome === "failure" ? "warn" : "info",
+        customerId: request.customerId,
+        actor: request.actor,
+        subject: { type: "sales_trial_offering", id: offeringId },
+        correlationId,
+        message,
+        request: read.request,
+        response: read.response,
+        details: { integrationSurface: read.integrationSurface },
+        externalIds: { offeringId, itemId, projectId },
+      }),
+    ),
+  );
+}
+
+async function recordProjectMemberRead(
+  deps: SalesTrialOfferingsDeps,
+  request: Pick<SalesTrialOfferingMutationRequest, "customerId" | "actor">,
+  correlationId: string,
+  offeringId: string,
+  itemId: string,
+  projectId: string,
+  read: Awaited<ReturnType<CloudShareProjectMemberSource["listActiveProjectMembers"]>>,
+  outcome: "success" | "failure",
+  message: string,
+) {
+  await deps.diagnostics?.record({
+    source: "sales-trial-offerings",
+    operation: "sales.trial_offering.project_members.revalidated",
+    outcome,
+    level: outcome === "failure" ? "warn" : "info",
+    customerId: request.customerId,
+    actor: request.actor,
+    subject: { type: "sales_trial_offering", id: offeringId },
+    correlationId,
+    message,
+    request: read.request as unknown as Record<string, unknown>,
+    response: read.response as unknown as Record<string, unknown>,
+    details: {
+      integrationSurface: read.integrationSurface,
+      memberCount: read.members.length,
+      cached: false,
+    },
+    externalIds: { offeringId, itemId, projectId },
+  });
+}
+
+async function recordPrePublishFailureEvidence(
+  deps: SalesTrialOfferingsDeps,
+  request: Pick<SalesTrialOfferingMutationRequest, "customerId" | "actor">,
+  correlationId: string,
+  offeringId: string,
+  itemId: string,
+  projectId: string,
+  error: unknown,
+) {
+  if (error instanceof SalesItemProvisioningValidationError) {
+    await recordResourceReads(
+      deps,
+      request,
+      correlationId,
+      offeringId,
+      itemId,
+      projectId,
+      error.completedReads,
+      "failure",
+      "Catalogue Item revalidation found stale CloudShare resources",
+    );
+    return;
+  }
+  if (error instanceof SalesItemProvisioningReadError) {
+    await recordResourceReads(
+      deps,
+      request,
+      correlationId,
+      offeringId,
+      itemId,
+      projectId,
+      error.completedReads,
+      "failure",
+      "CloudShare could not fully revalidate this Catalogue Item",
+    );
+    return;
+  }
+  const evidence = cloudShareEvidence(error);
+  if (!evidence) {
+    return;
+  }
+  await deps.diagnostics?.record({
+    source: "sales-trial-offerings",
+    operation: "sales.trial_offering.project_members.revalidated",
+    outcome: "failure",
+    level: "warn",
+    customerId: request.customerId,
+    actor: request.actor,
+    subject: { type: "sales_trial_offering", id: offeringId },
+    correlationId,
+    message: "CloudShare could not read active Project members before Sales Trial Offering publication",
+    request: evidence.request,
+    response: evidence.response,
+    details: {
+      integrationSurface: "cloudshare.v3.project_members_gui",
+      failureMode: "project_member_read",
+      cached: false,
+    },
+    externalIds: { offeringId, itemId, projectId },
   });
 }
