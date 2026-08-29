@@ -1,0 +1,4 @@
+-- Intentionally empty. This branch briefly proposed Customer-scoped portal
+-- email uniqueness, but #408 must preserve the existing global portal
+-- identity semantics. Retain the migration slot so all checked-out revisions
+-- have a complete, stable migration history.

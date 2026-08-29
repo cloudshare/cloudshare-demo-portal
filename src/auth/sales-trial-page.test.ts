@@ -1,3 +1,4 @@
+import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SalesTrialPage from "../../app/sales-trial/page";
 
@@ -16,6 +17,7 @@ vi.mock("next/headers", () => ({
 
 vi.mock("next/navigation", () => ({
   redirect: mockRedirect,
+  useRouter: () => ({ replace: vi.fn(), refresh: vi.fn() }),
 }));
 
 vi.mock("@/composition", () => ({
@@ -64,12 +66,10 @@ describe("sales trial page routing", () => {
 
     const page = await SalesTrialPage();
 
-    expect(page).toMatchObject({
-      props: {
-        email: "visitor@example.test",
-        firstName: "Ari",
-      },
-    });
+    const html = renderToStaticMarkup(page);
+    expect(html).toContain("Welcome, Ari.");
+    expect(html).toContain("There are no active Trial Offerings right now.");
+    expect(html).not.toContain("Exam catalog");
   });
 
   it("redirects a non-Sales Trial session back to its own home", async () => {
