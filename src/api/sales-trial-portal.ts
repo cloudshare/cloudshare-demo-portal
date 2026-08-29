@@ -74,19 +74,17 @@ export async function handleSalesTrialSelfRegistration(
   if (!customer) {
     await recordFailure(deps, email, null, "sales_trial.account.create", "sales_trial_unavailable");
     return {
-      status: 503,
-      body: { error: "Sales Trial registration is not available right now." },
+      status: 400,
+      body: { error: "Registration is unavailable." },
     };
   }
 
-  const existing = await deps.users.findByEmail(email, {
-    customerId: customer.id,
-  });
+  const existing = await deps.users.findByEmail(email);
   if (existing) {
     await recordFailure(deps, email, customer, "sales_trial.account.create", "duplicate_email");
     return {
-      status: 409,
-      body: { error: "Registration is unavailable for this email." },
+      status: 400,
+      body: { error: "Registration is unavailable." },
     };
   }
 

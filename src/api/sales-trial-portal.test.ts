@@ -97,11 +97,17 @@ describe("Sales Trial self-registration", () => {
       { body: { firstName: "Ari", lastName: "Visitor", email: "visitor@example.test", password: "safe-password" } },
     );
 
-    expect(result).toEqual({
-      status: 409,
-      body: { error: "Registration is unavailable for this email." },
-    });
+    expect(result).toEqual({ status: 400, body: { error: "Registration is unavailable." } });
     expect(createUser).not.toHaveBeenCalled();
+  });
+
+  it("does not reveal whether registration is unavailable because configuration is absent", async () => {
+    const result = await handleSalesTrialSelfRegistration(
+      { users: makeProvisioningStore({ findSalesTrialRegistrationCustomer: vi.fn().mockResolvedValue(null) }) },
+      { body: { firstName: "Ari", lastName: "Visitor", email: "visitor@example.test", password: "safe-password" } },
+    );
+
+    expect(result).toEqual({ status: 400, body: { error: "Registration is unavailable." } });
   });
 });
 

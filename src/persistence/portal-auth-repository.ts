@@ -34,19 +34,15 @@ export function createPortalUserRepository(
       email: string,
       scope?: PortalUserLookupScope,
     ): Promise<PortalUserRecord | null> {
-      const users = await prisma.user.findMany({
-        where: {
-          email: email.trim().toLowerCase(),
-          ...(scope?.customerId ? { customerId: scope.customerId } : {}),
-          ...(scope?.role ? { role: scope.role } : {}),
-        },
-        take: 2,
+      const user = await prisma.user.findUnique({
+        where: { email: email.trim().toLowerCase() },
         include: { customer: true },
       });
-      const user = selectUserMatch(users, scope);
       if (!user) {
         return null;
       }
+      if (scope?.customerId && user.customerId !== scope.customerId) return null;
+      if (scope?.role && user.role !== scope.role) return null;
 
       return {
         id: user.id,
@@ -143,12 +139,7 @@ export function createPortalUserRepository(
       });
 
       const user = await prisma.user.upsert({
-        where: {
-          customerId_email: {
-            customerId: customer.id,
-            email: input.email.trim().toLowerCase(),
-          },
-        },
+        where: { email: input.email.trim().toLowerCase() },
         update: {
           customerId: customer.id,
           passwordHash: input.passwordHash,
@@ -235,32 +226,6 @@ function asPortalUserRole(role: string): PortalUserRole {
     return "sales_trial_participant";
   }
   return "candidate";
-}
-
-function selectUserMatch(
-  users: readonly ({
-    id: string;
-    customerId: string;
-    email: string;
-    firstName: string | null;
-    lastName: string | null;
-    passwordHash: string;
-    role: string;
-    customer: { workspace: string };
-  })[],
-  scope?: PortalUserLookupScope,
-) {
-  if (users.length === 1) {
-    return users[0];
-  }
-  if (scope || users.length === 0) {
-    return null;
-  }
-
-  const nonSalesTrialUsers = users.filter(
-    (user) => user.role !== "sales_trial_participant",
-  );
-  return nonSalesTrialUsers.length === 1 ? nonSalesTrialUsers[0] : null;
 }
 
 function asPortalCustomerWorkspace(value: string): PortalCustomerWorkspace {

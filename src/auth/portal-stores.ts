@@ -67,38 +67,19 @@ export interface PortalSessionStore {
 export function createInMemoryPortalUserStore(
   users: readonly PortalUserRecord[],
 ): PortalUserStore {
+  const byEmail = new Map(users.map((user) => [user.email.toLowerCase(), user]));
   return {
     async findByEmail(
       email: string,
       scope?: PortalUserLookupScope,
     ): Promise<PortalUserRecord | null> {
-      const normalizedEmail = email.trim().toLowerCase();
-      const matches = users.filter(
-        (user) =>
-          user.email.toLowerCase() === normalizedEmail &&
-          (!scope?.customerId || user.customerId === scope.customerId) &&
-          (!scope?.role || user.role === scope.role),
-      );
-      return selectUserMatch(matches, scope);
+      const user = byEmail.get(email.trim().toLowerCase()) ?? null;
+      if (!user) return null;
+      if (scope?.customerId && user.customerId !== scope.customerId) return null;
+      if (scope?.role && user.role !== scope.role) return null;
+      return user;
     },
   };
-}
-
-function selectUserMatch(
-  matches: readonly PortalUserRecord[],
-  scope?: PortalUserLookupScope,
-): PortalUserRecord | null {
-  if (matches.length === 1) {
-    return matches[0];
-  }
-  if (scope || matches.length === 0) {
-    return null;
-  }
-
-  const nonSalesTrialMatches = matches.filter(
-    (user) => user.role !== "sales_trial_participant",
-  );
-  return nonSalesTrialMatches.length === 1 ? nonSalesTrialMatches[0] : null;
 }
 
 export function createInMemoryPortalSessionStore(): PortalSessionStore & { reset(): void } {

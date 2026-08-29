@@ -123,14 +123,14 @@ describe("Prisma portal auth stores", () => {
     await expect(users.findByEmail(candidate.email)).resolves.toEqual(candidate);
   });
 
-  it("allows the same email address in different Customers and resolves the scoped lookup only", async () => {
+  it("uses the configured Customer even when another Sales workspace Customer is unconfigured", async () => {
     const users = createPortalUserRepository(prisma);
 
     const suffix = randomUUID();
     await users.upsertSeedUser({
       customerSlug: `portal-auth-helios-${suffix}`,
       customerName: "Helios CX",
-      email: `shared-${suffix}@portal-auth.example`,
+      email: `admin-${suffix}@portal-auth.example`,
       passwordHash: await hashPassword("admin-password"),
       role: "admin",
       workspace: "certification",
@@ -158,20 +158,13 @@ describe("Prisma portal auth stores", () => {
     expect(salesCustomer).toMatchObject({ id: configuredCustomer!.id });
     const participant = await users.createUser({
       customerId: salesCustomer!.id,
-      email: `shared-${suffix}@portal-auth.example`,
+      email: `trial-${suffix}@portal-auth.example`,
       firstName: "Ari",
       lastName: "Visitor",
       passwordHash: await hashPassword("trial-password"),
       role: "sales_trial_participant",
     });
 
-    await expect(
-      users.findByEmail(participant.email, { customerId: salesCustomer!.id }),
-    ).resolves.toEqual(participant);
-    await expect(users.findByEmail(participant.email)).resolves.toMatchObject({
-      customerId: expect.not.stringMatching(salesCustomer!.id),
-      email: participant.email,
-      role: "admin",
-    });
+    await expect(users.findByEmail(participant.email, { customerId: salesCustomer!.id })).resolves.toEqual(participant);
   });
 });

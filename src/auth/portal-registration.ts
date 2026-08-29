@@ -55,11 +55,11 @@ export async function registerCandidate(
     throw new PortalRegistrationValidationError("firstName and lastName must each be at least 2 characters");
   }
 
-  const customerId = await resolveCustomerId(deps.users, input);
-  const existing = await deps.users.findByEmail(email, { customerId });
+  const existing = await deps.users.findByEmail(email);
   if (existing) {
     throw new PortalUserAlreadyExistsError(email);
   }
+  const customerId = await resolveCustomerId(deps.users, input);
   const passwordHash = await hashPassword(password);
   return deps.users.createUser({
     customerId,
