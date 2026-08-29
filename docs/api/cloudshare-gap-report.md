@@ -1705,6 +1705,14 @@ CloudShare main-Sales-Pro rejection to a supportable 422 result. It revalidates 
 resources before the mutation and retains redacted evidence, but it cannot honestly claim a
 separate pre-create eligibility check. The portal must not rely on a guessed endpoint.
 
+Issue #409 extends that same documented `POST /sales` contract to Customer-scoped Sales Trial
+Offerings. The portal publishes exactly one shared Sales Experience with `type: trial`,
+`registrationType: registeredParticipantsOnly`, and `sendInvitations: dontSend`, while keeping
+provider identifiers and full request/response evidence out of ordinary UI/API surfaces. Non-
+ambiguous provider failures and pre-create Item revalidation failures now persist protected
+Customer-scoped diagnostics, while ambiguous `POST /sales` outcomes remain a no-replay
+`needs_attention` state.
+
 **Action required:**
 
 CloudShare must provide or document a legitimate Project-scoped eligibility endpoint, or the
