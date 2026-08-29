@@ -16,3 +16,14 @@ describe("Sales Trial Offering publish route composition", () => {
     expect(routeSource).toContain("createCloudShareProjectMemberSource");
   });
 });
+
+describe("Sales Trial Offering unpublish route composition", () => {
+  it("passes the audit writer into unpublication", () => {
+    const routeSource = readFileSync(
+      "app/api/sales/trial-offerings/[id]/unpublish/route.ts",
+      "utf8",
+    );
+
+    expect(routeSource).toContain("audit: services.audit");
+  });
+});

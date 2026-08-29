@@ -5,7 +5,7 @@ import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
-import { isValidCloudShareWallClock } from "@/domain/cloudshare-wall-clock";
+import { cloudShareWallClockToInstant } from "@/domain/cloudshare-wall-clock";
 import type { DiagnosticActor, DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { ItemRepository } from "@/domain/item";
 import type {
@@ -225,28 +225,81 @@ export async function handlePublishSalesTrialOffering(
   const correlationId = randomUUID();
   const externalId = offering.externalId ?? opaqueCloudShareId(offering.id);
   if (!item || item.customerId !== request.customerId || item.status !== "active") {
-    return response(404, { error: "Active Item was not found for this Customer." });
+    return rejectPublishPreflight(
+      deps,
+      request,
+      offering,
+      correlationId,
+      externalId,
+      404,
+      "Active Item was not found for this Customer.",
+      "item_not_found_or_inactive",
+    );
   }
   if (!connection) {
-    return response(404, {
-      error: "Save a Certalis CloudShare Connection before publishing a Sales Trial Offering.",
-    });
+    return rejectPublishPreflight(
+      deps,
+      request,
+      offering,
+      correlationId,
+      externalId,
+      404,
+      "Save a Certalis CloudShare Connection before publishing a Sales Trial Offering.",
+      "connection_missing",
+    );
   }
   if (
     !timezoneCache ||
     !timezoneCache.timezones.some((zone) => zone.id === offering.timeZone)
   ) {
-    return response(422, {
-      error: "Refresh the documented CloudShare timezone catalogue before publishing.",
-    });
+    return rejectPublishPreflight(
+      deps,
+      request,
+      offering,
+      correlationId,
+      externalId,
+      422,
+      "Refresh the documented CloudShare timezone catalogue before publishing.",
+      "unsupported_cloudshare_timezone",
+    );
   }
-  if (
-    !isValidCloudShareWallClock(offering.start, offering.timeZone) ||
-    !isValidCloudShareWallClock(offering.end, offering.timeZone)
-  ) {
-    return response(400, {
-      error: "Start and end must be unambiguous CloudShare wall-clock values.",
-    });
+  const startInstant = cloudShareWallClockToInstant(offering.start, offering.timeZone);
+  const endInstant = cloudShareWallClockToInstant(offering.end, offering.timeZone);
+  if (!startInstant || !endInstant) {
+    return rejectPublishPreflight(
+      deps,
+      request,
+      offering,
+      correlationId,
+      externalId,
+      400,
+      "Start and end must be unambiguous CloudShare wall-clock values.",
+      "invalid_wall_clock",
+    );
+  }
+  if (endInstant <= startInstant) {
+    return rejectPublishPreflight(
+      deps,
+      request,
+      offering,
+      correlationId,
+      externalId,
+      400,
+      "End must be after start.",
+      "end_before_start",
+    );
+  }
+  if (startInstant <= (deps.now ?? (() => new Date()))()) {
+    return rejectPublishPreflight(
+      deps,
+      request,
+      offering,
+      correlationId,
+      externalId,
+      400,
+      "Choose a future start time before publishing.",
+      "start_not_future",
+    );
   }
   let memberRead:
     | Awaited<ReturnType<CloudShareProjectMemberSource["listActiveProjectMembers"]>>
@@ -752,6 +805,57 @@ async function auditLifecycle(
     details,
     error,
   });
+}
+
+async function rejectPublishPreflight(
+  deps: SalesTrialOfferingsDeps,
+  request: SalesTrialOfferingPublishRequest,
+  offering: SalesTrialOffering,
+  correlationId: string,
+  externalId: string,
+  status: number,
+  error: string,
+  failureMode: string,
+) {
+  await Promise.allSettled([
+    deps.diagnostics?.record({
+      source: "sales-trial-offerings",
+      operation: "sales.trial_offering.publish",
+      outcome: "failure",
+      level: "warn",
+      customerId: request.customerId,
+      actor: request.actor,
+      subject: { type: "sales_trial_offering", id: offering.id },
+      correlationId,
+      message: error,
+      externalIds: { offeringId: offering.id, itemId: offering.itemId, externalId },
+      request: { method: "POST", path: `/api/sales/trial-offerings/${offering.id}/publish` },
+      response: { status },
+      details: {
+        integrationSurface: "portal.sales_trial_offerings",
+        failureMode,
+        cloudShareAttempted: false,
+      },
+    }),
+    auditLifecycle(
+      deps,
+      request,
+      offering.id,
+      "sales.trial_offering.publish",
+      "denied",
+      {
+        itemId: offering.itemId,
+        lifecycle: "publish",
+        status: offering.status,
+        failureMode,
+        integrationSurface: "portal.sales_trial_offerings",
+        cloudShareAttempted: false,
+      },
+      error,
+      correlationId,
+    ),
+  ]);
+  return response(status, { error, correlationId });
 }
 
 async function recordResourceReads(

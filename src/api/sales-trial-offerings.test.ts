@@ -310,6 +310,56 @@ describe("Sales Trial Offering API", () => {
     );
   });
 
+  it("blocks publication when the Trial Offering window no longer starts in the future", async () => {
+    const repository = createOfferingRepository();
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Helios Trial Offering",
+      description: "A shared Sales Trial for evaluators.",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: null,
+      externalId: null,
+      start: "2026-08-29T12:00",
+      end: "2026-08-29T13:00",
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: null,
+      status: "draft",
+      createdAt: new Date("2026-08-29T11:00:00Z"),
+      updatedAt: new Date("2026-08-29T11:00:00Z"),
+      publishedAt: null,
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    const deps = createDeps(repository);
+
+    const result = await handlePublishSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+
+    expect(result).toMatchObject({
+      status: 400,
+      body: { error: "Choose a future start time before publishing." },
+    });
+    expect(deps.deliveryFactory.forConnection).not.toHaveBeenCalled();
+    expect(deps.audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "sales.trial_offering.publish",
+        subjectType: "sales_trial_offering",
+        subjectId: "offering-1",
+        outcome: "denied",
+        details: expect.objectContaining({
+          itemId: "item-1",
+          failureMode: "start_not_future",
+          cloudShareAttempted: false,
+        }),
+      }),
+    );
+  });
+
   it("retains an ambiguous publish as needs_attention and blocks a blind replay", async () => {
     const repository = createOfferingRepository();
     await repository.save({

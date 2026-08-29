@@ -26,6 +26,7 @@ export async function POST(
       offerings: createPrismaSalesTrialOfferingRepository(services.prisma),
       items: createPrismaItemRepository(services.prisma),
       connections: services.cloudshareConnections,
+      audit: services.audit,
     },
     {
       customerId: session.customerId,
