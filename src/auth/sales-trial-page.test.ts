@@ -1,6 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
+import type { ReactElement } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import SalesTrialPage from "../../app/sales-trial/page";
+import SalesTrialRegisterPage from "../../app/sales-trial/register/page";
 
 const { mockCookies, mockRedirect, mockGetServices, mockGetPortalSession } = vi.hoisted(() => ({
   mockCookies: vi.fn(),
@@ -96,5 +98,26 @@ describe("sales trial page routing", () => {
 
     await expect(SalesTrialPage()).rejects.toThrow("redirect:/candidate");
     expect(mockRedirect).toHaveBeenCalledWith("/candidate");
+  });
+});
+
+describe("sales trial registration page", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockCookies.mockResolvedValue({ get: () => undefined });
+    mockGetServices.mockReturnValue({});
+    mockGetPortalSession.mockResolvedValue(null);
+  });
+
+  it("renders a safe native-form registration failure", async () => {
+    const renderRegisterPage = SalesTrialRegisterPage as unknown as (props: {
+      searchParams: Promise<Record<string, string>>;
+    }) => Promise<ReactElement>;
+
+    const page = await renderRegisterPage({
+      searchParams: Promise.resolve({ error: "Registration is unavailable." }),
+    });
+
+    expect(renderToStaticMarkup(page)).toContain("Registration is unavailable.");
   });
 });

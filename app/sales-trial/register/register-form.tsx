@@ -6,13 +6,17 @@ import { primaryButtonStyle } from "@/web/button-styles";
 import { cardStyle } from "@/web/card-styles";
 import { colors, pageHeadingStyle, spacing } from "@/web/design-tokens";
 
-export function SalesTrialRegisterForm() {
+interface SalesTrialRegisterFormProps {
+  readonly initialError?: string | null;
+}
+
+export function SalesTrialRegisterForm({ initialError = null }: SalesTrialRegisterFormProps = {}) {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(initialError);
 
   async function onSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
