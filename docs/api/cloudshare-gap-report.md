@@ -1823,8 +1823,13 @@ instructors. It is therefore not a supported precedent for a Sales pre-create el
 
 The Sales Enablement Session form performs this live lookup only after the Sales Admin selects an
 Item (thereby inferring its Project), does not cache it, and re-fetches/revalidates the selected
-Sales Pro immediately before `POST /sales`. A failed lookup or removed/inactive selection blocks
-creation with correlated, redacted diagnostics. The narrow race after the revalidation and before
+Sales Pro immediately before `POST /sales`. This check proves only that the chosen email is still
+an active Project member on the undocumented GUI surface; it does **not** prove CloudShare will
+accept that user as `mainSalesPro` for the eventual v4 Sales Experience create. Provider-side
+authority remains with the documented `POST /sales` call, and Certalis must continue mapping any
+main-Sales-Pro rejection from that mutation to supportable diagnostics rather than overclaiming the
+preflight. A failed lookup or removed/inactive selection blocks creation with correlated, redacted
+diagnostics. The narrow race after the revalidation and before
 CloudShare processes the create request is accepted as an extreme edge case; CloudShare remains the
 final authority. The selected email and display name are persisted on the immutable Session
 correlation, not on the catalogue Item.

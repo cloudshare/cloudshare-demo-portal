@@ -100,4 +100,32 @@ describe("Prisma Sales Trial Offering repository", () => {
       { id: "offering-2", status: "draft" },
     ]);
   });
+
+  it("persists a minimal fail-closed needs-attention marker after provider create", async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const repository = createPrismaSalesTrialOfferingRepository({
+      salesTrialOffering: { updateMany },
+    } as never);
+
+    await expect(
+      repository.markPublishNeedsAttention!("customer-1", "offering-1", {
+        cloudShareSalesExperienceId: "sales-1",
+        externalId: "opaque-1",
+        salesProDisplayName: "Owner Example",
+        updatedAt: new Date("2026-08-30T00:05:00Z"),
+        publishedAt: new Date("2026-08-30T00:05:00Z"),
+        attentionReason: "Remote create succeeded but local persistence failed.",
+      }),
+    ).resolves.toBe(true);
+
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { customerId: "customer-1", id: "offering-1" },
+      data: expect.objectContaining({
+        cloudShareSalesExperienceId: "sales-1",
+        externalId: "opaque-1",
+        status: "needs_attention",
+        attentionReason: "Remote create succeeded but local persistence failed.",
+      }),
+    });
+  });
 });

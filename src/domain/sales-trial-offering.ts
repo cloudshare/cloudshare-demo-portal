@@ -30,8 +30,19 @@ export interface SalesTrialOffering {
 
 export interface SalesTrialOfferingRepository {
   save(offering: SalesTrialOffering): Promise<void>;
+  markPublishNeedsAttention?(
+    customerId: string,
+    id: string,
+    update: {
+      readonly cloudShareSalesExperienceId: string;
+      readonly externalId: string;
+      readonly salesProDisplayName: string | null;
+      readonly updatedAt: Date;
+      readonly publishedAt: Date;
+      readonly attentionReason: string;
+    },
+  ): Promise<boolean>;
   findById(customerId: string, id: string): Promise<SalesTrialOffering | null>;
   listByCustomerId(customerId: string): Promise<readonly SalesTrialOffering[]>;
   listPublishedByCustomerId(customerId: string): Promise<readonly SalesTrialOffering[]>;
 }
-

@@ -199,9 +199,22 @@ export async function handlePublishSalesTrialOffering(
   }
   if (offering.status === "needs_attention") {
     return response(409, {
-      error: AMBIGUOUS_CREATE_REASON,
+      error: offering.attentionReason ?? AMBIGUOUS_CREATE_REASON,
       needsAttention: true,
       offering: toPortalOffering(offering),
+    });
+  }
+  if (hasProviderCorrelation(offering)) {
+    return response(409, {
+      error:
+        "This Sales Trial Offering already has CloudShare publication correlation and must stay in needs-attention state until support resolves it. Do not retry publication.",
+      needsAttention: true,
+      offering: toPortalOffering({
+        ...offering,
+        status: "needs_attention",
+        attentionReason:
+          offering.attentionReason ?? LOCAL_CORRELATION_PERSISTENCE_REASON,
+      }),
     });
   }
   const [item, connection, timezoneCache] = await Promise.all([
@@ -355,6 +368,31 @@ export async function handlePublishSalesTrialOffering(
     try {
       await deps.offerings.save(published);
     } catch (error) {
+      const fallback = {
+        cloudShareSalesExperienceId: created.salesExperienceId,
+        externalId,
+        salesProDisplayName: selectedSalesPro.displayName,
+        updatedAt: published.updatedAt,
+        publishedAt: published.publishedAt!,
+        attentionReason: LOCAL_CORRELATION_PERSISTENCE_REASON,
+      };
+      let fallbackPersisted = false;
+      try {
+        const needsAttention = {
+          ...published,
+          status: "needs_attention" as const,
+          attentionReason: LOCAL_CORRELATION_PERSISTENCE_REASON,
+        };
+        await deps.offerings.save(needsAttention);
+        fallbackPersisted = true;
+      } catch {
+        fallbackPersisted =
+          (await deps.offerings.markPublishNeedsAttention?.(
+            request.customerId,
+            offering.id,
+            fallback,
+          )) ?? false;
+      }
       await Promise.allSettled([
         deps.diagnostics?.record({
           source: "sales-trial-offerings",
@@ -379,6 +417,7 @@ export async function handlePublishSalesTrialOffering(
             integrationSurface: "cloudshare.v4.sales",
             failureMode: "local_correlation_persistence",
             createdSalesExperienceId: created.salesExperienceId,
+            fallbackPersisted,
           },
         }),
         auditLifecycle(
@@ -393,6 +432,7 @@ export async function handlePublishSalesTrialOffering(
             status: offering.status,
             failureMode: "local_correlation_persistence",
             integrationSurface: "cloudshare.v4.sales",
+            outcome: fallbackPersisted ? "needs_attention" : "persistence_failed",
           },
           "CloudShare created the shared Sales Trial Experience, but Certalis could not save its correlation.",
           correlationId,
@@ -554,6 +594,13 @@ function opaqueCloudShareId(value: string): string {
   return value.replaceAll("-", "");
 }
 
+function hasProviderCorrelation(offering: SalesTrialOffering): boolean {
+  return (
+    offering.status !== "published" &&
+    (Boolean(offering.cloudShareSalesExperienceId) || Boolean(offering.externalId))
+  );
+}
+
 function isOutcomeAmbiguousCreateFailure(error: unknown): boolean {
   if (error instanceof CloudShareRequestError) {
     return error.status >= 500;
@@ -605,6 +652,8 @@ const missingClientFactory: Pick<CloudShareClientFactory, "forConnection"> = {
 
 const AMBIGUOUS_CREATE_REASON =
   "CloudShare POST /sales completed without a response, so the creation outcome is unknown. Do not retry publication; review support diagnostics.";
+const LOCAL_CORRELATION_PERSISTENCE_REASON =
+  "CloudShare created the shared Sales Trial Experience, but Certalis could not durably save its correlation. Do not retry publication; review support diagnostics.";
 
 async function publishFailure(
   deps: SalesTrialOfferingsDeps,
