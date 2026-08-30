@@ -60,6 +60,16 @@ export interface SalesTrialOfferingRepository {
       readonly attentionReason: string;
     },
   ): Promise<boolean>;
+  markEndNeedsAttention?(
+    customerId: string,
+    id: string,
+    update: {
+      readonly end: string;
+      readonly updatedAt: Date;
+      readonly unpublishedAt: Date;
+      readonly attentionReason: string;
+    },
+  ): Promise<boolean>;
   findById(customerId: string, id: string): Promise<SalesTrialOffering | null>;
   listByCustomerId(customerId: string): Promise<readonly SalesTrialOffering[]>;
   listPublishedByCustomerId(customerId: string): Promise<readonly SalesTrialOffering[]>;

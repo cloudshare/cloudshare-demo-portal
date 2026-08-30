@@ -880,52 +880,9 @@ export async function handleEndSalesTrialOffering(
     return response(400, { error: "End trial requires a supported CloudShare timezone." });
   }
 
+  let updated;
   try {
-    const updated = await delivery.updateSession(offering.cloudShareSalesExperienceId, { end });
-    const unpublished = {
-      ...offering,
-      end,
-      status: "unpublished" as const,
-      updatedAt: now,
-      unpublishedAt: now,
-      attentionReason: null,
-    };
-    await deps.offerings.save(unpublished);
-    await Promise.allSettled([
-      deps.diagnostics?.record({
-        source: "sales-trial-offerings",
-        operation: "sales.trial_offering.end",
-        outcome: "success",
-        customerId: request.customerId,
-        actor: request.actor,
-        subject: { type: "sales_trial_offering", id: offering.id },
-        message: "Sales Trial Offering ended and unpublished",
-        externalIds: { offeringId: offering.id, itemId: offering.itemId },
-        request: updated.request as unknown as Record<string, unknown>,
-        response: updated.response as unknown as Record<string, unknown>,
-        details: {
-          integrationSurface: "cloudshare.v4.sales",
-          lifecycle: "end",
-          previousStatus: offering.status,
-          status: "unpublished",
-        },
-      }),
-      auditLifecycle(
-        deps,
-        request,
-        offering.id,
-        "sales.trial_offering.end",
-        "success",
-        {
-          itemId: offering.itemId,
-          lifecycle: "end",
-          previousStatus: offering.status,
-          status: "unpublished",
-          integrationSurface: "cloudshare.v4.sales",
-        },
-      ),
-    ]);
-    return response(200, { offering: toPortalOffering(unpublished) });
+    updated = await delivery.updateSession(offering.cloudShareSalesExperienceId, { end });
   } catch (error) {
     const publishedWithAttention = {
       ...offering,
@@ -981,6 +938,127 @@ export async function handleEndSalesTrialOffering(
         "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics.",
       needsAttention: true,
       offering: toPortalOffering(publishedWithAttention),
+    });
+  }
+
+  try {
+    const unpublished = {
+      ...offering,
+      end,
+      status: "unpublished" as const,
+      updatedAt: now,
+      unpublishedAt: now,
+      attentionReason: null,
+    };
+    await deps.offerings.save(unpublished);
+    await Promise.allSettled([
+      deps.diagnostics?.record({
+        source: "sales-trial-offerings",
+        operation: "sales.trial_offering.end",
+        outcome: "success",
+        customerId: request.customerId,
+        actor: request.actor,
+        subject: { type: "sales_trial_offering", id: offering.id },
+        message: "Sales Trial Offering ended and unpublished",
+        externalIds: { offeringId: offering.id, itemId: offering.itemId },
+        request: updated.request as unknown as Record<string, unknown>,
+        response: updated.response as unknown as Record<string, unknown>,
+        details: {
+          integrationSurface: "cloudshare.v4.sales",
+          lifecycle: "end",
+          previousStatus: offering.status,
+          status: "unpublished",
+        },
+      }),
+      auditLifecycle(
+        deps,
+        request,
+        offering.id,
+        "sales.trial_offering.end",
+        "success",
+        {
+          itemId: offering.itemId,
+          lifecycle: "end",
+          previousStatus: offering.status,
+          status: "unpublished",
+          integrationSurface: "cloudshare.v4.sales",
+        },
+      ),
+    ]);
+    return response(200, { offering: toPortalOffering(unpublished) });
+  } catch (error) {
+    const reason =
+      "CloudShare ended the Sales Trial Offering, but Certalis could not durably unpublish it locally. Do not retry end-trial; review support diagnostics.";
+    const endedNeedsAttention = {
+      ...offering,
+      end,
+      status: "needs_attention" as const,
+      updatedAt: now,
+      unpublishedAt: now,
+      attentionReason: reason,
+    };
+    let fallbackPersisted = false;
+    try {
+      await deps.offerings.save(endedNeedsAttention);
+      fallbackPersisted = true;
+    } catch {
+      fallbackPersisted =
+        (await deps.offerings.markEndNeedsAttention?.(request.customerId, offering.id, {
+          end,
+          updatedAt: endedNeedsAttention.updatedAt,
+          unpublishedAt: endedNeedsAttention.unpublishedAt!,
+          attentionReason: reason,
+        })) ?? false;
+    }
+    await Promise.allSettled([
+      deps.diagnostics?.record({
+        source: "sales-trial-offerings",
+        operation: "sales.trial_offering.end",
+        outcome: "failure",
+        level: "warn",
+        customerId: request.customerId,
+        actor: request.actor,
+        subject: { type: "sales_trial_offering", id: offering.id },
+        message: reason,
+        externalIds: {
+          offeringId: offering.id,
+          itemId: offering.itemId,
+          cloudShareSalesExperienceId: offering.cloudShareSalesExperienceId,
+        },
+        request: updated.request as unknown as Record<string, unknown>,
+        response: updated.response as unknown as Record<string, unknown>,
+        details: {
+          integrationSurface: "cloudshare.v4.sales",
+          failureMode: "local_end_persistence",
+          previousStatus: offering.status,
+          status: fallbackPersisted ? "needs_attention" : offering.status,
+          needsAttention: true,
+          fallbackPersisted,
+        },
+      }),
+      auditLifecycle(
+        deps,
+        request,
+        offering.id,
+        "sales.trial_offering.end",
+        "failure",
+        {
+          itemId: offering.itemId,
+          lifecycle: "end",
+          previousStatus: offering.status,
+          status: fallbackPersisted ? "needs_attention" : offering.status,
+          needsAttention: true,
+          failureMode: "local_end_persistence",
+          integrationSurface: "cloudshare.v4.sales",
+          outcome: fallbackPersisted ? "needs_attention" : "persistence_failed",
+        },
+        reason,
+      ),
+    ]);
+    return response(503, {
+      error: fallbackPersisted ? reason : `${reason} Portal state may be stale.`,
+      needsAttention: true,
+      ...(fallbackPersisted ? { offering: toPortalOffering(endedNeedsAttention) } : {}),
     });
   }
 }

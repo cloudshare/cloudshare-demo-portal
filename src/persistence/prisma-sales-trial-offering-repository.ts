@@ -65,6 +65,19 @@ export function createPrismaSalesTrialOfferingRepository(
       });
       return result.count === 1;
     },
+    async markEndNeedsAttention(customerId, id, update) {
+      const result = await prisma.salesTrialOffering.updateMany({
+        where: { customerId, id },
+        data: {
+          end: update.end,
+          status: "needs_attention",
+          updatedAt: update.updatedAt,
+          unpublishedAt: update.unpublishedAt,
+          attentionReason: update.attentionReason,
+        },
+      });
+      return result.count === 1;
+    },
     async findById(customerId, id) {
       const row = await prisma.salesTrialOffering.findFirst({ where: { customerId, id } });
       return row ? hydrate(row) : null;

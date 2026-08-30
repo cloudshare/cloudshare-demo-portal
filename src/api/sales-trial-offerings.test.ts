@@ -84,6 +84,21 @@ function createOfferingRepository(): SalesTrialOfferingRepository {
       });
       return true;
     },
+    async markEndNeedsAttention(customerId, id, update) {
+      const offering = rows.get(id) ?? null;
+      if (!offering || offering.customerId !== customerId) {
+        return false;
+      }
+      rows.set(id, {
+        ...offering,
+        end: update.end,
+        status: "needs_attention",
+        updatedAt: update.updatedAt,
+        unpublishedAt: update.unpublishedAt,
+        attentionReason: update.attentionReason,
+      });
+      return true;
+    },
     async findById(customerId, id) {
       const offering = rows.get(id) ?? null;
       return offering?.customerId === customerId ? offering : null;
@@ -1946,6 +1961,198 @@ describe("Sales Trial Offering API", () => {
         failureMode: "cloudshare_end_trial_update",
         status: "published",
         needsAttention: true,
+      }),
+    });
+  });
+
+  it("records a distinct needs-attention state when CloudShare end succeeds but local unpublish persistence fails", async () => {
+    const repository = createOfferingRepository();
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticRepository });
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Helios Trial Offering",
+      description: "A shared Sales Trial for evaluators.",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: "sales-1",
+      externalId: "opaque-1",
+      start: "2026-09-01T09:00",
+      end: null as never,
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: "Owner Example",
+      status: "published",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:30:00Z"),
+      publishedAt: new Date("2026-08-29T12:10:00Z"),
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    const updateSession = vi.fn().mockResolvedValue({
+      id: "sales-1",
+      request: { method: "PUT", path: "/sales/sales-1", body: { end: "2026-08-29T12:32" } },
+      response: { status: 200, body: { id: "sales-1", end: "2026-08-29T12:32" } },
+    });
+    let saveCalls = 0;
+    const save = vi.fn().mockImplementation(async (offering: SalesTrialOffering) => {
+      saveCalls += 1;
+      if (saveCalls === 1) {
+        throw new Error(`sqlite write failed for status ${offering.status}`);
+      }
+      await repository.save(offering);
+    });
+    const deps = createDeps(
+      {
+        ...repository,
+        save,
+      },
+      {
+        diagnostics,
+        deliveryFactory: {
+          forConnection: vi.fn().mockReturnValue({
+            createSession: vi.fn(),
+            updateSession,
+          }),
+        } as never,
+      },
+    );
+
+    const result = await handleEndSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+    const persisted = await repository.findById("customer-1", "offering-1");
+    const [entry] = await diagnosticRepository.query({
+      source: "sales-trial-offerings",
+      operation: "sales.trial_offering.end",
+    });
+
+    expect(result).toMatchObject({
+      status: 503,
+      body: {
+        error:
+          "CloudShare ended the Sales Trial Offering, but Certalis could not durably unpublish it locally. Do not retry end-trial; review support diagnostics.",
+        needsAttention: true,
+        offering: {
+          id: "offering-1",
+          status: "needs_attention",
+          end: "2026-08-29T12:32",
+          attentionReason:
+            "CloudShare ended the Sales Trial Offering, but Certalis could not durably unpublish it locally. Do not retry end-trial; review support diagnostics.",
+        },
+      },
+    });
+    expect(persisted).toMatchObject({
+      status: "needs_attention",
+      end: "2026-08-29T12:32",
+      unpublishedAt: new Date("2026-08-29T12:30:00Z"),
+    });
+    expect(entry).toMatchObject({
+      outcome: "failure",
+      externalIds: {
+        offeringId: "offering-1",
+        itemId: "item-1",
+        cloudShareSalesExperienceId: "sales-1",
+      },
+      request: { method: "PUT", path: "/sales/sales-1", body: { end: "2026-08-29T12:32" } },
+      response: { status: 200, body: { id: "sales-1", end: "2026-08-29T12:32" } },
+      details: expect.objectContaining({
+        integrationSurface: "cloudshare.v4.sales",
+        failureMode: "local_end_persistence",
+        status: "needs_attention",
+        needsAttention: true,
+        fallbackPersisted: true,
+      }),
+    });
+  });
+
+  it("warns about stale portal state when CloudShare end succeeds but local unpublish persistence and fallback both fail", async () => {
+    const repository = createOfferingRepository();
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticRepository });
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Helios Trial Offering",
+      description: "A shared Sales Trial for evaluators.",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: "sales-1",
+      externalId: "opaque-1",
+      start: "2026-09-01T09:00",
+      end: null as never,
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: "Owner Example",
+      status: "published",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:30:00Z"),
+      publishedAt: new Date("2026-08-29T12:10:00Z"),
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    const updateSession = vi.fn().mockResolvedValue({
+      id: "sales-1",
+      request: { method: "PUT", path: "/sales/sales-1", body: { end: "2026-08-29T12:32" } },
+      response: { status: 200, body: { id: "sales-1", end: "2026-08-29T12:32" } },
+    });
+    const save = vi.fn().mockRejectedValue(new Error("sqlite write failed for needs_attention"));
+    const deps = createDeps(
+      {
+        ...repository,
+        save,
+        markEndNeedsAttention: vi.fn().mockResolvedValue(false),
+      },
+      {
+        diagnostics,
+        deliveryFactory: {
+          forConnection: vi.fn().mockReturnValue({
+            createSession: vi.fn(),
+            updateSession,
+          }),
+        } as never,
+      },
+    );
+
+    const result = await handleEndSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+    const persisted = await repository.findById("customer-1", "offering-1");
+    const [entry] = await diagnosticRepository.query({
+      source: "sales-trial-offerings",
+      operation: "sales.trial_offering.end",
+    });
+
+    expect(result).toMatchObject({
+      status: 503,
+      body: {
+        error:
+          "CloudShare ended the Sales Trial Offering, but Certalis could not durably unpublish it locally. Do not retry end-trial; review support diagnostics. Portal state may be stale.",
+        needsAttention: true,
+      },
+    });
+    expect((result.body as { offering?: unknown }).offering).toBeUndefined();
+    expect(persisted).toMatchObject({
+      status: "published",
+      unpublishedAt: null,
+      end: null,
+    });
+    expect(entry).toMatchObject({
+      outcome: "failure",
+      externalIds: {
+        offeringId: "offering-1",
+        itemId: "item-1",
+        cloudShareSalesExperienceId: "sales-1",
+      },
+      details: expect.objectContaining({
+        integrationSurface: "cloudshare.v4.sales",
+        failureMode: "local_end_persistence",
+        status: "published",
+        needsAttention: true,
+        fallbackPersisted: false,
       }),
     });
   });

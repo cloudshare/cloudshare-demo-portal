@@ -156,4 +156,32 @@ describe("Prisma Sales Trial Offering repository", () => {
       }),
     });
   });
+
+  it("persists an end-trial needs-attention marker after provider close succeeds but local unpublish save fails", async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const repository = createPrismaSalesTrialOfferingRepository({
+      salesTrialOffering: { updateMany },
+    } as never);
+
+    await expect(
+      repository.markEndNeedsAttention!("customer-1", "offering-1", {
+        end: "2026-08-30T12:32",
+        updatedAt: new Date("2026-08-30T12:30:00Z"),
+        unpublishedAt: new Date("2026-08-30T12:30:00Z"),
+        attentionReason:
+          "CloudShare ended the Sales Trial Offering, but Certalis could not durably unpublish it locally.",
+      }),
+    ).resolves.toBe(true);
+
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { customerId: "customer-1", id: "offering-1" },
+      data: expect.objectContaining({
+        end: "2026-08-30T12:32",
+        status: "needs_attention",
+        unpublishedAt: new Date("2026-08-30T12:30:00Z"),
+        attentionReason:
+          "CloudShare ended the Sales Trial Offering, but Certalis could not durably unpublish it locally.",
+      }),
+    });
+  });
 });
