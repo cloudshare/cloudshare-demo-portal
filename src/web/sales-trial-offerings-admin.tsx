@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import { compactButtonStyle, disabledButtonStyle, primaryButtonStyle, secondaryButtonStyle } from "./button-styles";
+import { disabledButtonStyle, primaryButtonStyle, secondaryButtonStyle } from "./button-styles";
 import { alertPanelStyle, cardStyle, mutedPanelStyle } from "./card-styles";
 
 type Item = { id: string; name: string; defaultDurationMinutes: number };
@@ -171,10 +171,7 @@ export function SalesTrialOfferingsAdmin({
             <label style={{ display: "grid", gap: "0.35rem" }}>Sales Pro<select style={controlStyle} value={form.salesProEmail} onChange={(event) => setForm((current) => ({ ...current, salesProEmail: event.target.value }))}><option value="">Select an active Project member</option>{members.map((member) => <option key={member.email} value={member.email}>{member.displayName} ({member.email})</option>)}</select></label>
           </div>
         </div>
-        <div style={{ display: "flex", gap: "0.65rem", flexWrap: "wrap" }}>
-          <button type="button" onClick={() => void createDraft()} style={primaryButtonStyle}>Save draft</button>
-          <button type="button" onClick={() => setForm({ title: "", description: "", itemId: "", start: "", end: "", timeZone: "UTC", salesProEmail: "" })} style={secondaryButtonStyle}>Clear form</button>
-        </div>
+        <button type="button" onClick={() => void createDraft()} style={primaryButtonStyle}>Save draft</button>
         {message ? <div role={messageTone === "error" ? "alert" : "status"} style={messageTone === "error" ? alertPanelStyle.danger : alertPanelStyle.success}>{message}</div> : null}
       </section>
       <section style={{ ...cardStyle, display: "grid", gap: "1rem" }}>
@@ -197,7 +194,6 @@ export function SalesTrialOfferingsAdmin({
           <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
             <button type="button" style={offering.status !== "draft" ? { ...primaryButtonStyle, ...disabledButtonStyle } : primaryButtonStyle} disabled={offering.status !== "draft"} onClick={() => void lifecycle(offering.id, "publish")}>Publish</button>
             <button type="button" style={offering.status !== "published" ? { ...secondaryButtonStyle, ...disabledButtonStyle } : secondaryButtonStyle} disabled={offering.status !== "published"} onClick={() => void lifecycle(offering.id, "unpublish")}>Unpublish</button>
-            <button type="button" style={compactButtonStyle} onClick={() => void loadOfferings()}>Refresh</button>
           </div>
         </article>)}
       </section>
