@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { getServices } from "@/composition";
@@ -18,8 +19,47 @@ export async function GET(
   const services = getServices();
   const sessionId = (await cookies()).get(PORTAL_SESSION_COOKIE)?.value;
   const session = await getPortalSession(services, sessionId);
+  const offeringId = (await params).offeringId;
 
   if (!session || session.role !== "sales_trial_participant") {
+    const correlationId = randomUUID();
+    await Promise.allSettled([
+      services.diagnosticRecorder?.record({
+        source: "sales-trial-enter-route",
+        operation: "sales_trial.offering.enter.denied",
+        outcome: "failure",
+        level: "warn",
+        customerId: null,
+        actor: session ? { type: "portal_session" } : { type: "anonymous" },
+        subject: { type: "sales_trial_offering", id: offeringId },
+        correlationId,
+        message:
+          "Sales Trial offering entry denied before launch because the portal session was missing or not authorized.",
+        details: {
+          integrationSurface: "portal.sales_trial",
+          failureMode: "unauthorized_portal_session",
+        },
+      }),
+      services.audit?.write({
+        id: randomUUID(),
+        occurredAt: new Date(),
+        customerId: null,
+        actorType: session ? "portal_session" : "anonymous",
+        actorId: null,
+        actorEmail: null,
+        action: "sales_trial.offering.enter.denied",
+        subjectType: "sales_trial_offering",
+        subjectId: offeringId,
+        outcome: "denied",
+        correlationId,
+        details: {
+          operation: "sales_trial.offering.enter.denied",
+          integrationSurface: "portal.sales_trial",
+          failureMode: "unauthorized_portal_session",
+        },
+        error: "Unauthorized.",
+      }),
+    ]);
     return new NextResponse("Unauthorized.", {
       status: 401,
       headers: {
@@ -29,7 +69,6 @@ export async function GET(
     });
   }
 
-  const offeringId = (await params).offeringId;
   const response = await handleEnterSalesTrialOffering(
     {
       offerings: createPrismaSalesTrialOfferingRepository(services.prisma),

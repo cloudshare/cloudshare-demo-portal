@@ -361,6 +361,9 @@ async function resolveEnrollment(input: {
         (participant) => participant.id === input.enrollment.cloudShareParticipantId,
       ) ?? null
     : null;
+  if (input.enrollment.cloudShareParticipantId && !stalePersistedMatch && exactBefore.length === 0) {
+    throw missingPersistedParticipant(input.remoteBefore, input.enrollment);
+  }
   if (
     stalePersistedMatch &&
     !hasRequiredEnrollmentCorrelation(stalePersistedMatch, input.enrollment)
@@ -421,12 +424,9 @@ function matchesEnrollment(
   participant: SalesParticipant,
   enrollment: Pick<
     SalesTrialEnrollment,
-    "id" | "portalUserId" | "cloudShareParticipantId"
+    "id" | "portalUserId"
   >,
 ): boolean {
-  if (enrollment.cloudShareParticipantId && participant.id === enrollment.cloudShareParticipantId) {
-    return hasRequiredEnrollmentCorrelation(participant, enrollment);
-  }
   return hasRequiredEnrollmentCorrelation(participant, enrollment);
 }
 
@@ -637,6 +637,29 @@ function mismatchedPersistedParticipant(
       cloudShareParticipantId: participant.id,
       salesTrialEnrollmentId: enrollment.id,
       failureMode: "participant_correlation_mismatch",
+    },
+  );
+}
+
+function missingPersistedParticipant(
+  remote: SalesDeliveryEvidence,
+  enrollment: Pick<SalesTrialEnrollment, "id" | "portalUserId" | "cloudShareParticipantId">,
+): CloudShareResponseError {
+  return new CloudShareResponseError(
+    "CloudShare no longer returned the persisted Sales Trial participant for this enrollment.",
+    {
+      method: remote.request.method,
+      path: remote.request.path,
+      ...(remote.request.query ? { requestQuery: remote.request.query } : {}),
+      ...(remote.request.headers ? { requestHeaders: remote.request.headers } : {}),
+      ...(remote.request.body !== undefined ? { requestBody: remote.request.body } : {}),
+      status: remote.response.status,
+      responseStatus: remote.response.status,
+      ...(remote.response.headers ? { responseHeaders: remote.response.headers } : {}),
+      responseBody: remote.response.body,
+      cloudShareParticipantId: enrollment.cloudShareParticipantId ?? undefined,
+      salesTrialEnrollmentId: enrollment.id,
+      failureMode: "participant_reconciliation_missing_persisted_id",
     },
   );
 }

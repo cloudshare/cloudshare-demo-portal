@@ -5,11 +5,15 @@ const {
   mockGetServices,
   mockGetPortalSession,
   mockHandleEnterSalesTrialOffering,
+  mockDiagnosticRecord,
+  mockAuditWrite,
 } = vi.hoisted(() => ({
   mockCookies: vi.fn(),
   mockGetServices: vi.fn(),
   mockGetPortalSession: vi.fn(),
   mockHandleEnterSalesTrialOffering: vi.fn(),
+  mockDiagnosticRecord: vi.fn().mockResolvedValue(undefined),
+  mockAuditWrite: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("next/headers", () => ({
@@ -51,8 +55,8 @@ describe("Sales Trial enter route", () => {
       prisma: {},
       cloudshareConnections: {},
       cloudshareClientFactory: {},
-      diagnosticRecorder: {},
-      audit: {},
+      diagnosticRecorder: { record: mockDiagnosticRecord },
+      audit: { write: mockAuditWrite },
     });
   });
 
@@ -145,5 +149,65 @@ describe("Sales Trial enter route", () => {
     expect(response.status).toBe(401);
     expect(await response.text()).toBe("Unauthorized.");
     expect(mockHandleEnterSalesTrialOffering).not.toHaveBeenCalled();
+    expect(mockDiagnosticRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "sales-trial-enter-route",
+        operation: "sales_trial.offering.enter.denied",
+        outcome: "failure",
+        customerId: null,
+        subject: { type: "sales_trial_offering", id: "offering-1" },
+        details: expect.objectContaining({
+          integrationSurface: "portal.sales_trial",
+          failureMode: "unauthorized_portal_session",
+        }),
+      }),
+    );
+    expect(mockAuditWrite).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customerId: null,
+        action: "sales_trial.offering.enter.denied",
+        subjectType: "sales_trial_offering",
+        subjectId: "offering-1",
+        outcome: "denied",
+        details: expect.objectContaining({
+          operation: "sales_trial.offering.enter.denied",
+          failureMode: "unauthorized_portal_session",
+          integrationSurface: "portal.sales_trial",
+        }),
+      }),
+    );
+    expect(JSON.stringify(mockDiagnosticRecord.mock.calls[0]?.[0] ?? {})).not.toContain("candidate@helioscx.demo");
+    expect(JSON.stringify(mockDiagnosticRecord.mock.calls[0]?.[0] ?? {})).not.toContain("customer-helios");
+  });
+
+  it("rejects a missing session with the same safe audited denial", async () => {
+    mockGetPortalSession.mockResolvedValue(null);
+
+    const response = await GET(
+      new Request("http://localhost:3025/sales-trial/offerings/offering-1/enter"),
+      { params: Promise.resolve({ offeringId: "offering-1" }) },
+    );
+
+    expect(response.status).toBe(401);
+    expect(await response.text()).toBe("Unauthorized.");
+    expect(mockHandleEnterSalesTrialOffering).not.toHaveBeenCalled();
+    expect(mockDiagnosticRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        operation: "sales_trial.offering.enter.denied",
+        customerId: null,
+        actor: { type: "anonymous" },
+        details: expect.objectContaining({
+          failureMode: "unauthorized_portal_session",
+        }),
+      }),
+    );
+    expect(mockAuditWrite).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "sales_trial.offering.enter.denied",
+        customerId: null,
+        actorType: "anonymous",
+        outcome: "denied",
+      }),
+    );
   });
 });

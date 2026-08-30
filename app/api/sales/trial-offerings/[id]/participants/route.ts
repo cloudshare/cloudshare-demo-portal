@@ -33,6 +33,8 @@ export async function GET(
             services.cloudshareClientFactory.forConnection(connection),
           ),
       },
+      diagnostics: services.diagnosticRecorder,
+      audit: services.audit,
     },
     {
       customerId: session.customerId,
