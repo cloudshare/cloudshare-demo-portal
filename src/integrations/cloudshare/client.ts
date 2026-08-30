@@ -262,30 +262,39 @@ function sanitizeOrdinaryTracePath(path: string): string {
   }
 
   const segments = tail.split("/");
-  const staticParticipantChildren = new Set([
-    "invite",
-    "email-template",
-    "unassigned-environment",
-  ]);
+  const salesBase = "/v4/sales/{salesId}";
+  const matches = (pattern: readonly string[]) =>
+    pattern.length === segments.length &&
+    pattern.every((part, index) => part.startsWith("{") || part === segments[index]);
 
-  if (segments[0] === "participants") {
-    if (segments.length === 1) {
-      return "/v4/sales/{salesId}/participants";
+  const render = (pattern: readonly string[]) =>
+    `${salesBase}/${pattern.map((part, index) => part.startsWith("{") ? part : segments[index]!).join("/")}`;
+
+  const patterns = [
+    ["salespros"],
+    ["salespros", "invite"],
+    ["salespros", "email-template"],
+    ["salespros", "{salesProId}"],
+    ["participants"],
+    ["participants", "invite"],
+    ["participants", "email-template"],
+    ["participants", "unassigned-environment"],
+    ["participants", "{participantId}"],
+    ["participants", "{participantId}", "unassigned-environment"],
+    ["sponsored-link"],
+    ["users", "properties"],
+    ["users", "properties", "{propertyId}"],
+    ["students", "participants", "{participantId}", "environment"],
+    ["assign-shared-env-controlling-user"],
+  ] as const;
+
+  for (const pattern of patterns) {
+    if (matches(pattern)) {
+      return render(pattern);
     }
-
-    if (staticParticipantChildren.has(segments[1]!)) {
-      return `/v4/sales/{salesId}/participants/${segments[1]}`;
-    }
-
-    const participantTail = segments[2];
-    if (!participantTail) {
-      return "/v4/sales/{salesId}/participants/{participantId}";
-    }
-
-    return `/v4/sales/{salesId}/participants/{participantId}/${participantTail}`;
   }
 
-  return `/v4/sales/{salesId}/${tail}`;
+  return `${salesBase}/${tail}`;
 }
 
 export function createCloudShareClient(opts: CloudShareClientOptions): CloudShareClient {

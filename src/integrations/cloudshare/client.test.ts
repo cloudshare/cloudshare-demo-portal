@@ -462,6 +462,60 @@ describe("createCloudShareClient — v4", () => {
     expect(JSON.stringify(trace.mock.calls)).not.toContain("{participantId}/email-template");
   });
 
+  it("redacts documented nested Sales route identifiers while preserving static route names", async () => {
+    const trace = vi.fn();
+    const providerSalesId = "SALES-provider-opaque-3";
+    const providerParticipantId = "PART-provider-opaque-3";
+    const providerSalesProId = "SALESPRO-provider-opaque-3";
+    const providerPropertyId = "PROPERTY-provider-opaque-3";
+    const { http } = sequentialHttp(
+      ok({ id: "env-1" }),
+      ok({ id: providerSalesProId }),
+      ok({ id: providerPropertyId }),
+    );
+    const client = createCloudShareClient({
+      http,
+      endpoints,
+      tokenProvider: stubTokenProvider,
+      v3: { apiId: "api-id", apiKey: "api-key" },
+      trace,
+    });
+
+    await client.requestV4Detailed!({
+      method: "GET",
+      path: `/sales/${providerSalesId}/students/participants/${providerParticipantId}/environment`,
+      schema: z.object({ id: z.string() }),
+    });
+    await client.requestV4Detailed!({
+      method: "PUT",
+      path: `/sales/${providerSalesId}/salespros/${providerSalesProId}`,
+      schema: z.object({ id: z.string() }),
+    });
+    await client.requestV4Detailed!({
+      method: "GET",
+      path: `/sales/${providerSalesId}/users/properties/${providerPropertyId}`,
+      schema: z.object({ id: z.string() }),
+    });
+
+    expect(trace).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      message: "cloudshare request sent",
+      fields: expect.objectContaining({ path: "/v4/sales/{salesId}/students/participants/{participantId}/environment" }),
+    }));
+    expect(trace).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      message: "cloudshare request sent",
+      fields: expect.objectContaining({ path: "/v4/sales/{salesId}/salespros/{salesProId}" }),
+    }));
+    expect(trace).toHaveBeenNthCalledWith(5, expect.objectContaining({
+      message: "cloudshare request sent",
+      fields: expect.objectContaining({ path: "/v4/sales/{salesId}/users/properties/{propertyId}" }),
+    }));
+    const evidence = JSON.stringify(trace.mock.calls);
+    expect(evidence).not.toContain(providerSalesId);
+    expect(evidence).not.toContain(providerParticipantId);
+    expect(evidence).not.toContain(providerSalesProId);
+    expect(evidence).not.toContain(providerPropertyId);
+  });
+
   it("retains legacy sponsoredLinks URLs in protected traces", async () => {
     const trace = vi.fn();
     const { http } = capturingHttp(
