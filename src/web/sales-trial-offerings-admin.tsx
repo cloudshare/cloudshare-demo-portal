@@ -51,8 +51,7 @@ export function SalesTrialOfferingsAdmin({
   readonly email: string;
   readonly fetchAdmin?: typeof fetch;
 }) {
-  const startInputRef = useRef<HTMLInputElement | null>(null);
-  const endInputRef = useRef<HTMLInputElement | null>(null);
+  const formRef = useRef<HTMLFormElement | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [timezones, setTimezones] = useState<Timezone[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
@@ -81,12 +80,21 @@ export function SalesTrialOfferingsAdmin({
   );
 
   const getDraftPayload = useCallback(() => {
-    const start = startInputRef.current ? startInputRef.current.value : form.start;
-    const end = endInputRef.current ? endInputRef.current.value : form.end;
+    const currentForm = formRef.current;
+    const fieldValue = (
+      name: keyof typeof form,
+    ) => {
+      const field = currentForm?.elements.namedItem(name);
+      return field && "value" in field ? field.value : form[name];
+    };
     return {
-      ...form,
-      start,
-      end,
+      title: fieldValue("title"),
+      description: fieldValue("description"),
+      itemId: fieldValue("itemId"),
+      start: fieldValue("start"),
+      end: fieldValue("end"),
+      timeZone: fieldValue("timeZone"),
+      salesProEmail: fieldValue("salesProEmail"),
     };
   }, [form]);
 
@@ -229,18 +237,18 @@ export function SalesTrialOfferingsAdmin({
             <p style={{ margin: 0, color: "#52606d" }}>Reuse an existing Sales Item and assign one active Project member as the Sales Pro for the shared trial window.</p>
           </div>
         </div>
-        <div style={{ display: "grid", gap: "1rem" }}>
-          <label style={{ display: "grid", gap: "0.35rem" }}>Title<input style={controlStyle} value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} /></label>
-          <label style={{ display: "grid", gap: "0.35rem" }}>Description<textarea style={{ ...controlStyle, minHeight: "5.5rem", resize: "vertical" as const }} rows={4} value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} /></label>
-          <label style={{ display: "grid", gap: "0.35rem" }}>Item<select style={controlStyle} value={form.itemId} onChange={(event) => setForm((current) => ({ ...current, itemId: event.target.value }))}><option value="">Select an Item</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <form ref={formRef} style={{ display: "grid", gap: "1rem" }} onSubmit={(event) => { event.preventDefault(); void createDraft(); }}>
+          <label style={{ display: "grid", gap: "0.35rem" }}>Title<input name="title" style={controlStyle} value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} /></label>
+          <label style={{ display: "grid", gap: "0.35rem" }}>Description<textarea name="description" style={{ ...controlStyle, minHeight: "5.5rem", resize: "vertical" as const }} rows={4} value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} /></label>
+          <label style={{ display: "grid", gap: "0.35rem" }}>Item<select name="itemId" style={controlStyle} value={form.itemId} onChange={(event) => setForm((current) => ({ ...current, itemId: event.target.value }))}><option value="">Select an Item</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(12rem, 1fr))", gap: "0.9rem" }}>
-            <label style={{ display: "grid", gap: "0.35rem" }}>Start<input ref={startInputRef} style={controlStyle} type="datetime-local" value={form.start} onInput={(event) => syncDateTimeField("start", event.currentTarget.value)} onChange={(event) => syncDateTimeField("start", event.target.value)} /></label>
-            <label style={{ display: "grid", gap: "0.35rem" }}>End<input ref={endInputRef} style={controlStyle} type="datetime-local" value={form.end} onInput={(event) => syncDateTimeField("end", event.currentTarget.value)} onChange={(event) => syncDateTimeField("end", event.target.value)} /></label>
-            <label style={{ display: "grid", gap: "0.35rem" }}>Time zone<input style={controlStyle} list="trial-offering-timezones" value={form.timeZone} onChange={(event) => setForm((current) => ({ ...current, timeZone: event.target.value }))} /><datalist id="trial-offering-timezones">{timezones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}</datalist></label>
-            <label style={{ display: "grid", gap: "0.35rem" }}>Sales Pro<select style={controlStyle} value={form.salesProEmail} onChange={(event) => setForm((current) => ({ ...current, salesProEmail: event.target.value }))}><option value="">Select an active Project member</option>{members.map((member) => <option key={member.email} value={member.email}>{member.displayName} ({member.email})</option>)}</select></label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>Start<input name="start" style={controlStyle} type="datetime-local" value={form.start} onInput={(event) => syncDateTimeField("start", event.currentTarget.value)} onChange={(event) => syncDateTimeField("start", event.target.value)} /></label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>End<input name="end" style={controlStyle} type="datetime-local" value={form.end} onInput={(event) => syncDateTimeField("end", event.currentTarget.value)} onChange={(event) => syncDateTimeField("end", event.target.value)} /></label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>Time zone<input name="timeZone" style={controlStyle} list="trial-offering-timezones" value={form.timeZone} onChange={(event) => setForm((current) => ({ ...current, timeZone: event.target.value }))} /><datalist id="trial-offering-timezones">{timezones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}</datalist></label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>Sales Pro<select name="salesProEmail" style={controlStyle} value={form.salesProEmail} onChange={(event) => setForm((current) => ({ ...current, salesProEmail: event.target.value }))}><option value="">Select an active Project member</option>{members.map((member) => <option key={member.email} value={member.email}>{member.displayName} ({member.email})</option>)}</select></label>
           </div>
-        </div>
-        <button type="button" onClick={() => void createDraft()} style={primaryButtonStyle}>Save draft</button>
+          <button type="submit" style={primaryButtonStyle}>Save draft</button>
+        </form>
         {message ? <div role={messageTone === "error" ? "alert" : "status"} style={messageTone === "error" ? alertPanelStyle.danger : alertPanelStyle.success}>{message}</div> : null}
       </section>
       <section style={{ ...cardStyle, display: "grid", gap: "1rem" }}>

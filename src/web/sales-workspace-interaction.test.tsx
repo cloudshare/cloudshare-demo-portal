@@ -375,6 +375,124 @@ describe("SalesWorkspace interaction", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("Invalid Sales Trial Offering request.");
   });
 
+  it("retries Trial Offering draft save with the current visible form values after a failed attempt and selection changes", async () => {
+    const user = userEvent.setup();
+    const postBodies: Array<Record<string, unknown>> = [];
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const path = String(input);
+      if (path === "/api/sales/items" && !init?.method) {
+        return json({
+          activeItems: [{
+            id: "item-1",
+            name: "Windows Boxes",
+            description: "",
+            project: { id: "project-1", name: "Project" },
+            blueprints: [{ id: "bp-1", name: "Blueprint" }],
+            policy: { id: "policy-1", name: "Policy" },
+            regions: [{ id: "region-1", name: "Region" }],
+            defaultDurationMinutes: 1440,
+            status: "active",
+          }],
+        });
+      }
+      if (path === "/api/sales/timezones" && !init?.method) {
+        return json({
+          timezones: [
+            { id: "UTC", name: "UTC" },
+            { id: "Europe/London", name: "Europe/London" },
+          ],
+        });
+      }
+      if (path === "/api/sales/enablement-sessions/project-members?itemId=item-1") {
+        return json({
+          members: [
+            { email: "first-owner@example.test", displayName: "First Owner" },
+            { email: "sales-pro@example.test", displayName: "Sales Pro" },
+          ],
+        });
+      }
+      if (path === "/api/sales/trial-offerings" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        postBodies.push(body);
+        if (postBodies.length === 1) {
+          return json({ error: "Invalid Sales Trial Offering request." }, 400);
+        }
+        return json({
+          offering: {
+            id: "offering-1",
+            title: body.title,
+            description: body.description,
+            itemId: body.itemId,
+            start: body.start,
+            end: body.end,
+            timeZone: body.timeZone,
+            salesProEmail: body.salesProEmail,
+            salesProDisplayName: "Sales Pro",
+            status: "draft",
+            attentionReason: null,
+          },
+        }, 201);
+      }
+      if (path === "/api/sales/trial-offerings" && !init?.method) {
+        return json({ offerings: [] });
+      }
+      return json({});
+    });
+
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "trial-offerings" }} />);
+
+    await user.type(await screen.findByLabelText("Title"), "Helios Trial");
+    await user.type(screen.getByLabelText("Description"), "Shared trial");
+    await user.selectOptions(screen.getByLabelText("Item"), "item-1");
+    await user.selectOptions(await screen.findByLabelText("Sales Pro"), "first-owner@example.test");
+
+    const start = screen.getByLabelText("Start") as HTMLInputElement;
+    const end = screen.getByLabelText("End") as HTMLInputElement;
+    const timeZone = screen.getByDisplayValue("UTC") as HTMLInputElement;
+    const salesPro = screen.getByLabelText("Sales Pro") as HTMLSelectElement;
+
+    fireEvent.input(start, { target: { value: "2026-08-30T18:59" } });
+    fireEvent.input(end, { target: { value: "" } });
+    await user.click(screen.getByRole("button", { name: "Save draft" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("Invalid Sales Trial Offering request.");
+
+    start.value = "2026-08-30T18:59";
+    end.value = "2026-08-30T19:54";
+    timeZone.value = "Europe/London";
+    salesPro.value = "sales-pro@example.test";
+
+    expect(start.value).toBe("2026-08-30T18:59");
+    expect(end.value).toBe("2026-08-30T19:54");
+    expect(timeZone.value).toBe("Europe/London");
+    expect(salesPro.value).toBe("sales-pro@example.test");
+
+    await user.click(screen.getByRole("button", { name: "Save draft" }));
+
+    await waitFor(() => {
+      expect(postBodies).toEqual([
+        {
+          title: "Helios Trial",
+          description: "Shared trial",
+          itemId: "item-1",
+          start: "2026-08-30T18:59",
+          end: "",
+          timeZone: "UTC",
+          salesProEmail: "first-owner@example.test",
+        },
+        {
+          title: "Helios Trial",
+          description: "Shared trial",
+          itemId: "item-1",
+          start: "2026-08-30T18:59",
+          end: "2026-08-30T19:54",
+          timeZone: "Europe/London",
+          salesProEmail: "sales-pro@example.test",
+        },
+      ]);
+    });
+    expect((await screen.findByRole("status")).textContent).toContain("Trial Offering draft saved.");
+  });
+
   it("loads further active Opportunities only when the Sales Admin requests more results", async () => {
     const user = userEvent.setup();
     const firstPage = Array.from({ length: 20 }, (_, index) => ({ id: `opp-${index + 1}`, accountId: "account-1", accountName: "Acme", name: `Opportunity ${index + 1}`, label: `Acme - Opportunity ${index + 1}` }));
