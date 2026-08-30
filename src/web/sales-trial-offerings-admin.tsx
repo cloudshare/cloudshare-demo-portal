@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { disabledButtonStyle, primaryButtonStyle, secondaryButtonStyle } from "./button-styles";
 import { alertPanelStyle, cardStyle, mutedPanelStyle } from "./card-styles";
 
@@ -51,6 +51,8 @@ export function SalesTrialOfferingsAdmin({
   readonly email: string;
   readonly fetchAdmin?: typeof fetch;
 }) {
+  const startInputRef = useRef<HTMLInputElement | null>(null);
+  const endInputRef = useRef<HTMLInputElement | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [timezones, setTimezones] = useState<Timezone[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
@@ -70,6 +72,23 @@ export function SalesTrialOfferingsAdmin({
     timeZone: "UTC",
     salesProEmail: "",
   });
+
+  const syncDateTimeField = useCallback(
+    (field: "start" | "end", value: string) => {
+      setForm((current) => ({ ...current, [field]: value }));
+    },
+    [],
+  );
+
+  const getDraftPayload = useCallback(() => {
+    const start = startInputRef.current?.value || form.start;
+    const end = endInputRef.current?.value || form.end;
+    return {
+      ...form,
+      start,
+      end,
+    };
+  }, [form]);
 
   const loadOfferings = useCallback(async () => {
     const response = await fetchAdmin("/api/sales/trial-offerings");
@@ -115,10 +134,12 @@ export function SalesTrialOfferingsAdmin({
 
   async function createDraft() {
     setMessage(null);
+    const payload = getDraftPayload();
+    setForm(payload);
     const response = await fetchAdmin("/api/sales/trial-offerings", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(form),
+      body: JSON.stringify(payload),
     });
     const body = (await response.json()) as { error?: string };
     if (!response.ok) {
@@ -213,8 +234,8 @@ export function SalesTrialOfferingsAdmin({
           <label style={{ display: "grid", gap: "0.35rem" }}>Description<textarea style={{ ...controlStyle, minHeight: "5.5rem", resize: "vertical" as const }} rows={4} value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} /></label>
           <label style={{ display: "grid", gap: "0.35rem" }}>Item<select style={controlStyle} value={form.itemId} onChange={(event) => setForm((current) => ({ ...current, itemId: event.target.value }))}><option value="">Select an Item</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(12rem, 1fr))", gap: "0.9rem" }}>
-            <label style={{ display: "grid", gap: "0.35rem" }}>Start<input style={controlStyle} type="datetime-local" value={form.start} onChange={(event) => setForm((current) => ({ ...current, start: event.target.value }))} /></label>
-            <label style={{ display: "grid", gap: "0.35rem" }}>End<input style={controlStyle} type="datetime-local" value={form.end} onChange={(event) => setForm((current) => ({ ...current, end: event.target.value }))} /></label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>Start<input ref={startInputRef} style={controlStyle} type="datetime-local" value={form.start} onInput={(event) => syncDateTimeField("start", event.currentTarget.value)} onChange={(event) => syncDateTimeField("start", event.target.value)} /></label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>End<input ref={endInputRef} style={controlStyle} type="datetime-local" value={form.end} onInput={(event) => syncDateTimeField("end", event.currentTarget.value)} onChange={(event) => syncDateTimeField("end", event.target.value)} /></label>
             <label style={{ display: "grid", gap: "0.35rem" }}>Time zone<input style={controlStyle} list="trial-offering-timezones" value={form.timeZone} onChange={(event) => setForm((current) => ({ ...current, timeZone: event.target.value }))} /><datalist id="trial-offering-timezones">{timezones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}</datalist></label>
             <label style={{ display: "grid", gap: "0.35rem" }}>Sales Pro<select style={controlStyle} value={form.salesProEmail} onChange={(event) => setForm((current) => ({ ...current, salesProEmail: event.target.value }))}><option value="">Select an active Project member</option>{members.map((member) => <option key={member.email} value={member.email}>{member.displayName} ({member.email})</option>)}</select></label>
           </div>

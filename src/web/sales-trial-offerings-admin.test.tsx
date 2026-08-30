@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -121,5 +121,85 @@ describe("Sales Trial Offerings admin monitoring", () => {
     const region = screen.getByLabelText("Participant monitoring");
     expect(region.getAttribute("style")).toContain("overflow-x: auto");
     expect(region.getAttribute("style")).toContain("width: 100%");
+  });
+
+  it("retains manual datetime-local entry in state and sends it in the draft payload without requiring blur", async () => {
+    const capturedBodies: unknown[] = [];
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/sales/items") {
+        return json({
+          activeItems: [{ id: "item-1", name: "Accelerate Trial", defaultDurationMinutes: 1440 }],
+        });
+      }
+      if (url === "/api/sales/timezones") {
+        return json({ timezones: [{ id: "UTC", name: "UTC" }] });
+      }
+      if (url === "/api/sales/enablement-sessions/project-members?itemId=item-1") {
+        return json({
+          members: [{ email: "owner@example.test", displayName: "Owner Example" }],
+        });
+      }
+      if (url === "/api/sales/trial-offerings" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body));
+        capturedBodies.push(body);
+        return json({
+          offering: {
+            id: "offering-1",
+            title: body.title,
+            description: body.description,
+            itemId: body.itemId,
+            start: body.start,
+            end: body.end,
+            timeZone: body.timeZone,
+            salesProEmail: body.salesProEmail,
+            salesProDisplayName: "Owner Example",
+            status: "draft",
+            attentionReason: null,
+          },
+        }, { status: 201 });
+      }
+      if (url === "/api/sales/trial-offerings") {
+        return json({ offerings: [] });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+
+    render(<SalesTrialOfferingsAdmin email="sales-admin@certalis.demo" fetchAdmin={fetchAdmin as typeof fetch} />);
+
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText("Title"), "Helios Trial");
+    await user.type(screen.getByLabelText("Description"), "Shared trial");
+    await user.selectOptions(screen.getByLabelText("Item"), "item-1");
+    await user.selectOptions(
+      await screen.findByLabelText("Sales Pro"),
+      "owner@example.test",
+    );
+
+    const start = screen.getByLabelText("Start") as HTMLInputElement;
+    const end = screen.getByLabelText("End") as HTMLInputElement;
+
+    fireEvent.input(start, { target: { value: "2026-09-01T09:00" } });
+    fireEvent.input(end, { target: { value: "2026-09-01T17:00" } });
+
+    expect(start.value).toBe("2026-09-01T09:00");
+    expect(end.value).toBe("2026-09-01T17:00");
+
+    await user.click(screen.getByRole("button", { name: "Save draft" }));
+
+    await waitFor(() => {
+      expect(capturedBodies).toEqual([
+        {
+          title: "Helios Trial",
+          description: "Shared trial",
+          itemId: "item-1",
+          start: "2026-09-01T09:00",
+          end: "2026-09-01T17:00",
+          timeZone: "UTC",
+          salesProEmail: "owner@example.test",
+        },
+      ]);
+    });
+    expect((await screen.findByRole("status")).textContent).toContain("Trial Offering draft saved.");
   });
 });
