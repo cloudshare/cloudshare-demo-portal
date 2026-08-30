@@ -1965,6 +1965,94 @@ describe("Sales Trial Offering API", () => {
     });
   });
 
+  it("records protected provider-failure diagnostics even when the published attention save fails", async () => {
+    const repository = createOfferingRepository();
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticRepository });
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Helios Trial Offering",
+      description: "A shared Sales Trial for evaluators.",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: "sales-1",
+      externalId: "opaque-1",
+      start: "2026-09-01T09:00",
+      end: null as never,
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: "Owner Example",
+      status: "published",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:30:00Z"),
+      publishedAt: new Date("2026-08-29T12:10:00Z"),
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    const save = vi.fn().mockRejectedValue(new Error("sqlite write failed for published attention"));
+    const deps = createDeps(
+      {
+        ...repository,
+        save,
+      },
+      {
+        diagnostics,
+        deliveryFactory: {
+          forConnection: vi.fn().mockReturnValue({
+            createSession: vi.fn(),
+            updateSession: vi.fn().mockRejectedValue(
+              new CloudShareRequestError("unavailable", 503, {
+                method: "PUT",
+                path: "/sales/sales-1",
+                responseStatus: 503,
+                responseBody: { error: "unavailable" },
+              }),
+            ),
+          }),
+        } as never,
+      },
+    );
+
+    const result = await handleEndSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+    const persisted = await repository.findById("customer-1", "offering-1");
+    const [entry] = await diagnosticRepository.query({
+      source: "sales-trial-offerings",
+      operation: "sales.trial_offering.end",
+      outcome: "failure",
+    });
+
+    expect(result).toMatchObject({
+      status: 502,
+      body: {
+        error:
+          "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics. Portal state may be stale.",
+        needsAttention: true,
+      },
+    });
+    expect((result.body as { offering?: unknown }).offering).toBeUndefined();
+    expect(persisted).toMatchObject({
+      status: "published",
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    expect(entry).toMatchObject({
+      outcome: "failure",
+      request: { method: "PUT", path: "/sales/sales-1" },
+      response: { status: 503, body: { error: "unavailable" } },
+      details: expect.objectContaining({
+        integrationSurface: "cloudshare.v4.sales",
+        failureMode: "cloudshare_end_trial_update",
+        status: "published",
+        needsAttention: true,
+        localAttentionMarkerPersisted: false,
+      }),
+    });
+  });
+
   it("still reports provider end-trial failure when the local attention marker cannot be saved", async () => {
     const repository = createOfferingRepository();
     const diagnosticRepository = createInMemoryDiagnosticLogRepository();
@@ -2028,16 +2116,11 @@ describe("Sales Trial Offering API", () => {
       status: 502,
       body: {
         error:
-          "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics.",
+          "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics. Portal state may be stale.",
         needsAttention: true,
-        offering: {
-          id: "offering-1",
-          status: "published",
-          attentionReason:
-            "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics.",
-        },
       },
     });
+    expect((result.body as { offering?: unknown }).offering).toBeUndefined();
     expect(persisted).toMatchObject({
       status: "published",
       unpublishedAt: null,

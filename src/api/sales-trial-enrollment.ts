@@ -50,6 +50,7 @@ export interface SalesTrialEnrollmentDeps {
       >,
     ): Pick<
       SalesDelivery,
+      | "readSession"
       | "ensureParticipantCorrelationProperties"
       | "listParticipants"
       | "registerParticipants"
@@ -125,6 +126,28 @@ export async function handleEnterSalesTrialOffering(
   const delivery =
     deps.deliveryFactory?.forConnection(connection) ??
     createCloudShareSalesDelivery(deps.cloudshare!.forConnection(connection));
+  try {
+    const session = await delivery.readSession(offering.cloudShareSalesExperienceId);
+    if (session.status === "ended") {
+      return denied(
+        deps,
+        request,
+        correlationId,
+        "launch_unavailable",
+        GENERIC_UNAVAILABLE,
+        endedOffering(session),
+      );
+    }
+  } catch (error) {
+    return denied(
+      deps,
+      request,
+      correlationId,
+      "provider_failure",
+      GENERIC_UNAVAILABLE,
+      error,
+    );
+  }
   const reservation =
     (await deps.enrollments.reserveForLaunch?.(
       createEnrollment(request, (deps.newId ?? randomUUID)(), now),
@@ -551,6 +574,25 @@ function classifyAttentionReason(error: unknown): string | null {
     : null;
 }
 
+function endedOffering(
+  session: { readonly id: string } & SalesDeliveryEvidence,
+): CloudShareResponseError {
+  return new CloudShareResponseError(
+    "CloudShare no longer reports this Sales Trial Offering as open for launch.",
+    {
+      method: session.request.method,
+      path: session.request.path,
+      ...(session.request.query ? { requestQuery: session.request.query } : {}),
+      ...(session.request.headers ? { requestHeaders: session.request.headers } : {}),
+      ...(session.request.body !== undefined ? { requestBody: session.request.body } : {}),
+      responseStatus: session.response.status,
+      ...(session.response.headers ? { responseHeaders: session.response.headers } : {}),
+      responseBody: session.response.body,
+      failureMode: "offering_ended",
+    },
+  );
+}
+
 async function denied(
   deps: SalesTrialEnrollmentDeps,
   request: SalesTrialOfferingEnterRequest,
@@ -897,6 +939,9 @@ function salesTrialIntegrationSurfaceForPath(path: unknown): string {
   if (typeof path !== "string") {
     return "portal.sales_trial";
   }
+  if (/^\/sales\/[^/]+$/.test(path)) {
+    return "cloudshare.v4.sales";
+  }
   if (path.includes("/sponsored-link")) {
     return "cloudshare.v4.sales.sponsored_link";
   }
@@ -912,6 +957,9 @@ function salesTrialIntegrationSurfaceForPath(path: unknown): string {
 function salesTrialAttemptedOperationForPath(path: unknown): string {
   if (typeof path !== "string") {
     return "portal_guard";
+  }
+  if (/^\/sales\/[^/]+$/.test(path)) {
+    return "read_offering";
   }
   if (path.includes("/sponsored-link")) {
     return "create_sponsored_link";

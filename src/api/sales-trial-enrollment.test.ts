@@ -100,6 +100,12 @@ function createDeps(
     request: { method: "GET", path: "/sales/sales-1/participants" },
     response: { status: 200, body: { participants: [] } },
   });
+  const readSession = vi.fn().mockResolvedValue({
+    id: "sales-1",
+    status: "inProgress",
+    request: { method: "GET", path: "/sales/sales-1" },
+    response: { status: 200, body: { id: "sales-1", status: "inProgress" } },
+  });
   const registerParticipants = vi.fn().mockResolvedValue({
     request: { method: "POST", path: "/sales/sales-1/participants" },
     response: { status: 201, body: {} },
@@ -119,6 +125,7 @@ function createDeps(
     connections: { findByCustomerId: vi.fn().mockResolvedValue({ id: "connection-1" }) },
     deliveryFactory: {
       forConnection: vi.fn().mockReturnValue({
+        readSession,
         ensureParticipantCorrelationProperties: vi.fn().mockResolvedValue({
           requiredKeys: [
             "certalisSalesTrialEnrollmentId",
@@ -150,6 +157,7 @@ function createDeps(
     enrollments,
     diagnosticRepository,
     audit: deps.audit,
+    readSession,
     listParticipants,
     registerParticipants,
     updateParticipantCorrelation,
@@ -174,6 +182,113 @@ const request = {
 };
 
 describe("Sales Trial offering entry", () => {
+  it("fails closed before enrollment mutation when CloudShare reports the offering ended", async () => {
+    const { deps, enrollments, diagnosticRepository, audit, readSession, registerParticipants, createSponsoredLink } =
+      createDeps();
+    readSession.mockResolvedValue({
+      id: "sales-1",
+      status: "ended",
+      request: { method: "GET", path: "/sales/sales-1" },
+      response: { status: 200, body: { id: "sales-1", status: "ended" } },
+    });
+
+    const result = await handleEnterSalesTrialOffering(deps, request);
+    const persisted = await enrollments.findByOfferingAndPortalUser(
+      "customer-1",
+      "offering-1",
+      "trial-user-1",
+    );
+    const [failure] = await diagnosticRepository.query({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.entered",
+      outcome: "failure",
+    });
+
+    expect(result).toMatchObject({
+      status: 404,
+      body: { error: "This Sales Trial launch is unavailable.", correlationId: expect.any(String) },
+    });
+    expect(persisted).toBeNull();
+    expect(registerParticipants).not.toHaveBeenCalled();
+    expect(createSponsoredLink).not.toHaveBeenCalled();
+    expect(failure).toMatchObject({
+      correlationId: result.body?.correlationId,
+      request: expect.objectContaining({
+        method: "GET",
+        path: "/sales/sales-1",
+      }),
+      response: expect.objectContaining({
+        status: 200,
+        body: { id: "sales-1", status: "ended" },
+      }),
+      details: expect.objectContaining({
+        integrationSurface: "cloudshare.v4.sales",
+        failureMode: "launch_unavailable",
+      }),
+    });
+    expect(audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "sales_trial.offering.entered",
+        outcome: "failure",
+        details: expect.objectContaining({ failureMode: "launch_unavailable" }),
+      }),
+    );
+  });
+
+  it("fails closed before enrollment mutation when the CloudShare offering status check cannot confirm availability", async () => {
+    const { deps, enrollments, diagnosticRepository, audit, readSession, registerParticipants, createSponsoredLink } =
+      createDeps();
+    readSession.mockRejectedValue(
+      new CloudShareTransportError("sales read timed out", {
+        method: "GET",
+        path: "/sales/sales-1",
+        cause: "ETIMEDOUT",
+        transport: "tcp",
+      }),
+    );
+
+    const result = await handleEnterSalesTrialOffering(deps, request);
+    const persisted = await enrollments.findByOfferingAndPortalUser(
+      "customer-1",
+      "offering-1",
+      "trial-user-1",
+    );
+    const [failure] = await diagnosticRepository.query({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.entered",
+      outcome: "failure",
+    });
+
+    expect(result).toMatchObject({
+      status: 404,
+      body: { error: "This Sales Trial launch is unavailable.", correlationId: expect.any(String) },
+    });
+    expect(persisted).toBeNull();
+    expect(registerParticipants).not.toHaveBeenCalled();
+    expect(createSponsoredLink).not.toHaveBeenCalled();
+    expect(failure).toMatchObject({
+      correlationId: result.body?.correlationId,
+      request: expect.objectContaining({
+        method: "GET",
+        path: "/sales/sales-1",
+      }),
+      response: expect.objectContaining({
+        transport: "tcp",
+      }),
+      details: expect.objectContaining({
+        integrationSurface: "cloudshare.v4.sales",
+        failureMode: "provider_failure",
+      }),
+    });
+    expect(audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "sales_trial.offering.entered",
+        outcome: "failure",
+        details: expect.objectContaining({ failureMode: "provider_failure" }),
+      }),
+    );
+  });
+
   it("allows entry for an open-ended published offering after its start time", async () => {
     const { deps, enrollments, listParticipants, registerParticipants, createSponsoredLink } =
       createDeps({
@@ -467,6 +582,12 @@ describe("Sales Trial offering entry", () => {
       enrollments,
       deliveryFactory: {
         forConnection: vi.fn().mockReturnValue({
+          readSession: vi.fn().mockResolvedValue({
+            id: "sales-1",
+            status: "inProgress",
+            request: { method: "GET", path: "/sales/sales-1" },
+            response: { status: 200, body: { id: "sales-1", status: "inProgress" } },
+          }),
           ensureParticipantCorrelationProperties: vi.fn().mockResolvedValue({
             requiredKeys: [
               "certalisSalesTrialEnrollmentId",

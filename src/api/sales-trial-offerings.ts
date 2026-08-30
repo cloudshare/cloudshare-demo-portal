@@ -1176,6 +1176,10 @@ const LOCAL_CORRELATION_PERSISTENCE_REASON =
   "CloudShare created the shared Sales Trial Experience, but Certalis could not durably save its correlation. Do not retry publication; review support diagnostics.";
 const PROVISIONING_RESERVATION_REASON =
   "Sales Trial Offering publication is already in progress or unresolved. Do not retry publication or unpublish; review support diagnostics.";
+const END_PROVIDER_FAILURE_REASON =
+  "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics.";
+const END_LOCAL_PERSISTENCE_REASON =
+  "CloudShare ended the Sales Trial Offering, but Certalis could not durably unpublish it locally. Do not retry end-trial; review support diagnostics.";
 
 async function publishFailure(
   deps: SalesTrialOfferingsDeps,
