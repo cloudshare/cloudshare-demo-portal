@@ -37,7 +37,7 @@ export function createCloudShareProjectMemberSource(client: CloudShareClient): C
         ? await client.requestV3Detailed({
             method: "GET",
             path: "/users",
-            query: { projectUsers: "true", status: "active", projectId, getRows: "true" },
+            query: { projectUsers: "true", status: "active", loggedIn: "ever", projectId, getRows: "true" },
             schema: memberListSchema,
           })
         : await fallbackDetailed(client, projectId);
@@ -52,7 +52,7 @@ export function createCloudShareProjectMemberSource(client: CloudShareClient): C
 }
 
 async function fallbackDetailed(client: CloudShareClient, projectId: string) {
-  const query = { projectUsers: "true", status: "active", projectId, getRows: "true" };
+  const query = { projectUsers: "true", status: "active", loggedIn: "ever", projectId, getRows: "true" };
   const data = await client.requestV3({ method: "GET", path: "/users", query, schema: memberListSchema });
   return { data, request: { method: "GET" as const, path: "/users", query }, response: { status: 200, body: data } };
 }

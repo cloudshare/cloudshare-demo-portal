@@ -1797,14 +1797,17 @@ documented contract; the safe Certalis probe returned 404 and the inferred adapt
 CloudShare's own GUI appears to list active Project members through the undocumented classic-v3
 surface:
 
-`GET https://use.cloudshare.com/api/v3/users?projectUsers=true&status=active&projectId=<project-id>&getRows=true`
+`GET https://use.cloudshare.com/api/v3/users?projectUsers=true&status=active&loggedIn=ever&projectId=<project-id>&getRows=true`
 
 Live verification on 2026-07-14 confirmed HTTP 200 for a Certalis Project using exactly
-`projectUsers=true`, `status=active`, `projectId`, and `getRows=true`. The GUI response exposed a
-row collection (observed as `Rows`) with member identity fields including email and name parts;
+`projectUsers=true`, `status=active`, `loggedIn=ever`, `projectId`, and `getRows=true`. A later
+live roster check on 2026-08-30 confirmed that omitting `loggedIn=ever` falls back to CloudShare's
+default recent-login filter and can undercount active Project members, while the GUI's
+`loggedIn=ever` query returns the full active roster. The response exposed a row collection
+(observed as `Rows`) with member identity fields including email and name parts;
 Certalis normalizes only email plus a display name and never returns raw CloudShare member IDs to
-the browser. Both `projectUsers=true` and `getRows=true` remain required by the implemented typed
-adapter; additional GUI parameters remain undocumented.
+the browser. `projectUsers=true`, `getRows=true`, and `loggedIn=ever` remain required by the
+implemented typed adapter; additional GUI parameters remain undocumented.
 
 SUP-5002 tracks the misleading API documentation. BAC-24702 is the requested path to productize
 the Project User Management APIs so a future Sales Delivery adapter can replace this unsupported
