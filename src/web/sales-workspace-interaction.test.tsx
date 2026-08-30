@@ -295,6 +295,7 @@ describe("SalesWorkspace interaction", () => {
         itemId: "item-1",
         start: "2026-09-01T09:00",
         end: "2026-09-01T17:00",
+        noEndDate: false,
         timeZone: "UTC",
         salesProEmail: "owner@example.test",
       }]);
@@ -368,6 +369,7 @@ describe("SalesWorkspace interaction", () => {
         itemId: "item-1",
         start: "",
         end: "2026-09-01T17:00",
+        noEndDate: false,
         timeZone: "UTC",
         salesProEmail: "owner@example.test",
       }]);
@@ -476,6 +478,7 @@ describe("SalesWorkspace interaction", () => {
           itemId: "item-1",
           start: "2026-08-30T18:59",
           end: "",
+          noEndDate: false,
           timeZone: "UTC",
           salesProEmail: "first-owner@example.test",
         },
@@ -485,6 +488,7 @@ describe("SalesWorkspace interaction", () => {
           itemId: "item-1",
           start: "2026-08-30T18:59",
           end: "2026-08-30T19:54",
+          noEndDate: false,
           timeZone: "Europe/London",
           salesProEmail: "sales-pro@example.test",
         },
