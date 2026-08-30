@@ -39,6 +39,20 @@ function createEnrollmentRepository(): SalesTrialEnrollmentRepository {
     async save(enrollment) {
       rows.set(enrollment.id, enrollment);
     },
+    async reserveForLaunch(enrollment) {
+      const existing =
+        [...rows.values()].find(
+          (row) =>
+            row.customerId === enrollment.customerId &&
+            row.salesTrialOfferingId === enrollment.salesTrialOfferingId &&
+            row.portalUserId === enrollment.portalUserId,
+        ) ?? null;
+      if (existing) {
+        return { enrollment: existing, created: false } as const;
+      }
+      rows.set(enrollment.id, enrollment);
+      return { enrollment, created: true } as const;
+    },
     async findByOfferingAndPortalUser(customerId, salesTrialOfferingId, portalUserId) {
       return (
         [...rows.values()].find(
@@ -232,6 +246,112 @@ describe("Sales Trial offering entry", () => {
     expect(createSponsoredLink).toHaveBeenCalledTimes(2);
   });
 
+  it("reserves the first enrollment before provider mutation and blocks a concurrent duplicate launch without a second provider add", async () => {
+    const enrollments = createEnrollmentRepository();
+    const firstRosterGate: { release?: () => void } = {};
+    const firstRosterRead = new Promise<void>((resolve) => {
+      firstRosterGate.release = resolve;
+    });
+    const listParticipants = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        await firstRosterRead;
+        return {
+          participants: [],
+          request: { method: "GET", path: "/sales/sales-1/participants" },
+          response: { status: 200, body: { participants: [] } },
+        };
+      })
+      .mockResolvedValueOnce({
+        participants: [
+          {
+            id: "remote-1",
+            firstName: "Ari",
+            lastName: "Visitor",
+            email: "visitor@example.test",
+            invitationStatus: "notSent",
+            invitedBy: null,
+            participationStatus: "pending",
+            firstJoined: null,
+            environmentId: null,
+            envStatus: null,
+            customProperties: {
+              certalisSalesTrialEnrollmentId: "enrollment-1",
+              certalisSalesTrialParticipantUserId: "trial-user-1",
+            },
+          },
+        ],
+        request: { method: "GET", path: "/sales/sales-1/participants" },
+        response: { status: 200, body: { participants: [{ id: "remote-1" }] } },
+      });
+    const registerParticipants = vi.fn().mockResolvedValue({
+      request: { method: "POST", path: "/sales/sales-1/participants" },
+      response: { status: 201, body: {} },
+    });
+    const createSponsoredLink = vi.fn().mockResolvedValue({
+      loginUrl: "https://use.cloudshare.com/secret",
+      request: { method: "POST", path: "/sales/sales-1/sponsored-link" },
+      response: { status: 200, body: { loginUrl: "https://use.cloudshare.com/secret" } },
+    });
+    const deps = createDeps({
+      enrollments,
+      deliveryFactory: {
+        forConnection: vi.fn().mockReturnValue({
+          ensureParticipantCorrelationProperties: vi.fn().mockResolvedValue({
+            requiredKeys: [
+              "certalisSalesTrialEnrollmentId",
+              "certalisSalesTrialParticipantUserId",
+            ],
+            availableKeys: [
+              "certalisSalesTrialEnrollmentId",
+              "certalisSalesTrialParticipantUserId",
+            ],
+            requests: [],
+            responses: [],
+            request: { method: "GET", path: "/sales/sales-1/users/properties" },
+            response: { status: 200, body: [] },
+          }),
+          listParticipants,
+          registerParticipants,
+          updateParticipantCorrelation: vi.fn(),
+          createSponsoredLink,
+        }),
+      },
+      newId: vi.fn().mockReturnValueOnce("enrollment-1").mockReturnValueOnce("enrollment-2"),
+    }).deps;
+
+    const first = handleEnterSalesTrialOffering(deps, request);
+    await Promise.resolve();
+    const second = await handleEnterSalesTrialOffering(deps, request);
+    if (firstRosterGate.release) {
+      firstRosterGate.release();
+    }
+    const firstResult = await first;
+    const persisted = await enrollments.findByOfferingAndPortalUser(
+      "customer-1",
+      "offering-1",
+      "trial-user-1",
+    );
+    const all = await enrollments.listByOffering("customer-1", "offering-1");
+
+    expect(second).toMatchObject({
+      status: 404,
+      body: { error: "This Sales Trial launch is unavailable.", correlationId: expect.any(String) },
+    });
+    expect(firstResult).toEqual({
+      status: 302,
+      redirect: "https://use.cloudshare.com/secret",
+    });
+    expect(registerParticipants).toHaveBeenCalledTimes(1);
+    expect(createSponsoredLink).toHaveBeenCalledTimes(1);
+    expect(all).toHaveLength(1);
+    expect(persisted).toMatchObject({
+      id: "enrollment-1",
+      cloudShareParticipantId: "remote-1",
+      status: "active",
+    });
+  });
+
   it("fails closed when CloudShare returns more than one exact roster match and never mints a sponsored link", async () => {
     const { deps, listParticipants, createSponsoredLink, enrollments } = createDeps();
     listParticipants.mockResolvedValue({
@@ -410,6 +530,128 @@ describe("Sales Trial offering entry", () => {
     expect(createSponsoredLink).not.toHaveBeenCalled();
     expect(persisted).toMatchObject({
       status: "needs_attention",
+    });
+  });
+
+  it("fails closed when a persisted CloudShare participant id is absent and another roster row reuses the trial correlation keys", async () => {
+    const { deps, enrollments, listParticipants, registerParticipants, updateParticipantCorrelation, createSponsoredLink } = createDeps();
+    await enrollments.save({
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: "remote-1",
+      cloudShareRosterEnvironmentReference: null,
+      environmentStatus: null,
+      firstJoined: null,
+      status: "active",
+      attentionReason: null,
+      lastLaunchedAt: new Date("2026-08-30T09:30:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T09:30:00.000Z"),
+      createdAt: new Date("2026-08-30T09:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T09:30:00.000Z"),
+    });
+    listParticipants.mockResolvedValue({
+      participants: [
+        {
+          id: "remote-2",
+          firstName: "Ari",
+          lastName: "Visitor",
+          email: "visitor@example.test",
+          invitationStatus: "notSent",
+          invitedBy: null,
+          participationStatus: "pending",
+          firstJoined: null,
+          environmentId: null,
+          envStatus: null,
+          customProperties: {
+            certalisSalesTrialEnrollmentId: "enrollment-1",
+            certalisSalesTrialParticipantUserId: "trial-user-1",
+          },
+        },
+      ],
+      request: { method: "GET", path: "/sales/sales-1/participants", query: { offset: "0", limit: "100" } },
+      response: { status: 200, body: { participants: [{ id: "remote-2" }] } },
+    });
+
+    const result = await handleEnterSalesTrialOffering(deps, request);
+    const persisted = await enrollments.findByOfferingAndPortalUser(
+      "customer-1",
+      "offering-1",
+      "trial-user-1",
+    );
+
+    expect(result).toMatchObject({
+      status: 404,
+      body: { error: "This Sales Trial launch is unavailable.", correlationId: expect.any(String) },
+    });
+    expect(registerParticipants).not.toHaveBeenCalled();
+    expect(updateParticipantCorrelation).not.toHaveBeenCalled();
+    expect(createSponsoredLink).not.toHaveBeenCalled();
+    expect(persisted).toMatchObject({
+      status: "needs_attention",
+    });
+  });
+
+  it("fails closed on a sole propertyless same-email roster row and records protected provider evidence", async () => {
+    const { deps, diagnosticRepository, enrollments, listParticipants, registerParticipants, updateParticipantCorrelation, createSponsoredLink } = createDeps();
+    listParticipants.mockResolvedValue({
+      participants: [
+        {
+          id: "remote-1",
+          firstName: "Ari",
+          lastName: "Visitor",
+          email: "visitor@example.test",
+          invitationStatus: "notSent",
+          invitedBy: null,
+          participationStatus: "pending",
+          firstJoined: null,
+          environmentId: null,
+          envStatus: null,
+          customProperties: {},
+        },
+      ],
+      request: { method: "GET", path: "/sales/sales-1/participants", query: { offset: "0", limit: "100" } },
+      response: { status: 200, body: { participants: [{ id: "remote-1", email: "visitor@example.test" }] } },
+    });
+
+    const result = await handleEnterSalesTrialOffering(deps, request);
+    const persisted = await enrollments.findByOfferingAndPortalUser(
+      "customer-1",
+      "offering-1",
+      "trial-user-1",
+    );
+    const [failure] = await diagnosticRepository.query({
+      source: "sales-trial-enrollment",
+      outcome: "failure",
+    });
+
+    expect(result).toMatchObject({
+      status: 404,
+      body: { error: "This Sales Trial launch is unavailable.", correlationId: expect.any(String) },
+    });
+    expect(registerParticipants).not.toHaveBeenCalled();
+    expect(updateParticipantCorrelation).not.toHaveBeenCalled();
+    expect(createSponsoredLink).not.toHaveBeenCalled();
+    expect(persisted).toMatchObject({
+      id: "enrollment-1",
+      status: "needs_attention",
+    });
+    expect(failure).toMatchObject({
+      correlationId: result.body?.correlationId,
+      details: expect.objectContaining({
+        integrationSurface: "cloudshare.v4.sales.participants",
+      }),
+      request: expect.objectContaining({
+        method: "GET",
+        path: "/sales/sales-1/participants",
+      }),
+      response: expect.objectContaining({
+        body: { participants: [{ id: "remote-1", email: "visitor@example.test" }] },
+      }),
     });
   });
 

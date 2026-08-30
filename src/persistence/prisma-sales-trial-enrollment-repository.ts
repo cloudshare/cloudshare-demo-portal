@@ -15,6 +15,31 @@ export function createPrismaSalesTrialEnrollmentRepository(
         update: serialize(enrollment),
       });
     },
+    async reserveForLaunch(enrollment) {
+      try {
+        const created = await prisma.salesTrialEnrollment.create({
+          data: serialize(enrollment),
+        });
+        return { enrollment: hydrate(created), created: true } as const;
+      } catch (error) {
+        if (!isLaunchReservationConflict(error)) {
+          throw error;
+        }
+        const existing = await prisma.salesTrialEnrollment.findUnique({
+          where: {
+            customerId_salesTrialOfferingId_portalUserId: {
+              customerId: enrollment.customerId,
+              salesTrialOfferingId: enrollment.salesTrialOfferingId,
+              portalUserId: enrollment.portalUserId,
+            },
+          },
+        });
+        if (!existing) {
+          throw error;
+        }
+        return { enrollment: hydrate(existing), created: false } as const;
+      }
+    },
     async findByOfferingAndPortalUser(customerId, salesTrialOfferingId, portalUserId) {
       const row = await prisma.salesTrialEnrollment.findUnique({
         where: {
@@ -36,6 +61,18 @@ export function createPrismaSalesTrialEnrollmentRepository(
       ).map(hydrate);
     },
   };
+}
+
+function isLaunchReservationConflict(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "P2002" &&
+    Array.isArray((error as { meta?: { target?: unknown } }).meta?.target) &&
+    JSON.stringify((error as { meta?: { target?: unknown } }).meta?.target) ===
+      JSON.stringify(["customerId", "salesTrialOfferingId", "portalUserId"])
+  );
 }
 
 function serialize(enrollment: SalesTrialEnrollment) {

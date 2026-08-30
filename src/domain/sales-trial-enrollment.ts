@@ -22,6 +22,12 @@ export interface SalesTrialEnrollment {
 
 export interface SalesTrialEnrollmentRepository {
   save(enrollment: SalesTrialEnrollment): Promise<void>;
+  reserveForLaunch?(
+    enrollment: SalesTrialEnrollment,
+  ): Promise<{
+    readonly enrollment: SalesTrialEnrollment;
+    readonly created: boolean;
+  }>;
   findByOfferingAndPortalUser(
     customerId: string,
     salesTrialOfferingId: string,

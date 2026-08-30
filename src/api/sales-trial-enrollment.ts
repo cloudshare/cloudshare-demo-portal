@@ -125,24 +125,46 @@ export async function handleEnterSalesTrialOffering(
   const delivery =
     deps.deliveryFactory?.forConnection(connection) ??
     createCloudShareSalesDelivery(deps.cloudshare!.forConnection(connection));
-
-  const current = await deps.enrollments.findByOfferingAndPortalUser(
-    request.customerId,
-    request.offeringId,
-    request.participant.userId,
-  );
-  if (current?.status === "needs_attention") {
+  const reservation =
+    (await deps.enrollments.reserveForLaunch?.(
+      createEnrollment(request, (deps.newId ?? randomUUID)(), now),
+    )) ?? {
+      enrollment:
+        (await deps.enrollments.findByOfferingAndPortalUser(
+          request.customerId,
+          request.offeringId,
+          request.participant.userId,
+        )) ?? createEnrollment(request, (deps.newId ?? randomUUID)(), now),
+      created: false,
+    };
+  if (!deps.enrollments.reserveForLaunch && reservation.enrollment.createdAt.getTime() === now.getTime()) {
+    await deps.enrollments.save(reservation.enrollment);
+  }
+  if (reservation.enrollment.status === "needs_attention") {
     return denied(
       deps,
       request,
       correlationId,
       "needs_attention",
-      current.attentionReason ?? undefined,
+      reservation.enrollment.attentionReason ?? undefined,
     );
   }
-
-  const enrollmentId = current?.id ?? (deps.newId ?? randomUUID)();
-  let enrollment = current ?? createEnrollment(request, enrollmentId, now);
+  if (
+    !reservation.created &&
+    reservation.enrollment.status === "provisioning" &&
+    !reservation.enrollment.cloudShareParticipantId
+  ) {
+    return denied(
+      deps,
+      request,
+      correlationId,
+      "launch_in_progress",
+      "This Sales Trial launch is unavailable.",
+      undefined,
+      reservation.enrollment.id,
+    );
+  }
+  let enrollment = reservation.enrollment;
 
   try {
     const correlationEvidence = await delivery.ensureParticipantCorrelationProperties(
@@ -361,7 +383,7 @@ async function resolveEnrollment(input: {
         (participant) => participant.id === input.enrollment.cloudShareParticipantId,
       ) ?? null
     : null;
-  if (input.enrollment.cloudShareParticipantId && !stalePersistedMatch && exactBefore.length === 0) {
+  if (input.enrollment.cloudShareParticipantId && !stalePersistedMatch) {
     throw missingPersistedParticipant(input.remoteBefore, input.enrollment);
   }
   if (
@@ -383,28 +405,15 @@ async function resolveEnrollment(input: {
   if (exactBefore.length === 1) {
     return { remote: exactBefore[0]! };
   }
-  if (propertylessByEmail.length > 1) {
-    throw ambiguousRoster(input.remoteBefore, input.enrollment, "duplicate_propertyless_email");
+  if (propertylessByEmail.length > 0) {
+    throw propertylessSameEmailConflict(input.remoteBefore, input.enrollment, propertylessByEmail);
   }
-  if (propertylessByEmail.length === 1) {
-    const adopted = propertylessByEmail[0]!;
-    await input.delivery.updateParticipantCorrelation(
-      input.salesExperienceId,
-      adopted.id,
-      {
-        firstName: input.enrollment.firstName,
-        lastName: input.enrollment.lastName,
-        customProperties: enrollmentCorrelationProperties(input.enrollment),
-      },
-    );
-  } else {
-    await input.delivery.registerParticipants(input.salesExperienceId, [
-      {
-        ...participantIdentity(input.enrollment),
-        customProperties: enrollmentCorrelationProperties(input.enrollment),
-      },
-    ]);
-  }
+  await input.delivery.registerParticipants(input.salesExperienceId, [
+    {
+      ...participantIdentity(input.enrollment),
+      customProperties: enrollmentCorrelationProperties(input.enrollment),
+    },
+  ]);
   const remoteAfter = await input.delivery.listParticipants(input.salesExperienceId);
   const exactAfter = exactMatches(remoteAfter.participants, input.enrollment);
   if (exactAfter.length !== 1) {
@@ -489,7 +498,8 @@ function classifyAttentionReason(error: unknown): string | null {
     (
       failureMode.includes("duplicate") ||
       failureMode.includes("reconciliation") ||
-      failureMode.includes("correlation")
+      failureMode.includes("correlation") ||
+      failureMode.includes("propertyless")
     )
     ? NEEDS_ATTENTION_REASON
     : null;
@@ -660,6 +670,34 @@ function missingPersistedParticipant(
       cloudShareParticipantId: enrollment.cloudShareParticipantId ?? undefined,
       salesTrialEnrollmentId: enrollment.id,
       failureMode: "participant_reconciliation_missing_persisted_id",
+    },
+  );
+}
+
+function propertylessSameEmailConflict(
+  remote: SalesDeliveryEvidence,
+  enrollment: Pick<SalesTrialEnrollment, "id" | "portalUserId" | "email">,
+  participants: readonly SalesParticipant[],
+): CloudShareResponseError {
+  return new CloudShareResponseError(
+    "CloudShare returned an unproven same-email Sales Trial participant without the required Certalis correlation values.",
+    {
+      method: remote.request.method,
+      path: remote.request.path,
+      ...(remote.request.query ? { requestQuery: remote.request.query } : {}),
+      ...(remote.request.headers ? { requestHeaders: remote.request.headers } : {}),
+      ...(remote.request.body !== undefined ? { requestBody: remote.request.body } : {}),
+      status: remote.response.status,
+      responseStatus: remote.response.status,
+      ...(remote.response.headers ? { responseHeaders: remote.response.headers } : {}),
+      responseBody: remote.response.body,
+      salesTrialEnrollmentId: enrollment.id,
+      portalUserId: enrollment.portalUserId,
+      participantCount: participants.length,
+      failureMode:
+        participants.length > 1
+          ? "duplicate_propertyless_same_email"
+          : "propertyless_same_email_conflict",
     },
   );
 }
