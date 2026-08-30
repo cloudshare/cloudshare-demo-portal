@@ -23,13 +23,14 @@ export async function GET(
 
   if (!session || session.role !== "sales_trial_participant") {
     const correlationId = randomUUID();
+    const customerId = session?.customerId ?? null;
     await Promise.allSettled([
       services.diagnosticRecorder?.record({
         source: "sales-trial-enter-route",
         operation: "sales_trial.offering.enter.denied",
         outcome: "failure",
         level: "warn",
-        customerId: null,
+        customerId,
         actor: session ? { type: "portal_session" } : { type: "anonymous" },
         subject: { type: "sales_trial_offering", id: offeringId },
         correlationId,
@@ -43,7 +44,7 @@ export async function GET(
       services.audit?.write({
         id: randomUUID(),
         occurredAt: new Date(),
-        customerId: null,
+        customerId,
         actorType: session ? "portal_session" : "anonymous",
         actorId: null,
         actorEmail: null,

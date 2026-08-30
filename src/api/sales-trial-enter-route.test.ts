@@ -154,7 +154,7 @@ describe("Sales Trial enter route", () => {
         source: "sales-trial-enter-route",
         operation: "sales_trial.offering.enter.denied",
         outcome: "failure",
-        customerId: null,
+        customerId: "customer-helios",
         subject: { type: "sales_trial_offering", id: "offering-1" },
         details: expect.objectContaining({
           integrationSurface: "portal.sales_trial",
@@ -164,7 +164,7 @@ describe("Sales Trial enter route", () => {
     );
     expect(mockAuditWrite).toHaveBeenCalledWith(
       expect.objectContaining({
-        customerId: null,
+        customerId: "customer-helios",
         action: "sales_trial.offering.enter.denied",
         subjectType: "sales_trial_offering",
         subjectId: "offering-1",
@@ -177,7 +177,6 @@ describe("Sales Trial enter route", () => {
       }),
     );
     expect(JSON.stringify(mockDiagnosticRecord.mock.calls[0]?.[0] ?? {})).not.toContain("candidate@helioscx.demo");
-    expect(JSON.stringify(mockDiagnosticRecord.mock.calls[0]?.[0] ?? {})).not.toContain("customer-helios");
   });
 
   it("rejects a missing session with the same safe audited denial", async () => {
