@@ -1866,7 +1866,7 @@ describe("Sales Trial Offering API", () => {
     });
   });
 
-  it("fails closed when provider end-trial update fails and preserves the published offering", async () => {
+  it("fails closed when provider end-trial update fails and preserves the published lifecycle visibility", async () => {
     const repository = createOfferingRepository();
     const diagnosticRepository = createInMemoryDiagnosticLogRepository();
     const diagnostics = createDiagnosticRecorder({ repository: diagnosticRepository });
@@ -1923,12 +1923,19 @@ describe("Sales Trial Offering API", () => {
       body: {
         error: "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics.",
         needsAttention: true,
-        offering: { id: "offering-1", status: "needs_attention" },
+        offering: {
+          id: "offering-1",
+          status: "published",
+          attentionReason:
+            "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics.",
+        },
       },
     });
     expect(persisted).toMatchObject({
-      status: "needs_attention",
+      status: "published",
       unpublishedAt: null,
+      attentionReason:
+        "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics.",
     });
     expect(entry).toMatchObject({
       outcome: "failure",
@@ -1937,6 +1944,8 @@ describe("Sales Trial Offering API", () => {
       details: expect.objectContaining({
         integrationSurface: "cloudshare.v4.sales",
         failureMode: "cloudshare_end_trial_update",
+        status: "published",
+        needsAttention: true,
       }),
     });
   });

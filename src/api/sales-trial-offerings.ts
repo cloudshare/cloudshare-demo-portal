@@ -927,14 +927,14 @@ export async function handleEndSalesTrialOffering(
     ]);
     return response(200, { offering: toPortalOffering(unpublished) });
   } catch (error) {
-    const needsAttention = {
+    const publishedWithAttention = {
       ...offering,
-      status: "needs_attention" as const,
+      status: "published" as const,
       updatedAt: now,
       attentionReason:
         "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics.",
     };
-    await deps.offerings.save(needsAttention);
+    await deps.offerings.save(publishedWithAttention);
     const evidence = cloudShareEvidence(error);
     await Promise.allSettled([
       deps.diagnostics?.record({
@@ -954,7 +954,8 @@ export async function handleEndSalesTrialOffering(
           integrationSurface: "cloudshare.v4.sales",
           failureMode: "cloudshare_end_trial_update",
           previousStatus: offering.status,
-          status: "needs_attention",
+          status: "published",
+          needsAttention: true,
         },
       }),
       auditLifecycle(
@@ -967,7 +968,8 @@ export async function handleEndSalesTrialOffering(
           itemId: offering.itemId,
           lifecycle: "end",
           previousStatus: offering.status,
-          status: "needs_attention",
+          status: "published",
+          needsAttention: true,
           failureMode: "cloudshare_end_trial_update",
           integrationSurface: "cloudshare.v4.sales",
         },
@@ -978,7 +980,7 @@ export async function handleEndSalesTrialOffering(
       error:
         "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics.",
       needsAttention: true,
-      offering: toPortalOffering(needsAttention),
+      offering: toPortalOffering(publishedWithAttention),
     });
   }
 }

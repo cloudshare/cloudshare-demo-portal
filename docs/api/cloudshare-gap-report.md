@@ -2101,8 +2101,9 @@ update succeeds.
 
 Open-ended Trial Offerings can be authored and published without inventing an arbitrary end date,
 while normal browser and ordinary API surfaces remain metadata-only. Provider failure during the
-end-trial update leaves the Offering in a needs-attention state and still published, so Certalis
-does not silently strand a live CloudShare Experience behind a local-only unpublish.
+end-trial update leaves the Offering published with an admin-visible attention reason and protected
+diagnostics, so Certalis does not silently strand a live CloudShare Experience behind a local-only
+unpublish.
 
 **Action required (live verification):**
 
