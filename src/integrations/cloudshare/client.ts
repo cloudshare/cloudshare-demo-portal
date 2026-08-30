@@ -250,6 +250,25 @@ function describeRequest(urlText: string): {
   };
 }
 
+const REDACTED_SALES_ROUTE = "[REDACTED_ROUTE]";
+const documentedSalesTracePatterns = [
+  ["salespros"],
+  ["salespros", "invite"],
+  ["salespros", "email-template"],
+  ["salespros", "{salesProId}"],
+  ["participants"],
+  ["participants", "invite"],
+  ["participants", "email-template"],
+  ["participants", "unassigned-environment"],
+  ["participants", "{participantId}"],
+  ["participants", "{participantId}", "unassigned-environment"],
+  ["sponsored-link"],
+  ["users", "properties"],
+  ["users", "properties", "{propertyId}"],
+  ["students", "participants", "{participantId}", "environment"],
+  ["assign-shared-env-controlling-user"],
+] as const;
+
 function sanitizeOrdinaryTracePath(path: string): string {
   const match = path.match(/^\/v4\/sales\/([^/]+)(?:\/(.*))?$/);
   if (!match) {
@@ -270,31 +289,13 @@ function sanitizeOrdinaryTracePath(path: string): string {
   const render = (pattern: readonly string[]) =>
     `${salesBase}/${pattern.map((part, index) => part.startsWith("{") ? part : segments[index]!).join("/")}`;
 
-  const patterns = [
-    ["salespros"],
-    ["salespros", "invite"],
-    ["salespros", "email-template"],
-    ["salespros", "{salesProId}"],
-    ["participants"],
-    ["participants", "invite"],
-    ["participants", "email-template"],
-    ["participants", "unassigned-environment"],
-    ["participants", "{participantId}"],
-    ["participants", "{participantId}", "unassigned-environment"],
-    ["sponsored-link"],
-    ["users", "properties"],
-    ["users", "properties", "{propertyId}"],
-    ["students", "participants", "{participantId}", "environment"],
-    ["assign-shared-env-controlling-user"],
-  ] as const;
-
-  for (const pattern of patterns) {
+  for (const pattern of documentedSalesTracePatterns) {
     if (matches(pattern)) {
       return render(pattern);
     }
   }
 
-  return `${salesBase}/${tail}`;
+  return `${salesBase}/${REDACTED_SALES_ROUTE}`;
 }
 
 export function createCloudShareClient(opts: CloudShareClientOptions): CloudShareClient {
