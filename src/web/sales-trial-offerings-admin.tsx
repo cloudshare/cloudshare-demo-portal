@@ -81,8 +81,8 @@ export function SalesTrialOfferingsAdmin({
   );
 
   const getDraftPayload = useCallback(() => {
-    const start = startInputRef.current?.value || form.start;
-    const end = endInputRef.current?.value || form.end;
+    const start = startInputRef.current ? startInputRef.current.value : form.start;
+    const end = endInputRef.current ? endInputRef.current.value : form.end;
     return {
       ...form,
       start,
