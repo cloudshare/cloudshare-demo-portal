@@ -393,8 +393,13 @@ async function resolveEnrollment(input: {
   if (exactBefore.length > 1) {
     throw ambiguousRoster(input.remoteBefore, input.enrollment, "duplicate_correlated_participants");
   }
-  if (input.enrollment.cloudShareParticipantId === null && exactBefore.length === 1) {
-    throw unboundCorrelatedParticipant(input.remoteBefore, input.enrollment, exactBefore[0]!);
+  const sameEmailConflicts = input.remoteBefore.participants.filter(
+    (participant) =>
+      participant.email.toLowerCase() === input.enrollment.email.toLowerCase() &&
+      participant.id !== input.enrollment.cloudShareParticipantId,
+  );
+  if (sameEmailConflicts.length > 0) {
+    throw sameEmailParticipantConflict(input.remoteBefore, input.enrollment, sameEmailConflicts);
   }
   const stalePersistedMatch = input.enrollment.cloudShareParticipantId
     ? input.remoteBefore.participants.find(
@@ -413,6 +418,9 @@ async function resolveEnrollment(input: {
       input.enrollment,
       stalePersistedMatch,
     );
+  }
+  if (input.enrollment.cloudShareParticipantId === null && exactBefore.length === 1) {
+    throw unboundCorrelatedParticipant(input.remoteBefore, input.enrollment, exactBefore[0]!);
   }
   const propertylessByEmail = input.remoteBefore.participants.filter(
     (participant) =>
@@ -518,7 +526,8 @@ function classifyAttentionReason(error: unknown): string | null {
       failureMode.includes("reconciliation") ||
       failureMode.includes("correlation") ||
       failureMode.includes("correlated") ||
-      failureMode.includes("propertyless")
+      failureMode.includes("propertyless") ||
+      failureMode.includes("same_email")
     )
     ? NEEDS_ATTENTION_REASON
     : null;
@@ -717,6 +726,35 @@ function propertylessSameEmailConflict(
         participants.length > 1
           ? "duplicate_propertyless_same_email"
           : "propertyless_same_email_conflict",
+    },
+  );
+}
+
+function sameEmailParticipantConflict(
+  remote: SalesDeliveryEvidence,
+  enrollment: Pick<
+    SalesTrialEnrollment,
+    "id" | "portalUserId" | "email" | "cloudShareParticipantId"
+  >,
+  participants: readonly SalesParticipant[],
+): CloudShareResponseError {
+  return new CloudShareResponseError(
+    "CloudShare returned additional same-email Sales Trial participants, so sponsored-link launch could not be trusted.",
+    {
+      method: remote.request.method,
+      path: remote.request.path,
+      ...(remote.request.query ? { requestQuery: remote.request.query } : {}),
+      ...(remote.request.headers ? { requestHeaders: remote.request.headers } : {}),
+      ...(remote.request.body !== undefined ? { requestBody: remote.request.body } : {}),
+      status: remote.response.status,
+      responseStatus: remote.response.status,
+      ...(remote.response.headers ? { responseHeaders: remote.response.headers } : {}),
+      responseBody: remote.response.body,
+      salesTrialEnrollmentId: enrollment.id,
+      portalUserId: enrollment.portalUserId,
+      cloudShareParticipantId: enrollment.cloudShareParticipantId ?? undefined,
+      participantCount: participants.length,
+      failureMode: "same_email_participant_conflict",
     },
   );
 }

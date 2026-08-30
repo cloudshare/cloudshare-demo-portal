@@ -279,6 +279,83 @@ describe("Sales Trial offering entry", () => {
     expect(createSponsoredLink).toHaveBeenCalledTimes(2);
   });
 
+  it("fails closed when one exact correlated participant and another same-email row both exist in the authoritative roster", async () => {
+    const { deps, enrollments, listParticipants, registerParticipants, updateParticipantCorrelation, createSponsoredLink } = createDeps();
+    await enrollments.save({
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: "remote-1",
+      cloudShareRosterEnvironmentReference: "env-1",
+      environmentStatus: "Ready",
+      firstJoined: "2026-08-30T10:05:00.000Z",
+      status: "active",
+      attentionReason: null,
+      lastLaunchedAt: new Date("2026-08-30T10:05:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T10:05:00.000Z"),
+      createdAt: new Date("2026-08-30T09:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:05:00.000Z"),
+    });
+    listParticipants.mockResolvedValue({
+      participants: [
+        {
+          id: "remote-1",
+          firstName: "Ari",
+          lastName: "Visitor",
+          email: "visitor@example.test",
+          invitationStatus: "notSent",
+          invitedBy: null,
+          participationStatus: "inProgress",
+          firstJoined: "2026-08-30T10:05:00.000Z",
+          environmentId: "env-1",
+          envStatus: "Ready",
+          customProperties: {
+            certalisSalesTrialEnrollmentId: "enrollment-1",
+            certalisSalesTrialParticipantUserId: "trial-user-1",
+          },
+        },
+        {
+          id: "remote-2",
+          firstName: "Ari",
+          lastName: "Visitor",
+          email: "visitor@example.test",
+          invitationStatus: "notSent",
+          invitedBy: null,
+          participationStatus: "pending",
+          firstJoined: null,
+          environmentId: null,
+          envStatus: null,
+          customProperties: {},
+        },
+      ],
+      request: { method: "GET", path: "/sales/sales-1/participants", query: { offset: "0", limit: "100" } },
+      response: { status: 200, body: { participants: [{ id: "remote-1" }, { id: "remote-2" }] } },
+    });
+
+    const result = await handleEnterSalesTrialOffering(deps, request);
+    const persisted = await enrollments.findByOfferingAndPortalUser(
+      "customer-1",
+      "offering-1",
+      "trial-user-1",
+    );
+
+    expect(result).toMatchObject({
+      status: 404,
+      body: { error: "This Sales Trial launch is unavailable.", correlationId: expect.any(String) },
+    });
+    expect(registerParticipants).not.toHaveBeenCalled();
+    expect(updateParticipantCorrelation).not.toHaveBeenCalled();
+    expect(createSponsoredLink).not.toHaveBeenCalled();
+    expect(persisted).toMatchObject({
+      status: "needs_attention",
+      cloudShareParticipantId: "remote-1",
+    });
+  });
+
   it("reserves the first enrollment before provider mutation and blocks a concurrent duplicate launch without a second provider add", async () => {
     const enrollments = createEnrollmentRepository();
     const firstRosterGate: { release?: () => void } = {};
