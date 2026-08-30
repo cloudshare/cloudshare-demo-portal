@@ -5,7 +5,10 @@ import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
-import { cloudShareWallClockToInstant } from "@/domain/cloudshare-wall-clock";
+import {
+  cloudShareWallClockToInstant,
+  formatCloudShareWallClock,
+} from "@/domain/cloudshare-wall-clock";
 import type { DiagnosticActor, DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { ItemRepository } from "@/domain/item";
 import type {
@@ -35,7 +38,8 @@ const writeSchema = z.object({
   description: z.string().trim().min(1).max(2000),
   itemId: z.string().trim().min(1),
   start: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),
-  end: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),
+  end: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/).nullable(),
+  noEndDate: z.boolean().optional(),
   timeZone: z.string().trim().min(1).max(100),
   salesProEmail: z.string().trim().email(),
 });
@@ -99,7 +103,7 @@ type PortalSalesTrialOffering = {
   readonly description: string;
   readonly itemId: string;
   readonly start: string;
-  readonly end: string;
+  readonly end: string | null;
   readonly timeZone: string;
   readonly salesProEmail: string;
   readonly salesProDisplayName: string | null;
@@ -124,7 +128,12 @@ export async function handleCreateSalesTrialOffering(
   if (!parsed.success) {
     return response(400, { error: "Invalid Sales Trial Offering request." });
   }
-  if (parsed.data.end <= parsed.data.start) {
+  if (parsed.data.end === null && !parsed.data.noEndDate) {
+    return response(400, {
+      error: "Select an end time or explicitly mark the Trial Offering as open-ended.",
+    });
+  }
+  if (parsed.data.end !== null && parsed.data.end <= parsed.data.start) {
     return response(400, { error: "End must be after start." });
   }
   const item = await deps.items.findById(parsed.data.itemId);
@@ -304,8 +313,11 @@ export async function handlePublishSalesTrialOffering(
     );
   }
   const startInstant = cloudShareWallClockToInstant(offering.start, offering.timeZone);
-  const endInstant = cloudShareWallClockToInstant(offering.end, offering.timeZone);
-  if (!startInstant || !endInstant) {
+  const endInstant =
+    offering.end === null
+      ? null
+      : cloudShareWallClockToInstant(offering.end, offering.timeZone);
+  if (!startInstant || (offering.end !== null && !endInstant)) {
     return rejectPublishPreflight(
       deps,
       request,
@@ -317,7 +329,7 @@ export async function handlePublishSalesTrialOffering(
       "invalid_wall_clock",
     );
   }
-  if (endInstant <= startInstant) {
+  if (endInstant !== null && endInstant <= startInstant) {
     return rejectPublishPreflight(
       deps,
       request,
@@ -840,6 +852,137 @@ export async function handleUnpublishSalesTrialOffering(
   return response(200, { offering: toPortalOffering(unpublished) });
 }
 
+export async function handleEndSalesTrialOffering(
+  deps: SalesTrialOfferingsDeps,
+  request: SalesTrialOfferingPublishRequest,
+) {
+  const offering = await deps.offerings.findById(request.customerId, request.id);
+  if (!offering) {
+    return response(404, { error: "Sales Trial Offering was not found for this Customer." });
+  }
+  if (offering.status !== "published" || !offering.cloudShareSalesExperienceId) {
+    return response(409, { error: "Only published Sales Trial Offerings can be ended." });
+  }
+  const connection = await deps.connections.findByCustomerId(request.customerId);
+  if (!connection) {
+    return response(404, { error: "Sales Trial Offering is unavailable." });
+  }
+  const delivery =
+    deps.deliveryFactory?.forConnection(connection) ??
+    createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection));
+  if (!delivery.updateSession) {
+    return response(503, { error: "Sales Delivery update is not configured." });
+  }
+
+  const now = (deps.now ?? (() => new Date()))();
+  const end = formatCloudShareWallClock(new Date(now.getTime() + 2 * 60_000), offering.timeZone);
+  if (!end) {
+    return response(400, { error: "End trial requires a supported CloudShare timezone." });
+  }
+
+  try {
+    const updated = await delivery.updateSession(offering.cloudShareSalesExperienceId, { end });
+    const unpublished = {
+      ...offering,
+      end,
+      status: "unpublished" as const,
+      updatedAt: now,
+      unpublishedAt: now,
+      attentionReason: null,
+    };
+    await deps.offerings.save(unpublished);
+    await Promise.allSettled([
+      deps.diagnostics?.record({
+        source: "sales-trial-offerings",
+        operation: "sales.trial_offering.end",
+        outcome: "success",
+        customerId: request.customerId,
+        actor: request.actor,
+        subject: { type: "sales_trial_offering", id: offering.id },
+        message: "Sales Trial Offering ended and unpublished",
+        externalIds: { offeringId: offering.id, itemId: offering.itemId },
+        request: updated.request as unknown as Record<string, unknown>,
+        response: updated.response as unknown as Record<string, unknown>,
+        details: {
+          integrationSurface: "cloudshare.v4.sales",
+          lifecycle: "end",
+          previousStatus: offering.status,
+          status: "unpublished",
+        },
+      }),
+      auditLifecycle(
+        deps,
+        request,
+        offering.id,
+        "sales.trial_offering.end",
+        "success",
+        {
+          itemId: offering.itemId,
+          lifecycle: "end",
+          previousStatus: offering.status,
+          status: "unpublished",
+          integrationSurface: "cloudshare.v4.sales",
+        },
+      ),
+    ]);
+    return response(200, { offering: toPortalOffering(unpublished) });
+  } catch (error) {
+    const needsAttention = {
+      ...offering,
+      status: "needs_attention" as const,
+      updatedAt: now,
+      attentionReason:
+        "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics.",
+    };
+    await deps.offerings.save(needsAttention);
+    const evidence = cloudShareEvidence(error);
+    await Promise.allSettled([
+      deps.diagnostics?.record({
+        source: "sales-trial-offerings",
+        operation: "sales.trial_offering.end",
+        outcome: "failure",
+        level: "warn",
+        customerId: request.customerId,
+        actor: request.actor,
+        subject: { type: "sales_trial_offering", id: offering.id },
+        message:
+          "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics.",
+        externalIds: { offeringId: offering.id, itemId: offering.itemId },
+        request: evidence?.request,
+        response: evidence?.response,
+        details: {
+          integrationSurface: "cloudshare.v4.sales",
+          failureMode: "cloudshare_end_trial_update",
+          previousStatus: offering.status,
+          status: "needs_attention",
+        },
+      }),
+      auditLifecycle(
+        deps,
+        request,
+        offering.id,
+        "sales.trial_offering.end",
+        "failure",
+        {
+          itemId: offering.itemId,
+          lifecycle: "end",
+          previousStatus: offering.status,
+          status: "needs_attention",
+          failureMode: "cloudshare_end_trial_update",
+          integrationSurface: "cloudshare.v4.sales",
+        },
+        "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics.",
+      ),
+    ]);
+    return response(502, {
+      error:
+        "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics.",
+      needsAttention: true,
+      offering: toPortalOffering(needsAttention),
+    });
+  }
+}
+
 function toPortalOffering(offering: SalesTrialOffering): PortalSalesTrialOffering {
   return {
     id: offering.id,
@@ -873,11 +1016,14 @@ function toParticipantOffering(offering: SalesTrialOffering): ParticipantSalesTr
 
 function isOfferingActive(offering: SalesTrialOffering, now: Date): boolean {
   const start = cloudShareWallClockToInstant(offering.start, offering.timeZone);
-  const end = cloudShareWallClockToInstant(offering.end, offering.timeZone);
-  if (!start || !end) {
+  const end =
+    offering.end === null
+      ? null
+      : cloudShareWallClockToInstant(offering.end, offering.timeZone);
+  if (!start || (offering.end !== null && !end)) {
     return false;
   }
-  return start <= now && now < end;
+  return start <= now && (end === null || now < end);
 }
 
 function opaqueCloudShareId(value: string): string {

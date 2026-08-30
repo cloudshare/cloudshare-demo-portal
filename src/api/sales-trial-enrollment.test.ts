@@ -174,6 +174,66 @@ const request = {
 };
 
 describe("Sales Trial offering entry", () => {
+  it("allows entry for an open-ended published offering after its start time", async () => {
+    const { deps, enrollments, listParticipants, registerParticipants, createSponsoredLink } =
+      createDeps({
+        offerings: {
+          findById: vi.fn().mockResolvedValue(
+            createOffering({
+              end: null,
+            }),
+          ),
+        },
+      });
+    listParticipants
+      .mockResolvedValueOnce({
+        participants: [],
+        request: { method: "GET", path: "/sales/sales-1/participants" },
+        response: { status: 200, body: { participants: [] } },
+      })
+      .mockResolvedValueOnce({
+        participants: [
+          {
+            id: "remote-1",
+            firstName: "Ari",
+            lastName: "Visitor",
+            email: "visitor@example.test",
+            invitationStatus: "notSent",
+            invitedBy: null,
+            participationStatus: "pending",
+            firstJoined: null,
+            environmentId: null,
+            envStatus: null,
+            customProperties: {
+              certalisSalesTrialEnrollmentId: "enrollment-1",
+              certalisSalesTrialParticipantUserId: "trial-user-1",
+            },
+          },
+        ],
+        request: { method: "GET", path: "/sales/sales-1/participants" },
+        response: { status: 200, body: { participants: [{ id: "remote-1" }] } },
+      });
+
+    const result = await handleEnterSalesTrialOffering(deps, request);
+    const persisted = await enrollments.findByOfferingAndPortalUser(
+      "customer-1",
+      "offering-1",
+      "trial-user-1",
+    );
+
+    expect(result).toEqual({
+      status: 302,
+      redirect: "https://use.cloudshare.com/secret",
+    });
+    expect(registerParticipants).toHaveBeenCalledTimes(1);
+    expect(createSponsoredLink).toHaveBeenCalledTimes(1);
+    expect(persisted).toMatchObject({
+      id: "enrollment-1",
+      cloudShareParticipantId: "remote-1",
+      status: "active",
+    });
+  });
+
   it("registers the authenticated participant once, reconciles exactly, and redirects without a body", async () => {
     const { deps, enrollments, listParticipants, registerParticipants, createSponsoredLink } =
       createDeps();

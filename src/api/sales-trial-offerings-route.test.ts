@@ -65,6 +65,21 @@ describe("Sales Trial Offering unpublish route composition", () => {
   });
 });
 
+describe("Sales Trial Offering end route composition", () => {
+  it("passes CloudShare delivery, diagnostics, and the audit writer into end-trial handling", () => {
+    const routeSource = readFileSync(
+      "app/api/sales/trial-offerings/[id]/end/route.ts",
+      "utf8",
+    );
+
+    expect(routeSource).toContain("handleEndSalesTrialOffering");
+    expect(routeSource).toContain("deliveryFactory");
+    expect(routeSource).toContain("createCloudShareSalesDelivery");
+    expect(routeSource).toContain("diagnostics: services.diagnosticRecorder");
+    expect(routeSource).toContain("audit: services.audit");
+  });
+});
+
 describe("sales trial offerings route", () => {
   beforeEach(() => {
     vi.clearAllMocks();

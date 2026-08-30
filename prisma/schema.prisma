@@ -127,7 +127,7 @@ model SalesTrialOffering {
   cloudShareSalesExperienceId String?
   externalId                  String?
   start                       String
-  end                         String
+  end                         String?
   timeZone                    String
   salesProEmail               String
   salesProDisplayName         String?

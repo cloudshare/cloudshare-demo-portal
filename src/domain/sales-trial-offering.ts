@@ -17,7 +17,7 @@ export interface SalesTrialOffering {
   /** Server-only provider correlation; never expose through ordinary APIs. */
   readonly externalId: string | null;
   readonly start: string;
-  readonly end: string;
+  readonly end: string | null;
   readonly timeZone: string;
   readonly salesProEmail: string;
   readonly salesProDisplayName: string | null;

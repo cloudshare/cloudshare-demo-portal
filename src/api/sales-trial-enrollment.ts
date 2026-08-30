@@ -519,13 +519,18 @@ function ambiguousRoster(
   );
 }
 
-function isOfferingOpen(start: string, end: string, timeZone: string, now: Date): boolean {
+function isOfferingOpen(
+  start: string,
+  end: string | null,
+  timeZone: string,
+  now: Date,
+): boolean {
   const startInstant = cloudShareWallClockToInstant(start, timeZone);
-  const endInstant = cloudShareWallClockToInstant(end, timeZone);
-  if (!startInstant || !endInstant) {
+  const endInstant = end === null ? null : cloudShareWallClockToInstant(end, timeZone);
+  if (!startInstant || (end !== null && !endInstant)) {
     return false;
   }
-  return startInstant <= now && now < endInstant;
+  return startInstant <= now && (endInstant === null || now < endInstant);
 }
 
 function classifyAttentionReason(error: unknown): string | null {

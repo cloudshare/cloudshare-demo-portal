@@ -120,7 +120,7 @@ function hydrate(row: {
   cloudShareSalesExperienceId: string | null;
   externalId: string | null;
   start: string;
-  end: string;
+  end: string | null;
   timeZone: string;
   salesProEmail: string;
   salesProDisplayName: string | null;

@@ -7,6 +7,17 @@ import { alertPanelStyle, cardStyle, mutedPanelStyle } from "./card-styles";
 type Item = { id: string; name: string; defaultDurationMinutes: number };
 type Timezone = { id: string; name: string };
 type Member = { email: string; displayName: string };
+type DraftPayload = {
+  title: string;
+  description: string;
+  itemId: string;
+  start: string;
+  end: string | null;
+  noEndDate: boolean;
+  timeZone: string;
+  salesProEmail: string;
+};
+type DraftFormField = "title" | "description" | "itemId" | "start" | "end" | "timeZone" | "salesProEmail";
 type MonitoringParticipant = {
   id: string;
   firstName: string;
@@ -25,7 +36,7 @@ type Offering = {
   description: string;
   itemId: string;
   start: string;
-  end: string;
+  end: string | null;
   timeZone: string;
   salesProEmail: string;
   salesProDisplayName: string | null;
@@ -68,6 +79,7 @@ export function SalesTrialOfferingsAdmin({
     itemId: "",
     start: "",
     end: "",
+    noEndDate: false,
     timeZone: "UTC",
     salesProEmail: "",
   });
@@ -79,11 +91,9 @@ export function SalesTrialOfferingsAdmin({
     [],
   );
 
-  const getDraftPayload = useCallback(() => {
+  const getDraftPayload = useCallback((): DraftPayload => {
     const currentForm = formRef.current;
-    const fieldValue = (
-      name: keyof typeof form,
-    ) => {
+    const fieldValue = (name: DraftFormField): string => {
       const field = currentForm?.elements.namedItem(name);
       return field && "value" in field ? field.value : form[name];
     };
@@ -92,7 +102,8 @@ export function SalesTrialOfferingsAdmin({
       description: fieldValue("description"),
       itemId: fieldValue("itemId"),
       start: fieldValue("start"),
-      end: fieldValue("end"),
+      end: form.noEndDate ? null : fieldValue("end"),
+      noEndDate: form.noEndDate,
       timeZone: fieldValue("timeZone"),
       salesProEmail: fieldValue("salesProEmail"),
     };
@@ -143,7 +154,11 @@ export function SalesTrialOfferingsAdmin({
   async function createDraft() {
     setMessage(null);
     const payload = getDraftPayload();
-    setForm(payload);
+    setForm((current) => ({
+      ...current,
+      ...payload,
+      end: payload.end ?? "",
+    }));
     const response = await fetchAdmin("/api/sales/trial-offerings", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -161,6 +176,7 @@ export function SalesTrialOfferingsAdmin({
       itemId: "",
       start: "",
       end: "",
+      noEndDate: false,
       timeZone: "UTC",
       salesProEmail: "",
     });
@@ -169,7 +185,7 @@ export function SalesTrialOfferingsAdmin({
     setMessage("Trial Offering draft saved.");
   }
 
-  async function lifecycle(id: string, action: "publish" | "unpublish") {
+  async function lifecycle(id: string, action: "publish" | "end") {
     setMessage(null);
     const response = await fetchAdmin(`/api/sales/trial-offerings/${encodeURIComponent(id)}/${action}`, {
       method: "POST",
@@ -182,7 +198,7 @@ export function SalesTrialOfferingsAdmin({
     }
     await loadOfferings();
     setMessageTone("success");
-    setMessage(action === "publish" ? "Trial Offering published." : "Trial Offering unpublished.");
+    setMessage(action === "publish" ? "Trial Offering published." : "Trial Offering ended.");
   }
 
   async function toggleMonitoring(id: string) {
@@ -243,10 +259,25 @@ export function SalesTrialOfferingsAdmin({
           <label style={{ display: "grid", gap: "0.35rem" }}>Item<select name="itemId" style={controlStyle} value={form.itemId} onChange={(event) => setForm((current) => ({ ...current, itemId: event.target.value }))}><option value="">Select an Item</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(12rem, 1fr))", gap: "0.9rem" }}>
             <label style={{ display: "grid", gap: "0.35rem" }}>Start<input name="start" style={controlStyle} type="datetime-local" value={form.start} onInput={(event) => syncDateTimeField("start", event.currentTarget.value)} onChange={(event) => syncDateTimeField("start", event.target.value)} /></label>
-            <label style={{ display: "grid", gap: "0.35rem" }}>End<input name="end" style={controlStyle} type="datetime-local" value={form.end} onInput={(event) => syncDateTimeField("end", event.currentTarget.value)} onChange={(event) => syncDateTimeField("end", event.target.value)} /></label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>End<input aria-label="End" name="end" style={controlStyle} type="datetime-local" value={form.end} disabled={form.noEndDate} onInput={(event) => syncDateTimeField("end", event.currentTarget.value)} onChange={(event) => syncDateTimeField("end", event.target.value)} /></label>
             <label style={{ display: "grid", gap: "0.35rem" }}>Time zone<input name="timeZone" style={controlStyle} list="trial-offering-timezones" value={form.timeZone} onChange={(event) => setForm((current) => ({ ...current, timeZone: event.target.value }))} /><datalist id="trial-offering-timezones">{timezones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}</datalist></label>
             <label style={{ display: "grid", gap: "0.35rem" }}>Sales Pro<select name="salesProEmail" style={controlStyle} value={form.salesProEmail} onChange={(event) => setForm((current) => ({ ...current, salesProEmail: event.target.value }))}><option value="">Select an active Project member</option>{members.map((member) => <option key={member.email} value={member.email}>{member.displayName} ({member.email})</option>)}</select></label>
           </div>
+          <label style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            <input
+              aria-label="No end date"
+              type="checkbox"
+              checked={form.noEndDate}
+              onChange={(event) =>
+                setForm((current) => ({
+                  ...current,
+                  noEndDate: event.target.checked,
+                  end: event.target.checked ? "" : current.end,
+                }))
+              }
+            />
+            No end date
+          </label>
           <button type="submit" style={primaryButtonStyle}>Save draft</button>
         </form>
         {message ? <div role={messageTone === "error" ? "alert" : "status"} style={messageTone === "error" ? alertPanelStyle.danger : alertPanelStyle.success}>{message}</div> : null}
@@ -265,12 +296,12 @@ export function SalesTrialOfferingsAdmin({
             </div>
             <strong style={{ textTransform: "capitalize", color: offering.status === "needs_attention" ? "#9a3412" : "#35556f" }}>{offering.status.replaceAll("_", " ")}</strong>
           </div>
-          <p style={{ margin: 0 }}>{offering.start} to {offering.end} ({offering.timeZone})</p>
+          <p style={{ margin: 0 }}>{offering.start} to {offering.end ?? "Open-ended"} ({offering.timeZone})</p>
           <p style={{ margin: 0 }}>Sales Pro: {offering.salesProDisplayName ?? offering.salesProEmail}</p>
           {offering.attentionReason ? <div style={alertPanelStyle.warning}>{offering.attentionReason}</div> : null}
           <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
             <button type="button" style={offering.status !== "draft" ? { ...primaryButtonStyle, ...disabledButtonStyle } : primaryButtonStyle} disabled={offering.status !== "draft"} onClick={() => void lifecycle(offering.id, "publish")}>Publish</button>
-            <button type="button" style={offering.status !== "published" ? { ...secondaryButtonStyle, ...disabledButtonStyle } : secondaryButtonStyle} disabled={offering.status !== "published"} onClick={() => void lifecycle(offering.id, "unpublish")}>Unpublish</button>
+            <button type="button" style={offering.status !== "published" ? { ...secondaryButtonStyle, ...disabledButtonStyle } : secondaryButtonStyle} disabled={offering.status !== "published"} onClick={() => { if (window.confirm("End this Trial Offering now and unpublish it from the portal?")) void lifecycle(offering.id, "end"); }}>End trial</button>
             {offering.status === "published" ? <button type="button" style={secondaryButtonStyle} onClick={() => void toggleMonitoring(offering.id)}>{monitoringOfferingId === offering.id ? "Hide monitoring" : "Open monitoring"}</button> : null}
           </div>
           {monitoringOfferingId === offering.id ? <section aria-label="Participant monitoring" style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem", overflowX: "auto", width: "100%" }}>

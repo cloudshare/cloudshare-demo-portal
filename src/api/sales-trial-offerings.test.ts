@@ -14,6 +14,7 @@ import {
 import { SalesItemProvisioningValidationError } from "@/integrations/cloudshare/sales-item-provisioning";
 import {
   handleCreateSalesTrialOffering,
+  handleEndSalesTrialOffering,
   handleListPublishedSalesTrialOfferings,
   handleListSalesTrialOfferings,
   handlePublishSalesTrialOffering,
@@ -195,6 +196,12 @@ const body = {
   salesProEmail: "owner@example.test",
 };
 
+const openEndedBody = {
+  ...body,
+  end: null,
+  noEndDate: true,
+};
+
 describe("Sales Trial Offering API", () => {
   it("creates a customer-scoped draft offering and keeps provider correlation server-only", async () => {
     const repository = createOfferingRepository();
@@ -240,6 +247,37 @@ describe("Sales Trial Offering API", () => {
         lifecycle: "draft",
         status: "draft",
       },
+    });
+  });
+
+  it("creates an explicit open-ended draft only when the admin opts into no end date", async () => {
+    const repository = createOfferingRepository();
+    const deps = createDeps(repository);
+
+    const allowed = await handleCreateSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      body: openEndedBody,
+    });
+    const rejected = await handleCreateSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      body: { ...body, end: null },
+    });
+
+    expect(allowed).toMatchObject({
+      status: 201,
+      body: {
+        offering: {
+          id: "offering-1",
+          status: "draft",
+          end: null,
+        },
+      },
+    });
+    expect(rejected).toMatchObject({
+      status: 400,
+      body: { error: "Select an end time or explicitly mark the Trial Offering as open-ended." },
     });
   });
 
@@ -403,6 +441,47 @@ describe("Sales Trial Offering API", () => {
     expect(JSON.stringify(result.body)).not.toContain("status");
   });
 
+  it("keeps open-ended published participant offerings visible after they start", async () => {
+    const repository = createOfferingRepository();
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Open-ended Trial",
+      description: "Visible after start until an admin ends it.",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: "sales-1",
+      externalId: "opaque-1",
+      start: "2026-08-29T12:00",
+      end: null as never,
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: "Owner Example",
+      status: "published",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:30:00Z"),
+      publishedAt: new Date("2026-08-29T12:30:00Z"),
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+
+    const result = await handleListPublishedSalesTrialOfferings(createDeps(repository), {
+      customerId: "customer-1",
+    });
+
+    expect(result.body).toEqual({
+      offerings: [
+        {
+          id: "offering-1",
+          title: "Open-ended Trial",
+          description: "Visible after start until an admin ends it.",
+          start: "2026-08-29T12:00",
+          end: null,
+          timeZone: "UTC",
+        },
+      ],
+    });
+  });
+
   it("publishes a draft offering through POST /sales using type trial and disabled invitations", async () => {
     const repository = createOfferingRepository();
     await repository.save({
@@ -468,6 +547,45 @@ describe("Sales Trial Offering API", () => {
         }),
       }),
     );
+  });
+
+  it("publishes an explicit open-ended draft through POST /sales with end null", async () => {
+    const repository = createOfferingRepository();
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Helios Trial Offering",
+      description: "A shared Sales Trial for evaluators.",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: null,
+      externalId: null,
+      start: "2026-09-01T09:00",
+      end: null as never,
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: null,
+      status: "draft",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:00:00Z"),
+      publishedAt: null,
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    const deps = createDeps(repository);
+
+    const result = await handlePublishSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+
+    expect(result.status).toBe(200);
+    expect(
+      deps.deliveryFactory.forConnection(connection).createSession,
+    ).toHaveBeenCalledWith(expect.objectContaining({ end: null }));
+    expect(result.body).toMatchObject({
+      offering: { id: "offering-1", status: "published", end: null },
+    });
   });
 
   it("allows retry after a known provider rejection by restoring the offering to draft", async () => {
@@ -1683,5 +1801,143 @@ describe("Sales Trial Offering API", () => {
     expect(deps.audit.write).not.toHaveBeenCalledWith(
       expect.objectContaining({ action: "sales.trial_offering.unpublish", outcome: "success" }),
     );
+  });
+
+  it("ends a published offering by closing the provider window first and then unpublishing locally", async () => {
+    const repository = createOfferingRepository();
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Helios Trial Offering",
+      description: "A shared Sales Trial for evaluators.",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: "sales-1",
+      externalId: "opaque-1",
+      start: "2026-09-01T09:00",
+      end: null as never,
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: "Owner Example",
+      status: "published",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:30:00Z"),
+      publishedAt: new Date("2026-08-29T12:10:00Z"),
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    const updateSession = vi.fn().mockResolvedValue({
+      id: "sales-1",
+      request: { method: "PUT", path: "/sales/sales-1", body: { end: "2026-08-29T12:32" } },
+      response: { status: 200, body: { id: "sales-1", end: "2026-08-29T12:32" } },
+    });
+    const deps = createDeps(repository, {
+      deliveryFactory: {
+        forConnection: vi.fn().mockReturnValue({
+          createSession: vi.fn(),
+          updateSession,
+        }),
+      } as never,
+    });
+
+    const result = await handleEndSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+    const persisted = await repository.findById("customer-1", "offering-1");
+
+    expect(result).toMatchObject({
+      status: 200,
+      body: {
+        offering: {
+          id: "offering-1",
+          status: "unpublished",
+          end: "2026-08-29T12:32",
+        },
+      },
+    });
+    expect(updateSession).toHaveBeenCalledWith("sales-1", {
+      end: "2026-08-29T12:32",
+    });
+    expect(persisted).toMatchObject({
+      status: "unpublished",
+      end: "2026-08-29T12:32",
+      unpublishedAt: new Date("2026-08-29T12:30:00Z"),
+    });
+  });
+
+  it("fails closed when provider end-trial update fails and preserves the published offering", async () => {
+    const repository = createOfferingRepository();
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticRepository });
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Helios Trial Offering",
+      description: "A shared Sales Trial for evaluators.",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: "sales-1",
+      externalId: "opaque-1",
+      start: "2026-09-01T09:00",
+      end: null as never,
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: "Owner Example",
+      status: "published",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:30:00Z"),
+      publishedAt: new Date("2026-08-29T12:10:00Z"),
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    const deps = createDeps(repository, {
+      diagnostics,
+      deliveryFactory: {
+        forConnection: vi.fn().mockReturnValue({
+          createSession: vi.fn(),
+          updateSession: vi.fn().mockRejectedValue(
+            new CloudShareRequestError("unavailable", 503, {
+              method: "PUT",
+              path: "/sales/sales-1",
+              responseStatus: 503,
+              responseBody: { error: "unavailable" },
+            }),
+          ),
+        }),
+      } as never,
+    });
+
+    const result = await handleEndSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+    const persisted = await repository.findById("customer-1", "offering-1");
+    const [entry] = await diagnosticRepository.query({
+      source: "sales-trial-offerings",
+      operation: "sales.trial_offering.end",
+    });
+
+    expect(result).toMatchObject({
+      status: 502,
+      body: {
+        error: "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics.",
+        needsAttention: true,
+        offering: { id: "offering-1", status: "needs_attention" },
+      },
+    });
+    expect(persisted).toMatchObject({
+      status: "needs_attention",
+      unpublishedAt: null,
+    });
+    expect(entry).toMatchObject({
+      outcome: "failure",
+      request: { method: "PUT", path: "/sales/sales-1" },
+      response: { status: 503, body: { error: "unavailable" } },
+      details: expect.objectContaining({
+        integrationSurface: "cloudshare.v4.sales",
+        failureMode: "cloudshare_end_trial_update",
+      }),
+    });
   });
 });

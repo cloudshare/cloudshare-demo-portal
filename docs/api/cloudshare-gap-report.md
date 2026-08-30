@@ -2081,6 +2081,43 @@ can you get a historical list of environments that might have been consumed?”
 
 ---
 
+## GAP-34 — Sales Trial Offerings may publish with `end: null`, but post-close sponsored-link access still needs live proof
+
+| Field | Detail |
+|---|---|
+| **Status** | Confirmed contract support plus one open live-behaviour question |
+| **Verified live** | Partial |
+
+**Observed behaviour**
+
+The local v4 OpenAPI export for `POST /sales` and `PUT /sales/{id}` models `end` as nullable on the
+Sales Experience shape. Certalis now treats an explicitly opted-in open-ended Trial Offering as a
+supported request and sends `end: null` on publish. Ending that offering is a provider-first
+operation: Certalis updates the provider Sales Experience to `now + 2 minutes` through the
+documented `PUT /sales/{id}` path, then unpublishes the portal Offering only after that provider
+update succeeds.
+
+**Impact on Certalis Sales Trial use**
+
+Open-ended Trial Offerings can be authored and published without inventing an arbitrary end date,
+while normal browser and ordinary API surfaces remain metadata-only. Provider failure during the
+end-trial update leaves the Offering in a needs-attention state and still published, so Certalis
+does not silently strand a live CloudShare Experience behind a local-only unpublish.
+
+**Action required (live verification):**
+
+Prove the post-close access boundary in the live tenant with a disposable fixture: after the
+provider-first close, confirm whether an already-issued sponsored link still reaches a policy-live
+environment while the ordinary Experience login page blocks new access. If the tenant behaves
+differently, keep the portal fail-closed and record the observed divergence here.
+
+**Code reference:** `src/api/sales-trial-offerings.ts`,
+`src/api/sales-trial-enrollment.ts`,
+`src/integrations/cloudshare/sales-delivery.ts`,
+`docs/api/assets/cloudshare-public-api-v4-2026-07-10.json`
+
+---
+
 ## GAP-N — Short descriptive title
 
 | Field | Detail |
@@ -2108,5 +2145,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-08-22 (recorded BAC-25363 production verification for GAP-30).
+*Last updated: 2026-08-30 (recorded GAP-34 Sales Trial open-ended/end-trial contract and remaining live proof).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*

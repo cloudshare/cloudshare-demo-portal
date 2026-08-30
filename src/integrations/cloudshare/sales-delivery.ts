@@ -24,7 +24,7 @@ export interface CreateSalesDemoSessionInput {
    * and retained only in redacted server-side diagnostic evidence. */
   readonly passphrase: string;
   readonly start: string;
-  readonly end: string;
+  readonly end: string | null;
   readonly timeZone: string;
   readonly mainSalesProEmail: string;
   readonly registrationType: "registeredParticipantsOnly";
@@ -43,7 +43,10 @@ export interface SalesDelivery {
   /** PUT always starts from a documented full GET representation. Certalis
    * changes only the provider-visible name: schedule edits need their own
    * lifecycle policy before they can be exposed. */
-  updateSession?(salesExperienceId: string, changes: { readonly name: string }): Promise<{ readonly id: string } & SalesDeliveryEvidence>;
+  updateSession?(
+    salesExperienceId: string,
+    changes: { readonly name?: string; readonly end?: string | null },
+  ): Promise<{ readonly id: string } & SalesDeliveryEvidence>;
   /** Ensures the documented Sales user-property definitions used for durable
    * Certalis-to-CloudShare participant correlation. */
   ensureParticipantCorrelationProperties(
@@ -242,7 +245,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
       // silently reset settings outside Certalis' edit scope, including the
       // explicit-native-invite capability chosen at creation.
       const body = {
-        name: changes.name,
+        name: changes.name ?? current.name,
         type: current.type,
         projectId: current.projectId,
         teamId: current.teamId,
@@ -274,7 +277,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
         isSharedLabViewAccessEnabled: current.isSharedLabViewAccessEnabled,
         allowAudioVideo: current.allowAudioVideo,
         start: current.start,
-        end: current.end,
+        end: changes.end === undefined ? current.end : changes.end,
         timeZone: current.timeZone,
       };
       const { data, evidence } = await detailed({ method: "PUT", path: `/sales/${encodeURIComponent(salesExperienceId)}`, body, schema: salesExperienceSchema });
