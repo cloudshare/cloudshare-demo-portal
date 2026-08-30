@@ -153,7 +153,7 @@
   .appShell { grid-template-columns: minmax(0, 1fr); }
   .leftNav { position: static; height: auto; padding: 0.75rem; }
   .brand, .account { display: none; }
-  .nav { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .nav { grid-template-columns: repeat(5, minmax(0, 1fr)); }
   .navButton { justify-content: center; min-height: 2.75rem; padding-inline: 0.35rem; font-size: 0.78rem; }
   .topbar { min-height: 3.5rem; padding-inline: 1rem; }
   .content { padding: 1rem 0.85rem 2.5rem; }

@@ -1,6 +1,8 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
+import { compactButtonStyle, disabledButtonStyle, primaryButtonStyle, secondaryButtonStyle } from "./button-styles";
+import { alertPanelStyle, cardStyle, mutedPanelStyle } from "./card-styles";
 
 type Item = { id: string; name: string; defaultDurationMinutes: number };
 type Timezone = { id: string; name: string };
@@ -19,12 +21,30 @@ type Offering = {
   attentionReason: string | null;
 };
 
-export function SalesTrialOfferingsAdmin({ email }: { readonly email: string }) {
+const controlStyle = {
+  width: "100%",
+  minWidth: 0,
+  padding: "0.7rem 0.8rem",
+  border: "1px solid #b7bdc8",
+  borderRadius: "6px",
+  background: "#ffffff",
+  color: "#17243a",
+  boxSizing: "border-box" as const,
+};
+
+export function SalesTrialOfferingsAdmin({
+  email,
+  fetchAdmin = fetch,
+}: {
+  readonly email: string;
+  readonly fetchAdmin?: typeof fetch;
+}) {
   const [items, setItems] = useState<Item[]>([]);
   const [timezones, setTimezones] = useState<Timezone[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [offerings, setOfferings] = useState<Offering[]>([]);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageTone, setMessageTone] = useState<"success" | "error">("success");
   const [form, setForm] = useState({
     title: "",
     description: "",
@@ -35,26 +55,29 @@ export function SalesTrialOfferingsAdmin({ email }: { readonly email: string }) 
     salesProEmail: "",
   });
 
-  async function loadOfferings() {
-    const response = await fetch("/api/sales/trial-offerings");
+  const loadOfferings = useCallback(async () => {
+    const response = await fetchAdmin("/api/sales/trial-offerings");
     const body = (await response.json()) as { offerings?: Offering[]; error?: string };
     if (!response.ok) throw new Error(body.error ?? "Could not load Trial Offerings.");
     setOfferings(body.offerings ?? []);
-  }
+  }, [fetchAdmin]);
 
   useEffect(() => {
     void Promise.all([
-      fetch("/api/sales/items").then(async (response) => {
+      fetchAdmin("/api/sales/items").then(async (response) => {
         const body = (await response.json()) as { activeItems?: Item[] };
         setItems(body.activeItems ?? []);
       }),
-      fetch("/api/sales/timezones").then(async (response) => {
+      fetchAdmin("/api/sales/timezones").then(async (response) => {
         const body = (await response.json()) as { timezones?: Timezone[] };
         setTimezones(body.timezones ?? []);
       }),
       loadOfferings(),
-    ]).catch((error) => setMessage(error instanceof Error ? error.message : "Load failed."));
-  }, []);
+    ]).catch((error) => {
+      setMessageTone("error");
+      setMessage(error instanceof Error ? error.message : "Load failed.");
+    });
+  }, [fetchAdmin, loadOfferings]);
 
   useEffect(() => {
     if (!form.itemId) {
@@ -62,24 +85,28 @@ export function SalesTrialOfferingsAdmin({ email }: { readonly email: string }) 
       setForm((current) => ({ ...current, salesProEmail: "" }));
       return;
     }
-    void fetch(`/api/sales/enablement-sessions/project-members?itemId=${encodeURIComponent(form.itemId)}`)
+    void fetchAdmin(`/api/sales/enablement-sessions/project-members?itemId=${encodeURIComponent(form.itemId)}`)
       .then(async (response) => {
         const body = (await response.json()) as { members?: Member[]; error?: string };
         if (!response.ok) throw new Error(body.error ?? "Could not retrieve active Project members.");
         setMembers(body.members ?? []);
       })
-      .catch((error) => setMessage(error instanceof Error ? error.message : "Load failed."));
-  }, [form.itemId]);
+      .catch((error) => {
+        setMessageTone("error");
+        setMessage(error instanceof Error ? error.message : "Load failed.");
+      });
+  }, [fetchAdmin, form.itemId]);
 
   async function createDraft() {
     setMessage(null);
-    const response = await fetch("/api/sales/trial-offerings", {
+    const response = await fetchAdmin("/api/sales/trial-offerings", {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(form),
     });
     const body = (await response.json()) as { error?: string };
     if (!response.ok) {
+      setMessageTone("error");
       setMessage(body.error ?? "Could not create Trial Offering.");
       return;
     }
@@ -93,65 +120,87 @@ export function SalesTrialOfferingsAdmin({ email }: { readonly email: string }) 
       salesProEmail: "",
     });
     await loadOfferings();
+    setMessageTone("success");
     setMessage("Trial Offering draft saved.");
   }
 
   async function lifecycle(id: string, action: "publish" | "unpublish") {
     setMessage(null);
-    const response = await fetch(`/api/sales/trial-offerings/${encodeURIComponent(id)}/${action}`, {
+    const response = await fetchAdmin(`/api/sales/trial-offerings/${encodeURIComponent(id)}/${action}`, {
       method: "POST",
     });
     const body = (await response.json()) as { error?: string };
     if (!response.ok) {
+      setMessageTone("error");
       setMessage(body.error ?? `Could not ${action} Trial Offering.`);
       return;
     }
     await loadOfferings();
+    setMessageTone("success");
     setMessage(action === "publish" ? "Trial Offering published." : "Trial Offering unpublished.");
   }
 
   return (
-    <main style={{ padding: "2rem", display: "grid", gap: "1.5rem", background: "#f8fafc", minHeight: "100vh" }}>
-      <section style={{ background: "#ffffff", border: "1px solid #dbe4ee", borderRadius: "12px", padding: "1.5rem", display: "grid", gap: "0.6rem" }}>
-        <p style={{ margin: 0, color: "#52606d" }}>Sales admin</p>
+    <section aria-label="Trial Offerings" style={{ display: "grid", gap: "1.5rem" }}>
+      <section style={{ ...mutedPanelStyle, display: "grid", gap: "0.8rem" }}>
+        <p style={{ margin: 0, color: "#35556f", fontSize: "0.82rem", fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase" }}>Sales operations</p>
         <h1 style={{ margin: 0 }}>Trial Offerings</h1>
         <p style={{ margin: 0, color: "#52606d" }}>
-          Publish one shared CloudShare Sales Experience of type <code>trial</code> without adding participants or exposing provider identifiers in the ordinary UI. Signed in as {email}.
+          Publish one shared CloudShare Sales Experience of type <code>trial</code> without adding participants or exposing provider identifiers in the ordinary UI.
+        </p>
+        <p style={{ margin: 0, color: "#52606d" }}>
+          This section is separate from Sales Sessions so Certalis can author and publish a reusable trial catalogue entry before any participant enrollment or launch flow exists. Signed in as {email}.
         </p>
       </section>
-      <section style={{ background: "#ffffff", border: "1px solid #dbe4ee", borderRadius: "12px", padding: "1.5rem", display: "grid", gap: "0.9rem" }}>
-        <h2 style={{ margin: 0 }}>Create draft</h2>
-        <label style={{ display: "grid", gap: "0.35rem" }}>Title<input value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} /></label>
-        <label style={{ display: "grid", gap: "0.35rem" }}>Description<textarea rows={4} value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} /></label>
-        <label style={{ display: "grid", gap: "0.35rem" }}>Item<select value={form.itemId} onChange={(event) => setForm((current) => ({ ...current, itemId: event.target.value }))}><option value="">Select an Item</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(12rem, 1fr))", gap: "0.9rem" }}>
-          <label style={{ display: "grid", gap: "0.35rem" }}>Start<input type="datetime-local" value={form.start} onChange={(event) => setForm((current) => ({ ...current, start: event.target.value }))} /></label>
-          <label style={{ display: "grid", gap: "0.35rem" }}>End<input type="datetime-local" value={form.end} onChange={(event) => setForm((current) => ({ ...current, end: event.target.value }))} /></label>
-          <label style={{ display: "grid", gap: "0.35rem" }}>Time zone<input list="trial-offering-timezones" value={form.timeZone} onChange={(event) => setForm((current) => ({ ...current, timeZone: event.target.value }))} /><datalist id="trial-offering-timezones">{timezones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}</datalist></label>
-          <label style={{ display: "grid", gap: "0.35rem" }}>Sales Pro<select value={form.salesProEmail} onChange={(event) => setForm((current) => ({ ...current, salesProEmail: event.target.value }))}><option value="">Select an active Project member</option>{members.map((member) => <option key={member.email} value={member.email}>{member.displayName} ({member.email})</option>)}</select></label>
+      <section style={{ ...cardStyle, display: "grid", gap: "1.1rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "start", flexWrap: "wrap" }}>
+          <div style={{ display: "grid", gap: "0.35rem" }}>
+            <p style={{ margin: 0, color: "#35556f", fontSize: "0.82rem", fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase" }}>Authoring</p>
+            <h2 style={{ margin: 0 }}>Create draft</h2>
+            <p style={{ margin: 0, color: "#52606d" }}>Reuse an existing Sales Item and assign one active Project member as the Sales Pro for the shared trial window.</p>
+          </div>
         </div>
-        <button type="button" onClick={() => void createDraft()} style={{ justifySelf: "start" }}>Save draft</button>
-        {message ? <p role="status" style={{ margin: 0 }}>{message}</p> : null}
+        <div style={{ display: "grid", gap: "1rem" }}>
+          <label style={{ display: "grid", gap: "0.35rem" }}>Title<input style={controlStyle} value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} /></label>
+          <label style={{ display: "grid", gap: "0.35rem" }}>Description<textarea style={{ ...controlStyle, minHeight: "5.5rem", resize: "vertical" as const }} rows={4} value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} /></label>
+          <label style={{ display: "grid", gap: "0.35rem" }}>Item<select style={controlStyle} value={form.itemId} onChange={(event) => setForm((current) => ({ ...current, itemId: event.target.value }))}><option value="">Select an Item</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(12rem, 1fr))", gap: "0.9rem" }}>
+            <label style={{ display: "grid", gap: "0.35rem" }}>Start<input style={controlStyle} type="datetime-local" value={form.start} onChange={(event) => setForm((current) => ({ ...current, start: event.target.value }))} /></label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>End<input style={controlStyle} type="datetime-local" value={form.end} onChange={(event) => setForm((current) => ({ ...current, end: event.target.value }))} /></label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>Time zone<input style={controlStyle} list="trial-offering-timezones" value={form.timeZone} onChange={(event) => setForm((current) => ({ ...current, timeZone: event.target.value }))} /><datalist id="trial-offering-timezones">{timezones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}</datalist></label>
+            <label style={{ display: "grid", gap: "0.35rem" }}>Sales Pro<select style={controlStyle} value={form.salesProEmail} onChange={(event) => setForm((current) => ({ ...current, salesProEmail: event.target.value }))}><option value="">Select an active Project member</option>{members.map((member) => <option key={member.email} value={member.email}>{member.displayName} ({member.email})</option>)}</select></label>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: "0.65rem", flexWrap: "wrap" }}>
+          <button type="button" onClick={() => void createDraft()} style={primaryButtonStyle}>Save draft</button>
+          <button type="button" onClick={() => setForm({ title: "", description: "", itemId: "", start: "", end: "", timeZone: "UTC", salesProEmail: "" })} style={secondaryButtonStyle}>Clear form</button>
+        </div>
+        {message ? <div role={messageTone === "error" ? "alert" : "status"} style={messageTone === "error" ? alertPanelStyle.danger : alertPanelStyle.success}>{message}</div> : null}
       </section>
-      <section style={{ background: "#ffffff", border: "1px solid #dbe4ee", borderRadius: "12px", padding: "1.5rem", display: "grid", gap: "0.9rem" }}>
-        <h2 style={{ margin: 0 }}>Current Offerings</h2>
-        {offerings.length === 0 ? <p style={{ margin: 0 }}>No Trial Offerings yet.</p> : offerings.map((offering) => <article key={offering.id} style={{ border: "1px solid #dbe4ee", borderRadius: "10px", padding: "1rem", display: "grid", gap: "0.4rem" }}>
+      <section style={{ ...cardStyle, display: "grid", gap: "1rem" }}>
+        <div style={{ display: "grid", gap: "0.35rem" }}>
+          <p style={{ margin: 0, color: "#35556f", fontSize: "0.82rem", fontWeight: 800, letterSpacing: "0.08em", textTransform: "uppercase" }}>Queue</p>
+          <h2 style={{ margin: 0 }}>Current Offerings</h2>
+          <p style={{ margin: 0, color: "#52606d" }}>Drafts stay internal to Certalis Sales Admins until explicitly published. Published offerings remain metadata-only in the ordinary UI.</p>
+        </div>
+        {offerings.length === 0 ? <p style={{ margin: 0, color: "#52606d" }}>No Trial Offerings yet.</p> : offerings.map((offering) => <article key={offering.id} style={{ border: "1px solid #dbe4ee", borderRadius: "10px", padding: "1rem", display: "grid", gap: "0.6rem", background: "#fbfdff" }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "start", flexWrap: "wrap" }}>
-            <div>
+            <div style={{ display: "grid", gap: "0.2rem" }}>
               <h3 style={{ margin: 0 }}>{offering.title}</h3>
-              <p style={{ margin: "0.25rem 0 0", color: "#52606d" }}>{offering.description}</p>
+              <p style={{ margin: 0, color: "#52606d" }}>{offering.description || "No description provided."}</p>
             </div>
-            <strong>{offering.status}</strong>
+            <strong style={{ textTransform: "capitalize", color: offering.status === "needs_attention" ? "#9a3412" : "#35556f" }}>{offering.status.replaceAll("_", " ")}</strong>
           </div>
           <p style={{ margin: 0 }}>{offering.start} to {offering.end} ({offering.timeZone})</p>
           <p style={{ margin: 0 }}>Sales Pro: {offering.salesProDisplayName ?? offering.salesProEmail}</p>
-          {offering.attentionReason ? <p style={{ margin: 0, color: "#9a3412" }}>{offering.attentionReason}</p> : null}
+          {offering.attentionReason ? <div style={alertPanelStyle.warning}>{offering.attentionReason}</div> : null}
           <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
-            <button type="button" disabled={offering.status !== "draft"} onClick={() => void lifecycle(offering.id, "publish")}>Publish</button>
-            <button type="button" disabled={offering.status !== "published"} onClick={() => void lifecycle(offering.id, "unpublish")}>Unpublish</button>
+            <button type="button" style={offering.status !== "draft" ? { ...primaryButtonStyle, ...disabledButtonStyle } : primaryButtonStyle} disabled={offering.status !== "draft"} onClick={() => void lifecycle(offering.id, "publish")}>Publish</button>
+            <button type="button" style={offering.status !== "published" ? { ...secondaryButtonStyle, ...disabledButtonStyle } : secondaryButtonStyle} disabled={offering.status !== "published"} onClick={() => void lifecycle(offering.id, "unpublish")}>Unpublish</button>
+            <button type="button" style={compactButtonStyle} onClick={() => void loadOfferings()}>Refresh</button>
           </div>
         </article>)}
       </section>
-    </main>
+    </section>
   );
 }

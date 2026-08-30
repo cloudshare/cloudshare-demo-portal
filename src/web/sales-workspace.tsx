@@ -15,6 +15,7 @@ import { renderSalesSessionName } from "@/domain/sales-session-name";
 import type { SalesExperienceType } from "@/domain/sales-experience-type";
 import { parseSalesSessionProvisionDraft, salesSessionProvisionDraftKey, type SalesSessionProvisionDraft } from "./sales-session-provision-draft";
 import { SalesSessionsWorkbench } from "./sales-sessions-workbench";
+import { SalesTrialOfferingsAdmin } from "./sales-trial-offerings-admin";
 import shellStyles from "./sales-workspace.module.css";
 import { workspaceTabButtonStyle, workspaceTabNavStyle } from "./workspace-tab-styles";
 
@@ -101,6 +102,7 @@ export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemVi
     {route.tab === "records" ? <SalesRecordsFeature initialSelection={{ accountId: route.accountId ?? null, opportunityId: route.opportunityId ?? null }} onNavigate={navigate} /> : null}
     {route.tab === "sessions" && route.sessionView !== "provision" && route.queueView ? <SalesSessionsWorkbench route={route} creationNotice={creationNotice} onNavigate={navigate} /> : null}
     {route.tab === "sessions" && (route.sessionView === "provision" || !route.queueView) ? <SalesDemoSessionsFeature draftStorageKey={salesSessionProvisionDraftKey(email)} initialSelection={{ accountId: route.accountId ?? "", opportunityId: route.opportunityId ?? "", view: route.sessionView === "provision" ? "provision" : "manage", focusSessionId: route.sessionId ?? "", status: route.sessionStatus ?? "upcoming", participantsOpen: route.participantsOpen ?? false }} onNavigate={navigate} /> : null}
+    {route.tab === "trial-offerings" ? <SalesTrialOfferingsAdmin email={email} fetchAdmin={fetchAdmin} /> : null}
     {route.tab === "support" ? <section aria-label="Sales support"><PortalSectionIntro title="Sales support" description="Append-only support evidence for Sales records and live Item resource curation in the Certalis Customer workspace." /><AdminSupportFeature active view="diagnostics" diagnosticFilters={{ ...(route.correlationId ? { correlationId: route.correlationId } : {}), ...(route.source ? { source: route.source } : {}), ...(route.subjectId ? { subjectId: route.subjectId } : {}) }} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={(intent) => navigate({ tab: "support", correlationId: intent.diagnosticFilters?.correlationId, source: intent.diagnosticFilters?.source, subjectId: intent.diagnosticFilters?.subjectId })} /></section> : null}
     {route.tab === "configuration" ? <section aria-label="Sales configuration"><PortalSectionIntro title="CloudShare Connection" description="Manage the encrypted CloudShare Connection for the isolated Certalis Sales Customer." /><CloudShareConnectionFeature active fetchAdmin={fetchAdmin} getNavigationHref={() => buildSalesWorkspaceHref({ tab: "configuration" })} onNavigate={() => undefined} /></section> : null}</div>
     </main>
@@ -110,6 +112,7 @@ export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemVi
 function salesTabIcon(tab: SalesTab): string {
   switch (tab) {
     case "sessions": return "▣";
+    case "trial-offerings": return "◫";
     case "records": return "◇";
     case "items": return "□";
     case "support": return "?";

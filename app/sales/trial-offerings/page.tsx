@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { getPortalSessionServices } from "@/composition";
 import { getPortalHomePath, getPortalSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
-import { SalesTrialOfferingsAdmin } from "@/web/sales-trial-offerings-admin";
+import { SalesWorkspace } from "@/web/sales-workspace";
 
 export default async function SalesTrialOfferingsPage() {
   const services = getPortalSessionServices();
@@ -19,5 +19,5 @@ export default async function SalesTrialOfferingsPage() {
   if (session.workspace !== "sales") {
     redirect("/admin");
   }
-  return <SalesTrialOfferingsAdmin email={session.email} />;
+  return <SalesWorkspace email={session.email} initialRoute={{ tab: "trial-offerings" }} />;
 }

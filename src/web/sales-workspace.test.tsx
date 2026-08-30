@@ -13,6 +13,23 @@ const deferred = <T,>() => { let resolve!: (value: T) => void; return { promise:
 describe("Sales Item authoring", () => {
   afterEach(() => { vi.restoreAllMocks(); router.push.mockClear(); });
 
+  it("renders Trial Offerings inside the Sales workspace shell with the left-nav section active", async () => {
+    vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url === "/api/sales/items" && !init?.method) return json({ activeItems: [] });
+      if (url === "/api/sales/timezones" && !init?.method) return json({ timezones: [{ id: "UTC", name: "UTC" }] });
+      if (url === "/api/sales/trial-offerings" && !init?.method) return json({ offerings: [] });
+      return json({});
+    });
+
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "trial-offerings" }} />);
+
+    expect(screen.getByRole("complementary", { name: "Sales workspace navigation" })).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Trial Offerings" }).getAttribute("aria-current")).toBe("page");
+    expect(await screen.findByRole("heading", { name: "Trial Offerings" })).not.toBeNull();
+    expect(screen.getByText("Current Offerings")).not.toBeNull();
+  });
+
   it("numbers Blueprint steps by selection order, reindexes on removal, and posts only shared default-Snapshot Regions", async () => {
     const user = userEvent.setup();
     const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
