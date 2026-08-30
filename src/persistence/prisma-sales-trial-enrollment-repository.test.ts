@@ -31,6 +31,7 @@ describe("Prisma Sales Trial enrollment repository", () => {
     await expect(repository.reserveForLaunch!(enrollment)).resolves.toEqual({
       enrollment,
       created: true,
+      reclaimed: false,
     });
     expect(create).toHaveBeenCalledWith({ data: expect.objectContaining({ id: "enrollment-1" }) });
   });
@@ -40,14 +41,16 @@ describe("Prisma Sales Trial enrollment repository", () => {
       code: "P2002",
       meta: { target: ["customerId", "salesTrialOfferingId", "portalUserId"] },
     });
+    const updateMany = vi.fn().mockResolvedValue({ count: 0 });
     const findUnique = vi.fn().mockResolvedValue(enrollment);
     const repository = createPrismaSalesTrialEnrollmentRepository({
-      salesTrialEnrollment: { create, findUnique },
+      salesTrialEnrollment: { create, updateMany, findUnique },
     } as never);
 
     await expect(repository.reserveForLaunch!(enrollment)).resolves.toEqual({
       enrollment,
       created: false,
+      reclaimed: false,
     });
     expect(findUnique).toHaveBeenCalledWith({
       where: {
@@ -56,6 +59,42 @@ describe("Prisma Sales Trial enrollment repository", () => {
           salesTrialOfferingId: "offering-1",
           portalUserId: "trial-user-1",
         },
+      },
+    });
+  });
+
+  it("atomically reclaims a retryable failure before the next launch attempt", async () => {
+    const create = vi.fn().mockRejectedValue({
+      code: "P2002",
+      meta: { target: ["customerId", "salesTrialOfferingId", "portalUserId"] },
+    });
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const findUnique = vi.fn().mockResolvedValue({
+      ...enrollment,
+      status: "provisioning",
+    });
+    const repository = createPrismaSalesTrialEnrollmentRepository({
+      salesTrialEnrollment: { create, updateMany, findUnique },
+    } as never);
+
+    await expect(repository.reserveForLaunch!(enrollment)).resolves.toEqual({
+      enrollment: { ...enrollment, status: "provisioning" },
+      created: false,
+      reclaimed: true,
+    });
+    expect(updateMany).toHaveBeenCalledWith({
+      where: {
+        customerId: "customer-1",
+        salesTrialOfferingId: "offering-1",
+        portalUserId: "trial-user-1",
+        status: "retryable_failure",
+        cloudShareParticipantId: null,
+      },
+      data: {
+        status: "provisioning",
+        attentionReason: null,
+        lastReconciledAt: enrollment.lastReconciledAt,
+        updatedAt: enrollment.updatedAt,
       },
     });
   });

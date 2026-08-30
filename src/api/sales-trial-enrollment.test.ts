@@ -48,10 +48,24 @@ function createEnrollmentRepository(): SalesTrialEnrollmentRepository {
             row.portalUserId === enrollment.portalUserId,
         ) ?? null;
       if (existing) {
-        return { enrollment: existing, created: false } as const;
+        if (
+          existing.status === "retryable_failure" &&
+          existing.cloudShareParticipantId === null
+        ) {
+          const reclaimed = {
+            ...existing,
+            status: "provisioning" as const,
+            attentionReason: null,
+            lastReconciledAt: enrollment.lastReconciledAt,
+            updatedAt: enrollment.updatedAt,
+          };
+          rows.set(existing.id, reclaimed);
+          return { enrollment: reclaimed, created: false, reclaimed: true } as const;
+        }
+        return { enrollment: existing, created: false, reclaimed: false } as const;
       }
       rows.set(enrollment.id, enrollment);
-      return { enrollment, created: true } as const;
+      return { enrollment, created: true, reclaimed: false } as const;
     },
     async findByOfferingAndPortalUser(customerId, salesTrialOfferingId, portalUserId) {
       return (
@@ -214,7 +228,26 @@ describe("Sales Trial offering entry", () => {
   });
 
   it("re-enters idempotently without duplicate provider registration", async () => {
-    const { deps, listParticipants, registerParticipants, createSponsoredLink } = createDeps();
+    const { deps, enrollments, listParticipants, registerParticipants, createSponsoredLink } = createDeps();
+    await enrollments.save({
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: "remote-1",
+      cloudShareRosterEnvironmentReference: "env-1",
+      environmentStatus: "Ready",
+      firstJoined: "2026-08-30T10:05:00.000Z",
+      status: "active",
+      attentionReason: null,
+      lastLaunchedAt: new Date("2026-08-30T10:05:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T10:05:00.000Z"),
+      createdAt: new Date("2026-08-30T09:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:05:00.000Z"),
+    });
     const remoteParticipant = {
       id: "remote-1",
       firstName: "Ari",
@@ -349,6 +382,179 @@ describe("Sales Trial offering entry", () => {
       id: "enrollment-1",
       cloudShareParticipantId: "remote-1",
       status: "active",
+    });
+  });
+
+  it("persists a retryable failure before reconciliation, then reclaims and succeeds on repeat entry", async () => {
+    const { deps, enrollments, diagnosticRepository, audit, listParticipants, registerParticipants, createSponsoredLink } =
+      createDeps();
+    listParticipants
+      .mockResolvedValueOnce({
+        participants: [],
+        request: { method: "GET", path: "/sales/sales-1/participants" },
+        response: { status: 200, body: { participants: [] } },
+      })
+      .mockResolvedValueOnce({
+        participants: [],
+        request: { method: "GET", path: "/sales/sales-1/participants" },
+        response: { status: 200, body: { participants: [] } },
+      })
+      .mockResolvedValueOnce({
+        participants: [
+          {
+            id: "remote-1",
+            firstName: "Ari",
+            lastName: "Visitor",
+            email: "visitor@example.test",
+            invitationStatus: "notSent",
+            invitedBy: null,
+            participationStatus: "pending",
+            firstJoined: null,
+            environmentId: null,
+            envStatus: null,
+            customProperties: {
+              certalisSalesTrialEnrollmentId: "enrollment-1",
+              certalisSalesTrialParticipantUserId: "trial-user-1",
+            },
+          },
+        ],
+        request: { method: "GET", path: "/sales/sales-1/participants" },
+        response: { status: 200, body: { participants: [{ id: "remote-1" }] } },
+      });
+    registerParticipants
+      .mockRejectedValueOnce(
+        new CloudShareTransportError("CloudShare participant registration timed out.", {
+          method: "POST",
+          path: "/sales/sales-1/participants",
+          requestBody: [{ email: "visitor@example.test" }],
+          cause: "ETIMEDOUT",
+          transport: "tcp",
+        }),
+      )
+      .mockResolvedValueOnce({
+        request: { method: "POST", path: "/sales/sales-1/participants" },
+        response: { status: 201, body: {} },
+      });
+
+    const first = await handleEnterSalesTrialOffering(deps, request);
+    const afterFirst = await enrollments.findByOfferingAndPortalUser(
+      "customer-1",
+      "offering-1",
+      "trial-user-1",
+    );
+    const second = await handleEnterSalesTrialOffering(deps, request);
+    const afterSecond = await enrollments.findByOfferingAndPortalUser(
+      "customer-1",
+      "offering-1",
+      "trial-user-1",
+    );
+    const failures = await diagnosticRepository.query({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.entered",
+      outcome: "failure",
+    });
+
+    expect(first).toMatchObject({
+      status: 404,
+      body: { error: "This Sales Trial launch is unavailable.", correlationId: expect.any(String) },
+    });
+    expect(afterFirst).toMatchObject({
+      id: "enrollment-1",
+      status: "retryable_failure",
+      cloudShareParticipantId: null,
+      attentionReason: null,
+    });
+    expect(second).toEqual({
+      status: 302,
+      redirect: "https://use.cloudshare.com/secret",
+    });
+    expect(afterSecond).toMatchObject({
+      id: "enrollment-1",
+      status: "active",
+      cloudShareParticipantId: "remote-1",
+    });
+    expect(registerParticipants).toHaveBeenCalledTimes(2);
+    expect(createSponsoredLink).toHaveBeenCalledTimes(1);
+    expect(failures[0]).toMatchObject({
+      correlationId: first.body?.correlationId,
+      request: expect.objectContaining({
+        method: "POST",
+        path: "/sales/sales-1/participants",
+      }),
+      details: expect.objectContaining({
+        integrationSurface: "cloudshare.v4.sales.participants",
+        failureMode: "provider_failure",
+      }),
+    });
+    expect(audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "sales_trial.offering.entered",
+        details: expect.objectContaining({ failureMode: "provider_failure" }),
+      }),
+    );
+  });
+
+  it("fails closed when a reclaimed local enrollment without a persisted provider id finds a single exact-correlated roster row", async () => {
+    const { deps, enrollments, listParticipants, registerParticipants, updateParticipantCorrelation, createSponsoredLink } = createDeps();
+    await enrollments.save({
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: null,
+      cloudShareRosterEnvironmentReference: null,
+      environmentStatus: null,
+      firstJoined: null,
+      status: "retryable_failure",
+      attentionReason: null,
+      lastLaunchedAt: null,
+      lastReconciledAt: new Date("2026-08-30T09:30:00.000Z"),
+      createdAt: new Date("2026-08-30T09:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T09:30:00.000Z"),
+    });
+    listParticipants.mockResolvedValue({
+      participants: [
+        {
+          id: "remote-1",
+          firstName: "Ari",
+          lastName: "Visitor",
+          email: "visitor@example.test",
+          invitationStatus: "notSent",
+          invitedBy: null,
+          participationStatus: "pending",
+          firstJoined: null,
+          environmentId: null,
+          envStatus: null,
+          customProperties: {
+            certalisSalesTrialEnrollmentId: "enrollment-1",
+            certalisSalesTrialParticipantUserId: "trial-user-1",
+          },
+        },
+      ],
+      request: { method: "GET", path: "/sales/sales-1/participants" },
+      response: { status: 200, body: { participants: [{ id: "remote-1" }] } },
+    });
+
+    const result = await handleEnterSalesTrialOffering(deps, request);
+    const persisted = await enrollments.findByOfferingAndPortalUser(
+      "customer-1",
+      "offering-1",
+      "trial-user-1",
+    );
+
+    expect(result).toMatchObject({
+      status: 404,
+      body: { error: "This Sales Trial launch is unavailable.", correlationId: expect.any(String) },
+    });
+    expect(registerParticipants).not.toHaveBeenCalled();
+    expect(updateParticipantCorrelation).not.toHaveBeenCalled();
+    expect(createSponsoredLink).not.toHaveBeenCalled();
+    expect(persisted).toMatchObject({
+      status: "needs_attention",
+      cloudShareParticipantId: null,
     });
   });
 
@@ -656,7 +862,26 @@ describe("Sales Trial offering entry", () => {
   });
 
   it("records the sponsored-link integration surface when the redirect mint fails", async () => {
-    const { deps, diagnosticRepository, listParticipants, createSponsoredLink } = createDeps();
+    const { deps, diagnosticRepository, enrollments, listParticipants, createSponsoredLink } = createDeps();
+    await enrollments.save({
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: "remote-1",
+      cloudShareRosterEnvironmentReference: "env-1",
+      environmentStatus: "Ready",
+      firstJoined: "2026-08-30T10:05:00.000Z",
+      status: "active",
+      attentionReason: null,
+      lastLaunchedAt: new Date("2026-08-30T10:05:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T10:05:00.000Z"),
+      createdAt: new Date("2026-08-30T09:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:05:00.000Z"),
+    });
     const remoteParticipant = {
       id: "remote-1",
       firstName: "Ari",

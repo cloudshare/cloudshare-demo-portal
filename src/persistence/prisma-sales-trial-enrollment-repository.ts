@@ -20,11 +20,26 @@ export function createPrismaSalesTrialEnrollmentRepository(
         const created = await prisma.salesTrialEnrollment.create({
           data: serialize(enrollment),
         });
-        return { enrollment: hydrate(created), created: true } as const;
+        return { enrollment: hydrate(created), created: true, reclaimed: false } as const;
       } catch (error) {
         if (!isLaunchReservationConflict(error)) {
           throw error;
         }
+        const reclaimed = await prisma.salesTrialEnrollment.updateMany({
+          where: {
+            customerId: enrollment.customerId,
+            salesTrialOfferingId: enrollment.salesTrialOfferingId,
+            portalUserId: enrollment.portalUserId,
+            status: "retryable_failure",
+            cloudShareParticipantId: null,
+          },
+          data: {
+            status: "provisioning",
+            attentionReason: null,
+            lastReconciledAt: enrollment.lastReconciledAt,
+            updatedAt: enrollment.updatedAt,
+          },
+        });
         const existing = await prisma.salesTrialEnrollment.findUnique({
           where: {
             customerId_salesTrialOfferingId_portalUserId: {
@@ -37,7 +52,11 @@ export function createPrismaSalesTrialEnrollmentRepository(
         if (!existing) {
           throw error;
         }
-        return { enrollment: hydrate(existing), created: false } as const;
+        return {
+          enrollment: hydrate(existing),
+          created: false,
+          reclaimed: reclaimed.count === 1,
+        } as const;
       }
     },
     async findByOfferingAndPortalUser(customerId, salesTrialOfferingId, portalUserId) {
@@ -119,7 +138,9 @@ function hydrate(row: {
   return {
     ...row,
     status:
-      row.status === "provisioning" || row.status === "needs_attention"
+      row.status === "provisioning" ||
+      row.status === "needs_attention" ||
+      row.status === "retryable_failure"
         ? row.status
         : "active",
   };

@@ -1,4 +1,8 @@
-export type SalesTrialEnrollmentStatus = "provisioning" | "active" | "needs_attention";
+export type SalesTrialEnrollmentStatus =
+  | "provisioning"
+  | "active"
+  | "needs_attention"
+  | "retryable_failure";
 
 export interface SalesTrialEnrollment {
   readonly id: string;
@@ -27,6 +31,7 @@ export interface SalesTrialEnrollmentRepository {
   ): Promise<{
     readonly enrollment: SalesTrialEnrollment;
     readonly created: boolean;
+    readonly reclaimed: boolean;
   }>;
   findByOfferingAndPortalUser(
     customerId: string,
