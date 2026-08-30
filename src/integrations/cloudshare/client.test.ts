@@ -412,6 +412,56 @@ describe("createCloudShareClient — v4", () => {
     expect(JSON.stringify(trace.mock.calls)).not.toContain(providerParticipantId);
   });
 
+  it("preserves documented static Sales participant child routes in ordinary trace paths", async () => {
+    const trace = vi.fn();
+    const providerSalesId = "SALES-provider-opaque-2";
+    const { http } = sequentialHttp(
+      { status: 200, body: "" },
+      ok({ subject: "Invite" }),
+      ok({ environmentId: "env-1" }),
+    );
+    const client = createCloudShareClient({
+      http,
+      endpoints,
+      tokenProvider: stubTokenProvider,
+      v3: { apiId: "api-id", apiKey: "api-key" },
+      trace,
+    });
+
+    await client.requestV4Detailed!({
+      method: "POST",
+      path: `/sales/${providerSalesId}/participants/invite`,
+      allowEmptyResponse: true,
+      schema: z.void(),
+    });
+    await client.requestV4Detailed!({
+      method: "GET",
+      path: `/sales/${providerSalesId}/participants/email-template`,
+      schema: z.object({ subject: z.string() }),
+    });
+    await client.requestV4Detailed!({
+      method: "GET",
+      path: `/sales/${providerSalesId}/participants/unassigned-environment`,
+      schema: z.object({ environmentId: z.string() }),
+    });
+
+    expect(trace).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      message: "cloudshare request sent",
+      fields: expect.objectContaining({ path: "/v4/sales/{salesId}/participants/invite" }),
+    }));
+    expect(trace).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      message: "cloudshare request sent",
+      fields: expect.objectContaining({ path: "/v4/sales/{salesId}/participants/email-template" }),
+    }));
+    expect(trace).toHaveBeenNthCalledWith(5, expect.objectContaining({
+      message: "cloudshare request sent",
+      fields: expect.objectContaining({ path: "/v4/sales/{salesId}/participants/unassigned-environment" }),
+    }));
+    expect(JSON.stringify(trace.mock.calls)).not.toContain(providerSalesId);
+    expect(JSON.stringify(trace.mock.calls)).not.toContain("{participantId}/invite");
+    expect(JSON.stringify(trace.mock.calls)).not.toContain("{participantId}/email-template");
+  });
+
   it("retains legacy sponsoredLinks URLs in protected traces", async () => {
     const trace = vi.fn();
     const { http } = capturingHttp(

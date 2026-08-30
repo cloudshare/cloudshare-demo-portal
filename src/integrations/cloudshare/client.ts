@@ -251,15 +251,41 @@ function describeRequest(urlText: string): {
 }
 
 function sanitizeOrdinaryTracePath(path: string): string {
-  const salesScoped = path.replace(
-    /^(\/v4\/sales\/)[^/]+/,
-    "$1{salesId}",
-  );
+  const match = path.match(/^\/v4\/sales\/([^/]+)(?:\/(.*))?$/);
+  if (!match) {
+    return path;
+  }
 
-  return salesScoped.replace(
-    /(\/participants\/)[^/]+/g,
-    "$1{participantId}",
-  );
+  const tail = match[2];
+  if (!tail) {
+    return "/v4/sales/{salesId}";
+  }
+
+  const segments = tail.split("/");
+  const staticParticipantChildren = new Set([
+    "invite",
+    "email-template",
+    "unassigned-environment",
+  ]);
+
+  if (segments[0] === "participants") {
+    if (segments.length === 1) {
+      return "/v4/sales/{salesId}/participants";
+    }
+
+    if (staticParticipantChildren.has(segments[1]!)) {
+      return `/v4/sales/{salesId}/participants/${segments[1]}`;
+    }
+
+    const participantTail = segments[2];
+    if (!participantTail) {
+      return "/v4/sales/{salesId}/participants/{participantId}";
+    }
+
+    return `/v4/sales/{salesId}/participants/{participantId}/${participantTail}`;
+  }
+
+  return `/v4/sales/{salesId}/${tail}`;
 }
 
 export function createCloudShareClient(opts: CloudShareClientOptions): CloudShareClient {
