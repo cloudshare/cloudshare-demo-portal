@@ -250,6 +250,18 @@ function describeRequest(urlText: string): {
   };
 }
 
+function sanitizeOrdinaryTracePath(path: string): string {
+  const salesScoped = path.replace(
+    /^(\/v4\/sales\/)[^/]+/,
+    "$1{salesId}",
+  );
+
+  return salesScoped.replace(
+    /(\/participants\/)[^/]+/g,
+    "$1{participantId}",
+  );
+}
+
 export function createCloudShareClient(opts: CloudShareClientOptions): CloudShareClient {
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const random = opts.random ?? Math.random;
@@ -270,7 +282,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
         operation: "cloudshare_http",
         method: request.method,
         host: requestInfo.host,
-        path: requestInfo.path,
+        path: sanitizeOrdinaryTracePath(requestInfo.path),
         integrationSurface: requestInfo.integrationSurface,
         ...(opts.customerId ? { customerId: opts.customerId } : {}),
         requestHeaders: sanitizeHeaders(request.headers),
