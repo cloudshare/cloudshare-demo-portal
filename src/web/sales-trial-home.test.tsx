@@ -137,4 +137,45 @@ describe("Sales Trial participant home", () => {
     expect(openTrialWindow).toHaveBeenCalledWith("offering-1");
     expect(screen.getByRole("alert").textContent).not.toContain("cloudshare.com");
   });
+
+  it("fetches active Trial Offerings only once across render and rerender when no initial offerings are provided", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        offerings: [
+          {
+            id: "offering-1",
+            title: "Helios Trial",
+            description: "Shared trial",
+            start: "2026-08-30T09:00",
+            end: "2026-08-30T17:00",
+            timeZone: "UTC",
+          },
+        ],
+      }),
+    });
+
+    const { rerender } = render(
+      <SalesTrialHome
+        email="visitor@example.test"
+        firstName="Ari"
+        fetchImpl={fetchImpl as typeof fetch}
+      />,
+    );
+
+    await screen.findByText("Helios Trial");
+
+    rerender(
+      <SalesTrialHome
+        email="visitor@example.test"
+        firstName="Ari"
+        fetchImpl={fetchImpl as typeof fetch}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    });
+    expect(fetchImpl).toHaveBeenCalledWith("/api/sales-trial/offerings");
+  });
 });

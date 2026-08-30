@@ -445,6 +445,19 @@ async function resolveEnrollment(input: {
   if (exactAfter.length !== 1) {
     throw ambiguousRoster(remoteAfter, input.enrollment, "participant_reconciliation_failed");
   }
+  const sameEmailConflictsAfter = remoteAfter.participants.filter(
+    (participant) =>
+      participant.email.toLowerCase() === input.enrollment.email.toLowerCase() &&
+      participant.id !== exactAfter[0]!.id,
+  );
+  if (sameEmailConflictsAfter.length > 0) {
+    throw sameEmailParticipantConflict(
+      remoteAfter,
+      input.enrollment,
+      sameEmailConflictsAfter,
+      exactAfter[0]!.id,
+    );
+  }
   return { remote: exactAfter[0]! };
 }
 
@@ -737,6 +750,7 @@ function sameEmailParticipantConflict(
     "id" | "portalUserId" | "email" | "cloudShareParticipantId"
   >,
   participants: readonly SalesParticipant[],
+  cloudShareParticipantId = enrollment.cloudShareParticipantId ?? undefined,
 ): CloudShareResponseError {
   return new CloudShareResponseError(
     "CloudShare returned additional same-email Sales Trial participants, so sponsored-link launch could not be trusted.",
@@ -752,7 +766,7 @@ function sameEmailParticipantConflict(
       responseBody: remote.response.body,
       salesTrialEnrollmentId: enrollment.id,
       portalUserId: enrollment.portalUserId,
-      cloudShareParticipantId: enrollment.cloudShareParticipantId ?? undefined,
+      cloudShareParticipantId,
       participantCount: participants.length,
       failureMode: "same_email_participant_conflict",
     },

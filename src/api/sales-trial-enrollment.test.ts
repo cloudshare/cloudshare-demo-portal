@@ -938,6 +938,70 @@ describe("Sales Trial offering entry", () => {
     });
   });
 
+  it("fails closed after registration when the authoritative roster adds another same-email participant alongside one exact correlated match", async () => {
+    const { deps, enrollments, listParticipants, registerParticipants, updateParticipantCorrelation, createSponsoredLink } = createDeps();
+    listParticipants
+      .mockResolvedValueOnce({
+        participants: [],
+        request: { method: "GET", path: "/sales/sales-1/participants", query: { offset: "0", limit: "100" } },
+        response: { status: 200, body: { participants: [] } },
+      })
+      .mockResolvedValueOnce({
+        participants: [
+          {
+            id: "remote-1",
+            firstName: "Ari",
+            lastName: "Visitor",
+            email: "visitor@example.test",
+            invitationStatus: "notSent",
+            invitedBy: null,
+            participationStatus: "pending",
+            firstJoined: null,
+            environmentId: null,
+            envStatus: null,
+            customProperties: {
+              certalisSalesTrialEnrollmentId: "enrollment-1",
+              certalisSalesTrialParticipantUserId: "trial-user-1",
+            },
+          },
+          {
+            id: "remote-2",
+            firstName: "Ari",
+            lastName: "Visitor",
+            email: "visitor@example.test",
+            invitationStatus: "notSent",
+            invitedBy: null,
+            participationStatus: "pending",
+            firstJoined: null,
+            environmentId: null,
+            envStatus: null,
+            customProperties: {},
+          },
+        ],
+        request: { method: "GET", path: "/sales/sales-1/participants", query: { offset: "0", limit: "100" } },
+        response: { status: 200, body: { participants: [{ id: "remote-1" }, { id: "remote-2" }] } },
+      });
+
+    const result = await handleEnterSalesTrialOffering(deps, request);
+    const persisted = await enrollments.findByOfferingAndPortalUser(
+      "customer-1",
+      "offering-1",
+      "trial-user-1",
+    );
+
+    expect(result).toMatchObject({
+      status: 404,
+      body: { error: "This Sales Trial launch is unavailable.", correlationId: expect.any(String) },
+    });
+    expect(registerParticipants).toHaveBeenCalledTimes(1);
+    expect(updateParticipantCorrelation).not.toHaveBeenCalled();
+    expect(createSponsoredLink).not.toHaveBeenCalled();
+    expect(persisted).toMatchObject({
+      status: "needs_attention",
+      cloudShareParticipantId: null,
+    });
+  });
+
   it("records the sponsored-link integration surface when the redirect mint fails", async () => {
     const { deps, diagnosticRepository, enrollments, listParticipants, createSponsoredLink } = createDeps();
     await enrollments.save({

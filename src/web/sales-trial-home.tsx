@@ -21,6 +21,8 @@ type TrialOffering = {
   readonly timeZone: string;
 };
 
+const EMPTY_TRIAL_OFFERINGS: readonly TrialOffering[] = [];
+
 interface SalesTrialHomeProps {
   readonly email: string;
   readonly firstName?: string | null;
@@ -36,9 +38,10 @@ export function SalesTrialHome({
   firstName,
   fetchImpl = fetch,
   openTrialWindow = (offeringId) => openSalesTrialWindow(offeringId),
-  initialOfferings = [],
+  initialOfferings = EMPTY_TRIAL_OFFERINGS,
 }: SalesTrialHomeProps) {
   const router = useRouter();
+  const hasInitialOfferings = initialOfferings.length > 0;
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
   const [offerings, setOfferings] = useState<TrialOffering[]>([...initialOfferings]);
@@ -47,7 +50,7 @@ export function SalesTrialHome({
   const [openOfferingId, setOpenOfferingId] = useState<string | null>(null);
 
   React.useEffect(() => {
-    if (initialOfferings.length > 0) {
+    if (hasInitialOfferings) {
       return;
     }
     void fetchImpl("/api/sales-trial/offerings")
@@ -64,7 +67,7 @@ export function SalesTrialHome({
         );
         setOfferings([]);
       });
-  }, [fetchImpl, initialOfferings]);
+  }, [fetchImpl, hasInitialOfferings]);
 
   React.useEffect(() => {
     function handleMessage(event: MessageEvent) {
