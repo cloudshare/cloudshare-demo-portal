@@ -52,7 +52,7 @@ export interface SalesTrialOfferingRepository {
     customerId: string,
     id: string,
     update: {
-      readonly cloudShareSalesExperienceId: string;
+      readonly cloudShareSalesExperienceId: string | null;
       readonly externalId: string;
       readonly salesProDisplayName: string | null;
       readonly updatedAt: Date;

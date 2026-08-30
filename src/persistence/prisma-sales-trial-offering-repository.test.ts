@@ -128,4 +128,32 @@ describe("Prisma Sales Trial Offering repository", () => {
       }),
     });
   });
+
+  it("preserves null provider correlation for ambiguous unresolved fallback state", async () => {
+    const updateMany = vi.fn().mockResolvedValue({ count: 1 });
+    const repository = createPrismaSalesTrialOfferingRepository({
+      salesTrialOffering: { updateMany },
+    } as never);
+
+    await expect(
+      repository.markPublishNeedsAttention!("customer-1", "offering-1", {
+        cloudShareSalesExperienceId: null,
+        externalId: "opaque-1",
+        salesProDisplayName: null,
+        updatedAt: new Date("2026-08-30T00:10:00Z"),
+        publishedAt: new Date("2026-08-30T00:10:00Z"),
+        attentionReason: "Remote outcome is ambiguous.",
+      }),
+    ).resolves.toBe(true);
+
+    expect(updateMany).toHaveBeenCalledWith({
+      where: { customerId: "customer-1", id: "offering-1" },
+      data: expect.objectContaining({
+        cloudShareSalesExperienceId: null,
+        externalId: "opaque-1",
+        status: "needs_attention",
+        attentionReason: "Remote outcome is ambiguous.",
+      }),
+    });
+  });
 });

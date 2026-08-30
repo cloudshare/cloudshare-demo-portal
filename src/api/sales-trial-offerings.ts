@@ -674,7 +674,7 @@ export async function handlePublishSalesTrialOffering(
       fallbackPersisted =
         (await deps.offerings.markPublishNeedsAttention?.(request.customerId, offering.id, {
           cloudShareSalesExperienceId:
-            needsAttention.cloudShareSalesExperienceId ?? "pending-provider-outcome",
+            needsAttention.cloudShareSalesExperienceId,
           externalId,
           salesProDisplayName: needsAttention.salesProDisplayName,
           updatedAt: needsAttention.updatedAt,

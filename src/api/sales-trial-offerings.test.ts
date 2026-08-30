@@ -828,6 +828,12 @@ describe("Sales Trial Offering API", () => {
         fallbackPersisted: true,
       },
     });
+    const persisted = await repository.findById("customer-1", "offering-1");
+    expect(persisted).toMatchObject({
+      status: "needs_attention",
+      externalId: "offering1",
+      cloudShareSalesExperienceId: null,
+    });
     expect(deps.audit.write).toHaveBeenCalledWith(
       expect.objectContaining({
         action: "sales.trial_offering.publish",
