@@ -176,6 +176,8 @@ describe("Sales Trial participant home", () => {
     await waitFor(() => {
       expect(fetchImpl).toHaveBeenCalledTimes(1);
     });
-    expect(fetchImpl).toHaveBeenCalledWith("/api/sales-trial/offerings");
+    expect(fetchImpl).toHaveBeenCalledWith("/api/sales-trial/offerings", {
+      cache: "no-store",
+    });
   });
 });

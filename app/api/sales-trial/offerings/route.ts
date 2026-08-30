@@ -14,11 +14,17 @@ export async function GET() {
     (await cookies()).get(PORTAL_SESSION_COOKIE)?.value,
   );
   if (!session || session.role !== "sales_trial_participant") {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { error: "unauthorized" },
+      { status: 401, headers: { "cache-control": "no-store" } },
+    );
   }
   const result = await handleListPublishedSalesTrialOfferings(
     { offerings: createPrismaSalesTrialOfferingRepository(services.prisma) },
     { customerId: session.customerId },
   );
-  return NextResponse.json(result.body, { status: result.status });
+  return NextResponse.json(result.body, {
+    status: result.status,
+    headers: { "cache-control": "no-store" },
+  });
 }

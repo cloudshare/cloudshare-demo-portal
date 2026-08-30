@@ -53,7 +53,7 @@ export function SalesTrialHome({
     if (hasInitialOfferings) {
       return;
     }
-    void fetchImpl("/api/sales-trial/offerings")
+    void fetchImpl("/api/sales-trial/offerings", { cache: "no-store" })
       .then(async (response) => {
         const body = (await response.json()) as { offerings?: TrialOffering[]; error?: string };
         if (!response.ok) {
