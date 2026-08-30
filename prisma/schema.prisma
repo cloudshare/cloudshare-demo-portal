@@ -34,6 +34,7 @@ model Customer {
   opportunityContacts  OpportunityContact[]
   salesDemoSessions    SalesDemoSession[]
   salesTrialOfferings  SalesTrialOffering[]
+  salesTrialEnrollments SalesTrialEnrollment[]
   salesTimezoneCache   SalesTimezoneCache?
   salesTrialPortalConfiguration SalesTrialPortalConfiguration?
   salesSessionNameTemplate String @default("{account} - {opportunity} ({revision}) - {item}")
@@ -138,10 +139,38 @@ model SalesTrialOffering {
   unpublishedAt               DateTime?
   customer                    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   item                        Item     @relation(fields: [customerId, itemId], references: [customerId, id], onDelete: Restrict)
+  enrollments                 SalesTrialEnrollment[]
 
   @@unique([customerId, id])
   @@index([customerId, status, createdAt])
   @@index([customerId, itemId])
+}
+
+model SalesTrialEnrollment {
+  id                                 String   @id
+  customerId                         String
+  salesTrialOfferingId               String
+  portalUserId                       String
+  email                              String
+  firstName                          String
+  lastName                           String
+  cloudShareParticipantId            String?
+  cloudShareRosterEnvironmentReference String?
+  environmentStatus                  String?
+  firstJoined                        String?
+  status                             String
+  attentionReason                    String?
+  lastLaunchedAt                     DateTime?
+  lastReconciledAt                   DateTime
+  createdAt                          DateTime
+  updatedAt                          DateTime
+  customer                           Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  offering                           SalesTrialOffering @relation(fields: [customerId, salesTrialOfferingId], references: [customerId, id], onDelete: Cascade)
+  user                               User               @relation(fields: [portalUserId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, salesTrialOfferingId, portalUserId])
+  @@unique([cloudShareParticipantId])
+  @@index([customerId, salesTrialOfferingId, updatedAt])
 }
 
 // Immutable portal-to-CloudShare correlation. Sales Experiences are never
@@ -240,6 +269,7 @@ model User {
   lastSalesExperienceType String?
   customer     Customer        @relation(fields: [customerId], references: [id], onDelete: Cascade)
   sessions     PortalSession[]
+  salesTrialEnrollments SalesTrialEnrollment[]
 
 }
 

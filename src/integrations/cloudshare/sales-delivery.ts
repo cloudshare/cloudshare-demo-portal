@@ -46,7 +46,10 @@ export interface SalesDelivery {
   updateSession?(salesExperienceId: string, changes: { readonly name: string }): Promise<{ readonly id: string } & SalesDeliveryEvidence>;
   /** Ensures the documented Sales user-property definitions used for durable
    * Certalis-to-CloudShare participant correlation. */
-  ensureParticipantCorrelationProperties(salesExperienceId: string): Promise<{
+  ensureParticipantCorrelationProperties(
+    salesExperienceId: string,
+    requiredKeys?: readonly string[],
+  ): Promise<{
     readonly requiredKeys: readonly SalesParticipantCorrelationPropertyKey[];
     readonly availableKeys: readonly string[];
     readonly requests: readonly SalesDeliveryRequestEvidence[];
@@ -265,12 +268,15 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
       const { data, evidence } = await detailed({ method: "PUT", path: `/sales/${encodeURIComponent(salesExperienceId)}`, body, schema: salesExperienceSchema });
       return { id: data.id, ...evidence };
     },
-    async ensureParticipantCorrelationProperties(salesExperienceId) {
+    async ensureParticipantCorrelationProperties(
+      salesExperienceId,
+      requiredKeys = SALES_PARTICIPANT_CORRELATION_PROPERTY_KEYS,
+    ) {
       const path = `/sales/${encodeURIComponent(salesExperienceId)}/users/properties`;
       const existing = await detailed({ method: "GET", path, schema: salesUserPropertyDefinitionsSchema });
       const existingKeys = existing.data.map((definition) => definition.name);
-      const missingKeys = SALES_PARTICIPANT_CORRELATION_PROPERTY_KEYS.filter((key) => !existingKeys.includes(key));
-      if (missingKeys.length === 0) return { requiredKeys: SALES_PARTICIPANT_CORRELATION_PROPERTY_KEYS, availableKeys: existingKeys, requests: [existing.evidence.request], responses: [existing.evidence.response], ...existing.evidence };
+      const missingKeys = requiredKeys.filter((key) => !existingKeys.includes(key));
+      if (missingKeys.length === 0) return { requiredKeys: requiredKeys as readonly SalesParticipantCorrelationPropertyKey[], availableKeys: existingKeys, requests: [existing.evidence.request], responses: [existing.evidence.response], ...existing.evidence };
       let created: Awaited<ReturnType<typeof detailed<z.output<typeof salesUserPropertyDefinitionsSchema>>>>;
       try {
         created = await detailed({ method: "POST", path, body: missingKeys.map((name) => ({ name })), schema: salesUserPropertyDefinitionsSchema });
@@ -279,7 +285,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
         throw error;
       }
       const availableKeys = [...existingKeys, ...created.data.map((definition) => definition.name)];
-      const stillMissingKeys = SALES_PARTICIPANT_CORRELATION_PROPERTY_KEYS.filter((key) => !availableKeys.includes(key));
+      const stillMissingKeys = requiredKeys.filter((key) => !availableKeys.includes(key));
       if (stillMissingKeys.length > 0) {
         throw new CloudShareResponseError("CloudShare Sales user-property provisioning did not return all required correlation keys.", {
           method: created.evidence.request.method, path: created.evidence.request.path,
@@ -291,7 +297,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
           responseBody: created.evidence.response.body, priorHttpExchanges: [{ request: existing.evidence.request, response: existing.evidence.response }], failureMode: "sales_participant_correlation_properties_missing",
         });
       }
-      return { requiredKeys: SALES_PARTICIPANT_CORRELATION_PROPERTY_KEYS, availableKeys, requests: [existing.evidence.request, created.evidence.request], responses: [existing.evidence.response, created.evidence.response], ...created.evidence };
+      return { requiredKeys: requiredKeys as readonly SalesParticipantCorrelationPropertyKey[], availableKeys, requests: [existing.evidence.request, created.evidence.request], responses: [existing.evidence.response, created.evidence.response], ...created.evidence };
     },
     async registerParticipants(salesExperienceId, participants) {
       // A 201 means CloudShare accepted the registration even when the body is

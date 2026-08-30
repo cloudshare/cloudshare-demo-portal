@@ -193,11 +193,17 @@ export async function handleListSalesTrialOfferings(
 }
 
 export async function handleListPublishedSalesTrialOfferings(
-  deps: Pick<SalesTrialOfferingsDeps, "offerings">,
+  deps: Pick<SalesTrialOfferingsDeps, "offerings" | "now">,
   request: SalesTrialOfferingReadRequest,
 ) {
   const offerings = await deps.offerings.listPublishedByCustomerId(request.customerId);
-  return response(200, { offerings: offerings.map(toParticipantOffering) });
+  const now = (deps.now ?? (() => new Date()))();
+  return response(200, {
+    offerings: offerings
+      .filter((offering) => isOfferingActive(offering, now))
+      .sort((left, right) => left.start.localeCompare(right.start))
+      .map(toParticipantOffering),
+  });
 }
 
 export async function handlePublishSalesTrialOffering(
@@ -863,6 +869,15 @@ function toParticipantOffering(offering: SalesTrialOffering): ParticipantSalesTr
     end: offering.end,
     timeZone: offering.timeZone,
   };
+}
+
+function isOfferingActive(offering: SalesTrialOffering, now: Date): boolean {
+  const start = cloudShareWallClockToInstant(offering.start, offering.timeZone);
+  const end = cloudShareWallClockToInstant(offering.end, offering.timeZone);
+  if (!start || !end) {
+    return false;
+  }
+  return start <= now && now < end;
 }
 
 function opaqueCloudShareId(value: string): string {
