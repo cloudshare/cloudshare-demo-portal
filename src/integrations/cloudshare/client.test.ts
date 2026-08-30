@@ -371,6 +371,210 @@ describe("createCloudShareClient — v4", () => {
     expect(detailed.response.body).toEqual({ loginUrl: "https://use.cloudshare.com/Ent/Course.mvc/ClassSponsoredLink/secret-token" });
   });
 
+  it("redacts Sales Experience and participant identifiers from ordinary trace paths while retaining detailed evidence", async () => {
+    const trace = vi.fn();
+    const providerSalesId = "SALES-provider-opaque-1";
+    const providerParticipantId = "PART-provider-opaque-9";
+    const { http } = sequentialHttp(
+      ok({ id: providerSalesId, status: "inProgress" }),
+      ok({ count: 1, items: [{ id: providerParticipantId, email: "participant@example.test" }] }),
+    );
+    const client = createCloudShareClient({
+      http,
+      endpoints,
+      tokenProvider: stubTokenProvider,
+      v3: { apiId: "api-id", apiKey: "api-key" },
+      trace,
+    });
+
+    const session = await client.requestV4Detailed!({
+      method: "GET",
+      path: `/sales/${providerSalesId}`,
+      schema: z.object({ id: z.string(), status: z.string() }),
+    });
+    const roster = await client.requestV4Detailed!({
+      method: "GET",
+      path: `/sales/${providerSalesId}/participants/${providerParticipantId}`,
+      schema: z.object({ count: z.number(), items: z.array(z.object({ id: z.string(), email: z.string().email() })) }),
+    });
+
+    expect(session.request.path).toBe(`/v4/sales/${providerSalesId}`);
+    expect(roster.request.path).toBe(`/v4/sales/${providerSalesId}/participants/${providerParticipantId}`);
+    expect(trace).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      message: "cloudshare request sent",
+      fields: expect.objectContaining({ path: "/v4/sales/{salesId}" }),
+    }));
+    expect(trace).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      message: "cloudshare request sent",
+      fields: expect.objectContaining({ path: "/v4/sales/{salesId}/participants/{participantId}" }),
+    }));
+    expect(JSON.stringify(trace.mock.calls)).not.toContain(providerSalesId);
+    expect(JSON.stringify(trace.mock.calls)).not.toContain(providerParticipantId);
+  });
+
+  it("preserves documented static Sales participant child routes in ordinary trace paths", async () => {
+    const trace = vi.fn();
+    const providerSalesId = "SALES-provider-opaque-2";
+    const { http } = sequentialHttp(
+      { status: 200, body: "" },
+      ok({ subject: "Invite" }),
+      ok({ environmentId: "env-1" }),
+    );
+    const client = createCloudShareClient({
+      http,
+      endpoints,
+      tokenProvider: stubTokenProvider,
+      v3: { apiId: "api-id", apiKey: "api-key" },
+      trace,
+    });
+
+    await client.requestV4Detailed!({
+      method: "POST",
+      path: `/sales/${providerSalesId}/participants/invite`,
+      allowEmptyResponse: true,
+      schema: z.void(),
+    });
+    await client.requestV4Detailed!({
+      method: "GET",
+      path: `/sales/${providerSalesId}/participants/email-template`,
+      schema: z.object({ subject: z.string() }),
+    });
+    await client.requestV4Detailed!({
+      method: "GET",
+      path: `/sales/${providerSalesId}/participants/unassigned-environment`,
+      schema: z.object({ environmentId: z.string() }),
+    });
+
+    expect(trace).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      message: "cloudshare request sent",
+      fields: expect.objectContaining({ path: "/v4/sales/{salesId}/participants/invite" }),
+    }));
+    expect(trace).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      message: "cloudshare request sent",
+      fields: expect.objectContaining({ path: "/v4/sales/{salesId}/participants/email-template" }),
+    }));
+    expect(trace).toHaveBeenNthCalledWith(5, expect.objectContaining({
+      message: "cloudshare request sent",
+      fields: expect.objectContaining({ path: "/v4/sales/{salesId}/participants/unassigned-environment" }),
+    }));
+    expect(JSON.stringify(trace.mock.calls)).not.toContain(providerSalesId);
+    expect(JSON.stringify(trace.mock.calls)).not.toContain("{participantId}/invite");
+    expect(JSON.stringify(trace.mock.calls)).not.toContain("{participantId}/email-template");
+  });
+
+  it("redacts documented nested Sales route identifiers while preserving static route names", async () => {
+    const trace = vi.fn();
+    const providerSalesId = "SALES-provider-opaque-3";
+    const providerParticipantId = "PART-provider-opaque-3";
+    const providerSalesProId = "SALESPRO-provider-opaque-3";
+    const providerPropertyId = "PROPERTY-provider-opaque-3";
+    const { http } = sequentialHttp(
+      ok({ id: "env-1" }),
+      ok({ id: providerSalesProId }),
+      ok({ id: providerPropertyId }),
+    );
+    const client = createCloudShareClient({
+      http,
+      endpoints,
+      tokenProvider: stubTokenProvider,
+      v3: { apiId: "api-id", apiKey: "api-key" },
+      trace,
+    });
+
+    await client.requestV4Detailed!({
+      method: "GET",
+      path: `/sales/${providerSalesId}/students/participants/${providerParticipantId}/environment`,
+      schema: z.object({ id: z.string() }),
+    });
+    await client.requestV4Detailed!({
+      method: "PUT",
+      path: `/sales/${providerSalesId}/salespros/${providerSalesProId}`,
+      schema: z.object({ id: z.string() }),
+    });
+    await client.requestV4Detailed!({
+      method: "GET",
+      path: `/sales/${providerSalesId}/users/properties/${providerPropertyId}`,
+      schema: z.object({ id: z.string() }),
+    });
+
+    expect(trace).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      message: "cloudshare request sent",
+      fields: expect.objectContaining({ path: "/v4/sales/{salesId}/students/participants/{participantId}/environment" }),
+    }));
+    expect(trace).toHaveBeenNthCalledWith(3, expect.objectContaining({
+      message: "cloudshare request sent",
+      fields: expect.objectContaining({ path: "/v4/sales/{salesId}/salespros/{salesProId}" }),
+    }));
+    expect(trace).toHaveBeenNthCalledWith(5, expect.objectContaining({
+      message: "cloudshare request sent",
+      fields: expect.objectContaining({ path: "/v4/sales/{salesId}/users/properties/{propertyId}" }),
+    }));
+    const evidence = JSON.stringify(trace.mock.calls);
+    expect(evidence).not.toContain(providerSalesId);
+    expect(evidence).not.toContain(providerParticipantId);
+    expect(evidence).not.toContain(providerSalesProId);
+    expect(evidence).not.toContain(providerPropertyId);
+  });
+
+  it("fails closed for unrecognized Sales route tails in ordinary traces", async () => {
+    const trace = vi.fn();
+    const providerSalesId = "SALES-provider-opaque-4";
+    const providerUnknownId = "UNKNOWN-provider-opaque-4";
+    const { http } = capturingHttp(ok({ id: providerUnknownId }));
+    const client = createCloudShareClient({
+      http,
+      endpoints,
+      tokenProvider: stubTokenProvider,
+      v3: { apiId: "api-id", apiKey: "api-key" },
+      trace,
+    });
+
+    await client.requestV4Detailed!({
+      method: "GET",
+      path: `/sales/${providerSalesId}/future-surface/${providerUnknownId}/deep-child`,
+      schema: z.object({ id: z.string() }),
+    });
+
+    expect(trace).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      message: "cloudshare request sent",
+      fields: expect.objectContaining({ path: "/v4/sales/{salesId}/[REDACTED_ROUTE]" }),
+    }));
+    const evidence = JSON.stringify(trace.mock.calls);
+    expect(evidence).not.toContain(providerSalesId);
+    expect(evidence).not.toContain(providerUnknownId);
+    expect(evidence).not.toContain("future-surface");
+    expect(evidence).not.toContain("deep-child");
+  });
+
+  it.each([
+    ["/sales/opaque-1/salespros/invite", "/v4/sales/{salesId}/salespros/invite"],
+    ["/sales/opaque-1/salespros/email-template", "/v4/sales/{salesId}/salespros/email-template"],
+    ["/sales/opaque-1/sponsored-link", "/v4/sales/{salesId}/sponsored-link"],
+    ["/sales/opaque-1/users/properties", "/v4/sales/{salesId}/users/properties"],
+    ["/sales/opaque-1/participants/opaque-participant/unassigned-environment", "/v4/sales/{salesId}/participants/{participantId}/unassigned-environment"],
+    ["/sales/opaque-1/assign-shared-env-controlling-user", "/v4/sales/{salesId}/assign-shared-env-controlling-user"],
+  ])("preserves documented Sales trace route shape %s", async (path, expectedPath) => {
+    const trace = vi.fn();
+    const client = createCloudShareClient({
+      http: capturingHttp(ok({ ok: true })).http,
+      endpoints,
+      tokenProvider: stubTokenProvider,
+      v3: { apiId: "api-id", apiKey: "api-key" },
+      trace,
+    });
+
+    await client.requestV4Detailed!({
+      method: "GET",
+      path,
+      schema: z.object({ ok: z.boolean() }),
+    });
+
+    expect(trace).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      message: "cloudshare request sent",
+      fields: expect.objectContaining({ path: expectedPath }),
+    }));
+  });
+
   it("retains legacy sponsoredLinks URLs in protected traces", async () => {
     const trace = vi.fn();
     const { http } = capturingHttp(

@@ -250,6 +250,54 @@ function describeRequest(urlText: string): {
   };
 }
 
+const REDACTED_SALES_ROUTE = "[REDACTED_ROUTE]";
+const documentedSalesTracePatterns = [
+  ["salespros"],
+  ["salespros", "invite"],
+  ["salespros", "email-template"],
+  ["salespros", "{salesProId}"],
+  ["participants"],
+  ["participants", "invite"],
+  ["participants", "email-template"],
+  ["participants", "unassigned-environment"],
+  ["participants", "{participantId}"],
+  ["participants", "{participantId}", "unassigned-environment"],
+  ["sponsored-link"],
+  ["users", "properties"],
+  ["users", "properties", "{propertyId}"],
+  ["students", "participants", "{participantId}", "environment"],
+  ["assign-shared-env-controlling-user"],
+] as const;
+
+function sanitizeOrdinaryTracePath(path: string): string {
+  const match = path.match(/^\/v4\/sales\/([^/]+)(?:\/(.*))?$/);
+  if (!match) {
+    return path;
+  }
+
+  const tail = match[2];
+  if (!tail) {
+    return "/v4/sales/{salesId}";
+  }
+
+  const segments = tail.split("/");
+  const salesBase = "/v4/sales/{salesId}";
+  const matches = (pattern: readonly string[]) =>
+    pattern.length === segments.length &&
+    pattern.every((part, index) => part.startsWith("{") || part === segments[index]);
+
+  const render = (pattern: readonly string[]) =>
+    `${salesBase}/${pattern.map((part, index) => part.startsWith("{") ? part : segments[index]!).join("/")}`;
+
+  for (const pattern of documentedSalesTracePatterns) {
+    if (matches(pattern)) {
+      return render(pattern);
+    }
+  }
+
+  return `${salesBase}/${REDACTED_SALES_ROUTE}`;
+}
+
 export function createCloudShareClient(opts: CloudShareClientOptions): CloudShareClient {
   const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const random = opts.random ?? Math.random;
@@ -270,7 +318,7 @@ export function createCloudShareClient(opts: CloudShareClientOptions): CloudShar
         operation: "cloudshare_http",
         method: request.method,
         host: requestInfo.host,
-        path: requestInfo.path,
+        path: sanitizeOrdinaryTracePath(requestInfo.path),
         integrationSurface: requestInfo.integrationSurface,
         ...(opts.customerId ? { customerId: opts.customerId } : {}),
         requestHeaders: sanitizeHeaders(request.headers),

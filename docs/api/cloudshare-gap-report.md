@@ -1705,6 +1705,14 @@ CloudShare main-Sales-Pro rejection to a supportable 422 result. It revalidates 
 resources before the mutation and retains redacted evidence, but it cannot honestly claim a
 separate pre-create eligibility check. The portal must not rely on a guessed endpoint.
 
+Issue #409 extends that same documented `POST /sales` contract to Customer-scoped Sales Trial
+Offerings. The portal publishes exactly one shared Sales Experience with `type: trial`,
+`registrationType: registeredParticipantsOnly`, and `sendInvitations: dontSend`, while keeping
+provider identifiers and full request/response evidence out of ordinary UI/API surfaces. Non-
+ambiguous provider failures and pre-create Item revalidation failures now persist protected
+Customer-scoped diagnostics, while ambiguous `POST /sales` outcomes remain a no-replay
+`needs_attention` state.
+
 **Action required:**
 
 CloudShare must provide or document a legitimate Project-scoped eligibility endpoint, or the
@@ -1789,14 +1797,17 @@ documented contract; the safe Certalis probe returned 404 and the inferred adapt
 CloudShare's own GUI appears to list active Project members through the undocumented classic-v3
 surface:
 
-`GET https://use.cloudshare.com/api/v3/users?projectUsers=true&status=active&projectId=<project-id>&getRows=true`
+`GET https://use.cloudshare.com/api/v3/users?projectUsers=true&status=active&loggedIn=ever&projectId=<project-id>&getRows=true`
 
-Live verification on 2026-07-14 confirmed HTTP 200 for a Certalis Project using exactly
-`projectUsers=true`, `status=active`, `projectId`, and `getRows=true`. The GUI response exposed a
-row collection (observed as `Rows`) with member identity fields including email and name parts;
+Live verification on 2026-07-14 confirmed HTTP 200 for a Certalis Project using
+`projectUsers=true`, `status=active`, `projectId`, and `getRows=true`; that probe did not establish
+the `loggedIn` behavior. A later live roster check on 2026-08-30 confirmed that omitting
+`loggedIn=ever` falls back to CloudShare's default recent-login filter and can undercount active
+Project members, while the GUI's `loggedIn=ever` query returns the full active roster. The response exposed a row collection
+(observed as `Rows`) with member identity fields including email and name parts;
 Certalis normalizes only email plus a display name and never returns raw CloudShare member IDs to
-the browser. Both `projectUsers=true` and `getRows=true` remain required by the implemented typed
-adapter; additional GUI parameters remain undocumented.
+the browser. `projectUsers=true`, `getRows=true`, and `loggedIn=ever` remain required by the
+implemented typed adapter; additional GUI parameters remain undocumented.
 
 SUP-5002 tracks the misleading API documentation. BAC-24702 is the requested path to productize
 the Project User Management APIs so a future Sales Delivery adapter can replace this unsupported
@@ -1815,8 +1826,13 @@ instructors. It is therefore not a supported precedent for a Sales pre-create el
 
 The Sales Enablement Session form performs this live lookup only after the Sales Admin selects an
 Item (thereby inferring its Project), does not cache it, and re-fetches/revalidates the selected
-Sales Pro immediately before `POST /sales`. A failed lookup or removed/inactive selection blocks
-creation with correlated, redacted diagnostics. The narrow race after the revalidation and before
+Sales Pro immediately before `POST /sales`. This check proves only that the chosen email is still
+an active Project member on the undocumented GUI surface; it does **not** prove CloudShare will
+accept that user as `mainSalesPro` for the eventual v4 Sales Experience create. Provider-side
+authority remains with the documented `POST /sales` call, and Certalis must continue mapping any
+main-Sales-Pro rejection from that mutation to supportable diagnostics rather than overclaiming the
+preflight. A failed lookup or removed/inactive selection blocks creation with correlated, redacted
+diagnostics. The narrow race after the revalidation and before
 CloudShare processes the create request is accepted as an extreme edge case; CloudShare remains the
 final authority. The selected email and display name are persisted on the immutable Session
 correlation, not on the catalogue Item.

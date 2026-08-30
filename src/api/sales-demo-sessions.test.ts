@@ -9,7 +9,7 @@ const admin = { type: "admin", id: "sales-admin", email: "sales-admin@certalis.d
 const projectMembers = {
   listActiveProjectMembers: vi.fn().mockResolvedValue({
     members: [{ email: admin.email, displayName: "Sales Admin" }],
-    request: { method: "GET", path: "/users", query: { projectUsers: "true", status: "active", projectId: "project-1", getRows: "true" } },
+    request: { method: "GET", path: "/users", query: { projectUsers: "true", status: "active", loggedIn: "ever", projectId: "project-1", getRows: "true" } },
     response: { status: 200, body: { Rows: [] } }, integrationSurface: "cloudshare.v3.project_members_gui",
   }),
 };

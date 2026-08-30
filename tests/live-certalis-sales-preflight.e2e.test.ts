@@ -24,6 +24,6 @@ describe("live Certalis Sales-Pro preflight probe", () => {
     const read = await createCloudShareProjectMemberSource(client).listActiveProjectMembers(project!.id);
     expect(read.response.status).toBe(200);
     expect(read.members).toEqual(expect.any(Array));
-    expect(read.request.query).toEqual({ projectUsers: "true", status: "active", projectId: project!.id, getRows: "true" });
+    expect(read.request.query).toEqual({ projectUsers: "true", status: "active", loggedIn: "ever", projectId: project!.id, getRows: "true" });
   }, 20_000);
 });

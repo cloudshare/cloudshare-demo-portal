@@ -33,6 +33,7 @@ model Customer {
   salesOpportunities   SalesOpportunity[]
   opportunityContacts  OpportunityContact[]
   salesDemoSessions    SalesDemoSession[]
+  salesTrialOfferings  SalesTrialOffering[]
   salesTimezoneCache   SalesTimezoneCache?
   salesTrialPortalConfiguration SalesTrialPortalConfiguration?
   salesSessionNameTemplate String @default("{account} - {opportunity} ({revision}) - {item}")
@@ -110,9 +111,37 @@ model Item {
   updatedAt              DateTime
   customer               Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
   demoSessions           SalesDemoSession[]
+  trialOfferings         SalesTrialOffering[]
 
   @@index([customerId, status])
   @@unique([customerId, id])
+}
+
+model SalesTrialOffering {
+  id                          String   @id
+  customerId                  String
+  itemId                      String
+  title                       String
+  description                 String
+  cloudShareSalesExperienceId String?
+  externalId                  String?
+  start                       String
+  end                         String
+  timeZone                    String
+  salesProEmail               String
+  salesProDisplayName         String?
+  status                      String
+  attentionReason             String?
+  createdAt                   DateTime
+  updatedAt                   DateTime
+  publishedAt                 DateTime?
+  unpublishedAt               DateTime?
+  customer                    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  item                        Item     @relation(fields: [customerId, itemId], references: [customerId, id], onDelete: Restrict)
+
+  @@unique([customerId, id])
+  @@index([customerId, status, createdAt])
+  @@index([customerId, itemId])
 }
 
 // Immutable portal-to-CloudShare correlation. Sales Experiences are never

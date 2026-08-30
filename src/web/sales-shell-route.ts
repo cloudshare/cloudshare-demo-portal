@@ -1,7 +1,8 @@
-export type SalesTab = "items" | "records" | "sessions" | "support" | "configuration";
+export type SalesTab = "items" | "records" | "sessions" | "trial-offerings" | "support" | "configuration";
 
 export const SALES_TABS: readonly SalesTab[] = [
   "sessions",
+  "trial-offerings",
   "records",
   "items",
   "support",
@@ -63,6 +64,7 @@ export function getSalesTabLabel(tab: SalesTab): string {
     case "items": return "Items";
     case "records": return "Relationships";
     case "sessions": return "Sessions";
+    case "trial-offerings": return "Trial Offerings";
     case "support": return "Support";
     case "configuration": return "Configuration";
   }
@@ -158,7 +160,7 @@ function readValue(value: string | readonly string[] | undefined): string | unde
 }
 
 function parseTab(value: string | undefined): SalesTab {
-  if (value === "items" || value === "records" || value === "sessions" || value === "support" || value === "configuration") return value;
+  if (value === "items" || value === "records" || value === "sessions" || value === "trial-offerings" || value === "support" || value === "configuration") return value;
   return "sessions";
 }
 

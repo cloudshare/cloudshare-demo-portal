@@ -28,9 +28,9 @@ export interface CreateSalesDemoSessionInput {
   readonly timeZone: string;
   readonly mainSalesProEmail: string;
   readonly registrationType: "registeredParticipantsOnly";
-  /** Enables future explicit native invitations for Sales Participants and Sales Pros;
-   * creating the Experience itself never sends an email. */
-  readonly sendInvitations: "salesProsAndParticipants";
+  /** Certalis can either keep provider-native invitations disabled or allow
+   * an explicit invite slice to opt in later; create itself never sends mail. */
+  readonly sendInvitations: "dontSend" | "salesProsAndParticipants";
 }
 export interface SalesDelivery {
   createSession(input: CreateSalesDemoSessionInput): Promise<{ readonly salesExperienceId: string } & SalesDeliveryEvidence>;
