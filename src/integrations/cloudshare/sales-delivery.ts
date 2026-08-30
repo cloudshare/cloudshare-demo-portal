@@ -35,7 +35,7 @@ export interface CreateSalesDemoSessionInput {
 export interface SalesDelivery {
   createSession(input: CreateSalesDemoSessionInput): Promise<{ readonly salesExperienceId: string } & SalesDeliveryEvidence>;
   /** Documented v4 read used only for reconciliation; the provider ID remains server-side. */
-  readSession(salesExperienceId: string): Promise<{ readonly id: string; readonly status: CloudShareSalesExperienceStatus } & SalesDeliveryEvidence>;
+  readSession(salesExperienceId: string): Promise<{ readonly id: string; readonly status: CloudShareSalesExperienceStatus; readonly end?: string | null } & SalesDeliveryEvidence>;
   /** Maps CloudShare's versioned invitation-setting wire values to the one fact
    * invite callers need, and preserves the original value for diagnostics. */
   readParticipantInvitationCapability(salesExperienceId: string): Promise<{ readonly participantInvitationsEnabled: boolean; readonly sendInvitations: "salesProsOnly" | "salesParticipantsOnly" | "participantsOnly" | "dontSend" | "salesProsAndParticipants" | "unknown" } & SalesDeliveryEvidence>;
@@ -214,7 +214,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
     },
     async readSession(salesExperienceId) {
       const { data, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceReadSchema });
-      return { id: data.id, status: data.status, ...evidence };
+      return { id: data.id, status: data.status, end: data.end ?? null, ...evidence };
     },
     async readParticipantInvitationCapability(salesExperienceId) {
       const { data, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceSchema });

@@ -296,6 +296,39 @@ describe("Sales Trial Offering API", () => {
     });
   });
 
+  it("accepts a blank description for an explicit open-ended draft", async () => {
+    const repository = createOfferingRepository();
+    const deps = createDeps(repository);
+
+    const result = await handleCreateSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      body: {
+        ...openEndedBody,
+        description: "   ",
+      },
+    });
+    const persisted = await repository.findById("customer-1", "offering-1");
+
+    expect(result).toMatchObject({
+      status: 201,
+      body: {
+        offering: {
+          id: "offering-1",
+          description: "",
+          end: null,
+          status: "draft",
+        },
+      },
+    });
+    expect(persisted).toMatchObject({
+      id: "offering-1",
+      description: "",
+      end: null,
+      status: "draft",
+    });
+  });
+
   it("lists only this customer's offerings and keeps admin responses metadata-only", async () => {
     const repository = createOfferingRepository();
     await repository.save({

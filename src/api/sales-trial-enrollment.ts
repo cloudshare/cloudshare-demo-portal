@@ -7,7 +7,10 @@ import type {
 } from "@/domain/cloudshare-connection";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { SalesTrialEnrollment, SalesTrialEnrollmentRepository } from "@/domain/sales-trial-enrollment";
-import type { SalesTrialOfferingRepository } from "@/domain/sales-trial-offering";
+import type {
+  SalesTrialOffering,
+  SalesTrialOfferingRepository,
+} from "@/domain/sales-trial-offering";
 import {
   createCloudShareSalesDelivery,
   type SalesDelivery,
@@ -128,14 +131,14 @@ export async function handleEnterSalesTrialOffering(
     createCloudShareSalesDelivery(deps.cloudshare!.forConnection(connection));
   try {
     const session = await delivery.readSession(offering.cloudShareSalesExperienceId);
-    if (session.status === "ended") {
+    if (!isLaunchableProviderSession(offering, session)) {
       return denied(
         deps,
         request,
         correlationId,
         "launch_unavailable",
         GENERIC_UNAVAILABLE,
-        endedOffering(session),
+        unavailableOffering(session, offering),
       );
     }
   } catch (error) {
@@ -574,8 +577,16 @@ function classifyAttentionReason(error: unknown): string | null {
     : null;
 }
 
-function endedOffering(
-  session: { readonly id: string } & SalesDeliveryEvidence,
+function isLaunchableProviderSession(
+  offering: Pick<SalesTrialOffering, "end">,
+  session: { readonly status: "notStarted" | "inProgress" | "ended"; readonly end?: string | null },
+): boolean {
+  return session.status === "inProgress" && (session.end ?? null) === offering.end;
+}
+
+function unavailableOffering(
+  session: { readonly id: string; readonly status: "notStarted" | "inProgress" | "ended"; readonly end?: string | null } & SalesDeliveryEvidence,
+  offering: Pick<SalesTrialOffering, "end">,
 ): CloudShareResponseError {
   return new CloudShareResponseError(
     "CloudShare no longer reports this Sales Trial Offering as open for launch.",
@@ -588,7 +599,14 @@ function endedOffering(
       responseStatus: session.response.status,
       ...(session.response.headers ? { responseHeaders: session.response.headers } : {}),
       responseBody: session.response.body,
-      failureMode: "offering_ended",
+      failureMode:
+        session.status === "ended"
+          ? "offering_ended"
+          : session.status === "notStarted"
+            ? "offering_not_started"
+            : session.end !== offering.end
+              ? "offering_window_mismatch"
+              : "offering_unavailable",
     },
   );
 }

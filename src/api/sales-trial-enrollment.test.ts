@@ -103,8 +103,9 @@ function createDeps(
   const readSession = vi.fn().mockResolvedValue({
     id: "sales-1",
     status: "inProgress",
+    end: offering.end,
     request: { method: "GET", path: "/sales/sales-1" },
-    response: { status: 200, body: { id: "sales-1", status: "inProgress" } },
+    response: { status: 200, body: { id: "sales-1", status: "inProgress", end: offering.end } },
   });
   const registerParticipants = vi.fn().mockResolvedValue({
     request: { method: "POST", path: "/sales/sales-1/participants" },
@@ -188,8 +189,9 @@ describe("Sales Trial offering entry", () => {
     readSession.mockResolvedValue({
       id: "sales-1",
       status: "ended",
+      end: "2026-08-30T10:02",
       request: { method: "GET", path: "/sales/sales-1" },
-      response: { status: 200, body: { id: "sales-1", status: "ended" } },
+      response: { status: 200, body: { id: "sales-1", status: "ended", end: "2026-08-30T10:02" } },
     });
 
     const result = await handleEnterSalesTrialOffering(deps, request);
@@ -219,7 +221,7 @@ describe("Sales Trial offering entry", () => {
       }),
       response: expect.objectContaining({
         status: 200,
-        body: { id: "sales-1", status: "ended" },
+        body: { id: "sales-1", status: "ended", end: "2026-08-30T10:02" },
       }),
       details: expect.objectContaining({
         integrationSurface: "cloudshare.v4.sales",
@@ -289,8 +291,62 @@ describe("Sales Trial offering entry", () => {
     );
   });
 
-  it("allows entry for an open-ended published offering after its start time", async () => {
-    const { deps, enrollments, listParticipants, registerParticipants, createSponsoredLink } =
+  it("fails closed before enrollment mutation when CloudShare reports the offering has not started", async () => {
+    const { deps, enrollments, diagnosticRepository, audit, readSession, registerParticipants, createSponsoredLink } =
+      createDeps();
+    readSession.mockResolvedValue({
+      id: "sales-1",
+      status: "notStarted",
+      end: "2026-08-30T17:00",
+      request: { method: "GET", path: "/sales/sales-1" },
+      response: { status: 200, body: { id: "sales-1", status: "notStarted", end: "2026-08-30T17:00" } },
+    });
+
+    const result = await handleEnterSalesTrialOffering(deps, request);
+    const persisted = await enrollments.findByOfferingAndPortalUser(
+      "customer-1",
+      "offering-1",
+      "trial-user-1",
+    );
+    const [failure] = await diagnosticRepository.query({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.entered",
+      outcome: "failure",
+    });
+
+    expect(result).toMatchObject({
+      status: 404,
+      body: { error: "This Sales Trial launch is unavailable.", correlationId: expect.any(String) },
+    });
+    expect(persisted).toBeNull();
+    expect(registerParticipants).not.toHaveBeenCalled();
+    expect(createSponsoredLink).not.toHaveBeenCalled();
+    expect(failure).toMatchObject({
+      correlationId: result.body?.correlationId,
+      request: expect.objectContaining({
+        method: "GET",
+        path: "/sales/sales-1",
+      }),
+      response: expect.objectContaining({
+        status: 200,
+        body: { id: "sales-1", status: "notStarted", end: "2026-08-30T17:00" },
+      }),
+      details: expect.objectContaining({
+        integrationSurface: "cloudshare.v4.sales",
+        failureMode: "launch_unavailable",
+      }),
+    });
+    expect(audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "sales_trial.offering.entered",
+        outcome: "failure",
+        details: expect.objectContaining({ failureMode: "launch_unavailable" }),
+      }),
+    );
+  });
+
+  it("fails closed before enrollment mutation when provider end no longer matches a stale open-ended local offering", async () => {
+    const { deps, enrollments, diagnosticRepository, audit, readSession, registerParticipants, createSponsoredLink } =
       createDeps({
         offerings: {
           findById: vi.fn().mockResolvedValue(
@@ -300,6 +356,70 @@ describe("Sales Trial offering entry", () => {
           ),
         },
       });
+    readSession.mockResolvedValue({
+      id: "sales-1",
+      status: "inProgress",
+      end: "2026-08-30T10:02",
+      request: { method: "GET", path: "/sales/sales-1" },
+      response: { status: 200, body: { id: "sales-1", status: "inProgress", end: "2026-08-30T10:02" } },
+    });
+
+    const result = await handleEnterSalesTrialOffering(deps, request);
+    const persisted = await enrollments.findByOfferingAndPortalUser(
+      "customer-1",
+      "offering-1",
+      "trial-user-1",
+    );
+    const [failure] = await diagnosticRepository.query({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.entered",
+      outcome: "failure",
+    });
+
+    expect(result).toMatchObject({
+      status: 404,
+      body: { error: "This Sales Trial launch is unavailable.", correlationId: expect.any(String) },
+    });
+    expect(persisted).toBeNull();
+    expect(registerParticipants).not.toHaveBeenCalled();
+    expect(createSponsoredLink).not.toHaveBeenCalled();
+    expect(failure).toMatchObject({
+      correlationId: result.body?.correlationId,
+      details: expect.objectContaining({
+        integrationSurface: "cloudshare.v4.sales",
+        failureMode: "launch_unavailable",
+      }),
+      response: expect.objectContaining({
+        body: { id: "sales-1", status: "inProgress", end: "2026-08-30T10:02" },
+      }),
+    });
+    expect(audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "sales_trial.offering.entered",
+        outcome: "failure",
+        details: expect.objectContaining({ failureMode: "launch_unavailable" }),
+      }),
+    );
+  });
+
+  it("allows entry for an open-ended published offering after its start time", async () => {
+    const { deps, enrollments, readSession, listParticipants, registerParticipants, createSponsoredLink } =
+      createDeps({
+        offerings: {
+          findById: vi.fn().mockResolvedValue(
+            createOffering({
+              end: null,
+            }),
+          ),
+        },
+      });
+    readSession.mockResolvedValue({
+      id: "sales-1",
+      status: "inProgress",
+      end: null,
+      request: { method: "GET", path: "/sales/sales-1" },
+      response: { status: 200, body: { id: "sales-1", status: "inProgress", end: null } },
+    });
     listParticipants
       .mockResolvedValueOnce({
         participants: [],
@@ -585,8 +705,9 @@ describe("Sales Trial offering entry", () => {
           readSession: vi.fn().mockResolvedValue({
             id: "sales-1",
             status: "inProgress",
+            end: "2026-08-30T17:00",
             request: { method: "GET", path: "/sales/sales-1" },
-            response: { status: 200, body: { id: "sales-1", status: "inProgress" } },
+            response: { status: 200, body: { id: "sales-1", status: "inProgress", end: "2026-08-30T17:00" } },
           }),
           ensureParticipantCorrelationProperties: vi.fn().mockResolvedValue({
             requiredKeys: [
