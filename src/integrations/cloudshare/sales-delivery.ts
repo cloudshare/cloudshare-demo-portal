@@ -48,7 +48,7 @@ export interface SalesDelivery {
    * Certalis-to-CloudShare participant correlation. */
   ensureParticipantCorrelationProperties(
     salesExperienceId: string,
-    requiredKeys?: readonly string[],
+    requiredKeys?: readonly SalesParticipantCorrelationPropertyKey[],
   ): Promise<{
     readonly requiredKeys: readonly SalesParticipantCorrelationPropertyKey[];
     readonly availableKeys: readonly string[];
@@ -68,11 +68,23 @@ export interface SalesDelivery {
 }
 export interface SalesProContact { readonly name?: string; readonly email: string; readonly type: "mainSalesPro" | "salesPro"; }
 
-export const SALES_PARTICIPANT_CORRELATION_PROPERTY_KEYS = [
+export const SALES_SESSION_PARTICIPANT_CORRELATION_PROPERTY_KEYS = [
   "certalisSalesParticipantId",
   "certalisOpportunityContactId",
 ] as const;
-export type SalesParticipantCorrelationPropertyKey = (typeof SALES_PARTICIPANT_CORRELATION_PROPERTY_KEYS)[number];
+export const SALES_TRIAL_PARTICIPANT_CORRELATION_PROPERTY_KEYS = [
+  "certalisSalesTrialEnrollmentId",
+  "certalisSalesTrialParticipantUserId",
+] as const;
+export const SALES_PARTICIPANT_CORRELATION_PROPERTY_KEYS =
+  SALES_SESSION_PARTICIPANT_CORRELATION_PROPERTY_KEYS;
+export type SalesSessionParticipantCorrelationPropertyKey =
+  (typeof SALES_SESSION_PARTICIPANT_CORRELATION_PROPERTY_KEYS)[number];
+export type SalesTrialParticipantCorrelationPropertyKey =
+  (typeof SALES_TRIAL_PARTICIPANT_CORRELATION_PROPERTY_KEYS)[number];
+export type SalesParticipantCorrelationPropertyKey =
+  | SalesSessionParticipantCorrelationPropertyKey
+  | SalesTrialParticipantCorrelationPropertyKey;
 export interface SalesParticipantInput { readonly firstName: string; readonly lastName: string; readonly email: string; readonly customProperties?: readonly { readonly name: string; readonly value: string }[]; }
 /** Browser-safe monitoring read model. Invite URLs are not part of this documented response. */
 export type SalesParticipant = Omit<SalesParticipantInput, "customProperties"> & {
@@ -276,7 +288,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
       const existing = await detailed({ method: "GET", path, schema: salesUserPropertyDefinitionsSchema });
       const existingKeys = existing.data.map((definition) => definition.name);
       const missingKeys = requiredKeys.filter((key) => !existingKeys.includes(key));
-      if (missingKeys.length === 0) return { requiredKeys: requiredKeys as readonly SalesParticipantCorrelationPropertyKey[], availableKeys: existingKeys, requests: [existing.evidence.request], responses: [existing.evidence.response], ...existing.evidence };
+      if (missingKeys.length === 0) return { requiredKeys, availableKeys: existingKeys, requests: [existing.evidence.request], responses: [existing.evidence.response], ...existing.evidence };
       let created: Awaited<ReturnType<typeof detailed<z.output<typeof salesUserPropertyDefinitionsSchema>>>>;
       try {
         created = await detailed({ method: "POST", path, body: missingKeys.map((name) => ({ name })), schema: salesUserPropertyDefinitionsSchema });
@@ -297,7 +309,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
           responseBody: created.evidence.response.body, priorHttpExchanges: [{ request: existing.evidence.request, response: existing.evidence.response }], failureMode: "sales_participant_correlation_properties_missing",
         });
       }
-      return { requiredKeys: requiredKeys as readonly SalesParticipantCorrelationPropertyKey[], availableKeys, requests: [existing.evidence.request, created.evidence.request], responses: [existing.evidence.response, created.evidence.response], ...created.evidence };
+      return { requiredKeys, availableKeys, requests: [existing.evidence.request, created.evidence.request], responses: [existing.evidence.response, created.evidence.response], ...created.evidence };
     },
     async registerParticipants(salesExperienceId, participants) {
       // A 201 means CloudShare accepted the registration even when the body is

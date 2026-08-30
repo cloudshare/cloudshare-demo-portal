@@ -12,14 +12,14 @@ import {
   createCloudShareSalesDelivery,
   type SalesDelivery,
   type SalesDeliveryEvidence,
+  type SalesParticipantCorrelationPropertyKey,
   type SalesParticipant,
+  SALES_TRIAL_PARTICIPANT_CORRELATION_PROPERTY_KEYS,
 } from "@/integrations/cloudshare/sales-delivery";
 import { CloudShareResponseError } from "@/integrations/cloudshare/errors";
 
-const TRIAL_CORRELATION_KEYS = [
-  "certalisSalesTrialEnrollmentId",
-  "certalisSalesTrialParticipantUserId",
-] as const;
+const TRIAL_CORRELATION_KEYS: readonly SalesParticipantCorrelationPropertyKey[] =
+  SALES_TRIAL_PARTICIPANT_CORRELATION_PROPERTY_KEYS;
 
 const GENERIC_UNAVAILABLE = "This Sales Trial launch is unavailable.";
 const NEEDS_ATTENTION_REASON =
@@ -273,6 +273,7 @@ export async function handleListSalesTrialOfferingParticipants(
   readonly status: number;
   readonly body: Record<string, unknown>;
 }> {
+  const correlationId = randomUUID();
   const offering = await deps.offerings.findById(request.customerId, request.offeringId);
   if (!offering || !offering.cloudShareSalesExperienceId || offering.status !== "published") {
     return { status: 404, body: { error: "Sales Trial Offering was not found for this Customer." } };
@@ -284,10 +285,22 @@ export async function handleListSalesTrialOfferingParticipants(
   const delivery =
     deps.deliveryFactory?.forConnection(connection) ??
     createCloudShareSalesDelivery(deps.cloudshare!.forConnection(connection));
-  const [enrollments, remote] = await Promise.all([
-    deps.enrollments.listByOffering(request.customerId, request.offeringId),
-    delivery.listParticipants(offering.cloudShareSalesExperienceId),
-  ]);
+  let enrollments: Awaited<ReturnType<SalesTrialEnrollmentRepository["listByOffering"]>>;
+  let remote: Awaited<ReturnType<SalesDelivery["listParticipants"]>>;
+  try {
+    [enrollments, remote] = await Promise.all([
+      deps.enrollments.listByOffering(request.customerId, request.offeringId),
+      delivery.listParticipants(offering.cloudShareSalesExperienceId),
+    ]);
+  } catch (error) {
+    return monitoringFailure(
+      deps,
+      request,
+      correlationId,
+      "Sales Trial participant monitoring is unavailable.",
+      error,
+    );
+  }
   const participants = enrollments.map((enrollment) =>
     projectTrialMonitoringParticipant(
       enrollment,
@@ -298,7 +311,7 @@ export async function handleListSalesTrialOfferingParticipants(
     status: 200,
     body: {
       participants,
-      correlationId: randomUUID(),
+      correlationId,
     },
   };
 }
@@ -342,6 +355,21 @@ async function resolveEnrollment(input: {
   const exactBefore = exactMatches(input.remoteBefore.participants, input.enrollment);
   if (exactBefore.length > 1) {
     throw ambiguousRoster(input.remoteBefore, input.enrollment, "duplicate_correlated_participants");
+  }
+  const stalePersistedMatch = input.enrollment.cloudShareParticipantId
+    ? input.remoteBefore.participants.find(
+        (participant) => participant.id === input.enrollment.cloudShareParticipantId,
+      ) ?? null
+    : null;
+  if (
+    stalePersistedMatch &&
+    !hasRequiredEnrollmentCorrelation(stalePersistedMatch, input.enrollment)
+  ) {
+    throw mismatchedPersistedParticipant(
+      input.remoteBefore,
+      input.enrollment,
+      stalePersistedMatch,
+    );
   }
   const propertylessByEmail = input.remoteBefore.participants.filter(
     (participant) =>
@@ -396,18 +424,10 @@ function matchesEnrollment(
     "id" | "portalUserId" | "cloudShareParticipantId"
   >,
 ): boolean {
-  if (
-    enrollment.cloudShareParticipantId &&
-    participant.id === enrollment.cloudShareParticipantId &&
-    participant.customProperties.certalisSalesTrialEnrollmentId === enrollment.id &&
-    participant.customProperties.certalisSalesTrialParticipantUserId === enrollment.portalUserId
-  ) {
-    return true;
+  if (enrollment.cloudShareParticipantId && participant.id === enrollment.cloudShareParticipantId) {
+    return hasRequiredEnrollmentCorrelation(participant, enrollment);
   }
-  return (
-    participant.customProperties.certalisSalesTrialEnrollmentId === enrollment.id &&
-    participant.customProperties.certalisSalesTrialParticipantUserId === enrollment.portalUserId
-  );
+  return hasRequiredEnrollmentCorrelation(participant, enrollment);
 }
 
 function enrollmentCorrelationProperties(
@@ -466,7 +486,11 @@ function classifyAttentionReason(error: unknown): string | null {
   }
   const failureMode = (error as { context?: { failureMode?: unknown } }).context?.failureMode;
   return typeof failureMode === "string" &&
-    (failureMode.includes("duplicate") || failureMode.includes("reconciliation"))
+    (
+      failureMode.includes("duplicate") ||
+      failureMode.includes("reconciliation") ||
+      failureMode.includes("correlation")
+    )
     ? NEEDS_ATTENTION_REASON
     : null;
 }
@@ -512,11 +536,14 @@ async function denied(
               status: context.responseStatus ?? context.status,
               headers: context.responseHeaders,
               body: context.responseBody,
+              transport: context.transport,
+              network: context.network,
+              tls: context.tls,
             },
           }
         : {}),
       details: {
-        integrationSurface: context?.path ? "cloudshare.v4.sales.participants" : "portal.sales_trial",
+        integrationSurface: context?.path ? salesTrialIntegrationSurfaceForPath(context.path) : "portal.sales_trial",
         failureMode,
       },
     }),
@@ -578,6 +605,162 @@ function projectTrialMonitoringParticipant(
       source: participant.environmentId ? "cloudshare_v4_sales_participant_roster" : "not_assigned",
     },
   };
+}
+
+function hasRequiredEnrollmentCorrelation(
+  participant: SalesParticipant,
+  enrollment: Pick<SalesTrialEnrollment, "id" | "portalUserId">,
+): boolean {
+  return (
+    participant.customProperties.certalisSalesTrialEnrollmentId === enrollment.id &&
+    participant.customProperties.certalisSalesTrialParticipantUserId === enrollment.portalUserId
+  );
+}
+
+function mismatchedPersistedParticipant(
+  remote: SalesDeliveryEvidence,
+  enrollment: Pick<SalesTrialEnrollment, "id" | "portalUserId" | "cloudShareParticipantId">,
+  participant: SalesParticipant,
+): CloudShareResponseError {
+  return new CloudShareResponseError(
+    "CloudShare returned the persisted Sales Trial participant without the required Certalis trial correlation values.",
+    {
+      method: remote.request.method,
+      path: remote.request.path,
+      ...(remote.request.query ? { requestQuery: remote.request.query } : {}),
+      ...(remote.request.headers ? { requestHeaders: remote.request.headers } : {}),
+      ...(remote.request.body !== undefined ? { requestBody: remote.request.body } : {}),
+      status: remote.response.status,
+      responseStatus: remote.response.status,
+      ...(remote.response.headers ? { responseHeaders: remote.response.headers } : {}),
+      responseBody: remote.response.body,
+      cloudShareParticipantId: participant.id,
+      salesTrialEnrollmentId: enrollment.id,
+      failureMode: "participant_correlation_mismatch",
+    },
+  );
+}
+
+async function monitoringFailure(
+  deps: SalesTrialEnrollmentDeps,
+  request: {
+    readonly customerId: string;
+    readonly offeringId: string;
+    readonly actor: { readonly type: "admin"; readonly id: string; readonly email: string };
+  },
+  correlationId: string,
+  message: string,
+  error: unknown,
+): Promise<{ readonly status: number; readonly body: Record<string, unknown> }> {
+  const context =
+    error instanceof Error && "context" in error
+      ? (error as { context?: Record<string, unknown> }).context
+      : undefined;
+  const integrationSurface = salesTrialIntegrationSurfaceForPath(context?.path);
+  const attemptedOperation = salesTrialAttemptedOperationForPath(context?.path);
+
+  await Promise.allSettled([
+    deps.diagnostics?.record({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.monitoring.read_participants",
+      outcome: "failure",
+      level: "warn",
+      customerId: request.customerId,
+      actor: request.actor,
+      subject: { type: "sales_trial_offering", id: request.offeringId },
+      correlationId,
+      message,
+      externalIds: { offeringId: request.offeringId },
+      ...(context
+        ? {
+            request: {
+              method: context.method,
+              path: context.path,
+              query: context.requestQuery,
+              headers: context.requestHeaders,
+              body: context.requestBody,
+            },
+            response: {
+              status: context.responseStatus ?? context.status,
+              headers: context.responseHeaders,
+              body: context.responseBody,
+              transport: context.transport,
+              network: context.network,
+              tls: context.tls,
+            },
+          }
+        : {}),
+      details: {
+        integrationSurface,
+        attemptedOperation,
+        failureMode:
+          context?.failureMode ??
+          ((context?.responseStatus ?? context?.status) ? "http_failure" : "transport_failure"),
+      },
+    }),
+    deps.audit?.write({
+      id: randomUUID(),
+      occurredAt: (deps.now ?? (() => new Date()))(),
+      customerId: request.customerId,
+      actorType: request.actor.type,
+      actorId: request.actor.id,
+      actorEmail: request.actor.email,
+      action: "sales_trial.offering.monitoring.read_participants",
+      subjectType: "sales_trial_offering",
+      subjectId: request.offeringId,
+      outcome: "failure",
+      correlationId,
+      details: {
+        offeringId: request.offeringId,
+        integrationSurface,
+        attemptedOperation,
+        failureMode:
+          context?.failureMode ??
+          ((context?.responseStatus ?? context?.status) ? "http_failure" : "transport_failure"),
+      },
+      error: message,
+    }),
+  ]);
+
+  return {
+    status: 502,
+    body: {
+      error: message,
+      correlationId,
+    },
+  };
+}
+
+function salesTrialIntegrationSurfaceForPath(path: unknown): string {
+  if (typeof path !== "string") {
+    return "portal.sales_trial";
+  }
+  if (path.includes("/sponsored-link")) {
+    return "cloudshare.v4.sales.sponsored_link";
+  }
+  if (path.includes("/users/properties")) {
+    return "cloudshare.v4.sales.user_properties";
+  }
+  if (path.includes("/participants")) {
+    return "cloudshare.v4.sales.participants";
+  }
+  return "portal.sales_trial";
+}
+
+function salesTrialAttemptedOperationForPath(path: unknown): string {
+  if (typeof path !== "string") {
+    return "portal_guard";
+  }
+  if (path.includes("/sponsored-link")) {
+    return "create_sponsored_link";
+  }
+  if (path.includes("/users/properties")) {
+    return "ensure_participant_correlation_properties";
+  }
+  if (path.includes("/participants")) {
+    return "list_participants";
+  }
+  return "portal_guard";
 }
 
 export function buildEnterSalesTrialOfferingBlockedPage(

@@ -3,6 +3,7 @@ import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import type { SalesTrialOffering } from "@/domain/sales-trial-offering";
 import type { SalesTrialEnrollment, SalesTrialEnrollmentRepository } from "@/domain/sales-trial-enrollment";
+import { CloudShareTransportError } from "@/integrations/cloudshare/errors";
 import {
   handleEnterSalesTrialOffering,
   handleListSalesTrialOfferingParticipants,
@@ -62,8 +63,9 @@ function createDeps(
 ) {
   const offering = createOffering();
   const enrollments = createEnrollmentRepository();
+  const diagnosticRepository = createInMemoryDiagnosticLogRepository();
   const diagnostics = createDiagnosticRecorder({
-    repository: createInMemoryDiagnosticLogRepository(),
+    repository: diagnosticRepository,
   });
   const listParticipants = vi.fn().mockResolvedValue({
     participants: [],
@@ -115,7 +117,16 @@ function createDeps(
     newId: () => "enrollment-1",
     ...overrides,
   };
-  return { deps, enrollments, listParticipants, registerParticipants, updateParticipantCorrelation, createSponsoredLink };
+  return {
+    deps,
+    enrollments,
+    diagnosticRepository,
+    audit: deps.audit,
+    listParticipants,
+    registerParticipants,
+    updateParticipantCorrelation,
+    createSponsoredLink,
+  };
 }
 
 const request = {
@@ -278,6 +289,127 @@ describe("Sales Trial offering entry", () => {
       status: "needs_attention",
     });
   });
+
+  it("fails closed when a persisted CloudShare participant id returns without the required trial correlations", async () => {
+    const { deps, enrollments, listParticipants, registerParticipants, updateParticipantCorrelation, createSponsoredLink } = createDeps();
+    await enrollments.save({
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: "remote-1",
+      cloudShareRosterEnvironmentReference: null,
+      environmentStatus: null,
+      firstJoined: null,
+      status: "active",
+      attentionReason: null,
+      lastLaunchedAt: new Date("2026-08-30T09:30:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T09:30:00.000Z"),
+      createdAt: new Date("2026-08-30T09:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T09:30:00.000Z"),
+    });
+    listParticipants.mockResolvedValue({
+      participants: [
+        {
+          id: "remote-1",
+          firstName: "Ari",
+          lastName: "Visitor",
+          email: "visitor@example.test",
+          invitationStatus: "notSent",
+          invitedBy: null,
+          participationStatus: "pending",
+          firstJoined: null,
+          environmentId: null,
+          envStatus: null,
+          customProperties: {
+            certalisSalesTrialEnrollmentId: "someone-else",
+            certalisSalesTrialParticipantUserId: "different-user",
+          },
+        },
+      ],
+      request: { method: "GET", path: "/sales/sales-1/participants", query: { offset: "0", limit: "100" } },
+      response: { status: 200, body: { participants: [{ id: "remote-1" }] } },
+    });
+
+    const result = await handleEnterSalesTrialOffering(deps, request);
+    const persisted = await enrollments.findByOfferingAndPortalUser(
+      "customer-1",
+      "offering-1",
+      "trial-user-1",
+    );
+
+    expect(result).toMatchObject({
+      status: 404,
+      body: { error: "This Sales Trial launch is unavailable.", correlationId: expect.any(String) },
+    });
+    expect(registerParticipants).not.toHaveBeenCalled();
+    expect(updateParticipantCorrelation).not.toHaveBeenCalled();
+    expect(createSponsoredLink).not.toHaveBeenCalled();
+    expect(persisted).toMatchObject({
+      status: "needs_attention",
+    });
+  });
+
+  it("records the sponsored-link integration surface when the redirect mint fails", async () => {
+    const { deps, diagnosticRepository, listParticipants, createSponsoredLink } = createDeps();
+    const remoteParticipant = {
+      id: "remote-1",
+      firstName: "Ari",
+      lastName: "Visitor",
+      email: "visitor@example.test",
+      invitationStatus: "notSent",
+      invitedBy: null,
+      participationStatus: "inProgress",
+      firstJoined: "2026-08-30T10:05:00.000Z",
+      environmentId: "env-1",
+      envStatus: "Ready",
+      customProperties: {
+        certalisSalesTrialEnrollmentId: "enrollment-1",
+        certalisSalesTrialParticipantUserId: "trial-user-1",
+      },
+    };
+    listParticipants.mockResolvedValue({
+      participants: [remoteParticipant],
+      request: { method: "GET", path: "/sales/sales-1/participants", query: { offset: "0", limit: "100" } },
+      response: { status: 200, body: { participants: [{ id: "remote-1" }] } },
+    });
+    createSponsoredLink.mockRejectedValue(
+      new CloudShareTransportError("CloudShare sponsored link request timed out.", {
+        method: "POST",
+        path: "/sales/sales-1/sponsored-link",
+        requestBody: { firstName: "Ari" },
+        cause: "ETIMEDOUT",
+        transport: "tcp",
+        network: { remoteAddress: "203.0.113.7" },
+        tls: { protocol: "TLSv1.3" },
+      }),
+    );
+
+    const result = await handleEnterSalesTrialOffering(deps, request);
+    const [failure] = await diagnosticRepository.query({ source: "sales-trial-enrollment", outcome: "failure" });
+
+    expect(result).toMatchObject({
+      status: 404,
+      body: { error: "This Sales Trial launch is unavailable.", correlationId: expect.any(String) },
+    });
+    expect(failure).toMatchObject({
+      operation: "sales_trial.offering.entered",
+      details: expect.objectContaining({
+        integrationSurface: "cloudshare.v4.sales.sponsored_link",
+      }),
+      request: expect.objectContaining({
+        method: "POST",
+        path: "/sales/sales-1/sponsored-link",
+      }),
+      response: expect.objectContaining({
+        transport: "tcp",
+        network: { remoteAddress: "203.0.113.7" },
+      }),
+    });
+  });
 });
 
 describe("Sales Trial offering monitoring", () => {
@@ -352,5 +484,90 @@ describe("Sales Trial offering monitoring", () => {
     });
     expect(JSON.stringify(result.body)).not.toContain("remote-1");
     expect(JSON.stringify(result.body)).not.toContain("loginUrl");
+  });
+
+  it("returns a safe monitoring failure while recording protected provider evidence and audit", async () => {
+    const { deps, diagnosticRepository, audit, enrollments, listParticipants } = createDeps();
+    await enrollments.save({
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: "remote-1",
+      cloudShareRosterEnvironmentReference: null,
+      environmentStatus: null,
+      firstJoined: null,
+      status: "active",
+      attentionReason: null,
+      lastLaunchedAt: null,
+      lastReconciledAt: new Date("2026-08-30T10:00:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:00:00.000Z"),
+    });
+    listParticipants.mockRejectedValue(
+      new CloudShareTransportError("participant roster timed out", {
+        method: "GET",
+        path: "/sales/sales-1/participants",
+        requestQuery: { offset: "0", limit: "100" },
+        requestHeaders: { authorization: "Bearer secret", "x-request-id": "req-1" },
+        cause: "ETIMEDOUT",
+        transport: "tcp",
+        network: { remoteAddress: "203.0.113.10" },
+        tls: { protocol: "TLSv1.3", authorized: true },
+      }),
+    );
+
+    const result = await handleListSalesTrialOfferingParticipants(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+    });
+    const [failure] = await diagnosticRepository.query({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.monitoring.read_participants",
+      outcome: "failure",
+    });
+
+    expect(result).toEqual({
+      status: 502,
+      body: {
+        error: "Sales Trial participant monitoring is unavailable.",
+        correlationId: expect.any(String),
+      },
+    });
+    expect(failure).toMatchObject({
+      customerId: "customer-1",
+      correlationId: result.body.correlationId,
+      details: expect.objectContaining({
+        integrationSurface: "cloudshare.v4.sales.participants",
+        attemptedOperation: "list_participants",
+      }),
+      request: expect.objectContaining({
+        method: "GET",
+        path: "/sales/sales-1/participants",
+        query: { offset: "0", limit: "100" },
+        headers: { authorization: "[REDACTED]", "x-request-id": "req-1" },
+      }),
+      response: expect.objectContaining({
+        transport: "tcp",
+        network: { remoteAddress: "203.0.113.10" },
+        tls: { protocol: "TLSv1.3", authorized: true },
+      }),
+    });
+    expect(audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "sales_trial.offering.monitoring.read_participants",
+        correlationId: result.body.correlationId,
+        details: expect.objectContaining({
+          attemptedOperation: "list_participants",
+          integrationSurface: "cloudshare.v4.sales.participants",
+        }),
+      }),
+    );
+    expect(JSON.stringify(result.body)).not.toContain("203.0.113.10");
+    expect(JSON.stringify(result.body)).not.toContain("secret");
   });
 });
