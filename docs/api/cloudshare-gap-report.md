@@ -1799,11 +1799,11 @@ surface:
 
 `GET https://use.cloudshare.com/api/v3/users?projectUsers=true&status=active&loggedIn=ever&projectId=<project-id>&getRows=true`
 
-Live verification on 2026-07-14 confirmed HTTP 200 for a Certalis Project using exactly
-`projectUsers=true`, `status=active`, `loggedIn=ever`, `projectId`, and `getRows=true`. A later
-live roster check on 2026-08-30 confirmed that omitting `loggedIn=ever` falls back to CloudShare's
-default recent-login filter and can undercount active Project members, while the GUI's
-`loggedIn=ever` query returns the full active roster. The response exposed a row collection
+Live verification on 2026-07-14 confirmed HTTP 200 for a Certalis Project using
+`projectUsers=true`, `status=active`, `projectId`, and `getRows=true`; that probe did not establish
+the `loggedIn` behavior. A later live roster check on 2026-08-30 confirmed that omitting
+`loggedIn=ever` falls back to CloudShare's default recent-login filter and can undercount active
+Project members, while the GUI's `loggedIn=ever` query returns the full active roster. The response exposed a row collection
 (observed as `Rows`) with member identity fields including email and name parts;
 Certalis normalizes only email plus a display name and never returns raw CloudShare member IDs to
 the browser. `projectUsers=true`, `getRows=true`, and `loggedIn=ever` remain required by the
