@@ -7,6 +7,18 @@ import { alertPanelStyle, cardStyle, mutedPanelStyle } from "./card-styles";
 type Item = { id: string; name: string; defaultDurationMinutes: number };
 type Timezone = { id: string; name: string };
 type Member = { email: string; displayName: string };
+type MonitoringParticipant = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  participationStatus: "pending" | "inProgress" | "concluded";
+  firstJoined: string | null;
+  envStatus: string | null;
+  environment: { dimension: "cloudshare_environment"; value: string | null; source: string };
+  needsAttention?: boolean;
+  monitoringMessage?: string;
+};
 type Offering = {
   id: string;
   title: string;
@@ -45,6 +57,10 @@ export function SalesTrialOfferingsAdmin({
   const [offerings, setOfferings] = useState<Offering[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [messageTone, setMessageTone] = useState<"success" | "error">("success");
+  const [monitoringOfferingId, setMonitoringOfferingId] = useState<string | null>(null);
+  const [monitoringParticipants, setMonitoringParticipants] = useState<MonitoringParticipant[]>([]);
+  const [monitoringLoading, setMonitoringLoading] = useState(false);
+  const [monitoringError, setMonitoringError] = useState<string | null>(null);
   const [form, setForm] = useState({
     title: "",
     description: "",
@@ -140,6 +156,38 @@ export function SalesTrialOfferingsAdmin({
     setMessage(action === "publish" ? "Trial Offering published." : "Trial Offering unpublished.");
   }
 
+  async function toggleMonitoring(id: string) {
+    if (monitoringOfferingId === id) {
+      setMonitoringOfferingId(null);
+      setMonitoringParticipants([]);
+      setMonitoringError(null);
+      return;
+    }
+    setMonitoringLoading(true);
+    setMonitoringOfferingId(id);
+    setMonitoringError(null);
+    try {
+      const response = await fetchAdmin(
+        `/api/sales/trial-offerings/${encodeURIComponent(id)}/participants`,
+      );
+      const body = (await response.json()) as {
+        participants?: MonitoringParticipant[];
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(body.error ?? "Could not load participant monitoring.");
+      }
+      setMonitoringParticipants(body.participants ?? []);
+    } catch (error) {
+      setMonitoringParticipants([]);
+      setMonitoringError(
+        error instanceof Error ? error.message : "Could not load participant monitoring.",
+      );
+    } finally {
+      setMonitoringLoading(false);
+    }
+  }
+
   return (
     <section aria-label="Trial Offerings" style={{ display: "grid", gap: "1.5rem" }}>
       <section style={{ ...mutedPanelStyle, display: "grid", gap: "0.8rem" }}>
@@ -194,7 +242,35 @@ export function SalesTrialOfferingsAdmin({
           <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
             <button type="button" style={offering.status !== "draft" ? { ...primaryButtonStyle, ...disabledButtonStyle } : primaryButtonStyle} disabled={offering.status !== "draft"} onClick={() => void lifecycle(offering.id, "publish")}>Publish</button>
             <button type="button" style={offering.status !== "published" ? { ...secondaryButtonStyle, ...disabledButtonStyle } : secondaryButtonStyle} disabled={offering.status !== "published"} onClick={() => void lifecycle(offering.id, "unpublish")}>Unpublish</button>
+            {offering.status === "published" ? <button type="button" style={secondaryButtonStyle} onClick={() => void toggleMonitoring(offering.id)}>{monitoringOfferingId === offering.id ? "Hide monitoring" : "Open monitoring"}</button> : null}
           </div>
+          {monitoringOfferingId === offering.id ? <section aria-label="Participant monitoring" style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem", overflowX: "auto", width: "100%" }}>
+            <div style={{ display: "grid", gap: "0.25rem" }}>
+              <strong>Participant monitoring</strong>
+              <span style={{ color: "#52606d" }}>CloudShare visibility derived from the reconciled Trial enrollment roster.</span>
+            </div>
+            {monitoringLoading ? <p style={{ margin: 0 }}>Refreshing participant monitoring…</p> : null}
+            {monitoringError ? <div role="alert" style={alertPanelStyle.danger}>{monitoringError}</div> : null}
+            {!monitoringLoading && !monitoringError && monitoringParticipants.length === 0 ? <p style={{ margin: 0, color: "#52606d" }}>No enrolled participants are currently visible for this Trial Offering.</p> : null}
+            {!monitoringLoading && !monitoringError && monitoringParticipants.length > 0 ? <table style={{ width: "100%", minWidth: "42rem", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: "left", padding: "0.45rem", borderBottom: "1px solid #dbe4ee" }}>Participant</th>
+                  <th style={{ textAlign: "left", padding: "0.45rem", borderBottom: "1px solid #dbe4ee" }}>First joined</th>
+                  <th style={{ textAlign: "left", padding: "0.45rem", borderBottom: "1px solid #dbe4ee" }}>Participation</th>
+                  <th style={{ textAlign: "left", padding: "0.45rem", borderBottom: "1px solid #dbe4ee" }}>Environment</th>
+                </tr>
+              </thead>
+              <tbody>
+                {monitoringParticipants.map((participant) => <tr key={participant.id}>
+                  <td style={{ padding: "0.45rem", borderBottom: "1px solid #eef2f7" }}><strong>{participant.firstName} {participant.lastName}</strong><br /><span>{participant.email}</span>{participant.needsAttention ? <><br /><small style={{ color: "#9a3412" }}>{participant.monitoringMessage}</small></> : null}</td>
+                  <td style={{ padding: "0.45rem", borderBottom: "1px solid #eef2f7" }}>{participant.firstJoined ?? "—"}</td>
+                  <td style={{ padding: "0.45rem", borderBottom: "1px solid #eef2f7" }}>{participant.participationStatus}</td>
+                  <td style={{ padding: "0.45rem", borderBottom: "1px solid #eef2f7" }}>{participant.environment.value ?? participant.envStatus ?? "Not assigned"}</td>
+                </tr>)}
+              </tbody>
+            </table> : null}
+          </section> : null}
         </article>)}
       </section>
     </section>
