@@ -117,6 +117,7 @@ export function SalesTrialHome({
 
   return (
     <main style={pageStyle}>
+      <style>{salesTrialHomeStyles}</style>
       <section style={pageContentStyle}>
         <section style={heroStyle}>
           <div style={{ display: "grid", gap: spacing.sm }}>
@@ -198,7 +199,6 @@ function SalesTrialOfferingCard({
   readonly onLaunch: () => void;
 }) {
   const [showDetails, setShowDetails] = useState(false);
-  const [hovered, setHovered] = useState(false);
   const windowLabel = offering.end
     ? `${offering.start} to ${offering.end} (${offering.timeZone})`
     : `${offering.start} onward (${offering.timeZone})`;
@@ -207,21 +207,19 @@ function SalesTrialOfferingCard({
 
   return (
     <article
-      style={{
-        ...offeringCardStyle,
-        ...(hovered ? offeringCardHoverStyle : null),
-      }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      className="sales-trial-offering-card"
+      style={offeringCardStyle}
     >
       <div style={flipPerspectiveStyle}>
-        <div style={getFlipInnerStyle(showDetails)}>
+        <div
+          className="sales-trial-offering-card__inner"
+          data-show-details={showDetails ? "true" : "false"}
+          style={flipInnerStyle}
+        >
           <section
             aria-hidden={showDetails}
-            style={{
-              ...flipFaceStyle,
-              ...(showDetails ? hiddenFaceStyle : null),
-            }}
+            className="sales-trial-offering-card__face sales-trial-offering-card__face--front"
+            style={flipFaceStyle}
           >
             <div style={offeringFaceContentStyle}>
               <div style={cardAccentStyle} />
@@ -248,11 +246,8 @@ function SalesTrialOfferingCard({
           </section>
           <section
             aria-hidden={!showDetails}
-            style={{
-              ...flipFaceStyle,
-              ...flipBackFaceStyle,
-              ...(!showDetails ? hiddenFaceStyle : null),
-            }}
+            className="sales-trial-offering-card__face sales-trial-offering-card__face--back"
+            style={flipFaceStyle}
           >
             <div style={offeringFaceContentStyle}>
               <div style={cardAccentStyle} />
@@ -287,18 +282,6 @@ function SalesTrialOfferingCard({
       </div>
     </article>
   );
-}
-
-function getFlipInnerStyle(showDetails: boolean): CSSProperties {
-  return {
-    display: "grid",
-    position: "relative",
-    height: "100%",
-    minHeight: "27rem",
-    transformStyle: "preserve-3d",
-    transform: showDetails ? "rotateY(180deg)" : "rotateY(0deg)",
-    transition: "transform 260ms ease",
-  };
 }
 
 const pageStyle: CSSProperties = {
@@ -380,47 +363,31 @@ const offeringCardStyle: CSSProperties = {
   ...cardStyle,
   padding: 0,
   minHeight: "27rem",
-  height: "27rem",
-  overflow: "hidden",
   border: `1px solid ${colors.border}`,
   boxShadow: "0 8px 24px rgba(15, 23, 42, 0.08)",
-  transition: "border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease",
-};
-
-const offeringCardHoverStyle: CSSProperties = {
-  border: `1px solid ${colors.info}`,
-  boxShadow: "0 18px 36px rgba(29, 78, 216, 0.14)",
-  transform: "translateY(-2px)",
 };
 
 const flipPerspectiveStyle: CSSProperties = {
   perspective: "1200px",
-  height: "100%",
+  minHeight: "27rem",
+};
+
+const flipInnerStyle: CSSProperties = {
+  display: "grid",
+  position: "relative",
   minHeight: "27rem",
 };
 
 const flipFaceStyle: CSSProperties = {
   gridArea: "1 / 1",
-  position: "absolute",
-  inset: 0,
-  backfaceVisibility: "hidden",
-  WebkitBackfaceVisibility: "hidden",
   minWidth: 0,
-};
-
-const flipBackFaceStyle: CSSProperties = {
-  transform: "rotateY(180deg)",
-};
-
-const hiddenFaceStyle: CSSProperties = {
-  pointerEvents: "none",
 };
 
 const offeringFaceContentStyle: CSSProperties = {
   display: "grid",
   gap: spacing.md,
   gridTemplateRows: "auto auto minmax(0, 1fr) auto",
-  height: "100%",
+  alignContent: "start",
   padding: spacing.lg,
   boxSizing: "border-box",
 };
@@ -523,3 +490,76 @@ const cardSecondaryButtonStyle: CSSProperties = {
   cursor: "pointer",
   fontWeight: 600,
 };
+
+const salesTrialHomeStyles = `
+  .sales-trial-offering-card {
+    transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  }
+
+  .sales-trial-offering-card:hover {
+    border-color: ${colors.info};
+    box-shadow: 0 18px 36px rgba(29, 78, 216, 0.14);
+    transform: translateY(-2px);
+  }
+
+  .sales-trial-offering-card__inner {
+    transform-style: preserve-3d;
+  }
+
+  .sales-trial-offering-card__face {
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    transition: opacity 220ms ease, transform 260ms ease, visibility 0ms linear 260ms;
+  }
+
+  .sales-trial-offering-card__inner[data-show-details="false"] .sales-trial-offering-card__face--front {
+    opacity: 1;
+    transform: rotateY(0deg);
+    visibility: visible;
+    pointer-events: auto;
+    transition-delay: 0ms, 0ms, 0ms;
+  }
+
+  .sales-trial-offering-card__inner[data-show-details="false"] .sales-trial-offering-card__face--back {
+    opacity: 0;
+    transform: rotateY(180deg);
+    visibility: hidden;
+    pointer-events: none;
+    transition-delay: 0ms, 0ms, 260ms;
+  }
+
+  .sales-trial-offering-card__inner[data-show-details="true"] .sales-trial-offering-card__face--front {
+    opacity: 0;
+    transform: rotateY(-180deg);
+    visibility: hidden;
+    pointer-events: none;
+    transition-delay: 0ms, 0ms, 260ms;
+  }
+
+  .sales-trial-offering-card__inner[data-show-details="true"] .sales-trial-offering-card__face--back {
+    opacity: 1;
+    transform: rotateY(0deg);
+    visibility: visible;
+    pointer-events: auto;
+    transition-delay: 0ms, 0ms, 0ms;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .sales-trial-offering-card,
+    .sales-trial-offering-card__face {
+      transition: none !important;
+    }
+
+    .sales-trial-offering-card:hover {
+      transform: none;
+    }
+
+    .sales-trial-offering-card__face,
+    .sales-trial-offering-card__inner[data-show-details="false"] .sales-trial-offering-card__face--front,
+    .sales-trial-offering-card__inner[data-show-details="false"] .sales-trial-offering-card__face--back,
+    .sales-trial-offering-card__inner[data-show-details="true"] .sales-trial-offering-card__face--front,
+    .sales-trial-offering-card__inner[data-show-details="true"] .sales-trial-offering-card__face--back {
+      transform: none !important;
+    }
+  }
+`;

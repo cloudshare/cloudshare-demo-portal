@@ -35,6 +35,22 @@ describe("Sales Trial participant home", () => {
   });
 
   it("renders offering cards with wrapped action layout that stays constrained-width friendly", () => {
+    const view = render(
+      <SalesTrialHome
+        email="visitor@example.test"
+        firstName="Ari"
+        initialOfferings={[
+          {
+            id: "offering-1",
+            title: "Helios Trial",
+            description: "Shared trial",
+            start: "2026-08-30T09:00",
+            end: "2026-08-30T17:00",
+            timeZone: "UTC",
+          },
+        ]}
+      />,
+    );
     const html = renderToStaticMarkup(
       createElement(SalesTrialHome, {
         email: "visitor@example.test",
@@ -55,6 +71,11 @@ describe("Sales Trial participant home", () => {
     expect(html).toContain("max-width:1180px");
     expect(html).toContain("Trial details");
     expect(html).toContain("grid-template-columns:repeat(auto-fit, minmax(min(100%, 18rem), 1fr))");
+    expect(html).toContain("@media (prefers-reduced-motion: reduce)");
+    const cardStyle = view.container.querySelector("article")?.getAttribute("style") ?? "";
+    expect(cardStyle).toContain("min-height: 27rem");
+    expect(cardStyle).not.toMatch(/(^|;)\s*height:\s*27rem/);
+    expect(cardStyle).not.toContain("overflow: hidden");
   });
 
   it("opens a retained child window and focuses it on repeat entry", async () => {
@@ -64,7 +85,7 @@ describe("Sales Trial participant home", () => {
       .mockReturnValueOnce({ reused: false })
       .mockReturnValueOnce({ reused: true });
 
-    render(
+    const view = render(
       <SalesTrialHome
         email="visitor@example.test"
         firstName="Ari"
@@ -125,7 +146,7 @@ describe("Sales Trial participant home", () => {
   it("removes the hidden card face from keyboard tab order while the opposite face is active", async () => {
     const user = userEvent.setup();
 
-    render(
+    const view = render(
       <SalesTrialHome
         email="visitor@example.test"
         firstName="Ari"
@@ -144,21 +165,23 @@ describe("Sales Trial participant home", () => {
 
     const openButton = screen.getByRole("button", { name: "Open trial window" });
     const detailsButton = screen.getByRole("button", { name: "Trial details" });
-    const hiddenBackButton = screen.getByRole("button", { name: "Back to trial", hidden: true });
-    const hiddenBackLaunchButton = screen.getAllByRole("button", { name: "Open trial window", hidden: true })[1];
+    const allButtons = Array.from(view.container.querySelectorAll("button"));
+    const hiddenBackButton = allButtons.find((button) => button.textContent === "Back to trial");
+    const hiddenBackLaunchButton = allButtons.filter((button) => button.textContent === "Open trial window")[1];
 
     expect(detailsButton.getAttribute("tabindex")).toBe("0");
-    expect(hiddenBackButton.getAttribute("tabindex")).toBe("-1");
-    expect(hiddenBackLaunchButton.getAttribute("tabindex")).toBe("-1");
+    expect(hiddenBackButton?.getAttribute("tabindex")).toBe("-1");
+    expect(hiddenBackLaunchButton?.getAttribute("tabindex")).toBe("-1");
 
     await user.click(detailsButton);
 
-    const frontLaunchButton = screen.getAllByRole("button", { name: "Open trial window", hidden: true })[0];
-    const backButton = screen.getByRole("button", { name: "Back to trial" });
+    const launchButtonsAfterFlip = Array.from(view.container.querySelectorAll("button")).filter((button) => button.textContent === "Open trial window");
+    const backButton = Array.from(view.container.querySelectorAll("button")).find((button) => button.textContent === "Back to trial");
+    const frontLaunchButton = launchButtonsAfterFlip[0];
 
-    expect(frontLaunchButton.getAttribute("tabindex")).toBe("-1");
+    expect(frontLaunchButton?.getAttribute("tabindex")).toBe("-1");
     expect(screen.getByRole("button", { name: "Open trial window" }).getAttribute("tabindex")).toBe("0");
-    expect(backButton.getAttribute("tabindex")).toBe("0");
+    expect(backButton?.getAttribute("tabindex")).toBe("0");
     expect(openButton.getAttribute("tabindex")).toBe("-1");
   });
 
