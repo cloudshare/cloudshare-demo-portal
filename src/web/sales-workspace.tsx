@@ -77,6 +77,8 @@ export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemVi
       ...((intent.tab === "records" || intent.tab === "sessions") && intent.accountId ? { accountId: intent.accountId } : {}),
       ...((intent.tab === "records" || intent.tab === "sessions") && intent.opportunityId ? { opportunityId: intent.opportunityId } : {}),
       ...(intent.tab === "support" && intent.correlationId ? { correlationId: intent.correlationId } : {}),
+      ...(intent.tab === "support" && intent.source ? { source: intent.source } : {}),
+      ...(intent.tab === "support" && intent.subjectId ? { subjectId: intent.subjectId } : {}),
     };
     const href = buildSalesWorkspaceHref(intent);
     if (intent.preserveScroll) router.push(href, { scroll: false });

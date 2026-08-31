@@ -561,6 +561,58 @@ describe("SalesWorkspace interaction", () => {
     expect(mockRouter.push).toHaveBeenLastCalledWith("/sales?tab=support&correlationId=corr-sales-1");
   });
 
+  it("opens Trial Offering attention diagnostics with source and subject filters immediately", async () => {
+    const user = userEvent.setup();
+    const fetchMock = vi.spyOn(window, "fetch").mockImplementation(async (input) => {
+      const path = String(input);
+      if (path === "/api/sales/items") return json({ activeItems: [] });
+      if (path === "/api/sales/timezones") return json({ timezones: [] });
+      if (path === "/api/sales/trial-offerings") {
+        return json({
+          offerings: [
+            {
+              id: "offering-1",
+              title: "Windows Trial",
+              description: "",
+              itemId: "item-1",
+              start: "2026-08-30T09:00",
+              end: null,
+              timeZone: "UTC",
+              salesProEmail: "owner@example.test",
+              salesProDisplayName: "Owner Example",
+              status: "published",
+              attentionReason:
+                "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics.",
+            },
+          ],
+        });
+      }
+      if (path.startsWith("/api/sales/diagnostics?")) {
+        return json({
+          entries: [],
+          page: { limit: 50, offset: 0, returned: 0, hasMore: false, nextOffset: null },
+        });
+      }
+      return json({ error: `Unexpected request ${path}` }, 500);
+    });
+
+    render(<SalesWorkspace email="sales-admin@certalis.demo" initialRoute={{ tab: "trial-offerings" }} />);
+
+    await user.click(await screen.findByRole("button", { name: "Open support diagnostics" }));
+
+    expect(mockRouter.push).toHaveBeenLastCalledWith(
+      "/sales?tab=support&source=sales-trial-offerings&subjectId=offering-1",
+    );
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([input]) => {
+        const url = new URL(String(input), "http://localhost:3000");
+        return url.pathname === "/api/sales/diagnostics" &&
+          url.searchParams.get("source") === "sales-trial-offerings" &&
+          url.searchParams.get("subjectId") === "offering-1";
+      })).toBe(true);
+    });
+  });
+
   it("keeps a successfully-created needs-attention Session non-retryable and linked to Sales Support", async () => {
     const user = userEvent.setup();
     vi.spyOn(window, "fetch").mockImplementation(async (input, init) => {
