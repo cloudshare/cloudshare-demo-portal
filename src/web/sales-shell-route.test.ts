@@ -25,5 +25,7 @@ describe("Sales workspace shell routes", () => {
   it("opens Sales Support on the failure correlation thread", () => {
     expect(buildSalesWorkspaceHref({ tab: "support", correlationId: "corr-sales-429" })).toBe("/sales?tab=support&correlationId=corr-sales-429");
     expect(parseSalesWorkspaceRouteState({ tab: "support", correlationId: "corr-sales-429" })).toMatchObject({ tab: "support", correlationId: "corr-sales-429" });
+    expect(buildSalesWorkspaceHref({ tab: "support", source: "sales-trial-offerings", subjectId: "offering-1" })).toBe("/sales?tab=support&source=sales-trial-offerings&subjectId=offering-1");
+    expect(parseSalesWorkspaceRouteState({ tab: "support", source: "sales-trial-offerings", subjectId: "offering-1" })).toMatchObject({ tab: "support", source: "sales-trial-offerings", subjectId: "offering-1" });
   });
 });
