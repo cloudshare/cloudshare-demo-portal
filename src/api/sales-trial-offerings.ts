@@ -52,6 +52,13 @@ const writeSchema = z.object({
 
 const response = (status: number, body: Record<string, unknown>) => ({ status, body });
 
+class SalesTrialEndingLeaseLostError extends Error {
+  constructor() {
+    super("Sales Trial ending reconciliation lease was lost.");
+    this.name = "SalesTrialEndingLeaseLostError";
+  }
+}
+
 export interface SalesTrialOfferingsDeps {
   readonly offerings: SalesTrialOfferingRepository;
   readonly items: Pick<ItemRepository, "findById">;
@@ -911,9 +918,11 @@ export async function handleEndSalesTrialOffering(
     endingLeaseExpiresAt: null,
   };
   const leaseToken = randomUUID();
+  const correlationId = randomUUID();
+  const leaseDurationMs = 15 * 60_000;
   if (deps.offerings.reserveEndingReconciliation) {
     const reserved = await deps.offerings.reserveEndingReconciliation(
-      request.customerId, offering.id, leaseToken, now, new Date(now.getTime() + 15 * 60_000), ending.unpublishedAt!,
+      request.customerId, offering.id, leaseToken, now, new Date(now.getTime() + leaseDurationMs), ending.unpublishedAt!,
     );
     if (!reserved) {
       const current = await deps.offerings.findById(request.customerId, offering.id);
@@ -922,8 +931,30 @@ export async function handleEndSalesTrialOffering(
   } else {
     await deps.offerings.save(ending);
   }
+  if (offering.status === "published") {
+    await Promise.allSettled([
+      deps.diagnostics?.record({
+        source: "sales-trial-offerings", operation: "sales.trial_offering.end", outcome: "success",
+        customerId: request.customerId, actor: request.actor, subject: { type: "sales_trial_offering", id: offering.id },
+        correlationId, message: "Sales Trial Offering unpublished and entering deferred shutdown",
+        externalIds: { offeringId: offering.id, cloudShareSalesExperienceId: offering.cloudShareSalesExperienceId! },
+        details: { integrationSurface: "portal.sales_trial_offerings", previousStatus: "published", status: "ending" },
+      }),
+      auditLifecycle(deps, request, offering.id, "sales.trial_offering.end", "success", {
+        lifecycle: "ending", previousStatus: "published", status: "ending", integrationSurface: "portal.sales_trial_offerings",
+      }, undefined, correlationId),
+    ]);
+  }
 
-  const correlationId = randomUUID();
+  let terminalTarget = offering.endingTerminalTarget ?? null;
+  const renewLease = async () => {
+    if (!deps.offerings.renewEndingReconciliation) return;
+    const renewalNow = (deps.now ?? (() => new Date()))();
+    const renewed = await deps.offerings.renewEndingReconciliation(
+      request.customerId, offering.id, leaseToken, renewalNow, new Date(renewalNow.getTime() + leaseDurationMs),
+    );
+    if (!renewed) throw new SalesTrialEndingLeaseLostError();
+  };
   const configurationFailure = async (failureMode: string, integrationSurface: string) => {
     const attention = { ...ending, attentionReason: "CloudShare shutdown reconciliation requires attention; review support diagnostics." };
     await deps.offerings.save(attention);
@@ -944,6 +975,7 @@ export async function handleEndSalesTrialOffering(
   const environments = deps.salesEnvironmentFactory.forConnection(connection);
   if (!environments.observeById) return configurationFailure("environment_getextended_missing", "cloudshare.v3.envs.getextended");
   try {
+    await renewLease();
     const [provider, roster] = await Promise.all([
       delivery.readSession(offering.cloudShareSalesExperienceId),
       delivery.listParticipants(offering.cloudShareSalesExperienceId),
@@ -951,6 +983,19 @@ export async function handleEndSalesTrialOffering(
     if (provider.status === "ended") {
       const ended = { ...ending, status: "ended" as const, endingLastReconciledAt: now, attentionReason: null };
       await deps.offerings.save(ended);
+      await Promise.allSettled([
+        deps.diagnostics?.record({
+          source: "sales-trial-offerings", operation: "sales.trial_offering.end", outcome: "success",
+          customerId: request.customerId, actor: request.actor, subject: { type: "sales_trial_offering", id: offering.id },
+          correlationId, message: "CloudShare Sales Trial Experience is ended",
+          externalIds: { offeringId: offering.id, cloudShareSalesExperienceId: offering.cloudShareSalesExperienceId! },
+          request: provider.request as unknown as Record<string, unknown>, response: provider.response as unknown as Record<string, unknown>,
+          details: { integrationSurface: "cloudshare.v4.sales", previousStatus: offering.status, status: "ended", providerUpdated: false },
+        }),
+        auditLifecycle(deps, request, offering.id, "sales.trial_offering.end", "success", {
+          lifecycle: "provider_ended", previousStatus: offering.status, status: "ended", integrationSurface: "cloudshare.v4.sales",
+        }, undefined, correlationId),
+      ]);
       return response(200, { offering: toPortalOffering(ended) });
     }
     const environmentIds = [...new Set(roster.participants.map((p) => p.environmentId).filter((id): id is string => Boolean(id)))];
@@ -959,24 +1004,59 @@ export async function handleEndSalesTrialOffering(
     // not burst an unbounded participant roster at the v3 endpoint.
     for (const environmentId of environmentIds) {
       observations.push(await environments.observeById!(environmentId));
+      await renewLease();
     }
     const calculation = calculateSalesTrialEnding({
       observations, now, timeZone: offering.timeZone, providerEnd: provider.end,
-      persistedTerminalTarget: offering.endingCalculatedEnd,
+      persistedTerminalTarget: offering.endingTerminalTarget,
     });
-    if (calculation.shouldUpdate) await delivery.updateSession(offering.cloudShareSalesExperienceId, { end: calculation.calculatedEnd });
+    if (calculation.activeCount === 0 && !terminalTarget) {
+      terminalTarget = calculation.calculatedEnd;
+      if (deps.offerings.persistEndingTerminalTarget &&
+        !(await deps.offerings.persistEndingTerminalTarget(request.customerId, offering.id, leaseToken, terminalTarget))) {
+        throw new SalesTrialEndingLeaseLostError();
+      }
+    }
+    await renewLease();
+    const providerUpdate = calculation.shouldUpdate
+      ? await delivery.updateSession(offering.cloudShareSalesExperienceId, { end: calculation.calculatedEnd })
+      : null;
     const reconciled = {
       ...ending,
       end: calculation.effectiveEnd,
       endingCalculatedEnd: calculation.effectiveEnd,
+      endingTerminalTarget: terminalTarget,
       endingLastReconciledAt: now,
       attentionReason: null,
     };
     await deps.offerings.save(reconciled);
+    const evidence = providerUpdate ?? provider;
+    await Promise.allSettled([
+      deps.diagnostics?.record({
+        source: "sales-trial-offerings", operation: "sales.trial_offering.end", outcome: "success",
+        customerId: request.customerId, actor: request.actor, subject: { type: "sales_trial_offering", id: offering.id },
+        correlationId, message: providerUpdate ? "CloudShare Sales Trial end reconciled" : "CloudShare Sales Trial end remains safely scheduled",
+        externalIds: { offeringId: offering.id, cloudShareSalesExperienceId: offering.cloudShareSalesExperienceId! },
+        request: evidence.request as unknown as Record<string, unknown>, response: evidence.response as unknown as Record<string, unknown>,
+        details: { integrationSurface: "cloudshare.v4.sales", previousStatus: offering.status, status: "ending",
+          providerUpdated: Boolean(providerUpdate), calculatedEnd: calculation.calculatedEnd, effectiveEnd: calculation.effectiveEnd,
+          activeEnvironmentCount: calculation.activeCount },
+      }),
+      auditLifecycle(deps, request, offering.id, "sales.trial_offering.end", "success", {
+        lifecycle: providerUpdate ? "provider_end_updated" : "provider_end_observed", previousStatus: offering.status,
+        status: "ending", integrationSurface: "cloudshare.v4.sales", calculatedEnd: calculation.calculatedEnd,
+        effectiveEnd: calculation.effectiveEnd, activeEnvironmentCount: calculation.activeCount,
+      }, undefined, correlationId),
+    ]);
     return response(200, { offering: toPortalOffering(reconciled) });
   } catch (error) {
+    if (error instanceof SalesTrialEndingLeaseLostError) {
+      const current = await deps.offerings.findById(request.customerId, offering.id);
+      return response(202, { offering: toPortalOffering(current ?? ending), reconciliationInProgress: true });
+    }
     const attention = {
       ...ending,
+      endingTerminalTarget: terminalTarget,
       endingLastReconciledAt: now,
       attentionReason: "CloudShare shutdown reconciliation requires attention; review support diagnostics.",
     };

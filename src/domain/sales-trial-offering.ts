@@ -31,6 +31,7 @@ export interface SalesTrialOffering {
   readonly attentionReason: string | null;
   readonly endingCalculatedEnd?: string | null;
   readonly endingLastReconciledAt?: Date | null;
+  readonly endingTerminalTarget?: string | null;
   readonly endingLeaseToken?: string | null;
   readonly endingLeaseExpiresAt?: Date | null;
 }
@@ -82,4 +83,6 @@ export interface SalesTrialOfferingRepository {
   listEnding?(customerId?: string): Promise<readonly SalesTrialOffering[]>;
   reserveEndingReconciliation?(customerId: string, id: string, token: string, now: Date, expiresAt: Date, unpublishedAt: Date): Promise<boolean>;
   releaseEndingReconciliation?(customerId: string, id: string, token: string): Promise<void>;
+  renewEndingReconciliation?(customerId: string, id: string, token: string, now: Date, expiresAt: Date): Promise<boolean>;
+  persistEndingTerminalTarget?(customerId: string, id: string, token: string, target: string): Promise<boolean>;
 }

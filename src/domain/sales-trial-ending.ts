@@ -30,9 +30,7 @@ export function calculateSalesTrialEnding(input: {
     : desiredEnd;
   const terminalTargetInstant = cloudShareWallClockToInstant(terminalTarget, input.timeZone);
   const shouldUpdate = active.length === 0
-    ? input.persistedTerminalTarget === null || input.persistedTerminalTarget === undefined
-      ? providerEndInstant?.getTime() !== terminalTargetInstant?.getTime()
-      : false
+    ? providerEndInstant?.getTime() !== terminalTargetInstant?.getTime()
     : providerEndInstant === null || desiredInstant > providerEndInstant;
   return {
     activeCount: active.length,

@@ -2107,6 +2107,9 @@ environments it uses a two-minute grace. Reconciliation runs immediately, on par
 on admin catalogue/monitoring reads, and every five minutes in the local Portal process. It may move
 the provider end later but not earlier while active environments remain. Partial reads retain the
 local `Ending` state, do not shorten the provider window, and expose protected support diagnostics.
+The first all-terminal observation persists a separate two-minute terminal-grace target before the
+provider mutation, so ambiguous PUT retries reuse exactly the same target. A renewable, fenced
+per-Offering database lease serializes timer, admin, and participant-triggered reconciliation.
 
 **Deployment note:** the five-minute timer is process-local for this demonstrator. A horizontally
 scaled production deployment requires one durable external scheduler or distributed lease so that

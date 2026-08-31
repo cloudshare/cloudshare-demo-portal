@@ -121,6 +121,20 @@ export function createPrismaSalesTrialOfferingRepository(
         data: { endingLeaseToken: null, endingLeaseExpiresAt: null },
       });
     },
+    async renewEndingReconciliation(customerId, id, token, now, expiresAt) {
+      const result = await prisma.salesTrialOffering.updateMany({
+        where: { customerId, id, status: "ending", endingLeaseToken: token, endingLeaseExpiresAt: { gt: now } },
+        data: { endingLeaseExpiresAt: expiresAt },
+      });
+      return result.count === 1;
+    },
+    async persistEndingTerminalTarget(customerId, id, token, target) {
+      const result = await prisma.salesTrialOffering.updateMany({
+        where: { customerId, id, status: "ending", endingLeaseToken: token },
+        data: { endingTerminalTarget: target },
+      });
+      return result.count === 1;
+    },
   };
 }
 
@@ -142,6 +156,7 @@ function serialize(offering: SalesTrialOffering) {
     attentionReason: offering.attentionReason,
     endingCalculatedEnd: offering.endingCalculatedEnd ?? null,
     endingLastReconciledAt: offering.endingLastReconciledAt ?? null,
+    endingTerminalTarget: offering.endingTerminalTarget ?? null,
     endingLeaseToken: offering.endingLeaseToken ?? null,
     endingLeaseExpiresAt: offering.endingLeaseExpiresAt ?? null,
     createdAt: offering.createdAt,
@@ -168,6 +183,7 @@ function hydrate(row: {
   attentionReason: string | null;
   endingCalculatedEnd: string | null;
   endingLastReconciledAt: Date | null;
+  endingTerminalTarget: string | null;
   endingLeaseToken: string | null;
   endingLeaseExpiresAt: Date | null;
   createdAt: Date;

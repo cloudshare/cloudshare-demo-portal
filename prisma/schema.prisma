@@ -135,6 +135,7 @@ model SalesTrialOffering {
   attentionReason             String?
   endingCalculatedEnd         String?
   endingLastReconciledAt      DateTime?
+  endingTerminalTarget        String?
   endingLeaseToken            String?
   endingLeaseExpiresAt        DateTime?
   createdAt                   DateTime

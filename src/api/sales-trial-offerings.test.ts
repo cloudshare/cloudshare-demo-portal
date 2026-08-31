@@ -127,6 +127,19 @@ function createOfferingRepository(): SalesTrialOfferingRepository {
         rows.set(id, { ...offering, endingLeaseToken: null, endingLeaseExpiresAt: null });
       }
     },
+    async renewEndingReconciliation(customerId, id, token, now, expiresAt) {
+      const offering = rows.get(id);
+      if (!offering || offering.customerId !== customerId || offering.endingLeaseToken !== token ||
+        !offering.endingLeaseExpiresAt || offering.endingLeaseExpiresAt <= now) return false;
+      rows.set(id, { ...offering, endingLeaseExpiresAt: expiresAt });
+      return true;
+    },
+    async persistEndingTerminalTarget(customerId, id, token, target) {
+      const offering = rows.get(id);
+      if (!offering || offering.customerId !== customerId || offering.endingLeaseToken !== token) return false;
+      rows.set(id, { ...offering, endingTerminalTarget: target });
+      return true;
+    },
   };
 }
 
@@ -2556,6 +2569,8 @@ describe("Sales Trial Offering API", () => {
       unpublishedAt: null, attentionReason: null,
     });
     const updateSession = vi.fn().mockResolvedValue({ id: "sales-deferred", request: {}, response: {} });
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    const audit = { write: vi.fn().mockResolvedValue(undefined) };
     const result = await handleEndSalesTrialOffering(createDeps(repository, {
       now: () => new Date("2026-08-31T12:00:00Z"),
       deliveryFactory: { forConnection: vi.fn().mockReturnValue({
@@ -2570,6 +2585,7 @@ describe("Sales Trial Offering API", () => {
         expirationTime: id === "env-archived" ? "Tue, 01 Sep 2026 14:30:00 GMT" : "Tue, 01 Sep 2026 13:00:00 GMT",
         exchanges: [],
       })) }) },
+      diagnostics: createDiagnosticRecorder({ repository: diagnosticRepository }), audit,
     } as never), { customerId: "customer-1", actor: { type: "admin", id: "admin-1" }, id: "offering-deferred" });
 
     expect(updateSession).toHaveBeenCalledWith("sales-deferred", { end: "2026-09-01T14:35" });
@@ -2578,6 +2594,11 @@ describe("Sales Trial Offering API", () => {
       endingLastReconciledAt: "2026-08-31T12:00:00.000Z",
     } } });
     await expect(repository.listPublishedByCustomerId("customer-1")).resolves.toEqual([]);
+    const successes = await diagnosticRepository.query({ operation: "sales.trial_offering.end", outcome: "success" });
+    expect(successes).toHaveLength(2);
+    expect(successes.find((entry) => (entry.details as { providerUpdated?: boolean }).providerUpdated)).toMatchObject({ correlationId: successes[0]!.correlationId,
+      request: {}, response: {}, details: expect.objectContaining({ status: "ending", providerUpdated: true }) });
+    expect(audit.write).toHaveBeenCalledTimes(2);
   });
 
   it("serializes reconciliation per offering so competing triggers cannot land a stale shorter end", async () => {
@@ -2638,5 +2659,62 @@ describe("Sales Trial Offering API", () => {
     expect(result).toMatchObject({ status: 202, body: { needsAttention: true, offering: { status: "ending" } } });
     expect(observeById).toHaveBeenCalledTimes(2);
     expect(maximum).toBe(1);
+  });
+
+  it("persists one terminal grace target before an ambiguous PUT and retries that same target", async () => {
+    const repository = createOfferingRepository();
+    await saveDeferredOffering(repository);
+    let currentNow = new Date("2026-08-31T12:00:00Z");
+    let statusCode: 2 | 5 = 2;
+    let providerEnd: string | null = null;
+    let ambiguous = false;
+    const updateSession = vi.fn(async (_id: string, changes: { end?: string | null }) => {
+      if (ambiguous) { ambiguous = false; throw new Error("ambiguous PUT"); }
+      providerEnd = changes.end ?? null;
+      return { id: "sales-deferred", request: { method: "PUT" }, response: { status: 200 } };
+    });
+    const deps = createDeps(repository, {
+      now: () => currentNow,
+      deliveryFactory: { forConnection: vi.fn().mockReturnValue({
+        readSession: vi.fn(async () => ({ id: "sales-deferred", status: "inProgress", end: providerEnd, request: {}, response: {} })),
+        listParticipants: vi.fn().mockResolvedValue({ participants: [{ environmentId: "env-1" }], request: {}, response: {} }),
+        updateSession,
+      }) } as never,
+      salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue({ observe: vi.fn(), observeById: vi.fn(async () => ({
+        environmentId: "env-1", statusCode, expirationTime: "Tue, 01 Sep 2026 14:00:00 GMT", exchanges: [],
+      })) }) },
+    } as never);
+    await handleEndSalesTrialOffering(deps, { customerId: "customer-1", actor: { type: "admin", id: "admin-1" }, id: "offering-deferred" });
+    statusCode = 5;
+    currentNow = new Date("2026-08-31T12:10:00Z");
+    ambiguous = true;
+    const failed = await handleEndSalesTrialOffering(deps, { customerId: "customer-1", actor: { type: "system" }, id: "offering-deferred" });
+    expect(failed).toMatchObject({ status: 202, body: { needsAttention: true } });
+    expect(await repository.findById("customer-1", "offering-deferred")).toMatchObject({ endingTerminalTarget: "2026-08-31T12:12" });
+    currentNow = new Date("2026-08-31T12:20:00Z");
+    await handleEndSalesTrialOffering(deps, { customerId: "customer-1", actor: { type: "system" }, id: "offering-deferred" });
+    expect(updateSession.mock.calls.slice(-2).map(([, changes]) => changes)).toEqual([
+      { end: "2026-08-31T12:12" }, { end: "2026-08-31T12:12" },
+    ]);
+  });
+
+  it("aborts without PUT when the reconciliation lease fence is lost during Environment reads", async () => {
+    const repository = createOfferingRepository();
+    await saveDeferredOffering(repository);
+    const updateSession = vi.fn();
+    let renewals = 0;
+    repository.renewEndingReconciliation = vi.fn(async () => ++renewals < 3);
+    const result = await handleEndSalesTrialOffering(createDeps(repository, {
+      deliveryFactory: { forConnection: vi.fn().mockReturnValue({
+        readSession: vi.fn().mockResolvedValue({ id: "sales-deferred", status: "inProgress", end: null, request: {}, response: {} }),
+        listParticipants: vi.fn().mockResolvedValue({ participants: [{ environmentId: "env-1" }, { environmentId: "env-2" }], request: {}, response: {} }),
+        updateSession,
+      }) } as never,
+      salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue({ observe: vi.fn(), observeById: vi.fn(async (id: string) => ({
+        environmentId: id, statusCode: 2, expirationTime: "Tue, 01 Sep 2026 14:00:00 GMT", exchanges: [],
+      })) }) },
+    } as never), { customerId: "customer-1", actor: { type: "system" }, id: "offering-deferred" });
+    expect(result).toMatchObject({ status: 202, body: { reconciliationInProgress: true } });
+    expect(updateSession).not.toHaveBeenCalled();
   });
 });
