@@ -22,15 +22,22 @@ type DraftPayload = {
 type DraftFormField = "title" | "description" | "itemId" | "start" | "end" | "timeZone" | "salesProEmail";
 type MonitoringParticipant = {
   id: string;
+  subject?: { type: "sales_trial_enrollment"; id: string };
   firstName: string;
   lastName: string;
   email: string;
   participationStatus: "pending" | "inProgress" | "concluded";
   firstJoined: string | null;
   envStatus: string | null;
-  environment: { dimension: "cloudshare_environment"; value: string | null; source: string };
+  environment: { dimension: "cloudshare_environment"; value: string | null; source: string; observedAt?: string };
   needsAttention?: boolean;
   monitoringMessage?: string;
+};
+type MonitoringObservation = {
+  freshness: "live" | "stale";
+  source: string;
+  observedAt?: string;
+  warning?: string;
 };
 type Offering = {
   id: string;
@@ -91,6 +98,7 @@ export function SalesTrialOfferingsAdmin({
   const [latestSupportByOfferingId, setLatestSupportByOfferingId] = useState<Record<string, string | null>>({});
   const [monitoringOfferingId, setMonitoringOfferingId] = useState<string | null>(null);
   const [monitoringParticipants, setMonitoringParticipants] = useState<MonitoringParticipant[]>([]);
+  const [monitoringObservation, setMonitoringObservation] = useState<MonitoringObservation | null>(null);
   const [monitoringLoading, setMonitoringLoading] = useState(false);
   const [monitoringError, setMonitoringError] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -250,6 +258,7 @@ export function SalesTrialOfferingsAdmin({
     if (monitoringOfferingId === id) {
       setMonitoringOfferingId(null);
       setMonitoringParticipants([]);
+      setMonitoringObservation(null);
       setMonitoringError(null);
       return;
     }
@@ -262,14 +271,17 @@ export function SalesTrialOfferingsAdmin({
       );
       const body = (await response.json()) as {
         participants?: MonitoringParticipant[];
+        observation?: MonitoringObservation;
         error?: string;
       };
       if (!response.ok) {
         throw new Error(body.error ?? "Could not load participant monitoring.");
       }
       setMonitoringParticipants(body.participants ?? []);
+      setMonitoringObservation(body.observation ?? null);
     } catch (error) {
       setMonitoringParticipants([]);
+      setMonitoringObservation(null);
       setMonitoringError(
         error instanceof Error ? error.message : "Could not load participant monitoring.",
       );
@@ -354,12 +366,14 @@ export function SalesTrialOfferingsAdmin({
           <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
             <button type="button" style={offering.status !== "draft" ? { ...primaryButtonStyle, ...disabledButtonStyle } : primaryButtonStyle} disabled={offering.status !== "draft"} onClick={() => void lifecycle(offering.id, "publish")}>Publish</button>
             <button type="button" style={offering.status !== "published" ? { ...secondaryButtonStyle, ...disabledButtonStyle } : secondaryButtonStyle} disabled={offering.status !== "published"} onClick={() => { if (window.confirm("End this Trial Offering now and unpublish it from the portal?")) void lifecycle(offering.id, "end"); }}>End trial</button>
-            {offering.status === "published" || offering.status === "ending" ? <button type="button" style={secondaryButtonStyle} onClick={() => void toggleMonitoring(offering.id)}>{monitoringOfferingId === offering.id ? "Hide monitoring" : "Open monitoring"}</button> : null}
+            {offering.status === "published" || offering.status === "ending" || offering.status === "ended" ? <button type="button" style={secondaryButtonStyle} onClick={() => void toggleMonitoring(offering.id)}>{monitoringOfferingId === offering.id ? "Hide monitoring" : "Open monitoring"}</button> : null}
           </div>
           {monitoringOfferingId === offering.id ? <section aria-label="Participant monitoring" style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem", overflowX: "auto", width: "100%" }}>
             <div style={{ display: "grid", gap: "0.25rem" }}>
               <strong>Participant monitoring</strong>
               <span style={{ color: "#52606d" }}>CloudShare visibility derived from the reconciled Trial enrollment roster.</span>
+              {monitoringObservation?.warning ? <span style={{ color: "#52606d" }}>{monitoringObservation.warning}</span> : null}
+              {monitoringObservation?.source ? <span style={{ color: "#52606d" }}>{`Observed from ${monitoringObservation.source}${monitoringObservation.observedAt ? ` · ${monitoringObservation.observedAt}` : ""}`}</span> : null}
             </div>
             {monitoringLoading ? <p style={{ margin: 0 }}>Refreshing participant monitoring…</p> : null}
             {monitoringError ? <div role="alert" style={alertPanelStyle.danger}>{monitoringError}</div> : null}

@@ -101,6 +101,74 @@ describe("Sales Trial Offerings admin monitoring", () => {
     expect(screen.getByRole("button", { name: "Open monitoring" })).toBeTruthy();
   });
 
+  it("keeps monitoring visible for an ended offering and labels stale retained history when the roster cannot be refreshed", async () => {
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/sales/items") return json({ activeItems: [] });
+      if (url === "/api/sales/timezones") return json({ timezones: [] });
+      if (url === "/api/sales/trial-offerings") {
+        return json({
+          offerings: [
+            {
+              id: "offering-1",
+              title: "Helios Trial",
+              description: "Shared trial",
+              itemId: "item-1",
+              start: "2026-08-30T09:00",
+              end: "2026-08-30T17:00",
+              timeZone: "UTC",
+              salesProEmail: "owner@example.test",
+              salesProDisplayName: "Owner",
+              status: "ended",
+              attentionReason: null,
+            },
+          ],
+        });
+      }
+      if (url === "/api/sales/trial-offerings/offering-1/participants") {
+        return json({
+          offering: { id: "offering-1", status: "ended" },
+          observation: {
+            freshness: "stale",
+            source: "certalis_sales_trial_enrollment_reconciliation",
+            observedAt: "2026-08-30T10:07:00.000Z",
+            warning: "CloudShare could not refresh the participant roster; showing the last locally reconciled participant state.",
+          },
+          participants: [
+            {
+              id: "enrollment-1",
+              subject: { type: "sales_trial_enrollment", id: "enrollment-1" },
+              firstName: "Ari",
+              lastName: "Visitor",
+              email: "visitor@example.test",
+              participationStatus: "inProgress",
+              firstJoined: "2026-08-30T10:05:00.000Z",
+              envStatus: "Suspended",
+              environment: {
+                dimension: "cloudshare_environment",
+                value: "Suspended",
+                source: "certalis_sales_trial_enrollment_reconciliation",
+                observedAt: "2026-08-30T10:07:00.000Z",
+              },
+            },
+          ],
+        });
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+
+    render(<SalesTrialOfferingsAdmin email="sales-admin@certalis.demo" fetchAdmin={fetchAdmin as typeof fetch} />);
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Open monitoring" }));
+
+    expect(await screen.findByText("Participant monitoring")).toBeTruthy();
+    expect(screen.getByText("Ari Visitor")).toBeTruthy();
+    expect(screen.getByText("Suspended")).toBeTruthy();
+    expect(screen.getByText("CloudShare could not refresh the participant roster; showing the last locally reconciled participant state.")).toBeTruthy();
+    expect(screen.getByText("Observed from certalis_sales_trial_enrollment_reconciliation · 2026-08-30T10:07:00.000Z")).toBeTruthy();
+  });
+
   it("renders monitoring inside an overflow-safe constrained-width container", async () => {
     const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

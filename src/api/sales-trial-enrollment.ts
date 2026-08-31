@@ -11,6 +11,7 @@ import {
   type SalesTrialEnrollment,
   type SalesTrialEnrollmentRepository,
 } from "@/domain/sales-trial-enrollment";
+import { isProjectableSalesParticipantRosterEnvironment } from "@/domain/sales-participant-environment";
 import type {
   SalesTrialOffering,
   SalesTrialOfferingRepository,
@@ -96,6 +97,10 @@ export interface EnterSalesTrialOfferingBlockedPageInput {
 
 type TrialMonitoringParticipant = {
   readonly id: string;
+  readonly subject: {
+    readonly type: "sales_trial_enrollment";
+    readonly id: string;
+  };
   readonly firstName: string;
   readonly lastName: string;
   readonly email: string;
@@ -105,10 +110,23 @@ type TrialMonitoringParticipant = {
   readonly environment: {
     readonly dimension: "cloudshare_environment";
     readonly value: string | null;
-    readonly source: "cloudshare_v4_sales_participant_roster" | "not_assigned";
+    readonly source:
+      | "cloudshare_v4_sales_participant_roster"
+      | "certalis_sales_trial_enrollment_reconciliation"
+      | "not_assigned";
+    readonly observedAt?: string;
   };
   readonly needsAttention?: boolean;
   readonly monitoringMessage?: string;
+};
+
+type TrialMonitoringObservation = {
+  readonly freshness: "live" | "stale";
+  readonly source:
+    | "cloudshare_v4_sales_participant_roster"
+    | "certalis_sales_trial_enrollment_reconciliation";
+  readonly observedAt?: string;
+  readonly warning?: string;
 };
 
 export async function handleEnterSalesTrialOffering(
@@ -356,8 +374,18 @@ export async function handleListSalesTrialOfferingParticipants(
   readonly body: Record<string, unknown>;
 }> {
   const correlationId = randomUUID();
-  const offering = await deps.offerings.findById(request.customerId, request.offeringId);
-  if (!offering || !offering.cloudShareSalesExperienceId || offering.status !== "published") {
+  let offering = await deps.offerings.findById(request.customerId, request.offeringId);
+  if (offering?.status === "ending" && deps.reconcileEnding) {
+    await deps.reconcileEnding(request.offeringId);
+    offering = await deps.offerings.findById(request.customerId, request.offeringId);
+  }
+  if (
+    !offering ||
+    !offering.cloudShareSalesExperienceId ||
+    (offering.status !== "published" &&
+      offering.status !== "ending" &&
+      offering.status !== "ended")
+  ) {
     return { status: 404, body: { error: "Sales Trial Offering was not found for this Customer." } };
   }
   const connection = await deps.connections.findByCustomerId(request.customerId);
@@ -375,13 +403,19 @@ export async function handleListSalesTrialOfferingParticipants(
       delivery.listParticipants(offering.cloudShareSalesExperienceId),
     ]);
   } catch (error) {
-    return monitoringFailure(
+    const failure = await monitoringFailure(
       deps,
       request,
       correlationId,
       "Sales Trial participant monitoring is unavailable.",
       error,
     );
+    const retained = await deps.enrollments.listByOffering(
+      request.customerId,
+      request.offeringId,
+    );
+    const fallback = staleMonitoringFallback(offering, retained, correlationId);
+    return fallback ?? failure;
   }
   const participants = enrollments.map((enrollment) =>
     projectTrialMonitoringParticipant(
@@ -392,6 +426,11 @@ export async function handleListSalesTrialOfferingParticipants(
   return {
     status: 200,
     body: {
+      offering: {
+        id: offering.id,
+        status: offering.status,
+      },
+      observation: liveMonitoringObservation(remote.participants, enrollments),
       participants,
       correlationId,
     },
@@ -729,13 +768,14 @@ function projectTrialMonitoringParticipant(
   if (!participant) {
     return {
       id: enrollment.id,
+      subject: { type: "sales_trial_enrollment", id: enrollment.id },
       firstName: enrollment.firstName,
       lastName: enrollment.lastName,
       email: enrollment.email,
-      participationStatus: "pending",
+      participationStatus: enrollment.cloudShareParticipantId ? "inProgress" : "pending",
       firstJoined: enrollment.firstJoined,
       envStatus: enrollment.environmentStatus,
-      environment: { dimension: "cloudshare_environment", value: null, source: "not_assigned" },
+      environment: projectRetainedEnvironment(enrollment),
       ...(enrollment.status === "needs_attention"
         ? { needsAttention: true, monitoringMessage: enrollment.attentionReason ?? NEEDS_ATTENTION_REASON }
         : {}),
@@ -743,6 +783,7 @@ function projectTrialMonitoringParticipant(
   }
   return {
     id: enrollment.id,
+    subject: { type: "sales_trial_enrollment", id: enrollment.id },
     firstName: enrollment.firstName,
     lastName: enrollment.lastName,
     email: enrollment.email,
@@ -751,8 +792,80 @@ function projectTrialMonitoringParticipant(
     envStatus: participant.envStatus,
     environment: {
       dimension: "cloudshare_environment",
-      value: participant.envStatus,
+      value: participant.envStatus ?? null,
       source: participant.environmentId ? "cloudshare_v4_sales_participant_roster" : "not_assigned",
+      ...(participant.environmentId ? { observedAt: enrollment.lastReconciledAt.toISOString() } : {}),
+    },
+  };
+}
+
+function projectRetainedEnvironment(
+  enrollment: Pick<SalesTrialEnrollment, "environmentStatus" | "lastReconciledAt">,
+): TrialMonitoringParticipant["environment"] {
+  if (
+    enrollment.environmentStatus &&
+    isProjectableSalesParticipantRosterEnvironment(enrollment.environmentStatus)
+  ) {
+    return {
+      dimension: "cloudshare_environment",
+      value: enrollment.environmentStatus,
+      source: "certalis_sales_trial_enrollment_reconciliation",
+      observedAt: enrollment.lastReconciledAt.toISOString(),
+    };
+  }
+  return {
+    dimension: "cloudshare_environment",
+    value: null,
+    source: "not_assigned",
+  };
+}
+
+function liveMonitoringObservation(
+  participants: readonly SalesParticipant[],
+  enrollments: readonly SalesTrialEnrollment[],
+): TrialMonitoringObservation {
+  const latest = enrollments.reduce<Date | null>((current, enrollment) => {
+    if (!current || enrollment.lastReconciledAt > current) {
+      return enrollment.lastReconciledAt;
+    }
+    return current;
+  }, null);
+  return {
+    freshness: "live",
+    source: "cloudshare_v4_sales_participant_roster",
+    ...(participants.length > 0 || latest ? { observedAt: latest?.toISOString() } : {}),
+  };
+}
+
+function staleMonitoringFallback(
+  offering: Pick<SalesTrialOffering, "id" | "status">,
+  enrollments: readonly SalesTrialEnrollment[],
+  correlationId: string,
+): { readonly status: number; readonly body: Record<string, unknown> } | null {
+  if (offering.status !== "ended" || enrollments.length === 0) {
+    return null;
+  }
+  const latest = enrollments.reduce<Date>((current, enrollment) =>
+    enrollment.lastReconciledAt > current ? enrollment.lastReconciledAt : current,
+  enrollments[0]!.lastReconciledAt);
+  return {
+    status: 200,
+    body: {
+      offering: {
+        id: offering.id,
+        status: offering.status,
+      },
+      observation: {
+        freshness: "stale",
+        source: "certalis_sales_trial_enrollment_reconciliation",
+        observedAt: latest.toISOString(),
+        warning:
+          "CloudShare could not refresh the participant roster; showing the last locally reconciled participant state.",
+      },
+      participants: enrollments.map((enrollment) =>
+        projectTrialMonitoringParticipant(enrollment),
+      ),
+      correlationId,
     },
   };
 }
