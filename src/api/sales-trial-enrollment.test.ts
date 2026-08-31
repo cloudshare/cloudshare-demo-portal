@@ -1423,6 +1423,106 @@ describe("Sales Trial offering entry", () => {
 });
 
 describe("Sales Trial offering monitoring", () => {
+  it("fails closed when the roster has duplicate exact correlations", async () => {
+    const { deps, enrollments, audit, listParticipants } = createDeps();
+    await enrollments.save({
+      id: "enrollment-1", customerId: "customer-1", salesTrialOfferingId: "offering-1", portalUserId: "trial-user-1",
+      email: "visitor@example.test", firstName: "Ari", lastName: "Visitor", cloudShareParticipantId: null,
+      participationStatus: "pending", cloudShareRosterEnvironmentReference: null, environmentStatus: null, firstJoined: null,
+      status: "active", attentionReason: null, lastLaunchedAt: null, lastReconciledAt: new Date("2026-08-30T10:00:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"), updatedAt: new Date("2026-08-30T10:00:00.000Z"),
+    });
+    listParticipants.mockResolvedValue({
+      participants: ["remote-1", "remote-2"].map((id) => ({
+        id, firstName: "Ari", lastName: "Visitor", email: "visitor@example.test", invitationStatus: "notSent",
+        invitedBy: null, participationStatus: "inProgress", firstJoined: null, environmentId: null, envStatus: null,
+        customProperties: { certalisSalesTrialEnrollmentId: "enrollment-1", certalisSalesTrialParticipantUserId: "trial-user-1" },
+      })),
+      request: { method: "GET", path: "/sales/sales-1/participants" },
+      response: { status: 200, body: { participants: [{ id: "remote-1" }, { id: "remote-2" }] } },
+    });
+
+    const result = await handleListSalesTrialOfferingParticipants(deps, {
+      customerId: "customer-1", offeringId: "offering-1", actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+    });
+
+    expect(result).toEqual({
+      status: 502,
+      body: { error: "Sales Trial participant monitoring is unavailable.", correlationId: expect.any(String) },
+    });
+    expect(audit.write).toHaveBeenCalledWith(expect.objectContaining({
+      action: "sales_trial.offering.monitoring.read_participants", outcome: "failure",
+    }));
+  });
+
+  it("contains roster reconciliation persistence failures in the supportable monitoring response", async () => {
+    const { deps, enrollments, audit, listParticipants } = createDeps();
+    await enrollments.save({
+      id: "enrollment-1", customerId: "customer-1", salesTrialOfferingId: "offering-1", portalUserId: "trial-user-1",
+      email: "visitor@example.test", firstName: "Ari", lastName: "Visitor", cloudShareParticipantId: null,
+      participationStatus: "pending", cloudShareRosterEnvironmentReference: null, environmentStatus: null, firstJoined: null,
+      status: "active", attentionReason: null, lastLaunchedAt: null, lastReconciledAt: new Date("2026-08-30T10:00:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"), updatedAt: new Date("2026-08-30T10:00:00.000Z"),
+    });
+    listParticipants.mockResolvedValue({
+      participants: [{
+        id: "remote-1", firstName: "Ari", lastName: "Visitor", email: "visitor@example.test", invitationStatus: "notSent",
+        invitedBy: null, participationStatus: "inProgress", firstJoined: null, environmentId: null, envStatus: null,
+        customProperties: { certalisSalesTrialEnrollmentId: "enrollment-1", certalisSalesTrialParticipantUserId: "trial-user-1" },
+      }],
+      request: { method: "GET", path: "/sales/sales-1/participants" },
+      response: { status: 200, body: { participants: [{ id: "remote-1" }] } },
+    });
+    vi.spyOn(enrollments, "save").mockRejectedValueOnce(new Error("database unavailable"));
+
+    const result = await handleListSalesTrialOfferingParticipants(deps, {
+      customerId: "customer-1", offeringId: "offering-1", actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+    });
+
+    expect(result).toEqual({
+      status: 502,
+      body: { error: "Sales Trial participant monitoring is unavailable.", correlationId: expect.any(String) },
+    });
+    expect(audit.write).toHaveBeenCalledWith(expect.objectContaining({
+      action: "sales_trial.offering.monitoring.read_participants", outcome: "failure",
+    }));
+  });
+
+  it("reports a roster environment with no projectable status as not observed", async () => {
+    const { deps, enrollments, listParticipants } = createDeps();
+    await enrollments.save({
+      id: "enrollment-1", customerId: "customer-1", salesTrialOfferingId: "offering-1", portalUserId: "trial-user-1",
+      email: "visitor@example.test", firstName: "Ari", lastName: "Visitor", cloudShareParticipantId: null,
+      participationStatus: "pending", cloudShareRosterEnvironmentReference: null, environmentStatus: null, firstJoined: null,
+      status: "active", attentionReason: null, lastLaunchedAt: null, lastReconciledAt: new Date("2026-08-30T10:00:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"), updatedAt: new Date("2026-08-30T10:00:00.000Z"),
+    });
+    listParticipants.mockResolvedValue({
+      participants: [{
+        id: "remote-1", firstName: "Ari", lastName: "Visitor", email: "visitor@example.test", invitationStatus: "notSent",
+        invitedBy: null, participationStatus: "inProgress", firstJoined: null, environmentId: "env-1", envStatus: null,
+        customProperties: { certalisSalesTrialEnrollmentId: "enrollment-1", certalisSalesTrialParticipantUserId: "trial-user-1" },
+      }],
+      request: { method: "GET", path: "/sales/sales-1/participants" },
+      response: { status: 200, body: { participants: [{ id: "remote-1" }] } },
+    });
+
+    const result = await handleListSalesTrialOfferingParticipants(deps, {
+      customerId: "customer-1", offeringId: "offering-1", actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+    });
+
+    expect(result).toMatchObject({
+      status: 200,
+      body: {
+        participants: [
+          expect.objectContaining({
+            environment: expect.objectContaining({ source: "not_observed", value: null }),
+          }),
+        ],
+      },
+    });
+  });
+
   it("projects enrolled participants for admin monitoring without provider ids or login URLs", async () => {
     const { deps, enrollments, listParticipants } = createDeps();
     await enrollments.save({

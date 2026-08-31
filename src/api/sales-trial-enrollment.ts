@@ -127,6 +127,7 @@ export interface SalesTrialMonitoringParticipant {
     readonly source:
       | "cloudshare_v4_sales_participant_roster"
       | "certalis_sales_trial_enrollment_reconciliation"
+      | "not_observed"
       | "not_assigned";
     readonly observedAt?: string;
   };
@@ -446,12 +447,37 @@ export async function handleListSalesTrialOfferingParticipants(
   let enrollments: Awaited<ReturnType<SalesTrialEnrollmentRepository["listByOffering"]>>;
   let remote: Awaited<ReturnType<SalesDelivery["listParticipants"]>>;
   let rosterObservedAt: Date;
+  let reconciledEnrollments: SalesTrialEnrollment[];
   try {
     [enrollments, remote] = await Promise.all([
       deps.enrollments.listByOffering(request.customerId, request.offeringId),
       delivery.listParticipants(offering.cloudShareSalesExperienceId),
     ]);
     rosterObservedAt = new Date();
+    reconciledEnrollments = await Promise.all(
+      enrollments.map(async (enrollment) => {
+        const matches = exactMatches(remote.participants, enrollment);
+        if (matches.length > 1) {
+          throw ambiguousRoster(remote, enrollment, "duplicate_correlated_participants");
+        }
+        const matched = matches[0];
+        if (!matched) {
+          return enrollment;
+        }
+        const nextEnrollment: SalesTrialEnrollment = {
+          ...enrollment,
+          cloudShareParticipantId: matched.id,
+          participationStatus: matched.participationStatus,
+          cloudShareRosterEnvironmentReference: matched.environmentId,
+          environmentStatus: matched.envStatus,
+          firstJoined: matched.firstJoined,
+          lastReconciledAt: rosterObservedAt,
+          updatedAt: rosterObservedAt,
+        };
+        await deps.enrollments.save(nextEnrollment);
+        return nextEnrollment;
+      }),
+    );
   } catch (error) {
     const failure = await monitoringFailure(
       deps,
@@ -467,32 +493,10 @@ export async function handleListSalesTrialOfferingParticipants(
     const fallback = staleMonitoringFallback(offering, retained, correlationId);
     return fallback ?? failure;
   }
-  const reconciledEnrollments = await Promise.all(
-    enrollments.map(async (enrollment) => {
-      const matched = remote.participants.find((participant) =>
-        matchesEnrollment(participant, enrollment),
-      );
-      if (!matched) {
-        return enrollment;
-      }
-      const nextEnrollment: SalesTrialEnrollment = {
-        ...enrollment,
-        cloudShareParticipantId: matched.id,
-        participationStatus: matched.participationStatus,
-        cloudShareRosterEnvironmentReference: matched.environmentId,
-        environmentStatus: matched.envStatus,
-        firstJoined: matched.firstJoined,
-        lastReconciledAt: rosterObservedAt,
-        updatedAt: rosterObservedAt,
-      };
-      await deps.enrollments.save(nextEnrollment);
-      return nextEnrollment;
-    }),
-  );
   const participants = reconciledEnrollments.map((enrollment) =>
     projectTrialMonitoringParticipant(
       enrollment,
-      remote.participants.find((participant) => matchesEnrollment(participant, enrollment)),
+      exactMatches(remote.participants, enrollment)[0],
       rosterObservedAt,
     ),
   );
@@ -886,7 +890,10 @@ function projectTrialMonitoringParticipant(
 }
 
 function projectRetainedEnvironment(
-  enrollment: Pick<SalesTrialEnrollment, "environmentStatus" | "lastReconciledAt">,
+  enrollment: Pick<
+    SalesTrialEnrollment,
+    "cloudShareRosterEnvironmentReference" | "environmentStatus" | "lastReconciledAt"
+  >,
 ): SalesTrialMonitoringParticipant["environment"] {
   if (
     enrollment.environmentStatus &&
@@ -903,7 +910,7 @@ function projectRetainedEnvironment(
   return {
     dimension: "cloudshare_environment",
     value: null,
-    source: "not_assigned",
+    source: enrollment.cloudShareRosterEnvironmentReference ? "not_observed" : "not_assigned",
   };
 }
 
@@ -924,7 +931,7 @@ function projectLiveEnvironment(
   return {
     dimension: "cloudshare_environment",
     value: null,
-    source: "not_assigned",
+    source: environmentId ? "not_observed" : "not_assigned",
   };
 }
 
