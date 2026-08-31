@@ -116,6 +116,7 @@ function serialize(enrollment: SalesTrialEnrollment) {
     firstName: enrollment.firstName,
     lastName: enrollment.lastName,
     cloudShareParticipantId: enrollment.cloudShareParticipantId,
+    invitationStatus: enrollment.invitationStatus ?? "notSent",
     participationStatus: enrollment.participationStatus ?? "pending",
     cloudShareRosterEnvironmentReference: enrollment.cloudShareRosterEnvironmentReference,
     environmentStatus: enrollment.environmentStatus,
@@ -138,6 +139,7 @@ type SalesTrialEnrollmentRow = {
   firstName: string;
   lastName: string;
   cloudShareParticipantId: string | null;
+  invitationStatus: string;
   participationStatus: string;
   cloudShareRosterEnvironmentReference: string | null;
   environmentStatus: string | null;
@@ -153,6 +155,7 @@ type SalesTrialEnrollmentRow = {
 function hydrate(row: SalesTrialEnrollmentRow): SalesTrialEnrollment {
   return {
     ...row,
+    invitationStatus: row.invitationStatus === "sent" ? "sent" : "notSent",
     participationStatus:
       row.participationStatus === "inProgress" ||
       row.participationStatus === "concluded"

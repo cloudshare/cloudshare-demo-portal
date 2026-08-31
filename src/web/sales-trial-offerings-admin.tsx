@@ -92,6 +92,12 @@ function formatMonitoringParticipationStatus(
   return "Pending";
 }
 
+function formatMonitoringInvitationStatus(
+  status: SalesTrialMonitoringParticipant["invitationStatus"],
+): string {
+  return status === "sent" ? "Sent" : "Not sent";
+}
+
 export function SalesTrialOfferingsAdmin({
   email,
   fetchAdmin = fetch,
@@ -390,11 +396,12 @@ export function SalesTrialOfferingsAdmin({
             {monitoringLoading ? <p style={{ margin: 0 }}>Refreshing participant monitoring…</p> : null}
             {monitoringError ? <div role="alert" style={alertPanelStyle.danger}>{monitoringError}</div> : null}
             {!monitoringLoading && !monitoringError && monitoringParticipants.length === 0 ? <p style={{ margin: 0, color: "#52606d" }}>No enrolled participants are currently visible for this Trial Offering.</p> : null}
-            {!monitoringLoading && !monitoringError && monitoringParticipants.length > 0 ? <table style={{ width: "100%", minWidth: "42rem", borderCollapse: "collapse" }}>
+            {!monitoringLoading && !monitoringError && monitoringParticipants.length > 0 ? <table style={{ width: "100%", minWidth: "48rem", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
                   <th style={{ textAlign: "left", padding: "0.45rem", borderBottom: "1px solid #dbe4ee" }}>Participant</th>
                   <th style={{ textAlign: "left", padding: "0.45rem", borderBottom: "1px solid #dbe4ee" }}>First joined</th>
+                  <th style={{ textAlign: "left", padding: "0.45rem", borderBottom: "1px solid #dbe4ee" }}>Invitation</th>
                   <th style={{ textAlign: "left", padding: "0.45rem", borderBottom: "1px solid #dbe4ee" }}>Participation</th>
                   <th style={{ textAlign: "left", padding: "0.45rem", borderBottom: "1px solid #dbe4ee" }}>Environment</th>
                 </tr>
@@ -403,6 +410,7 @@ export function SalesTrialOfferingsAdmin({
                 {monitoringParticipants.map((participant) => <tr key={participant.id}>
                   <td style={{ padding: "0.45rem", borderBottom: "1px solid #eef2f7" }}><strong>{participant.firstName} {participant.lastName}</strong><br /><span>{participant.email}</span>{participant.needsAttention ? <><br /><small style={{ color: "#9a3412" }}>{participant.monitoringMessage}</small></> : null}</td>
                   <td style={{ padding: "0.45rem", borderBottom: "1px solid #eef2f7" }}>{participant.firstJoined ?? "—"}</td>
+                  <td style={{ padding: "0.45rem", borderBottom: "1px solid #eef2f7" }}>{formatMonitoringInvitationStatus(participant.invitationStatus)}</td>
                   <td style={{ padding: "0.45rem", borderBottom: "1px solid #eef2f7" }}>
                     {formatMonitoringParticipationStatus(participant.participationStatus)}
                     {formatMonitoringObservationSource(participant.observation?.source) && formatMonitoringObservationFreshness(participant.observation?.freshness) ? (

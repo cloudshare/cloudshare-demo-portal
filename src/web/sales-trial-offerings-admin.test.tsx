@@ -59,6 +59,7 @@ describe("Sales Trial Offerings admin monitoring", () => {
               firstName: "Ari",
               lastName: "Visitor",
               email: "visitor@example.test",
+              invitationStatus: "notSent",
               participationStatus: "inProgress",
               firstJoined: "2026-08-30T10:05:00.000Z",
               envStatus: "Ready",
@@ -82,6 +83,7 @@ describe("Sales Trial Offerings admin monitoring", () => {
     expect(await screen.findByText("Participant monitoring")).toBeTruthy();
     expect(screen.getByText("Ari Visitor")).toBeTruthy();
     expect(screen.getByText("visitor@example.test")).toBeTruthy();
+    expect(screen.getByText("Not sent")).toBeTruthy();
     expect(screen.getByText("In progress")).toBeTruthy();
     expect(screen.getByText("Observed from CloudShare participant roster · 2026-08-30T10:06:00.000Z")).toBeTruthy();
     expect(screen.getByText("Ready")).toBeTruthy();

@@ -10,6 +10,7 @@ const enrollment = {
   firstName: "Ari",
   lastName: "Visitor",
   cloudShareParticipantId: null,
+  invitationStatus: "notSent" as const,
   participationStatus: "pending" as const,
   cloudShareRosterEnvironmentReference: null,
   environmentStatus: null,

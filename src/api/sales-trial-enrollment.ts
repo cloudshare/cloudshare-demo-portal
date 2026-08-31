@@ -117,6 +117,7 @@ export interface SalesTrialMonitoringParticipant {
   readonly firstName: string;
   readonly lastName: string;
   readonly email: string;
+  readonly invitationStatus: "sent" | "notSent";
   readonly participationStatus: "pending" | "inProgress" | "concluded";
   readonly observation: SalesTrialMonitoringObservation;
   readonly firstJoined: string | null;
@@ -467,6 +468,7 @@ export async function handleListSalesTrialOfferingParticipants(
         const nextEnrollment: SalesTrialEnrollment = {
           ...enrollment,
           cloudShareParticipantId: matched.id,
+          invitationStatus: matched.invitationStatus,
           participationStatus: matched.participationStatus,
           cloudShareRosterEnvironmentReference: matched.environmentId,
           environmentStatus: matched.envStatus,
@@ -528,6 +530,7 @@ function createEnrollment(
     firstName: request.participant.firstName,
     lastName: request.participant.lastName,
     cloudShareParticipantId: null,
+    invitationStatus: "notSent",
     participationStatus: "pending",
     cloudShareRosterEnvironmentReference: null,
     environmentStatus: null,
@@ -852,6 +855,7 @@ function projectTrialMonitoringParticipant(
       firstName: enrollment.firstName,
       lastName: enrollment.lastName,
       email: enrollment.email,
+      invitationStatus: enrollment.invitationStatus ?? "notSent",
       participationStatus: enrollment.participationStatus ?? "pending",
       observation: {
         freshness: "stale",
@@ -877,6 +881,7 @@ function projectTrialMonitoringParticipant(
     firstName: enrollment.firstName,
     lastName: enrollment.lastName,
     email: enrollment.email,
+    invitationStatus: participant.invitationStatus,
     participationStatus: participant.participationStatus,
     observation: {
       freshness: "live",

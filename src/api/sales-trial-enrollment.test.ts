@@ -1516,6 +1516,7 @@ describe("Sales Trial offering monitoring", () => {
       body: {
         participants: [
           expect.objectContaining({
+            invitationStatus: "notSent",
             environment: expect.objectContaining({ source: "not_observed", value: null }),
           }),
         ],
@@ -1597,6 +1598,7 @@ describe("Sales Trial offering monitoring", () => {
           firstName: "Ari",
           lastName: "Visitor",
           email: "visitor@example.test",
+          invitationStatus: "notSent",
           participationStatus: "inProgress",
           observation: {
             freshness: "live",
@@ -2031,10 +2033,11 @@ describe("Sales Trial offering monitoring", () => {
               type: "sales_trial_enrollment",
               id: "enrollment-1",
             },
-            firstName: "Ari",
-            lastName: "Visitor",
-            email: "visitor@example.test",
-            participationStatus: "concluded",
+          firstName: "Ari",
+          lastName: "Visitor",
+          email: "visitor@example.test",
+          invitationStatus: "notSent",
+          participationStatus: "concluded",
             observation: {
               freshness: "stale",
               source: "certalis_sales_trial_enrollment_reconciliation",
@@ -2257,10 +2260,11 @@ describe("Sales Trial offering monitoring", () => {
               type: "sales_trial_enrollment",
               id: "enrollment-1",
             },
-            firstName: "Ari",
-            lastName: "Visitor",
-            email: "visitor@example.test",
-            participationStatus: "concluded",
+          firstName: "Ari",
+          lastName: "Visitor",
+          email: "visitor@example.test",
+          invitationStatus: "notSent",
+          participationStatus: "concluded",
             observation: {
               freshness: "stale",
               source: "certalis_sales_trial_enrollment_reconciliation",
