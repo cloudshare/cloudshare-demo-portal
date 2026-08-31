@@ -2690,9 +2690,11 @@ describe("Sales Trial Offering API", () => {
     ambiguous = true;
     const failed = await handleEndSalesTrialOffering(deps, { customerId: "customer-1", actor: { type: "system" }, id: "offering-deferred" });
     expect(failed).toMatchObject({ status: 202, body: { needsAttention: true } });
-    expect(await repository.findById("customer-1", "offering-deferred")).toMatchObject({ endingTerminalTarget: "2026-08-31T12:12" });
+    expect(await repository.findById("customer-1", "offering-deferred")).toMatchObject({ status: "ending", endingTerminalTarget: "2026-08-31T12:12" });
     currentNow = new Date("2026-08-31T12:20:00Z");
-    await handleEndSalesTrialOffering(deps, { customerId: "customer-1", actor: { type: "system" }, id: "offering-deferred" });
+    const completed = await handleEndSalesTrialOffering(deps, { customerId: "customer-1", actor: { type: "system" }, id: "offering-deferred" });
+    expect(completed).toMatchObject({ status: 200, body: { offering: { status: "ended", end: "2026-08-31T12:12" } } });
+    expect(await repository.findById("customer-1", "offering-deferred")).toMatchObject({ status: "ended" });
     expect(updateSession.mock.calls.slice(-2).map(([, changes]) => changes)).toEqual([
       { end: "2026-08-31T12:12" }, { end: "2026-08-31T12:12" },
     ]);

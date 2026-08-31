@@ -1023,6 +1023,7 @@ export async function handleEndSalesTrialOffering(
       : null;
     const reconciled = {
       ...ending,
+      status: calculation.activeCount === 0 ? "ended" as const : "ending" as const,
       end: calculation.effectiveEnd,
       endingCalculatedEnd: calculation.effectiveEnd,
       endingTerminalTarget: terminalTarget,
@@ -1038,13 +1039,14 @@ export async function handleEndSalesTrialOffering(
         correlationId, message: providerUpdate ? "CloudShare Sales Trial end reconciled" : "CloudShare Sales Trial end remains safely scheduled",
         externalIds: { offeringId: offering.id, cloudShareSalesExperienceId: offering.cloudShareSalesExperienceId! },
         request: evidence.request as unknown as Record<string, unknown>, response: evidence.response as unknown as Record<string, unknown>,
-        details: { integrationSurface: "cloudshare.v4.sales", previousStatus: offering.status, status: "ending",
+        details: { integrationSurface: "cloudshare.v4.sales", previousStatus: offering.status,
+          status: calculation.activeCount === 0 ? "ended" : "ending",
           providerUpdated: Boolean(providerUpdate), calculatedEnd: calculation.calculatedEnd, effectiveEnd: calculation.effectiveEnd,
           activeEnvironmentCount: calculation.activeCount },
       }),
       auditLifecycle(deps, request, offering.id, "sales.trial_offering.end", "success", {
         lifecycle: providerUpdate ? "provider_end_updated" : "provider_end_observed", previousStatus: offering.status,
-        status: "ending", integrationSurface: "cloudshare.v4.sales", calculatedEnd: calculation.calculatedEnd,
+        status: calculation.activeCount === 0 ? "ended" : "ending", integrationSurface: "cloudshare.v4.sales", calculatedEnd: calculation.calculatedEnd,
         effectiveEnd: calculation.effectiveEnd, activeEnvironmentCount: calculation.activeCount,
       }, undefined, correlationId),
     ]);
