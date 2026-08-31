@@ -1357,14 +1357,33 @@ function hasProviderCorrelation(offering: SalesTrialOffering): boolean {
 }
 
 function isOutcomeAmbiguousCreateFailure(error: unknown): boolean {
-  if (error instanceof CloudShareRequestError) {
-    return error.status >= 500;
+  if (isCloudShareOAuthTokenFailure(error)) {
+    return false;
   }
-  return (
-    error instanceof CloudShareTransportError ||
-    error instanceof CloudShareResponseError ||
-    !(error instanceof CloudShareAuthError)
-  );
+  if (error instanceof CloudShareRequestError) {
+    return error.status >= 500 && isSalesCreateRequest(error);
+  }
+  if (error instanceof CloudShareTransportError || error instanceof CloudShareResponseError) {
+    const context = cloudShareErrorContext(error);
+    return context ? isSalesCreateRequest(error) : true;
+  }
+  return !(error instanceof CloudShareAuthError);
+}
+
+function cloudShareErrorContext(error: unknown): Record<string, unknown> | undefined {
+  return error instanceof Error && "context" in error
+    ? (error as { context?: Record<string, unknown> }).context
+    : undefined;
+}
+
+function isCloudShareOAuthTokenFailure(error: unknown): boolean {
+  const context = cloudShareErrorContext(error);
+  return context?.path === "/oauth/token" || context?.integrationSurface === "cloudshare.v4.oauth.token";
+}
+
+function isSalesCreateRequest(error: unknown): boolean {
+  const context = cloudShareErrorContext(error);
+  return context?.method === "POST" && context?.path === "/sales";
 }
 
 function cloudShareEvidence(error: unknown):
@@ -1426,15 +1445,20 @@ async function publishFailure(
 ) {
   const itemValidationFailure = error instanceof SalesItemProvisioningValidationError;
   const itemReadFailure = error instanceof SalesItemProvisioningReadError;
+  const oauthTokenFailure = isCloudShareOAuthTokenFailure(error);
   const evidence = cloudShareEvidence(itemReadFailure ? error.cause : error);
-  const integrationSurface = itemValidationFailure || itemReadFailure
-    ? "cloudshare.v3.sales_item_resources"
-    : "cloudshare.v4.sales";
-  const failureMode = itemValidationFailure
-    ? "item_resource_drift"
-    : itemReadFailure
-      ? "item_resource_read"
-      : "cloudshare_create";
+  const integrationSurface = oauthTokenFailure
+    ? "cloudshare.v4.oauth.token"
+    : itemValidationFailure || itemReadFailure
+      ? "cloudshare.v3.sales_item_resources"
+      : "cloudshare.v4.sales";
+  const failureMode = oauthTokenFailure
+    ? "cloudshare_oauth_token"
+    : itemValidationFailure
+      ? "item_resource_drift"
+      : itemReadFailure
+        ? "item_resource_read"
+        : "cloudshare_create";
   await deps.diagnostics?.record({
     source: "sales-trial-offerings",
     operation: "sales.trial_offering.publish",
@@ -1444,11 +1468,13 @@ async function publishFailure(
     actor: request.actor,
     subject: { type: "sales_trial_offering", id: offering.id },
     correlationId,
-    message: itemValidationFailure
-      ? "Catalogue Item is stale against CloudShare resources"
-      : itemReadFailure
-        ? "CloudShare could not fully revalidate this Catalogue Item"
-        : "CloudShare could not publish the Sales Trial Offering",
+    message: oauthTokenFailure
+      ? "CloudShare OAuth token request failed before Sales Experience creation"
+      : itemValidationFailure
+        ? "Catalogue Item is stale against CloudShare resources"
+        : itemReadFailure
+          ? "CloudShare could not fully revalidate this Catalogue Item"
+          : "CloudShare could not publish the Sales Trial Offering",
     externalIds: {
       offeringId: offering.id,
       itemId: offering.itemId,
@@ -1462,11 +1488,13 @@ async function publishFailure(
       error: error instanceof Error ? error.message : String(error),
     },
   });
-  const errorMessage = itemValidationFailure
-    ? "This Item no longer matches its CloudShare resources. Refresh the Item before publishing."
-    : itemReadFailure
-      ? "CloudShare could not fully revalidate this Item. Review support diagnostics before retrying."
-      : "CloudShare could not publish the Sales Trial Offering. Review support diagnostics.";
+  const errorMessage = oauthTokenFailure
+    ? "CloudShare authentication failed before the Sales Trial Offering was created. Review support diagnostics and retry."
+    : itemValidationFailure
+      ? "This Item no longer matches its CloudShare resources. Refresh the Item before publishing."
+      : itemReadFailure
+        ? "CloudShare could not fully revalidate this Item. Review support diagnostics before retrying."
+        : "CloudShare could not publish the Sales Trial Offering. Review support diagnostics.";
   await auditLifecycle(
     deps,
     request,

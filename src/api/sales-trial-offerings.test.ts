@@ -241,6 +241,16 @@ async function saveDeferredOffering(repository: SalesTrialOfferingRepository, id
   });
 }
 
+async function savePublishDraft(repository: SalesTrialOfferingRepository, id = "offering-token") {
+  await repository.save({
+    id, customerId: "customer-1", title: "OAuth Trial", description: "", itemId: "item-1",
+    cloudShareSalesExperienceId: null, externalId: null, start: "2026-09-01T09:00", end: "2026-09-02T09:00",
+    timeZone: "UTC", salesProEmail: "owner@example.test", salesProDisplayName: null, status: "draft",
+    createdAt: new Date("2026-08-29T12:00:00Z"), updatedAt: new Date("2026-08-29T12:00:00Z"),
+    publishedAt: null, unpublishedAt: null, attentionReason: null,
+  });
+}
+
 const body = {
   title: "Helios Trial Offering",
   description: "A shared Sales Trial for evaluators.",
@@ -2556,6 +2566,42 @@ describe("Sales Trial Offering API", () => {
         fallbackPersisted: false,
       }),
     });
+  });
+
+  it("releases an OAuth token 504 reservation to Draft because POST sales was never attempted", async () => {
+    const repository = createOfferingRepository();
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    await savePublishDraft(repository);
+    const createSession = vi.fn().mockRejectedValue(new CloudShareRequestError("gateway timeout", 504, {
+      method: "POST", path: "/oauth/token", integrationSurface: "cloudshare.v4.oauth.token",
+      requestBody: "grant_type=client_credentials", responseStatus: 504,
+      responseBody: { error: "gateway_timeout" },
+    }));
+    const deps = createDeps(repository, {
+      diagnostics: createDiagnosticRecorder({ repository: diagnosticRepository }),
+      deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSession }) },
+    });
+
+    const result = await handlePublishSalesTrialOffering(deps, {
+      customerId: "customer-1", actor: { type: "admin", id: "admin-1" }, id: "offering-token",
+    });
+
+    expect(result).toMatchObject({ status: 502, body: {
+      error: "CloudShare authentication failed before the Sales Trial Offering was created. Review support diagnostics and retry.",
+    } });
+    expect(await repository.findById("customer-1", "offering-token")).toMatchObject({
+      status: "draft", externalId: null, cloudShareSalesExperienceId: null, attentionReason: null,
+    });
+    const [entry] = await diagnosticRepository.query({ operation: "sales.trial_offering.publish", outcome: "failure" });
+    expect(entry).toMatchObject({
+      message: "CloudShare OAuth token request failed before Sales Experience creation",
+      request: { method: "POST", path: "/oauth/token" }, response: { status: 504, body: { error: "gateway_timeout" } },
+      details: expect.objectContaining({ integrationSurface: "cloudshare.v4.oauth.token", failureMode: "cloudshare_oauth_token" }),
+    });
+    expect(deps.audit.write).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: "failure", details: expect.objectContaining({ failureMode: "cloudshare_oauth_token", integrationSurface: "cloudshare.v4.oauth.token" }),
+    }));
+    expect(createSession).toHaveBeenCalledTimes(1);
   });
 
   it("unpublishes immediately and defers CloudShare end to the latest active Environment expiry plus five minutes", async () => {
