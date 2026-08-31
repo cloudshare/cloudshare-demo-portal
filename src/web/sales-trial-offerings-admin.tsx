@@ -1,6 +1,11 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import type {
+  SalesTrialMonitoringObservation,
+  SalesTrialMonitoringParticipant,
+  SalesTrialOfferingMonitoringResponseBody,
+} from "@/api/sales-trial-enrollment";
 import { isAdminSessionExpiredError } from "./admin-authenticated-request";
 import { disabledButtonStyle, primaryButtonStyle, secondaryButtonStyle } from "./button-styles";
 import { alertPanelStyle, cardStyle, mutedPanelStyle } from "./card-styles";
@@ -20,25 +25,6 @@ type DraftPayload = {
   salesProEmail: string;
 };
 type DraftFormField = "title" | "description" | "itemId" | "start" | "end" | "timeZone" | "salesProEmail";
-type MonitoringParticipant = {
-  id: string;
-  subject?: { type: "sales_trial_enrollment"; id: string };
-  firstName: string;
-  lastName: string;
-  email: string;
-  participationStatus: "pending" | "inProgress" | "concluded";
-  firstJoined: string | null;
-  envStatus: string | null;
-  environment: { dimension: "cloudshare_environment"; value: string | null; source: string; observedAt?: string };
-  needsAttention?: boolean;
-  monitoringMessage?: string;
-};
-type MonitoringObservation = {
-  freshness: "live" | "stale";
-  source: string;
-  observedAt?: string;
-  warning?: string;
-};
 type Offering = {
   id: string;
   title: string;
@@ -97,8 +83,8 @@ export function SalesTrialOfferingsAdmin({
   const [messageCorrelationId, setMessageCorrelationId] = useState<string | null>(null);
   const [latestSupportByOfferingId, setLatestSupportByOfferingId] = useState<Record<string, string | null>>({});
   const [monitoringOfferingId, setMonitoringOfferingId] = useState<string | null>(null);
-  const [monitoringParticipants, setMonitoringParticipants] = useState<MonitoringParticipant[]>([]);
-  const [monitoringObservation, setMonitoringObservation] = useState<MonitoringObservation | null>(null);
+  const [monitoringParticipants, setMonitoringParticipants] = useState<SalesTrialMonitoringParticipant[]>([]);
+  const [monitoringObservation, setMonitoringObservation] = useState<SalesTrialMonitoringObservation | null>(null);
   const [monitoringLoading, setMonitoringLoading] = useState(false);
   const [monitoringError, setMonitoringError] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -269,9 +255,7 @@ export function SalesTrialOfferingsAdmin({
       const response = await fetchAdmin(
         `/api/sales/trial-offerings/${encodeURIComponent(id)}/participants`,
       );
-      const body = (await response.json()) as {
-        participants?: MonitoringParticipant[];
-        observation?: MonitoringObservation;
+      const body = (await response.json()) as SalesTrialOfferingMonitoringResponseBody & {
         error?: string;
       };
       if (!response.ok) {
@@ -366,7 +350,7 @@ export function SalesTrialOfferingsAdmin({
           <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
             <button type="button" style={offering.status !== "draft" ? { ...primaryButtonStyle, ...disabledButtonStyle } : primaryButtonStyle} disabled={offering.status !== "draft"} onClick={() => void lifecycle(offering.id, "publish")}>Publish</button>
             <button type="button" style={offering.status !== "published" ? { ...secondaryButtonStyle, ...disabledButtonStyle } : secondaryButtonStyle} disabled={offering.status !== "published"} onClick={() => { if (window.confirm("End this Trial Offering now and unpublish it from the portal?")) void lifecycle(offering.id, "end"); }}>End trial</button>
-            {offering.status === "published" || offering.status === "ending" || offering.status === "ended" ? <button type="button" style={secondaryButtonStyle} onClick={() => void toggleMonitoring(offering.id)}>{monitoringOfferingId === offering.id ? "Hide monitoring" : "Open monitoring"}</button> : null}
+            {offering.status === "published" || offering.status === "ending" || offering.status === "ended" || offering.status === "unpublished" ? <button type="button" style={secondaryButtonStyle} onClick={() => void toggleMonitoring(offering.id)}>{monitoringOfferingId === offering.id ? "Hide monitoring" : "Open monitoring"}</button> : null}
           </div>
           {monitoringOfferingId === offering.id ? <section aria-label="Participant monitoring" style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem", overflowX: "auto", width: "100%" }}>
             <div style={{ display: "grid", gap: "0.25rem" }}>

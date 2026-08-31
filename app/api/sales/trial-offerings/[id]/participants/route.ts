@@ -39,11 +39,11 @@ export async function GET(
       },
       diagnostics: services.diagnosticRecorder,
       audit: services.audit,
-      reconcileEnding: async (id) => {
+      reconcileEnding: async ({ customerId, offeringId, actor }) => {
         await handleEndSalesTrialOffering(salesTrialEndingDeps(services), {
-          customerId: session.customerId,
-          id,
-          actor: { type: "admin", id: session.userId, email: session.email },
+          customerId,
+          id: offeringId,
+          actor,
         });
       },
     },

@@ -70,7 +70,9 @@ export interface SalesTrialEnrollmentDeps {
   readonly audit?: Pick<AuditRepository, "write">;
   readonly now?: () => Date;
   readonly newId?: () => string;
-  readonly reconcileEnding?: (offeringId: string) => Promise<void>;
+  readonly reconcileEnding?: (
+    request: SalesTrialOfferingReconciliationRequest,
+  ) => Promise<void>;
 }
 
 export interface SalesTrialOfferingEnterRequest {
@@ -95,7 +97,15 @@ export interface EnterSalesTrialOfferingBlockedPageInput {
   readonly message: string;
 }
 
-type TrialMonitoringParticipant = {
+export interface SalesTrialOfferingReconciliationRequest {
+  readonly customerId: string;
+  readonly offeringId: string;
+  readonly actor:
+    | { readonly type: "admin"; readonly id: string; readonly email: string }
+    | { readonly type: "sales_trial_participant"; readonly id: string; readonly email: string };
+}
+
+export interface SalesTrialMonitoringParticipant {
   readonly id: string;
   readonly subject: {
     readonly type: "sales_trial_enrollment";
@@ -118,16 +128,35 @@ type TrialMonitoringParticipant = {
   };
   readonly needsAttention?: boolean;
   readonly monitoringMessage?: string;
-};
+}
 
-type TrialMonitoringObservation = {
+export interface SalesTrialMonitoringObservation {
   readonly freshness: "live" | "stale";
   readonly source:
     | "cloudshare_v4_sales_participant_roster"
     | "certalis_sales_trial_enrollment_reconciliation";
   readonly observedAt?: string;
   readonly warning?: string;
-};
+}
+
+export interface SalesTrialOfferingMonitoringSummary {
+  readonly id: string;
+  readonly status: SalesTrialOffering["status"];
+}
+
+export interface SalesTrialOfferingMonitoringResponseBody {
+  readonly offering: SalesTrialOfferingMonitoringSummary;
+  readonly observation: SalesTrialMonitoringObservation;
+  readonly participants: readonly SalesTrialMonitoringParticipant[];
+  readonly correlationId: string;
+}
+
+export interface SalesTrialOfferingMonitoringResponse {
+  readonly status: number;
+  readonly body:
+    | SalesTrialOfferingMonitoringResponseBody
+    | { readonly error: string; readonly correlationId?: string };
+}
 
 export async function handleEnterSalesTrialOffering(
   deps: SalesTrialEnrollmentDeps,
@@ -137,7 +166,11 @@ export async function handleEnterSalesTrialOffering(
   const now = (deps.now ?? (() => new Date()))();
   let offering = await deps.offerings.findById(request.customerId, request.offeringId);
   if (offering?.status === "ending" && deps.reconcileEnding) {
-    await deps.reconcileEnding(request.offeringId);
+    await deps.reconcileEnding({
+      customerId: request.customerId,
+      offeringId: request.offeringId,
+      actor: request.actor,
+    });
     offering = await deps.offerings.findById(request.customerId, request.offeringId);
   }
   const existingEnrollment = offering
@@ -369,14 +402,15 @@ export async function handleListSalesTrialOfferingParticipants(
     readonly offeringId: string;
     readonly actor: { readonly type: "admin"; readonly id: string; readonly email: string };
   },
-): Promise<{
-  readonly status: number;
-  readonly body: Record<string, unknown>;
-}> {
+): Promise<SalesTrialOfferingMonitoringResponse> {
   const correlationId = randomUUID();
   let offering = await deps.offerings.findById(request.customerId, request.offeringId);
   if (offering?.status === "ending" && deps.reconcileEnding) {
-    await deps.reconcileEnding(request.offeringId);
+    await deps.reconcileEnding({
+      customerId: request.customerId,
+      offeringId: request.offeringId,
+      actor: request.actor,
+    });
     offering = await deps.offerings.findById(request.customerId, request.offeringId);
   }
   if (
@@ -384,7 +418,8 @@ export async function handleListSalesTrialOfferingParticipants(
     !offering.cloudShareSalesExperienceId ||
     (offering.status !== "published" &&
       offering.status !== "ending" &&
-      offering.status !== "ended")
+      offering.status !== "ended" &&
+      offering.status !== "unpublished")
   ) {
     return { status: 404, body: { error: "Sales Trial Offering was not found for this Customer." } };
   }
@@ -764,7 +799,7 @@ async function denied(
 function projectTrialMonitoringParticipant(
   enrollment: SalesTrialEnrollment,
   participant?: SalesParticipant,
-): TrialMonitoringParticipant {
+): SalesTrialMonitoringParticipant {
   if (!participant) {
     return {
       id: enrollment.id,
@@ -801,7 +836,7 @@ function projectTrialMonitoringParticipant(
 
 function projectRetainedEnvironment(
   enrollment: Pick<SalesTrialEnrollment, "environmentStatus" | "lastReconciledAt">,
-): TrialMonitoringParticipant["environment"] {
+): SalesTrialMonitoringParticipant["environment"] {
   if (
     enrollment.environmentStatus &&
     isProjectableSalesParticipantRosterEnvironment(enrollment.environmentStatus)
@@ -823,7 +858,7 @@ function projectRetainedEnvironment(
 function liveMonitoringObservation(
   participants: readonly SalesParticipant[],
   enrollments: readonly SalesTrialEnrollment[],
-): TrialMonitoringObservation {
+): SalesTrialMonitoringObservation {
   const latest = enrollments.reduce<Date | null>((current, enrollment) => {
     if (!current || enrollment.lastReconciledAt > current) {
       return enrollment.lastReconciledAt;
@@ -841,8 +876,11 @@ function staleMonitoringFallback(
   offering: Pick<SalesTrialOffering, "id" | "status">,
   enrollments: readonly SalesTrialEnrollment[],
   correlationId: string,
-): { readonly status: number; readonly body: Record<string, unknown> } | null {
-  if (offering.status !== "ended" || enrollments.length === 0) {
+): SalesTrialOfferingMonitoringResponse | null {
+  if (
+    (offering.status !== "ended" && offering.status !== "unpublished") ||
+    enrollments.length === 0
+  ) {
     return null;
   }
   const latest = enrollments.reduce<Date>((current, enrollment) =>
