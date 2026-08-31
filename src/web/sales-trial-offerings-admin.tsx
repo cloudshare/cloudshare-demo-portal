@@ -64,6 +64,26 @@ const disabledControlStyle = {
   cursor: "not-allowed",
 };
 
+function formatMonitoringObservationSource(
+  source: SalesTrialMonitoringObservation["source"] | null | undefined,
+): string | null {
+  if (source === "cloudshare_v4_sales_participant_roster") {
+    return "CloudShare participant roster";
+  }
+  if (source === "certalis_sales_trial_enrollment_reconciliation") {
+    return "locally reconciled history";
+  }
+  return null;
+}
+
+function formatMonitoringParticipationStatus(
+  status: SalesTrialMonitoringParticipant["participationStatus"],
+): string {
+  if (status === "inProgress") return "In progress";
+  if (status === "concluded") return "Concluded";
+  return "Pending";
+}
+
 export function SalesTrialOfferingsAdmin({
   email,
   fetchAdmin = fetch,
@@ -357,7 +377,7 @@ export function SalesTrialOfferingsAdmin({
               <strong>Participant monitoring</strong>
               <span style={{ color: "#52606d" }}>CloudShare visibility derived from the reconciled Trial enrollment roster.</span>
               {monitoringObservation?.warning ? <span style={{ color: "#52606d" }}>{monitoringObservation.warning}</span> : null}
-              {monitoringObservation?.source ? <span style={{ color: "#52606d" }}>{`Observed from ${monitoringObservation.source}${monitoringObservation.observedAt ? ` · ${monitoringObservation.observedAt}` : ""}`}</span> : null}
+              {formatMonitoringObservationSource(monitoringObservation?.source) ? <span style={{ color: "#52606d" }}>{`Observed from ${formatMonitoringObservationSource(monitoringObservation?.source)}${monitoringObservation?.observedAt ? ` · ${monitoringObservation.observedAt}` : ""}`}</span> : null}
             </div>
             {monitoringLoading ? <p style={{ margin: 0 }}>Refreshing participant monitoring…</p> : null}
             {monitoringError ? <div role="alert" style={alertPanelStyle.danger}>{monitoringError}</div> : null}
@@ -375,7 +395,7 @@ export function SalesTrialOfferingsAdmin({
                 {monitoringParticipants.map((participant) => <tr key={participant.id}>
                   <td style={{ padding: "0.45rem", borderBottom: "1px solid #eef2f7" }}><strong>{participant.firstName} {participant.lastName}</strong><br /><span>{participant.email}</span>{participant.needsAttention ? <><br /><small style={{ color: "#9a3412" }}>{participant.monitoringMessage}</small></> : null}</td>
                   <td style={{ padding: "0.45rem", borderBottom: "1px solid #eef2f7" }}>{participant.firstJoined ?? "—"}</td>
-                  <td style={{ padding: "0.45rem", borderBottom: "1px solid #eef2f7" }}>{participant.participationStatus}</td>
+                  <td style={{ padding: "0.45rem", borderBottom: "1px solid #eef2f7" }}>{formatMonitoringParticipationStatus(participant.participationStatus)}</td>
                   <td style={{ padding: "0.45rem", borderBottom: "1px solid #eef2f7" }}>{participant.environment.value ?? participant.envStatus ?? "Not assigned"}</td>
                 </tr>)}
               </tbody>

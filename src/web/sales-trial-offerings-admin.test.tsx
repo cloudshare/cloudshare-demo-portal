@@ -48,6 +48,11 @@ describe("Sales Trial Offerings admin monitoring", () => {
       }
       if (url === "/api/sales/trial-offerings/offering-1/participants") {
         return json({
+          observation: {
+            freshness: "live",
+            source: "cloudshare_v4_sales_participant_roster",
+            observedAt: "2026-08-30T10:06:00.000Z",
+          },
           participants: [
             {
               id: "enrollment-1",
@@ -77,6 +82,8 @@ describe("Sales Trial Offerings admin monitoring", () => {
     expect(await screen.findByText("Participant monitoring")).toBeTruthy();
     expect(screen.getByText("Ari Visitor")).toBeTruthy();
     expect(screen.getByText("visitor@example.test")).toBeTruthy();
+    expect(screen.getByText("In progress")).toBeTruthy();
+    expect(screen.getByText("Observed from CloudShare participant roster · 2026-08-30T10:06:00.000Z")).toBeTruthy();
     expect(screen.getByText("Ready")).toBeTruthy();
     expect(screen.queryByText("remote-1")).toBeNull();
   });
@@ -166,7 +173,8 @@ describe("Sales Trial Offerings admin monitoring", () => {
     expect(screen.getByText("Ari Visitor")).toBeTruthy();
     expect(screen.getByText("Suspended")).toBeTruthy();
     expect(screen.getByText("CloudShare could not refresh the participant roster; showing the last locally reconciled participant state.")).toBeTruthy();
-    expect(screen.getByText("Observed from certalis_sales_trial_enrollment_reconciliation · 2026-08-30T10:07:00.000Z")).toBeTruthy();
+    expect(screen.getByText("In progress")).toBeTruthy();
+    expect(screen.getByText("Observed from locally reconciled history · 2026-08-30T10:07:00.000Z")).toBeTruthy();
   });
 
   it("shows monitoring controls for an unpublished offering so retained history stays reachable after unpublish", async () => {
