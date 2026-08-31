@@ -20,7 +20,11 @@ export function createPrismaSalesTrialEnrollmentRepository(
         const created = await prisma.salesTrialEnrollment.create({
           data: serialize(enrollment),
         });
-        return { enrollment: hydrate(created), created: true, reclaimed: false } as const;
+        return {
+          enrollment: hydrate(created as unknown as SalesTrialEnrollmentRow),
+          created: true,
+          reclaimed: false,
+        } as const;
       } catch (error) {
         if (!isLaunchReservationConflict(error)) {
           throw error;
@@ -53,7 +57,7 @@ export function createPrismaSalesTrialEnrollmentRepository(
           throw error;
         }
         return {
-          enrollment: hydrate(existing),
+          enrollment: hydrate(existing as unknown as SalesTrialEnrollmentRow),
           created: false,
           reclaimed: reclaimed.count === 1,
         } as const;
@@ -69,7 +73,7 @@ export function createPrismaSalesTrialEnrollmentRepository(
           },
         },
       });
-      return row ? hydrate(row) : null;
+      return row ? hydrate(row as unknown as SalesTrialEnrollmentRow) : null;
     },
     async listByOffering(customerId, salesTrialOfferingId) {
       return (
@@ -77,7 +81,7 @@ export function createPrismaSalesTrialEnrollmentRepository(
           where: { customerId, salesTrialOfferingId },
           orderBy: { createdAt: "asc" },
         })
-      ).map(hydrate);
+      ).map((row) => hydrate(row as unknown as SalesTrialEnrollmentRow));
     },
     async listByPortalUser(customerId, portalUserId) {
       return (
@@ -85,7 +89,7 @@ export function createPrismaSalesTrialEnrollmentRepository(
           where: { customerId, portalUserId },
           orderBy: { createdAt: "asc" },
         })
-      ).map(hydrate);
+      ).map((row) => hydrate(row as unknown as SalesTrialEnrollmentRow));
     },
   };
 }
@@ -112,6 +116,7 @@ function serialize(enrollment: SalesTrialEnrollment) {
     firstName: enrollment.firstName,
     lastName: enrollment.lastName,
     cloudShareParticipantId: enrollment.cloudShareParticipantId,
+    participationStatus: enrollment.participationStatus ?? "pending",
     cloudShareRosterEnvironmentReference: enrollment.cloudShareRosterEnvironmentReference,
     environmentStatus: enrollment.environmentStatus,
     firstJoined: enrollment.firstJoined,
@@ -124,7 +129,7 @@ function serialize(enrollment: SalesTrialEnrollment) {
   };
 }
 
-function hydrate(row: {
+type SalesTrialEnrollmentRow = {
   id: string;
   customerId: string;
   salesTrialOfferingId: string;
@@ -133,6 +138,7 @@ function hydrate(row: {
   firstName: string;
   lastName: string;
   cloudShareParticipantId: string | null;
+  participationStatus: string;
   cloudShareRosterEnvironmentReference: string | null;
   environmentStatus: string | null;
   firstJoined: string | null;
@@ -142,9 +148,16 @@ function hydrate(row: {
   lastReconciledAt: Date;
   createdAt: Date;
   updatedAt: Date;
-}): SalesTrialEnrollment {
+};
+
+function hydrate(row: SalesTrialEnrollmentRow): SalesTrialEnrollment {
   return {
     ...row,
+    participationStatus:
+      row.participationStatus === "inProgress" ||
+      row.participationStatus === "concluded"
+        ? row.participationStatus
+        : "pending",
     status:
       row.status === "provisioning" ||
       row.status === "needs_attention" ||

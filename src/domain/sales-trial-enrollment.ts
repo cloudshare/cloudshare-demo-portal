@@ -13,6 +13,7 @@ export interface SalesTrialEnrollment {
   readonly firstName: string;
   readonly lastName: string;
   readonly cloudShareParticipantId: string | null;
+  readonly participationStatus?: "pending" | "inProgress" | "concluded";
   readonly cloudShareRosterEnvironmentReference: string | null;
   readonly environmentStatus: string | null;
   readonly firstJoined: string | null;

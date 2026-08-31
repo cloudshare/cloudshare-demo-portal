@@ -10,6 +10,7 @@ const enrollment = {
   firstName: "Ari",
   lastName: "Visitor",
   cloudShareParticipantId: null,
+  participationStatus: "pending" as const,
   cloudShareRosterEnvironmentReference: null,
   environmentStatus: null,
   firstJoined: null,
@@ -33,7 +34,9 @@ describe("Prisma Sales Trial enrollment repository", () => {
       created: true,
       reclaimed: false,
     });
-    expect(create).toHaveBeenCalledWith({ data: expect.objectContaining({ id: "enrollment-1" }) });
+    expect(create).toHaveBeenCalledWith({
+      data: expect.objectContaining({ id: "enrollment-1", participationStatus: "pending" }),
+    });
   });
 
   it("returns the existing reservation on the unique customer offering user conflict", async () => {

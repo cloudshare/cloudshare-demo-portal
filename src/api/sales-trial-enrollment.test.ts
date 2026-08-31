@@ -1434,6 +1434,7 @@ describe("Sales Trial offering monitoring", () => {
       firstName: "Ari",
       lastName: "Visitor",
       cloudShareParticipantId: "remote-1",
+      participationStatus: "pending",
       cloudShareRosterEnvironmentReference: "env-1",
       environmentStatus: "CreationFailed",
       firstJoined: "2026-08-30T10:05:00.000Z",
@@ -1467,11 +1468,14 @@ describe("Sales Trial offering monitoring", () => {
       response: { status: 200, body: { participants: [{ id: "remote-1" }] } },
     });
 
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-30T10:09:00.000Z"));
     const result = await handleListSalesTrialOfferingParticipants(deps, {
       customerId: "customer-1",
       offeringId: "offering-1",
       actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
     });
+    vi.useRealTimers();
 
     expect(result.body).toEqual({
       offering: {
@@ -1481,7 +1485,7 @@ describe("Sales Trial offering monitoring", () => {
       observation: {
         freshness: "live",
         source: "cloudshare_v4_sales_participant_roster",
-        observedAt: "2026-08-30T10:06:00.000Z",
+        observedAt: "2026-08-30T10:09:00.000Z",
       },
       participants: [
         {
@@ -1495,12 +1499,12 @@ describe("Sales Trial offering monitoring", () => {
           email: "visitor@example.test",
           participationStatus: "inProgress",
           firstJoined: "2026-08-30T10:05:00.000Z",
-          envStatus: "Future allocation scheduled",
+          envStatus: "FutureAllocationScheduled",
           environment: {
             dimension: "cloudshare_environment",
             value: "Future allocation scheduled",
             source: "cloudshare_v4_sales_participant_roster",
-            observedAt: "2026-08-30T10:06:00.000Z",
+            observedAt: "2026-08-30T10:09:00.000Z",
           },
         },
       ],
@@ -1603,6 +1607,123 @@ describe("Sales Trial offering monitoring", () => {
     });
   });
 
+  it("persists fresh roster participation state so stale monitoring retains concluded history", async () => {
+    const offeringReads = vi.fn()
+      .mockResolvedValueOnce(createOffering({ status: "published" }))
+      .mockResolvedValueOnce(
+        createOffering({
+          status: "ended",
+          unpublishedAt: new Date("2026-08-30T17:05:00.000Z"),
+        }),
+      );
+    const { deps, enrollments, listParticipants } = createDeps({
+      offerings: { findById: offeringReads },
+    });
+    await enrollments.save({
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: "remote-1",
+      participationStatus: "inProgress",
+      cloudShareRosterEnvironmentReference: "env-1",
+      environmentStatus: "Ready",
+      firstJoined: "2026-08-30T10:05:00.000Z",
+      status: "active",
+      attentionReason: null,
+      lastLaunchedAt: new Date("2026-08-30T10:06:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T10:06:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:06:00.000Z"),
+    });
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-30T10:09:00.000Z"));
+    listParticipants.mockResolvedValueOnce({
+      participants: [
+        {
+          id: "remote-1",
+          firstName: "Ari",
+          lastName: "Visitor",
+          email: "visitor@example.test",
+          invitationStatus: "notSent",
+          invitedBy: null,
+          participationStatus: "concluded",
+          firstJoined: "2026-08-30T10:05:00.000Z",
+          environmentId: "env-1",
+          envStatus: "FutureAllocationScheduled",
+          customProperties: {
+            certalisSalesTrialEnrollmentId: "enrollment-1",
+            certalisSalesTrialParticipantUserId: "trial-user-1",
+          },
+        },
+      ],
+      request: { method: "GET", path: "/sales/sales-1/participants" },
+      response: { status: 200, body: { participants: [{ id: "remote-1" }] } },
+    });
+
+    const fresh = await handleListSalesTrialOfferingParticipants(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+    });
+    listParticipants.mockRejectedValueOnce(
+      new CloudShareTransportError("participant roster timed out", {
+        method: "GET",
+        path: "/sales/sales-1/participants",
+        cause: "ETIMEDOUT",
+        transport: "tcp",
+      }),
+    );
+    const stale = await handleListSalesTrialOfferingParticipants(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+    });
+    vi.useRealTimers();
+
+    expect(fresh).toMatchObject({
+      status: 200,
+      body: {
+        observation: {
+          freshness: "live",
+          observedAt: "2026-08-30T10:09:00.000Z",
+        },
+        participants: [
+          expect.objectContaining({
+            participationStatus: "concluded",
+            envStatus: "FutureAllocationScheduled",
+            environment: expect.objectContaining({
+              value: "Future allocation scheduled",
+              observedAt: "2026-08-30T10:09:00.000Z",
+            }),
+          }),
+        ],
+      },
+    });
+    expect(stale).toMatchObject({
+      status: 200,
+      body: {
+        observation: {
+          freshness: "stale",
+          observedAt: "2026-08-30T10:09:00.000Z",
+        },
+        participants: [
+          expect.objectContaining({
+            participationStatus: "concluded",
+            envStatus: "FutureAllocationScheduled",
+            environment: expect.objectContaining({
+              value: "Future allocation scheduled",
+              observedAt: "2026-08-30T10:09:00.000Z",
+            }),
+          }),
+        ],
+      },
+    });
+  });
+
   it("passes the customer-scoped reconciliation request object before reading ending history", async () => {
     const reconcileEnding = vi.fn().mockResolvedValue(undefined);
     const offeringReads = vi.fn()
@@ -1646,6 +1767,7 @@ describe("Sales Trial offering monitoring", () => {
       firstName: "Ari",
       lastName: "Visitor",
       cloudShareParticipantId: "remote-1",
+      participationStatus: "concluded",
       cloudShareRosterEnvironmentReference: "env-1",
       environmentStatus: "CreationFailed",
       firstJoined: "2026-08-30T10:05:00.000Z",
@@ -1698,9 +1820,9 @@ describe("Sales Trial offering monitoring", () => {
             firstName: "Ari",
             lastName: "Visitor",
             email: "visitor@example.test",
-            participationStatus: "inProgress",
+            participationStatus: "concluded",
             firstJoined: "2026-08-30T10:05:00.000Z",
-            envStatus: "Creation Failed",
+            envStatus: "CreationFailed",
             environment: {
               dimension: "cloudshare_environment",
               value: "Creation Failed",

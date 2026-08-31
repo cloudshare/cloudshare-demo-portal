@@ -302,6 +302,7 @@ export async function handleEnterSalesTrialOffering(
     enrollment = {
       ...enrollment,
       cloudShareParticipantId: resolved.remote.id,
+      participationStatus: resolved.remote.participationStatus,
       cloudShareRosterEnvironmentReference: resolved.remote.environmentId,
       environmentStatus: resolved.remote.envStatus,
       firstJoined: resolved.remote.firstJoined,
@@ -435,11 +436,13 @@ export async function handleListSalesTrialOfferingParticipants(
     createCloudShareSalesDelivery(deps.cloudshare!.forConnection(connection));
   let enrollments: Awaited<ReturnType<SalesTrialEnrollmentRepository["listByOffering"]>>;
   let remote: Awaited<ReturnType<SalesDelivery["listParticipants"]>>;
+  let rosterObservedAt: Date;
   try {
     [enrollments, remote] = await Promise.all([
       deps.enrollments.listByOffering(request.customerId, request.offeringId),
       delivery.listParticipants(offering.cloudShareSalesExperienceId),
     ]);
+    rosterObservedAt = new Date();
   } catch (error) {
     const failure = await monitoringFailure(
       deps,
@@ -455,10 +458,33 @@ export async function handleListSalesTrialOfferingParticipants(
     const fallback = staleMonitoringFallback(offering, retained, correlationId);
     return fallback ?? failure;
   }
-  const participants = enrollments.map((enrollment) =>
+  const reconciledEnrollments = await Promise.all(
+    enrollments.map(async (enrollment) => {
+      const matched = remote.participants.find((participant) =>
+        matchesEnrollment(participant, enrollment),
+      );
+      if (!matched) {
+        return enrollment;
+      }
+      const nextEnrollment: SalesTrialEnrollment = {
+        ...enrollment,
+        cloudShareParticipantId: matched.id,
+        participationStatus: matched.participationStatus,
+        cloudShareRosterEnvironmentReference: matched.environmentId,
+        environmentStatus: matched.envStatus,
+        firstJoined: matched.firstJoined,
+        lastReconciledAt: rosterObservedAt,
+        updatedAt: rosterObservedAt,
+      };
+      await deps.enrollments.save(nextEnrollment);
+      return nextEnrollment;
+    }),
+  );
+  const participants = reconciledEnrollments.map((enrollment) =>
     projectTrialMonitoringParticipant(
       enrollment,
       remote.participants.find((participant) => matchesEnrollment(participant, enrollment)),
+      rosterObservedAt,
     ),
   );
   return {
@@ -468,7 +494,7 @@ export async function handleListSalesTrialOfferingParticipants(
         id: offering.id,
         status: offering.status,
       },
-      observation: liveMonitoringObservation(remote.participants, enrollments),
+      observation: liveMonitoringObservation(remote.participants, rosterObservedAt),
       participants,
       correlationId,
     },
@@ -489,6 +515,7 @@ function createEnrollment(
     firstName: request.participant.firstName,
     lastName: request.participant.lastName,
     cloudShareParticipantId: null,
+    participationStatus: "pending",
     cloudShareRosterEnvironmentReference: null,
     environmentStatus: null,
     firstJoined: null,
@@ -802,6 +829,7 @@ async function denied(
 function projectTrialMonitoringParticipant(
   enrollment: SalesTrialEnrollment,
   participant?: SalesParticipant,
+  rosterObservedAt?: Date,
 ): SalesTrialMonitoringParticipant {
   if (!participant) {
     const environment = projectRetainedEnvironment(enrollment);
@@ -811,9 +839,9 @@ function projectTrialMonitoringParticipant(
       firstName: enrollment.firstName,
       lastName: enrollment.lastName,
       email: enrollment.email,
-      participationStatus: enrollment.cloudShareParticipantId ? "inProgress" : "pending",
+      participationStatus: enrollment.participationStatus ?? "pending",
       firstJoined: enrollment.firstJoined,
-      envStatus: environment.value,
+      envStatus: enrollment.environmentStatus,
       environment,
       ...(enrollment.status === "needs_attention"
         ? { needsAttention: true, monitoringMessage: enrollment.attentionReason ?? NEEDS_ATTENTION_REASON }
@@ -823,7 +851,7 @@ function projectTrialMonitoringParticipant(
   const environment = projectLiveEnvironment(
     participant.envStatus,
     participant.environmentId,
-    enrollment.lastReconciledAt,
+    rosterObservedAt ?? enrollment.lastReconciledAt,
   );
   return {
     id: enrollment.id,
@@ -833,7 +861,7 @@ function projectTrialMonitoringParticipant(
     email: enrollment.email,
     participationStatus: participant.participationStatus,
     firstJoined: participant.firstJoined,
-    envStatus: environment.value,
+    envStatus: participant.envStatus,
     environment,
   };
 }
@@ -883,18 +911,12 @@ function projectLiveEnvironment(
 
 function liveMonitoringObservation(
   participants: readonly SalesParticipant[],
-  enrollments: readonly SalesTrialEnrollment[],
+  observedAt: Date,
 ): SalesTrialMonitoringObservation {
-  const latest = enrollments.reduce<Date | null>((current, enrollment) => {
-    if (!current || enrollment.lastReconciledAt > current) {
-      return enrollment.lastReconciledAt;
-    }
-    return current;
-  }, null);
   return {
     freshness: "live",
     source: "cloudshare_v4_sales_participant_roster",
-    ...(participants.length > 0 || latest ? { observedAt: latest?.toISOString() } : {}),
+    ...(participants.length > 0 ? { observedAt: observedAt.toISOString() } : {}),
   };
 }
 

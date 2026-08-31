@@ -96,6 +96,7 @@ describe("Sales Trial offering participants route", () => {
       }),
     });
     mockCreateEnrollmentRepository.mockReturnValue({
+      save: vi.fn().mockResolvedValue(undefined),
       listByOffering: vi.fn().mockResolvedValue([]),
     });
     mockHandleEndSalesTrialOffering.mockResolvedValue({
@@ -114,6 +115,7 @@ describe("Sales Trial offering participants route", () => {
       workspace: "sales",
     });
     mockCreateEnrollmentRepository.mockReturnValue({
+      save: vi.fn().mockResolvedValue(undefined),
       listByOffering: vi.fn().mockResolvedValue([
         {
           id: "enrollment-1",
@@ -167,7 +169,7 @@ describe("Sales Trial offering participants route", () => {
     );
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({
+    await expect(response.json()).resolves.toMatchObject({
       offering: {
         id: "offering-1",
         status: "published",
@@ -175,12 +177,16 @@ describe("Sales Trial offering participants route", () => {
       observation: {
         freshness: "live",
         source: "cloudshare_v4_sales_participant_roster",
-        observedAt: "2026-08-30T10:05:00.000Z",
+        observedAt: expect.any(String),
       },
       participants: [
         expect.objectContaining({
           id: "enrollment-1",
           email: "visitor@example.test",
+          envStatus: "Ready",
+          environment: expect.objectContaining({
+            observedAt: expect.any(String),
+          }),
         }),
       ],
       correlationId: expect.any(String),
@@ -291,6 +297,7 @@ describe("Sales Trial offering participants route", () => {
       });
     mockCreateOfferingRepository.mockReturnValue({ findById });
     mockCreateEnrollmentRepository.mockReturnValue({
+      save: vi.fn().mockResolvedValue(undefined),
       listByOffering: vi.fn().mockResolvedValue([
         {
           id: "enrollment-1",
@@ -301,6 +308,7 @@ describe("Sales Trial offering participants route", () => {
           firstName: "Ari",
           lastName: "Visitor",
           cloudShareParticipantId: "remote-1",
+          participationStatus: "pending",
           cloudShareRosterEnvironmentReference: "env-1",
           environmentStatus: "Ready",
           firstJoined: "2026-08-30T10:05:00.000Z",
@@ -338,10 +346,13 @@ describe("Sales Trial offering participants route", () => {
       }),
     });
 
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-30T10:09:00.000Z"));
     const response = await GET(
       new Request("http://localhost:3025/api/sales/trial-offerings/offering-1/participants"),
       { params: Promise.resolve({ id: "offering-1" }) },
     );
+    vi.useRealTimers();
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({

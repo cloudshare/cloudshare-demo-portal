@@ -160,6 +160,7 @@ model SalesTrialEnrollment {
   firstName                          String
   lastName                           String
   cloudShareParticipantId            String?
+  participationStatus                String
   cloudShareRosterEnvironmentReference String?
   environmentStatus                  String?
   firstJoined                        String?
