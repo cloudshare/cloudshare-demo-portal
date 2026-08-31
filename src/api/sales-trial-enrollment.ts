@@ -11,7 +11,10 @@ import {
   type SalesTrialEnrollment,
   type SalesTrialEnrollmentRepository,
 } from "@/domain/sales-trial-enrollment";
-import { isProjectableSalesParticipantRosterEnvironment } from "@/domain/sales-participant-environment";
+import {
+  isProjectableSalesParticipantRosterEnvironment,
+  projectSalesParticipantRosterEnvironment,
+} from "@/domain/sales-participant-environment";
 import type {
   SalesTrialOffering,
   SalesTrialOfferingRepository,
@@ -801,6 +804,7 @@ function projectTrialMonitoringParticipant(
   participant?: SalesParticipant,
 ): SalesTrialMonitoringParticipant {
   if (!participant) {
+    const environment = projectRetainedEnvironment(enrollment);
     return {
       id: enrollment.id,
       subject: { type: "sales_trial_enrollment", id: enrollment.id },
@@ -809,13 +813,18 @@ function projectTrialMonitoringParticipant(
       email: enrollment.email,
       participationStatus: enrollment.cloudShareParticipantId ? "inProgress" : "pending",
       firstJoined: enrollment.firstJoined,
-      envStatus: enrollment.environmentStatus,
-      environment: projectRetainedEnvironment(enrollment),
+      envStatus: environment.value,
+      environment,
       ...(enrollment.status === "needs_attention"
         ? { needsAttention: true, monitoringMessage: enrollment.attentionReason ?? NEEDS_ATTENTION_REASON }
         : {}),
     };
   }
+  const environment = projectLiveEnvironment(
+    participant.envStatus,
+    participant.environmentId,
+    enrollment.lastReconciledAt,
+  );
   return {
     id: enrollment.id,
     subject: { type: "sales_trial_enrollment", id: enrollment.id },
@@ -824,13 +833,8 @@ function projectTrialMonitoringParticipant(
     email: enrollment.email,
     participationStatus: participant.participationStatus,
     firstJoined: participant.firstJoined,
-    envStatus: participant.envStatus,
-    environment: {
-      dimension: "cloudshare_environment",
-      value: participant.envStatus ?? null,
-      source: participant.environmentId ? "cloudshare_v4_sales_participant_roster" : "not_assigned",
-      ...(participant.environmentId ? { observedAt: enrollment.lastReconciledAt.toISOString() } : {}),
-    },
+    envStatus: environment.value,
+    environment,
   };
 }
 
@@ -841,11 +845,33 @@ function projectRetainedEnvironment(
     enrollment.environmentStatus &&
     isProjectableSalesParticipantRosterEnvironment(enrollment.environmentStatus)
   ) {
+    const rosterEnvironment = projectSalesParticipantRosterEnvironment(enrollment.environmentStatus, enrollment.lastReconciledAt);
     return {
       dimension: "cloudshare_environment",
-      value: enrollment.environmentStatus,
+      value: rosterEnvironment.value,
       source: "certalis_sales_trial_enrollment_reconciliation",
       observedAt: enrollment.lastReconciledAt.toISOString(),
+    };
+  }
+  return {
+    dimension: "cloudshare_environment",
+    value: null,
+    source: "not_assigned",
+  };
+}
+
+function projectLiveEnvironment(
+  envStatus: SalesParticipant["envStatus"],
+  environmentId: SalesParticipant["environmentId"],
+  observedAt: Date,
+): SalesTrialMonitoringParticipant["environment"] {
+  if (environmentId && envStatus && isProjectableSalesParticipantRosterEnvironment(envStatus)) {
+    const rosterEnvironment = projectSalesParticipantRosterEnvironment(envStatus, observedAt);
+    return {
+      dimension: "cloudshare_environment",
+      value: rosterEnvironment.value,
+      source: "cloudshare_v4_sales_participant_roster",
+      observedAt: observedAt.toISOString(),
     };
   }
   return {
