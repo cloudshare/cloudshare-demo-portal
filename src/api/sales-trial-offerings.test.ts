@@ -2604,6 +2604,22 @@ describe("Sales Trial Offering API", () => {
     expect(createSession).toHaveBeenCalledTimes(1);
   });
 
+  it("does not trust forged OAuth-looking context on an untyped Error", async () => {
+    const repository = createOfferingRepository();
+    await savePublishDraft(repository, "offering-forged-oauth");
+    const forged = Object.assign(new Error("unknown failure"), {
+      context: { method: "POST", path: "/oauth/token", integrationSurface: "cloudshare.v4.oauth.token", responseStatus: 504 },
+    });
+    const result = await handlePublishSalesTrialOffering(createDeps(repository, {
+      deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSession: vi.fn().mockRejectedValue(forged) }) },
+    }), { customerId: "customer-1", actor: { type: "admin", id: "admin-1" }, id: "offering-forged-oauth" });
+
+    expect(result).toMatchObject({ status: 502, body: { needsAttention: true, offering: { status: "needs_attention" } } });
+    expect(await repository.findById("customer-1", "offering-forged-oauth")).toMatchObject({
+      status: "needs_attention", attentionReason: expect.stringContaining("creation outcome is unknown"),
+    });
+  });
+
   it("unpublishes immediately and defers CloudShare end to the latest active Environment expiry plus five minutes", async () => {
     const repository = createOfferingRepository();
     await repository.save({

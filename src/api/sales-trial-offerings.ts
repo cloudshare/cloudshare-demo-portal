@@ -1377,6 +1377,12 @@ function cloudShareErrorContext(error: unknown): Record<string, unknown> | undef
 }
 
 function isCloudShareOAuthTokenFailure(error: unknown): boolean {
+  if (!(error instanceof CloudShareAuthError) &&
+    !(error instanceof CloudShareRequestError) &&
+    !(error instanceof CloudShareTransportError) &&
+    !(error instanceof CloudShareResponseError)) {
+    return false;
+  }
   const context = cloudShareErrorContext(error);
   return context?.path === "/oauth/token" || context?.integrationSurface === "cloudshare.v4.oauth.token";
 }
