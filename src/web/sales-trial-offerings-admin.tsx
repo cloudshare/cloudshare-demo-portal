@@ -76,6 +76,14 @@ function formatMonitoringObservationSource(
   return null;
 }
 
+function formatMonitoringObservationFreshness(
+  freshness: SalesTrialMonitoringObservation["freshness"] | null | undefined,
+): string | null {
+  if (freshness === "live") return "live";
+  if (freshness === "stale") return "stale";
+  return null;
+}
+
 function formatMonitoringParticipationStatus(
   status: SalesTrialMonitoringParticipant["participationStatus"],
 ): string {
@@ -395,7 +403,17 @@ export function SalesTrialOfferingsAdmin({
                 {monitoringParticipants.map((participant) => <tr key={participant.id}>
                   <td style={{ padding: "0.45rem", borderBottom: "1px solid #eef2f7" }}><strong>{participant.firstName} {participant.lastName}</strong><br /><span>{participant.email}</span>{participant.needsAttention ? <><br /><small style={{ color: "#9a3412" }}>{participant.monitoringMessage}</small></> : null}</td>
                   <td style={{ padding: "0.45rem", borderBottom: "1px solid #eef2f7" }}>{participant.firstJoined ?? "—"}</td>
-                  <td style={{ padding: "0.45rem", borderBottom: "1px solid #eef2f7" }}>{formatMonitoringParticipationStatus(participant.participationStatus)}</td>
+                  <td style={{ padding: "0.45rem", borderBottom: "1px solid #eef2f7" }}>
+                    {formatMonitoringParticipationStatus(participant.participationStatus)}
+                    {formatMonitoringObservationSource(participant.observation?.source) && formatMonitoringObservationFreshness(participant.observation?.freshness) ? (
+                      <>
+                        <br />
+                        <small style={{ color: "#52606d" }}>
+                          {`Participant state from ${formatMonitoringObservationSource(participant.observation.source)} · ${formatMonitoringObservationFreshness(participant.observation.freshness)}${participant.observation.observedAt ? ` · ${participant.observation.observedAt}` : ""}`}
+                        </small>
+                      </>
+                    ) : null}
+                  </td>
                   <td style={{ padding: "0.45rem", borderBottom: "1px solid #eef2f7" }}>{participant.environment.value ?? participant.envStatus ?? "Not assigned"}</td>
                 </tr>)}
               </tbody>

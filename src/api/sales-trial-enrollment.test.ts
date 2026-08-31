@@ -1498,6 +1498,11 @@ describe("Sales Trial offering monitoring", () => {
           lastName: "Visitor",
           email: "visitor@example.test",
           participationStatus: "inProgress",
+          observation: {
+            freshness: "live",
+            source: "cloudshare_v4_sales_participant_roster",
+            observedAt: "2026-08-30T10:09:00.000Z",
+          },
           firstJoined: "2026-08-30T10:05:00.000Z",
           envStatus: "FutureAllocationScheduled",
           environment: {
@@ -1601,6 +1606,115 @@ describe("Sales Trial offering monitoring", () => {
           expect.objectContaining({
             id: "enrollment-1",
             subject: { type: "sales_trial_enrollment", id: "enrollment-1" },
+          }),
+        ],
+      },
+    });
+  });
+
+  it("marks unmatched retained rows as locally reconciled history when a live roster read returns only a partial match", async () => {
+    const { deps, enrollments, listParticipants } = createDeps();
+    await enrollments.save({
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: "remote-1",
+      participationStatus: "inProgress",
+      cloudShareRosterEnvironmentReference: "env-1",
+      environmentStatus: "Ready",
+      firstJoined: "2026-08-30T10:05:00.000Z",
+      status: "active",
+      attentionReason: null,
+      lastLaunchedAt: new Date("2026-08-30T10:06:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T10:06:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:06:00.000Z"),
+    });
+    await enrollments.save({
+      id: "enrollment-2",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-2",
+      email: "second@example.test",
+      firstName: "Bea",
+      lastName: "Retained",
+      cloudShareParticipantId: "remote-2",
+      participationStatus: "concluded",
+      cloudShareRosterEnvironmentReference: "env-2",
+      environmentStatus: "Suspended",
+      firstJoined: "2026-08-30T10:01:00.000Z",
+      status: "active",
+      attentionReason: null,
+      lastLaunchedAt: new Date("2026-08-30T10:02:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T10:07:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:07:00.000Z"),
+    });
+    listParticipants.mockResolvedValue({
+      participants: [
+        {
+          id: "remote-1",
+          firstName: "Ari",
+          lastName: "Visitor",
+          email: "visitor@example.test",
+          invitationStatus: "notSent",
+          invitedBy: null,
+          participationStatus: "inProgress",
+          firstJoined: "2026-08-30T10:05:00.000Z",
+          environmentId: "env-1",
+          envStatus: "Ready",
+          customProperties: {
+            certalisSalesTrialEnrollmentId: "enrollment-1",
+            certalisSalesTrialParticipantUserId: "trial-user-1",
+          },
+        },
+      ],
+      request: { method: "GET", path: "/sales/sales-1/participants" },
+      response: { status: 200, body: { participants: [{ id: "remote-1" }] } },
+    });
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-30T10:09:00.000Z"));
+    const result = await handleListSalesTrialOfferingParticipants(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+    });
+    vi.useRealTimers();
+
+    expect(result).toMatchObject({
+      status: 200,
+      body: {
+        observation: {
+          freshness: "live",
+          source: "cloudshare_v4_sales_participant_roster",
+          observedAt: "2026-08-30T10:09:00.000Z",
+        },
+        participants: [
+          expect.objectContaining({
+            id: "enrollment-1",
+            observation: {
+              freshness: "live",
+              source: "cloudshare_v4_sales_participant_roster",
+              observedAt: "2026-08-30T10:09:00.000Z",
+            },
+          }),
+          expect.objectContaining({
+            id: "enrollment-2",
+            participationStatus: "concluded",
+            observation: {
+              freshness: "stale",
+              source: "certalis_sales_trial_enrollment_reconciliation",
+              observedAt: "2026-08-30T10:07:00.000Z",
+            },
+            environment: expect.objectContaining({
+              source: "certalis_sales_trial_enrollment_reconciliation",
+              observedAt: "2026-08-30T10:07:00.000Z",
+            }),
           }),
         ],
       },
@@ -1821,6 +1935,11 @@ describe("Sales Trial offering monitoring", () => {
             lastName: "Visitor",
             email: "visitor@example.test",
             participationStatus: "concluded",
+            observation: {
+              freshness: "stale",
+              source: "certalis_sales_trial_enrollment_reconciliation",
+              observedAt: "2026-08-30T10:07:00.000Z",
+            },
             firstJoined: "2026-08-30T10:05:00.000Z",
             envStatus: "CreationFailed",
             environment: {
@@ -2042,6 +2161,11 @@ describe("Sales Trial offering monitoring", () => {
             lastName: "Visitor",
             email: "visitor@example.test",
             participationStatus: "concluded",
+            observation: {
+              freshness: "stale",
+              source: "certalis_sales_trial_enrollment_reconciliation",
+              observedAt: "2026-08-30T10:07:00.000Z",
+            },
             firstJoined: "2026-08-30T10:05:00.000Z",
             envStatus: "CreationFailed",
             environment: {
@@ -2058,7 +2182,27 @@ describe("Sales Trial offering monitoring", () => {
   });
 
   it("records the current live roster read time even when the provider roster is empty", async () => {
-    const { deps, listParticipants } = createDeps();
+    const { deps, listParticipants, enrollments } = createDeps();
+    await enrollments.save({
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: "remote-1",
+      participationStatus: "concluded",
+      cloudShareRosterEnvironmentReference: "env-1",
+      environmentStatus: "CreationFailed",
+      firstJoined: "2026-08-30T10:05:00.000Z",
+      status: "active",
+      attentionReason: null,
+      lastLaunchedAt: new Date("2026-08-30T10:06:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T10:07:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:07:00.000Z"),
+    });
     listParticipants.mockResolvedValue({
       participants: [],
       request: { method: "GET", path: "/sales/sales-1/participants" },
@@ -2082,7 +2226,16 @@ describe("Sales Trial offering monitoring", () => {
           source: "cloudshare_v4_sales_participant_roster",
           observedAt: "2026-08-30T10:11:00.000Z",
         },
-        participants: [],
+        participants: [
+          expect.objectContaining({
+            id: "enrollment-1",
+            observation: {
+              freshness: "stale",
+              source: "certalis_sales_trial_enrollment_reconciliation",
+              observedAt: "2026-08-30T10:07:00.000Z",
+            },
+          }),
+        ],
       },
     });
   });

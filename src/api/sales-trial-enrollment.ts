@@ -118,6 +118,7 @@ export interface SalesTrialMonitoringParticipant {
   readonly lastName: string;
   readonly email: string;
   readonly participationStatus: "pending" | "inProgress" | "concluded";
+  readonly observation: SalesTrialMonitoringObservation;
   readonly firstJoined: string | null;
   readonly envStatus: string | null;
   readonly environment: {
@@ -848,6 +849,11 @@ function projectTrialMonitoringParticipant(
       lastName: enrollment.lastName,
       email: enrollment.email,
       participationStatus: enrollment.participationStatus ?? "pending",
+      observation: {
+        freshness: "stale",
+        source: "certalis_sales_trial_enrollment_reconciliation",
+        observedAt: enrollment.lastReconciledAt.toISOString(),
+      },
       firstJoined: enrollment.firstJoined,
       envStatus: enrollment.environmentStatus,
       environment,
@@ -868,6 +874,11 @@ function projectTrialMonitoringParticipant(
     lastName: enrollment.lastName,
     email: enrollment.email,
     participationStatus: participant.participationStatus,
+    observation: {
+      freshness: "live",
+      source: "cloudshare_v4_sales_participant_roster",
+      observedAt: (rosterObservedAt ?? enrollment.lastReconciledAt).toISOString(),
+    },
     firstJoined: participant.firstJoined,
     envStatus: participant.envStatus,
     environment,
