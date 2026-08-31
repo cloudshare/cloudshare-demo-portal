@@ -203,6 +203,8 @@ function SalesTrialOfferingCard({
   const windowLabel = offering.end
     ? `${offering.start} to ${offering.end} (${offering.timeZone})`
     : `${offering.start} onward (${offering.timeZone})`;
+  const frontFaceTabIndex = showDetails ? -1 : 0;
+  const backFaceTabIndex = showDetails ? 0 : -1;
 
   return (
     <article
@@ -235,11 +237,11 @@ function SalesTrialOfferingCard({
                 <span style={summaryEyebrowStyle}>Trial window</span>
                 <strong style={summaryValueStyle}>{windowLabel}</strong>
               </div>
-              <button type="button" onClick={onLaunch} style={primaryButtonStyle}>
+              <button type="button" tabIndex={frontFaceTabIndex} onClick={onLaunch} style={primaryButtonStyle}>
                 {active ? "Focus trial window" : "Open trial window"}
               </button>
               <div style={cardFooterStyle}>
-                <button type="button" onClick={() => setShowDetails(true)} style={cardSecondaryButtonStyle}>
+                <button type="button" tabIndex={frontFaceTabIndex} onClick={() => setShowDetails(true)} style={cardSecondaryButtonStyle}>
                   Trial details
                 </button>
               </div>
@@ -272,11 +274,11 @@ function SalesTrialOfferingCard({
                   </span>
                 </div>
               </div>
-              <button type="button" onClick={onLaunch} style={primaryButtonStyle}>
+              <button type="button" tabIndex={backFaceTabIndex} onClick={onLaunch} style={primaryButtonStyle}>
                 {active ? "Focus trial window" : "Open trial window"}
               </button>
               <div style={cardFooterStyle}>
-                <button type="button" onClick={() => setShowDetails(false)} style={cardSecondaryButtonStyle}>
+                <button type="button" tabIndex={backFaceTabIndex} onClick={() => setShowDetails(false)} style={cardSecondaryButtonStyle}>
                   Back to trial
                 </button>
               </div>

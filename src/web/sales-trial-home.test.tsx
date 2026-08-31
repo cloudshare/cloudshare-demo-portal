@@ -122,6 +122,46 @@ describe("Sales Trial participant home", () => {
     expect(openTrialWindow).toHaveBeenCalledWith("offering-1");
   });
 
+  it("removes the hidden card face from keyboard tab order while the opposite face is active", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <SalesTrialHome
+        email="visitor@example.test"
+        firstName="Ari"
+        initialOfferings={[
+          {
+            id: "offering-1",
+            title: "Helios Trial",
+            description: "Shared trial",
+            start: "2026-08-30T09:00",
+            end: "2026-08-30T17:00",
+            timeZone: "UTC",
+          },
+        ]}
+      />,
+    );
+
+    const openButton = screen.getByRole("button", { name: "Open trial window" });
+    const detailsButton = screen.getByRole("button", { name: "Trial details" });
+    const hiddenBackButton = screen.getByRole("button", { name: "Back to trial", hidden: true });
+    const hiddenBackLaunchButton = screen.getAllByRole("button", { name: "Open trial window", hidden: true })[1];
+
+    expect(detailsButton.getAttribute("tabindex")).toBe("0");
+    expect(hiddenBackButton.getAttribute("tabindex")).toBe("-1");
+    expect(hiddenBackLaunchButton.getAttribute("tabindex")).toBe("-1");
+
+    await user.click(detailsButton);
+
+    const frontLaunchButton = screen.getAllByRole("button", { name: "Open trial window", hidden: true })[0];
+    const backButton = screen.getByRole("button", { name: "Back to trial" });
+
+    expect(frontLaunchButton.getAttribute("tabindex")).toBe("-1");
+    expect(screen.getByRole("button", { name: "Open trial window" }).getAttribute("tabindex")).toBe("0");
+    expect(backButton.getAttribute("tabindex")).toBe("0");
+    expect(openButton.getAttribute("tabindex")).toBe("-1");
+  });
+
   it("shows a blocked-entry alert from the child window handoff without exposing provider data", async () => {
     const user = userEvent.setup();
     const openTrialWindow = vi.fn().mockReturnValue({ reused: false });
