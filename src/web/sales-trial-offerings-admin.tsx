@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { isAdminSessionExpiredError } from "./admin-authenticated-request";
 import { disabledButtonStyle, primaryButtonStyle, secondaryButtonStyle } from "./button-styles";
 import { alertPanelStyle, cardStyle, mutedPanelStyle } from "./card-styles";
 import { colors } from "./design-tokens";
@@ -208,29 +209,35 @@ export function SalesTrialOfferingsAdmin({
   async function lifecycle(id: string, action: "publish" | "end") {
     setMessage(null);
     setMessageCorrelationId(null);
-    const response = await fetchAdmin(`/api/sales/trial-offerings/${encodeURIComponent(id)}/${action}`, {
-      method: "POST",
-    });
-    const body = (await response.json()) as { error?: string; correlationId?: string; offering?: Offering };
-    if (!response.ok) {
-      const returnedOffering = body.offering;
-      if (returnedOffering) {
-        setOfferings((current) => current.map((offering) => offering.id === returnedOffering.id ? returnedOffering : offering));
-        setLatestSupportByOfferingId((current) => ({
-          ...current,
-          [returnedOffering.id]: body.correlationId ?? current[returnedOffering.id] ?? null,
-        }));
+    try {
+      const response = await fetchAdmin(`/api/sales/trial-offerings/${encodeURIComponent(id)}/${action}`, {
+        method: "POST",
+      });
+      const body = (await response.json()) as { error?: string; correlationId?: string; offering?: Offering };
+      if (!response.ok) {
+        const returnedOffering = body.offering;
+        if (returnedOffering) {
+          setOfferings((current) => current.map((offering) => offering.id === returnedOffering.id ? returnedOffering : offering));
+          setLatestSupportByOfferingId((current) => ({
+            ...current,
+            [returnedOffering.id]: body.correlationId ?? current[returnedOffering.id] ?? null,
+          }));
+        }
+        const duplicatePersistedWarning = returnedOffering?.attentionReason === (body.error ?? null);
+        setMessageTone("error");
+        setMessage(duplicatePersistedWarning ? null : body.error ?? `Could not ${action} Trial Offering.`);
+        setMessageCorrelationId(duplicatePersistedWarning ? null : body.correlationId ?? null);
+        return;
       }
-      const duplicatePersistedWarning = returnedOffering?.attentionReason === (body.error ?? null);
+      await loadOfferings();
+      setMessageTone("success");
+      setMessage(action === "publish" ? "Trial Offering published." : "Trial Offering ended.");
+      setMessageCorrelationId(null);
+    } catch (error) {
+      if (isAdminSessionExpiredError(error)) return;
       setMessageTone("error");
-      setMessage(duplicatePersistedWarning ? null : body.error ?? `Could not ${action} Trial Offering.`);
-      setMessageCorrelationId(duplicatePersistedWarning ? null : body.correlationId ?? null);
-      return;
+      setMessage(error instanceof Error ? error.message : `Could not ${action} Trial Offering.`);
     }
-    await loadOfferings();
-    setMessageTone("success");
-    setMessage(action === "publish" ? "Trial Offering published." : "Trial Offering ended.");
-    setMessageCorrelationId(null);
   }
 
   function openSupport(intent: Omit<NavigationIntent, "tab">) {
@@ -293,10 +300,10 @@ export function SalesTrialOfferingsAdmin({
           <label style={{ display: "grid", gap: "0.35rem" }}>Title<input name="title" style={controlStyle} value={form.title} onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))} /></label>
           <label style={{ display: "grid", gap: "0.35rem" }}>Description<textarea name="description" style={{ ...controlStyle, minHeight: "5.5rem", resize: "vertical" as const }} rows={4} value={form.description} onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))} /></label>
           <label style={{ display: "grid", gap: "0.35rem" }}>Item<select name="itemId" style={controlStyle} value={form.itemId} onChange={(event) => setForm((current) => ({ ...current, itemId: event.target.value }))}><option value="">Select an Item</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(12rem, 1fr))", gap: "0.9rem" }}>
-            <label style={{ display: "grid", gap: "0.35rem" }}>Start<input name="start" style={controlStyle} type="datetime-local" value={form.start} onInput={(event) => syncDateTimeField("start", event.currentTarget.value)} onChange={(event) => syncDateTimeField("start", event.target.value)} /></label>
+          <div aria-label="Trial window settings" style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: "0.9rem", alignItems: "start" }}>
+            <label style={{ display: "grid", gap: "0.35rem", alignContent: "start" }}>Start<input name="start" style={controlStyle} type="datetime-local" value={form.start} onInput={(event) => syncDateTimeField("start", event.currentTarget.value)} onChange={(event) => syncDateTimeField("start", event.target.value)} /></label>
             <div style={{ display: "grid", gap: "0.55rem", alignContent: "start" }}>
-              <label style={{ display: "grid", gap: "0.35rem" }}>End<input aria-label="End" name="end" style={form.noEndDate ? { ...controlStyle, ...disabledControlStyle } : controlStyle} type="datetime-local" value={form.end} disabled={form.noEndDate} onInput={(event) => syncDateTimeField("end", event.currentTarget.value)} onChange={(event) => syncDateTimeField("end", event.target.value)} /></label>
+              <label style={{ display: "grid", gap: "0.35rem", alignContent: "start" }}>End<input aria-label="End" name="end" style={form.noEndDate ? { ...controlStyle, ...disabledControlStyle } : controlStyle} type="datetime-local" value={form.end} disabled={form.noEndDate} onInput={(event) => syncDateTimeField("end", event.currentTarget.value)} onChange={(event) => syncDateTimeField("end", event.target.value)} /></label>
               <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", minHeight: "2.5rem" }}>
                 <input
                   aria-label="No end date"
@@ -313,8 +320,8 @@ export function SalesTrialOfferingsAdmin({
                 No end date
               </label>
             </div>
-            <label style={{ display: "grid", gap: "0.35rem" }}>Time zone<input name="timeZone" style={controlStyle} list="trial-offering-timezones" value={form.timeZone} onChange={(event) => setForm((current) => ({ ...current, timeZone: event.target.value }))} /><datalist id="trial-offering-timezones">{timezones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}</datalist></label>
-            <label style={{ display: "grid", gap: "0.35rem" }}>Sales Pro<select name="salesProEmail" style={controlStyle} value={form.salesProEmail} onChange={(event) => setForm((current) => ({ ...current, salesProEmail: event.target.value }))}><option value="">Select an active Project member</option>{members.map((member) => <option key={member.email} value={member.email}>{member.displayName} ({member.email})</option>)}</select></label>
+            <label style={{ display: "grid", gap: "0.35rem", alignContent: "start" }}>Time zone<input name="timeZone" style={controlStyle} list="trial-offering-timezones" value={form.timeZone} onChange={(event) => setForm((current) => ({ ...current, timeZone: event.target.value }))} /><datalist id="trial-offering-timezones">{timezones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}</datalist></label>
+            <label style={{ display: "grid", gap: "0.35rem", alignContent: "start" }}>Sales Pro<select name="salesProEmail" style={controlStyle} value={form.salesProEmail} onChange={(event) => setForm((current) => ({ ...current, salesProEmail: event.target.value }))}><option value="">Select an active Project member</option>{members.map((member) => <option key={member.email} value={member.email}>{member.displayName} ({member.email})</option>)}</select></label>
           </div>
           <button type="submit" style={primaryButtonStyle}>Save draft</button>
         </form>

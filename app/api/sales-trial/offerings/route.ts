@@ -5,6 +5,7 @@ import { getPortalSession } from "@/auth/portal-session";
 import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { handleListPublishedSalesTrialOfferings } from "@/api/sales-trial-offerings";
 import { createPrismaSalesTrialOfferingRepository } from "@/persistence/prisma-sales-trial-offering-repository";
+import { createPrismaSalesTrialEnrollmentRepository } from "@/persistence/prisma-sales-trial-enrollment-repository";
 
 export async function GET() {
   const services = getServices();
@@ -20,8 +21,11 @@ export async function GET() {
     );
   }
   const result = await handleListPublishedSalesTrialOfferings(
-    { offerings: createPrismaSalesTrialOfferingRepository(services.prisma) },
-    { customerId: session.customerId },
+    {
+      offerings: createPrismaSalesTrialOfferingRepository(services.prisma),
+      enrollments: createPrismaSalesTrialEnrollmentRepository(services.prisma),
+    },
+    { customerId: session.customerId, portalUserId: session.userId },
   );
   return NextResponse.json(result.body, {
     status: result.status,

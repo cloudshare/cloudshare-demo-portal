@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import userEvent from "@testing-library/user-event";
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { AdminSessionExpiredError } from "./admin-authenticated-request";
 import { SalesTrialOfferingsAdmin } from "./sales-trial-offerings-admin";
 
 function json(body: unknown, init?: ResponseInit) {
@@ -415,5 +416,43 @@ describe("Sales Trial Offerings admin monitoring", () => {
     });
     expect(confirmSpy).toHaveBeenCalled();
     expect((await screen.findByRole("status")).textContent).toContain("Trial Offering ended.");
+  });
+
+  it("keeps all four Trial window controls aligned in one desktop row with No end date inside End", async () => {
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/sales/items") return json({ activeItems: [] });
+      if (url === "/api/sales/timezones") return json({ timezones: [] });
+      if (url === "/api/sales/trial-offerings") return json({ offerings: [] });
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    render(<SalesTrialOfferingsAdmin email="sales-admin@certalis.demo" fetchAdmin={fetchAdmin as typeof fetch} />);
+
+    const settings = await screen.findByLabelText("Trial window settings");
+    expect(settings.getAttribute("style")).toContain("grid-template-columns: repeat(4, minmax(0, 1fr))");
+    expect(screen.getByLabelText("No end date").closest("label")?.parentElement?.textContent).toContain("End");
+    const controls = ["Start", "End", "Time zone", "Sales Pro"].map((name) => screen.getByLabelText(name).closest("label"));
+    expect(controls.every((control) => control?.getAttribute("style")?.includes("align-content: start"))).toBe(true);
+  });
+
+  it("silently yields to the shared logout redirect when End trial observes an expired admin session", async () => {
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/sales/items") return json({ activeItems: [] });
+      if (url === "/api/sales/timezones") return json({ timezones: [] });
+      if (url === "/api/sales/trial-offerings") return json({ offerings: [{
+        id: "offering-1", title: "Helios Trial", description: "Shared trial", itemId: "item-1",
+        start: "2026-08-30T09:00", end: null, timeZone: "UTC", salesProEmail: "owner@example.test",
+        salesProDisplayName: "Owner", status: "published", attentionReason: null,
+      }] });
+      if (url === "/api/sales/trial-offerings/offering-1/end" && init?.method === "POST") throw new AdminSessionExpiredError();
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<SalesTrialOfferingsAdmin email="sales-admin@certalis.demo" fetchAdmin={fetchAdmin as typeof fetch} />);
+    const user = userEvent.setup();
+
+    await expect(user.click(await screen.findByRole("button", { name: "End trial" }))).resolves.toBeUndefined();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 });

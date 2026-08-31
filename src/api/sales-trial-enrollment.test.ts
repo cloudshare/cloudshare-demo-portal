@@ -83,6 +83,11 @@ function createEnrollmentRepository(): SalesTrialEnrollmentRepository {
           row.customerId === customerId && row.salesTrialOfferingId === salesTrialOfferingId,
       );
     },
+    async listByPortalUser(customerId, portalUserId) {
+      return [...rows.values()].filter(
+        (row) => row.customerId === customerId && row.portalUserId === portalUserId,
+      );
+    },
   };
 }
 
@@ -183,6 +188,41 @@ const request = {
 };
 
 describe("Sales Trial offering entry", () => {
+  it("reopens an ended Trial Offering for the participant who already launched its environment", async () => {
+    const { deps, enrollments, listParticipants, createSponsoredLink } = createDeps({
+      offerings: { findById: vi.fn().mockResolvedValue(createOffering({ status: "unpublished", end: "2026-08-30T10:02" })) },
+    });
+    const launchedAt = new Date("2026-08-30T09:30:00.000Z");
+    await enrollments.save({
+      id: "enrollment-1", customerId: "customer-1", salesTrialOfferingId: "offering-1", portalUserId: "trial-user-1",
+      email: "visitor@example.test", firstName: "Ari", lastName: "Visitor", cloudShareParticipantId: "remote-1",
+      cloudShareRosterEnvironmentReference: "env-1", environmentStatus: "Ready", firstJoined: "2026-08-30T09:31:00.000Z",
+      status: "active", attentionReason: null, lastLaunchedAt: launchedAt, lastReconciledAt: launchedAt,
+      createdAt: launchedAt, updatedAt: launchedAt,
+    });
+    (deps.deliveryFactory!.forConnection as ReturnType<typeof vi.fn>).mockReturnValue({
+      readSession: vi.fn().mockResolvedValue({
+        id: "sales-1", status: "ended", end: "2026-08-30T10:02",
+        request: { method: "GET", path: "/sales/sales-1" }, response: { status: 200, body: { id: "sales-1", status: "ended" } },
+      }),
+      ensureParticipantCorrelationProperties: vi.fn().mockResolvedValue({
+        requiredKeys: ["certalisSalesTrialEnrollmentId", "certalisSalesTrialParticipantUserId"],
+        availableKeys: ["certalisSalesTrialEnrollmentId", "certalisSalesTrialParticipantUserId"], requests: [], responses: [],
+        request: { method: "GET", path: "/sales/sales-1/users/properties" }, response: { status: 200, body: [] },
+      }),
+      listParticipants: listParticipants.mockResolvedValue({
+        participants: [{ id: "remote-1", email: "visitor@example.test", firstName: "Ari", lastName: "Visitor", participationStatus: "inProgress", firstJoined: "2026-08-30T09:31:00.000Z", envStatus: "Ready", environmentId: "env-1", customProperties: { certalisSalesTrialEnrollmentId: "enrollment-1", certalisSalesTrialParticipantUserId: "trial-user-1" } }],
+        request: { method: "GET", path: "/sales/sales-1/participants" }, response: { status: 200, body: {} },
+      }),
+      registerParticipants: vi.fn(), updateParticipantCorrelation: vi.fn(), createSponsoredLink,
+    });
+
+    const result = await handleEnterSalesTrialOffering(deps, request);
+
+    expect(result).toMatchObject({ status: 302, redirect: "https://use.cloudshare.com/secret" });
+    expect(createSponsoredLink).toHaveBeenCalledOnce();
+  });
+
   it("fails closed before enrollment mutation when CloudShare reports the offering ended", async () => {
     const { deps, enrollments, diagnosticRepository, audit, readSession, registerParticipants, createSponsoredLink } =
       createDeps();

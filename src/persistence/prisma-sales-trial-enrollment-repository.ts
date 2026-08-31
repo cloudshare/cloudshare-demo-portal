@@ -79,6 +79,14 @@ export function createPrismaSalesTrialEnrollmentRepository(
         })
       ).map(hydrate);
     },
+    async listByPortalUser(customerId, portalUserId) {
+      return (
+        await prisma.salesTrialEnrollment.findMany({
+          where: { customerId, portalUserId },
+          orderBy: { createdAt: "asc" },
+        })
+      ).map(hydrate);
+    },
   };
 }
 

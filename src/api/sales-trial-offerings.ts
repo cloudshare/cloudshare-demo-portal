@@ -15,6 +15,7 @@ import type {
   SalesTrialOffering,
   SalesTrialOfferingRepository,
 } from "@/domain/sales-trial-offering";
+import type { SalesTrialEnrollmentRepository } from "@/domain/sales-trial-enrollment";
 import type { SalesTimezoneCacheRepository } from "@/domain/sales-timezones";
 import {
   SalesItemProvisioningReadError,
@@ -202,14 +203,33 @@ export async function handleListSalesTrialOfferings(
 }
 
 export async function handleListPublishedSalesTrialOfferings(
-  deps: Pick<SalesTrialOfferingsDeps, "offerings" | "now">,
-  request: SalesTrialOfferingReadRequest,
+  deps: Pick<SalesTrialOfferingsDeps, "offerings" | "now"> & {
+    readonly enrollments?: Pick<SalesTrialEnrollmentRepository, "listByPortalUser">;
+  },
+  request: SalesTrialOfferingReadRequest & { readonly portalUserId?: string },
 ) {
-  const offerings = await deps.offerings.listPublishedByCustomerId(request.customerId);
+  const published = await deps.offerings.listPublishedByCustomerId(request.customerId);
   const now = (deps.now ?? (() => new Date()))();
+  const launchedEnrollments = request.portalUserId && deps.enrollments?.listByPortalUser
+    ? await deps.enrollments.listByPortalUser(request.customerId, request.portalUserId)
+    : [];
+  const continuedOfferingIds = new Set(
+    launchedEnrollments
+      .filter((enrollment) => enrollment.status === "active" && enrollment.lastLaunchedAt !== null)
+      .map((enrollment) => enrollment.salesTrialOfferingId),
+  );
+  const continued = continuedOfferingIds.size === 0
+    ? []
+    : (await deps.offerings.listByCustomerId(request.customerId)).filter(
+        (offering) => offering.status === "unpublished" && continuedOfferingIds.has(offering.id),
+      );
+  const accessible = new Map<string, SalesTrialOffering>();
+  for (const offering of published.filter((candidate) => isOfferingActive(candidate, now))) {
+    accessible.set(offering.id, offering);
+  }
+  for (const offering of continued) accessible.set(offering.id, offering);
   return response(200, {
-    offerings: offerings
-      .filter((offering) => isOfferingActive(offering, now))
+    offerings: [...accessible.values()]
       .sort((left, right) => left.start.localeCompare(right.start))
       .map(toParticipantOffering),
   });

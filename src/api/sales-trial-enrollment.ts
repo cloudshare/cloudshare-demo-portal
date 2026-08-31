@@ -113,11 +113,26 @@ export async function handleEnterSalesTrialOffering(
   const correlationId = randomUUID();
   const now = (deps.now ?? (() => new Date()))();
   const offering = await deps.offerings.findById(request.customerId, request.offeringId);
+  const existingEnrollment = offering
+    ? await deps.enrollments.findByOfferingAndPortalUser(
+        request.customerId,
+        request.offeringId,
+        request.participant.userId,
+      )
+    : null;
+  const isContinuedAccess =
+    offering?.status === "unpublished" &&
+    existingEnrollment?.status === "active" &&
+    existingEnrollment.lastLaunchedAt !== null &&
+    existingEnrollment.cloudShareParticipantId !== null;
   if (
     !offering ||
-    offering.status !== "published" ||
     !offering.cloudShareSalesExperienceId ||
-    !isOfferingOpen(offering.start, offering.end, offering.timeZone, now)
+    !(
+      (offering.status === "published" &&
+        isOfferingOpen(offering.start, offering.end, offering.timeZone, now)) ||
+      isContinuedAccess
+    )
   ) {
     return denied(deps, request, correlationId, "launch_unavailable");
   }
@@ -131,7 +146,7 @@ export async function handleEnterSalesTrialOffering(
     createCloudShareSalesDelivery(deps.cloudshare!.forConnection(connection));
   try {
     const session = await delivery.readSession(offering.cloudShareSalesExperienceId);
-    if (!isLaunchableProviderSession(offering, session)) {
+    if (!isLaunchableProviderSession(offering, session, isContinuedAccess)) {
       return denied(
         deps,
         request,
@@ -151,16 +166,13 @@ export async function handleEnterSalesTrialOffering(
       error,
     );
   }
-  const reservation =
-    (await deps.enrollments.reserveForLaunch?.(
-      createEnrollment(request, (deps.newId ?? randomUUID)(), now),
-    )) ?? {
+  const reservation = isContinuedAccess
+    ? { enrollment: existingEnrollment!, created: false, reclaimed: false }
+    : (await deps.enrollments.reserveForLaunch?.(
+        createEnrollment(request, (deps.newId ?? randomUUID)(), now),
+      )) ?? {
       enrollment:
-        (await deps.enrollments.findByOfferingAndPortalUser(
-          request.customerId,
-          request.offeringId,
-          request.participant.userId,
-        )) ?? createEnrollment(request, (deps.newId ?? randomUUID)(), now),
+        existingEnrollment ?? createEnrollment(request, (deps.newId ?? randomUUID)(), now),
       created: false,
       reclaimed: false,
     };
@@ -580,8 +592,12 @@ function classifyAttentionReason(error: unknown): string | null {
 function isLaunchableProviderSession(
   offering: Pick<SalesTrialOffering, "end">,
   session: { readonly status: "notStarted" | "inProgress" | "ended"; readonly end?: string | null },
+  continuedAccess = false,
 ): boolean {
-  return session.status === "inProgress" && (session.end ?? null) === offering.end;
+  return (
+    (session.status === "inProgress" || (continuedAccess && session.status === "ended")) &&
+    (session.end ?? null) === offering.end
+  );
 }
 
 function unavailableOffering(

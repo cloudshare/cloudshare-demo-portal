@@ -42,4 +42,8 @@ export interface SalesTrialEnrollmentRepository {
     customerId: string,
     salesTrialOfferingId: string,
   ): Promise<readonly SalesTrialEnrollment[]>;
+  listByPortalUser(
+    customerId: string,
+    portalUserId: string,
+  ): Promise<readonly SalesTrialEnrollment[]>;
 }

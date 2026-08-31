@@ -6,12 +6,14 @@ const {
   mockGetServices,
   mockGetPortalSession,
   mockCreateOfferingRepository,
+  mockCreateEnrollmentRepository,
   mockHandleListPublishedSalesTrialOfferings,
 } = vi.hoisted(() => ({
   mockCookies: vi.fn(),
   mockGetServices: vi.fn(),
   mockGetPortalSession: vi.fn(),
   mockCreateOfferingRepository: vi.fn(),
+  mockCreateEnrollmentRepository: vi.fn(),
   mockHandleListPublishedSalesTrialOfferings: vi.fn(),
 }));
 
@@ -29,6 +31,10 @@ vi.mock("@/auth/portal-session", () => ({
 
 vi.mock("@/persistence/prisma-sales-trial-offering-repository", () => ({
   createPrismaSalesTrialOfferingRepository: mockCreateOfferingRepository,
+}));
+
+vi.mock("@/persistence/prisma-sales-trial-enrollment-repository", () => ({
+  createPrismaSalesTrialEnrollmentRepository: mockCreateEnrollmentRepository,
 }));
 
 vi.mock("@/api/sales-trial-offerings", () => ({
@@ -91,6 +97,7 @@ describe("sales trial offerings route", () => {
       prisma: {},
     });
     mockCreateOfferingRepository.mockReturnValue({ repository: "offerings" });
+    mockCreateEnrollmentRepository.mockReturnValue({ repository: "enrollments" });
   });
 
   it("returns uncached unauthorized responses", async () => {
@@ -133,8 +140,11 @@ describe("sales trial offerings route", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(mockHandleListPublishedSalesTrialOfferings).toHaveBeenCalledWith(
-      { offerings: { repository: "offerings" } },
-      { customerId: "customer-certalis" },
+      {
+        offerings: { repository: "offerings" },
+        enrollments: { repository: "enrollments" },
+      },
+      { customerId: "customer-certalis", portalUserId: "trial-user-1" },
     );
     await expect(response.json()).resolves.toEqual({
       offerings: [

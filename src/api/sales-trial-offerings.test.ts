@@ -530,6 +530,33 @@ describe("Sales Trial Offering API", () => {
     });
   });
 
+  it("keeps an ended offering visible only to a participant who previously launched it", async () => {
+    const repository = createOfferingRepository();
+    await repository.save({
+      id: "offering-ended", customerId: "customer-1", title: "Continued Trial", description: "Already launched",
+      itemId: "item-1", cloudShareSalesExperienceId: "sales-ended", externalId: "opaque-ended",
+      start: "2026-08-28T09:00", end: "2026-08-29T12:32", timeZone: "UTC",
+      salesProEmail: "owner@example.test", salesProDisplayName: "Owner", status: "unpublished",
+      createdAt: new Date("2026-08-28T08:00:00Z"), updatedAt: new Date("2026-08-29T12:30:00Z"),
+      publishedAt: new Date("2026-08-28T08:30:00Z"), unpublishedAt: new Date("2026-08-29T12:30:00Z"), attentionReason: null,
+    });
+    const enrollments = {
+      listByPortalUser: vi.fn().mockResolvedValue([
+        { salesTrialOfferingId: "offering-ended", lastLaunchedAt: new Date("2026-08-29T10:00:00Z"), status: "active" },
+      ]),
+    };
+
+    const result = await handleListPublishedSalesTrialOfferings(
+      { ...createDeps(repository), enrollments } as never,
+      { customerId: "customer-1", portalUserId: "trial-user-1" } as never,
+    );
+
+    expect(result.body).toEqual({ offerings: [{
+      id: "offering-ended", title: "Continued Trial", description: "Already launched",
+      start: "2026-08-28T09:00", end: "2026-08-29T12:32", timeZone: "UTC",
+    }] });
+  });
+
   it("publishes a draft offering through POST /sales using type trial and disabled invitations", async () => {
     const repository = createOfferingRepository();
     await repository.save({
