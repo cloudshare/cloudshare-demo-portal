@@ -261,7 +261,7 @@ export function SalesTrialOfferingsAdmin({
       if (!response.ok) {
         throw new Error(body.error ?? "Could not load participant monitoring.");
       }
-      setMonitoringParticipants(body.participants ?? []);
+      setMonitoringParticipants([...(body.participants ?? [])]);
       setMonitoringObservation(body.observation ?? null);
     } catch (error) {
       setMonitoringParticipants([]);

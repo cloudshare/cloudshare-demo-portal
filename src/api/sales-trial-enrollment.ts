@@ -1058,7 +1058,10 @@ async function monitoringFailure(
   correlationId: string,
   message: string,
   error: unknown,
-): Promise<{ readonly status: number; readonly body: Record<string, unknown> }> {
+): Promise<{
+  readonly status: number;
+  readonly body: { readonly error: string; readonly correlationId: string };
+}> {
   const context =
     error instanceof Error && "context" in error
       ? (error as { context?: Record<string, unknown> }).context
