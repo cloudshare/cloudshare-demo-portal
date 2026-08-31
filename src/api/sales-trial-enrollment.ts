@@ -429,6 +429,14 @@ export async function handleListSalesTrialOfferingParticipants(
   }
   const connection = await deps.connections.findByCustomerId(request.customerId);
   if (!connection) {
+    const retained = await deps.enrollments.listByOffering(
+      request.customerId,
+      request.offeringId,
+    );
+    const fallback = staleMonitoringFallback(offering, retained, correlationId);
+    if (fallback) {
+      return fallback;
+    }
     return { status: 404, body: { error: "Sales Trial Offering is unavailable." } };
   }
   const delivery =
@@ -916,7 +924,7 @@ function liveMonitoringObservation(
   return {
     freshness: "live",
     source: "cloudshare_v4_sales_participant_roster",
-    ...(participants.length > 0 ? { observedAt: observedAt.toISOString() } : {}),
+    observedAt: observedAt.toISOString(),
   };
 }
 

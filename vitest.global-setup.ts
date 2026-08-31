@@ -3,7 +3,7 @@ import { closeSync, existsSync, openSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 export default function setup() {
-  const dbPath = join(process.cwd(), "test.db");
+  const dbPath = join(process.cwd(), "prisma", "test.db");
   const journalPath = `${dbPath}-journal`;
 
   if (existsSync(dbPath)) {

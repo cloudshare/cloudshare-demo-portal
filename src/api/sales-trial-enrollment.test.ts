@@ -1981,6 +1981,112 @@ describe("Sales Trial offering monitoring", () => {
     expect(failure).toBeTruthy();
   });
 
+  it("treats a missing CloudShare connection as stale roster unavailability for retained ended history", async () => {
+    const { deps, enrollments } = createDeps({
+      offerings: {
+        findById: vi.fn().mockResolvedValue(
+          createOffering({
+            status: "ended",
+            unpublishedAt: new Date("2026-08-30T17:05:00.000Z"),
+          }),
+        ),
+      },
+      connections: { findByCustomerId: vi.fn().mockResolvedValue(null) },
+    });
+    await enrollments.save({
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: "remote-1",
+      participationStatus: "concluded",
+      cloudShareRosterEnvironmentReference: "env-1",
+      environmentStatus: "CreationFailed",
+      firstJoined: "2026-08-30T10:05:00.000Z",
+      status: "active",
+      attentionReason: null,
+      lastLaunchedAt: new Date("2026-08-30T10:06:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T10:07:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:07:00.000Z"),
+    });
+
+    const result = await handleListSalesTrialOfferingParticipants(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+    });
+
+    expect(result).toEqual({
+      status: 200,
+      body: {
+        offering: { id: "offering-1", status: "ended" },
+        observation: {
+          freshness: "stale",
+          source: "certalis_sales_trial_enrollment_reconciliation",
+          observedAt: "2026-08-30T10:07:00.000Z",
+          warning:
+            "CloudShare could not refresh the participant roster; showing the last locally reconciled participant state.",
+        },
+        participants: [
+          {
+            id: "enrollment-1",
+            subject: {
+              type: "sales_trial_enrollment",
+              id: "enrollment-1",
+            },
+            firstName: "Ari",
+            lastName: "Visitor",
+            email: "visitor@example.test",
+            participationStatus: "concluded",
+            firstJoined: "2026-08-30T10:05:00.000Z",
+            envStatus: "CreationFailed",
+            environment: {
+              dimension: "cloudshare_environment",
+              value: "Creation Failed",
+              source: "certalis_sales_trial_enrollment_reconciliation",
+              observedAt: "2026-08-30T10:07:00.000Z",
+            },
+          },
+        ],
+        correlationId: expect.any(String),
+      },
+    });
+  });
+
+  it("records the current live roster read time even when the provider roster is empty", async () => {
+    const { deps, listParticipants } = createDeps();
+    listParticipants.mockResolvedValue({
+      participants: [],
+      request: { method: "GET", path: "/sales/sales-1/participants" },
+      response: { status: 200, body: { participants: [] } },
+    });
+
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-30T10:11:00.000Z"));
+    const result = await handleListSalesTrialOfferingParticipants(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+    });
+    vi.useRealTimers();
+
+    expect(result).toMatchObject({
+      status: 200,
+      body: {
+        observation: {
+          freshness: "live",
+          source: "cloudshare_v4_sales_participant_roster",
+          observedAt: "2026-08-30T10:11:00.000Z",
+        },
+        participants: [],
+      },
+    });
+  });
+
   it("returns a safe monitoring failure while recording protected provider evidence and audit", async () => {
     const { deps, diagnosticRepository, audit, enrollments, listParticipants } = createDeps();
     await enrollments.save({
