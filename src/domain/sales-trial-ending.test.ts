@@ -21,9 +21,13 @@ describe("Sales Trial deferred ending", () => {
     });
   });
 
-  it("does not perpetually extend an already-scheduled terminal grace window", () => {
+  it("sets a two-minute terminal target once even when the provider end was later, then does not perpetually extend it", () => {
+    expect(calculateSalesTrialEnding({ observations: [], now: new Date("2026-08-31T12:00:00Z"),
+      timeZone: "UTC", providerEnd: "2026-09-02T12:00:00" })).toMatchObject({
+      activeCount: 0, effectiveEnd: "2026-08-31T12:02", shouldUpdate: true,
+    });
     expect(calculateSalesTrialEnding({ observations: [], now: new Date("2026-08-31T12:05:00Z"),
-      timeZone: "UTC", providerEnd: "2026-08-31T12:02:00" })).toMatchObject({
+      timeZone: "UTC", providerEnd: "2026-08-31T12:02:00", persistedTerminalTarget: "2026-08-31T12:02" })).toMatchObject({
       activeCount: 0, effectiveEnd: "2026-08-31T12:02", shouldUpdate: false,
     });
   });

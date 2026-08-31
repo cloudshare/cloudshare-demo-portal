@@ -184,4 +184,19 @@ describe("Prisma Sales Trial Offering repository", () => {
       }),
     });
   });
+
+  it("atomically transitions and leases one Offering reconciliation across competing triggers", async () => {
+    const updateMany = vi.fn().mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+    const repository = createPrismaSalesTrialOfferingRepository({ salesTrialOffering: { updateMany } } as never);
+    const now = new Date("2026-08-31T12:00:00Z");
+    const expiresAt = new Date("2026-08-31T12:04:00Z");
+    await expect(repository.reserveEndingReconciliation!("customer-1", "offering-1", "lease-a", now, expiresAt, now)).resolves.toBe(true);
+    await expect(repository.reserveEndingReconciliation!("customer-1", "offering-1", "lease-b", now, expiresAt, now)).resolves.toBe(false);
+    expect(updateMany).toHaveBeenNthCalledWith(1, {
+      where: { customerId: "customer-1", id: "offering-1", status: { in: ["published", "ending"] }, OR: [
+        { endingLeaseToken: null }, { endingLeaseExpiresAt: null }, { endingLeaseExpiresAt: { lte: now } },
+      ] },
+      data: expect.objectContaining({ status: "ending", unpublishedAt: now, endingLeaseToken: "lease-a", endingLeaseExpiresAt: expiresAt }),
+    });
+  });
 });

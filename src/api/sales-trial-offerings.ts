@@ -233,7 +233,7 @@ export async function handleListPublishedSalesTrialOfferings(
   const continued = continuedOfferingIds.size === 0
     ? []
     : (await deps.offerings.listByCustomerId(request.customerId)).filter(
-        (offering) => offering.status === "unpublished" && continuedOfferingIds.has(offering.id),
+        (offering) => (offering.status === "unpublished" || offering.status === "ending") && continuedOfferingIds.has(offering.id),
       );
   const accessible = new Map<string, SalesTrialOffering>();
   for (const offering of published.filter((candidate) => isOfferingActive(candidate, now))) {
@@ -907,25 +907,42 @@ export async function handleEndSalesTrialOffering(
     unpublishedAt: offering.unpublishedAt ?? now,
     updatedAt: now,
     attentionReason: null,
+    endingLeaseToken: null,
+    endingLeaseExpiresAt: null,
   };
-  await deps.offerings.save(ending);
+  const leaseToken = randomUUID();
+  if (deps.offerings.reserveEndingReconciliation) {
+    const reserved = await deps.offerings.reserveEndingReconciliation(
+      request.customerId, offering.id, leaseToken, now, new Date(now.getTime() + 15 * 60_000), ending.unpublishedAt!,
+    );
+    if (!reserved) {
+      const current = await deps.offerings.findById(request.customerId, offering.id);
+      return response(202, { offering: toPortalOffering(current ?? ending), reconciliationInProgress: true });
+    }
+  } else {
+    await deps.offerings.save(ending);
+  }
 
-  const connection = await deps.connections.findByCustomerId(request.customerId);
-  if (!connection || !deps.salesEnvironmentFactory) {
+  const correlationId = randomUUID();
+  const configurationFailure = async (failureMode: string, integrationSurface: string) => {
     const attention = { ...ending, attentionReason: "CloudShare shutdown reconciliation requires attention; review support diagnostics." };
     await deps.offerings.save(attention);
-    return response(202, { offering: toPortalOffering(attention), needsAttention: true });
-  }
+    await deps.diagnostics?.record({
+      source: "sales-trial-offerings", operation: "sales.trial_offering.end", outcome: "failure", level: "warn",
+      customerId: request.customerId, actor: request.actor, subject: { type: "sales_trial_offering", id: offering.id },
+      correlationId, message: attention.attentionReason!,
+      externalIds: { offeringId: offering.id, cloudShareSalesExperienceId: offering.cloudShareSalesExperienceId! },
+      details: { integrationSurface, failureMode, status: "ending", needsAttention: true },
+    });
+    return response(202, { offering: toPortalOffering(attention), needsAttention: true, correlationId });
+  };
+  const connection = await deps.connections.findByCustomerId(request.customerId);
+  if (!connection) return configurationFailure("cloudshare_connection_missing", "portal.cloudshare_connection");
   const delivery = deps.deliveryFactory?.forConnection(connection) ??
     createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection));
-  if (!delivery.updateSession) return response(503, { error: "Sales Delivery update is not configured." });
+  if (!delivery.updateSession) return configurationFailure("sales_delivery_update_missing", "cloudshare.v4.sales");
   const environments = deps.salesEnvironmentFactory.forConnection(connection);
-  if (!environments.observeById) {
-    const attention = { ...ending, attentionReason: "CloudShare shutdown reconciliation requires attention; review support diagnostics." };
-    await deps.offerings.save(attention);
-    return response(202, { offering: toPortalOffering(attention), needsAttention: true });
-  }
-  const correlationId = randomUUID();
+  if (!environments.observeById) return configurationFailure("environment_getextended_missing", "cloudshare.v3.envs.getextended");
   try {
     const [provider, roster] = await Promise.all([
       delivery.readSession(offering.cloudShareSalesExperienceId),
@@ -937,8 +954,16 @@ export async function handleEndSalesTrialOffering(
       return response(200, { offering: toPortalOffering(ended) });
     }
     const environmentIds = [...new Set(roster.participants.map((p) => p.environmentId).filter((id): id is string => Boolean(id)))];
-    const observations = await Promise.all(environmentIds.map((id) => environments.observeById!(id)));
-    const calculation = calculateSalesTrialEnding({ observations, now, timeZone: offering.timeZone, providerEnd: provider.end });
+    const observations = [];
+    // Deliberately sequential: fail closed on the first incomplete read and do
+    // not burst an unbounded participant roster at the v3 endpoint.
+    for (const environmentId of environmentIds) {
+      observations.push(await environments.observeById!(environmentId));
+    }
+    const calculation = calculateSalesTrialEnding({
+      observations, now, timeZone: offering.timeZone, providerEnd: provider.end,
+      persistedTerminalTarget: offering.endingCalculatedEnd,
+    });
     if (calculation.shouldUpdate) await delivery.updateSession(offering.cloudShareSalesExperienceId, { end: calculation.calculatedEnd });
     const reconciled = {
       ...ending,

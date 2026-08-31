@@ -6,6 +6,7 @@ export function calculateSalesTrialEnding(input: {
   readonly now: Date;
   readonly timeZone: string;
   readonly providerEnd?: string | null;
+  readonly persistedTerminalTarget?: string | null;
 }) {
   const active = input.observations.filter(({ statusCode }) => statusCode !== 5 && statusCode !== 9);
   const latestExpiry = active.reduce<Date | null>((latest, observation) => {
@@ -24,11 +25,19 @@ export function calculateSalesTrialEnding(input: {
   const providerEndInstant = input.providerEnd
     ? cloudShareWallClockToInstant(input.providerEnd.slice(0, 16), input.timeZone)
     : null;
-  const shouldUpdate = providerEndInstant === null || (active.length > 0 && desiredInstant > providerEndInstant);
+  const terminalTarget = active.length === 0 && input.persistedTerminalTarget
+    ? input.persistedTerminalTarget.slice(0, 16)
+    : desiredEnd;
+  const terminalTargetInstant = cloudShareWallClockToInstant(terminalTarget, input.timeZone);
+  const shouldUpdate = active.length === 0
+    ? input.persistedTerminalTarget === null || input.persistedTerminalTarget === undefined
+      ? providerEndInstant?.getTime() !== terminalTargetInstant?.getTime()
+      : false
+    : providerEndInstant === null || desiredInstant > providerEndInstant;
   return {
     activeCount: active.length,
-    calculatedEnd: desiredEnd,
-    effectiveEnd: shouldUpdate ? desiredEnd : input.providerEnd!.slice(0, 16),
+    calculatedEnd: active.length === 0 ? terminalTarget : desiredEnd,
+    effectiveEnd: shouldUpdate ? terminalTarget : active.length === 0 ? terminalTarget : input.providerEnd!.slice(0, 16),
     shouldUpdate,
   };
 }

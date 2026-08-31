@@ -114,6 +114,19 @@ function createOfferingRepository(): SalesTrialOfferingRepository {
     async listEnding(customerId) {
       return [...rows.values()].filter((offering) => offering.status === "ending" && (!customerId || offering.customerId === customerId));
     },
+    async reserveEndingReconciliation(customerId, id, token, now, expiresAt, unpublishedAt) {
+      const offering = rows.get(id);
+      if (!offering || offering.customerId !== customerId || (offering.status !== "published" && offering.status !== "ending") ||
+        (offering.endingLeaseToken && offering.endingLeaseExpiresAt && offering.endingLeaseExpiresAt > now)) return false;
+      rows.set(id, { ...offering, status: "ending", unpublishedAt, updatedAt: now, attentionReason: null, endingLeaseToken: token, endingLeaseExpiresAt: expiresAt });
+      return true;
+    },
+    async releaseEndingReconciliation(customerId, id, token) {
+      const offering = rows.get(id);
+      if (offering?.customerId === customerId && offering.endingLeaseToken === token) {
+        rows.set(id, { ...offering, endingLeaseToken: null, endingLeaseExpiresAt: null });
+      }
+    },
   };
 }
 
@@ -202,6 +215,17 @@ function createDeps(
     audit: { write: vi.fn().mockResolvedValue(undefined) },
     ...overrides,
   };
+}
+
+async function saveDeferredOffering(repository: SalesTrialOfferingRepository, id = "offering-deferred") {
+  await repository.save({
+    id, customerId: "customer-1", title: "Deferred Trial", description: "", itemId: "item-1",
+    cloudShareSalesExperienceId: "sales-deferred", externalId: "opaque-deferred",
+    start: "2026-08-31T09:00", end: null, timeZone: "UTC", salesProEmail: "owner@example.test",
+    salesProDisplayName: "Owner", status: "published", createdAt: new Date("2026-08-31T08:00:00Z"),
+    updatedAt: new Date("2026-08-31T09:00:00Z"), publishedAt: new Date("2026-08-31T09:00:00Z"),
+    unpublishedAt: null, attentionReason: null,
+  });
 }
 
 const body = {
@@ -539,7 +563,7 @@ describe("Sales Trial Offering API", () => {
       id: "offering-ended", customerId: "customer-1", title: "Continued Trial", description: "Already launched",
       itemId: "item-1", cloudShareSalesExperienceId: "sales-ended", externalId: "opaque-ended",
       start: "2026-08-28T09:00", end: "2026-08-29T12:32", timeZone: "UTC",
-      salesProEmail: "owner@example.test", salesProDisplayName: "Owner", status: "unpublished",
+      salesProEmail: "owner@example.test", salesProDisplayName: "Owner", status: "ending",
       createdAt: new Date("2026-08-28T08:00:00Z"), updatedAt: new Date("2026-08-29T12:30:00Z"),
       publishedAt: new Date("2026-08-28T08:30:00Z"), unpublishedAt: new Date("2026-08-29T12:30:00Z"), attentionReason: null,
     });
@@ -569,7 +593,7 @@ describe("Sales Trial Offering API", () => {
       id: "offering-ended", customerId: "customer-1", title: "Finished Trial", description: "No environment remains",
       itemId: "item-1", cloudShareSalesExperienceId: "sales-ended", externalId: "opaque-ended",
       start: "2026-08-28T09:00", end: "2026-08-29T12:32", timeZone: "UTC",
-      salesProEmail: "owner@example.test", salesProDisplayName: "Owner", status: "unpublished",
+      salesProEmail: "owner@example.test", salesProDisplayName: "Owner", status: "ending",
       createdAt: new Date("2026-08-28T08:00:00Z"), updatedAt: new Date("2026-08-29T12:30:00Z"),
       publishedAt: new Date("2026-08-28T08:30:00Z"), unpublishedAt: new Date("2026-08-29T12:30:00Z"), attentionReason: null,
     });
@@ -2554,5 +2578,65 @@ describe("Sales Trial Offering API", () => {
       endingLastReconciledAt: "2026-08-31T12:00:00.000Z",
     } } });
     await expect(repository.listPublishedByCustomerId("customer-1")).resolves.toEqual([]);
+  });
+
+  it("serializes reconciliation per offering so competing triggers cannot land a stale shorter end", async () => {
+    const repository = createOfferingRepository();
+    await saveDeferredOffering(repository);
+    const now = new Date("2026-08-31T12:00:00Z");
+    const [first, second] = await Promise.all([
+      repository.reserveEndingReconciliation!("customer-1", "offering-deferred", "lease-a", now, new Date(now.getTime() + 240_000), now),
+      repository.reserveEndingReconciliation!("customer-1", "offering-deferred", "lease-b", now, new Date(now.getTime() + 240_000), now),
+    ]);
+    expect([first, second].sort()).toEqual([false, true]);
+  });
+
+  it("persists Ending attention and correlated diagnostics for every missing shutdown dependency", async () => {
+    const scenarios = [
+      { failureMode: "cloudshare_connection_missing", overrides: { connections: { findByCustomerId: vi.fn().mockResolvedValue(null) },
+        deliveryFactory: {} as never, salesEnvironmentFactory: { forConnection: vi.fn() } } },
+      { failureMode: "sales_delivery_update_missing", overrides: { deliveryFactory: { forConnection: vi.fn().mockReturnValue({}) },
+        salesEnvironmentFactory: { forConnection: vi.fn() } } },
+      { failureMode: "environment_getextended_missing", overrides: { deliveryFactory: { forConnection: vi.fn().mockReturnValue({ updateSession: vi.fn() }) },
+        salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue({ observe: vi.fn() }) } } },
+    ];
+    for (const scenario of scenarios) {
+      const repository = createOfferingRepository();
+      await saveDeferredOffering(repository);
+      const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+      const result = await handleEndSalesTrialOffering(createDeps(repository, {
+        ...scenario.overrides, diagnostics: createDiagnosticRecorder({ repository: diagnosticRepository }),
+      } as never), { customerId: "customer-1", actor: { type: "admin", id: "admin-1" }, id: "offering-deferred" });
+      expect(result).toMatchObject({ status: 202, body: { needsAttention: true, correlationId: expect.any(String),
+        offering: { status: "ending", attentionReason: expect.stringContaining("requires attention") } } });
+      const [entry] = await diagnosticRepository.query({ operation: "sales.trial_offering.end", outcome: "failure" });
+      expect(entry).toMatchObject({ correlationId: (result.body as { correlationId: string }).correlationId,
+        details: expect.objectContaining({ failureMode: scenario.failureMode, status: "ending", needsAttention: true }) });
+    }
+  });
+
+  it("bounds getextended reads to one in flight and fails closed without reading later environments", async () => {
+    const repository = createOfferingRepository();
+    await saveDeferredOffering(repository);
+    let inFlight = 0;
+    let maximum = 0;
+    const observeById = vi.fn(async (id: string) => {
+      inFlight += 1; maximum = Math.max(maximum, inFlight);
+      await Promise.resolve();
+      inFlight -= 1;
+      if (id === "env-2") throw new Error("provider read failed");
+      return { environmentId: id, statusCode: 2 as const, expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT", exchanges: [] };
+    });
+    const result = await handleEndSalesTrialOffering(createDeps(repository, {
+      deliveryFactory: { forConnection: vi.fn().mockReturnValue({
+        readSession: vi.fn().mockResolvedValue({ id: "sales-deferred", status: "inProgress", end: null, request: {}, response: {} }),
+        listParticipants: vi.fn().mockResolvedValue({ participants: [1, 2, 3].map((n) => ({ environmentId: `env-${n}` })), request: {}, response: {} }),
+        updateSession: vi.fn().mockResolvedValue({ id: "sales-deferred", request: {}, response: {} }),
+      }) } as never,
+      salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue({ observe: vi.fn(), observeById }) },
+    } as never), { customerId: "customer-1", actor: { type: "admin", id: "admin-1" }, id: "offering-deferred" });
+    expect(result).toMatchObject({ status: 202, body: { needsAttention: true, offering: { status: "ending" } } });
+    expect(observeById).toHaveBeenCalledTimes(2);
+    expect(maximum).toBe(1);
   });
 });
