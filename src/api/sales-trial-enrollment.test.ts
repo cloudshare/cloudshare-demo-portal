@@ -1793,6 +1793,72 @@ describe("Sales Trial offering monitoring", () => {
     expect(failure).toBeTruthy();
   });
 
+  it("retains ending offering history when the participant roster cannot be refreshed", async () => {
+    const { deps, enrollments, listParticipants, diagnosticRepository } = createDeps({
+      offerings: {
+        findById: vi.fn().mockResolvedValue(
+          createOffering({
+            status: "ending",
+            endingCalculatedEnd: "2026-08-30T17:00",
+            endingLastReconciledAt: new Date("2026-08-30T10:08:00.000Z"),
+          }),
+        ),
+      },
+    });
+    await enrollments.save({
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: "remote-1",
+      cloudShareRosterEnvironmentReference: "env-1",
+      environmentStatus: "Suspended",
+      firstJoined: "2026-08-30T10:05:00.000Z",
+      status: "active",
+      attentionReason: null,
+      lastLaunchedAt: new Date("2026-08-30T10:06:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T10:07:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:07:00.000Z"),
+    });
+    listParticipants.mockRejectedValue(
+      new CloudShareTransportError("participant roster timed out", {
+        method: "GET",
+        path: "/sales/sales-1/participants",
+        cause: "ETIMEDOUT",
+        transport: "tcp",
+      }),
+    );
+
+    const result = await handleListSalesTrialOfferingParticipants(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+    });
+    const [failure] = await diagnosticRepository.query({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.monitoring.read_participants",
+      outcome: "failure",
+    });
+
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({
+      offering: { id: "offering-1", status: "ending" },
+      observation: {
+        freshness: "stale",
+        source: "certalis_sales_trial_enrollment_reconciliation",
+        observedAt: "2026-08-30T10:07:00.000Z",
+      },
+      participants: [expect.objectContaining({ id: "enrollment-1" })],
+      correlationId: expect.any(String),
+    });
+    expect(JSON.stringify(result.body)).not.toContain("Sales Trial Offering was not found");
+    expect(failure).toBeTruthy();
+  });
+
   it("returns a safe monitoring failure while recording protected provider evidence and audit", async () => {
     const { deps, diagnosticRepository, audit, enrollments, listParticipants } = createDeps();
     await enrollments.save({
