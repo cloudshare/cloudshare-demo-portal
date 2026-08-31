@@ -161,7 +161,7 @@ model SalesTrialEnrollment {
   lastName                           String
   cloudShareParticipantId            String?
   invitationStatus                   String   @default("notSent")
-  participationStatus                String
+  participationStatus                String   @default("pending")
   cloudShareRosterEnvironmentReference String?
   environmentStatus                  String?
   firstJoined                        String?
