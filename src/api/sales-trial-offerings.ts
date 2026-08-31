@@ -15,7 +15,10 @@ import type {
   SalesTrialOffering,
   SalesTrialOfferingRepository,
 } from "@/domain/sales-trial-offering";
-import type { SalesTrialEnrollmentRepository } from "@/domain/sales-trial-enrollment";
+import {
+  hasContinuableSalesTrialEnvironment,
+  type SalesTrialEnrollmentRepository,
+} from "@/domain/sales-trial-enrollment";
 import type { SalesTimezoneCacheRepository } from "@/domain/sales-timezones";
 import {
   SalesItemProvisioningReadError,
@@ -215,7 +218,7 @@ export async function handleListPublishedSalesTrialOfferings(
     : [];
   const continuedOfferingIds = new Set(
     launchedEnrollments
-      .filter((enrollment) => enrollment.status === "active" && enrollment.lastLaunchedAt !== null)
+      .filter(hasContinuableSalesTrialEnvironment)
       .map((enrollment) => enrollment.salesTrialOfferingId),
   );
   const continued = continuedOfferingIds.size === 0

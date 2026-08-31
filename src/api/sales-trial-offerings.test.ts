@@ -542,7 +542,10 @@ describe("Sales Trial Offering API", () => {
     });
     const enrollments = {
       listByPortalUser: vi.fn().mockResolvedValue([
-        { salesTrialOfferingId: "offering-ended", lastLaunchedAt: new Date("2026-08-29T10:00:00Z"), status: "active" },
+        {
+          salesTrialOfferingId: "offering-ended", lastLaunchedAt: new Date("2026-08-29T10:00:00Z"), status: "active",
+          cloudShareParticipantId: "participant-1", cloudShareRosterEnvironmentReference: "environment-1", environmentStatus: "Suspended",
+        },
       ]),
     };
 
@@ -555,6 +558,29 @@ describe("Sales Trial Offering API", () => {
       id: "offering-ended", title: "Continued Trial", description: "Already launched",
       start: "2026-08-28T09:00", end: "2026-08-29T12:32", timeZone: "UTC",
     }] });
+  });
+
+  it("hides an ended offering after the participant environment becomes terminal", async () => {
+    const repository = createOfferingRepository();
+    await repository.save({
+      id: "offering-ended", customerId: "customer-1", title: "Finished Trial", description: "No environment remains",
+      itemId: "item-1", cloudShareSalesExperienceId: "sales-ended", externalId: "opaque-ended",
+      start: "2026-08-28T09:00", end: "2026-08-29T12:32", timeZone: "UTC",
+      salesProEmail: "owner@example.test", salesProDisplayName: "Owner", status: "unpublished",
+      createdAt: new Date("2026-08-28T08:00:00Z"), updatedAt: new Date("2026-08-29T12:30:00Z"),
+      publishedAt: new Date("2026-08-28T08:30:00Z"), unpublishedAt: new Date("2026-08-29T12:30:00Z"), attentionReason: null,
+    });
+    const enrollments = { listByPortalUser: vi.fn().mockResolvedValue([{
+      salesTrialOfferingId: "offering-ended", lastLaunchedAt: new Date("2026-08-29T10:00:00Z"), status: "active",
+      cloudShareParticipantId: "participant-1", cloudShareRosterEnvironmentReference: "environment-1", environmentStatus: "Archived",
+    }]) };
+
+    const result = await handleListPublishedSalesTrialOfferings(
+      { ...createDeps(repository), enrollments } as never,
+      { customerId: "customer-1", portalUserId: "trial-user-1" } as never,
+    );
+
+    expect(result.body).toEqual({ offerings: [] });
   });
 
   it("publishes a draft offering through POST /sales using type trial and disabled invitations", async () => {

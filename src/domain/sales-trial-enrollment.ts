@@ -47,3 +47,20 @@ export interface SalesTrialEnrollmentRepository {
     portalUserId: string,
   ): Promise<readonly SalesTrialEnrollment[]>;
 }
+
+export function hasContinuableSalesTrialEnvironment(
+  enrollment: SalesTrialEnrollment | null,
+): enrollment is SalesTrialEnrollment {
+  if (
+    !enrollment ||
+    enrollment.status !== "active" ||
+    enrollment.lastLaunchedAt === null ||
+    enrollment.cloudShareParticipantId === null ||
+    enrollment.cloudShareRosterEnvironmentReference === null ||
+    enrollment.environmentStatus === null
+  ) {
+    return false;
+  }
+  const status = enrollment.environmentStatus.trim().toLowerCase();
+  return status !== "archived" && status !== "deleted" && status !== "creation failed";
+}

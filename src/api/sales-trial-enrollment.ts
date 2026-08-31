@@ -6,7 +6,11 @@ import type {
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
 import type { DiagnosticRecorder } from "@/domain/diagnostic-log";
-import type { SalesTrialEnrollment, SalesTrialEnrollmentRepository } from "@/domain/sales-trial-enrollment";
+import {
+  hasContinuableSalesTrialEnvironment,
+  type SalesTrialEnrollment,
+  type SalesTrialEnrollmentRepository,
+} from "@/domain/sales-trial-enrollment";
 import type {
   SalesTrialOffering,
   SalesTrialOfferingRepository,
@@ -122,9 +126,7 @@ export async function handleEnterSalesTrialOffering(
     : null;
   const isContinuedAccess =
     offering?.status === "unpublished" &&
-    existingEnrollment?.status === "active" &&
-    existingEnrollment.lastLaunchedAt !== null &&
-    existingEnrollment.cloudShareParticipantId !== null;
+    hasContinuableSalesTrialEnvironment(existingEnrollment);
   if (
     !offering ||
     !offering.cloudShareSalesExperienceId ||
@@ -590,14 +592,25 @@ function classifyAttentionReason(error: unknown): string | null {
 }
 
 function isLaunchableProviderSession(
-  offering: Pick<SalesTrialOffering, "end">,
+  offering: Pick<SalesTrialOffering, "end" | "timeZone">,
   session: { readonly status: "notStarted" | "inProgress" | "ended"; readonly end?: string | null },
   continuedAccess = false,
 ): boolean {
+  const sessionEnd = normalizeCloudShareProviderWallClock(session.end ?? null);
+  const matchingEnd = offering.end === null
+    ? sessionEnd === null
+    : cloudShareWallClockToInstant(offering.end, offering.timeZone)?.getTime() ===
+      cloudShareWallClockToInstant(sessionEnd ?? "", offering.timeZone)?.getTime();
   return (
     (session.status === "inProgress" || (continuedAccess && session.status === "ended")) &&
-    (session.end ?? null) === offering.end
+    matchingEnd
   );
+}
+
+function normalizeCloudShareProviderWallClock(value: string | null): string | null {
+  if (value === null) return null;
+  const match = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}):00(?:\.0+)?$/.exec(value);
+  return match?.[1] ?? value;
 }
 
 function unavailableOffering(

@@ -202,7 +202,7 @@ describe("Sales Trial offering entry", () => {
     });
     (deps.deliveryFactory!.forConnection as ReturnType<typeof vi.fn>).mockReturnValue({
       readSession: vi.fn().mockResolvedValue({
-        id: "sales-1", status: "ended", end: "2026-08-30T10:02",
+        id: "sales-1", status: "ended", end: "2026-08-30T10:02:00",
         request: { method: "GET", path: "/sales/sales-1" }, response: { status: 200, body: { id: "sales-1", status: "ended" } },
       }),
       ensureParticipantCorrelationProperties: vi.fn().mockResolvedValue({
