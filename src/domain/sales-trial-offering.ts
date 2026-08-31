@@ -2,6 +2,8 @@ export type SalesTrialOfferingStatus =
   | "draft"
   | "provisioning"
   | "published"
+  | "ending"
+  | "ended"
   | "unpublished"
   | "needs_attention";
 
@@ -27,6 +29,8 @@ export interface SalesTrialOffering {
   readonly publishedAt: Date | null;
   readonly unpublishedAt: Date | null;
   readonly attentionReason: string | null;
+  readonly endingCalculatedEnd?: string | null;
+  readonly endingLastReconciledAt?: Date | null;
 }
 
 export interface SalesTrialOfferingRepository {
@@ -73,4 +77,5 @@ export interface SalesTrialOfferingRepository {
   findById(customerId: string, id: string): Promise<SalesTrialOffering | null>;
   listByCustomerId(customerId: string): Promise<readonly SalesTrialOffering[]>;
   listPublishedByCustomerId(customerId: string): Promise<readonly SalesTrialOffering[]>;
+  listEnding?(customerId?: string): Promise<readonly SalesTrialOffering[]>;
 }

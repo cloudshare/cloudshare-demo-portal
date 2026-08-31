@@ -28,6 +28,7 @@ import {
   type HeartbeatAutoSuspend,
 } from "@/domain/heartbeat-auto-suspend";
 import { runHeartbeatAutoSuspend } from "@/api/suspend-resume";
+import { reconcileEndingSalesTrialOfferings } from "@/api/sales-trial-ending-reconciliation";
 import { createExamClock, type ExamClock } from "@/domain/exam-clock";
 import { createPrismaAuditRepository } from "@/persistence/audit-repository";
 import { createInMemoryResourceRepository } from "@/persistence/resource-repository";
@@ -491,6 +492,17 @@ export function getServices(): Services {
       ),
   });
   heartbeatAutoSuspend.start();
+  let salesTrialEndingRunning = false;
+  const salesTrialEndingInterval = setInterval(() => {
+    if (salesTrialEndingRunning) return;
+    salesTrialEndingRunning = true;
+    void reconcileEndingSalesTrialOfferings(services)
+      .catch((error) => logger.warn("sales trial ending reconciliation failed", {
+        error: error instanceof Error ? error.message : String(error),
+      }))
+      .finally(() => { salesTrialEndingRunning = false; });
+  }, 5 * 60_000);
+  salesTrialEndingInterval.unref();
 
   let portalSeedPromise: Promise<void> | null = null;
 
@@ -589,6 +601,7 @@ export function getServices(): Services {
     dispose: () => {
       void prisma.$disconnect();
       heartbeatAutoSuspend.stop();
+      clearInterval(salesTrialEndingInterval);
     },
   };
   globalForServices.__portalServices = services;

@@ -111,6 +111,9 @@ function createOfferingRepository(): SalesTrialOfferingRepository {
         (offering) => offering.customerId === customerId && offering.status === "published",
       );
     },
+    async listEnding(customerId) {
+      return [...rows.values()].filter((offering) => offering.status === "ending" && (!customerId || offering.customerId === customerId));
+    },
   };
 }
 
@@ -544,7 +547,7 @@ describe("Sales Trial Offering API", () => {
       listByPortalUser: vi.fn().mockResolvedValue([
         {
           salesTrialOfferingId: "offering-ended", lastLaunchedAt: new Date("2026-08-29T10:00:00Z"), status: "active",
-          cloudShareParticipantId: "participant-1", cloudShareRosterEnvironmentReference: "environment-1", environmentStatus: "Suspended",
+          cloudShareParticipantId: "participant-1", cloudShareRosterEnvironmentReference: "environment-1", environmentStatus: "Archived",
         },
       ]),
     };
@@ -572,7 +575,7 @@ describe("Sales Trial Offering API", () => {
     });
     const enrollments = { listByPortalUser: vi.fn().mockResolvedValue([{
       salesTrialOfferingId: "offering-ended", lastLaunchedAt: new Date("2026-08-29T10:00:00Z"), status: "active",
-      cloudShareParticipantId: "participant-1", cloudShareRosterEnvironmentReference: "environment-1", environmentStatus: "Archived",
+      cloudShareParticipantId: "participant-1", cloudShareRosterEnvironmentReference: "environment-1", environmentStatus: "Deleted",
     }]) };
 
     const result = await handleListPublishedSalesTrialOfferings(
@@ -2516,5 +2519,40 @@ describe("Sales Trial Offering API", () => {
         fallbackPersisted: false,
       }),
     });
+  });
+
+  it("unpublishes immediately and defers CloudShare end to the latest active Environment expiry plus five minutes", async () => {
+    const repository = createOfferingRepository();
+    await repository.save({
+      id: "offering-deferred", customerId: "customer-1", title: "Deferred Trial", description: "",
+      itemId: "item-1", cloudShareSalesExperienceId: "sales-deferred", externalId: "opaque-deferred",
+      start: "2026-08-31T09:00", end: null, timeZone: "UTC", salesProEmail: "owner@example.test",
+      salesProDisplayName: "Owner", status: "published", createdAt: new Date("2026-08-31T08:00:00Z"),
+      updatedAt: new Date("2026-08-31T09:00:00Z"), publishedAt: new Date("2026-08-31T09:00:00Z"),
+      unpublishedAt: null, attentionReason: null,
+    });
+    const updateSession = vi.fn().mockResolvedValue({ id: "sales-deferred", request: {}, response: {} });
+    const result = await handleEndSalesTrialOffering(createDeps(repository, {
+      now: () => new Date("2026-08-31T12:00:00Z"),
+      deliveryFactory: { forConnection: vi.fn().mockReturnValue({
+        readSession: vi.fn().mockResolvedValue({ id: "sales-deferred", status: "inProgress", end: null, request: {}, response: {} }),
+        listParticipants: vi.fn().mockResolvedValue({ participants: [
+          { environmentId: "env-ready" }, { environmentId: "env-archived" }, { environmentId: "env-deleted" },
+        ], request: {}, response: {} }), updateSession,
+      }) } as never,
+      salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue({ observe: vi.fn(), observeById: vi.fn(async (id: string) => ({
+        environmentId: id,
+        statusCode: id === "env-archived" ? 4 : id === "env-deleted" ? 5 : 2,
+        expirationTime: id === "env-archived" ? "Tue, 01 Sep 2026 14:30:00 GMT" : "Tue, 01 Sep 2026 13:00:00 GMT",
+        exchanges: [],
+      })) }) },
+    } as never), { customerId: "customer-1", actor: { type: "admin", id: "admin-1" }, id: "offering-deferred" });
+
+    expect(updateSession).toHaveBeenCalledWith("sales-deferred", { end: "2026-09-01T14:35" });
+    expect(result).toMatchObject({ status: 200, body: { offering: {
+      status: "ending", end: "2026-09-01T14:35", endingCalculatedEnd: "2026-09-01T14:35",
+      endingLastReconciledAt: "2026-08-31T12:00:00.000Z",
+    } } });
+    await expect(repository.listPublishedByCustomerId("customer-1")).resolves.toEqual([]);
   });
 });

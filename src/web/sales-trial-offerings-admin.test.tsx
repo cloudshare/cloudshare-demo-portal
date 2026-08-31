@@ -81,6 +81,26 @@ describe("Sales Trial Offerings admin monitoring", () => {
     expect(screen.queryByText("remote-1")).toBeNull();
   });
 
+  it("shows the calculated end and reconciliation freshness while an offering is Ending", async () => {
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/sales/items") return json({ activeItems: [] });
+      if (url === "/api/sales/timezones") return json({ timezones: [] });
+      if (url === "/api/sales/trial-offerings") return json({ offerings: [{
+        id: "offering-ending", title: "Ending Trial", description: "", itemId: "item-1",
+        start: "2026-08-31T09:00", end: "2026-09-01T14:35", timeZone: "UTC",
+        salesProEmail: "owner@example.test", salesProDisplayName: "Owner", status: "ending",
+        attentionReason: null, endingCalculatedEnd: "2026-09-01T14:35",
+        endingLastReconciledAt: "2026-08-31T12:00:00.000Z",
+      }] });
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    render(<SalesTrialOfferingsAdmin email="sales-admin@certalis.demo" fetchAdmin={fetchAdmin as typeof fetch} />);
+    expect(await screen.findByText(/scheduled to remain available until 2026-09-01T14:35/)).toBeTruthy();
+    expect(screen.getByText("Last reconciled: 2026-08-31T12:00:00.000Z")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open monitoring" })).toBeTruthy();
+  });
+
   it("renders monitoring inside an overflow-safe constrained-width container", async () => {
     const fetchAdmin = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);

@@ -98,6 +98,14 @@ export function createPrismaSalesTrialOfferingRepository(
         })
       ).map(hydrate);
     },
+    async listEnding(customerId) {
+      return (
+        await prisma.salesTrialOffering.findMany({
+          where: { status: "ending", ...(customerId ? { customerId } : {}) },
+          orderBy: { updatedAt: "asc" },
+        })
+      ).map(hydrate);
+    },
   };
 }
 
@@ -117,6 +125,8 @@ function serialize(offering: SalesTrialOffering) {
     salesProDisplayName: offering.salesProDisplayName,
     status: offering.status,
     attentionReason: offering.attentionReason,
+    endingCalculatedEnd: offering.endingCalculatedEnd ?? null,
+    endingLastReconciledAt: offering.endingLastReconciledAt ?? null,
     createdAt: offering.createdAt,
     updatedAt: offering.updatedAt,
     publishedAt: offering.publishedAt,
@@ -139,6 +149,8 @@ function hydrate(row: {
   salesProDisplayName: string | null;
   status: string;
   attentionReason: string | null;
+  endingCalculatedEnd: string | null;
+  endingLastReconciledAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
   publishedAt: Date | null;
@@ -149,6 +161,8 @@ function hydrate(row: {
     status:
       row.status === "provisioning" ||
       row.status === "published" ||
+      row.status === "ending" ||
+      row.status === "ended" ||
       row.status === "unpublished" ||
       row.status === "needs_attention"
         ? row.status

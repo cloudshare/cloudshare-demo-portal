@@ -10,6 +10,7 @@ import {
 import { createPrismaItemRepository } from "@/persistence/prisma-item-repository";
 import { createPrismaSalesTrialOfferingRepository } from "@/persistence/prisma-sales-trial-offering-repository";
 import { createPrismaSalesTimezoneCacheRepository } from "@/persistence/prisma-sales-timezone-repository";
+import { reconcileEndingSalesTrialOfferings } from "@/api/sales-trial-ending-reconciliation";
 
 async function context() {
   const services = getServices();
@@ -26,6 +27,7 @@ export async function GET() {
   if (!session) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  await reconcileEndingSalesTrialOfferings(services, session.customerId);
   const result = await handleListSalesTrialOfferings(
     { offerings: createPrismaSalesTrialOfferingRepository(services.prisma) },
     { customerId: session.customerId },

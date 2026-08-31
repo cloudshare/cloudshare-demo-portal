@@ -62,5 +62,5 @@ export function hasContinuableSalesTrialEnvironment(
     return false;
   }
   const status = enrollment.environmentStatus.trim().toLowerCase();
-  return status !== "archived" && status !== "deleted" && status !== "creation failed";
+  return status !== "deleted" && status !== "creation failed";
 }

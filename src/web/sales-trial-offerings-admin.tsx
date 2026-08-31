@@ -42,8 +42,10 @@ type Offering = {
   timeZone: string;
   salesProEmail: string;
   salesProDisplayName: string | null;
-  status: "draft" | "published" | "unpublished" | "needs_attention";
+  status: "draft" | "published" | "ending" | "ended" | "unpublished" | "needs_attention";
   attentionReason: string | null;
+  endingCalculatedEnd: string | null;
+  endingLastReconciledAt: string | null;
 };
 type NavigationIntent = {
   readonly tab: "support";
@@ -343,11 +345,16 @@ export function SalesTrialOfferingsAdmin({
           </div>
           <p style={{ margin: 0 }}>{offering.start} to {offering.end ?? "Open-ended"} ({offering.timeZone})</p>
           <p style={{ margin: 0 }}>Sales Pro: {offering.salesProDisplayName ?? offering.salesProEmail}</p>
+          {offering.status === "ending" ? <div style={mutedPanelStyle}>
+            <strong>Ending</strong>
+            <p style={{ margin: "0.35rem 0 0" }}>CloudShare access is scheduled to remain available until {offering.endingCalculatedEnd ?? offering.end ?? "the next successful reconciliation"} ({offering.timeZone}).</p>
+            <p style={{ margin: "0.35rem 0 0", color: colors.textMuted }}>Last reconciled: {offering.endingLastReconciledAt ?? "Pending"}</p>
+          </div> : null}
           {offering.attentionReason ? <div role="alert" style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.55rem" }}><p style={{ margin: 0 }}>{offering.attentionReason}</p><button type="button" style={{ border: 0, background: "transparent", color: colors.info, textDecoration: "underline", cursor: "pointer", padding: 0, justifySelf: "start" }} onClick={() => openSupport(latestSupportByOfferingId[offering.id] ? { correlationId: latestSupportByOfferingId[offering.id] } : { source: "sales-trial-offerings", subjectId: offering.id })}>{latestSupportByOfferingId[offering.id] ? `Open support diagnostics (${latestSupportByOfferingId[offering.id]})` : "Open support diagnostics"}</button></div> : null}
           <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
             <button type="button" style={offering.status !== "draft" ? { ...primaryButtonStyle, ...disabledButtonStyle } : primaryButtonStyle} disabled={offering.status !== "draft"} onClick={() => void lifecycle(offering.id, "publish")}>Publish</button>
             <button type="button" style={offering.status !== "published" ? { ...secondaryButtonStyle, ...disabledButtonStyle } : secondaryButtonStyle} disabled={offering.status !== "published"} onClick={() => { if (window.confirm("End this Trial Offering now and unpublish it from the portal?")) void lifecycle(offering.id, "end"); }}>End trial</button>
-            {offering.status === "published" ? <button type="button" style={secondaryButtonStyle} onClick={() => void toggleMonitoring(offering.id)}>{monitoringOfferingId === offering.id ? "Hide monitoring" : "Open monitoring"}</button> : null}
+            {offering.status === "published" || offering.status === "ending" ? <button type="button" style={secondaryButtonStyle} onClick={() => void toggleMonitoring(offering.id)}>{monitoringOfferingId === offering.id ? "Hide monitoring" : "Open monitoring"}</button> : null}
           </div>
           {monitoringOfferingId === offering.id ? <section aria-label="Participant monitoring" style={{ ...mutedPanelStyle, display: "grid", gap: "0.75rem", overflowX: "auto", width: "100%" }}>
             <div style={{ display: "grid", gap: "0.25rem" }}>

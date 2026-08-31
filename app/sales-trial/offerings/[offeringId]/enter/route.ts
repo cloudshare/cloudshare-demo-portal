@@ -11,6 +11,8 @@ import {
 import { createCloudShareSalesDelivery } from "@/integrations/cloudshare/sales-delivery";
 import { createPrismaSalesTrialEnrollmentRepository } from "@/persistence/prisma-sales-trial-enrollment-repository";
 import { createPrismaSalesTrialOfferingRepository } from "@/persistence/prisma-sales-trial-offering-repository";
+import { handleEndSalesTrialOffering } from "@/api/sales-trial-offerings";
+import { salesTrialEndingDeps } from "@/api/sales-trial-ending-reconciliation";
 
 export async function GET(
   _request: Request,
@@ -83,6 +85,11 @@ export async function GET(
       },
       diagnostics: services.diagnosticRecorder,
       audit: services.audit,
+      reconcileEnding: (id) => handleEndSalesTrialOffering(salesTrialEndingDeps(services), {
+        customerId: session.customerId,
+        id,
+        actor: { type: "sales_trial_participant", id: session.userId, email: session.email },
+      }).then(() => undefined),
     },
     {
       customerId: session.customerId,

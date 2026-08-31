@@ -6,6 +6,7 @@ import { PORTAL_SESSION_COOKIE } from "@/api/portal-auth";
 import { handleEndSalesTrialOffering } from "@/api/sales-trial-offerings";
 import { createPrismaSalesTrialOfferingRepository } from "@/persistence/prisma-sales-trial-offering-repository";
 import { createCloudShareSalesDelivery } from "@/integrations/cloudshare/sales-delivery";
+import { createCloudShareSalesEnvironmentSource } from "@/integrations/cloudshare/sales-environment";
 
 export async function POST(
   _request: Request,
@@ -29,6 +30,10 @@ export async function POST(
       deliveryFactory: {
         forConnection: (connection) =>
           createCloudShareSalesDelivery(services.cloudshareClientFactory.forConnection(connection)),
+      },
+      salesEnvironmentFactory: {
+        forConnection: (connection) =>
+          createCloudShareSalesEnvironmentSource(services.cloudshareClientFactory.forConnection(connection)),
       },
       diagnostics: services.diagnosticRecorder,
       audit: services.audit,

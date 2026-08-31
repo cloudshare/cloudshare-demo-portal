@@ -69,6 +69,7 @@ export interface SalesTrialEnrollmentDeps {
   readonly audit?: Pick<AuditRepository, "write">;
   readonly now?: () => Date;
   readonly newId?: () => string;
+  readonly reconcileEnding?: (offeringId: string) => Promise<void>;
 }
 
 export interface SalesTrialOfferingEnterRequest {
@@ -116,7 +117,11 @@ export async function handleEnterSalesTrialOffering(
 ): Promise<SalesTrialOfferingEnterResponse> {
   const correlationId = randomUUID();
   const now = (deps.now ?? (() => new Date()))();
-  const offering = await deps.offerings.findById(request.customerId, request.offeringId);
+  let offering = await deps.offerings.findById(request.customerId, request.offeringId);
+  if (offering?.status === "ending" && deps.reconcileEnding) {
+    await deps.reconcileEnding(request.offeringId);
+    offering = await deps.offerings.findById(request.customerId, request.offeringId);
+  }
   const existingEnrollment = offering
     ? await deps.enrollments.findByOfferingAndPortalUser(
         request.customerId,
@@ -125,7 +130,7 @@ export async function handleEnterSalesTrialOffering(
       )
     : null;
   const isContinuedAccess =
-    offering?.status === "unpublished" &&
+    (offering?.status === "unpublished" || offering?.status === "ending") &&
     hasContinuableSalesTrialEnvironment(existingEnrollment);
   if (
     !offering ||

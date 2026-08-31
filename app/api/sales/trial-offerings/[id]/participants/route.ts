@@ -7,6 +7,8 @@ import { handleListSalesTrialOfferingParticipants } from "@/api/sales-trial-enro
 import { createCloudShareSalesDelivery } from "@/integrations/cloudshare/sales-delivery";
 import { createPrismaSalesTrialEnrollmentRepository } from "@/persistence/prisma-sales-trial-enrollment-repository";
 import { createPrismaSalesTrialOfferingRepository } from "@/persistence/prisma-sales-trial-offering-repository";
+import { handleEndSalesTrialOffering } from "@/api/sales-trial-offerings";
+import { salesTrialEndingDeps } from "@/api/sales-trial-ending-reconciliation";
 
 export async function GET(
   _request: Request,
@@ -22,9 +24,18 @@ export async function GET(
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  const offeringId = (await params).id;
+  const offeringRepository = createPrismaSalesTrialOfferingRepository(services.prisma);
+  if ((await offeringRepository.findById(session.customerId, offeringId))?.status === "ending") {
+    await handleEndSalesTrialOffering(salesTrialEndingDeps(services), {
+      customerId: session.customerId,
+      id: offeringId,
+      actor: { type: "admin", id: session.userId, email: session.email },
+    });
+  }
   const result = await handleListSalesTrialOfferingParticipants(
     {
-      offerings: createPrismaSalesTrialOfferingRepository(services.prisma),
+      offerings: offeringRepository,
       enrollments: createPrismaSalesTrialEnrollmentRepository(services.prisma),
       connections: services.cloudshareConnections,
       deliveryFactory: {
@@ -38,7 +49,7 @@ export async function GET(
     },
     {
       customerId: session.customerId,
-      offeringId: (await params).id,
+      offeringId,
       actor: {
         type: "admin",
         id: session.userId,

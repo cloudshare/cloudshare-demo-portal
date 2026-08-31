@@ -12,11 +12,15 @@ const environmentListSchema = z.union([
 ]);
 export const cloudShareV3SalesEnvironmentStatusCodeSchema = z.union([z.literal(2), z.literal(3), z.literal(4), z.literal(5), z.literal(7), z.literal(8), z.literal(9)]);
 export type CloudShareV3SalesEnvironmentStatusCode = z.infer<typeof cloudShareV3SalesEnvironmentStatusCodeSchema>;
-const extendedSchema = z.object({ statusCode: cloudShareV3SalesEnvironmentStatusCodeSchema }).passthrough();
+const extendedSchema = z.object({
+  statusCode: cloudShareV3SalesEnvironmentStatusCodeSchema,
+  expirationTime: z.string().min(1),
+}).passthrough();
 
 export interface SalesEnvironmentObservation {
   readonly environmentId: string;
   readonly statusCode: CloudShareV3SalesEnvironmentStatusCode;
+  readonly expirationTime: string;
   readonly exchanges: readonly { readonly request: CloudShareRequestDiagnostics; readonly response: CloudShareResponseDiagnostics }[];
 }
 
@@ -34,9 +38,17 @@ export class SalesEnvironmentResolutionError extends Error {
 
 export interface SalesEnvironmentSource {
   observe(input: { readonly ownerEmail: string; readonly projectId: string }): Promise<SalesEnvironmentObservation>;
+  observeById?(environmentId: string): Promise<SalesEnvironmentObservation>;
 }
 
 export function createCloudShareSalesEnvironmentSource(client: CloudShareClient): SalesEnvironmentSource {
+  async function observeById(environmentId: string): Promise<SalesEnvironmentObservation> {
+    const extendedSpec = { method: "GET", path: "/envs/actions/getextended", query: { envId: environmentId }, schema: extendedSchema } as const;
+    const extended = client.requestV3Detailed
+      ? await client.requestV3Detailed(extendedSpec)
+      : { data: await client.requestV3(extendedSpec), request: { method: "GET" as const, path: extendedSpec.path, query: extendedSpec.query }, response: { status: 200, body: undefined }, host: "", integrationSurface: "cloudshare.v3" };
+    return { environmentId, statusCode: extended.data.statusCode, expirationTime: extended.data.expirationTime, exchanges: [{ request: extended.request, response: extended.response }] };
+  }
   return {
     async observe({ ownerEmail, projectId }) {
       const listSpec = { method: "GET", path: "/envs", query: { ownerEmail, brief: "false" }, schema: environmentListSchema } as const;
@@ -49,11 +61,9 @@ export function createCloudShareSalesEnvironmentSource(client: CloudShareClient)
         throw new SalesEnvironmentResolutionError(matches.length === 0 ? "environment_not_found_for_project" : "environment_ambiguous_for_project", exchanges);
       }
       const environmentId = matches[0]!.id;
-      const extendedSpec = { method: "GET", path: "/envs/actions/getextended", query: { envId: environmentId }, schema: extendedSchema } as const;
-      const extended = client.requestV3Detailed
-        ? await client.requestV3Detailed(extendedSpec)
-        : { data: await client.requestV3(extendedSpec), request: { method: "GET" as const, path: extendedSpec.path, query: extendedSpec.query }, response: { status: 200, body: undefined }, host: "", integrationSurface: "cloudshare.v3" };
-      return { environmentId, statusCode: extended.data.statusCode, exchanges: [...exchanges, { request: extended.request, response: extended.response }] };
+      const observation = await observeById(environmentId);
+      return { ...observation, exchanges: [...exchanges, ...observation.exchanges] };
     },
+    observeById,
   };
 }

@@ -133,6 +133,8 @@ model SalesTrialOffering {
   salesProDisplayName         String?
   status                      String
   attentionReason             String?
+  endingCalculatedEnd         String?
+  endingLastReconciledAt      DateTime?
   createdAt                   DateTime
   updatedAt                   DateTime
   publishedAt                 DateTime?
