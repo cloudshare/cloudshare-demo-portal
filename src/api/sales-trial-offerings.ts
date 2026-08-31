@@ -5,14 +5,22 @@ import type {
   CloudShareClientFactory,
   CloudShareConnectionRepository,
 } from "@/domain/cloudshare-connection";
-import { cloudShareWallClockToInstant } from "@/domain/cloudshare-wall-clock";
+import {
+  cloudShareWallClockToInstant,
+  formatCloudShareWallClock,
+} from "@/domain/cloudshare-wall-clock";
 import type { DiagnosticActor, DiagnosticRecorder } from "@/domain/diagnostic-log";
 import type { ItemRepository } from "@/domain/item";
 import type {
   SalesTrialOffering,
   SalesTrialOfferingRepository,
 } from "@/domain/sales-trial-offering";
+import {
+  hasContinuableSalesTrialEnvironment,
+  type SalesTrialEnrollmentRepository,
+} from "@/domain/sales-trial-enrollment";
 import type { SalesTimezoneCacheRepository } from "@/domain/sales-timezones";
+import { calculateSalesTrialEnding } from "@/domain/sales-trial-ending";
 import {
   SalesItemProvisioningReadError,
   SalesItemProvisioningValidationError,
@@ -29,18 +37,27 @@ import {
   CloudShareTransportError,
 } from "@/integrations/cloudshare/errors";
 import type { CloudShareProjectMemberSource } from "@/integrations/cloudshare/project-members";
+import type { SalesEnvironmentSource } from "@/integrations/cloudshare/sales-environment";
 
 const writeSchema = z.object({
   title: z.string().trim().min(1).max(100),
-  description: z.string().trim().min(1).max(2000),
+  description: z.string().trim().max(2000).default(""),
   itemId: z.string().trim().min(1),
   start: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),
-  end: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),
+  end: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/).nullable(),
+  noEndDate: z.boolean().optional(),
   timeZone: z.string().trim().min(1).max(100),
   salesProEmail: z.string().trim().email(),
 });
 
 const response = (status: number, body: Record<string, unknown>) => ({ status, body });
+
+class SalesTrialEndingLeaseLostError extends Error {
+  constructor() {
+    super("Sales Trial ending reconciliation lease was lost.");
+    this.name = "SalesTrialEndingLeaseLostError";
+  }
+}
 
 export interface SalesTrialOfferingsDeps {
   readonly offerings: SalesTrialOfferingRepository;
@@ -52,6 +69,11 @@ export interface SalesTrialOfferingsDeps {
         Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>
       >,
     ): SalesDelivery;
+  };
+  readonly salesEnvironmentFactory?: {
+    forConnection(
+      connection: NonNullable<Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>>,
+    ): SalesEnvironmentSource;
   };
   readonly cloudshare?: Pick<CloudShareClientFactory, "forConnection">;
   readonly itemProvisioningValidator?: SalesItemProvisioningValidator;
@@ -99,7 +121,7 @@ type PortalSalesTrialOffering = {
   readonly description: string;
   readonly itemId: string;
   readonly start: string;
-  readonly end: string;
+  readonly end: string | null;
   readonly timeZone: string;
   readonly salesProEmail: string;
   readonly salesProDisplayName: string | null;
@@ -109,6 +131,8 @@ type PortalSalesTrialOffering = {
   readonly publishedAt: string | null;
   readonly unpublishedAt: string | null;
   readonly attentionReason: string | null;
+  readonly endingCalculatedEnd: string | null;
+  readonly endingLastReconciledAt: string | null;
 };
 
 type ParticipantSalesTrialOffering = Pick<
@@ -124,7 +148,12 @@ export async function handleCreateSalesTrialOffering(
   if (!parsed.success) {
     return response(400, { error: "Invalid Sales Trial Offering request." });
   }
-  if (parsed.data.end <= parsed.data.start) {
+  if (parsed.data.end === null && !parsed.data.noEndDate) {
+    return response(400, {
+      error: "Select an end time or explicitly mark the Trial Offering as open-ended.",
+    });
+  }
+  if (parsed.data.end !== null && parsed.data.end <= parsed.data.start) {
     return response(400, { error: "End must be after start." });
   }
   const item = await deps.items.findById(parsed.data.itemId);
@@ -193,11 +222,36 @@ export async function handleListSalesTrialOfferings(
 }
 
 export async function handleListPublishedSalesTrialOfferings(
-  deps: Pick<SalesTrialOfferingsDeps, "offerings">,
-  request: SalesTrialOfferingReadRequest,
+  deps: Pick<SalesTrialOfferingsDeps, "offerings" | "now"> & {
+    readonly enrollments?: Pick<SalesTrialEnrollmentRepository, "listByPortalUser">;
+  },
+  request: SalesTrialOfferingReadRequest & { readonly portalUserId?: string },
 ) {
-  const offerings = await deps.offerings.listPublishedByCustomerId(request.customerId);
-  return response(200, { offerings: offerings.map(toParticipantOffering) });
+  const published = await deps.offerings.listPublishedByCustomerId(request.customerId);
+  const now = (deps.now ?? (() => new Date()))();
+  const launchedEnrollments = request.portalUserId && deps.enrollments?.listByPortalUser
+    ? await deps.enrollments.listByPortalUser(request.customerId, request.portalUserId)
+    : [];
+  const continuedOfferingIds = new Set(
+    launchedEnrollments
+      .filter(hasContinuableSalesTrialEnvironment)
+      .map((enrollment) => enrollment.salesTrialOfferingId),
+  );
+  const continued = continuedOfferingIds.size === 0
+    ? []
+    : (await deps.offerings.listByCustomerId(request.customerId)).filter(
+        (offering) => (offering.status === "unpublished" || offering.status === "ending") && continuedOfferingIds.has(offering.id),
+      );
+  const accessible = new Map<string, SalesTrialOffering>();
+  for (const offering of published.filter((candidate) => isOfferingActive(candidate, now))) {
+    accessible.set(offering.id, offering);
+  }
+  for (const offering of continued) accessible.set(offering.id, offering);
+  return response(200, {
+    offerings: [...accessible.values()]
+      .sort((left, right) => left.start.localeCompare(right.start))
+      .map(toParticipantOffering),
+  });
 }
 
 export async function handlePublishSalesTrialOffering(
@@ -298,8 +352,11 @@ export async function handlePublishSalesTrialOffering(
     );
   }
   const startInstant = cloudShareWallClockToInstant(offering.start, offering.timeZone);
-  const endInstant = cloudShareWallClockToInstant(offering.end, offering.timeZone);
-  if (!startInstant || !endInstant) {
+  const endInstant =
+    offering.end === null
+      ? null
+      : cloudShareWallClockToInstant(offering.end, offering.timeZone);
+  if (!startInstant || (offering.end !== null && !endInstant)) {
     return rejectPublishPreflight(
       deps,
       request,
@@ -311,7 +368,7 @@ export async function handlePublishSalesTrialOffering(
       "invalid_wall_clock",
     );
   }
-  if (endInstant <= startInstant) {
+  if (endInstant !== null && endInstant <= startInstant) {
     return rejectPublishPreflight(
       deps,
       request,
@@ -834,6 +891,415 @@ export async function handleUnpublishSalesTrialOffering(
   return response(200, { offering: toPortalOffering(unpublished) });
 }
 
+export async function handleEndSalesTrialOffering(
+  deps: SalesTrialOfferingsDeps,
+  request: SalesTrialOfferingPublishRequest,
+) {
+  // Production composition supplies the v3 environment source. Keep the
+  // legacy failure-aware path for older explicit adapters until they migrate.
+  if (!deps.salesEnvironmentFactory) {
+    return legacyHandleEndSalesTrialOffering(deps, request);
+  }
+  const offering = await deps.offerings.findById(request.customerId, request.id);
+  if (!offering) return response(404, { error: "Sales Trial Offering was not found for this Customer." });
+  if ((offering.status !== "published" && offering.status !== "ending") || !offering.cloudShareSalesExperienceId) {
+    return response(409, { error: "Only published or ending Sales Trial Offerings can be ended." });
+  }
+  const now = (deps.now ?? (() => new Date()))();
+  // Admission closes durably before any provider read or mutation. A provider
+  // failure must never reopen this catalogue entry to new participants.
+  const ending: SalesTrialOffering = {
+    ...offering,
+    status: "ending",
+    unpublishedAt: offering.unpublishedAt ?? now,
+    updatedAt: now,
+    attentionReason: null,
+    endingLeaseToken: null,
+    endingLeaseExpiresAt: null,
+  };
+  const leaseToken = randomUUID();
+  const correlationId = randomUUID();
+  const leaseDurationMs = 15 * 60_000;
+  if (deps.offerings.reserveEndingReconciliation) {
+    const reserved = await deps.offerings.reserveEndingReconciliation(
+      request.customerId, offering.id, leaseToken, now, new Date(now.getTime() + leaseDurationMs), ending.unpublishedAt!,
+    );
+    if (!reserved) {
+      const current = await deps.offerings.findById(request.customerId, offering.id);
+      return response(202, { offering: toPortalOffering(current ?? ending), reconciliationInProgress: true });
+    }
+  } else {
+    await deps.offerings.save(ending);
+  }
+  if (offering.status === "published") {
+    await Promise.allSettled([
+      deps.diagnostics?.record({
+        source: "sales-trial-offerings", operation: "sales.trial_offering.end", outcome: "success",
+        customerId: request.customerId, actor: request.actor, subject: { type: "sales_trial_offering", id: offering.id },
+        correlationId, message: "Sales Trial Offering unpublished and entering deferred shutdown",
+        externalIds: { offeringId: offering.id, cloudShareSalesExperienceId: offering.cloudShareSalesExperienceId! },
+        details: { integrationSurface: "portal.sales_trial_offerings", previousStatus: "published", status: "ending" },
+      }),
+      auditLifecycle(deps, request, offering.id, "sales.trial_offering.end", "success", {
+        lifecycle: "ending", previousStatus: "published", status: "ending", integrationSurface: "portal.sales_trial_offerings",
+      }, undefined, correlationId),
+    ]);
+  }
+
+  let terminalTarget = offering.endingTerminalTarget ?? null;
+  const renewLease = async () => {
+    if (!deps.offerings.renewEndingReconciliation) return;
+    const renewalNow = (deps.now ?? (() => new Date()))();
+    const renewed = await deps.offerings.renewEndingReconciliation(
+      request.customerId, offering.id, leaseToken, renewalNow, new Date(renewalNow.getTime() + leaseDurationMs),
+    );
+    if (!renewed) throw new SalesTrialEndingLeaseLostError();
+  };
+  const configurationFailure = async (failureMode: string, integrationSurface: string) => {
+    const attention = { ...ending, attentionReason: "CloudShare shutdown reconciliation requires attention; review support diagnostics." };
+    await deps.offerings.save(attention);
+    await deps.diagnostics?.record({
+      source: "sales-trial-offerings", operation: "sales.trial_offering.end", outcome: "failure", level: "warn",
+      customerId: request.customerId, actor: request.actor, subject: { type: "sales_trial_offering", id: offering.id },
+      correlationId, message: attention.attentionReason!,
+      externalIds: { offeringId: offering.id, cloudShareSalesExperienceId: offering.cloudShareSalesExperienceId! },
+      details: { integrationSurface, failureMode, status: "ending", needsAttention: true },
+    });
+    return response(202, { offering: toPortalOffering(attention), needsAttention: true, correlationId });
+  };
+  const connection = await deps.connections.findByCustomerId(request.customerId);
+  if (!connection) return configurationFailure("cloudshare_connection_missing", "portal.cloudshare_connection");
+  const delivery = deps.deliveryFactory?.forConnection(connection) ??
+    createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection));
+  if (!delivery.updateSession) return configurationFailure("sales_delivery_update_missing", "cloudshare.v4.sales");
+  const environments = deps.salesEnvironmentFactory.forConnection(connection);
+  if (!environments.observeById) return configurationFailure("environment_getextended_missing", "cloudshare.v3.envs.getextended");
+  try {
+    await renewLease();
+    const [provider, roster] = await Promise.all([
+      delivery.readSession(offering.cloudShareSalesExperienceId),
+      delivery.listParticipants(offering.cloudShareSalesExperienceId),
+    ]);
+    if (provider.status === "ended") {
+      const ended = { ...ending, status: "ended" as const, endingLastReconciledAt: now, attentionReason: null };
+      await deps.offerings.save(ended);
+      await Promise.allSettled([
+        deps.diagnostics?.record({
+          source: "sales-trial-offerings", operation: "sales.trial_offering.end", outcome: "success",
+          customerId: request.customerId, actor: request.actor, subject: { type: "sales_trial_offering", id: offering.id },
+          correlationId, message: "CloudShare Sales Trial Experience is ended",
+          externalIds: { offeringId: offering.id, cloudShareSalesExperienceId: offering.cloudShareSalesExperienceId! },
+          request: provider.request as unknown as Record<string, unknown>, response: provider.response as unknown as Record<string, unknown>,
+          details: { integrationSurface: "cloudshare.v4.sales", previousStatus: offering.status, status: "ended", providerUpdated: false },
+        }),
+        auditLifecycle(deps, request, offering.id, "sales.trial_offering.end", "success", {
+          lifecycle: "provider_ended", previousStatus: offering.status, status: "ended", integrationSurface: "cloudshare.v4.sales",
+        }, undefined, correlationId),
+      ]);
+      return response(200, { offering: toPortalOffering(ended) });
+    }
+    const environmentIds = [...new Set(roster.participants.map((p) => p.environmentId).filter((id): id is string => Boolean(id)))];
+    const observations = [];
+    // Deliberately sequential: fail closed on the first incomplete read and do
+    // not burst an unbounded participant roster at the v3 endpoint.
+    for (const environmentId of environmentIds) {
+      observations.push(await environments.observeById!(environmentId));
+      await renewLease();
+    }
+    const calculation = calculateSalesTrialEnding({
+      observations, now, timeZone: offering.timeZone, providerEnd: provider.end,
+      persistedTerminalTarget: offering.endingTerminalTarget,
+    });
+    if (calculation.activeCount === 0 && !terminalTarget) {
+      terminalTarget = calculation.calculatedEnd;
+      if (deps.offerings.persistEndingTerminalTarget &&
+        !(await deps.offerings.persistEndingTerminalTarget(request.customerId, offering.id, leaseToken, terminalTarget))) {
+        throw new SalesTrialEndingLeaseLostError();
+      }
+    }
+    await renewLease();
+    const providerUpdate = calculation.shouldUpdate
+      ? await delivery.updateSession(offering.cloudShareSalesExperienceId, { end: calculation.calculatedEnd })
+      : null;
+    const reconciled = {
+      ...ending,
+      status: calculation.activeCount === 0 ? "ended" as const : "ending" as const,
+      end: calculation.effectiveEnd,
+      endingCalculatedEnd: calculation.effectiveEnd,
+      endingTerminalTarget: terminalTarget,
+      endingLastReconciledAt: now,
+      attentionReason: null,
+    };
+    await deps.offerings.save(reconciled);
+    const evidence = providerUpdate ?? provider;
+    await Promise.allSettled([
+      deps.diagnostics?.record({
+        source: "sales-trial-offerings", operation: "sales.trial_offering.end", outcome: "success",
+        customerId: request.customerId, actor: request.actor, subject: { type: "sales_trial_offering", id: offering.id },
+        correlationId, message: providerUpdate ? "CloudShare Sales Trial end reconciled" : "CloudShare Sales Trial end remains safely scheduled",
+        externalIds: { offeringId: offering.id, cloudShareSalesExperienceId: offering.cloudShareSalesExperienceId! },
+        request: evidence.request as unknown as Record<string, unknown>, response: evidence.response as unknown as Record<string, unknown>,
+        details: { integrationSurface: "cloudshare.v4.sales", previousStatus: offering.status,
+          status: calculation.activeCount === 0 ? "ended" : "ending",
+          providerUpdated: Boolean(providerUpdate), calculatedEnd: calculation.calculatedEnd, effectiveEnd: calculation.effectiveEnd,
+          activeEnvironmentCount: calculation.activeCount },
+      }),
+      auditLifecycle(deps, request, offering.id, "sales.trial_offering.end", "success", {
+        lifecycle: providerUpdate ? "provider_end_updated" : "provider_end_observed", previousStatus: offering.status,
+        status: calculation.activeCount === 0 ? "ended" : "ending", integrationSurface: "cloudshare.v4.sales", calculatedEnd: calculation.calculatedEnd,
+        effectiveEnd: calculation.effectiveEnd, activeEnvironmentCount: calculation.activeCount,
+      }, undefined, correlationId),
+    ]);
+    return response(200, { offering: toPortalOffering(reconciled) });
+  } catch (error) {
+    if (error instanceof SalesTrialEndingLeaseLostError) {
+      const current = await deps.offerings.findById(request.customerId, offering.id);
+      return response(202, { offering: toPortalOffering(current ?? ending), reconciliationInProgress: true });
+    }
+    const attention = {
+      ...ending,
+      endingTerminalTarget: terminalTarget,
+      endingLastReconciledAt: now,
+      attentionReason: "CloudShare shutdown reconciliation requires attention; review support diagnostics.",
+    };
+    await deps.offerings.save(attention);
+    const evidence = cloudShareEvidence(error);
+    await deps.diagnostics?.record({
+      source: "sales-trial-offerings", operation: "sales.trial_offering.end", outcome: "failure", level: "warn",
+      customerId: request.customerId, actor: request.actor,
+      subject: { type: "sales_trial_offering", id: offering.id }, correlationId,
+      message: attention.attentionReason!,
+      externalIds: { offeringId: offering.id, cloudShareSalesExperienceId: offering.cloudShareSalesExperienceId },
+      request: evidence?.request, response: evidence?.response,
+      details: { integrationSurface: "cloudshare.v3.envs.getextended", status: "ending", needsAttention: true },
+    });
+    return response(202, { offering: toPortalOffering(attention), needsAttention: true, correlationId });
+  }
+}
+
+async function legacyHandleEndSalesTrialOffering(
+  deps: SalesTrialOfferingsDeps,
+  request: SalesTrialOfferingPublishRequest,
+) {
+  const offering = await deps.offerings.findById(request.customerId, request.id);
+  if (!offering) {
+    return response(404, { error: "Sales Trial Offering was not found for this Customer." });
+  }
+  if (offering.status !== "published" || !offering.cloudShareSalesExperienceId) {
+    return response(409, { error: "Only published Sales Trial Offerings can be ended." });
+  }
+  const connection = await deps.connections.findByCustomerId(request.customerId);
+  if (!connection) {
+    return response(404, { error: "Sales Trial Offering is unavailable." });
+  }
+  const delivery =
+    deps.deliveryFactory?.forConnection(connection) ??
+    createCloudShareSalesDelivery((deps.cloudshare ?? missingClientFactory).forConnection(connection));
+  if (!delivery.updateSession) {
+    return response(503, { error: "Sales Delivery update is not configured." });
+  }
+
+  const now = (deps.now ?? (() => new Date()))();
+  const end = formatCloudShareWallClock(new Date(now.getTime() + 2 * 60_000), offering.timeZone);
+  const correlationId = randomUUID();
+  if (!end) {
+    return response(400, { error: "End trial requires a supported CloudShare timezone." });
+  }
+
+  let updated;
+  try {
+    updated = await delivery.updateSession(offering.cloudShareSalesExperienceId, { end });
+  } catch (error) {
+    const publishedWithAttention = {
+      ...offering,
+      status: "published" as const,
+      updatedAt: now,
+      attentionReason: END_PROVIDER_FAILURE_REASON,
+    };
+    let localAttentionMarkerPersisted = false;
+    try {
+      await deps.offerings.save(publishedWithAttention);
+      localAttentionMarkerPersisted = true;
+    } catch {
+      // Preserve the durable provider-failure evidence path through diagnostics and audit
+      // even when the local attention marker cannot be saved.
+    }
+    const evidence = cloudShareEvidence(error);
+    await Promise.allSettled([
+      deps.diagnostics?.record({
+        source: "sales-trial-offerings",
+        operation: "sales.trial_offering.end",
+        outcome: "failure",
+        level: "warn",
+        customerId: request.customerId,
+        actor: request.actor,
+        subject: { type: "sales_trial_offering", id: offering.id },
+        correlationId,
+        message: END_PROVIDER_FAILURE_REASON,
+        externalIds: {
+          offeringId: offering.id,
+          itemId: offering.itemId,
+          cloudShareSalesExperienceId: offering.cloudShareSalesExperienceId,
+        },
+        request: evidence?.request,
+        response: evidence?.response,
+        details: {
+          integrationSurface: "cloudshare.v4.sales",
+          failureMode: "cloudshare_end_trial_update",
+          previousStatus: offering.status,
+          status: "published",
+          needsAttention: true,
+          localAttentionMarkerPersisted,
+        },
+      }),
+      auditLifecycle(
+        deps,
+        request,
+        offering.id,
+        "sales.trial_offering.end",
+        "failure",
+        {
+          itemId: offering.itemId,
+          lifecycle: "end",
+          previousStatus: offering.status,
+          status: "published",
+          needsAttention: true,
+          failureMode: "cloudshare_end_trial_update",
+          integrationSurface: "cloudshare.v4.sales",
+          localAttentionMarkerPersisted,
+        },
+        END_PROVIDER_FAILURE_REASON,
+        correlationId,
+      ),
+    ]);
+    return response(502, {
+      correlationId,
+      error: localAttentionMarkerPersisted ? END_PROVIDER_FAILURE_REASON : `${END_PROVIDER_FAILURE_REASON} Portal state may be stale.`,
+      needsAttention: true,
+      ...(localAttentionMarkerPersisted ? { offering: toPortalOffering(publishedWithAttention) } : {}),
+    });
+  }
+
+  try {
+    const unpublished = {
+      ...offering,
+      end,
+      status: "unpublished" as const,
+      updatedAt: now,
+      unpublishedAt: now,
+      attentionReason: null,
+    };
+    await deps.offerings.save(unpublished);
+    await Promise.allSettled([
+      deps.diagnostics?.record({
+        source: "sales-trial-offerings",
+        operation: "sales.trial_offering.end",
+        outcome: "success",
+        customerId: request.customerId,
+        actor: request.actor,
+        subject: { type: "sales_trial_offering", id: offering.id },
+        message: "Sales Trial Offering ended and unpublished",
+        externalIds: { offeringId: offering.id, itemId: offering.itemId },
+        request: updated.request as unknown as Record<string, unknown>,
+        response: updated.response as unknown as Record<string, unknown>,
+        details: {
+          integrationSurface: "cloudshare.v4.sales",
+          lifecycle: "end",
+          previousStatus: offering.status,
+          status: "unpublished",
+        },
+      }),
+      auditLifecycle(
+        deps,
+        request,
+        offering.id,
+        "sales.trial_offering.end",
+        "success",
+        {
+          itemId: offering.itemId,
+          lifecycle: "end",
+          previousStatus: offering.status,
+          status: "unpublished",
+          integrationSurface: "cloudshare.v4.sales",
+        },
+      ),
+    ]);
+    return response(200, { offering: toPortalOffering(unpublished) });
+  } catch (error) {
+    const endedNeedsAttention = {
+      ...offering,
+      end,
+      status: "needs_attention" as const,
+      updatedAt: now,
+      unpublishedAt: now,
+      attentionReason: END_LOCAL_PERSISTENCE_REASON,
+    };
+    let fallbackPersisted = false;
+    try {
+      await deps.offerings.save(endedNeedsAttention);
+      fallbackPersisted = true;
+    } catch {
+      fallbackPersisted =
+        (await deps.offerings.markEndNeedsAttention?.(request.customerId, offering.id, {
+          end,
+          updatedAt: endedNeedsAttention.updatedAt,
+          unpublishedAt: endedNeedsAttention.unpublishedAt!,
+          attentionReason: END_LOCAL_PERSISTENCE_REASON,
+        })) ?? false;
+    }
+    await Promise.allSettled([
+      deps.diagnostics?.record({
+        source: "sales-trial-offerings",
+        operation: "sales.trial_offering.end",
+        outcome: "failure",
+        level: "warn",
+        customerId: request.customerId,
+        actor: request.actor,
+        subject: { type: "sales_trial_offering", id: offering.id },
+        message: END_LOCAL_PERSISTENCE_REASON,
+        externalIds: {
+          offeringId: offering.id,
+          itemId: offering.itemId,
+          cloudShareSalesExperienceId: offering.cloudShareSalesExperienceId,
+        },
+        request: updated.request as unknown as Record<string, unknown>,
+        response: updated.response as unknown as Record<string, unknown>,
+        details: {
+          integrationSurface: "cloudshare.v4.sales",
+          failureMode: "local_end_persistence",
+          previousStatus: offering.status,
+          status: fallbackPersisted ? "needs_attention" : offering.status,
+          needsAttention: true,
+          fallbackPersisted,
+        },
+      }),
+      auditLifecycle(
+        deps,
+        request,
+        offering.id,
+        "sales.trial_offering.end",
+        "failure",
+        {
+          itemId: offering.itemId,
+          lifecycle: "end",
+          previousStatus: offering.status,
+          status: fallbackPersisted ? "needs_attention" : offering.status,
+          needsAttention: true,
+          failureMode: "local_end_persistence",
+          integrationSurface: "cloudshare.v4.sales",
+          outcome: fallbackPersisted ? "needs_attention" : "persistence_failed",
+        },
+        END_LOCAL_PERSISTENCE_REASON,
+      ),
+    ]);
+    return response(503, {
+      error: fallbackPersisted ? END_LOCAL_PERSISTENCE_REASON : `${END_LOCAL_PERSISTENCE_REASON} Portal state may be stale.`,
+      needsAttention: true,
+      ...(fallbackPersisted ? { offering: toPortalOffering(endedNeedsAttention) } : {}),
+    });
+  }
+}
+
 function toPortalOffering(offering: SalesTrialOffering): PortalSalesTrialOffering {
   return {
     id: offering.id,
@@ -851,6 +1317,8 @@ function toPortalOffering(offering: SalesTrialOffering): PortalSalesTrialOfferin
     publishedAt: offering.publishedAt?.toISOString() ?? null,
     unpublishedAt: offering.unpublishedAt?.toISOString() ?? null,
     attentionReason: offering.attentionReason,
+    endingCalculatedEnd: offering.endingCalculatedEnd ?? null,
+    endingLastReconciledAt: offering.endingLastReconciledAt?.toISOString() ?? null,
   };
 }
 
@@ -865,6 +1333,18 @@ function toParticipantOffering(offering: SalesTrialOffering): ParticipantSalesTr
   };
 }
 
+function isOfferingActive(offering: SalesTrialOffering, now: Date): boolean {
+  const start = cloudShareWallClockToInstant(offering.start, offering.timeZone);
+  const end =
+    offering.end === null
+      ? null
+      : cloudShareWallClockToInstant(offering.end, offering.timeZone);
+  if (!start || (offering.end !== null && !end)) {
+    return false;
+  }
+  return start <= now && (end === null || now < end);
+}
+
 function opaqueCloudShareId(value: string): string {
   return value.replaceAll("-", "");
 }
@@ -877,14 +1357,39 @@ function hasProviderCorrelation(offering: SalesTrialOffering): boolean {
 }
 
 function isOutcomeAmbiguousCreateFailure(error: unknown): boolean {
-  if (error instanceof CloudShareRequestError) {
-    return error.status >= 500;
+  if (isCloudShareOAuthTokenFailure(error)) {
+    return false;
   }
-  return (
-    error instanceof CloudShareTransportError ||
-    error instanceof CloudShareResponseError ||
-    !(error instanceof CloudShareAuthError)
-  );
+  if (error instanceof CloudShareRequestError) {
+    return error.status >= 500 && isSalesCreateRequest(error);
+  }
+  if (error instanceof CloudShareTransportError || error instanceof CloudShareResponseError) {
+    const context = cloudShareErrorContext(error);
+    return context ? isSalesCreateRequest(error) : true;
+  }
+  return !(error instanceof CloudShareAuthError);
+}
+
+function cloudShareErrorContext(error: unknown): Record<string, unknown> | undefined {
+  return error instanceof Error && "context" in error
+    ? (error as { context?: Record<string, unknown> }).context
+    : undefined;
+}
+
+function isCloudShareOAuthTokenFailure(error: unknown): boolean {
+  if (!(error instanceof CloudShareAuthError) &&
+    !(error instanceof CloudShareRequestError) &&
+    !(error instanceof CloudShareTransportError) &&
+    !(error instanceof CloudShareResponseError)) {
+    return false;
+  }
+  const context = cloudShareErrorContext(error);
+  return context?.path === "/oauth/token" || context?.integrationSurface === "cloudshare.v4.oauth.token";
+}
+
+function isSalesCreateRequest(error: unknown): boolean {
+  const context = cloudShareErrorContext(error);
+  return context?.method === "POST" && context?.path === "/sales";
 }
 
 function cloudShareEvidence(error: unknown):
@@ -931,6 +1436,10 @@ const LOCAL_CORRELATION_PERSISTENCE_REASON =
   "CloudShare created the shared Sales Trial Experience, but Certalis could not durably save its correlation. Do not retry publication; review support diagnostics.";
 const PROVISIONING_RESERVATION_REASON =
   "Sales Trial Offering publication is already in progress or unresolved. Do not retry publication or unpublish; review support diagnostics.";
+const END_PROVIDER_FAILURE_REASON =
+  "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics.";
+const END_LOCAL_PERSISTENCE_REASON =
+  "CloudShare ended the Sales Trial Offering, but Certalis could not durably unpublish it locally. Do not retry end-trial; review support diagnostics.";
 
 async function publishFailure(
   deps: SalesTrialOfferingsDeps,
@@ -942,15 +1451,20 @@ async function publishFailure(
 ) {
   const itemValidationFailure = error instanceof SalesItemProvisioningValidationError;
   const itemReadFailure = error instanceof SalesItemProvisioningReadError;
+  const oauthTokenFailure = isCloudShareOAuthTokenFailure(error);
   const evidence = cloudShareEvidence(itemReadFailure ? error.cause : error);
-  const integrationSurface = itemValidationFailure || itemReadFailure
-    ? "cloudshare.v3.sales_item_resources"
-    : "cloudshare.v4.sales";
-  const failureMode = itemValidationFailure
-    ? "item_resource_drift"
-    : itemReadFailure
-      ? "item_resource_read"
-      : "cloudshare_create";
+  const integrationSurface = oauthTokenFailure
+    ? "cloudshare.v4.oauth.token"
+    : itemValidationFailure || itemReadFailure
+      ? "cloudshare.v3.sales_item_resources"
+      : "cloudshare.v4.sales";
+  const failureMode = oauthTokenFailure
+    ? "cloudshare_oauth_token"
+    : itemValidationFailure
+      ? "item_resource_drift"
+      : itemReadFailure
+        ? "item_resource_read"
+        : "cloudshare_create";
   await deps.diagnostics?.record({
     source: "sales-trial-offerings",
     operation: "sales.trial_offering.publish",
@@ -960,11 +1474,13 @@ async function publishFailure(
     actor: request.actor,
     subject: { type: "sales_trial_offering", id: offering.id },
     correlationId,
-    message: itemValidationFailure
-      ? "Catalogue Item is stale against CloudShare resources"
-      : itemReadFailure
-        ? "CloudShare could not fully revalidate this Catalogue Item"
-        : "CloudShare could not publish the Sales Trial Offering",
+    message: oauthTokenFailure
+      ? "CloudShare OAuth token request failed before Sales Experience creation"
+      : itemValidationFailure
+        ? "Catalogue Item is stale against CloudShare resources"
+        : itemReadFailure
+          ? "CloudShare could not fully revalidate this Catalogue Item"
+          : "CloudShare could not publish the Sales Trial Offering",
     externalIds: {
       offeringId: offering.id,
       itemId: offering.itemId,
@@ -978,11 +1494,13 @@ async function publishFailure(
       error: error instanceof Error ? error.message : String(error),
     },
   });
-  const errorMessage = itemValidationFailure
-    ? "This Item no longer matches its CloudShare resources. Refresh the Item before publishing."
-    : itemReadFailure
-      ? "CloudShare could not fully revalidate this Item. Review support diagnostics before retrying."
-      : "CloudShare could not publish the Sales Trial Offering. Review support diagnostics.";
+  const errorMessage = oauthTokenFailure
+    ? "CloudShare authentication failed before the Sales Trial Offering was created. Review support diagnostics and retry."
+    : itemValidationFailure
+      ? "This Item no longer matches its CloudShare resources. Refresh the Item before publishing."
+      : itemReadFailure
+        ? "CloudShare could not fully revalidate this Item. Review support diagnostics before retrying."
+        : "CloudShare could not publish the Sales Trial Offering. Review support diagnostics.";
   await auditLifecycle(
     deps,
     request,

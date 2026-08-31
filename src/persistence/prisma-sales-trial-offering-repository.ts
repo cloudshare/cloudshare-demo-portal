@@ -65,6 +65,19 @@ export function createPrismaSalesTrialOfferingRepository(
       });
       return result.count === 1;
     },
+    async markEndNeedsAttention(customerId, id, update) {
+      const result = await prisma.salesTrialOffering.updateMany({
+        where: { customerId, id },
+        data: {
+          end: update.end,
+          status: "needs_attention",
+          updatedAt: update.updatedAt,
+          unpublishedAt: update.unpublishedAt,
+          attentionReason: update.attentionReason,
+        },
+      });
+      return result.count === 1;
+    },
     async findById(customerId, id) {
       const row = await prisma.salesTrialOffering.findFirst({ where: { customerId, id } });
       return row ? hydrate(row) : null;
@@ -85,6 +98,43 @@ export function createPrismaSalesTrialOfferingRepository(
         })
       ).map(hydrate);
     },
+    async listEnding(customerId) {
+      return (
+        await prisma.salesTrialOffering.findMany({
+          where: { status: "ending", ...(customerId ? { customerId } : {}) },
+          orderBy: { updatedAt: "asc" },
+        })
+      ).map(hydrate);
+    },
+    async reserveEndingReconciliation(customerId, id, token, now, expiresAt, unpublishedAt) {
+      const result = await prisma.salesTrialOffering.updateMany({
+        where: { customerId, id, status: { in: ["published", "ending"] }, OR: [
+          { endingLeaseToken: null }, { endingLeaseExpiresAt: null }, { endingLeaseExpiresAt: { lte: now } },
+        ] },
+        data: { status: "ending", unpublishedAt, updatedAt: now, attentionReason: null, endingLeaseToken: token, endingLeaseExpiresAt: expiresAt },
+      });
+      return result.count === 1;
+    },
+    async releaseEndingReconciliation(customerId, id, token) {
+      await prisma.salesTrialOffering.updateMany({
+        where: { customerId, id, endingLeaseToken: token },
+        data: { endingLeaseToken: null, endingLeaseExpiresAt: null },
+      });
+    },
+    async renewEndingReconciliation(customerId, id, token, now, expiresAt) {
+      const result = await prisma.salesTrialOffering.updateMany({
+        where: { customerId, id, status: "ending", endingLeaseToken: token, endingLeaseExpiresAt: { gt: now } },
+        data: { endingLeaseExpiresAt: expiresAt },
+      });
+      return result.count === 1;
+    },
+    async persistEndingTerminalTarget(customerId, id, token, target) {
+      const result = await prisma.salesTrialOffering.updateMany({
+        where: { customerId, id, status: "ending", endingLeaseToken: token },
+        data: { endingTerminalTarget: target },
+      });
+      return result.count === 1;
+    },
   };
 }
 
@@ -104,6 +154,11 @@ function serialize(offering: SalesTrialOffering) {
     salesProDisplayName: offering.salesProDisplayName,
     status: offering.status,
     attentionReason: offering.attentionReason,
+    endingCalculatedEnd: offering.endingCalculatedEnd ?? null,
+    endingLastReconciledAt: offering.endingLastReconciledAt ?? null,
+    endingTerminalTarget: offering.endingTerminalTarget ?? null,
+    endingLeaseToken: offering.endingLeaseToken ?? null,
+    endingLeaseExpiresAt: offering.endingLeaseExpiresAt ?? null,
     createdAt: offering.createdAt,
     updatedAt: offering.updatedAt,
     publishedAt: offering.publishedAt,
@@ -120,12 +175,17 @@ function hydrate(row: {
   cloudShareSalesExperienceId: string | null;
   externalId: string | null;
   start: string;
-  end: string;
+  end: string | null;
   timeZone: string;
   salesProEmail: string;
   salesProDisplayName: string | null;
   status: string;
   attentionReason: string | null;
+  endingCalculatedEnd: string | null;
+  endingLastReconciledAt: Date | null;
+  endingTerminalTarget: string | null;
+  endingLeaseToken: string | null;
+  endingLeaseExpiresAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
   publishedAt: Date | null;
@@ -136,6 +196,8 @@ function hydrate(row: {
     status:
       row.status === "provisioning" ||
       row.status === "published" ||
+      row.status === "ending" ||
+      row.status === "ended" ||
       row.status === "unpublished" ||
       row.status === "needs_attention"
         ? row.status

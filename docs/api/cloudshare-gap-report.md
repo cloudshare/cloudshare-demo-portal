@@ -2081,6 +2081,49 @@ can you get a historical list of environments that might have been consumed?”
 
 ---
 
+## GAP-34 — Ending a Sales Experience blocks sponsored-link access to policy-live environments
+
+| Field | Detail |
+|---|---|
+| **Status** | Confirmed and mitigated |
+| **Verified live** | Yes |
+
+**Observed behaviour**
+
+The local v4 OpenAPI export for `POST /sales` and `PUT /sales/{id}` models `end` as nullable on the
+Sales Experience shape. Certalis now treats an explicitly opted-in open-ended Trial Offering as a
+supported request and sends `end: null` on publish. Live QA confirmed that ending the Sales
+Experience blocks its Sponsored Link even when a participant remains In Progress and their
+environment still exists under its Policy storage lease. The documented v3
+`GET /envs/actions/getextended?envId=...` response supplies the authoritative `expirationTime` and
+numeric status. Status 4 (Archived) remains policy-live; only 5 (Deleted) and 9 (Creation Failed)
+are terminal for this shutdown calculation.
+
+**Impact on Certalis Sales Trial use**
+
+End Trial now unpublishes the portal Offering immediately, then keeps the CloudShare Experience
+open until five minutes after the latest non-terminal environment expiration. With no non-terminal
+environments it uses a two-minute grace. Reconciliation runs immediately, on participant reopen,
+on admin catalogue/monitoring reads, and every five minutes in the local Portal process. It may move
+the provider end later but not earlier while active environments remain. Partial reads retain the
+local `Ending` state, do not shorten the provider window, and expose protected support diagnostics.
+The first all-terminal observation persists a separate two-minute terminal-grace target before the
+provider mutation, so ambiguous PUT retries reuse exactly the same target. A renewable, fenced
+per-Offering database lease serializes timer, admin, and participant-triggered reconciliation.
+
+**Deployment note:** the five-minute timer is process-local for this demonstrator. A horizontally
+scaled production deployment requires one durable external scheduler or distributed lease so that
+only one worker owns each reconciliation pass.
+
+**Code reference:** `src/api/sales-trial-offerings.ts`,
+`src/api/sales-trial-enrollment.ts`,
+`src/domain/sales-trial-ending.ts`,
+`src/integrations/cloudshare/sales-environment.ts`,
+`src/integrations/cloudshare/sales-delivery.ts`,
+`docs/api/assets/cloudshare-public-api-v4-2026-07-10.json`
+
+---
+
 ## GAP-N — Short descriptive title
 
 | Field | Detail |
@@ -2108,5 +2151,5 @@ fully understood and mitigated.]
 
 ---
 
-*Last updated: 2026-08-22 (recorded BAC-25363 production verification for GAP-30).
+*Last updated: 2026-08-31 (updated GAP-34 with live sponsored-link boundary and deferred-end mitigation).
 Maintained by: portal team. Append new entries above the gap template; do not renumber existing gaps.*

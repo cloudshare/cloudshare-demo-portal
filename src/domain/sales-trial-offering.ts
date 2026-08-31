@@ -2,6 +2,8 @@ export type SalesTrialOfferingStatus =
   | "draft"
   | "provisioning"
   | "published"
+  | "ending"
+  | "ended"
   | "unpublished"
   | "needs_attention";
 
@@ -17,7 +19,7 @@ export interface SalesTrialOffering {
   /** Server-only provider correlation; never expose through ordinary APIs. */
   readonly externalId: string | null;
   readonly start: string;
-  readonly end: string;
+  readonly end: string | null;
   readonly timeZone: string;
   readonly salesProEmail: string;
   readonly salesProDisplayName: string | null;
@@ -27,6 +29,11 @@ export interface SalesTrialOffering {
   readonly publishedAt: Date | null;
   readonly unpublishedAt: Date | null;
   readonly attentionReason: string | null;
+  readonly endingCalculatedEnd?: string | null;
+  readonly endingLastReconciledAt?: Date | null;
+  readonly endingTerminalTarget?: string | null;
+  readonly endingLeaseToken?: string | null;
+  readonly endingLeaseExpiresAt?: Date | null;
 }
 
 export interface SalesTrialOfferingRepository {
@@ -60,7 +67,22 @@ export interface SalesTrialOfferingRepository {
       readonly attentionReason: string;
     },
   ): Promise<boolean>;
+  markEndNeedsAttention?(
+    customerId: string,
+    id: string,
+    update: {
+      readonly end: string;
+      readonly updatedAt: Date;
+      readonly unpublishedAt: Date;
+      readonly attentionReason: string;
+    },
+  ): Promise<boolean>;
   findById(customerId: string, id: string): Promise<SalesTrialOffering | null>;
   listByCustomerId(customerId: string): Promise<readonly SalesTrialOffering[]>;
   listPublishedByCustomerId(customerId: string): Promise<readonly SalesTrialOffering[]>;
+  listEnding?(customerId?: string): Promise<readonly SalesTrialOffering[]>;
+  reserveEndingReconciliation?(customerId: string, id: string, token: string, now: Date, expiresAt: Date, unpublishedAt: Date): Promise<boolean>;
+  releaseEndingReconciliation?(customerId: string, id: string, token: string): Promise<void>;
+  renewEndingReconciliation?(customerId: string, id: string, token: string, now: Date, expiresAt: Date): Promise<boolean>;
+  persistEndingTerminalTarget?(customerId: string, id: string, token: string, target: string): Promise<boolean>;
 }

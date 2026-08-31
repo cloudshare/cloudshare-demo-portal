@@ -14,6 +14,7 @@ import {
 import { SalesItemProvisioningValidationError } from "@/integrations/cloudshare/sales-item-provisioning";
 import {
   handleCreateSalesTrialOffering,
+  handleEndSalesTrialOffering,
   handleListPublishedSalesTrialOfferings,
   handleListSalesTrialOfferings,
   handlePublishSalesTrialOffering,
@@ -83,6 +84,21 @@ function createOfferingRepository(): SalesTrialOfferingRepository {
       });
       return true;
     },
+    async markEndNeedsAttention(customerId, id, update) {
+      const offering = rows.get(id) ?? null;
+      if (!offering || offering.customerId !== customerId) {
+        return false;
+      }
+      rows.set(id, {
+        ...offering,
+        end: update.end,
+        status: "needs_attention",
+        updatedAt: update.updatedAt,
+        unpublishedAt: update.unpublishedAt,
+        attentionReason: update.attentionReason,
+      });
+      return true;
+    },
     async findById(customerId, id) {
       const offering = rows.get(id) ?? null;
       return offering?.customerId === customerId ? offering : null;
@@ -94,6 +110,35 @@ function createOfferingRepository(): SalesTrialOfferingRepository {
       return [...rows.values()].filter(
         (offering) => offering.customerId === customerId && offering.status === "published",
       );
+    },
+    async listEnding(customerId) {
+      return [...rows.values()].filter((offering) => offering.status === "ending" && (!customerId || offering.customerId === customerId));
+    },
+    async reserveEndingReconciliation(customerId, id, token, now, expiresAt, unpublishedAt) {
+      const offering = rows.get(id);
+      if (!offering || offering.customerId !== customerId || (offering.status !== "published" && offering.status !== "ending") ||
+        (offering.endingLeaseToken && offering.endingLeaseExpiresAt && offering.endingLeaseExpiresAt > now)) return false;
+      rows.set(id, { ...offering, status: "ending", unpublishedAt, updatedAt: now, attentionReason: null, endingLeaseToken: token, endingLeaseExpiresAt: expiresAt });
+      return true;
+    },
+    async releaseEndingReconciliation(customerId, id, token) {
+      const offering = rows.get(id);
+      if (offering?.customerId === customerId && offering.endingLeaseToken === token) {
+        rows.set(id, { ...offering, endingLeaseToken: null, endingLeaseExpiresAt: null });
+      }
+    },
+    async renewEndingReconciliation(customerId, id, token, now, expiresAt) {
+      const offering = rows.get(id);
+      if (!offering || offering.customerId !== customerId || offering.endingLeaseToken !== token ||
+        !offering.endingLeaseExpiresAt || offering.endingLeaseExpiresAt <= now) return false;
+      rows.set(id, { ...offering, endingLeaseExpiresAt: expiresAt });
+      return true;
+    },
+    async persistEndingTerminalTarget(customerId, id, token, target) {
+      const offering = rows.get(id);
+      if (!offering || offering.customerId !== customerId || offering.endingLeaseToken !== token) return false;
+      rows.set(id, { ...offering, endingTerminalTarget: target });
+      return true;
     },
   };
 }
@@ -185,6 +230,27 @@ function createDeps(
   };
 }
 
+async function saveDeferredOffering(repository: SalesTrialOfferingRepository, id = "offering-deferred") {
+  await repository.save({
+    id, customerId: "customer-1", title: "Deferred Trial", description: "", itemId: "item-1",
+    cloudShareSalesExperienceId: "sales-deferred", externalId: "opaque-deferred",
+    start: "2026-08-31T09:00", end: null, timeZone: "UTC", salesProEmail: "owner@example.test",
+    salesProDisplayName: "Owner", status: "published", createdAt: new Date("2026-08-31T08:00:00Z"),
+    updatedAt: new Date("2026-08-31T09:00:00Z"), publishedAt: new Date("2026-08-31T09:00:00Z"),
+    unpublishedAt: null, attentionReason: null,
+  });
+}
+
+async function savePublishDraft(repository: SalesTrialOfferingRepository, id = "offering-token") {
+  await repository.save({
+    id, customerId: "customer-1", title: "OAuth Trial", description: "", itemId: "item-1",
+    cloudShareSalesExperienceId: null, externalId: null, start: "2026-09-01T09:00", end: "2026-09-02T09:00",
+    timeZone: "UTC", salesProEmail: "owner@example.test", salesProDisplayName: null, status: "draft",
+    createdAt: new Date("2026-08-29T12:00:00Z"), updatedAt: new Date("2026-08-29T12:00:00Z"),
+    publishedAt: null, unpublishedAt: null, attentionReason: null,
+  });
+}
+
 const body = {
   title: "Helios Trial Offering",
   description: "A shared Sales Trial for evaluators.",
@@ -193,6 +259,12 @@ const body = {
   end: "2026-09-02T09:00",
   timeZone: "UTC",
   salesProEmail: "owner@example.test",
+};
+
+const openEndedBody = {
+  ...body,
+  end: null,
+  noEndDate: true,
 };
 
 describe("Sales Trial Offering API", () => {
@@ -243,6 +315,70 @@ describe("Sales Trial Offering API", () => {
     });
   });
 
+  it("creates an explicit open-ended draft only when the admin opts into no end date", async () => {
+    const repository = createOfferingRepository();
+    const deps = createDeps(repository);
+
+    const allowed = await handleCreateSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      body: openEndedBody,
+    });
+    const rejected = await handleCreateSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      body: { ...body, end: null },
+    });
+
+    expect(allowed).toMatchObject({
+      status: 201,
+      body: {
+        offering: {
+          id: "offering-1",
+          status: "draft",
+          end: null,
+        },
+      },
+    });
+    expect(rejected).toMatchObject({
+      status: 400,
+      body: { error: "Select an end time or explicitly mark the Trial Offering as open-ended." },
+    });
+  });
+
+  it("accepts a blank description for an explicit open-ended draft", async () => {
+    const repository = createOfferingRepository();
+    const deps = createDeps(repository);
+
+    const result = await handleCreateSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      body: {
+        ...openEndedBody,
+        description: "   ",
+      },
+    });
+    const persisted = await repository.findById("customer-1", "offering-1");
+
+    expect(result).toMatchObject({
+      status: 201,
+      body: {
+        offering: {
+          id: "offering-1",
+          description: "",
+          end: null,
+          status: "draft",
+        },
+      },
+    });
+    expect(persisted).toMatchObject({
+      id: "offering-1",
+      description: "",
+      end: null,
+      status: "draft",
+    });
+  });
+
   it("lists only this customer's offerings and keeps admin responses metadata-only", async () => {
     const repository = createOfferingRepository();
     await repository.save({
@@ -253,8 +389,8 @@ describe("Sales Trial Offering API", () => {
       itemId: "item-1",
       cloudShareSalesExperienceId: "sales-1",
       externalId: "opaque-1",
-      start: "2026-09-01T09:00",
-      end: "2026-09-02T09:00",
+      start: "2026-08-29T12:00",
+      end: "2026-08-29T13:00",
       timeZone: "UTC",
       salesProEmail: "owner@example.test",
       salesProDisplayName: "Owner Example",
@@ -297,7 +433,7 @@ describe("Sales Trial Offering API", () => {
     expect(JSON.stringify(result.body)).not.toContain("opaque-1");
   });
 
-  it("projects published participant offerings without admin-only metadata", async () => {
+  it("projects only in-window published participant offerings without admin-only metadata", async () => {
     const repository = createOfferingRepository();
     await repository.save({
       id: "offering-1",
@@ -307,8 +443,114 @@ describe("Sales Trial Offering API", () => {
       itemId: "item-1",
       cloudShareSalesExperienceId: "sales-1",
       externalId: "opaque-1",
-      start: "2026-09-01T09:00",
-      end: "2026-09-02T09:00",
+      start: "2026-08-29T12:00",
+      end: "2026-08-29T13:00",
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: "Owner Example",
+      status: "published",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:30:00Z"),
+      publishedAt: new Date("2026-08-29T12:30:00Z"),
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    await repository.save({
+      id: "offering-2",
+      customerId: "customer-1",
+      title: "Future Offering",
+      description: "Starts later",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: "sales-2",
+      externalId: "opaque-2",
+      start: "2026-09-02T09:00",
+      end: "2026-09-03T09:00",
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: "Owner Example",
+      status: "published",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:30:00Z"),
+      publishedAt: new Date("2026-08-29T12:30:00Z"),
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    await repository.save({
+      id: "offering-3",
+      customerId: "customer-1",
+      title: "Ended Offering",
+      description: "Ended already",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: "sales-3",
+      externalId: "opaque-3",
+      start: "2026-08-28T09:00",
+      end: "2026-08-29T09:00",
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: "Owner Example",
+      status: "published",
+      createdAt: new Date("2026-08-28T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T09:00:00Z"),
+      publishedAt: new Date("2026-08-28T12:30:00Z"),
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    await repository.save({
+      id: "offering-4",
+      customerId: "customer-1",
+      title: "Unpublished Offering",
+      description: "Not visible",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: "sales-4",
+      externalId: "opaque-4",
+      start: "2026-08-29T11:00",
+      end: "2026-08-30T12:00",
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: "Owner Example",
+      status: "unpublished",
+      createdAt: new Date("2026-08-28T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:30:00Z"),
+      publishedAt: new Date("2026-08-28T12:30:00Z"),
+      unpublishedAt: new Date("2026-08-29T12:31:00Z"),
+      attentionReason: null,
+    });
+
+    const result = await handleListPublishedSalesTrialOfferings(createDeps(repository), {
+      customerId: "customer-1",
+    });
+
+    expect(result.body).toEqual({
+      offerings: [
+        {
+          id: "offering-1",
+          title: "Customer One",
+          description: "Visible here",
+          start: "2026-08-29T12:00",
+          end: "2026-08-29T13:00",
+          timeZone: "UTC",
+        },
+      ],
+    });
+    expect(JSON.stringify(result.body)).not.toContain("itemId");
+    expect(JSON.stringify(result.body)).not.toContain("salesPro");
+    expect(JSON.stringify(result.body)).not.toContain("createdAt");
+    expect(JSON.stringify(result.body)).not.toContain("publishedAt");
+    expect(JSON.stringify(result.body)).not.toContain("status");
+  });
+
+  it("keeps open-ended published participant offerings visible after they start", async () => {
+    const repository = createOfferingRepository();
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Open-ended Trial",
+      description: "Visible after start until an admin ends it.",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: "sales-1",
+      externalId: "opaque-1",
+      start: "2026-08-29T12:00",
+      end: null as never,
       timeZone: "UTC",
       salesProEmail: "owner@example.test",
       salesProDisplayName: "Owner Example",
@@ -328,19 +570,67 @@ describe("Sales Trial Offering API", () => {
       offerings: [
         {
           id: "offering-1",
-          title: "Customer One",
-          description: "Visible here",
-          start: "2026-09-01T09:00",
-          end: "2026-09-02T09:00",
+          title: "Open-ended Trial",
+          description: "Visible after start until an admin ends it.",
+          start: "2026-08-29T12:00",
+          end: null,
           timeZone: "UTC",
         },
       ],
     });
-    expect(JSON.stringify(result.body)).not.toContain("itemId");
-    expect(JSON.stringify(result.body)).not.toContain("salesPro");
-    expect(JSON.stringify(result.body)).not.toContain("createdAt");
-    expect(JSON.stringify(result.body)).not.toContain("publishedAt");
-    expect(JSON.stringify(result.body)).not.toContain("status");
+  });
+
+  it("keeps an ended offering visible only to a participant who previously launched it", async () => {
+    const repository = createOfferingRepository();
+    await repository.save({
+      id: "offering-ended", customerId: "customer-1", title: "Continued Trial", description: "Already launched",
+      itemId: "item-1", cloudShareSalesExperienceId: "sales-ended", externalId: "opaque-ended",
+      start: "2026-08-28T09:00", end: "2026-08-29T12:32", timeZone: "UTC",
+      salesProEmail: "owner@example.test", salesProDisplayName: "Owner", status: "ending",
+      createdAt: new Date("2026-08-28T08:00:00Z"), updatedAt: new Date("2026-08-29T12:30:00Z"),
+      publishedAt: new Date("2026-08-28T08:30:00Z"), unpublishedAt: new Date("2026-08-29T12:30:00Z"), attentionReason: null,
+    });
+    const enrollments = {
+      listByPortalUser: vi.fn().mockResolvedValue([
+        {
+          salesTrialOfferingId: "offering-ended", lastLaunchedAt: new Date("2026-08-29T10:00:00Z"), status: "active",
+          cloudShareParticipantId: "participant-1", cloudShareRosterEnvironmentReference: "environment-1", environmentStatus: "Archived",
+        },
+      ]),
+    };
+
+    const result = await handleListPublishedSalesTrialOfferings(
+      { ...createDeps(repository), enrollments } as never,
+      { customerId: "customer-1", portalUserId: "trial-user-1" } as never,
+    );
+
+    expect(result.body).toEqual({ offerings: [{
+      id: "offering-ended", title: "Continued Trial", description: "Already launched",
+      start: "2026-08-28T09:00", end: "2026-08-29T12:32", timeZone: "UTC",
+    }] });
+  });
+
+  it("hides an ended offering after the participant environment becomes terminal", async () => {
+    const repository = createOfferingRepository();
+    await repository.save({
+      id: "offering-ended", customerId: "customer-1", title: "Finished Trial", description: "No environment remains",
+      itemId: "item-1", cloudShareSalesExperienceId: "sales-ended", externalId: "opaque-ended",
+      start: "2026-08-28T09:00", end: "2026-08-29T12:32", timeZone: "UTC",
+      salesProEmail: "owner@example.test", salesProDisplayName: "Owner", status: "ending",
+      createdAt: new Date("2026-08-28T08:00:00Z"), updatedAt: new Date("2026-08-29T12:30:00Z"),
+      publishedAt: new Date("2026-08-28T08:30:00Z"), unpublishedAt: new Date("2026-08-29T12:30:00Z"), attentionReason: null,
+    });
+    const enrollments = { listByPortalUser: vi.fn().mockResolvedValue([{
+      salesTrialOfferingId: "offering-ended", lastLaunchedAt: new Date("2026-08-29T10:00:00Z"), status: "active",
+      cloudShareParticipantId: "participant-1", cloudShareRosterEnvironmentReference: "environment-1", environmentStatus: "Deleted",
+    }]) };
+
+    const result = await handleListPublishedSalesTrialOfferings(
+      { ...createDeps(repository), enrollments } as never,
+      { customerId: "customer-1", portalUserId: "trial-user-1" } as never,
+    );
+
+    expect(result.body).toEqual({ offerings: [] });
   });
 
   it("publishes a draft offering through POST /sales using type trial and disabled invitations", async () => {
@@ -408,6 +698,45 @@ describe("Sales Trial Offering API", () => {
         }),
       }),
     );
+  });
+
+  it("publishes an explicit open-ended draft through POST /sales with end null", async () => {
+    const repository = createOfferingRepository();
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Helios Trial Offering",
+      description: "A shared Sales Trial for evaluators.",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: null,
+      externalId: null,
+      start: "2026-09-01T09:00",
+      end: null as never,
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: null,
+      status: "draft",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:00:00Z"),
+      publishedAt: null,
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    const deps = createDeps(repository);
+
+    const result = await handlePublishSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+
+    expect(result.status).toBe(200);
+    expect(
+      deps.deliveryFactory.forConnection(connection).createSession,
+    ).toHaveBeenCalledWith(expect.objectContaining({ end: null }));
+    expect(result.body).toMatchObject({
+      offering: { id: "offering-1", status: "published", end: null },
+    });
   });
 
   it("allows retry after a known provider rejection by restoring the offering to draft", async () => {
@@ -1623,5 +1952,833 @@ describe("Sales Trial Offering API", () => {
     expect(deps.audit.write).not.toHaveBeenCalledWith(
       expect.objectContaining({ action: "sales.trial_offering.unpublish", outcome: "success" }),
     );
+  });
+
+  it("ends a published offering by closing the provider window first and then unpublishing locally", async () => {
+    const repository = createOfferingRepository();
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Helios Trial Offering",
+      description: "A shared Sales Trial for evaluators.",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: "sales-1",
+      externalId: "opaque-1",
+      start: "2026-09-01T09:00",
+      end: null as never,
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: "Owner Example",
+      status: "published",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:30:00Z"),
+      publishedAt: new Date("2026-08-29T12:10:00Z"),
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    const updateSession = vi.fn().mockResolvedValue({
+      id: "sales-1",
+      request: { method: "PUT", path: "/sales/sales-1", body: { end: "2026-08-29T12:32" } },
+      response: { status: 200, body: { id: "sales-1", end: "2026-08-29T12:32" } },
+    });
+    const deps = createDeps(repository, {
+      deliveryFactory: {
+        forConnection: vi.fn().mockReturnValue({
+          createSession: vi.fn(),
+          updateSession,
+        }),
+      } as never,
+    });
+
+    const result = await handleEndSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+    const persisted = await repository.findById("customer-1", "offering-1");
+
+    expect(result).toMatchObject({
+      status: 200,
+      body: {
+        offering: {
+          id: "offering-1",
+          status: "unpublished",
+          end: "2026-08-29T12:32",
+        },
+      },
+    });
+    expect(updateSession).toHaveBeenCalledWith("sales-1", {
+      end: "2026-08-29T12:32",
+    });
+    expect(persisted).toMatchObject({
+      status: "unpublished",
+      end: "2026-08-29T12:32",
+      unpublishedAt: new Date("2026-08-29T12:30:00Z"),
+    });
+  });
+
+  it("fails closed when provider end-trial update fails and preserves the published lifecycle visibility", async () => {
+    const repository = createOfferingRepository();
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticRepository });
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Helios Trial Offering",
+      description: "A shared Sales Trial for evaluators.",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: "sales-1",
+      externalId: "opaque-1",
+      start: "2026-09-01T09:00",
+      end: null as never,
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: "Owner Example",
+      status: "published",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:30:00Z"),
+      publishedAt: new Date("2026-08-29T12:10:00Z"),
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    const deps = createDeps(repository, {
+      diagnostics,
+      deliveryFactory: {
+        forConnection: vi.fn().mockReturnValue({
+          createSession: vi.fn(),
+          updateSession: vi.fn().mockRejectedValue(
+            new CloudShareRequestError("unavailable", 503, {
+              method: "PUT",
+              path: "/sales/sales-1",
+              responseStatus: 503,
+              responseBody: { error: "unavailable" },
+            }),
+          ),
+        }),
+      } as never,
+    });
+
+    const result = await handleEndSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+    const persisted = await repository.findById("customer-1", "offering-1");
+    const [entry] = await diagnosticRepository.query({
+      source: "sales-trial-offerings",
+      operation: "sales.trial_offering.end",
+    });
+
+    expect(result).toMatchObject({
+      status: 502,
+      body: {
+        error: "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics.",
+        needsAttention: true,
+        correlationId: expect.any(String),
+        offering: {
+          id: "offering-1",
+          status: "published",
+          attentionReason:
+            "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics.",
+        },
+      },
+    });
+    expect(persisted).toMatchObject({
+      status: "published",
+      unpublishedAt: null,
+      attentionReason:
+        "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics.",
+    });
+    expect(entry).toMatchObject({
+      outcome: "failure",
+      correlationId: expect.any(String),
+      request: { method: "PUT", path: "/sales/sales-1" },
+      response: { status: 503, body: { error: "unavailable" } },
+      details: expect.objectContaining({
+        integrationSurface: "cloudshare.v4.sales",
+        failureMode: "cloudshare_end_trial_update",
+        status: "published",
+        needsAttention: true,
+      }),
+    });
+  });
+
+  it("records protected provider-failure diagnostics even when the published attention save fails", async () => {
+    const repository = createOfferingRepository();
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticRepository });
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Helios Trial Offering",
+      description: "A shared Sales Trial for evaluators.",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: "sales-1",
+      externalId: "opaque-1",
+      start: "2026-09-01T09:00",
+      end: null as never,
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: "Owner Example",
+      status: "published",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:30:00Z"),
+      publishedAt: new Date("2026-08-29T12:10:00Z"),
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    const save = vi.fn().mockRejectedValue(new Error("sqlite write failed for published attention"));
+    const deps = createDeps(
+      {
+        ...repository,
+        save,
+      },
+      {
+        diagnostics,
+        deliveryFactory: {
+          forConnection: vi.fn().mockReturnValue({
+            createSession: vi.fn(),
+            updateSession: vi.fn().mockRejectedValue(
+              new CloudShareRequestError("unavailable", 503, {
+                method: "PUT",
+                path: "/sales/sales-1",
+                responseStatus: 503,
+                responseBody: { error: "unavailable" },
+              }),
+            ),
+          }),
+        } as never,
+      },
+    );
+
+    const result = await handleEndSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+    const persisted = await repository.findById("customer-1", "offering-1");
+    const [entry] = await diagnosticRepository.query({
+      source: "sales-trial-offerings",
+      operation: "sales.trial_offering.end",
+      outcome: "failure",
+    });
+
+    expect(result).toMatchObject({
+      status: 502,
+      body: {
+        error:
+          "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics. Portal state may be stale.",
+        needsAttention: true,
+        correlationId: expect.any(String),
+      },
+    });
+    expect((result.body as { offering?: unknown }).offering).toBeUndefined();
+    expect(persisted).toMatchObject({
+      status: "published",
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    expect(entry).toMatchObject({
+      outcome: "failure",
+      correlationId: expect.any(String),
+      request: { method: "PUT", path: "/sales/sales-1" },
+      response: { status: 503, body: { error: "unavailable" } },
+      details: expect.objectContaining({
+        integrationSurface: "cloudshare.v4.sales",
+        failureMode: "cloudshare_end_trial_update",
+        status: "published",
+        needsAttention: true,
+        localAttentionMarkerPersisted: false,
+      }),
+    });
+  });
+
+  it("still reports provider end-trial failure when the local attention marker cannot be saved", async () => {
+    const repository = createOfferingRepository();
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticRepository });
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Helios Trial Offering",
+      description: "A shared Sales Trial for evaluators.",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: "sales-1",
+      externalId: "opaque-1",
+      start: "2026-09-01T09:00",
+      end: null as never,
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: "Owner Example",
+      status: "published",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:30:00Z"),
+      publishedAt: new Date("2026-08-29T12:10:00Z"),
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    const save = vi.fn().mockRejectedValue(new Error("sqlite write failed for published marker"));
+    const deps = createDeps(
+      {
+        ...repository,
+        save,
+      },
+      {
+        diagnostics,
+        deliveryFactory: {
+          forConnection: vi.fn().mockReturnValue({
+            createSession: vi.fn(),
+            updateSession: vi.fn().mockRejectedValue(
+              new CloudShareRequestError("unavailable", 503, {
+                method: "PUT",
+                path: "/sales/sales-1",
+                responseStatus: 503,
+                responseBody: { error: "unavailable" },
+              }),
+            ),
+          }),
+        } as never,
+      },
+    );
+
+    const result = await handleEndSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+    const persisted = await repository.findById("customer-1", "offering-1");
+    const [entry] = await diagnosticRepository.query({
+      source: "sales-trial-offerings",
+      operation: "sales.trial_offering.end",
+    });
+
+    expect(result).toMatchObject({
+      status: 502,
+      body: {
+        error:
+          "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics. Portal state may be stale.",
+        needsAttention: true,
+        correlationId: expect.any(String),
+      },
+    });
+    expect((result.body as { offering?: unknown }).offering).toBeUndefined();
+    expect(persisted).toMatchObject({
+      status: "published",
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    expect(entry).toMatchObject({
+      outcome: "failure",
+      correlationId: expect.any(String),
+      details: expect.objectContaining({
+        failureMode: "cloudshare_end_trial_update",
+        status: "published",
+        localAttentionMarkerPersisted: false,
+      }),
+    });
+  });
+
+  it("records the protected GET evidence and returns a correlation id when end-trial stops before PUT", async () => {
+    const repository = createOfferingRepository();
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticRepository });
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Helios Trial Offering",
+      description: "A shared Sales Trial for evaluators.",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: "sales-1",
+      externalId: "opaque-1",
+      start: "2026-09-01T09:00",
+      end: null as never,
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: "Owner Example",
+      status: "published",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:30:00Z"),
+      publishedAt: new Date("2026-08-29T12:10:00Z"),
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    const failure = Object.assign(
+      new Error("CloudShare did not return the complete documented Sales Experience required for a safe update."),
+      {
+        context: {
+          method: "GET",
+          path: "/sales/sales-1",
+          responseStatus: 200,
+          responseBody: {
+            id: "sales-1",
+            name: "Helios Trial Offering",
+            type: "trial",
+            projectId: "project-1",
+            blueprintIds: ["bp-1"],
+            cloudshareRegionIds: ["region-1"],
+            policyId: "policy-1",
+            mainSalesPro: { email: "owner@example.test" },
+            registrationType: "registeredParticipantsOnly",
+            start: "2026-09-01T09:00",
+            end: null,
+            timeZone: "UTC",
+          },
+        },
+      },
+    );
+    const deps = createDeps(repository, {
+      diagnostics,
+      deliveryFactory: {
+        forConnection: vi.fn().mockReturnValue({
+          createSession: vi.fn(),
+          updateSession: vi.fn().mockRejectedValue(failure),
+        }),
+      } as never,
+    });
+
+    const result = await handleEndSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+    const [entry] = await diagnosticRepository.query({
+      source: "sales-trial-offerings",
+      operation: "sales.trial_offering.end",
+      outcome: "failure",
+    });
+
+    expect(result).toMatchObject({
+      status: 502,
+      body: {
+        error: "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics.",
+        needsAttention: true,
+        correlationId: expect.any(String),
+      },
+    });
+    expect(entry).toMatchObject({
+      outcome: "failure",
+      correlationId: (result.body as { correlationId: string }).correlationId,
+      request: { method: "GET", path: "/sales/sales-1" },
+      response: {
+        status: 200,
+        body: expect.objectContaining({
+          id: "sales-1",
+          type: "trial",
+          registrationType: "registeredParticipantsOnly",
+        }),
+      },
+      details: expect.objectContaining({
+        integrationSurface: "cloudshare.v4.sales",
+        failureMode: "cloudshare_end_trial_update",
+        status: "published",
+        needsAttention: true,
+      }),
+    });
+  });
+
+  it("records a distinct needs-attention state when CloudShare end succeeds but local unpublish persistence fails", async () => {
+    const repository = createOfferingRepository();
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticRepository });
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Helios Trial Offering",
+      description: "A shared Sales Trial for evaluators.",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: "sales-1",
+      externalId: "opaque-1",
+      start: "2026-09-01T09:00",
+      end: null as never,
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: "Owner Example",
+      status: "published",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:30:00Z"),
+      publishedAt: new Date("2026-08-29T12:10:00Z"),
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    const updateSession = vi.fn().mockResolvedValue({
+      id: "sales-1",
+      request: { method: "PUT", path: "/sales/sales-1", body: { end: "2026-08-29T12:32" } },
+      response: { status: 200, body: { id: "sales-1", end: "2026-08-29T12:32" } },
+    });
+    let saveCalls = 0;
+    const save = vi.fn().mockImplementation(async (offering: SalesTrialOffering) => {
+      saveCalls += 1;
+      if (saveCalls === 1) {
+        throw new Error(`sqlite write failed for status ${offering.status}`);
+      }
+      await repository.save(offering);
+    });
+    const deps = createDeps(
+      {
+        ...repository,
+        save,
+      },
+      {
+        diagnostics,
+        deliveryFactory: {
+          forConnection: vi.fn().mockReturnValue({
+            createSession: vi.fn(),
+            updateSession,
+          }),
+        } as never,
+      },
+    );
+
+    const result = await handleEndSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+    const persisted = await repository.findById("customer-1", "offering-1");
+    const [entry] = await diagnosticRepository.query({
+      source: "sales-trial-offerings",
+      operation: "sales.trial_offering.end",
+    });
+
+    expect(result).toMatchObject({
+      status: 503,
+      body: {
+        error:
+          "CloudShare ended the Sales Trial Offering, but Certalis could not durably unpublish it locally. Do not retry end-trial; review support diagnostics.",
+        needsAttention: true,
+        offering: {
+          id: "offering-1",
+          status: "needs_attention",
+          end: "2026-08-29T12:32",
+          attentionReason:
+            "CloudShare ended the Sales Trial Offering, but Certalis could not durably unpublish it locally. Do not retry end-trial; review support diagnostics.",
+        },
+      },
+    });
+    expect(persisted).toMatchObject({
+      status: "needs_attention",
+      end: "2026-08-29T12:32",
+      unpublishedAt: new Date("2026-08-29T12:30:00Z"),
+    });
+    expect(entry).toMatchObject({
+      outcome: "failure",
+      externalIds: {
+        offeringId: "offering-1",
+        itemId: "item-1",
+        cloudShareSalesExperienceId: "sales-1",
+      },
+      request: { method: "PUT", path: "/sales/sales-1", body: { end: "2026-08-29T12:32" } },
+      response: { status: 200, body: { id: "sales-1", end: "2026-08-29T12:32" } },
+      details: expect.objectContaining({
+        integrationSurface: "cloudshare.v4.sales",
+        failureMode: "local_end_persistence",
+        status: "needs_attention",
+        needsAttention: true,
+        fallbackPersisted: true,
+      }),
+    });
+  });
+
+  it("warns about stale portal state when CloudShare end succeeds but local unpublish persistence and fallback both fail", async () => {
+    const repository = createOfferingRepository();
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticRepository });
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Helios Trial Offering",
+      description: "A shared Sales Trial for evaluators.",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: "sales-1",
+      externalId: "opaque-1",
+      start: "2026-09-01T09:00",
+      end: null as never,
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: "Owner Example",
+      status: "published",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:30:00Z"),
+      publishedAt: new Date("2026-08-29T12:10:00Z"),
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    const updateSession = vi.fn().mockResolvedValue({
+      id: "sales-1",
+      request: { method: "PUT", path: "/sales/sales-1", body: { end: "2026-08-29T12:32" } },
+      response: { status: 200, body: { id: "sales-1", end: "2026-08-29T12:32" } },
+    });
+    const save = vi.fn().mockRejectedValue(new Error("sqlite write failed for needs_attention"));
+    const deps = createDeps(
+      {
+        ...repository,
+        save,
+        markEndNeedsAttention: vi.fn().mockResolvedValue(false),
+      },
+      {
+        diagnostics,
+        deliveryFactory: {
+          forConnection: vi.fn().mockReturnValue({
+            createSession: vi.fn(),
+            updateSession,
+          }),
+        } as never,
+      },
+    );
+
+    const result = await handleEndSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+    const persisted = await repository.findById("customer-1", "offering-1");
+    const [entry] = await diagnosticRepository.query({
+      source: "sales-trial-offerings",
+      operation: "sales.trial_offering.end",
+    });
+
+    expect(result).toMatchObject({
+      status: 503,
+      body: {
+        error:
+          "CloudShare ended the Sales Trial Offering, but Certalis could not durably unpublish it locally. Do not retry end-trial; review support diagnostics. Portal state may be stale.",
+        needsAttention: true,
+      },
+    });
+    expect((result.body as { offering?: unknown }).offering).toBeUndefined();
+    expect(persisted).toMatchObject({
+      status: "published",
+      unpublishedAt: null,
+      end: null,
+    });
+    expect(entry).toMatchObject({
+      outcome: "failure",
+      externalIds: {
+        offeringId: "offering-1",
+        itemId: "item-1",
+        cloudShareSalesExperienceId: "sales-1",
+      },
+      details: expect.objectContaining({
+        integrationSurface: "cloudshare.v4.sales",
+        failureMode: "local_end_persistence",
+        status: "published",
+        needsAttention: true,
+        fallbackPersisted: false,
+      }),
+    });
+  });
+
+  it("releases an OAuth token 504 reservation to Draft because POST sales was never attempted", async () => {
+    const repository = createOfferingRepository();
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    await savePublishDraft(repository);
+    const createSession = vi.fn().mockRejectedValue(new CloudShareRequestError("gateway timeout", 504, {
+      method: "POST", path: "/oauth/token", integrationSurface: "cloudshare.v4.oauth.token",
+      requestBody: "grant_type=client_credentials", responseStatus: 504,
+      responseBody: { error: "gateway_timeout" },
+    }));
+    const deps = createDeps(repository, {
+      diagnostics: createDiagnosticRecorder({ repository: diagnosticRepository }),
+      deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSession }) },
+    });
+
+    const result = await handlePublishSalesTrialOffering(deps, {
+      customerId: "customer-1", actor: { type: "admin", id: "admin-1" }, id: "offering-token",
+    });
+
+    expect(result).toMatchObject({ status: 502, body: {
+      error: "CloudShare authentication failed before the Sales Trial Offering was created. Review support diagnostics and retry.",
+    } });
+    expect(await repository.findById("customer-1", "offering-token")).toMatchObject({
+      status: "draft", externalId: null, cloudShareSalesExperienceId: null, attentionReason: null,
+    });
+    const [entry] = await diagnosticRepository.query({ operation: "sales.trial_offering.publish", outcome: "failure" });
+    expect(entry).toMatchObject({
+      message: "CloudShare OAuth token request failed before Sales Experience creation",
+      request: { method: "POST", path: "/oauth/token" }, response: { status: 504, body: { error: "gateway_timeout" } },
+      details: expect.objectContaining({ integrationSurface: "cloudshare.v4.oauth.token", failureMode: "cloudshare_oauth_token" }),
+    });
+    expect(deps.audit.write).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: "failure", details: expect.objectContaining({ failureMode: "cloudshare_oauth_token", integrationSurface: "cloudshare.v4.oauth.token" }),
+    }));
+    expect(createSession).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not trust forged OAuth-looking context on an untyped Error", async () => {
+    const repository = createOfferingRepository();
+    await savePublishDraft(repository, "offering-forged-oauth");
+    const forged = Object.assign(new Error("unknown failure"), {
+      context: { method: "POST", path: "/oauth/token", integrationSurface: "cloudshare.v4.oauth.token", responseStatus: 504 },
+    });
+    const result = await handlePublishSalesTrialOffering(createDeps(repository, {
+      deliveryFactory: { forConnection: vi.fn().mockReturnValue({ createSession: vi.fn().mockRejectedValue(forged) }) },
+    }), { customerId: "customer-1", actor: { type: "admin", id: "admin-1" }, id: "offering-forged-oauth" });
+
+    expect(result).toMatchObject({ status: 502, body: { needsAttention: true, offering: { status: "needs_attention" } } });
+    expect(await repository.findById("customer-1", "offering-forged-oauth")).toMatchObject({
+      status: "needs_attention", attentionReason: expect.stringContaining("creation outcome is unknown"),
+    });
+  });
+
+  it("unpublishes immediately and defers CloudShare end to the latest active Environment expiry plus five minutes", async () => {
+    const repository = createOfferingRepository();
+    await repository.save({
+      id: "offering-deferred", customerId: "customer-1", title: "Deferred Trial", description: "",
+      itemId: "item-1", cloudShareSalesExperienceId: "sales-deferred", externalId: "opaque-deferred",
+      start: "2026-08-31T09:00", end: null, timeZone: "UTC", salesProEmail: "owner@example.test",
+      salesProDisplayName: "Owner", status: "published", createdAt: new Date("2026-08-31T08:00:00Z"),
+      updatedAt: new Date("2026-08-31T09:00:00Z"), publishedAt: new Date("2026-08-31T09:00:00Z"),
+      unpublishedAt: null, attentionReason: null,
+    });
+    const updateSession = vi.fn().mockResolvedValue({ id: "sales-deferred", request: {}, response: {} });
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    const audit = { write: vi.fn().mockResolvedValue(undefined) };
+    const result = await handleEndSalesTrialOffering(createDeps(repository, {
+      now: () => new Date("2026-08-31T12:00:00Z"),
+      deliveryFactory: { forConnection: vi.fn().mockReturnValue({
+        readSession: vi.fn().mockResolvedValue({ id: "sales-deferred", status: "inProgress", end: null, request: {}, response: {} }),
+        listParticipants: vi.fn().mockResolvedValue({ participants: [
+          { environmentId: "env-ready" }, { environmentId: "env-archived" }, { environmentId: "env-deleted" },
+        ], request: {}, response: {} }), updateSession,
+      }) } as never,
+      salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue({ observe: vi.fn(), observeById: vi.fn(async (id: string) => ({
+        environmentId: id,
+        statusCode: id === "env-archived" ? 4 : id === "env-deleted" ? 5 : 2,
+        expirationTime: id === "env-archived" ? "Tue, 01 Sep 2026 14:30:00 GMT" : "Tue, 01 Sep 2026 13:00:00 GMT",
+        exchanges: [],
+      })) }) },
+      diagnostics: createDiagnosticRecorder({ repository: diagnosticRepository }), audit,
+    } as never), { customerId: "customer-1", actor: { type: "admin", id: "admin-1" }, id: "offering-deferred" });
+
+    expect(updateSession).toHaveBeenCalledWith("sales-deferred", { end: "2026-09-01T14:35" });
+    expect(result).toMatchObject({ status: 200, body: { offering: {
+      status: "ending", end: "2026-09-01T14:35", endingCalculatedEnd: "2026-09-01T14:35",
+      endingLastReconciledAt: "2026-08-31T12:00:00.000Z",
+    } } });
+    await expect(repository.listPublishedByCustomerId("customer-1")).resolves.toEqual([]);
+    const successes = await diagnosticRepository.query({ operation: "sales.trial_offering.end", outcome: "success" });
+    expect(successes).toHaveLength(2);
+    expect(successes.find((entry) => (entry.details as { providerUpdated?: boolean }).providerUpdated)).toMatchObject({ correlationId: successes[0]!.correlationId,
+      request: {}, response: {}, details: expect.objectContaining({ status: "ending", providerUpdated: true }) });
+    expect(audit.write).toHaveBeenCalledTimes(2);
+  });
+
+  it("serializes reconciliation per offering so competing triggers cannot land a stale shorter end", async () => {
+    const repository = createOfferingRepository();
+    await saveDeferredOffering(repository);
+    const now = new Date("2026-08-31T12:00:00Z");
+    const [first, second] = await Promise.all([
+      repository.reserveEndingReconciliation!("customer-1", "offering-deferred", "lease-a", now, new Date(now.getTime() + 240_000), now),
+      repository.reserveEndingReconciliation!("customer-1", "offering-deferred", "lease-b", now, new Date(now.getTime() + 240_000), now),
+    ]);
+    expect([first, second].sort()).toEqual([false, true]);
+  });
+
+  it("persists Ending attention and correlated diagnostics for every missing shutdown dependency", async () => {
+    const scenarios = [
+      { failureMode: "cloudshare_connection_missing", overrides: { connections: { findByCustomerId: vi.fn().mockResolvedValue(null) },
+        deliveryFactory: {} as never, salesEnvironmentFactory: { forConnection: vi.fn() } } },
+      { failureMode: "sales_delivery_update_missing", overrides: { deliveryFactory: { forConnection: vi.fn().mockReturnValue({}) },
+        salesEnvironmentFactory: { forConnection: vi.fn() } } },
+      { failureMode: "environment_getextended_missing", overrides: { deliveryFactory: { forConnection: vi.fn().mockReturnValue({ updateSession: vi.fn() }) },
+        salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue({ observe: vi.fn() }) } } },
+    ];
+    for (const scenario of scenarios) {
+      const repository = createOfferingRepository();
+      await saveDeferredOffering(repository);
+      const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+      const result = await handleEndSalesTrialOffering(createDeps(repository, {
+        ...scenario.overrides, diagnostics: createDiagnosticRecorder({ repository: diagnosticRepository }),
+      } as never), { customerId: "customer-1", actor: { type: "admin", id: "admin-1" }, id: "offering-deferred" });
+      expect(result).toMatchObject({ status: 202, body: { needsAttention: true, correlationId: expect.any(String),
+        offering: { status: "ending", attentionReason: expect.stringContaining("requires attention") } } });
+      const [entry] = await diagnosticRepository.query({ operation: "sales.trial_offering.end", outcome: "failure" });
+      expect(entry).toMatchObject({ correlationId: (result.body as { correlationId: string }).correlationId,
+        details: expect.objectContaining({ failureMode: scenario.failureMode, status: "ending", needsAttention: true }) });
+    }
+  });
+
+  it("bounds getextended reads to one in flight and fails closed without reading later environments", async () => {
+    const repository = createOfferingRepository();
+    await saveDeferredOffering(repository);
+    let inFlight = 0;
+    let maximum = 0;
+    const observeById = vi.fn(async (id: string) => {
+      inFlight += 1; maximum = Math.max(maximum, inFlight);
+      await Promise.resolve();
+      inFlight -= 1;
+      if (id === "env-2") throw new Error("provider read failed");
+      return { environmentId: id, statusCode: 2 as const, expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT", exchanges: [] };
+    });
+    const result = await handleEndSalesTrialOffering(createDeps(repository, {
+      deliveryFactory: { forConnection: vi.fn().mockReturnValue({
+        readSession: vi.fn().mockResolvedValue({ id: "sales-deferred", status: "inProgress", end: null, request: {}, response: {} }),
+        listParticipants: vi.fn().mockResolvedValue({ participants: [1, 2, 3].map((n) => ({ environmentId: `env-${n}` })), request: {}, response: {} }),
+        updateSession: vi.fn().mockResolvedValue({ id: "sales-deferred", request: {}, response: {} }),
+      }) } as never,
+      salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue({ observe: vi.fn(), observeById }) },
+    } as never), { customerId: "customer-1", actor: { type: "admin", id: "admin-1" }, id: "offering-deferred" });
+    expect(result).toMatchObject({ status: 202, body: { needsAttention: true, offering: { status: "ending" } } });
+    expect(observeById).toHaveBeenCalledTimes(2);
+    expect(maximum).toBe(1);
+  });
+
+  it("persists one terminal grace target before an ambiguous PUT and retries that same target", async () => {
+    const repository = createOfferingRepository();
+    await saveDeferredOffering(repository);
+    let currentNow = new Date("2026-08-31T12:00:00Z");
+    let statusCode: 2 | 5 = 2;
+    let providerEnd: string | null = null;
+    let ambiguous = false;
+    const updateSession = vi.fn(async (_id: string, changes: { end?: string | null }) => {
+      if (ambiguous) { ambiguous = false; throw new Error("ambiguous PUT"); }
+      providerEnd = changes.end ?? null;
+      return { id: "sales-deferred", request: { method: "PUT" }, response: { status: 200 } };
+    });
+    const deps = createDeps(repository, {
+      now: () => currentNow,
+      deliveryFactory: { forConnection: vi.fn().mockReturnValue({
+        readSession: vi.fn(async () => ({ id: "sales-deferred", status: "inProgress", end: providerEnd, request: {}, response: {} })),
+        listParticipants: vi.fn().mockResolvedValue({ participants: [{ environmentId: "env-1" }], request: {}, response: {} }),
+        updateSession,
+      }) } as never,
+      salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue({ observe: vi.fn(), observeById: vi.fn(async () => ({
+        environmentId: "env-1", statusCode, expirationTime: "Tue, 01 Sep 2026 14:00:00 GMT", exchanges: [],
+      })) }) },
+    } as never);
+    await handleEndSalesTrialOffering(deps, { customerId: "customer-1", actor: { type: "admin", id: "admin-1" }, id: "offering-deferred" });
+    statusCode = 5;
+    currentNow = new Date("2026-08-31T12:10:00Z");
+    ambiguous = true;
+    const failed = await handleEndSalesTrialOffering(deps, { customerId: "customer-1", actor: { type: "system" }, id: "offering-deferred" });
+    expect(failed).toMatchObject({ status: 202, body: { needsAttention: true } });
+    expect(await repository.findById("customer-1", "offering-deferred")).toMatchObject({ status: "ending", endingTerminalTarget: "2026-08-31T12:12" });
+    currentNow = new Date("2026-08-31T12:20:00Z");
+    const completed = await handleEndSalesTrialOffering(deps, { customerId: "customer-1", actor: { type: "system" }, id: "offering-deferred" });
+    expect(completed).toMatchObject({ status: 200, body: { offering: { status: "ended", end: "2026-08-31T12:12" } } });
+    expect(await repository.findById("customer-1", "offering-deferred")).toMatchObject({ status: "ended" });
+    expect(updateSession.mock.calls.slice(-2).map(([, changes]) => changes)).toEqual([
+      { end: "2026-08-31T12:12" }, { end: "2026-08-31T12:12" },
+    ]);
+  });
+
+  it("aborts without PUT when the reconciliation lease fence is lost during Environment reads", async () => {
+    const repository = createOfferingRepository();
+    await saveDeferredOffering(repository);
+    const updateSession = vi.fn();
+    let renewals = 0;
+    repository.renewEndingReconciliation = vi.fn(async () => ++renewals < 3);
+    const result = await handleEndSalesTrialOffering(createDeps(repository, {
+      deliveryFactory: { forConnection: vi.fn().mockReturnValue({
+        readSession: vi.fn().mockResolvedValue({ id: "sales-deferred", status: "inProgress", end: null, request: {}, response: {} }),
+        listParticipants: vi.fn().mockResolvedValue({ participants: [{ environmentId: "env-1" }, { environmentId: "env-2" }], request: {}, response: {} }),
+        updateSession,
+      }) } as never,
+      salesEnvironmentFactory: { forConnection: vi.fn().mockReturnValue({ observe: vi.fn(), observeById: vi.fn(async (id: string) => ({
+        environmentId: id, statusCode: 2, expirationTime: "Tue, 01 Sep 2026 14:00:00 GMT", exchanges: [],
+      })) }) },
+    } as never), { customerId: "customer-1", actor: { type: "system" }, id: "offering-deferred" });
+    expect(result).toMatchObject({ status: 202, body: { reconciliationInProgress: true } });
+    expect(updateSession).not.toHaveBeenCalled();
   });
 });

@@ -77,6 +77,8 @@ export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemVi
       ...((intent.tab === "records" || intent.tab === "sessions") && intent.accountId ? { accountId: intent.accountId } : {}),
       ...((intent.tab === "records" || intent.tab === "sessions") && intent.opportunityId ? { opportunityId: intent.opportunityId } : {}),
       ...(intent.tab === "support" && intent.correlationId ? { correlationId: intent.correlationId } : {}),
+      ...(intent.tab === "support" && intent.source ? { source: intent.source } : {}),
+      ...(intent.tab === "support" && intent.subjectId ? { subjectId: intent.subjectId } : {}),
     };
     const href = buildSalesWorkspaceHref(intent);
     if (intent.preserveScroll) router.push(href, { scroll: false });
@@ -102,7 +104,7 @@ export function SalesWorkspace({ email, initialRoute = { tab: "sessions", itemVi
     {route.tab === "records" ? <SalesRecordsFeature initialSelection={{ accountId: route.accountId ?? null, opportunityId: route.opportunityId ?? null }} onNavigate={navigate} /> : null}
     {route.tab === "sessions" && route.sessionView !== "provision" && route.queueView ? <SalesSessionsWorkbench route={route} creationNotice={creationNotice} onNavigate={navigate} /> : null}
     {route.tab === "sessions" && (route.sessionView === "provision" || !route.queueView) ? <SalesDemoSessionsFeature draftStorageKey={salesSessionProvisionDraftKey(email)} initialSelection={{ accountId: route.accountId ?? "", opportunityId: route.opportunityId ?? "", view: route.sessionView === "provision" ? "provision" : "manage", focusSessionId: route.sessionId ?? "", status: route.sessionStatus ?? "upcoming", participantsOpen: route.participantsOpen ?? false }} onNavigate={navigate} /> : null}
-    {route.tab === "trial-offerings" ? <SalesTrialOfferingsAdmin email={email} fetchAdmin={fetchAdmin} /> : null}
+    {route.tab === "trial-offerings" ? <SalesTrialOfferingsAdmin email={email} fetchAdmin={fetchAdmin} onNavigate={navigate} /> : null}
     {route.tab === "support" ? <section aria-label="Sales support"><PortalSectionIntro title="Sales support" description="Append-only support evidence for Sales records and live Item resource curation in the Certalis Customer workspace." /><AdminSupportFeature active view="diagnostics" diagnosticFilters={{ ...(route.correlationId ? { correlationId: route.correlationId } : {}), ...(route.source ? { source: route.source } : {}), ...(route.subjectId ? { subjectId: route.subjectId } : {}) }} diagnosticsEndpoint="/api/sales/diagnostics" fetchAdmin={fetchAdmin} onNavigate={(intent) => navigate({ tab: "support", correlationId: intent.diagnosticFilters?.correlationId, source: intent.diagnosticFilters?.source, subjectId: intent.diagnosticFilters?.subjectId })} /></section> : null}
     {route.tab === "configuration" ? <section aria-label="Sales configuration"><PortalSectionIntro title="CloudShare Connection" description="Manage the encrypted CloudShare Connection for the isolated Certalis Sales Customer." /><CloudShareConnectionFeature active fetchAdmin={fetchAdmin} getNavigationHref={() => buildSalesWorkspaceHref({ tab: "configuration" })} onNavigate={() => undefined} /></section> : null}</div>
     </main>
@@ -210,7 +212,9 @@ function SalesDemoSessionsFeature({ initialSelection, draftStorageKey, onNavigat
   const [draftHydrated, setDraftHydrated] = useState(false);
   const currentStart = useRef(start);
   const currentTimeZone = useRef(timeZone);
+  const currentType = useRef(type);
   const salesPreferenceDirty = useRef({ timeZone: false, experienceType: false });
+  const persistedSalesPreference = useRef({ timeZone, experienceType: type });
   const restoringDraftItem = useRef(false);
   const draftHasPreferences = useRef(false);
   const draftHasTemplate = useRef(false);
@@ -255,10 +259,10 @@ function SalesDemoSessionsFeature({ initialSelection, draftStorageKey, onNavigat
     }
   }, [initialSelection.accountId, initialSelection.opportunityId]);
 
-  useEffect(() => { currentStart.current = start; currentTimeZone.current = timeZone; }, [start, timeZone]);
+  useEffect(() => { currentStart.current = start; currentTimeZone.current = timeZone; currentType.current = type; }, [start, timeZone, type]);
   useEffect(() => { void fetchSales("/api/sales/session-configuration", { cache: "no-store" }).then(async (response) => { const body = await response.json() as { template?: string }; if (response.ok && body.template && !draftHasTemplate.current) setSessionNameTemplate(body.template); }); }, [fetchSales]);
-  useEffect(() => { let active = true; void fetchSales("/api/sales/timezones", { cache: "no-store" }).then(async (response) => { const body = await response.json() as { timezones?: { id: string; name: string }[]; freshness?: string; correlationId?: string; preference?: { timeZone?: string | null; experienceType?: SalesExperienceType | null } }; if (!active) return; if (!response.ok) { setMessage("CloudShare timezones could not be loaded."); setTimezoneCorrelationId(body.correlationId ?? null); return; } setTimezones(body.timezones ?? []); setTimezoneFreshness(body.freshness ?? null); setTimezoneCorrelationId(body.correlationId ?? null); if (!draftHasPreferences.current && !salesPreferenceDirty.current.timeZone && body.preference?.timeZone) setTimeZone(body.preference.timeZone); if (!draftHasPreferences.current && !salesPreferenceDirty.current.experienceType && body.preference?.experienceType) setType(body.preference.experienceType); }).catch(() => { if (active) setMessage("CloudShare timezones could not be loaded."); }); return () => { active = false; }; }, [fetchSales]);
-  useEffect(() => { if ((!salesPreferenceDirty.current.timeZone && !salesPreferenceDirty.current.experienceType) || timezones.length === 0) return; void fetchSales("/api/sales/timezones", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ timeZone, experienceType: type }) }); }, [fetchSales, timeZone, type, timezones.length]);
+  useEffect(() => { let active = true; void fetchSales("/api/sales/timezones", { cache: "no-store" }).then(async (response) => { const body = await response.json() as { timezones?: { id: string; name: string }[]; freshness?: string; correlationId?: string; preference?: { timeZone?: string | null; experienceType?: SalesExperienceType | null } }; if (!active) return; if (!response.ok) { setMessage("CloudShare timezones could not be loaded."); setTimezoneCorrelationId(body.correlationId ?? null); return; } setTimezones(body.timezones ?? []); setTimezoneFreshness(body.freshness ?? null); setTimezoneCorrelationId(body.correlationId ?? null); if (!draftHasPreferences.current) { const savedTimeZone = body.preference?.timeZone ?? currentTimeZone.current; const savedType = body.preference?.experienceType ?? currentType.current; const nextTimeZone = !salesPreferenceDirty.current.timeZone && body.preference?.timeZone ? body.preference.timeZone : currentTimeZone.current; const nextType = !salesPreferenceDirty.current.experienceType && body.preference?.experienceType ? body.preference.experienceType : currentType.current; persistedSalesPreference.current = { timeZone: savedTimeZone, experienceType: savedType }; if (nextTimeZone !== currentTimeZone.current) setTimeZone(nextTimeZone); if (nextType !== currentType.current) setType(nextType); } }).catch(() => { if (active) setMessage("CloudShare timezones could not be loaded."); }); return () => { active = false; }; }, [fetchSales]);
+  useEffect(() => { if ((!salesPreferenceDirty.current.timeZone && !salesPreferenceDirty.current.experienceType) || timezones.length === 0) return; const preference = { timeZone, experienceType: type }; if (persistedSalesPreference.current.timeZone === preference.timeZone && persistedSalesPreference.current.experienceType === preference.experienceType) return; persistedSalesPreference.current = preference; void fetchSales("/api/sales/timezones", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(preference) }); }, [fetchSales, timeZone, type, timezones.length]);
 
   const load = useCallback(async () => {
     const itemResponse = await fetchSales("/api/sales/items", { cache: "no-store" });

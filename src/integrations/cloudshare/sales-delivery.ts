@@ -24,7 +24,7 @@ export interface CreateSalesDemoSessionInput {
    * and retained only in redacted server-side diagnostic evidence. */
   readonly passphrase: string;
   readonly start: string;
-  readonly end: string;
+  readonly end: string | null;
   readonly timeZone: string;
   readonly mainSalesProEmail: string;
   readonly registrationType: "registeredParticipantsOnly";
@@ -35,7 +35,7 @@ export interface CreateSalesDemoSessionInput {
 export interface SalesDelivery {
   createSession(input: CreateSalesDemoSessionInput): Promise<{ readonly salesExperienceId: string } & SalesDeliveryEvidence>;
   /** Documented v4 read used only for reconciliation; the provider ID remains server-side. */
-  readSession(salesExperienceId: string): Promise<{ readonly id: string; readonly status: CloudShareSalesExperienceStatus } & SalesDeliveryEvidence>;
+  readSession(salesExperienceId: string): Promise<{ readonly id: string; readonly status: CloudShareSalesExperienceStatus; readonly end?: string | null } & SalesDeliveryEvidence>;
   /** Maps CloudShare's versioned invitation-setting wire values to the one fact
    * invite callers need, and preserves the original value for diagnostics. */
   readParticipantInvitationCapability(salesExperienceId: string): Promise<{ readonly participantInvitationsEnabled: boolean; readonly sendInvitations: "salesProsOnly" | "salesParticipantsOnly" | "participantsOnly" | "dontSend" | "salesProsAndParticipants" | "unknown" } & SalesDeliveryEvidence>;
@@ -43,10 +43,16 @@ export interface SalesDelivery {
   /** PUT always starts from a documented full GET representation. Certalis
    * changes only the provider-visible name: schedule edits need their own
    * lifecycle policy before they can be exposed. */
-  updateSession?(salesExperienceId: string, changes: { readonly name: string }): Promise<{ readonly id: string } & SalesDeliveryEvidence>;
+  updateSession?(
+    salesExperienceId: string,
+    changes: { readonly name?: string; readonly end?: string | null },
+  ): Promise<{ readonly id: string } & SalesDeliveryEvidence>;
   /** Ensures the documented Sales user-property definitions used for durable
    * Certalis-to-CloudShare participant correlation. */
-  ensureParticipantCorrelationProperties(salesExperienceId: string): Promise<{
+  ensureParticipantCorrelationProperties(
+    salesExperienceId: string,
+    requiredKeys?: readonly SalesParticipantCorrelationPropertyKey[],
+  ): Promise<{
     readonly requiredKeys: readonly SalesParticipantCorrelationPropertyKey[];
     readonly availableKeys: readonly string[];
     readonly requests: readonly SalesDeliveryRequestEvidence[];
@@ -65,11 +71,23 @@ export interface SalesDelivery {
 }
 export interface SalesProContact { readonly name?: string; readonly email: string; readonly type: "mainSalesPro" | "salesPro"; }
 
-export const SALES_PARTICIPANT_CORRELATION_PROPERTY_KEYS = [
+export const SALES_SESSION_PARTICIPANT_CORRELATION_PROPERTY_KEYS = [
   "certalisSalesParticipantId",
   "certalisOpportunityContactId",
 ] as const;
-export type SalesParticipantCorrelationPropertyKey = (typeof SALES_PARTICIPANT_CORRELATION_PROPERTY_KEYS)[number];
+export const SALES_TRIAL_PARTICIPANT_CORRELATION_PROPERTY_KEYS = [
+  "certalisSalesTrialEnrollmentId",
+  "certalisSalesTrialParticipantUserId",
+] as const;
+export const SALES_PARTICIPANT_CORRELATION_PROPERTY_KEYS =
+  SALES_SESSION_PARTICIPANT_CORRELATION_PROPERTY_KEYS;
+export type SalesSessionParticipantCorrelationPropertyKey =
+  (typeof SALES_SESSION_PARTICIPANT_CORRELATION_PROPERTY_KEYS)[number];
+export type SalesTrialParticipantCorrelationPropertyKey =
+  (typeof SALES_TRIAL_PARTICIPANT_CORRELATION_PROPERTY_KEYS)[number];
+export type SalesParticipantCorrelationPropertyKey =
+  | SalesSessionParticipantCorrelationPropertyKey
+  | SalesTrialParticipantCorrelationPropertyKey;
 export interface SalesParticipantInput { readonly firstName: string; readonly lastName: string; readonly email: string; readonly customProperties?: readonly { readonly name: string; readonly value: string }[]; }
 /** Browser-safe monitoring read model. Invite URLs are not part of this documented response. */
 export type SalesParticipant = Omit<SalesParticipantInput, "customProperties"> & {
@@ -176,7 +194,8 @@ export function normalizeSalesParticipantPage(payload: unknown): unknown {
 const participantsEnvelopeSchema = z.preprocess(normalizeSalesParticipantPage, z.object({ count: z.number().int().nonnegative().optional(), participants: z.array(salesParticipantSchema) }));
 const PARTICIPANT_PAGE_LIMIT = 100;
 
-const mutableSalesExperienceFields = ["name", "type", "projectId", "teamId", "blueprintIds", "allowParticipantsSwitchSteps", "cloudshareRegionIds", "awsCloudRegion", "azureCloudRegion", "googleCloudProviderRegion", "googleCloudProviderZone", "policyId", "opportunity", "mainSalesPro", "additionalSalesPros", "start", "end", "timeZone", "registrationType", "passphrase", "description", "labels", "externalId", "allowMultipleEnvironmentActivations", "sendInvitations", "emailDomainBlocklist", "blockFreeEmailDomains", "customFields", "useCustomInvitationEmail", "preConfigureParticipantEnvironments", "sharedEnvBlueprintId", "sharedEnvPolicyId", "isSharedLabViewAccessEnabled", "allowAudioVideo"] as const;
+const requiredMutableSalesExperienceFields = ["name", "type", "projectId", "blueprintIds", "cloudshareRegionIds", "policyId", "opportunity", "mainSalesPro", "registrationType", "start", "timeZone"] as const;
+const optionalMutableSalesExperienceFields = ["teamId", "allowParticipantsSwitchSteps", "awsCloudRegion", "azureCloudRegion", "googleCloudProviderRegion", "googleCloudProviderZone", "additionalSalesPros", "passphrase", "description", "labels", "externalId", "allowMultipleEnvironmentActivations", "sendInvitations", "emailDomainBlocklist", "blockFreeEmailDomains", "customFields", "useCustomInvitationEmail", "preConfigureParticipantEnvironments", "sharedEnvBlueprintId", "sharedEnvPolicyId", "isSharedLabViewAccessEnabled", "allowAudioVideo", "end"] as const;
 
 /** The deep CloudShare Sales Delivery module. Callers never learn v4 paths,
  * wire keys, or response parsing; they only validate an owner and create a
@@ -196,7 +215,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
     },
     async readSession(salesExperienceId) {
       const { data, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceReadSchema });
-      return { id: data.id, status: data.status, ...evidence };
+      return { id: data.id, status: data.status, end: data.end ?? null, ...evidence };
     },
     async readParticipantInvitationCapability(salesExperienceId) {
       const { data, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceSchema });
@@ -220,57 +239,61 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
       throw new Error("CloudShare Sales Pro pagination exceeded the bounded page limit.");
     },
     async updateSession(salesExperienceId, changes) {
-      const { data: current } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceSchema });
-      if (!hasEveryMutableSalesExperienceField(current)) throw new Error("CloudShare did not return the complete documented Sales Experience required for a safe update.");
+      const { data: current, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceSchema });
+      const missingRequiredFields = getMissingRequiredMutableSalesExperienceFields(current);
+      if (missingRequiredFields.length > 0) {
+        throw new CloudShareResponseError("CloudShare did not return the complete documented Sales Experience required for a safe update.", {
+          method: evidence.request.method,
+          path: evidence.request.path,
+          ...(evidence.request.query ? { requestQuery: evidence.request.query } : {}),
+          ...(evidence.request.headers ? { requestHeaders: evidence.request.headers } : {}),
+          ...(evidence.request.body !== undefined ? { requestBody: evidence.request.body } : {}),
+          status: evidence.response.status,
+          responseStatus: evidence.response.status,
+          ...(evidence.response.headers ? { responseHeaders: evidence.response.headers } : {}),
+          responseBody: evidence.response.body,
+          failureMode: "sales_experience_update_read_incomplete",
+          missingFields: missingRequiredFields,
+        });
+      }
       // Sales_Experience declares many defaults. Copy every documented mutable
       // value that CloudShare returned, rather than permitting a full PUT to
       // silently reset settings outside Certalis' edit scope, including the
       // explicit-native-invite capability chosen at creation.
-      const body = {
-        name: changes.name,
+      const body: Record<string, unknown> = {
+        name: changes.name ?? current.name,
         type: current.type,
         projectId: current.projectId,
-        teamId: current.teamId,
         blueprintIds: current.blueprintIds,
-        allowParticipantsSwitchSteps: current.allowParticipantsSwitchSteps,
         cloudshareRegionIds: current.cloudshareRegionIds,
-        awsCloudRegion: current.awsCloudRegion,
-        azureCloudRegion: current.azureCloudRegion,
-        googleCloudProviderRegion: current.googleCloudProviderRegion,
-        googleCloudProviderZone: current.googleCloudProviderZone,
         policyId: current.policyId,
         opportunity: current.opportunity,
         mainSalesPro: current.mainSalesPro,
-        additionalSalesPros: current.additionalSalesPros,
         registrationType: current.registrationType,
-        passphrase: current.passphrase,
-        description: current.description,
-        labels: current.labels,
-        externalId: current.externalId,
-        allowMultipleEnvironmentActivations: current.allowMultipleEnvironmentActivations,
-        sendInvitations: current.sendInvitations,
-        emailDomainBlocklist: current.emailDomainBlocklist,
-        blockFreeEmailDomains: current.blockFreeEmailDomains,
-        customFields: current.customFields,
-        useCustomInvitationEmail: current.useCustomInvitationEmail,
-        preConfigureParticipantEnvironments: current.preConfigureParticipantEnvironments,
-        sharedEnvBlueprintId: current.sharedEnvBlueprintId,
-        sharedEnvPolicyId: current.sharedEnvPolicyId,
-        isSharedLabViewAccessEnabled: current.isSharedLabViewAccessEnabled,
-        allowAudioVideo: current.allowAudioVideo,
         start: current.start,
-        end: current.end,
+        end: changes.end === undefined ? (Object.hasOwn(current, "end") ? current.end : null) : changes.end,
         timeZone: current.timeZone,
       };
-      const { data, evidence } = await detailed({ method: "PUT", path: `/sales/${encodeURIComponent(salesExperienceId)}`, body, schema: salesExperienceSchema });
-      return { id: data.id, ...evidence };
+      for (const field of optionalMutableSalesExperienceFields) {
+        if (field === "end") {
+          continue;
+        }
+        if (Object.hasOwn(current, field)) {
+          body[field] = current[field];
+        }
+      }
+      const { data, evidence: updateEvidence } = await detailed({ method: "PUT", path: `/sales/${encodeURIComponent(salesExperienceId)}`, body, schema: salesExperienceSchema });
+      return { id: data.id, ...updateEvidence };
     },
-    async ensureParticipantCorrelationProperties(salesExperienceId) {
+    async ensureParticipantCorrelationProperties(
+      salesExperienceId,
+      requiredKeys = SALES_PARTICIPANT_CORRELATION_PROPERTY_KEYS,
+    ) {
       const path = `/sales/${encodeURIComponent(salesExperienceId)}/users/properties`;
       const existing = await detailed({ method: "GET", path, schema: salesUserPropertyDefinitionsSchema });
       const existingKeys = existing.data.map((definition) => definition.name);
-      const missingKeys = SALES_PARTICIPANT_CORRELATION_PROPERTY_KEYS.filter((key) => !existingKeys.includes(key));
-      if (missingKeys.length === 0) return { requiredKeys: SALES_PARTICIPANT_CORRELATION_PROPERTY_KEYS, availableKeys: existingKeys, requests: [existing.evidence.request], responses: [existing.evidence.response], ...existing.evidence };
+      const missingKeys = requiredKeys.filter((key) => !existingKeys.includes(key));
+      if (missingKeys.length === 0) return { requiredKeys, availableKeys: existingKeys, requests: [existing.evidence.request], responses: [existing.evidence.response], ...existing.evidence };
       let created: Awaited<ReturnType<typeof detailed<z.output<typeof salesUserPropertyDefinitionsSchema>>>>;
       try {
         created = await detailed({ method: "POST", path, body: missingKeys.map((name) => ({ name })), schema: salesUserPropertyDefinitionsSchema });
@@ -279,7 +302,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
         throw error;
       }
       const availableKeys = [...existingKeys, ...created.data.map((definition) => definition.name)];
-      const stillMissingKeys = SALES_PARTICIPANT_CORRELATION_PROPERTY_KEYS.filter((key) => !availableKeys.includes(key));
+      const stillMissingKeys = requiredKeys.filter((key) => !availableKeys.includes(key));
       if (stillMissingKeys.length > 0) {
         throw new CloudShareResponseError("CloudShare Sales user-property provisioning did not return all required correlation keys.", {
           method: created.evidence.request.method, path: created.evidence.request.path,
@@ -291,7 +314,7 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
           responseBody: created.evidence.response.body, priorHttpExchanges: [{ request: existing.evidence.request, response: existing.evidence.response }], failureMode: "sales_participant_correlation_properties_missing",
         });
       }
-      return { requiredKeys: SALES_PARTICIPANT_CORRELATION_PROPERTY_KEYS, availableKeys, requests: [existing.evidence.request, created.evidence.request], responses: [existing.evidence.response, created.evidence.response], ...created.evidence };
+      return { requiredKeys, availableKeys, requests: [existing.evidence.request, created.evidence.request], responses: [existing.evidence.response, created.evidence.response], ...created.evidence };
     },
     async registerParticipants(salesExperienceId, participants) {
       // A 201 means CloudShare accepted the registration even when the body is
@@ -395,7 +418,7 @@ function throwParticipantPageFailure(evidence: SalesDeliveryEvidence, expectedCo
   });
 }
 
-function hasEveryMutableSalesExperienceField(value: z.infer<typeof salesExperienceSchema>): boolean {
+function getMissingRequiredMutableSalesExperienceFields(value: z.infer<typeof salesExperienceSchema>): string[] {
   const record = value as Record<string, unknown>;
-  return mutableSalesExperienceFields.every((field) => Object.hasOwn(record, field) && record[field] !== undefined);
+  return requiredMutableSalesExperienceFields.filter((field) => !Object.hasOwn(record, field) || record[field] === undefined);
 }
