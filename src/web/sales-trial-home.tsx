@@ -121,13 +121,12 @@ export function SalesTrialHome({
         <section style={heroStyle}>
           <div style={{ display: "grid", gap: spacing.sm }}>
             <p style={heroEyebrowStyle}>Certalis Sales Trial</p>
-            <h1 style={{ ...pageHeadingStyle, margin: 0, fontSize: "clamp(2rem, 4vw, 3.25rem)" }}>
+            <h1 style={heroHeadingStyle}>
               {firstName ? `Welcome, ${firstName}.` : "Welcome."}
             </h1>
             <p style={heroCopyStyle}>
               Your Sales Trial sign-in is active for <strong>{email}</strong>. Open a trial window
-              from the active catalogue below, or flip a card to review its access window before
-              you launch.
+              from the active catalogue below, or review the trial details before you launch.
             </p>
           </div>
         </section>
@@ -340,6 +339,12 @@ const heroCopyStyle: CSSProperties = {
   color: colors.textSecondary,
   maxWidth: "48rem",
   lineHeight: 1.6,
+};
+
+const heroHeadingStyle: CSSProperties = {
+  ...pageHeadingStyle,
+  margin: 0,
+  fontSize: "3rem",
 };
 
 const sectionHeaderStyle: CSSProperties = {
