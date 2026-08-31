@@ -876,6 +876,7 @@ export async function handleEndSalesTrialOffering(
 
   const now = (deps.now ?? (() => new Date()))();
   const end = formatCloudShareWallClock(new Date(now.getTime() + 2 * 60_000), offering.timeZone);
+  const correlationId = randomUUID();
   if (!end) {
     return response(400, { error: "End trial requires a supported CloudShare timezone." });
   }
@@ -908,8 +909,13 @@ export async function handleEndSalesTrialOffering(
         customerId: request.customerId,
         actor: request.actor,
         subject: { type: "sales_trial_offering", id: offering.id },
+        correlationId,
         message: END_PROVIDER_FAILURE_REASON,
-        externalIds: { offeringId: offering.id, itemId: offering.itemId },
+        externalIds: {
+          offeringId: offering.id,
+          itemId: offering.itemId,
+          cloudShareSalesExperienceId: offering.cloudShareSalesExperienceId,
+        },
         request: evidence?.request,
         response: evidence?.response,
         details: {
@@ -938,9 +944,11 @@ export async function handleEndSalesTrialOffering(
           localAttentionMarkerPersisted,
         },
         END_PROVIDER_FAILURE_REASON,
+        correlationId,
       ),
     ]);
     return response(502, {
+      correlationId,
       error: localAttentionMarkerPersisted ? END_PROVIDER_FAILURE_REASON : `${END_PROVIDER_FAILURE_REASON} Portal state may be stale.`,
       needsAttention: true,
       ...(localAttentionMarkerPersisted ? { offering: toPortalOffering(publishedWithAttention) } : {}),

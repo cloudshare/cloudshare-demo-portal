@@ -309,8 +309,39 @@ describe("CloudShare Sales Delivery", () => {
     expect(requestV4Detailed).toHaveBeenLastCalledWith(expect.objectContaining({ method: "PUT", path: "/sales/sales-1", body: expect.objectContaining({ name: "Renamed", projectId: "project-1", blueprintIds: ["bp-1"], mainSalesPro: { email: "sales@certalis.demo" }, externalId: "portal-correlation", registrationType: "registeredParticipantsOnly", sendInvitations: "salesProsAndParticipants" }) }));
     expect(requestV4Detailed.mock.calls[1][0].body).not.toHaveProperty("accessLink");
   });
-  it("fails closed without PUT when GET cannot preserve every documented mutable Sales field", async () => {
+  it("accepts a documented GET shape that omits optional fields and still sends the safe full PUT", async () => {
     const incomplete = { id: "sales-1", name: "Original", type: "demo", projectId: "project-1", blueprintIds: ["bp-1"], cloudshareRegionIds: ["region-1"], policyId: "policy-1", opportunity: "Acme", mainSalesPro: { email: "sales@certalis.demo" }, registrationType: "registeredParticipantsOnly", start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" };
+    const requestV4Detailed = vi.fn()
+      .mockResolvedValueOnce({ data: incomplete, request: { method: "GET", path: "/sales/sales-1" }, response: { status: 200, body: incomplete } })
+      .mockResolvedValueOnce({ data: { ...incomplete, end: "2026-07-15T10:02" }, request: { method: "PUT", path: "/sales/sales-1", body: { ...incomplete, end: "2026-07-15T10:02" } }, response: { status: 200, body: { ...incomplete, end: "2026-07-15T10:02" } } });
+    const delivery = createCloudShareSalesDelivery({ requestV4Detailed } as never);
+
+    await expect(delivery.updateSession!("sales-1", { end: "2026-07-15T10:02" })).resolves.toMatchObject({
+      id: "sales-1",
+      request: { method: "PUT", path: "/sales/sales-1" },
+    });
+    expect(requestV4Detailed).toHaveBeenCalledTimes(2);
+    expect(requestV4Detailed).toHaveBeenLastCalledWith(expect.objectContaining({
+      method: "PUT",
+      path: "/sales/sales-1",
+      body: {
+        name: "Original",
+        type: "demo",
+        projectId: "project-1",
+        blueprintIds: ["bp-1"],
+        cloudshareRegionIds: ["region-1"],
+        policyId: "policy-1",
+        opportunity: "Acme",
+        mainSalesPro: { email: "sales@certalis.demo" },
+        registrationType: "registeredParticipantsOnly",
+        start: "2026-07-15T09:00",
+        end: "2026-07-15T10:02",
+        timeZone: "UTC",
+      },
+    }));
+  });
+  it("fails closed without PUT when GET omits a documented required mutable field", async () => {
+    const incomplete = { id: "sales-1", name: "Original", type: "demo", projectId: "project-1", blueprintIds: ["bp-1"], cloudshareRegionIds: ["region-1"], policyId: "policy-1", mainSalesPro: { email: "sales@certalis.demo" }, registrationType: "registeredParticipantsOnly", start: "2026-07-15T09:00", end: "2026-07-15T10:00", timeZone: "UTC" };
     const requestV4Detailed = vi.fn().mockResolvedValue({ data: incomplete, request: { method: "GET", path: "/sales/sales-1" }, response: { status: 200, body: incomplete } });
     const delivery = createCloudShareSalesDelivery({ requestV4Detailed } as never);
 

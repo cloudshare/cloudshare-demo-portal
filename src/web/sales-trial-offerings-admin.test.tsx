@@ -264,6 +264,7 @@ describe("Sales Trial Offerings admin monitoring", () => {
     const end = screen.getByLabelText("End") as HTMLInputElement;
     expect(end.disabled).toBe(true);
     expect(end.value).toBe("");
+    expect(end.style.background).toBe("rgb(241, 245, 249)");
 
     await user.click(screen.getByRole("button", { name: "Save draft" }));
 
@@ -281,6 +282,79 @@ describe("Sales Trial Offerings admin monitoring", () => {
         },
       ]);
     });
+  });
+
+  it("opens support diagnostics from the canonical end-trial warning without duplicating the message", async () => {
+    const fetchAdmin = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/sales/items") return json({ activeItems: [] });
+      if (url === "/api/sales/timezones") return json({ timezones: [] });
+      if (url === "/api/sales/trial-offerings") {
+        return json({
+          offerings: [
+            {
+              id: "offering-1",
+              title: "Helios Trial",
+              description: "Shared trial",
+              itemId: "item-1",
+              start: "2026-08-30T09:00",
+              end: null,
+              timeZone: "UTC",
+              salesProEmail: "owner@example.test",
+              salesProDisplayName: "Owner",
+              status: "published",
+              attentionReason: null,
+            },
+          ],
+        });
+      }
+      if (url === "/api/sales/trial-offerings/offering-1/end" && init?.method === "POST") {
+        return json(
+          {
+            error: "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics.",
+            correlationId: "corr-end-1",
+            needsAttention: true,
+            offering: {
+              id: "offering-1",
+              title: "Helios Trial",
+              description: "Shared trial",
+              itemId: "item-1",
+              start: "2026-08-30T09:00",
+              end: null,
+              timeZone: "UTC",
+              salesProEmail: "owner@example.test",
+              salesProDisplayName: "Owner",
+              status: "published",
+              attentionReason: "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics.",
+            },
+          },
+          { status: 502 },
+        );
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const onNavigate = vi.fn();
+
+    render(
+      <SalesTrialOfferingsAdmin
+        email="sales-admin@certalis.demo"
+        fetchAdmin={fetchAdmin as typeof fetch}
+        onNavigate={onNavigate}
+      />,
+    );
+
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "End trial" }));
+
+    const alerts = await screen.findAllByRole("alert");
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0].textContent).toContain("CloudShare could not end the Sales Trial Offering.");
+    expect(screen.getAllByText(/CloudShare could not end the Sales Trial Offering\./)).toHaveLength(1);
+
+    await user.click(screen.getByRole("button", { name: "Open support diagnostics (corr-end-1)" }));
+    expect(onNavigate).toHaveBeenCalledWith({ tab: "support", correlationId: "corr-end-1" });
+    expect(confirmSpy).toHaveBeenCalled();
   });
 
   it("sends the end-trial action only after confirmation and refreshes the offering list", async () => {

@@ -1971,6 +1971,7 @@ describe("Sales Trial Offering API", () => {
       body: {
         error: "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics.",
         needsAttention: true,
+        correlationId: expect.any(String),
         offering: {
           id: "offering-1",
           status: "published",
@@ -1987,6 +1988,7 @@ describe("Sales Trial Offering API", () => {
     });
     expect(entry).toMatchObject({
       outcome: "failure",
+      correlationId: expect.any(String),
       request: { method: "PUT", path: "/sales/sales-1" },
       response: { status: 503, body: { error: "unavailable" } },
       details: expect.objectContaining({
@@ -2064,6 +2066,7 @@ describe("Sales Trial Offering API", () => {
         error:
           "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics. Portal state may be stale.",
         needsAttention: true,
+        correlationId: expect.any(String),
       },
     });
     expect((result.body as { offering?: unknown }).offering).toBeUndefined();
@@ -2074,6 +2077,7 @@ describe("Sales Trial Offering API", () => {
     });
     expect(entry).toMatchObject({
       outcome: "failure",
+      correlationId: expect.any(String),
       request: { method: "PUT", path: "/sales/sales-1" },
       response: { status: 503, body: { error: "unavailable" } },
       details: expect.objectContaining({
@@ -2151,6 +2155,7 @@ describe("Sales Trial Offering API", () => {
         error:
           "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics. Portal state may be stale.",
         needsAttention: true,
+        correlationId: expect.any(String),
       },
     });
     expect((result.body as { offering?: unknown }).offering).toBeUndefined();
@@ -2161,10 +2166,109 @@ describe("Sales Trial Offering API", () => {
     });
     expect(entry).toMatchObject({
       outcome: "failure",
+      correlationId: expect.any(String),
       details: expect.objectContaining({
         failureMode: "cloudshare_end_trial_update",
         status: "published",
         localAttentionMarkerPersisted: false,
+      }),
+    });
+  });
+
+  it("records the protected GET evidence and returns a correlation id when end-trial stops before PUT", async () => {
+    const repository = createOfferingRepository();
+    const diagnosticRepository = createInMemoryDiagnosticLogRepository();
+    const diagnostics = createDiagnosticRecorder({ repository: diagnosticRepository });
+    await repository.save({
+      id: "offering-1",
+      customerId: "customer-1",
+      title: "Helios Trial Offering",
+      description: "A shared Sales Trial for evaluators.",
+      itemId: "item-1",
+      cloudShareSalesExperienceId: "sales-1",
+      externalId: "opaque-1",
+      start: "2026-09-01T09:00",
+      end: null as never,
+      timeZone: "UTC",
+      salesProEmail: "owner@example.test",
+      salesProDisplayName: "Owner Example",
+      status: "published",
+      createdAt: new Date("2026-08-29T12:00:00Z"),
+      updatedAt: new Date("2026-08-29T12:30:00Z"),
+      publishedAt: new Date("2026-08-29T12:10:00Z"),
+      unpublishedAt: null,
+      attentionReason: null,
+    });
+    const failure = Object.assign(
+      new Error("CloudShare did not return the complete documented Sales Experience required for a safe update."),
+      {
+        context: {
+          method: "GET",
+          path: "/sales/sales-1",
+          responseStatus: 200,
+          responseBody: {
+            id: "sales-1",
+            name: "Helios Trial Offering",
+            type: "trial",
+            projectId: "project-1",
+            blueprintIds: ["bp-1"],
+            cloudshareRegionIds: ["region-1"],
+            policyId: "policy-1",
+            mainSalesPro: { email: "owner@example.test" },
+            registrationType: "registeredParticipantsOnly",
+            start: "2026-09-01T09:00",
+            end: null,
+            timeZone: "UTC",
+          },
+        },
+      },
+    );
+    const deps = createDeps(repository, {
+      diagnostics,
+      deliveryFactory: {
+        forConnection: vi.fn().mockReturnValue({
+          createSession: vi.fn(),
+          updateSession: vi.fn().mockRejectedValue(failure),
+        }),
+      } as never,
+    });
+
+    const result = await handleEndSalesTrialOffering(deps, {
+      customerId: "customer-1",
+      actor: { type: "admin", id: "admin-1", email: "admin@example.test" },
+      id: "offering-1",
+    });
+    const [entry] = await diagnosticRepository.query({
+      source: "sales-trial-offerings",
+      operation: "sales.trial_offering.end",
+      outcome: "failure",
+    });
+
+    expect(result).toMatchObject({
+      status: 502,
+      body: {
+        error: "CloudShare could not end the Sales Trial Offering. It remains published; review support diagnostics.",
+        needsAttention: true,
+        correlationId: expect.any(String),
+      },
+    });
+    expect(entry).toMatchObject({
+      outcome: "failure",
+      correlationId: (result.body as { correlationId: string }).correlationId,
+      request: { method: "GET", path: "/sales/sales-1" },
+      response: {
+        status: 200,
+        body: expect.objectContaining({
+          id: "sales-1",
+          type: "trial",
+          registrationType: "registeredParticipantsOnly",
+        }),
+      },
+      details: expect.objectContaining({
+        integrationSurface: "cloudshare.v4.sales",
+        failureMode: "cloudshare_end_trial_update",
+        status: "published",
+        needsAttention: true,
       }),
     });
   });

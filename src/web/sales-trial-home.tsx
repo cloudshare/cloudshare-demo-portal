@@ -1,12 +1,11 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { type CSSProperties, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   accountLogoutButtonStyle,
   disabledButtonStyle,
   primaryButtonStyle,
-  secondaryButtonStyle,
 } from "./button-styles";
 import { alertPanelStyle, cardStyle } from "./card-styles";
 import { colors, pageHeadingStyle, spacing } from "./design-tokens";
@@ -17,7 +16,7 @@ type TrialOffering = {
   readonly title: string;
   readonly description: string;
   readonly start: string;
-  readonly end: string;
+  readonly end: string | null;
   readonly timeZone: string;
 };
 
@@ -117,72 +116,51 @@ export function SalesTrialHome({
   }
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        padding: spacing.xl,
-        background: colors.surfaceMuted,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      <section style={{ ...cardStyle, width: "100%", maxWidth: "640px" }}>
-        <p style={{ marginTop: 0, color: colors.textSecondary }}>Certalis Sales Trial</p>
-        <h1 style={{ ...pageHeadingStyle, marginTop: 0 }}>
-          {firstName ? `Welcome, ${firstName}.` : "Welcome."}
-        </h1>
-        <p style={{ color: colors.textSecondary }}>
-          Your Sales Trial sign-in is active for <strong>{email}</strong>.
-        </p>
+    <main style={pageStyle}>
+      <section style={pageContentStyle}>
+        <section style={heroStyle}>
+          <div style={{ display: "grid", gap: spacing.sm }}>
+            <p style={heroEyebrowStyle}>Certalis Sales Trial</p>
+            <h1 style={{ ...pageHeadingStyle, margin: 0, fontSize: "clamp(2rem, 4vw, 3.25rem)" }}>
+              {firstName ? `Welcome, ${firstName}.` : "Welcome."}
+            </h1>
+            <p style={heroCopyStyle}>
+              Your Sales Trial sign-in is active for <strong>{email}</strong>. Open a trial window
+              from the active catalogue below, or flip a card to review its access window before
+              you launch.
+            </p>
+          </div>
+        </section>
         {launchError ? <div role="alert" style={alertPanelStyle.danger}>{launchError}</div> : null}
         {offerings.length === 0 ? (
-          <p style={{ color: colors.textSecondary, marginBottom: 0 }}>
-            There are no active Trial Offerings right now.
-          </p>
+          <section style={{ ...cardStyle, display: "grid", gap: spacing.sm }}>
+            <h2 style={{ margin: 0 }}>No active Trial Offerings</h2>
+            <p style={{ color: colors.textSecondary, margin: 0 }}>
+              There are no active Trial Offerings right now.
+            </p>
+          </section>
         ) : (
-          <div style={{ display: "grid", gap: spacing.md }}>
-            {offerings.map((offering) => (
-              <article
-                key={offering.id}
-                style={{
-                  border: "1px solid #d8dee8",
-                  borderRadius: "10px",
-                  padding: spacing.md,
-                  background: "#ffffff",
-                }}
-              >
-                <h2 style={{ marginTop: 0 }}>{offering.title}</h2>
-                <p style={{ color: colors.textSecondary }}>{offering.description}</p>
-                <p style={{ color: colors.textSecondary, marginBottom: 0 }}>
-                  {offering.start} to {offering.end} ({offering.timeZone})
-                </p>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(12rem, 1fr))",
-                    gap: spacing.sm,
-                    marginTop: spacing.md,
-                    width: "100%",
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => launch(offering.id)}
-                    style={
-                      openOfferingId === offering.id
-                        ? secondaryButtonStyle
-                        : primaryButtonStyle
-                    }
-                  >
-                    {openOfferingId === offering.id
-                      ? "Focus trial window"
-                      : "Open trial window"}
-                  </button>
-                </div>
-              </article>
-            ))}
-          </div>
+          <section style={{ display: "grid", gap: spacing.md }}>
+            <div style={sectionHeaderStyle}>
+              <div>
+                <p style={sectionEyebrowStyle}>Active catalogue</p>
+                <h2 style={{ margin: "0.25rem 0 0" }}>Choose a Trial Offering</h2>
+              </div>
+              <p style={sectionCopyStyle}>
+                {offerings.length} active {offerings.length === 1 ? "window" : "windows"}
+              </p>
+            </div>
+            <div style={offeringGridStyle}>
+              {offerings.map((offering) => (
+                <SalesTrialOfferingCard
+                  key={offering.id}
+                  offering={offering}
+                  active={openOfferingId === offering.id}
+                  onLaunch={() => launch(offering.id)}
+                />
+              ))}
+            </div>
+          </section>
         )}
         {offeringError ? (
           <p role="status" style={{ color: colors.danger, marginBottom: 0 }}>
@@ -195,8 +173,8 @@ export function SalesTrialHome({
           disabled={loggingOut}
           style={
             loggingOut
-              ? { ...accountLogoutButtonStyle, ...disabledButtonStyle, marginTop: spacing.lg }
-              : { ...accountLogoutButtonStyle, marginTop: spacing.lg }
+              ? { ...accountLogoutButtonStyle, ...disabledButtonStyle }
+              : accountLogoutButtonStyle
           }
         >
           {loggingOut ? "Signing out..." : "Sign out"}
@@ -210,3 +188,331 @@ export function SalesTrialHome({
     </main>
   );
 }
+
+function SalesTrialOfferingCard({
+  offering,
+  active,
+  onLaunch,
+}: {
+  readonly offering: TrialOffering;
+  readonly active: boolean;
+  readonly onLaunch: () => void;
+}) {
+  const [showDetails, setShowDetails] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const windowLabel = offering.end
+    ? `${offering.start} to ${offering.end} (${offering.timeZone})`
+    : `${offering.start} onward (${offering.timeZone})`;
+
+  return (
+    <article
+      style={{
+        ...offeringCardStyle,
+        ...(hovered ? offeringCardHoverStyle : null),
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <div style={flipPerspectiveStyle}>
+        <div style={getFlipInnerStyle(showDetails)}>
+          <section
+            aria-hidden={showDetails}
+            style={{
+              ...flipFaceStyle,
+              ...(showDetails ? hiddenFaceStyle : null),
+            }}
+          >
+            <div style={offeringFaceContentStyle}>
+              <div style={cardAccentStyle} />
+              <div style={{ display: "grid", gap: spacing.sm }}>
+                <div style={cardTitleRowStyle}>
+                  <h3 style={{ margin: 0, fontSize: "1.3rem", color: colors.textPrimary }}>{offering.title}</h3>
+                  <span style={availabilityBadgeStyle}>{active ? "Window open" : "Ready to launch"}</span>
+                </div>
+                <p style={bodyCopyStyle}>{offering.description || "No description provided."}</p>
+              </div>
+              <div style={summaryPanelStyle}>
+                <span style={summaryEyebrowStyle}>Trial window</span>
+                <strong style={summaryValueStyle}>{windowLabel}</strong>
+              </div>
+              <button type="button" onClick={onLaunch} style={primaryButtonStyle}>
+                {active ? "Focus trial window" : "Open trial window"}
+              </button>
+              <div style={cardFooterStyle}>
+                <button type="button" onClick={() => setShowDetails(true)} style={cardSecondaryButtonStyle}>
+                  Trial details
+                </button>
+              </div>
+            </div>
+          </section>
+          <section
+            aria-hidden={!showDetails}
+            style={{
+              ...flipFaceStyle,
+              ...flipBackFaceStyle,
+              ...(!showDetails ? hiddenFaceStyle : null),
+            }}
+          >
+            <div style={offeringFaceContentStyle}>
+              <div style={cardAccentStyle} />
+              <div style={{ display: "grid", gap: spacing.sm }}>
+                <span style={summaryEyebrowStyle}>Trial details</span>
+                <h3 style={{ margin: 0, fontSize: "1.3rem", color: colors.textPrimary }}>{offering.title}</h3>
+                <p style={bodyCopyStyle}>{offering.description || "No description provided."}</p>
+              </div>
+              <div style={detailsGridStyle}>
+                <div style={detailPanelStyle}>
+                  <span style={detailLabelStyle}>Window</span>
+                  <span style={detailValueStyle}>{windowLabel}</span>
+                </div>
+                <div style={detailPanelStyle}>
+                  <span style={detailLabelStyle}>Access path</span>
+                  <span style={detailValueStyle}>
+                    Portal launch opens the CloudShare trial window in a separate tab.
+                  </span>
+                </div>
+              </div>
+              <button type="button" onClick={onLaunch} style={primaryButtonStyle}>
+                {active ? "Focus trial window" : "Open trial window"}
+              </button>
+              <div style={cardFooterStyle}>
+                <button type="button" onClick={() => setShowDetails(false)} style={cardSecondaryButtonStyle}>
+                  Back to trial
+                </button>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function getFlipInnerStyle(showDetails: boolean): CSSProperties {
+  return {
+    display: "grid",
+    position: "relative",
+    height: "100%",
+    minHeight: "27rem",
+    transformStyle: "preserve-3d",
+    transform: showDetails ? "rotateY(180deg)" : "rotateY(0deg)",
+    transition: "transform 260ms ease",
+  };
+}
+
+const pageStyle: CSSProperties = {
+  minHeight: "100vh",
+  padding: spacing.xl,
+  background: "linear-gradient(180deg, #eef6ff 0%, #f8fafc 34%, #ffffff 100%)",
+};
+
+const pageContentStyle: CSSProperties = {
+  width: "100%",
+  maxWidth: "1180px",
+  margin: "0 auto",
+  display: "grid",
+  gap: spacing.lg,
+};
+
+const heroStyle: CSSProperties = {
+  ...cardStyle,
+  display: "grid",
+  gap: spacing.md,
+  padding: spacing.xxl,
+  background: "linear-gradient(135deg, #ffffff 0%, #f0fdf9 52%, #eff6ff 100%)",
+  border: `1px solid ${colors.borderStrong}`,
+  boxShadow: "0 16px 40px rgba(15, 23, 42, 0.08)",
+};
+
+const heroEyebrowStyle: CSSProperties = {
+  margin: 0,
+  color: colors.accent,
+  fontSize: "0.82rem",
+  fontWeight: 800,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
+};
+
+const heroCopyStyle: CSSProperties = {
+  margin: 0,
+  color: colors.textSecondary,
+  maxWidth: "48rem",
+  lineHeight: 1.6,
+};
+
+const sectionHeaderStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: spacing.md,
+  alignItems: "end",
+  flexWrap: "wrap",
+};
+
+const sectionEyebrowStyle: CSSProperties = {
+  margin: 0,
+  color: colors.accent,
+  fontSize: "0.8rem",
+  fontWeight: 800,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
+};
+
+const sectionCopyStyle: CSSProperties = {
+  margin: 0,
+  color: colors.textSecondary,
+};
+
+const offeringGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 18rem), 1fr))",
+  gap: spacing.md,
+  alignItems: "stretch",
+};
+
+const offeringCardStyle: CSSProperties = {
+  ...cardStyle,
+  padding: 0,
+  minHeight: "27rem",
+  height: "27rem",
+  overflow: "hidden",
+  border: `1px solid ${colors.border}`,
+  boxShadow: "0 8px 24px rgba(15, 23, 42, 0.08)",
+  transition: "border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease",
+};
+
+const offeringCardHoverStyle: CSSProperties = {
+  border: `1px solid ${colors.info}`,
+  boxShadow: "0 18px 36px rgba(29, 78, 216, 0.14)",
+  transform: "translateY(-2px)",
+};
+
+const flipPerspectiveStyle: CSSProperties = {
+  perspective: "1200px",
+  height: "100%",
+  minHeight: "27rem",
+};
+
+const flipFaceStyle: CSSProperties = {
+  gridArea: "1 / 1",
+  position: "absolute",
+  inset: 0,
+  backfaceVisibility: "hidden",
+  WebkitBackfaceVisibility: "hidden",
+  minWidth: 0,
+};
+
+const flipBackFaceStyle: CSSProperties = {
+  transform: "rotateY(180deg)",
+};
+
+const hiddenFaceStyle: CSSProperties = {
+  pointerEvents: "none",
+};
+
+const offeringFaceContentStyle: CSSProperties = {
+  display: "grid",
+  gap: spacing.md,
+  gridTemplateRows: "auto auto minmax(0, 1fr) auto",
+  height: "100%",
+  padding: spacing.lg,
+  boxSizing: "border-box",
+};
+
+const cardAccentStyle: CSSProperties = {
+  height: "4px",
+  borderRadius: "999px",
+  background: "linear-gradient(90deg, #4f46e5 0%, #0f6d66 54%, #f97316 100%)",
+};
+
+const cardTitleRowStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: spacing.sm,
+  alignItems: "start",
+  flexWrap: "wrap",
+};
+
+const availabilityBadgeStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "0.35rem 0.7rem",
+  borderRadius: "999px",
+  background: colors.infoSoft,
+  color: colors.info,
+  fontSize: "0.82rem",
+  fontWeight: 700,
+};
+
+const bodyCopyStyle: CSSProperties = {
+  margin: 0,
+  color: colors.textSecondary,
+  lineHeight: 1.55,
+};
+
+const summaryPanelStyle: CSSProperties = {
+  display: "grid",
+  gap: "0.3rem",
+  padding: spacing.md,
+  borderRadius: "10px",
+  border: `1px solid ${colors.border}`,
+  background: "#f8fafc",
+};
+
+const summaryEyebrowStyle: CSSProperties = {
+  color: colors.accent,
+  fontSize: "0.8rem",
+  fontWeight: 800,
+  letterSpacing: "0.08em",
+  textTransform: "uppercase",
+};
+
+const summaryValueStyle: CSSProperties = {
+  color: colors.textPrimary,
+  lineHeight: 1.5,
+};
+
+const detailsGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fit, minmax(12rem, 1fr))",
+  gap: spacing.sm,
+};
+
+const detailPanelStyle: CSSProperties = {
+  display: "grid",
+  gap: "0.3rem",
+  padding: spacing.md,
+  borderRadius: "10px",
+  border: `1px solid ${colors.border}`,
+  background: "#f8fafc",
+};
+
+const detailLabelStyle: CSSProperties = {
+  color: colors.textMuted,
+  fontSize: "0.82rem",
+  fontWeight: 700,
+};
+
+const detailValueStyle: CSSProperties = {
+  color: colors.textPrimary,
+  lineHeight: 1.45,
+};
+
+const cardFooterStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "flex-end",
+};
+
+const cardSecondaryButtonStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  gap: "0.4rem",
+  padding: "0.75rem 1rem",
+  borderRadius: "8px",
+  border: `1px solid ${colors.borderStrong}`,
+  background: "#ffffff",
+  color: colors.textPrimary,
+  cursor: "pointer",
+  fontWeight: 600,
+};

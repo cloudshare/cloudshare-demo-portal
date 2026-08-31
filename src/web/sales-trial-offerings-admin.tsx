@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { disabledButtonStyle, primaryButtonStyle, secondaryButtonStyle } from "./button-styles";
 import { alertPanelStyle, cardStyle, mutedPanelStyle } from "./card-styles";
+import { colors } from "./design-tokens";
 
 type Item = { id: string; name: string; defaultDurationMinutes: number };
 type Timezone = { id: string; name: string };
@@ -43,6 +44,12 @@ type Offering = {
   status: "draft" | "published" | "unpublished" | "needs_attention";
   attentionReason: string | null;
 };
+type NavigationIntent = {
+  readonly tab: "support";
+  readonly correlationId?: string | null;
+  readonly source?: string | null;
+  readonly subjectId?: string | null;
+};
 
 const controlStyle = {
   width: "100%",
@@ -54,13 +61,21 @@ const controlStyle = {
   color: "#17243a",
   boxSizing: "border-box" as const,
 };
+const disabledControlStyle = {
+  background: colors.surfaceSubtle,
+  color: colors.textMuted,
+  border: `1px solid ${colors.borderStrong}`,
+  cursor: "not-allowed",
+};
 
 export function SalesTrialOfferingsAdmin({
   email,
   fetchAdmin = fetch,
+  onNavigate,
 }: {
   readonly email: string;
   readonly fetchAdmin?: typeof fetch;
+  readonly onNavigate?: (intent: NavigationIntent) => void;
 }) {
   const formRef = useRef<HTMLFormElement | null>(null);
   const [items, setItems] = useState<Item[]>([]);
@@ -69,6 +84,8 @@ export function SalesTrialOfferingsAdmin({
   const [offerings, setOfferings] = useState<Offering[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [messageTone, setMessageTone] = useState<"success" | "error">("success");
+  const [messageCorrelationId, setMessageCorrelationId] = useState<string | null>(null);
+  const [latestSupportByOfferingId, setLatestSupportByOfferingId] = useState<Record<string, string | null>>({});
   const [monitoringOfferingId, setMonitoringOfferingId] = useState<string | null>(null);
   const [monitoringParticipants, setMonitoringParticipants] = useState<MonitoringParticipant[]>([]);
   const [monitoringLoading, setMonitoringLoading] = useState(false);
@@ -153,6 +170,7 @@ export function SalesTrialOfferingsAdmin({
 
   async function createDraft() {
     setMessage(null);
+    setMessageCorrelationId(null);
     const payload = getDraftPayload();
     setForm((current) => ({
       ...current,
@@ -168,6 +186,7 @@ export function SalesTrialOfferingsAdmin({
     if (!response.ok) {
       setMessageTone("error");
       setMessage(body.error ?? "Could not create Trial Offering.");
+      setMessageCorrelationId(null);
       return;
     }
     setForm({
@@ -183,22 +202,39 @@ export function SalesTrialOfferingsAdmin({
     await loadOfferings();
     setMessageTone("success");
     setMessage("Trial Offering draft saved.");
+    setMessageCorrelationId(null);
   }
 
   async function lifecycle(id: string, action: "publish" | "end") {
     setMessage(null);
+    setMessageCorrelationId(null);
     const response = await fetchAdmin(`/api/sales/trial-offerings/${encodeURIComponent(id)}/${action}`, {
       method: "POST",
     });
-    const body = (await response.json()) as { error?: string };
+    const body = (await response.json()) as { error?: string; correlationId?: string; offering?: Offering };
     if (!response.ok) {
+      const returnedOffering = body.offering;
+      if (returnedOffering) {
+        setOfferings((current) => current.map((offering) => offering.id === returnedOffering.id ? returnedOffering : offering));
+        setLatestSupportByOfferingId((current) => ({
+          ...current,
+          [returnedOffering.id]: body.correlationId ?? current[returnedOffering.id] ?? null,
+        }));
+      }
+      const duplicatePersistedWarning = returnedOffering?.attentionReason === (body.error ?? null);
       setMessageTone("error");
-      setMessage(body.error ?? `Could not ${action} Trial Offering.`);
+      setMessage(duplicatePersistedWarning ? null : body.error ?? `Could not ${action} Trial Offering.`);
+      setMessageCorrelationId(duplicatePersistedWarning ? null : body.correlationId ?? null);
       return;
     }
     await loadOfferings();
     setMessageTone("success");
     setMessage(action === "publish" ? "Trial Offering published." : "Trial Offering ended.");
+    setMessageCorrelationId(null);
+  }
+
+  function openSupport(intent: Omit<NavigationIntent, "tab">) {
+    onNavigate?.({ tab: "support", ...intent });
   }
 
   async function toggleMonitoring(id: string) {
@@ -259,28 +295,30 @@ export function SalesTrialOfferingsAdmin({
           <label style={{ display: "grid", gap: "0.35rem" }}>Item<select name="itemId" style={controlStyle} value={form.itemId} onChange={(event) => setForm((current) => ({ ...current, itemId: event.target.value }))}><option value="">Select an Item</option>{items.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(12rem, 1fr))", gap: "0.9rem" }}>
             <label style={{ display: "grid", gap: "0.35rem" }}>Start<input name="start" style={controlStyle} type="datetime-local" value={form.start} onInput={(event) => syncDateTimeField("start", event.currentTarget.value)} onChange={(event) => syncDateTimeField("start", event.target.value)} /></label>
-            <label style={{ display: "grid", gap: "0.35rem" }}>End<input aria-label="End" name="end" style={controlStyle} type="datetime-local" value={form.end} disabled={form.noEndDate} onInput={(event) => syncDateTimeField("end", event.currentTarget.value)} onChange={(event) => syncDateTimeField("end", event.target.value)} /></label>
+            <div style={{ display: "grid", gap: "0.55rem", alignContent: "start" }}>
+              <label style={{ display: "grid", gap: "0.35rem" }}>End<input aria-label="End" name="end" style={form.noEndDate ? { ...controlStyle, ...disabledControlStyle } : controlStyle} type="datetime-local" value={form.end} disabled={form.noEndDate} onInput={(event) => syncDateTimeField("end", event.currentTarget.value)} onChange={(event) => syncDateTimeField("end", event.target.value)} /></label>
+              <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", minHeight: "2.5rem" }}>
+                <input
+                  aria-label="No end date"
+                  type="checkbox"
+                  checked={form.noEndDate}
+                  onChange={(event) =>
+                    setForm((current) => ({
+                      ...current,
+                      noEndDate: event.target.checked,
+                      end: event.target.checked ? "" : current.end,
+                    }))
+                  }
+                />
+                No end date
+              </label>
+            </div>
             <label style={{ display: "grid", gap: "0.35rem" }}>Time zone<input name="timeZone" style={controlStyle} list="trial-offering-timezones" value={form.timeZone} onChange={(event) => setForm((current) => ({ ...current, timeZone: event.target.value }))} /><datalist id="trial-offering-timezones">{timezones.map((zone) => <option key={zone.id} value={zone.id}>{zone.name}</option>)}</datalist></label>
             <label style={{ display: "grid", gap: "0.35rem" }}>Sales Pro<select name="salesProEmail" style={controlStyle} value={form.salesProEmail} onChange={(event) => setForm((current) => ({ ...current, salesProEmail: event.target.value }))}><option value="">Select an active Project member</option>{members.map((member) => <option key={member.email} value={member.email}>{member.displayName} ({member.email})</option>)}</select></label>
           </div>
-          <label style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-            <input
-              aria-label="No end date"
-              type="checkbox"
-              checked={form.noEndDate}
-              onChange={(event) =>
-                setForm((current) => ({
-                  ...current,
-                  noEndDate: event.target.checked,
-                  end: event.target.checked ? "" : current.end,
-                }))
-              }
-            />
-            No end date
-          </label>
           <button type="submit" style={primaryButtonStyle}>Save draft</button>
         </form>
-        {message ? <div role={messageTone === "error" ? "alert" : "status"} style={messageTone === "error" ? alertPanelStyle.danger : alertPanelStyle.success}>{message}</div> : null}
+        {message ? <div role={messageTone === "error" ? "alert" : "status"} style={{ ...(messageTone === "error" ? alertPanelStyle.danger : alertPanelStyle.success), display: "grid", gap: "0.55rem" }}><p style={{ margin: 0 }}>{message}</p>{messageCorrelationId ? <button type="button" style={{ border: 0, background: "transparent", color: colors.info, textDecoration: "underline", cursor: "pointer", padding: 0, justifySelf: "start" }} onClick={() => openSupport({ correlationId: messageCorrelationId })}>{`Open support diagnostics (${messageCorrelationId})`}</button> : null}</div> : null}
       </section>
       <section style={{ ...cardStyle, display: "grid", gap: "1rem" }}>
         <div style={{ display: "grid", gap: "0.35rem" }}>
@@ -298,7 +336,7 @@ export function SalesTrialOfferingsAdmin({
           </div>
           <p style={{ margin: 0 }}>{offering.start} to {offering.end ?? "Open-ended"} ({offering.timeZone})</p>
           <p style={{ margin: 0 }}>Sales Pro: {offering.salesProDisplayName ?? offering.salesProEmail}</p>
-          {offering.attentionReason ? <div style={alertPanelStyle.warning}>{offering.attentionReason}</div> : null}
+          {offering.attentionReason ? <div role="alert" style={{ ...alertPanelStyle.warning, display: "grid", gap: "0.55rem" }}><p style={{ margin: 0 }}>{offering.attentionReason}</p><button type="button" style={{ border: 0, background: "transparent", color: colors.info, textDecoration: "underline", cursor: "pointer", padding: 0, justifySelf: "start" }} onClick={() => openSupport(latestSupportByOfferingId[offering.id] ? { correlationId: latestSupportByOfferingId[offering.id] } : { source: "sales-trial-offerings", subjectId: offering.id })}>{latestSupportByOfferingId[offering.id] ? `Open support diagnostics (${latestSupportByOfferingId[offering.id]})` : "Open support diagnostics"}</button></div> : null}
           <div style={{ display: "flex", gap: "0.6rem", flexWrap: "wrap" }}>
             <button type="button" style={offering.status !== "draft" ? { ...primaryButtonStyle, ...disabledButtonStyle } : primaryButtonStyle} disabled={offering.status !== "draft"} onClick={() => void lifecycle(offering.id, "publish")}>Publish</button>
             <button type="button" style={offering.status !== "published" ? { ...secondaryButtonStyle, ...disabledButtonStyle } : secondaryButtonStyle} disabled={offering.status !== "published"} onClick={() => { if (window.confirm("End this Trial Offering now and unpublish it from the portal?")) void lifecycle(offering.id, "end"); }}>End trial</button>

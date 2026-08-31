@@ -194,7 +194,8 @@ export function normalizeSalesParticipantPage(payload: unknown): unknown {
 const participantsEnvelopeSchema = z.preprocess(normalizeSalesParticipantPage, z.object({ count: z.number().int().nonnegative().optional(), participants: z.array(salesParticipantSchema) }));
 const PARTICIPANT_PAGE_LIMIT = 100;
 
-const mutableSalesExperienceFields = ["name", "type", "projectId", "teamId", "blueprintIds", "allowParticipantsSwitchSteps", "cloudshareRegionIds", "awsCloudRegion", "azureCloudRegion", "googleCloudProviderRegion", "googleCloudProviderZone", "policyId", "opportunity", "mainSalesPro", "additionalSalesPros", "start", "end", "timeZone", "registrationType", "passphrase", "description", "labels", "externalId", "allowMultipleEnvironmentActivations", "sendInvitations", "emailDomainBlocklist", "blockFreeEmailDomains", "customFields", "useCustomInvitationEmail", "preConfigureParticipantEnvironments", "sharedEnvBlueprintId", "sharedEnvPolicyId", "isSharedLabViewAccessEnabled", "allowAudioVideo"] as const;
+const requiredMutableSalesExperienceFields = ["name", "type", "projectId", "blueprintIds", "cloudshareRegionIds", "policyId", "opportunity", "mainSalesPro", "registrationType", "start", "timeZone"] as const;
+const optionalMutableSalesExperienceFields = ["teamId", "allowParticipantsSwitchSteps", "awsCloudRegion", "azureCloudRegion", "googleCloudProviderRegion", "googleCloudProviderZone", "additionalSalesPros", "passphrase", "description", "labels", "externalId", "allowMultipleEnvironmentActivations", "sendInvitations", "emailDomainBlocklist", "blockFreeEmailDomains", "customFields", "useCustomInvitationEmail", "preConfigureParticipantEnvironments", "sharedEnvBlueprintId", "sharedEnvPolicyId", "isSharedLabViewAccessEnabled", "allowAudioVideo", "end"] as const;
 
 /** The deep CloudShare Sales Delivery module. Callers never learn v4 paths,
  * wire keys, or response parsing; they only validate an owner and create a
@@ -238,50 +239,51 @@ export function createCloudShareSalesDelivery(client: CloudShareClient): SalesDe
       throw new Error("CloudShare Sales Pro pagination exceeded the bounded page limit.");
     },
     async updateSession(salesExperienceId, changes) {
-      const { data: current } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceSchema });
-      if (!hasEveryMutableSalesExperienceField(current)) throw new Error("CloudShare did not return the complete documented Sales Experience required for a safe update.");
+      const { data: current, evidence } = await detailed({ method: "GET", path: `/sales/${encodeURIComponent(salesExperienceId)}`, schema: salesExperienceSchema });
+      const missingRequiredFields = getMissingRequiredMutableSalesExperienceFields(current);
+      if (missingRequiredFields.length > 0) {
+        throw new CloudShareResponseError("CloudShare did not return the complete documented Sales Experience required for a safe update.", {
+          method: evidence.request.method,
+          path: evidence.request.path,
+          ...(evidence.request.query ? { requestQuery: evidence.request.query } : {}),
+          ...(evidence.request.headers ? { requestHeaders: evidence.request.headers } : {}),
+          ...(evidence.request.body !== undefined ? { requestBody: evidence.request.body } : {}),
+          status: evidence.response.status,
+          responseStatus: evidence.response.status,
+          ...(evidence.response.headers ? { responseHeaders: evidence.response.headers } : {}),
+          responseBody: evidence.response.body,
+          failureMode: "sales_experience_update_read_incomplete",
+          missingFields: missingRequiredFields,
+        });
+      }
       // Sales_Experience declares many defaults. Copy every documented mutable
       // value that CloudShare returned, rather than permitting a full PUT to
       // silently reset settings outside Certalis' edit scope, including the
       // explicit-native-invite capability chosen at creation.
-      const body = {
+      const body: Record<string, unknown> = {
         name: changes.name ?? current.name,
         type: current.type,
         projectId: current.projectId,
-        teamId: current.teamId,
         blueprintIds: current.blueprintIds,
-        allowParticipantsSwitchSteps: current.allowParticipantsSwitchSteps,
         cloudshareRegionIds: current.cloudshareRegionIds,
-        awsCloudRegion: current.awsCloudRegion,
-        azureCloudRegion: current.azureCloudRegion,
-        googleCloudProviderRegion: current.googleCloudProviderRegion,
-        googleCloudProviderZone: current.googleCloudProviderZone,
         policyId: current.policyId,
         opportunity: current.opportunity,
         mainSalesPro: current.mainSalesPro,
-        additionalSalesPros: current.additionalSalesPros,
         registrationType: current.registrationType,
-        passphrase: current.passphrase,
-        description: current.description,
-        labels: current.labels,
-        externalId: current.externalId,
-        allowMultipleEnvironmentActivations: current.allowMultipleEnvironmentActivations,
-        sendInvitations: current.sendInvitations,
-        emailDomainBlocklist: current.emailDomainBlocklist,
-        blockFreeEmailDomains: current.blockFreeEmailDomains,
-        customFields: current.customFields,
-        useCustomInvitationEmail: current.useCustomInvitationEmail,
-        preConfigureParticipantEnvironments: current.preConfigureParticipantEnvironments,
-        sharedEnvBlueprintId: current.sharedEnvBlueprintId,
-        sharedEnvPolicyId: current.sharedEnvPolicyId,
-        isSharedLabViewAccessEnabled: current.isSharedLabViewAccessEnabled,
-        allowAudioVideo: current.allowAudioVideo,
         start: current.start,
-        end: changes.end === undefined ? current.end : changes.end,
+        end: changes.end === undefined ? (Object.hasOwn(current, "end") ? current.end : null) : changes.end,
         timeZone: current.timeZone,
       };
-      const { data, evidence } = await detailed({ method: "PUT", path: `/sales/${encodeURIComponent(salesExperienceId)}`, body, schema: salesExperienceSchema });
-      return { id: data.id, ...evidence };
+      for (const field of optionalMutableSalesExperienceFields) {
+        if (field === "end") {
+          continue;
+        }
+        if (Object.hasOwn(current, field)) {
+          body[field] = current[field];
+        }
+      }
+      const { data, evidence: updateEvidence } = await detailed({ method: "PUT", path: `/sales/${encodeURIComponent(salesExperienceId)}`, body, schema: salesExperienceSchema });
+      return { id: data.id, ...updateEvidence };
     },
     async ensureParticipantCorrelationProperties(
       salesExperienceId,
@@ -416,7 +418,7 @@ function throwParticipantPageFailure(evidence: SalesDeliveryEvidence, expectedCo
   });
 }
 
-function hasEveryMutableSalesExperienceField(value: z.infer<typeof salesExperienceSchema>): boolean {
+function getMissingRequiredMutableSalesExperienceFields(value: z.infer<typeof salesExperienceSchema>): string[] {
   const record = value as Record<string, unknown>;
-  return mutableSalesExperienceFields.every((field) => Object.hasOwn(record, field) && record[field] !== undefined);
+  return requiredMutableSalesExperienceFields.filter((field) => !Object.hasOwn(record, field) || record[field] === undefined);
 }

@@ -52,9 +52,9 @@ describe("Sales Trial participant home", () => {
       }),
     );
 
-    expect(html).toContain("max-width:640px");
-    expect(html).toContain("grid-template-columns:repeat(auto-fit, minmax(12rem, 1fr))");
-    expect(html).toContain("width:100%");
+    expect(html).toContain("max-width:1180px");
+    expect(html).toContain("Trial details");
+    expect(html).toContain("grid-template-columns:repeat(auto-fit, minmax(min(100%, 18rem), 1fr))");
   });
 
   it("opens a retained child window and focuses it on repeat entry", async () => {
@@ -89,6 +89,37 @@ describe("Sales Trial participant home", () => {
     expect(openTrialWindow).toHaveBeenNthCalledWith(1, "offering-1");
     expect(openTrialWindow).toHaveBeenNthCalledWith(2, "offering-1");
     expect(screen.getByRole("button", { name: "Focus trial window" })).toBeTruthy();
+  });
+
+  it("flips each Trial Offering card to details and back without changing the launch action", async () => {
+    const user = userEvent.setup();
+    const openTrialWindow = vi.fn().mockReturnValue({ reused: false });
+
+    render(
+      <SalesTrialHome
+        email="visitor@example.test"
+        firstName="Ari"
+        openTrialWindow={openTrialWindow}
+        initialOfferings={[
+          {
+            id: "offering-1",
+            title: "Helios Trial",
+            description: "Shared trial",
+            start: "2026-08-30T09:00",
+            end: "2026-08-30T17:00",
+            timeZone: "UTC",
+          },
+        ]}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Trial details" }));
+    expect(screen.getByText("Window")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Back to trial" })).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "Back to trial" }));
+    await user.click(screen.getByRole("button", { name: "Open trial window" }));
+    expect(openTrialWindow).toHaveBeenCalledWith("offering-1");
   });
 
   it("shows a blocked-entry alert from the child window handoff without exposing provider data", async () => {
@@ -163,7 +194,7 @@ describe("Sales Trial participant home", () => {
       />,
     );
 
-    await screen.findByText("Helios Trial");
+    await screen.findByRole("button", { name: "Trial details" });
 
     rerender(
       <SalesTrialHome
