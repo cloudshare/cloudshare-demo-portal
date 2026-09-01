@@ -52,4 +52,5 @@ export const disabledButtonStyle: CSSProperties = {
   border: "1px solid #64748b",
   color: "#475569",
   cursor: "not-allowed",
+  opacity: 0.55,
 };
