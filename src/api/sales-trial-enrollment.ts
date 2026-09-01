@@ -28,6 +28,7 @@ import {
   SALES_TRIAL_PARTICIPANT_CORRELATION_PROPERTY_KEYS,
 } from "@/integrations/cloudshare/sales-delivery";
 import {
+  CloudShareRequestError,
   CloudShareResponseError,
   CloudShareTransportError,
 } from "@/integrations/cloudshare/errors";
@@ -498,10 +499,9 @@ export async function handleListSalesTrialOfferingParticipants(
       request.customerId,
       request.offeringId,
     );
-    const fallback =
-      error instanceof CloudShareTransportError
-        ? staleMonitoringFallback(offering, retained, correlationId)
-        : null;
+    const fallback = isUnavailableParticipantRoster(error)
+      ? staleMonitoringFallback(offering, retained, correlationId)
+      : null;
     return fallback ?? failure;
   }
   const participants = reconciledEnrollments.map((enrollment) =>
@@ -998,6 +998,14 @@ function staleMonitoringFallback(
       correlationId,
     },
   };
+}
+
+function isUnavailableParticipantRoster(error: unknown): boolean {
+  return (
+    error instanceof CloudShareTransportError ||
+    (error instanceof CloudShareRequestError &&
+      (error.status === 404 || error.status === 410 || error.status >= 500))
+  );
 }
 
 function hasRequiredEnrollmentCorrelation(

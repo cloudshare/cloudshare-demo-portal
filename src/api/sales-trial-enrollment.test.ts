@@ -3,7 +3,10 @@ import { createDiagnosticRecorder } from "@/domain/diagnostic-log";
 import { createInMemoryDiagnosticLogRepository } from "@/persistence/diagnostic-log-repository";
 import type { SalesTrialOffering } from "@/domain/sales-trial-offering";
 import type { SalesTrialEnrollment, SalesTrialEnrollmentRepository } from "@/domain/sales-trial-enrollment";
-import { CloudShareTransportError } from "@/integrations/cloudshare/errors";
+import {
+  CloudShareRequestError,
+  CloudShareTransportError,
+} from "@/integrations/cloudshare/errors";
 import {
   handleEnterSalesTrialOffering,
   handleListSalesTrialOfferingParticipants,
@@ -2001,7 +2004,26 @@ describe("Sales Trial offering monitoring", () => {
     });
   });
 
-  it("falls back to the last locally reconciled participant state with explicit timestamp and source when the provider roster is unavailable", async () => {
+  it.each([
+    {
+      label: "the roster request times out",
+      error: new CloudShareTransportError("participant roster timed out", {
+        method: "GET",
+        path: "/sales/sales-1/participants",
+        requestQuery: { offset: "0", limit: "100" },
+        requestHeaders: { authorization: "Bearer secret", "x-request-id": "req-1" },
+        cause: "ETIMEDOUT",
+        transport: "tcp",
+      }),
+    },
+    {
+      label: "CloudShare no longer exposes the ended roster",
+      error: new CloudShareRequestError("participant roster was not found", 404, {
+        method: "GET",
+        path: "/sales/sales-1/participants",
+      }),
+    },
+  ])("falls back to the last locally reconciled participant state with explicit timestamp and source when $label", async ({ error }) => {
     const { deps, enrollments, diagnosticRepository, audit, listParticipants } = createDeps({
       offerings: {
         findById: vi.fn().mockResolvedValue(
@@ -2032,16 +2054,7 @@ describe("Sales Trial offering monitoring", () => {
       createdAt: new Date("2026-08-30T10:00:00.000Z"),
       updatedAt: new Date("2026-08-30T10:07:00.000Z"),
     });
-    listParticipants.mockRejectedValue(
-      new CloudShareTransportError("participant roster timed out", {
-        method: "GET",
-        path: "/sales/sales-1/participants",
-        requestQuery: { offset: "0", limit: "100" },
-        requestHeaders: { authorization: "Bearer secret", "x-request-id": "req-1" },
-        cause: "ETIMEDOUT",
-        transport: "tcp",
-      }),
-    );
+    listParticipants.mockRejectedValue(error);
 
     const result = await handleListSalesTrialOfferingParticipants(deps, {
       customerId: "customer-1",
