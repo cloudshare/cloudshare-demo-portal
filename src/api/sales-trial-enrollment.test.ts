@@ -4281,6 +4281,102 @@ describe("Sales Trial participant environment extension", () => {
     });
   });
 
+  it("fails closed after a successful PUT when post-extend readback changes only status and not expiry", async () => {
+    const { deps, enrollments, diagnosticRepository, observe, extendById, observeById } = createDeps();
+    await enrollments.save({
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: "remote-1",
+      invitationStatus: "sent",
+      participationStatus: "inProgress",
+      cloudShareRosterEnvironmentReference: "env-1",
+      environmentStatus: "Archived",
+      observedExpirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
+      firstJoined: "2026-08-30T10:05:00.000Z",
+      status: "active",
+      attentionReason: null,
+      lastLaunchedAt: new Date("2026-08-30T10:06:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T10:07:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:07:00.000Z"),
+    });
+    observe.mockResolvedValueOnce({
+      environmentId: "opaque-v3-env-1",
+      statusCode: 4,
+      expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
+      exchanges: [
+        {
+          request: { method: "GET", path: "/api/v3/envs", query: { ownerEmail: "visitor@example.test", brief: "false" } },
+          response: { status: 200, body: [{ id: "opaque-v3-env-1", projectId: "project-1" }] },
+        },
+        {
+          request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "opaque-v3-env-1" } },
+          response: { status: 200, body: { statusCode: 4, expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT" } },
+        },
+      ],
+    });
+    observeById.mockResolvedValueOnce({
+      environmentId: "opaque-v3-env-1",
+      statusCode: 2,
+      expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
+      exchanges: [
+        {
+          request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "opaque-v3-env-1" } },
+          response: { status: 200, body: { statusCode: 2, expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT" } },
+        },
+      ],
+    });
+
+    const result = await handleExtendSalesTrialOfferingParticipant(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      enrollmentId: "enrollment-1",
+      actor: { type: "admin", id: "admin-1", email: "sales-admin@example.test" },
+    });
+    const persisted = await enrollments.findById?.("customer-1", "enrollment-1");
+    const failures = await diagnosticRepository.query({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.environment.extend",
+      outcome: "failure",
+    });
+    const successes = await diagnosticRepository.query({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.environment.extend",
+      outcome: "success",
+    });
+
+    expect(result).toEqual({
+      status: 502,
+      body: {
+        error: "Sales Trial environment extension could not be confirmed.",
+        correlationId: expect.any(String),
+      },
+    });
+    expect(extendById).toHaveBeenCalledTimes(1);
+    expect(persisted).toMatchObject({
+      status: "needs_attention",
+      attentionReason:
+        "The previous Sales Trial extension outcome is still unconfirmed. Certalis must reconcile the current CloudShare state before another extension can be requested.",
+      environmentStatus: "Archived",
+      observedExpirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
+    });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({
+      externalIds: expect.objectContaining({
+        environmentId: "opaque-v3-env-1",
+      }),
+      details: expect.objectContaining({
+        failureMode: "extension_outcome_unconfirmed",
+      }),
+    });
+    expect(successes).toHaveLength(0);
+  });
+
   it("fails closed for a customer-scoped enrollment lookup miss", async () => {
     const { deps, extendById, observe, observeById, diagnosticRepository } = createDeps({
       enrollments: {

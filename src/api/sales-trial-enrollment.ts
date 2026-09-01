@@ -967,6 +967,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
         [...preflight.exchanges, extension.exchange, ...observed.exchanges],
         pendingExtension.id,
         preflight.environmentId,
+        "extension_outcome_unconfirmed",
       );
     }
 
@@ -1645,8 +1646,9 @@ function didExtensionChangeOutcome(
   after: Pick<SalesTrialEnrollment, "observedExpirationTime" | "environmentStatus">,
 ): boolean {
   return (
-    (before.observedExpirationTime ?? null) !== (after.observedExpirationTime ?? null) ||
-    (before.environmentStatus ?? null) !== (after.environmentStatus ?? null)
+    before.observedExpirationTime !== null &&
+    after.observedExpirationTime !== null &&
+    before.observedExpirationTime !== after.observedExpirationTime
   );
 }
 
