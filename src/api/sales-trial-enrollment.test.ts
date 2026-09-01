@@ -2188,7 +2188,7 @@ describe("Sales Trial offering monitoring", () => {
     expect(failure).toBeTruthy();
   });
 
-  it("retains ending offering history when the participant roster cannot be refreshed", async () => {
+  it("does not present stale history while an ending offering roster cannot be refreshed", async () => {
     const { deps, enrollments, listParticipants, diagnosticRepository } = createDeps({
       offerings: {
         findById: vi.fn().mockResolvedValue(
@@ -2239,18 +2239,10 @@ describe("Sales Trial offering monitoring", () => {
       outcome: "failure",
     });
 
-    expect(result.status).toBe(200);
-    expect(result.body).toMatchObject({
-      offering: { id: "offering-1", status: "ending" },
-      observation: {
-        freshness: "stale",
-        source: "certalis_sales_trial_enrollment_reconciliation",
-        observedAt: "2026-08-30T10:07:00.000Z",
-      },
-      participants: [expect.objectContaining({ id: "enrollment-1" })],
-      correlationId: expect.any(String),
+    expect(result).toEqual({
+      status: 502,
+      body: { error: "Sales Trial participant monitoring is unavailable.", correlationId: expect.any(String) },
     });
-    expect(JSON.stringify(result.body)).not.toContain("Sales Trial Offering was not found");
     expect(failure).toBeTruthy();
   });
 

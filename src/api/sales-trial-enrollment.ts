@@ -968,8 +968,7 @@ function staleMonitoringFallback(
   correlationId: string,
 ): SalesTrialOfferingMonitoringResponse | null {
   if (
-    (offering.status !== "ending" &&
-      offering.status !== "ended" &&
+    (offering.status !== "ended" &&
       offering.status !== "unpublished") ||
     enrollments.length === 0
   ) {
