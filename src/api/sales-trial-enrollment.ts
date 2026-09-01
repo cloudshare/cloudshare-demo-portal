@@ -27,7 +27,10 @@ import {
   type SalesParticipant,
   SALES_TRIAL_PARTICIPANT_CORRELATION_PROPERTY_KEYS,
 } from "@/integrations/cloudshare/sales-delivery";
-import { CloudShareResponseError } from "@/integrations/cloudshare/errors";
+import {
+  CloudShareResponseError,
+  CloudShareTransportError,
+} from "@/integrations/cloudshare/errors";
 
 const TRIAL_CORRELATION_KEYS: readonly SalesParticipantCorrelationPropertyKey[] =
   SALES_TRIAL_PARTICIPANT_CORRELATION_PROPERTY_KEYS;
@@ -495,7 +498,10 @@ export async function handleListSalesTrialOfferingParticipants(
       request.customerId,
       request.offeringId,
     );
-    const fallback = staleMonitoringFallback(offering, retained, correlationId);
+    const fallback =
+      error instanceof CloudShareTransportError
+        ? staleMonitoringFallback(offering, retained, correlationId)
+        : null;
     return fallback ?? failure;
   }
   const participants = reconciledEnrollments.map((enrollment) =>
