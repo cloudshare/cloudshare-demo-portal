@@ -674,6 +674,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
             saveError,
             preflight.exchanges,
             ineligible.id,
+            preflight.environmentId,
             "persistence_failure",
             "Sales Trial extension state could not be persisted after CloudShare preflight observation.",
           );
@@ -714,6 +715,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
             saveError,
             preflight.exchanges,
             reconciled.id,
+            preflight.environmentId,
             "persistence_failure",
             "Sales Trial extension state could not be persisted after CloudShare preflight observation.",
           );
@@ -752,6 +754,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
           saveError,
           preflight.exchanges,
           unresolved.id,
+          preflight.environmentId,
           "persistence_failure",
           "Sales Trial extension state could not be persisted after CloudShare preflight observation.",
         );
@@ -782,6 +785,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
           saveError,
           preflight.exchanges,
           ineligible.id,
+          preflight.environmentId,
           "persistence_failure",
           "Sales Trial extension state could not be persisted after CloudShare preflight observation.",
         );
@@ -821,6 +825,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
         saveError,
         preflight.exchanges,
         pendingExtension.id,
+        preflight.environmentId,
         "persistence_failure",
         "Sales Trial extension state could not be persisted after CloudShare preflight observation.",
       );
@@ -837,6 +842,8 @@ export async function handleExtendSalesTrialOfferingParticipant(
         correlationId,
         error,
         [...preflight.exchanges, extension.exchange],
+        pendingExtension.id,
+        preflight.environmentId,
       );
     }
 
@@ -857,6 +864,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
           saveError,
           [...preflight.exchanges, extension.exchange, ...observed.exchanges],
           pendingExtension.id,
+          preflight.environmentId,
           "persistence_failure",
           "Sales Trial extension state could not be persisted after CloudShare reconcile observation.",
         );
@@ -888,6 +896,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
         undefined,
         [...preflight.exchanges, extension.exchange, ...observed.exchanges],
         pendingExtension.id,
+        preflight.environmentId,
       );
     }
 
@@ -906,6 +915,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
         saveError,
         [...preflight.exchanges, extension.exchange, ...observed.exchanges],
         pendingExtension.id,
+        preflight.environmentId,
         "persistence_failure",
         "Sales Trial extension state could not be persisted after CloudShare reconcile observation.",
       );
@@ -958,6 +968,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
         error,
         error.exchanges,
         unresolved.id,
+        undefined,
         error.reason,
       );
     }
@@ -2015,6 +2026,7 @@ async function extensionFailure(
     readonly response: unknown;
   }[] = [],
   subjectId = request.enrollmentId,
+  canonicalEnvironmentId?: string,
   failureModeOverride?: string,
   loggedErrorOverride?: string,
 ): Promise<SalesTrialParticipantEnvironmentExtendResponse> {
@@ -2076,6 +2088,7 @@ async function extensionFailure(
       externalIds: {
         offeringId: request.offeringId,
         salesTrialEnrollmentId: subjectId,
+        ...(canonicalEnvironmentId ? { environmentId: canonicalEnvironmentId } : {}),
       },
       ...(requestExchange
         ? {

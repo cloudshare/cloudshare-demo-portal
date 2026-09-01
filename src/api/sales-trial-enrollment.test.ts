@@ -3020,6 +3020,9 @@ describe("Sales Trial participant environment extension", () => {
         query: { envId: "opaque-v3-env-1" },
         headers: { authorization: "[REDACTED]", "x-request-id": "req-1" },
       }),
+      externalIds: expect.objectContaining({
+        environmentId: "opaque-v3-env-1",
+      }),
       details: expect.objectContaining({
         attemptedOperation: "observe_extended_environment",
         failureMode: "transport_failure",
@@ -3170,6 +3173,11 @@ describe("Sales Trial participant environment extension", () => {
       observedExpirationTime: "Tue, 01 Sep 2026 13:00:00 GMT",
     });
     expect(failures).toHaveLength(1);
+    expect(failures[0]).toMatchObject({
+      externalIds: expect.objectContaining({
+        environmentId: "opaque-v3-env-1",
+      }),
+    });
     expect(successes).toHaveLength(0);
   });
 
@@ -3289,17 +3297,24 @@ describe("Sales Trial participant environment extension", () => {
       },
     });
     expect(extendById).toHaveBeenCalledTimes(1);
-    const [failure] = await diagnosticRepository.query({
+    const failures = await diagnosticRepository.query({
       source: "sales-trial-enrollment",
       operation: "sales_trial.offering.environment.extend",
       outcome: "failure",
     });
+    const failure = failures.find(
+      (entry) => entry.correlationId === first.body.correlationId,
+    );
+    expect(failure).toBeDefined();
     expect(failure).toMatchObject({
       correlationId: first.body.correlationId,
       request: expect.objectContaining({
         method: "GET",
         path: "/api/v3/envs/actions/getextended",
         query: { envId: "opaque-v3-env-1" },
+      }),
+      externalIds: expect.objectContaining({
+        environmentId: "opaque-v3-env-1",
       }),
       details: expect.objectContaining({
         failureMode: "persistence_failure",
