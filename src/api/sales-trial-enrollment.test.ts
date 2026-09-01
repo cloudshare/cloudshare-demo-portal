@@ -3214,7 +3214,7 @@ describe("Sales Trial participant environment extension", () => {
       participationStatus: "inProgress",
       cloudShareRosterEnvironmentReference: "env-1",
       environmentStatus: "Archived",
-      observedExpirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
+      observedExpirationTime: null,
       firstJoined: "2026-08-30T10:05:00.000Z",
       status: "active",
       attentionReason: null,
@@ -3311,10 +3311,134 @@ describe("Sales Trial participant environment extension", () => {
     expect(extendById).toHaveBeenCalledTimes(1);
     expect(reserveForExtension).toHaveBeenCalledTimes(2);
     expect([first.status, second.status].sort()).toEqual([200, 409]);
+    expect([first.body, second.body]).toContainEqual({
+      error: "This Sales Trial environment cannot be extended.",
+      reason:
+        "The previous Sales Trial extension outcome is still unconfirmed. Certalis must reconcile the current CloudShare state before another extension can be requested.",
+      correlationId: expect.any(String),
+    });
     expect([first.body.correlationId, second.body.correlationId]).toEqual([
       expect.any(String),
       expect.any(String),
     ]);
+  });
+
+  it("denies immediately on an extension claim miss when the reloaded row is not the pending-extension fence", async () => {
+    const enrollments = createEnrollmentRepository();
+    const existing = {
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: "remote-1",
+      invitationStatus: "sent" as const,
+      participationStatus: "inProgress" as const,
+      cloudShareRosterEnvironmentReference: "env-1",
+      environmentStatus: "Archived",
+      observedExpirationTime: null,
+      firstJoined: "2026-08-30T10:05:00.000Z",
+      status: "needs_attention" as const,
+      attentionReason: "Support reconciliation required",
+      lastLaunchedAt: new Date("2026-08-30T10:06:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T10:07:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:07:00.000Z"),
+    };
+    await enrollments.save(existing);
+    const save = vi.fn(enrollments.save);
+    const observe = vi.fn();
+    const extendById = vi.fn();
+    const result = await handleExtendSalesTrialOfferingParticipant(
+      createDeps({
+        enrollments: {
+          ...enrollments,
+          save,
+          reserveForExtension: vi.fn().mockResolvedValue(false),
+        },
+        salesEnvironmentFactory: {
+          forConnection: vi.fn().mockReturnValue({
+            observe,
+            observeById: vi.fn(),
+            extendById,
+          }),
+        },
+      }).deps,
+      {
+        customerId: "customer-1",
+        offeringId: "offering-1",
+        enrollmentId: "enrollment-1",
+        actor: { type: "admin", id: "admin-1", email: "sales-admin@example.test" },
+      },
+    );
+
+    expect(result).toEqual({
+      status: 409,
+      body: {
+        error: "This Sales Trial environment cannot be extended.",
+        reason: "Support reconciliation required",
+        correlationId: expect.any(String),
+      },
+    });
+    expect(observe).not.toHaveBeenCalled();
+    expect(extendById).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it("denies a retained row that is not active before any provider call", async () => {
+    const { deps, enrollments, diagnosticRepository } = createDeps();
+    await enrollments.save({
+      id: "enrollment-1",
+      customerId: "customer-1",
+      salesTrialOfferingId: "offering-1",
+      portalUserId: "trial-user-1",
+      email: "visitor@example.test",
+      firstName: "Ari",
+      lastName: "Visitor",
+      cloudShareParticipantId: "remote-1",
+      invitationStatus: "sent",
+      participationStatus: "inProgress",
+      cloudShareRosterEnvironmentReference: "env-1",
+      environmentStatus: "Archived",
+      observedExpirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
+      firstJoined: "2026-08-30T10:05:00.000Z",
+      status: "retryable_failure",
+      attentionReason: null,
+      lastLaunchedAt: new Date("2026-08-30T10:06:00.000Z"),
+      lastReconciledAt: new Date("2026-08-30T10:07:00.000Z"),
+      createdAt: new Date("2026-08-30T10:00:00.000Z"),
+      updatedAt: new Date("2026-08-30T10:07:00.000Z"),
+    });
+
+    const result = await handleExtendSalesTrialOfferingParticipant(deps, {
+      customerId: "customer-1",
+      offeringId: "offering-1",
+      enrollmentId: "enrollment-1",
+      actor: { type: "admin", id: "admin-1", email: "sales-admin@example.test" },
+    });
+    const [failure] = await diagnosticRepository.query({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.environment.extend",
+      outcome: "failure",
+    });
+
+    expect(result).toEqual({
+      status: 409,
+      body: {
+        error: "This Sales Trial environment cannot be extended.",
+        reason: "A retained CloudShare environment mapping is required before Certalis can request an extension.",
+        correlationId: expect.any(String),
+      },
+    });
+    expect(failure).toMatchObject({
+      correlationId: result.body.correlationId,
+      details: expect.objectContaining({
+        integrationSurface: "portal.sales_trial",
+        attemptedOperation: "portal_guard",
+      }),
+    });
   });
 
   it("keeps the durable no-replay fence when post-mutation reconciliation persistence fails, then blocks a second PUT", async () => {

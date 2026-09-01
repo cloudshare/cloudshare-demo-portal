@@ -680,6 +680,24 @@ export async function handleExtendSalesTrialOfferingParticipant(
           body: { error: EXTEND_UNAVAILABLE, correlationId },
         };
       }
+      if (!isPendingExtensionReconciliation(enrollment)) {
+        const reloadedExtendState = buildExtendState(enrollment);
+        await recordExtensionGuardDenied(
+          deps,
+          request,
+          correlationId,
+          409,
+          reloadedExtendState.reason ?? EXTEND_MAPPING_REQUIRED,
+        );
+        return {
+          status: 409,
+          body: {
+            error: EXTEND_UNAVAILABLE,
+            reason: reloadedExtendState.reason ?? EXTEND_MAPPING_REQUIRED,
+            correlationId,
+          },
+        };
+      }
       reconcileOnly = true;
     }
   }
@@ -1418,6 +1436,12 @@ function buildExtendState(
       reason: enrollment.attentionReason ?? NEEDS_ATTENTION_REASON,
     };
   }
+  if (enrollment.status !== "active") {
+    return {
+      enabled: false,
+      reason: EXTEND_MAPPING_REQUIRED,
+    };
+  }
   if (
     enrollment.cloudShareParticipantId === null ||
     enrollment.cloudShareRosterEnvironmentReference === null ||
@@ -1607,7 +1631,13 @@ function hasEstablishedExtensionOutcome(
   if (before.status !== "needs_attention") {
     return true;
   }
-  return !isRetryBlockedByPendingOutcome(after) || didExtensionChangeOutcome(before, after);
+  if (!isRetryBlockedByPendingOutcome(after)) {
+    return true;
+  }
+  if (before.observedExpirationTime === null) {
+    return false;
+  }
+  return didExtensionChangeOutcome(before, after);
 }
 
 function isRetryBlockedByPendingOutcome(
