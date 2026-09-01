@@ -134,25 +134,57 @@ function createDeps(
     response: { status: 200, body: { loginUrl: "https://use.cloudshare.com/secret" } },
   });
   const extendById = vi.fn().mockResolvedValue({
-    environmentId: "env-1",
+    environmentId: "opaque-v3-env-1",
     exchange: {
-      request: { method: "PUT", path: "/api/v3/envs/actions/extend", query: { envId: "env-1" } },
+      request: { method: "PUT", path: "/api/v3/envs/actions/extend", query: { envId: "opaque-v3-env-1" } },
       response: { status: 200, body: "" },
     },
   });
+  const observe = vi.fn().mockResolvedValue({
+    environmentId: "opaque-v3-env-1",
+    statusCode: 4,
+    expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
+    exchanges: [
+      {
+        request: { method: "GET", path: "/api/v3/envs", query: { ownerEmail: "visitor@example.test", brief: "false" } },
+        response: { status: 200, body: [{ id: "opaque-v3-env-1", projectId: "project-1" }] },
+      },
+      {
+        request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "opaque-v3-env-1" } },
+        response: { status: 200, body: { statusCode: 4, expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT" } },
+      },
+    ],
+  });
   const observeById = vi.fn().mockResolvedValue({
-    environmentId: "env-1",
+    environmentId: "opaque-v3-env-1",
     statusCode: 4,
     expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT",
     exchanges: [
       {
-        request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "env-1" } },
+        request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "opaque-v3-env-1" } },
         response: { status: 200, body: { statusCode: 4, expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT" } },
       },
     ],
   });
   const deps = {
     offerings: { findById: vi.fn().mockResolvedValue(offering) },
+    items: {
+      findById: vi.fn().mockResolvedValue({
+        id: "item-1",
+        customerId: "customer-1",
+        name: "Trial Item",
+        description: "Shared trial item",
+        project: { id: "project-1", name: "Project 1" },
+        blueprints: [{ id: "bp-1", name: "Blueprint 1" }],
+        policy: { id: "policy-1", name: "Policy 1" },
+        regions: [{ id: "region-1", name: "Region 1" }],
+        defaultDurationMinutes: 60,
+        status: "active",
+        archivedAt: null,
+        createdAt: new Date("2026-08-29T10:00:00.000Z"),
+        updatedAt: new Date("2026-08-29T10:00:00.000Z"),
+      }),
+    },
     enrollments,
     connections: { findByCustomerId: vi.fn().mockResolvedValue({ id: "connection-1" }) },
     deliveryFactory: {
@@ -182,6 +214,7 @@ function createDeps(
     audit: { write: vi.fn().mockResolvedValue(undefined) },
     salesEnvironmentFactory: {
       forConnection: vi.fn().mockReturnValue({
+        observe,
         observeById,
         extendById,
       }),
@@ -200,6 +233,7 @@ function createDeps(
     registerParticipants,
     updateParticipantCorrelation,
     createSponsoredLink,
+    observe,
     extendById,
     observeById,
   };
@@ -2518,7 +2552,7 @@ describe("Sales Trial offering monitoring", () => {
 
 describe("Sales Trial participant environment extension", () => {
   it("extends an exact retained environment mapping, reads back the provider state, and returns a safe monitoring projection", async () => {
-    const { deps, enrollments, diagnosticRepository, audit, extendById, observeById } = createDeps();
+    const { deps, enrollments, diagnosticRepository, audit, observe, extendById, observeById } = createDeps();
     await enrollments.save({
       id: "enrollment-1",
       customerId: "customer-1",
@@ -2541,29 +2575,34 @@ describe("Sales Trial participant environment extension", () => {
       createdAt: new Date("2026-08-30T10:00:00.000Z"),
       updatedAt: new Date("2026-08-30T10:07:00.000Z"),
     });
-    observeById
+    observe
       .mockResolvedValueOnce({
-        environmentId: "env-1",
+        environmentId: "opaque-v3-env-1",
         statusCode: 4,
         expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
         exchanges: [
           {
-            request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "env-1" } },
+            request: { method: "GET", path: "/api/v3/envs", query: { ownerEmail: "visitor@example.test", brief: "false" } },
+            response: { status: 200, body: [{ id: "opaque-v3-env-1", projectId: "project-1" }] },
+          },
+          {
+            request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "opaque-v3-env-1" } },
             response: { status: 200, body: { statusCode: 4, expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT" } },
           },
         ],
       })
-      .mockResolvedValueOnce({
-        environmentId: "env-1",
-        statusCode: 4,
-        expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT",
-        exchanges: [
-          {
-            request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "env-1" } },
-            response: { status: 200, body: { statusCode: 4, expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT" } },
-          },
-        ],
-      });
+      ;
+    observeById.mockResolvedValueOnce({
+      environmentId: "opaque-v3-env-1",
+      statusCode: 4,
+      expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT",
+      exchanges: [
+        {
+          request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "opaque-v3-env-1" } },
+          response: { status: 200, body: { statusCode: 4, expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT" } },
+        },
+      ],
+    });
 
     const result = await handleExtendSalesTrialOfferingParticipant(deps, {
       customerId: "customer-1",
@@ -2599,10 +2638,13 @@ describe("Sales Trial participant environment extension", () => {
         correlationId: expect.any(String),
       },
     });
-    expect(extendById).toHaveBeenCalledWith("env-1");
-    expect(observeById).toHaveBeenCalledTimes(2);
-    expect(observeById).toHaveBeenNthCalledWith(1, "env-1");
-    expect(observeById).toHaveBeenNthCalledWith(2, "env-1");
+    expect(observe).toHaveBeenCalledWith({
+      ownerEmail: "visitor@example.test",
+      projectId: "project-1",
+    });
+    expect(extendById).toHaveBeenCalledWith("opaque-v3-env-1");
+    expect(observeById).toHaveBeenCalledTimes(1);
+    expect(observeById).toHaveBeenNthCalledWith(1, "opaque-v3-env-1");
     expect(persisted).toMatchObject({
       environmentStatus: "Archived",
       observedExpirationTime: "Tue, 01 Sep 2026 13:00:00 GMT",
@@ -2614,36 +2656,43 @@ describe("Sales Trial participant environment extension", () => {
       request: expect.objectContaining({
         method: "PUT",
         path: "/api/v3/envs/actions/extend",
-        query: { envId: "env-1" },
+        query: { envId: "opaque-v3-env-1" },
       }),
       response: expect.objectContaining({ status: 200, body: "" }),
       details: expect.objectContaining({
         integrationSurface: "cloudshare.v3.environments",
         attemptedOperation: "extend_environment",
         expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT",
-        httpExchanges: [
+        httpExchanges: expect.arrayContaining([
+          expect.objectContaining({
+            request: expect.objectContaining({
+              method: "GET",
+              path: "/api/v3/envs",
+              query: { ownerEmail: "visitor@example.test", brief: "false" },
+            }),
+          }),
           expect.objectContaining({
             request: expect.objectContaining({
               method: "GET",
               path: "/api/v3/envs/actions/getextended",
-              query: { envId: "env-1" },
+              query: { envId: "opaque-v3-env-1" },
             }),
           }),
           expect.objectContaining({
             request: expect.objectContaining({
               method: "PUT",
               path: "/api/v3/envs/actions/extend",
-              query: { envId: "env-1" },
+              query: { envId: "opaque-v3-env-1" },
             }),
           }),
           expect.objectContaining({
             request: expect.objectContaining({
               method: "GET",
               path: "/api/v3/envs/actions/getextended",
-              query: { envId: "env-1" },
+              query: { envId: "opaque-v3-env-1" },
             }),
           }),
-        ],
+        ]),
       }),
     });
     expect(audit.write).toHaveBeenCalledWith(
@@ -2701,7 +2750,7 @@ describe("Sales Trial participant environment extension", () => {
   });
 
   it("does not mutate the provider when preflight reports a terminal environment, persists the observed state, and records protected diagnostics", async () => {
-    const { deps, enrollments, diagnosticRepository, audit, extendById, observeById } = createDeps();
+    const { deps, enrollments, diagnosticRepository, audit, extendById, observe } = createDeps();
     await enrollments.save({
       id: "enrollment-1",
       customerId: "customer-1",
@@ -2724,13 +2773,17 @@ describe("Sales Trial participant environment extension", () => {
       createdAt: new Date("2026-08-30T10:00:00.000Z"),
       updatedAt: new Date("2026-08-30T10:07:00.000Z"),
     });
-    observeById.mockResolvedValueOnce({
-      environmentId: "env-1",
+    observe.mockResolvedValueOnce({
+      environmentId: "opaque-v3-env-1",
       statusCode: 5,
       expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
       exchanges: [
         {
-          request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "env-1" } },
+          request: { method: "GET", path: "/api/v3/envs", query: { ownerEmail: "visitor@example.test", brief: "false" } },
+          response: { status: 200, body: [{ id: "opaque-v3-env-1", projectId: "project-1" }] },
+        },
+        {
+          request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "opaque-v3-env-1" } },
           response: { status: 200, body: { statusCode: 5, expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT" } },
         },
       ],
@@ -2786,7 +2839,7 @@ describe("Sales Trial participant environment extension", () => {
   });
 
   it("treats CreationFailed as terminal before mutation and keeps the participant ineligible for extend", async () => {
-    const { deps, enrollments, extendById, observeById } = createDeps();
+    const { deps, enrollments, extendById, observe } = createDeps();
     await enrollments.save({
       id: "enrollment-1",
       customerId: "customer-1",
@@ -2809,13 +2862,17 @@ describe("Sales Trial participant environment extension", () => {
       createdAt: new Date("2026-08-30T10:00:00.000Z"),
       updatedAt: new Date("2026-08-30T10:07:00.000Z"),
     });
-    observeById.mockResolvedValueOnce({
-      environmentId: "env-1",
+    observe.mockResolvedValueOnce({
+      environmentId: "opaque-v3-env-1",
       statusCode: 9,
       expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
       exchanges: [
         {
-          request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "env-1" } },
+          request: { method: "GET", path: "/api/v3/envs", query: { ownerEmail: "visitor@example.test", brief: "false" } },
+          response: { status: 200, body: [{ id: "opaque-v3-env-1", projectId: "project-1" }] },
+        },
+        {
+          request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "opaque-v3-env-1" } },
           response: { status: 200, body: { statusCode: 9, expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT" } },
         },
       ],
@@ -2859,7 +2916,7 @@ describe("Sales Trial participant environment extension", () => {
   });
 
   it("blocks replay after an ambiguous extend outcome, records both exchanges, and reconciles on retry before allowing success", async () => {
-    const { deps, enrollments, diagnosticRepository, extendById, observeById } = createDeps();
+    const { deps, enrollments, diagnosticRepository, observe, extendById, observeById } = createDeps();
     await enrollments.save({
       id: "enrollment-1",
       customerId: "customer-1",
@@ -2882,39 +2939,47 @@ describe("Sales Trial participant environment extension", () => {
       createdAt: new Date("2026-08-30T10:00:00.000Z"),
       updatedAt: new Date("2026-08-30T10:07:00.000Z"),
     });
-    observeById
+    observe
       .mockResolvedValueOnce({
-        environmentId: "env-1",
+        environmentId: "opaque-v3-env-1",
         statusCode: 4,
         expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
         exchanges: [
           {
-            request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "env-1" } },
+            request: { method: "GET", path: "/api/v3/envs", query: { ownerEmail: "visitor@example.test", brief: "false" } },
+            response: { status: 200, body: [{ id: "opaque-v3-env-1", projectId: "project-1" }] },
+          },
+          {
+            request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "opaque-v3-env-1" } },
             response: { status: 200, body: { statusCode: 4, expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT" } },
           },
         ],
       })
-      .mockRejectedValueOnce(
-        new CloudShareTransportError("getextended timed out", {
-          method: "GET",
-          path: "/api/v3/envs/actions/getextended",
-          requestQuery: { envId: "env-1" },
-          requestHeaders: { authorization: "cs_sha1 secret", "x-request-id": "req-1" },
-          cause: "ETIMEDOUT",
-          transport: "tcp",
-        }),
-      )
       .mockResolvedValueOnce({
-        environmentId: "env-1",
+        environmentId: "opaque-v3-env-1",
         statusCode: 4,
         expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT",
         exchanges: [
           {
-            request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "env-1" } },
+            request: { method: "GET", path: "/api/v3/envs", query: { ownerEmail: "visitor@example.test", brief: "false" } },
+            response: { status: 200, body: [{ id: "opaque-v3-env-1", projectId: "project-1" }] },
+          },
+          {
+            request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "opaque-v3-env-1" } },
             response: { status: 200, body: { statusCode: 4, expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT" } },
           },
         ],
       });
+    observeById.mockRejectedValueOnce(
+      new CloudShareTransportError("getextended timed out", {
+        method: "GET",
+        path: "/api/v3/envs/actions/getextended",
+        requestQuery: { envId: "opaque-v3-env-1" },
+        requestHeaders: { authorization: "cs_sha1 secret", "x-request-id": "req-1" },
+        cause: "ETIMEDOUT",
+        transport: "tcp",
+      }),
+    );
 
     const first = await handleExtendSalesTrialOfferingParticipant(deps, {
       customerId: "customer-1",
@@ -2936,7 +3001,7 @@ describe("Sales Trial participant environment extension", () => {
         correlationId: expect.any(String),
       },
     });
-    expect(extendById).toHaveBeenCalledWith("env-1");
+    expect(extendById).toHaveBeenCalledWith("opaque-v3-env-1");
     expect(unresolved).toMatchObject({
       status: "needs_attention",
       attentionReason:
@@ -2948,35 +3013,42 @@ describe("Sales Trial participant environment extension", () => {
       request: expect.objectContaining({
         method: "GET",
         path: "/api/v3/envs/actions/getextended",
-        query: { envId: "env-1" },
+        query: { envId: "opaque-v3-env-1" },
         headers: { authorization: "[REDACTED]", "x-request-id": "req-1" },
       }),
       details: expect.objectContaining({
         attemptedOperation: "observe_extended_environment",
         failureMode: "transport_failure",
-        httpExchanges: [
+        httpExchanges: expect.arrayContaining([
+          expect.objectContaining({
+            request: expect.objectContaining({
+              method: "GET",
+              path: "/api/v3/envs",
+              query: { ownerEmail: "visitor@example.test", brief: "false" },
+            }),
+          }),
           expect.objectContaining({
             request: expect.objectContaining({
               method: "GET",
               path: "/api/v3/envs/actions/getextended",
-              query: { envId: "env-1" },
+              query: { envId: "opaque-v3-env-1" },
             }),
           }),
           expect.objectContaining({
             request: expect.objectContaining({
               method: "PUT",
               path: "/api/v3/envs/actions/extend",
-              query: { envId: "env-1" },
+              query: { envId: "opaque-v3-env-1" },
             }),
           }),
           expect.objectContaining({
             request: expect.objectContaining({
               method: "GET",
               path: "/api/v3/envs/actions/getextended",
-              query: { envId: "env-1" },
+              query: { envId: "opaque-v3-env-1" },
             }),
           }),
-        ],
+        ]),
       }),
     });
 
@@ -3004,7 +3076,7 @@ describe("Sales Trial participant environment extension", () => {
       },
     });
     expect(extendById).toHaveBeenCalledTimes(1);
-    expect(observeById).toHaveBeenCalledTimes(3);
+    expect(observeById).toHaveBeenCalledTimes(1);
     expect(reconciled).toMatchObject({
       status: "active",
       attentionReason: null,
@@ -3020,7 +3092,7 @@ describe("Sales Trial participant environment extension", () => {
   });
 
   it("does not record success on a reconcile-only retry when CloudShare now reports the environment as terminal", async () => {
-    const { deps, enrollments, diagnosticRepository, extendById, observeById } = createDeps();
+    const { deps, enrollments, diagnosticRepository, observe, extendById } = createDeps();
     await enrollments.save({
       id: "enrollment-1",
       customerId: "customer-1",
@@ -3044,13 +3116,17 @@ describe("Sales Trial participant environment extension", () => {
       createdAt: new Date("2026-08-30T10:00:00.000Z"),
       updatedAt: new Date("2026-08-30T10:07:00.000Z"),
     });
-    observeById.mockResolvedValueOnce({
-      environmentId: "env-1",
+    observe.mockResolvedValueOnce({
+      environmentId: "opaque-v3-env-1",
       statusCode: 5,
       expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT",
       exchanges: [
         {
-          request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "env-1" } },
+          request: { method: "GET", path: "/api/v3/envs", query: { ownerEmail: "visitor@example.test", brief: "false" } },
+          response: { status: 200, body: [{ id: "opaque-v3-env-1", projectId: "project-1" }] },
+        },
+        {
+          request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "opaque-v3-env-1" } },
           response: { status: 200, body: { statusCode: 5, expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT" } },
         },
       ],
@@ -3126,46 +3202,54 @@ describe("Sales Trial participant environment extension", () => {
       }
       await backing.save(enrollment);
     });
-    const { deps, extendById, observeById } = createDeps({
+    const { deps, extendById, observe, observeById, diagnosticRepository } = createDeps({
       enrollments: {
         ...backing,
         save,
       },
     });
-    observeById
+    observe
       .mockResolvedValueOnce({
-        environmentId: "env-1",
+        environmentId: "opaque-v3-env-1",
         statusCode: 4,
         expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
         exchanges: [
           {
-            request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "env-1" } },
+            request: { method: "GET", path: "/api/v3/envs", query: { ownerEmail: "visitor@example.test", brief: "false" } },
+            response: { status: 200, body: [{ id: "opaque-v3-env-1", projectId: "project-1" }] },
+          },
+          {
+            request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "opaque-v3-env-1" } },
             response: { status: 200, body: { statusCode: 4, expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT" } },
           },
         ],
       })
       .mockResolvedValueOnce({
-        environmentId: "env-1",
+        environmentId: "opaque-v3-env-1",
         statusCode: 4,
         expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT",
         exchanges: [
           {
-            request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "env-1" } },
-            response: { status: 200, body: { statusCode: 4, expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT" } },
+            request: { method: "GET", path: "/api/v3/envs", query: { ownerEmail: "visitor@example.test", brief: "false" } },
+            response: { status: 200, body: [{ id: "opaque-v3-env-1", projectId: "project-1" }] },
           },
-        ],
-      })
-      .mockResolvedValueOnce({
-        environmentId: "env-1",
-        statusCode: 4,
-        expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT",
-        exchanges: [
           {
-            request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "env-1" } },
+            request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "opaque-v3-env-1" } },
             response: { status: 200, body: { statusCode: 4, expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT" } },
           },
         ],
       });
+    observeById.mockResolvedValueOnce({
+      environmentId: "opaque-v3-env-1",
+      statusCode: 4,
+      expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT",
+      exchanges: [
+        {
+          request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "opaque-v3-env-1" } },
+          response: { status: 200, body: { statusCode: 4, expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT" } },
+        },
+      ],
+    });
 
     const first = await handleExtendSalesTrialOfferingParticipant(deps, {
       customerId: "customer-1",
@@ -3201,10 +3285,36 @@ describe("Sales Trial participant environment extension", () => {
       },
     });
     expect(extendById).toHaveBeenCalledTimes(1);
+    const [failure] = await diagnosticRepository.query({
+      source: "sales-trial-enrollment",
+      operation: "sales_trial.offering.environment.extend",
+      outcome: "failure",
+    });
+    expect(failure).toMatchObject({
+      correlationId: first.body.correlationId,
+      request: expect.objectContaining({
+        method: "GET",
+        path: "/api/v3/envs/actions/getextended",
+        query: { envId: "opaque-v3-env-1" },
+      }),
+      details: expect.objectContaining({
+        failureMode: "persistence_failure",
+        httpExchanges: expect.arrayContaining([
+          expect.objectContaining({
+            request: expect.objectContaining({
+              method: "GET",
+              path: "/api/v3/envs",
+              query: { ownerEmail: "visitor@example.test", brief: "false" },
+            }),
+          }),
+        ]),
+      }),
+    });
+    expect(JSON.stringify(first.body)).not.toContain("opaque-v3-env-1");
   });
 
   it("fails closed after a successful PUT when post-extend readback reports a terminal environment", async () => {
-    const { deps, enrollments, diagnosticRepository, extendById, observeById } = createDeps();
+    const { deps, enrollments, diagnosticRepository, observe, extendById, observeById } = createDeps();
     await enrollments.save({
       id: "enrollment-1",
       customerId: "customer-1",
@@ -3227,29 +3337,33 @@ describe("Sales Trial participant environment extension", () => {
       createdAt: new Date("2026-08-30T10:00:00.000Z"),
       updatedAt: new Date("2026-08-30T10:07:00.000Z"),
     });
-    observeById
+    observe
       .mockResolvedValueOnce({
-        environmentId: "env-1",
+        environmentId: "opaque-v3-env-1",
         statusCode: 4,
         expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
         exchanges: [
           {
-            request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "env-1" } },
+            request: { method: "GET", path: "/api/v3/envs", query: { ownerEmail: "visitor@example.test", brief: "false" } },
+            response: { status: 200, body: [{ id: "opaque-v3-env-1", projectId: "project-1" }] },
+          },
+          {
+            request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "opaque-v3-env-1" } },
             response: { status: 200, body: { statusCode: 4, expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT" } },
           },
         ],
-      })
-      .mockResolvedValueOnce({
-        environmentId: "env-1",
-        statusCode: 5,
-        expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT",
-        exchanges: [
-          {
-            request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "env-1" } },
-            response: { status: 200, body: { statusCode: 5, expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT" } },
-          },
-        ],
       });
+    observeById.mockResolvedValueOnce({
+      environmentId: "opaque-v3-env-1",
+      statusCode: 5,
+      expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT",
+      exchanges: [
+        {
+          request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "opaque-v3-env-1" } },
+          response: { status: 200, body: { statusCode: 5, expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT" } },
+        },
+      ],
+    });
 
     const result = await handleExtendSalesTrialOfferingParticipant(deps, {
       customerId: "customer-1",
@@ -3289,7 +3403,7 @@ describe("Sales Trial participant environment extension", () => {
   });
 
   it("fails closed for a customer-scoped enrollment lookup miss", async () => {
-    const { deps, extendById, observeById } = createDeps({
+    const { deps, extendById, observe, observeById, diagnosticRepository } = createDeps({
       enrollments: {
         ...createEnrollmentRepository(),
         findById: vi.fn().mockResolvedValue(null),

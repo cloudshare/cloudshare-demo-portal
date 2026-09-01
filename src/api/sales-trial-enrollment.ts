@@ -15,6 +15,7 @@ import {
   isProjectableSalesParticipantRosterEnvironment,
   projectSalesParticipantRosterEnvironment,
 } from "@/domain/sales-participant-environment";
+import type { ItemRepository } from "@/domain/item";
 import type {
   SalesTrialOffering,
   SalesTrialOfferingRepository,
@@ -65,6 +66,7 @@ type Participant = {
 
 export interface SalesTrialEnrollmentDeps {
   readonly offerings: Pick<SalesTrialOfferingRepository, "findById">;
+  readonly items?: Pick<ItemRepository, "findById">;
   readonly enrollments: SalesTrialEnrollmentRepository;
   readonly connections: Pick<CloudShareConnectionRepository, "findByCustomerId">;
   readonly cloudshare?: Pick<CloudShareClientFactory, "forConnection">;
@@ -73,7 +75,7 @@ export interface SalesTrialEnrollmentDeps {
       connection: NonNullable<
         Awaited<ReturnType<CloudShareConnectionRepository["findByCustomerId"]>>
       >,
-    ): Pick<Required<SalesEnvironmentSource>, "observeById" | "extendById">;
+    ): Pick<Required<SalesEnvironmentSource>, "observe" | "observeById" | "extendById">;
   };
   readonly deliveryFactory?: {
     forConnection(
@@ -619,7 +621,13 @@ export async function handleExtendSalesTrialOfferingParticipant(
   }
 
   const connection = await deps.connections.findByCustomerId(request.customerId);
-  if (!connection || !deps.salesEnvironmentFactory) {
+  const item = deps.items ? await deps.items.findById(offering.itemId) : null;
+  if (
+    !connection ||
+    !deps.salesEnvironmentFactory ||
+    !item ||
+    item.customerId !== request.customerId
+  ) {
     return {
       status: 404,
       body: { error: EXTEND_UNAVAILABLE, correlationId },
@@ -628,9 +636,10 @@ export async function handleExtendSalesTrialOfferingParticipant(
   const environments = deps.salesEnvironmentFactory.forConnection(connection);
 
   try {
-    const preflight = await environments.observeById(
-      enrollment.cloudShareRosterEnvironmentReference!,
-    );
+    const preflight = await environments.observe({
+      ownerEmail: enrollment.email,
+      projectId: item.project.id,
+    });
     const preflightEnrollment = applyEnvironmentObservation(enrollment, preflight, now);
 
     if (isPendingExtensionReconciliation(enrollment)) {
@@ -640,7 +649,20 @@ export async function handleExtendSalesTrialOfferingParticipant(
           status: "active" as const,
           attentionReason: null,
         };
-        await deps.enrollments.save(ineligible);
+        try {
+          await deps.enrollments.save(ineligible);
+        } catch (saveError) {
+          return extensionFailure(
+            deps,
+            request,
+            correlationId,
+            saveError,
+            preflight.exchanges,
+            ineligible.id,
+            "persistence_failure",
+            "Sales Trial extension state could not be persisted after CloudShare preflight observation.",
+          );
+        }
         await recordExtensionFailure(
           deps,
           request,
@@ -666,7 +688,20 @@ export async function handleExtendSalesTrialOfferingParticipant(
           status: "active" as const,
           attentionReason: null,
         };
-        await deps.enrollments.save(reconciled);
+        try {
+          await deps.enrollments.save(reconciled);
+        } catch (saveError) {
+          return extensionFailure(
+            deps,
+            request,
+            correlationId,
+            saveError,
+            preflight.exchanges,
+            reconciled.id,
+            "persistence_failure",
+            "Sales Trial extension state could not be persisted after CloudShare preflight observation.",
+          );
+        }
         await recordExtensionSuccess(
           deps,
           request,
@@ -674,7 +709,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
           reconciled,
           preflight.expirationTime,
           undefined,
-          [preflight.exchanges[0]!],
+          preflight.exchanges,
         );
         return {
           status: 200,
@@ -690,7 +725,20 @@ export async function handleExtendSalesTrialOfferingParticipant(
         status: "needs_attention" as const,
         attentionReason: EXTEND_PENDING_RECONCILIATION,
       };
-      await deps.enrollments.save(unresolved);
+      try {
+        await deps.enrollments.save(unresolved);
+      } catch (saveError) {
+        return extensionFailure(
+          deps,
+          request,
+          correlationId,
+          saveError,
+          preflight.exchanges,
+          unresolved.id,
+          "persistence_failure",
+          "Sales Trial extension state could not be persisted after CloudShare preflight observation.",
+        );
+      }
       return {
         status: 409,
         body: {
@@ -707,7 +755,20 @@ export async function handleExtendSalesTrialOfferingParticipant(
         status: "active" as const,
         attentionReason: null,
       };
-      await deps.enrollments.save(ineligible);
+      try {
+        await deps.enrollments.save(ineligible);
+      } catch (saveError) {
+        return extensionFailure(
+          deps,
+          request,
+          correlationId,
+          saveError,
+          preflight.exchanges,
+          ineligible.id,
+          "persistence_failure",
+          "Sales Trial extension state could not be persisted after CloudShare preflight observation.",
+        );
+      }
       await recordExtensionFailure(
         deps,
         request,
@@ -732,23 +793,32 @@ export async function handleExtendSalesTrialOfferingParticipant(
       status: "needs_attention" as const,
       attentionReason: EXTEND_PENDING_RECONCILIATION,
     };
-    await deps.enrollments.save(pendingExtension);
+    try {
+      await deps.enrollments.save(pendingExtension);
+    } catch (saveError) {
+      return extensionFailure(
+        deps,
+        request,
+        correlationId,
+        saveError,
+        preflight.exchanges,
+        pendingExtension.id,
+        "persistence_failure",
+        "Sales Trial extension state could not be persisted after CloudShare preflight observation.",
+      );
+    }
 
-    const extension = await environments.extendById(
-      enrollment.cloudShareRosterEnvironmentReference!,
-    );
+    const extension = await environments.extendById(preflight.environmentId);
     let observed;
     try {
-      observed = await environments.observeById(
-        enrollment.cloudShareRosterEnvironmentReference!,
-      );
+      observed = await environments.observeById(preflight.environmentId);
     } catch (error) {
       return extensionFailure(
         deps,
         request,
         correlationId,
         error,
-        [preflight.exchanges[0]!, extension.exchange],
+        [...preflight.exchanges, extension.exchange],
       );
     }
 
@@ -761,14 +831,16 @@ export async function handleExtendSalesTrialOfferingParticipant(
       };
       try {
         await deps.enrollments.save(ineligible);
-      } catch {
+      } catch (saveError) {
         return extensionFailure(
           deps,
           request,
           correlationId,
-          undefined,
-          [preflight.exchanges[0]!, extension.exchange, ...observed.exchanges],
+          saveError,
+          [...preflight.exchanges, extension.exchange, ...observed.exchanges],
           pendingExtension.id,
+          "persistence_failure",
+          "Sales Trial extension state could not be persisted after CloudShare reconcile observation.",
         );
       }
       await recordExtensionFailure(
@@ -777,7 +849,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
         correlationId,
         EXTEND_UNAVAILABLE,
         ineligibleReasonForStatus(observed.statusCode),
-        [preflight.exchanges[0]!, extension.exchange, ...observed.exchanges],
+        [...preflight.exchanges, extension.exchange, ...observed.exchanges],
         ineligible.id,
       );
       return {
@@ -795,7 +867,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
         request,
         correlationId,
         undefined,
-        [preflight.exchanges[0]!, extension.exchange, ...observed.exchanges],
+        [...preflight.exchanges, extension.exchange, ...observed.exchanges],
         pendingExtension.id,
       );
     }
@@ -807,14 +879,16 @@ export async function handleExtendSalesTrialOfferingParticipant(
     };
     try {
       await deps.enrollments.save(reconciled);
-    } catch {
+    } catch (saveError) {
       return extensionFailure(
         deps,
         request,
         correlationId,
-        undefined,
-        [preflight.exchanges[0]!, extension.exchange, ...observed.exchanges],
+        saveError,
+        [...preflight.exchanges, extension.exchange, ...observed.exchanges],
         pendingExtension.id,
+        "persistence_failure",
+        "Sales Trial extension state could not be persisted after CloudShare reconcile observation.",
       );
     }
 
@@ -825,7 +899,7 @@ export async function handleExtendSalesTrialOfferingParticipant(
       reconciled,
       observed.expirationTime,
       extension.exchange,
-      [preflight.exchanges[0]!, extension.exchange, ...observed.exchanges],
+      [...preflight.exchanges, extension.exchange, ...observed.exchanges],
     );
 
     return {
@@ -1834,15 +1908,20 @@ async function extensionFailure(
     readonly response: unknown;
   }[] = [],
   subjectId = request.enrollmentId,
+  failureModeOverride?: string,
+  loggedErrorOverride?: string,
 ): Promise<SalesTrialParticipantEnvironmentExtendResponse> {
   const context =
     error instanceof Error && "context" in error
       ? (error as { context?: Record<string, unknown> }).context
       : undefined;
-  const attemptedOperation =
-    typeof context?.path === "string" && context.path.includes("/getextended")
-      ? "observe_extended_environment"
-      : "extend_environment";
+  const fallbackExchange =
+    (completedExchanges[completedExchanges.length - 1] as
+      | {
+          readonly request: Record<string, unknown>;
+          readonly response: Record<string, unknown>;
+        }
+      | undefined) ?? null;
   const requestExchange = context
     ? {
         request: {
@@ -1861,10 +1940,20 @@ async function extensionFailure(
           tls: context.tls,
         },
       }
-    : null;
+    : fallbackExchange;
+  const attemptedOperation = salesTrialAttemptedOperationForPath(
+    requestExchange?.request?.path,
+  );
   const httpExchanges = requestExchange
-    ? [...completedExchanges, requestExchange]
+    ? context
+      ? [...completedExchanges, requestExchange]
+      : completedExchanges
     : completedExchanges;
+  const failureMode =
+    failureModeOverride ??
+    context?.failureMode ??
+    ((context?.responseStatus ?? context?.status) ? "http_failure" : "transport_failure");
+  const loggedError = loggedErrorOverride ?? EXTEND_UNCONFIRMED;
 
   await Promise.allSettled([
     deps.diagnostics?.record({
@@ -1876,7 +1965,7 @@ async function extensionFailure(
       actor: request.actor,
       subject: { type: "sales_trial_enrollment", id: subjectId },
       correlationId,
-      message: EXTEND_UNCONFIRMED,
+      message: loggedError,
       externalIds: {
         offeringId: request.offeringId,
         salesTrialEnrollmentId: subjectId,
@@ -1890,9 +1979,7 @@ async function extensionFailure(
       details: {
         integrationSurface: "cloudshare.v3.environments",
         attemptedOperation,
-        failureMode:
-          context?.failureMode ??
-          ((context?.responseStatus ?? context?.status) ? "http_failure" : "transport_failure"),
+        failureMode,
         httpExchanges,
       },
     }),
@@ -1912,11 +1999,9 @@ async function extensionFailure(
         offeringId: request.offeringId,
         integrationSurface: "cloudshare.v3.environments",
         attemptedOperation,
-        failureMode:
-          context?.failureMode ??
-          ((context?.responseStatus ?? context?.status) ? "http_failure" : "transport_failure"),
+        failureMode,
       },
-      error: EXTEND_UNCONFIRMED,
+      error: loggedError,
     }),
   ]);
   return {

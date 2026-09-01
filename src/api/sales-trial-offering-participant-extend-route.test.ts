@@ -8,6 +8,7 @@ const {
   mockGetServices,
   mockGetPortalAdminSession,
   mockCreateOfferingRepository,
+  mockCreateItemRepository,
   mockCreateEnrollmentRepository,
   mockCreateCloudShareSalesEnvironmentSource,
 } = vi.hoisted(() => ({
@@ -15,6 +16,7 @@ const {
   mockGetServices: vi.fn(),
   mockGetPortalAdminSession: vi.fn(),
   mockCreateOfferingRepository: vi.fn(),
+  mockCreateItemRepository: vi.fn(),
   mockCreateEnrollmentRepository: vi.fn(),
   mockCreateCloudShareSalesEnvironmentSource: vi.fn(),
 }));
@@ -33,6 +35,10 @@ vi.mock("@/auth/portal-session", () => ({
 
 vi.mock("@/persistence/prisma-sales-trial-offering-repository", () => ({
   createPrismaSalesTrialOfferingRepository: mockCreateOfferingRepository,
+}));
+
+vi.mock("@/persistence/prisma-item-repository", () => ({
+  createPrismaItemRepository: mockCreateItemRepository,
 }));
 
 vi.mock("@/persistence/prisma-sales-trial-enrollment-repository", () => ({
@@ -82,11 +88,29 @@ describe("Sales Trial participant extend route", () => {
         id: "offering-1",
         customerId: "customer-certalis",
         title: "Trial 1",
+        itemId: "item-1",
         status: "ended",
         cloudShareSalesExperienceId: "sales-1",
         start: "2026-08-30T08:00:00.000Z",
         end: "2026-08-30T18:00:00.000Z",
         timeZone: "UTC",
+        createdAt: new Date("2026-08-30T08:00:00.000Z"),
+        updatedAt: new Date("2026-08-30T08:00:00.000Z"),
+      }),
+    });
+    mockCreateItemRepository.mockReturnValue({
+      findById: vi.fn().mockResolvedValue({
+        id: "item-1",
+        customerId: "customer-certalis",
+        name: "Trial Item",
+        description: "",
+        project: { id: "project-1", name: "Project 1" },
+        blueprints: [{ id: "bp-1", name: "Blueprint 1" }],
+        policy: { id: "policy-1", name: "Policy 1" },
+        regions: [{ id: "region-1", name: "Region 1" }],
+        defaultDurationMinutes: 60,
+        status: "active",
+        archivedAt: null,
         createdAt: new Date("2026-08-30T08:00:00.000Z"),
         updatedAt: new Date("2026-08-30T08:00:00.000Z"),
       }),
@@ -104,7 +128,7 @@ describe("Sales Trial participant extend route", () => {
         cloudShareParticipantId: "remote-1",
         invitationStatus: "sent",
         participationStatus: "inProgress",
-        cloudShareRosterEnvironmentReference: "env-1",
+        cloudShareRosterEnvironmentReference: "roster-env-1",
         environmentStatus: "Archived",
         observedExpirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
         firstJoined: "2026-08-30T10:05:00.000Z",
@@ -118,32 +142,36 @@ describe("Sales Trial participant extend route", () => {
     });
     mockCreateCloudShareSalesEnvironmentSource.mockReturnValue({
       extendById: vi.fn().mockResolvedValue({
-        environmentId: "env-1",
+        environmentId: "opaque-v3-env-1",
         exchange: {
-          request: { method: "PUT", path: "/api/v3/envs/actions/extend", query: { envId: "env-1" } },
+          request: { method: "PUT", path: "/api/v3/envs/actions/extend", query: { envId: "opaque-v3-env-1" } },
           response: { status: 200, body: "" },
         },
+      }),
+      observe: vi.fn().mockResolvedValue({
+        environmentId: "opaque-v3-env-1",
+        statusCode: 4,
+        expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
+        exchanges: [
+          {
+            request: { method: "GET", path: "/api/v3/envs", query: { ownerEmail: "visitor@example.test", brief: "false" } },
+            response: { status: 200, body: [{ id: "opaque-v3-env-1", projectId: "project-1" }] },
+          },
+          {
+            request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "opaque-v3-env-1" } },
+            response: { status: 200, body: { statusCode: 4, expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT" } },
+          },
+        ],
       }),
       observeById: vi
         .fn()
         .mockResolvedValueOnce({
-          environmentId: "env-1",
-          statusCode: 4,
-          expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
-          exchanges: [
-            {
-              request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "env-1" } },
-              response: { status: 200, body: { statusCode: 4, expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT" } },
-            },
-          ],
-        })
-        .mockResolvedValueOnce({
-          environmentId: "env-1",
+          environmentId: "opaque-v3-env-1",
           statusCode: 4,
           expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT",
           exchanges: [
             {
-              request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "env-1" } },
+              request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "opaque-v3-env-1" } },
               response: { status: 200, body: { statusCode: 4, expirationTime: "Tue, 01 Sep 2026 13:00:00 GMT" } },
             },
           ],
@@ -189,30 +217,34 @@ describe("Sales Trial participant extend route", () => {
     });
     mockCreateCloudShareSalesEnvironmentSource.mockReturnValue({
       extendById: vi.fn().mockResolvedValue({
-        environmentId: "env-1",
+        environmentId: "opaque-v3-env-1",
         exchange: {
-          request: { method: "PUT", path: "/api/v3/envs/actions/extend", query: { envId: "env-1" } },
+          request: { method: "PUT", path: "/api/v3/envs/actions/extend", query: { envId: "opaque-v3-env-1" } },
           response: { status: 200, body: "" },
         },
       }),
+      observe: vi.fn().mockResolvedValue({
+        environmentId: "opaque-v3-env-1",
+        statusCode: 4,
+        expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
+        exchanges: [
+          {
+            request: { method: "GET", path: "/api/v3/envs", query: { ownerEmail: "visitor@example.test", brief: "false" } },
+            response: { status: 200, body: [{ id: "opaque-v3-env-1", projectId: "project-1" }] },
+          },
+          {
+            request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "opaque-v3-env-1" } },
+            response: { status: 200, body: { statusCode: 4, expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT" } },
+          },
+        ],
+      }),
       observeById: vi
         .fn()
-        .mockResolvedValueOnce({
-          environmentId: "env-1",
-          statusCode: 4,
-          expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT",
-          exchanges: [
-            {
-              request: { method: "GET", path: "/api/v3/envs/actions/getextended", query: { envId: "env-1" } },
-              response: { status: 200, body: { statusCode: 4, expirationTime: "Tue, 01 Sep 2026 12:00:00 GMT" } },
-            },
-          ],
-        })
         .mockRejectedValueOnce(
           new CloudShareTransportError("getextended timed out", {
             method: "GET",
             path: "/api/v3/envs/actions/getextended",
-            requestQuery: { envId: "env-1" },
+            requestQuery: { envId: "opaque-v3-env-1" },
             requestHeaders: { authorization: "cs_sha1 secret", "x-request-id": "req-1" },
             cause: "ETIMEDOUT",
             transport: "tcp",
@@ -243,34 +275,41 @@ describe("Sales Trial participant extend route", () => {
       request: expect.objectContaining({
         method: "GET",
         path: "/api/v3/envs/actions/getextended",
-        query: { envId: "env-1" },
+        query: { envId: "opaque-v3-env-1" },
         headers: { authorization: "[REDACTED]", "x-request-id": "req-1" },
       }),
       details: expect.objectContaining({
         attemptedOperation: "observe_extended_environment",
-        httpExchanges: [
+        httpExchanges: expect.arrayContaining([
+          expect.objectContaining({
+            request: expect.objectContaining({
+              method: "GET",
+              path: "/api/v3/envs",
+              query: { ownerEmail: "visitor@example.test", brief: "false" },
+            }),
+          }),
           expect.objectContaining({
             request: expect.objectContaining({
               method: "GET",
               path: "/api/v3/envs/actions/getextended",
-              query: { envId: "env-1" },
+              query: { envId: "opaque-v3-env-1" },
             }),
           }),
           expect.objectContaining({
             request: expect.objectContaining({
               method: "PUT",
               path: "/api/v3/envs/actions/extend",
-              query: { envId: "env-1" },
+              query: { envId: "opaque-v3-env-1" },
             }),
           }),
           expect.objectContaining({
             request: expect.objectContaining({
               method: "GET",
               path: "/api/v3/envs/actions/getextended",
-              query: { envId: "env-1" },
+              query: { envId: "opaque-v3-env-1" },
             }),
           }),
-        ],
+        ]),
       }),
     });
   });
